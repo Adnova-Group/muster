@@ -8,3 +8,6 @@ tools you already use.
 - Plan: `docs/plan/2026-06-07-muster-v1-glass-box-router.md`
 
 CLI: `npx muster detect | capabilities | manifest validate <file> | memory read|write`
+
+Slice 2 (fan-out + review): `npx muster wave <manifest> | tally <verdicts> | pick <candidates>`
+Design: `docs/design/2026-06-07-muster-v2-fanout-review.md`

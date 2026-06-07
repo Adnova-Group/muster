@@ -7,6 +7,7 @@ const ROLES = new Set([
   "code-navigation", "docs-research", "brainstorm", "plan", "implement",
   "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt"
 ]);
+const DETECT_KINDS = new Set(["plugin", "skill", "mcp_server"]);
 
 export function validateCatalog(entries) {
   const errors = [];
@@ -20,6 +21,8 @@ export function validateCatalog(entries) {
     if (typeof e.rank !== "number") errors.push(`${at}: rank must be a number`);
     if (e.kind === "external" && (!e.detect || !e.detect.kind || !e.detect.match))
       errors.push(`${at}: external entry needs detect.{kind,match}`);
+    else if (e.kind === "external" && e.detect && e.detect.kind && !DETECT_KINDS.has(e.detect.kind))
+      errors.push(`${at}: unknown detect.kind "${e.detect.kind}" (must be plugin|skill|mcp_server)`);
     if (e.kind === "builtin" && (!e.provenance || !e.provenance.license))
       errors.push(`${at}: builtin entry needs provenance.{adapted_from,license}`);
   });

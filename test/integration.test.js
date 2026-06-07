@@ -30,8 +30,8 @@ test("detect -> capabilities -> hand-built manifest validates (bare machine)", a
     }],
     recommendations: caps.roles["code-navigation"].recommendations,
     degradations: ["code-navigation fell to builtin (no LSP server)"],
-    plan: [{ task: "rate-limit middleware", mode: "single" },
-           { task: "token-bucket store", mode: "tournament", note: "in-mem vs redis" }]
+    plan: [{ id: "middleware", task: "rate-limit middleware", mode: "single", deps: [] },
+           { id: "store", task: "token-bucket store", mode: "tournament", deps: ["middleware"], note: "in-mem vs redis" }]
   };
   assert.deepEqual(validateManifest(manifest), { ok: true, errors: [] });
 });

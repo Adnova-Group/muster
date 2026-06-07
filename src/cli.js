@@ -5,6 +5,9 @@ import { readInstalled } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
+import { computeWaves } from "./wave.js";
+import { tallyReview } from "./review.js";
+import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { readFile } from "node:fs/promises";
 
@@ -34,8 +37,19 @@ try {
   } else if (cmd === "memory" && rest[0] === "read") {
     if (!rest[1]) fail("memory read <dir> [query]: missing dir");
     out(await readMemory(rest[1], rest[2] || ""));
+  } else if (cmd === "wave") {
+    if (!rest[0]) fail("wave <manifest.json>: missing file path");
+    const m = JSON.parse(await readFile(rest[0], "utf8"));
+    if (!Array.isArray(m.plan)) fail("wave: manifest has no 'plan' array");
+    out(computeWaves(m.plan));
+  } else if (cmd === "tally") {
+    if (!rest[0]) fail("tally <verdicts.json>: missing file path");
+    out(tallyReview(JSON.parse(await readFile(rest[0], "utf8"))));
+  } else if (cmd === "pick") {
+    if (!rest[0]) fail("pick <candidates.json>: missing file path");
+    out(pickWinner(JSON.parse(await readFile(rest[0], "utf8"))));
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|memory read|write ...>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...>`);
   }
 } catch (e) {
   fail(e.message);

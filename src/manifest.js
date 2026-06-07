@@ -16,9 +16,19 @@ export function validateManifest(m) {
   for (const f of ["recommendations", "degradations"])
     if (!Array.isArray(m[f])) errors.push(`${f}: must be an array`);
   if (!Array.isArray(m.plan) || m.plan.length === 0) errors.push("plan: required non-empty array");
-  else m.plan.forEach((p, i) => {
-    if (!p.task) errors.push(`plan[${i}].task: required`);
-    if (!MODES.has(p.mode)) errors.push(`plan[${i}].mode: must be single|tournament`);
-  });
+  else {
+    const ids = new Set();
+    const multi = m.plan.length > 1;
+    m.plan.forEach((p, i) => {
+      if (!p.task) errors.push(`plan[${i}].task: required`);
+      if (!MODES.has(p.mode)) errors.push(`plan[${i}].mode: must be single|tournament`);
+      if (multi && !p.id) errors.push(`plan[${i}].id: required when plan has multiple tasks`);
+      if (p.id) { if (ids.has(p.id)) errors.push(`plan[${i}].id: duplicate id "${p.id}"`); ids.add(p.id); }
+      if (p.deps !== undefined && !Array.isArray(p.deps)) errors.push(`plan[${i}].deps: must be an array`);
+    });
+    m.plan.forEach((p, i) => {
+      for (const d of (p.deps || [])) if (!ids.has(d)) errors.push(`plan[${i}].deps: unknown dep "${d}"`);
+    });
+  }
   return { ok: errors.length === 0, errors };
 }

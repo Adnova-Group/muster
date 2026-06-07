@@ -1,0 +1,6 @@
+{ "plan": [
+  { "id": "a", "task": "A", "mode": "single", "deps": [] },
+  { "id": "b", "task": "B", "mode": "single", "deps": ["a"] },
+  { "id": "c", "task": "C", "mode": "tournament", "deps": ["a"] },
+  { "id": "d", "task": "D", "mode": "single", "deps": ["b", "c"] }
+] }

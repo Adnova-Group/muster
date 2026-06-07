@@ -150,7 +150,7 @@ Catalog entry shapes (illustrative):
 - id: muster-planner
   kind: builtin
   roles: [plan]
-  provenance: { adapted_from: "superpowers writing-plans", license: "TBD-verify" }
+  provenance: { adapted_from: "superpowers writing-plans", license: "MIT" }
   rank: 50
 ```
 
@@ -341,17 +341,16 @@ context, then writes its own.
 - **Source licenses verified (2026-06-07):** superpowers, gsd-core, book-genesis, wshobson/agents =
   **MIT**; knowledge-work-plugins = **Apache-2.0**. All permissive — every planned built-in is
   bundleable with attribution; none must be demoted to recommend-only on license grounds.
+- **Muster's own license: Apache-2.0** (decided 2026-06-07) — absorbs the MIT sources with
+  attribution and matches the Apache-2.0 source; its NOTICE file is the attribution surface.
 
 **Still open**
-1. **Muster's OSS license** — pending user. Apache-2.0 recommended: cleanly absorbs the MIT sources
-   (with attribution) and the one Apache-2.0 source, and its NOTICE file is the natural attribution
-   surface. MIT is the lighter alternative.
-2. `ProjectProfile.shape` taxonomy — exact enum + how monorepo composition is represented.
-3. Crew Manifest: shown inline in the session, written to `.muster/`, or both? (Leaning both.)
-4. Memory: wiki entry granularity, `INDEX.md` format, and `[[name]]` link-resolution rules
+1. `ProjectProfile.shape` taxonomy — exact enum + how monorepo composition is represented.
+2. Crew Manifest: shown inline in the session, written to `.muster/`, or both? (Leaning both.)
+3. Memory: wiki entry granularity, `INDEX.md` format, and `[[name]]` link-resolution rules
    (Muster-resolved, Obsidian-independent).
-5. Exact lifecycle stages enumerated in v1 (sequential), given fan-out/review land in slice 2.
-6. Per-built-in attribution mechanics: provenance fields → `NOTICE`/attribution file generation
+4. Exact lifecycle stages enumerated in v1 (sequential), given fan-out/review land in slice 2.
+5. Per-built-in attribution mechanics: provenance fields → `NOTICE`/attribution file generation
    (now unblocked — all sources permissive).
 
 ## 15. Future slices (so this slice's boundaries are legible)
@@ -481,3 +480,9 @@ Adopted as lifecycle invariants:
   recommended).
 - **Why:** lock the portable-core distribution model, keep slice 1 minimal to prove the glass-box
   router, and unblock the built-in bundling plan with verified-permissive sources.
+
+### 2026-06-07 — License decided: Apache-2.0
+- **What changed:** Muster is licensed Apache-2.0. Recorded in §14 resolved; the design is now
+  decision-complete (remaining §14 items are spec-level details, not forks).
+- **Why:** Apache-2.0 absorbs the MIT sources with attribution and matches the one Apache-2.0 source
+  (knowledge-work); its NOTICE file is the per-built-in attribution surface.

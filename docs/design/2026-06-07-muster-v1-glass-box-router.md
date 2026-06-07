@@ -49,14 +49,15 @@ because it is the cheapest domain to validate routing, not because Muster is a d
 5. Persist a **Run Record** to a pluggable memory backend (local default).
 6. Run the lifecycle **sequentially** for now (or simply emit the annotated plan) — enough to prove
    the router end to end.
-7. Branch on **greenfield vs existing**: route a greenfield target (no project/repo yet) to a
-   brainstorm → plan → project-setup bootstrap (superpowers if installed, else built-in) before any
-   implementation (§16).
+
+Slice 1 targets **existing projects** and runs **interactive** only — see Non-goals.
 
 **Non-goals (deferred to later slices)**
 - Parallel fan-out, tournaments, adversarial review gate (slice 2).
-- Full autopilot ship/merge (slice 2). Slice 1 provides the autopilot *shell* through plan emission
-  only — see §16 run modes.
+- Autopilot run mode (§16) — deferred; it has nothing real to drive until the slice-2 execution
+  layer exists.
+- Greenfield bootstrap (§16) — empty-dir → brainstorm → plan → project-setup. Designed (§16) as
+  roadmap; not built in slice 1. Slice 1 assumes an existing project/repo.
 - Domains other than software (S4).
 - Runtime adapters other than Claude Code — but source stays portable (S1).
 - ForceVue connector — the *DNA* is mandatory here; the *integration* is not (S4/S5).
@@ -94,8 +95,10 @@ because it is the cheapest domain to validate routing, not because Muster is a d
 
 ### A. `muster` CLI (deterministic engine, owned "code" layer)
 
-Language: Node (aligns with the gsd-style npm distribution path and the user's runtime). Each
-subcommand is a pure-ish function over the filesystem + harness state, emitting JSON.
+Language: Node. **Distributed as an npm package** (gsd-core style): the Claude Code plugin and every
+future CLI adapter shell out to the same `npx muster …` binary, so the CLI is the portable core and
+adapters stay thin. Each subcommand is a pure-ish function over the filesystem + harness state,
+emitting JSON.
 
 - `muster detect` → inspects the repo and emits `ProjectProfile`.
 - `muster capabilities` → emits `AvailableCapabilities` (catalog ∩ installed + fallbacks + dynamic).
@@ -198,9 +201,9 @@ a nicety.
 ## 6. Data flow (one slice-1 run)
 
 ```
-/muster "<outcome>"
+/muster "<outcome>"               (slice 1: existing project, interactive)
  → muster detect          → ProjectProfile
-     ├─ greenfield? ──────→ bootstrap: brainstorm → plan → project setup → re-detect   (§16)
+     ├─ greenfield? ──────→ bootstrap: brainstorm → plan → project setup → re-detect   (§16, LATER SLICE)
      └─ existing project ─┐
  → muster capabilities    → AvailableCapabilities  (catalog ∩ installed, + fallbacks, + dynamic)
  → router skill           → CREW MANIFEST  [glass box]
@@ -330,19 +333,26 @@ context, then writes its own.
 - **Router skill (model-facing):** scripted scenario fixtures asserting manifest/run-record *shape
   and routing choices given a capability set*, not LLM prose.
 
-## 14. Open questions (to resolve in the spec or with the user)
+## 14. Open questions
 
-1. CLI distribution for v1: `npx muster …` vs a plugin-bundled binary vs both. (Leaning npx, gsd-style.)
+**Resolved**
+- **CLI distribution:** npm package; the Claude Code plugin + future adapters shell out to
+  `npx muster …`. (decided 2026-06-07)
+- **Source licenses verified (2026-06-07):** superpowers, gsd-core, book-genesis, wshobson/agents =
+  **MIT**; knowledge-work-plugins = **Apache-2.0**. All permissive — every planned built-in is
+  bundleable with attribution; none must be demoted to recommend-only on license grounds.
+
+**Still open**
+1. **Muster's OSS license** — pending user. Apache-2.0 recommended: cleanly absorbs the MIT sources
+   (with attribution) and the one Apache-2.0 source, and its NOTICE file is the natural attribution
+   surface. MIT is the lighter alternative.
 2. `ProjectProfile.shape` taxonomy — exact enum + how monorepo composition is represented.
-3. Crew Manifest: is it shown inline in the session, written to `.muster/`, or both? (Leaning both.)
+3. Crew Manifest: shown inline in the session, written to `.muster/`, or both? (Leaning both.)
 4. Memory: wiki entry granularity, `INDEX.md` format, and `[[name]]` link-resolution rules
    (Muster-resolved, Obsidian-independent).
 5. Exact lifecycle stages enumerated in v1 (sequential), given fan-out/review land in slice 2.
-6. **License verification per bundled built-in (blocker).** Each repo we adapt built-in defaults
-   from (gsd-core, superpowers, book-genesis, wshobson/agents, knowledge-work) must have its license
-   confirmed compatible with Muster's chosen OSS license before its content is bundled, with
-   attribution recorded in provenance + NOTICE. Which built-ins ship in v1 depends on this.
-7. Muster's own OSS license choice (drives #6).
+6. Per-built-in attribution mechanics: provenance fields → `NOTICE`/attribution file generation
+   (now unblocked — all sources permissive).
 
 ## 15. Future slices (so this slice's boundaries are legible)
 
@@ -363,16 +373,17 @@ adopted and how it maps onto Muster, with slice-1 scope flagged.
 ### Run modes
 
 - **Interactive (default).** `/muster <outcome>` runs detect → route → manifest → (sequential
-  lifecycle), pausing for human approval at gates. Slice 1.
-- **Autopilot.** `muster autopilot <outcome|issue>` runs the whole lifecycle hands-off — plan →
-  execute → ship — with one human decision (how to merge), mirroring atomic's `/autopilot`. In slice
-  1, autopilot drives detect → route → plan emission sequentially; fan-out, review gate, and
-  ship/merge land in slice 2. The router keeps the plan/manifest currency-clean (spec-as-current-
-  truth) so fanned-out agents can't be diverted.
+  lifecycle), pausing for human approval at gates. **This is the only slice-1 mode.**
+- **Autopilot (deferred — slice 2+).** `muster autopilot <outcome|issue>` runs the whole lifecycle
+  hands-off — plan → execute → ship — with one human decision (how to merge), mirroring atomic's
+  `/autopilot`. Deferred because it has nothing real to drive until the slice-2 execution layer
+  exists. The router keeps the plan/manifest currency-clean (spec-as-current-truth) so fanned-out
+  agents can't be diverted once autopilot lands.
 
-### Greenfield vs existing — bootstrap when no project exists
+### Greenfield vs existing — bootstrap when no project exists (deferred — later slice)
 
-`detect` first answers: does a project/repo exist here?
+Slice 1 assumes an existing project. The greenfield branch below is designed here as roadmap; it is
+not built in slice 1. `detect` first answers: does a project/repo exist here?
 
 - **Existing project** → normal flow (detect shape → route crew → execute).
 - **Greenfield** (empty dir / no repo / no manifest) → **bootstrap branch** before routing:
@@ -459,3 +470,14 @@ Adopted as lifecycle invariants:
   optional adapters.
 - **Why:** most OSS users have no MCP memory server; the wiki gives compounding memory with no setup,
   stays git-committable (serves Glass Box), and must not depend on any specific app.
+
+### 2026-06-07 — Distribution, scope tightening, license verification
+- **What changed:** (1) CLI distribution decided — npm package, adapters shell out to `npx muster`.
+  (2) Slice 1 tightened to **existing projects, interactive only**: autopilot and greenfield
+  bootstrap moved from slice-1 goals to deferred roadmap (§16 retained as design). (3) Source
+  licenses verified — superpowers/gsd-core/book-genesis/wshobson = MIT, knowledge-work = Apache-2.0;
+  all permissive, so all planned built-ins are bundleable with attribution. (4) Open Questions
+  reorganized into resolved vs open; Muster's own license is the remaining call (Apache-2.0
+  recommended).
+- **Why:** lock the portable-core distribution model, keep slice 1 minimal to prove the glass-box
+  router, and unblock the built-in bundling plan with verified-permissive sources.

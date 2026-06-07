@@ -1,0 +1,8 @@
+{
+  "outcome": "Add rate limiting",
+  "successCriteria": ["429 past N req/min", "tests green"],
+  "crew": [{ "stage": "navigate", "provider": "grep", "source": "builtin", "rationale": "no LSP", "evidence": "no serena", "fallback": "inline" }],
+  "recommendations": ["install serena"],
+  "degradations": ["nav fell to builtin"],
+  "plan": [{ "task": "middleware", "mode": "single" }]
+}

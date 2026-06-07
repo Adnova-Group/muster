@@ -59,3 +59,17 @@ test("toBuiltin derives name/description when source has no frontmatter", () => 
 test("toBuiltin is idempotent", () => {
   assert.equal(toBuiltin(src, item, source).content, toBuiltin(src, item, source).content);
 });
+
+import { generateNotice } from "../src/vendor.js";
+
+test("generateNotice lists each source repo + license once", () => {
+  const entries = [
+    { provenance: { adapted_from: "obra/superpowers a/SKILL.md", license: "MIT" } },
+    { provenance: { adapted_from: "obra/superpowers b/SKILL.md", license: "MIT" } },
+    { provenance: { adapted_from: "wshobson/agents x.md", license: "MIT" } }
+  ];
+  const n = generateNotice(entries);
+  assert.match(n, /obra\/superpowers \(MIT\)/);
+  assert.match(n, /wshobson\/agents \(MIT\)/);
+  assert.equal((n.match(/obra\/superpowers/g) || []).length, 1);
+});

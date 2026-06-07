@@ -33,3 +33,11 @@ test("missing deps field defaults to no deps", () => {
   const w = computeWaves([{ id: "a" }, { id: "b" }]);
   assert.deepEqual(ids(w), [["a", "b"]]);
 });
+
+test("non-array input throws", () => {
+  assert.throws(() => computeWaves(null), /must be an array/);
+});
+
+test("duplicate id throws", () => {
+  assert.throws(() => computeWaves([{ id: "a", deps: [] }, { id: "a", deps: [] }]), /duplicate task id/);
+});

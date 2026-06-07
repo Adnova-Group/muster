@@ -1,0 +1,12 @@
+{
+  "name": "muster",
+  "version": "0.1.0",
+  "description": "Glass-box agentic orchestrator: detects context, assembles the right crew, and shows its reasoning.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": { "muster": "src/cli.js" },
+  "files": ["src", "catalog", "plugin", "LICENSE", "NOTICE"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" },
+  "dependencies": { "yaml": "^2.5.0" }
+}

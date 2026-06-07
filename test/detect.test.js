@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { tmpProject } from "./helpers.js";
 import { detectProject } from "../src/detect.js";
+
+const pexec = promisify(execFile);
 
 test("empty dir is greenfield", async () => {
   const dir = await tmpProject({});
@@ -41,4 +45,16 @@ test("unknown values never throw, reported as unknown", async () => {
   const p = await detectProject(dir);
   assert.equal(p.packageManager, "unknown");
   assert.equal(p.testRunner, "unknown");
+});
+
+test("populates vcs from a real git repo", async () => {
+  const dir = await tmpProject({ "package.json": { name: "x" }, "a.txt": "hi" });
+  await pexec("git", ["init", "-q"], { cwd: dir });
+  await pexec("git", ["config", "user.email", "t@t.t"], { cwd: dir });
+  await pexec("git", ["config", "user.name", "t"], { cwd: dir });
+  const p = await detectProject(dir);
+  assert.equal(p.vcs.isRepo, true);
+  assert.equal(typeof p.vcs.branch, "string");      // some branch name
+  assert.equal(p.vcs.dirty, true);                   // untracked files present
+  assert.equal(p.vcs.hasRemote, false);              // no remote added
 });

@@ -24,6 +24,14 @@ test("validateCatalog accepts a valid builtin + external", () => {
   assert.equal(ok, true);
 });
 
+test("validateCatalog rejects an unknown detect.kind", () => {
+  const { ok, errors } = validateCatalog([
+    { id: "x", kind: "external", roles: ["plan"], rank: 1, detect: { kind: "filesystem", match: "x" } }
+  ]);
+  assert.equal(ok, false);
+  assert.ok(errors.some(e => /detect\.kind/.test(e)));
+});
+
 test("loadCatalog reads + validates the shipped software catalog", async () => {
   const entries = await loadCatalog(new URL("../catalog/", import.meta.url));
   assert.ok(entries.length > 0);

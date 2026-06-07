@@ -1,5 +1,12 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const pexec = promisify(execFile);
+async function git(cwd, args) {
+  try { const { stdout } = await pexec("git", args, { cwd }); return stdout.trim(); } catch { return null; }
+}
 
 async function readJson(p) { try { return JSON.parse(await readFile(p, "utf8")); } catch { return null; } }
 async function exists(p) { try { await stat(p); return true; } catch { return false; } }
@@ -43,9 +50,19 @@ export async function detectProject(cwd) {
 
   if (await exists(join(cwd, "pnpm-workspace.yaml")) || (pkg && pkg.workspaces)) shape = "monorepo";
 
+  let branch = null, dirty = false, hasRemote = false;
+  if (isRepo) {
+    branch = await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"])
+          ?? await git(cwd, ["symbolic-ref", "--short", "HEAD"]);
+    const statusOut = await git(cwd, ["status", "--porcelain"]);
+    dirty = statusOut !== null && statusOut !== "";
+    const remoteOut = await git(cwd, ["remote"]);
+    hasRemote = !!(remoteOut && remoteOut !== "");
+  }
+
   return {
     greenfield, languages, frameworks, shape, packageManager, testRunner,
-    vcs: { isRepo, branch: null, dirty: false, hasRemote: false },
+    vcs: { isRepo, branch, dirty, hasRemote },
     signals: frameworks
   };
 }

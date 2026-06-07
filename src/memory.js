@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile, mkdir, stat } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir, stat, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 
 async function exists(p) { try { await stat(p); return true; } catch { return false; } }
@@ -33,4 +33,14 @@ export async function readMemory(dir, query) {
     if (content.toLowerCase().includes(q)) hits.push({ slug: f.replace(/\.md$/, ""), content });
   }
   return hits;
+}
+
+export async function appendState(dir, runId, line) {
+  await mkdir(dir, { recursive: true });
+  await appendFile(join(dir, `${runId}.state.md`), line.replace(/\n/g, " ") + "\n");
+}
+
+export async function appendFollowup(dir, runId, finding) {
+  await mkdir(dir, { recursive: true });
+  await appendFile(join(dir, `${runId}.followups.md`), `- [${finding.severity}] ${finding.note}\n`);
 }

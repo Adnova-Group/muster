@@ -20,7 +20,8 @@ Inspiration (credited, not forked): atomic-claude (lifecycle discipline — agen
 scratchpad working-memory, spec-as-current-truth, checkpoint/verify gates), gsd-core (cross-runtime
 install + parallel waves), superpowers (brainstorm/plan/review skills + cross-CLI sync pattern),
 book-genesis (non-code phased pipeline + adversarial quality gates). Design DNA from ForceVue
-(Adnova Group): outcome alignment, Glass-Box traceability, compounding memory.
+(Adnova Group): outcome alignment, Glass-Box traceability, compounding memory. Memory follows
+Karpathy's LLM Wiki pattern (tool-agnostic markdown knowledge base, no MCP/vector DB required).
 
 ### Full-system decomposition (context only — most is out of scope for this slice)
 
@@ -278,15 +279,33 @@ Plan:
 them (via an installed brainstorming skill if present, else inline) **before** producing a manifest.
 No manifest, no run. This is both ForceVue DNA and the user's own goal-driven principle.
 
-## 11. Memory (compounding) — interface + local default
+## 11. Memory (compounding) — interface + LLM-Wiki default
 
-- Abstract interface: `read(query) -> RunRecord[]`, `write(RunRecord)`. RunRecord = manifest +
-  decisions + outcome status + lineage refs + timestamp.
-- v1 default backend: local files under `.muster/memory/` (JSON + a human-readable index).
-- Future backends (deferred): the user's brain MCP servers; ForceVue. The interface is designed so
-  these are drop-in adapters.
-- Each run reads relevant prior records (same repo/outcome lineage) and threads them into the router
-  as context, then writes its own.
+Abstract, pluggable interface: `read(query) -> Entry[]`, `write(Entry)`. Entries include Run Records
+(manifest + decisions + outcome status + lineage refs + timestamp) and distilled knowledge
+(conventions, decisions, gotchas).
+
+**Default backend: an LLM-Wiki-style markdown store** (Karpathy's LLM Wiki pattern) — **zero
+infrastructure, no MCP, no vector DB**. A folder under `.muster/memory/` of human-readable,
+interlinked markdown files with a central `INDEX.md` table-of-contents: the router reads the index
+first to orient, then pulls only the relevant topic files. **The agent that uses the wiki maintains
+it** — adding entries, merging duplicates, pruning stale content — so memory compounds as Muster
+works. It is git-committable and reviewable, which directly serves the Glass-Box principle. This is
+the same shape as the BRIEF/STATE/FOLLOWUPS run records and the manifests — they become wiki entries.
+
+**Tool-agnostic — independent of Obsidian (or any app).** Karpathy pairs the wiki with Obsidian as a
+viewer; Muster does not. The store is plain markdown readable in any editor or directly by the agent,
+with **no dependency on Obsidian, its vault format, or its plugins**. Cross-links are plain relative
+markdown links resolved by Muster itself (a `[[name]]` convention is allowed, but Muster resolves it
+— it does not require an Obsidian backlink engine). Obsidian stays a fine *optional* viewer, never a
+requirement.
+
+**Optional backends (adapters, deferred):** MCP "brain" servers (e.g. openbrain / agent-brain) and
+ForceVue, for users who run them. The default requires **none** of these — important for OSS, where
+most users have no MCP memory configured (the brain pattern needs a server set up; the wiki does not).
+
+Each run reads relevant prior entries (same repo/outcome lineage), threads them into the router as
+context, then writes its own.
 
 ## 12. Graceful degradation & error handling
 
@@ -316,7 +335,8 @@ No manifest, no run. This is both ForceVue DNA and the user's own goal-driven pr
 1. CLI distribution for v1: `npx muster …` vs a plugin-bundled binary vs both. (Leaning npx, gsd-style.)
 2. `ProjectProfile.shape` taxonomy — exact enum + how monorepo composition is represented.
 3. Crew Manifest: is it shown inline in the session, written to `.muster/`, or both? (Leaning both.)
-4. Memory record granularity and the local index format.
+4. Memory: wiki entry granularity, `INDEX.md` format, and `[[name]]` link-resolution rules
+   (Muster-resolved, Obsidian-independent).
 5. Exact lifecycle stages enumerated in v1 (sequential), given fan-out/review land in slice 2.
 6. **License verification per bundled built-in (blocker).** Each repo we adapt built-in defaults
    from (gsd-core, superpowers, book-genesis, wshobson/agents, knowledge-work) must have its license
@@ -430,3 +450,12 @@ Adopted as lifecycle invariants:
   to slice-1 goals.
 - **Why:** atomic's orchestration shell (autopilot, signals, project setup, greenfield bootstrap via
   superpowers) is half of Muster's heritage and was underweighted in the initial draft.
+
+### 2026-06-07 — Memory default = LLM Wiki (Obsidian-independent)
+- **What changed:** §11 default memory backend is now an LLM-Wiki-style **plain-markdown** store
+  (Karpathy's LLM Wiki pattern): `INDEX.md` + interlinked topic files, agent-maintained, zero infra
+  (no MCP, no vector DB). Explicitly **tool-agnostic and independent of Obsidian** — `[[name]]` links
+  are resolved by Muster, not an Obsidian backlink engine. MCP brain servers and ForceVue demoted to
+  optional adapters.
+- **Why:** most OSS users have no MCP memory server; the wiki gives compounding memory with no setup,
+  stays git-committable (serves Glass Box), and must not depend on any specific app.

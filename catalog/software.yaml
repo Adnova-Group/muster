@@ -1,0 +1,65 @@
+# External providers — optional, detected at runtime. None assumed present.
+- id: serena
+  kind: external
+  roles: [code-navigation]
+  detect: { kind: mcp_server, match: serena }
+  rank: 90
+  recommended: true
+  invoke: "use serena symbol tools (find_symbol, find_referencing_symbols)"
+  notes: "LSP-grade navigation"
+- id: context7
+  kind: external
+  roles: [docs-research]
+  detect: { kind: mcp_server, match: context7 }
+  rank: 90
+  recommended: true
+  invoke: "resolve-library-id then query-docs"
+  notes: "live external library docs"
+- id: superpowers
+  kind: external
+  roles: [brainstorm, plan, test-author, code-review]
+  detect: { kind: plugin, match: superpowers }
+  rank: 80
+  invoke: "invoke the matching superpowers skill"
+- id: pr-review-toolkit
+  kind: external
+  roles: [code-review, security-review]
+  detect: { kind: plugin, match: pr-review-toolkit }
+  rank: 70
+  invoke: "dispatch the matching reviewer agent"
+- id: wshobson-agents
+  kind: external
+  roles: [security-review, tech-debt]
+  detect: { kind: plugin, match: agents }
+  rank: 70
+  invoke: "dispatch the matching wshobson specialist agent"
+- id: muster-planner
+  kind: builtin
+  roles: [brainstorm, plan]
+  rank: 50
+  provenance: { adapted_from: "superpowers writing-plans/brainstorming", license: "MIT" }
+- id: muster-reviewer
+  kind: builtin
+  roles: [code-review]
+  rank: 50
+  provenance: { adapted_from: "wshobson/agents code-reviewer", license: "MIT" }
+- id: muster-tdd
+  kind: builtin
+  roles: [test-author]
+  rank: 50
+  provenance: { adapted_from: "superpowers test-driven-development", license: "MIT" }
+- id: muster-grep-nav
+  kind: builtin
+  roles: [code-navigation]
+  rank: 30
+  provenance: { adapted_from: "Muster (grep/ast-grep wrapper)", license: "Apache-2.0" }
+- id: muster-webfetch-docs
+  kind: builtin
+  roles: [docs-research]
+  rank: 30
+  provenance: { adapted_from: "Muster (WebFetch wrapper)", license: "Apache-2.0" }
+- id: muster-builder
+  kind: builtin
+  roles: [implement]
+  rank: 50
+  provenance: { adapted_from: "atomic-claude builder/surgeon archetypes", license: "MIT" }

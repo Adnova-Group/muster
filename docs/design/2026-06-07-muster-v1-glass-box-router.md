@@ -16,7 +16,8 @@ Muster owns the **spine** (router, lifecycle, fan-out, memory interface, portabl
 already has, and never reimplements a specialist capability that exists. When an external provider is
 absent, it falls back to a bundled best-of-breed built-in, and only works inline as a last resort.
 
-Inspiration (credited, not forked): atomic-claude (lifecycle discipline), gsd-core (cross-runtime
+Inspiration (credited, not forked): atomic-claude (lifecycle discipline — agent-roster archetypes,
+scratchpad working-memory, spec-as-current-truth, checkpoint/verify gates), gsd-core (cross-runtime
 install + parallel waves), superpowers (brainstorm/plan/review skills + cross-CLI sync pattern),
 book-genesis (non-code phased pipeline + adversarial quality gates). Design DNA from ForceVue
 (Adnova Group): outcome alignment, Glass-Box traceability, compounding memory.
@@ -47,9 +48,14 @@ because it is the cheapest domain to validate routing, not because Muster is a d
 5. Persist a **Run Record** to a pluggable memory backend (local default).
 6. Run the lifecycle **sequentially** for now (or simply emit the annotated plan) — enough to prove
    the router end to end.
+7. Branch on **greenfield vs existing**: route a greenfield target (no project/repo yet) to a
+   brainstorm → plan → project-setup bootstrap (superpowers if installed, else built-in) before any
+   implementation (§16).
 
 **Non-goals (deferred to later slices)**
 - Parallel fan-out, tournaments, adversarial review gate (slice 2).
+- Full autopilot ship/merge (slice 2). Slice 1 provides the autopilot *shell* through plan emission
+  only — see §16 run modes.
 - Domains other than software (S4).
 - Runtime adapters other than Claude Code — but source stays portable (S1).
 - ForceVue connector — the *DNA* is mandatory here; the *integration* is not (S4/S5).
@@ -193,11 +199,15 @@ a nicety.
 ```
 /muster "<outcome>"
  → muster detect          → ProjectProfile
+     ├─ greenfield? ──────→ bootstrap: brainstorm → plan → project setup → re-detect   (§16)
+     └─ existing project ─┐
  → muster capabilities    → AvailableCapabilities  (catalog ∩ installed, + fallbacks, + dynamic)
  → router skill           → CREW MANIFEST  [glass box]
  → (sequential lifecycle execution — or emit annotated plan)
  → muster memory write    → RUN RECORD
 ```
+
+Run modes (interactive / autopilot) and the greenfield bootstrap branch are detailed in §16.
 
 ## 7. ProjectProfile (output of `detect`)
 
@@ -207,10 +217,14 @@ Deterministic, derived only from files + git. Example fields:
 - `shape`: e.g. `frontend` | `backend` | `fullstack` | `mobile` | `library` | `monorepo`
 - `package_manager`, `test_runner` (detected, not assumed)
 - `vcs`: branch, dirty/clean, remote present
+- `greenfield`: true when no project/repo exists (empty dir, no VCS, no manifest) — triggers the
+  bootstrap branch (§16)
 - `signals`: notable markers found (e.g. react-native, expo, next, prisma) — descriptive, not
   prescriptive
 
-No model involvement. Unknowns are reported as `unknown`, never guessed.
+No model involvement. Unknowns are reported as `unknown`, never guessed. The profile is Muster's
+**signals** layer (atomic-signals-inferrer analog): deterministic repo-shape awareness without
+hallucination, persisted under `.muster/` and refreshed when the repo changes.
 
 ## 8. AvailableCapabilities (output of `capabilities`)
 
@@ -321,6 +335,76 @@ No manifest, no run. This is both ForceVue DNA and the user's own goal-driven pr
 - **S1:** additional CLI adapters (opencode/codex/gemini) over the same portable source.
 - **ForceVue:** optional connector — push PM artifacts with lineage; ForceVue/brain as memory backend.
 
+## 16. Run modes & atomic orchestration heritage
+
+Muster's orchestration spine adapts proven patterns from atomic-claude. This section records what is
+adopted and how it maps onto Muster, with slice-1 scope flagged.
+
+### Run modes
+
+- **Interactive (default).** `/muster <outcome>` runs detect → route → manifest → (sequential
+  lifecycle), pausing for human approval at gates. Slice 1.
+- **Autopilot.** `muster autopilot <outcome|issue>` runs the whole lifecycle hands-off — plan →
+  execute → ship — with one human decision (how to merge), mirroring atomic's `/autopilot`. In slice
+  1, autopilot drives detect → route → plan emission sequentially; fan-out, review gate, and
+  ship/merge land in slice 2. The router keeps the plan/manifest currency-clean (spec-as-current-
+  truth) so fanned-out agents can't be diverted.
+
+### Greenfield vs existing — bootstrap when no project exists
+
+`detect` first answers: does a project/repo exist here?
+
+- **Existing project** → normal flow (detect shape → route crew → execute).
+- **Greenfield** (empty dir / no repo / no manifest) → **bootstrap branch** before routing:
+  1. Define the project with the brainstorm/plan roles — prefer an installed superpowers
+     brainstorming/writing-plans provider; else the Muster built-in planner. **No code before a
+     design + plan exist** (same gate as superpowers/atomic).
+  2. Project setup (atomic-setup analog): `git init`, docs/ layout, `.gitignore`, initial structure,
+     a CLAUDE.md/AGENTS.md seed — only what is missing, never overwrite.
+  3. Re-run detect on the now-existing project and continue into the normal flow.
+
+This is why "use superpowers if a project/repo does not exist yet" is first-class: greenfield routes
+to brainstorm → plan → setup, not straight to implementation.
+
+### Signals (repo-shape awareness)
+
+`detect`/ProjectProfile is Muster's signals layer — the atomic-signals-inferrer analog: deterministic
+repo-shape awareness without hallucination, persisted under `.muster/` and threaded into the router +
+compounding memory, refreshed when the repo changes.
+
+### Agent-roster archetypes → roles + built-in defaults
+
+Atomic's tight agent roster maps onto Muster roles; the built-in defaults for these roles are adapted
+(with credit) from atomic's agent definitions:
+
+| Atomic agent | Muster role | Notes |
+|---|---|---|
+| investigator (ro locator) | code-navigation / investigate | file:line locator; built-in below serena |
+| builder (cohesion-bounded, TDD) | implement | feature-slice builder |
+| surgeon (1–2 files) | implement (small scope) | router picks builder vs surgeon by task scope |
+| strategist (ro heavyweight reasoning) | plan / analyze | "is this the right approach"; tournament judge (slice 2) |
+| reviewer (PASS / CHANGES_REQUESTED) | code-review | re-runs quality signals; review gate (slice 2) |
+
+### Working memory (scratchpad) → Run Record structure
+
+Atomic's implement→review scratchpad becomes the shape of Muster's run working-memory + Run Record:
+
+- **BRIEF** = the Crew Manifest (outcome + scope + crew + plan) — the fanned-out agents' single source.
+- **STATE** = append-only checkpoint log of each step/decision (the glass-box trail at execution
+  granularity; satisfies "checkpoint after every significant step").
+- **FOLLOWUPS** = ledger of non-blocking findings deferred during a run, dispositioned at finalize.
+
+These persist via the memory interface (local default in v1) and are what makes memory *compound*.
+
+### Quality gates
+
+Adopted as lifecycle invariants:
+- **Spec-as-current-truth.** Muster-generated plans/specs keep the body as current truth + a change
+  log for history, so fresh-context fanned-out agents are never misled.
+- **Checkpoint discipline.** Every significant step appends to STATE.
+- **Verify-before-claim.** No "done/passing" without a fresh verification run in the same step
+  (atomic-verify / TDD analog). TDD-in-loop enforcement is slice 2; the invariant is set now.
+
 ## Change log
 
 ### 2026-06-07 — Initial draft
@@ -336,3 +420,13 @@ No manifest, no run. This is both ForceVue DNA and the user's own goal-driven pr
   Built-ins carry provenance + verified license; license verification is a bundling blocker.
 - **Why:** Establish the keystone subsystem before the rest of the platform plugs into it, and make
   Muster strong out-of-the-box without depending on any optional tool.
+
+### 2026-06-07 — Atomic orchestration heritage (§16)
+- **What changed:** Added run modes (interactive + autopilot), the greenfield-vs-existing branch
+  (greenfield → superpowers/built-in brainstorm → plan → project setup before implementation),
+  signals as the persisted detect layer, atomic agent-roster archetypes mapped to roles + built-in
+  defaults, the scratchpad BRIEF/STATE/FOLLOWUPS structure as the Run Record shape, and the
+  spec-as-current-truth / checkpoint / verify-before-claim quality gates. Added greenfield handling
+  to slice-1 goals.
+- **Why:** atomic's orchestration shell (autopilot, signals, project setup, greenfield bootstrap via
+  superpowers) is half of Muster's heritage and was underweighted in the initial draft.

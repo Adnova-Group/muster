@@ -12,7 +12,9 @@ You are given: an `outcome` string, a `ProjectProfile` JSON, an `AvailableCapabi
 - **Glass Box.** Every crew member records: chosen `provider`, `source` (installed/builtin/dynamic/inline), one-line `rationale`, the `evidence` from the profile/capabilities it rests on, and the `fallback` if absent.
 - **Respect the ladder.** Use `AvailableCapabilities.roles[role].chosen` as the provider for that role. Surface its `recommendations` verbatim in the manifest `recommendations`.
 - **Dynamic path.** If an installed plugin/MCP in `installedRaw` is clearly better for a role but absent from the catalog, you may choose it with `source: "dynamic"` and say why.
-- **Plan annotations.** Decompose the outcome into `plan` tasks; tag each `single` (well-known) or `tournament` (high-uncertainty / quality-critical). Slice 1 executes sequentially; the tags are for slice 2.
+- **Plan annotations.** Decompose the outcome into `plan` tasks; give each a short unique `id`, list
+  its `deps` (ids it must follow), and tag `mode` `single` (well-known) or `tournament` (high-uncertainty
+  / quality-critical). Independent tasks share `deps: []` so they run in the same wave.
 
 ## Output
 Emit ONLY the Crew Manifest JSON matching this shape (validated by `muster manifest validate`):
@@ -21,5 +23,5 @@ Emit ONLY the Crew Manifest JSON matching this shape (validated by `muster manif
 { "outcome": "...", "successCriteria": ["..."],
   "crew": [{ "stage": "...", "provider": "...", "source": "...", "rationale": "...", "evidence": "...", "fallback": "..." }],
   "recommendations": ["..."], "degradations": ["..."],
-  "plan": [{ "task": "...", "mode": "single" }] }
+  "plan": [{ "id": "t1", "task": "...", "mode": "single", "deps": [] }] }
 ```

@@ -3,5 +3,10 @@
   "description": "Glass-box agentic orchestrator: detect context, assemble the right crew, show the reasoning.",
   "version": "0.1.0",
   "commands": ["commands/muster.md"],
-  "skills": ["skills/router/SKILL.md"]
+  "skills": [
+    "skills/router/SKILL.md",
+    "skills/orchestrator/SKILL.md",
+    "skills/tournament/SKILL.md",
+    "skills/review-gate/SKILL.md"
+  ]
 }

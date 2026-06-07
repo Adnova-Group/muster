@@ -22,3 +22,11 @@ test("none passing -> escalate, no winner", () => {
 test("empty -> escalate", () => {
   assert.deepEqual(pickWinner([]), { winner: null, escalate: true, ranking: [] });
 });
+
+test("ties broken by id ascending", () => {
+  const r = pickWinner([
+    { id: "zeta", total: 8, passing: true },
+    { id: "alpha", total: 8, passing: true }
+  ]);
+  assert.equal(r.winner, "alpha");
+});

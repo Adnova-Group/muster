@@ -40,7 +40,8 @@ try {
   } else if (cmd === "wave") {
     if (!rest[0]) fail("wave <manifest.json>: missing file path");
     const m = JSON.parse(await readFile(rest[0], "utf8"));
-    out(computeWaves(m.plan || []));
+    if (!Array.isArray(m.plan)) fail("wave: manifest has no 'plan' array");
+    out(computeWaves(m.plan));
   } else if (cmd === "tally") {
     if (!rest[0]) fail("tally <verdicts.json>: missing file path");
     out(tallyReview(JSON.parse(await readFile(rest[0], "utf8"))));

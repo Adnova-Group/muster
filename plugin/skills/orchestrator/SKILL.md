@@ -15,7 +15,7 @@ Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the ou
    b. BARRIER: wait for all wave tasks to finish.
    c. Invoke the **review-gate** skill over the wave's changes.
    d. Append a STATE line recording wave index, tasks, winners, and review result
-      (use `muster` memory append for `<runId>.state.md`).
+      (append to the run STATE file via the appendState helper / record the wave outcome in <runId>.state.md).
    e. If the review gate escalates, stop and report to the user (do not start the next wave).
 3. After the last wave, summarize the run and ensure FOLLOWUPS are recorded.
 

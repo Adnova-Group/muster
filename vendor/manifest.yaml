@@ -1,0 +1,18 @@
+sources:
+  - id: superpowers
+    kind: local
+    repo: obra/superpowers
+    license: MIT
+    items: []
+  - id: gsd
+    kind: github
+    repo: open-gsd/gsd-core
+    ref: main
+    license: MIT
+    items: []
+  - id: wshobson
+    kind: github
+    repo: wshobson/agents
+    ref: main
+    license: MIT
+    items: []

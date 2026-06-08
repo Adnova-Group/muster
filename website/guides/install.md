@@ -15,7 +15,7 @@ Muster runs on your interactive Claude Code subscription. There is no separate m
 npx @adnova-group/muster install
 ```
 
-`install` copies Muster's output style to `~/.claude/output-styles/muster.md`. It is idempotent: it skips an identical file and backs up a different one to `.bak`. Then it prints the steps it cannot do for you, because registering a plugin is a Claude Code action, not a shell command.
+`install` mutates nothing in your `~/.claude`. It only prints the steps it cannot do for you, because registering a plugin is a Claude Code action, not a shell command.
 
 ## 2. Register the plugin
 
@@ -24,11 +24,12 @@ Run these inside Claude Code:
 ```sh
 /plugin marketplace add Adnova-Group/muster   # register the marketplace
 /plugin install muster@muster                 # install the plugin
-/output-style muster                          # enable the glass-box voice
 ```
 
+Muster's glass-box output style ships **inside the plugin** and applies automatically when the plugin is enabled (it sets `force-for-plugin: true`), so there is no style command to run. The old `/output-style <name>` command was removed from Claude Code in v2.1.91; auto-apply replaces it. To pick a different style at any time, use `/config` and select **Output style**.
+
 ::: tip Restart to activate
-Plugin install is a Claude Code action, so the running session only picks Muster up after you (re)install it through `/plugin`. The plugin's agents and the always-on `SessionStart` hook become available in your next fresh session.
+Plugin install is a Claude Code action, so the running session only picks Muster up after you (re)install it through `/plugin`. The plugin's agents, the always-on `SessionStart` hook, and the output style become active in your next fresh session (restart or `/clear`).
 :::
 
 ## 3. Verify
@@ -53,5 +54,26 @@ npx @adnova-group/muster capabilities
 - **Four slash commands**: `/muster:run`, `/muster:autopilot`, `/muster:diagnose`, `/muster:audit`.
 - **A SessionStart hook** that prepends Muster's working principles, the four verbs, and a one-line project detect to every session. It activates when Muster is enabled and goes away when it is disabled. It never writes to your `~/.claude` files.
 - **Built-in agents and skills**, vendored from MIT-licensed upstreams plus Muster's own clean-room specialists.
+
+## Uninstall
+
+Because everything Muster adds lives **inside the plugin**, removal is mostly a matter of removing the plugin. Muster never writes to your `~/.claude/CLAUDE.md` or `settings.json`, so there is nothing tangled to unpick.
+
+```sh
+npx @adnova-group/muster uninstall
+```
+
+`uninstall` prints the steps it cannot do for you, because removing a plugin is a Claude Code action:
+
+```sh
+/plugin uninstall muster@muster    # remove the plugin (and its style + hook)
+/plugin marketplace remove muster  # remove the marketplace
+```
+
+It also cleans up after older Muster versions: if a pre-`force-for-plugin` install left a copied style at `~/.claude/output-styles/muster.md`, `uninstall` removes it (and restores the original it had displaced, if there is a `.bak`). On a current install there is nothing there to remove.
+
+::: tip Everything leaves with the plugin
+The output style (`force-for-plugin`) and the `SessionStart` hook are both plugin-native, so uninstalling the plugin removes them automatically. The forced style auto-reverts to whatever output style you had before. There is no global file or `CLAUDE.md` block to clean up by hand.
+:::
 
 Next: the [Quickstart](/guides/quickstart).

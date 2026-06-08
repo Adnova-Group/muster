@@ -3,6 +3,10 @@ const DOMAIN_KEYWORDS = {
   business: ["business case", "investor", "pitch", "financial model", "market analysis"],
   marketing: ["lead magnet", "campaign", "landing page", "go-to-market", "gtm", "email sequence"],
   ops: ["runbook", "sop", "operations", "process doc", "incident"],
+  blog: ["blog post", "blog", "article"],
+  social: ["social post", "social media", "tweet", "linkedin post", "x post", "thread", "instagram caption", "reel script"],
+  newsletter: ["newsletter", "email newsletter"],
+  sales: ["case study", "customer story", "sales deck"],
   software: ["implement", "refactor", "bug", "api", "endpoint", "function", "deploy"]
 };
 

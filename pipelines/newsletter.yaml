@@ -1,0 +1,14 @@
+id: newsletter
+domain: newsletter
+title: Email Newsletter
+phases:
+  - { id: intake,        role: brainstorm,    desc: "audience, goal, one theme, CTA" }
+  - { id: curate,        role: docs-research, desc: "gather items, links, and insights worth sending" }
+  - { id: draft,         role: author,        desc: "draft: strong open, scannable body, single clear CTA" }
+  - { id: subject-lines, role: author,        desc: "write 3+ subject lines + preview text; tournament-judge" }
+  - { id: review,        role: code-review,   desc: "adversarial review + deliverability check" }
+  - { id: score,         role: score,         desc: "score vs rubric, apply floor principle" }
+gate:
+  criteria: [hook, value, scannability, cta, deliverability]
+  floor: 2
+  pass_total: 12

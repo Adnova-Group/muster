@@ -14,6 +14,7 @@ import { validateManifest as validateVendorManifest, runVendor } from "./vendor.
 import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
 import { renderPlanChecklist } from "./checklist.js";
+import { classifyDomain } from "./domain.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -69,8 +70,14 @@ try {
     const di = rest.indexOf("--done");
     const done = di >= 0 && rest[di + 1] ? rest[di + 1].split(",") : [];
     process.stdout.write(renderPlanChecklist(m.plan || [], done) + "\n");
+  } else if (cmd === "domain") {
+    if (!rest[0]) fail("domain <outcome> [--domain x]: missing outcome");
+    const di = rest.indexOf("--domain");
+    const override = di >= 0 ? rest[di + 1] : undefined;
+    const outcome = rest.filter((r, i) => i !== di && i !== di + 1)[0] || rest[0];
+    out(classifyDomain(outcome, await detectProject(process.cwd()), override));
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|score <file>>`);
   }
 } catch (e) {
   fail(e.message);

@@ -7,6 +7,7 @@ phases:
   - { id: variants, role: author,      desc: "write 3+ hook/post variants; tournament-judge the strongest" }
   - { id: review,   role: code-review, desc: "adversarial review + platform-fit check" }
   - { id: score,    role: score,       desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [hook, clarity, brand-fit, platform-fit, cta]
   floor: 2

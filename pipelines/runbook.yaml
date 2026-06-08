@@ -13,6 +13,7 @@ phases:
   - { id: cleanup,        role: author,      desc: "revert temp hotfixes, restore flags, postmortem trigger (SEV-1: 48h, SEV-2: 5d), update last-tested date" }
   - { id: review,         role: code-review, desc: "adversarial review + dry-run check" }
   - { id: score,          role: score,       desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [completeness, clarity, safety, validation, rollback, preconditions, observability, idempotency, escalation-path]
   floor: 2

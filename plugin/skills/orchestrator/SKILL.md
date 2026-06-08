@@ -17,7 +17,9 @@ Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the ou
         docs-research, research) run on **haiku**, the default is **sonnet**, heavy judgment is **opus**.
         This keeps quota spend proportional to the work (Muster runs on your interactive subscription).
    b. BARRIER: wait for all wave tasks to finish.
-   c. Invoke the **review-gate** skill over the wave's changes.
+   c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops using the
+      Ralph loop primitive (`loopState` in `src/loop.js`): re-dispatch fix attempts until the gate
+      passes (`done`) or the iteration cap is hit (`max-iterations`), then escalate per step 2e.
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx muster plan-checklist .muster/manifest.json
       --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.

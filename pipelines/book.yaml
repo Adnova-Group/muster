@@ -62,6 +62,8 @@ phases:
     role: author
     desc: "Editorial package: logline/blurb, positioning, comp titles, next steps."
 
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+
 gate:
   criteria:
     - structure

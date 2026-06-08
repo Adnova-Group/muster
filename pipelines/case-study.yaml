@@ -1,0 +1,14 @@
+id: case-study
+domain: sales
+title: Customer Case Study
+phases:
+  - { id: intake,    role: brainstorm,    desc: "customer, segment, the win, target buyer" }
+  - { id: synthesis, role: docs-research, desc: "interview/notes synthesis; quotes; before/after metrics" }
+  - { id: draft,     role: author,        desc: "draft challenge -> solution -> results; quantified outcomes" }
+  - { id: metrics,   role: author,        desc: "verify + foreground the metrics; pull-quotes" }
+  - { id: review,    role: code-review,   desc: "adversarial review + credibility check" }
+  - { id: score,     role: score,         desc: "score vs rubric, apply floor principle" }
+gate:
+  criteria: [narrative, metrics, credibility, clarity, cta]
+  floor: 2
+  pass_total: 12

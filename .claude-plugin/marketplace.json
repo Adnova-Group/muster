@@ -1,9 +1,9 @@
 {
-  "name": "muster-local",
+  "name": "muster",
   "owner": {
     "name": "Adnova Group"
   },
-  "description": "Local Muster marketplace (dogfooding).",
+  "description": "Muster marketplace.",
   "plugins": [
     {
       "name": "muster",

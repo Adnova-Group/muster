@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tmpProject } from "./helpers.js";
+import { tmpProject } from "../test-support/helpers.js";
 import { readInstalled } from "../src/harness.js";
 
 test("reads plugin ids from installed_plugins.json", async () => {

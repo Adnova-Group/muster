@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { tmpProject } from "./helpers.js";
+import { tmpProject } from "../test-support/helpers.js";
 import { detectProject } from "../src/detect.js";
 
 const pexec = promisify(execFile);

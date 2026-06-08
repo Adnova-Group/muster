@@ -6,7 +6,7 @@ import { computeWaves } from "../src/wave.js";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { readInstalled } from "../src/harness.js";
-import { tmpProject } from "./helpers.js";
+import { tmpProject } from "../test-support/helpers.js";
 
 test("a bug symptom seeds a valid, schedulable fix plan with a real debug provider", async () => {
   const home = await tmpProject({}); // bare machine

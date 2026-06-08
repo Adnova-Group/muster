@@ -14,7 +14,7 @@ import { runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
 import { buildSignals } from "./signals.js";
-import { validateManifest as validateVendorManifest, runVendor } from "./vendor.js";
+import { validateVendorManifest, runVendor } from "./vendor.js";
 import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
 import { renderPlanChecklist } from "./checklist.js";
@@ -25,7 +25,7 @@ import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { buildAuditManifest } from "./audit.js";
 import { runInstall } from "./install.js";
 import { assessOutcome } from "./interview.js";
-import { parseDomainArgs, formatError } from "./cli-args.js";
+import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
 import { matchProviders } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
@@ -49,29 +49,30 @@ try {
     const catalog = await loadCatalog(CATALOG_DIR);
     out(matchProviders(rest[0], catalog, await readInstalled(homedir())));
   } else if (cmd === "manifest" && rest[0] === "validate") {
-    if (!rest[1]) fail("manifest validate <file>: missing file path");
-    const obj = JSON.parse(await readFile(rest[1], "utf8"));
+    const file = requireArg(rest, 1, "manifest validate <file>: missing file path", fail);
+    const obj = JSON.parse(await readFile(file, "utf8"));
     const r = validateManifest(obj);
     out(r);
     if (!r.ok) process.exit(2);
   } else if (cmd === "memory" && rest[0] === "write") {
-    if (!rest[1] || !rest[2]) fail("memory write <dir> <entry.json>: missing args");
-    const dir = rest[1]; const entry = JSON.parse(await readFile(rest[2], "utf8"));
+    const dir = requireArg(rest, 1, "memory write <dir> <entry.json>: missing args", fail);
+    const entryFile = requireArg(rest, 2, "memory write <dir> <entry.json>: missing args", fail);
+    const entry = JSON.parse(await readFile(entryFile, "utf8"));
     await writeMemory(dir, entry); out({ ok: true });
   } else if (cmd === "memory" && rest[0] === "read") {
     if (!rest[1]) fail("memory read <dir> [query]: missing dir");
     out(await readMemory(rest[1], rest[2] || ""));
   } else if (cmd === "wave") {
-    if (!rest[0]) fail("wave <manifest.json>: missing file path");
-    const m = JSON.parse(await readFile(rest[0], "utf8"));
+    const file = requireArg(rest, 0, "wave <manifest.json>: missing file path", fail);
+    const m = JSON.parse(await readFile(file, "utf8"));
     if (!Array.isArray(m.plan)) fail("wave: manifest has no 'plan' array");
     out(computeWaves(m.plan));
   } else if (cmd === "tally") {
-    if (!rest[0]) fail("tally <verdicts.json>: missing file path");
-    out(tallyReview(JSON.parse(await readFile(rest[0], "utf8"))));
+    const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
+    out(tallyReview(JSON.parse(await readFile(file, "utf8"))));
   } else if (cmd === "pick") {
-    if (!rest[0]) fail("pick <candidates.json>: missing file path");
-    out(pickWinner(JSON.parse(await readFile(rest[0], "utf8"))));
+    const file = requireArg(rest, 0, "pick <candidates.json>: missing file path", fail);
+    out(pickWinner(JSON.parse(await readFile(file, "utf8"))));
   } else if (cmd === "vendor") {
     const manifestUrl = new URL("../vendor/manifest.yaml", import.meta.url);
     const manifest = parseYaml(await readFile(manifestUrl, "utf8"));
@@ -84,21 +85,20 @@ try {
   } else if (cmd === "setup") {
     out(await scaffoldProject(rest[0] || process.cwd()));
   } else if (cmd === "plan-checklist") {
-    if (!rest[0]) fail("plan-checklist <manifest.json> [--done a,b]: missing file path");
-    const m = JSON.parse(await readFile(rest[0], "utf8"));
-    const di = rest.indexOf("--done");
-    const done = di >= 0 && rest[di + 1] ? rest[di + 1].split(",") : [];
+    const file = requireArg(rest, 0, "plan-checklist <manifest.json> [--done a,b]: missing file path", fail);
+    const m = JSON.parse(await readFile(file, "utf8"));
+    const doneArg = flagValue(rest, "--done");
+    const done = doneArg ? doneArg.split(",") : [];
     process.stdout.write(renderPlanChecklist(m.plan || [], done) + "\n");
   } else if (cmd === "score") {
-    if (!rest[0]) fail("score <file.json>: missing file path ({scores, gate})");
-    const { scores, gate } = JSON.parse(await readFile(rest[0], "utf8"));
+    const file = requireArg(rest, 0, "score <file.json>: missing file path ({scores, gate})", fail);
+    const { scores, gate } = JSON.parse(await readFile(file, "utf8"));
     out(scoreArtifact(scores, gate));
   } else if (cmd === "prioritize") {
-    if (!rest[0]) fail("prioritize <file> [--model rice]: missing file");
-    const parsed = JSON.parse(await readFile(rest[0], "utf8"));
+    const file = requireArg(rest, 0, "prioritize <file> [--model rice]: missing file", fail);
+    const parsed = JSON.parse(await readFile(file, "utf8"));
     const items = Array.isArray(parsed) ? parsed : parsed.items;
-    const mi = rest.indexOf("--model");
-    const model = (mi >= 0 && rest[mi + 1]) ? rest[mi + 1] : (Array.isArray(parsed) ? "rice" : (parsed.model || "rice"));
+    const model = flagValue(rest, "--model") || (Array.isArray(parsed) ? "rice" : (parsed.model || "rice"));
     out(prioritize(items, model));
   } else if (cmd === "pipeline") {
     if (!rest[0]) fail("pipeline <domain|id>: missing arg");
@@ -116,10 +116,13 @@ try {
     const p = routePipeline(ps, outcome, domain);
     out({ domain, pipeline: p ? p.id : null });
   } else if (cmd === "diagnose") {
-    const ciIdx = rest.indexOf("--ci");
-    let input, ci = false;
-    if (ciIdx >= 0) { ci = true; if (!rest[ciIdx + 1]) fail("diagnose --ci <file>: missing file"); input = await readFile(rest[ciIdx + 1], "utf8"); }
-    else input = rest.join(" ");
+    const ci = rest.includes("--ci");
+    let input;
+    if (ci) {
+      const ciFile = flagValue(rest, "--ci");
+      if (!ciFile) fail("diagnose --ci <file>: missing file");
+      input = await readFile(ciFile, "utf8");
+    } else input = rest.join(" ");
     if (!input || !input.trim()) fail("diagnose <symptom> | --ci <file>: missing input");
     const failure = classifyFailure(input, { ci });
     const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));

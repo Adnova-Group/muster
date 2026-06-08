@@ -1,13 +1,6 @@
-import { readdir, readFile, writeFile, mkdir, stat, appendFile } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir, appendFile } from "node:fs/promises";
 import { join } from "node:path";
-
-async function exists(p) {
-  try { await stat(p); return true; }
-  catch (err) {
-    if (err.code === "ENOENT" || err.code === "ENOTDIR") return false;
-    throw err;
-  }
-}
+import { exists } from "./fs-util.js";
 
 export async function writeMemory(dir, entry) {
   for (const field of ["slug", "title", "outcome", "body"]) {

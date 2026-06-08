@@ -1,7 +1,6 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-
-async function readJson(p) { try { return JSON.parse(await readFile(p, "utf8")); } catch { return null; } }
+import { readJson } from "./fs-util.js";
 
 function pluginName(key) { return key.split("@")[0]; }
 

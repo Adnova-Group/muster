@@ -1,3 +1,5 @@
+import { escapeRe } from "./keyword.js";
+
 const DOMAIN_KEYWORDS = {
   pm: ["prd", "product spec", "user story", "epic", "roadmap", "prioritize", "prioritization", "requirements", "product brief"],
   business: ["business case", "investor", "pitch", "financial model", "market analysis"],
@@ -10,8 +12,6 @@ const DOMAIN_KEYWORDS = {
   book: ["book", "novel", "manuscript", "memoir"],
   software: ["implement", "refactor", "bug", "api", "endpoint", "function", "deploy"]
 };
-
-function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 export function classifyDomain(outcome, profile = {}, override) {
   if (override) return { domain: override, source: "override", confidence: 1 };

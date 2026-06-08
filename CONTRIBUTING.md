@@ -37,11 +37,10 @@ Try `node src/cli.js detect` or `node src/cli.js capabilities` to see it work ag
 | Path | What lives here |
 | --- | --- |
 | `src/` | The deterministic CLI. Plain Node modules, no LLM calls. Each verb maps to a module dispatched from `src/cli.js`. |
-| `plugin/` | The model-facing surface: `commands/`, `skills/`, and `agents/`. This is what Claude Code loads. |
+| `plugin/` | The model-facing surface: `commands/`, `skills/`, `agents/`, `hooks/`, and `output-styles/`. This is what Claude Code loads. The glass-box output style ships here with `force-for-plugin` so it auto-applies when the plugin is enabled. |
 | `catalog/*.yaml` | The capability catalog. Maps provider IDs to roles and ranks so the router can pick a crew. |
 | `pipelines/*.yaml` | Domain pipelines (one file per pipeline). Each defines the phases for an outcome like a PRD or a roadmap. |
 | `vendor/manifest.yaml` | The vendoring source of truth. Lists upstream skills and agents to pull in and the role each maps to. |
-| `output-styles/` | Output style definitions for the plugin. |
 | `test/` | The `node:test` suites. Unit tests sit alongside `integration.*` and `smoke` suites. |
 
 The split between `src/` and `plugin/` is the important one. `src/` is deterministic code that you can run and test without a model in the loop. `plugin/` is the prompt-and-skill layer the model reads. When something can be computed (routing, scoring, wave ordering, validation), it belongs in `src/` as code, not in a prompt.

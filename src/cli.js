@@ -23,7 +23,7 @@ import { loadPipelines, pipelineForDomain, routePipeline } from "./pipeline.js";
 import { scoreArtifact } from "./score.js";
 import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { buildAuditManifest } from "./audit.js";
-import { runInstall } from "./install.js";
+import { runInstall, runUninstall } from "./install.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
 import { matchProviders } from "./match.js";
@@ -148,6 +148,8 @@ try {
     out(await readProfile());
   } else if (cmd === "install") {
     out(await runInstall({ home: rest[0] || homedir() }));
+  } else if (cmd === "uninstall") {
+    out(await runUninstall({ home: rest[0] || homedir() }));
   } else if (cmd === "signals") {
     const dir = rest[0] || process.cwd();
     const profile = await detectProject(dir);
@@ -157,7 +159,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

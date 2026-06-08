@@ -6,22 +6,35 @@ import { join } from "node:path";
 import { readProfile } from "../src/profile.js";
 
 describe("readProfile", () => {
-  it("finds profile at .claude/.atomic/profile.md", async () => {
-    const tmp = await mkdtemp(join(tmpdir(), "muster-profile-"));
-    const profileDir = join(tmp, ".claude", ".atomic");
-    await mkdir(profileDir, { recursive: true });
-    const content = "# User profile\n\n## Identity\nName: Test User\n";
-    await writeFile(join(profileDir, "profile.md"), content, "utf8");
-    const result = await readProfile(tmp);
-    assert.equal(result.found, true, "should find profile");
-    assert.equal(result.content, content, "content should match");
-    assert.ok(result.path.endsWith("profile.md"), `unexpected path: ${result.path}`);
+  it("finds muster's own global profile at ~/.claude/muster/profile.md", async () => {
+    const home = await mkdtemp(join(tmpdir(), "muster-home-"));
+    const cwd = await mkdtemp(join(tmpdir(), "muster-cwd-"));
+    const dir = join(home, ".claude", "muster");
+    await mkdir(dir, { recursive: true });
+    const content = "# Muster user profile\n\nRole: PM\n";
+    await writeFile(join(dir, "profile.md"), content, "utf8");
+    const result = await readProfile(home, cwd);
+    assert.equal(result.found, true);
+    assert.equal(result.content, content);
+    assert.ok(result.path.endsWith("profile.md"));
   });
 
-  it("returns found:false for empty tmp dir with no profile", async () => {
-    const tmp = await mkdtemp(join(tmpdir(), "muster-profile-empty-"));
-    const result = await readProfile(tmp);
-    assert.equal(result.found, false, "should not find profile");
+  it("project .muster/profile.md overrides the global one", async () => {
+    const home = await mkdtemp(join(tmpdir(), "muster-home-"));
+    const cwd = await mkdtemp(join(tmpdir(), "muster-cwd-"));
+    await mkdir(join(home, ".claude", "muster"), { recursive: true });
+    await writeFile(join(home, ".claude", "muster", "profile.md"), "global", "utf8");
+    await mkdir(join(cwd, ".muster"), { recursive: true });
+    await writeFile(join(cwd, ".muster", "profile.md"), "project", "utf8");
+    const result = await readProfile(home, cwd);
+    assert.equal(result.content, "project");
+  });
+
+  it("returns found:false when no profile exists", async () => {
+    const home = await mkdtemp(join(tmpdir(), "muster-home-"));
+    const cwd = await mkdtemp(join(tmpdir(), "muster-cwd-"));
+    const result = await readProfile(home, cwd);
+    assert.equal(result.found, false);
     assert.equal(result.path, null);
     assert.equal(result.content, "");
   });

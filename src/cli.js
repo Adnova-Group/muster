@@ -15,7 +15,7 @@ import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
 import { renderPlanChecklist } from "./checklist.js";
 import { classifyDomain } from "./domain.js";
-import { loadPipelines, pipelineForDomain } from "./pipeline.js";
+import { loadPipelines, pipelineForDomain, routePipeline } from "./pipeline.js";
 import { scoreArtifact } from "./score.js";
 import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 
@@ -87,6 +87,13 @@ try {
     const override = di >= 0 ? rest[di + 1] : undefined;
     const outcome = rest.filter((r, i) => i !== di && i !== di + 1)[0] || rest[0];
     out(classifyDomain(outcome, await detectProject(process.cwd()), override));
+  } else if (cmd === "route") {
+    if (!rest[0]) fail("route <outcome>: missing outcome");
+    const outcome = rest.join(" ");
+    const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
+    const { domain } = classifyDomain(outcome, await detectProject(process.cwd()));
+    const p = routePipeline(ps, outcome, domain);
+    out({ domain, pipeline: p ? p.id : null });
   } else if (cmd === "diagnose") {
     const ciIdx = rest.indexOf("--ci");
     let input, ci = false;
@@ -97,7 +104,7 @@ try {
     const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
     out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|score <file>|diagnose <symptom>|--ci <file>>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>>`);
   }
 } catch (e) {
   fail(e.message);

@@ -1,0 +1,15 @@
+id: launch-plan
+domain: pm
+title: Launch Plan
+match: [launch plan, go-to-market plan]
+phases:
+  - { id: intake,    role: brainstorm,    desc: "what's launching, audience, goals, date" }
+  - { id: timeline,  role: author,        desc: "phased timeline + milestones + owners" }
+  - { id: channels,  role: author,        desc: "channels, messaging, assets, enablement" }
+  - { id: risks,     role: author,        desc: "risks, dependencies, rollback, metrics" }
+  - { id: review,    role: code-review,   desc: "adversarial review gate" }
+  - { id: score,     role: score,         desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [completeness, timeline, ownership, risk-coverage, success-metrics]
+  floor: 2
+  pass_total: 12

@@ -1,0 +1,14 @@
+id: executive-summary
+domain: business
+title: Executive Summary
+match: [executive summary, exec summary, one-pager]
+phases:
+  - { id: intake,    role: brainstorm,    desc: "the decision/ask, audience (exec), context" }
+  - { id: synthesis, role: docs-research, desc: "pull the few facts that matter; the bottom line" }
+  - { id: draft,     role: author,        desc: "draft: BLUF (bottom line up front), brief, decision-focused" }
+  - { id: review,    role: code-review,   desc: "adversarial review gate" }
+  - { id: score,     role: score,         desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [clarity, brevity, decision-focus, evidence, clear-ask]
+  floor: 2
+  pass_total: 12

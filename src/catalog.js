@@ -5,7 +5,8 @@ import { parse } from "yaml";
 
 const ROLES = new Set([
   "code-navigation", "docs-research", "brainstorm", "plan", "implement",
-  "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug"
+  "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug",
+  "author", "research", "score"
 ]);
 const DETECT_KINDS = new Set(["plugin", "skill", "mcp_server"]);
 

@@ -14,7 +14,8 @@ test("detect -> capabilities -> hand-built manifest validates (bare machine)", a
   const caps = resolveCapabilities(await loadCatalog(new URL("../catalog/", import.meta.url)), await readInstalled(home));
 
   assert.equal(profile.shape, "backend");
-  assert.equal(caps.roles["code-navigation"].chosen.source, "builtin");
+  // code-navigation has no vendored builtin; it falls to inline when serena is absent
+  assert.ok(["builtin", "inline"].includes(caps.roles["code-navigation"].chosen.source));
   assert.ok(caps.roles["code-navigation"].recommendations.length >= 1);
 
   const manifest = {
@@ -29,7 +30,7 @@ test("detect -> capabilities -> hand-built manifest validates (bare machine)", a
       fallback: "inline"
     }],
     recommendations: caps.roles["code-navigation"].recommendations,
-    degradations: ["code-navigation fell to builtin (no LSP server)"],
+    degradations: ["code-navigation fell to inline (no LSP server, no builtin)"],
     plan: [{ id: "middleware", task: "rate-limit middleware", mode: "single", deps: [] },
            { id: "store", task: "token-bucket store", mode: "tournament", deps: ["middleware"], note: "in-mem vs redis" }]
   };

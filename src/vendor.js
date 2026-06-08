@@ -1,4 +1,9 @@
 import { parse, stringify } from "yaml";
+import { readFile, writeFile, mkdir, readdir, stat } from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 export function validateManifest(doc) {
   const errors = [];
@@ -54,4 +59,54 @@ export function generateNotice(builtinEntries) {
   let out = "Muster\nCopyright 2026 Adnova Group\n\nThis product bundles adapted content from:\n";
   for (const [repo, lic] of bySrc) out += `\n- ${repo} (${lic})`;
   return out + "\n";
+}
+
+const pexec = promisify(execFile);
+async function exists(p) { try { await stat(p); return true; } catch { return false; } }
+
+async function resolveSuperpowers(home) {
+  const base = join(home, ".claude/plugins/cache/claude-plugins-official/superpowers");
+  if (!(await exists(base))) return null;
+  const versions = (await readdir(base)).sort().reverse();
+  for (const v of versions) {
+    const skills = join(base, v, "skills");
+    if (await exists(skills)) return skills;
+  }
+  return null;
+}
+
+async function fetchSourceRoot(source, home) {
+  if (source.kind === "local") {
+    if (source.id === "superpowers") return await resolveSuperpowers(home);
+    return null;
+  }
+  const dir = join(tmpdir(), `muster-vendor-${source.id}`);
+  try {
+    await pexec("rm", ["-rf", dir]);
+    await pexec("git", ["clone", "--depth", "1", "--branch", source.ref || "main",
+      `https://github.com/${source.repo}.git`, dir]);
+    return dir;
+  } catch { return null; }
+}
+
+export async function runVendor({ home = homedir(), repoRoot = process.cwd(), manifest } = {}) {
+  const warnings = [];
+  const allEntries = [];
+  for (const source of manifest.sources) {
+    const root = await fetchSourceRoot(source, home);
+    if (!root) { warnings.push(`source ${source.id}: could not fetch (${source.kind})`); continue; }
+    for (const item of source.items) {
+      const srcPath = join(root, item.from);
+      if (!(await exists(srcPath))) { warnings.push(`${source.id}: missing item ${item.from}`); continue; }
+      const text = await readFile(srcPath, "utf8");
+      const { path, content, catalogEntry } = toBuiltin(text, item, source);
+      const abs = join(repoRoot, path);
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, content);
+      allEntries.push(catalogEntry);
+    }
+  }
+  await writeFile(join(repoRoot, "catalog/builtins.generated.yaml"), stringify(allEntries));
+  await writeFile(join(repoRoot, "NOTICE"), generateNotice(allEntries));
+  return { count: allEntries.length, warnings };
 }

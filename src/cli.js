@@ -13,6 +13,7 @@ import { readFile } from "node:fs/promises";
 import { validateManifest as validateVendorManifest, runVendor } from "./vendor.js";
 import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
+import { renderPlanChecklist } from "./checklist.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -62,8 +63,14 @@ try {
     out({ vendored: res.count, warnings: res.warnings.length });
   } else if (cmd === "setup") {
     out(await scaffoldProject(rest[0] || process.cwd()));
+  } else if (cmd === "plan-checklist") {
+    if (!rest[0]) fail("plan-checklist <manifest.json> [--done a,b]: missing file path");
+    const m = JSON.parse(await readFile(rest[0], "utf8"));
+    const di = rest.indexOf("--done");
+    const done = di >= 0 && rest[di + 1] ? rest[di + 1].split(",") : [];
+    process.stdout.write(renderPlanChecklist(m.plan || [], done) + "\n");
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>>`);
   }
 } catch (e) {
   fail(e.message);

@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { readFile } from "node:fs/promises";
 import { validateManifest as validateVendorManifest, runVendor } from "./vendor.js";
 import { parse as parseYaml } from "yaml";
+import { scaffoldProject } from "./setup.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -59,8 +60,10 @@ try {
     const res = await runVendor({ repoRoot, manifest });
     res.warnings.forEach(w => process.stderr.write(`warn: ${w}\n`));
     out({ vendored: res.count, warnings: res.warnings.length });
+  } else if (cmd === "setup") {
+    out(await scaffoldProject(rest[0] || process.cwd()));
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]>`);
   }
 } catch (e) {
   fail(e.message);

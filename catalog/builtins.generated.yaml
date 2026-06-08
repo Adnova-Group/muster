@@ -42,6 +42,7 @@
   kind: builtin
   roles:
     - implement
+    - debug
   rank: 50
   provenance:
     adapted_from: obra/superpowers systematic-debugging/SKILL.md
@@ -250,6 +251,7 @@
   kind: builtin
   roles:
     - implement
+    - debug
   rank: 50
   provenance:
     adapted_from: wshobson/agents plugins/developer-essentials/skills/debugging-strategies/SKILL.md

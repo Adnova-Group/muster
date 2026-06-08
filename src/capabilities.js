@@ -1,6 +1,6 @@
 const ROLES = [
   "code-navigation", "docs-research", "brainstorm", "plan", "implement",
-  "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt"
+  "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug"
 ];
 
 function isInstalled(entry, installed) {

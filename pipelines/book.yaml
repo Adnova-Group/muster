@@ -1,0 +1,18 @@
+# Book pipeline — handles fiction AND non-fiction/business/self-improvement.
+# Phase structure inspired by book-genesis (felipelobomotta-blip/book-genesis-v4), generalized.
+id: book
+domain: book
+title: Book
+match: [book, novel, manuscript, memoir, nonfiction book]
+phases:
+  - { id: intake,       role: brainstorm,    desc: "type (fiction|nonfiction), audience, premise/thesis, market, success metric" }
+  - { id: foundation,   role: author,        desc: "fiction: characters, theme, world; nonfiction: thesis, framework, promise, throughline" }
+  - { id: architecture, role: author,        desc: "outline + structure (chapters/acts or part/section progression)" }
+  - { id: drafting,     role: author,        desc: "draft chapter by chapter; consistent voice; concrete scenes/examples" }
+  - { id: audit,        role: code-review,   desc: "independent adversarial audit (structure, pacing, gaps) — blocks weak output" }
+  - { id: score,        role: score,         desc: "score vs rubric (Genesis-style), floor principle" }
+  - { id: editorial,    role: author,        desc: "editorial package: logline/blurb, positioning, next steps" }
+gate:
+  criteria: [originality, structure, voice, clarity, coherence, market, hook, throughline]
+  floor: 2
+  pass_total: 18

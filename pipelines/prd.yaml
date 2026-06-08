@@ -1,6 +1,8 @@
 id: prd
 domain: pm
+default: true
 title: Product Requirements Document
+match: [prd, product requirements, product spec]
 phases:
   - { id: intake,   role: brainstorm,    desc: "clarify problem, audience, success metrics" }
   - { id: research, role: docs-research, desc: "gather evidence: market, competitor, customer context" }

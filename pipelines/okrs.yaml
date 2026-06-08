@@ -1,0 +1,14 @@
+id: okrs
+domain: business
+title: OKRs
+match: [okr, okrs, objectives and key results]
+phases:
+  - { id: intake,       role: brainstorm,  desc: "strategy context, time horizon, scope" }
+  - { id: objectives,   role: author,      desc: "1-3 qualitative, ambitious, outcome objectives" }
+  - { id: key-results,  role: author,      desc: "2-4 measurable key results per objective; baselines + targets" }
+  - { id: review,       role: code-review, desc: "adversarial review + alignment check" }
+  - { id: score,        role: score,       desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [outcome-orientation, measurability, ambition, alignment, focus]
+  floor: 2
+  pass_total: 12

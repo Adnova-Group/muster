@@ -1,0 +1,14 @@
+id: user-story
+domain: pm
+title: User Story
+match: [user story, user stories]
+phases:
+  - { id: intake,     role: brainstorm,  desc: "persona, need, context" }
+  - { id: story,      role: author,      desc: "as-a / I-want / so-that; INVEST-compliant" }
+  - { id: acceptance, role: author,      desc: "acceptance criteria (Given/When/Then); edge cases" }
+  - { id: review,     role: code-review, desc: "adversarial review gate" }
+  - { id: score,      role: score,       desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [clarity, user-value, acceptance-criteria, testability, right-sized]
+  floor: 2
+  pass_total: 12

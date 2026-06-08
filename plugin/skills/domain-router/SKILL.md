@@ -5,10 +5,13 @@ description: Pick the work domain for an outcome and route to its pipeline (PM/P
 
 # Domain router
 
-1. Classify: `npx muster domain "<outcome>" [--domain <override>]` -> `{domain, source, confidence}`.
-2. If `domain` is `unknown`, classify it yourself (model judgment) from the outcome + workspace and
-   record that you did so and why (glass box).
-3. Look up a pipeline: `npx muster pipeline <domain>`.
-   - If a pipeline exists (e.g. `pm` -> PRD), invoke that pipeline skill (e.g. **prd-pipeline**).
-   - Else proceed with the existing software route -> Crew Manifest -> orchestrator flow.
-4. Record the chosen domain + pipeline (or software fallback) in the run STATE.
+1. Route: `npx muster route "<outcome>"` -> `{domain, pipeline}`. This picks the specific pipeline by
+   matching the outcome (e.g. "epic" -> epic, "release notes" -> release-notes, "write a book" -> book),
+   falling back to the domain's default pipeline (pm -> prd, business -> business-case).
+2. If `pipeline` is non-null, run it (the `prd-pipeline` skill is the reference shape: intake ->
+   research -> draft -> review -> score, reusing the review-gate + floor-scored gate). The pipeline's
+   `phases` name the roles; each resolves via the capability ladder (installed -> built-in -> inline).
+3. If `pipeline` is null:
+   - `domain` software (or a code workspace) -> the normal software route -> Crew Manifest -> orchestrator.
+   - else classify the work yourself (model judgment) and pick the closest pipeline, recording why.
+4. Record the chosen domain + pipeline (or software fallback) in the run STATE (glass box).

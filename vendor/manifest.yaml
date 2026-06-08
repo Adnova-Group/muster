@@ -178,6 +178,57 @@ sources:
         id: wsh-docs-architect
         roles: [architecture-review]
         as: agent
+      # === Broadened roster (more-specialists): software + knowledge-work breadth ===
+      # software
+      - from: plugins/machine-learning-ops/agents/data-scientist.md
+        id: wsh-data-scientist
+        roles: [research]
+        as: agent
+      - from: plugins/data-engineering/agents/data-engineer.md
+        id: wsh-data-engineer
+        roles: [research]
+        as: agent
+      - from: plugins/cicd-automation/agents/devops-troubleshooter.md
+        id: wsh-devops-troubleshooter
+        roles: [implement]
+        as: agent
+      - from: plugins/cloud-infrastructure/agents/cloud-architect.md
+        id: wsh-cloud-architect
+        roles: [architecture-review]
+        as: agent
+      - from: plugins/database-cloud-optimization/agents/database-optimizer.md
+        id: wsh-database-optimizer
+        roles: [performance]
+        as: agent
+      - from: plugins/documentation-generation/agents/api-documenter.md
+        id: wsh-api-documenter
+        roles: [docs-research]
+        as: agent
+      - from: plugins/machine-learning-ops/agents/ml-engineer.md
+        id: wsh-ml-engineer
+        roles: [implement]
+        as: agent
+      - from: plugins/llm-application-dev/agents/prompt-engineer.md
+        id: wsh-prompt-engineer
+        roles: [implement]
+        as: agent
+      # knowledge-work (PM/business/content)
+      - from: plugins/business-analytics/agents/business-analyst.md
+        id: wsh-business-analyst
+        roles: [research]
+        as: agent
+      - from: plugins/content-marketing/agents/content-marketer.md
+        id: wsh-content-marketer
+        roles: [author]
+        as: agent
+      - from: plugins/documentation-generation/agents/tutorial-engineer.md
+        id: wsh-tutorial-engineer
+        roles: [docs-research]
+        as: agent
+      - from: plugins/customer-sales-automation/agents/customer-support.md
+        id: wsh-customer-support
+        roles: [author]
+        as: agent
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

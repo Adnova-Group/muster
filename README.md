@@ -7,6 +7,8 @@ tools you already use.
 - Design: `docs/design/2026-06-07-muster-v1-glass-box-router.md`
 - Plan: `docs/plan/2026-06-07-muster-v1-glass-box-router.md`
 
+Installing muster: `npx muster install` copies muster's output style into `~/.claude/output-styles/muster.md` (idempotent — skips if identical, backs up to `.bak` if it differs) and prints the next steps it can't do for you: register the local marketplace (`/plugin marketplace add <repo>`), install the plugin (`/plugin install muster@muster-local`), and enable the style (`/output-style muster`). Plugin install is a Claude Code action — the running session only picks muster up after you (re)install it via `/plugin`.
+
 CLI: `npx muster detect | capabilities | manifest validate <file> | memory read|write`
 
 Slice 2 (fan-out + review): `npx muster wave <manifest> | tally <verdicts> | pick <candidates>`

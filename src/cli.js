@@ -22,6 +22,7 @@ import { classifyDomain } from "./domain.js";
 import { loadPipelines, pipelineForDomain, routePipeline } from "./pipeline.js";
 import { scoreArtifact } from "./score.js";
 import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
+import { runInstall } from "./install.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -116,6 +117,8 @@ try {
     out(await initScratchpad(rest[1] || ".muster", rest[0]));
   } else if (cmd === "profile") {
     out(await readProfile());
+  } else if (cmd === "install") {
+    out(await runInstall({ home: rest[0] || homedir() }));
   } else if (cmd === "signals") {
     const dir = rest[0] || process.cwd();
     const profile = await detectProject(dir);
@@ -125,7 +128,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|doctor|scratchpad <runId>|profile|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(e.message);

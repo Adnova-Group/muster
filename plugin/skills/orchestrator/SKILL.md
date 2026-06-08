@@ -12,6 +12,10 @@ Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the ou
    a. Dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task.
+      - **Model:** dispatch each agent with the model for its role from capabilities
+        (`muster capabilities` -> `roles[<role>].model`): mechanical roles (code-navigation,
+        docs-research, research) run on **haiku**, the default is **sonnet**, heavy judgment is **opus**.
+        This keeps quota spend proportional to the work (Muster runs on your interactive subscription).
    b. BARRIER: wait for all wave tasks to finish.
    c. Invoke the **review-gate** skill over the wave's changes.
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered

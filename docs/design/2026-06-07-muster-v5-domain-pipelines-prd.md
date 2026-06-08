@@ -46,7 +46,9 @@ Deterministic precedence:
    - business: business case, investor, pitch, financial model, market analysis
    - marketing: lead magnet, campaign, landing page, gtm, go-to-market, email sequence
    - ops: runbook, sop, operations, process doc, incident
-   - software: implement, refactor, bug, api, endpoint, function, test, deploy
+   - software: implement, refactor, bug, api, endpoint, function, deploy
+     (note: `test` deliberately excluded — substring-matches "latest"/"attestation"; revisit with
+     word-boundary matching before growing the keyword sets)
 3. **workspace signal** → a real code project (`profile.shape !== unknown && !greenfield`) ⇒ software,
    source `workspace`.
 4. else `{domain: "unknown"}` — the **router skill** classifies via model judgment (glass-box: records

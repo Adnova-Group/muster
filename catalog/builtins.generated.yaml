@@ -317,6 +317,22 @@
   provenance:
     adapted_from: wshobson/agents plugins/ui-design/skills/responsive-design/SKILL.md
     license: MIT
+- id: wsh-performance-engineer
+  kind: builtin
+  roles:
+    - performance
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/application-performance/agents/performance-engineer.md
+    license: MIT
+- id: wsh-seo-structure-architect
+  kind: builtin
+  roles:
+    - seo
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/seo-technical-optimization/agents/seo-structure-architect.md
+    license: MIT
 - id: gsd-plan-phase
   kind: builtin
   roles:

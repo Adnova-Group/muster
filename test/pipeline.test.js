@@ -4,7 +4,7 @@ import { validatePipeline, loadPipelines, pipelineForDomain } from "../src/pipel
 
 test("validatePipeline accepts a well-formed pipeline", () => {
   const p = { id: "prd", domain: "pm", phases: [{ id: "draft", role: "author" }],
-    gate: { criteria: ["clarity"], floor: 2 } };
+    gate: { criteria: ["clarity"], floor: 2, pass_total: 10 } };
   assert.deepEqual(validatePipeline(p), { ok: true, errors: [] });
 });
 test("validatePipeline rejects missing phases/gate", () => {
@@ -12,6 +12,12 @@ test("validatePipeline rejects missing phases/gate", () => {
   assert.equal(r.ok, false);
   assert.ok(r.errors.some(e => /phases/.test(e)));
   assert.ok(r.errors.some(e => /gate/.test(e)));
+});
+test("validatePipeline rejects gate missing pass_total", () => {
+  const r = validatePipeline({ id: "x", domain: "pm", phases: [{ id: "a", role: "author" }],
+    gate: { criteria: ["c"], floor: 2 } });   // no pass_total
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /pass_total/.test(e)));
 });
 test("loads shipped pipelines and finds PRD by domain", async () => {
   const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));

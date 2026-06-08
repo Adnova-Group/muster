@@ -4,7 +4,8 @@ const ROLES = [
   "code-navigation", "docs-research", "brainstorm", "plan", "implement",
   "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug",
   "author", "research", "score",
-  "architecture-review", "browser-control", "computer-control"
+  "architecture-review", "browser-control", "computer-control",
+  "performance", "seo"
 ];
 
 function isInstalled(entry, installed) {

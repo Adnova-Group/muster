@@ -57,6 +57,10 @@ The role set is fixed but the provider set is not. When an outcome does not fit 
 
 Each role also carries a model picked to fit the work: mechanical roles run on Haiku, the default is Sonnet, and heavy judgment runs on Opus. Muster composes the tools you already have and falls back to its own. For the full design, see [docs/architecture.md](docs/architecture.md).
 
+## Always-on guidance
+
+Muster ships a plugin-native `SessionStart` hook (`plugin/hooks/`) that prepends a short context block to every session: muster's working principles (think first, test-first, surgical changes, glass-box reasoning, code over model for deterministic work, fail loud), the four verbs, and a one-line project detect for the current directory. It lives inside the plugin, so it activates when muster is enabled and goes away when muster is disabled. It does not write to your `~/.claude/CLAUDE.md` or `settings.json` and creates no global files. The hook is fail-safe: any error falls back to an empty result and never blocks a session from starting.
+
 ## Pipelines
 
 A pipeline is a phased, gated recipe for producing one kind of artifact. Each declares a domain, an ordered list of phases, and a gate. Gating uses a floor principle: the weakest dimension must clear the floor and the total must clear a pass threshold, so a strong average cannot rescue one weak dimension.

@@ -16,7 +16,8 @@ const SEEDS = {
 export async function scaffoldProject(dir) {
   const created = [], skipped = [];
   if (!(await exists(join(dir, ".git")))) {
-    try { await pexec("git", ["init", "-q"], { cwd: dir }); created.push(".git"); } catch { /* git absent */ }
+    try { await pexec("git", ["init", "-q"], { cwd: dir }); created.push(".git"); }
+    catch { skipped.push(".git (git unavailable)"); }
   } else skipped.push(".git");
 
   for (const [rel, content] of Object.entries(SEEDS)) {

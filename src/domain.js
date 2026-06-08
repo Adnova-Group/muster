@@ -1,5 +1,5 @@
 const DOMAIN_KEYWORDS = {
-  pm: ["prd", "product spec", "user story", "epic", "roadmap", "requirements", "product brief"],
+  pm: ["prd", "product spec", "user story", "epic", "roadmap", "prioritize", "prioritization", "requirements", "product brief"],
   business: ["business case", "investor", "pitch", "financial model", "market analysis"],
   marketing: ["lead magnet", "campaign", "landing page", "go-to-market", "gtm", "email sequence"],
   ops: ["runbook", "sop", "operations", "process doc", "incident"],

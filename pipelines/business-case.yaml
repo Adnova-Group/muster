@@ -1,0 +1,13 @@
+id: business-case
+domain: business
+title: Business Case
+phases:
+  - { id: intake,   role: brainstorm,    desc: "frame the opportunity, audience, and the decision to be made" }
+  - { id: research, role: docs-research, desc: "market size, competition, customer evidence, financial assumptions" }
+  - { id: draft,    role: author,        desc: "draft sections: problem, opportunity, options, financials/ROI, risks, recommendation" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate)" }
+  - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
+gate:
+  criteria: [market-size, financials, roi, risk, feasibility, clarity]
+  floor: 2
+  pass_total: 14

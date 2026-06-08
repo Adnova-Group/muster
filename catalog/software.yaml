@@ -53,8 +53,9 @@
   kind: external
   roles: [code-review, security-review, tech-debt]
   detect: { kind: plugin, match: qodo-skills }
-  rank: 65
+  rank: 35
   invoke: "use qodo skills / PR resolver"
+  notes: "low rank by preference — Muster's bundled wshobson/superpowers built-ins lead these roles; qodo is a fallback"
 # Browser / computer control (recognized when installed)
 - id: playwright
   kind: external

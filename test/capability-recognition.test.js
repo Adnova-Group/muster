@@ -17,10 +17,12 @@ test("recognizes installed control/audit providers across sources (plugin or mcp
   assert.equal(a.roles["docs-research"].chosen.id, "context7");
   assert.equal(a.roles["refactor"].chosen.id, "code-simplifier");
   assert.equal(a.roles["security-review"].chosen.id, "security-guidance"); // rank 80 beats pr-review 70
-  assert.equal(a.roles["tech-debt"].chosen.id, "qodo-skills");
   assert.equal(a.roles["browser-control"].chosen.id, "playwright");       // mcp server
-  for (const r of ["code-navigation", "docs-research", "refactor", "security-review", "tech-debt", "browser-control"])
+  for (const r of ["code-navigation", "docs-research", "refactor", "security-review", "browser-control"])
     assert.equal(a.roles[r].chosen.source, "installed", `${r} not installed-resolved`);
+  // qodo is demoted by preference: tech-debt leads with a bundled wshobson built-in, not qodo
+  assert.equal(a.roles["tech-debt"].chosen.source, "builtin");
+  assert.match(a.roles["tech-debt"].chosen.id, /^wsh-/);
 });
 
 test("new roles exist; computer-control recommends desktop-commander when absent", async () => {

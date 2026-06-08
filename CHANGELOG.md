@@ -5,6 +5,27 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-06-08
+
+### Added
+
+- **Fail-loud guard against an all-inline crew.** `npx muster manifest validate` now emits a
+  `warnings` entry when every crew member has `source: inline` — the signature of a manifest that
+  skipped capability resolution and would silently run everything in-context instead of routing to
+  specialists (builtins resolve roles like `implement -> muster-builder`). The manifest is still
+  structurally valid, so this is a warning, not an error; `validateManifest`'s `{ok, errors}`
+  contract is unchanged. New `manifestWarnings()` export.
+
+### Changed
+
+- **`/muster:autopilot` step 3 spells out the recovery rule.** Build the crew from `npx muster
+  capabilities`; never hand-author crew providers. If `manifest validate` fails or warns, fix the
+  inputs (run the interview for `successCriteria`, re-resolve) rather than patching the crew to
+  `inline` to force `ok:true`.
+- **Output style tightened.** The Muster glass-box voice now caps verbosity hard (shortest complete
+  answer, stop when answered, one table max), bans selling/justifying Muster, and bans self-narration
+  ("Let me…") and rigor-flagging ("rather than guess").
+
 ## [0.2.1] - 2026-06-08
 
 ### Fixed
@@ -75,6 +96,7 @@ publish to carry it.
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
+[0.2.2]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.2
 [0.2.1]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.1.0

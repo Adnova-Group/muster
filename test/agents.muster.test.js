@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { modelForRole } from "../src/model.js";
+import { toAgent } from "../src/vendor.js";
 
 const AGENT_IDS = [
   "muster-surgeon",
@@ -57,4 +58,30 @@ test("each agent file's frontmatter model equals modelForRole(primaryRole)", asy
     const expected = modelForRole(PRIMARY_ROLE[id]);
     assert.equal(fm.model, expected, `${id} model should be ${expected}`);
   }
+});
+
+// Description search feeds off catalog `description`. Every authored + vendored agent
+// entry must carry a non-empty string description (input for the description-search ranker).
+for (const file of ["agents.muster.yaml", "agents.generated.yaml"]) {
+  test(`every agent entry in ${file} has a non-empty string description`, async () => {
+    const raw = await readFile(new URL(`../catalog/${file}`, import.meta.url), "utf8");
+    const entries = parse(raw);
+    assert.ok(Array.isArray(entries) && entries.length > 0, `${file} should parse to a non-empty array`);
+    for (const e of entries) {
+      assert.equal(typeof e.description, "string", `${e.id}: description must be a string`);
+      assert.ok(e.description.trim().length > 0, `${e.id}: description must be non-empty`);
+    }
+  });
+}
+
+test("catalog still loads/validates clean with descriptions present", async () => {
+  await assert.doesNotReject(() => loadCatalog(catalogDir));
+});
+
+test("toAgent carries source frontmatter description into the catalog entry", () => {
+  const sourceText = `---\nname: foo-agent\ndescription: Foo bar\n---\n\n# Foo\nbody\n`;
+  const item = { from: "foo.md", id: "wsh-foo", roles: ["implement"], as: "agent" };
+  const source = { repo: "wshobson/agents", license: "MIT" };
+  const { catalogEntry } = toAgent(sourceText, item, source);
+  assert.equal(catalogEntry.description, "Foo bar");
 });

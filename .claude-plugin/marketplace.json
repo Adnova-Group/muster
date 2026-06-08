@@ -1,0 +1,14 @@
+{
+  "name": "muster-local",
+  "owner": {
+    "name": "Adnova Group"
+  },
+  "description": "Local Muster marketplace (dogfooding).",
+  "plugins": [
+    {
+      "name": "muster",
+      "source": "./plugin",
+      "description": "Glass-box agentic orchestrator: detect context, assemble the right crew, run domain pipelines, show the reasoning."
+    }
+  ]
+}

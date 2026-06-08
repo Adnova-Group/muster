@@ -41,7 +41,7 @@ export function toBuiltin(sourceText, item, source) {
   };
   const content = `---\n${stringify(fm, { lineWidth: 0 }).trim()}\n---\n\n${body.trim()}\n`;
   return {
-    path: `plugin/skills/builtins/${item.id}/SKILL.md`,
+    path: `plugin/builtins/${item.id}/SKILL.md`,
     content,
     catalogEntry: {
       id: item.id, kind: "builtin", roles: item.roles, rank: 50,

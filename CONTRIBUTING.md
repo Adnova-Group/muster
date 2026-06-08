@@ -7,7 +7,7 @@ Thanks for your interest in Muster. This guide covers how to set up the repo, ho
 Clone the repo, then install dependencies:
 
 ```bash
-git clone https://github.com/OWNER/muster.git
+git clone https://github.com/Adnova-Group/muster.git
 cd muster
 npm install
 ```

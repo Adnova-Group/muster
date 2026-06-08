@@ -12,6 +12,7 @@ If `$ARGUMENTS` is empty, ask for the outcome and stop — Muster never runs wit
 3. Invoke the **router** skill with the outcome, the two JSON blobs, and any memory hits.
 4. The router emits a Crew Manifest. Write it to `.muster/manifest.json`, then validate:
    `npx muster manifest validate .muster/manifest.json` — repair and re-validate until `ok: true`.
-5. Show the manifest to the user (the Glass Box) and **STOP for approval**. This command plans and shows;
-   it does not execute the plan. To run the full lifecycle hands-off, use `/muster:autopilot`.
+5. Show the manifest to the user (the Glass Box) and collect approval via the **AskUserQuestion** selection UI
+   with options **Approve & run** (hands off to `/muster:autopilot`) / **Adjust the plan** (loop back to the
+   router) / **Cancel**. This command plans and shows; it does not execute the plan itself.
 6. Optionally append a memory entry: `npx muster memory write .muster/memory <entry.json>`.

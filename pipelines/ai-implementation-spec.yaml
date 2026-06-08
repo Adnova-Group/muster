@@ -1,0 +1,15 @@
+id: ai-implementation-spec
+domain: pm
+title: Implementation Spec
+match: [implementation spec, technical spec, ai implementation spec]
+phases:
+  - { id: intake,       role: brainstorm,  desc: "feature, constraints, success criteria" }
+  - { id: architecture, role: author,      desc: "approach, components, data flow, tradeoffs" }
+  - { id: interfaces,   role: author,      desc: "interfaces/contracts, edge cases, error handling" }
+  - { id: risks,        role: author,      desc: "risks, test strategy, rollout" }
+  - { id: review,       role: code-review, desc: "adversarial review gate" }
+  - { id: score,        role: score,       desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [clarity, completeness, feasibility, testability, interfaces]
+  floor: 2
+  pass_total: 12

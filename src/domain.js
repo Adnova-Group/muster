@@ -6,7 +6,8 @@ const DOMAIN_KEYWORDS = {
   blog: ["blog post", "blog", "article"],
   social: ["social post", "social media", "tweet", "linkedin post", "x post", "thread", "instagram caption", "reel script"],
   newsletter: ["newsletter", "email newsletter"],
-  sales: ["case study", "customer story", "sales deck"],
+  sales: ["case study", "customer story", "sales deck", "battlecard"],
+  book: ["book", "novel", "manuscript", "memoir"],
   software: ["implement", "refactor", "bug", "api", "endpoint", "function", "deploy"]
 };
 

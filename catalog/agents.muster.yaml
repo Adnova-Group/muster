@@ -1,0 +1,29 @@
+# Muster-authored agent definitions (role specialists). Clean-room: inspired by atomic's
+# role taxonomy, authored fresh for muster. Discovered by Claude Code from plugin/agents/.
+# rank 55 sits just above the rank-50 vendored skills so a muster agent is preferred over a
+# bare skill for the same role (capabilities sorts by rank descending).
+- id: muster-surgeon
+  kind: agent
+  roles: [implement]
+  rank: 55
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-builder
+  kind: agent
+  roles: [implement]
+  rank: 56 # default implementer: cohesion-bounded, handles N files; outranks surgeon (refuses 3+)
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-reviewer
+  kind: agent
+  roles: [code-review]
+  rank: 55
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-investigator
+  kind: agent
+  roles: [code-navigation]
+  rank: 55
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-strategist
+  kind: agent
+  roles: [architecture-review, plan]
+  rank: 55
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }

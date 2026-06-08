@@ -1,14 +1,15 @@
 id: release-notes
 domain: pm
 title: Release Notes
-match: [release notes, changelog]
+match: [release notes, changelog, what's new, patch notes]
 phases:
-  - { id: intake,     role: brainstorm,  desc: "release scope, audience (users vs devs)" }
-  - { id: changes,    role: docs-research, desc: "gather merged changes / highlights / fixes" }
-  - { id: draft,      role: author,      desc: "draft: highlights first, grouped, user-impact framed" }
-  - { id: review,     role: code-review, desc: "adversarial review gate" }
-  - { id: score,      role: score,       desc: "score vs rubric, floor principle" }
+  - { id: intake,      role: brainstorm,    desc: "release scope, audience (users vs devs)" }
+  - { id: changes,     role: docs-research, desc: "gather merged changes / highlights / fixes" }
+  - { id: categorize,  role: author,        desc: "classify changes: Added/Changed/Deprecated/Removed/Fixed/Security (Keep a Changelog); note semver bump" }
+  - { id: draft,       role: author,        desc: "highlights first; group by category; frame as user benefit; flag breaking changes/deprecations" }
+  - { id: review,      role: code-review,   desc: "adversarial review gate" }
+  - { id: score,       role: score,         desc: "score vs rubric, floor principle" }
 gate:
-  criteria: [clarity, completeness, user-impact, tone, structure]
+  criteria: [clarity, completeness, user-impact, tone, structure, semver-consistency]
   floor: 2
-  pass_total: 12
+  pass_total: 14

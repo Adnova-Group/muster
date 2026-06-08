@@ -1,14 +1,17 @@
 id: case-study
 domain: sales
 title: Customer Case Study
+match: [case study, customer story, success story, testimonial]
 phases:
-  - { id: intake,    role: brainstorm,    desc: "customer, segment, the win, target buyer" }
-  - { id: synthesis, role: docs-research, desc: "interview/notes synthesis; quotes; before/after metrics" }
-  - { id: draft,     role: author,        desc: "draft challenge -> solution -> results; quantified outcomes" }
-  - { id: metrics,   role: author,        desc: "verify + foreground the metrics; pull-quotes" }
-  - { id: review,    role: code-review,   desc: "adversarial review + credibility check" }
-  - { id: score,     role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: intake,             role: brainstorm,    desc: "customer, segment, the win, target buyer" }
+  - { id: synthesis,          role: docs-research, desc: "interview/notes synthesis; quotes; before/after metrics" }
+  - { id: draft,              role: author,        desc: "Hero's Journey (customer=hero, product=guide); Challenge->Solution->Results (CSR); 600-1200 words; headline leads with a concrete metric" }
+  - { id: metrics,            role: author,        desc: "verify + foreground the metrics; pull-quotes" }
+  - { id: buyer-fit,          role: author,        desc: "reframe results for target buyer segment; next-step CTA + related social proof; confirm ICP match" }
+  - { id: review,             role: code-review,   desc: "adversarial review + credibility check" }
+  - { id: approval-checklist, role: author,        desc: "customer-approval checklist: quotes approved, metrics cleared, logo/name usage, legal flag" }
+  - { id: score,              role: score,         desc: "score vs rubric, apply floor principle" }
 gate:
-  criteria: [narrative, metrics, credibility, clarity, cta]
+  criteria: [hero-arc, metrics, credibility, clarity, buyer-alignment, cta]
   floor: 2
-  pass_total: 12
+  pass_total: 15

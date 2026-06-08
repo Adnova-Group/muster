@@ -10,14 +10,15 @@ test("a PRD outcome routes to the PRD pipeline and scores by floor", async () =>
   const prd = pipelineForDomain(await loadPipelines(new URL("../pipelines/", import.meta.url)), d.domain);
   assert.equal(prd.id, "prd");
 
-  const good = scoreArtifact(
-    { "problem-clarity": 3, "outcome-alignment": 3, evidence: 2, "scope-discipline": 2, feasibility: 2, measurability: 2 },
-    prd.gate);
+  // score against the pipeline's actual criteria (research can evolve them)
+  const crit = prd.gate.criteria;
+  const good = scoreArtifact(Object.fromEntries(crit.map(c => [c, 3])), prd.gate);
   assert.equal(good.passing, true);
 
-  const weak = scoreArtifact(
-    { "problem-clarity": 3, "outcome-alignment": 3, evidence: 3, "scope-discipline": 3, feasibility: 3, measurability: 1 },
-    prd.gate);
-  assert.equal(weak.passing, false);            // measurability below floor
-  assert.equal(weak.weakest.criterion, "measurability");
+  // one dimension below the floor fails the gate and is reported as weakest
+  const weakScores = Object.fromEntries(crit.map(c => [c, 3]));
+  weakScores[crit[0]] = 1;
+  const weak = scoreArtifact(weakScores, prd.gate);
+  assert.equal(weak.passing, false);
+  assert.equal(weak.weakest.criterion, crit[0]);
 });

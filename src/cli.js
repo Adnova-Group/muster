@@ -25,6 +25,7 @@ import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { runInstall } from "./install.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError } from "./cli-args.js";
+import { matchProviders } from "./match.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -40,6 +41,10 @@ try {
   } else if (cmd === "capabilities") {
     const catalog = await loadCatalog(CATALOG_DIR);
     out(resolveCapabilities(catalog, await readInstalled(rest[0] || homedir())));
+  } else if (cmd === "match") {
+    if (!rest[0]) fail("match <task>: missing task");
+    const catalog = await loadCatalog(CATALOG_DIR);
+    out(matchProviders(rest[0], catalog, await readInstalled(homedir())));
   } else if (cmd === "manifest" && rest[0] === "validate") {
     if (!rest[1]) fail("manifest validate <file>: missing file path");
     const obj = JSON.parse(await readFile(rest[1], "utf8"));
@@ -132,7 +137,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

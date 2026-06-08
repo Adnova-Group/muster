@@ -28,6 +28,8 @@ export function validateCatalog(entries) {
       errors.push(`${at}: unknown detect.kind "${e.detect.kind}" (must be plugin|skill|mcp_server|agent)`);
     if ((e.kind === "builtin" || e.kind === "agent") && (!e.provenance || !e.provenance.license))
       errors.push(`${at}: ${e.kind} entry needs provenance.license (adapted_from for vendored, inspired_by for clean-room)`);
+    if (e.description !== undefined && typeof e.description !== "string")
+      errors.push(`${at}: description must be a string`);
   });
   return { ok: errors.length === 0, errors };
 }

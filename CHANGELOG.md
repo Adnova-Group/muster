@@ -5,6 +5,29 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-08
+
+### Fixed
+
+- **Installer no longer references the removed `/output-style` command.** Claude
+  Code dropped `/output-style <name>` in v2.1.91, so a fresh install printed
+  `Unknown commands: /output-style`. The glass-box style now ships inside the
+  plugin (`plugin/output-styles/muster.md`) with `force-for-plugin: true`, so it
+  auto-applies whenever the plugin is enabled — no command to run. `muster
+  install` no longer copies anything into `~/.claude`; it just prints the plugin
+  steps.
+
+### Added
+
+- **`muster uninstall`.** Prints the plugin-removal steps and cleans up any
+  legacy home-copy of the output style left by older versions.
+- **`keep-coding-instructions: true`** on the output style, so the glass-box
+  voice layers on top of Claude Code's engineering behavior instead of replacing
+  it.
+
+Note: the npm `0.2.0` tarball predated this installer fix; `0.2.1` is the first
+publish to carry it.
+
 ## [0.2.0] - 2026-06-08
 
 ### Added
@@ -52,5 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
+[0.2.1]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.1.0

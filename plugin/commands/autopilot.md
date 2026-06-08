@@ -13,7 +13,9 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
    `.muster/manifest.json` (`npx muster manifest validate` until ok).
 4. **Show the plan** — `npx muster plan-checklist .muster/manifest.json` and display it.
 5. **Orchestrate** — run the **orchestrator** skill over the manifest (waves, tournaments, review gate)
-   **without pausing** at gates. After each green + reviewed wave: commit (`feat(wave N): <summary>`)
+   **without pausing** at gates. Each wave loops until criteria are met via the Ralph loop (`loopState`
+   in `src/loop.js`): orchestrator iterates implement→review→fix until the wave's gate passes or the
+   iteration cap escalates (step 6). After each green + reviewed wave: commit (`feat(wave N): <summary>`)
    and re-render the checklist with completed ids (`--done …`) into the run STATE.
 6. **Escalation** — if a review gate escalates (fix-loop cap) or a tournament has no passing candidate,
    STOP and report the unresolved items; the branch stays intact.

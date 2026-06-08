@@ -10,6 +10,7 @@ phases:
   - { id: draft,    role: author,        desc: "enumerate 8 sections: exec summary, problem, target users, strategic context w/ OKR linkage, solution, success metrics, stories+requirements, out-of-scope+deps" }
   - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate)" }
   - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [problem-clarity, outcome-alignment, evidence, scope-discipline, dependency-clarity, primary-metric, guardrail-metrics]
   floor: 2

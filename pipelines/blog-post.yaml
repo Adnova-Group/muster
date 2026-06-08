@@ -9,6 +9,7 @@ phases:
   - { id: edit,     role: author,        desc: "tighten prose, voice consistency, readability, headings, internal links" }
   - { id: review,   role: code-review,   desc: "adversarial review gate" }
   - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [hook, clarity, value, originality, structure, evidence, cta]
   floor: 2

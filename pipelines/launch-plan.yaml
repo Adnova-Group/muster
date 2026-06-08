@@ -11,6 +11,7 @@ phases:
   - { id: post-launch,  role: author,      desc: "30-60-90 day: feedback capture, activation, funnel fixes, metric review" }
   - { id: review,       role: code-review, desc: "adversarial review gate" }
   - { id: score,        role: score,       desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [completeness, timeline, RACI, risk-coverage, beachhead-defined, post-launch-plan, success-metrics]
   floor: 2

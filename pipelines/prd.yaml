@@ -2,14 +2,15 @@ id: prd
 domain: pm
 default: true
 title: Product Requirements Document
-match: [prd, product requirements, product spec]
+match: [prd, product requirements, product spec, feature spec, product brief, requirements doc]
 phases:
   - { id: intake,   role: brainstorm,    desc: "clarify problem, audience, success metrics" }
+  - { id: framing,  role: brainstorm,    desc: "Jobs-to-be-Done framing: functional/emotional/social job + hiring criteria; proto-persona" }
   - { id: research, role: docs-research, desc: "gather evidence: market, competitor, customer context" }
-  - { id: draft,    role: author,        desc: "draft PRD sections: problem, goals, scope, requirements, metrics" }
+  - { id: draft,    role: author,        desc: "enumerate 8 sections: exec summary, problem, target users, strategic context w/ OKR linkage, solution, success metrics, stories+requirements, out-of-scope+deps" }
   - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate)" }
   - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
 gate:
-  criteria: [problem-clarity, outcome-alignment, evidence, scope-discipline, feasibility, measurability]
+  criteria: [problem-clarity, outcome-alignment, evidence, scope-discipline, dependency-clarity, primary-metric, guardrail-metrics]
   floor: 2
-  pass_total: 14
+  pass_total: 16

@@ -1,47 +1,82 @@
 # Muster
 
-Glass-box agentic orchestrator. Detects your project, discovers the capabilities you have installed,
-assembles the right crew, and shows its reasoning. Works on bare Claude Code; gets better with the
-tools you already use.
+Glass-box, multi-domain agentic orchestrator for Claude Code. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.
 
-- Design: `docs/design/2026-06-07-muster-v1-glass-box-router.md`
-- Plan: `docs/plan/2026-06-07-muster-v1-glass-box-router.md`
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
 
-Installing muster: `npx muster install` copies muster's output style into `~/.claude/output-styles/muster.md` (idempotent — skips if identical, backs up to `.bak` if it differs) and prints the next steps it can't do for you: register the local marketplace (`/plugin marketplace add <repo>`), install the plugin (`/plugin install muster@muster-local`), and enable the style (`/output-style muster`). Plugin install is a Claude Code action — the running session only picks muster up after you (re)install it via `/plugin`.
+## What it is
 
-CLI: `npx muster detect | capabilities | manifest validate <file> | memory read|write`
+Muster turns an outcome into finished work. It detects your project, discovers the capabilities you already have installed, picks the best tool for each piece of the job, and runs a crew of specialists toward your success criteria. Every decision is inspectable: which role resolved to which provider, on which model, and why.
 
-Slice 2 (fan-out + review): `npx muster wave <manifest> | tally <verdicts> | pick <candidates>`
-Design: `docs/design/2026-06-07-muster-v2-fanout-review.md`
+It runs on bare Claude Code with no extra services and no separate model API, and it gets better as you install more tools. The work is not limited to code. Product, business, content, and operations are first-class.
 
-Native built-ins: `npx muster vendor` imports curated upstream skills/agents (superpowers, gsd, wshobson) into `plugin/skills/builtins/` with attribution. Design: `docs/design/2026-06-07-muster-v3-native-builtins.md`
+## Quickstart
 
-Agent layer: roles resolve to a first-class `agent` provider kind alongside skills/MCP (`muster capabilities` -> `roles[<role>].chosen.kind` is `agent | skill | mcp | inline`). Muster ships its own clean-room specialists in `plugin/agents/` — `muster-surgeon` (1-2 file edits), `muster-builder` (cohesive slice), `muster-reviewer` (verdict-emitting review), `muster-investigator` (read-only locator, haiku), `muster-strategist` (heavyweight reasoning, opus) — authored fresh from the role concept (atomic-claude credited as inspiration, not copied; Apache-2.0). It also vendors a curated set of MIT agents from wshobson/agents with provenance, via `vendor/manifest.yaml` — spanning software (backend-architect, code-reviewer, debugger, security-auditor, frontend-developer, test-automator, legacy-modernizer, docs-architect, data-scientist, data-engineer, devops-troubleshooter, cloud-architect, database-optimizer, api-documenter, ml-engineer, prompt-engineer) and knowledge-work for the PM/business/content side (business-analyst, content-marketer, tutorial-engineer, customer-support). Each carries a searchable description, so description-search (`muster match`) makes the breadth reachable without inventing a role per specialist. The ladder prefers an installed external agent first, then a muster built-in agent, then a skill, then inline — so muster composes the tools you already have and falls back to its own, and no longer borrows atomic's agents at build time. Dispatch honors `chosen.kind` (agent → `subagent_type`; else generic + injected skill) and always applies `roles[<role>].model` as the model override, so `modelForRole` governs regardless of provider kind.
+```sh
+npx muster install
+```
 
-Issue input: `/muster:run` and `/muster:autopilot` accept a GitHub issue reference as the outcome — a bare number, `#123`, or an issues URL. `npx muster issue <ref>` resolves it via `gh issue view` to the issue title + body and uses that as the outcome before assess/route. It degrades gracefully: with no remote, no `gh`, or no such issue, it fails with a clear message (so it's a no-op until you push the repo).
+`install` copies Muster's output style to `~/.claude/output-styles/muster.md` (idempotent: it skips an identical file and backs up a different one to `.bak`), then prints the steps it cannot do for you:
 
-Interview mode: a thin outcome gets refined before any crew is assembled. `npx muster assess "<outcome>"` is a deterministic gap-check returning `{ clear, signals }` (flags too-short / no-success-criteria / vague-only). When it's not clear, the **interview** skill runs an interactive requirements interview — one question at a time via the AskUserQuestion selection UI (purpose, users, constraints, measurable success criteria, scope) behind a hard approval gate — and emits an enriched outcome + `successCriteria` the router can run. `/muster:run` does this as its front half before routing; `/muster:autopilot` triggers it only on an info-gap, and in unattended (Routine) mode records the gap to the run report instead of blocking.
+```sh
+/plugin marketplace add <repo>      # register the local marketplace
+/plugin install muster@muster-local # install the plugin
+/output-style muster                # enable the glass-box voice
+```
 
-Specialist matching: roles are a fixed set, but provider breadth is not — `npx muster match "<task>"` ranks every catalog provider by deterministic keyword/token overlap against the task (id/roles/keywords weighted over description; installed providers get a small boost; no LLM call, in keeping with the deterministic CLI). Each agent carries a searchable `description`, so a task like "audit this code for security vulnerabilities" surfaces the security specialists even when it doesn't map to one of the named roles. The router uses `match` as a candidate source when an outcome doesn't fit the role enum — the escape hatch that keeps wshobson-style breadth reachable without inventing a role per specialist.
+Plugin install is a Claude Code action, so the running session picks Muster up only after you (re)install it through `/plugin`. Then run your first outcome:
 
-Roadmap prioritization: goals in, a RICE-prioritized now/next/later roadmap out. Candidate initiatives are generated by reusing existing roles (brainstorm to surface bets, research/docs-research to gather market, competitor, and customer-feedback evidence), and the **interview** skill enriches the goal first when it's too thin to mine. The scoring is deterministic: each initiative gets RICE factors (reach, impact, confidence, effort) with evidence-backed rationale, then `npx muster prioritize <file> --model rice` ranks them by `(reach*impact*confidence)/effort` — code does the math, the model only estimates the factors, and it fails loud on non-finite or zero-effort inputs. The output is a now/next/later roadmap doc (default `docs/roadmap.md`) with the RICE score table and sequencing rationale, plus an optional offer to file the top-N initiatives as GitHub issues via `gh` (skipped gracefully with no remote). Routed via the `roadmap` pm-domain pipeline.
+```
+/muster:run Add rate limiting to the public API with tests
+```
 
-Commands (namespaced under the plugin): `/muster:run <outcome>` plans and shows the glass-box crew + plan, then stops for approval; `/muster:autopilot <outcome>` runs the full lifecycle hands-off (detect → route → waves → commit-per-wave → present merge); `/muster:diagnose <symptom>` is failure-first bug fix. `npx muster setup` scaffolds a new repo; `npx muster plan-checklist <manifest>` renders ticking progress. Design: `docs/design/2026-06-07-muster-v4-autopilot-greenfield.md`
+## The four modes
 
-Domain pipelines: `npx muster route "<outcome>"` picks the right pipeline by matching the outcome (then domain default), and `npx muster pipeline <id|domain>` shows it; all are phased + floor-scored (`npx muster score`). 18 shipped — PRD, business-case, epic, user-story, launch-plan, release-notes, executive-summary, okrs, ai-implementation-spec, ai-test-plan (the ForceVue doc set), competitive-battlecard, blog-post, social-post, lead-magnet, newsletter, case-study, runbook, and book (fiction + non-fiction). The author/research/score roles resolve to bundled best-of-breed built-ins (copywriting frameworks AIDA/PAS/BAB/QUEST + E-E-A-T; floor-principle scoring). PM/business/content/ops work is first-class, not just code. Design: `docs/design/2026-06-07-muster-v5-domain-pipelines-prd.md`
+| Mode | Command | What it does |
+| --- | --- | --- |
+| Run | `/muster:run <outcome>` | Plans, shows the crew manifest and plan, then stops for your approval. Does not execute. |
+| Autopilot | `/muster:autopilot <outcome>` | Hands-off lifecycle: branch, route, run waves, commit per wave, present the merge. Stops only for the merge decision or an escalation. |
+| Diagnose | `/muster:diagnose <symptom>` | Failure-first bug fix: reproduce, find root cause, fix, add a regression test, verify. No symptom-patching. |
+| Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions, then fixes everything with tests and verifies. |
 
-Diagnose (bug fix): `/muster:diagnose <symptom>` (or paste failing output) -> reproduce -> root cause (systematic debugging, via the best available `debug` provider) -> fix -> regression test -> verify. `npx muster diagnose` seeds the fix plan. Design: `docs/design/2026-06-07-muster-v6-diagnose.md`
+Run and Autopilot accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome. A thin outcome gets refined first: `muster assess` does a deterministic gap-check, and if the outcome is vague, an interview skill asks one question at a time behind an approval gate before any crew is assembled.
 
-Audit mode: `/muster:audit [path]` is the review-and-fix counterpart to `/muster:diagnose` — where diagnose is failure-first on a single bug, audit is breadth-first over the whole codebase. `npx muster audit` seeds a manifest that fans out six read-only dimension reviews in parallel — architecture, tech-debt, coverage, simplification (reuse/duplication), readability (maintainability), and security — each on the best provider for its role (architecture on muster-strategist/opus, security on the security provider, and so on). It consolidates the findings into a single ranked ledger (by severity, then blast radius), then fixes everything via the orchestrator + Ralph loop with TDD (a failing test first wherever behavior changes), and verifies green through the review-gate before presenting the merge decision.
+## How it works
 
-Model selection: each role carries a model (`muster capabilities` -> `roles[<role>].model`) — mechanical roles (code-navigation, docs-research, research) run on haiku, default sonnet, heavy judgment / tournament judge on opus. The orchestrator dispatches subagents accordingly, so quota spend tracks the work.
+The novel core is a capability and domain router. Muster names a fixed vocabulary of roles (the kinds of work a crew might need), and each role resolves through a ladder, best available first:
 
-Execution model: the `muster` CLI is deterministic Node (no LLM calls). Model work runs through the interactive Claude Code session's built-in subagent dispatch (the Task tool) — NOT `claude -p` or the Agent SDK. So Muster draws normal interactive subscription quota (it does not hit the separate June-2026 Agent-SDK credit), and fan-out simply spends that quota faster.
+1. An installed external provider (a plugin, agent, or MCP server you already have)
+2. A Muster built-in agent
+3. A Muster built-in skill
+4. Inline (the model does it directly)
 
-Output style: `output-styles/muster.md` is a glass-box, terse TUI voice (lead with outcome, show crew/decisions/evidence, tick checkboxes). Enable via `/output-style` or copy to `~/.claude/output-styles/`.
+`muster capabilities` walks this ladder for every role and reports the winner, the full fallback chain, installable recommendations, and the chosen model. Because the chain always ends at inline, every role resolves to something, so Muster works on bare Claude Code and improves as you add tools.
 
-Ralph loop + humanizer: orchestration loops-until-done via the Ralph primitive (`src/loop.js` `loopState({ iteration, maxIterations, done })` -> `iterate` | `done` | `max-iterations`) — each wave re-runs implement→review→fix until the gate passes or the cap escalates, so subagents drive toward the success criteria instead of stopping after one pass. Every human-facing pipeline ends with a `humanize` phase (the `muster-humanizer` built-in: strips em-dashes, banned words, robotic cadence) — machine-facing AI specs (ai-implementation-spec, ai-test-plan) are exempt to preserve technical precision.
+The role set is fixed but the provider set is not. When an outcome does not fit a named role, description-search bridges the gap: `muster match "<task>"` ranks every catalog provider by deterministic token overlap (no model call), so "audit this code for security vulnerabilities" surfaces the security specialist even though it never names a role.
 
-Driving muster remotely: Muster ships no remote-control transport of its own — it rides Claude Code's native features. **Schedule it** — a Claude Code Routine (`/schedule`, `claude.ai/code/routines`, or API `POST https://api.anthropic.com/v1/claude_code/routines/<id>/fire` with a `text` field) fires `/muster:autopilot <outcome>` as an autonomous cloud run; unattended mode opens a PR by default (see `plugin/commands/autopilot.md`). Docs: `code.claude.com/docs/en/routines.md`. **Steer it** — Channels (Telegram/Discord/iMessage/webhook) deliver `<channel>` events the orchestrator interprets as steering (approve / stop / status / retarget) mid-run; the session must be running to receive them. Docs: `code.claude.com/docs/en/channels.md`. **Take over** — Remote Control (`claude --remote-control` / `/remote-control`, QR to phone) gives phone/web access to a running local session when a human wants to grab the wheel. Docs: `code.claude.com/docs/en/remote-control.md`.
+Each role also carries a model picked to fit the work: mechanical roles run on Haiku, the default is Sonnet, and heavy judgment runs on Opus. Muster composes the tools you already have and falls back to its own. For the full design, see [docs/architecture.md](docs/architecture.md).
 
-Expanded built-ins (wshobson-expand): two new routable roles added — `performance` (application performance engineering) and `seo` (technical SEO optimization) — plus expanded wshobson coverage: `application-performance` and `seo-technical-optimization` plugins vendored via their primary agent files (no skills/ dir in source); `distributed-debugging`, `error-debugging`, `error-diagnostics`, `code-refactoring`, and `codebase-cleanup` plugins skipped (no skills/ dir; existing wsh-* builtins already cover debug/refactor/tech-debt roles). Total vendored builtins: 44 generated + 3 muster-authored = 47.
+## Pipelines
+
+A pipeline is a phased, gated recipe for producing one kind of artifact. Each declares a domain, an ordered list of phases, and a gate. Gating uses a floor principle: the weakest dimension must clear the floor and the total must clear a pass threshold, so a strong average cannot rescue one weak dimension.
+
+The set spans software and knowledge work. A few examples: PRD, business-case, launch-plan, executive-summary, OKRs, AI implementation spec, competitive-battlecard, blog-post, case-study, runbook, and book (fiction and non-fiction). Roadmap prioritization is one to call out: goals go in, and a RICE-ranked now/next/later roadmap comes out, with the model estimating the factors and the CLI doing the arithmetic. Human-facing pipelines end with a humanize phase that strips em-dashes, AI-tell words, and robotic cadence.
+
+## Built on
+
+Muster's design was inspired by atomic-claude, superpowers, gsd-core, and book-genesis. It vendors a curated set of MIT-licensed skills and agents, with every source and item recorded for attribution:
+
+| Source | License | Provides |
+| --- | --- | --- |
+| obra/superpowers | MIT | Brainstorming, planning, TDD, code-review, debugging, verification skills |
+| wshobson/agents | MIT | Software and knowledge-work agents across many specialties |
+| open-gsd/gsd-core | MIT | Plan, execute, and verify workflow phases |
+
+Alongside the vendored material, Muster ships its own clean-room specialists, authored fresh from the role concept. Full provenance lives in [NOTICE](NOTICE).
+
+## Contributing and license
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+
+Muster is licensed under Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

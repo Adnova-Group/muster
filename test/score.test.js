@@ -17,6 +17,22 @@ test("fails on total even if floor met", () => {
   assert.equal(r.passing, false);
 });
 
+test("non-finite score values are rejected before they can corrupt the gate", () => {
+  // A string score must not be silently string-concatenated into `total`
+  // (which would yield a wrong-typed result downstream numeric checks trust).
+  assert.throws(
+    () => scoreArtifact({ a: "high", b: "low" }, {}),
+    /score for "a" must be a finite number, got high/,
+    "a non-numeric score must throw, not corrupt total via string concat");
+  // NaN and Infinity are numbers but not finite — they poison comparisons.
+  assert.throws(() => scoreArtifact({ a: NaN }, {}), /must be a finite number/,
+    "NaN must be rejected");
+  assert.throws(() => scoreArtifact({ a: Infinity }, {}), /must be a finite number/,
+    "Infinity must be rejected");
+  assert.throws(() => scoreArtifact({ a: null }, {}), /must be a finite number/,
+    "null must be rejected");
+});
+
 test("tie for weakest -> first by insertion order wins (deterministic tie-break)", () => {
   // a and b both score the lowest (1). Strict `<` keeps the first-inserted one,
   // so the reported weakest must be deterministic and equal to insertion order.

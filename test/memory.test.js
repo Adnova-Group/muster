@@ -7,6 +7,38 @@ import { writeMemory, readMemory } from "../src/memory.js";
 
 async function dir() { return mkdtemp(join(tmpdir(), "muster-mem-")); }
 
+async function fileExists(p) {
+  try { await readFile(p, "utf8"); return true; } catch { return false; }
+}
+
+test("writeMemory rejects a slug with path traversal and writes nothing outside dir", async () => {
+  const d = await dir();
+  // A "../escape" slug would resolve to a sibling of the memory dir — a write
+  // primitive that escapes the named store. Must be rejected before any write.
+  await assert.rejects(
+    () => writeMemory(d, { slug: "../escape", title: "T", outcome: "O", body: "B" }),
+    /invalid slug "\.\.\/escape" \(no path separators or \.\.\)/,
+    "a slug containing .. or a separator must throw");
+  // Prove nothing leaked to the parent of the memory dir.
+  assert.equal(await fileExists(join(d, "..", "escape.md")), false,
+    "no file may be written outside the target dir");
+});
+
+test("writeMemory rejects entries missing required fields and writes nothing", async () => {
+  const d = await dir();
+  await assert.rejects(
+    () => writeMemory(d, { title: "T", outcome: "O", body: "B" }),
+    /missing required field "slug"/,
+    "a missing slug must throw, not write undefined.md");
+  await assert.rejects(
+    () => writeMemory(d, { slug: "s", title: "T", outcome: "O" }),
+    /missing required field "body"/,
+    "a missing body must throw, not interpolate the literal 'undefined'");
+  // No undefined.md leaked from the missing-slug case.
+  assert.equal(await fileExists(join(d, "undefined.md")), false,
+    "no undefined.md may be written");
+});
+
 test("writeMemory creates a markdown entry and an INDEX line", async () => {
   const d = await dir();
   const entry = { slug: "rate-limit-run", title: "Rate limit run",

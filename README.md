@@ -4,6 +4,10 @@ Glass-box, multi-domain agentic orchestrator for Claude Code. Give it an outcome
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
+[![npm](https://img.shields.io/npm/v/@adnova-group/muster.svg)](https://www.npmjs.com/package/@adnova-group/muster)
+[![Docs](https://img.shields.io/badge/docs-adnova--group.github.io%2Fmuster-6d5ce7.svg)](https://adnova-group.github.io/muster/)
+
+📖 **Documentation: [adnova-group.github.io/muster](https://adnova-group.github.io/muster/)**
 
 ## What it is
 
@@ -55,7 +59,7 @@ The novel core is a capability and domain router. Muster names a fixed vocabular
 
 The role set is fixed but the provider set is not. When an outcome does not fit a named role, description-search bridges the gap: `muster match "<task>"` ranks every catalog provider by deterministic token overlap (no model call), so "audit this code for security vulnerabilities" surfaces the security specialist even though it never names a role.
 
-Each role also carries a model picked to fit the work: mechanical roles run on Haiku, the default is Sonnet, and heavy judgment runs on Opus. Muster composes the tools you already have and falls back to its own. For the full design, see [docs/architecture.md](docs/architecture.md).
+Each role also carries a model picked to fit the work: mechanical roles run on Haiku, the default is Sonnet, and heavy judgment runs on Opus. Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
 
 ## Always-on guidance
 

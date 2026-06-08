@@ -26,6 +26,7 @@ import { runInstall } from "./install.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError } from "./cli-args.js";
 import { matchProviders } from "./match.js";
+import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
@@ -91,6 +92,13 @@ try {
     if (!rest[0]) fail("score <file.json>: missing file path ({scores, gate})");
     const { scores, gate } = JSON.parse(await readFile(rest[0], "utf8"));
     out(scoreArtifact(scores, gate));
+  } else if (cmd === "prioritize") {
+    if (!rest[0]) fail("prioritize <file> [--model rice]: missing file");
+    const parsed = JSON.parse(await readFile(rest[0], "utf8"));
+    const items = Array.isArray(parsed) ? parsed : parsed.items;
+    const mi = rest.indexOf("--model");
+    const model = (mi >= 0 && rest[mi + 1]) ? rest[mi + 1] : (Array.isArray(parsed) ? "rice" : (parsed.model || "rice"));
+    out(prioritize(items, model));
   } else if (cmd === "pipeline") {
     if (!rest[0]) fail("pipeline <domain|id>: missing arg");
     const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
@@ -142,7 +150,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|issue <ref>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice]|diagnose <symptom>|--ci <file>|issue <ref>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

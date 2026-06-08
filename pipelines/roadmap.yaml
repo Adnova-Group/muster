@@ -1,0 +1,17 @@
+id: roadmap
+domain: pm
+title: Roadmap Prioritization
+match: [roadmap, prioritize, prioritization, roadmap prioritization, product roadmap, backlog prioritization, rice]
+phases:
+  - { id: generate,   role: brainstorm,    desc: "surface candidate initiatives from goals/strategy/themes" }
+  - { id: research,   role: docs-research, desc: "gather evidence per initiative: market, competitor, and customer-feedback signals" }
+  - { id: estimate,   role: brainstorm,    desc: "assign RICE factors (reach, impact, confidence, effort) per initiative with rationale; evidence-backed, not vibes" }
+  - { id: prioritize, role: score,         desc: "run the deterministic RICE scorer (muster prioritize) to rank initiatives" }
+  - { id: draft,      role: author,        desc: "now/next/later roadmap doc + RICE score table + sequencing rationale" }
+  - { id: review,     role: code-review,   desc: "adversarial review gate (reuse review-gate)" }
+  - { id: score,      role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: humanize,   role: humanize,      desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [coverage, evidence, scoring-rigor, sequencing, outcome-alignment, feasibility]
+  floor: 2
+  pass_total: 14

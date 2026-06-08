@@ -89,7 +89,7 @@ sources:
         roles: [implement]
       - from: plugins/backend-development/skills/architecture-patterns/SKILL.md
         id: wsh-architecture-patterns
-        roles: [implement]
+        roles: [implement, architecture-review]
       - from: plugins/backend-development/skills/microservices-patterns/SKILL.md
         id: wsh-microservices-patterns
         roles: [implement]
@@ -114,17 +114,17 @@ sources:
       # refactor / tech-debt
       - from: plugins/framework-migration/skills/react-modernization/SKILL.md
         id: wsh-react-modernization
-        roles: [refactor]
+        roles: [refactor, tech-debt]
       - from: plugins/framework-migration/skills/dependency-upgrade/SKILL.md
         id: wsh-dependency-upgrade
-        roles: [refactor]
+        roles: [refactor, tech-debt]
       - from: plugins/python-development/skills/python-anti-patterns/SKILL.md
         id: wsh-python-anti-patterns
-        roles: [refactor]
+        roles: [refactor, tech-debt]
       # documentation / architecture
       - from: plugins/documentation-generation/skills/architecture-decision-records/SKILL.md
         id: wsh-architecture-decision-records
-        roles: [implement]
+        roles: [implement, architecture-review]
       - from: plugins/documentation-generation/skills/openapi-spec-generation/SKILL.md
         id: wsh-openapi-spec-generation
         roles: [implement]
@@ -135,6 +135,14 @@ sources:
       - from: plugins/ui-design/skills/responsive-design/SKILL.md
         id: wsh-responsive-design
         roles: [frontend]
+      # performance (no skills/ dir — using primary agent file)
+      - from: plugins/application-performance/agents/performance-engineer.md
+        id: wsh-performance-engineer
+        roles: [performance]
+      # seo (no skills/ dir — using primary agent file)
+      - from: plugins/seo-technical-optimization/agents/seo-structure-architect.md
+        id: wsh-seo-structure-architect
+        roles: [seo]
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

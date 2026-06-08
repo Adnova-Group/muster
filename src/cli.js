@@ -16,6 +16,7 @@ import { scaffoldProject } from "./setup.js";
 import { renderPlanChecklist } from "./checklist.js";
 import { classifyDomain } from "./domain.js";
 import { loadPipelines, pipelineForDomain } from "./pipeline.js";
+import { scoreArtifact } from "./score.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -71,6 +72,10 @@ try {
     const di = rest.indexOf("--done");
     const done = di >= 0 && rest[di + 1] ? rest[di + 1].split(",") : [];
     process.stdout.write(renderPlanChecklist(m.plan || [], done) + "\n");
+  } else if (cmd === "score") {
+    if (!rest[0]) fail("score <file.json>: missing file path ({scores, gate})");
+    const { scores, gate } = JSON.parse(await readFile(rest[0], "utf8"));
+    out(scoreArtifact(scores, gate));
   } else if (cmd === "pipeline") {
     if (!rest[0]) fail("pipeline <domain|id>: missing arg");
     const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));

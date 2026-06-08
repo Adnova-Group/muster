@@ -1,0 +1,16 @@
+# Muster-authored built-ins (not vendored — safe from `muster vendor` regeneration).
+- id: muster-author
+  kind: builtin
+  roles: [author]
+  rank: 50
+  provenance: { adapted_from: "Muster (copywriting frameworks: AIDA/PAS/BAB/QUEST, E-E-A-T)", license: Apache-2.0 }
+- id: muster-research
+  kind: builtin
+  roles: [research]
+  rank: 40
+  provenance: { adapted_from: "Muster (source-gathering + evidence synthesis)", license: Apache-2.0 }
+- id: muster-scorer
+  kind: builtin
+  roles: [score]
+  rank: 50
+  provenance: { adapted_from: "Muster (floor-principle rubric scoring, book-genesis-inspired)", license: Apache-2.0 }

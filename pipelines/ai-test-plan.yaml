@@ -1,0 +1,14 @@
+id: ai-test-plan
+domain: pm
+title: Test Plan
+match: [test plan, ai test plan, qa plan]
+phases:
+  - { id: intake, role: brainstorm,  desc: "feature under test, risks, scope, exit criteria" }
+  - { id: scope,  role: author,      desc: "what's in/out; risk-based prioritization" }
+  - { id: cases,  role: author,      desc: "test cases (happy path, edge, negative); data needs" }
+  - { id: review, role: code-review, desc: "adversarial review + coverage gaps" }
+  - { id: score,  role: score,       desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [coverage, clarity, prioritization, test-data, exit-criteria]
+  floor: 2
+  pass_total: 12

@@ -1,0 +1,14 @@
+id: epic
+domain: pm
+title: Epic
+match: [epic, epics]
+phases:
+  - { id: intake,      role: brainstorm,  desc: "problem, outcome, scope, target users" }
+  - { id: breakdown,   role: author,      desc: "decompose into stories/deliverables; sequencing + dependencies" }
+  - { id: acceptance,  role: author,      desc: "epic-level acceptance criteria + success metrics" }
+  - { id: review,      role: code-review, desc: "adversarial review gate" }
+  - { id: score,       role: score,       desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [clarity, scope-discipline, outcome-alignment, acceptance-criteria, dependencies]
+  floor: 2
+  pass_total: 12

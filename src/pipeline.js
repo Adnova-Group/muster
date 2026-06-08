@@ -32,5 +32,25 @@ export async function loadPipelines(dir) {
 }
 
 export function pipelineForDomain(pipelines, domain) {
-  return pipelines.find(p => p.domain === domain) || null;
+  return pipelines.find(p => p.domain === domain && p.default)
+    || pipelines.find(p => p.domain === domain) || null;
+}
+
+function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+// Select a pipeline by matching the outcome against each pipeline's `match` keywords
+// (word-boundary). Returns null if none match — callers fall back to pipelineForDomain.
+export function pickPipeline(pipelines, outcome) {
+  const text = (outcome || "");
+  for (const p of pipelines) {
+    for (const m of (p.match || [])) {
+      if (new RegExp(`\\b${escapeRe(m)}\\b`, "i").test(text)) return p;
+    }
+  }
+  return null;
+}
+
+// Resolve the pipeline for an outcome: explicit match wins, else domain default.
+export function routePipeline(pipelines, outcome, domain) {
+  return pickPipeline(pipelines, outcome) || pipelineForDomain(pipelines, domain);
 }

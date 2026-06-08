@@ -1,0 +1,15 @@
+id: competitive-battlecard
+domain: sales
+title: Competitive Battlecard
+match: [battlecard, competitive battlecard, competitor comparison]
+phases:
+  - { id: intake,      role: brainstorm,    desc: "competitor, segment, deal context" }
+  - { id: research,    role: docs-research, desc: "competitor facts, pricing, strengths/weaknesses (cited)" }
+  - { id: positioning, role: author,        desc: "our differentiation, landmines, traps, why-we-win" }
+  - { id: objections,  role: author,        desc: "objection handling + proof points" }
+  - { id: review,      role: code-review,   desc: "adversarial review + accuracy check" }
+  - { id: score,       role: score,         desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [accuracy, differentiation, objection-coverage, usability, evidence]
+  floor: 2
+  pass_total: 12

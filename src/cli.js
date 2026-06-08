@@ -26,6 +26,7 @@ import { runInstall } from "./install.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError } from "./cli-args.js";
 import { matchProviders } from "./match.js";
+import { parseIssueRef, resolveIssue } from "./issue.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -114,6 +115,10 @@ try {
     const failure = classifyFailure(input, { ci });
     const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
     out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
+  } else if (cmd === "issue") {
+    if (!rest[0]) fail("issue <ref>: missing #N | number | issue-url");
+    if (parseIssueRef(rest[0]).kind !== "issue") fail("not a GitHub issue reference: " + rest[0]);
+    out(await resolveIssue(rest[0]));
   } else if (cmd === "assess") {
     if (!rest[0]) fail("assess <outcome>: missing outcome");
     out(assessOutcome(rest[0]));
@@ -137,7 +142,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|issue <ref>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

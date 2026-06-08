@@ -65,7 +65,7 @@ The set spans software and knowledge work. A few examples: PRD, business-case, l
 
 ## Built on
 
-Muster's design was inspired by atomic-claude, superpowers, gsd-core, and book-genesis. It vendors a curated set of MIT-licensed skills and agents, with every source and item recorded for attribution:
+Muster's design was inspired by atomic-claude, superpowers, and gsd-core. It vendors a curated set of MIT-licensed skills and agents, with every source and item recorded for attribution:
 
 | Source | License | Provides |
 | --- | --- | --- |

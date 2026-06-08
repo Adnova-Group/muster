@@ -1,0 +1,13 @@
+id: prd
+domain: pm
+title: Product Requirements Document
+phases:
+  - { id: intake,   role: brainstorm,    desc: "clarify problem, audience, success metrics" }
+  - { id: research, role: docs-research, desc: "gather evidence: market, competitor, customer context" }
+  - { id: draft,    role: author,        desc: "draft PRD sections: problem, goals, scope, requirements, metrics" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate)" }
+  - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
+gate:
+  criteria: [problem-clarity, outcome-alignment, evidence, scope-discipline, feasibility, measurability]
+  floor: 2
+  pass_total: 14

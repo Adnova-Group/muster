@@ -95,7 +95,7 @@ try {
     const { scores, gate } = JSON.parse(await readFile(file, "utf8"));
     out(scoreArtifact(scores, gate));
   } else if (cmd === "prioritize") {
-    const file = requireArg(rest, 0, "prioritize <file> [--model rice]: missing file", fail);
+    const file = requireArg(rest, 0, "prioritize <file> [--model rice|ice|wsjf|weighted]: missing file", fail);
     const parsed = JSON.parse(await readFile(file, "utf8"));
     const items = Array.isArray(parsed) ? parsed : parsed.items;
     const model = flagValue(rest, "--model") || (Array.isArray(parsed) ? "rice" : (parsed.model || "rice"));
@@ -157,7 +157,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

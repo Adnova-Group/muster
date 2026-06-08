@@ -1,49 +1,46 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInstall } from "../src/install.js";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
-const sourceStyle = join(repoRoot, "output-styles", "muster.md");
 
+// The output style ships inside the plugin (force-for-plugin auto-apply), so
+// install does NOT copy anything into ~/.claude. These tests pin that contract:
+// install mutates nothing under home and only surfaces the registration steps.
 describe("runInstall", () => {
-  it("fresh install copies the style file (action: copied)", async () => {
+  it("reports the style is plugin-shipped and auto-applied", async () => {
     const home = await mkdtemp(join(tmpdir(), "muster-install-"));
     const result = await runInstall({ home, repoRoot });
-    assert.equal(result.style.action, "copied");
-    const dest = join(home, ".claude", "output-styles", "muster.md");
-    assert.equal(result.style.dest, dest);
-    const expected = await readFile(sourceStyle, "utf8");
-    assert.equal(await readFile(dest, "utf8"), expected);
+    assert.equal(result.outputStyle.source, "plugin");
+    assert.equal(result.outputStyle.autoApplied, true);
   });
 
-  it("is idempotent — second call skips, no .bak created", async () => {
+  it("does NOT write anything under ~/.claude (no global mutation)", async () => {
     const home = await mkdtemp(join(tmpdir(), "muster-install-"));
     await runInstall({ home, repoRoot });
-    const result = await runInstall({ home, repoRoot });
-    assert.equal(result.style.action, "skipped");
-    const bak = join(home, ".claude", "output-styles", "muster.md.bak");
-    await assert.rejects(() => readFile(bak, "utf8"));
+    // home was created empty by mkdtemp; install must leave it that way.
+    const entries = await readdir(home);
+    assert.deepEqual(entries, [], "install must not create files under home");
   });
 
-  it("differing dest is backed up and updated (action: updated)", async () => {
+  it("surfaces the plugin registration steps, and no removed /output-style command", async () => {
     const home = await mkdtemp(join(tmpdir(), "muster-install-"));
-    const dir = join(home, ".claude", "output-styles");
-    await mkdir(dir, { recursive: true });
-    const dest = join(dir, "muster.md");
-    const oldContent = "# stale custom style\n";
-    await writeFile(dest, oldContent, "utf8");
+    const { nextSteps } = await runInstall({ home, repoRoot });
+    const joined = nextSteps.join("\n");
+    assert.match(joined, /\/plugin marketplace add/, "must tell the user to add the marketplace");
+    assert.match(joined, /\/plugin install muster@muster/, "must tell the user to install the plugin");
+    assert.doesNotMatch(joined, /\/output-style/, "must not reference the removed /output-style command");
+  });
 
-    const result = await runInstall({ home, repoRoot });
-    assert.equal(result.style.action, "updated");
-
-    const bak = join(dir, "muster.md.bak");
-    assert.equal(await readFile(bak, "utf8"), oldContent);
-
-    const expected = await readFile(sourceStyle, "utf8");
-    assert.equal(await readFile(dest, "utf8"), expected);
+  it("is idempotent — a second call is identical and still mutates nothing", async () => {
+    const home = await mkdtemp(join(tmpdir(), "muster-install-"));
+    const a = await runInstall({ home, repoRoot });
+    const b = await runInstall({ home, repoRoot });
+    assert.deepEqual(b, a);
+    assert.deepEqual(await readdir(home), []);
   });
 });

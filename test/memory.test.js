@@ -3,7 +3,17 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { writeMemory, readMemory } from "../src/memory.js";
+
+// Pull the YAML frontmatter block (between the first two `---` fences) out of a
+// memory doc and parse it, so a test can assert on the *parsed* key set rather
+// than on raw text — the only way to prove an injected key did not materialize.
+function frontmatter(md) {
+  const m = md.match(/^---\n([\s\S]*?)\n---\n/);
+  assert.ok(m, "doc must open with a YAML frontmatter fence");
+  return parseYaml(m[1]);
+}
 
 async function dir() { return mkdtemp(join(tmpdir(), "muster-mem-")); }
 
@@ -50,6 +60,64 @@ test("writeMemory creates a markdown entry and an INDEX line", async () => {
   assert.match(md, /\[\[express-notes\]\]/);
   const index = await readFile(join(d, "INDEX.md"), "utf8");
   assert.match(index, /rate-limit-run\.md/);
+});
+
+test("writeMemory cannot be tricked into forging frontmatter keys via a newline in title", async () => {
+  const d = await dir();
+  // A title carrying a newline + a fake key is the injection: with raw string
+  // interpolation this would close the value and inject `malicious: true` as a
+  // real frontmatter key. Built through yaml.stringify it must stay a quoted
+  // scalar of `title`, never a key of its own.
+  const entry = { slug: "inject", title: "Pwned\n---\nmalicious: true",
+    outcome: "O", body: "B" };
+  await writeMemory(d, entry);
+  const md = await readFile(join(d, "inject.md"), "utf8");
+  const fm = frontmatter(md);
+  assert.equal("malicious" in fm, false, "injected key must NOT appear in parsed frontmatter");
+  assert.equal(fm.title, "Pwned\n---\nmalicious: true", "title round-trips intact as a scalar");
+  assert.equal(fm.outcome, "O");
+});
+
+test("writeMemory output stays readable for a normal entry (round-trips via yaml)", async () => {
+  const d = await dir();
+  const entry = { slug: "normal", title: "Rate limit run",
+    outcome: "Add rate limiting", body: "Chose token bucket.", links: ["express-notes", "redis"] };
+  await writeMemory(d, entry);
+  const md = await readFile(join(d, "normal.md"), "utf8");
+  const fm = frontmatter(md);
+  assert.equal(fm.title, "Rate limit run");
+  assert.equal(fm.outcome, "Add rate limiting");
+  assert.match(md, /Chose token bucket/);
+  assert.match(md, /\[\[express-notes\]\] \[\[redis\]\]/);
+});
+
+test("writeMemory rejects a [[link]] value carrying a newline or closing brackets", async () => {
+  const d = await dir();
+  // A link value that contains `]]` or a newline could break out of the link
+  // line / inject markup. It must be rejected, not silently emitted.
+  await assert.rejects(
+    () => writeMemory(d, { slug: "badlink", title: "T", outcome: "O", body: "B", links: ["ok]] evil"] }),
+    /invalid link/,
+    "a link containing ]] must throw");
+  await assert.rejects(
+    () => writeMemory(d, { slug: "badlink2", title: "T", outcome: "O", body: "B", links: ["line1\nline2"] }),
+    /invalid link/,
+    "a link containing a newline must throw");
+});
+
+test("writeMemory INDEX.md dedups a repeated slug but appends a distinct one", async () => {
+  const d = await dir();
+  await writeMemory(d, { slug: "dup", title: "First", outcome: "O1", body: "B" });
+  // Re-writing the SAME slug must not append a second index line for it.
+  await writeMemory(d, { slug: "dup", title: "Second", outcome: "O2", body: "B" });
+  let index = await readFile(join(d, "INDEX.md"), "utf8");
+  const dupLines = index.split("\n").filter(l => l.includes("dup.md"));
+  assert.equal(dupLines.length, 1, `exactly one index line for dup.md, got: ${JSON.stringify(dupLines)}`);
+  // A distinct slug appends a second line.
+  await writeMemory(d, { slug: "other", title: "Other", outcome: "O3", body: "B" });
+  index = await readFile(join(d, "INDEX.md"), "utf8");
+  assert.equal(index.split("\n").filter(l => l.includes("dup.md")).length, 1, "dup.md still single");
+  assert.equal(index.split("\n").filter(l => l.includes("other.md")).length, 1, "other.md appended once");
 });
 
 test("readMemory returns entries matching a query substring", async () => {

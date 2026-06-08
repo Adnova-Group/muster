@@ -1,9 +1,9 @@
-import { mkdir, writeFile, stat } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { exists } from "./fs-util.js";
 const pexec = promisify(execFile);
-async function exists(p) { try { await stat(p); return true; } catch { return false; } }
 
 const SEEDS = {
   ".gitignore": "node_modules/\n.muster/\n*.log\n",

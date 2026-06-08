@@ -1,3 +1,5 @@
+import { chosen, collectRecommendations } from "./crew.js";
+
 const CI_PATTERNS = [/\bFAIL\b/, /✗/, /Error:/, /\bassert/i, /exit code [1-9]/, /\bat .+:\d+/];
 
 export function classifyFailure(input, opts = {}) {
@@ -7,19 +9,12 @@ export function classifyFailure(input, opts = {}) {
   return { mode: isCi ? "ci" : "bug", signal: firstLine.slice(0, 200) };
 }
 
-function chosen(caps, role) {
-  return (caps && caps.roles && caps.roles[role] && caps.roles[role].chosen) || { id: "inline", source: "inline" };
-}
-
 export function buildDiagnoseManifest(failure, caps = {}) {
   const stage = (role, rationale) => {
     const p = chosen(caps, role);
     return { stage: role, provider: p.id, source: p.source, rationale, evidence: `failure: ${failure.signal}`, fallback: "inline" };
   };
-  const recs = [];
-  for (const r of ["debug", "implement", "test-author", "code-review"])
-    for (const rec of ((caps.roles && caps.roles[r] && caps.roles[r].recommendations) || []))
-      if (!recs.includes(rec)) recs.push(rec);
+  const recs = collectRecommendations(caps, ["debug", "implement", "test-author", "code-review"]);
   return {
     outcome: `Resolve: ${failure.signal}`,
     successCriteria: ["root cause identified", "fix applied", "regression test added", "suite green"],

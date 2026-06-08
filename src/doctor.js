@@ -1,10 +1,9 @@
 import { loadCatalog } from "./catalog.js";
 import { loadPipelines } from "./pipeline.js";
-import { readdir, stat } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-
-async function exists(p) { try { await stat(p); return true; } catch { return false; } }
+import { exists } from "./fs-util.js";
 
 export async function runDoctor({ root } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpProject } from "./helpers.js";
+import { tmpProject } from "../test-support/helpers.js";
 import { detectProject } from "../src/detect.js";
 import { scaffoldProject } from "../src/setup.js";
 import { renderPlanChecklist } from "../src/checklist.js";

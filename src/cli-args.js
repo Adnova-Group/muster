@@ -14,6 +14,23 @@ export function parseDomainArgs(rest) {
   return { override, outcome };
 }
 
+// Return the positional arg at `idx`, or invoke `fail(usage)` when it is missing.
+// Pure: the caller passes its own `fail` (cli.js's writes stderr + process.exit), so
+// this helper neither imports process nor decides how a missing arg is signalled —
+// it only enforces the presence check that ~7 dispatch branches were duplicating.
+export function requireArg(rest, idx, usage, fail) {
+  if (!rest[idx]) fail(usage);
+  return rest[idx];
+}
+
+// Optional `--flag value` lookup. Returns the token after `name`, or undefined when
+// the flag is absent or has no following value. Mirrors the `rest.indexOf('--flag');
+// rest[i+1]` idiom the dispatch branches repeat.
+export function flagValue(rest, name) {
+  const i = rest.indexOf(name);
+  return i >= 0 ? rest[i + 1] : undefined;
+}
+
 // Format a caught error for stderr: full stack under DEBUG, friendly message otherwise.
 export function formatError(e, env = process.env) {
   return env.DEBUG ? (e.stack || e.message) : e.message;

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { readInstalled } from "../src/harness.js";
-import { tmpProject } from "./helpers.js";
+import { tmpProject } from "../test-support/helpers.js";
 
 test("shipped catalog includes generated builtins + still validates", async () => {
   const entries = await loadCatalog(new URL("../catalog/", import.meta.url));

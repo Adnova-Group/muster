@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDomainArgs, formatError } from "../src/cli-args.js";
+import { parseDomainArgs, formatError, requireArg, flagValue } from "../src/cli-args.js";
 
 test("parseDomainArgs: --domain pm with no trailing outcome does not reuse pm as outcome", () => {
   const { override, outcome } = parseDomainArgs(["--domain", "pm"]);
@@ -30,6 +30,41 @@ test("parseDomainArgs: empty args -> empty outcome, no override", () => {
   const { override, outcome } = parseDomainArgs([]);
   assert.equal(override, undefined);
   assert.equal(outcome, "");
+});
+
+test("requireArg: returns the arg when present", () => {
+  let failed = false;
+  const v = requireArg(["a", "b.json"], 1, "usage", () => { failed = true; });
+  assert.equal(v, "b.json");
+  assert.equal(failed, false);
+});
+
+test("requireArg: invokes fail(usage) when the arg is missing", () => {
+  let msg = null;
+  requireArg(["a"], 1, "manifest validate <file>: missing file path", (m) => { msg = m; });
+  assert.equal(msg, "manifest validate <file>: missing file path");
+});
+
+test("requireArg: invokes fail when the arg is an empty string", () => {
+  let failed = false;
+  requireArg(["a", ""], 1, "usage", () => { failed = true; });
+  assert.equal(failed, true);
+});
+
+test("flagValue: returns the token after the flag", () => {
+  assert.equal(flagValue(["x", "--model", "rice"], "--model"), "rice");
+});
+
+test("flagValue: returns undefined when the flag is absent", () => {
+  assert.equal(flagValue(["x", "y"], "--model"), undefined);
+});
+
+test("flagValue: returns undefined when the flag has no following value", () => {
+  assert.equal(flagValue(["x", "--done"], "--done"), undefined);
+});
+
+test("flagValue: finds the flag regardless of position", () => {
+  assert.equal(flagValue(["--ci", "ci.txt", "extra"], "--ci"), "ci.txt");
 });
 
 test("formatError: friendly one-liner without DEBUG", () => {

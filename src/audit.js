@@ -1,3 +1,5 @@
+import { chosen, collectRecommendations } from "./crew.js";
+
 export const AUDIT_DIMENSIONS = [
   { id: "architecture", role: "architecture-review", focus: "system architecture, boundaries, coupling" },
   { id: "tech-debt", role: "tech-debt", focus: "tech debt, dead code, outdated patterns" },
@@ -6,10 +8,6 @@ export const AUDIT_DIMENSIONS = [
   { id: "readability", role: "code-review", focus: "human readability, maintainability" },
   { id: "security", role: "security-review", focus: "security audit (injection, secrets, unsafe IO)" }
 ];
-
-function chosen(caps, role) {
-  return (caps && caps.roles && caps.roles[role] && caps.roles[role].chosen) || { id: "inline", source: "inline" };
-}
 
 export function buildAuditManifest(caps = {}) {
   const stage = (role, rationale) => {
@@ -21,10 +19,7 @@ export function buildAuditManifest(caps = {}) {
   crew.push(stage("implement", "audit: remediate findings"));
   crew.push(stage("code-review", "audit: review-gate + verify"));
 
-  const recs = [];
-  for (const d of AUDIT_DIMENSIONS)
-    for (const rec of ((caps.roles && caps.roles[d.role] && caps.roles[d.role].recommendations) || []))
-      if (!recs.includes(rec)) recs.push(rec);
+  const recs = collectRecommendations(caps, AUDIT_DIMENSIONS.map(d => d.role));
 
   const auditTasks = AUDIT_DIMENSIONS.map(d => ({
     id: `audit-${d.id}`,

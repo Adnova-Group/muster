@@ -34,5 +34,23 @@ export async function runInstall({ home = homedir(), repoRoot } = {}) {
     action = "updated";
   }
 
-  return { style: { action, dest, source } };
+  // Registration guidance. Installing a plugin into Claude Code's cache is a CC action
+  // (the running session won't pick it up until the user reinstalls), so muster surfaces
+  // the exact steps rather than mutating CC's plugin state.
+  const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
+  const marketplace = await readIfExists(join(root, ".claude-plugin", "marketplace.json"));
+  const nextSteps = [];
+  if (marketplace) {
+    let mpName = "muster-local", pName = "muster";
+    try {
+      const mp = JSON.parse(marketplace);
+      if (mp.name) mpName = mp.name;
+      if (mp.plugins?.[0]?.name) pName = mp.plugins[0].name;
+    } catch { /* fall back to defaults */ }
+    nextSteps.push(`add the marketplace: /plugin marketplace add ${root}`);
+    nextSteps.push(`install the plugin: /plugin install ${pName}@${mpName}`);
+  }
+  nextSteps.push("enable the output style: /output-style muster");
+
+  return { style: { action, dest, source }, nextSteps };
 }

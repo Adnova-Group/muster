@@ -26,3 +26,11 @@ test("loads shipped pipelines and finds PRD by domain", async () => {
   assert.equal(prd.id, "prd");
   assert.ok(prd.phases.length >= 3);
 });
+test("business-case pipeline loads and resolves by domain + id", async () => {
+  const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
+  const byDomain = pipelineForDomain(ps, "business");
+  assert.equal(byDomain.id, "business-case");
+  assert.equal(byDomain.domain, "business");
+  assert.ok(byDomain.phases.length >= 3);
+  assert.ok(byDomain.gate.criteria.includes("roi"));
+});

@@ -10,6 +10,8 @@ import { tallyReview } from "./review.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { readFile } from "node:fs/promises";
+import { validateManifest as validateVendorManifest, runVendor } from "./vendor.js";
+import { parse as parseYaml } from "yaml";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -48,8 +50,17 @@ try {
   } else if (cmd === "pick") {
     if (!rest[0]) fail("pick <candidates.json>: missing file path");
     out(pickWinner(JSON.parse(await readFile(rest[0], "utf8"))));
+  } else if (cmd === "vendor") {
+    const manifestUrl = new URL("../vendor/manifest.yaml", import.meta.url);
+    const manifest = parseYaml(await readFile(manifestUrl, "utf8"));
+    const v = validateVendorManifest(manifest);
+    if (!v.ok) { v.errors.forEach(e => process.stderr.write(`manifest: ${e}\n`)); process.exit(2); }
+    const repoRoot = new URL("../", import.meta.url).pathname;
+    const res = await runVendor({ repoRoot, manifest });
+    res.warnings.forEach(w => process.stderr.write(`warn: ${w}\n`));
+    out({ vendored: res.count, warnings: res.warnings.length });
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor>`);
   }
 } catch (e) {
   fail(e.message);

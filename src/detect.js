@@ -1,31 +1,13 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { exists, readJson } from "./fs-util.js";
 
 const pexec = promisify(execFile);
 async function git(cwd, args) {
   try { const { stdout } = await pexec("git", args, { cwd }); return stdout.trim(); } catch { return null; }
 }
-
-// Returns parsed JSON, or null on absence/parse-failure (graceful degradation).
-// Distinguishes the two: ENOENT (genuinely absent) stays silent; a present-but-
-// unparseable file warns to stderr (fail loud) while still returning null.
-async function readJson(p) {
-  let raw;
-  try {
-    raw = await readFile(p, "utf8");
-  } catch {
-    return null; // absent (ENOENT) or unreadable — silent
-  }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    process.stderr.write(`muster: warning: ${p} is present but not valid JSON\n`);
-    return null;
-  }
-}
-async function exists(p) { try { await stat(p); return true; } catch { return false; } }
 
 const FRAMEWORKS = ["next", "react-native", "expo", "react", "vue", "svelte", "angular",
   "express", "fastify", "nestjs", "prisma", "vite"];

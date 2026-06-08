@@ -2,7 +2,12 @@
 // haiku: cheap/mechanical (locating, gathering). opus: heavy judgment (strategy, the tournament judge).
 // sonnet: the default for implementation, review, authoring, scoring.
 const HAIKU = new Set(["code-navigation", "docs-research", "research"]);
-const OPUS = new Set(["strategist", "judge", "architect", "architecture-review"]);
+// "judge" is an intentional conceptual role OUTSIDE the resolved ROLES enum
+// (roles.js): the tournament skill (plugin/skills/tournament/SKILL.md) dispatches
+// a "judge agent on opus" to score candidates. "architecture-review" is a
+// canonical ROLES member. Dead names (strategist, architect) removed — never
+// passed to modelForRole; muster-strategist is a provider id, not a role.
+const OPUS = new Set(["judge", "architecture-review"]);
 
 export function modelForRole(role) {
   if (HAIKU.has(role)) return "haiku";

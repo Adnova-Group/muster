@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tmpProject } from "./helpers.js";
+import { tmpProject } from "../test-support/helpers.js";
 
 test("tmpProject writes files", async () => {
   const dir = await tmpProject({ "package.json": { name: "x" } });

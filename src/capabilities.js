@@ -1,21 +1,6 @@
 import { modelForRole } from "./model.js";
-
-const ROLES = [
-  "code-navigation", "docs-research", "brainstorm", "plan", "implement",
-  "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug",
-  "author", "research", "score",
-  "architecture-review", "browser-control", "computer-control",
-  "performance", "seo", "humanize"
-];
-
-function isInstalled(entry, installed) {
-  if (entry.kind !== "external" || !entry.detect) return false;
-  // Match the detect name across ALL installed sources — a tool installed as a plugin often also
-  // provides an MCP server (e.g. serena, context7), and naming varies; detect.kind is a hint, not a filter.
-  const m = entry.detect.match;
-  return installed.plugins.includes(m) || installed.skills.includes(m) || installed.mcpServers.includes(m)
-    || (installed.agents || []).includes(m);
-}
+import { ROLES } from "./roles.js";
+import { isInstalled } from "./installed.js";
 
 // Dispatch type for a resolved provider: "agent" | "mcp" | "skill".
 function providerType(entry) {
@@ -34,21 +19,25 @@ export function resolveCapabilities(catalog, installed) {
     const forRole = catalog.filter(e => e.roles.includes(role)).sort((a, b) => b.rank - a.rank);
     const chain = [];
     let chosen = null;
+    let chosenRank = 0; // inline default: 0
     for (const e of forRole) {
+      let entry = null;
       if (e.kind === "external" && isInstalled(e, installed)) {
-        chain.push({ id: e.id, source: "installed", kind: providerType(e) });
-        if (!chosen) chosen = { id: e.id, source: "installed", kind: providerType(e) };
+        entry = { id: e.id, source: "installed", kind: providerType(e) };
       } else if (e.kind === "builtin" || e.kind === "agent") {
-        chain.push({ id: e.id, source: "builtin", kind: providerType(e) });
-        if (!chosen) chosen = { id: e.id, source: "builtin", kind: providerType(e) };
+        entry = { id: e.id, source: "builtin", kind: providerType(e) };
+      }
+      if (!entry) continue;
+      chain.push(entry);
+      if (!chosen) {
+        chosen = entry;
+        // first qualifying entry == chosen; capture its rank here (single pass).
+        chosenRank = entry.source === "installed" ? (e.rank ?? Infinity) : (e.rank ?? 0);
       }
     }
     if (!chosen) chosen = { id: "inline", source: "inline", kind: "inline" };
     chain.push({ id: "inline", source: "inline", kind: "inline" });
 
-    const chosenRank = chosen.source === "installed"
-      ? (forRole.find(e => e.id === chosen.id)?.rank ?? Infinity)
-      : (chosen.source === "builtin" ? (forRole.find(e => e.id === chosen.id)?.rank ?? 0) : 0);
     const recommendations = [];
     for (const e of forRole) {
       if (e.kind === "external" && e.recommended && !isInstalled(e, installed) && e.rank > chosenRank) {

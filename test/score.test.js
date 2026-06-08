@@ -33,6 +33,20 @@ test("non-finite score values are rejected before they can corrupt the gate", ()
     "null must be rejected");
 });
 
+test("empty / nullish input -> zeroed result, never throws, never passes", () => {
+  // An artifact with no scored dimensions must not pass the gate (there is
+  // nothing to clear the floor with) and must not crash the pipeline. The
+  // weakest must report a null criterion with value 0, and total 0.
+  const empty = scoreArtifact({}, { floor: 0, pass_total: 0 });
+  assert.deepEqual(empty, { total: 0, weakest: { criterion: null, value: 0 }, passing: false });
+  // null and undefined are coerced to {} via `scores || {}` — identical shape,
+  // no throw. A degenerate judge output must degrade gracefully, not poison.
+  assert.deepEqual(scoreArtifact(null, { floor: 0, pass_total: 0 }),
+    { total: 0, weakest: { criterion: null, value: 0 }, passing: false });
+  assert.deepEqual(scoreArtifact(undefined, { floor: 0, pass_total: 0 }),
+    { total: 0, weakest: { criterion: null, value: 0 }, passing: false });
+});
+
 test("tie for weakest -> first by insertion order wins (deterministic tie-break)", () => {
   // a and b both score the lowest (1). Strict `<` keeps the first-inserted one,
   // so the reported weakest must be deterministic and equal to insertion order.

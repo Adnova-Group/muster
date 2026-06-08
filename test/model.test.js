@@ -9,8 +9,10 @@ test("mechanical roles -> haiku", () => {
 });
 
 test("heavy-judgment roles -> opus", () => {
+  // "judge" is a conceptual non-enum role (tournament skill dispatches it on opus);
+  // "architecture-review" is the canonical ROLES member.
   assert.equal(modelForRole("judge"), "opus");
-  assert.equal(modelForRole("strategist"), "opus");
+  assert.equal(modelForRole("architecture-review"), "opus");
 });
 
 test("default role -> sonnet", () => {

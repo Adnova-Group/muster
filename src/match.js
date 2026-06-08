@@ -2,6 +2,8 @@
 // provider catalog's breadth (ids, roles, keywords, free-text descriptions) is searchable
 // without collapsing everything into the fixed role enum. Used by `muster match <task>`.
 
+import { isInstalled } from "./installed.js";
+
 const STOPWORDS = new Set([
   "the", "and", "for", "with", "this", "that", "a", "an", "to", "of", "it", "is", "in", "on",
 ]);
@@ -11,18 +13,6 @@ function tokenize(text) {
   if (typeof text !== "string") return [];
   return text.toLowerCase().split(/[^a-z0-9]+/)
     .filter(t => t.length >= 3 && !STOPWORDS.has(t));
-}
-
-// Mirror of capabilities.js isInstalled: match entry.detect.match across every installed
-// source (a tool installed as a plugin often also exposes an MCP server; naming varies, so
-// detect.kind is a hint, not a filter). Guard every installed array against undefined.
-function isInstalled(entry, installed) {
-  if (entry.kind !== "external" || !entry.detect?.match) return false;
-  const m = entry.detect.match;
-  return (installed.plugins || []).includes(m)
-    || (installed.skills || []).includes(m)
-    || (installed.mcpServers || []).includes(m)
-    || (installed.agents || []).includes(m);
 }
 
 export function matchProviders(task, catalog, installed = {}, opts = {}) {

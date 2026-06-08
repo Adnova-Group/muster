@@ -41,3 +41,31 @@ test("missing agents dir degrades to empty agents array", async () => {
   const r = await readInstalled(home);
   assert.deepEqual(r.agents, []);
 });
+
+test("merges agents from installed plugin agents dirs", async () => {
+  const home = await tmpProject({
+    ".claude/plugins/installed_plugins.json": {
+      version: 2, plugins: { "superpowers@official": [{}] }
+    },
+    // best-effort layout: ~/.claude/plugins/<plugin>/agents/*.md
+    ".claude/plugins/superpowers/agents/foo.md": "# foo agent",
+    // and a deeper cache-style layout: ~/.claude/plugins/cache/<marketplace>/<plugin>/agents/*.md
+    ".claude/plugins/cache/official/serena/agents/bar.md": "# bar agent",
+    // own top-level agents still work + dedupe
+    ".claude/agents/baz.md": "# baz agent"
+  });
+  const r = await readInstalled(home);
+  assert.ok(r.agents.includes("foo"), "plugin agent foo merged");
+  assert.ok(r.agents.includes("bar"), "deeper plugin agent bar merged");
+  assert.ok(r.agents.includes("baz"), "own top-level agent baz preserved");
+});
+
+test("missing plugin agents dirs degrade silently", async () => {
+  const home = await tmpProject({
+    ".claude/plugins/installed_plugins.json": {
+      version: 2, plugins: { "superpowers@official": [{}] }
+    }
+  });
+  const r = await readInstalled(home);
+  assert.deepEqual(r.agents, []);
+});

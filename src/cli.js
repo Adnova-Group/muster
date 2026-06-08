@@ -24,12 +24,14 @@ import { scoreArtifact } from "./score.js";
 import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { runInstall } from "./install.js";
 import { assessOutcome } from "./interview.js";
+import { parseDomainArgs, formatError } from "./cli-args.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
 
+async function main() {
 const [cmd, ...rest] = process.argv.slice(2);
 
 try {
@@ -88,10 +90,8 @@ try {
     const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
     out(pipelineForDomain(ps, rest[0]) || ps.find(p => p.id === rest[0]) || null);
   } else if (cmd === "domain") {
-    if (!rest[0]) fail("domain <outcome> [--domain x]: missing outcome");
-    const di = rest.indexOf("--domain");
-    const override = di >= 0 ? rest[di + 1] : undefined;
-    const outcome = rest.filter((r, i) => i !== di && i !== di + 1)[0] || rest[0];
+    const { override, outcome } = parseDomainArgs(rest);
+    if (!outcome) fail("domain <outcome> [--domain x]: missing outcome");
     out(classifyDomain(outcome, await detectProject(process.cwd()), override));
   } else if (cmd === "route") {
     if (!rest[0]) fail("route <outcome>: missing outcome");
@@ -135,5 +135,10 @@ try {
     fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|signals [dir]>`);
   }
 } catch (e) {
-  fail(e.message);
+  fail(formatError(e));
 }
+}
+
+// cli.js is the bin entry — run it. Pure helpers live in cli-args.js so tests
+// never need to import this file (which would trigger dispatch).
+await main();

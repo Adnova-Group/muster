@@ -32,3 +32,8 @@ test("readMemory returns entries matching a query substring", async () => {
 test("readMemory on empty dir returns []", async () => {
   assert.deepEqual(await readMemory(await dir(), "anything"), []);
 });
+
+test("readMemory on a missing dir returns [] (ENOENT -> absent, no throw)", async () => {
+  const missing = join(await dir(), "does", "not", "exist");
+  assert.deepEqual(await readMemory(missing, "anything"), []);
+});

@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateManifest } from "../src/vendor.js";
-import { toBuiltin } from "../src/vendor.js";
+import { validateManifest, toBuiltin, generateNotice } from "../src/vendor.js";
 
 test("validateManifest accepts a well-formed manifest", () => {
   const doc = { sources: [
@@ -66,8 +65,6 @@ test("toBuiltin keeps adapted_from on one line (no yaml wrapping)", () => {
   const line = r.content.split("\n").find(l => l.startsWith("adapted_from:"));
   assert.ok(line.includes("extremely-long-agent-name.md"), "adapted_from must be on a single unwrapped line");
 });
-
-import { generateNotice } from "../src/vendor.js";
 
 test("generateNotice lists each source repo + license once", () => {
   const entries = [

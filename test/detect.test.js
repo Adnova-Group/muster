@@ -47,6 +47,39 @@ test("unknown values never throw, reported as unknown", async () => {
   assert.equal(p.testRunner, "unknown");
 });
 
+test("malformed package.json degrades AND warns to stderr", async () => {
+  const dir = await tmpProject({ "package.json": "{ not valid json," });
+  const calls = [];
+  const orig = process.stderr.write;
+  process.stderr.write = (chunk, ...rest) => { calls.push(String(chunk)); return true; };
+  let p;
+  try {
+    p = await detectProject(dir);
+  } finally {
+    process.stderr.write = orig;
+  }
+  // graceful degradation: still returns a result, treated as no-pkg
+  assert.equal(p.greenfield, false);
+  assert.deepEqual(p.languages, []);
+  // fail loud: a warning was emitted mentioning the path
+  const warned = calls.join("");
+  assert.match(warned, /warning/);
+  assert.match(warned, /package\.json/);
+});
+
+test("absent package.json emits no warning", async () => {
+  const dir = await tmpProject({ "README.md": "# hi" });
+  const calls = [];
+  const orig = process.stderr.write;
+  process.stderr.write = (chunk, ...rest) => { calls.push(String(chunk)); return true; };
+  try {
+    await detectProject(dir);
+  } finally {
+    process.stderr.write = orig;
+  }
+  assert.equal(calls.join(""), "");
+});
+
 test("populates vcs from a real git repo", async () => {
   const dir = await tmpProject({ "package.json": { name: "x" }, "a.txt": "hi" });
   await pexec("git", ["init", "-q"], { cwd: dir });

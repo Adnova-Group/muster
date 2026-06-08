@@ -1,7 +1,13 @@
 import { readdir, readFile, writeFile, mkdir, stat, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 
-async function exists(p) { try { await stat(p); return true; } catch { return false; } }
+async function exists(p) {
+  try { await stat(p); return true; }
+  catch (err) {
+    if (err.code === "ENOENT" || err.code === "ENOTDIR") return false;
+    throw err;
+  }
+}
 
 export async function writeMemory(dir, entry) {
   await mkdir(dir, { recursive: true });

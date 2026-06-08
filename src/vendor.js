@@ -106,16 +106,16 @@ async function resolveSuperpowers(home) {
 
 async function fetchSourceRoot(source, home) {
   if (source.kind === "local") {
-    if (source.id === "superpowers") return await resolveSuperpowers(home);
-    return null;
+    if (source.id === "superpowers") return { root: await resolveSuperpowers(home) };
+    return { root: null };
   }
   const dir = join(tmpdir(), `muster-vendor-${source.id}`);
   try {
     await pexec("rm", ["-rf", dir]);
     await pexec("git", ["clone", "--depth", "1", "--branch", source.ref || "main",
       `https://github.com/${source.repo}.git`, dir]);
-    return dir;
-  } catch { return null; }
+    return { root: dir };
+  } catch (e) { return { root: null, error: e }; }
 }
 
 export async function runVendor({ home = homedir(), repoRoot = process.cwd(), manifest } = {}) {
@@ -123,8 +123,12 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
   const builtinEntries = [];
   const agentEntries = [];
   for (const source of manifest.sources) {
-    const root = await fetchSourceRoot(source, home);
-    if (!root) { warnings.push(`source ${source.id}: could not fetch (${source.kind})`); continue; }
+    const { root, error } = await fetchSourceRoot(source, home);
+    if (!root) {
+      const detail = error ? `: ${error.message}` : "";
+      warnings.push(`source ${source.id}: could not fetch (${source.kind})${detail}`);
+      continue;
+    }
     for (const item of source.items) {
       const srcPath = join(root, item.from);
       if (!(await exists(srcPath))) { warnings.push(`${source.id}: missing item ${item.from}`); continue; }

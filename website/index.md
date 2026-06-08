@@ -1,0 +1,38 @@
+---
+layout: home
+
+hero:
+  name: Muster
+  text: Glass-box agentic orchestrator for Claude Code
+  tagline: Give it an outcome. It detects your project, assembles the right crew, and shows its reasoning before it acts.
+  actions:
+    - theme: brand
+      text: Get Started
+      link: /guides/install
+    - theme: alt
+      text: How it works
+      link: /reference/concepts
+    - theme: alt
+      text: GitHub
+      link: https://github.com/Adnova-Group/muster
+
+features:
+  - icon: 🔍
+    title: Glass-box by design
+    details: Every routing decision is inspectable. Which role resolved to which provider, on which model, and why. The crew manifest shows the plan before any work begins.
+  - icon: 🧩
+    title: Multi-runtime
+    details: Composes the tools you already have (plugins, agents, MCP servers) and falls back to its own built-ins. Runs on bare Claude Code and gets better as you install more.
+  - icon: 🌐
+    title: Multi-domain
+    details: Not just code. Product, business, content, and operations pipelines are first-class. PRDs, roadmaps, launch plans, runbooks, and more.
+  - icon: ⚙️
+    title: Code over model
+    details: A deterministic Node CLI owns routing, scoring, and validation. No LLM calls. Reproducible by construction. The model is reserved for judgment.
+  - icon: 🚦
+    title: Four modes
+    details: Run plans and shows. Autopilot runs the full lifecycle hands-off. Diagnose fixes one bug failure-first. Audit sweeps the whole codebase.
+  - icon: 🔒
+    title: No extra services
+    details: No separate model API, no runtime to deploy, no keys to manage. It draws your interactive Claude Code subscription. If you can run Claude Code, you can run Muster.
+---

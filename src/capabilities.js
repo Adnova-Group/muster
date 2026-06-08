@@ -3,16 +3,16 @@ import { modelForRole } from "./model.js";
 const ROLES = [
   "code-navigation", "docs-research", "brainstorm", "plan", "implement",
   "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug",
-  "author", "research", "score"
+  "author", "research", "score",
+  "architecture-review", "browser-control", "computer-control"
 ];
 
 function isInstalled(entry, installed) {
   if (entry.kind !== "external" || !entry.detect) return false;
-  const { kind, match } = entry.detect;
-  if (kind === "plugin") return installed.plugins.includes(match);
-  if (kind === "skill") return installed.skills.includes(match);
-  if (kind === "mcp_server") return installed.mcpServers.includes(match);
-  return false;
+  // Match the detect name across ALL installed sources — a tool installed as a plugin often also
+  // provides an MCP server (e.g. serena, context7), and naming varies; detect.kind is a hint, not a filter.
+  const m = entry.detect.match;
+  return installed.plugins.includes(m) || installed.skills.includes(m) || installed.mcpServers.includes(m);
 }
 
 export function resolveCapabilities(catalog, installed) {

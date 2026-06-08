@@ -2,7 +2,7 @@
 // haiku: cheap/mechanical (locating, gathering). opus: heavy judgment (strategy, the tournament judge).
 // sonnet: the default for implementation, review, authoring, scoring.
 const HAIKU = new Set(["code-navigation", "docs-research", "research"]);
-const OPUS = new Set(["strategist", "judge", "architect"]);
+const OPUS = new Set(["strategist", "judge", "architect", "architecture-review"]);
 
 export function modelForRole(role) {
   if (HAIKU.has(role)) return "haiku";

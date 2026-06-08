@@ -1,3 +1,5 @@
+import { modelForRole } from "./model.js";
+
 const ROLES = [
   "code-navigation", "docs-research", "brainstorm", "plan", "implement",
   "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug",
@@ -40,7 +42,7 @@ export function resolveCapabilities(catalog, installed) {
         recommendations.push(`install ${e.id} for ${role} — better than the ${chosen.id} fallback`);
       }
     }
-    roles[role] = { chosen, chain, recommendations };
+    roles[role] = { chosen, chain, recommendations, model: modelForRole(role) };
   }
   return { roles, installedRaw: installed };
 }

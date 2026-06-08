@@ -1,6 +1,10 @@
 // Book-genesis floor principle: weakest dimension must clear `floor` AND total must clear `pass_total`.
 export function scoreArtifact(scores, gate = {}) {
   const entries = Object.entries(scores || {});
+  for (const [c, v] of entries) {
+    if (typeof v !== "number" || !Number.isFinite(v))
+      throw new Error(`scoreArtifact: score for "${c}" must be a finite number, got ${v}`);
+  }
   const total = entries.reduce((s, [, v]) => s + v, 0);
   let weakest = { criterion: null, value: entries.length ? Infinity : 0 };
   // Strict `<` means ties are broken by insertion order: the first criterion

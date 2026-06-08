@@ -12,6 +12,7 @@ phases:
   - { id: conversion-copy,  role: author,        desc: "landing page headline (AIDA), opt-in micro-copy, thank-you upsell CTA; spam-trigger check on follow-up email" }
   - { id: review,           role: code-review,   desc: "adversarial review gate" }
   - { id: score,            role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [audience-fit, value, actionability, headline-clarity, conversion-copy, design-readiness]
   floor: 2

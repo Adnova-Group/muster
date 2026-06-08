@@ -9,6 +9,7 @@ phases:
   - { id: acceptance,  role: author,      desc: "epic-level acceptance criteria + success metrics" }
   - { id: review,      role: code-review, desc: "adversarial review gate" }
   - { id: score,       role: score,       desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [narrative-clarity, scope-discipline, outcome-alignment, hypothesis-testability, acceptance-criteria, dependencies]
   floor: 2

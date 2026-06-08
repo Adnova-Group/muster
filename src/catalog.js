@@ -8,7 +8,7 @@ const ROLES = new Set([
   "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug",
   "author", "research", "score",
   "architecture-review", "browser-control", "computer-control",
-  "performance", "seo"
+  "performance", "seo", "humanize"
 ]);
 const DETECT_KINDS = new Set(["plugin", "skill", "mcp_server"]);
 

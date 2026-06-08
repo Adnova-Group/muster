@@ -9,6 +9,7 @@ phases:
   - { id: key-results,     role: author,      desc: "Verb + Metric from X to Y by Date; outcome KRs not output; baseline each" }
   - { id: review,          role: code-review, desc: "adversarial review + alignment check" }
   - { id: score,           role: score,       desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [outcome-not-output, measurability, stretch-graded, alignment, focus, baseline-present]
   floor: 2

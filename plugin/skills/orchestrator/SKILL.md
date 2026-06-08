@@ -26,5 +26,24 @@ Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the ou
    e. If the review gate escalates, stop and report to the user (do not start the next wave).
 3. After the last wave, summarize the run and ensure FOLLOWUPS are recorded.
 
+## Channel steering (remote)
+
+When the orchestrator is driven remotely (Channels wired), a steering message may arrive mid-run as a
+`<channel source="...">` event. Classify **every** such event deterministically with `classifySteer`
+(from `src/steer.js`) — do NOT free-interpret it. Map the returned action:
+
+- **approve** — treat as the human passing the current review gate: end the current `loopState`
+  fix-cycle as `done` and continue to the next wave.
+- **stop** — halt after the current in-flight wave completes (never abandon a wave mid-flight); write
+  the halt + current plan-checklist to STATE; reply through the channel that the run is stopped.
+- **status** — read-only: reply through the channel with the live `npx muster plan-checklist
+  .muster/manifest.json --done <completed ids>` rendering; do not change run state.
+- **retarget** — a scope change: do NOT silently re-scope the run; record it as a follow-up and reply
+  through the channel that it's been logged for the human to confirm (spec-as-current-truth: the
+  manifest stays the single source).
+- **unknown** — reply through the channel asking the human to rephrase (approve / stop / status /
+  retarget); take no action.
+
 Iron rules: never start wave k+1 before wave k passes the gate; never silently drop a failed task
-(record it in STATE); keep the manifest the single source (spec-as-current-truth).
+(record it in STATE); keep the manifest the single source (spec-as-current-truth); never let a channel
+event silently re-scope the run or abandon an in-flight wave.

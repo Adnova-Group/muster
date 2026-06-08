@@ -2,14 +2,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { ROLES as ROLE_LIST } from "./roles.js";
 
-const ROLES = new Set([
-  "code-navigation", "docs-research", "brainstorm", "plan", "implement",
-  "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug",
-  "author", "research", "score",
-  "architecture-review", "browser-control", "computer-control",
-  "performance", "seo", "humanize"
-]);
+const ROLES = new Set(ROLE_LIST);
 const DETECT_KINDS = new Set(["plugin", "skill", "mcp_server", "agent"]);
 
 export function validateCatalog(entries) {

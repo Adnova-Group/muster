@@ -1,9 +1,10 @@
 import { parse, stringify } from "yaml";
-import { readFile, writeFile, mkdir, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { exists } from "./fs-util.js";
 
 export function validateManifest(doc) {
   const errors = [];
@@ -92,7 +93,6 @@ export function generateNotice(builtinEntries) {
 }
 
 const pexec = promisify(execFile);
-async function exists(p) { try { await stat(p); return true; } catch { return false; } }
 
 async function resolveSuperpowers(home) {
   const base = join(home, ".claude/plugins/cache/claude-plugins-official/superpowers");

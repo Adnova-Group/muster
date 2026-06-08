@@ -1,6 +1,6 @@
-import { mkdir, writeFile, stat } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-async function exists(p) { try { await stat(p); return true; } catch { return false; } }
+import { exists } from "./fs-util.js";
 
 export async function initScratchpad(dir, runId) {
   const sp = join(dir, "scratchpad", runId);

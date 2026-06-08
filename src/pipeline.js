@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { parse } from "yaml";
+import { escapeRe } from "./keyword.js";
 
 export function validatePipeline(p) {
   const errors = [];
@@ -35,8 +36,6 @@ export function pipelineForDomain(pipelines, domain) {
   return pipelines.find(p => p.domain === domain && p.default)
     || pipelines.find(p => p.domain === domain) || null;
 }
-
-function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 // Select a pipeline by matching the outcome against each pipeline's `match` keywords
 // (word-boundary). Returns null if none match — callers fall back to pipelineForDomain.

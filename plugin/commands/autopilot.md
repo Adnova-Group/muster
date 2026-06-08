@@ -7,7 +7,7 @@ The outcome: `$ARGUMENTS`
 
 If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this hands-off run:
 
-1. **Branch** — create a work branch off the base (never run on the base branch).
+1. **Branch** — create a work branch off the base (never run on the base branch) — for full isolation, create a git worktree under `.worktrees/<branch>/` (per superpowers using-git-worktrees) so the main workspace stays clean; a plain branch is fine otherwise.
 2. **Detect** — `npx muster detect`. If `greenfield: true`, run the **greenfield** skill, then re-detect.
 3. **Route** — `npx muster capabilities` → invoke the **router** skill → validated Crew Manifest at
    `.muster/manifest.json` (`npx muster manifest validate` until ok).

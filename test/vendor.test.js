@@ -34,7 +34,7 @@ const source = { repo: "obra/superpowers", license: "MIT" };
 
 test("toBuiltin merges provenance frontmatter, preserves body", () => {
   const r = toBuiltin(src, item, source);
-  assert.equal(r.path, "plugin/skills/builtins/sp-brainstorm/SKILL.md");
+  assert.equal(r.path, "plugin/builtins/sp-brainstorm/SKILL.md");
   assert.match(r.content, /muster_builtin: true/);
   assert.match(r.content, /adapted_from: obra\/superpowers brainstorming\/SKILL.md/);
   assert.match(r.content, /license: MIT/);

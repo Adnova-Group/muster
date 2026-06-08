@@ -1,11 +1,19 @@
 {
   "name": "muster",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Glass-box agentic orchestrator: detect context, assemble the right crew, show the reasoning.",
   "author": {
     "name": "Adnova Group",
     "email": "rnbennett@gmail.com"
   },
   "license": "Apache-2.0",
-  "keywords": ["orchestrator", "agents", "routing", "glass-box", "autopilot", "pm", "domain-pipelines"]
+  "keywords": [
+    "orchestrator",
+    "agents",
+    "routing",
+    "glass-box",
+    "autopilot",
+    "pm",
+    "domain-pipelines"
+  ]
 }

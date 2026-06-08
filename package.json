@@ -8,7 +8,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "homepage": "https://github.com/Adnova-Group/muster#readme",
+  "homepage": "https://adnova-group.github.io/muster/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Adnova-Group/muster.git"

@@ -19,21 +19,25 @@ export function resolveCapabilities(catalog, installed) {
     const forRole = catalog.filter(e => e.roles.includes(role)).sort((a, b) => b.rank - a.rank);
     const chain = [];
     let chosen = null;
+    let chosenRank = 0; // inline default: 0
     for (const e of forRole) {
+      let entry = null;
       if (e.kind === "external" && isInstalled(e, installed)) {
-        chain.push({ id: e.id, source: "installed", kind: providerType(e) });
-        if (!chosen) chosen = { id: e.id, source: "installed", kind: providerType(e) };
+        entry = { id: e.id, source: "installed", kind: providerType(e) };
       } else if (e.kind === "builtin" || e.kind === "agent") {
-        chain.push({ id: e.id, source: "builtin", kind: providerType(e) });
-        if (!chosen) chosen = { id: e.id, source: "builtin", kind: providerType(e) };
+        entry = { id: e.id, source: "builtin", kind: providerType(e) };
+      }
+      if (!entry) continue;
+      chain.push(entry);
+      if (!chosen) {
+        chosen = entry;
+        // first qualifying entry == chosen; capture its rank here (single pass).
+        chosenRank = entry.source === "installed" ? (e.rank ?? Infinity) : (e.rank ?? 0);
       }
     }
     if (!chosen) chosen = { id: "inline", source: "inline", kind: "inline" };
     chain.push({ id: "inline", source: "inline", kind: "inline" });
 
-    const chosenRank = chosen.source === "installed"
-      ? (forRole.find(e => e.id === chosen.id)?.rank ?? Infinity)
-      : (chosen.source === "builtin" ? (forRole.find(e => e.id === chosen.id)?.rank ?? 0) : 0);
     const recommendations = [];
     for (const e of forRole) {
       if (e.kind === "external" && e.recommended && !isInstalled(e, installed) && e.rank > chosenRank) {

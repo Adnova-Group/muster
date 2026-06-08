@@ -6,7 +6,7 @@ import { scoreArtifact } from "../src/score.js";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { readInstalled } from "../src/harness.js";
-import { tmpProject } from "./helpers.js";
+import { tmpProject } from "../test-support/helpers.js";
 
 const PIPE = new URL("../pipelines/", import.meta.url);
 const newIds = ["book", "epic", "user-story", "launch-plan", "release-notes",

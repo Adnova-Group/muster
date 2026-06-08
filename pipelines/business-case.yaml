@@ -9,6 +9,7 @@ phases:
   - { id: draft,    role: author,        desc: "draft sections: problem, opportunity, options, financials/ROI, risks, recommendation" }
   - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate)" }
   - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [market-size, financials, roi, risk, feasibility, clarity]
   floor: 2

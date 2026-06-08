@@ -8,6 +8,7 @@ phases:
   - { id: acceptance, role: author,      desc: "Given/When/Then (Gherkin); happy path + 2+ edge/negative; INVEST testable" }
   - { id: review,     role: code-review, desc: "adversarial review gate" }
   - { id: score,      role: score,       desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [clarity, user-value, acceptance-criteria, testability, independence, estimable]
   floor: 2

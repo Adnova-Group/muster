@@ -14,3 +14,8 @@
   roles: [score]
   rank: 50
   provenance: { adapted_from: "Muster (floor-principle rubric scoring, book-genesis-inspired)", license: Apache-2.0 }
+- id: muster-humanizer
+  kind: builtin
+  roles: [humanize]
+  rank: 50
+  provenance: { adapted_from: "blader/humanizer + StealthHumanizer (AI-tell removal)", license: MIT }

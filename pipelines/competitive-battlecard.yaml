@@ -10,6 +10,7 @@ phases:
   - { id: objections,  role: author,      desc: "objection handling + proof points" }
   - { id: review,    role: code-review,   desc: "adversarial review + accuracy check" }
   - { id: score,     role: score,         desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [accuracy, differentiation, objection-coverage, single-page-fit, evidence]
   floor: 2

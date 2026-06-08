@@ -9,6 +9,7 @@ phases:
   - { id: draft,       role: author,        desc: "highlights first; group by category; frame as user benefit; flag breaking changes/deprecations" }
   - { id: review,      role: code-review,   desc: "adversarial review gate" }
   - { id: score,       role: score,         desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [clarity, completeness, user-impact, tone, structure, semver-consistency]
   floor: 2

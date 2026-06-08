@@ -10,6 +10,7 @@ phases:
   - { id: deliverability-preflight, role: author,       desc: "no ALL-CAPS/multi-! subject; no spam words (FREE, ACT NOW, $$$); plain-text version; unsubscribe link; consistent from-name; inbox-placement note" }
   - { id: review,                  role: code-review,   desc: "adversarial review + deliverability check" }
   - { id: score,                   role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
   criteria: [subject-line-quality, open-hook, value, scannability, cta, deliverability]
   floor: 2

@@ -9,10 +9,13 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
 
 1. **Branch** — create a work branch off the base (never run on the base branch) — for full isolation, create a git worktree under `.worktrees/<branch>/` (per superpowers using-git-worktrees) so the main workspace stays clean; a plain branch is fine otherwise.
 2. **Detect** — `npx muster detect`. If `greenfield: true`, run the **greenfield** skill, then re-detect.
-3. **Route** — `npx muster capabilities` → invoke the **router** skill → validated Crew Manifest at
-   `.muster/manifest.json` (`npx muster manifest validate` until ok). Dispatch honors each role's
-   resolved provider kind (`roles[<role>].chosen.kind`) — installed external agents first, then
-   muster's built-in agents, then skills — and always applies the role's `model`.
+3. **Route** — first close any info-gap: `npx muster assess "$ARGUMENTS"` → `{ clear, signals }`. In attended
+   mode, if `clear: false`, trigger the **interview** skill ONCE to enrich the outcome and gather
+   `successCriteria` before routing, then continue hands-off with the approved enriched outcome (unattended
+   handling is in the Routine subsection below). Then `npx muster capabilities` → invoke the **router** skill →
+   validated Crew Manifest at `.muster/manifest.json` (`npx muster manifest validate` until ok). Dispatch
+   honors each role's resolved provider kind (`roles[<role>].chosen.kind`) — installed external agents first,
+   then muster's built-in agents, then skills — and always applies the role's `model`.
 4. **Show the plan** — `npx muster plan-checklist .muster/manifest.json` and display it.
 5. **Orchestrate** — run the **orchestrator** skill over the manifest (waves, tournaments, review gate)
    **without pausing** at gates. Each wave loops until criteria are met via the Ralph loop (`loopState`
@@ -27,8 +30,9 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
 
 **Unattended (Routine) mode**
 
-When autopilot is fired by a Claude Code Routine (no interactive human present), steps 1–6 run identically. Step 7 is non-interactive:
+When autopilot is fired by a Claude Code Routine (no interactive human present), steps 1–6 run identically — except the step 3 info-gap check must **not** block (there is no human to interview). Step 7 is non-interactive:
 
+- On `npx muster assess` returning `clear: false`, **do not** trigger the interview. Record the gap (the `signals`) to the run report in STATE and proceed with best-effort defaults — autonomy still stops at the reviewable artifact (the PR), where the human can close the gap.
 - The merge **disposition** comes from the outcome text (e.g. "…then open a PR" / "…keep the branch"). **Default when no disposition is stated: open a Pull Request.**
 - **Never** auto-merge to a base branch and **never** push directly to main/master in unattended mode — autonomy stops at the reviewable artifact (the PR).
 - Escalations (fix-loop cap reached, tournament with no passing candidate) are written to the run report in STATE instead of blocking on an interactive prompt; the Routine result and any wired Channel can surface them to the human.

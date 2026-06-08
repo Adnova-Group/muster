@@ -20,9 +20,9 @@ npx muster install
 `install` copies Muster's output style to `~/.claude/output-styles/muster.md` (idempotent: it skips an identical file and backs up a different one to `.bak`), then prints the steps it cannot do for you:
 
 ```sh
-/plugin marketplace add <repo>      # register the local marketplace
-/plugin install muster@muster-local # install the plugin
-/output-style muster                # enable the glass-box voice
+/plugin marketplace add Adnova-Group/muster  # register the marketplace
+/plugin install muster@muster                # install the plugin
+/output-style muster                         # enable the glass-box voice
 ```
 
 Plugin install is a Claude Code action, so the running session picks Muster up only after you (re)install it through `/plugin`. Then run your first outcome:

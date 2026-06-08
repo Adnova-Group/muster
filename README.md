@@ -14,7 +14,7 @@ It runs on bare Claude Code with no extra services and no separate model API, an
 ## Quickstart
 
 ```sh
-npx muster install
+npx @adnova-group/muster install
 ```
 
 `install` copies Muster's output style to `~/.claude/output-styles/muster.md` (idempotent: it skips an identical file and backs up a different one to `.bak`), then prints the steps it cannot do for you:

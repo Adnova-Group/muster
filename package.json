@@ -1,10 +1,13 @@
 {
-  "name": "muster",
+  "name": "@adnova-group/muster",
   "version": "0.1.0",
   "description": "Glass-box agentic orchestrator: detects context, assembles the right crew, and shows its reasoning.",
   "license": "Apache-2.0",
   "author": "Adnova Group",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "homepage": "https://github.com/Adnova-Group/muster#readme",
   "repository": {
     "type": "git",

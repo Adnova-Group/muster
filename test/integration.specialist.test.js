@@ -39,6 +39,9 @@ test("every agent catalog entry has a searchable description", async () => {
 test("router skill + README document specialist matching", async () => {
   const router = await readFile(new URL("../plugin/skills/router/SKILL.md", import.meta.url), "utf8");
   assert.match(router, /muster match/, "router must use muster match");
+  // public docs: README + architecture deep-dive document specialist/description-search
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  assert.match(readme, /Specialist matching/, "README must document specialist matching");
+  const arch = await readFile(new URL("../docs/architecture.md", import.meta.url), "utf8");
+  assert.match(readme + arch, /specialist/i, "public docs must document specialist matching");
+  assert.match(readme + arch, /muster match|description-search/i, "public docs must mention the match ranker");
 });

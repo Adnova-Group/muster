@@ -3,9 +3,38 @@
   "version": "0.1.0",
   "description": "Glass-box agentic orchestrator: detects context, assembles the right crew, and shows its reasoning.",
   "license": "Apache-2.0",
+  "author": "Adnova Group",
   "type": "module",
+  "homepage": "https://github.com/OWNER/muster#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/muster.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OWNER/muster/issues"
+  },
+  "keywords": [
+    "orchestrator",
+    "agentic",
+    "ai",
+    "claude-code",
+    "cli",
+    "multi-agent",
+    "pipelines",
+    "glass-box"
+  ],
   "bin": { "muster": "src/cli.js" },
-  "files": ["src", "catalog", "plugin", "LICENSE", "NOTICE"],
+  "files": [
+    "src",
+    "plugin",
+    "catalog",
+    "pipelines",
+    "output-styles",
+    "vendor",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "engines": { "node": ">=20" },
   "scripts": { "test": "node --test" },
   "dependencies": { "yaml": "^2.5.0" }

@@ -16,11 +16,11 @@ test("autopilot documents an unattended Routine mode with safe finish defaults",
   assert.match(text, /escalat/i, "autopilot must say how escalations surface unattended");
 });
 
-test("README explains driving muster remotely over Claude Code's native transport", async () => {
-  const text = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  assert.match(text, /Driving muster remotely/, "README must have a remote section");
+test("public docs explain driving muster remotely over Claude Code's native transport", async () => {
+  // the remote-driving deep-dive lives in the architecture doc (the public README stays lean)
+  const text = await readFile(new URL("../docs/architecture.md", import.meta.url), "utf8");
   for (const feature of ["Routine", "Channel", "Remote Control"]) {
-    assert.match(text, new RegExp(feature, "i"), `README remote section must mention ${feature}`);
+    assert.match(text, new RegExp(feature, "i"), `architecture doc must mention ${feature}`);
   }
-  assert.match(text, /no remote-control transport of its own|rides/i, "README must state muster rides CC's transport, not its own");
+  assert.match(text, /Claude Code's own features|not a transport [Mm]uster ships|rides|native/i, "must state muster uses CC's transport, not its own");
 });

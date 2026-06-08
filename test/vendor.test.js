@@ -60,6 +60,13 @@ test("toBuiltin is idempotent", () => {
   assert.equal(toBuiltin(src, item, source).content, toBuiltin(src, item, source).content);
 });
 
+test("toBuiltin keeps adapted_from on one line (no yaml wrapping)", () => {
+  const longItem = { from: "plugins/some-very-long-marketplace-path/agents/extremely-long-agent-name.md", id: "wsh-x", roles: ["implement"] };
+  const r = toBuiltin("# x\nbody", longItem, { repo: "wshobson/agents", license: "MIT" });
+  const line = r.content.split("\n").find(l => l.startsWith("adapted_from:"));
+  assert.ok(line.includes("extremely-long-agent-name.md"), "adapted_from must be on a single unwrapped line");
+});
+
 import { generateNotice } from "../src/vendor.js";
 
 test("generateNotice lists each source repo + license once", () => {

@@ -1,9 +1,6 @@
 ---
 name: receiving-code-review
-description: Use when receiving code review feedback, before implementing
-  suggestions, especially if feedback seems unclear or technically questionable
-  - requires technical rigor and verification, not performative agreement or
-  blind implementation
+description: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation
 muster_builtin: true
 adapted_from: obra/superpowers receiving-code-review/SKILL.md
 license: MIT

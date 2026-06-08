@@ -1,12 +1,8 @@
 ---
 name: async-python-patterns
-description: Master Python asyncio, concurrent programming, and async/await
-  patterns for high-performance applications. Use when building async APIs,
-  concurrent systems, or I/O-bound applications requiring non-blocking
-  operations.
+description: Master Python asyncio, concurrent programming, and async/await patterns for high-performance applications. Use when building async APIs, concurrent systems, or I/O-bound applications requiring non-blocking operations.
 muster_builtin: true
-adapted_from: wshobson/agents
-  plugins/python-development/skills/async-python-patterns/SKILL.md
+adapted_from: wshobson/agents plugins/python-development/skills/async-python-patterns/SKILL.md
 license: MIT
 ---
 

@@ -1,12 +1,8 @@
 ---
 name: e2e-testing-patterns
-description: Master end-to-end testing with Playwright and Cypress to build
-  reliable test suites that catch bugs, improve confidence, and enable fast
-  deployment. Use when implementing E2E tests, debugging flaky tests, or
-  establishing testing standards.
+description: Master end-to-end testing with Playwright and Cypress to build reliable test suites that catch bugs, improve confidence, and enable fast deployment. Use when implementing E2E tests, debugging flaky tests, or establishing testing standards.
 muster_builtin: true
-adapted_from: wshobson/agents
-  plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md
+adapted_from: wshobson/agents plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md
 license: MIT
 ---
 

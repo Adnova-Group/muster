@@ -1,9 +1,6 @@
 ---
 name: dependency-upgrade
-description: Manage major dependency version upgrades with compatibility
-  analysis, staged rollout, and comprehensive testing. Use when upgrading
-  framework versions, updating major dependencies, or managing breaking changes
-  in libraries.
+description: Manage major dependency version upgrades with compatibility analysis, staged rollout, and comprehensive testing. Use when upgrading framework versions, updating major dependencies, or managing breaking changes in libraries.
 muster_builtin: true
 adapted_from: wshobson/agents plugins/framework-migration/skills/dependency-upgrade/SKILL.md
 license: MIT

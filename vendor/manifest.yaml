@@ -3,16 +3,150 @@ sources:
     kind: local
     repo: obra/superpowers
     license: MIT
-    items: []
-  - id: gsd
-    kind: github
-    repo: open-gsd/gsd-core
-    ref: main
-    license: MIT
-    items: []
+    items:
+      - from: brainstorming/SKILL.md
+        id: sp-brainstorm
+        roles: [brainstorm]
+      - from: writing-plans/SKILL.md
+        id: sp-plan
+        roles: [plan]
+      - from: test-driven-development/SKILL.md
+        id: sp-tdd
+        roles: [test-author]
+      - from: requesting-code-review/SKILL.md
+        id: sp-review
+        roles: [code-review]
+      - from: receiving-code-review/SKILL.md
+        id: sp-review-recv
+        roles: [code-review]
+      - from: systematic-debugging/SKILL.md
+        id: sp-debug
+        roles: [implement]
+      - from: verification-before-completion/SKILL.md
+        id: sp-verify
+        roles: [test-author]
+      - from: subagent-driven-development/SKILL.md
+        id: sp-subagents
+        roles: [plan]
+      - from: dispatching-parallel-agents/SKILL.md
+        id: sp-parallel
+        roles: [plan]
   - id: wshobson
     kind: github
     repo: wshobson/agents
     ref: main
     license: MIT
-    items: []
+    items:
+      # security-review
+      - from: plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md
+        id: wsh-stride-analysis-patterns
+        roles: [security-review]
+      - from: plugins/security-scanning/skills/attack-tree-construction/SKILL.md
+        id: wsh-attack-tree-construction
+        roles: [security-review]
+      - from: plugins/security-scanning/skills/sast-configuration/SKILL.md
+        id: wsh-sast-configuration
+        roles: [security-review]
+      - from: plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md
+        id: wsh-threat-mitigation-mapping
+        roles: [security-review]
+      - from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md
+        id: wsh-signed-audit-trails-recipe
+        roles: [security-review]
+      # code-review
+      - from: plugins/developer-essentials/skills/code-review-excellence/SKILL.md
+        id: wsh-code-review-excellence
+        roles: [code-review]
+      - from: plugins/agent-teams/skills/multi-reviewer-patterns/SKILL.md
+        id: wsh-multi-reviewer-patterns
+        roles: [code-review]
+      # test-author
+      - from: plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md
+        id: wsh-e2e-testing-patterns
+        roles: [test-author]
+      - from: plugins/javascript-typescript/skills/javascript-testing-patterns/SKILL.md
+        id: wsh-javascript-testing-patterns
+        roles: [test-author]
+      - from: plugins/python-development/skills/python-testing-patterns/SKILL.md
+        id: wsh-python-testing-patterns
+        roles: [test-author]
+      # frontend
+      - from: plugins/frontend-mobile-development/skills/nextjs-app-router-patterns/SKILL.md
+        id: wsh-nextjs-app-router-patterns
+        roles: [frontend]
+      - from: plugins/frontend-mobile-development/skills/react-state-management/SKILL.md
+        id: wsh-react-state-management
+        roles: [frontend]
+      - from: plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md
+        id: wsh-tailwind-design-system
+        roles: [frontend]
+      - from: plugins/ui-design/skills/design-system-patterns/SKILL.md
+        id: wsh-design-system-patterns
+        roles: [frontend]
+      # implement (backend/api/language)
+      - from: plugins/backend-development/skills/api-design-principles/SKILL.md
+        id: wsh-api-design-principles
+        roles: [implement]
+      - from: plugins/backend-development/skills/architecture-patterns/SKILL.md
+        id: wsh-architecture-patterns
+        roles: [implement]
+      - from: plugins/backend-development/skills/microservices-patterns/SKILL.md
+        id: wsh-microservices-patterns
+        roles: [implement]
+      - from: plugins/javascript-typescript/skills/typescript-advanced-types/SKILL.md
+        id: wsh-typescript-advanced-types
+        roles: [implement]
+      - from: plugins/javascript-typescript/skills/nodejs-backend-patterns/SKILL.md
+        id: wsh-nodejs-backend-patterns
+        roles: [implement]
+      - from: plugins/python-development/skills/python-design-patterns/SKILL.md
+        id: wsh-python-design-patterns
+        roles: [implement]
+      - from: plugins/python-development/skills/async-python-patterns/SKILL.md
+        id: wsh-async-python-patterns
+        roles: [implement]
+      - from: plugins/systems-programming/skills/go-concurrency-patterns/SKILL.md
+        id: wsh-go-concurrency-patterns
+        roles: [implement]
+      - from: plugins/developer-essentials/skills/debugging-strategies/SKILL.md
+        id: wsh-debugging-strategies
+        roles: [implement]
+      # refactor / tech-debt
+      - from: plugins/framework-migration/skills/react-modernization/SKILL.md
+        id: wsh-react-modernization
+        roles: [refactor]
+      - from: plugins/framework-migration/skills/dependency-upgrade/SKILL.md
+        id: wsh-dependency-upgrade
+        roles: [refactor]
+      - from: plugins/python-development/skills/python-anti-patterns/SKILL.md
+        id: wsh-python-anti-patterns
+        roles: [refactor]
+      # documentation / architecture
+      - from: plugins/documentation-generation/skills/architecture-decision-records/SKILL.md
+        id: wsh-architecture-decision-records
+        roles: [implement]
+      - from: plugins/documentation-generation/skills/openapi-spec-generation/SKILL.md
+        id: wsh-openapi-spec-generation
+        roles: [implement]
+      # accessibility (frontend)
+      - from: plugins/accessibility-compliance/skills/wcag-audit-patterns/SKILL.md
+        id: wsh-wcag-audit-patterns
+        roles: [frontend]
+      - from: plugins/ui-design/skills/responsive-design/SKILL.md
+        id: wsh-responsive-design
+        roles: [frontend]
+  - id: gsd
+    kind: github
+    repo: open-gsd/gsd-core
+    ref: main
+    license: MIT
+    items:
+      - from: gsd-core/workflows/plan-phase.md
+        id: gsd-plan-phase
+        roles: [plan]
+      - from: gsd-core/workflows/execute-phase.md
+        id: gsd-execute-phase
+        roles: [implement]
+      - from: gsd-core/workflows/verify-work.md
+        id: gsd-verify-work
+        roles: [plan]

@@ -17,6 +17,7 @@ import { renderPlanChecklist } from "./checklist.js";
 import { classifyDomain } from "./domain.js";
 import { loadPipelines, pipelineForDomain } from "./pipeline.js";
 import { scoreArtifact } from "./score.js";
+import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -86,8 +87,17 @@ try {
     const override = di >= 0 ? rest[di + 1] : undefined;
     const outcome = rest.filter((r, i) => i !== di && i !== di + 1)[0] || rest[0];
     out(classifyDomain(outcome, await detectProject(process.cwd()), override));
+  } else if (cmd === "diagnose") {
+    const ciIdx = rest.indexOf("--ci");
+    let input, ci = false;
+    if (ciIdx >= 0) { ci = true; if (!rest[ciIdx + 1]) fail("diagnose --ci <file>: missing file"); input = await readFile(rest[ciIdx + 1], "utf8"); }
+    else input = rest.join(" ");
+    if (!input || !input.trim()) fail("diagnose <symptom> | --ci <file>: missing input");
+    const failure = classifyFailure(input, { ci });
+    const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
+    out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|score <file>>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|score <file>|diagnose <symptom>|--ci <file>>`);
   }
 } catch (e) {
   fail(e.message);

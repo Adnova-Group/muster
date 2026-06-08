@@ -21,7 +21,7 @@ sources:
         roles: [code-review]
       - from: systematic-debugging/SKILL.md
         id: sp-debug
-        roles: [implement]
+        roles: [implement, debug]
       - from: verification-before-completion/SKILL.md
         id: sp-verify
         roles: [test-author]
@@ -110,7 +110,7 @@ sources:
         roles: [implement]
       - from: plugins/developer-essentials/skills/debugging-strategies/SKILL.md
         id: wsh-debugging-strategies
-        roles: [implement]
+        roles: [implement, debug]
       # refactor / tech-debt
       - from: plugins/framework-migration/skills/react-modernization/SKILL.md
         id: wsh-react-modernization

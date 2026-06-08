@@ -22,4 +22,13 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
 7. **Finish** — after the last wave, present merge options (finishing-a-development-branch). The single
    human decision. No auto-push.
 
+**Unattended (Routine) mode**
+
+When autopilot is fired by a Claude Code Routine (no interactive human present), steps 1–6 run identically. Step 7 is non-interactive:
+
+- The merge **disposition** comes from the outcome text (e.g. "…then open a PR" / "…keep the branch"). **Default when no disposition is stated: open a Pull Request.**
+- **Never** auto-merge to a base branch and **never** push directly to main/master in unattended mode — autonomy stops at the reviewable artifact (the PR).
+- Escalations (fix-loop cap reached, tournament with no passing candidate) are written to the run report in STATE instead of blocking on an interactive prompt; the Routine result and any wired Channel can surface them to the human.
+- The outcome is supplied via the Routine's `text` field (API `/fire`) or the saved Routine config — the same `$ARGUMENTS` slot, nothing extra to wire.
+
 Glass box: branch, each commit, escalations, and the ticking checklist are recorded in STATE.

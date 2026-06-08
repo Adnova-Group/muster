@@ -16,7 +16,7 @@ test("reads plugin ids from installed_plugins.json", async () => {
 test("missing files degrade to empty, never throw", async () => {
   const home = await tmpProject({});
   const r = await readInstalled(home);
-  assert.deepEqual(r, { plugins: [], skills: [], mcpServers: [] });
+  assert.deepEqual(r, { plugins: [], skills: [], mcpServers: [], agents: [] });
 });
 
 test("reads mcp servers from settings", async () => {
@@ -25,4 +25,19 @@ test("reads mcp servers from settings", async () => {
   });
   const r = await readInstalled(home);
   assert.deepEqual(r.mcpServers.sort(), ["context7", "serena"]);
+});
+
+test("reads installed agents from ~/.claude/agents/*.md", async () => {
+  const home = await tmpProject({
+    ".claude/agents/foo.md": "# foo agent",
+    ".claude/agents/bar.md": "# bar agent"
+  });
+  const r = await readInstalled(home);
+  assert.deepEqual(r.agents.sort(), ["bar", "foo"]);
+});
+
+test("missing agents dir degrades to empty agents array", async () => {
+  const home = await tmpProject({});
+  const r = await readInstalled(home);
+  assert.deepEqual(r.agents, []);
 });

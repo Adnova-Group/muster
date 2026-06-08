@@ -9,6 +9,8 @@
     "skills/tournament/SKILL.md",
     "skills/review-gate/SKILL.md",
     "skills/autopilot/SKILL.md",
-    "skills/greenfield/SKILL.md"
+    "skills/greenfield/SKILL.md",
+    "skills/domain-router/SKILL.md",
+    "skills/prd-pipeline/SKILL.md"
   ]
 }

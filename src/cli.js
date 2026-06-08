@@ -14,6 +14,9 @@ import { validateManifest as validateVendorManifest, runVendor } from "./vendor.
 import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
 import { renderPlanChecklist } from "./checklist.js";
+import { classifyDomain } from "./domain.js";
+import { loadPipelines, pipelineForDomain } from "./pipeline.js";
+import { scoreArtifact } from "./score.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -69,8 +72,22 @@ try {
     const di = rest.indexOf("--done");
     const done = di >= 0 && rest[di + 1] ? rest[di + 1].split(",") : [];
     process.stdout.write(renderPlanChecklist(m.plan || [], done) + "\n");
+  } else if (cmd === "score") {
+    if (!rest[0]) fail("score <file.json>: missing file path ({scores, gate})");
+    const { scores, gate } = JSON.parse(await readFile(rest[0], "utf8"));
+    out(scoreArtifact(scores, gate));
+  } else if (cmd === "pipeline") {
+    if (!rest[0]) fail("pipeline <domain|id>: missing arg");
+    const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
+    out(pipelineForDomain(ps, rest[0]) || ps.find(p => p.id === rest[0]) || null);
+  } else if (cmd === "domain") {
+    if (!rest[0]) fail("domain <outcome> [--domain x]: missing outcome");
+    const di = rest.indexOf("--domain");
+    const override = di >= 0 ? rest[di + 1] : undefined;
+    const outcome = rest.filter((r, i) => i !== di && i !== di + 1)[0] || rest[0];
+    out(classifyDomain(outcome, await detectProject(process.cwd()), override));
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|score <file>>`);
   }
 } catch (e) {
   fail(e.message);

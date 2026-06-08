@@ -13,7 +13,19 @@ function isInstalled(entry, installed) {
   // Match the detect name across ALL installed sources — a tool installed as a plugin often also
   // provides an MCP server (e.g. serena, context7), and naming varies; detect.kind is a hint, not a filter.
   const m = entry.detect.match;
-  return installed.plugins.includes(m) || installed.skills.includes(m) || installed.mcpServers.includes(m);
+  return installed.plugins.includes(m) || installed.skills.includes(m) || installed.mcpServers.includes(m)
+    || (installed.agents || []).includes(m);
+}
+
+// Dispatch type for a resolved provider: "agent" | "mcp" | "skill".
+function providerType(entry) {
+  if (entry.kind === "agent") return "agent";
+  if (entry.kind === "builtin") return "skill";
+  // external: derive from the detect hint.
+  const dk = entry.detect?.kind;
+  if (dk === "agent") return "agent";
+  if (dk === "mcp_server") return "mcp";
+  return "skill";
 }
 
 export function resolveCapabilities(catalog, installed) {
@@ -24,15 +36,15 @@ export function resolveCapabilities(catalog, installed) {
     let chosen = null;
     for (const e of forRole) {
       if (e.kind === "external" && isInstalled(e, installed)) {
-        chain.push({ id: e.id, source: "installed" });
-        if (!chosen) chosen = { id: e.id, source: "installed" };
-      } else if (e.kind === "builtin") {
-        chain.push({ id: e.id, source: "builtin" });
-        if (!chosen) chosen = { id: e.id, source: "builtin" };
+        chain.push({ id: e.id, source: "installed", kind: providerType(e) });
+        if (!chosen) chosen = { id: e.id, source: "installed", kind: providerType(e) };
+      } else if (e.kind === "builtin" || e.kind === "agent") {
+        chain.push({ id: e.id, source: "builtin", kind: providerType(e) });
+        if (!chosen) chosen = { id: e.id, source: "builtin", kind: providerType(e) };
       }
     }
-    if (!chosen) chosen = { id: "inline", source: "inline" };
-    chain.push({ id: "inline", source: "inline" });
+    if (!chosen) chosen = { id: "inline", source: "inline", kind: "inline" };
+    chain.push({ id: "inline", source: "inline", kind: "inline" });
 
     const chosenRank = chosen.source === "installed"
       ? (forRole.find(e => e.id === chosen.id)?.rank ?? Infinity)

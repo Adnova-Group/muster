@@ -18,3 +18,7 @@ test("workspace -> software when no keyword", () => {
 test("unknown when nothing matches", () => {
   assert.equal(classifyDomain("hello there", { shape: "unknown", greenfield: true }).domain, "unknown");
 });
+test("classifyDomain matches keywords on word boundaries, not substrings", () => {
+  assert.notEqual(classifyDomain("describe the epicenter of the outage").domain, "pm");
+  assert.notEqual(classifyDomain("write a functional walkthrough").domain, "software");
+});

@@ -74,6 +74,7 @@ export function toAgent(sourceText, item, source) {
     content,
     catalogEntry: {
       id: item.id, kind: "agent", roles: item.roles, rank: 50,
+      description: fm.description,
       provenance: { adapted_from, license: source.license }
     }
   };

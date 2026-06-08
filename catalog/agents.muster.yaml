@@ -6,24 +6,29 @@
   kind: agent
   roles: [implement]
   rank: 55
+  description: Surgical 1-2 file edits — typos, single-function rewrites, mechanical renames, one-callsite fixes. Hard-refuses anything touching 3+ files.
   provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
 - id: muster-builder
   kind: agent
   roles: [implement]
   rank: 56 # default implementer: cohesion-bounded, handles N files; outranks surgeon (refuses 3+)
+  description: Feature-checkpoint builder for one cohesive slice (endpoint + service + dto + test) across however many files it takes. Refuses cross-cutting or architecturally ambiguous work.
   provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
 - id: muster-reviewer
   kind: agent
   roles: [code-review]
   rank: 55
+  description: Read-only diff/branch reviewer. One severity-tagged line per finding, no praise, no scope creep. Re-runs the stated test signals and ends with an explicit verdict.
   provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
 - id: muster-investigator
   kind: agent
   roles: [code-navigation]
   rank: 55
+  description: Read-only code locator. Answers "where is X / what calls Y / map this dir" as a file:line table. Refuses to suggest fixes or speculate on design.
   provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
 - id: muster-strategist
   kind: agent
   roles: [architecture-review, plan]
   rank: 55
+  description: Read-only heavyweight reasoning — revise plans, audit specs/designs, surface hidden assumptions and tradeoffs. Answers "is this the right approach?", not "is this code correct?". Does not implement.
   provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }

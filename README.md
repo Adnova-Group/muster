@@ -13,3 +13,5 @@ Slice 2 (fan-out + review): `npx muster wave <manifest> | tally <verdicts> | pic
 Design: `docs/design/2026-06-07-muster-v2-fanout-review.md`
 
 Native built-ins: `npx muster vendor` imports curated upstream skills/agents (superpowers, gsd, wshobson) into `plugin/skills/builtins/` with attribution. Design: `docs/design/2026-06-07-muster-v3-native-builtins.md`
+
+Autopilot: `/muster-autopilot <outcome>` runs detect → (greenfield bootstrap) → route → waves → commit-per-wave → present merge. `npx muster setup` scaffolds a new repo; `npx muster plan-checklist <manifest>` renders ticking progress. Design: `docs/design/2026-06-07-muster-v4-autopilot-greenfield.md`

@@ -5,13 +5,13 @@
   "license": "Apache-2.0",
   "author": "Adnova Group",
   "type": "module",
-  "homepage": "https://github.com/OWNER/muster#readme",
+  "homepage": "https://github.com/Adnova-Group/muster#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/muster.git"
+    "url": "git+https://github.com/Adnova-Group/muster.git"
   },
   "bugs": {
-    "url": "https://github.com/OWNER/muster/issues"
+    "url": "https://github.com/Adnova-Group/muster/issues"
   },
   "keywords": [
     "orchestrator",

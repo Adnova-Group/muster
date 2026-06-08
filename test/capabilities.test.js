@@ -36,3 +36,12 @@ test("role with neither external nor builtin resolves to inline", () => {
   assert.deepEqual(a.roles["plan"].chosen, { id: "muster-planner", source: "builtin" });
   assert.deepEqual(a.roles["security-review"].chosen, { id: "inline", source: "inline" });
 });
+
+import { loadCatalog } from "../src/catalog.js";
+test("debug role resolves to a built-in on a bare machine (not inline)", async () => {
+  const cat = await loadCatalog(new URL("../catalog/", import.meta.url));
+  const a = resolveCapabilities(cat, { plugins: [], skills: [], mcpServers: [] });
+  assert.ok(a.roles["debug"], "debug role must exist");
+  assert.equal(a.roles["debug"].chosen.source, "builtin");
+  assert.notEqual(a.roles["debug"].chosen.id, "inline");
+});

@@ -29,7 +29,7 @@
   invoke: "dispatch the matching reviewer agent"
 - id: wshobson-agents
   kind: external
-  roles: [security-review, tech-debt]
+  roles: [security-review, tech-debt, debug]
   detect: { kind: plugin, match: agents }
   rank: 70
   recommended: true

@@ -1,14 +1,14 @@
 id: executive-summary
 domain: business
 title: Executive Summary
-match: [executive summary, exec summary, one-pager]
+match: [executive summary, exec summary, one-pager, board summary, leadership brief, memo]
 phases:
-  - { id: intake,    role: brainstorm,    desc: "the decision/ask, audience (exec), context" }
+  - { id: scqa,      role: brainstorm,    desc: "Minto SCQA: Situation/Complication/Question/Answer" }
   - { id: synthesis, role: docs-research, desc: "pull the few facts that matter; the bottom line" }
-  - { id: draft,     role: author,        desc: "draft: BLUF (bottom line up front), brief, decision-focused" }
+  - { id: draft,     role: author,        desc: "BLUF first sentence = ask + recommendation; <=1 page; pyramid principle" }
   - { id: review,    role: code-review,   desc: "adversarial review gate" }
   - { id: score,     role: score,         desc: "score vs rubric, floor principle" }
 gate:
-  criteria: [clarity, brevity, decision-focus, evidence, clear-ask]
+  criteria: [clarity, one-page-discipline, decision-focus, evidence, single-ask, audience-calibrated]
   floor: 2
-  pass_total: 12
+  pass_total: 14

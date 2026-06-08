@@ -1,14 +1,15 @@
 id: epic
 domain: pm
 title: Epic
-match: [epic, epics]
+match: [epic, epics, initiative, theme, capability epic]
 phases:
   - { id: intake,      role: brainstorm,  desc: "problem, outcome, scope, target users" }
-  - { id: breakdown,   role: author,      desc: "decompose into stories/deliverables; sequencing + dependencies" }
+  - { id: hypothesis,  role: brainstorm,  desc: "epic hypothesis: We believe [capability] for [persona] will achieve [outcome] measured by [metric]; JTBD framing" }
+  - { id: breakdown,   role: author,      desc: "Richard Lawrence story-splitting patterns + user-story-mapping; sequence by risk + dependency" }
   - { id: acceptance,  role: author,      desc: "epic-level acceptance criteria + success metrics" }
   - { id: review,      role: code-review, desc: "adversarial review gate" }
   - { id: score,       role: score,       desc: "score vs rubric, floor principle" }
 gate:
-  criteria: [clarity, scope-discipline, outcome-alignment, acceptance-criteria, dependencies]
+  criteria: [narrative-clarity, scope-discipline, outcome-alignment, hypothesis-testability, acceptance-criteria, dependencies]
   floor: 2
-  pass_total: 12
+  pass_total: 14

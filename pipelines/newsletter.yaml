@@ -1,14 +1,16 @@
 id: newsletter
 domain: newsletter
 title: Email Newsletter
+match: [newsletter, email newsletter, email digest, weekly roundup, broadcast email]
 phases:
-  - { id: intake,        role: brainstorm,    desc: "audience, goal, one theme, CTA" }
-  - { id: curate,        role: docs-research, desc: "gather items, links, and insights worth sending" }
-  - { id: draft,         role: author,        desc: "draft: strong open, scannable body, single clear CTA" }
-  - { id: subject-lines, role: author,        desc: "write 3+ subject lines + preview text; tournament-judge" }
-  - { id: review,        role: code-review,   desc: "adversarial review + deliverability check" }
-  - { id: score,         role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: intake,                  role: brainstorm,    desc: "audience, goal, one theme, CTA" }
+  - { id: curate,                  role: docs-research, desc: "gather items, links, and insights worth sending" }
+  - { id: draft,                   role: author,        desc: "draft: strong open, scannable body, single clear CTA" }
+  - { id: subject-lines,           role: author,        desc: "5+ subject lines: vary length (<=50 chars mobile), casing, curiosity type (number/question/personal); preview text <=37 chars; spam-trigger check; tournament-judge top 2" }
+  - { id: deliverability-preflight, role: author,       desc: "no ALL-CAPS/multi-! subject; no spam words (FREE, ACT NOW, $$$); plain-text version; unsubscribe link; consistent from-name; inbox-placement note" }
+  - { id: review,                  role: code-review,   desc: "adversarial review + deliverability check" }
+  - { id: score,                   role: score,         desc: "score vs rubric, apply floor principle" }
 gate:
-  criteria: [hook, value, scannability, cta, deliverability]
+  criteria: [subject-line-quality, open-hook, value, scannability, cta, deliverability]
   floor: 2
-  pass_total: 12
+  pass_total: 14

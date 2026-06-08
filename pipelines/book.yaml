@@ -1,18 +1,78 @@
 # Book pipeline — handles fiction AND non-fiction/business/self-improvement.
-# Phase structure inspired by book-genesis (felipelobomotta-blip/book-genesis-v4), generalized.
+# Phase structure inspired by book-genesis (felipelobomotta-blip/book-genesis-v4),
+# NousResearch/autonovel, Chapter Blog nonfiction outline, ProWritingAid,
+# Minto Pyramid/SCQA, StoryBrand SB7, and Before-After-Bridge.
 id: book
 domain: book
 title: Book
-match: [book, novel, manuscript, memoir, nonfiction book]
+match:
+  - book
+  - novel
+  - manuscript
+  - memoir
+  - nonfiction book
+  - self-help
+  - business book
+  - how-to book
+  - thought leadership
+  - narrative nonfiction
+  - prescriptive nonfiction
+  - guide
+  - personal development book
 phases:
-  - { id: intake,       role: brainstorm,    desc: "type (fiction|nonfiction), audience, premise/thesis, market, success metric" }
-  - { id: foundation,   role: author,        desc: "fiction: characters, theme, world; nonfiction: thesis, framework, promise, throughline" }
-  - { id: architecture, role: author,        desc: "outline + structure (chapters/acts or part/section progression)" }
-  - { id: drafting,     role: author,        desc: "draft chapter by chapter; consistent voice; concrete scenes/examples" }
-  - { id: audit,        role: code-review,   desc: "independent adversarial audit (structure, pacing, gaps) — blocks weak output" }
-  - { id: score,        role: score,         desc: "score vs rubric (Genesis-style), floor principle" }
-  - { id: editorial,    role: author,        desc: "editorial package: logline/blurb, positioning, next steps" }
+  - id: intake
+    role: brainstorm
+    desc: >-
+      Clarify: type (fiction|nonfiction), audience, premise/thesis, market, success metric.
+      Output: type declaration (fiction|nonfiction) + one-sentence reader-transformation promise
+      (nonfiction) OR premise/dramatic question (fiction).
+
+  - id: foundation
+    role: author
+    desc: >-
+      fiction: characters (want/wound/ghost), theme, world rules, POV.
+      nonfiction: thesis (Minto SCQA — Situation/Complication/Question/Answer), reader avatar,
+      core framework (one big idea + 3-5 pillars), transformation promise, throughline/red thread;
+      StoryBrand arc optional for self-help (hero=reader, guide=author).
+
+  - id: architecture
+    role: author
+    desc: >-
+      fiction: 3/5-act beat sheet (Save the Cat / Story Grid), scene-sequel pairs.
+      nonfiction: concept->proof->how->bridge chapter unit (Chapter Blog) or pyramid
+      (thesis->key ideas->evidence); validate every chapter advances the transformation
+      promise (no orphan chapters).
+
+  - id: drafting
+    role: author
+    desc: >-
+      Draft chapter by chapter; consistent voice; concrete scenes/examples.
+      nonfiction: each chapter = concept (one idea) + proof (case/story/data) + how (steps) + bridge;
+      track throughline continuity across chapters.
+
+  - id: audit
+    role: code-review
+    desc: "Independent adversarial audit (structure, pacing, gaps, orphan chapters, throughline breaks) — blocks weak output."
+
+  - id: score
+    role: score
+    desc: "Score vs rubric (Genesis-style), floor principle; flag any criterion below floor."
+
+  - id: editorial
+    role: author
+    desc: "Editorial package: logline/blurb, positioning, comp titles, next steps."
+
 gate:
-  criteria: [originality, structure, voice, clarity, coherence, market, hook, throughline]
+  criteria:
+    - structure
+    - voice
+    - clarity
+    - coherence
+    - throughline
+    - market
+    - originality
+    - hook
+    - evidence
+    - actionability
   floor: 2
-  pass_total: 18
+  pass_total: 20

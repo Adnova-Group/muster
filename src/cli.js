@@ -9,7 +9,11 @@ import { computeWaves } from "./wave.js";
 import { tallyReview } from "./review.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { runDoctor } from "./doctor.js";
+import { initScratchpad } from "./scratchpad.js";
+import { readProfile } from "./profile.js";
+import { buildSignals } from "./signals.js";
 import { validateManifest as validateVendorManifest, runVendor } from "./vendor.js";
 import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
@@ -103,8 +107,25 @@ try {
     const failure = classifyFailure(input, { ci });
     const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
     out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
+  } else if (cmd === "doctor") {
+    const r = await runDoctor({ root: new URL("../", import.meta.url) });
+    out(r);
+    if (!r.ok) process.exit(2);
+  } else if (cmd === "scratchpad") {
+    if (!rest[0]) fail("scratchpad <runId> [dir]: missing runId");
+    out(await initScratchpad(rest[1] || ".muster", rest[0]));
+  } else if (cmd === "profile") {
+    out(await readProfile());
+  } else if (cmd === "signals") {
+    const dir = rest[0] || process.cwd();
+    const profile = await detectProject(dir);
+    const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
+    const sig = buildSignals(profile, caps);
+    await mkdir(".muster", { recursive: true });
+    await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
+    out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|diagnose <symptom>|--ci <file>|doctor|scratchpad <runId>|profile|signals [dir]>`);
   }
 } catch (e) {
   fail(e.message);

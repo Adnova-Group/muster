@@ -7,6 +7,10 @@ The user's outcome: `$ARGUMENTS`
 
 If `$ARGUMENTS` is empty, ask for the outcome and stop — Muster never runs without a stated outcome.
 
+0. **Issue ref?** If `$ARGUMENTS` is a GitHub issue reference (`#N`, a bare number, or an issues URL), run
+   `npx muster issue "$ARGUMENTS"` and use the returned `outcome` (issue title + body) as the working
+   outcome for everything below. If `gh` fails (no remote / not authed / no such issue), report it and stop.
+   Otherwise `$ARGUMENTS` is the outcome as typed.
 1. Run `npx muster assess "$ARGUMENTS"` → `{ clear, signals }`. If `clear: false`, invoke the **interview**
    skill (the `signals` name the gaps) to enrich the outcome and gather `successCriteria` BEFORE detect/route.
    The interview's approved enriched outcome replaces `$ARGUMENTS` for the rest of this flow — it feeds the

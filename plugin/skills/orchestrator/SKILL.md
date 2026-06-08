@@ -17,6 +17,16 @@ Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the ou
         - `chosen.kind === "agent"` -> dispatch with that agent **as the subagent type**
           (the Agent tool's `subagent_type`/`agentType` = `chosen.id`), passing the task +
           the Crew Manifest as the BRIEF.
+          - **Generic-subagent fallback (degraded path):** if `chosen.id` is **not a dispatchable
+            type in the running session's registry** — e.g. the plugin's agents were installed after
+            the session started and have not been picked up yet (agent types become dispatchable only
+            after a Claude Code restart) — do **not** fail the task. Fall back to a **generic**
+            subagent (`subagent_type` = the harness default, e.g. `general-purpose`) and inject the
+            resolved provider's **brief** into the BRIEF, exactly as the skill/mcp branch below does.
+            The output is equivalent; only the specialist's own system prompt is skipped — the role's
+            `model` override (next bullet) is still applied, so model selection is never lost on the
+            fallback. Glass-box: note in STATE that the role ran via the generic fallback (agent type
+            unavailable in session) rather than its native specialist.
         - else (`kind` skill / mcp / inline) -> dispatch a **generic** subagent and inject the
           resolved provider (skill) into the BRIEF, as today.
       - **Model (authoritative, regardless of kind):** always pass `roles[<role>].model` from

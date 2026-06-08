@@ -17,3 +17,5 @@ Native built-ins: `npx muster vendor` imports curated upstream skills/agents (su
 Autopilot: `/muster-autopilot <outcome>` runs detect → (greenfield bootstrap) → route → waves → commit-per-wave → present merge. `npx muster setup` scaffolds a new repo; `npx muster plan-checklist <manifest>` renders ticking progress. Design: `docs/design/2026-06-07-muster-v4-autopilot-greenfield.md`
 
 Domain pipelines: Muster detects the work domain (`npx muster domain "<outcome>"`) and runs a phased pipeline — the first is PRD (`npx muster pipeline prd`), scored by a floor principle (`npx muster score`). PM/business work is first-class, not just code. Design: `docs/design/2026-06-07-muster-v5-domain-pipelines-prd.md`
+
+Diagnose (bug fix): `/muster:diagnose <symptom>` (or paste failing output) -> reproduce -> root cause (systematic debugging, via the best available `debug` provider) -> fix -> regression test -> verify. `npx muster diagnose` seeds the fix plan. Design: `docs/design/2026-06-07-muster-v6-diagnose.md`

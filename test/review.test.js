@@ -23,3 +23,20 @@ test("any blocker (single reviewer) -> blocked, lists it", () => {
 test("empty verdicts -> not blocked, zero counts", () => {
   assert.deepEqual(tallyReview([]), { blocked: false, blockers: [], counts: { blocker: 0, risk: 0, nit: 0 } });
 });
+
+test("unknown severity is skipped — outside the known set, must not touch counts or verdict", () => {
+  const r = tallyReview([
+    { reviewer: "x", findings: [
+      { severity: "critical", note: "not a recognized severity" },
+      { severity: "risk", note: "r" }
+    ] }
+  ]);
+  // "critical" is not in {blocker,risk,nit}: it must be ignored entirely so an
+  // unrecognized severity can never silently inflate a count or flip the gate.
+  assert.deepEqual(r.counts, { blocker: 0, risk: 1, nit: 0 },
+    "unknown severity 'critical' must not increment any known count");
+  assert.equal(r.blocked, false,
+    "unknown severity must not block — only 'blocker' blocks the gate");
+  assert.deepEqual(r.blockers, [],
+    "unknown severity must not be recorded as a blocker");
+});

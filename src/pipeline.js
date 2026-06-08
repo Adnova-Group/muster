@@ -13,8 +13,8 @@ export function validatePipeline(p) {
     if (!ph.id) errors.push(`pipeline.phases[${i}].id required`);
     if (!ph.role) errors.push(`pipeline.phases[${i}].role required`);
   });
-  if (!p.gate || !Array.isArray(p.gate.criteria) || typeof p.gate.floor !== "number")
-    errors.push("pipeline: gate.{criteria,floor} required");
+  if (!p.gate || !Array.isArray(p.gate.criteria) || typeof p.gate.floor !== "number" || typeof p.gate.pass_total !== "number")
+    errors.push("pipeline: gate.{criteria,floor,pass_total} required");
   return { ok: errors.length === 0, errors };
 }
 

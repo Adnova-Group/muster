@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 async function readJson(p) { try { return JSON.parse(await readFile(p, "utf8")); } catch { return null; } }
@@ -16,9 +16,16 @@ export async function readInstalled(home) {
 
   const skills = [];
 
+  const agents = [];
+  try {
+    const files = await readdir(join(home, ".claude/agents"));
+    for (const f of files) if (f.endsWith(".md")) agents.push(f.slice(0, -3));
+  } catch { /* dir may not exist */ }
+
   return {
     plugins: [...new Set(plugins)],
     skills: [...new Set(skills)],
-    mcpServers: [...new Set(mcpServers)]
+    mcpServers: [...new Set(mcpServers)],
+    agents: [...new Set(agents)]
   };
 }

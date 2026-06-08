@@ -12,8 +12,16 @@ Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the ou
    a. Dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task.
-      - **Model:** dispatch each agent with the model for its role from capabilities
-        (`muster capabilities` -> `roles[<role>].model`): mechanical roles (code-navigation,
+      - **Provider kind:** look up the role's chosen provider from capabilities
+        (`npx muster capabilities` -> `roles[<role>].chosen = { id, source, kind }`):
+        - `chosen.kind === "agent"` -> dispatch with that agent **as the subagent type**
+          (the Agent tool's `subagent_type`/`agentType` = `chosen.id`), passing the task +
+          the Crew Manifest as the BRIEF.
+        - else (`kind` skill / mcp / inline) -> dispatch a **generic** subagent and inject the
+          resolved provider (skill) into the BRIEF, as today.
+      - **Model (authoritative, regardless of kind):** always pass `roles[<role>].model` from
+        capabilities as the Agent tool's `model` **override** — this takes precedence over an
+        agent's own frontmatter model, so `modelForRole` governs: mechanical roles (code-navigation,
         docs-research, research) run on **haiku**, the default is **sonnet**, heavy judgment is **opus**.
         This keeps quota spend proportional to the work (Muster runs on your interactive subscription).
    b. BARRIER: wait for all wave tasks to finish.

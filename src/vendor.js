@@ -18,6 +18,8 @@ export function validateManifest(doc) {
       if (!it.id) errors.push(`sources[${i}].items[${j}].id: required`);
       if (!Array.isArray(it.roles) || it.roles.length === 0)
         errors.push(`sources[${i}].items[${j}].roles: required non-empty array`);
+      if (it.as !== undefined && it.as !== "agent" && it.as !== "skill")
+        errors.push(`sources[${i}].items[${j}].as: must be "agent" or "skill" when set`);
     });
   });
   return { ok: errors.length === 0, errors };
@@ -45,6 +47,33 @@ export function toBuiltin(sourceText, item, source) {
     content,
     catalogEntry: {
       id: item.id, kind: "builtin", roles: item.roles, rank: 50,
+      provenance: { adapted_from, license: source.license }
+    }
+  };
+}
+
+// Vendor an item marked `as: agent` into a muster `kind: agent` catalog entry.
+// Body goes to plugin/agents/<id>.md; catalog entry to catalog/agents.generated.yaml.
+// model tier: architecture-review → opus (heavy judgment); everything else → sonnet.
+export function toAgent(sourceText, item, source) {
+  const { data, body } = splitFrontmatter(sourceText);
+  const adapted_from = `${source.repo} ${item.from}`;
+  const model = item.model || (item.roles.includes("architecture-review") ? "opus" : "sonnet");
+  const fm = {
+    name: data.name || item.id,
+    description: data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
+    model,
+    tools: data.tools || "Read, Grep, Glob, Edit, Bash",
+    muster_builtin: true,
+    adapted_from,
+    license: source.license
+  };
+  const content = `---\n${stringify(fm, { lineWidth: 0 }).trim()}\n---\n\n${body.trim()}\n`;
+  return {
+    path: `plugin/agents/${item.id}.md`,
+    content,
+    catalogEntry: {
+      id: item.id, kind: "agent", roles: item.roles, rank: 50,
       provenance: { adapted_from, license: source.license }
     }
   };
@@ -91,7 +120,8 @@ async function fetchSourceRoot(source, home) {
 
 export async function runVendor({ home = homedir(), repoRoot = process.cwd(), manifest } = {}) {
   const warnings = [];
-  const allEntries = [];
+  const builtinEntries = [];
+  const agentEntries = [];
   for (const source of manifest.sources) {
     const root = await fetchSourceRoot(source, home);
     if (!root) { warnings.push(`source ${source.id}: could not fetch (${source.kind})`); continue; }
@@ -99,17 +129,26 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
       const srcPath = join(root, item.from);
       if (!(await exists(srcPath))) { warnings.push(`${source.id}: missing item ${item.from}`); continue; }
       const text = await readFile(srcPath, "utf8");
-      const { path, content, catalogEntry } = toBuiltin(text, item, source);
+      const isAgent = item.as === "agent";
+      const { path, content, catalogEntry } = isAgent
+        ? toAgent(text, item, source)
+        : toBuiltin(text, item, source);
       const abs = join(repoRoot, path);
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, content);
-      allEntries.push(catalogEntry);
+      (isAgent ? agentEntries : builtinEntries).push(catalogEntry);
     }
   }
+  const allEntries = [...builtinEntries, ...agentEntries];
   if (allEntries.length === 0) {
     return { count: 0, warnings: [...warnings, "no items vendored — refusing to overwrite NOTICE/builtins.generated.yaml"] };
   }
-  await writeFile(join(repoRoot, "catalog/builtins.generated.yaml"), stringify(allEntries, { lineWidth: 0 }));
+  // Only overwrite a generated catalog when we actually produced entries of that kind,
+  // so a partial/agent-only re-vendor can't clobber the other file on fetch failure.
+  if (builtinEntries.length > 0)
+    await writeFile(join(repoRoot, "catalog/builtins.generated.yaml"), stringify(builtinEntries, { lineWidth: 0 }));
+  if (agentEntries.length > 0)
+    await writeFile(join(repoRoot, "catalog/agents.generated.yaml"), stringify(agentEntries, { lineWidth: 0 }));
   await writeFile(join(repoRoot, "NOTICE"), generateNotice(allEntries));
-  return { count: allEntries.length, warnings };
+  return { count: allEntries.length, builtins: builtinEntries.length, agents: agentEntries.length, warnings };
 }

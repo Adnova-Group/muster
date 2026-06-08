@@ -195,6 +195,7 @@
   kind: builtin
   roles:
     - implement
+    - architecture-review
   rank: 50
   provenance:
     adapted_from: wshobson/agents plugins/backend-development/skills/architecture-patterns/SKILL.md
@@ -260,6 +261,7 @@
   kind: builtin
   roles:
     - refactor
+    - tech-debt
   rank: 50
   provenance:
     adapted_from: wshobson/agents plugins/framework-migration/skills/react-modernization/SKILL.md
@@ -268,6 +270,7 @@
   kind: builtin
   roles:
     - refactor
+    - tech-debt
   rank: 50
   provenance:
     adapted_from: wshobson/agents plugins/framework-migration/skills/dependency-upgrade/SKILL.md
@@ -276,6 +279,7 @@
   kind: builtin
   roles:
     - refactor
+    - tech-debt
   rank: 50
   provenance:
     adapted_from: wshobson/agents plugins/python-development/skills/python-anti-patterns/SKILL.md
@@ -284,6 +288,7 @@
   kind: builtin
   roles:
     - implement
+    - architecture-review
   rank: 50
   provenance:
     adapted_from: wshobson/agents plugins/documentation-generation/skills/architecture-decision-records/SKILL.md

@@ -41,7 +41,7 @@ export async function runInstall({ home = homedir(), repoRoot } = {}) {
   const marketplace = await readIfExists(join(root, ".claude-plugin", "marketplace.json"));
   const nextSteps = [];
   if (marketplace) {
-    let mpName = "muster-local", pName = "muster";
+    let mpName = "muster", pName = "muster";
     try {
       const mp = JSON.parse(marketplace);
       if (mp.name) mpName = mp.name;

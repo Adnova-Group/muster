@@ -10,6 +10,13 @@ async function exists(p) {
 }
 
 export async function writeMemory(dir, entry) {
+  for (const field of ["slug", "title", "outcome", "body"]) {
+    const v = entry?.[field];
+    if (typeof v !== "string" || v.length === 0)
+      throw new Error(`writeMemory: missing required field "${field}"`);
+  }
+  if (entry.slug.includes("/") || entry.slug.includes("\\") || entry.slug.includes(".."))
+    throw new Error(`writeMemory: invalid slug "${entry.slug}" (no path separators or ..)`);
   await mkdir(dir, { recursive: true });
   const links = (entry.links || []).map(l => `[[${l}]]`).join(" ");
   const md = `---

@@ -1,6 +1,6 @@
 {
   "name": "@adnova-group/muster",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Glass-box agentic orchestrator: detects context, assembles the right crew, and shows its reasoning.",
   "license": "Apache-2.0",
   "author": "Adnova Group",
@@ -26,7 +26,9 @@
     "pipelines",
     "glass-box"
   ],
-  "bin": { "muster": "src/cli.js" },
+  "bin": {
+    "muster": "src/cli.js"
+  },
   "files": [
     "src",
     "plugin",
@@ -38,7 +40,13 @@
     "LICENSE",
     "NOTICE"
   ],
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test" },
-  "dependencies": { "yaml": "^2.5.0" }
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  }
 }

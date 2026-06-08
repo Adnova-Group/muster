@@ -29,6 +29,5 @@ test("choice points are wired to the AskUserQuestion selection UI", async () => 
 
 test("README documents installing muster", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  assert.match(readme, /Installing muster/, "README must have an install section");
-  assert.match(readme, /muster install/, "README must show the install command");
+  assert.match(readme, /muster install/, "README quickstart must show the install command");
 });

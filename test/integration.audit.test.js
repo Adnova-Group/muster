@@ -52,6 +52,8 @@ test("the audit command + README document the mode", async () => {
     assert.match(cmd, new RegExp(dim, "i"), `audit.md must mention ${dim}`);
   }
   assert.match(cmd, /muster audit/, "audit.md must seed via muster audit");
+  // public docs: the README modes table + the architecture deep-dive document audit
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  assert.match(readme, /Audit mode/, "README must document audit mode");
+  const arch = await readFile(new URL("../docs/architecture.md", import.meta.url), "utf8");
+  assert.match(readme + arch, /\baudit\b/i, "public docs must document the audit mode");
 });

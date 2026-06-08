@@ -1,9 +1,6 @@
 ---
 name: responsive-design
-description: Implement modern responsive layouts using container queries, fluid
-  typography, CSS Grid, and mobile-first breakpoint strategies. Use when
-  building adaptive interfaces, implementing fluid layouts, or creating
-  component-level responsive behavior.
+description: Implement modern responsive layouts using container queries, fluid typography, CSS Grid, and mobile-first breakpoint strategies. Use when building adaptive interfaces, implementing fluid layouts, or creating component-level responsive behavior.
 muster_builtin: true
 adapted_from: wshobson/agents plugins/ui-design/skills/responsive-design/SKILL.md
 license: MIT

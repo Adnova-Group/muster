@@ -1,11 +1,8 @@
 ---
 name: microservices-patterns
-description: Design microservices architectures with service boundaries,
-  event-driven communication, and resilience patterns. Use when building
-  distributed systems, decomposing monoliths, or implementing microservices.
+description: Design microservices architectures with service boundaries, event-driven communication, and resilience patterns. Use when building distributed systems, decomposing monoliths, or implementing microservices.
 muster_builtin: true
-adapted_from: wshobson/agents
-  plugins/backend-development/skills/microservices-patterns/SKILL.md
+adapted_from: wshobson/agents plugins/backend-development/skills/microservices-patterns/SKILL.md
 license: MIT
 ---
 

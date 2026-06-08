@@ -1,11 +1,8 @@
 ---
 name: python-testing-patterns
-description: Implement comprehensive testing strategies with pytest, fixtures,
-  mocking, and test-driven development. Use when writing Python tests, setting
-  up test suites, or implementing testing best practices.
+description: Implement comprehensive testing strategies with pytest, fixtures, mocking, and test-driven development. Use when writing Python tests, setting up test suites, or implementing testing best practices.
 muster_builtin: true
-adapted_from: wshobson/agents
-  plugins/python-development/skills/python-testing-patterns/SKILL.md
+adapted_from: wshobson/agents plugins/python-development/skills/python-testing-patterns/SKILL.md
 license: MIT
 ---
 

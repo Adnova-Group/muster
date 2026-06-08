@@ -1,11 +1,8 @@
 ---
 name: nextjs-app-router-patterns
-description: Master Next.js 14+ App Router with Server Components, streaming,
-  parallel routes, and advanced data fetching. Use when building Next.js
-  applications, implementing SSR/SSG, or optimizing React Server Components.
+description: Master Next.js 14+ App Router with Server Components, streaming, parallel routes, and advanced data fetching. Use when building Next.js applications, implementing SSR/SSG, or optimizing React Server Components.
 muster_builtin: true
-adapted_from: wshobson/agents
-  plugins/frontend-mobile-development/skills/nextjs-app-router-patterns/SKILL.md
+adapted_from: wshobson/agents plugins/frontend-mobile-development/skills/nextjs-app-router-patterns/SKILL.md
 license: MIT
 ---
 

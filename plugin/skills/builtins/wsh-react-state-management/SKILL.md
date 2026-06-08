@@ -1,11 +1,8 @@
 ---
 name: react-state-management
-description: Master modern React state management with Redux Toolkit, Zustand,
-  Jotai, and React Query. Use when setting up global state, managing server
-  state, or choosing between state management solutions.
+description: Master modern React state management with Redux Toolkit, Zustand, Jotai, and React Query. Use when setting up global state, managing server state, or choosing between state management solutions.
 muster_builtin: true
-adapted_from: wshobson/agents
-  plugins/frontend-mobile-development/skills/react-state-management/SKILL.md
+adapted_from: wshobson/agents plugins/frontend-mobile-development/skills/react-state-management/SKILL.md
 license: MIT
 ---
 

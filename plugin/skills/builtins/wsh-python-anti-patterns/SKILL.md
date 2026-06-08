@@ -1,9 +1,6 @@
 ---
 name: python-anti-patterns
-description: Use this skill when reviewing Python code for common anti-patterns
-  to avoid. Use as a checklist when reviewing code, before finalizing
-  implementations, or when debugging issues that might stem from known bad
-  practices.
+description: Use this skill when reviewing Python code for common anti-patterns to avoid. Use as a checklist when reviewing code, before finalizing implementations, or when debugging issues that might stem from known bad practices.
 muster_builtin: true
 adapted_from: wshobson/agents plugins/python-development/skills/python-anti-patterns/SKILL.md
 license: MIT

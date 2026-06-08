@@ -39,7 +39,7 @@ export function toBuiltin(sourceText, item, source) {
     adapted_from,
     license: source.license
   };
-  const content = `---\n${stringify(fm).trim()}\n---\n\n${body.trim()}\n`;
+  const content = `---\n${stringify(fm, { lineWidth: 0 }).trim()}\n---\n\n${body.trim()}\n`;
   return {
     path: `plugin/skills/builtins/${item.id}/SKILL.md`,
     content,
@@ -106,7 +106,10 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
       allEntries.push(catalogEntry);
     }
   }
-  await writeFile(join(repoRoot, "catalog/builtins.generated.yaml"), stringify(allEntries));
+  if (allEntries.length === 0) {
+    return { count: 0, warnings: [...warnings, "no items vendored — refusing to overwrite NOTICE/builtins.generated.yaml"] };
+  }
+  await writeFile(join(repoRoot, "catalog/builtins.generated.yaml"), stringify(allEntries, { lineWidth: 0 }));
   await writeFile(join(repoRoot, "NOTICE"), generateNotice(allEntries));
   return { count: allEntries.length, warnings };
 }

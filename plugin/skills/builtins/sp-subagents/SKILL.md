@@ -1,7 +1,6 @@
 ---
 name: subagent-driven-development
-description: Use when executing implementation plans with independent tasks in
-  the current session
+description: Use when executing implementation plans with independent tasks in the current session
 muster_builtin: true
 adapted_from: obra/superpowers subagent-driven-development/SKILL.md
 license: MIT

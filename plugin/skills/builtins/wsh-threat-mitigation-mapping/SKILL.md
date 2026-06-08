@@ -1,11 +1,8 @@
 ---
 name: threat-mitigation-mapping
-description: Map identified threats to appropriate security controls and
-  mitigations. Use when prioritizing security investments, creating remediation
-  plans, or validating control effectiveness.
+description: Map identified threats to appropriate security controls and mitigations. Use when prioritizing security investments, creating remediation plans, or validating control effectiveness.
 muster_builtin: true
-adapted_from: wshobson/agents
-  plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md
+adapted_from: wshobson/agents plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md
 license: MIT
 ---
 

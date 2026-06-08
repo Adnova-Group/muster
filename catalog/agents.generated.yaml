@@ -1,0 +1,65 @@
+- id: wsh-backend-architect
+  kind: agent
+  roles:
+    - architecture-review
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/backend-development/agents/backend-architect.md
+    license: MIT
+- id: wsh-code-reviewer
+  kind: agent
+  roles:
+    - code-review
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/code-documentation/agents/code-reviewer.md
+    license: MIT
+- id: wsh-debugger
+  kind: agent
+  roles:
+    - debug
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/debugging-toolkit/agents/debugger.md
+    license: MIT
+- id: wsh-security-auditor
+  kind: agent
+  roles:
+    - security-review
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/backend-development/agents/security-auditor.md
+    license: MIT
+- id: wsh-frontend-developer
+  kind: agent
+  roles:
+    - frontend
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/frontend-mobile-development/agents/frontend-developer.md
+    license: MIT
+- id: wsh-test-automator
+  kind: agent
+  roles:
+    - test-author
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/backend-development/agents/test-automator.md
+    license: MIT
+- id: wsh-legacy-modernizer
+  kind: agent
+  roles:
+    - refactor
+    - tech-debt
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/framework-migration/agents/legacy-modernizer.md
+    license: MIT
+- id: wsh-docs-architect
+  kind: agent
+  roles:
+    - architecture-review
+  rank: 50
+  provenance:
+    adapted_from: wshobson/agents plugins/code-documentation/agents/docs-architect.md
+    license: MIT

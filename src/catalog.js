@@ -27,7 +27,7 @@ export function validateCatalog(entries) {
     else if (e.kind === "external" && e.detect && e.detect.kind && !DETECT_KINDS.has(e.detect.kind))
       errors.push(`${at}: unknown detect.kind "${e.detect.kind}" (must be plugin|skill|mcp_server|agent)`);
     if ((e.kind === "builtin" || e.kind === "agent") && (!e.provenance || !e.provenance.license))
-      errors.push(`${at}: ${e.kind} entry needs provenance.{adapted_from,license}`);
+      errors.push(`${at}: ${e.kind} entry needs provenance.license (adapted_from for vendored, inspired_by for clean-room)`);
   });
   return { ok: errors.length === 0, errors };
 }

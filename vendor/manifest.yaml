@@ -143,6 +143,41 @@ sources:
       - from: plugins/seo-technical-optimization/agents/seo-structure-architect.md
         id: wsh-seo-structure-architect
         roles: [seo]
+      # === Curated wshobson AGENTS (kind: agent, not skills) ===
+      # `as: agent` routes these to catalog/agents.generated.yaml + plugin/agents/<id>.md.
+      # Mapped to muster roles, one agent per role gap. perf + seo already vendored above — not duplicated.
+      - from: plugins/backend-development/agents/backend-architect.md
+        id: wsh-backend-architect
+        roles: [architecture-review]
+        as: agent
+      - from: plugins/code-documentation/agents/code-reviewer.md
+        id: wsh-code-reviewer
+        roles: [code-review]
+        as: agent
+      - from: plugins/debugging-toolkit/agents/debugger.md
+        id: wsh-debugger
+        roles: [debug]
+        as: agent
+      - from: plugins/backend-development/agents/security-auditor.md
+        id: wsh-security-auditor
+        roles: [security-review]
+        as: agent
+      - from: plugins/frontend-mobile-development/agents/frontend-developer.md
+        id: wsh-frontend-developer
+        roles: [frontend]
+        as: agent
+      - from: plugins/backend-development/agents/test-automator.md
+        id: wsh-test-automator
+        roles: [test-author]
+        as: agent
+      - from: plugins/framework-migration/agents/legacy-modernizer.md
+        id: wsh-legacy-modernizer
+        roles: [refactor, tech-debt]
+        as: agent
+      - from: plugins/code-documentation/agents/docs-architect.md
+        id: wsh-docs-architect
+        roles: [architecture-review]
+        as: agent
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

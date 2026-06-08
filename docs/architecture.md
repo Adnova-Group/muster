@@ -104,6 +104,10 @@ Orchestration loops until done via a Ralph-style primitive (`src/loop.js`: `loop
 
 Driving Muster remotely uses Claude Code's own features, not a transport Muster ships. A Claude Code Routine can fire `/muster:autopilot` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session when a human wants to take over.
 
+## Session hook
+
+Muster's always-on guidance is delivered by a plugin-native `SessionStart` hook in `plugin/hooks/` rather than a global `CLAUDE.md`. A Claude Code plugin cannot auto-load a `CLAUDE.md`, but a `SessionStart` hook can return `additionalContext`, which Claude Code prepends to the session. The hook script is self-contained (only Node builtins, no import from `src/`, since the plugin ships only `plugin/`). It emits the working principles, the four verbs, and a dependency-free project sniff of the current directory. Because the hook is declared in the plugin (`plugin/hooks/hooks.json`, discovered at the conventional path), it activates when muster is enabled and is removed when muster is disabled. It never writes to the user's `~/.claude` files. The script is fail-safe: any error returns a minimal valid result and exits cleanly, so a session always starts.
+
 ## Vendoring
 
 Muster ships a curated set of built-in skills and agents, imported from upstream projects rather than hand-copied. `vendor/manifest.yaml` lists every source (repository, license, ref) and the specific items pulled from each, mapped to the Muster roles they serve. `muster vendor` generates the built-ins into `plugin/` and writes provenance into `NOTICE`.

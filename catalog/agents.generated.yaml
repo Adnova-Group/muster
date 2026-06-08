@@ -3,6 +3,7 @@
   roles:
     - architecture-review
   rank: 50
+  description: Expert backend architect specializing in scalable API design, microservices architecture, and distributed systems. Masters REST/GraphQL/gRPC APIs, event-driven architectures, service mesh patterns, and modern backend frameworks. Handles service boundary definition, inter-service communication, resilience patterns, and observability. Use PROACTIVELY when creating new backend services or APIs.
   provenance:
     adapted_from: wshobson/agents plugins/backend-development/agents/backend-architect.md
     license: MIT
@@ -11,6 +12,7 @@
   roles:
     - code-review
   rank: 50
+  description: Elite code review expert specializing in modern AI-powered code analysis, security vulnerabilities, performance optimization, and production reliability. Masters static analysis tools, security scanning, and configuration review with 2024/2025 best practices. Use PROACTIVELY for code quality assurance.
   provenance:
     adapted_from: wshobson/agents plugins/code-documentation/agents/code-reviewer.md
     license: MIT
@@ -19,6 +21,7 @@
   roles:
     - debug
   rank: 50
+  description: Debugging specialist for errors, test failures, and unexpected behavior. Use proactively when encountering any issues.
   provenance:
     adapted_from: wshobson/agents plugins/debugging-toolkit/agents/debugger.md
     license: MIT
@@ -27,6 +30,7 @@
   roles:
     - security-review
   rank: 50
+  description: Review code and architecture for security vulnerabilities, OWASP Top 10, auth flaws, and compliance issues. Use for security review during feature development.
   provenance:
     adapted_from: wshobson/agents plugins/backend-development/agents/security-auditor.md
     license: MIT
@@ -35,6 +39,7 @@
   roles:
     - frontend
   rank: 50
+  description: Build React components, implement responsive layouts, and handle client-side state management. Masters React 19, Next.js 15, and modern frontend architecture. Optimizes performance and ensures accessibility. Use PROACTIVELY when creating UI components or fixing frontend issues.
   provenance:
     adapted_from: wshobson/agents plugins/frontend-mobile-development/agents/frontend-developer.md
     license: MIT
@@ -43,6 +48,7 @@
   roles:
     - test-author
   rank: 50
+  description: Create comprehensive test suites including unit, integration, and E2E tests. Supports TDD/BDD workflows. Use for test creation during feature development.
   provenance:
     adapted_from: wshobson/agents plugins/backend-development/agents/test-automator.md
     license: MIT
@@ -52,6 +58,7 @@
     - refactor
     - tech-debt
   rank: 50
+  description: Refactor legacy codebases, migrate outdated frameworks, and implement gradual modernization. Handles technical debt, dependency updates, and backward compatibility. Use PROACTIVELY for legacy system updates, framework migrations, or technical debt reduction.
   provenance:
     adapted_from: wshobson/agents plugins/framework-migration/agents/legacy-modernizer.md
     license: MIT
@@ -60,6 +67,7 @@
   roles:
     - architecture-review
   rank: 50
+  description: Creates comprehensive technical documentation from existing codebases. Analyzes architecture, design patterns, and implementation details to produce long-form technical manuals and ebooks. Use PROACTIVELY for system documentation, architecture guides, or technical deep-dives.
   provenance:
     adapted_from: wshobson/agents plugins/code-documentation/agents/docs-architect.md
     license: MIT

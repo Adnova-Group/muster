@@ -1,0 +1,15 @@
+id: blog-post
+domain: blog
+title: Blog Post
+phases:
+  - { id: intake,   role: brainstorm,    desc: "audience, search intent, angle, target keyword, success metric" }
+  - { id: research, role: docs-research, desc: "evidence, sources, competitor posts, E-E-A-T signals" }
+  - { id: outline,  role: author,        desc: "hook + section outline (problem -> insight -> proof -> action)" }
+  - { id: draft,    role: author,        desc: "draft sections one at a time; concrete examples; scannable structure" }
+  - { id: edit,     role: author,        desc: "tighten prose, voice consistency, readability, headings, internal links" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate" }
+  - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
+gate:
+  criteria: [hook, clarity, value, originality, structure, evidence, cta]
+  floor: 2
+  pass_total: 16

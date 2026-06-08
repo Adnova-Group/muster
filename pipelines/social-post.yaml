@@ -1,0 +1,13 @@
+id: social-post
+domain: social
+title: Social Media Post
+phases:
+  - { id: intake,   role: brainstorm,  desc: "platform, audience, goal, one core idea, CTA" }
+  - { id: angle,    role: author,      desc: "choose an angle + framework (AIDA / PAS / BAB / QUEST)" }
+  - { id: variants, role: author,      desc: "write 3+ hook/post variants; tournament-judge the strongest" }
+  - { id: review,   role: code-review, desc: "adversarial review + platform-fit check" }
+  - { id: score,    role: score,       desc: "score vs rubric, apply floor principle" }
+gate:
+  criteria: [hook, clarity, brand-fit, platform-fit, cta]
+  floor: 2
+  pass_total: 12

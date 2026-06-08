@@ -1,0 +1,14 @@
+id: runbook
+domain: ops
+title: Operations Runbook
+phases:
+  - { id: intake,     role: brainstorm,  desc: "scope, trigger, owners, prerequisites" }
+  - { id: steps,      role: author,      desc: "numbered, copy-pasteable steps; expected output for each" }
+  - { id: validation, role: author,      desc: "verification checks + success criteria per step" }
+  - { id: rollback,   role: author,      desc: "rollback / abort procedure + safety notes" }
+  - { id: review,     role: code-review, desc: "adversarial review + dry-run check" }
+  - { id: score,      role: score,       desc: "score vs rubric, apply floor principle" }
+gate:
+  criteria: [completeness, clarity, safety, validation, rollback]
+  floor: 2
+  pass_total: 12

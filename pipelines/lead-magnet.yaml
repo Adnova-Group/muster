@@ -1,0 +1,15 @@
+id: lead-magnet
+domain: marketing
+title: Lead Magnet
+phases:
+  - { id: intake,       role: brainstorm,    desc: "ICP, pain, promise, format (checklist/ebook/template), conversion goal" }
+  - { id: research,     role: docs-research, desc: "audience evidence, competitor magnets, proof points" }
+  - { id: outline,      role: author,        desc: "value outline: quick win + depth; lead-capture placement" }
+  - { id: draft,        role: author,        desc: "draft the asset; actionable, skimmable, on-brand" }
+  - { id: design-brief, role: author,        desc: "layout/design brief + CTA + landing-page copy" }
+  - { id: review,       role: code-review,   desc: "adversarial review gate" }
+  - { id: score,        role: score,         desc: "score vs rubric, apply floor principle" }
+gate:
+  criteria: [audience-fit, value, actionability, lead-capture, design-readiness]
+  floor: 2
+  pass_total: 12

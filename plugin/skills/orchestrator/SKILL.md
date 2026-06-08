@@ -31,7 +31,9 @@ Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the ou
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx muster plan-checklist .muster/manifest.json
       --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.
-   e. If the review gate escalates, stop and report to the user (do not start the next wave).
+   e. If the review gate escalates (fix-loop cap, or a tournament with no passing candidate), stop and do
+      not start the next wave. Present the resolution choices via the **AskUserQuestion** selection UI —
+      e.g. **Retry with more context** / **Re-scope the task** / **Abort the run**.
 3. After the last wave, summarize the run and ensure FOLLOWUPS are recorded.
 
 ## Channel steering (remote)

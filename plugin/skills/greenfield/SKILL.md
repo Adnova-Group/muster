@@ -17,3 +17,5 @@ Use when `muster detect` reports `greenfield: true` (empty dir / no project).
    flow.
 
 Iron rule: no implementation before a design + plan exist (same gate as superpowers/atomic).
+
+When asking the user to choose (e.g. confirm scaffolding, pick a project type), use the **AskUserQuestion** selection UI.

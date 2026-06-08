@@ -1,8 +1,23 @@
 ---
-name: muster-autopilot
-description: Hands-off full-lifecycle run on a stated outcome. Usage: /muster-autopilot <outcome>
+name: autopilot
+description: "Hands-off full lifecycle. Plans THEN executes end to end: branch, route, run waves (parallel fan-out + tournaments + adversarial review gate), commit per wave, then present merge. Only stops for the merge decision or an escalation. (vs /muster:run, which only plans and shows.) Usage: /muster:autopilot <outcome>"
 ---
 
 The outcome: `$ARGUMENTS`
 
-If empty, ask for the outcome and stop. Otherwise invoke the **autopilot** skill with this outcome.
+If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this hands-off run:
+
+1. **Branch** — create a work branch off the base (never run on the base branch).
+2. **Detect** — `npx muster detect`. If `greenfield: true`, run the **greenfield** skill, then re-detect.
+3. **Route** — `npx muster capabilities` → invoke the **router** skill → validated Crew Manifest at
+   `.muster/manifest.json` (`npx muster manifest validate` until ok).
+4. **Show the plan** — `npx muster plan-checklist .muster/manifest.json` and display it.
+5. **Orchestrate** — run the **orchestrator** skill over the manifest (waves, tournaments, review gate)
+   **without pausing** at gates. After each green + reviewed wave: commit (`feat(wave N): <summary>`)
+   and re-render the checklist with completed ids (`--done …`) into the run STATE.
+6. **Escalation** — if a review gate escalates (fix-loop cap) or a tournament has no passing candidate,
+   STOP and report the unresolved items; the branch stays intact.
+7. **Finish** — after the last wave, present merge options (finishing-a-development-branch). The single
+   human decision. No auto-push.
+
+Glass box: branch, each commit, escalations, and the ticking checklist are recorded in STATE.

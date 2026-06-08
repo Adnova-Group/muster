@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdtemp } from "node:fs/promises";
+import { readFile, mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,16 +8,21 @@ import { runInstall } from "../src/install.js";
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 
-test("runInstall puts the output style under ~/.claude and returns next steps", async () => {
+test("runInstall surfaces plugin registration without mutating ~/.claude", async () => {
   const home = await mkdtemp(join(tmpdir(), "muster-install-"));
   const r = await runInstall({ home, repoRoot: REPO });
-  assert.equal(r.style.action, "copied");
-  const installed = await readFile(join(home, ".claude/output-styles/muster.md"), "utf8");
-  const source = await readFile(join(REPO, "output-styles/muster.md"), "utf8");
-  assert.equal(installed, source, "installed style must match the repo's output style");
-  // next steps must cover both the style enable and the plugin registration
-  assert.ok(r.nextSteps.some(s => /\/output-style muster/.test(s)), "must tell the user to enable the style");
+  // The style ships in the plugin (force-for-plugin), so install copies nothing.
+  assert.equal(r.outputStyle.source, "plugin");
+  assert.equal(r.outputStyle.autoApplied, true);
+  assert.deepEqual(await readdir(home), [], "install must not write under ~/.claude");
+  // next steps cover plugin registration, and never the removed /output-style command
   assert.ok(r.nextSteps.some(s => /\/plugin install/.test(s)), "must tell the user to install the plugin");
+  assert.ok(!r.nextSteps.some(s => /\/output-style/.test(s)), "must not reference the removed /output-style command");
+});
+
+test("the plugin ships the output style with force-for-plugin auto-apply", async () => {
+  const style = await readFile(new URL("../plugin/output-styles/muster.md", import.meta.url), "utf8");
+  assert.match(style, /force-for-plugin:\s*true/, "plugin style must auto-apply when enabled");
 });
 
 test("choice points are wired to the AskUserQuestion selection UI", async () => {

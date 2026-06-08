@@ -21,15 +21,14 @@ It runs on bare Claude Code with no extra services and no separate model API, an
 npx @adnova-group/muster install
 ```
 
-`install` copies Muster's output style to `~/.claude/output-styles/muster.md` (idempotent: it skips an identical file and backs up a different one to `.bak`), then prints the steps it cannot do for you:
+`install` mutates nothing in your `~/.claude`. It just prints the steps it cannot do for you, because registering a plugin is a Claude Code action:
 
 ```sh
 /plugin marketplace add Adnova-Group/muster  # register the marketplace
 /plugin install muster@muster                # install the plugin
-/output-style muster                         # enable the glass-box voice
 ```
 
-Plugin install is a Claude Code action, so the running session picks Muster up only after you (re)install it through `/plugin`. Then run your first outcome:
+Muster's glass-box output style ships inside the plugin and applies automatically when the plugin is enabled (`force-for-plugin`), so there is no command to run. Plugin install is a Claude Code action, so the running session picks Muster up only after you (re)install it through `/plugin`. Restart or `/clear`, then run your first outcome:
 
 ```
 /muster:run Add rate limiting to the public API with tests

@@ -64,7 +64,6 @@ try {
     hookSpecificOutput: {
       hookEventName: EVENT,
       additionalContext: buildContext(process.cwd()),
-      sessionTitle: "muster",
     },
   });
 } catch {

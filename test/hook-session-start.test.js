@@ -38,7 +38,7 @@ test("session-start hook: Node project in git repo emits full guidance", async (
   const parsed = JSON.parse(stdout);
   const out = parsed.hookSpecificOutput;
   assert.equal(out.hookEventName, "SessionStart");
-  assert.equal(out.sessionTitle, "muster");
+  assert.ok(!("sessionTitle" in out), "must not override the session title");
 
   const ctx = out.additionalContext;
   assert.equal(typeof ctx, "string");

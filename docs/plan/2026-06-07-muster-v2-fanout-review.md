@@ -36,7 +36,7 @@ test/
 
 **Shared shapes (slice 2):**
 ```js
-// plan task (manifest):     { id: string, task: string, mode: "single"|"tournament", deps: string[], note?: string }
+// plan task (manifest):     { id: string, task: string, mode: "single"|"tournament", deps?: string[], note?: string }  // deps optional; omitted == []
 // wave output:              waves: Array<Array<planTask>>   // wave k: all deps satisfied by waves < k
 // reviewer verdict:         { reviewer: string, findings: [{ severity: "blocker"|"risk"|"nit", note: string }] }
 // tally output:             { blocked: boolean, blockers: [{reviewer,note}], counts: {blocker,risk,nit} }

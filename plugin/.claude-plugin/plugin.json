@@ -2,11 +2,13 @@
   "name": "muster",
   "description": "Glass-box agentic orchestrator: detect context, assemble the right crew, show the reasoning.",
   "version": "0.1.0",
-  "commands": ["commands/muster.md"],
+  "commands": ["commands/muster.md", "commands/autopilot.md"],
   "skills": [
     "skills/router/SKILL.md",
     "skills/orchestrator/SKILL.md",
     "skills/tournament/SKILL.md",
-    "skills/review-gate/SKILL.md"
+    "skills/review-gate/SKILL.md",
+    "skills/autopilot/SKILL.md",
+    "skills/greenfield/SKILL.md"
   ]
 }

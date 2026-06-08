@@ -3,7 +3,7 @@ import { detectProject } from "./detect.js";
 import { loadCatalog } from "./catalog.js";
 import { readInstalled } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
-import { validateManifest } from "./manifest.js";
+import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves } from "./wave.js";
 import { tallyReview } from "./review.js";
@@ -52,7 +52,8 @@ try {
     const file = requireArg(rest, 1, "manifest validate <file>: missing file path", fail);
     const obj = JSON.parse(await readFile(file, "utf8"));
     const r = validateManifest(obj);
-    out(r);
+    const warnings = manifestWarnings(obj);
+    out(warnings.length ? { ...r, warnings } : r);
     if (!r.ok) process.exit(2);
   } else if (cmd === "memory" && rest[0] === "write") {
     const dir = requireArg(rest, 1, "memory write <dir> <entry.json>: missing args", fail);

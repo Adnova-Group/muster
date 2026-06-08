@@ -17,6 +17,11 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
    validated Crew Manifest at `.muster/manifest.json` (`npx muster manifest validate` until ok). Dispatch
    honors each role's resolved provider kind (`roles[<role>].chosen.kind`) — installed external agents first,
    then muster's built-in agents, then skills — and always applies the role's `model`.
+   **Build the crew FROM `npx muster capabilities` — never hand-author crew providers.** If `manifest
+   validate` fails or emits a `warnings` entry (e.g. an all-inline crew), fix the *inputs* — run the
+   interview for `successCriteria`, re-resolve capabilities — do **not** patch the crew to `inline` to
+   force `ok:true`. An all-inline crew means routing was bypassed (builtins resolve `implement ->
+   muster-builder`), so the run silently degrades to in-context work with no specialists.
 4. **Show the plan** — `npx muster plan-checklist .muster/manifest.json` and display it.
 5. **Orchestrate** — run the **orchestrator** skill over the manifest (waves, tournaments, review gate)
    **without pausing** at gates. Each wave loops until criteria are met via the Ralph loop (`loopState`

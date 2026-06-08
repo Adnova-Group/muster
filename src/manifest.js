@@ -32,3 +32,20 @@ export function validateManifest(m) {
   }
   return { ok: errors.length === 0, errors };
 }
+
+// Non-fatal advisories: a manifest can be structurally VALID yet signal a likely mistake.
+// An all-inline crew almost always means capability resolution was skipped — builtins (e.g.
+// `implement -> muster-builder`) resolve for nearly every role, so a hand-authored inline-only
+// crew silently bypasses routing and runs everything in-context. muster fails loud, so surface it.
+export function manifestWarnings(m) {
+  const warnings = [];
+  const crew = Array.isArray(m?.crew) ? m.crew : [];
+  if (crew.length > 0 && crew.every((c) => c && c.source === "inline")) {
+    warnings.push(
+      "crew: every member is source:inline — capability resolution was likely skipped. " +
+        "Build the crew from `npx muster capabilities` (builtins resolve roles like `implement -> muster-builder`); " +
+        "a hand-authored all-inline crew bypasses routing."
+    );
+  }
+  return warnings;
+}

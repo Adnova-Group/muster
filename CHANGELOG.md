@@ -5,6 +5,32 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-06-09
+
+### Added
+
+- **In-session drift reinforcement (`UserPromptSubmit` hook).** A new plugin-native hook
+  re-asserts muster mode on a turn cadence so a session stops reverting to default inline Claude
+  behavior. Short nudge every `N` turns (`MUSTER_NUDGE_EVERY`, default 3); full
+  principles + verbs every `N·K` turns (`MUSTER_PRINCIPLES_EVERY`, default 3). Per-session turn
+  counter in `os.tmpdir()`; fully self-contained and fail-safe (always valid JSON, exit 0).
+  Compaction still re-fires `SessionStart` as a backstop.
+- **Default-routing posture (`ROUTING_POLICY`).** Injected guidance now states that, in a
+  muster repo, actionable prompts should be driven through the verbs (and copy/content through the
+  humanizer) by default, while conversational turns fall through — no need to prefix every task
+  with `/muster`. Carried in the `SessionStart` payload, the periodic full payload, and a condensed
+  clause in the short nudge.
+- **Orchestrator iron rule against inline crew-dispatch drift.** `plugin/skills/orchestrator`
+  now leads with a rule that each wave task MUST be dispatched to its resolved provider via the
+  Agent tool before any edit, with an announce-to-STATE requirement so inline work is auditable.
+  Documented as steering, not a hard gate (a harness-level `PreToolUse` block is the real fix).
+
+### Changed
+
+- **Shared `plugin/hooks/guidance.js` is the single source of truth.** `session-start.js` was
+  refactored to consume `PRINCIPLES`/`VERBS`/`ROUTING_POLICY`/`detect` from it instead of inlining
+  the text, so the two hooks can never drift apart.
+
 ## [0.2.2] - 2026-06-08
 
 ### Added

@@ -13,6 +13,6 @@ Drive the audit loop:
 4. **Consolidate** — dedupe + rank all findings into a single ledger (by severity, then blast radius). Record the ledger in STATE (glass box).
 5. **Fix all** — via the orchestrator + Ralph loop: remediate every finding, TDD (failing test first where behavior changes). Defer an item only with an explicit written reason in the ledger. Keep the suite green per fix.
 6. **Verify** — run the **review-gate** + the full suite; must be green. Confirm no regressions.
-7. **Escalate** if the fix-loop cap is hit on an item (record it in the ledger, continue the others). Then present the merge decision (finishing-a-development-branch) via the **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**.
+7. **Escalate** if the fix-loop cap is hit on an item (record it in the ledger, continue the others). Then present the merge decision via the **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**.
 
 Reuses the orchestrator + review-gate; glass box records the per-dimension providers + the findings ledger. (vs `/muster:diagnose`, which is failure-first single-bug; audit is breadth-first whole-codebase.)

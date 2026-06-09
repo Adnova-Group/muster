@@ -1,23 +1,51 @@
 import { parse, stringify } from "yaml";
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, sep } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
 import { modelForRole, maxTier, MODEL_TIER_ORDER } from "./model.js";
 
+// Allowlist of tools vendored agent frontmatter may reference.
+// Derived from the tools lines in plugin/agents/wsh-*.md (all use the same set)
+// plus additional Claude built-ins that are safe to expose to sub-agents.
+const ALLOWED_TOOLS = new Set([
+  "Read", "Grep", "Glob", "Edit", "Write", "Bash",
+  "WebFetch", "WebSearch", "TodoWrite", "NotebookRead",
+  "KillShell", "BashOutput"
+]);
+const DEFAULT_TOOLS = "Read, Grep, Glob, Edit, Bash";
+
+const ID_RE = /^[a-zA-Z0-9_-]+$/;
+const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const REF_RE = /^[A-Za-z0-9_.\/~^-]+$/;
+
 export function validateVendorManifest(doc) {
   const errors = [];
   if (!doc || !Array.isArray(doc.sources)) return { ok: false, errors: ["manifest.sources must be an array"] };
   doc.sources.forEach((s, i) => {
-    if (!s.id) errors.push(`sources[${i}].id: required`);
+    if (!s.id) {
+      errors.push(`sources[${i}].id: required`);
+    } else if (!ID_RE.test(s.id)) {
+      errors.push(`sources[${i}].id: invalid — must match /^[a-zA-Z0-9_-]+$/`);
+    }
     if (!s.license) errors.push(`sources[${i}].license: required`);
     if (!["local", "github"].includes(s.kind)) errors.push(`sources[${i}].kind: must be local|github`);
+    if (s.repo !== undefined && !REPO_RE.test(s.repo))
+      errors.push(`sources[${i}].repo: invalid — must be owner/name (alphanumeric, dash, dot, underscore only)`);
+    if (s.ref !== undefined) {
+      if (!REF_RE.test(s.ref) || s.ref.startsWith("-"))
+        errors.push(`sources[${i}].ref: invalid — must not start with "-" and may only contain alphanumeric, _./${String.fromCharCode(126)}^- chars`);
+    }
     if (!Array.isArray(s.items)) errors.push(`sources[${i}].items: must be an array`);
     else s.items.forEach((it, j) => {
       if (!it.from) errors.push(`sources[${i}].items[${j}].from: required`);
-      if (!it.id) errors.push(`sources[${i}].items[${j}].id: required`);
+      if (!it.id) {
+        errors.push(`sources[${i}].items[${j}].id: required`);
+      } else if (!ID_RE.test(it.id)) {
+        errors.push(`sources[${i}].items[${j}].id: invalid — must match /^[a-zA-Z0-9_-]+$/`);
+      }
       if (!Array.isArray(it.roles) || it.roles.length === 0)
         errors.push(`sources[${i}].items[${j}].roles: required non-empty array`);
       if (it.as !== undefined && it.as !== "agent" && it.as !== "skill")
@@ -81,11 +109,16 @@ export function toAgent(sourceText, item, source) {
   // item.model is an explicit manifest pin (trusted as-is); otherwise derive from
   // roles via the single policy source (src/model.js), floored at sonnet.
   const model = item.model || modelForRoles(item.roles);
+  const filteredTools = (() => {
+    if (!data.tools) return DEFAULT_TOOLS;
+    const allowed = data.tools.split(",").map(s => s.trim()).filter(t => ALLOWED_TOOLS.has(t));
+    return allowed.length > 0 ? allowed.join(", ") : DEFAULT_TOOLS;
+  })();
   const fm = {
     name: data.name || item.id,
     description: data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
     model,
-    tools: data.tools || "Read, Grep, Glob, Edit, Bash",
+    tools: filteredTools,
     muster_builtin: true,
     adapted_from,
     license: source.license
@@ -154,7 +187,13 @@ async function fetchSourceRoot(source, home) {
     if (source.id === "superpowers") return { root: await resolveSuperpowers(home) };
     return { root: null };
   }
+  const vendorBase = join(tmpdir(), "muster-vendor-");
   const dir = join(tmpdir(), `muster-vendor-${source.id}`);
+  // Belt-and-suspenders: computed dir must start with the expected vendor base
+  // (validateVendorManifest should have caught bad ids already, but guard anyway).
+  if (!dir.startsWith(vendorBase)) {
+    return { root: null, error: new Error(`source.id "${source.id}" would escape vendor tmp dir`) };
+  }
   try {
     await pexec("rm", ["-rf", dir]);
     await pexec("git", ["clone", "--depth", "1", "--branch", source.ref || "main",
@@ -176,6 +215,11 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
     }
     for (const item of source.items) {
       const srcPath = join(root, item.from);
+      // Guard: srcPath must stay within the clone/source root (no traversal via item.from).
+      if (srcPath !== root && !srcPath.startsWith(root + sep)) {
+        warnings.push(`${source.id}: item ${item.from} is outside of source root — skipping (traversal attempt)`);
+        continue;
+      }
       if (!(await exists(srcPath))) { warnings.push(`${source.id}: missing item ${item.from}`); continue; }
       const text = await readFile(srcPath, "utf8");
       const isAgent = item.as === "agent";
@@ -183,6 +227,11 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
         ? toAgent(text, item, source)
         : toBuiltin(text, item, source);
       const abs = join(repoRoot, path);
+      // Guard: abs output path must stay within repoRoot (no traversal via item.id).
+      if (!abs.startsWith(repoRoot + sep)) {
+        warnings.push(`${source.id}: item.id "${item.id}" would write outside repoRoot — skipping`);
+        continue;
+      }
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, content);
       (isAgent ? agentEntries : builtinEntries).push(catalogEntry);

@@ -49,16 +49,16 @@ the manifest — the crew on paper is not the crew doing the work.
           resolved provider (skill) into the BRIEF, as today.
       - **Model (authoritative, regardless of kind):** always pass the crew member's `model` as the
         Agent tool's `model` **override**. The model is written into each crew member in the manifest
-        by the router from `muster capabilities` output (the `roles[<role>].model` value, determined
-        by `modelForRole` in `src/model.js` — see that file for the full tier policy). If a fable
+        by the router from `muster capabilities` output (the `roles[<role>].model` value). If a fable
         dispatch is rejected because fable is unavailable on the current plan, retry once with
-        `fallbackModelFor("fable")` from `src/model.js` (resolves to **opus**) and record the
+        **opus** (the fable fallback — `fallbackModelFor("fable")` in `src/model.js`) and record the
         degradation in STATE — never fail the task over a model tier, and never drop the override
         (a dropped override silently inherits the orchestrator's model).
    b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point, e.g. for review-gate fixes dispatched inline).
-   c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops using
-      `reviewGateState` (from `src/loop.js`): re-dispatch fix attempts until the gate passes (`done`)
-      or the iteration cap is hit (`max-iterations`), then escalate per step 2e.
+   c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops: re-dispatch
+      fix attempts until the gate passes (`done`) or the iteration cap is hit (`max-iterations`), then
+      escalate per step 2e. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
+      `src/loop.js` — a plugin-user sees this value enforced by the review-gate skill).
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx -y @adnova-group/muster plan-checklist .muster/manifest.json
       --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.
@@ -70,8 +70,9 @@ the manifest — the crew on paper is not the crew doing the work.
 ## Channel steering (remote)
 
 When the orchestrator is driven remotely (Channels wired), a steering message may arrive mid-run as a
-`<channel source="...">` event. Classify **every** such event deterministically with `classifySteer`
-(from `src/steer.js`) — do NOT free-interpret it. Map the returned action:
+`<channel source="...">` event. Classify **every** such event deterministically by running
+`npx -y @adnova-group/muster steer "<msg>"` (which calls `classifySteer` in `src/steer.js`) — do NOT
+free-interpret it. Map the returned action:
 
 - **approve** — treat as the human passing the current review gate: end the current `loopState`
   fix-cycle as `done` and continue to the next wave.

@@ -8,16 +8,27 @@
 // Decision order:
 //   1. ALLOW if payload has agent_id (crew subagent — always allowed).
 //   2. ALLOW if the target path is under .muster/ (STATE bookkeeping is legit).
+//      (For Bash: no path target; this gate is skipped.)
 //   3. ALLOW if .muster/wave-active does not exist.
 //   4. ALLOW if the marker's mtime is older than 60 minutes (stale/crashed wave).
 //   5. MUSTER_WAVE_GUARD: "off" → silent allow; "warn" → allow with reminder;
-//      unset or "deny" → DENY.
+//      unset or "deny":
+//        Edit/Write/NotebookEdit → DENY.
+//        Bash → inspect command via bashWriteTarget(); DENY only on a
+//          high-confidence write match; ALLOW everything else (fail-open).
 //
 // FAIL-SAFE: entire body wrapped in try/catch; any error → silent allow, exit 0.
+//
+// Bash command classification lives in bash-write-target.js (pure, unit-testable).
+// See that file for the DENY patterns and known heredoc-body limitation.
 
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { emit } from "./guidance.js";
+import { bashWriteTarget } from "./bash-write-target.js";
+
+// Re-export for callers that import from this module directly.
+export { bashWriteTarget };
 
 const EVENT = "PreToolUse";
 const MARKER = ".muster/wave-active";
@@ -40,7 +51,7 @@ function warnAllow(waveId) {
 }
 
 // Sanitize a waveId read from a marker file before interpolating into output.
-// - strip non-printable ASCII (keep 0x20–0x7E)
+// - strip non-printable ASCII (keep 0x20-0x7E)
 // - cap at 64 chars
 // - fall back to "unknown" if empty after sanitization
 function sanitizeWaveId(raw) {
@@ -58,6 +69,22 @@ function deny(waveId) {
         `This includes shell-based file writes (sed -i, tee, heredocs) which bypass the hook. ` +
         `If no wave is actually running: rm .muster/wave-active. ` +
         `For harnesses whose PreToolUse payload lacks agent_id, set MUSTER_WAVE_GUARD=warn to allow with a reminder instead of blocking.`,
+    },
+  });
+  process.exit(0);
+}
+
+function denyBash(waveId, fragment) {
+  emit({
+    hookSpecificOutput: {
+      hookEventName: EVENT,
+      permissionDecision: "deny",
+      permissionDecisionReason:
+        `muster wave ${waveId} is active — this Bash command contains a high-confidence file write (matched: ${fragment}). ` +
+        `Dispatch file writes through the crew (Agent tool) instead of running them inline. ` +
+        `If no wave is actually running: rm .muster/wave-active. ` +
+        `If this is a false positive (e.g. redirect-looking text inside a heredoc body): ` +
+        `set MUSTER_WAVE_GUARD=warn to allow with a reminder instead of blocking.`,
     },
   });
   process.exit(0);
@@ -89,6 +116,7 @@ try {
     : "";
 
   // 2. Paths inside .muster/ are orchestrator STATE bookkeeping — always allowed.
+  //    (Bash has no file_path/notebook_path; target is "" so this gate is skipped.)
   const musterDir = path.resolve(cwd, ".muster") + path.sep;
   if (target && (target === path.resolve(cwd, ".muster") || target.startsWith(musterDir))) {
     allow();
@@ -125,8 +153,19 @@ try {
   } else if (guard === "warn") {
     warnAllow(waveId);
   } else {
-    // "deny" or anything unrecognised → block.
-    deny(waveId);
+    // "deny" or anything unrecognised.
+    // For Bash: inspect the command; deny only on high-confidence write match (fail-open).
+    if (payload.tool_name === "Bash") {
+      const command = (payload.tool_input && payload.tool_input.command) || "";
+      const fragment = bashWriteTarget(command);
+      if (fragment !== null) {
+        denyBash(waveId, fragment);
+      } else {
+        allow();
+      }
+    } else {
+      deny(waveId);
+    }
   }
 } catch {
   // FAIL-SAFE: never break the session.

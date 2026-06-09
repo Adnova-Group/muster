@@ -155,6 +155,28 @@ export function generateNotice(builtinEntries) {
 const pexec = promisify(execFile);
 
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
+const SHA_RE = /^[0-9a-f]{40}$/i;
+
+// Pure function: given a github source and a target directory, return the
+// sequence of git commands (each as [cmd, argv]) needed to clone/fetch it.
+// When source.ref is a 40-hex SHA, git clone --branch cannot be used (it only
+// accepts branch/tag names), so we fall back to init + fetch FETCH_HEAD.
+// Branch/tag refs keep the cheaper single-command clone path.
+export function cloneCommandsFor(source, dir) {
+  const url = `https://github.com/${source.repo}.git`;
+  const ref = source.ref || "main";
+  if (SHA_RE.test(ref)) {
+    return [
+      ["git", ["init", dir]],
+      ["git", ["-C", dir, "remote", "add", "origin", url]],
+      ["git", ["-C", dir, "fetch", "--depth", "1", "origin", ref]],
+      ["git", ["-C", dir, "checkout", "FETCH_HEAD"]],
+    ];
+  }
+  return [
+    ["git", ["clone", "--depth", "1", "--branch", ref, url, dir]],
+  ];
+}
 
 export function pickLatestVersion(entries) {
   if (!entries || entries.length === 0) return undefined;
@@ -196,8 +218,9 @@ async function fetchSourceRoot(source, home) {
   }
   try {
     await pexec("rm", ["-rf", dir]);
-    await pexec("git", ["clone", "--depth", "1", "--branch", source.ref || "main",
-      `https://github.com/${source.repo}.git`, dir]);
+    for (const [cmd, args] of cloneCommandsFor(source, dir)) {
+      await pexec(cmd, args);
+    }
     return { root: dir };
   } catch (e) { return { root: null, error: e }; }
 }

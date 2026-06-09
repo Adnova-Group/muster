@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateVendorManifest, toBuiltin, toAgent, generateNotice, runVendor, pickLatestVersion, splitFrontmatter } from "../src/vendor.js";
+import { validateVendorManifest, toBuiltin, toAgent, generateNotice, runVendor, pickLatestVersion, splitFrontmatter, cloneCommandsFor } from "../src/vendor.js";
 import { modelForRole } from "../src/model.js";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -568,4 +568,92 @@ test("shipped builtin catalog entries all have unique descriptions (no duplicate
     }
     seen.set(e.description, e.id);
   }
+});
+
+// --- cloneCommandsFor: SHA vs branch dispatch ----------------------------------
+
+const SHA = "cf6059d030bf4fe96623ae2e596d2f31e35fedc0";
+const SHA2 = "85cfa5dc136200667e3044ef2827747880314e03";
+const shaSource = { kind: "github", repo: "wshobson/agents", ref: SHA };
+const branchSource = { kind: "github", repo: "wshobson/agents", ref: "main" };
+const tagSource = { kind: "github", repo: "wshobson/agents", ref: "v1.2.3" };
+
+test("cloneCommandsFor: SHA ref produces init+remote-add+fetch+checkout sequence", () => {
+  const cmds = cloneCommandsFor(shaSource, "/tmp/test-dir");
+  // Must return an array of [cmd, argv] pairs
+  assert.ok(Array.isArray(cmds), "cloneCommandsFor must return an array");
+  assert.equal(cmds.length, 4, "SHA path must produce exactly 4 git operations");
+  // First: git init <dir>
+  assert.deepEqual(cmds[0], ["git", ["init", "/tmp/test-dir"]]);
+  // Second: git -C <dir> remote add origin <url>
+  assert.deepEqual(cmds[1], ["git", ["-C", "/tmp/test-dir", "remote", "add", "origin", "https://github.com/wshobson/agents.git"]]);
+  // Third: git -C <dir> fetch --depth 1 origin <sha>
+  assert.deepEqual(cmds[2], ["git", ["-C", "/tmp/test-dir", "fetch", "--depth", "1", "origin", SHA]]);
+  // Fourth: git -C <dir> checkout FETCH_HEAD
+  assert.deepEqual(cmds[3], ["git", ["-C", "/tmp/test-dir", "checkout", "FETCH_HEAD"]]);
+});
+
+test("cloneCommandsFor: branch ref produces single clone command", () => {
+  const cmds = cloneCommandsFor(branchSource, "/tmp/test-dir");
+  assert.ok(Array.isArray(cmds), "cloneCommandsFor must return an array");
+  assert.equal(cmds.length, 1, "branch path must produce exactly 1 git operation");
+  assert.deepEqual(cmds[0], ["git", ["clone", "--depth", "1", "--branch", "main",
+    "https://github.com/wshobson/agents.git", "/tmp/test-dir"]]);
+});
+
+test("cloneCommandsFor: tag ref produces single clone command", () => {
+  const cmds = cloneCommandsFor(tagSource, "/tmp/test-dir");
+  assert.equal(cmds.length, 1, "tag path must produce exactly 1 git operation");
+  assert.deepEqual(cmds[0], ["git", ["clone", "--depth", "1", "--branch", "v1.2.3",
+    "https://github.com/wshobson/agents.git", "/tmp/test-dir"]]);
+});
+
+test("cloneCommandsFor: lowercase 40-hex SHA is dispatched as SHA path", () => {
+  const src = { kind: "github", repo: "open-gsd/gsd-core", ref: SHA2 };
+  const cmds = cloneCommandsFor(src, "/tmp/gsd-dir");
+  assert.equal(cmds.length, 4, "40-hex lowercase SHA must use SHA fetch path");
+  assert.ok(cmds[2][1].includes(SHA2), "fetch must include the exact SHA");
+});
+
+test("cloneCommandsFor: uppercase 40-hex SHA is dispatched as SHA path", () => {
+  const src = { kind: "github", repo: "owner/repo", ref: SHA.toUpperCase() };
+  const cmds = cloneCommandsFor(src, "/tmp/upper-dir");
+  assert.equal(cmds.length, 4, "uppercase 40-hex SHA must use SHA fetch path");
+});
+
+test("cloneCommandsFor: 39-hex string (not SHA length) uses clone path", () => {
+  const notAFullSha = "cf6059d030bf4fe96623ae2e596d2f31e35fedc";  // 39 chars
+  const src = { kind: "github", repo: "owner/repo", ref: notAFullSha };
+  const cmds = cloneCommandsFor(src, "/tmp/dir");
+  assert.equal(cmds.length, 1, "39-hex must fall through to clone path");
+});
+
+test("cloneCommandsFor: missing ref defaults to main via clone path", () => {
+  const src = { kind: "github", repo: "owner/repo" };
+  const cmds = cloneCommandsFor(src, "/tmp/dir");
+  assert.equal(cmds.length, 1, "missing ref must use clone path with main");
+  assert.ok(cmds[0][1].includes("main"), "must default branch to main");
+});
+
+// --- validateVendorManifest: 40-hex SHA ref accepted --------------------------
+
+test("validateVendorManifest accepts 40-hex SHA as a valid ref", () => {
+  const doc = { sources: [
+    { id: "s", kind: "github", license: "MIT", repo: "owner/repo", ref: SHA,
+      items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.ok(!r.errors.some(e => /ref.*invalid/.test(e)),
+    `40-hex SHA should be accepted, errors: ${JSON.stringify(r.errors)}`);
+});
+
+// --- real vendor/manifest.yaml validates with pinned SHAs --------------------
+
+test("vendor/manifest.yaml with pinned SHAs validates cleanly", async () => {
+  const { parse: parseYaml } = await import("yaml");
+  const { readFile: rf } = await import("node:fs/promises");
+  const raw = await rf(new URL("../vendor/manifest.yaml", import.meta.url), "utf8");
+  const doc = parseYaml(raw);
+  const r = validateVendorManifest(doc);
+  assert.deepEqual(r, { ok: true, errors: [] }, `manifest should validate, errors: ${JSON.stringify(r.errors)}`);
 });

@@ -12,8 +12,8 @@
 
 ## File Structure
 
-- `plugin/hooks/guidance.js` — **new.** Shared text + `detect(cwd)`. Exports `PRINCIPLES`, `VERBS`, `SHORT_NUDGE`, `detect`.
-- `plugin/hooks/session-start.js` — **modify.** Import from `guidance.js` instead of inlining the text. Output unchanged.
+- `plugin/hooks/guidance.js` — **new.** Shared text + `detect(cwd)`. Exports `PRINCIPLES`, `VERBS`, `ROUTING_POLICY`, `SHORT_NUDGE`, `detect`.
+- `plugin/hooks/session-start.js` — **modify.** Import from `guidance.js`; compose `PRINCIPLES + VERBS + ROUTING_POLICY + detect`. Adds one `ROUTING_POLICY` line vs. today.
 - `plugin/hooks/user-prompt-submit.js` — **new.** Per-turn counter + cadence + nudge emission.
 - `plugin/hooks/hooks.json` — **modify.** Register the `UserPromptSubmit` hook.
 - `test/hook-user-prompt-submit.test.js` — **new.** Full behavior coverage of the new hook.
@@ -62,10 +62,18 @@ export const VERBS =
   "Verbs: /muster:run (plan + show), /muster:autopilot (hands-off lifecycle), " +
   "/muster:diagnose (failure-first fix), /muster:audit (whole-codebase review-and-fix).";
 
+export const ROUTING_POLICY = [
+  "Default routing: in this muster repo, drive actionable prompts through muster —",
+  "route directives and substantive questions to the verbs (/muster:run · :autopilot ·",
+  ":diagnose · :audit) where applicable, and content/copy work through the muster content",
+  "pipeline (humanizer). Let conversational or trivial turns fall through. Honor explicit",
+  "/muster commands as given.",
+].join(" ");
+
 export const SHORT_NUDGE =
-  "muster mode — route through skills and the verbs, keep reasoning glass-box, " +
-  "don't drift to plain inline work. " +
-  "Verbs: /muster:run · /muster:autopilot · /muster:diagnose · /muster:audit.";
+  "muster mode — drive directives through the muster verbs (don't default to plain inline " +
+  "work), route copy/content through the humanizer, keep reasoning glass-box. Conversational " +
+  "turns fall through. Verbs: /muster:run · /muster:autopilot · /muster:diagnose · /muster:audit.";
 
 export function detect(cwd) {
   const has = (f) => {
@@ -106,7 +114,7 @@ Replace the entire contents of `plugin/hooks/session-start.js` with:
 // FAIL-SAFE: this runs at every session start (including source "compact" and
 // "resume"). On ANY error we print minimal valid JSON and exit 0. Never throw.
 
-import { PRINCIPLES, VERBS, detect } from "./guidance.js";
+import { PRINCIPLES, VERBS, ROUTING_POLICY, detect } from "./guidance.js";
 
 const EVENT = "SessionStart";
 
@@ -118,7 +126,7 @@ try {
   emit({
     hookSpecificOutput: {
       hookEventName: EVENT,
-      additionalContext: [PRINCIPLES, VERBS, detect(process.cwd())].join("\n"),
+      additionalContext: [PRINCIPLES, VERBS, ROUTING_POLICY, detect(process.cwd())].join("\n"),
     },
   });
 } catch {
@@ -211,6 +219,7 @@ test("no nudge before turn N, short nudge at turn N (default N=3)", async () => 
   const { stdout } = await runTurn(sid);
   const ctx = ctxOf(stdout).additionalContext;
   assert.match(ctx, /muster mode/i, "turn 3 short nudge");
+  assert.match(ctx, /humanizer/i, "short nudge carries the routing clause");
   for (const v of ["run", "autopilot", "diagnose", "audit"]) {
     assert.match(ctx, new RegExp(v), `nudge mentions ${v}`);
   }
@@ -229,6 +238,7 @@ test("turn N*2 is a short-only turn; turn N*K (=9) is the full payload", async (
   const nine = ctxOf(last.stdout).additionalContext;
   assert.match(nine, /muster principles:/, "turn 9 full principles");
   assert.match(nine, /TDD|verify|glass-box/i, "turn 9 has a principle keyword");
+  assert.match(nine, /Default routing|humanizer/i, "turn 9 carries the routing policy");
   for (const v of ["run", "autopilot", "diagnose", "audit"]) {
     assert.match(nine, new RegExp(v), `full payload mentions ${v}`);
   }
@@ -302,7 +312,7 @@ Create `plugin/hooks/user-prompt-submit.js`:
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { PRINCIPLES, VERBS, SHORT_NUDGE } from "./guidance.js";
+import { PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE } from "./guidance.js";
 
 const EVENT = "UserPromptSubmit";
 
@@ -348,7 +358,7 @@ try {
   const count = bumpTurn(sessionId);
 
   let additionalContext;
-  if (count % (N * K) === 0) additionalContext = `${PRINCIPLES}\n${VERBS}`;
+  if (count % (N * K) === 0) additionalContext = `${PRINCIPLES}\n${VERBS}\n${ROUTING_POLICY}`;
   else if (count % N === 0) additionalContext = SHORT_NUDGE;
 
   const out = { hookEventName: EVENT };
@@ -468,10 +478,11 @@ git commit -m "feat(hooks): register UserPromptSubmit hook; pin compact-backstop
 - Fail-safe (missing session_id, malformed stdin) → Task 2 tests 6–7. ✓
 - `hooks.json` registration → Task 3. ✓
 - Compact backstop unchanged + pinned → Task 3 Step 1. ✓
-- Full periodic payload is `PRINCIPLES + VERBS` (no `detect`) → impl Step 3 matches spec. ✓
+- Full periodic payload is `PRINCIPLES + VERBS + ROUTING_POLICY` (no `detect`) → impl Step 3 matches spec. ✓
+- Default routing posture (directives→verbs, copy→humanizer, conversational falls through) → `ROUTING_POLICY` + routing clause in `SHORT_NUDGE` (Task 1 Step 2), injected at SessionStart (Task 1 Step 3) and on the periodic full payload (Task 2 Step 3); asserted by the `humanizer`/`Default routing` test matchers (Task 2 Step 1). ✓
 
 **Placeholder scan:** none — every code/command step is complete.
 
-**Type/name consistency:** `PRINCIPLES`, `VERBS`, `SHORT_NUDGE`, `detect` exported by `guidance.js` and imported by both hooks with matching names; `bumpTurn`, `posInt`, `EVENT` used consistently; env var names identical across spec, impl, and tests.
+**Type/name consistency:** `PRINCIPLES`, `VERBS`, `ROUTING_POLICY`, `SHORT_NUDGE`, `detect` exported by `guidance.js` and imported by both hooks with matching names; `bumpTurn`, `posInt`, `EVENT` used consistently; env var names identical across spec, impl, and tests. Existing session-start tests still pass because the added `ROUTING_POLICY` line does not remove any verb or principle keyword they match on.
 
 **Out of scope (per spec):** counter-file cleanup, `.muster` config file, transcript-based counting, `plugin.json` version bump.

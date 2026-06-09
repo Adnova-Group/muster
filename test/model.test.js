@@ -31,6 +31,34 @@ test("default role -> sonnet", () => {
   assert.equal(modelForRole("author"), "sonnet");
 });
 
+// --- MODEL_TIER_ORDER & maxTier ---
+
+import { MODEL_TIER_ORDER, maxTier } from "../src/model.js";
+
+test("MODEL_TIER_ORDER is ascending: haiku < sonnet < opus < fable", () => {
+  assert.deepEqual(MODEL_TIER_ORDER, ["haiku", "sonnet", "opus", "fable"]);
+});
+
+test("maxTier picks fable over sonnet and haiku", () => {
+  assert.equal(maxTier(["haiku", "sonnet", "fable"]), "fable");
+});
+
+test("maxTier picks sonnet when no higher tier present", () => {
+  assert.equal(maxTier(["haiku", "sonnet"]), "sonnet");
+});
+
+test("maxTier ignores unknown names, returns known max", () => {
+  assert.equal(maxTier(["unknown-role", "sonnet"]), "sonnet");
+});
+
+test("maxTier returns undefined for empty list", () => {
+  assert.equal(maxTier([]), undefined);
+});
+
+test("maxTier returns undefined when all inputs are unknown", () => {
+  assert.equal(maxTier(["unknown", "also-unknown"]), undefined);
+});
+
 test("resolveCapabilities tags every role with a model", async () => {
   const { resolveCapabilities } = await import("../src/capabilities.js");
   const caps = resolveCapabilities([], { plugins: [], skills: [], mcpServers: [] });

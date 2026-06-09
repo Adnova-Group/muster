@@ -1,7 +1,7 @@
 ---
 name: code-documentation-docs-architect
 description: Creates comprehensive technical documentation from existing codebases. Analyzes architecture, design patterns, and implementation details to produce long-form technical manuals and ebooks. Use PROACTIVELY for system documentation, architecture guides, or technical deep-dives.
-model: opus
+model: fable
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 adapted_from: wshobson/agents plugins/code-documentation/agents/docs-architect.md

@@ -5,7 +5,7 @@ description: Produce a PRD via a phased pipeline (intake -> research -> draft ->
 
 # PRD pipeline
 
-Load the pipeline: `npx muster pipeline prd`. Run its phases in order, anchored to the outcome:
+Load the pipeline: `npx -y @adnova-group/muster pipeline prd`. Run its phases in order, anchored to the outcome:
 
 1. **intake** (role: brainstorm) — clarify the problem, audience, and explicit success metrics. No
    PRD without success metrics (outcome-anchored).
@@ -15,7 +15,7 @@ Load the pipeline: `npx muster pipeline prd`. Run its phases in order, anchored 
    success metrics. Use the chosen author provider; else built-in/inline.
 4. **review** (role: code-review) — run the **review-gate** skill adversarially over the draft.
 5. **score** (role: score) — a judge scores each `gate.criteria` dimension 0-3 with evidence; write
-   `{scores, gate}` to `.muster/prd-score.json`; run `npx muster score .muster/prd-score.json`.
+   `{scores, gate}` to `.muster/prd-score.json`; run `npx -y @adnova-group/muster score .muster/prd-score.json`.
    - If not `passing` (floor or total), loop draft+review addressing the `weakest` dimension. Cap 3,
      then ESCALATE with the weakest dimension — do not ship a failing PRD.
 

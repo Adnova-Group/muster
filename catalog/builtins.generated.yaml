@@ -35,14 +35,13 @@
   kind: builtin
   roles:
     - code-review
-  rank: 50
+  rank: 48
   provenance:
     adapted_from: obra/superpowers receiving-code-review/SKILL.md
     license: MIT
 - id: sp-debug
   kind: builtin
   roles:
-    - implement
     - debug
   rank: 50
   provenance:
@@ -358,3 +357,4 @@
   provenance:
     adapted_from: open-gsd/gsd-core gsd-core/workflows/verify-work.md
     license: MIT
+  description: "Built-in for verify — UAT + gap-closure verification of completed work"

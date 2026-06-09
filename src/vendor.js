@@ -38,19 +38,21 @@ export function toBuiltin(sourceText, item, source) {
   const adapted_from = `${source.repo} ${item.from}`;
   const fm = {
     name: data.name || item.id,
-    description: data.description || `Built-in for ${item.roles.join(", ")} (adapted from ${source.repo})`,
+    description: item.description || data.description || `Built-in for ${item.roles.join(", ")} (adapted from ${source.repo})`,
     muster_builtin: true,
     adapted_from,
     license: source.license
   };
   const content = `---\n${stringify(fm, { lineWidth: 0 }).trim()}\n---\n\n${body.trim()}\n`;
+  const catalogEntry = {
+    id: item.id, kind: "builtin", roles: item.roles, rank: item.rank !== undefined ? item.rank : 50,
+    provenance: { adapted_from, license: source.license }
+  };
+  if (item.description) catalogEntry.description = item.description;
   return {
     path: `plugin/builtins/${item.id}/SKILL.md`,
     content,
-    catalogEntry: {
-      id: item.id, kind: "builtin", roles: item.roles, rank: 50,
-      provenance: { adapted_from, license: source.license }
-    }
+    catalogEntry
   };
 }
 

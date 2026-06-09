@@ -7,24 +7,41 @@
 // FAIL-SAFE: this runs at every session start (including source "compact" and
 // "resume"). On ANY error we print minimal valid JSON and exit 0. Never throw.
 
-import { unlinkSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { PRINCIPLES, VERBS, ROUTING_POLICY, detect } from "./guidance.js";
+import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, detect } from "./guidance.js";
 
 const EVENT = "SessionStart";
 
-function emit(obj) {
-  process.stdout.write(JSON.stringify(obj));
+// Sources that begin a genuinely fresh session: clear the stale wave marker.
+// "compact" and "resume" fire mid-wave — do NOT disarm the wave guard.
+const RESET_SOURCES = new Set(["startup", "clear"]);
+
+// Read the stdin payload (matches user-prompt-submit.js pattern).
+let payload;
+try {
+  payload = JSON.parse(readFileSync(0, "utf8"));
+} catch {
+  payload = {};
 }
 
-// Clear any stale wave marker so a new session never inherits a previous wave's state.
-try { unlinkSync(path.join(process.cwd(), ".muster", "wave-active")); } catch { /* not present — fine */ }
+const source = typeof payload.source === "string" ? payload.source : null;
+const cwd = (typeof payload.cwd === "string" && payload.cwd.length > 0)
+  ? payload.cwd
+  : process.cwd();
+
+// Clear any stale wave marker ONLY when this is a fresh session start.
+// source === null  → old-style payload with no source field → treat as startup.
+// source "compact" or "resume" → mid-session; leave the marker intact.
+if (source === null || RESET_SOURCES.has(source)) {
+  try { unlinkSync(path.join(cwd, ".muster", "wave-active")); } catch { /* not present — fine */ }
+}
 
 try {
   emit({
     hookSpecificOutput: {
       hookEventName: EVENT,
-      additionalContext: [PRINCIPLES, VERBS, ROUTING_POLICY, detect(process.cwd())].join("\n"),
+      additionalContext: [PRINCIPLES, VERBS, ROUTING_POLICY, detect(cwd)].join("\n"),
     },
   });
 } catch {

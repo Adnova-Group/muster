@@ -12,13 +12,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE } from "./guidance.js";
+import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE } from "./guidance.js";
 
 const EVENT = "UserPromptSubmit";
-
-function emit(obj) {
-  process.stdout.write(JSON.stringify(obj));
-}
 
 function posInt(value, fallback) {
   const n = Number.parseInt(value, 10);
@@ -28,6 +24,10 @@ function posInt(value, fallback) {
 // Increment and persist a per-session turn counter; return the new count.
 function bumpTurn(sessionId) {
   const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
+  // Guard: if sanitization yields an empty string, skip turn-counting entirely
+  // to avoid writing a bare shared file (muster-turns-) that causes cross-session
+  // collisions.
+  if (safe.length === 0) return null;
   const file = path.join(os.tmpdir(), `muster-turns-${safe}`);
   let count = 0;
   try {
@@ -56,6 +56,12 @@ try {
   const N = posInt(process.env.MUSTER_NUDGE_EVERY, 3);
   const K = posInt(process.env.MUSTER_PRINCIPLES_EVERY, 3);
   const count = bumpTurn(sessionId);
+
+  // count === null means the session_id sanitized to empty — skip nudging.
+  if (count === null) {
+    emit({ hookSpecificOutput: { hookEventName: EVENT } });
+    process.exit(0);
+  }
 
   let additionalContext;
   if (count % (N * K) === 0) additionalContext = `${PRINCIPLES}\n${VERBS}\n${ROUTING_POLICY}`;

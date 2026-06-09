@@ -58,7 +58,17 @@ The novel core is a capability and domain router. Muster names a fixed vocabular
 
 The role set is fixed but the provider set is not. When an outcome does not fit a named role, description-search bridges the gap: `muster match "<task>"` ranks every catalog provider by deterministic token overlap (no model call), so "audit this code for security vulnerabilities" surfaces the security specialist even though it never names a role.
 
-Each role also carries a model picked to fit the work: mechanical roles run on Haiku, the default is Sonnet, and heavy judgment runs on Opus. Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
+Each role also carries a model picked to fit the work: mechanical roles run on Haiku, the default is Sonnet, and heavy judgment runs on Fable (degrades to Opus when unavailable on the plan). Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
+
+## Configuration
+
+Muster's runtime behavior can be tuned with environment variables:
+
+| Variable | Default | Semantics |
+| --- | --- | --- |
+| `MUSTER_NUDGE_EVERY` | `3` | Inject a short drift-reinforcement nudge every N turns. |
+| `MUSTER_PRINCIPLES_EVERY` | `3` | Inject the full principles + verbs every N*K turns (K = this value; at defaults: nudge every 3, full every 9). |
+| `MUSTER_WAVE_GUARD` | `deny` | PreToolUse hook enforcement while a wave is active: `deny` blocks inline edits, `warn` allows with a reminder, `off` disables the guard. |
 
 ## Always-on guidance
 

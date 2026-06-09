@@ -12,18 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **In-session drift reinforcement (`UserPromptSubmit` hook).** A new plugin-native hook
   re-asserts muster mode on a turn cadence so a session stops reverting to default inline Claude
   behavior. Short nudge every `N` turns (`MUSTER_NUDGE_EVERY`, default 3); full
-  principles + verbs every `N·K` turns (`MUSTER_PRINCIPLES_EVERY`, default 3). Per-session turn
-  counter in `os.tmpdir()`; fully self-contained and fail-safe (always valid JSON, exit 0).
-  Compaction still re-fires `SessionStart` as a backstop.
+  principles + verbs every `N*K` turns (K = `MUSTER_PRINCIPLES_EVERY`, default 3 -- at defaults:
+  nudge every 3, full every 9). Per-session turn counter in `os.tmpdir()`; fully self-contained and
+  fail-safe (always valid JSON, exit 0). Compaction still re-fires `SessionStart` as a backstop.
 - **Default-routing posture (`ROUTING_POLICY`).** Injected guidance now states that, in a
   muster repo, actionable prompts should be driven through the verbs (and copy/content through the
   humanizer) by default, while conversational turns fall through — no need to prefix every task
   with `/muster`. Carried in the `SessionStart` payload, the periodic full payload, and a condensed
   clause in the short nudge.
-- **Orchestrator iron rule against inline crew-dispatch drift.** `plugin/skills/orchestrator`
-  now leads with a rule that each wave task MUST be dispatched to its resolved provider via the
-  Agent tool before any edit, with an announce-to-STATE requirement so inline work is auditable.
-  Documented as steering, not a hard gate (a harness-level `PreToolUse` block is the real fix).
+- **Orchestrator iron rule + `PreToolUse` wave-guard hook.** `plugin/skills/orchestrator`
+  leads with the iron rule: each wave task MUST be dispatched via the Agent tool before any edit,
+  with an announce-to-STATE requirement so inline work is auditable. The `PreToolUse` hook
+  (`plugin/hooks/pre-tool-use.js`) now ships as the hard harness-level gate. Decision order:
+  (1) subagent calls always allowed; (2) `.muster/` STATE writes always allowed; (3) allow if no
+  wave marker; (4) allow if marker is stale (>60 min); (5) honour `MUSTER_WAVE_GUARD`:
+  `off` = silent allow, `warn` = allow with reminder, unset or `deny` = deny.
 
 ### Changed
 
@@ -122,6 +125,7 @@ publish to carry it.
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
+[0.2.3]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.3
 [0.2.2]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.2
 [0.2.1]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.0

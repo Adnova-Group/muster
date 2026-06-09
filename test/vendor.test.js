@@ -317,3 +317,67 @@ test("runVendor: resolveSuperpowers picks highest semver dir over content-hash d
   assert.equal(res.count, 1);
   assert.equal(res.warnings.filter(w => /could not fetch/.test(w)).length, 0);
 });
+
+// --- item.description override in toBuiltin / toAgent -------------------------
+
+test("toBuiltin: item.description overrides data.description and fallback", () => {
+  // Source has its own frontmatter description, but item pins a different one.
+  const srcWithDesc = `---\nname: verify\ndescription: Source-level description\n---\n\nBody.\n`;
+  const itemWithDesc = { from: "verify/SKILL.md", id: "gsd-verify-work", roles: ["plan"], description: "Built-in for verify — UAT + gap-closure verification of completed work" };
+  const r = toBuiltin(srcWithDesc, itemWithDesc, source);
+  const { data } = splitFrontmatter(r.content);
+  assert.equal(data.description, "Built-in for verify — UAT + gap-closure verification of completed work");
+});
+
+test("toBuiltin: item.description beats fallback when source has no description", () => {
+  const srcNoDesc = `---\nname: verify\n---\n\nBody.\n`;
+  const itemWithDesc = { from: "verify/SKILL.md", id: "gsd-verify-work", roles: ["plan"], description: "Custom description" };
+  const r = toBuiltin(srcNoDesc, itemWithDesc, source);
+  const { data } = splitFrontmatter(r.content);
+  assert.equal(data.description, "Custom description");
+});
+
+test("toBuiltin: item.description propagates into catalogEntry when set", () => {
+  const srcWithDesc = `---\nname: x\ndescription: source-desc\n---\n\nBody.\n`;
+  const itemWithDesc = { from: "x/SKILL.md", id: "x", roles: ["plan"], description: "override-desc" };
+  const r = toBuiltin(srcWithDesc, itemWithDesc, source);
+  assert.equal(r.catalogEntry.description, "override-desc");
+});
+
+test("toBuiltin: catalogEntry description absent when item has no description override", () => {
+  // When no item.description is set, catalogEntry should have no description field.
+  const srcWithDesc = `---\nname: x\ndescription: d\n---\n\nBody.\n`;
+  const itemPlain = { from: "x/SKILL.md", id: "x", roles: ["plan"] };
+  const r = toBuiltin(srcWithDesc, itemPlain, source);
+  assert.equal(r.catalogEntry.description, undefined);
+});
+
+test("toBuiltin: item.rank overrides default 50 in catalogEntry", () => {
+  const r = toBuiltin(src, { ...item, rank: 48 }, source);
+  assert.equal(r.catalogEntry.rank, 48);
+});
+
+test("toBuiltin: catalogEntry rank defaults to 50 when item has no rank", () => {
+  const r = toBuiltin(src, item, source);
+  assert.equal(r.catalogEntry.rank, 50);
+});
+
+// --- no two builtin catalog entries share an identical description ---------------
+// This catches future accidental duplicate descriptions like gsd-plan-phase vs gsd-verify-work.
+import { readFile as readFileFn } from "node:fs/promises";
+import { parse as parseFn } from "yaml";
+
+test("shipped builtin catalog entries all have unique descriptions (no duplicates)", async () => {
+  const raw = await readFileFn(new URL("../catalog/builtins.generated.yaml", import.meta.url), "utf8");
+  const entries = parseFn(raw);
+  assert.ok(Array.isArray(entries), "catalog must be an array");
+  // Only entries that have a description field are subject to the uniqueness check.
+  const withDesc = entries.filter(e => typeof e.description === "string" && e.description.length > 0);
+  const seen = new Map();
+  for (const e of withDesc) {
+    if (seen.has(e.description)) {
+      assert.fail(`Duplicate description "${e.description}" on entries "${seen.get(e.description)}" and "${e.id}"`);
+    }
+    seen.set(e.description, e.id);
+  }
+});

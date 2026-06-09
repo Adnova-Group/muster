@@ -44,7 +44,8 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 | --- | --- | --- |
 | haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
 | sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| opus | the tournament `judge`, `architecture-review` | Heavy judgment |
+| fable | the tournament `judge`, `architecture-review` | Heavy judgment |
+| opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
 
 The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work: cheap models do the cheap parts, the expensive model is reserved for the calls that need it.
 
@@ -100,13 +101,19 @@ The practical consequences:
 - Fan-out spends that same quota faster, since parallel subagents are parallel quota.
 - There is no separate runtime to deploy or key to manage. If you can run Claude Code, you can run Muster.
 
-Orchestration loops until done via a Ralph-style primitive (`src/loop.js`: `loopState({ iteration, maxIterations, done })` returns `iterate`, `done`, or `max-iterations`). Each wave re-runs implement, review, and fix until the gate passes or the iteration cap escalates, so subagents drive toward the success criteria rather than stopping after one pass.
+Orchestration loops until done via a Ralph-style primitive (`src/loop.js`). `loopState({ iteration, maxIterations, done })` returns an object `{ continue: bool, reason: "done" | "max-iterations" | "iterate" }`. The review-gate fix-loop uses the dedicated `reviewGateState` helper, which caps at `REVIEW_GATE_MAX_ITERATIONS = 3` regardless of the caller's `maxIterations`. Each wave re-runs implement, review, and fix until the gate passes (`reason: "done"`) or the iteration cap escalates (`reason: "max-iterations"`), so subagents drive toward the success criteria rather than stopping after one pass.
 
 Driving Muster remotely uses Claude Code's own features, not a transport Muster ships. A Claude Code Routine can fire `/muster:autopilot` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session when a human wants to take over.
 
-## Session hook
+## Session hooks
 
-Muster's always-on guidance is delivered by a plugin-native `SessionStart` hook in `plugin/hooks/` rather than a global `CLAUDE.md`. A Claude Code plugin cannot auto-load a `CLAUDE.md`, but a `SessionStart` hook can return `additionalContext`, which Claude Code prepends to the session. The hook script is self-contained (only Node builtins, no import from `src/`, since the plugin ships only `plugin/`). It emits the working principles, the four verbs, and a dependency-free project sniff of the current directory. Because the hook is declared in the plugin (`plugin/hooks/hooks.json`, discovered at the conventional path), it activates when muster is enabled and is removed when muster is disabled. It never writes to the user's `~/.claude` files. The script is fail-safe: any error returns a minimal valid result and exits cleanly, so a session always starts.
+Muster ships three plugin-native hooks in `plugin/hooks/`. All are declared in `plugin/hooks/hooks.json`, activate when muster is enabled, and are removed when muster is disabled. None write to the user's `~/.claude` files. Every hook is fail-safe: any error returns a minimal valid result and exits cleanly.
+
+**`SessionStart`** (`session-start.js`) delivers always-on guidance. A Claude Code plugin cannot auto-load a `CLAUDE.md`, but a `SessionStart` hook can return `additionalContext`, which Claude Code prepends to the session. The script emits the working principles, the four verbs, and a dependency-free project sniff of the current directory. It also clears any stale `.muster/wave-active` marker so a new session never inherits a crashed wave's state.
+
+**`UserPromptSubmit`** (`user-prompt-submit.js`) implements two-tier drift reinforcement so sessions do not revert to default Claude behavior after compaction or a long run. It maintains a per-session turn counter and injects a short nudge every `MUSTER_NUDGE_EVERY` turns (default 3) and the full principles + verbs + routing policy every `MUSTER_NUDGE_EVERY * MUSTER_PRINCIPLES_EVERY` turns (default every 9 turns). Compaction re-fires `SessionStart` as a backstop.
+
+**`PreToolUse`** (`pre-tool-use.js`) enforces the wave-guard iron rule. While `.muster/wave-active` exists, any Edit, Write, or NotebookEdit originating from the orchestrator main loop (not from a crew subagent) is blocked. Decision order: (1) subagent calls always allowed, (2) writes into `.muster/` always allowed (STATE bookkeeping), (3) allow if no wave marker exists, (4) allow if the marker is older than 60 minutes (stale/crashed wave), (5) honour `MUSTER_WAVE_GUARD`: `off` = silent allow, `warn` = allow with a reminder, unset or `deny` = deny.
 
 ## Vendoring
 

@@ -15,7 +15,7 @@ Inputs: the task, the Crew Manifest (for `successCriteria`), and N (default 3).
    and note the degradation): score EACH candidate against every item in `successCriteria`, evidence-cited
    (no bare ratings). Produce a candidates array: `[{ id, scores: {criterion: n}, total, passing }]`
    where `passing` means no criterion critically fails (the floor principle).
-3. Write the candidates to `.muster/candidates.json` and run `npx muster pick .muster/candidates.json`.
+3. Write the candidates to `.muster/candidates.json` and run `npx -y @adnova-group/muster pick .muster/candidates.json`.
 4. If `escalate` is true (none passing), report to the orchestrator (do not ship a loser).
    Otherwise adopt the `winner`'s changes and discard the others.
 5. Append the per-candidate scores + winner to the run STATE (glass box).

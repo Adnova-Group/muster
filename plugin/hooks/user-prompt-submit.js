@@ -4,7 +4,7 @@
 //
 // Two tiers, keyed off a per-session turn counter:
 //   - every N turns        -> short nudge        (MUSTER_NUDGE_EVERY, default 3)
-//   - every N*K turns       -> full principles    (MUSTER_PRINCIPLES_EVERY, default 3)
+//   - every N*K turns       -> full principles    (K = MUSTER_PRINCIPLES_EVERY, default 3)
 //
 // Self-contained apart from sibling guidance.js. FAIL-SAFE: whole body in
 // try/catch; on ANY error or missing state, emit minimal valid JSON and exit 0.

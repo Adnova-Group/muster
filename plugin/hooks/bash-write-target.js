@@ -10,13 +10,10 @@
 //     (fd-duplication 2>&1/>&2, heredoc openers <<WORD, and input <file
 //      are stripped before scanning)
 //
-// KNOWN LIMITATION — heredoc bodies: redirect-looking text inside a heredoc
-// body (between <<MARKER and closing MARKER) may false-positive because we do
-// not parse heredoc bodies. This is an accepted tradeoff: the simpler regex
-// scanner avoids a full shell parser. The deny reason in pre-tool-use.js
-// includes a note to use MUSTER_WAVE_GUARD=warn as the escape hatch.
-// Example: `cat <<EOF\nhello > not-real\nEOF` may fire on the body line, but
-// `cat <<EOF > file` correctly fires on the outer redirect (independently).
+// KNOWN LIMITATION — quoted-string stripping handles balanced single- and
+// double-quoted strings. Remaining edge cases: unbalanced quotes and heredoc
+// bodies (redirect-looking text between <<MARKER and closing MARKER may still
+// false-positive). Use MUSTER_WAVE_GUARD=warn as the escape hatch for both.
 //
 // Exemption targets (string-level, no fs resolution): /dev/*, /tmp/*, .muster/*
 
@@ -56,6 +53,11 @@ export function bashWriteTarget(command) {
   stripped = stripped.replace(/<<[-]?\w+/g, "");
   // Strip input redirects `< file` (not output, not heredoc)
   stripped = stripped.replace(/<\s*\S+/g, "");
+  // Strip quoted-string contents so `> ` inside them doesn't false-positive.
+  // Handles balanced single- and double-quoted strings.
+  // Runs AFTER sed/tee checks (those used the original string above) and
+  // AFTER fd-dup/heredoc/input strips so those constructs are already gone.
+  stripped = stripped.replace(/"[^"]*"|'[^']*'/g, "QUOTED");
 
   // Now find >>? followed by a file token
   const redirRe = />{1,2}\s*(\S+)/g;

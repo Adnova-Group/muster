@@ -26,6 +26,16 @@ async function runHook(cwd) {
   }
 }
 
+// Run the hook with a stdin payload (e.g. a compact-source SessionStart event).
+function runHookStdin(cwd, stdinText) {
+  return new Promise((resolve) => {
+    const child = execFile("node", [HOOK], { cwd }, (err, stdout) => {
+      resolve({ stdout: stdout ?? err?.stdout ?? "", code: err?.code ?? 0 });
+    });
+    child.stdin.end(stdinText);
+  });
+}
+
 test("session-start hook: Node project in git repo emits full guidance", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-node-"));
   await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: "x" }));
@@ -79,5 +89,22 @@ test("session-start hook: output is parseable JSON and exit 0 in both cases (fai
     const { stdout, code } = await runHook(dir);
     assert.equal(code, 0);
     assert.doesNotThrow(() => JSON.parse(stdout), "stdout is valid JSON");
+  }
+});
+
+test("session-start hook: emits full payload on a compact-source event (backstop)", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-compact-"));
+  await writeFile(path.join(dir, "package.json"), "{}");
+
+  const { stdout, code } = await runHookStdin(
+    dir,
+    JSON.stringify({ source: "compact", session_id: "x" }),
+  );
+  assert.equal(code, 0, "exit 0");
+
+  const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /muster principles:/, "full principles present after compact");
+  for (const verb of ["run", "autopilot", "diagnose", "audit"]) {
+    assert.match(ctx, new RegExp(verb), `mentions ${verb}`);
   }
 });

@@ -10,7 +10,9 @@ Inputs: the task, the Crew Manifest (for `successCriteria`), and N (default 3).
 1. Dispatch N implementer agents **concurrently**, each instructed to take a DISTINCT approach to the
    task (vary the angle: e.g. minimal, robust, performance-first). Dispatch them on the task role's
    model (`muster capabilities` -> `roles[<role>].model`; usually **sonnet**).
-2. Dispatch a judge agent **on opus** (heavy judgment): score EACH candidate against every item in `successCriteria`, evidence-cited
+2. Dispatch a judge agent **on fable** (peak judgment; if fable is unavailable on this plan — e.g.
+   it needs extra usage credits — fall back to **opus** per `fallbackModelFor` in `src/model.js`,
+   and note the degradation): score EACH candidate against every item in `successCriteria`, evidence-cited
    (no bare ratings). Produce a candidates array: `[{ id, scores: {criterion: n}, total, passing }]`
    where `passing` means no criterion critically fails (the floor principle).
 3. Write the candidates to `.muster/candidates.json` and run `npx muster pick .muster/candidates.json`.

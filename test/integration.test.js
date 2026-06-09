@@ -25,6 +25,7 @@ test("detect -> capabilities -> hand-built manifest validates (bare machine)", a
       stage: "implement",
       provider: caps.roles["implement"].chosen.id,
       source: caps.roles["implement"].chosen.source,
+      model: caps.roles["implement"].model,
       rationale: "backend express service",
       evidence: `shape=${profile.shape}, express in deps`,
       fallback: "inline"

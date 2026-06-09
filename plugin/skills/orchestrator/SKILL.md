@@ -58,9 +58,9 @@ the manifest — the crew on paper is not the crew doing the work.
         degradation in STATE — never fail the task over a model tier, and never drop the override
         (a dropped override silently inherits the orchestrator's model).
    b. BARRIER: wait for all wave tasks to finish.
-   c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops using the
-      Ralph loop primitive (`loopState` in `src/loop.js`): re-dispatch fix attempts until the gate
-      passes (`done`) or the iteration cap is hit (`max-iterations`), then escalate per step 2e.
+   c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops using
+      `reviewGateState` (from `src/loop.js`): re-dispatch fix attempts until the gate passes (`done`)
+      or the iteration cap is hit (`max-iterations`), then escalate per step 2e.
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx muster plan-checklist .muster/manifest.json
       --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.

@@ -69,3 +69,43 @@ test("missing plugin agents dirs degrade silently", async () => {
   const r = await readInstalled(home);
   assert.deepEqual(r.agents, []);
 });
+
+test("reads installed skills from ~/.claude/skills/<name>/SKILL.md", async () => {
+  const home = await tmpProject({
+    ".claude/skills/my-skill/SKILL.md": "# my-skill",
+    ".claude/skills/other-skill/SKILL.md": "# other-skill"
+  });
+  const r = await readInstalled(home);
+  assert.deepEqual(r.skills.sort(), ["my-skill", "other-skill"]);
+});
+
+test("missing skills dir degrades to empty skills array", async () => {
+  const home = await tmpProject({});
+  const r = await readInstalled(home);
+  assert.deepEqual(r.skills, []);
+});
+
+test("merges skills from installed plugin skills dirs", async () => {
+  const home = await tmpProject({
+    ".claude/plugins/installed_plugins.json": {
+      version: 2, plugins: { "superpowers@official": [{}] }
+    },
+    ".claude/plugins/superpowers/skills/sp-tdd/SKILL.md": "# sp-tdd",
+    ".claude/plugins/cache/official/serena/skills/serena-skill/SKILL.md": "# serena-skill",
+    ".claude/skills/my-skill/SKILL.md": "# my-skill"
+  });
+  const r = await readInstalled(home);
+  assert.ok(r.skills.includes("sp-tdd"), "plugin skill sp-tdd merged");
+  assert.ok(r.skills.includes("serena-skill"), "deeper plugin skill serena-skill merged");
+  assert.ok(r.skills.includes("my-skill"), "own top-level skill my-skill preserved");
+});
+
+test("missing plugin skills dirs degrade silently", async () => {
+  const home = await tmpProject({
+    ".claude/plugins/installed_plugins.json": {
+      version: 2, plugins: { "superpowers@official": [{}] }
+    }
+  });
+  const r = await readInstalled(home);
+  assert.deepEqual(r.skills, []);
+});

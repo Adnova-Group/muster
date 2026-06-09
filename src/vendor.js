@@ -104,10 +104,27 @@ export function generateNotice(builtinEntries) {
 
 const pexec = promisify(execFile);
 
+const SEMVER_RE = /^\d+\.\d+\.\d+$/;
+
+export function pickLatestVersion(entries) {
+  if (!entries || entries.length === 0) return undefined;
+  const semvers = entries.filter(e => SEMVER_RE.test(e));
+  if (semvers.length === 0) return entries[0];
+  return semvers.reduce((best, cur) => {
+    const [bMaj, bMin, bPat] = best.split(".").map(Number);
+    const [cMaj, cMin, cPat] = cur.split(".").map(Number);
+    if (cMaj !== bMaj) return cMaj > bMaj ? cur : best;
+    if (cMin !== bMin) return cMin > bMin ? cur : best;
+    return cPat > bPat ? cur : best;
+  });
+}
+
 async function resolveSuperpowers(home) {
   const base = join(home, ".claude/plugins/cache/claude-plugins-official/superpowers");
   if (!(await exists(base))) return null;
-  const versions = (await readdir(base)).sort().reverse();
+  const entries = await readdir(base);
+  const best = pickLatestVersion(entries);
+  const versions = best ? [best, ...entries.filter(e => e !== best)] : entries;
   for (const v of versions) {
     const skills = join(base, v, "skills");
     if (await exists(skills)) return skills;

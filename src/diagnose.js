@@ -1,4 +1,4 @@
-import { chosen, collectRecommendations, modelFor } from "./crew.js";
+import { collectRecommendations, makeStage } from "./crew.js";
 
 const CI_PATTERNS = [/\bFAIL\b/, /✗/, /Error:/, /\bassert/i, /exit code [1-9]/, /\bat .+:\d+/];
 
@@ -10,10 +10,7 @@ export function classifyFailure(input, opts = {}) {
 }
 
 export function buildDiagnoseManifest(failure, caps = {}) {
-  const stage = (role, rationale) => {
-    const p = chosen(caps, role);
-    return { stage: role, provider: p.id, source: p.source, model: modelFor(caps, role), rationale, evidence: `failure: ${failure.signal}`, fallback: "inline" };
-  };
+  const stage = makeStage(caps, `failure: ${failure.signal}`);
   const recs = collectRecommendations(caps, ["debug", "implement", "test-author", "code-review"]);
   return {
     outcome: `Resolve: ${failure.signal}`,

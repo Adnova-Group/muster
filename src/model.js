@@ -25,3 +25,20 @@ const FALLBACK = { fable: "opus" };
 export function fallbackModelFor(model) {
   return FALLBACK[model] || model;
 }
+
+// Ascending capability order. opus is included because it is a valid dispatch
+// tier via fallbackModelFor (fable degrades to opus) even though modelForRole
+// never emits it directly.
+export const MODEL_TIER_ORDER = ["haiku", "sonnet", "opus", "fable"];
+
+// Returns the highest-capability tier from a list of model names, according to
+// MODEL_TIER_ORDER. Unknown names are silently ignored. Returns undefined when
+// the list is empty or contains no known tiers.
+export function maxTier(models) {
+  let best = -1;
+  for (const m of models) {
+    const idx = MODEL_TIER_ORDER.indexOf(m);
+    if (idx > best) best = idx;
+  }
+  return best === -1 ? undefined : MODEL_TIER_ORDER[best];
+}

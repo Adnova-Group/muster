@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
-import { modelForRole } from "./model.js";
+import { modelForRole, maxTier, MODEL_TIER_ORDER } from "./model.js";
 
 export function validateVendorManifest(doc) {
   const errors = [];
@@ -56,14 +56,29 @@ export function toBuiltin(sourceText, item, source) {
 
 // Vendor an item marked `as: agent` into a muster `kind: agent` catalog entry.
 // Body goes to plugin/agents/<id>.md; catalog entry to catalog/agents.generated.yaml.
-// model tier: the modelForRole policy on the item's highest-judgment role —
-// one policy source (src/model.js), not a second hardcoded mapping here.
+// model tier: maxTier over the item's role-mapped models, floored at sonnet.
+// An agent never pins below sonnet — haiku-tier (mechanical) roles ride the
+// orchestrator's override instead. The floor is enforced via MODEL_TIER_ORDER
+// index comparison so the tier name is not hardcoded here.
+const SONNET_IDX = MODEL_TIER_ORDER.indexOf("sonnet");
+function floorAtSonnet(tier) {
+  if (tier === undefined) return MODEL_TIER_ORDER[SONNET_IDX];
+  return MODEL_TIER_ORDER.indexOf(tier) >= SONNET_IDX ? tier : MODEL_TIER_ORDER[SONNET_IDX];
+}
+
+// Pure helper: given a roles array, return the model tier toAgent would emit
+// (absent an explicit item.model override). Exported so tests and the generator
+// share one code path for drift detection.
+export function modelForRoles(roles) {
+  return floorAtSonnet(maxTier(roles.map(modelForRole)));
+}
+
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
   const adapted_from = `${source.repo} ${item.from}`;
-  const model = item.model
-    || item.roles.map(modelForRole).find(m => m === "fable" || m === "opus")
-    || "sonnet";
+  // item.model is an explicit manifest pin (trusted as-is); otherwise derive from
+  // roles via the single policy source (src/model.js), floored at sonnet.
+  const model = item.model || modelForRoles(item.roles);
   const fm = {
     name: data.name || item.id,
     description: data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,

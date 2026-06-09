@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateVendorManifest, toBuiltin, generateNotice, runVendor, pickLatestVersion } from "../src/vendor.js";
+import { validateVendorManifest, toBuiltin, toAgent, generateNotice, runVendor, pickLatestVersion, splitFrontmatter } from "../src/vendor.js";
+import { modelForRole } from "../src/model.js";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -240,6 +241,53 @@ test("pickLatestVersion: empty list returns undefined", () => {
 
 test("pickLatestVersion: single semver entry", () => {
   assert.equal(pickLatestVersion(["3.2.1"]), "3.2.1");
+});
+
+// --- toAgent: model resolution ------------------------------------------------
+
+const agentSrc = `---\nname: my-agent\ndescription: Does the thing\n---\n\n# My Agent\nBody text.\n`;
+const agentSource = { repo: "obra/superpowers", license: "MIT" };
+
+test("toAgent model passthrough: explicit item.model wins verbatim", () => {
+  const item = { from: "ag/AGENT.md", id: "sp-ag", roles: ["architecture-review"], model: "haiku" };
+  const r = toAgent(agentSrc, item, agentSource);
+  const { data } = splitFrontmatter(r.content);
+  assert.equal(data.model, "haiku");
+});
+
+test("toAgent architecture-review role → modelForRole policy (fable)", () => {
+  const item = { from: "ag/AGENT.md", id: "sp-arch", roles: ["architecture-review"] };
+  const r = toAgent(agentSrc, item, agentSource);
+  const { data } = splitFrontmatter(r.content);
+  // Expectation derived from policy, not hardcoded — follows modelForRole.
+  assert.equal(data.model, modelForRole("architecture-review"));
+});
+
+test("toAgent default roles (implement) → sonnet", () => {
+  const item = { from: "ag/AGENT.md", id: "sp-impl", roles: ["implement"] };
+  const r = toAgent(agentSrc, item, agentSource);
+  const { data } = splitFrontmatter(r.content);
+  assert.equal(data.model, "sonnet");
+});
+
+test("toAgent haiku-tier roles only → sonnet floor applies (not haiku)", () => {
+  // "research" maps to haiku in modelForRole but toAgent floors at sonnet.
+  const item = { from: "ag/AGENT.md", id: "sp-research", roles: ["research"] };
+  const r = toAgent(agentSrc, item, agentSource);
+  const { data } = splitFrontmatter(r.content);
+  assert.equal(data.model, "sonnet");
+  assert.notEqual(data.model, "haiku");
+});
+
+test("toAgent frontmatter carries resolved model field", () => {
+  const item = { from: "ag/AGENT.md", id: "sp-carry", roles: ["implement"] };
+  const r = toAgent(agentSrc, item, agentSource);
+  // Verify the raw content string contains a model key, and that parsing it
+  // round-trips to the same value — exercises splitFrontmatter integration.
+  assert.match(r.content, /^model:/m);
+  const { data } = splitFrontmatter(r.content);
+  assert.ok(data.model, "frontmatter must have a non-empty model field");
+  assert.equal(data.model, "sonnet");
 });
 
 test("runVendor: resolveSuperpowers picks highest semver dir over content-hash dir", async (t) => {

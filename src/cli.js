@@ -30,6 +30,7 @@ import { dirFromImportMeta } from "./fs-util.js";
 import { matchProviders } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
+import { classifySteer } from "./steer.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -139,6 +140,9 @@ try {
   } else if (cmd === "assess") {
     if (!rest[0]) fail("assess <outcome>: missing outcome");
     out(assessOutcome(rest[0]));
+  } else if (cmd === "steer") {
+    if (!rest[0]) fail("steer <message>: missing message");
+    out(classifySteer(rest.join(" ")));
   } else if (cmd === "doctor") {
     const r = await runDoctor({ root: new URL("../", import.meta.url) });
     out(r);
@@ -161,7 +165,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

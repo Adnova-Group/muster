@@ -1,6 +1,6 @@
 ---
 name: domain-router
-description: Pick the work domain for an outcome and route to its pipeline (PM/PRD, etc.), else fall back to the software route. Glass-box: records the domain choice + why.
+description: Pick the work domain for an outcome and route to its pipeline (PM/PRD, etc.); for unrecognized domains, classify by judgment and pick the closest pipeline. Falls back to the software route for code workspaces. Glass-box: records the domain choice + why.
 ---
 
 # Domain router

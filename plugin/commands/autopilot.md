@@ -30,9 +30,9 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
    and re-render the checklist with completed ids (`--done …`) into the run STATE.
 6. **Escalation** — if a review gate escalates (fix-loop cap) or a tournament has no passing candidate,
    STOP and report the unresolved items; the branch stays intact.
-7. **Finish** — after the last wave, present the merge decision (finishing-a-development-branch) via the
-   **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** /
-   **Discard**. The single attended human decision. No auto-push.
+7. **Finish** — after the last wave, present the merge decision via the **AskUserQuestion** selection UI
+   with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**. The single attended
+   human decision. No auto-push.
 
 **Unattended (Routine) mode**
 

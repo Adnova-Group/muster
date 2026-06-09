@@ -18,12 +18,14 @@ const HOOK = path.join(
 
 async function runHook(cwd) {
   // Never rejects on non-zero exit; capture both for assertions.
-  try {
-    const { stdout } = await execFileP("node", [HOOK], { cwd });
-    return { stdout, code: 0 };
-  } catch (err) {
-    return { stdout: err.stdout ?? "", code: err.code ?? 1 };
-  }
+  // Pass empty input so the hook's readFileSync(0) returns empty string (parses
+  // as {}) rather than blocking on an open pipe.
+  return new Promise((resolve) => {
+    const child = execFile("node", [HOOK], { cwd }, (err, stdout) => {
+      resolve({ stdout: stdout ?? err?.stdout ?? "", code: err?.code ?? 0 });
+    });
+    child.stdin.end(""); // close stdin immediately
+  });
 }
 
 // Run the hook with a stdin payload (e.g. a compact-source SessionStart event).

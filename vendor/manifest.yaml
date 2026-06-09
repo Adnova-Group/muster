@@ -19,9 +19,10 @@ sources:
       - from: receiving-code-review/SKILL.md
         id: sp-review-recv
         roles: [code-review]
+        rank: 48
       - from: systematic-debugging/SKILL.md
         id: sp-debug
-        roles: [implement, debug]
+        roles: [debug]
       - from: verification-before-completion/SKILL.md
         id: sp-verify
         roles: [test-author]
@@ -244,3 +245,4 @@ sources:
       - from: gsd-core/workflows/verify-work.md
         id: gsd-verify-work
         roles: [plan]
+        description: "Built-in for verify — UAT + gap-closure verification of completed work"

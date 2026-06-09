@@ -17,14 +17,11 @@
 
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { emit } from "./guidance.js";
 
 const EVENT = "PreToolUse";
 const MARKER = ".muster/wave-active";
 const STALE_MS = 60 * 60 * 1000; // 60 minutes
-
-function emit(obj) {
-  process.stdout.write(JSON.stringify(obj));
-}
 
 function allow() {
   emit({ hookSpecificOutput: { hookEventName: EVENT } });
@@ -42,13 +39,25 @@ function warnAllow(waveId) {
   process.exit(0);
 }
 
+// Sanitize a waveId read from a marker file before interpolating into output.
+// - strip non-printable ASCII (keep 0x20–0x7E)
+// - cap at 64 chars
+// - fall back to "unknown" if empty after sanitization
+function sanitizeWaveId(raw) {
+  const clean = raw.replace(/[^\x20-\x7E]/g, "").slice(0, 64).trim();
+  return clean.length > 0 ? clean : "unknown";
+}
+
 function deny(waveId) {
   emit({
     hookSpecificOutput: {
       hookEventName: EVENT,
       permissionDecision: "deny",
       permissionDecisionReason:
-        `muster wave ${waveId} is active — dispatch this edit through the crew (Agent tool) instead of editing inline. If no wave is actually running: rm .muster/wave-active`,
+        `muster wave ${waveId} is active — dispatch this edit through the crew (Agent tool) instead of editing inline. ` +
+        `This includes shell-based file writes (sed -i, tee, heredocs) which bypass the hook. ` +
+        `If no wave is actually running: rm .muster/wave-active. ` +
+        `For harnesses whose PreToolUse payload lacks agent_id, set MUSTER_WAVE_GUARD=warn to allow with a reminder instead of blocking.`,
     },
   });
   process.exit(0);
@@ -101,10 +110,10 @@ try {
     allow();
   }
 
-  // Read wave id from marker content.
+  // Read wave id from marker content, then sanitize.
   let waveId = "unknown";
   try {
-    waveId = readFileSync(markerPath, "utf8").trim() || "unknown";
+    waveId = sanitizeWaveId(readFileSync(markerPath, "utf8").trim());
   } catch {
     waveId = "unknown";
   }

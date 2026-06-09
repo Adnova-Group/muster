@@ -43,4 +43,34 @@ describe("runInstall", () => {
     assert.deepEqual(b, a);
     assert.deepEqual(await readdir(home), []);
   });
+
+  it("ephemeral npx cache root (/_npx/) → recommends GitHub marketplace slug, not the ephemeral path", async () => {
+    const home = await mkdtemp(join(tmpdir(), "muster-install-"));
+    const ephemeralRoot = "/home/user/.npm/_npx/abc123def456/node_modules/@adnova-group/muster";
+    const { nextSteps } = await runInstall({ home, repoRoot: ephemeralRoot });
+    const joined = nextSteps.join("\n");
+    // Must recommend the GitHub-hosted marketplace slug
+    assert.match(joined, /\/plugin marketplace add Adnova-Group\/muster/, "must recommend the GitHub marketplace slug");
+    // Must NOT recommend adding the ephemeral path as the marketplace target
+    assert.doesNotMatch(joined, /\/plugin marketplace add \/home/, "must not tell the user to add the ephemeral path");
+  });
+
+  it("ephemeral npx cache root (Windows \\_npx\\) → recommends GitHub marketplace slug", async () => {
+    const home = await mkdtemp(join(tmpdir(), "muster-install-"));
+    const ephemeralRoot = "C:\\Users\\user\\AppData\\Roaming\\npm-cache\\_npx\\abc123\\node_modules\\@adnova-group\\muster";
+    const { nextSteps } = await runInstall({ home, repoRoot: ephemeralRoot });
+    const joined = nextSteps.join("\n");
+    assert.match(joined, /\/plugin marketplace add Adnova-Group\/muster/, "must recommend the GitHub marketplace slug");
+    assert.doesNotMatch(joined, /node_modules/, "must not mention the ephemeral node_modules path");
+  });
+
+  it("non-ephemeral checkout root → keeps local-path marketplace instruction", async () => {
+    const home = await mkdtemp(join(tmpdir(), "muster-install-"));
+    const { nextSteps } = await runInstall({ home, repoRoot });
+    const joined = nextSteps.join("\n");
+    // The real repoRoot is a normal checkout path, not under _npx — must use local path
+    assert.match(joined, /\/plugin marketplace add /, "must tell the user to add the marketplace");
+    assert.doesNotMatch(joined, /\/plugin marketplace add Adnova-Group\/muster/, "real checkout must use local path, not GitHub slug");
+    assert.match(joined, new RegExp(`/plugin marketplace add ${repoRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "must include the actual repo path");
+  });
 });

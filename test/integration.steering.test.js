@@ -17,7 +17,8 @@ test("the documented steering actions classify end-to-end", () => {
 test("the orchestrator skill wires channel steering through classifySteer", async () => {
   const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
   assert.match(text, /classifySteer/, "orchestrator must classify channel events via classifySteer");
-  assert.match(text, /src\/steer\.js/, "orchestrator must point at src/steer.js");
+  // the canonical invocation is the CLI form; src/steer.js may appear as an implementation note
+  assert.match(text, /muster steer/, "orchestrator must reference the CLI steer subcommand");
   assert.match(text, /<channel/, "orchestrator must handle <channel> events");
   // every action the classifier can return must have a documented orchestrator behavior
   for (const action of ["approve", "stop", "status", "retarget", "unknown"]) {

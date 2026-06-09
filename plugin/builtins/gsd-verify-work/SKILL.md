@@ -1,6 +1,6 @@
 ---
 name: gsd-verify-work
-description: Built-in for plan (adapted from open-gsd/gsd-core)
+description: Built-in for verify — UAT + gap-closure verification of completed work
 muster_builtin: true
 adapted_from: open-gsd/gsd-core gsd-core/workflows/verify-work.md
 license: MIT

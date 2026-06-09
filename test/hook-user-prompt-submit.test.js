@@ -122,3 +122,27 @@ test("malformed stdin: valid JSON, exit 0, no nudge (fail-safe)", async () => {
   assert.doesNotThrow(() => JSON.parse(stdout), "stdout is valid JSON");
   assert.ok(!("additionalContext" in ctxOf(stdout)), "garbage stdin -> no nudge");
 });
+
+// ── session_id that sanitizes to empty string must not write the bare tmp file ─
+test("session_id of only non-word chars sanitizes to empty: no file write, exits 0, valid JSON", async () => {
+  // "!!!" sanitizes to "" via replace(/[^a-zA-Z0-9_-]/g, "")
+  const badId = "!!!";
+
+  // Remove the bare file if it pre-exists (from old hook versions) so we can
+  // verify the fixed hook does not (re-)create it.
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { existsSync, rmSync } = await import("node:fs");
+  const bareFile = path.default.join(os.default.tmpdir(), "muster-turns-");
+  try { rmSync(bareFile); } catch { /* not present — fine */ }
+
+  const { stdout, code } = await runRaw(JSON.stringify({ session_id: badId }));
+  assert.equal(code, 0, "exit 0");
+  assert.doesNotThrow(() => JSON.parse(stdout), "stdout is valid JSON");
+  const out = ctxOf(stdout);
+  // Must not nudge (turn-counting is skipped)
+  assert.ok(!("additionalContext" in out), "empty sanitized session_id -> no nudge (turn-counting skipped)");
+
+  // Verify the bare file was NOT written.
+  assert.ok(!existsSync(bareFile), "bare tmp file must not be written when session_id sanitizes to empty");
+});

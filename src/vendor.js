@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
+import { modelForRole } from "./model.js";
 
 export function validateVendorManifest(doc) {
   const errors = [];
@@ -55,11 +56,14 @@ export function toBuiltin(sourceText, item, source) {
 
 // Vendor an item marked `as: agent` into a muster `kind: agent` catalog entry.
 // Body goes to plugin/agents/<id>.md; catalog entry to catalog/agents.generated.yaml.
-// model tier: architecture-review → opus (heavy judgment); everything else → sonnet.
+// model tier: the modelForRole policy on the item's highest-judgment role —
+// one policy source (src/model.js), not a second hardcoded mapping here.
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
   const adapted_from = `${source.repo} ${item.from}`;
-  const model = item.model || (item.roles.includes("architecture-review") ? "opus" : "sonnet");
+  const model = item.model
+    || item.roles.map(modelForRole).find(m => m === "fable" || m === "opus")
+    || "sonnet";
   const fm = {
     name: data.name || item.id,
     description: data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,

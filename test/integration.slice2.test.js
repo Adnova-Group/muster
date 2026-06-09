@@ -8,7 +8,7 @@ import { pickWinner } from "../src/tournament.js";
 test("a valid diamond manifest schedules into 3 waves", () => {
   const m = {
     outcome: "ship feature", successCriteria: ["tests green"],
-    crew: [{ stage: "implement", provider: "muster-builder", source: "builtin",
+    crew: [{ stage: "implement", provider: "muster-builder", source: "builtin", model: "sonnet",
              rationale: "r", evidence: "e", fallback: "inline" }],
     recommendations: [], degradations: [],
     plan: [

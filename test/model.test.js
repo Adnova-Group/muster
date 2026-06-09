@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { modelForRole } from "../src/model.js";
+import { modelForRole, fallbackModelFor } from "../src/model.js";
 
 test("mechanical roles -> haiku", () => {
   assert.equal(modelForRole("code-navigation"), "haiku");
@@ -8,11 +8,21 @@ test("mechanical roles -> haiku", () => {
   assert.equal(modelForRole("research"), "haiku");
 });
 
-test("heavy-judgment roles -> opus", () => {
-  // "judge" is a conceptual non-enum role (tournament skill dispatches it on opus);
-  // "architecture-review" is the canonical ROLES member.
-  assert.equal(modelForRole("judge"), "opus");
-  assert.equal(modelForRole("architecture-review"), "opus");
+test("heavy-judgment roles -> fable (top tier)", () => {
+  // "judge" is a conceptual non-enum role (tournament skill dispatches the judge);
+  // "architecture-review" is the canonical ROLES member. These are the two spots
+  // where peak judgment pays for fable's 2x cost; everything else stays cheaper.
+  assert.equal(modelForRole("judge"), "fable");
+  assert.equal(modelForRole("architecture-review"), "fable");
+});
+
+// Fable may be unavailable on a given plan (e.g. requires extra usage credits).
+// Dispatch must degrade to opus — never fail the task, never silently inherit.
+test("fable degrades to opus when unavailable; other tiers have no fallback", () => {
+  assert.equal(fallbackModelFor("fable"), "opus");
+  assert.equal(fallbackModelFor("opus"), "opus");
+  assert.equal(fallbackModelFor("sonnet"), "sonnet");
+  assert.equal(fallbackModelFor("haiku"), "haiku");
 });
 
 test("default role -> sonnet", () => {

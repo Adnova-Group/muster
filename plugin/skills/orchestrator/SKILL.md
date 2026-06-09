@@ -46,11 +46,17 @@ the manifest — the crew on paper is not the crew doing the work.
             unavailable in session) rather than its native specialist.
         - else (`kind` skill / mcp / inline) -> dispatch a **generic** subagent and inject the
           resolved provider (skill) into the BRIEF, as today.
-      - **Model (authoritative, regardless of kind):** always pass `roles[<role>].model` from
-        capabilities as the Agent tool's `model` **override** — this takes precedence over an
-        agent's own frontmatter model, so `modelForRole` governs: mechanical roles (code-navigation,
-        docs-research, research) run on **haiku**, the default is **sonnet**, heavy judgment is **opus**.
-        This keeps quota spend proportional to the work (Muster runs on your interactive subscription).
+      - **Model (authoritative, regardless of kind):** always pass the crew member's `model` (bound
+        into the manifest by the builders; same value as `roles[<role>].model`) as the Agent tool's
+        `model` **override** — this takes precedence over an agent's own frontmatter model, so
+        `modelForRole` governs: mechanical roles (code-navigation, docs-research, research) run on
+        **haiku**, the default is **sonnet**, peak judgment (the tournament judge, architecture
+        review) is **fable**. This keeps quota spend proportional to the work (Muster runs on your
+        interactive subscription). **Fable fallback:** fable may be unavailable on the current plan
+        (e.g. it requires extra usage credits). If a fable dispatch is rejected for that reason,
+        retry once with `fallbackModelFor` from `src/model.js` (fable -> **opus**) and record the
+        degradation in STATE — never fail the task over a model tier, and never drop the override
+        (a dropped override silently inherits the orchestrator's model).
    b. BARRIER: wait for all wave tasks to finish.
    c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops using the
       Ralph loop primitive (`loopState` in `src/loop.js`): re-dispatch fix attempts until the gate

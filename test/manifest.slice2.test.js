@@ -4,7 +4,7 @@ import { validateManifest } from "../src/manifest.js";
 
 const base = {
   outcome: "x", successCriteria: ["c"],
-  crew: [{ stage: "s", provider: "p", source: "builtin", rationale: "r", evidence: "e", fallback: "inline" }],
+  crew: [{ stage: "s", provider: "p", source: "builtin", model: "sonnet", rationale: "r", evidence: "e", fallback: "inline" }],
   recommendations: [], degradations: []
 };
 

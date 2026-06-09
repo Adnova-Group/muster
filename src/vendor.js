@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
+import { modelForRole, maxTier, MODEL_TIER_ORDER } from "./model.js";
 
 export function validateVendorManifest(doc) {
   const errors = [];
@@ -55,11 +56,29 @@ export function toBuiltin(sourceText, item, source) {
 
 // Vendor an item marked `as: agent` into a muster `kind: agent` catalog entry.
 // Body goes to plugin/agents/<id>.md; catalog entry to catalog/agents.generated.yaml.
-// model tier: architecture-review → opus (heavy judgment); everything else → sonnet.
+// model tier: maxTier over the item's role-mapped models, floored at sonnet.
+// An agent never pins below sonnet — haiku-tier (mechanical) roles ride the
+// orchestrator's override instead. The floor is enforced via MODEL_TIER_ORDER
+// index comparison so the tier name is not hardcoded here.
+const SONNET_IDX = MODEL_TIER_ORDER.indexOf("sonnet");
+function floorAtSonnet(tier) {
+  if (tier === undefined) return MODEL_TIER_ORDER[SONNET_IDX];
+  return MODEL_TIER_ORDER.indexOf(tier) >= SONNET_IDX ? tier : MODEL_TIER_ORDER[SONNET_IDX];
+}
+
+// Pure helper: given a roles array, return the model tier toAgent would emit
+// (absent an explicit item.model override). Exported so tests and the generator
+// share one code path for drift detection.
+export function modelForRoles(roles) {
+  return floorAtSonnet(maxTier(roles.map(modelForRole)));
+}
+
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
   const adapted_from = `${source.repo} ${item.from}`;
-  const model = item.model || (item.roles.includes("architecture-review") ? "opus" : "sonnet");
+  // item.model is an explicit manifest pin (trusted as-is); otherwise derive from
+  // roles via the single policy source (src/model.js), floored at sonnet.
+  const model = item.model || modelForRoles(item.roles);
   const fm = {
     name: data.name || item.id,
     description: data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
@@ -100,10 +119,27 @@ export function generateNotice(builtinEntries) {
 
 const pexec = promisify(execFile);
 
+const SEMVER_RE = /^\d+\.\d+\.\d+$/;
+
+export function pickLatestVersion(entries) {
+  if (!entries || entries.length === 0) return undefined;
+  const semvers = entries.filter(e => SEMVER_RE.test(e));
+  if (semvers.length === 0) return entries[0];
+  return semvers.reduce((best, cur) => {
+    const [bMaj, bMin, bPat] = best.split(".").map(Number);
+    const [cMaj, cMin, cPat] = cur.split(".").map(Number);
+    if (cMaj !== bMaj) return cMaj > bMaj ? cur : best;
+    if (cMin !== bMin) return cMin > bMin ? cur : best;
+    return cPat > bPat ? cur : best;
+  });
+}
+
 async function resolveSuperpowers(home) {
   const base = join(home, ".claude/plugins/cache/claude-plugins-official/superpowers");
   if (!(await exists(base))) return null;
-  const versions = (await readdir(base)).sort().reverse();
+  const entries = await readdir(base);
+  const best = pickLatestVersion(entries);
+  const versions = best ? [best, ...entries.filter(e => e !== best)] : entries;
   for (const v of versions) {
     const skills = join(base, v, "skills");
     if (await exists(skills)) return skills;

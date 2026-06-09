@@ -7,22 +7,19 @@ import { resolveCapabilities } from "../src/capabilities.js";
 import { modelForRole } from "../src/model.js";
 import { toAgent } from "../src/vendor.js";
 
-const AGENT_IDS = [
-  "muster-surgeon",
-  "muster-builder",
-  "muster-reviewer",
-  "muster-investigator",
-  "muster-strategist"
-];
+// Derive agent ids and primary roles directly from the catalog yaml so that any
+// newly added agent is automatically covered — no manual list to update.
+//
+// Convention (documented in catalog/agents.muster.yaml): roles[0] is the primary
+// role for each agent and drives the modelForRole policy assertion below.
+const musterYamlUrl = new URL("../catalog/agents.muster.yaml", import.meta.url);
+const MUSTER_ENTRIES = parse(await readFile(musterYamlUrl, "utf8"));
 
-// Primary role each agent is authored for (drives expected model).
-const PRIMARY_ROLE = {
-  "muster-surgeon": "implement",
-  "muster-builder": "implement",
-  "muster-reviewer": "code-review",
-  "muster-investigator": "code-navigation",
-  "muster-strategist": "architecture-review"
-};
+// Derive a flat list of ids and a primary-role map from the yaml at test time.
+// Adding a 6th (or nth) entry to agents.muster.yaml is sufficient — no test edits needed.
+const AGENT_IDS = MUSTER_ENTRIES.map(e => e.id);
+// Primary role = roles[0] per catalog convention (first role drives modelForRole policy).
+const PRIMARY_ROLE = Object.fromEntries(MUSTER_ENTRIES.map(e => [e.id, e.roles[0]]));
 
 const catalogDir = new URL("../catalog/", import.meta.url);
 
@@ -50,6 +47,9 @@ test("agent roles resolve to a chosen provider with kind 'agent'", async () => {
 });
 
 test("each agent file's frontmatter model equals modelForRole(primaryRole)", async () => {
+  // Count assertion: every yaml entry is iterated — a newly added agent is never silently skipped.
+  assert.ok(MUSTER_ENTRIES.length > 0, "agents.muster.yaml must contain at least one entry");
+  let covered = 0;
   for (const id of AGENT_IDS) {
     const src = await readFile(new URL(`../plugin/agents/${id}.md`, import.meta.url), "utf8");
     const m = src.match(/^---\n([\s\S]*?)\n---/);
@@ -57,7 +57,10 @@ test("each agent file's frontmatter model equals modelForRole(primaryRole)", asy
     const fm = parse(m[1]);
     const expected = modelForRole(PRIMARY_ROLE[id]);
     assert.equal(fm.model, expected, `${id} model should be ${expected}`);
+    covered++;
   }
+  assert.equal(covered, MUSTER_ENTRIES.length,
+    `iterated ${covered} agents but yaml has ${MUSTER_ENTRIES.length} entries`);
 });
 
 // Description search feeds off catalog `description`. Every authored + vendored agent

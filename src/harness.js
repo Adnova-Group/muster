@@ -30,6 +30,29 @@ async function collectPluginAgents(pluginsBase, maxDepth = 4) {
   return found;
 }
 
+// Collect skill names from any skills/ dir found within `pluginsBase`.
+// Skills live as directories: skills/<name>/SKILL.md — the directory name is
+// the skill name. Walks up to `maxDepth` levels, tolerating missing dirs.
+async function collectPluginSkills(pluginsBase, maxDepth = 4) {
+  const found = [];
+  async function walk(dir, depth) {
+    if (depth > maxDepth) return;
+    for (const entry of await readdirSafe(dir)) {
+      if (entry === "skills") {
+        for (const name of await readdirSafe(join(dir, "skills"))) {
+          const entries = await readdirSafe(join(dir, "skills", name));
+          if (entries.includes("SKILL.md")) found.push(name);
+        }
+        continue;
+      }
+      // Recurse; readdirSafe returns [] for files, so leaves terminate.
+      await walk(join(dir, entry), depth + 1);
+    }
+  }
+  await walk(pluginsBase, 0);
+  return found;
+}
+
 export async function readInstalled(home) {
   const plugins = [];
   const pj = await readJson(join(home, ".claude/plugins/installed_plugins.json"));
@@ -40,6 +63,16 @@ export async function readInstalled(home) {
   if (settings && settings.mcpServers) mcpServers.push(...Object.keys(settings.mcpServers));
 
   const skills = [];
+  try {
+    for (const name of await readdir(join(home, ".claude/skills"))) {
+      const entries = await readdirSafe(join(home, ".claude/skills", name));
+      if (entries.includes("SKILL.md")) skills.push(name);
+    }
+  } catch { /* dir may not exist */ }
+
+  // Also merge skills shipped by installed plugins, scanning the same plugin
+  // directory tree used for agents (both shallow and deep cache layouts).
+  for (const name of await collectPluginSkills(join(home, ".claude/plugins"))) skills.push(name);
 
   const agents = [];
   try {

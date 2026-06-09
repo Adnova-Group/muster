@@ -26,6 +26,7 @@ import { buildAuditManifest } from "./audit.js";
 import { runInstall, runUninstall } from "./install.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
+import { dirFromImportMeta } from "./fs-util.js";
 import { matchProviders } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
@@ -79,7 +80,7 @@ try {
     const manifest = parseYaml(await readFile(manifestUrl, "utf8"));
     const v = validateVendorManifest(manifest);
     if (!v.ok) { v.errors.forEach(e => process.stderr.write(`manifest: ${e}\n`)); process.exit(2); }
-    const repoRoot = new URL("../", import.meta.url).pathname;
+    const repoRoot = dirFromImportMeta(import.meta.url, "../");
     const res = await runVendor({ repoRoot, manifest });
     res.warnings.forEach(w => process.stderr.write(`warn: ${w}\n`));
     out({ vendored: res.count, warnings: res.warnings.length });

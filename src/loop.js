@@ -7,3 +7,11 @@ export function loopState({ iteration, maxIterations = 25, done = false }) {
   if (iteration >= maxIterations) return { continue: false, reason: "max-iterations" };
   return { continue: true, reason: "iterate" };
 }
+
+// The review-gate fix-loop is capped at 3 iterations — this cap IS the contract (prose in
+// plugin/skills/review-gate/SKILL.md points here). The caller cannot raise it: a higher caller-
+// supplied maxIterations is silently dropped so the contract cannot be accidentally widened.
+export const REVIEW_GATE_MAX_ITERATIONS = 3;
+export function reviewGateState({ iteration, done = false }) {
+  return loopState({ iteration, maxIterations: REVIEW_GATE_MAX_ITERATIONS, done });
+}

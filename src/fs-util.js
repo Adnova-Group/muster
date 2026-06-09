@@ -1,4 +1,13 @@
 import { readFile, stat } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+// Resolves a relative path from a module's import.meta.url to a filesystem path.
+// Uses fileURLToPath so the result is correct on all platforms — in particular,
+// on native Windows Node a bare `new URL(rel, importMetaUrl).pathname` yields
+// `/C:/...` which breaks path.join; fileURLToPath normalises it to `C:\...`.
+export function dirFromImportMeta(importMetaUrl, rel) {
+  return fileURLToPath(new URL(rel, importMetaUrl));
+}
 
 // Canonical existence check. Returns false ONLY for a genuinely-absent path
 // (ENOENT) or a non-directory component in the path (ENOTDIR). Any other error

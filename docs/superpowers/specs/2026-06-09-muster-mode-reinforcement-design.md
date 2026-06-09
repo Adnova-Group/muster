@@ -14,7 +14,24 @@ payload) now happens exceptionally rarely, so it cannot be relied on to re-ancho
 ## Goal
 
 Periodically re-assert muster mode during a live session, cheaply, so adherence does not depend
-on manual reminders or on compaction occurring.
+on manual reminders or on compaction occurring. "Muster mode" includes a **default routing
+posture**: in a muster-installed repo, actionable prompts should be driven through muster workflows
+by default — the user should not have to prefix every task with `/muster`.
+
+## Routing posture
+
+The injected guidance carries a routing directive (`ROUTING_POLICY`), re-asserted on the same
+cadence as the drift fix:
+
+- **Directives and substantive questions** → route through the muster verbs
+  (`/muster:run`, `:autopilot`, `:diagnose`, `:audit`) where applicable.
+- **Conversational / trivial turns** → fall through to a normal response, no workflow.
+- **Explicit `/muster` commands or verbs** → honored as given; auto-routing only applies to prompts
+  that don't already invoke one.
+
+This is a steering directive injected as text, not a hard gate — it biases the model's default
+path, it does not intercept or block prompts. A hard-gate classifier is explicitly out of scope
+(see below).
 
 ## Mechanism
 
@@ -50,19 +67,29 @@ Single source of truth for the guidance text. Self-contained (node: builtins onl
 
 - `PRINCIPLES` — the 6 principle lines (string).
 - `VERBS` — the verbs line (string).
-- `SHORT_NUDGE` — the one-paragraph nudge (below).
+- `ROUTING_POLICY` — the default-routing directive (string, below).
+- `SHORT_NUDGE` — the one-paragraph nudge, which includes a condensed routing clause (below).
 - `detect(cwd)` — project/git detection (moved verbatim from `session-start.js`).
 
-`SHORT_NUDGE` text:
+`ROUTING_POLICY` text:
 
-> muster mode — route through skills and the verbs, keep reasoning glass-box, don't drift to
-> plain inline work. Verbs: /muster:run · /muster:autopilot · /muster:diagnose · /muster:audit.
+> Default routing: in this muster repo, drive actionable prompts through muster — route directives
+> and substantive questions to the verbs (/muster:run · :autopilot · :diagnose · :audit) where
+> applicable, and content/copy work through the muster content pipeline (humanizer). Let
+> conversational or trivial turns fall through. Honor explicit /muster commands as given.
+
+`SHORT_NUDGE` text (carries a condensed routing clause):
+
+> muster mode — drive directives through the muster verbs (don't default to plain inline work),
+> route copy/content through the humanizer, keep reasoning glass-box. Conversational turns fall
+> through. Verbs: /muster:run · /muster:autopilot · /muster:diagnose · /muster:audit.
 
 ### `plugin/hooks/session-start.js` (refactor)
 
-Import `PRINCIPLES`, `VERBS`, `detect` from `guidance.js` and compose
-`[PRINCIPLES, VERBS, detect(cwd)]`. Behavior and output unchanged — existing
-`hook-session-start.test.js` guards this. Remains fully self-contained and fail-safe.
+Import `PRINCIPLES`, `VERBS`, `ROUTING_POLICY`, `detect` from `guidance.js` and compose
+`[PRINCIPLES, VERBS, ROUTING_POLICY, detect(cwd)]`. The added `ROUTING_POLICY` line is the only
+output change; existing `hook-session-start.test.js` assertions still hold (they match on verbs and
+a principle keyword, which remain present). Remains fully self-contained and fail-safe.
 
 ### `plugin/hooks/user-prompt-submit.js` (new)
 
@@ -75,13 +102,13 @@ valid JSON and exit 0. Logic:
 3. `N` from `process.env.MUSTER_NUDGE_EVERY`, parsed as a positive int; junk/≤0 → default `3`.
 4. `K` from `process.env.MUSTER_PRINCIPLES_EVERY`, parsed as a positive int; junk/≤0 → default `3`.
 5. Emit:
-   - `count % (N*K) === 0` → `additionalContext = PRINCIPLES + "\n" + VERBS`
-   - else `count % N === 0` → `additionalContext = SHORT_NUDGE`
+   - `count % (N*K) === 0` → `additionalContext = PRINCIPLES + "\n" + VERBS + "\n" + ROUTING_POLICY`
+   - else `count % N === 0` → `additionalContext = SHORT_NUDGE` (already carries the routing clause)
    - else → no `additionalContext`
    - `hookSpecificOutput.hookEventName = "UserPromptSubmit"` in all cases.
 
-The full periodic payload is `PRINCIPLES + VERBS` only (no `detect` — project type does not change
-mid-session and orientation is a session-start concern).
+The full periodic payload is `PRINCIPLES + VERBS + ROUTING_POLICY` (no `detect` — project type does
+not change mid-session and orientation is a session-start concern).
 
 ### `plugin/hooks/hooks.json` (edit)
 
@@ -123,7 +150,10 @@ collide.
 - `MUSTER_NUDGE_EVERY=5` honored; `MUSTER_PRINCIPLES_EVERY=2` honored; junk values
   (`""`, `"abc"`, `"0"`, `"-1"`) fall back to defaults.
 - Malformed/empty stdin → valid JSON, exit 0, no nudge.
-- Short nudge text contains the four verbs and a "muster mode" marker.
+- Short nudge text contains the four verbs and a "muster mode" marker, plus a routing marker
+  (mentions the humanizer / "drive directives").
+- Full payload (turn N·K) contains a routing marker (e.g. "Default routing" / humanizer) in
+  addition to the principle keyword and verbs.
 
 ### `test/hook-session-start.test.js` (augment)
 
@@ -144,3 +174,6 @@ verbs) regardless of `source`, since the compact backstop relies on it.
 - Reading turn count from the transcript (O(n) per turn → O(n²) over a session; the counter file
   is O(1)).
 - Any change to `plugin.json` version — a separate release step, not part of this design.
+- A hard-gate `UserPromptSubmit` classifier that decides conversational-vs-directive and
+  blocks/rewrites prompts. The routing posture here is steering text only; a classifier is brittle
+  and a larger build — its own future spec if wanted.

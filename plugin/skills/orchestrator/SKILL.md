@@ -7,6 +7,23 @@ description: Execute a validated Crew Manifest in dependency-ordered waves, with
 
 Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the outcome).
 
+## Iron rule: dispatch the crew, never work inline
+
+The most common failure of this skill is the orchestrator doing a wave's implement/review work
+**inline in the main loop** instead of dispatching it to the resolved provider. That silently voids
+the manifest — the crew on paper is not the crew doing the work.
+
+- **Before you Edit or Write ANY file during a wave, you MUST have dispatched that task to its
+  resolved provider via the Agent tool** (`subagent_type = roles[<role>].chosen.id`, e.g.
+  `implement -> muster-builder`). If you are about to edit a file in the main loop during a wave,
+  STOP — that is the inline-drift failure; dispatch instead.
+- **Announce before acting:** for each task, write a glass-box line to STATE
+  `dispatching <task id> -> <subagent_type> (<role>)` **before** the work starts. A wave whose STATE
+  shows edited files but no dispatch line is, by definition, inline drift.
+- **Honest limit:** this is steering, not a hard gate — nothing in the plugin can block a main-loop
+  edit. The real fix is harness-level (a PreToolUse hook that blocks main-loop Edit/Write while a wave
+  is active); until that exists, this rule is the guardrail.
+
 1. Compute waves: `npx muster wave .muster/manifest.json` -> ordered list of waves.
 2. For each wave, in order:
    a. Dispatch every task in the wave **concurrently** (use the harness Agent tool):
@@ -65,5 +82,7 @@ When the orchestrator is driven remotely (Channels wired), a steering message ma
   retarget); take no action.
 
 Iron rules: never start wave k+1 before wave k passes the gate; never silently drop a failed task
-(record it in STATE); keep the manifest the single source (spec-as-current-truth); never let a channel
-event silently re-scope the run or abandon an in-flight wave.
+(record it in STATE); never do a wave's implement/review work inline — always dispatch to the resolved
+provider and record the `dispatching <id> -> <subagent_type>` line in STATE; keep the manifest the
+single source (spec-as-current-truth); never let a channel event silently re-scope the run or abandon
+an in-flight wave.

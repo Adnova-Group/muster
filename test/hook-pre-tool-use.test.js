@@ -589,6 +589,31 @@ test("Bash: allow when agent_id present even with write command", async () => {
   }
 });
 
+// ── bashWriteTarget quoted-string false-positive regression tests ────────────
+test("bashWriteTarget: git commit -m with > in message is not a write", () => {
+  assert.equal(
+    bashWriteTarget('git commit -m "msg with > arrow"'),
+    null,
+    "> inside double-quoted commit message must return null",
+  );
+});
+
+test("bashWriteTarget: node -e with > in double-quoted expression is not a write", () => {
+  assert.equal(
+    bashWriteTarget('node -e "const x = a > b"'),
+    null,
+    "> inside double-quoted -e expression must return null",
+  );
+});
+
+test("bashWriteTarget: node -e with > in single-quoted expression is not a write", () => {
+  assert.equal(
+    bashWriteTarget("node -e 'a > b'"),
+    null,
+    "> inside single-quoted -e expression must return null",
+  );
+});
+
 test("Bash: deny reason names matched pattern and mentions MUSTER_WAVE_GUARD=warn", async () => {
   const tmpDir = makeMarker("wave-bash-reason");
   try {

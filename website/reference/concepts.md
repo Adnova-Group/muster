@@ -58,7 +58,8 @@ Each resolved role carries a model picked to fit the work, so quota spend tracks
 | --- | --- | --- |
 | haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
 | sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| opus | the tournament `judge`, `architecture-review` | Heavy judgment |
+| fable | the tournament `judge`, `architecture-review` | Heavy judgment |
+| opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
 
 The orchestrator passes the chosen model as the dispatch override when it spawns each subagent.
 

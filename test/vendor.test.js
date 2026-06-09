@@ -317,3 +317,255 @@ test("runVendor: resolveSuperpowers picks highest semver dir over content-hash d
   assert.equal(res.count, 1);
   assert.equal(res.warnings.filter(w => /could not fetch/.test(w)).length, 0);
 });
+
+// --- item.description override in toBuiltin / toAgent -------------------------
+
+test("toBuiltin: item.description overrides data.description and fallback", () => {
+  // Source has its own frontmatter description, but item pins a different one.
+  const srcWithDesc = `---\nname: verify\ndescription: Source-level description\n---\n\nBody.\n`;
+  const itemWithDesc = { from: "verify/SKILL.md", id: "gsd-verify-work", roles: ["plan"], description: "Built-in for verify — UAT + gap-closure verification of completed work" };
+  const r = toBuiltin(srcWithDesc, itemWithDesc, source);
+  const { data } = splitFrontmatter(r.content);
+  assert.equal(data.description, "Built-in for verify — UAT + gap-closure verification of completed work");
+});
+
+test("toBuiltin: item.description beats fallback when source has no description", () => {
+  const srcNoDesc = `---\nname: verify\n---\n\nBody.\n`;
+  const itemWithDesc = { from: "verify/SKILL.md", id: "gsd-verify-work", roles: ["plan"], description: "Custom description" };
+  const r = toBuiltin(srcNoDesc, itemWithDesc, source);
+  const { data } = splitFrontmatter(r.content);
+  assert.equal(data.description, "Custom description");
+});
+
+test("toBuiltin: item.description propagates into catalogEntry when set", () => {
+  const srcWithDesc = `---\nname: x\ndescription: source-desc\n---\n\nBody.\n`;
+  const itemWithDesc = { from: "x/SKILL.md", id: "x", roles: ["plan"], description: "override-desc" };
+  const r = toBuiltin(srcWithDesc, itemWithDesc, source);
+  assert.equal(r.catalogEntry.description, "override-desc");
+});
+
+test("toBuiltin: catalogEntry description absent when item has no description override", () => {
+  // When no item.description is set, catalogEntry should have no description field.
+  const srcWithDesc = `---\nname: x\ndescription: d\n---\n\nBody.\n`;
+  const itemPlain = { from: "x/SKILL.md", id: "x", roles: ["plan"] };
+  const r = toBuiltin(srcWithDesc, itemPlain, source);
+  assert.equal(r.catalogEntry.description, undefined);
+});
+
+test("toBuiltin: item.rank overrides default 50 in catalogEntry", () => {
+  const r = toBuiltin(src, { ...item, rank: 48 }, source);
+  assert.equal(r.catalogEntry.rank, 48);
+});
+
+test("toBuiltin: catalogEntry rank defaults to 50 when item has no rank", () => {
+  const r = toBuiltin(src, item, source);
+  assert.equal(r.catalogEntry.rank, 50);
+});
+
+// --- no two builtin catalog entries share an identical description ---------------
+// This catches future accidental duplicate descriptions like gsd-plan-phase vs gsd-verify-work.
+import { sep } from "node:path";
+import { readFile as readFileFn } from "node:fs/promises";
+import { parse as parseFn } from "yaml";
+
+// --- Security: source.id path-traversal rejection ---
+
+test("validateVendorManifest rejects source.id with path-traversal characters", () => {
+  const doc = { sources: [
+    { id: "../../../etc", kind: "local", license: "MIT", items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /sources\[0\]\.id/.test(e) && /invalid/.test(e)), `expected id-invalid error, got: ${JSON.stringify(r.errors)}`);
+});
+
+test("validateVendorManifest rejects source.id with slash", () => {
+  const doc = { sources: [
+    { id: "a/b", kind: "local", license: "MIT", items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /sources\[0\]\.id/.test(e) && /invalid/.test(e)));
+});
+
+test("validateVendorManifest accepts source.id with allowed chars (alphanumeric, dash, underscore)", () => {
+  const doc = { sources: [
+    { id: "my-source_01", kind: "local", license: "MIT", items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  // Only fails if something else is wrong (no id-invalid error)
+  assert.ok(!r.errors.some(e => /id.*invalid/.test(e)));
+});
+
+// --- Security: item.from traversal warn+skip in runVendor ---
+
+test("runVendor: item.from traversal path is warned and skipped", async (t) => {
+  const { home, repoRoot } = await tmpDirs();
+  t.after(() => Promise.all([rm(home, { recursive: true, force: true }), rm(repoRoot, { recursive: true, force: true })]));
+
+  // Seed a real file at a location outside the expected root (simulated via a separate tmp dir)
+  // We seed the superpowers root normally but provide a traversal item.from.
+  await seedSuperpowers(home, { "ok/SKILL.md": "---\nname: ok\n---\n\nBody.\n" });
+  await mkdir(join(repoRoot, "catalog"), { recursive: true });
+
+  // Plant a file that would be accessible via traversal at the skills root's parent
+  const skillsRoot = join(home, SP_BASE, "v1.0.0", "skills");
+  // Write a sentinel file one level above skills root
+  const outsideFile = join(skillsRoot, "..", "outside.md");
+  await writeFile(outsideFile, "---\nname: outside\n---\n\nSECRET.\n");
+
+  const manifest = { sources: [
+    { id: "superpowers", kind: "local", repo: "obra/superpowers", license: "MIT", items: [
+      { from: "../outside.md", id: "sp-traversal", roles: ["brainstorm"] },
+      { from: "ok/SKILL.md", id: "sp-ok", roles: ["brainstorm"] }
+    ]}
+  ]};
+  const res = await runVendor({ home, repoRoot, manifest });
+
+  // The traversal item is skipped with a warning; the valid item still vendors.
+  assert.equal(res.count, 1, "only the safe item should be vendored");
+  assert.ok(res.warnings.some(w => /traversal/.test(w) || /outside of source root/.test(w)),
+    `expected traversal warning, got: ${JSON.stringify(res.warnings)}`);
+  // The traversal item must NOT have been written.
+  const traversalPath = join(repoRoot, "plugin/builtins/sp-traversal/SKILL.md");
+  const traversalExists = await import("../src/fs-util.js").then(m => m.exists(traversalPath));
+  assert.equal(traversalExists, false, "traversal item must not be written");
+});
+
+// --- Security: item.id path-traversal rejection ---
+
+test("validateVendorManifest rejects item.id with path-traversal characters", () => {
+  const doc = { sources: [
+    { id: "s", kind: "local", license: "MIT", items: [
+      { from: "f.md", id: "../../.claude/x", roles: ["brainstorm"] }
+    ]}
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /items\[0\]\.id/.test(e) && /invalid/.test(e)), `expected item id-invalid error, got: ${JSON.stringify(r.errors)}`);
+});
+
+test("validateVendorManifest rejects item.id with dot prefix", () => {
+  const doc = { sources: [
+    { id: "s", kind: "local", license: "MIT", items: [
+      { from: "f.md", id: ".hidden", roles: ["brainstorm"] }
+    ]}
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /items\[0\]\.id/.test(e) && /invalid/.test(e)));
+});
+
+// --- Security: source.repo format validation ---
+
+test("validateVendorManifest rejects source.repo with extra path components", () => {
+  const doc = { sources: [
+    { id: "s", kind: "github", license: "MIT", repo: "owner/repo/extra",
+      items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /repo/.test(e) && /invalid/.test(e)), `expected repo-invalid error, got: ${JSON.stringify(r.errors)}`);
+});
+
+test("validateVendorManifest rejects source.repo without slash (bare name)", () => {
+  const doc = { sources: [
+    { id: "s", kind: "github", license: "MIT", repo: "justname",
+      items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /repo/.test(e) && /invalid/.test(e)));
+});
+
+test("validateVendorManifest accepts valid owner/name repo", () => {
+  const doc = { sources: [
+    { id: "s", kind: "github", license: "MIT", repo: "my-org/my.repo_01",
+      items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.ok(!r.errors.some(e => /repo.*invalid/.test(e)));
+});
+
+// --- Security: source.ref validation ---
+
+test("validateVendorManifest rejects source.ref starting with dash (git flag injection)", () => {
+  const doc = { sources: [
+    { id: "s", kind: "github", license: "MIT", repo: "owner/repo", ref: "--upload-pack=malicious",
+      items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /ref/.test(e) && /invalid/.test(e)), `expected ref-invalid error, got: ${JSON.stringify(r.errors)}`);
+});
+
+test("validateVendorManifest rejects source.ref with disallowed characters (space, semicolon)", () => {
+  const doc = { sources: [
+    { id: "s", kind: "github", license: "MIT", repo: "owner/repo", ref: "main; rm -rf /",
+      items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /ref/.test(e) && /invalid/.test(e)));
+});
+
+test("validateVendorManifest accepts valid ref strings (branch, tag, semver)", () => {
+  for (const ref of ["main", "v1.0.0", "feature/my-branch", "refs/heads/main"]) {
+    const doc = { sources: [
+      { id: "s", kind: "github", license: "MIT", repo: "owner/repo", ref,
+        items: [{ from: "f.md", id: "ok", roles: ["brainstorm"] }] }
+    ]};
+    const r = validateVendorManifest(doc);
+    assert.ok(!r.errors.some(e => /ref.*invalid/.test(e)), `ref "${ref}" should be accepted, errors: ${JSON.stringify(r.errors)}`);
+  }
+});
+
+// --- Security: tools allowlist filtering in toAgent ---
+
+test("toAgent filters unknown tools from frontmatter, keeping only ALLOWED_TOOLS", () => {
+  const srcWithBadTools = `---\nname: my-agent\ntools: Read, Bash, EvalCode, RunShell\n---\n\nBody.\n`;
+  const it = { from: "ag/AGENT.md", id: "sp-ag", roles: ["implement"] };
+  const r = toAgent(srcWithBadTools, it, agentSource);
+  const { data } = splitFrontmatter(r.content);
+  const tools = data.tools.split(",").map(s => s.trim());
+  assert.ok(tools.includes("Read"), "Read should be allowed through");
+  assert.ok(tools.includes("Bash"), "Bash should be allowed through");
+  assert.ok(!tools.includes("EvalCode"), "EvalCode must be filtered out");
+  assert.ok(!tools.includes("RunShell"), "RunShell must be filtered out");
+});
+
+test("toAgent falls back to default tools string when all frontmatter tools are disallowed", () => {
+  const srcAllBad = `---\nname: my-agent\ntools: EvalCode, RunShell, ExecArbitrary\n---\n\nBody.\n`;
+  const it = { from: "ag/AGENT.md", id: "sp-ag2", roles: ["implement"] };
+  const r = toAgent(srcAllBad, it, agentSource);
+  const { data } = splitFrontmatter(r.content);
+  // Must fall back to a non-empty default string containing at least Read
+  assert.ok(typeof data.tools === "string" && data.tools.length > 0, "tools must be non-empty");
+  assert.ok(data.tools.includes("Read"), "fallback must include Read");
+});
+
+test("toAgent passes through all-allowed tools unchanged", () => {
+  const srcGoodTools = `---\nname: my-agent\ntools: Read, Grep, Glob\n---\n\nBody.\n`;
+  const it = { from: "ag/AGENT.md", id: "sp-ag3", roles: ["implement"] };
+  const r = toAgent(srcGoodTools, it, agentSource);
+  const { data } = splitFrontmatter(r.content);
+  const tools = data.tools.split(",").map(s => s.trim());
+  assert.deepEqual(tools, ["Read", "Grep", "Glob"]);
+});
+
+// --- Security: shipped builtin catalog entries all have unique descriptions ---
+
+test("shipped builtin catalog entries all have unique descriptions (no duplicates)", async () => {
+  const raw = await readFileFn(new URL("../catalog/builtins.generated.yaml", import.meta.url), "utf8");
+  const entries = parseFn(raw);
+  assert.ok(Array.isArray(entries), "catalog must be an array");
+  // Only entries that have a description field are subject to the uniqueness check.
+  const withDesc = entries.filter(e => typeof e.description === "string" && e.description.length > 0);
+  const seen = new Map();
+  for (const e of withDesc) {
+    if (seen.has(e.description)) {
+      assert.fail(`Duplicate description "${e.description}" on entries "${seen.get(e.description)}" and "${e.id}"`);
+    }
+    seen.set(e.description, e.id);
+  }
+});

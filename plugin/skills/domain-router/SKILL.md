@@ -1,11 +1,11 @@
 ---
 name: domain-router
-description: Pick the work domain for an outcome and route to its pipeline (PM/PRD, etc.), else fall back to the software route. Glass-box: records the domain choice + why.
+description: Pick the work domain for an outcome and route to its pipeline (PM/PRD, etc.); for unrecognized domains, classify by judgment and pick the closest pipeline. Falls back to the software route for code workspaces. Glass-box: records the domain choice + why.
 ---
 
 # Domain router
 
-1. Route: `npx muster route "<outcome>"` -> `{domain, pipeline}`. This picks the specific pipeline by
+1. Route: `npx -y @adnova-group/muster route "<outcome>"` -> `{domain, pipeline}`. This picks the specific pipeline by
    matching the outcome (e.g. "epic" -> epic, "release notes" -> release-notes, "write a book" -> book),
    falling back to the domain's default pipeline (pm -> prd, business -> business-case).
 2. If `pipeline` is non-null, run it (the `prd-pipeline` skill is the reference shape: intake ->

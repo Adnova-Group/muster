@@ -1,6 +1,6 @@
 ---
 name: interview
-description: Interactive requirements interview — one question at a time via the AskUserQuestion selection UI — that turns a thin outcome into an enriched, criteria-backed outcome the router can run. Front half of /muster:run; autopilot triggers it only on an info-gap.
+description: Interactive requirements interview — one question at a time via the AskUserQuestion selection UI — that turns a thin outcome into an enriched, criteria-backed outcome the router can run.
 ---
 
 # Interview (requirements)
@@ -8,10 +8,14 @@ description: Interactive requirements interview — one question at a time via t
 Turn a thin outcome into an enriched, criteria-backed one before any routing happens.
 
 ## When to run
-- Run when `npx muster assess "<outcome>"` returns `clear: false` (contract:
+- Run when `npx -y @adnova-group/muster assess "<outcome>"` returns `clear: false` (contract:
   `assessOutcome(text) -> { clear, signals }` in `src/interview.js`). The `signals` name the gaps.
 - Run when the user explicitly asks to brainstorm/refine the outcome.
 - **Skip** when `clear: true` — hand straight to the router.
+
+**Callers:** `/muster:run` invokes this as its front half before routing; `/muster:autopilot` triggers
+it once on an info-gap (attended mode only — unattended skips the interview and proceeds with
+best-effort defaults).
 
 ## HARD GATE
 Do **not** route, assemble a crew, decompose into a plan, or implement anything until the user approves

@@ -31,6 +31,11 @@ export const SHORT_NUDGE =
   "work), route copy/content through the humanizer, keep reasoning glass-box. Conversational " +
   "turns fall through. Verbs: /muster:run · /muster:autopilot · /muster:diagnose · /muster:audit.";
 
+// Shared emit helper — writes a JSON object to stdout.
+export function emit(obj) {
+  process.stdout.write(JSON.stringify(obj));
+}
+
 export function detect(cwd) {
   const has = (f) => {
     try {

@@ -6,7 +6,7 @@ description: Turn goals into a RICE-prioritized now/next/later roadmap — gener
 # Roadmap prioritization
 
 The implementation skill behind the `roadmap` pipeline (pm domain). Load it with
-`npx muster pipeline roadmap`; the pipeline's **prioritize** phase is where step 4 below runs. Run the
+`npx -y @adnova-group/muster pipeline roadmap`; the pipeline's **prioritize** phase is where step 4 below runs. Run the
 flow anchored to the outcome — goals, strategy, themes in, a prioritized roadmap out.
 
 1. **Generate** candidate initiatives from the goals/strategy/themes — brainstorm broadly, one
@@ -19,7 +19,7 @@ flow anchored to the outcome — goals, strategy, themes in, a prioritized roadm
    evidence strength**: thin or contested signal means lower confidence, full stop.
 4. **Score deterministically** — write the initiatives to a JSON file
    (`{ items:[{name,reach,impact,confidence,effort}], model: "rice" }`) and run
-   `npx muster prioritize <file> --model rice`. It returns the items ranked by RICE score
+   `npx -y @adnova-group/muster prioritize <file> --model rice`. It returns the items ranked by RICE score
    `(reach*impact*confidence)/effort` with `score` + `rank`, and fails loud on non-finite or
    zero-effort inputs. **Code does the math; the model only supplies the factors** — never hand-rank.
    This is the muster principle: deterministic transforms belong in code.

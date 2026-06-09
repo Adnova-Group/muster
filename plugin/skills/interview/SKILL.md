@@ -8,7 +8,7 @@ description: Interactive requirements interview — one question at a time via t
 Turn a thin outcome into an enriched, criteria-backed one before any routing happens.
 
 ## When to run
-- Run when `npx muster assess "<outcome>"` returns `clear: false` (contract:
+- Run when `npx -y @adnova-group/muster assess "<outcome>"` returns `clear: false` (contract:
   `assessOutcome(text) -> { clear, signals }` in `src/interview.js`). The `signals` name the gaps.
 - Run when the user explicitly asks to brainstorm/refine the outcome.
 - **Skip** when `clear: true` — hand straight to the router.

@@ -24,14 +24,14 @@ the manifest — the crew on paper is not the crew doing the work.
   harness level — it will deny any main-loop Edit/Write/NotebookEdit while `.muster/wave-active`
   exists, so inline drift is blocked, not just discouraged.
 
-1. Compute waves: `npx muster wave .muster/manifest.json` -> ordered list of waves.
+1. Compute waves: `npx -y @adnova-group/muster wave .muster/manifest.json` -> ordered list of waves.
 2. For each wave, in order:
    a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task — the `PreToolUse` hook reads this marker to enforce the iron rule.
       Dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task.
       - **Provider kind:** look up the role's chosen provider from capabilities
-        (`npx muster capabilities` -> `roles[<role>].chosen = { id, source, kind }`):
+        (`npx -y @adnova-group/muster capabilities` -> `roles[<role>].chosen = { id, source, kind }`):
         - `chosen.kind === "agent"` -> dispatch with that agent **as the subagent type**
           (the Agent tool's `subagent_type`/`agentType` = `chosen.id`), passing the task +
           the Crew Manifest as the BRIEF.
@@ -47,15 +47,12 @@ the manifest — the crew on paper is not the crew doing the work.
             unavailable in session) rather than its native specialist.
         - else (`kind` skill / mcp / inline) -> dispatch a **generic** subagent and inject the
           resolved provider (skill) into the BRIEF, as today.
-      - **Model (authoritative, regardless of kind):** always pass the crew member's `model` (bound
-        into the manifest by the builders; same value as `roles[<role>].model`) as the Agent tool's
-        `model` **override** — this takes precedence over an agent's own frontmatter model, so
-        `modelForRole` governs: mechanical roles (code-navigation, docs-research, research) run on
-        **haiku**, the default is **sonnet**, peak judgment (the tournament judge, architecture
-        review) is **fable**. This keeps quota spend proportional to the work (Muster runs on your
-        interactive subscription). **Fable fallback:** fable may be unavailable on the current plan
-        (e.g. it requires extra usage credits). If a fable dispatch is rejected for that reason,
-        retry once with `fallbackModelFor` from `src/model.js` (fable -> **opus**) and record the
+      - **Model (authoritative, regardless of kind):** always pass the crew member's `model` as the
+        Agent tool's `model` **override**. The model is written into each crew member in the manifest
+        by the router from `muster capabilities` output (the `roles[<role>].model` value, determined
+        by `modelForRole` in `src/model.js` — see that file for the full tier policy). If a fable
+        dispatch is rejected because fable is unavailable on the current plan, retry once with
+        `fallbackModelFor("fable")` from `src/model.js` (resolves to **opus**) and record the
         degradation in STATE — never fail the task over a model tier, and never drop the override
         (a dropped override silently inherits the orchestrator's model).
    b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point, e.g. for review-gate fixes dispatched inline).
@@ -63,7 +60,7 @@ the manifest — the crew on paper is not the crew doing the work.
       `reviewGateState` (from `src/loop.js`): re-dispatch fix attempts until the gate passes (`done`)
       or the iteration cap is hit (`max-iterations`), then escalate per step 2e.
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
-      plan checklist with completed tasks ticked (`npx muster plan-checklist .muster/manifest.json
+      plan checklist with completed tasks ticked (`npx -y @adnova-group/muster plan-checklist .muster/manifest.json
       --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.
    e. If the review gate escalates (fix-loop cap, or a tournament with no passing candidate), stop and do
       not start the next wave. Present the resolution choices via the **AskUserQuestion** selection UI —
@@ -80,7 +77,7 @@ When the orchestrator is driven remotely (Channels wired), a steering message ma
   fix-cycle as `done` and continue to the next wave.
 - **stop** — halt after the current in-flight wave completes (never abandon a wave mid-flight); write
   the halt + current plan-checklist to STATE; reply through the channel that the run is stopped.
-- **status** — read-only: reply through the channel with the live `npx muster plan-checklist
+- **status** — read-only: reply through the channel with the live `npx -y @adnova-group/muster plan-checklist
   .muster/manifest.json --done <completed ids>` rendering; do not change run state.
 - **retarget** — a scope change: do NOT silently re-scope the run; record it as a follow-up and reply
   through the channel that it's been logged for the human to confirm (spec-as-current-truth: the
@@ -88,8 +85,4 @@ When the orchestrator is driven remotely (Channels wired), a steering message ma
 - **unknown** — reply through the channel asking the human to rephrase (approve / stop / status /
   retarget); take no action.
 
-Iron rules: never start wave k+1 before wave k passes the gate; never silently drop a failed task
-(record it in STATE); never do a wave's implement/review work inline — always dispatch to the resolved
-provider and record the `dispatching <id> -> <subagent_type>` line in STATE; keep the manifest the
-single source (spec-as-current-truth); never let a channel event silently re-scope the run or abandon
-an in-flight wave.
+Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.

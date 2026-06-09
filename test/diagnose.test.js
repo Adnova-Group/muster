@@ -19,7 +19,7 @@ test("classifyFailure: empty throws", () => {
 
 const caps = { roles: {
   debug: { chosen: { id: "sp-debug", source: "builtin" }, recommendations: ["install wshobson debugging agents for debug"] },
-  implement: { chosen: { id: "sp-debug", source: "builtin" }, recommendations: [] },
+  implement: { chosen: { id: "wsh-api-design-principles", source: "builtin" }, recommendations: [] },
   "test-author": { chosen: { id: "sp-tdd", source: "builtin" }, recommendations: [] },
   "code-review": { chosen: { id: "superpowers", source: "installed" }, recommendations: [] }
 }};

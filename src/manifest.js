@@ -1,5 +1,8 @@
 const SOURCES = new Set(["installed", "builtin", "dynamic", "inline"]);
 const MODES = new Set(["single", "tournament"]);
+// Model tiers a crew member may dispatch on. `fable` is the top tier (above opus),
+// pre-accepted so a future fable-tier role validates without a schema change.
+const MODEL_TIERS = new Set(["haiku", "sonnet", "opus", "fable"]);
 
 export function validateManifest(m) {
   const errors = [];
@@ -12,6 +15,11 @@ export function validateManifest(m) {
     for (const f of ["stage", "provider", "rationale", "evidence", "fallback"])
       if (!c[f]) errors.push(`crew[${i}].${f}: required`);
     if (!SOURCES.has(c.source)) errors.push(`crew[${i}].source: must be one of ${[...SOURCES].join("|")}`);
+    // A non-inline member dispatches to a real provider on a real model — the model
+    // must travel with it (else dispatch inherits the orchestrator's model). Inline
+    // members run in-context and are exempt. A present model must be a known tier.
+    if (c.source !== "inline" && !c.model) errors.push(`crew[${i}].model: required for non-inline members`);
+    if (c.model && !MODEL_TIERS.has(c.model)) errors.push(`crew[${i}].model: must be one of ${[...MODEL_TIERS].join("|")}`);
   });
   for (const f of ["recommendations", "degradations"])
     if (!Array.isArray(m[f])) errors.push(`${f}: must be an array`);

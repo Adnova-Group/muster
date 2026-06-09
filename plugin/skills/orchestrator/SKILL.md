@@ -20,13 +20,14 @@ the manifest — the crew on paper is not the crew doing the work.
 - **Announce before acting:** for each task, write a glass-box line to STATE
   `dispatching <task id> -> <subagent_type> (<role>)` **before** the work starts. A wave whose STATE
   shows edited files but no dispatch line is, by definition, inline drift.
-- **Honest limit:** this is steering, not a hard gate — nothing in the plugin can block a main-loop
-  edit. The real fix is harness-level (a PreToolUse hook that blocks main-loop Edit/Write while a wave
-  is active); until that exists, this rule is the guardrail.
+- **Hard gate:** the `PreToolUse` hook (`plugin/hooks/pre-tool-use.js`) enforces this rule at the
+  harness level — it will deny any main-loop Edit/Write/NotebookEdit while `.muster/wave-active`
+  exists, so inline drift is blocked, not just discouraged.
 
 1. Compute waves: `npx muster wave .muster/manifest.json` -> ordered list of waves.
 2. For each wave, in order:
-   a. Dispatch every task in the wave **concurrently** (use the harness Agent tool):
+   a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task — the `PreToolUse` hook reads this marker to enforce the iron rule.
+      Dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task.
       - **Provider kind:** look up the role's chosen provider from capabilities
@@ -46,15 +47,21 @@ the manifest — the crew on paper is not the crew doing the work.
             unavailable in session) rather than its native specialist.
         - else (`kind` skill / mcp / inline) -> dispatch a **generic** subagent and inject the
           resolved provider (skill) into the BRIEF, as today.
-      - **Model (authoritative, regardless of kind):** always pass `roles[<role>].model` from
-        capabilities as the Agent tool's `model` **override** — this takes precedence over an
-        agent's own frontmatter model, so `modelForRole` governs: mechanical roles (code-navigation,
-        docs-research, research) run on **haiku**, the default is **sonnet**, heavy judgment is **opus**.
-        This keeps quota spend proportional to the work (Muster runs on your interactive subscription).
-   b. BARRIER: wait for all wave tasks to finish.
-   c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops using the
-      Ralph loop primitive (`loopState` in `src/loop.js`): re-dispatch fix attempts until the gate
-      passes (`done`) or the iteration cap is hit (`max-iterations`), then escalate per step 2e.
+      - **Model (authoritative, regardless of kind):** always pass the crew member's `model` (bound
+        into the manifest by the builders; same value as `roles[<role>].model`) as the Agent tool's
+        `model` **override** — this takes precedence over an agent's own frontmatter model, so
+        `modelForRole` governs: mechanical roles (code-navigation, docs-research, research) run on
+        **haiku**, the default is **sonnet**, peak judgment (the tournament judge, architecture
+        review) is **fable**. This keeps quota spend proportional to the work (Muster runs on your
+        interactive subscription). **Fable fallback:** fable may be unavailable on the current plan
+        (e.g. it requires extra usage credits). If a fable dispatch is rejected for that reason,
+        retry once with `fallbackModelFor` from `src/model.js` (fable -> **opus**) and record the
+        degradation in STATE — never fail the task over a model tier, and never drop the override
+        (a dropped override silently inherits the orchestrator's model).
+   b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point, e.g. for review-gate fixes dispatched inline).
+   c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops using
+      `reviewGateState` (from `src/loop.js`): re-dispatch fix attempts until the gate passes (`done`)
+      or the iteration cap is hit (`max-iterations`), then escalate per step 2e.
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx muster plan-checklist .muster/manifest.json
       --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.

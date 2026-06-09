@@ -2,6 +2,8 @@
 # role taxonomy, authored fresh for muster. Discovered by Claude Code from plugin/agents/.
 # rank 55 sits just above the rank-50 vendored skills so a muster agent is preferred over a
 # bare skill for the same role (capabilities sorts by rank descending).
+# Convention: roles[0] is the PRIMARY role for each agent — it drives the modelForRole
+# policy assertion in test/agents.muster.test.js.  Place a new agent's governing role first.
 - id: muster-surgeon
   kind: agent
   roles: [implement]

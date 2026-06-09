@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { AUDIT_DIMENSIONS, buildAuditManifest } from "../src/audit.js";
 import { validateManifest } from "../src/manifest.js";
 import { computeWaves } from "../src/wave.js";
+import { modelForRole } from "../src/model.js";
 
 const EXPECTED_ROLES = {
   architecture: "architecture-review",
@@ -58,6 +59,15 @@ test("computeWaves fans out audits then chains consolidate/fix/verify", () => {
   assert.deepEqual(waves[2].map(t => t.id), ["fix"]);
   assert.deepEqual(waves[3].map(t => t.id), ["verify"]);
   assert.equal(waves.length, 4);
+});
+
+test("every audit crew member carries the model resolved for its role", () => {
+  const m = buildAuditManifest({});
+  for (const c of m.crew) {
+    assert.equal(c.model, modelForRole(c.stage), `crew stage ${c.stage} model`);
+  }
+  // architecture-review is heavy judgment -> fable (top tier); the rest default to sonnet.
+  assert.equal(m.crew.find(c => c.stage === "architecture-review").model, "fable");
 });
 
 test("chosen provider for a role surfaces in crew", () => {

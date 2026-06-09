@@ -1,4 +1,4 @@
-import { chosen, collectRecommendations } from "./crew.js";
+import { collectRecommendations, makeStage } from "./crew.js";
 
 export const AUDIT_DIMENSIONS = [
   { id: "architecture", role: "architecture-review", focus: "system architecture, boundaries, coupling" },
@@ -10,10 +10,7 @@ export const AUDIT_DIMENSIONS = [
 ];
 
 export function buildAuditManifest(caps = {}) {
-  const stage = (role, rationale) => {
-    const p = chosen(caps, role);
-    return { stage: role, provider: p.id, source: p.source, rationale, evidence: "whole-codebase review", fallback: "inline" };
-  };
+  const stage = makeStage(caps, "whole-codebase review");
 
   const crew = AUDIT_DIMENSIONS.map(d => stage(d.role, `audit: ${d.focus}`));
   crew.push(stage("implement", "audit: remediate findings"));

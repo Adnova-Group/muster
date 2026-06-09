@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
+import { splitFrontmatter, modelForRoles } from "../src/vendor.js";
 
 const catalogDir = new URL("../catalog/", import.meta.url);
 const agentsFile = new URL("../catalog/agents.generated.yaml", import.meta.url);
@@ -51,5 +52,19 @@ test("core software roles each resolve to SOME provider on a bare machine", asyn
     assert.ok(chosen, `role ${role} must exist`);
     assert.notEqual(chosen.source, "inline", `role ${role} must have a real provider, not inline`);
     assert.ok(["agent", "skill", "mcp"].includes(chosen.kind), `role ${role} provider kind`);
+  }
+});
+
+test("vendored agent plugin files have model frontmatter matching current policy (no drift)", async () => {
+  const agents = await readAgents();
+  for (const e of agents) {
+    const f = fileURLToPath(new URL(`../plugin/agents/${e.id}.md`, import.meta.url));
+    const text = await readFile(f, "utf8");
+    const { data: fm } = splitFrontmatter(text);
+    const expected = modelForRoles(e.roles);
+    assert.equal(
+      fm.model, expected,
+      `${e.id}.md has model: ${fm.model} but policy for roles [${e.roles.join(", ")}] requires model: ${expected} — run \`muster vendor\` or fix the frontmatter`
+    );
   }
 });

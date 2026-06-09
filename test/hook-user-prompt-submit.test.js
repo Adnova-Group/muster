@@ -1,0 +1,124 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HOOK = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "plugin",
+  "hooks",
+  "user-prompt-submit.js",
+);
+
+// Unique per process run so tmpdir counter files never collide across runs.
+let seq = 0;
+function uniqSession() {
+  seq += 1;
+  return `test-${process.pid}-${seq}-${Math.random().toString(36).slice(2)}`;
+}
+
+// Spawn the hook, pipe `stdinText` to it, return { stdout, code }. Never rejects.
+function runRaw(stdinText, env = {}) {
+  return new Promise((resolve) => {
+    const child = execFile(
+      "node",
+      [HOOK],
+      { env: { ...process.env, ...env } },
+      (err, stdout) => {
+        resolve({ stdout: stdout ?? err?.stdout ?? "", code: err?.code ?? 0 });
+      },
+    );
+    child.stdin.end(stdinText);
+  });
+}
+
+// Convenience: one turn for a given session id.
+function runTurn(sessionId, env = {}) {
+  return runRaw(JSON.stringify({ session_id: sessionId }), env);
+}
+
+function ctxOf(stdout) {
+  const out = JSON.parse(stdout).hookSpecificOutput;
+  assert.equal(out.hookEventName, "UserPromptSubmit");
+  return out; // { hookEventName, additionalContext? }
+}
+
+test("no nudge before turn N, short nudge at turn N (default N=3)", async () => {
+  const sid = uniqSession();
+  for (const turn of [1, 2]) {
+    const { stdout, code } = await runTurn(sid);
+    assert.equal(code, 0, `turn ${turn} exit 0`);
+    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${turn} silent`);
+  }
+  const { stdout } = await runTurn(sid);
+  const ctx = ctxOf(stdout).additionalContext;
+  assert.match(ctx, /muster mode/i, "turn 3 short nudge");
+  assert.match(ctx, /humanizer/i, "short nudge carries the routing clause");
+  for (const v of ["run", "autopilot", "diagnose", "audit"]) {
+    assert.match(ctx, new RegExp(v), `nudge mentions ${v}`);
+  }
+  assert.doesNotMatch(ctx, /muster principles:/, "short nudge is not the full payload");
+});
+
+test("turn N*2 is a short-only turn; turn N*K (=9) is the full payload", async () => {
+  const sid = uniqSession();
+  let last;
+  for (let t = 1; t <= 6; t++) last = await runTurn(sid);
+  const six = ctxOf(last.stdout).additionalContext;
+  assert.match(six, /muster mode/i, "turn 6 short nudge");
+  assert.doesNotMatch(six, /muster principles:/, "turn 6 not full");
+
+  for (let t = 7; t <= 9; t++) last = await runTurn(sid);
+  const nine = ctxOf(last.stdout).additionalContext;
+  assert.match(nine, /muster principles:/, "turn 9 full principles");
+  assert.match(nine, /TDD|verify|glass-box/i, "turn 9 has a principle keyword");
+  assert.match(nine, /Default routing|humanizer/i, "turn 9 carries the routing policy");
+  for (const v of ["run", "autopilot", "diagnose", "audit"]) {
+    assert.match(nine, new RegExp(v), `full payload mentions ${v}`);
+  }
+});
+
+test("MUSTER_NUDGE_EVERY overrides the short cadence", async () => {
+  const sid = uniqSession();
+  const env = { MUSTER_NUDGE_EVERY: "5" };
+  for (let t = 1; t <= 4; t++) {
+    const { stdout } = await runTurn(sid, env);
+    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${t} silent with N=5`);
+  }
+  const { stdout } = await runTurn(sid, env);
+  assert.match(ctxOf(stdout).additionalContext, /muster mode/i, "turn 5 nudge with N=5");
+});
+
+test("MUSTER_PRINCIPLES_EVERY overrides the full cadence (K=2 -> full at turn 6)", async () => {
+  const sid = uniqSession();
+  const env = { MUSTER_PRINCIPLES_EVERY: "2" };
+  let last;
+  for (let t = 1; t <= 6; t++) last = await runTurn(sid, env);
+  assert.match(ctxOf(last.stdout).additionalContext, /muster principles:/, "full at turn 6 with K=2");
+});
+
+test("junk env values fall back to defaults", async () => {
+  const sid = uniqSession();
+  const env = { MUSTER_NUDGE_EVERY: "abc", MUSTER_PRINCIPLES_EVERY: "-1" };
+  for (let t = 1; t <= 2; t++) {
+    const { stdout } = await runTurn(sid, env);
+    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${t} silent (default N=3)`);
+  }
+  const { stdout } = await runTurn(sid, env);
+  assert.match(ctxOf(stdout).additionalContext, /muster mode/i, "turn 3 nudge under junk env");
+});
+
+test("missing session_id: valid JSON, exit 0, no nudge", async () => {
+  const { stdout, code } = await runRaw(JSON.stringify({ foo: "bar" }));
+  assert.equal(code, 0);
+  assert.ok(!("additionalContext" in ctxOf(stdout)), "no session id -> no nudge");
+});
+
+test("malformed stdin: valid JSON, exit 0, no nudge (fail-safe)", async () => {
+  const { stdout, code } = await runRaw("not json {");
+  assert.equal(code, 0);
+  assert.doesNotThrow(() => JSON.parse(stdout), "stdout is valid JSON");
+  assert.ok(!("additionalContext" in ctxOf(stdout)), "garbage stdin -> no nudge");
+});

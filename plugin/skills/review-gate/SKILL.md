@@ -12,6 +12,6 @@ Inputs: the wave's changes, and `AvailableCapabilities` (from `npx muster capabi
 2. Dispatch reviewers **concurrently**, each adversarially prompted to REFUTE the work / find the worst
    real problem. Each returns findings: `[{ severity: "blocker"|"risk"|"nit", note }]`.
 3. Write verdicts to `.muster/verdicts.json`; run `npx muster tally .muster/verdicts.json`.
-4. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review. Cap at 3
-   iterations. If still blocked after the cap, ESCALATE to the human with the unresolved blockers.
+4. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review. Cap at
+   `REVIEW_GATE_MAX_ITERATIONS` (from `src/loop.js`). If still blocked after the cap, ESCALATE to the human with the unresolved blockers.
 5. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking). Return pass/escalate to the orchestrator.

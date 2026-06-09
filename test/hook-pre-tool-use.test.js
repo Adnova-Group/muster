@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, writeFileSync, mkdirSync, utimesSync, rmSync } from "node:fs";
+import { bashWriteTarget } from "../plugin/hooks/bash-write-target.js";
 import os from "node:os";
 
 const HOOK = path.join(
@@ -362,6 +363,240 @@ test("deny NotebookEdit (notebook_path) when wave-active marker exists", async (
     assert.equal(out.hookEventName, "PreToolUse");
     assert.equal(out.permissionDecision, "deny", "NotebookEdit should be denied during wave");
     assert.match(out.permissionDecisionReason, /wave-notebook-1/, "reason includes wave id");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// ── bashWriteTarget pure-function unit tests ──────────────────────────────────
+// DENY cases
+test("bashWriteTarget: sed -i is a write", () => {
+  assert.ok(bashWriteTarget("sed -i 's/a/b/' src/x.js") !== null, "sed -i should return match");
+});
+
+test("bashWriteTarget: echo hi > src/x.js is a write", () => {
+  assert.ok(bashWriteTarget("echo hi > src/x.js") !== null, "output redirect to file should match");
+});
+
+test("bashWriteTarget: cat <<EOF > config.json is a write", () => {
+  assert.ok(bashWriteTarget("cat <<EOF > config.json") !== null, "heredoc with redirect to file should match");
+});
+
+test("bashWriteTarget: npm test | tee out.log is a write", () => {
+  assert.ok(bashWriteTarget("npm test | tee out.log") !== null, "tee to non-exempt file should match");
+});
+
+test("bashWriteTarget: echo x >> README.md is a write", () => {
+  assert.ok(bashWriteTarget("echo x >> README.md") !== null, "append redirect to file should match");
+});
+
+// ALLOW cases
+test("bashWriteTarget: npm test is not a write", () => {
+  assert.equal(bashWriteTarget("npm test"), null, "npm test must return null");
+});
+
+test("bashWriteTarget: npm test 2>&1 is not a write (fd duplication)", () => {
+  assert.equal(bashWriteTarget("npm test 2>&1"), null, "fd duplication must return null");
+});
+
+test("bashWriteTarget: git log --oneline is not a write", () => {
+  assert.equal(bashWriteTarget("git log --oneline"), null);
+});
+
+test("bashWriteTarget: echo hi > /dev/null is exempt", () => {
+  assert.equal(bashWriteTarget("echo hi > /dev/null"), null, "/dev/ target is exempt");
+});
+
+test("bashWriteTarget: node x.js > /tmp/out.txt is exempt", () => {
+  assert.equal(bashWriteTarget("node x.js > /tmp/out.txt"), null, "/tmp/ target is exempt");
+});
+
+test("bashWriteTarget: echo state > .muster/wave-active is exempt", () => {
+  assert.equal(bashWriteTarget("echo state > .muster/wave-active"), null, ".muster/ target is exempt");
+});
+
+test("bashWriteTarget: npm test 2>&1 | tee /dev/stderr is exempt", () => {
+  assert.equal(bashWriteTarget("npm test 2>&1 | tee /dev/stderr"), null, "tee to /dev/ is exempt");
+});
+
+// ── Bash integration tests: deny high-confidence write commands during wave ───
+function bashPayload(command, cwd, extra = {}) {
+  return JSON.stringify({
+    tool_name: "Bash",
+    tool_input: { command },
+    cwd,
+    ...extra,
+  });
+}
+
+test("Bash: deny sed -i during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-1");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("sed -i 's/a/b/' src/x.js", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "sed -i must be denied");
+    assert.match(out.permissionDecisionReason, /wave-bash-1/, "reason includes wave id");
+    assert.match(out.permissionDecisionReason, /sed/, "reason names matched pattern");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: deny echo > file during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-2");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("echo hi > src/x.js", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "output redirect must be denied");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: deny cat <<EOF > config.json during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-3");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("cat <<EOF > config.json", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "heredoc redirect must be denied");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: deny tee to non-exempt file during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-4");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("npm test | tee out.log", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "tee to file must be denied");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: deny echo >> file (append) during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-5");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("echo x >> README.md", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "append redirect must be denied");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow npm test during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-allow-1");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("npm test", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "npm test must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow npm test 2>&1 (fd duplication) during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-allow-2");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("npm test 2>&1", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "2>&1 must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow git log --oneline during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-allow-3");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("git log --oneline", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "git log must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow echo hi > /dev/null during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-allow-4");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("echo hi > /dev/null", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "/dev/ redirect must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow node x.js > /tmp/out.txt during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-allow-5");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("node x.js > /tmp/out.txt", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "/tmp/ redirect must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow echo state > .muster/wave-active during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-allow-6");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("echo state > .muster/wave-active", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", ".muster/ redirect must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow npm test 2>&1 | tee /dev/stderr during active wave", async () => {
+  const tmpDir = makeMarker("wave-bash-allow-7");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("npm test 2>&1 | tee /dev/stderr", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "tee to /dev/ must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow when agent_id present even with write command", async () => {
+  const tmpDir = makeMarker("wave-bash-agent");
+  try {
+    const { stdout, code } = await runRaw(
+      bashPayload("sed -i 's/a/b/' src/x.js", tmpDir, { agent_id: "sub-xyz" }),
+    );
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "subagent Bash write must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: deny reason names matched pattern and mentions MUSTER_WAVE_GUARD=warn", async () => {
+  const tmpDir = makeMarker("wave-bash-reason");
+  try {
+    const { stdout } = await runRaw(bashPayload("sed -i 's/x/y/' file.js", tmpDir));
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny");
+    assert.match(out.permissionDecisionReason, /MUSTER_WAVE_GUARD.*warn|warn.*MUSTER_WAVE_GUARD/i);
+    assert.match(out.permissionDecisionReason, /sed/i);
   } finally {
     cleanDir(tmpDir);
   }

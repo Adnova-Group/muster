@@ -35,7 +35,8 @@ sources:
   - id: wshobson
     kind: github
     repo: wshobson/agents
-    ref: main
+    # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
     license: MIT
     items:
       # security-review
@@ -233,7 +234,8 @@ sources:
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core
-    ref: main
+    # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
+    ref: 85cfa5dc136200667e3044ef2827747880314e03
     license: MIT
     items:
       - from: gsd-core/workflows/plan-phase.md

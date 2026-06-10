@@ -6,6 +6,9 @@
 // DENY patterns (conservative — false positives deferred these):
 //   sed with -i flag      \bsed\b[^|;&\n]*?\s-i(\s|$|')
 //   tee to non-exempt     \btee\b\s+(-a\s+)?<non-exempt-token>
+//   cp/mv to non-exempt   \bcp\b or \bmv\b — destination is the LAST token
+//                         (handles flags and multiple sources; fail-open on
+//                          ambiguous tokens containing shell metacharacters)
 //   > or >> redirect whose target is not /dev/*, /tmp/*, or .muster/*
 //     (fd-duplication 2>&1/>&2, heredoc openers <<WORD, and input <file
 //      are stripped before scanning)
@@ -14,6 +17,11 @@
 // double-quoted strings. Remaining edge cases: unbalanced quotes and heredoc
 // bodies (redirect-looking text between <<MARKER and closing MARKER may still
 // false-positive). Use MUSTER_WAVE_GUARD=warn as the escape hatch for both.
+//
+// KNOWN LIMITATION — tee first-target-only: `tee a b` (multi-target form)
+// only checks the first target token after `tee [-a]`. The second and
+// subsequent targets are not inspected. Low real-world risk (multi-target tee
+// is rare in agentic scripts) but documented here for completeness.
 //
 // Exemption targets (string-level, no fs resolution): /dev/*, /tmp/*, .muster/*
 
@@ -38,7 +46,45 @@ export function bashWriteTarget(command) {
     }
   }
 
-  // 3. Output redirection > or >> to a non-exempt target.
+  // 3. cp/mv to a non-exempt destination.
+  //
+  // Strategy: find the first cp/mv command segment (split on shell separators
+  // |, ;, &&, ||, &), then extract its destination (last token). Fail-open on
+  // anything ambiguous — tokens containing $( ) ` { } or unbalanced quotes.
+  //
+  // cp handles flags (`cp -r a b`), multiple sources (`cp a b c dir/`) — the
+  // destination is always the final non-flag token. We allow the first segment
+  // only, splitting on pipeline/sequence operators so `cp a b && echo` only
+  // examines `cp a b` (destination `b`).
+  const cpMvMatch = command.match(/(?:^|[|;&\n])\s*\b(cp|mv)\b(.*)/);
+  if (cpMvMatch) {
+    // Take only the first segment after cp/mv (stop at next |, ;, &, \n).
+    const afterCmd = cpMvMatch[2];
+    const segment = afterCmd.split(/[|;&\n]/)[0];
+    // Split into tokens on whitespace. Skip redirection tokens (>, >>, <, <<).
+    const rawTokens = segment.trim().split(/\s+/).filter(Boolean);
+    // Fail-open if any token contains shell metacharacters that make the
+    // destination ambiguous.
+    const AMBIGUOUS_RE = /[$`{}()]/;
+    if (rawTokens.some((t) => AMBIGUOUS_RE.test(t))) {
+      // Ambiguous — cannot reliably determine destination; fail-open.
+    } else {
+      // Filter out flag tokens (start with -) and redirect operators.
+      const REDIR_TOKEN_RE = /^>+$|^<+$/;
+      const nonFlagTokens = rawTokens.filter(
+        (t) => !t.startsWith("-") && !REDIR_TOKEN_RE.test(t),
+      );
+      // Need at least 2 tokens: one source and one destination.
+      if (nonFlagTokens.length >= 2) {
+        const dest = nonFlagTokens[nonFlagTokens.length - 1];
+        if (!EXEMPT_TARGET_RE.test(dest)) {
+          return `${cpMvMatch[1]} ${dest}`;
+        }
+      }
+    }
+  }
+
+  // 4. Output redirection > or >> to a non-exempt target.
   //
   // Strip safe constructs first, then scan for remaining > / >> tokens.
   //   Strip fd-duplication:    2>&1, >&2, 1>&2, etc.

@@ -1,10 +1,11 @@
 // Direct unit tests for guidance.js detect() function.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
+import { cleanDir } from "./test-support/hook-helpers.js";
 
 // Import guidance.js detect directly.
 const { detect } = await import(
@@ -13,10 +14,6 @@ const { detect } = await import(
 
 function tmpDir() {
   return mkdtempSync(path.join(os.tmpdir(), "muster-gd-test-"));
-}
-
-function cleanDir(dir) {
-  try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
 // ── pyproject.toml ────────────────────────────────────────────────────────────

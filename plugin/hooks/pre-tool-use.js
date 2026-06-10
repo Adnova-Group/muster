@@ -27,9 +27,6 @@ import path from "node:path";
 import { emit } from "./guidance.js";
 import { bashWriteTarget } from "./bash-write-target.js";
 
-// Re-export for callers that import from this module directly.
-export { bashWriteTarget };
-
 const EVENT = "PreToolUse";
 const MARKER = ".muster/wave-active";
 const STALE_MS = 60 * 60 * 1000; // 60 minutes

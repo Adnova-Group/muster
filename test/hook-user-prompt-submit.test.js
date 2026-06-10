@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnHook } from "./test-support/hook-helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -21,17 +21,7 @@ function uniqSession() {
 
 // Spawn the hook, pipe `stdinText` to it, return { stdout, code }. Never rejects.
 function runRaw(stdinText, env = {}) {
-  return new Promise((resolve) => {
-    const child = execFile(
-      "node",
-      [HOOK],
-      { env: { ...process.env, ...env } },
-      (err, stdout) => {
-        resolve({ stdout: stdout ?? err?.stdout ?? "", code: err?.code ?? 0 });
-      },
-    );
-    child.stdin.end(stdinText);
-  });
+  return spawnHook(HOOK, stdinText, env);
 }
 
 // Convenience: one turn for a given session id.

@@ -32,6 +32,7 @@
   "files": [
     "src",
     "plugin",
+    ".claude-plugin",
     "catalog",
     "pipelines",
     "vendor",
@@ -44,7 +45,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "prepublishOnly": "node --test"
   },
   "dependencies": {
     "yaml": "^2.5.0"

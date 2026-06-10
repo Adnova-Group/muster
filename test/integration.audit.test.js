@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadCatalog } from "../src/catalog.js";
 import { readInstalled } from "../src/harness.js";
 import { resolveCapabilities } from "../src/capabilities.js";
@@ -20,7 +23,8 @@ const DIM_ROLE = {
 };
 
 test("buildAuditManifest over real capabilities validates with all 6 dimensions resolved", async () => {
-  const caps = resolveCapabilities(await loadCatalog(CATALOG), await readInstalled(process.env.HOME || "/tmp"));
+  const fakeHome = await mkdtemp(join(tmpdir(), "muster-audit-int-"));
+  const caps = resolveCapabilities(await loadCatalog(CATALOG), await readInstalled(fakeHome));
   const m = buildAuditManifest(caps);
   assert.deepEqual(validateManifest(m), { ok: true, errors: [] });
   // every dimension maps to its role and is present in the plan

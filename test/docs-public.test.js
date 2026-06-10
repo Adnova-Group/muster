@@ -34,3 +34,23 @@ test("package.json is npm-publish-ready", async () => {
   assert.ok(pkg.engines?.node, "engines.node set");
   assert.equal(pkg.license, "Apache-2.0");
 });
+
+test("package.json version === plugin/.claude-plugin/plugin.json version", async () => {
+  const pkg = JSON.parse(await read("package.json"));
+  const plugin = JSON.parse(await read("plugin/.claude-plugin/plugin.json"));
+  assert.equal(
+    pkg.version,
+    plugin.version,
+    `package.json version (${pkg.version}) must match plugin.json version (${plugin.version})`
+  );
+});
+
+test("CHANGELOG.md contains a heading for the current version", async () => {
+  const pkg = JSON.parse(await read("package.json"));
+  const changelog = await read("CHANGELOG.md");
+  const heading = `## [${pkg.version}]`;
+  assert.ok(
+    changelog.includes(heading),
+    `CHANGELOG.md must contain a "${heading}" heading for the current version`
+  );
+});

@@ -1,13 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const execFileP = promisify(execFile);
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",

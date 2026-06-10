@@ -16,6 +16,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 const pexecFile = promisify(execFile);
 
@@ -203,4 +205,41 @@ test("cli wire: plan-checklist shows task ids and names from the fixture", async
   assert.ok(stdout.includes(" a "), "output should contain task id 'a'");
   assert.ok(stdout.includes(" b "), "output should contain task id 'b'");
   assert.ok(stdout.includes("(tournament)"), "tournament task should be labelled");
+});
+
+// ---------------------------------------------------------------------------
+// negative-path: unknown command, bad wave inputs
+// ---------------------------------------------------------------------------
+
+test("cli wire: unknown command exits 1 and emits 'unknown command' on stderr", async () => {
+  try {
+    await run(["totally-unknown-command-xyz"]);
+    assert.fail("should have exited non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1, `expected exit 1, got ${err.code}`);
+    assert.match(err.stderr, /unknown command/i, "stderr must mention 'unknown command'");
+  }
+});
+
+test("cli wire: wave /nonexistent.json exits 1", async () => {
+  try {
+    await run(["wave", "/nonexistent-file-that-does-not-exist-xyz.json"]);
+    assert.fail("should have exited non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1, `expected exit 1, got ${err.code}`);
+  }
+});
+
+test("cli wire: wave <invalid JSON file> exits 1 with error on stderr", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-cli-wire-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const badJson = join(tmp, "bad.json");
+  await writeFile(badJson, "{ this is not valid json !!!");
+  try {
+    await run(["wave", badJson]);
+    assert.fail("should have exited non-zero for invalid JSON");
+  } catch (err) {
+    assert.equal(err.code, 1, `expected exit 1, got ${err.code}`);
+    assert.ok(err.stderr && err.stderr.length > 0, "stderr must be non-empty on JSON parse error");
+  }
 });

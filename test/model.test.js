@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { modelForRole, fallbackModelFor } from "../src/model.js";
+import { modelForRole, fallbackModelFor, capTier } from "../src/model.js";
 
 test("mechanical roles -> haiku", () => {
   assert.equal(modelForRole("code-navigation"), "haiku");
@@ -57,6 +57,48 @@ test("maxTier returns undefined for empty list", () => {
 
 test("maxTier returns undefined when all inputs are unknown", () => {
   assert.equal(maxTier(["unknown", "also-unknown"]), undefined);
+});
+
+// --- capTier ---
+
+test("capTier(fable, opus) returns opus (cap is below fable, so fable is capped)", () => {
+  assert.equal(capTier("fable", "opus"), "opus");
+});
+
+test("capTier(sonnet, opus) returns sonnet (sonnet is already below cap)", () => {
+  assert.equal(capTier("sonnet", "opus"), "sonnet");
+});
+
+test("capTier(fable, bogus) returns fable (invalid cap is ignored, fail-open)", () => {
+  assert.equal(capTier("fable", "bogus"), "fable");
+});
+
+test("capTier(fable, undefined) returns fable (no cap set)", () => {
+  assert.equal(capTier("fable", undefined), "fable");
+});
+
+// Integration: modelForRole respects MUSTER_MAX_TIER when set.
+test("modelForRole honors MUSTER_MAX_TIER=opus: fable roles cap to opus, sonnet roles unchanged", () => {
+  const prev = process.env.MUSTER_MAX_TIER;
+  process.env.MUSTER_MAX_TIER = "opus";
+  try {
+    assert.equal(modelForRole("architecture-review"), "opus");
+    assert.equal(modelForRole("implement"), "sonnet");
+  } finally {
+    if (prev === undefined) delete process.env.MUSTER_MAX_TIER;
+    else process.env.MUSTER_MAX_TIER = prev;
+  }
+});
+
+test("modelForRole honors MUSTER_MAX_TIER=sonnet: fable caps to sonnet", () => {
+  const prev = process.env.MUSTER_MAX_TIER;
+  process.env.MUSTER_MAX_TIER = "sonnet";
+  try {
+    assert.equal(modelForRole("architecture-review"), "sonnet");
+  } finally {
+    if (prev === undefined) delete process.env.MUSTER_MAX_TIER;
+    else process.env.MUSTER_MAX_TIER = prev;
+  }
 });
 
 test("resolveCapabilities tags every role with a model", async () => {

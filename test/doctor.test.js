@@ -151,6 +151,92 @@ describe("runDoctor plugin-staleness check", () => {
   });
 });
 
+// ---------- install-integrity ----------
+
+describe("runDoctor install-integrity check", () => {
+  it("skips (ok) when installed_plugins.json is absent", async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-ii-"));
+    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const check = result.checks.find(c => c.name === "install-integrity");
+    assert.ok(check, "install-integrity check must exist");
+    assert.equal(check.ok, true, `expected ok:true (no install file) — detail: ${check.detail}`);
+  });
+
+  it("skips (ok) when muster has no entry in installed_plugins.json", async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-ii-"));
+    await mkdir(join(fakeHome, ".claude/plugins"), { recursive: true });
+    await writeFile(
+      join(fakeHome, ".claude/plugins/installed_plugins.json"),
+      JSON.stringify({ version: 2, plugins: { "other@official": [{}] } })
+    );
+    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const check = result.checks.find(c => c.name === "install-integrity");
+    assert.ok(check, "install-integrity check must exist");
+    assert.equal(check.ok, true, "no muster entry → ok/skip");
+  });
+
+  it("fails when installPath directory does not exist", async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-ii-nodir-"));
+    const missingPath = join(fakeHome, "nonexistent-cache-dir");
+    await mkdir(join(fakeHome, ".claude/plugins"), { recursive: true });
+    await writeFile(
+      join(fakeHome, ".claude/plugins/installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: { "muster@official": [{ version: "0.2.4", installPath: missingPath }] }
+      })
+    );
+    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const check = result.checks.find(c => c.name === "install-integrity");
+    assert.ok(check, "install-integrity check must exist");
+    assert.equal(check.ok, false, "missing installPath dir → should fail");
+    assert.ok(check.detail.includes(missingPath), `detail must name the path; got: ${check.detail}`);
+    assert.match(check.detail, /plugin cache is missing/i, "detail must mention 'plugin cache is missing'");
+    assert.match(check.detail, /uninstall muster|reinstall|plugin install muster/i, "detail must include remediation");
+  });
+
+  it("fails when installPath exists but hooks/hooks.json is absent", async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-ii-nohooks-"));
+    const installPath = join(fakeHome, "plugin-cache-dir");
+    await mkdir(join(installPath), { recursive: true });
+    // hooks/ dir exists but hooks.json does not
+    await mkdir(join(installPath, "hooks"), { recursive: true });
+    await mkdir(join(fakeHome, ".claude/plugins"), { recursive: true });
+    await writeFile(
+      join(fakeHome, ".claude/plugins/installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: { "muster@official": [{ version: "0.2.4", installPath }] }
+      })
+    );
+    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const check = result.checks.find(c => c.name === "install-integrity");
+    assert.ok(check, "install-integrity check must exist");
+    assert.equal(check.ok, false, "missing hooks/hooks.json → should fail");
+    assert.match(check.detail, /plugin cache is missing/i, "detail must mention 'plugin cache is missing'");
+    assert.match(check.detail, /uninstall muster|reinstall|plugin install muster/i, "detail must include remediation");
+  });
+
+  it("passes when installPath exists with hooks/hooks.json present", async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-ii-ok-"));
+    const installPath = join(fakeHome, "plugin-cache-dir");
+    await mkdir(join(installPath, "hooks"), { recursive: true });
+    await writeFile(join(installPath, "hooks/hooks.json"), JSON.stringify({ hooks: {} }));
+    await mkdir(join(fakeHome, ".claude/plugins"), { recursive: true });
+    await writeFile(
+      join(fakeHome, ".claude/plugins/installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: { "muster@official": [{ version: "0.2.4", installPath }] }
+      })
+    );
+    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const check = result.checks.find(c => c.name === "install-integrity");
+    assert.ok(check, "install-integrity check must exist");
+    assert.equal(check.ok, true, `installPath and hooks/hooks.json present → should pass; detail: ${check.detail}`);
+  });
+});
+
 // ---------- version-parity ----------
 
 describe("runDoctor version-parity check", () => {

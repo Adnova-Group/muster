@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loopState, reviewGateState, REVIEW_GATE_MAX_ITERATIONS } from "../src/loop.js";
+import { loopState, reviewGateState, REVIEW_GATE_MAX_ITERATIONS, dispatchRetryState, DISPATCH_MAX_ATTEMPTS } from "../src/loop.js";
 
 test("continues while not done and under the cap", () => {
   assert.deepEqual(loopState({ iteration: 0, maxIterations: 25, done: false }), { continue: true, reason: "iterate" });
@@ -30,4 +30,19 @@ test("reviewGateState: caller cannot override the cap upward", () => {
 });
 test("reviewGateState: done still short-circuits before the cap", () => {
   assert.deepEqual(reviewGateState({ iteration: 1, done: true }), { continue: false, reason: "done" });
+});
+
+// dispatchRetryState: cap (2) IS the contract — these tests encode that.
+test("DISPATCH_MAX_ATTEMPTS is 2", () => {
+  assert.equal(DISPATCH_MAX_ATTEMPTS, 2);
+});
+test("dispatchRetryState retries on first failure (attempt 1, not succeeded)", () => {
+  assert.deepEqual(dispatchRetryState({ attempt: 1 }), { retry: true, reason: "retry" });
+});
+test("dispatchRetryState exhausted at attempt >= DISPATCH_MAX_ATTEMPTS", () => {
+  assert.deepEqual(dispatchRetryState({ attempt: 2 }), { retry: false, reason: "attempts-exhausted" });
+  assert.deepEqual(dispatchRetryState({ attempt: 3 }), { retry: false, reason: "attempts-exhausted" });
+});
+test("dispatchRetryState: succeeded short-circuits before the cap", () => {
+  assert.deepEqual(dispatchRetryState({ attempt: 1, succeeded: true }), { retry: false, reason: "succeeded" });
 });

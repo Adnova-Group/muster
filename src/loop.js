@@ -15,3 +15,13 @@ export const REVIEW_GATE_MAX_ITERATIONS = 3;
 export function reviewGateState({ iteration, done = false }) {
   return loopState({ iteration, maxIterations: REVIEW_GATE_MAX_ITERATIONS, done });
 }
+
+// The dispatch retry loop is capped at 2 attempts — this cap IS the contract (prose in
+// plugin/skills/orchestrator/SKILL.md points here). The caller cannot raise it: there is no
+// maxAttempts param so the contract cannot be accidentally widened.
+export const DISPATCH_MAX_ATTEMPTS = 2;
+export function dispatchRetryState({ attempt, succeeded = false }) {
+  if (succeeded) return { retry: false, reason: "succeeded" };
+  if (attempt < DISPATCH_MAX_ATTEMPTS) return { retry: true, reason: "retry" };
+  return { retry: false, reason: "attempts-exhausted" };
+}

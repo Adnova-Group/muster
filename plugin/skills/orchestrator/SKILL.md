@@ -55,6 +55,12 @@ the manifest — the crew on paper is not the crew doing the work.
         **opus** (the fable fallback — `fallbackModelFor("fable")` in `src/model.js`) and record the
         degradation in STATE — never fail the task over a model tier, and never drop the override
         (a dropped override silently inherits the orchestrator's model).
+      - **Subagent failure (error or crash):** a dispatch that errors or dies is NEVER a silent stop.
+        Re-dispatch ONCE with the same brief plus the error appended as context (`dispatchRetryState`
+        from `src/loop.js` — max 2 attempts; model-availability rejections follow the fable→opus rule
+        above instead). If the retry also fails: record the failure in STATE and treat it exactly like
+        a review-gate escalation (step 2e) — the wave's OTHER tasks still complete and the barrier
+        collects what succeeded; only the failed task escalates.
    b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point; review-gate fix agents are dispatched via the Agent tool after the barrier).
    c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops: re-dispatch
       fix attempts until the gate passes (`done`) or the iteration cap is hit (`max-iterations`), then

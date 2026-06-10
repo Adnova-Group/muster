@@ -21,3 +21,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Verify packed tarball
+        run: |
+          TARBALL=$(npm pack --json | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');console.log(JSON.parse(d)[0].filename)")
+          TMPDIR=$(mktemp -d)
+          cd "$TMPDIR"
+          npm init -y
+          npm install "$OLDPWD/$TARBALL"
+          ./node_modules/.bin/muster detect
+          ./node_modules/.bin/muster doctor

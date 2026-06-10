@@ -4,13 +4,13 @@
 // - uses payload.cwd when present
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import {
-  mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync,
+  mkdtempSync, existsSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
+import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -21,25 +21,18 @@ const HOOK = path.join(
 );
 
 // Spawn the hook with the given cwd and stdin payload, return { stdout, code }.
+// NOTE: cwd is set as the process working directory via execFile option, not env.
+// The session-start hook reads cwd from payload.cwd, so these tests always include
+// it in the JSON payload directly. spawnHook is used here via its env parameter.
 function runHookStdin(cwd, stdinText) {
-  return new Promise((resolve) => {
-    const child = execFile("node", [HOOK], { cwd }, (err, stdout) => {
-      resolve({ stdout: stdout ?? err?.stdout ?? "", code: err?.code ?? 0 });
-    });
-    child.stdin.end(stdinText);
-  });
+  return spawnHook(HOOK, stdinText);
 }
 
 // Create a temp dir with .muster/wave-active marker, return tmpDir.
-function makeMarker(waveId = "wave-001") {
+function makeTmpMarker(waveId = "wave-001") {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-wg-"));
-  mkdirSync(path.join(tmpDir, ".muster"), { recursive: true });
-  writeFileSync(path.join(tmpDir, ".muster", "wave-active"), waveId);
+  makeMarker(tmpDir, waveId);
   return tmpDir;
-}
-
-function cleanDir(dir) {
-  try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
 function markerExists(dir) {
@@ -48,7 +41,7 @@ function markerExists(dir) {
 
 // ── source:"compact" — marker must survive ───────────────────────────────────
 test("session-start: marker survives source:compact (wave guard must not fire mid-wave)", async () => {
-  const tmpDir = makeMarker("wave-compact-1");
+  const tmpDir = makeTmpMarker("wave-compact-1");
   try {
     const payload = JSON.stringify({ source: "compact", session_id: "s1", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
@@ -62,7 +55,7 @@ test("session-start: marker survives source:compact (wave guard must not fire mi
 
 // ── source:"resume" — marker must survive ────────────────────────────────────
 test("session-start: marker survives source:resume", async () => {
-  const tmpDir = makeMarker("wave-resume-1");
+  const tmpDir = makeTmpMarker("wave-resume-1");
   try {
     const payload = JSON.stringify({ source: "resume", session_id: "s2", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
@@ -76,7 +69,7 @@ test("session-start: marker survives source:resume", async () => {
 
 // ── source:"startup" — marker must be removed ───────────────────────────────
 test("session-start: marker removed on source:startup", async () => {
-  const tmpDir = makeMarker("wave-old");
+  const tmpDir = makeTmpMarker("wave-old");
   try {
     const payload = JSON.stringify({ source: "startup", session_id: "s3", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
@@ -89,7 +82,7 @@ test("session-start: marker removed on source:startup", async () => {
 
 // ── source:"clear" — marker must be removed ─────────────────────────────────
 test("session-start: marker removed on source:clear", async () => {
-  const tmpDir = makeMarker("wave-old-2");
+  const tmpDir = makeTmpMarker("wave-old-2");
   try {
     const payload = JSON.stringify({ source: "clear", session_id: "s4", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
@@ -102,7 +95,7 @@ test("session-start: marker removed on source:clear", async () => {
 
 // ── missing source — marker must be removed (old-style no-source SessionStart) ─
 test("session-start: marker removed when source field is absent", async () => {
-  const tmpDir = makeMarker("wave-nosrc");
+  const tmpDir = makeTmpMarker("wave-nosrc");
   try {
     const payload = JSON.stringify({ session_id: "s5", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
@@ -115,7 +108,7 @@ test("session-start: marker removed when source field is absent", async () => {
 
 // ── payload.cwd takes precedence over process.cwd() ────────────────────────
 test("session-start: uses payload.cwd to locate the marker (not process.cwd)", async () => {
-  const tmpDir = makeMarker("wave-cwd-test");
+  const tmpDir = makeTmpMarker("wave-cwd-test");
   // Run hook from a DIFFERENT directory (os.tmpdir()) but pass cwd in payload.
   try {
     const payload = JSON.stringify({ source: "startup", session_id: "s6", cwd: tmpDir });

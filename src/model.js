@@ -44,6 +44,15 @@ export function fallbackModelFor(model) {
   return FALLBACK[model] || model;
 }
 
+// Floors a resolved tier at sonnet. An agent never pins below sonnet — haiku-
+// tier (mechanical) roles ride the orchestrator's override instead.
+// Returns sonnet if tier is undefined or below sonnet in MODEL_TIER_ORDER.
+const SONNET_IDX = MODEL_TIER_ORDER.indexOf("sonnet");
+export function floorAtSonnet(tier) {
+  if (tier === undefined) return MODEL_TIER_ORDER[SONNET_IDX];
+  return MODEL_TIER_ORDER.indexOf(tier) >= SONNET_IDX ? tier : MODEL_TIER_ORDER[SONNET_IDX];
+}
+
 // Returns the highest-capability tier from a list of model names, according to
 // MODEL_TIER_ORDER. Unknown names are silently ignored. Returns undefined when
 // the list is empty or contains no known tiers.

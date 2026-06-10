@@ -59,12 +59,14 @@ The input file is either an array of items or `{ "items": [...], "model": "wsjf"
 | `audit` | Drive the whole-codebase review and fix. |
 | `issue <ref>` | Resolve a GitHub issue reference into an outcome (title + body). |
 | `assess <outcome>` | Deterministic gap-check: is the outcome clear enough to route? |
+| `steer <message>` | Classify a mid-run steering message (approve, stop, status, retarget). |
 
 ## Ops and setup
 
 | Command | What it does |
 | --- | --- |
 | `install [home]` | Copy the output style and print the plugin-install steps. |
+| `uninstall [home]` | Print the plugin-removal steps and clean up legacy style files. |
 | `setup [dir]` | Scaffold Muster files into a target directory. |
 | `vendor` | Generate built-in agents and skills from `vendor/manifest.yaml`. |
 | `doctor` | Health-check the installation. |

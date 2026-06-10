@@ -29,7 +29,7 @@ Run these inside Claude Code:
 Muster's glass-box output style ships **inside the plugin** and applies automatically when the plugin is enabled (it sets `force-for-plugin: true`), so there is no style command to run. The old `/output-style <name>` command was removed from Claude Code in v2.1.91; auto-apply replaces it. To pick a different style at any time, use `/config` and select **Output style**.
 
 ::: tip Restart to activate
-Plugin install is a Claude Code action, so the running session only picks Muster up after you (re)install it through `/plugin`. The plugin's agents, the always-on `SessionStart` hook, and the output style become active in your next fresh session (restart or `/clear`).
+Plugin install is a Claude Code action, so the running session only picks Muster up after you (re)install it through `/plugin`. The plugin's agents, the three session hooks, and the output style become active in your next fresh session (restart or `/clear`).
 :::
 
 ## 3. Verify
@@ -52,7 +52,10 @@ npx @adnova-group/muster capabilities
 ## What the plugin adds
 
 - **Four slash commands**: `/muster:run`, `/muster:autopilot`, `/muster:diagnose`, `/muster:audit`.
-- **A SessionStart hook** that prepends Muster's working principles, the four verbs, and a one-line project detect to every session. It activates when Muster is enabled and goes away when it is disabled. It never writes to your `~/.claude` files.
+- **Three session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled:
+  - **`SessionStart`** prepends Muster's working principles, the four verbs, a routing-policy reminder, and a one-line project detect to every session. Never writes to your `~/.claude` files.
+  - **`UserPromptSubmit`** injects periodic drift-reinforcement nudges (every `MUSTER_NUDGE_EVERY` turns) and full principle reminders (every `MUSTER_NUDGE_EVERY * MUSTER_PRINCIPLES_EVERY` turns) so sessions stay on-model after compaction or long runs.
+  - **`PreToolUse`** enforces the wave-guard iron rule: blocks file writes from the orchestrator main loop while a wave is active, with behaviour controlled by `MUSTER_WAVE_GUARD` (`deny` / `warn` / `off`).
 - **Built-in agents and skills**, vendored from MIT-licensed upstreams plus Muster's own clean-room specialists.
 
 ## Uninstall
@@ -73,7 +76,7 @@ npx @adnova-group/muster uninstall
 It also cleans up after older Muster versions: if a pre-`force-for-plugin` install left a copied style at `~/.claude/output-styles/muster.md`, `uninstall` removes it (and restores the original it had displaced, if there is a `.bak`). On a current install there is nothing there to remove.
 
 ::: tip Everything leaves with the plugin
-The output style (`force-for-plugin`) and the `SessionStart` hook are both plugin-native, so uninstalling the plugin removes them automatically. The forced style auto-reverts to whatever output style you had before. There is no global file or `CLAUDE.md` block to clean up by hand.
+The output style (`force-for-plugin`) and all three session hooks are plugin-native, so uninstalling the plugin removes them automatically. The forced style auto-reverts to whatever output style you had before. There is no global file or `CLAUDE.md` block to clean up by hand.
 :::
 
 Next: the [Quickstart](/guides/quickstart).

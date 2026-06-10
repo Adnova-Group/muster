@@ -25,8 +25,6 @@ That runs the [`node:test`](https://nodejs.org/api/test.html) suites under `test
 There is no build step. The CLI runs the `src/` tree directly:
 
 ```bash
-npx muster <verb>
-# or, equivalently
 node src/cli.js <verb>
 ```
 

@@ -5,6 +5,10 @@ import { validateManifest } from "../src/manifest.js";
 import { computeWaves } from "../src/wave.js";
 import { modelForRole } from "../src/model.js";
 
+// Ensure MUSTER_MAX_TIER never leaks in from the caller's environment and
+// silently makes tier assertions wrong. Mirror agents.muster.test.js.
+delete process.env.MUSTER_MAX_TIER;
+
 const EXPECTED_ROLES = {
   architecture: "architecture-review",
   "tech-debt": "tech-debt",

@@ -10,10 +10,28 @@ const HAIKU = new Set(["code-navigation", "docs-research", "research"]);
 // modelForRole; muster-strategist is a provider id, not a role.
 const FABLE = new Set(["judge", "architecture-review"]);
 
+// Ascending capability order. opus is included because it is a valid dispatch
+// tier via fallbackModelFor (fable degrades to opus) even though modelForRole
+// never emits it directly. Declared before capTier/modelForRole to avoid TDZ.
+export const MODEL_TIER_ORDER = ["haiku", "sonnet", "opus", "fable"];
+
+// Caps a resolved tier to a maximum. If cap is a valid tier name from
+// MODEL_TIER_ORDER and tier sits strictly above cap in the order, returns cap;
+// otherwise returns tier unchanged. An invalid or unset cap is a no-op
+// (fail-open so a misconfigured env never breaks dispatch).
+export function capTier(tier, cap = process.env.MUSTER_MAX_TIER) {
+  if (!cap) return tier;
+  const capIdx = MODEL_TIER_ORDER.indexOf(cap);
+  if (capIdx === -1) return tier; // invalid cap name — ignore
+  const tierIdx = MODEL_TIER_ORDER.indexOf(tier);
+  if (tierIdx === -1) return tier; // unknown tier — ignore
+  return tierIdx > capIdx ? cap : tier;
+}
+
 export function modelForRole(role) {
-  if (HAIKU.has(role)) return "haiku";
-  if (FABLE.has(role)) return "fable";
-  return "sonnet";
+  if (HAIKU.has(role)) return capTier("haiku");
+  if (FABLE.has(role)) return capTier("fable");
+  return capTier("sonnet");
 }
 
 // Fable may be unavailable on a given plan (e.g. it requires extra usage
@@ -25,11 +43,6 @@ const FALLBACK = { fable: "opus" };
 export function fallbackModelFor(model) {
   return FALLBACK[model] || model;
 }
-
-// Ascending capability order. opus is included because it is a valid dispatch
-// tier via fallbackModelFor (fable degrades to opus) even though modelForRole
-// never emits it directly.
-export const MODEL_TIER_ORDER = ["haiku", "sonnet", "opus", "fable"];
 
 // Returns the highest-capability tier from a list of model names, according to
 // MODEL_TIER_ORDER. Unknown names are silently ignored. Returns undefined when

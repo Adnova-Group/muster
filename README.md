@@ -69,6 +69,7 @@ Muster's runtime behavior can be tuned with environment variables:
 | `MUSTER_NUDGE_EVERY` | `3` | Inject a short drift-reinforcement nudge every N turns. |
 | `MUSTER_PRINCIPLES_EVERY` | `3` | Inject the full principles + verbs every N*K turns (K = this value; at defaults: nudge every 3, full every 9). |
 | `MUSTER_WAVE_GUARD` | `deny` | PreToolUse hook enforcement while a wave is active: `deny` blocks inline edits, `warn` allows with a reminder, `off` disables the guard. |
+| `MUSTER_MAX_TIER` | _(unset)_ | Caps the model tier policy (e.g. `opus` disables Fable, `sonnet` for budget mode); unset = no cap. Note: static agent frontmatter pins (e.g. muster-strategist) are not affected on direct invocation; in muster runs the dispatch override honors the cap. |
 
 ## Always-on guidance
 

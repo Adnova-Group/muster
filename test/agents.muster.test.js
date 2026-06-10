@@ -7,6 +7,11 @@ import { resolveCapabilities } from "../src/capabilities.js";
 import { modelForRole } from "../src/model.js";
 import { toAgent } from "../src/vendor.js";
 
+// This file asserts uncapped modelForRole policy (frontmatter must match raw role→model).
+// Ensure MUSTER_MAX_TIER never leaks in from a caller's environment and silently
+// makes every assertion wrong.
+delete process.env.MUSTER_MAX_TIER;
+
 // Derive agent ids and primary roles directly from the catalog yaml so that any
 // newly added agent is automatically covered — no manual list to update.
 //

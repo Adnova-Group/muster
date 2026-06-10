@@ -22,12 +22,13 @@ the manifest — the crew on paper is not the crew doing the work.
   shows edited files but no dispatch line is, by definition, inline drift.
 - **Hard gate:** the `PreToolUse` hook (`plugin/hooks/pre-tool-use.js`) enforces this rule at the
   harness level — it will deny any main-loop Edit/Write/NotebookEdit while `.muster/wave-active`
-  exists, so inline drift is blocked, not just discouraged.
+  exists, so inline drift is blocked, not just discouraged. The hook also inspects Bash commands
+  for file-write patterns (`sed -i`, `tee`, `>` / `>>` redirects); set `MUSTER_WAVE_GUARD=warn`
+  to allow with a reminder if the guard triggers a false positive.
 
 1. Compute waves: `npx -y @adnova-group/muster wave .muster/manifest.json` -> ordered list of waves.
 2. For each wave, in order:
-   a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task — the `PreToolUse` hook reads this marker to enforce the iron rule.
-      Dispatch every task in the wave **concurrently** (use the harness Agent tool):
+   a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task — the `PreToolUse` hook reads this marker to enforce the iron rule. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task.
       - **Provider kind:** look up the role's chosen provider from capabilities
@@ -54,10 +55,10 @@ the manifest — the crew on paper is not the crew doing the work.
         **opus** (the fable fallback — `fallbackModelFor("fable")` in `src/model.js`) and record the
         degradation in STATE — never fail the task over a model tier, and never drop the override
         (a dropped override silently inherits the orchestrator's model).
-   b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point, e.g. for review-gate fixes dispatched inline).
+   b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point; review-gate fix agents are dispatched via the Agent tool after the barrier).
    c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops: re-dispatch
       fix attempts until the gate passes (`done`) or the iteration cap is hit (`max-iterations`), then
-      escalate per step 2e. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
+      escalate per step 2e below. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
       `src/loop.js` — a plugin-user sees this value enforced by the review-gate skill).
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx -y @adnova-group/muster plan-checklist .muster/manifest.json

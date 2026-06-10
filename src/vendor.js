@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
-import { modelForRole, maxTier, MODEL_TIER_ORDER } from "./model.js";
+import { modelForRole, maxTier, floorAtSonnet } from "./model.js";
 
 // Allowlist of tools vendored agent frontmatter may reference.
 // Derived from the tools lines in plugin/agents/wsh-*.md (all use the same set)
@@ -88,13 +88,8 @@ export function toBuiltin(sourceText, item, source) {
 // Body goes to plugin/agents/<id>.md; catalog entry to catalog/agents.generated.yaml.
 // model tier: maxTier over the item's role-mapped models, floored at sonnet.
 // An agent never pins below sonnet — haiku-tier (mechanical) roles ride the
-// orchestrator's override instead. The floor is enforced via MODEL_TIER_ORDER
-// index comparison so the tier name is not hardcoded here.
-const SONNET_IDX = MODEL_TIER_ORDER.indexOf("sonnet");
-function floorAtSonnet(tier) {
-  if (tier === undefined) return MODEL_TIER_ORDER[SONNET_IDX];
-  return MODEL_TIER_ORDER.indexOf(tier) >= SONNET_IDX ? tier : MODEL_TIER_ORDER[SONNET_IDX];
-}
+// orchestrator's override instead. The floor is enforced by floorAtSonnet from
+// src/model.js (which owns MODEL_TIER_ORDER and tier arithmetic).
 
 // Pure helper: given a roles array, return the model tier toAgent would emit
 // (absent an explicit item.model override). Exported so tests and the generator
@@ -162,8 +157,12 @@ const SHA_RE = /^[0-9a-f]{40}$/i;
 // When source.ref is a 40-hex SHA, git clone --branch cannot be used (it only
 // accepts branch/tag names), so we fall back to init + fetch FETCH_HEAD.
 // Branch/tag refs keep the cheaper single-command clone path.
+//
+// source.url: optional URL override for tests / local fixtures. When absent
+// the default https://github.com/<repo>.git URL is used — behaviour is
+// byte-identical to the previous implementation for all real sources.
 export function cloneCommandsFor(source, dir) {
-  const url = `https://github.com/${source.repo}.git`;
+  const url = source.url || `https://github.com/${source.repo}.git`;
   const ref = source.ref || "main";
   if (SHA_RE.test(ref)) {
     return [

@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, writeFileSync, mkdirSync, utimesSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync } from "node:fs";
 import { bashWriteTarget } from "../plugin/hooks/bash-write-target.js";
 import os from "node:os";
+import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -15,19 +15,9 @@ const HOOK = path.join(
   "pre-tool-use.js",
 );
 
-// Spawn the hook, pipe stdinText to it, return { stdout, code }. Never rejects.
+// Spawn the hook with the pre-tool-use hook path bound.
 function runRaw(stdinText, env = {}) {
-  return new Promise((resolve) => {
-    const child = execFile(
-      "node",
-      [HOOK],
-      { env: { ...process.env, ...env } },
-      (err, stdout) => {
-        resolve({ stdout: stdout ?? err?.stdout ?? "", code: err?.code ?? 0 });
-      },
-    );
-    child.stdin.end(stdinText);
-  });
+  return spawnHook(HOOK, stdinText, env);
 }
 
 // Build a payload for an Edit tool call targeting file_path, with the given cwd.
@@ -40,26 +30,16 @@ function editPayload(filePath, cwd, extra = {}) {
   });
 }
 
-// Create a temp dir, write .muster/wave-active with the given content, return tmpDir.
-function makeMarker(waveId = "wave-001", mtime = null) {
+// Create a temp dir with a wave-active marker and return tmpDir.
+function makeTmpMarker(waveId = "wave-001", mtime = null) {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-wg-test-"));
-  mkdirSync(path.join(tmpDir, ".muster"), { recursive: true });
-  const markerPath = path.join(tmpDir, ".muster", "wave-active");
-  writeFileSync(markerPath, waveId);
-  if (mtime !== null) {
-    utimesSync(markerPath, mtime, mtime);
-  }
+  makeMarker(tmpDir, waveId, mtime !== null ? { mtime } : {});
   return tmpDir;
-}
-
-// Remove the temp dir (best-effort).
-function cleanDir(dir) {
-  try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
 }
 
 // ── case (a): deny when marker exists + main-loop Edit outside .muster/ ─────
 test("deny when wave-active marker exists and editing outside .muster/", async () => {
-  const tmpDir = makeMarker("wave-042");
+  const tmpDir = makeTmpMarker("wave-042");
   try {
     // MUSTER_WAVE_GUARD unset => deny
     const { stdout, code } = await runRaw(
@@ -78,7 +58,7 @@ test("deny when wave-active marker exists and editing outside .muster/", async (
 
 // ── case (b): allow when agent_id present (subagent call) ───────────────────
 test("allow when agent_id is present (crew subagent)", async () => {
-  const tmpDir = makeMarker("wave-007");
+  const tmpDir = makeTmpMarker("wave-007");
   try {
     const { stdout, code } = await runRaw(
       JSON.stringify({
@@ -116,7 +96,7 @@ test("allow when no wave-active marker exists", async () => {
 
 // ── case (d): allow for .muster/ path target ────────────────────────────────
 test("allow Edit targeting a path inside .muster/", async () => {
-  const tmpDir = makeMarker("wave-003");
+  const tmpDir = makeTmpMarker("wave-003");
   try {
     // file_path is inside .muster/ (relative or absolute under cwd)
     const { stdout, code } = await runRaw(
@@ -135,7 +115,7 @@ test("allow Edit targeting a path inside .muster/", async () => {
 test("allow when wave-active marker is older than 60 minutes (stale/crashed wave)", async () => {
   // Backdate by 61 minutes
   const staleTime = new Date(Date.now() - 61 * 60 * 1000);
-  const tmpDir = makeMarker("wave-001", staleTime);
+  const tmpDir = makeTmpMarker("wave-001", staleTime);
   try {
     const { stdout, code } = await runRaw(
       editPayload("/some/project/src/foo.js", tmpDir),
@@ -151,7 +131,7 @@ test("allow when wave-active marker is older than 60 minutes (stale/crashed wave
 
 // ── case (f): warn mode emits additionalContext, does NOT deny ───────────────
 test("warn mode: emits additionalContext reminder, no deny", async () => {
-  const tmpDir = makeMarker("wave-099");
+  const tmpDir = makeTmpMarker("wave-099");
   try {
     const { stdout, code } = await runRaw(
       editPayload("/some/project/src/foo.js", tmpDir),
@@ -170,7 +150,7 @@ test("warn mode: emits additionalContext reminder, no deny", async () => {
 
 // ── case (g): off mode is silent allow ──────────────────────────────────────
 test("off mode: silent allow, no additionalContext, no deny", async () => {
-  const tmpDir = makeMarker("wave-005");
+  const tmpDir = makeTmpMarker("wave-005");
   try {
     const { stdout, code } = await runRaw(
       editPayload("/some/project/src/foo.js", tmpDir),
@@ -198,7 +178,7 @@ test("garbled stdin: silent allow, valid JSON, exit 0 (fail-safe)", async () => 
 
 // ── allow-path tests: permissionDecision must be ABSENT (not merely !== deny) ─
 test("allow when agent_id present: permissionDecision field must be absent", async () => {
-  const tmpDir = makeMarker("wave-007");
+  const tmpDir = makeTmpMarker("wave-007");
   try {
     const { stdout } = await runRaw(
       JSON.stringify({
@@ -230,7 +210,7 @@ test("allow when no wave-active: permissionDecision field must be absent", async
 });
 
 test("allow .muster/ path: permissionDecision field must be absent", async () => {
-  const tmpDir = makeMarker("wave-003");
+  const tmpDir = makeTmpMarker("wave-003");
   try {
     const { stdout } = await runRaw(editPayload(".muster/STATE.md", tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -243,7 +223,7 @@ test("allow .muster/ path: permissionDecision field must be absent", async () =>
 
 test("allow stale marker: permissionDecision field must be absent", async () => {
   const staleTime = new Date(Date.now() - 61 * 60 * 1000);
-  const tmpDir = makeMarker("wave-001", staleTime);
+  const tmpDir = makeTmpMarker("wave-001", staleTime);
   try {
     const { stdout } = await runRaw(editPayload("/some/project/src/foo.js", tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -255,7 +235,7 @@ test("allow stale marker: permissionDecision field must be absent", async () => 
 });
 
 test("warn mode: permissionDecision field must be absent", async () => {
-  const tmpDir = makeMarker("wave-099");
+  const tmpDir = makeTmpMarker("wave-099");
   try {
     const { stdout } = await runRaw(
       editPayload("/some/project/src/foo.js", tmpDir),
@@ -270,7 +250,7 @@ test("warn mode: permissionDecision field must be absent", async () => {
 });
 
 test("off mode: permissionDecision field must be absent", async () => {
-  const tmpDir = makeMarker("wave-005");
+  const tmpDir = makeTmpMarker("wave-005");
   try {
     const { stdout } = await runRaw(
       editPayload("/some/project/src/foo.js", tmpDir),
@@ -287,7 +267,7 @@ test("off mode: permissionDecision field must be absent", async () => {
 // ── waveId sanitization: long/garbage marker content ────────────────────────
 test("waveId sanitized: long marker content is capped at 64 chars in deny reason", async () => {
   const longId = "A".repeat(200);
-  const tmpDir = makeMarker(longId);
+  const tmpDir = makeTmpMarker(longId);
   try {
     const { stdout } = await runRaw(editPayload("/some/file.js", tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -306,7 +286,7 @@ test("waveId sanitized: long marker content is capped at 64 chars in deny reason
 
 test("waveId sanitized: non-printable chars stripped from deny reason", async () => {
   const dirtyId = "wave\x00\x01\x1f\x7f-dirty​ ";
-  const tmpDir = makeMarker(dirtyId);
+  const tmpDir = makeTmpMarker(dirtyId);
   try {
     const { stdout } = await runRaw(editPayload("/some/file.js", tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -321,7 +301,7 @@ test("waveId sanitized: non-printable chars stripped from deny reason", async ()
 
 // ── deny reason text improvements ───────────────────────────────────────────
 test("deny reason mentions shell-based file writes (sed -i, tee, heredocs)", async () => {
-  const tmpDir = makeMarker("wave-shell-test");
+  const tmpDir = makeTmpMarker("wave-shell-test");
   try {
     const { stdout } = await runRaw(editPayload("/some/file.js", tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -335,7 +315,7 @@ test("deny reason mentions shell-based file writes (sed -i, tee, heredocs)", asy
 });
 
 test("deny reason mentions MUSTER_WAVE_GUARD=warn as escape hatch", async () => {
-  const tmpDir = makeMarker("wave-escape-test");
+  const tmpDir = makeTmpMarker("wave-escape-test");
   try {
     const { stdout } = await runRaw(editPayload("/some/file.js", tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -349,7 +329,7 @@ test("deny reason mentions MUSTER_WAVE_GUARD=warn as escape hatch", async () => 
 
 // ── NotebookEdit deny test ────────────────────────────────────────────────────
 test("deny NotebookEdit (notebook_path) when wave-active marker exists", async () => {
-  const tmpDir = makeMarker("wave-notebook-1");
+  const tmpDir = makeTmpMarker("wave-notebook-1");
   try {
     const { stdout, code } = await runRaw(
       JSON.stringify({
@@ -430,7 +410,7 @@ function bashPayload(command, cwd, extra = {}) {
 }
 
 test("Bash: deny sed -i during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-1");
+  const tmpDir = makeTmpMarker("wave-bash-1");
   try {
     const { stdout, code } = await runRaw(bashPayload("sed -i 's/a/b/' src/x.js", tmpDir));
     assert.equal(code, 0);
@@ -444,7 +424,7 @@ test("Bash: deny sed -i during active wave", async () => {
 });
 
 test("Bash: deny echo > file during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-2");
+  const tmpDir = makeTmpMarker("wave-bash-2");
   try {
     const { stdout, code } = await runRaw(bashPayload("echo hi > src/x.js", tmpDir));
     assert.equal(code, 0);
@@ -456,7 +436,7 @@ test("Bash: deny echo > file during active wave", async () => {
 });
 
 test("Bash: deny cat <<EOF > config.json during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-3");
+  const tmpDir = makeTmpMarker("wave-bash-3");
   try {
     const { stdout, code } = await runRaw(bashPayload("cat <<EOF > config.json", tmpDir));
     assert.equal(code, 0);
@@ -468,7 +448,7 @@ test("Bash: deny cat <<EOF > config.json during active wave", async () => {
 });
 
 test("Bash: deny tee to non-exempt file during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-4");
+  const tmpDir = makeTmpMarker("wave-bash-4");
   try {
     const { stdout, code } = await runRaw(bashPayload("npm test | tee out.log", tmpDir));
     assert.equal(code, 0);
@@ -480,7 +460,7 @@ test("Bash: deny tee to non-exempt file during active wave", async () => {
 });
 
 test("Bash: deny echo >> file (append) during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-5");
+  const tmpDir = makeTmpMarker("wave-bash-5");
   try {
     const { stdout, code } = await runRaw(bashPayload("echo x >> README.md", tmpDir));
     assert.equal(code, 0);
@@ -492,7 +472,7 @@ test("Bash: deny echo >> file (append) during active wave", async () => {
 });
 
 test("Bash: allow npm test during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-allow-1");
+  const tmpDir = makeTmpMarker("wave-bash-allow-1");
   try {
     const { stdout, code } = await runRaw(bashPayload("npm test", tmpDir));
     assert.equal(code, 0);
@@ -504,7 +484,7 @@ test("Bash: allow npm test during active wave", async () => {
 });
 
 test("Bash: allow npm test 2>&1 (fd duplication) during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-allow-2");
+  const tmpDir = makeTmpMarker("wave-bash-allow-2");
   try {
     const { stdout, code } = await runRaw(bashPayload("npm test 2>&1", tmpDir));
     assert.equal(code, 0);
@@ -516,7 +496,7 @@ test("Bash: allow npm test 2>&1 (fd duplication) during active wave", async () =
 });
 
 test("Bash: allow git log --oneline during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-allow-3");
+  const tmpDir = makeTmpMarker("wave-bash-allow-3");
   try {
     const { stdout, code } = await runRaw(bashPayload("git log --oneline", tmpDir));
     assert.equal(code, 0);
@@ -528,7 +508,7 @@ test("Bash: allow git log --oneline during active wave", async () => {
 });
 
 test("Bash: allow echo hi > /dev/null during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-allow-4");
+  const tmpDir = makeTmpMarker("wave-bash-allow-4");
   try {
     const { stdout, code } = await runRaw(bashPayload("echo hi > /dev/null", tmpDir));
     assert.equal(code, 0);
@@ -540,7 +520,7 @@ test("Bash: allow echo hi > /dev/null during active wave", async () => {
 });
 
 test("Bash: allow node x.js > /tmp/out.txt during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-allow-5");
+  const tmpDir = makeTmpMarker("wave-bash-allow-5");
   try {
     const { stdout, code } = await runRaw(bashPayload("node x.js > /tmp/out.txt", tmpDir));
     assert.equal(code, 0);
@@ -552,7 +532,7 @@ test("Bash: allow node x.js > /tmp/out.txt during active wave", async () => {
 });
 
 test("Bash: allow echo state > .muster/wave-active during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-allow-6");
+  const tmpDir = makeTmpMarker("wave-bash-allow-6");
   try {
     const { stdout, code } = await runRaw(bashPayload("echo state > .muster/wave-active", tmpDir));
     assert.equal(code, 0);
@@ -564,7 +544,7 @@ test("Bash: allow echo state > .muster/wave-active during active wave", async ()
 });
 
 test("Bash: allow npm test 2>&1 | tee /dev/stderr during active wave", async () => {
-  const tmpDir = makeMarker("wave-bash-allow-7");
+  const tmpDir = makeTmpMarker("wave-bash-allow-7");
   try {
     const { stdout, code } = await runRaw(bashPayload("npm test 2>&1 | tee /dev/stderr", tmpDir));
     assert.equal(code, 0);
@@ -576,7 +556,7 @@ test("Bash: allow npm test 2>&1 | tee /dev/stderr during active wave", async () 
 });
 
 test("Bash: allow when agent_id present even with write command", async () => {
-  const tmpDir = makeMarker("wave-bash-agent");
+  const tmpDir = makeTmpMarker("wave-bash-agent");
   try {
     const { stdout, code } = await runRaw(
       bashPayload("sed -i 's/a/b/' src/x.js", tmpDir, { agent_id: "sub-xyz" }),
@@ -615,13 +595,140 @@ test("bashWriteTarget: node -e with > in single-quoted expression is not a write
 });
 
 test("Bash: deny reason names matched pattern and mentions MUSTER_WAVE_GUARD=warn", async () => {
-  const tmpDir = makeMarker("wave-bash-reason");
+  const tmpDir = makeTmpMarker("wave-bash-reason");
   try {
     const { stdout } = await runRaw(bashPayload("sed -i 's/x/y/' file.js", tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, "deny");
     assert.match(out.permissionDecisionReason, /MUSTER_WAVE_GUARD.*warn|warn.*MUSTER_WAVE_GUARD/i);
     assert.match(out.permissionDecisionReason, /sed/i);
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// ── cp/mv detection tests ──────────────────────────────────────────────────
+// DENY: cp/mv to non-exempt destinations
+test("bashWriteTarget: cp to non-exempt dest is a write", () => {
+  assert.ok(
+    bashWriteTarget("cp config.json src/config.json") !== null,
+    "cp to project path should return match",
+  );
+});
+
+test("bashWriteTarget: mv to non-exempt dest is a write", () => {
+  assert.ok(
+    bashWriteTarget("mv old.js src/new.js") !== null,
+    "mv to project path should return match",
+  );
+});
+
+test("bashWriteTarget: cp with flags to non-exempt dest is a write", () => {
+  assert.ok(
+    bashWriteTarget("cp -r a b") !== null,
+    "cp -r to project path should return match",
+  );
+});
+
+test("bashWriteTarget: cp multiple sources to non-exempt dest is a write", () => {
+  assert.ok(
+    bashWriteTarget("cp a b c dir/") !== null,
+    "cp multiple sources: last arg (dir/) is the dest and should be denied",
+  );
+});
+
+// ALLOW: cp/mv to exempt destinations (/tmp/, /dev/, .muster/)
+test("bashWriteTarget: cp to /tmp/ is exempt", () => {
+  assert.equal(
+    bashWriteTarget("cp data.csv /tmp/data.csv"),
+    null,
+    "cp to /tmp/ must be exempt",
+  );
+});
+
+test("bashWriteTarget: mv to .muster/ is exempt", () => {
+  assert.equal(
+    bashWriteTarget("mv x .muster/x"),
+    null,
+    "mv to .muster/ must be exempt",
+  );
+});
+
+test("bashWriteTarget: cp to /dev/ is exempt", () => {
+  assert.equal(
+    bashWriteTarget("cp log.txt /dev/null"),
+    null,
+    "cp to /dev/ must be exempt",
+  );
+});
+
+// ALLOW: ambiguous forms fail-open
+test("bashWriteTarget: cp with command substitution in src is ambiguous — allow (fail-open)", () => {
+  assert.equal(
+    bashWriteTarget('cp "$(ls)" dst'),
+    null,
+    "ambiguous cp (command substitution) must fail-open and return null",
+  );
+});
+
+// Integration tests: cp/mv during active wave
+test("Bash: deny cp config.json src/config.json during active wave", async () => {
+  const tmpDir = makeTmpMarker("wave-cp-1");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("cp config.json src/config.json", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "cp to project path must be denied");
+    assert.match(out.permissionDecisionReason, /wave-cp-1/, "reason includes wave id");
+    assert.match(out.permissionDecisionReason, /cp|mv/, "reason names the command");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: deny mv old.js src/new.js during active wave", async () => {
+  const tmpDir = makeTmpMarker("wave-mv-1");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("mv old.js src/new.js", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "mv to project path must be denied");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow cp data.csv /tmp/data.csv during active wave", async () => {
+  const tmpDir = makeTmpMarker("wave-cp-allow-1");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("cp data.csv /tmp/data.csv", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "cp to /tmp/ must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("Bash: allow mv x .muster/x during active wave", async () => {
+  const tmpDir = makeTmpMarker("wave-mv-allow-1");
+  try {
+    const { stdout, code } = await runRaw(bashPayload("mv x .muster/x", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "mv to .muster/ must be allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test('Bash: allow cp "$(ls)" dst (ambiguous — fail-open) during active wave', async () => {
+  const tmpDir = makeTmpMarker("wave-cp-ambig-1");
+  try {
+    const { stdout, code } = await runRaw(bashPayload('cp "$(ls)" dst', tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.ok(out.permissionDecision !== "deny", "ambiguous cp must fail-open and be allowed");
   } finally {
     cleanDir(tmpDir);
   }

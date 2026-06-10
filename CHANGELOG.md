@@ -5,6 +5,11 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-06-10
+
+### Added
+- **Subagent dispatch-failure contract** — a dispatch that errors or dies is never a silent stop: the orchestrator re-dispatches once with the error appended as context (`dispatchRetryState` / `DISPATCH_MAX_ATTEMPTS = 2` in `src/loop.js`, mirroring the review-gate primitive); model-availability rejections keep following the fable→opus fallback; a second failure escalates like a review-gate cap while the wave's other tasks still complete. Field-reported: an orchestrated run halted outright when one subagent errored.
+
 ## [0.2.5] - 2026-06-10
 
 ### Added
@@ -149,6 +154,7 @@ publish to carry it.
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
+[0.2.6]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.6
 [0.2.5]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.5
 [0.2.4]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.4
 [0.2.3]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.3

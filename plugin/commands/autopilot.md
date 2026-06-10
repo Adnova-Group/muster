@@ -28,8 +28,9 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
    in `src/loop.js`): orchestrator iterates implement→review→fix until the wave's gate passes or the
    iteration cap escalates — see step 6 below. After each green + reviewed wave: commit (`feat(wave N): <summary>`)
    and re-render the checklist with completed ids (`--done …`) into the run STATE.
-6. **Escalation** — if a review gate escalates (fix-loop cap) or a tournament has no passing candidate,
-   STOP and report the unresolved items; the branch stays intact.
+6. **Escalation** — if a review gate escalates (fix-loop cap), a tournament has no passing candidate,
+   or a subagent dispatch that still fails after its retry, STOP and report the unresolved items;
+   the branch stays intact.
 7. **Finish** — after the last wave, present the merge decision via the **AskUserQuestion** selection UI
    with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**. The single attended
    human decision. No auto-push.
@@ -41,7 +42,7 @@ When autopilot is fired by a Claude Code Routine (no interactive human present),
 - On `npx -y @adnova-group/muster assess` returning `clear: false`, **do not** trigger the interview. Record the gap (the `signals`) to the run report in STATE and proceed with best-effort defaults — autonomy still stops at the reviewable artifact (the PR), where the human can close the gap.
 - The merge **disposition** comes from the outcome text (e.g. "…then open a PR" / "…keep the branch"). **Default when no disposition is stated: open a Pull Request.**
 - **Never** auto-merge to a base branch and **never** push directly to main/master in unattended mode — autonomy stops at the reviewable artifact (the PR).
-- Escalations (fix-loop cap reached, tournament with no passing candidate) are written to the run report in STATE instead of blocking on an interactive prompt; the Routine result and any wired Channel can surface them to the human.
+- Escalations (fix-loop cap reached, tournament with no passing candidate, or a subagent dispatch that still fails after its retry) are written to the run report in STATE instead of blocking on an interactive prompt; the Routine result and any wired Channel can surface them to the human.
 - The outcome is supplied via the Routine's `text` field (API `/fire`) or the saved Routine config — the same `$ARGUMENTS` slot, nothing extra to wire.
 
 Glass box: branch, each commit, escalations, and the ticking checklist are recorded in STATE.

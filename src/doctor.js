@@ -135,6 +135,49 @@ export async function runDoctor({ root, home } = {}) {
     }
   }
 
+  // --- install integrity ---
+  // For each muster entry in installed_plugins.json, verify that the registered
+  // installPath directory exists and contains hooks/hooks.json.  A missing
+  // cache directory means the plugin copy silently failed and hooks will never
+  // load, even though the version string looks healthy.
+  {
+    const effectiveHome = home || homedir();
+    const installedPath = join(effectiveHome, ".claude/plugins/installed_plugins.json");
+    const installedJson = await readJson(installedPath);
+
+    if (!installedJson || !installedJson.plugins) {
+      checks.push({ name: "install-integrity", ok: true, detail: "no installed_plugins.json — skip" });
+    } else {
+      const musterKey = Object.keys(installedJson.plugins).find(k => k.split("@")[0] === "muster");
+      if (!musterKey) {
+        checks.push({ name: "install-integrity", ok: true, detail: "muster not in installed_plugins.json — skip" });
+      } else {
+        const entries = installedJson.plugins[musterKey];
+        const entry = Array.isArray(entries) ? entries[0] : null;
+        const installPath = entry?.installPath;
+        const remediation = `plugin cache is missing/incomplete — run: claude plugin uninstall muster@<marketplace> && claude plugin install muster@<marketplace>, then restart`;
+
+        if (!installPath) {
+          checks.push({ name: "install-integrity", ok: true, detail: "no installPath recorded — skip" });
+        } else if (!(await exists(installPath))) {
+          checks.push({
+            name: "install-integrity",
+            ok: false,
+            detail: `${remediation} (installPath not found: ${installPath})`
+          });
+        } else if (!(await exists(join(installPath, "hooks/hooks.json")))) {
+          checks.push({
+            name: "install-integrity",
+            ok: false,
+            detail: `${remediation} (hooks/hooks.json missing under: ${installPath})`
+          });
+        } else {
+          checks.push({ name: "install-integrity", ok: true, detail: `installPath verified: ${installPath}` });
+        }
+      }
+    }
+  }
+
   // --- version parity ---
   // Ensure package.json version matches plugin/.claude-plugin/plugin.json version.
   // A mismatch means the tarball carries different versions and will confuse users.

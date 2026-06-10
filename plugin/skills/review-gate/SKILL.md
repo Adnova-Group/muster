@@ -14,4 +14,6 @@ Inputs: the wave's changes, and `AvailableCapabilities` (from `npx -y @adnova-gr
 3. Write verdicts to `.muster/verdicts.json`; run `npx -y @adnova-group/muster tally .muster/verdicts.json`.
 4. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review. Cap at
    **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3). If still blocked after the cap, ESCALATE to the human with the unresolved blockers.
-5. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking). Return pass/escalate to the orchestrator.
+5. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking).
+
+Return pass (all clear) or escalate (cap hit with remaining blockers) to the orchestrator.

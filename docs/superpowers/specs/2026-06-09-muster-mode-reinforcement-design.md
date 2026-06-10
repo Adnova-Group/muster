@@ -1,7 +1,9 @@
 # Muster Mode Reinforcement — Design
 
 **Date:** 2026-06-09
-**Status:** Approved for planning
+**Status:** Implemented
+
+> **Implemented.** Shipped in 0.2.3; this is the design record.
 
 ## Problem
 

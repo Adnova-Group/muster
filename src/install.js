@@ -54,10 +54,16 @@ export async function runInstall({ home = homedir(), repoRoot } = {}) {
     nextSteps.push(`install the plugin: /plugin install muster@muster`);
   } else {
     const marketplace = await readIfExists(join(root, ".claude-plugin", "marketplace.json"));
-    const { mpName, pName } = resolveNames(marketplace);
     if (marketplace) {
+      const { mpName, pName } = resolveNames(marketplace);
       nextSteps.push(`add the marketplace: /plugin marketplace add ${root}`);
       nextSteps.push(`install the plugin: /plugin install ${pName}@${mpName}`);
+    } else {
+      // No local marketplace.json (e.g. tarball install missing the manifest, or
+      // an unrecognised root).  Fall back to the GitHub-hosted marketplace so the
+      // user always gets actionable steps rather than an empty list.
+      nextSteps.push(`add the marketplace: /plugin marketplace add ${GITHUB_SLUG}`);
+      nextSteps.push(`install the plugin: /plugin install muster@muster`);
     }
   }
   // No "enable the output style" step: the plugin force-applies it on enable.

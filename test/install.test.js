@@ -73,4 +73,15 @@ describe("runInstall", () => {
     assert.doesNotMatch(joined, /\/plugin marketplace add Adnova-Group\/muster/, "real checkout must use local path, not GitHub slug");
     assert.match(joined, new RegExp(`/plugin marketplace add ${repoRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "must include the actual repo path");
   });
+
+  it("non-npx root WITHOUT marketplace.json → falls back to GitHub steps, never empty", async () => {
+    const home = await mkdtemp(join(tmpdir(), "muster-install-"));
+    // A real non-npx dir that has no .claude-plugin/marketplace.json
+    const noMarketplaceRoot = await mkdtemp(join(tmpdir(), "muster-no-mp-"));
+    const { nextSteps } = await runInstall({ home, repoRoot: noMarketplaceRoot });
+    assert.ok(nextSteps.length > 0, "nextSteps must not be empty when marketplace.json is absent");
+    const joined = nextSteps.join("\n");
+    assert.match(joined, /\/plugin marketplace add Adnova-Group\/muster/, "must fall back to GitHub marketplace slug");
+    assert.match(joined, /\/plugin install muster@muster/, "must still include plugin install step");
+  });
 });

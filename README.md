@@ -18,7 +18,7 @@ It runs on bare Claude Code with no extra services and no separate model API, an
 ## Quickstart
 
 ```sh
-npx @adnova-group/muster install
+npx -y @adnova-group/muster install
 ```
 
 `install` mutates nothing in your `~/.claude`. It just prints the steps it cannot do for you, because registering a plugin is a Claude Code action:
@@ -60,6 +60,22 @@ The role set is fixed but the provider set is not. When an outcome does not fit 
 
 Each role also carries a model picked to fit the work: mechanical roles run on Haiku, the default is Sonnet, and heavy judgment runs on Fable (degrades to Opus when unavailable on the plan). Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
 
+## Always-on guidance
+
+Muster ships three plugin-native hooks that work together to keep the session anchored:
+
+- **`SessionStart`**: prepends muster's working principles, the four verbs, a one-line project detect, and the default-routing directive at the start of every session, so the session opens with full context and a clear posture for routing actionable prompts through muster.
+- **`UserPromptSubmit`**: fires before each user turn and re-injects a short drift-reinforcement nudge every N turns (default 3) and the full principles payload every N*K turns (default 9), so the session does not revert to default inline Claude behavior over time.
+- **`PreToolUse`**: wave-guard. While a wave is active (`.muster/wave-active` present), denies main-loop `Edit`/`Write`/`NotebookEdit` and Bash file-write patterns so the orchestrator's iron rule (dispatch via Agent tool, never edit inline) is enforced at the harness level.
+
+All three hooks live inside the plugin, so they activate when muster is enabled and go away when muster is disabled. They do not write to your `~/.claude/CLAUDE.md` or `settings.json` and create no global files. Each hook is fail-safe: any error falls back to an empty result and never blocks a session from starting.
+
+## Pipelines
+
+A pipeline is a phased, gated recipe for producing one kind of artifact. Each declares a domain, an ordered list of phases, and a gate. Gating uses a floor principle: the weakest dimension must clear the floor and the total must clear a pass threshold, so a strong average cannot rescue one weak dimension.
+
+The set spans software and knowledge work. A few examples: PRD, business-case, launch-plan, executive-summary, OKRs, AI implementation spec, competitive-battlecard, blog-post, case-study, runbook, and book (fiction and non-fiction). Roadmap prioritization is one to call out: goals go in, and a RICE-ranked now/next/later roadmap comes out, with the model estimating the factors and the CLI doing the arithmetic. Human-facing pipelines end with a humanize phase that strips em-dashes, AI-tell words, and robotic cadence.
+
 ## Configuration
 
 Muster's runtime behavior can be tuned with environment variables:
@@ -70,16 +86,6 @@ Muster's runtime behavior can be tuned with environment variables:
 | `MUSTER_PRINCIPLES_EVERY` | `3` | Inject the full principles + verbs every N*K turns (K = this value; at defaults: nudge every 3, full every 9). |
 | `MUSTER_WAVE_GUARD` | `deny` | PreToolUse hook enforcement while a wave is active: `deny` blocks inline edits, `warn` allows with a reminder, `off` disables the guard. |
 | `MUSTER_MAX_TIER` | _(unset)_ | Caps the model tier policy (e.g. `opus` disables Fable, `sonnet` for budget mode); unset = no cap. Note: static agent frontmatter pins (e.g. muster-strategist) are not affected on direct invocation; in muster runs the dispatch override honors the cap. |
-
-## Always-on guidance
-
-Muster ships a plugin-native `SessionStart` hook (`plugin/hooks/`) that prepends a short context block to every session: muster's working principles (think first, test-first, surgical changes, glass-box reasoning, code over model for deterministic work, fail loud), the four verbs, and a one-line project detect for the current directory. It lives inside the plugin, so it activates when muster is enabled and goes away when muster is disabled. It does not write to your `~/.claude/CLAUDE.md` or `settings.json` and creates no global files. The hook is fail-safe: any error falls back to an empty result and never blocks a session from starting.
-
-## Pipelines
-
-A pipeline is a phased, gated recipe for producing one kind of artifact. Each declares a domain, an ordered list of phases, and a gate. Gating uses a floor principle: the weakest dimension must clear the floor and the total must clear a pass threshold, so a strong average cannot rescue one weak dimension.
-
-The set spans software and knowledge work. A few examples: PRD, business-case, launch-plan, executive-summary, OKRs, AI implementation spec, competitive-battlecard, blog-post, case-study, runbook, and book (fiction and non-fiction). Roadmap prioritization is one to call out: goals go in, and a RICE-ranked now/next/later roadmap comes out, with the model estimating the factors and the CLI doing the arithmetic. Human-facing pipelines end with a humanize phase that strips em-dashes, AI-tell words, and robotic cadence.
 
 ## Built on
 

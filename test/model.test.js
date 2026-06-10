@@ -108,3 +108,39 @@ test("resolveCapabilities tags every role with a model", async () => {
   assert.equal(caps.roles["implement"].model, "sonnet");
   assert.equal(caps.roles["author"].model, "sonnet");
 });
+
+// --- capabilities-level MUSTER_MAX_TIER cap test ---------------------------
+// Uses the real catalog so the test exercises the full resolveCapabilities +
+// modelForRole + capTier pipeline with a live tier cap applied.
+
+test("MUSTER_MAX_TIER=sonnet: resolveCapabilities caps architecture-review to sonnet", async () => {
+  const { loadCatalog } = await import("../src/catalog.js");
+  const { resolveCapabilities } = await import("../src/capabilities.js");
+  const prev = process.env.MUSTER_MAX_TIER;
+  process.env.MUSTER_MAX_TIER = "sonnet";
+  try {
+    const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
+    const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+    assert.equal(caps.roles["architecture-review"].model, "sonnet",
+      "architecture-review should be capped from fable to sonnet when MUSTER_MAX_TIER=sonnet");
+  } finally {
+    if (prev === undefined) delete process.env.MUSTER_MAX_TIER;
+    else process.env.MUSTER_MAX_TIER = prev;
+  }
+});
+
+test("MUSTER_MAX_TIER unset: resolveCapabilities resolves architecture-review to fable", async () => {
+  const { loadCatalog } = await import("../src/catalog.js");
+  const { resolveCapabilities } = await import("../src/capabilities.js");
+  const prev = process.env.MUSTER_MAX_TIER;
+  delete process.env.MUSTER_MAX_TIER;
+  try {
+    const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
+    const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+    assert.equal(caps.roles["architecture-review"].model, "fable",
+      "architecture-review should resolve to fable when no cap is set");
+  } finally {
+    if (prev === undefined) delete process.env.MUSTER_MAX_TIER;
+    else process.env.MUSTER_MAX_TIER = prev;
+  }
+});

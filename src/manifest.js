@@ -51,7 +51,7 @@ export function manifestWarnings(m) {
   if (crew.length > 0 && crew.every((c) => c && c.source === "inline")) {
     warnings.push(
       "crew: every member is source:inline — capability resolution was likely skipped. " +
-        "Build the crew from `npx muster capabilities` (builtins resolve roles like `implement -> muster-builder`); " +
+        "Build the crew from `npx -y @adnova-group/muster capabilities` (builtins resolve roles like `implement -> muster-builder`); " +
         "a hand-authored all-inline crew bypasses routing."
     );
   }

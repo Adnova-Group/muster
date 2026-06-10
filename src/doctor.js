@@ -135,5 +135,28 @@ export async function runDoctor({ root, home } = {}) {
     }
   }
 
+  // --- version parity ---
+  // Ensure package.json version matches plugin/.claude-plugin/plugin.json version.
+  // A mismatch means the tarball carries different versions and will confuse users.
+  {
+    const pkgPath = join(base, "package.json");
+    const pluginJsonPath = join(base, "plugin/.claude-plugin/plugin.json");
+    const pkgJson = await readJson(pkgPath);
+    const pluginJson = await readJson(pluginJsonPath);
+    const pkgVersion = pkgJson?.version;
+    const pluginVersion = pluginJson?.version;
+    if (!pkgVersion || !pluginVersion) {
+      checks.push({ name: "version-parity", ok: true, detail: "version info unavailable — skip" });
+    } else if (pkgVersion !== pluginVersion) {
+      checks.push({
+        name: "version-parity",
+        ok: false,
+        detail: `package.json version (${pkgVersion}) !== plugin.json version (${pluginVersion}) — bump both together`,
+      });
+    } else {
+      checks.push({ name: "version-parity", ok: true, detail: `both at ${pkgVersion}` });
+    }
+  }
+
   return { ok: checks.every(c => c.ok), checks };
 }

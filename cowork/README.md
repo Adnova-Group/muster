@@ -19,6 +19,7 @@ Sixteen tools, the routing and analysis half of muster:
 | `muster_steer` | Classify a mid-run steer message |
 | `muster_diagnose` / `muster_audit` | Build the diagnose / whole-codebase audit manifest |
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
+| `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_score` / `muster_prioritize` | Score against a gate / rank a backlog |
 | `muster_pick` / `muster_tally` | Tournament winner / review-gate decision |
 

@@ -40,7 +40,7 @@ const COWORK_PROTOCOL = [
   "1. muster_detect + muster_capabilities: learn the project and which provider+model resolves each role. Dispatch each role on its model when you can.",
   "2. muster_assess the outcome if it is thin; muster_route / muster_domain to pick the pipeline.",
   "3. Assemble a crew manifest, then muster_manifest_validate it and fix until ok.",
-  "4. muster_wave gives dependency-ordered waves. Run each wave in parallel IF this runtime can fan out subagents; otherwise run its members SEQUENTIALLY, one at a time. Cross-wave order is fixed; intra-wave order is free.",
+  "4. muster_wave gives dependency-ordered waves. Run each wave in parallel IF this runtime can fan out subagents; otherwise run its members SEQUENTIALLY: call muster_next with the manifest and the ids completed so far, run the returned task, append its id, repeat until done. Cross-wave order is fixed; intra-wave order is free.",
   "5. Gate between waves: muster_tally the review verdicts before proceeding; muster_pick for tournaments. Re-run the stated test signals before claiming a wave done.",
   "6. Glass-box: state each routing decision and its evidence as you go.",
 ].join("\n");
@@ -76,6 +76,7 @@ const TOOLS = {
   // gate/math verbs — JSON in, written to a temp file
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), pick: (a) => a.manifest },
   muster_wave: { argv: ["wave"], ...J("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), pick: (a) => a.manifest },
+  muster_next: { argv: ["next"], ...J("Single-agent driver: given a manifest and the ids completed so far, return the next runnable task plus the full ready frontier. Run `next`, append its id to `completed`, call again until done.", { manifest: { type: "object" }, completed: { type: "array", items: { type: "string" } } }, ["manifest"]), pick: (a) => a.manifest, flags: (a) => a.completed?.length ? ["--done", a.completed.join(",")] : [] },
   muster_score: { argv: ["score"], ...J("Score an artifact's dimensions against a gate.", { scores: { type: "object" }, gate: { type: "object" } }, ["scores", "gate"]), pick: (a) => ({ scores: a.scores, gate: a.gate }) },
   muster_prioritize: { argv: ["prioritize"], ...J("Rank backlog items by RICE/ICE/WSJF/weighted.", { items: { type: "array" }, model: { type: "string", enum: ["rice", "ice", "wsjf", "weighted"] } }, ["items"]), pick: (a) => ({ items: a.items, model: a.model || "rice" }), flags: (a) => a.model ? ["--model", a.model] : [] },
   muster_pick: { argv: ["pick"], ...J("Pick the tournament winner from scored candidates.", { candidates: { type: "array" } }, ["candidates"]), pick: (a) => a.candidates },

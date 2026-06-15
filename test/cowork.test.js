@@ -67,7 +67,7 @@ test("tools/list exposes exactly the 16 brain verbs, matching the MCPB manifest"
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 16, "16 tools served");
+  assert.equal(served.length, 17, "17 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -87,6 +87,15 @@ test("json verb: muster_wave computes dependency-ordered waves (diamond)", async
   assert.equal(waves.length, 2, "diamond collapses to 2 waves");
   assert.deepEqual(waves[0].map((s) => s.id), ["a"]);
   assert.deepEqual(waves[1].map((s) => s.id).sort(), ["b", "c"]);
+});
+
+test("json verb: muster_next drives sequentially (completed ids -> next runnable task)", async () => {
+  const manifest = { plan: [{ id: "a", deps: [] }, { id: "b", deps: ["a"] }, { id: "c", deps: ["a"] }, { id: "d", deps: ["b", "c"] }] };
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_next", arguments: { manifest, completed: ["a", "b", "c"] } } }]);
+  const res = JSON.parse(r[2].result.content[0].text);
+  assert.equal(r[2].result.isError, false);
+  assert.equal(res.next.id, "d", "with a,b,c done the only runnable task is d");
+  assert.equal(res.done, false);
 });
 
 test("error path: a CLI failure surfaces as isError, not a crash", async () => {

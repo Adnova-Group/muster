@@ -28,16 +28,29 @@ export function capTier(tier, cap = process.env.MUSTER_MAX_TIER) {
   return tierIdx > capIdx ? cap : tier;
 }
 
+// Fable can be disabled platform-wide (Anthropic has done so), and a dispatch on
+// a disabled tier is rejected — which historically choked the run because the
+// only fallback was a prose instruction the orchestrator had to catch. So fable
+// degrades to opus deterministically and BY DEFAULT, here at the emission layer:
+// capabilities/crew/signals never emit fable, so the orchestrator never dispatches
+// it. Opt back in with MUSTER_ENABLE_FABLE once the tier is available again.
+function fableEnabled() {
+  // Robust against MCPB boolean user_config, which substitutes as the string
+  // "false"/"true": only "1"/"true"-ish values enable; "0"/"false"/"" do not.
+  const v = process.env.MUSTER_ENABLE_FABLE;
+  return !!v && v !== "0" && v.toLowerCase() !== "false";
+}
+
 export function modelForRole(role) {
   if (HAIKU.has(role)) return capTier("haiku");
-  if (FABLE.has(role)) return capTier("fable");
+  if (FABLE.has(role)) return capTier(fableEnabled() ? "fable" : fallbackModelFor("fable"));
   return capTier("sonnet");
 }
 
-// Fable may be unavailable on a given plan (e.g. it requires extra usage
-// credits). Dispatch degrades per this map — never fail the task over a model
-// tier, and never silently inherit the orchestrator's model. Tiers without an
-// entry are their own fallback.
+// Fable degrades per this map — never fail the task over a model tier, and never
+// silently inherit the orchestrator's model. Tiers without an entry are their own
+// fallback. Wired into modelForRole (above) and used by the orchestrator's
+// dispatch-retry path when an opted-in fable dispatch is still rejected.
 const FALLBACK = { fable: "opus" };
 
 export function fallbackModelFor(model) {

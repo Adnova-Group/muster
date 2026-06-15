@@ -23,6 +23,7 @@ npx @adnova-group/muster <command> [args]
 | --- | --- |
 | `manifest validate <file>` | Validate a Crew Manifest's shape. |
 | `wave <file>` | Compute dependency-ordered execution waves from a manifest. |
+| `next <manifest.json> [--done a,b]` | Single-agent driver: given completed task ids, return the next runnable task (and the full ready frontier). |
 | `plan-checklist <file>` | Render the plan as a checklist (`--done <ids>` ticks completed tasks). |
 | `tally <file>` / `pick <file>` | Tally tournament votes and pick a winner. |
 

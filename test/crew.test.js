@@ -17,7 +17,8 @@ test("modelFor: returns caps.roles[role].model when present", () => {
 
 test("modelFor: falls back to modelForRole when caps has no entry for the role", () => {
   assert.equal(modelFor({}, "architecture-review"), modelForRole("architecture-review"));
-  assert.equal(modelFor({}, "architecture-review"), "fable");
+  // top tier degrades fable->opus by default (fable disabled platform-wide).
+  assert.equal(modelFor({}, "architecture-review"), "opus");
 });
 
 test("modelFor: falls back when caps is null", () => {

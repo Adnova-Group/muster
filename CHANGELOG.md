@@ -5,6 +5,15 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-06-15
+
+### Added
+- **Claude Cowork port (in progress)** — `cowork/mcp-server.mjs` wraps muster's deterministic CLI brain as a local MCP server (zero-dep stdio JSON-RPC, 16 tools: routing, scoring, RICE, wave planning), with principles + routing policy injected via the MCP `instructions` field (reusing `plugin/hooks/guidance.js`). `cowork/manifest.json` is the MCPB desktop-extension descriptor. Cowork extends only through MCP/MCPB — no plugin/skill/slash/hook primitives — so the deterministic half ports cleanly; the orchestration half is gated on undisclosed subagent dispatch.
+- **`scripts/cowork-probe.mjs`** — portability probe for a target runtime: phase 1 (CLI shell-out + JSON shape) and phase 2 (dispatch-contract invariants) self-verify; phase 3 emits a fan-out + model-override self-test spec the host runtime executes, then grades the results via `--dispatch-results`.
+
+### Fixed
+- **Fable degrades to opus deterministically, by default** — Anthropic disabled the fable tier platform-wide, and the old fallback was prose-only in the orchestrator skill (the model had to catch the dispatch rejection) while `fallbackModelFor` sat unused, so orchestrated runs *choked* instead of falling over. `modelForRole` (`src/model.js`) now wires `fallbackModelFor("fable")` unless `MUSTER_ENABLE_FABLE=1` is set, so `capabilities`/`crew`/`signals`/vendored agent frontmatter never emit fable and the orchestrator never dispatches a rejected tier. Opt back in with `MUSTER_ENABLE_FABLE=1` when the tier returns.
+
 ## [0.2.6] - 2026-06-10
 
 ### Added

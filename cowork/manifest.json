@@ -1,0 +1,39 @@
+{
+  "manifest_version": "0.2",
+  "name": "muster",
+  "display_name": "Muster",
+  "version": "0.2.7",
+  "description": "Glass-box agentic router. Exposes muster's deterministic CLI brain — capability/domain routing, gate scoring, RICE prioritization, wave planning — as MCP tools.",
+  "long_description": "Muster's deterministic core (project detection, role-to-provider resolution, artifact gate scoring, dependency-ordered wave planning) wrapped as a local MCP server for Claude Cowork. The router runs as plain Node in Cowork's VM and makes no model calls; Claude calls these tools to decide who does the work, then does the judgment work itself. Principles and routing policy are injected via the server's MCP instructions.",
+  "author": { "name": "rnbennett" },
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "cowork/mcp-server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/cowork/mcp-server.mjs"]
+    }
+  },
+  "tools": [
+    { "name": "muster_detect", "description": "Detect the project profile for a directory." },
+    { "name": "muster_capabilities", "description": "Resolve every role to its best-available provider, chain, and model tier." },
+    { "name": "muster_match", "description": "Rank catalog providers against a free-text task." },
+    { "name": "muster_domain", "description": "Classify an outcome into a work domain." },
+    { "name": "muster_route", "description": "Route an outcome to its domain + pipeline." },
+    { "name": "muster_pipeline", "description": "Load a pipeline definition by domain or id." },
+    { "name": "muster_assess", "description": "Gap-check an outcome before running." },
+    { "name": "muster_steer", "description": "Classify a mid-run steer message." },
+    { "name": "muster_diagnose", "description": "Classify a failure symptom and build a diagnose manifest." },
+    { "name": "muster_audit", "description": "Build the whole-codebase audit manifest." },
+    { "name": "muster_manifest_validate", "description": "Validate a crew manifest's shape and dependency graph." },
+    { "name": "muster_wave", "description": "Compute dependency-ordered execution waves." },
+    { "name": "muster_score", "description": "Score an artifact against a gate." },
+    { "name": "muster_prioritize", "description": "Rank backlog items by RICE/ICE/WSJF/weighted." },
+    { "name": "muster_pick", "description": "Pick the tournament winner from scored candidates." },
+    { "name": "muster_tally", "description": "Tally adversarial review verdicts into a gate decision." }
+  ],
+  "compatibility": {
+    "runtimes": { "node": ">=20" }
+  }
+}

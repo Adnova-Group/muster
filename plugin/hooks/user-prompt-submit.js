@@ -41,11 +41,21 @@ function bumpTurn(sessionId) {
 }
 
 try {
-  let sessionId;
+  let payload;
   try {
-    sessionId = JSON.parse(readFileSync(0, "utf8")).session_id;
+    payload = JSON.parse(readFileSync(0, "utf8"));
   } catch {
-    sessionId = undefined;
+    payload = {};
+  }
+  const sessionId = typeof payload.session_id === "string" ? payload.session_id : undefined;
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+
+  // Slash-command turns are explicit intent — never inject on them, and never count
+  // them. Injecting context on a "/..." prompt is noise, and in a relayed/remote
+  // session it can land ahead of the command and break slash-command parsing.
+  if (prompt.trimStart().startsWith("/")) {
+    emit({ hookSpecificOutput: { hookEventName: EVENT } });
+    process.exit(0);
   }
 
   if (typeof sessionId !== "string" || sessionId.length === 0) {

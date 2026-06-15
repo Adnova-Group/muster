@@ -1,6 +1,6 @@
 {
   "name": "@adnova-group/muster",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Glass-box agentic orchestrator: detects context, assembles the right crew, and shows its reasoning.",
   "license": "Apache-2.0",
   "author": "Adnova Group",
@@ -36,6 +36,7 @@
     "catalog",
     "pipelines",
     "vendor",
+    "cowork",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

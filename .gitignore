@@ -2,3 +2,4 @@ node_modules/
 .muster/
 *.log
 tmp/
+cowork-dispatch-spec.json

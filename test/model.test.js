@@ -8,12 +8,33 @@ test("mechanical roles -> haiku", () => {
   assert.equal(modelForRole("research"), "haiku");
 });
 
-test("heavy-judgment roles -> fable (top tier)", () => {
-  // "judge" is a conceptual non-enum role (tournament skill dispatches the judge);
-  // "architecture-review" is the canonical ROLES member. These are the two spots
-  // where peak judgment pays for fable's 2x cost; everything else stays cheaper.
-  assert.equal(modelForRole("judge"), "fable");
-  assert.equal(modelForRole("architecture-review"), "fable");
+// "judge" is a conceptual non-enum role (tournament skill dispatches the judge);
+// "architecture-review" is the canonical ROLES member. These are the two spots
+// where peak judgment would pay for fable's 2x cost. But fable can be disabled
+// platform-wide, so it degrades to opus BY DEFAULT (deterministic — the choke must
+// never depend on the orchestrator catching a dispatch rejection). Opt back in with
+// MUSTER_ENABLE_FABLE once fable is available again.
+test("heavy-judgment roles -> opus by default (fable degraded)", () => {
+  const prev = process.env.MUSTER_ENABLE_FABLE;
+  delete process.env.MUSTER_ENABLE_FABLE;
+  try {
+    assert.equal(modelForRole("judge"), "opus");
+    assert.equal(modelForRole("architecture-review"), "opus");
+  } finally {
+    if (prev !== undefined) process.env.MUSTER_ENABLE_FABLE = prev;
+  }
+});
+
+test("heavy-judgment roles -> fable when MUSTER_ENABLE_FABLE is set", () => {
+  const prev = process.env.MUSTER_ENABLE_FABLE;
+  process.env.MUSTER_ENABLE_FABLE = "1";
+  try {
+    assert.equal(modelForRole("judge"), "fable");
+    assert.equal(modelForRole("architecture-review"), "fable");
+  } finally {
+    if (prev === undefined) delete process.env.MUSTER_ENABLE_FABLE;
+    else process.env.MUSTER_ENABLE_FABLE = prev;
+  }
 });
 
 // Fable may be unavailable on a given plan (e.g. requires extra usage credits).
@@ -129,18 +150,38 @@ test("MUSTER_MAX_TIER=sonnet: resolveCapabilities caps architecture-review to so
   }
 });
 
-test("MUSTER_MAX_TIER unset: resolveCapabilities resolves architecture-review to fable", async () => {
+test("no cap, fable disabled (default): resolveCapabilities degrades architecture-review to opus", async () => {
   const { loadCatalog } = await import("../src/catalog.js");
   const { resolveCapabilities } = await import("../src/capabilities.js");
-  const prev = process.env.MUSTER_MAX_TIER;
+  const prevCap = process.env.MUSTER_MAX_TIER;
+  const prevFable = process.env.MUSTER_ENABLE_FABLE;
   delete process.env.MUSTER_MAX_TIER;
+  delete process.env.MUSTER_ENABLE_FABLE;
+  try {
+    const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
+    const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+    assert.equal(caps.roles["architecture-review"].model, "opus",
+      "architecture-review should degrade fable->opus by default so dispatch never chokes");
+  } finally {
+    if (prevCap === undefined) delete process.env.MUSTER_MAX_TIER; else process.env.MUSTER_MAX_TIER = prevCap;
+    if (prevFable === undefined) delete process.env.MUSTER_ENABLE_FABLE; else process.env.MUSTER_ENABLE_FABLE = prevFable;
+  }
+});
+
+test("MUSTER_ENABLE_FABLE set, no cap: resolveCapabilities resolves architecture-review to fable", async () => {
+  const { loadCatalog } = await import("../src/catalog.js");
+  const { resolveCapabilities } = await import("../src/capabilities.js");
+  const prevCap = process.env.MUSTER_MAX_TIER;
+  const prevFable = process.env.MUSTER_ENABLE_FABLE;
+  delete process.env.MUSTER_MAX_TIER;
+  process.env.MUSTER_ENABLE_FABLE = "1";
   try {
     const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
     const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
     assert.equal(caps.roles["architecture-review"].model, "fable",
-      "architecture-review should resolve to fable when no cap is set");
+      "architecture-review should resolve to fable when opted in and no cap is set");
   } finally {
-    if (prev === undefined) delete process.env.MUSTER_MAX_TIER;
-    else process.env.MUSTER_MAX_TIER = prev;
+    if (prevCap === undefined) delete process.env.MUSTER_MAX_TIER; else process.env.MUSTER_MAX_TIER = prevCap;
+    if (prevFable === undefined) delete process.env.MUSTER_ENABLE_FABLE; else process.env.MUSTER_ENABLE_FABLE = prevFable;
   }
 });

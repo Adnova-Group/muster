@@ -259,7 +259,7 @@ test("toAgent model passthrough: explicit item.model wins verbatim", () => {
   assert.equal(data.model, "haiku");
 });
 
-test("toAgent architecture-review role → modelForRole policy (fable)", () => {
+test("toAgent architecture-review role → modelForRole policy (fable→opus by default)", () => {
   const item = { from: "ag/AGENT.md", id: "sp-arch", roles: ["architecture-review"] };
   const r = toAgent(agentSrc, item, agentSource);
   const { data } = splitFrontmatter(r.content);

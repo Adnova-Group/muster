@@ -29,6 +29,11 @@ function runTurn(sessionId, env = {}) {
   return runRaw(JSON.stringify({ session_id: sessionId }), env);
 }
 
+// One turn carrying a prompt (the UserPromptSubmit payload includes `prompt`).
+function runPrompt(sessionId, prompt, env = {}) {
+  return runRaw(JSON.stringify({ session_id: sessionId, prompt }), env);
+}
+
 function ctxOf(stdout) {
   const out = JSON.parse(stdout).hookSpecificOutput;
   assert.equal(out.hookEventName, "UserPromptSubmit");
@@ -98,6 +103,38 @@ test("junk env values fall back to defaults", async () => {
   }
   const { stdout } = await runTurn(sid, env);
   assert.match(ctxOf(stdout).additionalContext, /muster mode/i, "turn 3 nudge under junk env");
+});
+
+// Slash-command turns must be transparent: no injected context (which in a relayed
+// remote session can land ahead of the command and break slash parsing), and they
+// must not consume the turn counter.
+test("slash-command prompt gets no nudge and does not consume the turn count", async () => {
+  const sid = uniqSession();
+  for (let t = 1; t <= 2; t++) {
+    const { stdout } = await runPrompt(sid, "do some work");
+    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${t} silent`);
+  }
+  // A slash turn where a normal turn 3 would nudge: must stay silent...
+  const slash = await runPrompt(sid, "/muster:run ship it");
+  assert.equal(slash.code, 0);
+  assert.ok(!("additionalContext" in ctxOf(slash.stdout)), "slash-command turn injects nothing");
+  // ...and must not have consumed the count: the next normal turn is the real turn 3.
+  const { stdout } = await runPrompt(sid, "another task");
+  assert.match(ctxOf(stdout).additionalContext, /muster mode/i, "slash turn was transparent to the counter");
+});
+
+test("leading-whitespace slash command is still treated as a slash command", async () => {
+  const sid = uniqSession();
+  for (let t = 1; t <= 2; t++) await runPrompt(sid, "work");
+  const { stdout } = await runPrompt(sid, "   /muster:autopilot do it");
+  assert.ok(!("additionalContext" in ctxOf(stdout)), "leading whitespace before / still skips injection");
+});
+
+test("a normal prompt at a nudge turn still nudges (guard does not over-fire)", async () => {
+  const sid = uniqSession();
+  let last;
+  for (let t = 1; t <= 3; t++) last = await runPrompt(sid, "regular request");
+  assert.match(ctxOf(last.stdout).additionalContext, /muster mode/i, "non-slash prompt nudges as before");
 });
 
 test("missing session_id: valid JSON, exit 0, no nudge", async () => {

@@ -35,7 +35,10 @@ export function capTier(tier, cap = process.env.MUSTER_MAX_TIER) {
 // capabilities/crew/signals never emit fable, so the orchestrator never dispatches
 // it. Opt back in with MUSTER_ENABLE_FABLE once the tier is available again.
 function fableEnabled() {
-  return !!process.env.MUSTER_ENABLE_FABLE;
+  // Robust against MCPB boolean user_config, which substitutes as the string
+  // "false"/"true": only "1"/"true"-ish values enable; "0"/"false"/"" do not.
+  const v = process.env.MUSTER_ENABLE_FABLE;
+  return !!v && v !== "0" && v.toLowerCase() !== "false";
 }
 
 export function modelForRole(role) {

@@ -56,6 +56,14 @@ node scripts/cowork-probe.mjs --dispatch-results results.json
 
 If phase 3 passes, the full orchestration half is buildable on Cowork. If it does not, muster runs as a router plus single-agent executor: the agent walks each wave sequentially per the execution protocol, and every routing, scoring, and gate decision is still deterministic.
 
+## How capabilities resolve here
+
+`muster_capabilities` runs with `--cowork`, so it resolves providers from Cowork's MCP registry rather than `~/.claude`:
+
+- **Local MCP servers** are read from `claude_desktop_config.json` (`mcpServers` keys). On Windows the MSIX-virtualized path is tried before `%APPDATA%\Claude`.
+- **MCPB extensions** are discovered by enumerating the `Claude Extensions/` directory and reading each `manifest.json` (there is no index file).
+- **Remote connectors** (Slack, Drive, GitHub, and so on) live in your cloud account, not on disk, so they cannot be auto-discovered. Declare the ones you want muster to treat as available via `MUSTER_COWORK_CONNECTORS=slack,drive` (or the `connectors` user_config). The output marks `connectorsDiscoverable: false` so the gap is visible.
+
 ## Tier notes
 
-Fable degrades to opus by default (the tier can be disabled platform-wide). Set `MUSTER_ENABLE_FABLE=1` to opt back in once it returns. `MUSTER_MAX_TIER=opus|sonnet` caps dispatch for budget control.
+Fable degrades to opus by default (the tier can be disabled platform-wide). Set `MUSTER_ENABLE_FABLE=1` (or the `enable_fable` user_config) to opt back in once it returns. `MUSTER_MAX_TIER=opus|sonnet` caps dispatch for budget control.

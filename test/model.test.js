@@ -37,6 +37,21 @@ test("heavy-judgment roles -> fable when MUSTER_ENABLE_FABLE is set", () => {
   }
 });
 
+// An MCPB boolean user_config substitutes as the STRING "false", which a naive
+// truthy check would wrongly treat as enabled. "0"/"false" must mean disabled.
+test("MUSTER_ENABLE_FABLE='false' or '0' keeps fable degraded (string-as-env safety)", () => {
+  const prev = process.env.MUSTER_ENABLE_FABLE;
+  try {
+    for (const falsey of ["false", "0", ""]) {
+      process.env.MUSTER_ENABLE_FABLE = falsey;
+      assert.equal(modelForRole("architecture-review"), "opus", `"${falsey}" must not enable fable`);
+    }
+  } finally {
+    if (prev === undefined) delete process.env.MUSTER_ENABLE_FABLE;
+    else process.env.MUSTER_ENABLE_FABLE = prev;
+  }
+});
+
 // Fable may be unavailable on a given plan (e.g. requires extra usage credits).
 // Dispatch must degrade to opus — never fail the task, never silently inherit.
 test("fable degrades to opus when unavailable; other tiers have no fallback", () => {

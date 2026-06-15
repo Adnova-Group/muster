@@ -1,10 +1,10 @@
 {
-  "manifest_version": "0.2",
+  "manifest_version": "0.3",
   "name": "muster",
   "display_name": "Muster",
   "version": "0.2.7",
-  "description": "Glass-box agentic router. Exposes muster's deterministic CLI brain — capability/domain routing, gate scoring, RICE prioritization, wave planning — as MCP tools.",
-  "long_description": "Muster's deterministic core (project detection, role-to-provider resolution, artifact gate scoring, dependency-ordered wave planning) wrapped as a local MCP server for Claude Cowork. The router runs as plain Node in Cowork's VM and makes no model calls; Claude calls these tools to decide who does the work, then does the judgment work itself. Principles and routing policy are injected via the server's MCP instructions.",
+  "description": "Glass-box agentic router. Exposes muster's deterministic CLI brain (capability and domain routing, gate scoring, RICE prioritization, wave planning) as MCP tools.",
+  "long_description": "Muster's deterministic core (project detection, role-to-provider resolution, artifact gate scoring, dependency-ordered wave planning) wrapped as a local MCP server for Claude Cowork. The router runs as plain Node and makes no model calls; Claude calls these tools to decide who does the work, then does the judgment work itself. Principles, routing policy, and an execution protocol are injected via the server's MCP instructions. Note: the server spawns the muster CLI as a child process, which can be blocked on Windows MSIX installs (virtualized bundle path); verify with scripts/cowork-probe.mjs before relying on it there.",
   "author": { "name": "rnbennett" },
   "license": "MIT",
   "server": {
@@ -12,7 +12,32 @@
     "entry_point": "cowork/mcp-server.mjs",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/cowork/mcp-server.mjs"]
+      "args": ["${__dirname}/cowork/mcp-server.mjs"],
+      "env": {
+        "MUSTER_ENABLE_FABLE": "${user_config.enable_fable}",
+        "MUSTER_MAX_TIER": "${user_config.max_tier}",
+        "MUSTER_COWORK_CONNECTORS": "${user_config.connectors}"
+      }
+    }
+  },
+  "user_config": {
+    "enable_fable": {
+      "type": "boolean",
+      "title": "Enable Fable tier",
+      "description": "Route peak-judgment roles to Fable. Off by default; degrades to Opus when disabled.",
+      "default": false
+    },
+    "max_tier": {
+      "type": "string",
+      "title": "Max model tier",
+      "description": "Cap dispatch at 'opus' or 'sonnet' for budget control. Leave empty for no cap.",
+      "default": ""
+    },
+    "connectors": {
+      "type": "string",
+      "title": "Declared remote connectors",
+      "description": "Comma-separated names of remote connectors to treat as available. Remote connectors cannot be auto-discovered from disk.",
+      "default": ""
     }
   },
   "tools": [

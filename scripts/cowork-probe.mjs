@@ -84,6 +84,14 @@ function phase1() {
     else record("cli", label, "pass", "exit 0, JSON valid, shape OK");
     if (args[0] === "capabilities" && r.ok) caps = r.json;
   }
+  // The Cowork MCP server spawns the CLI as a child process. On Windows MSIX installs the
+  // virtualized bundle path can block that (anthropics/claude-code#47977). These CLI probes
+  // running here prove child-process spawn works in THIS runtime; flag the platform caveat.
+  const onWin = process.platform === "win32";
+  record("cli", "child-process spawn works in this runtime (MSIX risk on win32)",
+    caps ? (onWin ? "manual" : "pass") : "fail",
+    caps ? (onWin ? "spawn worked here; re-verify from the packaged MSIX-virtualized path" : "spawn confirmed in this runtime")
+         : "CLI never produced output — spawn or path is broken here");
   return caps;
 }
 

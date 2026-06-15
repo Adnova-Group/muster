@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { detectProject } from "./detect.js";
 import { loadCatalog } from "./catalog.js";
-import { readInstalled } from "./harness.js";
+import { readInstalled, readInstalledCowork } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
-import { computeWaves } from "./wave.js";
+import { computeWaves, nextTasks } from "./wave.js";
 import { tallyReview } from "./review.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
@@ -45,7 +45,18 @@ try {
     out(await detectProject(rest[0] || process.cwd()));
   } else if (cmd === "capabilities") {
     const catalog = await loadCatalog(CATALOG_DIR);
-    out(resolveCapabilities(catalog, await readInstalled(rest[0] || homedir())));
+    const home = rest.find(a => !a.startsWith("-")) || homedir();
+    // --cowork resolves providers from Cowork's MCP registry instead of ~/.claude;
+    // declared remote connectors (not disk-discoverable) come from --connectors or env.
+    let installed;
+    if (rest.includes("--cowork")) {
+      const declared = (flagValue(rest, "--connectors") || process.env.MUSTER_COWORK_CONNECTORS || "")
+        .split(",").map(s => s.trim()).filter(Boolean);
+      installed = await readInstalledCowork(home, { declaredConnectors: declared });
+    } else {
+      installed = await readInstalled(home);
+    }
+    out(resolveCapabilities(catalog, installed));
   } else if (cmd === "match") {
     if (!rest[0]) fail("match <task>: missing task");
     const catalog = await loadCatalog(CATALOG_DIR);
@@ -70,6 +81,12 @@ try {
     const m = JSON.parse(await readFile(file, "utf8"));
     if (!Array.isArray(m.plan)) fail("wave: manifest has no 'plan' array");
     out(computeWaves(m.plan));
+  } else if (cmd === "next") {
+    const file = requireArg(rest, 0, "next <manifest.json> [--done a,b]: missing file path", fail);
+    const m = JSON.parse(await readFile(file, "utf8"));
+    if (!Array.isArray(m.plan)) fail("next: manifest has no 'plan' array");
+    const doneArg = flagValue(rest, "--done");
+    out(nextTasks(m.plan, doneArg ? doneArg.split(",") : []));
   } else if (cmd === "tally") {
     const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
     out(tallyReview(JSON.parse(await readFile(file, "utf8"))));
@@ -165,7 +182,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities|match <task>|manifest validate <file>|wave <file>|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

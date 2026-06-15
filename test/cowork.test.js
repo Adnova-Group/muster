@@ -59,7 +59,20 @@ test("instructions carry a Cowork execution protocol with the sequential (no-fan
   assert.match(instr, /muster_detect/, "names the detect step");
   assert.match(instr, /muster_wave/, "names the wave step");
   assert.match(instr, /muster_manifest_validate/, "names the validate step");
-  assert.match(instr, /sequential/i, "spells out the sequential fallback when fan-out is unavailable");
+  assert.match(instr, /muster_next.*fan-out is unavailable|fan-out is unavailable/i, "spells out the no-fan-out fallback via muster_next");
+});
+
+test("instructions cover the full autopilot/audit/diagnose lifecycle (dispatch confirmed on Cowork)", async () => {
+  const r = await rpc([INIT]);
+  const instr = r[1].result.instructions;
+  assert.match(instr, /parallel/i, "leads with parallel fan-out now that dispatch is confirmed");
+  assert.match(instr, /branch/i, "autopilot branches first");
+  assert.match(instr, /commit/i, "commits per wave");
+  assert.match(instr, /merge/i, "presents the merge decision");
+  assert.match(instr, /muster_pick/, "tournament winner via muster_pick");
+  assert.match(instr, /muster_tally/, "review gate via muster_tally");
+  assert.match(instr, /audit/i, "audit mode described");
+  assert.match(instr, /diagnose/i, "diagnose mode described");
 });
 
 test("tools/list exposes exactly the 16 brain verbs, matching the MCPB manifest", async () => {

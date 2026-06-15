@@ -50,11 +50,14 @@ the manifest — the crew on paper is not the crew doing the work.
           resolved provider (skill) into the BRIEF, as today.
       - **Model (authoritative, regardless of kind):** always pass the crew member's `model` as the
         Agent tool's `model` **override**. The model is written into each crew member in the manifest
-        by the router from `muster capabilities` output (the `roles[<role>].model` value). If a fable
-        dispatch is rejected because fable is unavailable on the current plan, retry once with
-        **opus** (the fable fallback — `fallbackModelFor("fable")` in `src/model.js`) and record the
-        degradation in STATE — never fail the task over a model tier, and never drop the override
-        (a dropped override silently inherits the orchestrator's model).
+        by the router from `muster capabilities` output (the `roles[<role>].model` value). Fable is
+        degraded to **opus deterministically at the emission layer** (`modelForRole` in `src/model.js`)
+        because the tier can be disabled platform-wide — so by default the manifest never carries
+        `fable` and the orchestrator never dispatches it. (Opt back in with `MUSTER_ENABLE_FABLE=1`
+        once the tier returns.) If an opted-in fable dispatch is still rejected, retry once with
+        **opus** (`fallbackModelFor("fable")`) and record the degradation in STATE — never fail the
+        task over a model tier, and never drop the override (a dropped override silently inherits the
+        orchestrator's model).
       - **Subagent failure (error or crash):** a dispatch that errors or dies is NEVER a silent stop.
         Re-dispatch ONCE with the same brief plus the error appended as context (`dispatchRetryState`
         from `src/loop.js` — max 2 attempts; model-availability rejections follow the fable→opus rule

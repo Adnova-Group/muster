@@ -63,7 +63,7 @@ const J = (description, props, required) => ({
 const TOOLS = {
   // analysis verbs — string or no arg
   muster_detect: { argv: ["detect"], ...S("Detect the project profile (languages, frameworks, VCS, test runner) for a directory.", "dir", false) },
-  muster_capabilities: { argv: ["capabilities"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier.", "home", false) },
+  muster_capabilities: { argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork's MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS).", "home", false) },
   muster_match: { argv: ["match"], ...S("Rank catalog providers against a free-text task by token overlap (no model call).", "task") },
   muster_domain: { argv: ["domain"], ...S("Classify an outcome into a work domain (software, product, content, ...).", "outcome") },
   muster_route: { argv: ["route"], ...S("Route an outcome to its domain + pipeline id.", "outcome") },

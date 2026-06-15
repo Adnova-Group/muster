@@ -31,18 +31,25 @@ const CLI = path.join(HERE, "..", "src", "cli.js");
 const PROTOCOL_VERSION = "2025-06-18";
 const SERVER_INFO = { name: "muster", version: "0.2.7" };
 
-// Cowork has no muster orchestrator skill / subagents / slash commands — only these MCP tools.
-// So the server teaches the glass-box loop itself. Critically, it spells out the sequential
-// fallback: Cowork's docs describe a single agent loop, so when the runtime cannot fan out
-// parallel subagents, wave members run one at a time (cross-wave order is fixed, intra-wave is free).
+// Cowork has no muster orchestrator skill / slash commands — only these MCP tools plus your own
+// subagent dispatch (confirmed to support parallel fan-out and per-call model override). So the
+// server teaches the glass-box loop and the per-mode lifecycle itself.
 const COWORK_PROTOCOL = [
-  "Running muster here (no skills, agents, or slash commands — only these MCP tools):",
-  "1. muster_detect + muster_capabilities: learn the project and which provider+model resolves each role. Dispatch each role on its model when you can.",
-  "2. muster_assess the outcome if it is thin; muster_route / muster_domain to pick the pipeline.",
-  "3. Assemble a crew manifest, then muster_manifest_validate it and fix until ok.",
-  "4. muster_wave gives dependency-ordered waves. Run each wave in parallel IF this runtime can fan out subagents; otherwise run its members SEQUENTIALLY: call muster_next with the manifest and the ids completed so far, run the returned task, append its id, repeat until done. Cross-wave order is fixed; intra-wave order is free.",
-  "5. Gate between waves: muster_tally the review verdicts before proceeding; muster_pick for tournaments. Re-run the stated test signals before claiming a wave done.",
+  "Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.",
+  "",
+  "Core loop (every mode):",
+  "1. muster_detect + muster_capabilities: learn the project and which provider+model resolves each role. Dispatch each role on the model muster_capabilities assigns it.",
+  "2. muster_assess a thin outcome; muster_route / muster_domain to pick the pipeline.",
+  "3. Assemble a crew manifest, muster_manifest_validate it, fix until ok.",
+  "4. muster_wave gives dependency-ordered waves. Dispatch each wave's members as PARALLEL subagents (fall back to muster_next, one task at a time, only if fan-out is unavailable). Cross-wave order is fixed; intra-wave order is free.",
+  "5. The wave barrier is the gate: for a tournament, collect the candidates and muster_pick the winner; for review, dispatch adversarial reviewers and muster_tally their verdicts. Re-run the stated test signals before a wave counts as done. A failed gate re-scopes that wave, it does not stop the run.",
   "6. Glass-box: state each routing decision and its evidence as you go.",
+  "",
+  "By intent (the muster verbs, driven in prose since there are no slash commands):",
+  "- autopilot (hands-off): create a branch FIRST, run the core loop wave by wave, commit after each green wave, then STOP and present the merge decision. Only halt early for an escalation.",
+  "- audit: fan out the six read-only review dimensions (architecture, tech-debt, coverage, simplification, readability, security) as parallel subagents, consolidate one ranked ledger, then fix with TDD and verify through the gate before presenting the merge.",
+  "- diagnose (one bug): reproduce first, find the root cause, fix, add a regression test, verify. No symptom-patching.",
+  "- run: do the core loop through the manifest and plan, then STOP for approval. Plan and show; do not execute.",
 ].join("\n");
 
 const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("\n\n");

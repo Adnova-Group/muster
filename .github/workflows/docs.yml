@@ -9,6 +9,8 @@ on:
     paths:
       - "website/**"
       - ".github/workflows/docs.yml"
+      - "package.json"
+      - "CHANGELOG.md"
   workflow_dispatch:
 
 # Permissions needed for the GitHub Pages deployment.

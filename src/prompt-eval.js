@@ -14,11 +14,18 @@ export function interpolate(template, vars = {}) {
 
 // --- Code-based graders: return 10 (valid) | 0 (invalid) | null (not applicable). ---
 function validateJson(s) { try { JSON.parse(s); return 10; } catch { return 0; } }
-function validateRegex(s) { try { new RegExp(s); return 10; } catch { return 0; } }
+// Cap pattern length before compiling an untrusted string (suite files / LLM output)
+// so a pathological pattern cannot stall the regex compiler. The compiled RegExp is
+// discarded immediately and never executed, so there is no exec-time ReDoS exposure.
+function validateRegex(s) {
+  if (typeof s !== "string" || s.length > 4096) return 0;
+  try { new RegExp(s); return 10; } catch { return 0; }
+}
 // No Python runtime in-process: balanced-delimiter + a Python-signal heuristic so plain
 // prose / SQL / JSON does not score as valid Python. Honest about being best-effort — a
-// real run can shell out to `python -c` if available.
-const PY_SIGNAL = /\b(def|class|import|from|return|for|while|if|elif|else|with|lambda|print|yield|async|await)\b|:\s*\n\s+\S|^\s*#/m;
+// real run can shell out to `python -c` if available. (A lone `#` comment is NOT a
+// signal: a markdown heading "# Title" would otherwise read as Python.)
+const PY_SIGNAL = /\b(def|class|import|from|return|for|while|if|elif|else|with|lambda|print|yield|async|await)\b|:\s*\n\s+\S/;
 function validatePython(s) {
   const t = String(s).trim();
   if (!t) return 0;
@@ -65,34 +72,23 @@ export function parseGraderResponse(text) {
   return { score, reasoning: obj.reasoning || "", strengths: obj.strengths || "", weaknesses: obj.weaknesses || "" };
 }
 
+// Single source of truth for the grading policy: average code + model when both apply
+// (correctness + technical validity), otherwise whichever is present, else 0.
+function combineScores(code, model) {
+  if (code != null && model != null) return (code + model) / 2;
+  return code ?? model ?? 0;
+}
+
 async function gradeOne({ testCase, output, callModel, rubric }) {
   const code = codeGrade(output, testCase.format);
   const graderText = await callModel(buildGraderPrompt(output, rubric || testCase.rubric));
   const model = parseGraderResponse(graderText);
-  // Combine: if a code grade applies, average it with the model grade (correctness +
-  // technical validity); otherwise the model grade stands alone.
-  const score = code == null ? model.score : (code + model.score) / 2;
+  const score = combineScores(code, model.score);
   return { codeScore: code, modelScore: model.score, score, reasoning: model.reasoning };
 }
 
-// Grade a suite whose model outputs (and optional grader responses) were already
-// collected by the calling skill — keeps the `muster prompt eval` CLI fully deterministic
-// and offline, mirroring `muster score`. Each entry: { output, format?, graderResponse? }.
-export function gradeCollected({ dataset, passThreshold = 7 }) {
-  if (!Array.isArray(dataset) || dataset.length === 0)
-    throw new Error("gradeCollected: dataset must be a non-empty array");
-  const results = dataset.map((entry) => {
-    const code = codeGrade(entry.output, entry.format);
-    const model = entry.graderResponse != null
-      ? parseGraderResponse(String(entry.graderResponse)).score
-      : null;
-    let score;
-    if (code != null && model != null) score = (code + model) / 2;
-    else if (code != null) score = code;
-    else if (model != null) score = model;
-    else score = 0;
-    return { ...entry, codeScore: code, modelScore: model, score, passing: score >= passThreshold };
-  });
+// Suite-level report shared by gradeCollected and runEval: accuracy = passing/total.
+function summarize(results, passThreshold) {
   const passing = results.filter(r => r.passing).length;
   return {
     results,
@@ -103,8 +99,29 @@ export function gradeCollected({ dataset, passThreshold = 7 }) {
   };
 }
 
-// Run the full suite. `callModel` serves both the prompt-under-test and the grader; the
-// grader prompt is recognisable (contains "grader"), so a single injected fn suffices.
+// Grade a suite whose model outputs (and optional grader responses) were already
+// collected by the calling skill — keeps the `muster prompt eval` CLI fully deterministic
+// and offline, mirroring `muster score`. Each entry: { output, format?, graderResponse? }.
+export function gradeCollected({ dataset, passThreshold = 7 }) {
+  if (!Array.isArray(dataset) || dataset.length === 0)
+    throw new Error("gradeCollected: dataset must be a non-empty array");
+  const results = dataset.map((entry) => {
+    const { output, format, graderResponse } = entry;
+    const code = codeGrade(output, format);
+    const model = graderResponse != null ? parseGraderResponse(String(graderResponse)).score : null;
+    const score = combineScores(code, model);
+    // Pull only the known fields (not a blind ...entry spread) so a hostile suite file
+    // cannot leak keys like __proto__ into the result objects.
+    return { output, format, graderResponse, codeScore: code, modelScore: model, score, passing: score >= passThreshold };
+  });
+  return summarize(results, passThreshold);
+}
+
+// Library API (not used by the CLI, which grades pre-collected outputs via gradeCollected):
+// run a full suite end-to-end. `callModel` is invoked once for the prompt-under-test and
+// again for the grader prompt (built by buildGraderPrompt); a caller wiring a real model
+// can branch on the prompt or inject a dedicated grader. A promptfoo adapter can satisfy
+// the same contract.
 export async function runEval({ dataset, promptTemplate, callModel, rubric, passThreshold = 7 }) {
   if (!Array.isArray(dataset) || dataset.length === 0)
     throw new Error("runEval: dataset must be a non-empty array");
@@ -115,13 +132,5 @@ export async function runEval({ dataset, promptTemplate, callModel, rubric, pass
     const graded = await gradeOne({ testCase, output, callModel, rubric });
     results.push({ testCase, output, ...graded, passing: graded.score >= passThreshold });
   }
-  const passing = results.filter(r => r.passing).length;
-  const averageScore = results.reduce((s, r) => s + r.score, 0) / results.length;
-  return {
-    results,
-    total: results.length,
-    accuracy: passing / results.length,
-    averageScore,
-    passThreshold,
-  };
+  return summarize(results, passThreshold);
 }

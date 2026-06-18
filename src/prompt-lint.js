@@ -22,9 +22,20 @@ const firstLines = (text, n = 4) =>
 const hasInterpolation = (text, ctx) =>
   /\{\{\s*\w+\s*\}\}|\$\{\s*\w+\s*\}/.test(text || "") || (text || "").length > 1500 ||
   (Array.isArray(ctx.interpolatedVars) && ctx.interpolatedVars.length > 0);
-const hasXmlBlock = (text) => /<([a-zA-Z][\w-]*)\b[^>]*>[\s\S]*?<\/\1>/.test(text || "");
+// Linear-time XML detection: find an opening tag, then a plain string search for its
+// matching close tag. The old backreference+lazy-scan regex was O(n^2) and a ReDoS
+// risk, since the linter runs at runtime on (possibly attacker-influenced) prompts.
+const hasXmlBlock = (text) => {
+  if (!text) return false;
+  const m = text.match(/<([a-zA-Z][\w-]*)[\s>]/);
+  return !!m && text.includes(`</${m[1]}>`);
+};
 const ACTION_VERB = /^(write|generate|classify|summari[sz]e|extract|identify|analy[sz]e|create|list|translate|rewrite|explain|compare|evaluate|produce|return|find|select|determine|draft|review)\b/i;
-const NEGATIVE = /\b(do not|don'?t|never|avoid|no\s+\w+ing)\b/gi;
+// Negative-instruction phrasings. `no <verb>ing` is restricted to a small set of known
+// constraint verbs so ordinary noun phrases ("no existing context", "no meaning") are
+// not miscounted as negatives. Built per-call (not a shared /g literal) to avoid a
+// stateful `lastIndex` foot-gun.
+const NEGATIVE_SRC = "\\b(do not|don'?t|never|avoid|no\\s+(?:log|cach|retr|truncat|format|wrap|generat|output|process|nest|render)\\w*ing)\\b";
 
 export const RULES = [
   {
@@ -46,8 +57,9 @@ export const RULES = [
     title: "State the output format explicitly", source: BP,
     applies: () => true,
     // Require a format *instruction*, not a bare keyword — "don't use markdown" is not
-    // an output-format spec. Anchor on directive phrasing or an actual tag block.
-    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (with )?(a|an|only |valid )*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<[a-z][\w-]*>[\s\S]*?<\/[a-z][\w-]*>/i),
+    // an output-format spec. Anchor on directive phrasing or an output-semantic tag
+    // (NOT any XML block: <document>{{x}}</document> wraps *input*, not output format).
+    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (with )?(a|an|only |valid )*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b/i),
     fix: "Name the exact output format (JSON shape, prose, markdown) positively.",
   },
   {
@@ -63,7 +75,7 @@ export const RULES = [
     applies: () => true,
     pass: (t, c) => {
       const s = surface(t, c);
-      const neg = (s.match(NEGATIVE) || []).length;
+      const neg = (s.match(new RegExp(NEGATIVE_SRC, "gi")) || []).length;
       return neg <= 2;
     },
     fix: "Tell Claude what TO do instead of stacking 'do not / never' clauses.",

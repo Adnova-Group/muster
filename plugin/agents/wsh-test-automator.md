@@ -36,7 +36,7 @@ Build robust, maintainable test suites for newly implemented features. Cover uni
 
 ## Output Format
 
-Organize tests by type:
+Return a markdown list of test files organized by type:
 
 - **Unit Tests**: One test file per source file, grouped by function/method
 - **Integration Tests**: Grouped by API endpoint or service interaction

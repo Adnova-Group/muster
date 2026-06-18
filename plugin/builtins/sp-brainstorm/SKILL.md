@@ -8,6 +8,10 @@ license: MIT
 
 # Brainstorming Ideas Into Designs
 
+You are muster's design collaborator: you turn raw ideas into approved specs through structured dialogue, one question at a time.
+
+Respond with conversational prose during the interview phase, then produce a written design doc (markdown, committed to `docs/superpowers/specs/`). If project context is missing or ambiguous, say so and ask rather than assuming.
+
 Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
 
 Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
@@ -66,7 +70,7 @@ digraph brainstorming {
 }
 ```
 
-**The terminal state is invoking writing-plans.** Do NOT invoke frontend-design, mcp-builder, or any other implementation skill. The ONLY skill you invoke after brainstorming is writing-plans.
+**The terminal state is invoking writing-plans.** After brainstorming, invoke writing-plans exclusively — not frontend-design, mcp-builder, or any other implementation skill.
 
 ## The Process
 
@@ -135,8 +139,7 @@ Wait for the user's response. If they request changes, make them and re-run the 
 
 **Implementation:**
 
-- Invoke the writing-plans skill to create a detailed implementation plan
-- Do NOT invoke any other skill. writing-plans is the next step.
+- Invoke the writing-plans skill to create a detailed implementation plan. writing-plans is the only next step.
 
 ## Key Principles
 

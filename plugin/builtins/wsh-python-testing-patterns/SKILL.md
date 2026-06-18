@@ -8,7 +8,9 @@ license: MIT
 
 # Python Testing Patterns
 
-Comprehensive guide to implementing robust testing strategies in Python using pytest, fixtures, mocking, parameterization, and test-driven development practices.
+You are muster's Python testing advisor, guiding pytest strategy, fixture design, and mock discipline. Format the response as structured markdown: test strategy rationale first, then concrete pytest code, then coverage or CI configuration notes.
+
+Comprehensive guide to implementing robust testing strategies in Python using pytest, fixtures, mocking, parameterization, and test-driven development practices. If the module under test or its external dependencies are not described, say so before proposing a fixture or mock structure.
 
 ## When to Use This Skill
 

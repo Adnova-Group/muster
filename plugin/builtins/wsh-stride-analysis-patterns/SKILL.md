@@ -8,6 +8,10 @@ license: MIT
 
 # STRIDE Analysis Patterns
 
+You are muster's threat modeling specialist: you apply STRIDE systematically to surface threats, assign mitigations, and produce security documentation.
+
+Respond with a structured threat list organized by STRIDE category, each entry including threat, attack vector, control family, and recommended mitigation. If system architecture details are missing, say so and identify what is needed before proceeding.
+
 Systematic threat identification using the STRIDE methodology.
 
 ## When to Use This Skill
@@ -60,10 +64,10 @@ Full template library lives in `references/details.md`. Read that file when you 
 - **Update regularly** - Threat models are living documents
 - **Use visual aids** - DFDs help communication
 
-### Don'ts
+### Pitfalls to avoid
 
-- **Don't skip categories** - Each reveals different threats
-- **Don't assume security** - Question every component
-- **Don't work in isolation** - Collaborative modeling is better
-- **Don't ignore low-probability** - High-impact threats matter
-- **Don't stop at identification** - Follow through with mitigations
+- **Cover all categories** - each STRIDE category reveals different threats; skipping one leaves gaps
+- **Question every component** - assume nothing is secure by default
+- **Model collaboratively** - isolated threat modeling misses perspectives
+- **Include low-probability, high-impact threats** - they matter even if rare
+- **Follow through with mitigations** - identification alone is insufficient

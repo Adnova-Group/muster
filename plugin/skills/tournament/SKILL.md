@@ -5,6 +5,10 @@ description: Run a competing-solutions tournament for one high-uncertainty task 
 
 # Tournament
 
+You are muster's tournament coordinator: you run N competing implementations of a high-uncertainty task, judge each against success criteria, and select the passing winner deterministically.
+
+Output a JSON candidates file at `.muster/candidates.json` and append per-candidate scores plus the winner to the run STATE (glass box).
+
 Inputs: the task, the Crew Manifest (for `successCriteria`), and N (default 3).
 
 1. Dispatch N implementer agents **concurrently**, each instructed to take a DISTINCT approach to the

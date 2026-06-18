@@ -46,6 +46,10 @@ const ACTION_VERB = /^(write|generate|classify|summari[sz]e|extract|identify|ana
 // not miscounted as negatives. Built per-call (not a shared /g literal) to avoid a
 // stateful `lastIndex` foot-gun.
 const NEGATIVE_SRC = "\\b(do not|don'?t|never|avoid|no\\s+(?:log|cach|retr|truncat|format|wrap|generat|output|process|nest|render)\\w*ing)\\b";
+// Strip fenced + inline code before counting negatives — "never" in a TypeScript example
+// or a bash flag is not a negative *instruction*, and counting it pressures authors to
+// corrupt code samples to satisfy the rule.
+const stripCode = (s) => String(s).replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ");
 
 export const RULES = [
   {
@@ -78,7 +82,7 @@ export const RULES = [
     // Require a format *instruction*, not a bare keyword — "don't use markdown" is not
     // an output-format spec. Anchor on directive phrasing or an output-semantic tag
     // (NOT any XML block: <document>{{x}}</document> wraps *input*, not output format).
-    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (?:with )?(?:(?:a|an|only|valid)\s+)*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b|one [\w-]+ per line|one per line|per (finding|item|line|row|entry)\b|as (?:a |an )?(?:bullet(?:ed)?|numbered|markdown)\s*(?:list|table)|prefix(?:ed)? (?:each |every )?\w+ with/i),
+    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(?:return|output|produce|reply|emit|respond|generate)[^.\n]{0,40}?\b(json|xml|markdown|yaml|csv|list|object|array|table)\b|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b|one [\w-]+ per line|one per line|per (finding|item|line|row|entry)\b|as (?:a |an )?(?:bullet(?:ed)?|numbered|markdown)\s*(?:list|table)|prefix(?:ed)? (?:each |every )?\w+ with/i),
     fix: "Name the exact output format (JSON shape, prose, markdown, or a clear per-line/list spec).",
   },
   {
@@ -93,7 +97,7 @@ export const RULES = [
     title: "Prefer positive instructions over negative ones", source: BP,
     applies: () => true,
     pass: (t, c) => {
-      const s = surface(t, c);
+      const s = stripCode(surface(t, c));
       const neg = (s.match(new RegExp(NEGATIVE_SRC, "gi")) || []).length;
       // System/instruction prompts (esp. guardrail roles) legitimately use more
       // prohibitions ("read-only", "never modify"), so tolerate more before flagging.
@@ -162,13 +166,29 @@ export const DEFAULT_GATE = { floor: 1, pass_total: 10 };
 //        "system" — an agent/skill/instruction (system) prompt; task-only rules
 //        (action-verb lead, multishot examples) are exempt and POS tolerates more
 //        prohibitions. The scanner tags discovered prompt docs as "system".
+// Rules a prompt opts out of via an inline directive, e.g.
+//   <!-- prompt-lint-disable ANTH-POS-001: reason -->
+// The proper way to handle a legitimate exception (an orchestration prompt that must
+// stack prohibitions) — explicit and reviewable, not by mangling the prompt.
+function disabledRules(text) {
+  const ids = new Set();
+  const re = /prompt-lint-disable[:\s]+([A-Z][A-Z0-9-]*(?:\s*,\s*[A-Z][A-Z0-9-]*)*)/gi;
+  let m;
+  while ((m = re.exec(text)) !== null)
+    for (const id of m[1].split(/\s*,\s*/)) ids.add(id.toUpperCase());
+  return ids;
+}
+
 export function lintPrompt(text, ctx = {}, gate = DEFAULT_GATE) {
   const findings = [];
   const perDim = Object.fromEntries(DIMENSIONS.map(d => [d, { applicable: 0, passed: 0 }]));
   const systemGenre = ctx.genre === "system";
+  const disabled = disabledRules(surface(text, ctx));
+  const suppressed = [];
 
   for (const rule of RULES) {
     if (rule.taskOnly && systemGenre) continue; // task-prompt technique — exempt for system prompts
+    if (disabled.has(rule.id)) { suppressed.push(rule.id); continue; } // explicit opt-out
     if (!rule.applies(text, ctx)) continue;
     // Effective severity can soften by genre (e.g. FMT reads as advisory for system
     // prompts) — but severity is a REPORTING label only. Every applicable rule counts
@@ -199,5 +219,5 @@ export function lintPrompt(text, ctx = {}, gate = DEFAULT_GATE) {
   // Order findings by severity so the worst surfaces first.
   const rank = { error: 0, warn: 1, info: 2 };
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
-  return { rubric, findings, total, weakest, passing, gate };
+  return { rubric, findings, total, weakest, passing, gate, suppressed };
 }

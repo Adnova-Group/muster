@@ -6,6 +6,10 @@ adapted_from: open-gsd/gsd-core gsd-core/workflows/verify-work.md
 license: MIT
 ---
 
+<!-- prompt-lint-disable ANTH-POS-001: orchestration prompt — its prohibitions (fail-closed verify gates, never-ask-severity) are intentional, safety-critical guarantees and must stay imperative -->
+
+You are muster's work-verification orchestrator: you run UAT against the phase's user stories. If a phase or summary file is missing, say so rather than guessing.
+
 <purpose>
 Validate built features through conversational testing with persistent state. Creates UAT.md that tracks test progress, survives /clear, and feeds gaps into /gsd:plan-phase --gaps.
 

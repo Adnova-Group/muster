@@ -170,26 +170,25 @@ export function lintPrompt(text, ctx = {}, gate = DEFAULT_GATE) {
   for (const rule of RULES) {
     if (rule.taskOnly && systemGenre) continue; // task-prompt technique — exempt for system prompts
     if (!rule.applies(text, ctx)) continue;
-    // Effective severity can soften by genre (e.g. FMT is advisory for system prompts).
+    // Effective severity can soften by genre (e.g. FMT reads as advisory for system
+    // prompts) — but severity is a REPORTING label only. Every applicable rule counts
+    // toward the score, so zero findings (any severity) == a perfect 15/15. taskOnly
+    // exemptions above are the only way a rule drops out for a genre.
     const severity = (systemGenre && rule.systemSeverity) || rule.severity;
     const ok = rule.pass(text, ctx);
-    // Info findings are advisory: surfaced as suggestions but never counted toward the
-    // floor, so they cannot fail a prompt. error/warn findings drive the gate.
-    if (severity !== "info") {
-      const dim = perDim[rule.dimension];
-      dim.applicable += 1;
-      if (ok) dim.passed += 1;
-    }
+    const dim = perDim[rule.dimension];
+    dim.applicable += 1;
+    if (ok) dim.passed += 1;
     if (!ok) findings.push({
       id: rule.id, severity, dimension: rule.dimension,
       title: rule.title, source: rule.source, fix: rule.fix,
     });
   }
 
-  // Dimension score 0-3, reflecting only error/warn (non-advisory) rules — info findings
-  // are excluded above, so a dimension whose only applicable rules are info scores 3 (a
-  // free ride). That is intentional: advisory findings still surface in `findings` but
-  // never fail the floor. Read `rubric[d]` as "non-advisory health", not "no suggestions".
+  // Dimension score 0-3 over every applicable rule (all severities count). A dimension
+  // with no applicable rules (e.g. examples for a system prompt, where SHOT is exempt)
+  // scores full marks (3) so it never drags the floor where it does not apply. Net: a
+  // prompt with zero findings scores a perfect 15/15.
   const rubric = {};
   for (const d of DIMENSIONS) {
     const { applicable, passed } = perDim[d];

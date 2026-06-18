@@ -62,6 +62,7 @@ Lint, eval, and optimize prompts an application generates to build agents/agenti
 | `prompt variations <file>` | Emit deterministic, technique-driven prompt variations, each closing a specific lint gap. |
 | `prompt eval <suite.json>` | Grade a suite of pre-collected outputs: code graders (`json`/`regex`/`python`) combined with the model-judge score; reports per-case `score`, `accuracy`, `averageScore`. |
 | `prompt optimize <file.json>` | Select the winning variation from scored candidates via the tournament floor; flags a `regression` when no variation beats the pinned baseline. |
+| `prompt scan <dir>` | Walk a repo for candidate prompts (`.prompt` files, `prompts/` dirs, backtick `system`/`prompt`/`instructions` assignments) and lint each. Returns per-prompt findings + a pass/fail summary. Powers the conditional `prompt-quality` audit dimension. |
 
 ```sh
 # lint a runtime agent prompt piped from your app

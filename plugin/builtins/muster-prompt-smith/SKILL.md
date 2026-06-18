@@ -13,6 +13,23 @@ The deterministic work lives in the CLI (`src/prompt-lint.js`, `src/prompt-eval.
 the CLI cannot: collecting LLM responses and running the LLM-judge grader. Glass box: show
 each finding with its cited rule id, and the per-version scores.
 
+## 0. Scan a repo (audit prompt-quality dimension)
+
+When dispatched as the `prompt-quality` audit dimension, find and lint every prompt in the
+codebase in one deterministic pass:
+
+```
+npx -y @adnova-group/muster prompt scan <dir>
+```
+
+It walks the repo (skipping vendored/build dirs), discovers candidate prompts (`.prompt`
+files, anything under `prompts/`, and backtick `system`/`prompt`/`instructions`
+assignments), lints each, and returns `{ scannedFiles, promptCount, passing, failing,
+prompts: [{ file, kind, passing, total, weakest, findings }] }`. Report the failing
+prompts as audit findings (severity/location/problem/fix), each finding carrying its
+cited rule id. For a prompt you can tell is a runtime agent prompt, re-lint that one file
+with `prompt lint <file> --agent --tools` to apply the agent-specific rules.
+
 ## 1. Lint (structure + guardrails) — always, fully offline
 
 Run the linter on the prompt under review (a file, or pipe the assembled string):

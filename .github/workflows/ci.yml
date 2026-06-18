@@ -21,6 +21,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Router eval (deterministic grade on goldens)
+        # The full model-driven router eval runs separately (it needs a model); this prints
+        # the deterministic grade of the committed golden run for CI-log visibility. The
+        # contract itself is gated by test/router-eval.test.js inside `npm test` above.
+        run: npm run eval:router
       - name: Verify packed tarball
         run: |
           TARBALL=$(npm pack --json | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');console.log(JSON.parse(d)[0].filename)")

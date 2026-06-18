@@ -47,6 +47,7 @@
   },
   "scripts": {
     "test": "node --test",
+    "eval:router": "node eval/router/grade.mjs",
     "prepublishOnly": "node --test"
   },
   "dependencies": {

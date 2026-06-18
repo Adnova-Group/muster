@@ -79,7 +79,7 @@ export function selectWinner(candidates) {
     escalate,
     regression,
     winnerPrompt: winnerRow ? winnerRow.prompt ?? null : null,
-    baselineScore: baseline ? baseline.total : null,
+    baselineScore: baseline.total,
     ranking,
     candidates,
   };

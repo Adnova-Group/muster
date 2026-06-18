@@ -22,13 +22,19 @@ const firstLines = (text, n = 4) =>
 const hasInterpolation = (text, ctx) =>
   /\{\{\s*\w+\s*\}\}|\$\{\s*\w+\s*\}/.test(text || "") || (text || "").length > 1500 ||
   (Array.isArray(ctx.interpolatedVars) && ctx.interpolatedVars.length > 0);
-// Linear-time XML detection: find an opening tag, then a plain string search for its
-// matching close tag. The old backreference+lazy-scan regex was O(n^2) and a ReDoS
-// risk, since the linter runs at runtime on (possibly attacker-influenced) prompts.
+// Linear-time XML detection: collect every opening- and closing-tag name in two passes,
+// return true if any name appears as both. Two matchAll scans + a small set intersection
+// are O(n) — unlike the old backreference+lazy-scan regex, which was O(n^2) and a ReDoS
+// risk (the linter runs at runtime on possibly attacker-influenced prompts). Detecting any
+// open/close pair (not just the first tag) avoids a false negative when a stray tag-like
+// token precedes the real block, e.g. "Use <strong> styling. <doc>{{x}}</doc>".
 const hasXmlBlock = (text) => {
   if (!text) return false;
-  const m = text.match(/<([a-zA-Z][\w-]*)[\s>]/);
-  return !!m && text.includes(`</${m[1]}>`);
+  const opens = new Set();
+  for (const m of text.matchAll(/<([a-zA-Z][\w-]*)[\s>]/g)) opens.add(m[1]);
+  if (opens.size === 0) return false;
+  for (const m of text.matchAll(/<\/([a-zA-Z][\w-]*)>/g)) if (opens.has(m[1])) return true;
+  return false;
 };
 const ACTION_VERB = /^(write|generate|classify|summari[sz]e|extract|identify|analy[sz]e|create|list|translate|rewrite|explain|compare|evaluate|produce|return|find|select|determine|draft|review)\b/i;
 // Negative-instruction phrasings. `no <verb>ing` is restricted to a small set of known
@@ -59,7 +65,7 @@ export const RULES = [
     // Require a format *instruction*, not a bare keyword — "don't use markdown" is not
     // an output-format spec. Anchor on directive phrasing or an output-semantic tag
     // (NOT any XML block: <document>{{x}}</document> wraps *input*, not output format).
-    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (with )?(a|an|only |valid )*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b/i),
+    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (?:with )?(?:(?:a|an|only|valid)\s+)*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b/i),
     fix: "Name the exact output format (JSON shape, prose, markdown) positively.",
   },
   {

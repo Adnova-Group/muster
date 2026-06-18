@@ -83,6 +83,17 @@ test("non-agent prompt does not flag agent-only rules", () => {
   assert.ok(!ids.includes("LINT-STOP-002"), "stop-conditions rule should not apply to non-agent");
 });
 
+test("XML detection finds a real block even after a stray tag-like token", () => {
+  // A stray <strong> earlier must not hide a real <doc>...</doc> block downstream.
+  const r = lintPrompt("You are a writer. Use <strong> styling.\n\n<doc>{{x}}</doc>\n\nReturn JSON.");
+  assert.ok(!r.findings.map(f => f.id).includes("ANTH-XML-001"), "XML block present despite stray tag");
+});
+
+test("output-format rule accepts 'return a JSON' (article before the format)", () => {
+  const r = lintPrompt("You are a bot. Return a JSON object describing the input.");
+  assert.ok(!r.findings.map(f => f.id).includes("ANTH-FMT-001"), "'return a JSON' is a format directive");
+});
+
 test("input-wrapping XML alone does NOT satisfy the output-format rule", () => {
   // <document>{{x}}</document> wraps input; it is not an output-format declaration.
   const r = lintPrompt("You are an analyst.\n\nSummarize this.\n\n<document>{{x}}</document>");

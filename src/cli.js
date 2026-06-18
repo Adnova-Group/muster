@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { detectProject } from "./detect.js";
+import { detectProject, hasPromptingSignal } from "./detect.js";
 import { loadCatalog } from "./catalog.js";
 import { readInstalled, readInstalledCowork } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
@@ -243,8 +243,10 @@ try {
     out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
   } else if (cmd === "audit") {
     const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
-    const profile = await detectProject(rest[0] || process.cwd());
-    out(buildAuditManifest(caps, { prompting: (profile.signals || []).includes("prompting") }));
+    // Use the lightweight package.json-only check, not detectProject — audit must not
+    // incur git spawns (it stays offline for CI / the MCP wrapper).
+    const prompting = await hasPromptingSignal(rest[0] || process.cwd());
+    out(buildAuditManifest(caps, { prompting }));
   } else if (cmd === "issue") {
     if (!rest[0]) fail("issue <ref>: missing #N | number | issue-url");
     if (parseIssueRef(rest[0]).kind !== "issue") fail("not a GitHub issue reference: " + rest[0]);

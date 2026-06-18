@@ -27,6 +27,8 @@ test("picks up files under a prompts/ directory regardless of extension", () => 
   assert.equal(isPromptFile("app/prompts/agent.md"), true);
   assert.equal(isPromptFile("src/agent.js"), false);
   assert.equal(isPromptFile("notes/prompting-guide.md"), false);
+  // A singular `prompt/` utility folder is NOT a prompt-asset directory.
+  assert.equal(isPromptFile("src/prompt/utils.js"), false);
 });
 
 test("ignores trivial/short string assignments (noise filter)", () => {

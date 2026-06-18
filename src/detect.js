@@ -17,10 +17,18 @@ const BACKEND = new Set(["express", "fastify", "nestjs", "prisma"]);
 // the gate for the audit's prompt-quality dimension. Matched as exact deps or by scope.
 const AI_SDKS = new Set(["@anthropic-ai/sdk", "openai", "langchain", "@langchain/core",
   "llamaindex", "@google/generative-ai", "cohere-ai", "ai", "@modelcontextprotocol/sdk",
-  "@anthropic-ai/claude-agent-sdk", "crewai", "@langchain/langgraph"]);
+  "@anthropic-ai/claude-agent-sdk", "@langchain/langgraph"]);
 const AI_SCOPES = ["@langchain/", "@ai-sdk/", "@llamaindex/"];
 const hasAiSdk = (depNames) =>
   depNames.some(d => AI_SDKS.has(d) || AI_SCOPES.some(s => d.startsWith(s)));
+
+// Lightweight prompting check for callers (e.g. `muster audit`) that need only the signal
+// and must NOT pay detectProject's git spawns. Reads package.json deps and nothing else.
+export async function hasPromptingSignal(cwd) {
+  const pkg = await readJson(join(cwd, "package.json"));
+  if (!pkg) return false;
+  return hasAiSdk(Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) }));
+}
 
 export async function detectProject(cwd) {
   const pkg = await readJson(join(cwd, "package.json"));

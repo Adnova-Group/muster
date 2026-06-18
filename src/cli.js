@@ -126,8 +126,9 @@ try {
       process.stdin.on("end", () => resolve(d));
       process.stdin.on("error", reject);
     });
+    // A "-", a missing arg, or a flag (e.g. `prompt lint --agent`) all mean: read stdin.
     const readText = async (arg) =>
-      (!arg || arg === "-") ? await readStdin() : await readFile(arg, "utf8");
+      (!arg || arg === "-" || arg.startsWith("--")) ? await readStdin() : await readFile(arg, "utf8");
     if (sub === "lint") {
       const text = await readText(rest[1]);
       const ctx = { isAgent: rest.includes("--agent"), hasTools: rest.includes("--tools") };

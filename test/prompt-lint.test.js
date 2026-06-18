@@ -83,6 +83,12 @@ test("non-agent prompt does not flag agent-only rules", () => {
   assert.ok(!ids.includes("LINT-STOP-002"), "stop-conditions rule should not apply to non-agent");
 });
 
+test("role detection matches 'act as' anywhere, not only at string start", () => {
+  const r = lintPrompt("Please act as a senior engineer and review this.\n\nReturn a JSON summary.");
+  const ids = r.findings.map(f => f.id);
+  assert.ok(!ids.includes("ANTH-ROLE-001"), "'act as' should satisfy the role rule");
+});
+
 test("floor principle: a prompt failing a whole dimension does not pass", () => {
   const r = lintPrompt(WEAK);
   assert.equal(r.passing, false, "weak prompt should not pass the floor");

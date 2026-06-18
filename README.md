@@ -76,6 +76,21 @@ A pipeline is a phased, gated recipe for producing one kind of artifact. Each de
 
 The set spans software and knowledge work. A few examples: PRD, business-case, launch-plan, executive-summary, OKRs, AI implementation spec, competitive-battlecard, blog-post, case-study, runbook, and book (fiction and non-fiction). Roadmap prioritization is one to call out: goals go in, and a RICE-ranked now/next/later roadmap comes out, with the model estimating the factors and the CLI doing the arithmetic. Human-facing pipelines end with a humanize phase that strips em-dashes, AI-tell words, and robotic cadence.
 
+## Prompt evaluation
+
+Muster can lint, eval, and optimize prompts, including the prompts an application generates at runtime to build agents and agentic workflows, and prompts found in a codebase Muster is working in. The deterministic core runs offline; a built-in skill (`muster-prompt-smith`, the `prompt-quality` role) supplies the model calls for empirical eval.
+
+- **Lint** (`muster prompt lint <file|->`) is a no-LLM structural check that enforces Anthropic's best practices (role, XML tags, multishot examples, explicit output format, positive framing) and the agent/guardrail rules (imperative tool framing, stop conditions, "I don't know" allowance, citations, input separation). Every finding cites the doc rule it comes from and suggests a fix; the rubric is gated by the same floor principle as pipelines. Pass `--agent --tools` for runtime agent prompts.
+- **Eval** (`muster prompt eval <suite.json>`) grades outputs against a test dataset with code graders (`json`/`regex`/`python`) plus an LLM-judge, and reports accuracy.
+- **Optimize** (`muster prompt variations` then `muster prompt optimize`) generates technique-driven variations, re-scores them, and keeps the winner via the tournament floor, flagging a regression when nothing beats the baseline.
+
+```sh
+# lint a runtime agent prompt piped straight from your app
+your-app --print-agent-prompt | npx @adnova-group/muster prompt lint - --agent --tools
+```
+
+See the [commands reference](https://adnova-group.github.io/muster/reference/commands) for the full surface.
+
 ## Configuration
 
 Muster's runtime behavior can be tuned with environment variables:

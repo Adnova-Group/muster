@@ -15,14 +15,17 @@ export function interpolate(template, vars = {}) {
 // --- Code-based graders: return 10 (valid) | 0 (invalid) | null (not applicable). ---
 function validateJson(s) { try { JSON.parse(s); return 10; } catch { return 0; } }
 function validateRegex(s) { try { new RegExp(s); return 10; } catch { return 0; } }
-// No Python runtime in-process: balanced-delimiter + no-prose heuristic. Honest about
-// being best-effort — a real run can shell out to `python -c` if available.
+// No Python runtime in-process: balanced-delimiter + a Python-signal heuristic so plain
+// prose / SQL / JSON does not score as valid Python. Honest about being best-effort — a
+// real run can shell out to `python -c` if available.
+const PY_SIGNAL = /\b(def|class|import|from|return|for|while|if|elif|else|with|lambda|print|yield|async|await)\b|:\s*\n\s+\S|^\s*#/m;
 function validatePython(s) {
   const t = String(s).trim();
   if (!t) return 0;
   const balanced = (open, close) =>
     (t.split(open).length - 1) === (t.split(close).length - 1);
-  return balanced("(", ")") && balanced("[", "]") && balanced("{", "}") ? 10 : 0;
+  const delimitersOk = balanced("(", ")") && balanced("[", "]") && balanced("{", "}");
+  return delimitersOk && PY_SIGNAL.test(t) ? 10 : 0;
 }
 
 const CODE_GRADERS = { json: validateJson, regex: validateRegex, python: validatePython };

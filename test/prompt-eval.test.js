@@ -42,6 +42,11 @@ test("codeGrade returns null when no format is given (not applicable)", () => {
   assert.equal(codeGrade("anything", undefined), null);
 });
 
+test("codeGrade python rejects prose but accepts real Python", () => {
+  assert.equal(codeGrade("The quick brown fox (really) jumps.", "python"), 0);
+  assert.equal(codeGrade("def add(a, b):\n    return a + b", "python"), 10);
+});
+
 test("buildGraderPrompt asks for reasoning + a numeric score and embeds the output", () => {
   const p = buildGraderPrompt("THE_OUTPUT", "must be polite");
   assert.match(p, /THE_OUTPUT/);

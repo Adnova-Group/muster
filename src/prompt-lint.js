@@ -18,7 +18,7 @@ const has = (re) => (text, ctx) => re.test(surface(text, ctx));
 const firstLines = (text, n = 4) =>
   (text || "").split(/\n/).map(l => l.trim()).filter(Boolean).slice(0, n);
 
-// Interpolated content markers an app injects ({{var}}, <var>, ${var}) or a long body.
+// Interpolated content markers an app injects ({{var}} or ${var}) or a long body.
 const hasInterpolation = (text, ctx) =>
   /\{\{\s*\w+\s*\}\}|\$\{\s*\w+\s*\}/.test(text || "") || (text || "").length > 1500 ||
   (Array.isArray(ctx.interpolatedVars) && ctx.interpolatedVars.length > 0);
@@ -31,7 +31,7 @@ export const RULES = [
     id: "ANTH-ROLE-001", severity: "error", dimension: "structure",
     title: "Assign Claude a role (system prompt / persona)", source: BP,
     applies: () => true,
-    pass: has(/\byou are\b|\byour role is\b|^act as\b/i),
+    pass: has(/\byou are\b|\byour role is\b|\bact as\b/i),
     fix: "Open with a role, e.g. 'You are a senior X who ...' (system prompt preferred).",
   },
   {
@@ -105,7 +105,9 @@ export const RULES = [
     id: "GUARD-CITE-002", severity: "info", dimension: "guardrails",
     title: "Require citations/quotes when given source documents", source: `${GUARD}/reduce-hallucinations`,
     applies: (t, c) => !!c.hasDocuments || /<document|<context|<source/i.test(t || ""),
-    pass: has(/\bcite\b|\bquote\b|\bsource\b|with citations|reference the/i),
+    // Require a citation *directive*, not a bare mention of the word "source"
+    // ("source code" / "data source" must not satisfy this rule).
+    pass: has(/\bcite\b|\bquote\b|with citations?|cite (your |the )?sources?|reference the (source|document|passage)/i),
     fix: "Require a supporting quote/citation for each factual claim.",
   },
   {

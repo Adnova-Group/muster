@@ -5,6 +5,15 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-06-18
+
+### Added
+- **Prompt evaluation (`lint → eval → optimize`)** — a muster-native capability for grading prompts an application generates at runtime to build agents/agentic workflows, and prompts found in a codebase muster is working in. Three deterministic, dependency-free core modules plus a model-driven skill:
+  - **`src/prompt-lint.js`** — a no-LLM structural linter (callable at runtime, <50ms) that enforces Anthropic's prompt-engineering best practices (role/system, XML tags around interpolated content, multishot examples, explicit output format, positive framing, clear-and-direct lead) plus the agent/guardrail rules (imperative tool framing and stop conditions from the lintlang taxonomy; "I don't know" allowance, citations, and input separation from the strengthen-guardrails docs). Every rule carries a source-cited id (e.g. `ANTH-XML-001`, `LINT-STOP-002`) and a fix; findings are scored into a five-dimension rubric gated by the floor principle (`scoreArtifact`).
+  - **`src/prompt-eval.js`** — an empirical eval pipeline: `{{VARIABLE}}` interpolation, code-based graders (`json`/`regex`/`python`), an LLM-judge grader (reasoning-before-score), and a `gradeCollected` path that scores pre-collected outputs offline. Reports per-case score, accuracy, and average.
+  - **`src/prompt-optimize.js`** — an evaluator-optimizer loop that proposes technique-driven variations (each closing a specific lint gap), re-scores them, and selects the winner via the tournament floor (`pickWinner`), flagging a regression when no variation beats the pinned baseline.
+- **`muster prompt lint|variations|eval|optimize`** CLI subcommands (file or stdin) and a **`prompt-quality` role** resolved by the new **`muster-prompt-smith`** built-in skill, so the router can dispatch prompt review as a quality dimension. `promptfoo` is supported as an optional eval substrate behind the injected `callModel` contract; the native runner is the zero-dependency default.
+
 ## [0.2.7] - 2026-06-15
 
 ### Added

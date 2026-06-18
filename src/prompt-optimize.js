@@ -56,8 +56,14 @@ export function proposeVariations(prompt, ctx = {}) {
 // { id, prompt?, total, passing }. Reused by the `muster prompt optimize` CLI and by
 // optimizePrompt. A non-baseline winner scoring below the pinned baseline is a regression.
 export function selectWinner(candidates) {
-  const { winner, escalate, ranking } = pickWinner(candidates);
+  if (!Array.isArray(candidates) || candidates.length === 0)
+    throw new Error("selectWinner: candidates must be a non-empty array");
   const baseline = candidates.find(s => s.id === "baseline");
+  // The regression guard compares the winner against the pinned baseline — without a
+  // baseline candidate it would silently report regression:false. Fail loud instead.
+  if (!baseline)
+    throw new Error('selectWinner: candidates must include a "baseline" row to anchor regression detection');
+  const { winner, escalate, ranking } = pickWinner(candidates);
   const winnerRow = winner ? candidates.find(s => s.id === winner) : null;
   const regression = !!winnerRow && winnerRow.id !== "baseline" &&
     !!baseline && winnerRow.total < baseline.total;

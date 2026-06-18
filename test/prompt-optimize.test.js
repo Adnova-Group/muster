@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { proposeVariations, optimizePrompt } from "../src/prompt-optimize.js";
+import { proposeVariations, optimizePrompt, selectWinner } from "../src/prompt-optimize.js";
+
+test("selectWinner throws when candidates omit the baseline row", () => {
+  assert.throws(
+    () => selectWinner([{ id: "v1", total: 10, passing: true }]),
+    /baseline/,
+    "missing baseline must fail loud, not silently report no regression"
+  );
+});
 
 const WEAK = "answer the question: {{question}}";
 

@@ -21,12 +21,23 @@ test("discovers a markdown prompt by its name+description frontmatter (agent/ski
   assert.match(found[0].text, /strict reviewer/);
 });
 
-test("discovers markdown under conventional prompt dirs (agents/commands/skills/prompts)", () => {
+test("discovers markdown under ANCHORED Claude/plugin prompt dirs", () => {
   const files = [
-    { path: "src/commands/run.md", content: "Plan the work and show the crew before acting." },
-    { path: ".claude/skills/build/SKILL.md", content: "Build one cohesive slice across the files it needs." },
+    { path: ".claude/commands/run.md", content: "Plan the work and show the crew before acting." },
+    { path: "plugin/skills/build/SKILL.md", content: "Build one cohesive slice across the files it needs." },
+    { path: "prompts/agent.txt", content: "You are an agent. Do the work and stop when finished." },
   ];
-  assert.equal(discoverPrompts(files).length, 2);
+  assert.equal(discoverPrompts(files).length, 3);
+});
+
+test("does NOT pick up a generic docs/commands tree or GitHub issue templates", () => {
+  const files = [
+    // a CLI-reference docs folder — looks conventional but is prose
+    { path: "docs/commands/api.md", content: "# API\n\nThe `run` command does the thing, at length, here." },
+    // GitHub issue template — shares the name+description frontmatter schema
+    { path: ".github/ISSUE_TEMPLATE/bug.md", content: "---\nname: Bug report\ndescription: file a bug\n---\nDescribe the bug you encountered in detail here." },
+  ];
+  assert.equal(discoverPrompts(files).length, 0, "docs/ and .github/ must be excluded");
 });
 
 test("does NOT pick up ordinary docs (README/CHANGELOG/website) as prompts", () => {

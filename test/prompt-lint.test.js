@@ -158,6 +158,18 @@ test("ROLE still flags a roleless prompt, and excludes suggestive 'You can ...'"
     "'You can' is suggestive, not a role");
 });
 
+test("ROLE excludes input/state descriptions ('You receive ...', 'You get ...')", () => {
+  for (const lead of ["You receive a JSON object. Process it.", "You get a payload. Summarize it.", "You find a file. Read it."]) {
+    assert.ok(lintPrompt(lead).findings.map(f => f.id).includes("ANTH-ROLE-001"),
+      `"${lead}" describes input, not a persona`);
+  }
+});
+
+test("FMT does not pass on a stray 'tagged' used outside a format spec", () => {
+  const r = lintPrompt("You are a classifier. Files tagged as draft must be reviewed.", { genre: "task" });
+  assert.ok(r.findings.map(f => f.id).includes("ANTH-FMT-001"), "'tagged as draft' is not a format directive");
+});
+
 test("FMT detection accepts a natural-language format spec ('one finding per line, tagged ...')", () => {
   const r = lintPrompt(REVIEWER, { genre: "system" });
   assert.ok(!r.findings.map(f => f.id).includes("ANTH-FMT-001"), "natural-language format is a format spec");

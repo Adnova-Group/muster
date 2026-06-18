@@ -5,21 +5,6 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.9] - 2026-06-18
-
-### Added
-- **Genre-aware prompt linting.** `lintPrompt` takes a `ctx.genre` of `task` (default) or `system`. Task-only rules (action-verb lead, multishot examples) are exempt for system/instruction prompts, and `ANTH-POS-001` tolerates more prohibitions for guardrail roles. `prompt lint`/`variations` gain a `--system` flag, and `prompt scan` lints discovered docs in the system genre. Score now counts every applicable finding (any severity), so zero findings ⇔ a perfect 15/15.
-- **`prompt scan` finds markdown/text prompts, not just code.** `discoverPrompts` recognizes prompt docs — markdown with `name`+`description` frontmatter (the Claude Code skill/agent/command convention) or files under `.claude/`/`plugin/` `agents|commands|skills` (and any `prompts/`) — and strips YAML frontmatter so the lint reads the instruction body. Ordinary docs (`README`, `docs/`, `website/`, `.github/` issue templates) are deliberately excluded.
-- **Per-prompt `prompt-lint-disable` directive.** `<!-- prompt-lint-disable RULE-ID: reason -->` suppresses a rule for a prompt that legitimately violates it (e.g. an orchestration prompt that must stack prohibitions); suppressions are surfaced in `result.suppressed`.
-- **Router eval harness (`eval/router/`).** The first empirical (response-quality) eval: outcome → Crew Manifest, graded by code (manifest validity + expected-role coverage) and an LLM judge (routing appropriateness). Wired into CI as a deterministic contract regression test (`test/router-eval.test.js`, runs in `npm test`) plus an `npm run eval:router` report step; the full model-driven run stays a manual/scheduled job. See `eval/router/README.md`.
-
-### Changed
-- **Broadened + hardened linter detectors.** `ANTH-ROLE-001` accepts second-person persona framing ("You review a diff."); `ANTH-FMT-001` accepts natural-language and verb-near-format-noun specs ("one finding per line", "Emit ONLY the … JSON"); code stripping is now language-agnostic and ReDoS-safe (line-based `stripCode` blanks ` ``` `/`~~~` fences, `<pre>`/`<code>`, and indented blocks for any language); interpolation detection covers Handlebars/JS/Ruby/ERB/Python styles. These removed false positives the dogfood surfaced.
-- **muster's own prompts taken to 15/15.** Dogfooding the linter on muster itself remediated all 88 shipped prompt-docs to a clean 15/15 (adding roles, output-format lines, and "I don't know" allowances), with the safety-critical orchestration prompts kept verbatim and cleared via the disable directive rather than rewritten.
-
-### Fixed
-- **Router skill emitted invalid manifests.** The router eval found that the router skill's documented crew shape omitted the `model` field that `validateManifest` requires (a defect the structural linter, which scored the router 15/15, could not see). The crew shape now specifies `model` per non-inline member, sourced from `roles[role].model`; re-running the router yields valid manifests.
-
 ## [0.2.8] - 2026-06-18
 
 ### Added
@@ -30,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`muster prompt lint|variations|eval|optimize`** CLI subcommands (file or stdin) and a **`prompt-quality` role** resolved by the new **`muster-prompt-smith`** built-in skill, so the router can dispatch prompt review as a quality dimension. `promptfoo` is supported as an optional eval substrate behind the injected `callModel` contract; the native runner is the zero-dependency default.
 - **Prompt quality as a conditional `audit` dimension** — when the target project builds prompts/agents, `muster audit` adds a 7th read-only review dimension. `detect.js` emits a `prompting` signal when an LLM/agent SDK dependency is present (`@anthropic-ai/sdk`, `openai`, `langchain`/`@langchain/*`, `llamaindex`/`@llamaindex/*`, `ai`/`@ai-sdk/*`, `@modelcontextprotocol/sdk`, etc.); `buildAuditManifest(caps, { prompting })` gates the `prompt-quality` dimension on it (via the git-free `hasPromptingSignal`), so a plain codebase still gets the six core dimensions.
 - **`muster prompt scan <dir>`** — deterministic repo prompt-discovery: walks the tree (skipping vendored/build dirs, text files only, per-file + total caps), locates candidate prompts via `src/prompt-discover.js` (`.prompt` files, `prompts/` directories, and backtick `system`/`prompt`/`instructions`/`persona` assignments), lints each, and returns per-prompt findings plus a pass/fail summary. This is the repo-scan mode the `muster-prompt-smith` skill uses to drive the audit dimension.
+- **Genre-aware prompt linting.** `lintPrompt` takes a `ctx.genre` of `task` (default) or `system`. Task-only rules (action-verb lead, multishot examples) are exempt for system/instruction prompts, and `ANTH-POS-001` tolerates more prohibitions for guardrail roles. `prompt lint`/`variations` gain a `--system` flag, and `prompt scan` lints discovered docs in the system genre. Score counts every applicable finding (any severity), so zero findings ⇔ a perfect 15/15.
+- **`prompt scan` finds markdown/text prompts, not just code.** `discoverPrompts` recognizes prompt docs — markdown with `name`+`description` frontmatter (the Claude Code skill/agent/command convention) or files under `.claude/`/`plugin/` `agents|commands|skills` (and any `prompts/`) — and strips YAML frontmatter so the lint reads the instruction body. Ordinary docs (`README`, `docs/`, `website/`, `.github/` issue templates) are deliberately excluded.
+- **Per-prompt `prompt-lint-disable` directive.** `<!-- prompt-lint-disable RULE-ID: reason -->` suppresses a rule for a prompt that legitimately violates it (e.g. an orchestration prompt that must stack prohibitions); suppressions are surfaced in `result.suppressed`.
+- **Router eval harness (`eval/router/`).** The first empirical (response-quality) eval: outcome → Crew Manifest, graded by code (manifest validity + expected-role coverage) and an LLM judge (routing appropriateness). Wired into CI as a deterministic contract regression test (`test/router-eval.test.js`, runs in `npm test`) plus an `npm run eval:router` report step; the full model-driven run stays a manual/scheduled job. See `eval/router/README.md`.
+
+### Changed
+- **Broadened + hardened linter detectors.** `ANTH-ROLE-001` accepts second-person persona framing ("You review a diff."); `ANTH-FMT-001` accepts natural-language and verb-near-format-noun specs ("one finding per line", "Emit ONLY the … JSON"); code stripping is now language-agnostic and ReDoS-safe (line-based `stripCode` blanks fenced, `<pre>`/`<code>`, and indented blocks for any language); interpolation detection covers Handlebars/JS/Ruby/ERB/Python styles. These removed false positives the dogfood surfaced.
+- **muster's own prompts taken to 15/15.** Dogfooding the linter on muster itself remediated all 88 shipped prompt-docs to a clean 15/15 (adding roles, output-format lines, and "I don't know" allowances), with the safety-critical orchestration prompts kept verbatim and cleared via the disable directive rather than rewritten.
+
+### Fixed
+- **Router skill emitted invalid manifests.** The router eval found that the router skill's documented crew shape omitted the `model` field that `validateManifest` requires (a defect the structural linter, which scored the router 15/15, could not see). The crew shape now specifies `model` per non-inline member, sourced from `roles[role].model`; re-running the router yields valid manifests.
 
 ## [0.2.7] - 2026-06-15
 

@@ -1,8 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  interpolate, codeGrade, buildGraderPrompt, parseGraderResponse, runEval,
+  interpolate, codeGrade, buildGraderPrompt, parseGraderResponse, runEval, gradeCollected,
 } from "../src/prompt-eval.js";
+
+test("gradeCollected scores pre-collected outputs offline", () => {
+  const res = gradeCollected({
+    dataset: [
+      { output: '{"a":1}', format: "json", graderResponse: '{"score": 8}' },
+      { output: "not json", format: "json", graderResponse: '{"score": 2}' },
+    ],
+    passThreshold: 7,
+  });
+  assert.equal(res.results[0].score, 9); // (10 + 8) / 2
+  assert.equal(res.results[0].passing, true);
+  assert.equal(res.results[1].score, 1); // (0 + 2) / 2
+  assert.equal(res.results[1].passing, false);
+  assert.equal(res.accuracy, 0.5);
+});
 
 test("interpolate fills {{VAR}} slots from a test case", () => {
   const out = interpolate("Solve: {{task}} for {{user}}", { task: "add 2+2", user: "Ann" });

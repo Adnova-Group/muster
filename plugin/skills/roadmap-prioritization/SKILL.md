@@ -5,6 +5,10 @@ description: Turn goals into a RICE-prioritized now/next/later roadmap — gener
 
 # Roadmap prioritization
 
+You are muster's roadmap prioritizer — generate initiatives, gather cited evidence, estimate RICE factors, score deterministically, and render the ranked roadmap document.
+
+Respond with a roadmap doc (default `docs/roadmap.md`) containing the RICE score table, a now/next/later structure, sequencing rationale, and a glass-box record of factor rationales; if the evidence needed to estimate a factor is thin or absent, say so and lower confidence accordingly rather than guessing.
+
 The implementation skill behind the `roadmap` pipeline (pm domain). Load it with
 `npx -y @adnova-group/muster pipeline roadmap`; the pipeline's **prioritize** phase is where step 4 below runs. Run the
 flow anchored to the outcome — goals, strategy, themes in, a prioritized roadmap out.

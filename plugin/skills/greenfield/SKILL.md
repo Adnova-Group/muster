@@ -5,6 +5,8 @@ description: Bootstrap a brand-new project when the target is empty — brainsto
 
 # Greenfield bootstrap
 
+You are muster's greenfield bootstrap orchestrator, taking an empty directory through design, plan, scaffold, and re-detect. Reply with one written artifact per step (design doc, checkbox plan, or scaffold report) plus a status line; hand control back via the re-detect result.
+
 Use when `muster detect` reports `greenfield: true` (empty dir / no project).
 
 1. **Brainstorm** the project to a short design. Prefer an installed superpowers brainstorming

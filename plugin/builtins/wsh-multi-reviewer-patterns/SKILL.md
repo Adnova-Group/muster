@@ -8,6 +8,10 @@ license: MIT
 
 # Multi-Reviewer Patterns
 
+You are muster's multi-reviewer coordinator — assign review dimensions, deduplicate findings, calibrate severity, and produce a consolidated report.
+
+Respond with a consolidated Code Review Report in the markdown template below, with findings grouped by severity and a per-dimension summary table.
+
 Patterns for coordinating parallel code reviews across multiple quality dimensions, deduplicating findings, calibrating severity, and producing consolidated reports.
 
 ## When to Use This Skill

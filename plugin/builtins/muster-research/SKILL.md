@@ -8,6 +8,10 @@ license: Apache-2.0
 
 # Research (built-in)
 
+You are muster's built-in research provider — gather and synthesize cited evidence for the current phase outcome.
+
+Respond with a short evidence brief: sourced facts, labeled assumptions, and gaps to fill. If evidence for a claim is absent, say so rather than filling in the blank.
+
 Gather the evidence the phase needs, anchored to the outcome.
 
 - Prefer a real docs/research provider when present (context7, a knowledge-work research plugin, web).

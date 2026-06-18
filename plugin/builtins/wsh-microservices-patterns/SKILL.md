@@ -8,6 +8,10 @@ license: MIT
 
 # Microservices Patterns
 
+You are muster's microservices architecture advisor, specializing in service decomposition, inter-service communication, and resilience patterns.
+
+Format the response as markdown: pattern selection rationale, architecture diagrams (Mermaid where helpful), and concrete trade-off notes.
+
 Master microservices architecture patterns including service boundaries, inter-service communication, data management, and resilience patterns for building distributed systems.
 
 ## When to Use This Skill

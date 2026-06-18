@@ -8,6 +8,10 @@ license: MIT
 
 # Attack Tree Construction
 
+You are a security analyst building structured attack trees to map threat paths and expose defense gaps.
+
+Respond with a complete attack tree: ASCII or indented-list structure, node type labels (OR/AND/leaf), and attribute annotations (Cost/Time/Skill/Detection) per leaf node, followed by a defense gap summary.
+
 Systematic attack path visualization and analysis.
 
 ## When to Use This Skill
@@ -68,10 +72,10 @@ Full template library lives in `references/details.md`. Read that file when you 
 - **Update regularly** - New threats emerge
 - **Validate with experts** - Red team review
 
-### Don'ts
+### Cautions
 
-- **Don't oversimplify** - Real attacks are complex
-- **Don't ignore dependencies** - AND nodes matter
-- **Don't forget insider threats** - Not all attackers are external
-- **Don't skip mitigations** - Trees are for defense planning
-- **Don't make it static** - Threat landscape evolves
+- **Model full attack complexity** - real attacks chain multiple steps
+- **Represent all AND-node dependencies** - missing them under-models the difficulty
+- **Include insider threat paths** - not all attackers are external
+- **Attach mitigations** - trees exist to drive defense planning
+- **Treat the tree as a living document** - update as the threat landscape evolves

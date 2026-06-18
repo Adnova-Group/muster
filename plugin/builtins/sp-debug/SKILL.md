@@ -8,6 +8,10 @@ license: MIT
 
 # Systematic Debugging
 
+You are a systematic debugger. Follow the four-phase process below to reach root cause before applying any fix.
+
+Respond with a structured debug report: hypothesis table, confirmed root cause, fix applied, and test result. If the evidence needed to identify a root cause is missing, say so and request it rather than guessing.
+
 ## Overview
 
 Random fixes waste time and create new bugs. Quick patches mask underlying issues.
@@ -39,12 +43,12 @@ Use for ANY technical issue:
 - "Just one quick fix" seems obvious
 - You've already tried multiple fixes
 - Previous fix didn't work
-- You don't fully understand the issue
+- The issue is unclear or incompletely understood
 
-**Don't skip when:**
-- Issue seems simple (simple bugs have root causes too)
-- You're in a hurry (rushing guarantees rework)
-- Manager wants it fixed NOW (systematic is faster than thrashing)
+**Apply this process regardless of:**
+- Issue complexity (simple bugs have root causes too)
+- Time pressure (systematic is faster than thrashing)
+- Stakeholder urgency (systematic delivers faster than guess-and-check)
 
 ## The Four Phases
 
@@ -55,8 +59,7 @@ You MUST complete each phase before proceeding to the next.
 **BEFORE attempting ANY fix:**
 
 1. **Read Error Messages Carefully**
-   - Don't skip past errors or warnings
-   - They often contain the exact solution
+   - Read every error and warning — they often contain the exact solution
    - Read stack traces completely
    - Note line numbers, file paths, error codes
 
@@ -64,7 +67,7 @@ You MUST complete each phase before proceeding to the next.
    - Can you trigger it reliably?
    - What are the exact steps?
    - Does it happen every time?
-   - If not reproducible → gather more data, don't guess
+   - If not reproducible → gather more data and stop; say so rather than guessing
 
 3. **Check Recent Changes**
    - What changed that could cause this?
@@ -131,14 +134,12 @@ You MUST complete each phase before proceeding to the next.
    - What works that's similar to what's broken?
 
 2. **Compare Against References**
-   - If implementing pattern, read reference implementation COMPLETELY
-   - Don't skim - read every line
+   - If implementing a pattern, read the reference implementation completely — every line
    - Understand the pattern fully before applying
 
 3. **Identify Differences**
    - What's different between working and broken?
-   - List every difference, however small
-   - Don't assume "that can't matter"
+   - List every difference, however small — all of them may matter
 
 4. **Understand Dependencies**
    - What other components does this need?
@@ -156,19 +157,17 @@ You MUST complete each phase before proceeding to the next.
 
 2. **Test Minimally**
    - Make the SMALLEST possible change to test hypothesis
-   - One variable at a time
-   - Don't fix multiple things at once
+   - One variable at a time — isolate each change to keep results interpretable
 
 3. **Verify Before Continuing**
    - Did it work? Yes → Phase 4
-   - Didn't work? Form NEW hypothesis
-   - DON'T add more fixes on top
+   - Didn't work? Form a NEW hypothesis
+   - Each fix attempt must be isolated; adding multiple changes at once blocks analysis
 
-4. **When You Don't Know**
-   - Say "I don't understand X"
-   - Don't pretend to know
-   - Ask for help
-   - Research more
+4. **When the Cause Is Unclear**
+   - Say "I need more information about X"
+   - Ask for help or research further before proceeding
+   - Acknowledge the gap explicitly
 
 ### Phase 4: Implementation
 
@@ -197,7 +196,7 @@ You MUST complete each phase before proceeding to the next.
    - Count: How many fixes have you tried?
    - If < 3: Return to Phase 1, re-analyze with new information
    - **If ≥ 3: STOP and question the architecture (step 5 below)**
-   - DON'T attempt Fix #4 without architectural discussion
+   - Bring Fix #4 to the human before attempting it — get architectural alignment first
 
 5. **If 3+ Fixes Failed: Question Architecture**
 
@@ -223,7 +222,7 @@ If you catch yourself thinking:
 - "Add multiple changes, run tests"
 - "Skip the test, I'll manually verify"
 - "It's probably X, let me fix that"
-- "I don't fully understand but this might work"
+- "The root cause is unclear but this might work"
 - "Pattern says X but I'll adapt it differently"
 - "Here are the main problems: [lists fixes without investigation]"
 - Proposing solutions before tracing data flow

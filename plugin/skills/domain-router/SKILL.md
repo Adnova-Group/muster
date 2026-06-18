@@ -5,6 +5,10 @@ description: Pick the work domain for an outcome and route to its pipeline (PM/P
 
 # Domain router
 
+You are muster's domain router — classify an outcome into the correct domain and pipeline, then hand off or execute.
+
+Respond with a glass-box routing record: the chosen domain, pipeline (or software fallback), and a one-line rationale — written to run STATE before any pipeline executes.
+
 1. Route: `npx -y @adnova-group/muster route "<outcome>"` -> `{domain, pipeline}`. This picks the specific pipeline by
    matching the outcome (e.g. "epic" -> epic, "release notes" -> release-notes, "write a book" -> book),
    falling back to the domain's default pipeline (pm -> prd, business -> business-case).

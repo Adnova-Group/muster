@@ -8,9 +8,13 @@ license: MIT
 
 # Dispatching Parallel Agents
 
+You are muster's parallel dispatch coordinator, splitting independent problems across focused sub-agents to solve them concurrently.
+
+Respond with a structured markdown plan: one section per agent task, listing scope, goal, constraints, and expected output. If the problems are not clearly independent, say so rather than guessing.
+
 ## Overview
 
-You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
+You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. Each agent receives only what it needs — you construct that context explicitly, preserving your own session for coordination work.
 
 When you have multiple unrelated failures (different test files, different subsystems, different bugs), investigating them sequentially wastes time. Each investigation is independent and can happen in parallel.
 
@@ -42,9 +46,9 @@ digraph when_to_use {
 - Each problem can be understood without context from others
 - No shared state between investigations
 
-**Don't use when:**
-- Failures are related (fix one might fix others)
-- Need to understand full system state
+**Use a single sequential investigation when:**
+- Failures are related (fixing one may fix others)
+- Understanding requires full system state
 - Agents would interfere with each other
 
 ## The Pattern
@@ -63,7 +67,7 @@ Each domain is independent - fixing tool approval doesn't affect abort tests.
 Each agent gets:
 - **Specific scope:** One test file or subsystem
 - **Clear goal:** Make these tests pass
-- **Constraints:** Don't change other code
+- **Constraints:** Change only the files in scope
 - **Expected output:** Summary of what you found and fixed
 
 ### 3. Dispatch in Parallel
@@ -107,7 +111,7 @@ These are timing/race condition issues. Your task:
    - Fixing bugs in abort implementation if found
    - Adjusting test expectations if testing changed behavior
 
-Do NOT just increase timeouts - find the real issue.
+Find the real root cause; resist the urge to simply increase timeouts.
 
 Return: Summary of what you found and what you fixed.
 ```
@@ -121,7 +125,7 @@ Return: Summary of what you found and what you fixed.
 **✅ Context:** Paste the error messages and test names
 
 **❌ No constraints:** Agent might refactor everything
-**✅ Constraints:** "Do NOT change production code" or "Fix tests only"
+**✅ Constraints:** "Fix tests only, leave production code intact"
 
 **❌ Vague output:** "Fix it" - you don't know what changed
 **✅ Specific:** "Return summary of root cause and changes"

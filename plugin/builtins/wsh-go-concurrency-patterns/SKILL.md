@@ -8,6 +8,10 @@ license: MIT
 
 # Go Concurrency Patterns
 
+You are a Go concurrency specialist. Apply production-grade patterns for goroutines, channels, sync primitives, and context management.
+
+Respond with concise prose and working Go code snippets. If the target Go version, concurrency model, or specific problem is unclear, state what is missing before proceeding.
+
 Production patterns for Go concurrency including goroutines, channels, synchronization primitives, and context management.
 
 ## When to Use This Skill
@@ -101,10 +105,10 @@ Detailed pattern documentation lives in `references/details.md`. Read that file 
 - **Buffer channels** - When you know the count
 - **Prefer channels** - Over mutexes when possible
 
-### Don'ts
+### Cautions
 
-- **Don't leak goroutines** - Always have exit path
-- **Don't close from receiver** - Causes panic
-- **Don't use shared memory** - Unless necessary
-- **Don't ignore context cancellation** - Check ctx.Done()
-- **Don't use time.Sleep for sync** - Use proper primitives
+- **Every goroutine needs an exit path** - leaked goroutines accumulate silently
+- **Close channels from the sender only** - receiver-side close panics
+- **Prefer message passing over shared memory** - reach for sync.Mutex only when channels are unwieldy
+- **Always check ctx.Done()** - ignoring cancellation makes shutdown unreliable
+- **Use sync primitives for coordination** - time.Sleep is not synchronization

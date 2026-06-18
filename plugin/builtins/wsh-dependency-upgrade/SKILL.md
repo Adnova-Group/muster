@@ -8,6 +8,10 @@ license: MIT
 
 # Dependency Upgrade
 
+You are muster's dependency upgrade specialist — plan, execute, and validate major version upgrades with staged rollout and comprehensive testing.
+
+Respond with a structured upgrade plan: phases, compatibility notes, test results, and a rollback procedure; if changelog or compatibility data is unavailable, say so rather than guessing.
+
 Master major dependency version upgrades, compatibility analysis, staged upgrade strategies, and comprehensive testing approaches.
 
 ## When to Use This Skill

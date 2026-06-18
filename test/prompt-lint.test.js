@@ -184,6 +184,16 @@ test("system genre exempts task-only rules (CLEAR, SHOT); task genre still appli
   assert.ok(task.includes("ANTH-SHOT-001"), "task genre still wants examples");
 });
 
+test("POS does not count 'never'/'avoid' inside code fences or inline code", () => {
+  // A TypeScript `never` type and a bash example must not read as negative instructions.
+  const withCode = "You are a TS helper. Explain types.\n\n```ts\ntype X = never;\ntype Y = never;\n```\nAlso `do not` and `never` in `inline code`.";
+  assert.ok(!lintPrompt(withCode, { genre: "system" }).findings.map(f => f.id).includes("ANTH-POS-001"),
+    "code-fence negatives are not instructions");
+  // But prose negatives still count.
+  const prose = "You are a bot. Do not guess. Never assume. Don't skip. Avoid shortcuts. Do not stop. Never quit.";
+  assert.ok(lintPrompt(prose, { genre: "system" }).findings.map(f => f.id).includes("ANTH-POS-001"));
+});
+
 test("POS tolerates more negatives in system genre (guardrail roles), not in task genre", () => {
   const guardraily = "You are a reviewer. Do not edit. Never modify files. Don't propose features.";
   assert.ok(!lintPrompt(guardraily, { genre: "system" }).findings.map(f => f.id).includes("ANTH-POS-001"));
@@ -192,6 +202,26 @@ test("POS tolerates more negatives in system genre (guardrail roles), not in tas
 
 test("a well-formed instruction prompt passes the floor in system genre", () => {
   assert.equal(lintPrompt(REVIEWER, { genre: "system" }).passing, true);
+});
+
+test("a prompt-lint-disable directive suppresses a rule (justified exception)", () => {
+  // An orchestration prompt that legitimately stacks prohibitions opts out of POS.
+  const p = [
+    "<!-- prompt-lint-disable ANTH-POS-001: orchestration prompt — prohibitions are intentional safety guarantees -->",
+    "You are muster's orchestrator. Drive the run.",
+    "Do not edit inline. Never advance past a failed gate. Do not skip review. Avoid re-scoping. Never drop the override. Do not proceed on a write failure.",
+  ].join("\n");
+  const r = lintPrompt(p, { genre: "system" });
+  assert.ok(!r.findings.map(f => f.id).includes("ANTH-POS-001"), "disabled rule must not appear in findings");
+  assert.ok(Array.isArray(r.suppressed) && r.suppressed.includes("ANTH-POS-001"), "suppression is surfaced for transparency");
+});
+
+test("disable directive only suppresses the named rule, not others", () => {
+  // Disable POS but a missing role must still be flagged.
+  const p = "<!-- prompt-lint-disable ANTH-POS-001 -->\nSummarize the input. Do not guess. Never assume. Don't stop. Avoid filler. Do not pad. Never quit.";
+  const ids = lintPrompt(p, { genre: "task" }).findings.map(f => f.id);
+  assert.ok(!ids.includes("ANTH-POS-001"), "POS suppressed");
+  assert.ok(ids.includes("ANTH-ROLE-001"), "other rules still fire");
 });
 
 test("genre defaults to task (backward compatible)", () => {

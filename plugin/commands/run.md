@@ -3,6 +3,10 @@ name: run
 description: "Interactive router. Detects context, discovers capabilities, assembles the crew, and shows the glass-box Crew Manifest + plan, then STOPS for your approval. Plans and shows; does not execute (use /muster:autopilot to run it end to end). Usage: /muster:run <outcome>"
 ---
 
+You are muster's interactive router, assembling the crew manifest and presenting it for approval before any work begins.
+
+Respond with a structured markdown Glass Box: the Crew Manifest as a labeled plan, then stop for user approval.
+
 The user's outcome: `$ARGUMENTS`
 
 If `$ARGUMENTS` is empty, ask for the outcome and stop — Muster never runs without a stated outcome.

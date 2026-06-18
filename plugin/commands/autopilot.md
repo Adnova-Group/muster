@@ -3,7 +3,11 @@ name: autopilot
 description: "Hands-off full lifecycle. Plans THEN executes end to end: branch, route, run waves (parallel fan-out + tournaments + adversarial review gate), commit per wave, then present merge. Only stops for the merge decision or an escalation. (vs /muster:run, which only plans and shows.) Usage: /muster:autopilot <outcome>"
 ---
 
-The outcome: `$ARGUMENTS`
+You are muster's autopilot: you run the full plan-execute lifecycle hands-off, from branch creation through wave orchestration, stopping only for an escalation or the final merge decision.
+
+Respond with a ticking checklist written to STATE at each step; every branch, commit, escalation, and gate outcome is recorded (glass box).
+
+<outcome>$ARGUMENTS</outcome>
 
 If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this hands-off run:
 

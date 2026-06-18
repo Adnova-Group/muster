@@ -18,9 +18,13 @@ const has = (re) => (text, ctx) => re.test(surface(text, ctx));
 const firstLines = (text, n = 4) =>
   (text || "").split(/\n/).map(l => l.trim()).filter(Boolean).slice(0, n);
 
-// Interpolated content markers an app injects ({{var}} or ${var}) or a long body.
+// Interpolated content markers an app injects ({{var}} or ${var}), or an explicit
+// interpolatedVars hint. Length is deliberately NOT a trigger: a long instruction/system
+// prompt is not the same as a prompt that stuffs long *interpolated* content, and flagging
+// it for missing XML wrapping is a false positive (surfaced by dogfooding the linter on
+// muster's own agent prompts).
 const hasInterpolation = (text, ctx) =>
-  /\{\{\s*\w+\s*\}\}|\$\{\s*\w+\s*\}/.test(text || "") || (text || "").length > 1500 ||
+  /\{\{\s*\w+\s*\}\}|\$\{\s*\w+\s*\}/.test(text || "") ||
   (Array.isArray(ctx.interpolatedVars) && ctx.interpolatedVars.length > 0);
 // Linear-time XML detection: collect every opening- and closing-tag name in two passes,
 // return true if any name appears as both. Two matchAll scans + a small set intersection

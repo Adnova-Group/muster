@@ -17,18 +17,42 @@ const surface = (text, ctx) => `${ctx.system ? ctx.system + "\n" : ""}${text || 
 const has = (re) => (text, ctx) => re.test(surface(text, ctx));
 const firstLines = (text, n = 4) =>
   (text || "").split(/\n/).map(l => l.trim()).filter(Boolean).slice(0, n);
-// Strip fenced + inline code before pattern checks that should not see code samples — a
-// `${x}` template literal or a `never` keyword inside an example is not an interpolation
-// marker / negative instruction the prompt actually issues.
-const stripCode = (s) => String(s).replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ");
+// Strip code before pattern checks that should not see code samples — a `${x}` template
+// literal, a Ruby `#{x}`, or a `never` keyword inside an example is not an interpolation
+// marker / negative instruction the prompt actually issues. Language-AGNOSTIC: a fenced
+// block holds any language, so its contents are blanked regardless of syntax. Handles all
+// common code-block forms: ``` and ~~~ fences (any length + info string, even unclosed),
+// HTML <pre>/<code>, 4-space / tab indented blocks, and inline `code`. Line-based and O(n).
+function stripCode(s) {
+  let fence = null; // the fence char (` or ~) of the block we are inside, if any
+  const out = String(s).split("\n").map((line) => {
+    const m = line.match(/^[ \t]*(`{3,}|~{3,})/);
+    if (fence) {                                   // inside a fenced block
+      if (m && m[1][0] === fence) fence = null;    // a matching fence closes it
+      return " ";
+    }
+    if (m) { fence = m[1][0]; return " "; }         // open fence — remember its char
+    if (/^(?: {4}|\t)\S/.test(line)) return " ";    // indented code line
+    return line;
+  }).join("\n");
+  return out
+    .replace(/<pre\b[\s\S]*?<\/pre>/gi, " ")
+    .replace(/<code\b[\s\S]*?<\/code>/gi, " ")
+    .replace(/`[^`\n]*`/g, " ");
+}
 
-// Interpolated content markers an app injects ({{var}} or ${var}), or an explicit
-// interpolatedVars hint. Length is deliberately NOT a trigger: a long instruction/system
-// prompt is not the same as a prompt that stuffs long *interpolated* content, and flagging
-// it for missing XML wrapping is a false positive (surfaced by dogfooding the linter on
-// muster's own agent prompts).
+// Interpolation markers an app injects, across templating styles/frameworks:
+//   {{var}} (Handlebars/Jinja/Vue) · ${var} (JS/shell) · #{var} (Ruby) ·
+//   <%= var %> / <% var %> (ERB/EJS) · %(name)s (Python printf). Distinctive enough to
+// avoid prose false positives; checked against code-stripped text so examples don't count.
+const INTERP_RE = /\{\{\s*[\w.]+\s*\}\}|\$\{\s*[\w.]+\s*\}|#\{\s*[\w.]+\s*\}|<%=?\s*[\w.]+\s*%>|%\([\w.]+\)[sd]/;
+
+// Length is deliberately NOT a trigger: a long instruction/system prompt is not the same
+// as a prompt that stuffs long *interpolated* content, and flagging it for missing XML
+// wrapping is a false positive (surfaced by dogfooding the linter on muster's own agent
+// prompts). Checked against code-stripped text so markers in code examples don't count.
 const hasInterpolation = (text, ctx) =>
-  /\{\{\s*\w+\s*\}\}|\$\{\s*\w+\s*\}/.test(stripCode(text || "")) ||
+  INTERP_RE.test(stripCode(text || "")) ||
   (Array.isArray(ctx.interpolatedVars) && ctx.interpolatedVars.length > 0);
 // Linear-time XML detection: collect every opening- and closing-tag name in two passes,
 // return true if any name appears as both. Two matchAll scans + a small set intersection

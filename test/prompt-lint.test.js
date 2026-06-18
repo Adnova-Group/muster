@@ -146,6 +146,30 @@ test("interpolation markers inside code examples do NOT trigger the XML rule", (
   assert.ok(!ids.includes("GUARD-SEP-003"), "code-example markers do not require separation");
 });
 
+test("code-stripping is language-agnostic across fence and block styles", () => {
+  // negatives + interpolation in Ruby/Python/shell code under ```/~~~/<pre>/indented must NOT trip POS or XML.
+  const samples = [
+    "You are a coach.\n\n```ruby\nputs \"never #{user} avoid\"\n```",            // ``` ruby, #{}
+    "You are a coach.\n\n~~~python\nx = \"avoid %(name)s never\"\n~~~",            // ~~~ python, %()s
+    "You are a coach.\n\n<pre>echo \"never ${VAR} avoid do not\"</pre>",          // <pre>, ${} + many negatives
+    "You are a coach.\n\n    avoid this; never that; do not; ${x} #{y}",          // 4-space indented code
+  ];
+  for (const p of samples) {
+    const ids = lintPrompt(p, { genre: "system" }).findings.map(f => f.id);
+    assert.ok(!ids.includes("ANTH-POS-001"), `code negatives must not trip POS: ${p.slice(0,30)}`);
+    assert.ok(!ids.includes("ANTH-XML-001"), `code interpolation must not trip XML: ${p.slice(0,30)}`);
+  }
+});
+
+test("interpolation detection covers non-JS styles (Ruby/ERB/Python) in prose", () => {
+  // Real interpolation the prompt injects — flagged for XML wrapping regardless of style.
+  for (const marker of ["#{user}", "<%= user %>", "%(user)s"]) {
+    const p = `You are a bot. Greet the person. Name: ${marker}`;
+    assert.ok(lintPrompt(p, { genre: "system" }).findings.map(f => f.id).includes("ANTH-XML-001"),
+      `${marker} should be detected as interpolation`);
+  }
+});
+
 // --- genre-aware linting + broadened detectors -------------------------------
 
 const REVIEWER = `You review a diff. You do not edit code.

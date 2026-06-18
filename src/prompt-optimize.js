@@ -9,13 +9,14 @@ import { lintPrompt } from "./prompt-lint.js";
 import { pickWinner } from "./tournament.js";
 
 // Deterministic technique transforms. Each closes the gap named by a lint rule id.
-// Wrap both {{var}} and ${var} (the linter flags both as interpolation, so the fix must
-// cover both or the re-lint would still fail). Idempotent: skip a var already wrapped in
-// a like-named tag, so re-running (or the combined pass) never produces nested tags.
-const VAR_RE = /\{\{\s*(\w+)\s*\}\}|\$\{\s*(\w+)\s*\}/g;
-const wrapXml = (p) => p.replace(VAR_RE, (m, a, b) => {
-  const k = a || b;
-  return new RegExp(`<${k}\\b`).test(p) ? m : `<${k}>\n${m}\n</${k}>`;
+// Wrap every interpolation style the linter recognizes ({{var}}, ${var}, #{var},
+// <%= var %>, %(name)s) so the fix is not a silent no-op for non-JS prompts. Idempotent:
+// skip a var already wrapped in a like-named tag, so re-running never produces nested tags.
+const VAR_RE = /\{\{\s*([\w.]+)\s*\}\}|\$\{\s*([\w.]+)\s*\}|#\{\s*([\w.]+)\s*\}|<%=?\s*([\w.]+)\s*%>|%\(([\w.]+)\)[sd]/g;
+const wrapXml = (p) => p.replace(VAR_RE, (m, ...g) => {
+  const name = g.slice(0, 5).find(Boolean);          // the one matched capture
+  const tag = name.replace(/\W/g, "_");              // tag-safe (user.name -> user_name)
+  return new RegExp(`<${tag}\\b`).test(p) ? m : `<${tag}>\n${m}\n</${tag}>`;
 });
 
 const TRANSFORMS = {

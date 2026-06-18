@@ -1,0 +1,43 @@
+{
+  "prompt": "plugin/skills/router/SKILL.md",
+  "description": "Empirical eval of the router skill: outcome -> Crew Manifest JSON. Each case is graded by code (manifest validates + crew non-empty) and by an LLM judge against a per-case rubric. passThreshold 7/10.",
+  "passThreshold": 7,
+  "cases": [
+    {
+      "id": "auth-backend",
+      "task": "Add JWT authentication to the Express REST API, including tests.",
+      "expectRoles": ["implement", "test-author"],
+      "rubric": "A good manifest routes this software task to an implementation provider plus a test author; a security-review dimension is a bonus. Crew providers should be real (not all inline). The plan should build the endpoint then test it. Penalize: content/author roles, missing tests, empty/all-inline crew."
+    },
+    {
+      "id": "security-audit",
+      "task": "Audit the entire codebase for security vulnerabilities and remediate the findings.",
+      "expectRoles": ["security-review", "code-review"],
+      "rubric": "A good manifest fans out review dimensions including a security-review provider, consolidates findings, then fixes with a verify gate. Penalize: a single implement-only crew, no security dimension, no remediation/verify step."
+    },
+    {
+      "id": "blog-post",
+      "task": "Write a 600-word launch blog post announcing our new analytics dashboard.",
+      "expectRoles": ["author", "humanize"],
+      "rubric": "A good manifest routes this content task to an authoring provider and ends with a humanize phase (strip AI-tells). Penalize: software/implement roles, code review, missing humanize."
+    },
+    {
+      "id": "fix-failing-test",
+      "task": "Diagnose and fix the failing unit test in the payments service.",
+      "expectRoles": ["debug", "implement"],
+      "rubric": "A good manifest is failure-first: reproduce/diagnose the failure before fixing, then verify the suite is green. Penalize: jumping to a broad feature build, no reproduction step, no verify."
+    },
+    {
+      "id": "refactor-utils",
+      "task": "Refactor the legacy dateUtils module for readability without changing behavior.",
+      "expectRoles": ["refactor"],
+      "rubric": "A good manifest routes to a refactor/simplification provider and includes a behavior-preservation check (tests stay green). Penalize: feature additions, behavior changes, no regression guard."
+    },
+    {
+      "id": "research-vectordb",
+      "task": "Research and recommend a vector database for our RAG pipeline.",
+      "expectRoles": ["research", "docs-research"],
+      "rubric": "A good manifest routes to a research provider that gathers and synthesizes evidence and ends with a cited recommendation. Penalize: jumping to implementation, no evidence/sources, code-heavy crew."
+    }
+  ]
+}

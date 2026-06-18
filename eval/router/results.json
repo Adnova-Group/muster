@@ -1,0 +1,12 @@
+{
+  "ran": "2026-06-18",
+  "note": "Router outputs in out/<id>.json (produced by subagents executing the router skill). judgeScore from an independent LLM-judge scoring routing appropriateness; code grade is manifest validity + expected-role coverage (eval/router/grade.mjs).",
+  "cases": [
+    { "id": "auth-backend",      "judgeScore": 9, "judgeReason": "Real implement+test-author providers, TDD plan, security-review bonus." },
+    { "id": "security-audit",    "judgeScore": 8, "judgeReason": "Security auditor + remediation + regression tests + verify gate; review fan-out via tournament." },
+    { "id": "blog-post",         "judgeScore": 9, "judgeReason": "Author + humanize ending, SEO bonus, no software roles." },
+    { "id": "fix-failing-test",  "judgeScore": 9, "judgeReason": "Failure-first reproduce/root-cause before fix, regression test + full-suite verify." },
+    { "id": "refactor-utils",    "judgeScore": 9, "judgeReason": "Refactor provider, characterization baseline, behavior-preservation, scoped diff review." },
+    { "id": "research-vectordb", "judgeScore": 9, "judgeReason": "Research + docs-research providers, evidence via context7, cited recommendation doc." }
+  ]
+}

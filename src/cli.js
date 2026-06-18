@@ -120,23 +120,25 @@ try {
   } else if (cmd === "prompt") {
     const sub = rest[0];
     // Read a prompt from a file path or, when the arg is "-" (or absent), from stdin.
+    // Cap stdin so an untrusted caller can't pump unbounded input into the linter.
+    const MAX_STDIN_BYTES = 1_048_576; // 1 MB — far above any realistic prompt
     const readStdin = () => new Promise((resolve, reject) => {
-      let d = ""; process.stdin.setEncoding("utf8");
-      process.stdin.on("data", c => { d += c; });
+      let d = "", bytes = 0; process.stdin.setEncoding("utf8");
+      process.stdin.on("data", c => {
+        bytes += Buffer.byteLength(c, "utf8");
+        if (bytes > MAX_STDIN_BYTES) { process.stdin.destroy(); reject(new Error(`stdin exceeds ${MAX_STDIN_BYTES} byte limit`)); return; }
+        d += c;
+      });
       process.stdin.on("end", () => resolve(d));
       process.stdin.on("error", reject);
     });
     // A "-", a missing arg, or a flag (e.g. `prompt lint --agent`) all mean: read stdin.
     const readText = async (arg) =>
       (!arg || arg === "-" || arg.startsWith("--")) ? await readStdin() : await readFile(arg, "utf8");
-    if (sub === "lint") {
+    if (sub === "lint" || sub === "variations") {
       const text = await readText(rest[1]);
       const ctx = { isAgent: rest.includes("--agent"), hasTools: rest.includes("--tools") };
-      out(lintPrompt(text, ctx));
-    } else if (sub === "variations") {
-      const text = await readText(rest[1]);
-      const ctx = { isAgent: rest.includes("--agent"), hasTools: rest.includes("--tools") };
-      out(proposeVariations(text, ctx));
+      out(sub === "lint" ? lintPrompt(text, ctx) : proposeVariations(text, ctx));
     } else if (sub === "eval") {
       const file = requireArg(rest, 1, "prompt eval <suite.json>: missing suite ({dataset:[{output,format?,graderResponse?}], passThreshold?})", fail);
       const suite = JSON.parse(await readFile(file, "utf8"));

@@ -47,6 +47,50 @@ test("codeGrade python rejects prose but accepts real Python", () => {
   assert.equal(codeGrade("def add(a, b):\n    return a + b", "python"), 10);
 });
 
+test("codeGrade python does not misread a markdown heading as code", () => {
+  // Balanced delimiters + a leading '#' must NOT count as a Python comment signal.
+  assert.equal(codeGrade("# Overview\n\nThis is a plain document about things.", "python"), 0);
+});
+
+test("codeGrade returns null for an unknown format", () => {
+  assert.equal(codeGrade("anything: 1", "yaml"), null);
+});
+
+test("validateRegex caps overlong patterns", () => {
+  assert.equal(codeGrade("a".repeat(5000), "regex"), 0);
+});
+
+test("parseGraderResponse scrapes a score from non-JSON, else 0", () => {
+  const r = parseGraderResponse("the model rambled, score = 6, end");
+  assert.equal(r.score, 6);
+  assert.equal(r.reasoning, "unparseable grader response");
+  assert.equal(parseGraderResponse("total nonsense, no number").score, 0);
+});
+
+test("interpolate stringifies falsy values rather than dropping them", () => {
+  assert.equal(interpolate("n={{n}}", { n: 0 }), "n=0");
+  assert.equal(interpolate("x={{x}}", { x: "" }), "x=");
+});
+
+test("gradeCollected scores an entry with neither code nor model grade as 0", () => {
+  const res = gradeCollected({ dataset: [{ output: "freeform" }], passThreshold: 7 });
+  assert.equal(res.results[0].score, 0);
+  assert.equal(res.results[0].passing, false);
+});
+
+test("gradeCollected does not leak a __proto__ key from a hostile suite entry", () => {
+  const entry = JSON.parse('{"output":"{}","format":"json","__proto__":{"x":1}}');
+  const res = gradeCollected({ dataset: [entry] });
+  assert.ok(!Object.prototype.hasOwnProperty.call(res.results[0], "__proto__"));
+});
+
+test("runEval rejects an empty dataset", async () => {
+  await assert.rejects(
+    () => runEval({ dataset: [], promptTemplate: "x", callModel: async () => "y" }),
+    /non-empty/
+  );
+});
+
 test("buildGraderPrompt asks for reasoning + a numeric score and embeds the output", () => {
   const p = buildGraderPrompt("THE_OUTPUT", "must be polite");
   assert.match(p, /THE_OUTPUT/);

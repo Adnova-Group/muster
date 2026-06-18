@@ -62,3 +62,40 @@ test("optimizePrompt escalates when nothing passes the gate", async () => {
   assert.equal(r.escalate, true);
   assert.equal(r.winner, null);
 });
+
+test("selectWinner reports a true regression when the only passing winner scores below a non-passing baseline", () => {
+  // pickWinner picks the highest PASSING candidate; the baseline is higher but non-passing.
+  const r = selectWinner([
+    { id: "baseline", total: 14, passing: false },
+    { id: "add-role", total: 9, passing: true },
+  ]);
+  assert.equal(r.winner, "add-role");
+  assert.equal(r.regression, true, "winner (9) is below the pinned baseline (14)");
+});
+
+test("selectWinner with no passing candidate escalates and returns nulls", () => {
+  const r = selectWinner([{ id: "baseline", total: 3, passing: false }]);
+  assert.equal(r.winner, null);
+  assert.equal(r.escalate, true);
+  assert.equal(r.regression, false);
+  assert.equal(r.winnerPrompt, null);
+  assert.equal(r.baselineScore, 3);
+});
+
+test("proposeVariations emits a combined all-improvements variant and dedupes shared techniques", () => {
+  const vs = proposeVariations(WEAK);
+  const combined = vs.find(v => v.id === "all-improvements");
+  assert.ok(combined, "expected an all-improvements variant");
+  // ANTH-XML-001 and GUARD-SEP-003 both map to wrap-xml — only one should appear.
+  assert.equal(vs.filter(v => v.technique === "wrap-xml").length, 1, "wrap-xml deduped");
+});
+
+test("wrapXml handles ${var} and is idempotent on already-tagged content", () => {
+  // ${var} prompt: the wrap-xml variation must actually introduce a tag for it.
+  const vs = proposeVariations("You are a bot. Echo. value: ${value}");
+  const wrap = vs.find(v => v.technique === "wrap-xml");
+  assert.ok(wrap && /<value>/.test(wrap.prompt), "${value} should be wrapped");
+  // Idempotence: a var already inside a like-named tag is not double-wrapped.
+  const combined = vs.find(v => v.id === "all-improvements") || wrap;
+  assert.ok(!/<value>\s*<value>/.test(combined.prompt), "no nested double-wrap");
+});

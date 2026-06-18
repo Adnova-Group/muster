@@ -9,7 +9,14 @@ import { lintPrompt } from "./prompt-lint.js";
 import { pickWinner } from "./tournament.js";
 
 // Deterministic technique transforms. Each closes the gap named by a lint rule id.
-const wrapXml = (p) => p.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => `<${k}>\n${m}\n</${k}>`);
+// Wrap both {{var}} and ${var} (the linter flags both as interpolation, so the fix must
+// cover both or the re-lint would still fail). Idempotent: skip a var already wrapped in
+// a like-named tag, so re-running (or the combined pass) never produces nested tags.
+const VAR_RE = /\{\{\s*(\w+)\s*\}\}|\$\{\s*(\w+)\s*\}/g;
+const wrapXml = (p) => p.replace(VAR_RE, (m, a, b) => {
+  const k = a || b;
+  return new RegExp(`<${k}\\b`).test(p) ? m : `<${k}>\n${m}\n</${k}>`;
+});
 
 const TRANSFORMS = {
   "ANTH-ROLE-001": { technique: "add-role",
@@ -65,8 +72,8 @@ export function selectWinner(candidates) {
     throw new Error('selectWinner: candidates must include a "baseline" row to anchor regression detection');
   const { winner, escalate, ranking } = pickWinner(candidates);
   const winnerRow = winner ? candidates.find(s => s.id === winner) : null;
-  const regression = !!winnerRow && winnerRow.id !== "baseline" &&
-    !!baseline && winnerRow.total < baseline.total;
+  // baseline is guaranteed present (thrown above), so no need to re-guard it here.
+  const regression = !!winnerRow && winnerRow.id !== "baseline" && winnerRow.total < baseline.total;
   return {
     winner: winner ?? null,
     escalate,

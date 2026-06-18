@@ -83,6 +83,50 @@ test("non-agent prompt does not flag agent-only rules", () => {
   assert.ok(!ids.includes("LINT-STOP-002"), "stop-conditions rule should not apply to non-agent");
 });
 
+test("input-wrapping XML alone does NOT satisfy the output-format rule", () => {
+  // <document>{{x}}</document> wraps input; it is not an output-format declaration.
+  const r = lintPrompt("You are an analyst.\n\nSummarize this.\n\n<document>{{x}}</document>");
+  const ids = r.findings.map(f => f.id);
+  assert.ok(ids.includes("ANTH-FMT-001"), "wrapping input must not pass the format rule");
+  assert.ok(!ids.includes("ANTH-XML-001"), "but the XML rule is satisfied");
+});
+
+test("positive-framing rule ignores ordinary noun phrases like 'no existing context'", () => {
+  const r = lintPrompt("You are a helper. Summarize the input. Note: no existing context is provided, so be concise. Return JSON.");
+  const ids = r.findings.map(f => f.id);
+  assert.ok(!ids.includes("ANTH-POS-001"), "'no existing' is not a negative instruction");
+});
+
+test("real negative instructions still trip the positive-framing rule", () => {
+  const r = lintPrompt("Answer this. Do not apologize. Never speculate. Don't add caveats.");
+  assert.ok(r.findings.map(f => f.id).includes("ANTH-POS-001"), "three negatives should flag");
+});
+
+test("GUARD-CITE-002: flags missing citation directive, passes on a real one", () => {
+  const ctx = { hasDocuments: true };
+  const miss = lintPrompt("Summarize the source code in the document.", ctx).findings.map(f => f.id);
+  assert.ok(miss.includes("GUARD-CITE-002"), "'source code' is not a citation directive");
+  const ok = lintPrompt("Answer using the document. Cite your sources for every claim.", ctx).findings.map(f => f.id);
+  assert.ok(!ok.includes("GUARD-CITE-002"), "an explicit cite directive passes");
+});
+
+test("GUARD-IDK-001: a Q&A prompt without an 'I don't know' escape hatch is flagged", () => {
+  assert.ok(lintPrompt("Answer the question accurately.").findings.map(f => f.id).includes("GUARD-IDK-001"));
+  assert.ok(!lintPrompt("Answer the question. If you don't know, say so.").findings.map(f => f.id).includes("GUARD-IDK-001"));
+});
+
+test("LINT-TOOL-001: suggestive tool language flagged, imperative passes", () => {
+  const sugg = lintPrompt("You are an agent. You can use the search tool.", { isAgent: true, hasTools: true });
+  assert.ok(sugg.findings.map(f => f.id).includes("LINT-TOOL-001"), "'you can use' is suggestive");
+  const imp = lintPrompt("You are an agent. Use the search tool to find the answer. Stop when done.", { isAgent: true, hasTools: true });
+  assert.ok(!imp.findings.map(f => f.id).includes("LINT-TOOL-001"), "imperative tool framing passes");
+});
+
+test("${var} interpolation (not just {{var}}) is treated as interpolated content", () => {
+  const r = lintPrompt("You are a bot. Echo the value. Answer: ${value}");
+  assert.ok(r.findings.map(f => f.id).includes("ANTH-XML-001"), "${var} should require XML wrapping");
+});
+
 test("role detection matches 'act as' anywhere, not only at string start", () => {
   const r = lintPrompt("Please act as a senior engineer and review this.\n\nReturn a JSON summary.");
   const ids = r.findings.map(f => f.id);

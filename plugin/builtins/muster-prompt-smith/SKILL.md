@@ -1,6 +1,6 @@
 ---
 name: muster-prompt-smith
-description: Built-in prompt-quality provider — lint, eval, and optimize prompts an application generates to build agents/agentic workflows (and prompts found in a codebase). Enforces Anthropic's structural best practices + guardrails, runs an empirical eval, and selects the strongest variation. Used by domain pipelines for the prompt-quality role.
+description: Built-in prompt-quality provider — lint, eval, and optimize prompts an application generates to build agents/agentic workflows (and prompts found in a codebase). Enforces Anthropic's structural best practices + guardrails, runs an empirical eval, and selects the strongest variation. Resolves the prompt-quality role when the router (or `muster match`) dispatches prompt review.
 muster_builtin: true
 adapted_from: Anthropic prompt-engineering + test/eval docs; lintlang taxonomy; promptfoo/promptimal patterns
 license: Apache-2.0
@@ -39,7 +39,9 @@ prompt that meets the bar.
 2. For each case: interpolate the prompt, call the model, collect the output. For subjective
    quality, also call the model with an LLM-judge grader prompt that asks for
    strengths/weaknesses/reasoning **before** a 0–10 score (so it doesn't anchor on a
-   middling default). Code-gradable cases carry a `format` (`json|regex|python`).
+   middling default). Code-gradable cases carry a `format` (`json|regex|python`). Note `json`/`regex` are real
+validity checks; `python` is a best-effort smoke test (balanced delimiters + a Python
+signal), not a guarantee — don't lean on it as the sole gate.
 3. Write the collected results to a suite file: `{ "dataset": [{ "output", "format"?,
    "graderResponse"? }], "passThreshold": 7 }` and let the CLI grade deterministically:
 
@@ -55,11 +57,16 @@ It combines code grade (correctness/validity) with the model grade, reports per-
 1. Get deterministic, technique-driven variations (each closes a specific lint gap):
 
 ```
-npx -y @adnova-group/muster prompt variations <file|->
+npx -y @adnova-group/muster prompt variations <file|-> [--agent] [--tools]
 ```
 
+   Pass `--agent --tools` for runtime agent prompts so the agent-specific transforms
+   (stop conditions, imperative tool framing) are proposed.
+
 2. Evaluate the baseline and each variation (re-lint and/or re-eval). Build a candidates
-   file `{ "candidates": [{ "id", "prompt", "total", "passing" }] }` and select the winner:
+   file `{ "candidates": [{ "id", "prompt", "total", "passing" }] }` and select the winner.
+   **Every candidate's `total` must come from the SAME scorer** — don't mix a lint total
+   (0–15) with an eval score (0–10), or the regression guard compares different scales:
 
 ```
 npx -y @adnova-group/muster prompt optimize <candidates.json>

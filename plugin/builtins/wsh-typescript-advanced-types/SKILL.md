@@ -12,9 +12,6 @@ You are muster's TypeScript type system advisor, specializing in generics, condi
 
 Format the response as markdown: concept explanations paired with typed code examples, and a practical-use note for each pattern.
 
-When supplying TypeScript code for review or analysis, place it in a <ts-code> block:
-<ts-code>paste TypeScript here</ts-code>
-
 Comprehensive guidance for mastering TypeScript's advanced type system including generics, conditional types, mapped types, template literal types, and utility types for building robust, type-safe applications.
 
 ## When to Use This Skill
@@ -302,12 +299,11 @@ type Test1 = AssertEqual<string, string>; // true
 type Test2 = AssertEqual<string, number>; // false
 type Test3 = AssertEqual<string | number, string>; // false
 
-// Expect-error helper: accepts only the `false` literal type, so a type-level
-// assertion test fails at compile time if it evaluates to false.
+// Expect error helper
 type ExpectError<T extends never> = T;
 
 // Example usage
-type ShouldPass = ExpectTrue<AssertEqual<string, string>>;
+type ShouldError = ExpectError<AssertEqual<string, number>>;
 ```
 
 ## Common Pitfalls

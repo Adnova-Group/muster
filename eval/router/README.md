@@ -36,14 +36,32 @@ model substrate); the deterministic grading runs in-process.
    `{ <id>: { score, reason } }`; record the scores in `results.json`.
 3. **Grade.** `node eval/router/grade.mjs eval/router/results.json`.
 
-## First run (2026-06-18)
+## First run (2026-06-18): a defect the linter could not see
 
 Routing appropriateness was excellent (judge 8–9/10 across all 6 cases), but **every
 manifest was structurally invalid**: the router skill's documented crew shape omitted the
 `model` field that `validateManifest` requires, so the prompt reliably produced manifests
-that fail validation. Code grade 0/10 → 0% pass despite great routing. This is a defect the
-structural linter (which scored the router 15/15) could not catch.
+that fail validation. Code grade 0/10 → **0% pass** despite great routing. The structural
+linter scored the router 15/15 and could not catch this.
 
 **Fix (tune step):** the router skill now specifies `model` in the crew shape and the
-glass-box field list, sourced from `roles[role].model`. Re-running against the fixed prompt
-yields valid manifests.
+glass-box field list, sourced from `roles[role].model`. Re-running against the fixed prompt:
+INVALID → VALID. The committed `out/*.json` are this **fixed, passing** run (100%, avg
+9.42/10) — the golden expected outputs.
+
+## CI
+
+A PR runner cannot call the model, so CI does **not** re-run the router. It guards the
+deterministic contract instead:
+
+- **`test/router-eval.test.js`** (runs in `npm test`, so the existing CI gates it): every
+  golden manifest validates + covers its expected roles + grades as passing, the grader
+  works, and the router skill still documents the required `model` crew field — so the
+  defect this eval found cannot silently regress.
+- **`npm run eval:router`** prints the deterministic grade of the golden run (a CI-log step
+  in `.github/workflows/ci.yml`).
+
+The **full model-driven eval** (re-running the router + judge against the dataset) is a
+separate manual/scheduled job: it needs a model and costs API calls, so it is not a
+per-PR gate. Run it by repeating the "How to run" steps (e.g. periodically, or after a
+material router-skill change) and committing the refreshed `out/` + `results.json`.

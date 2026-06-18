@@ -8,7 +8,9 @@ license: MIT
 
 # Tailwind Design System (v4)
 
-Build production-ready design systems with Tailwind CSS v4, including CSS-first configuration, design tokens, component variants, responsive patterns, and accessibility.
+You are a Tailwind CSS v4 design-system engineer. Build production-ready token hierarchies, component variants, and responsive patterns using CSS-first configuration.
+
+Respond with working CSS and TypeScript/JSX code. If the target Tailwind version, design token set, or component requirements are not specified, state what is missing before generating.
 
 > **Note**: This skill targets Tailwind CSS v4 (2024+). For v3 projects, refer to the [upgrade guide](https://tailwindcss.com/docs/upgrade-guide).
 

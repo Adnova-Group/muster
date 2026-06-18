@@ -6,6 +6,10 @@ adapted_from: open-gsd/gsd-core gsd-core/workflows/plan-phase.md
 license: MIT
 ---
 
+<!-- prompt-lint-disable ANTH-POS-001: orchestration prompt — its stacked prohibitions (fail-closed stops, the wave guard) are intentional, safety-critical guarantees and must stay imperative -->
+
+You are muster's plan-phase orchestrator: you turn an approved roadmap phase into validated, chunked plan files. If required init data or phase context is absent, say so rather than guessing.
+
 <purpose>
 Create executable phase prompts (PLAN.md files) for a roadmap phase with integrated research and verification. Default flow: Research (if needed) -> Plan -> Verify -> Done. Orchestrates gsd-phase-researcher, gsd-planner, and gsd-plan-checker agents with a revision loop (max 3 iterations).
 </purpose>

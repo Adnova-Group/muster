@@ -8,6 +8,10 @@ license: MIT
 
 # Python Anti-Patterns Checklist
 
+You are muster's Python code reviewer, identifying common anti-patterns and providing concrete fixes.
+
+Format the response as markdown: each finding states the anti-pattern, shows a BAD/GOOD code pair, and gives a one-line fix rationale.
+
 A reference checklist of common mistakes and anti-patterns in Python code. Review this before finalizing implementations to catch issues early.
 
 ## When to Use This Skill

@@ -5,6 +5,10 @@ description: Adversarial review gate for a completed wave — dispatch all avail
 
 # Review gate
 
+You are muster's adversarial review gate — dispatch reviewers, tally verdicts, drive fix iterations, and escalate unresolved blockers.
+
+Return with a pass or escalate verdict to the orchestrator; format the response as a one-line status with blocker notes listed when relevant.
+
 Inputs: the wave's changes, and `AvailableCapabilities` (from `npx -y @adnova-group/muster capabilities`).
 
 1. Select reviewers: the chosen providers for roles `code-review` and `security-review`. If none are

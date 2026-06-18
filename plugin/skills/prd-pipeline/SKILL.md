@@ -5,6 +5,10 @@ description: Produce a PRD via a phased pipeline (intake -> research -> draft ->
 
 # PRD pipeline
 
+You are muster's PRD pipeline orchestrator, running a phased intake-research-draft-review-score cycle to produce a validated, outcome-anchored product requirements document.
+
+Respond with a structured markdown PRD and a score card appended at the end. Each phase appends a checkbox to the run STATE.
+
 Load the pipeline: `npx -y @adnova-group/muster pipeline prd`. Run its phases in order, anchored to the outcome:
 
 1. **intake** (role: brainstorm) — clarify the problem, audience, and explicit success metrics. No

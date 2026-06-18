@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { detectProject } from "./detect.js";
+import { detectProject, hasPromptingSignal } from "./detect.js";
 import { loadCatalog } from "./catalog.js";
 import { readInstalled, readInstalledCowork } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
@@ -9,7 +9,8 @@ import { computeWaves, nextTasks } from "./wave.js";
 import { tallyReview } from "./review.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
+import { join, relative, extname } from "node:path";
 import { runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
@@ -34,11 +35,66 @@ import { classifySteer } from "./steer.js";
 import { lintPrompt } from "./prompt-lint.js";
 import { gradeCollected } from "./prompt-eval.js";
 import { proposeVariations, selectWinner } from "./prompt-optimize.js";
+import { discoverPrompts } from "./prompt-discover.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
+
+// `muster prompt scan` support: walk a repo for candidate prompts and lint each. Bounded
+// (skip vendored/build dirs, text extensions only, per-file + total caps) so it stays fast
+// and safe to run on any tree. Deterministic — the lint is no-LLM.
+const SCAN_SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage",
+  ".next", ".nuxt", ".worktrees", ".muster", "vendor", "__pycache__"]);
+const SCAN_TEXT_EXT = new Set([".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".rb",
+  ".go", ".java", ".md", ".txt", ".prompt", ".tmpl", ".json", ".yaml", ".yml"]);
+const SCAN_MAX_FILE = 256 * 1024;
+const SCAN_MAX_FILES = 5000;
+
+async function collectScanFiles(root) {
+  const files = [];
+  async function walk(dir) {
+    if (files.length >= SCAN_MAX_FILES) return;
+    let ents;
+    try { ents = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (files.length >= SCAN_MAX_FILES) return;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full); continue; }
+      if (!e.isFile()) continue;
+      const isPromptName = /\.(prompt|tmpl)$/i.test(e.name);
+      if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;
+      let content;
+      try { content = await readFile(full, "utf8"); } catch { continue; }
+      if (content.length > SCAN_MAX_FILE) continue;
+      files.push({ path: relative(root, full), content });
+    }
+  }
+  await walk(root);
+  return files;
+}
+
+async function scanRepoPrompts(root) {
+  const files = await collectScanFiles(root);
+  const reviewed = discoverPrompts(files).map((p) => {
+    const { findings, total, passing, weakest } = lintPrompt(p.text);
+    return {
+      file: p.file, kind: p.kind, identifier: p.identifier, passing, total,
+      weakest: weakest?.criterion ?? null,
+      findings: findings.map(f => ({ id: f.id, severity: f.severity, fix: f.fix })),
+    };
+  });
+  const failing = reviewed.filter(r => !r.passing);
+  return {
+    scannedFiles: files.length,
+    promptCount: reviewed.length,
+    passing: reviewed.length - failing.length,
+    failing: failing.length,
+    truncated: files.length >= SCAN_MAX_FILES,
+    prompts: reviewed,
+  };
+}
 
 async function main() {
 const [cmd, ...rest] = process.argv.slice(2);
@@ -147,8 +203,10 @@ try {
       const file = requireArg(rest, 1, "prompt optimize <file.json>: missing file ({candidates:[{id,prompt?,total,passing}]})", fail);
       const { candidates } = JSON.parse(await readFile(file, "utf8"));
       out(selectWinner(candidates));
+    } else if (sub === "scan") {
+      out(await scanRepoPrompts(rest[1] || process.cwd()));
     } else {
-      fail("prompt <lint|variations|eval|optimize> [file|-] [--agent] [--tools]");
+      fail("prompt <lint|variations|eval|optimize|scan> [file|dir|-] [--agent] [--tools]");
     }
   } else if (cmd === "prioritize") {
     const file = requireArg(rest, 0, "prioritize <file> [--model rice|ice|wsjf|weighted]: missing file", fail);
@@ -185,7 +243,10 @@ try {
     out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
   } else if (cmd === "audit") {
     const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
-    out(buildAuditManifest(caps));
+    // Use the lightweight package.json-only check, not detectProject — audit must not
+    // incur git spawns (it stays offline for CI / the MCP wrapper).
+    const prompting = await hasPromptingSignal(rest[0] || process.cwd());
+    out(buildAuditManifest(caps, { prompting }));
   } else if (cmd === "issue") {
     if (!rest[0]) fail("issue <ref>: missing #N | number | issue-url");
     if (parseIssueRef(rest[0]).kind !== "issue") fail("not a GitHub issue reference: " + rest[0]);
@@ -218,7 +279,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize> [file]|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

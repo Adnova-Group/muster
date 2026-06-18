@@ -31,6 +31,22 @@ test("plan has exactly 6 audit-* tasks, all with empty deps", () => {
   for (const a of audits) assert.deepEqual(a.deps, []);
 });
 
+test("prompting projects get a 7th prompt-quality dimension; plain projects do not", () => {
+  const plain = buildAuditManifest({});
+  assert.ok(!plain.plan.some(p => p.id === "audit-prompt-quality"), "no prompt dim by default");
+
+  const m = buildAuditManifest({}, { prompting: true });
+  const audits = m.plan.filter(p => p.id.startsWith("audit-"));
+  assert.equal(audits.length, 7, "prompting adds a 7th dimension");
+  const pq = m.plan.find(p => p.id === "audit-prompt-quality");
+  assert.ok(pq, "audit-prompt-quality task present");
+  assert.deepEqual(pq.deps, []);
+  assert.ok(m.crew.some(c => c.stage === "prompt-quality"), "prompt-quality crew member present");
+  // consolidate now waits on all 7
+  assert.equal(m.plan.find(p => p.id === "consolidate").deps.length, 7);
+  assert.ok(validateManifest(m).ok, "prompting manifest still validates");
+});
+
 test("consolidate/fix/verify dependency chain", () => {
   const m = buildAuditManifest({});
   const auditIds = m.plan.filter(p => p.id.startsWith("audit-")).map(p => p.id);

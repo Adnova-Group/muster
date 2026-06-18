@@ -56,9 +56,11 @@ export const RULES = [
       const s = surface(t, c);
       if (/\byou are\b|\byour role is\b|\bact as\b/i.test(s)) return true;
       // Second-person persona framing — an opening line like "You review a diff." assigns
-      // a role by action. Exclude suggestive/modal openers ("You can ...", "You should ...").
+      // a role by action. Exclude suggestive/modal openers ("You can ...") AND input/state
+      // descriptions ("You receive ...", "You get ...") that don't assign a persona.
       return firstLines(s).some(l =>
-        /^you\s+[a-z]+/i.test(l) && !/^you\s+(can|could|may|might|should|would|will|must|need|have)\b/i.test(l));
+        /^you\s+[a-z]+/i.test(l) &&
+        !/^you\s+(can|could|may|might|should|would|will|must|need|have|receive|get|got|find|obtain|hold|contain|see)\b/i.test(l));
     },
     fix: "Open with a role, e.g. 'You are a senior X who ...' (system prompt preferred).",
   },
@@ -76,7 +78,7 @@ export const RULES = [
     // Require a format *instruction*, not a bare keyword — "don't use markdown" is not
     // an output-format spec. Anchor on directive phrasing or an output-semantic tag
     // (NOT any XML block: <document>{{x}}</document> wraps *input*, not output format).
-    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (?:with )?(?:(?:a|an|only|valid)\s+)*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b|one [\w-]+ per line|one per line|per (finding|item|line|row|entry)\b|as (?:a |an )?(?:bullet(?:ed)?|numbered|markdown)\s*(?:list|table)|\btagged\b|prefix(?:ed)? (?:each |every )?\w+ with/i),
+    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (?:with )?(?:(?:a|an|only|valid)\s+)*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b|one [\w-]+ per line|one per line|per (finding|item|line|row|entry)\b|as (?:a |an )?(?:bullet(?:ed)?|numbered|markdown)\s*(?:list|table)|prefix(?:ed)? (?:each |every )?\w+ with/i),
     fix: "Name the exact output format (JSON shape, prose, markdown, or a clear per-line/list spec).",
   },
   {
@@ -184,8 +186,10 @@ export function lintPrompt(text, ctx = {}, gate = DEFAULT_GATE) {
     });
   }
 
-  // Dimension score 0-3. A dimension with no applicable rules scores full marks (3) so
-  // it never drags the floor for prompts where it does not apply.
+  // Dimension score 0-3, reflecting only error/warn (non-advisory) rules — info findings
+  // are excluded above, so a dimension whose only applicable rules are info scores 3 (a
+  // free ride). That is intentional: advisory findings still surface in `findings` but
+  // never fail the floor. Read `rubric[d]` as "non-advisory health", not "no suggestions".
   const rubric = {};
   for (const d of DIMENSIONS) {
     const { applicable, passed } = perDim[d];

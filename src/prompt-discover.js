@@ -14,9 +14,14 @@ const PROMPT_EXT = /\.(prompt|prompt\.md|tmpl)$/i;
 // Plural `prompts/` only — a singular `prompt/` is usually a code utility folder, not a
 // directory of prompt assets, so matching it would misclassify ordinary source files.
 const PROMPT_DIR = /(^|\/)prompts\//i;
-// Markdown/text files, and the conventional directories that hold prompt docs.
+// Markdown/text files, and the conventional directories that hold prompt docs. The
+// agent/command/skill dirs are ANCHORED to a Claude Code / plugin subtree — a generic
+// `docs/commands/` CLI-reference folder is not a prompt directory. `prompts/` is generic.
 const MD_EXT = /\.(md|markdown|mdx|txt)$/i;
-const PROMPT_DOC_DIR = /(^|\/)(agents|commands|skills|prompts)\//i;
+const PROMPT_DOC_DIR = /(^|\/)(?:\.claude|plugin)\/(?:agents|commands|skills|builtins|output-styles)\/|(^|\/)prompts\//i;
+// Looks prompt-y by frontmatter but isn't: GitHub issue templates share the
+// name+description schema; docs/website trees are prose. Excluded from doc detection.
+const NON_PROMPT_DIR = /(^|\/)(?:\.github|docs|website|node_modules)\//i;
 // Assignment to a prompt-ish identifier holding a backtick template literal.
 const ASSIGN = /\b(system|systemprompt|prompt|instructions|persona)\s*[:=]\s*`([\s\S]*?)`/gi;
 const MIN_PROMPT_LEN = 40;
@@ -40,6 +45,7 @@ export function isPromptFile(path) {
 // docs that merely describe prompt syntax would false-positive.
 function isPromptDoc(path, content) {
   if (!MD_EXT.test(path)) return false;
+  if (NON_PROMPT_DIR.test(path)) return false;
   if (PROMPT_DOC_DIR.test(path)) return true;
   const fm = (content.match(FRONTMATTER) || [""])[0];
   return /\bname:\s*\S/.test(fm) && /\bdescription:\s*\S/.test(fm);

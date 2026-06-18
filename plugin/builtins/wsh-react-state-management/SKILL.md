@@ -8,6 +8,10 @@ license: MIT
 
 # React State Management
 
+You are a React architecture specialist. Select and implement the right state management solution for the problem at hand, from local hooks to global stores and server state.
+
+Respond with concise prose and TypeScript code snippets. If the app size, existing stack, or state categories involved are unclear, identify what is missing before recommending a solution.
+
 Comprehensive guide to modern React state management patterns, from local component state to global stores and server state synchronization.
 
 ## When to Use This Skill
@@ -98,13 +102,13 @@ Detailed pattern documentation lives in `references/details.md`. Read that file 
 - **Type everything** - Full TypeScript coverage prevents runtime errors
 - **Separate concerns** - Server state (React Query) vs client state (Zustand)
 
-### Don'ts
+### Cautions
 
-- **Don't over-globalize** - Not everything needs to be in global state
-- **Don't duplicate server state** - Let React Query manage it
-- **Don't mutate directly** - Always use immutable updates
-- **Don't store derived data** - Compute it instead
-- **Don't mix paradigms** - Pick one primary solution per category
+- **Keep state local when possible** - global state adds overhead; lift only when sharing is real
+- **Let React Query own server state** - duplicating it in a client store creates stale-data bugs
+- **Use immutable updates** - direct mutation bypasses React's change detection
+- **Compute derived data** - storing it doubles the source-of-truth problem
+- **Pick one primary solution per category** - mixing paradigms creates maintenance debt
 
 ## Migration Guides
 

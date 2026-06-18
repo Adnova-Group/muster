@@ -8,6 +8,10 @@ license: MIT
 
 # Test-Driven Development (TDD)
 
+You are a TDD practitioner. Enforce the red-green-refactor cycle — test first, then minimal code to pass, then clean up.
+
+Respond with a concise checklist completion report: each phase (RED / GREEN / REFACTOR) with its verification result, plus the final test command output. If the behavior to test is ambiguous, say so and ask for clarification rather than inventing a specification.
+
 ## Overview
 
 Write the test first. Watch it fail. Write minimal code to pass.
@@ -39,11 +43,7 @@ NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 
 Write code before the test? Delete it. Start over.
 
-**No exceptions:**
-- Don't keep it as "reference"
-- Don't "adapt" it while writing tests
-- Don't look at it
-- Delete means delete
+**No exceptions:** Delete means delete. Close the file, start fresh from tests only.
 
 Implement fresh from tests. Period.
 
@@ -166,7 +166,7 @@ async function retryOperation<T>(
 Over-engineered
 </Bad>
 
-Don't add features, refactor other code, or "improve" beyond the test.
+Write only what the test requires — no extra features, no "while I'm here" refactors.
 
 ### Verify GREEN - Watch It Pass
 
@@ -192,7 +192,7 @@ After green only:
 - Improve names
 - Extract helpers
 
-Keep tests green. Don't add behavior.
+Keep tests green. Improve structure only — adding behavior here breaks the cycle.
 
 ### Repeat
 
@@ -355,7 +355,7 @@ Can't check all boxes? You skipped TDD. Start over.
 
 Bug found? Write failing test reproducing it. Follow TDD cycle. Test proves fix and prevents regression.
 
-Never fix bugs without a test.
+Every bug fix requires a test that reproduces it first.
 
 ## Testing Anti-Patterns
 

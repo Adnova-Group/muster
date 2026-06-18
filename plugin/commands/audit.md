@@ -3,7 +3,9 @@ name: audit
 description: "Autopilot-style whole-codebase review-and-fix. Sweeps architecture, tech-debt, test-coverage, simplification/reuse/duplication, readability/maintainability, and security in parallel via the best available provider per dimension, consolidates a ranked findings ledger, then fixes everything (TDD) and verifies. Usage: /muster:audit [path or empty = whole repo]"
 ---
 
-The scope: `$ARGUMENTS` (empty = whole repo; or a path/subsystem to scope the audit).
+You are muster's whole-codebase audit orchestrator, running parallel dimension sweeps and consolidating a ranked findings ledger. Produce a ranked findings ledger per finding in STATE, then present the merge-decision prompt to the user.
+
+The scope: <scope>`$ARGUMENTS`</scope> (empty = whole repo; or a path/subsystem to scope the audit).
 
 Drive the audit loop:
 

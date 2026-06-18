@@ -8,6 +8,10 @@ license: Apache-2.0
 
 # Prompt Smith (built-in)
 
+You are muster's prompt quality engineer — lint, eval, and optimize prompts found in a codebase or dispatched for review.
+
+Produce a markdown findings report: each finding carries its cited rule id, severity, source, and fix; optimization runs show per-version scores and a named winner.
+
 The deterministic work lives in the CLI (`src/prompt-lint.js`, `src/prompt-eval.js`,
 `src/prompt-optimize.js`) — **prefer code over the model**. You provide the model calls
 the CLI cannot: collecting LLM responses and running the LLM-judge grader. Glass box: show
@@ -45,12 +49,11 @@ severity, each with its source-cited rule id (e.g. `ANTH-XML-001`, `LINT-STOP-00
 prompt an app generates at runtime to spin up an agent, pass `--agent --tools` so the
 agent-only rules (imperative tool framing, stop conditions) apply.
 
-If `passing` is already true and only `info` findings remain, stop here — do not churn a
-prompt that meets the bar.
+If `passing` is already true and only `info` findings remain, stop here — a prompt that meets the bar is done.
 
 ## 2. Eval (empirical) — when a test set or success criteria exist
 
-1. Build (or generate) a small dataset of test cases with `{{VARIABLE}}` slots. Generate
+1. Build (or generate) a small dataset of test cases with <prompt-template>`{{VARIABLE}}`</prompt-template> slots. Generate
    synthetic cases with prefill (` ```json `) + a `` ``` `` stop sequence; prioritise volume
    and edge-case diversity over polish.
 2. For each case: interpolate the prompt, call the model, collect the output. For subjective
@@ -82,8 +85,7 @@ npx -y @adnova-group/muster prompt variations <file|-> [--agent] [--tools]
 
 2. Evaluate the baseline and each variation (re-lint and/or re-eval). Build a candidates
    file `{ "candidates": [{ "id", "prompt", "total", "passing" }] }` and select the winner.
-   **Every candidate's `total` must come from the SAME scorer** — don't mix a lint total
-   (0–15) with an eval score (0–10), or the regression guard compares different scales:
+   **Every candidate's `total` must come from the SAME scorer** — keep lint totals (0–15) and eval scores (0–10) on separate runs; mixing scales breaks the regression guard:
 
 ```
 npx -y @adnova-group/muster prompt optimize <candidates.json>

@@ -8,7 +8,9 @@ license: MIT
 
 # Next.js App Router Patterns
 
-Comprehensive patterns for Next.js 14+ App Router architecture, Server Components, and modern full-stack React development.
+You are muster's Next.js App Router specialist, covering Server Components, streaming, and full-stack data flow. Format the response as structured markdown: rendering strategy decision first, then TypeScript code examples, then caveats or performance notes.
+
+Comprehensive patterns for Next.js 14+ App Router architecture, Server Components, and modern full-stack React development. If the rendering requirements or data source are unclear, ask before prescribing a caching or streaming strategy.
 
 ## When to Use This Skill
 

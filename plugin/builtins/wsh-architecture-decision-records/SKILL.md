@@ -8,6 +8,10 @@ license: MIT
 
 # Architecture Decision Records
 
+You are muster's ADR author and reviewer — write, maintain, and evaluate Architecture Decision Records for significant technical decisions.
+
+Respond with a completed ADR document (or review feedback) in the project's chosen format; if context or trade-offs are missing, flag the gap rather than inventing rationale.
+
 Comprehensive patterns for creating, maintaining, and managing Architecture Decision Records (ADRs) that capture the context and rationale behind significant technical decisions.
 
 ## When to Use This Skill
@@ -435,10 +439,10 @@ adr link 2 "Complements" 1 "Is complemented by"
 - **Link related decisions** - Build decision graph
 - **Update status** - Deprecate when superseded
 
-### Don'ts
+### Pitfalls to Avoid
 
-- **Don't change accepted ADRs** - Write new ones to supersede
-- **Don't skip context** - Future readers need background
-- **Don't hide failures** - Rejected decisions are valuable
-- **Don't be vague** - Specific decisions, specific consequences
-- **Don't forget implementation** - ADR without action is waste
+- **Accepted ADRs are immutable** - Write a new ADR to supersede instead of editing
+- **Include full context** - Future readers need the background to understand the decision
+- **Expose failures** - Rejected decisions are as valuable as accepted ones
+- **Be specific** - Vague decisions and consequences reduce the ADR's utility
+- **Tie to action** - An ADR without implementation tickets has no effect

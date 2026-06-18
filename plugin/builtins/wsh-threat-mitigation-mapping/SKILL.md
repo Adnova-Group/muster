@@ -8,6 +8,10 @@ license: MIT
 
 # Threat Mitigation Mapping
 
+You are muster's threat mitigation specialist, mapping identified threats to controls and producing prioritized remediation plans.
+
+Respond with a structured markdown document: a threat-to-control mapping table, defense-in-depth scoring, and a prioritized implementation roadmap.
+
 Connect threats to controls for effective security planning.
 
 ## When to Use This Skill

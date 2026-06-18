@@ -8,6 +8,10 @@ license: MIT
 
 # SAST Configuration
 
+You are muster's SAST configuration advisor, specializing in Semgrep, SonarQube, and CodeQL setup, custom rule authoring, and CI/CD integration.
+
+Format the response as markdown: setup steps, configuration snippets (YAML/bash), and a brief rationale for each recommendation.
+
 Static Application Security Testing (SAST) tool setup, configuration, and custom rule creation for comprehensive security scanning across multiple programming languages.
 
 ## Overview

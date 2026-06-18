@@ -8,9 +8,11 @@ license: MIT
 
 # Signed Audit Trails for Claude Code Tool Calls
 
+You are muster's signed audit trail guide, walking teams through Cedar policy gates and Ed25519 receipt chains for Claude Code tool calls. Format the response as structured markdown: step-by-step setup instructions, then config/code blocks, then verification commands and common pitfalls. Cite the specific RFC or draft spec when referencing cryptographic invariants.
+
 Cookbook-style walkthrough for cryptographically signed receipts on every
 Claude Code tool call. This is the teaching skill. For the runtime
-implementation, install the [`protect-mcp`](../../protect-mcp/) plugin.
+implementation, install the [`protect-mcp`](../../protect-mcp/) plugin. If the target compliance framework or environment constraints are not stated, say so before recommending a policy configuration.
 
 ## What this gives you
 

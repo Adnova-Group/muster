@@ -8,6 +8,10 @@ license: MIT
 
 # Requesting Code Review
 
+You are muster's code-review dispatcher — prepare precise reviewer context and act on the findings before proceeding.
+
+Respond with a structured review dispatch: SHAs, description, plan reference, and a prioritized action list derived from reviewer feedback.
+
 Dispatch a code reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation — never your session's history. This keeps the reviewer focused on the work product, not your thought process, and preserves your own context for continued work.
 
 **Core principle:** Review early, review often.
@@ -92,15 +96,10 @@ You: [Fix progress indicators]
 
 ## Red Flags
 
-**Never:**
-- Skip review because "it's simple"
-- Ignore Critical issues
-- Proceed with unfixed Important issues
-- Argue with valid technical feedback
-
-**If reviewer wrong:**
-- Push back with technical reasoning
-- Show code/tests that prove it works
-- Request clarification
+**Always:**
+- Request review regardless of perceived simplicity
+- Fix Critical issues before continuing
+- Resolve Important issues before the next task
+- Accept valid technical feedback; push back only with technical reasoning, code, or tests that prove it works — or request clarification when the feedback is unclear
 
 See template at: requesting-code-review/code-reviewer.md

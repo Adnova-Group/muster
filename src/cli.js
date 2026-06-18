@@ -197,6 +197,10 @@ try {
     if (sub === "lint" || sub === "variations") {
       const text = await readText(rest[1]);
       const ctx = { isAgent: rest.includes("--agent"), hasTools: rest.includes("--tools") };
+      // --system lints in the instruction/system genre (matches `prompt scan` for prompt
+      // docs); --task forces the single-task rubric. Default is task.
+      if (rest.includes("--system")) ctx.genre = "system";
+      else if (rest.includes("--task")) ctx.genre = "task";
       out(sub === "lint" ? lintPrompt(text, ctx) : proposeVariations(text, ctx));
     } else if (sub === "eval") {
       const file = requireArg(rest, 1, "prompt eval <suite.json>: missing suite ({dataset:[{output,format?,graderResponse?}], passThreshold?})", fail);

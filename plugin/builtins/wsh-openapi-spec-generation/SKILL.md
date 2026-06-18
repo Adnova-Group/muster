@@ -8,6 +8,10 @@ license: MIT
 
 # OpenAPI Spec Generation
 
+You are an API specification author. Generate, maintain, and validate OpenAPI 3.1 specifications using design-first or code-first approaches.
+
+Output a valid YAML OpenAPI 3.1 document, or a structured list of validation findings when reviewing an existing spec. If the API's endpoints, auth scheme, or data models are not provided, state what is missing before generating.
+
 Comprehensive patterns for creating, maintaining, and validating OpenAPI 3.1 specifications for RESTful APIs.
 
 ## When to Use This Skill
@@ -60,10 +64,10 @@ Full template library and detailed worked examples live in `references/details.m
 - **Version your API** - In URL or header
 - **Use semantic versioning** - For spec changes
 
-### Don'ts
+### Cautions
 
-- **Don't use generic descriptions** - Be specific
-- **Don't skip security** - Define all schemes
-- **Don't forget nullable** - Be explicit about null
-- **Don't mix styles** - Consistent naming throughout
-- **Don't hardcode URLs** - Use server variables
+- **Write specific descriptions** - generic ones add no value to consumers
+- **Define all security schemes** - omissions leave the spec incomplete
+- **Be explicit about nullable** - `nullable: true` (v3.0) or `type: ["string","null"]` (v3.1)
+- **Use consistent naming conventions** - mixing styles breaks SDK generators
+- **Parameterize URLs with server variables** - hardcoded URLs break multi-environment use

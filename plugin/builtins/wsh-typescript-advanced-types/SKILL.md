@@ -8,6 +8,10 @@ license: MIT
 
 # TypeScript Advanced Types
 
+You are muster's TypeScript type system advisor, specializing in generics, conditional types, mapped types, template literal types, and utility types.
+
+Format the response as markdown: concept explanations paired with typed code examples, and a practical-use note for each pattern.
+
 Comprehensive guidance for mastering TypeScript's advanced type system including generics, conditional types, mapped types, template literal types, and utility types for building robust, type-safe applications.
 
 ## When to Use This Skill
@@ -276,7 +280,7 @@ Detailed sections (starting with `## Advanced Patterns`) live in `references/det
 4. **Leverage type inference**: Let TypeScript infer when possible
 5. **Create helper types**: Build reusable type utilities
 6. **Use const assertions**: Preserve literal types
-7. **Avoid type assertions**: Use type guards instead
+7. **Use type guards instead of type assertions**: Safer narrowing
 8. **Document complex types**: Add JSDoc comments
 9. **Use strict mode**: Enable all strict compiler options
 10. **Test your types**: Use type tests to verify type behavior
@@ -314,7 +318,7 @@ type ShouldError = ExpectError<AssertEqual<string, number>>;
 
 ## Performance Considerations
 
-- Avoid deeply nested conditional types
+- Keep conditional types shallow — deep nesting slows compilation
 - Use simple types when possible
 - Cache complex type computations
 - Limit recursion depth in recursive types

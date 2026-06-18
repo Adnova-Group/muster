@@ -6,6 +6,10 @@ adapted_from: open-gsd/gsd-core gsd-core/workflows/execute-phase.md
 license: MIT
 ---
 
+<!-- prompt-lint-disable ANTH-POS-001: orchestration prompt — its prohibitions (the wave guard, fail-closed phase-completion gate) are intentional, safety-critical guarantees and must stay imperative -->
+
+Produce a per-plan results list plus STATE and ROADMAP updates; cite the source file and section for every decision so the trail stays auditable.
+
 <purpose>
 Execute all plans in a phase using wave-based parallel execution. Orchestrator stays lean — delegates plan execution to subagents.
 </purpose>

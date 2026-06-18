@@ -13,6 +13,14 @@ const FRAMEWORKS = ["next", "react-native", "expo", "react", "vue", "svelte", "a
   "express", "fastify", "nestjs", "prisma", "vite"];
 const FRONTEND = new Set(["react", "vue", "svelte", "angular", "vite", "next"]);
 const BACKEND = new Set(["express", "fastify", "nestjs", "prisma"]);
+// LLM/agent SDKs whose presence means the project builds prompts/agents at runtime —
+// the gate for the audit's prompt-quality dimension. Matched as exact deps or by scope.
+const AI_SDKS = new Set(["@anthropic-ai/sdk", "openai", "langchain", "@langchain/core",
+  "llamaindex", "@google/generative-ai", "cohere-ai", "ai", "@modelcontextprotocol/sdk",
+  "@anthropic-ai/claude-agent-sdk", "crewai", "@langchain/langgraph"]);
+const AI_SCOPES = ["@langchain/", "@ai-sdk/", "@llamaindex/"];
+const hasAiSdk = (depNames) =>
+  depNames.some(d => AI_SDKS.has(d) || AI_SCOPES.some(s => d.startsWith(s)));
 
 export async function detectProject(cwd) {
   const pkg = await readJson(join(cwd, "package.json"));
@@ -58,9 +66,12 @@ export async function detectProject(cwd) {
     hasRemote = !!(remoteOut && remoteOut !== "");
   }
 
+  const signals = [...frameworks];
+  if (hasAiSdk(depNames)) signals.push("prompting");
+
   return {
     greenfield, languages, frameworks, shape, packageManager, testRunner,
     vcs: { isRepo, branch, dirty, hasRemote },
-    signals: frameworks
+    signals
   };
 }

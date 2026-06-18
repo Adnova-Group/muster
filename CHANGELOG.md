@@ -5,6 +5,12 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-06-18
+
+### Added
+- **Prompt quality as a conditional `audit` dimension** — when the target project builds prompts/agents, `muster audit` now adds a 7th read-only review dimension. `detect.js` emits a `prompting` signal when an LLM/agent SDK dependency is present (`@anthropic-ai/sdk`, `openai`, `langchain`/`@langchain/*`, `llamaindex`/`@llamaindex/*`, `ai`/`@ai-sdk/*`, `@modelcontextprotocol/sdk`, `crewai`, etc.); `buildAuditManifest(caps, { prompting })` gates the `prompt-quality` dimension on it, so a plain codebase still gets the six core dimensions.
+- **`muster prompt scan <dir>`** — deterministic repo prompt-discovery: walks the tree (skipping vendored/build dirs, text files only, per-file + total caps), locates candidate prompts via `src/prompt-discover.js` (`.prompt` files, `prompts/` directories, and backtick `system`/`prompt`/`instructions`/`persona` assignments), lints each, and returns per-prompt findings plus a pass/fail summary. This is the repo-scan mode the `muster-prompt-smith` skill uses to drive the audit dimension.
+
 ## [0.2.8] - 2026-06-18
 
 ### Added

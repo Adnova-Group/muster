@@ -40,6 +40,18 @@ test("frontend-only deps yield frontend shape", async () => {
   assert.equal(p.shape, "frontend");
 });
 
+test("an LLM SDK dependency adds the 'prompting' signal", async () => {
+  const dir = await tmpProject({ "package.json": { dependencies: { "@anthropic-ai/sdk": "0.30.0" } } });
+  const p = await detectProject(dir);
+  assert.ok(p.signals.includes("prompting"), "expected 'prompting' signal from an AI SDK dep");
+});
+
+test("a plain project has no 'prompting' signal", async () => {
+  const dir = await tmpProject({ "package.json": { dependencies: { express: "4.0.0" } } });
+  const p = await detectProject(dir);
+  assert.ok(!p.signals.includes("prompting"));
+});
+
 test("unknown values never throw, reported as unknown", async () => {
   const dir = await tmpProject({ "README.md": "# hi" });
   const p = await detectProject(dir);

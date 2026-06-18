@@ -19,3 +19,8 @@
   roles: [humanize]
   rank: 50
   provenance: { adapted_from: "blader/humanizer + StealthHumanizer (AI-tell removal)", license: MIT }
+- id: muster-prompt-smith
+  kind: builtin
+  roles: [prompt-quality]
+  rank: 50
+  provenance: { adapted_from: "Anthropic prompt-engineering + eval docs; lintlang taxonomy; promptfoo/promptimal patterns", license: Apache-2.0 }

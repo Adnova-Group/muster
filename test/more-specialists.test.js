@@ -11,7 +11,7 @@ const ROLES = new Set([
   "code-review", "security-review", "test-author", "refactor", "frontend", "tech-debt", "debug",
   "author", "research", "score",
   "architecture-review", "browser-control", "computer-control",
-  "performance", "seo", "humanize"
+  "performance", "seo", "humanize", "prompt-quality"
 ]);
 
 const catalogDir = new URL("../catalog/", import.meta.url);

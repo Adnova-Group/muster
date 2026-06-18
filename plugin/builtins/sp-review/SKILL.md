@@ -100,6 +100,6 @@ You: [Fix progress indicators]
 - Request review regardless of perceived simplicity
 - Fix Critical issues before continuing
 - Resolve Important issues before the next task
-- Accept valid technical feedback; push back only with technical reasoning, code, or tests that prove it works
+- Accept valid technical feedback; push back only with technical reasoning, code, or tests that prove it works — or request clarification when the feedback is unclear
 
 See template at: requesting-code-review/code-reviewer.md

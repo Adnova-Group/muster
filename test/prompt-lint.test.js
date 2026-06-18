@@ -138,6 +138,14 @@ test("${var} interpolation (not just {{var}}) is treated as interpolated content
   assert.ok(r.findings.map(f => f.id).includes("ANTH-XML-001"), "${var} should require XML wrapping");
 });
 
+test("interpolation markers inside code examples do NOT trigger the XML rule", () => {
+  // A ${x} template literal or {{x}} in a code sample is not interpolated input the prompt injects.
+  const p = "You are a TS coach. Explain template literals.\n\n```ts\nconst s = `hello ${name}`;\n```\nAlso `{{mustache}}` inline.";
+  const ids = lintPrompt(p, { genre: "system" }).findings.map(f => f.id);
+  assert.ok(!ids.includes("ANTH-XML-001"), "code-example ${x} is not interpolation");
+  assert.ok(!ids.includes("GUARD-SEP-003"), "code-example markers do not require separation");
+});
+
 // --- genre-aware linting + broadened detectors -------------------------------
 
 const REVIEWER = `You review a diff. You do not edit code.

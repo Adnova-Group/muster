@@ -78,9 +78,12 @@ async function collectScanFiles(root) {
 async function scanRepoPrompts(root) {
   const files = await collectScanFiles(root);
   const reviewed = discoverPrompts(files).map((p) => {
-    const { findings, total, passing, weakest } = lintPrompt(p.text);
+    // Discovered prompt docs and system/instruction code-prompts are the system genre;
+    // dedicated prompt files (.prompt/.tmpl/templates) are task prompts.
+    const genre = p.kind === "prompt-file" ? "task" : "system";
+    const { findings, total, passing, weakest } = lintPrompt(p.text, { genre });
     return {
-      file: p.file, kind: p.kind, identifier: p.identifier, passing, total,
+      file: p.file, kind: p.kind, identifier: p.identifier, genre, passing, total,
       weakest: weakest?.criterion ?? null,
       findings: findings.map(f => ({ id: f.id, severity: f.severity, fix: f.fix })),
     };

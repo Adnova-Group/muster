@@ -49,10 +49,17 @@ const NEGATIVE_SRC = "\\b(do not|don'?t|never|avoid|no\\s+(?:log|cach|retr|trunc
 
 export const RULES = [
   {
-    id: "ANTH-ROLE-001", severity: "error", dimension: "structure",
+    id: "ANTH-ROLE-001", severity: "error", systemSeverity: "warn", dimension: "structure",
     title: "Assign Claude a role (system prompt / persona)", source: BP,
     applies: () => true,
-    pass: has(/\byou are\b|\byour role is\b|\bact as\b/i),
+    pass: (t, c) => {
+      const s = surface(t, c);
+      if (/\byou are\b|\byour role is\b|\bact as\b/i.test(s)) return true;
+      // Second-person persona framing — an opening line like "You review a diff." assigns
+      // a role by action. Exclude suggestive/modal openers ("You can ...", "You should ...").
+      return firstLines(s).some(l =>
+        /^you\s+[a-z]+/i.test(l) && !/^you\s+(can|could|may|might|should|would|will|must|need|have)\b/i.test(l));
+    },
     fix: "Open with a role, e.g. 'You are a senior X who ...' (system prompt preferred).",
   },
   {
@@ -63,17 +70,17 @@ export const RULES = [
     fix: "Wrap injected content in descriptive tags, e.g. <document>{{x}}</document>.",
   },
   {
-    id: "ANTH-FMT-001", severity: "warn", dimension: "structure",
+    id: "ANTH-FMT-001", severity: "warn", systemSeverity: "info", dimension: "structure",
     title: "State the output format explicitly", source: BP,
     applies: () => true,
     // Require a format *instruction*, not a bare keyword — "don't use markdown" is not
     // an output-format spec. Anchor on directive phrasing or an output-semantic tag
     // (NOT any XML block: <document>{{x}}</document> wraps *input*, not output format).
-    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (?:with )?(?:(?:a|an|only|valid)\s+)*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b/i),
-    fix: "Name the exact output format (JSON shape, prose, markdown) positively.",
+    pass: has(/format (your|the) (response|answer|output)|respond with|reply with|(return|output|produce|reply) (?:with )?(?:(?:a|an|only|valid)\s+)*(json|xml|markdown|yaml|csv|list|object|array)|as (a|an) (json|xml|markdown|yaml|csv)|<(json|output|format|response|result|answer)\b|one [\w-]+ per line|one per line|per (finding|item|line|row|entry)\b|as (?:a |an )?(?:bullet(?:ed)?|numbered|markdown)\s*(?:list|table)|\btagged\b|prefix(?:ed)? (?:each |every )?\w+ with/i),
+    fix: "Name the exact output format (JSON shape, prose, markdown, or a clear per-line/list spec).",
   },
   {
-    id: "ANTH-SHOT-001", severity: "warn", dimension: "examples",
+    id: "ANTH-SHOT-001", severity: "warn", dimension: "examples", taskOnly: true,
     title: "Provide examples (multishot) for non-trivial tasks", source: BP,
     applies: (t) => (t || "").length > 200,
     pass: has(/<example[s]?\b|\bexample\s*\d*\s*:|for example,/i),
@@ -86,12 +93,14 @@ export const RULES = [
     pass: (t, c) => {
       const s = surface(t, c);
       const neg = (s.match(new RegExp(NEGATIVE_SRC, "gi")) || []).length;
-      return neg <= 2;
+      // System/instruction prompts (esp. guardrail roles) legitimately use more
+      // prohibitions ("read-only", "never modify"), so tolerate more before flagging.
+      return neg <= (c.genre === "system" ? 5 : 2);
     },
     fix: "Tell Claude what TO do instead of stacking 'do not / never' clauses.",
   },
   {
-    id: "ANTH-CLEAR-001", severity: "info", dimension: "clarity",
+    id: "ANTH-CLEAR-001", severity: "info", dimension: "clarity", taskOnly: true,
     title: "Lead with a clear, direct action-verb instruction", source: BP,
     applies: () => true,
     // Any of the opening lines leading with an action verb counts — a role line on
@@ -147,23 +156,32 @@ const DIMENSIONS = ["structure", "examples", "clarity", "agentic", "guardrails"]
 // `pass_total`. Mirrors the book-genesis floor principle used elsewhere in muster.
 export const DEFAULT_GATE = { floor: 1, pass_total: 10 };
 
+// genre: "task" (default) — a single-task prompt; full rubric applies.
+//        "system" — an agent/skill/instruction (system) prompt; task-only rules
+//        (action-verb lead, multishot examples) are exempt and POS tolerates more
+//        prohibitions. The scanner tags discovered prompt docs as "system".
 export function lintPrompt(text, ctx = {}, gate = DEFAULT_GATE) {
   const findings = [];
   const perDim = Object.fromEntries(DIMENSIONS.map(d => [d, { applicable: 0, passed: 0 }]));
+  const systemGenre = ctx.genre === "system";
 
   for (const rule of RULES) {
+    if (rule.taskOnly && systemGenre) continue; // task-prompt technique — exempt for system prompts
     if (!rule.applies(text, ctx)) continue;
-    const dim = perDim[rule.dimension];
-    dim.applicable += 1;
+    // Effective severity can soften by genre (e.g. FMT is advisory for system prompts).
+    const severity = (systemGenre && rule.systemSeverity) || rule.severity;
     const ok = rule.pass(text, ctx);
-    if (ok) {
-      dim.passed += 1;
-    } else {
-      findings.push({
-        id: rule.id, severity: rule.severity, dimension: rule.dimension,
-        title: rule.title, source: rule.source, fix: rule.fix,
-      });
+    // Info findings are advisory: surfaced as suggestions but never counted toward the
+    // floor, so they cannot fail a prompt. error/warn findings drive the gate.
+    if (severity !== "info") {
+      const dim = perDim[rule.dimension];
+      dim.applicable += 1;
+      if (ok) dim.passed += 1;
     }
+    if (!ok) findings.push({
+      id: rule.id, severity, dimension: rule.dimension,
+      title: rule.title, source: rule.source, fix: rule.fix,
+    });
   }
 
   // Dimension score 0-3. A dimension with no applicable rules scores full marks (3) so

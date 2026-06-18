@@ -5,12 +5,6 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.9] - 2026-06-18
-
-### Added
-- **Prompt quality as a conditional `audit` dimension** — when the target project builds prompts/agents, `muster audit` now adds a 7th read-only review dimension. `detect.js` emits a `prompting` signal when an LLM/agent SDK dependency is present (`@anthropic-ai/sdk`, `openai`, `langchain`/`@langchain/*`, `llamaindex`/`@llamaindex/*`, `ai`/`@ai-sdk/*`, `@modelcontextprotocol/sdk`, `crewai`, etc.); `buildAuditManifest(caps, { prompting })` gates the `prompt-quality` dimension on it, so a plain codebase still gets the six core dimensions.
-- **`muster prompt scan <dir>`** — deterministic repo prompt-discovery: walks the tree (skipping vendored/build dirs, text files only, per-file + total caps), locates candidate prompts via `src/prompt-discover.js` (`.prompt` files, `prompts/` directories, and backtick `system`/`prompt`/`instructions`/`persona` assignments), lints each, and returns per-prompt findings plus a pass/fail summary. This is the repo-scan mode the `muster-prompt-smith` skill uses to drive the audit dimension.
-
 ## [0.2.8] - 2026-06-18
 
 ### Added
@@ -19,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`src/prompt-eval.js`** — an empirical eval pipeline: `{{VARIABLE}}` interpolation, code-based graders (`json`/`regex`/`python`), an LLM-judge grader (reasoning-before-score), and a `gradeCollected` path that scores pre-collected outputs offline. Reports per-case score, accuracy, and average.
   - **`src/prompt-optimize.js`** — an evaluator-optimizer loop that proposes technique-driven variations (each closing a specific lint gap), re-scores them, and selects the winner via the tournament floor (`pickWinner`), flagging a regression when no variation beats the pinned baseline.
 - **`muster prompt lint|variations|eval|optimize`** CLI subcommands (file or stdin) and a **`prompt-quality` role** resolved by the new **`muster-prompt-smith`** built-in skill, so the router can dispatch prompt review as a quality dimension. `promptfoo` is supported as an optional eval substrate behind the injected `callModel` contract; the native runner is the zero-dependency default.
+- **Prompt quality as a conditional `audit` dimension** — when the target project builds prompts/agents, `muster audit` adds a 7th read-only review dimension. `detect.js` emits a `prompting` signal when an LLM/agent SDK dependency is present (`@anthropic-ai/sdk`, `openai`, `langchain`/`@langchain/*`, `llamaindex`/`@llamaindex/*`, `ai`/`@ai-sdk/*`, `@modelcontextprotocol/sdk`, etc.); `buildAuditManifest(caps, { prompting })` gates the `prompt-quality` dimension on it (via the git-free `hasPromptingSignal`), so a plain codebase still gets the six core dimensions.
+- **`muster prompt scan <dir>`** — deterministic repo prompt-discovery: walks the tree (skipping vendored/build dirs, text files only, per-file + total caps), locates candidate prompts via `src/prompt-discover.js` (`.prompt` files, `prompts/` directories, and backtick `system`/`prompt`/`instructions`/`persona` assignments), lints each, and returns per-prompt findings plus a pass/fail summary. This is the repo-scan mode the `muster-prompt-smith` skill uses to drive the audit dimension.
 
 ## [0.2.7] - 2026-06-15
 

@@ -9,7 +9,9 @@
 // register as prompts.
 
 const PROMPT_EXT = /\.(prompt|prompt\.md|tmpl)$/i;
-const PROMPT_DIR = /(^|\/)prompts?\//i;
+// Plural `prompts/` only — a singular `prompt/` is usually a code utility folder, not a
+// directory of prompt assets, so matching it would misclassify ordinary source files.
+const PROMPT_DIR = /(^|\/)prompts\//i;
 // Assignment to a prompt-ish identifier holding a backtick template literal.
 const ASSIGN = /\b(system|systemprompt|prompt|instructions|persona)\s*[:=]\s*`([\s\S]*?)`/gi;
 const MIN_PROMPT_LEN = 40;

@@ -52,6 +52,24 @@ npx @adnova-group/muster prioritize initiatives.json --model wsjf
 
 The input file is either an array of items or `{ "items": [...], "model": "wsjf" }`. A `--model` flag overrides the file's `model`.
 
+## Prompt evaluation
+
+Lint, eval, and optimize prompts an application generates to build agents/agentic workflows (or prompts found in a codebase). The deterministic core runs offline; a skill (`muster-prompt-smith`, the `prompt-quality` role) supplies the model calls for empirical eval.
+
+| Command | What it does |
+| --- | --- |
+| `prompt lint <file> [--agent] [--tools]` | Lint prompt structure + guardrails against Anthropic's best practices (no LLM). Returns a scored rubric and `findings[]` with source-cited rule ids. Reads stdin when the file arg is `-` or absent. |
+| `prompt variations <file>` | Emit deterministic, technique-driven prompt variations, each closing a specific lint gap. |
+| `prompt eval <suite.json>` | Grade a suite of pre-collected outputs: code graders (`json`/`regex`/`python`) combined with the model-judge score; reports per-case `score`, `accuracy`, `averageScore`. |
+| `prompt optimize <file.json>` | Select the winning variation from scored candidates via the tournament floor; flags a `regression` when no variation beats the pinned baseline. |
+
+```sh
+# lint a runtime agent prompt piped from your app
+your-app --print-agent-prompt | npx @adnova-group/muster prompt lint - --agent --tools
+```
+
+The linter enforces the structure (role, XML tags, multishot examples, explicit output format, positive framing) and the agent/guardrail rules (imperative tool framing, stop conditions, "I don't know" allowance, citations, input separation). Every finding cites the doc rule it comes from.
+
 ## Failure-first and review
 
 | Command | What it does |

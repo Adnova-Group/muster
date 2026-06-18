@@ -31,6 +31,9 @@ import { matchProviders } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
 import { classifySteer } from "./steer.js";
+import { lintPrompt } from "./prompt-lint.js";
+import { gradeCollected } from "./prompt-eval.js";
+import { proposeVariations, selectWinner } from "./prompt-optimize.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -114,6 +117,39 @@ try {
     const file = requireArg(rest, 0, "score <file.json>: missing file path ({scores, gate})", fail);
     const { scores, gate } = JSON.parse(await readFile(file, "utf8"));
     out(scoreArtifact(scores, gate));
+  } else if (cmd === "prompt") {
+    const sub = rest[0];
+    // Read a prompt from a file path or, when the arg is "-" (or absent), from stdin.
+    // Cap stdin so an untrusted caller can't pump unbounded input into the linter.
+    const MAX_STDIN_BYTES = 1_048_576; // 1 MB — far above any realistic prompt
+    const readStdin = () => new Promise((resolve, reject) => {
+      let d = "", bytes = 0; process.stdin.setEncoding("utf8");
+      process.stdin.on("data", c => {
+        bytes += Buffer.byteLength(c, "utf8");
+        if (bytes > MAX_STDIN_BYTES) { process.stdin.destroy(); reject(new Error(`stdin exceeds ${MAX_STDIN_BYTES} byte limit`)); return; }
+        d += c;
+      });
+      process.stdin.on("end", () => resolve(d));
+      process.stdin.on("error", reject);
+    });
+    // A "-", a missing arg, or a flag (e.g. `prompt lint --agent`) all mean: read stdin.
+    const readText = async (arg) =>
+      (!arg || arg === "-" || arg.startsWith("--")) ? await readStdin() : await readFile(arg, "utf8");
+    if (sub === "lint" || sub === "variations") {
+      const text = await readText(rest[1]);
+      const ctx = { isAgent: rest.includes("--agent"), hasTools: rest.includes("--tools") };
+      out(sub === "lint" ? lintPrompt(text, ctx) : proposeVariations(text, ctx));
+    } else if (sub === "eval") {
+      const file = requireArg(rest, 1, "prompt eval <suite.json>: missing suite ({dataset:[{output,format?,graderResponse?}], passThreshold?})", fail);
+      const suite = JSON.parse(await readFile(file, "utf8"));
+      out(gradeCollected(suite));
+    } else if (sub === "optimize") {
+      const file = requireArg(rest, 1, "prompt optimize <file.json>: missing file ({candidates:[{id,prompt?,total,passing}]})", fail);
+      const { candidates } = JSON.parse(await readFile(file, "utf8"));
+      out(selectWinner(candidates));
+    } else {
+      fail("prompt <lint|variations|eval|optimize> [file|-] [--agent] [--tools]");
+    }
   } else if (cmd === "prioritize") {
     const file = requireArg(rest, 0, "prioritize <file> [--model rice|ice|wsjf|weighted]: missing file", fail);
     const parsed = JSON.parse(await readFile(file, "utf8"));
@@ -182,7 +218,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize> [file]|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

@@ -29,7 +29,7 @@ const execFileP = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "src", "cli.js");
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "muster", version: "0.2.7" };
+const SERVER_INFO = { name: "muster", version: "0.2.8" };
 
 // Cowork has no muster orchestrator skill / slash commands — only these MCP tools plus your own
 // subagent dispatch (confirmed to support parallel fan-out and per-call model override). So the

@@ -138,6 +138,68 @@ test("${var} interpolation (not just {{var}}) is treated as interpolated content
   assert.ok(r.findings.map(f => f.id).includes("ANTH-XML-001"), "${var} should require XML wrapping");
 });
 
+// --- genre-aware linting + broadened detectors -------------------------------
+
+const REVIEWER = `You review a diff. You do not edit code.
+
+## Iron rules
+- Read-only. Never modify files.
+- One finding per line, each tagged [blocker], [risk], or [nit]. Location first, then the fix.
+- Stay in scope. Do not propose unrelated cleanups.`;
+
+test("ROLE detection accepts second-person persona framing ('You review ...')", () => {
+  const r = lintPrompt(REVIEWER, { genre: "system" });
+  assert.ok(!r.findings.map(f => f.id).includes("ANTH-ROLE-001"), "'You review a diff' assigns a role");
+});
+
+test("ROLE still flags a roleless prompt, and excludes suggestive 'You can ...'", () => {
+  assert.ok(lintPrompt("Summarize the input and return a list.").findings.map(f => f.id).includes("ANTH-ROLE-001"));
+  assert.ok(lintPrompt("You can do whatever. Return a list.").findings.map(f => f.id).includes("ANTH-ROLE-001"),
+    "'You can' is suggestive, not a role");
+});
+
+test("ROLE excludes input/state descriptions ('You receive ...', 'You get ...')", () => {
+  for (const lead of ["You receive a JSON object. Process it.", "You get a payload. Summarize it.", "You find a file. Read it."]) {
+    assert.ok(lintPrompt(lead).findings.map(f => f.id).includes("ANTH-ROLE-001"),
+      `"${lead}" describes input, not a persona`);
+  }
+});
+
+test("FMT does not pass on a stray 'tagged' used outside a format spec", () => {
+  const r = lintPrompt("You are a classifier. Files tagged as draft must be reviewed.", { genre: "task" });
+  assert.ok(r.findings.map(f => f.id).includes("ANTH-FMT-001"), "'tagged as draft' is not a format directive");
+});
+
+test("FMT detection accepts a natural-language format spec ('one finding per line, tagged ...')", () => {
+  const r = lintPrompt(REVIEWER, { genre: "system" });
+  assert.ok(!r.findings.map(f => f.id).includes("ANTH-FMT-001"), "natural-language format is a format spec");
+});
+
+test("system genre exempts task-only rules (CLEAR, SHOT); task genre still applies them", () => {
+  const longInstruction = "You are a planner. " + "Decompose the work and weigh tradeoffs carefully across the system. ".repeat(8);
+  const sys = lintPrompt(longInstruction, { genre: "system" }).findings.map(f => f.id);
+  assert.ok(!sys.includes("ANTH-SHOT-001"), "examples are not required of system prompts");
+  assert.ok(!sys.includes("ANTH-CLEAR-001"), "action-verb-lead is a task-prompt rule");
+  const task = lintPrompt(longInstruction, { genre: "task" }).findings.map(f => f.id);
+  assert.ok(task.includes("ANTH-SHOT-001"), "task genre still wants examples");
+});
+
+test("POS tolerates more negatives in system genre (guardrail roles), not in task genre", () => {
+  const guardraily = "You are a reviewer. Do not edit. Never modify files. Don't propose features.";
+  assert.ok(!lintPrompt(guardraily, { genre: "system" }).findings.map(f => f.id).includes("ANTH-POS-001"));
+  assert.ok(lintPrompt(guardraily, { genre: "task" }).findings.map(f => f.id).includes("ANTH-POS-001"));
+});
+
+test("a well-formed instruction prompt passes the floor in system genre", () => {
+  assert.equal(lintPrompt(REVIEWER, { genre: "system" }).passing, true);
+});
+
+test("genre defaults to task (backward compatible)", () => {
+  // No genre => task rules apply, as before.
+  const r = lintPrompt("Summarize the input.");
+  assert.ok(r.findings.map(f => f.id).includes("ANTH-ROLE-001"));
+});
+
 test("role detection matches 'act as' anywhere, not only at string start", () => {
   const r = lintPrompt("Please act as a senior engineer and review this.\n\nReturn a JSON summary.");
   const ids = r.findings.map(f => f.id);

@@ -9,16 +9,25 @@ export const AUDIT_DIMENSIONS = [
   { id: "security", role: "security-review", focus: "security audit (injection, secrets, unsafe IO)" }
 ];
 
-export function buildAuditManifest(caps = {}) {
-  const stage = makeStage(caps, "whole-codebase review");
+// The prompt-quality dimension is conditional: it is only added when the target project
+// builds prompts/agents (detect.js emits the "prompting" signal). On a plain codebase it
+// would have nothing to review, so the default audit stays at the six core dimensions.
+const PROMPT_DIMENSION = {
+  id: "prompt-quality", role: "prompt-quality",
+  focus: "prompt structure + agent/tool-prompt quality (run `muster prompt scan` to find and lint repo prompts)"
+};
 
-  const crew = AUDIT_DIMENSIONS.map(d => stage(d.role, `audit: ${d.focus}`));
+export function buildAuditManifest(caps = {}, opts = {}) {
+  const stage = makeStage(caps, "whole-codebase review");
+  const dimensions = opts.prompting ? [...AUDIT_DIMENSIONS, PROMPT_DIMENSION] : AUDIT_DIMENSIONS;
+
+  const crew = dimensions.map(d => stage(d.role, `audit: ${d.focus}`));
   crew.push(stage("implement", "audit: remediate findings"));
   crew.push(stage("code-review", "audit: review-gate + verify"));
 
-  const recs = collectRecommendations(caps, AUDIT_DIMENSIONS.map(d => d.role));
+  const recs = collectRecommendations(caps, dimensions.map(d => d.role));
 
-  const auditTasks = AUDIT_DIMENSIONS.map(d => ({
+  const auditTasks = dimensions.map(d => ({
     id: `audit-${d.id}`,
     task: `audit ${d.focus} (read-only; findings: severity/location/problem/fix)`,
     mode: "single",

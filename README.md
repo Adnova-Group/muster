@@ -41,7 +41,7 @@ Muster's glass-box output style ships inside the plugin and applies automaticall
 | Run | `/muster:run <outcome>` | Plans, shows the crew manifest and plan, then stops for your approval. Does not execute. |
 | Autopilot | `/muster:autopilot <outcome>` | Hands-off lifecycle: branch, route, run waves, commit per wave, present the merge. Stops only for the merge decision or an escalation. |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first bug fix: reproduce, find root cause, fix, add a regression test, verify. No symptom-patching. |
-| Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions, then fixes everything with tests and verifies. |
+| Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions (seven when the project builds prompts or agents), then fixes everything with tests and verifies. |
 
 Run and Autopilot accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome. A thin outcome gets refined first: `muster assess` does a deterministic gap-check, and if the outcome is vague, an interview skill asks one question at a time behind an approval gate before any crew is assembled.
 
@@ -83,6 +83,9 @@ Muster can lint, eval, and optimize prompts, including the prompts an applicatio
 - **Lint** (`muster prompt lint <file|->`) is a no-LLM structural check that enforces Anthropic's best practices (role, XML tags, multishot examples, explicit output format, positive framing) and the agent/guardrail rules (imperative tool framing, stop conditions, "I don't know" allowance, citations, input separation). Every finding cites the doc rule it comes from and suggests a fix; the rubric is gated by the same floor principle as pipelines. Pass `--agent --tools` for runtime agent prompts.
 - **Eval** (`muster prompt eval <suite.json>`) grades outputs against a test dataset with code graders (`json`/`regex`/`python`) plus an LLM-judge, and reports accuracy.
 - **Optimize** (`muster prompt variations` then `muster prompt optimize`) generates technique-driven variations, re-scores them, and keeps the winner via the tournament floor, flagging a regression when nothing beats the baseline.
+- **Scan** (`muster prompt scan <dir>`) walks a repo for prompts (markdown skill/agent/command docs, `.prompt` files, code assignments) and lints each; it powers the conditional `prompt-quality` audit dimension.
+
+The linter is genre-aware (`--system` relaxes task-only rules for instruction prompts), ignores code fences across languages, and lets a prompt opt out of a rule inline (`<!-- prompt-lint-disable RULE: reason -->`). A prompt with zero findings scores a perfect 15/15.
 
 ```sh
 # lint a runtime agent prompt piped straight from your app

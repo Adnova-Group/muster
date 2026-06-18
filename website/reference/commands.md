@@ -58,8 +58,8 @@ Lint, eval, and optimize prompts an application generates to build agents/agenti
 
 | Command | What it does |
 | --- | --- |
-| `prompt lint <file> [--agent] [--tools]` | Lint prompt structure + guardrails against Anthropic's best practices (no LLM). Returns a scored rubric and `findings[]` with source-cited rule ids. Reads stdin when the file arg is `-` or absent. |
-| `prompt variations <file>` | Emit deterministic, technique-driven prompt variations, each closing a specific lint gap. |
+| `prompt lint <file> [--agent] [--tools] [--system]` | Lint prompt structure + guardrails against Anthropic's best practices (no LLM). Returns a scored rubric and `findings[]` with source-cited rule ids. Reads stdin when the file arg is `-` or absent. |
+| `prompt variations <file> [--agent] [--tools] [--system]` | Emit deterministic, technique-driven prompt variations, each closing a specific lint gap. |
 | `prompt eval <suite.json>` | Grade a suite of pre-collected outputs: code graders (`json`/`regex`/`python`) combined with the model-judge score; reports per-case `score`, `accuracy`, `averageScore`. |
 | `prompt optimize <file.json>` | Select the winning variation from scored candidates via the tournament floor; flags a `regression` when no variation beats the pinned baseline. |
 | `prompt scan <dir>` | Walk a repo for candidate prompts (`.prompt` files, `prompts/` dirs, backtick `system`/`prompt`/`instructions` assignments) and lint each. Returns per-prompt findings + a pass/fail summary. Powers the conditional `prompt-quality` audit dimension. |
@@ -69,14 +69,16 @@ Lint, eval, and optimize prompts an application generates to build agents/agenti
 your-app --print-agent-prompt | npx @adnova-group/muster prompt lint - --agent --tools
 ```
 
-The linter enforces the structure (role, XML tags, multishot examples, explicit output format, positive framing) and the agent/guardrail rules (imperative tool framing, stop conditions, "I don't know" allowance, citations, input separation). Every finding cites the doc rule it comes from.
+The linter enforces the structure (role, XML tags, multishot examples, explicit output format, positive framing) and the agent/guardrail rules (imperative tool framing, stop conditions, "I don't know" allowance, citations, input separation). Every finding cites the doc rule it comes from. Code in fenced/inline blocks is ignored across languages, so a `never` keyword or `${x}` in an example is not mistaken for an instruction.
+
+The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prompt (the action-verb-lead and multishot rules relax, and prohibitions are tolerated more) versus the default single-task rubric. A prompt that legitimately violates a rule can opt out inline with a comment — `<!-- prompt-lint-disable ANTH-POS-001: reason -->` — and the suppression is surfaced in the result. A prompt with zero findings scores a perfect 15/15.
 
 ## Failure-first and review
 
 | Command | What it does |
 | --- | --- |
 | `diagnose <symptom>` | Structure a failure-first bug fix (`--ci <file>` to read CI output). |
-| `audit` | Drive the whole-codebase review and fix. |
+| `audit` | Drive the whole-codebase review and fix across six dimensions (architecture, tech-debt, coverage, simplification, readability, security). When the project builds prompts/agents (an LLM/agent SDK dependency is present), a seventh `prompt-quality` dimension is added, backed by `prompt scan`. |
 | `issue <ref>` | Resolve a GitHub issue reference into an outcome (title + body). |
 | `assess <outcome>` | Deterministic gap-check: is the outcome clear enough to route? |
 | `steer <message>` | Classify a mid-run steering message (approve, stop, status, retarget). |

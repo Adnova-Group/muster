@@ -72,6 +72,34 @@ async function gradeOne({ testCase, output, callModel, rubric }) {
   return { codeScore: code, modelScore: model.score, score, reasoning: model.reasoning };
 }
 
+// Grade a suite whose model outputs (and optional grader responses) were already
+// collected by the calling skill — keeps the `muster prompt eval` CLI fully deterministic
+// and offline, mirroring `muster score`. Each entry: { output, format?, graderResponse? }.
+export function gradeCollected({ dataset, passThreshold = 7 }) {
+  if (!Array.isArray(dataset) || dataset.length === 0)
+    throw new Error("gradeCollected: dataset must be a non-empty array");
+  const results = dataset.map((entry) => {
+    const code = codeGrade(entry.output, entry.format);
+    const model = entry.graderResponse != null
+      ? parseGraderResponse(String(entry.graderResponse)).score
+      : null;
+    let score;
+    if (code != null && model != null) score = (code + model) / 2;
+    else if (code != null) score = code;
+    else if (model != null) score = model;
+    else score = 0;
+    return { ...entry, codeScore: code, modelScore: model, score, passing: score >= passThreshold };
+  });
+  const passing = results.filter(r => r.passing).length;
+  return {
+    results,
+    total: results.length,
+    accuracy: passing / results.length,
+    averageScore: results.reduce((s, r) => s + r.score, 0) / results.length,
+    passThreshold,
+  };
+}
+
 // Run the full suite. `callModel` serves both the prompt-under-test and the grader; the
 // grader prompt is recognisable (contains "grader"), so a single injected fn suffices.
 export async function runEval({ dataset, promptTemplate, callModel, rubric, passThreshold = 7 }) {

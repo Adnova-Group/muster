@@ -15,8 +15,8 @@ const LINTLANG = "https://github.com/hermes-labs-ai/lintlang";
 // Treat the system string (if provided) as part of the searchable surface.
 const surface = (text, ctx) => `${ctx.system ? ctx.system + "\n" : ""}${text || ""}`;
 const has = (re) => (text, ctx) => re.test(surface(text, ctx));
-const firstLines = (text, n = 3) =>
-  (text || "").split(/\n/).map(l => l.trim()).filter(Boolean).slice(0, n).join(" ");
+const firstLines = (text, n = 4) =>
+  (text || "").split(/\n/).map(l => l.trim()).filter(Boolean).slice(0, n);
 
 // Interpolated content markers an app injects ({{var}}, <var>, ${var}) or a long body.
 const hasInterpolation = (text, ctx) =>
@@ -72,7 +72,9 @@ export const RULES = [
     id: "ANTH-CLEAR-001", severity: "info", dimension: "clarity",
     title: "Lead with a clear, direct action-verb instruction", source: BP,
     applies: () => true,
-    pass: (t) => ACTION_VERB.test(firstLines(t)) || ACTION_VERB.test(t || ""),
+    // Any of the opening lines leading with an action verb counts — a role line on
+    // line 1 followed by "Classify the ..." on line 2 is still clear and direct.
+    pass: (t) => firstLines(t).some(l => ACTION_VERB.test(l)),
     fix: "Start the task line with an action verb (Write, Classify, Extract, ...).",
   },
   {

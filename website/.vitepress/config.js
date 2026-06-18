@@ -1,4 +1,12 @@
 import { defineConfig } from "vitepress";
+import { readFileSync } from "node:fs";
+
+// Version badge tracks the published package automatically — read it from the root
+// package.json at build time so it never goes stale on a release (the docs deploy is
+// triggered on a package.json change; see .github/workflows/docs.yml).
+const { version } = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8")
+);
 
 // Project Pages live under https://<owner>.github.io/muster/, so the base path
 // must be "/muster/". If you later point a custom domain at the site (a CNAME),
@@ -34,7 +42,7 @@ export default defineConfig({
       },
       { text: "Credits", link: "/about/credits" },
       {
-        text: "0.2.0",
+        text: `v${version}`,
         items: [
           {
             text: "Changelog",

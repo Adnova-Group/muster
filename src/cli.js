@@ -43,6 +43,25 @@ const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
 
+// Shared stdin/text reader for every command that accepts a file-or-stdin arg. Caps stdin so an
+// untrusted caller can't pump unbounded input into a linter/scorer (used by `prompt` and `humanize-score`).
+const MAX_STDIN_BYTES = 1_048_576; // 1 MB — far above any realistic prompt
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    let d = "", bytes = 0; process.stdin.setEncoding("utf8");
+    process.stdin.on("data", c => {
+      bytes += Buffer.byteLength(c, "utf8");
+      if (bytes > MAX_STDIN_BYTES) { process.stdin.destroy(); reject(new Error(`stdin exceeds ${MAX_STDIN_BYTES} byte limit`)); return; }
+      d += c;
+    });
+    process.stdin.on("end", () => resolve(d));
+    process.stdin.on("error", reject);
+  });
+}
+// A "-", a missing arg, or a flag (e.g. `lint --agent`) all mean: read stdin.
+const readText = async (arg) =>
+  (!arg || arg === "-" || arg.startsWith("--")) ? await readStdin() : await readFile(arg, "utf8");
+
 // `muster prompt scan` support: walk a repo for candidate prompts and lint each. Bounded
 // (skip vendored/build dirs, text extensions only, per-file + total caps) so it stays fast
 // and safe to run on any tree. Deterministic — the lint is no-LLM.
@@ -179,22 +198,6 @@ try {
     out(scoreArtifact(scores, gate));
   } else if (cmd === "prompt") {
     const sub = rest[0];
-    // Read a prompt from a file path or, when the arg is "-" (or absent), from stdin.
-    // Cap stdin so an untrusted caller can't pump unbounded input into the linter.
-    const MAX_STDIN_BYTES = 1_048_576; // 1 MB — far above any realistic prompt
-    const readStdin = () => new Promise((resolve, reject) => {
-      let d = "", bytes = 0; process.stdin.setEncoding("utf8");
-      process.stdin.on("data", c => {
-        bytes += Buffer.byteLength(c, "utf8");
-        if (bytes > MAX_STDIN_BYTES) { process.stdin.destroy(); reject(new Error(`stdin exceeds ${MAX_STDIN_BYTES} byte limit`)); return; }
-        d += c;
-      });
-      process.stdin.on("end", () => resolve(d));
-      process.stdin.on("error", reject);
-    });
-    // A "-", a missing arg, or a flag (e.g. `prompt lint --agent`) all mean: read stdin.
-    const readText = async (arg) =>
-      (!arg || arg === "-" || arg.startsWith("--")) ? await readStdin() : await readFile(arg, "utf8");
     if (sub === "lint" && rest.includes("--chat")) {
       // lintlang H7: lint a chat-format prompt (array of {role, content}) for role-ordering hygiene.
       const file = flagValue(rest, "--chat");
@@ -236,16 +239,8 @@ try {
     }
   } else if (cmd === "humanize-score") {
     // Deterministic 0-100 AI-tell score for human-facing text — the CI-gateable measure behind
-    // the LLM humanizer. Reads a file path or stdin (when arg is "-", missing, or a flag).
-    const arg = rest[0];
-    const text = (!arg || arg === "-" || arg.startsWith("--"))
-      ? await new Promise((resolve, reject) => {
-          let d = ""; process.stdin.setEncoding("utf8");
-          process.stdin.on("data", c => { d += c; });
-          process.stdin.on("end", () => resolve(d));
-          process.stdin.on("error", reject);
-        })
-      : await readFile(arg, "utf8");
+    // the LLM humanizer. Reads a file path or capped stdin (shared readText helper).
+    const text = await readText(rest[0]);
     const threshold = Number(flagValue(rest, "--threshold")) || undefined;
     out(scoreHumanness(text, threshold ? { threshold } : {}));
   } else if (cmd === "prioritize") {

@@ -31,7 +31,16 @@ the manifest — the crew on paper is not the crew doing the work.
   to allow with a reminder if the guard triggers a false positive.
 
 1. Compute waves: `npx -y @adnova-group/muster wave .muster/manifest.json` -> ordered list of waves.
-2. For each wave, in order:
+2. **Pre-flight plan review (once, before wave 1).** Scan the whole plan for conflicts before dispatching anything:
+   tasks that contradict each other or the manifest's `successCriteria`/global constraints, and anything a task
+   mandates that the review gate would later flag as a defect (a test that asserts nothing, verbatim duplication of
+   a logic block, a task that undoes another). Present everything found to the human as **one batched
+   AskUserQuestion** — each finding beside the plan text that mandates it, asking which governs — **before**
+   execution begins, not one interrupt per discovery mid-run. If the scan is clean, proceed without comment.
+   In **unattended (Routine) mode** there is no human to ask: record the conflicts to STATE and proceed best-effort.
+   This is a one-shot gate; the per-wave review loop (step 3c) remains the net for conflicts that only emerge from
+   implementation.
+3. For each wave, in order:
    a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task — the `PreToolUse` hook reads this marker to enforce the iron rule. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task.
@@ -66,12 +75,12 @@ the manifest — the crew on paper is not the crew doing the work.
         Re-dispatch ONCE with the same brief plus the error appended as context (`dispatchRetryState`
         from `src/loop.js` — max 2 attempts; model-availability rejections follow the fable→opus rule
         above instead). If the retry also fails: record the failure in STATE and treat it exactly like
-        a review-gate escalation (step 2e) — the wave's OTHER tasks still complete and the barrier
+        a review-gate escalation (step 3e) — the wave's OTHER tasks still complete and the barrier
         collects what succeeded; only the failed task escalates.
    b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point; review-gate fix agents are dispatched via the Agent tool after the barrier).
    c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops: re-dispatch
       fix attempts until the gate passes (`done`) or the iteration cap is hit (`max-iterations`), then
-      escalate per step 2e below. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
+      escalate per step 3e below. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
       `src/loop.js` — a plugin-user sees this value enforced by the review-gate skill).
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx -y @adnova-group/muster plan-checklist .muster/manifest.json
@@ -79,7 +88,7 @@ the manifest — the crew on paper is not the crew doing the work.
    e. If the review gate escalates (fix-loop cap, or a tournament with no passing candidate), stop and do
       not start the next wave. Present the resolution choices via the **AskUserQuestion** selection UI —
       e.g. **Retry with more context** / **Re-scope the task** / **Abort the run**.
-3. After the last wave, summarize the run and ensure FOLLOWUPS are recorded.
+4. After the last wave, summarize the run and ensure FOLLOWUPS are recorded.
 
 ## Channel steering (remote)
 

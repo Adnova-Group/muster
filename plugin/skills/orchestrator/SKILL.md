@@ -44,6 +44,10 @@ the manifest — the crew on paper is not the crew doing the work.
    a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task — the `PreToolUse` hook reads this marker to enforce the iron rule. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task.
+      - **Parallel isolation (concurrent file writers):** when a wave dispatches more than one task
+        that writes files, give each its own git worktree (`isolation: "worktree"` on the Agent tool)
+        so independent same-wave tasks cannot collide on the shared working tree; the post-barrier
+        step reconciles them. Read-only tasks (investigate/review) and single-task waves skip it.
       - **Provider kind:** look up the role's chosen provider from capabilities
         (`npx -y @adnova-group/muster capabilities` -> `roles[<role>].chosen = { id, source, kind }`):
         - `chosen.kind === "agent"` -> dispatch with that agent **as the subagent type**
@@ -85,9 +89,13 @@ the manifest — the crew on paper is not the crew doing the work.
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx -y @adnova-group/muster plan-checklist .muster/manifest.json
       --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.
-   e. If the review gate escalates (fix-loop cap, or a tournament with no passing candidate), stop and do
-      not start the next wave. Present the resolution choices via the **AskUserQuestion** selection UI —
-      e.g. **Retry with more context** / **Re-scope the task** / **Abort the run**.
+   e. If the review gate escalates (fix-loop cap, or a tournament with no passing candidate), do not start
+      the next wave. **First dispatch `muster-strategist` (read-only, root-cause) on the failing task plus
+      the fix-loop history** — the same error surviving repeated fixes is a design/spec problem, not another
+      edit, and the strategist is the read-only reasoner for exactly that. Append its analysis to STATE. Then
+      present the resolution choices via the **AskUserQuestion** selection UI — e.g. **Apply the strategist's
+      recommendation** / **Retry with more context** / **Re-scope the task** / **Abort the run**. In unattended
+      (Routine) mode, record the strategist's root-cause to the run report instead of prompting.
 4. After the last wave, summarize the run and ensure FOLLOWUPS are recorded.
 
 ## Channel steering (remote)

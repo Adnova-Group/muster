@@ -44,3 +44,10 @@ test("empty input scores a perfect 100", () => {
   assert.equal(scoreHumanness("").score, 100);
   assert.equal(scoreHumanness(null).score, 100);
 });
+
+test("emoji detector ignores typographic dingbats but catches flag emoji (audit regression)", () => {
+  assert.equal(scoreHumanness("Done ✓ — solid work ★").findings.find(f => f.category === "emoji"), undefined,
+    "checkmark/star dingbats are not emoji tells");
+  const flag = scoreHumanness("Shipped to the US market 🇺🇸");
+  assert.ok(flag.findings.some(f => f.category === "emoji"), "flag emoji should be detected");
+});

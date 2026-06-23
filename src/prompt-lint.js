@@ -164,11 +164,13 @@ export const RULES = [
     applies: (t, c) => Array.isArray(c.tools) && c.tools.length > 0,
     pass: (t, c) => {
       const s = surface(t, c).toLowerCase();
+      // Word-boundary match, not substring: a required field "id" must not be satisfied by "provided".
+      const refs = (w) => new RegExp(`\\b${String(w).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(s);
       return c.tools.every((tool) => {
-        const name = String((tool && tool.name) || "").toLowerCase();
-        if (!name || !s.includes(name)) return false; // a tool the prompt never names cannot be driven correctly
+        const name = (tool && tool.name) || "";
+        if (!name || !refs(name)) return false; // a tool the prompt never names cannot be driven correctly
         const req = (tool.inputSchema && tool.inputSchema.required) || [];
-        return req.every((f) => s.includes(String(f).toLowerCase())); // each required arg must be referenced
+        return req.every(refs); // each required arg must be referenced
       });
     },
     fix: "Name every callable tool and reference each of its required arguments so the prompt's intent matches the tool schema.",
@@ -285,7 +287,12 @@ export function lintChat(messages) {
       if (role && role !== "system" && role === prev)
         add("LINT-ROLE-012", "Roles should alternate (no two consecutive same-role turns)", `${role} follows ${prev} at index ${i}`);
     }
-    if (typeof (m && m.content) === "string" && ROLE_BLEED.test(m.content))
+    // content may be a string or the API content-block array [{type:"text", text}] — flatten both.
+    const content = m && m.content;
+    const contentText = typeof content === "string"
+      ? content
+      : Array.isArray(content) ? content.map((b) => (b && typeof b.text === "string" ? b.text : "")).join("\n") : "";
+    if (contentText && ROLE_BLEED.test(contentText))
       add("LINT-ROLE-013", "Role bleed: content embeds a role marker that can confuse turn parsing", `index ${i} content opens with a 'role:' marker`);
   });
   return { findings, ok: findings.length === 0 };
@@ -295,7 +302,11 @@ export function lintChat(messages) {
 // this lints a WORKFLOW — an array of sibling prompts ({ id?, text } or strings) — for the same
 // concrete mutable-state artifact (a file path / state token) referenced by 2+ prompts without
 // isolation. Conservative on purpose: only a shared concrete token flags, to avoid noise.
-const STATE_TOKEN = /\b[\w./-]*(?:state|scratch|memory|ledger|\.muster\/[\w./-]+|[\w-]+\.(?:json|txt|md|log))\b/gi;
+// Non-overlapping alternatives — each linear, none with a greedy `.`-containing prefix that could
+// backtrack against a later arm (the old single greedy `[\w./-]*` form was a ReDoS). The keyword arms
+// require a separator (._-) adjacent so bare prose words ("state of the union", "memory") don't match;
+// only concrete artifacts flag: a .muster/ path, a data-file name, or a separator-joined state token.
+const STATE_TOKEN = /\.muster\/[\w./-]+|\b[\w-]+\.(?:json|txt|md|log)\b|\b[\w-]*[._-](?:state|scratch|memory|ledger)[\w-]*\b|\b(?:state|scratch|memory|ledger)[._-][\w-]+\b/gi;
 export function lintWorkflow(prompts) {
   const findings = [];
   if (!Array.isArray(prompts) || prompts.length < 2) return { findings, ok: true };

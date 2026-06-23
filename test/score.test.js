@@ -74,3 +74,9 @@ test("tie for weakest -> first by insertion order wins (deterministic tie-break)
   assert.equal(r2.weakest.criterion, "b",
     "tie-break follows insertion order, so reordering keys changes the winner");
 });
+
+test("calibrateScores rejects a non-finite offset (audit regression)", () => {
+  assert.throws(() => calibrateScores({ a: 2 }, { a: NaN }), /offset.*finite/);
+  assert.throws(() => calibrateScores({ a: 2 }, { a: "x" }), /offset.*finite/);
+  assert.deepEqual(calibrateScores({ a: 2 }, { b: 1 }), { a: 2 }, "an offset for an absent criterion is ignored");
+});

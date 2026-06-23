@@ -32,7 +32,7 @@ import { matchProviders } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
 import { classifySteer } from "./steer.js";
-import { lintPrompt } from "./prompt-lint.js";
+import { lintPrompt, lintChat, lintWorkflow } from "./prompt-lint.js";
 import { gradeCollected } from "./prompt-eval.js";
 import { proposeVariations, selectWinner } from "./prompt-optimize.js";
 import { discoverPrompts } from "./prompt-discover.js";
@@ -194,13 +194,31 @@ try {
     // A "-", a missing arg, or a flag (e.g. `prompt lint --agent`) all mean: read stdin.
     const readText = async (arg) =>
       (!arg || arg === "-" || arg.startsWith("--")) ? await readStdin() : await readFile(arg, "utf8");
-    if (sub === "lint" || sub === "variations") {
+    if (sub === "lint" && rest.includes("--chat")) {
+      // lintlang H7: lint a chat-format prompt (array of {role, content}) for role-ordering hygiene.
+      const file = flagValue(rest, "--chat");
+      const messages = JSON.parse(file ? await readFile(file, "utf8") : await readStdin());
+      out(lintChat(messages));
+    } else if (sub === "lint" && rest.includes("--workflow")) {
+      // lintlang H4: lint a workflow (array of sibling prompts) for shared-state context-boundary erosion.
+      const file = flagValue(rest, "--workflow");
+      const prompts = JSON.parse(file ? await readFile(file, "utf8") : await readStdin());
+      out(lintWorkflow(prompts));
+    } else if (sub === "lint" || sub === "variations") {
       const text = await readText(rest[1]);
       const ctx = { isAgent: rest.includes("--agent"), hasTools: rest.includes("--tools") };
       // --system lints in the instruction/system genre (matches `prompt scan` for prompt
       // docs); --task forces the single-task rubric. Default is task.
       if (rest.includes("--system")) ctx.genre = "system";
       else if (rest.includes("--task")) ctx.genre = "task";
+      // --tool-schema <file>: pass the real tool schemas so the schema↔intent rule (LINT-SCHEMA-003)
+      // can check the prompt references each tool + its required fields (bare --tools stays a boolean).
+      const schemaFile = flagValue(rest, "--tool-schema");
+      if (schemaFile) {
+        const parsed = JSON.parse(await readFile(schemaFile, "utf8"));
+        ctx.tools = Array.isArray(parsed) ? parsed : parsed.tools;
+        ctx.isAgent = true;
+      }
       out(sub === "lint" ? lintPrompt(text, ctx) : proposeVariations(text, ctx));
     } else if (sub === "eval") {
       const file = requireArg(rest, 1, "prompt eval <suite.json>: missing suite ({dataset:[{output,format?,graderResponse?}], passThreshold?})", fail);
@@ -213,7 +231,7 @@ try {
     } else if (sub === "scan") {
       out(await scanRepoPrompts(rest[1] || process.cwd()));
     } else {
-      fail("prompt <lint|variations|eval|optimize|scan> [file|dir|-] [--agent] [--tools]");
+      fail("prompt <lint|variations|eval|optimize|scan> [file|dir|-] [--agent] [--tools] [--tool-schema <f>] [--chat <f>] [--workflow <f>]");
     }
   } else if (cmd === "prioritize") {
     const file = requireArg(rest, 0, "prioritize <file> [--model rice|ice|wsjf|weighted]: missing file", fail);

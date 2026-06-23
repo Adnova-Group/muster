@@ -156,6 +156,24 @@ export const RULES = [
     fix: "State when to stop, e.g. 'Stop once the tests pass or after N attempts.'",
   },
   {
+    // lintlang H3 (schema-intent mismatch). Only fires when the caller passes the actual tool
+    // schemas via ctx.tools = [{ name, inputSchema:{ required:[...] } }] — a bare `--tools` flag
+    // (hasTools) does NOT trigger it, because without the schema there is nothing to check against.
+    id: "LINT-SCHEMA-003", severity: "warn", dimension: "agentic",
+    title: "Reference every provided tool and its required fields (schema↔intent alignment)", source: LINTLANG,
+    applies: (t, c) => Array.isArray(c.tools) && c.tools.length > 0,
+    pass: (t, c) => {
+      const s = surface(t, c).toLowerCase();
+      return c.tools.every((tool) => {
+        const name = String((tool && tool.name) || "").toLowerCase();
+        if (!name || !s.includes(name)) return false; // a tool the prompt never names cannot be driven correctly
+        const req = (tool.inputSchema && tool.inputSchema.required) || [];
+        return req.every((f) => s.includes(String(f).toLowerCase())); // each required arg must be referenced
+      });
+    },
+    fix: "Name every callable tool and reference each of its required arguments so the prompt's intent matches the tool schema.",
+  },
+  {
     id: "GUARD-IDK-001", severity: "info", dimension: "guardrails",
     title: "Allow 'I don't know' to reduce hallucination", source: `${GUARD}/reduce-hallucinations`,
     applies: has(/\b(answer|question|fact|factual)\b/i),
@@ -244,4 +262,60 @@ export function lintPrompt(text, ctx = {}, gate = DEFAULT_GATE) {
   const rank = { error: 0, warn: 1, info: 2 };
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
   return { rubric, findings, total, weakest, passing, gate, suppressed };
+}
+
+// lintlang H7 (role confusion). lintPrompt operates on one prompt string and cannot see turn
+// structure; this lints a chat-format prompt (an array of { role, content }) for role-ordering
+// hygiene. Pure + synchronous like the rest of the module. Returns { findings, ok }.
+const ROLE_BLEED = /^\s*(system|assistant|user)\s*:/im;
+export function lintChat(messages) {
+  const findings = [];
+  const add = (id, title, detail) =>
+    findings.push({ id, severity: "warn", dimension: "structure", title, detail, source: LINTLANG });
+  if (!Array.isArray(messages) || messages.length === 0) {
+    add("LINT-ROLE-010", "Chat must be a non-empty array of {role, content}", "no messages to lint");
+    return { findings, ok: false };
+  }
+  messages.forEach((m, i) => {
+    const role = m && m.role;
+    if (role === "system" && i !== 0)
+      add("LINT-ROLE-011", "System message must be first", `system role found at index ${i}`);
+    if (i > 0) {
+      const prev = messages[i - 1] && messages[i - 1].role;
+      if (role && role !== "system" && role === prev)
+        add("LINT-ROLE-012", "Roles should alternate (no two consecutive same-role turns)", `${role} follows ${prev} at index ${i}`);
+    }
+    if (typeof (m && m.content) === "string" && ROLE_BLEED.test(m.content))
+      add("LINT-ROLE-013", "Role bleed: content embeds a role marker that can confuse turn parsing", `index ${i} content opens with a 'role:' marker`);
+  });
+  return { findings, ok: findings.length === 0 };
+}
+
+// lintlang H4 (context-boundary erosion). A single prompt can't reveal cross-task state leakage;
+// this lints a WORKFLOW — an array of sibling prompts ({ id?, text } or strings) — for the same
+// concrete mutable-state artifact (a file path / state token) referenced by 2+ prompts without
+// isolation. Conservative on purpose: only a shared concrete token flags, to avoid noise.
+const STATE_TOKEN = /\b[\w./-]*(?:state|scratch|memory|ledger|\.muster\/[\w./-]+|[\w-]+\.(?:json|txt|md|log))\b/gi;
+export function lintWorkflow(prompts) {
+  const findings = [];
+  if (!Array.isArray(prompts) || prompts.length < 2) return { findings, ok: true };
+  const items = prompts.map((p, i) => ({ id: (p && p.id) || `prompt[${i}]`, text: typeof p === "string" ? p : (p && p.text) || "" }));
+  const seen = new Map(); // token -> Set(prompt ids)
+  for (const it of items) {
+    for (const raw of it.text.match(STATE_TOKEN) || []) {
+      const tok = raw.toLowerCase();
+      if (!seen.has(tok)) seen.set(tok, new Set());
+      seen.get(tok).add(it.id);
+    }
+  }
+  for (const [tok, ids] of seen) {
+    if (ids.size >= 2)
+      findings.push({
+        id: "LINT-CTX-020", severity: "warn", dimension: "guardrails",
+        title: "Shared mutable-state artifact referenced across sibling tasks (context-boundary erosion)",
+        detail: `'${tok}' referenced by ${[...ids].join(", ")}`, source: LINTLANG,
+        fix: "Give each task its own scoped state, or declare the shared artifact read-only / owned by one task.",
+      });
+  }
+  return { findings, ok: findings.length === 0 };
 }

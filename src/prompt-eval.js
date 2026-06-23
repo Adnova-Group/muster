@@ -52,7 +52,20 @@ function validateToolCall(s) {
   return nameOk && argsOk ? 10 : 0;
 }
 
-const CODE_GRADERS = { json: validateJson, regex: validateRegex, python: validatePython, "tool-call": validateToolCall };
+// Multi-step generalization of `tool-call`: the output must be a non-empty JSON array where every
+// element is a valid tool-call (name + arguments object) — i.e. a well-formed agent trajectory. This
+// is in-process VALIDITY only; sequence/args-match assertions need expected values + a recorded run,
+// out of scope for the deterministic grader (reach for promptfoo when a trajectory is recorded).
+function validateTrajectory(s) {
+  const t = String(s).trim();
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
+  let arr;
+  try { arr = JSON.parse(fenced ? fenced[1] : t); } catch { return 0; }
+  if (!Array.isArray(arr) || arr.length === 0) return 0;
+  return arr.every((step) => validateToolCall(JSON.stringify(step)) === 10) ? 10 : 0;
+}
+
+const CODE_GRADERS = { json: validateJson, regex: validateRegex, python: validatePython, "tool-call": validateToolCall, trajectory: validateTrajectory };
 
 export function codeGrade(output, format) {
   if (!format) return null;

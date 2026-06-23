@@ -35,34 +35,42 @@ function validatePython(s) {
   return delimitersOk && PY_SIGNAL.test(t) ? 10 : 0;
 }
 
-// Tool/function-call validity (promptfoo `is-valid-function-call` analog): the output must
-// be a JSON object that names a tool and carries an object of arguments. Accepts the common
-// shapes (name/arguments, tool/input, function/parameters). In-process, no schema — pairs with
-// the agent-prompt lint rules when evaluating prompts that must emit a tool call.
-function validateToolCall(s) {
-  const t = String(s).trim();
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
-  let obj;
-  try { obj = JSON.parse(fenced ? fenced[1] : t); } catch { return 0; }
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return 0;
+// Extract the inner payload of a ```fenced``` block (json-tagged or bare), else the trimmed string.
+// Single source for the fence-stripping used by the tool-call/trajectory graders and the LLM-judge parser.
+function stripFence(s) {
+  const m = /```(?:json)?\s*([\s\S]*?)```/i.exec(String(s));
+  return (m ? m[1] : String(s)).trim();
+}
+
+// Is a parsed value a well-formed tool/function call: names a tool + carries an arguments object?
+// Accepts the common shapes (name/arguments, tool/input, function/parameters). Takes the PARSED object
+// so the trajectory grader can check array elements directly — no stringify/reparse round-trip.
+function isToolCallShape(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
   const name = obj.name ?? obj.tool ?? obj.function ?? obj.tool_name;
   const args = obj.arguments ?? obj.input ?? obj.parameters ?? obj.args;
-  const nameOk = typeof name === "string" && name.length > 0;
-  const argsOk = args !== null && typeof args === "object" && !Array.isArray(args);
-  return nameOk && argsOk ? 10 : 0;
+  return typeof name === "string" && name.length > 0
+    && args !== null && typeof args === "object" && !Array.isArray(args);
+}
+
+// Tool/function-call validity (promptfoo `is-valid-function-call` analog): the output must be a JSON
+// object that names a tool and carries an object of arguments. In-process, no schema — pairs with the
+// agent-prompt lint rules when evaluating prompts that must emit a tool call.
+function validateToolCall(s) {
+  let obj;
+  try { obj = JSON.parse(stripFence(s)); } catch { return 0; }
+  return isToolCallShape(obj) ? 10 : 0;
 }
 
 // Multi-step generalization of `tool-call`: the output must be a non-empty JSON array where every
-// element is a valid tool-call (name + arguments object) — i.e. a well-formed agent trajectory. This
-// is in-process VALIDITY only; sequence/args-match assertions need expected values + a recorded run,
-// out of scope for the deterministic grader (reach for promptfoo when a trajectory is recorded).
+// element is a valid tool-call — i.e. a well-formed agent trajectory. In-process VALIDITY only;
+// sequence/args-match assertions need expected values + a recorded run, out of scope for the
+// deterministic grader (reach for promptfoo when a trajectory is recorded).
 function validateTrajectory(s) {
-  const t = String(s).trim();
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
   let arr;
-  try { arr = JSON.parse(fenced ? fenced[1] : t); } catch { return 0; }
+  try { arr = JSON.parse(stripFence(s)); } catch { return 0; }
   if (!Array.isArray(arr) || arr.length === 0) return 0;
-  return arr.every((step) => validateToolCall(JSON.stringify(step)) === 10) ? 10 : 0;
+  return arr.every(isToolCallShape) ? 10 : 0;
 }
 
 const CODE_GRADERS = { json: validateJson, regex: validateRegex, python: validatePython, "tool-call": validateToolCall, trajectory: validateTrajectory };
@@ -90,10 +98,8 @@ export function buildGraderPrompt(output, rubric) {
 }
 
 export function parseGraderResponse(text) {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
-  const raw = fenced ? fenced[1] : text;
   let obj = {};
-  try { obj = JSON.parse(raw.trim()); }
+  try { obj = JSON.parse(stripFence(text)); }
   catch {
     const m = /"?score"?\s*[:=]\s*(-?\d+(?:\.\d+)?)/i.exec(text);
     obj = { score: m ? Number(m[1]) : 0, reasoning: "unparseable grader response" };
@@ -102,8 +108,8 @@ export function parseGraderResponse(text) {
   return { score, reasoning: obj.reasoning || "", strengths: obj.strengths || "", weaknesses: obj.weaknesses || "" };
 }
 
-// Single source of truth for the grading policy: average code + model when both apply
-// (correctness + technical validity), otherwise whichever is present, else 0.
+// Single source of truth for the grading policy: average the code grade (validity/correctness) and
+// the model grade (subjective quality) when both apply, otherwise whichever is present, else 0.
 function combineScores(code, model) {
   if (code != null && model != null) return (code + model) / 2;
   return code ?? model ?? 0;

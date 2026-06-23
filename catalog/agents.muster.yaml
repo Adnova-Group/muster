@@ -34,3 +34,9 @@
   rank: 55
   description: Read-only heavyweight reasoning — revise plans, audit specs/designs, surface hidden assumptions and tradeoffs. Answers "is this the right approach?", not "is this code correct?". Does not implement.
   provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-improver
+  kind: agent
+  roles: [improve]
+  rank: 55
+  description: Read-only retrospective — mines a completed run's STATE, escalations, and review-gate fix-loops for recurring friction, then proposes user-gated edits to muster's own skills/agents/rules. Proposes, never applies; never edits during a run.
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }

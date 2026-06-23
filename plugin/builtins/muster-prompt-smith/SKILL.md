@@ -94,6 +94,11 @@ npx -y @adnova-group/muster prompt variations <file|-> [--agent] [--tools]
    Pass `--agent --tools` for runtime agent prompts so the agent-specific transforms
    (stop conditions, imperative tool framing) are proposed.
 
+   **Feed failures back as actionable side info** (gepa): don't generate variations blind — pass the
+   prior round's concrete lint findings (rule id + fix) and eval failure reasons (which cases failed and
+   why) into the next variation prompt, so each candidate targets a named defect rather than a generic
+   rewrite. The optimize loop converges faster when the proposer can read why the last attempt lost.
+
 2. Evaluate the baseline and each variation (re-lint and/or re-eval). Build a candidates
    file `{ "candidates": [{ "id", "prompt", "total", "passing" }] }` and select the winner.
    **Every candidate's `total` must come from the SAME scorer** — keep lint totals (0–15) and eval scores (0–10) on separate runs; mixing scales breaks the regression guard:

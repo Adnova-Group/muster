@@ -116,5 +116,10 @@ floor. **Regression guard:** if `regression` is true (the winning variation scor
 pinned baseline), keep the baseline and report it. If `escalate` is true (nothing passes the
 gate), surface that — do not ship a prompt that fails the floor.
 
+For a **multi-round** loop (regenerate variations fed the last round's failure reasons), let
+`trackOptimization(roundTotals)` (`src/prompt-optimize.js`) decide when to stop: it tracks the running
+best and halts after `patience` consecutive rounds with no new best, so the loop converges instead of
+burning rounds. The model proposes; this controller owns the stop decision.
+
 Glass box: record the chosen rules fixed, the winning technique, and the per-version scores
 in the run STATE. Ship the winner only when it passes the floor and beats the baseline.

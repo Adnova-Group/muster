@@ -95,3 +95,22 @@ export async function optimizePrompt({ prompt, evalFn, ctx = {} }) {
   }
   return selectWinner(scored);
 }
+
+// Deterministic multi-round convergence controller for an iterative optimize loop (MIPRO/textgrad
+// shape): the SKILL generates a fresh round of variations each iteration (model work, fed the prior
+// round's failure reasons as actionable side info); this pure function decides whether another round
+// is worth it. `roundTotals` is the winning `total` from each round so far (in order). Stops after
+// `patience` consecutive rounds with no new best — so the loop converges instead of running forever.
+export function trackOptimization(roundTotals, { patience = 2 } = {}) {
+  if (!Array.isArray(roundTotals) || roundTotals.length === 0)
+    return { bestTotal: null, bestRound: -1, plateauRounds: 0, improved: false, shouldStop: false };
+  for (const t of roundTotals)
+    if (typeof t !== "number" || !Number.isFinite(t))
+      throw new Error(`trackOptimization: every round total must be a finite number, got ${t}`);
+  let bestTotal = -Infinity, bestRound = -1;
+  roundTotals.forEach((t, i) => { if (t > bestTotal) { bestTotal = t; bestRound = i; } });
+  const plateauRounds = roundTotals.length - 1 - bestRound; // trailing rounds since the last new best
+  const last = roundTotals.length - 1;
+  const improved = bestRound === last && last > 0;          // this round set a new best
+  return { bestTotal, bestRound, plateauRounds, improved, shouldStop: plateauRounds >= patience };
+}

@@ -1,8 +1,10 @@
-# Muster Full Asset Audit — drift vs source material + new GitHub inspiration
+# Muster Asset Drift Ledger — drift vs source material + new GitHub inspiration
 
-_Run `muster/clean-room-drift-audit` · base `main` · supersedes the two earlier partial ledgers (`upstream-drift-ledger`, `cleanroom-drift-addendum`) which it incorporates._
+_2026-06-23 · base `main` · **single canonical ledger** (consolidates the earlier `upstream-drift-ledger` + `cleanroom-drift-addendum`, now removed)._
 
 Covers **all ~38 muster-authored assets** + the vendored set. Two questions per asset: (1) has its declared source drifted? (2) what *additional* GitHub repos could improve it? All external repos below were fetched live by research agents; paper/benchmark-only items are flagged.
+
+**Provenance correction (own it):** the first pass under-scoped to vendored files and wrongly dismissed atomic-claude. atomic-claude is a published methodology (`atomic.alonso.network`, Apache-2.0), not a vendored repo — it is the *concept* source for the 5 `muster-*` agents. The pipelines and the self-improvement gap surfaced only on the full sweep.
 
 ## Scope
 
@@ -28,7 +30,17 @@ Covers **all ~38 muster-authored assets** + the vendored set. Two questions per 
 
 ## B. Clean-room agents vs atomic-claude
 
-atomic-claude (`atomic.alonso.network`, concept source) defines roles muster's 5 agents mostly cover. Gaps:
+atomic-claude (`atomic.alonso.network`, concept source) defines roles muster's 5 agents mostly cover:
+
+| atomic-claude role | muster equivalent | Status |
+|---|---|---|
+| Implementer/Builder (isolates in `.worktrees/`) | `muster-builder` + `muster-surgeon` | partial — no worktree isolation (CR-3) |
+| Reviewer ("never grades own homework", fix every finding) | `muster-reviewer` + `review-gate` | aligned (maker≠checker, loop-until-clean) |
+| Strategist (read-only, dispatched when "stuck twice") | `muster-strategist` | partial — no auto-escalation (CR-2) |
+| Improve-Agent (retrospective, self-sharpening) | — | **missing entirely (CR-1)** |
+| (n/a) | `muster-investigator` | muster addition, no upstream |
+
+Gaps:
 
 - **CR-1 ADOPT (high/med)** — no **self-improvement/retrospective agent** (atomic's "Improve-Agent" self-sharpening loop). Muster has `memory/` but nothing mines run STATE/escalations to propose skill/rule edits. → add `muster-improver` (read-only, user-gated). **Biggest clean-room gap.**
 - **CR-2 ADOPT (med/low)** — no **"stuck twice → dispatch strategist"** auto-escalation; orchestrator jumps fix-loop-cap straight to human. → add root-cause dispatch of `muster-strategist` before human escalation.

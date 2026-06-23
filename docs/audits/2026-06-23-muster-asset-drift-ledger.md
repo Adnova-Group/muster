@@ -156,14 +156,14 @@ Framework currency: AIDA/PAS/BAB/QUEST + E-E-A-T still canonical; add **PASTOR**
 
 ---
 
-## Top adoptions across everything (impact × effort × fit)
+## Top adoptions across everything (impact × effort × fit) — all LANDED 2026-06-23
 
-1. **CR-1** new `muster-improver` self-sharpening agent — the standout capability gap.
-2. **#2** orchestrator pre-flight plan-conflict review.
-3. **muster-humanizer** enrichment (it's 26 lines; the cited repos make it real) + CI-scored detection.
-4. **book.yaml** premise-forge + per-chapter scored loop + continuity ledger.
-5. **muster-prompt-smith** lintlang H3–H7 + promptfoo trajectory/tool-call asserts (aligns with the planned prompt-eval capability).
-6. **CR-2 / CR-3** stuck-escalation + per-task worktree isolation.
-7. **blog-post GEO/answer-first** + **ADR→MADR status lifecycle** + **test-plan→29119-3** — concrete, low-effort doc-correctness fixes.
+1. ✅ **CR-1** `muster-improver` self-sharpening agent + `improve` role (`f0076c3`).
+2. ✅ **#2** orchestrator pre-flight plan-conflict review (`b4d3f07`).
+3. ✅ **muster-humanizer** enrichment — two-pass audit, tiered vocab, full tell taxonomy, voice calibration (`5912138`).
+4. ✅ **book.yaml** premise-forge gate + per-chapter scored loop + continuity ledger (`d86760a`).
+5. ✅ **muster-prompt-smith** `tool-call` eval grader + honest lintlang H1–H7 coverage map (`4c268f1`). H3/H4/H7 deferred — need tool-schema / multi-turn / cross-task context the pure linter doesn't receive.
+6. ✅ **CR-2 / CR-3** strategist root-cause on escalation + per-task worktree isolation (`7c03cfb`).
+7. ✅ **blog-post GEO/answer-first** + **ADR→MADR status lifecycle** + **test-plan→ISO 29119-3** (`933b82b`).
 
-Each adoption is a separate implementation run; this audit ranks, it does not apply.
+This audit ranked; the seven adoptions above were then implemented (each TDD-verified, 714 tests green) and merged to `main`. Remaining items are the per-asset "additional repos" tables (D/E) — discovery candidates, not yet scheduled.

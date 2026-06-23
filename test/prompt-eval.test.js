@@ -51,6 +51,13 @@ test("codeGrade tool-call validates a function-call shape", () => {
   assert.equal(codeGrade("just prose", "tool-call"), 0);
 });
 
+test("codeGrade trajectory validates an array of tool calls", () => {
+  assert.equal(codeGrade('[{"name":"a","arguments":{}},{"tool":"b","input":{"x":1}}]', "trajectory"), 10);
+  assert.equal(codeGrade('[]', "trajectory"), 0);                         // empty trajectory
+  assert.equal(codeGrade('[{"name":"a","arguments":{}},{"oops":true}]', "trajectory"), 0); // one bad step
+  assert.equal(codeGrade('{"name":"a","arguments":{}}', "trajectory"), 0); // single object, not an array
+});
+
 test("codeGrade python rejects prose but accepts real Python", () => {
   assert.equal(codeGrade("The quick brown fox (really) jumps.", "python"), 0);
   assert.equal(codeGrade("def add(a, b):\n    return a + b", "python"), 10);

@@ -33,6 +33,7 @@ import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
 import { classifySteer } from "./steer.js";
 import { lintPrompt, lintChat, lintWorkflow } from "./prompt-lint.js";
+import { scoreHumanness } from "./humanizer-score.js";
 import { gradeCollected } from "./prompt-eval.js";
 import { proposeVariations, selectWinner } from "./prompt-optimize.js";
 import { discoverPrompts } from "./prompt-discover.js";
@@ -233,6 +234,20 @@ try {
     } else {
       fail("prompt <lint|variations|eval|optimize|scan> [file|dir|-] [--agent] [--tools] [--tool-schema <f>] [--chat <f>] [--workflow <f>]");
     }
+  } else if (cmd === "humanize-score") {
+    // Deterministic 0-100 AI-tell score for human-facing text — the CI-gateable measure behind
+    // the LLM humanizer. Reads a file path or stdin (when arg is "-", missing, or a flag).
+    const arg = rest[0];
+    const text = (!arg || arg === "-" || arg.startsWith("--"))
+      ? await new Promise((resolve, reject) => {
+          let d = ""; process.stdin.setEncoding("utf8");
+          process.stdin.on("data", c => { d += c; });
+          process.stdin.on("end", () => resolve(d));
+          process.stdin.on("error", reject);
+        })
+      : await readFile(arg, "utf8");
+    const threshold = Number(flagValue(rest, "--threshold")) || undefined;
+    out(scoreHumanness(text, threshold ? { threshold } : {}));
   } else if (cmd === "prioritize") {
     const file = requireArg(rest, 0, "prioritize <file> [--model rice|ice|wsjf|weighted]: missing file", fail);
     const parsed = JSON.parse(await readFile(file, "utf8"));
@@ -304,7 +319,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

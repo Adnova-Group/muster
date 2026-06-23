@@ -22,4 +22,10 @@ Score the artifact against the pipeline's `gate.criteria`, then let `muster scor
 4. If not `passing`, report the `weakest` criterion to the pipeline so the draft loops on that dimension.
    Do not ship an artifact that fails the floor — escalate after the cap.
 
+**Guard against LLM-as-judge bias** (Awesome-LLMs-as-Judges): score what the rubric measures, not length —
+a longer artifact is not a better one (verbosity bias). Use the full 0–3 range; resist clustering everything
+at 2 (range compression), since the floor principle depends on an honest weakest score. Don't anchor on the
+order criteria are listed. When a criterion is genuinely borderline, rate it twice and take the consensus
+rather than one greedy number.
+
 Glass box: record the per-criterion scores + the evidence in the run STATE.

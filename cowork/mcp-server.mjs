@@ -16,7 +16,7 @@
 // newline-delimited. No SDK dependency.
 
 import { execFile } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -29,7 +29,9 @@ const execFileP = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "src", "cli.js");
 const PROTOCOL_VERSION = "2025-06-18";
-const SERVER_INFO = { name: "muster", version: "0.2.8" };
+// Single-source the version from package.json so serverInfo never drifts from the release.
+const VERSION = JSON.parse(readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;
+const SERVER_INFO = { name: "muster", version: VERSION };
 
 // Cowork has no muster orchestrator skill / slash commands — only these MCP tools plus your own
 // subagent dispatch (confirmed to support parallel fan-out and per-call model override). So the

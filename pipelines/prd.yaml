@@ -4,11 +4,11 @@ default: true
 title: Product Requirements Document
 match: [prd, product requirements, product spec, feature spec, product brief, requirements doc]
 phases:
-  - { id: intake,   role: brainstorm,    desc: "clarify problem, audience, success metrics" }
+  - { id: intake,   role: brainstorm,    desc: "clarify problem, audience, success metrics; confidence-gated clarification — keep asking until you can state the problem and metrics with high confidence before drafting, don't draft on guesses" }
   - { id: framing,  role: brainstorm,    desc: "Jobs-to-be-Done framing: functional/emotional/social job + hiring criteria; proto-persona" }
   - { id: research, role: docs-research, desc: "gather evidence: market, competitor, customer context" }
   - { id: draft,    role: author,        desc: "enumerate 8 sections: exec summary, problem, target users, strategic context w/ OKR linkage, solution, success metrics, stories+requirements, out-of-scope+deps" }
-  - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate)" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate) + claim-by-claim verification: each requirement/metric carries a confidence flag; unsupported claims are flagged, not asserted" }
   - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:

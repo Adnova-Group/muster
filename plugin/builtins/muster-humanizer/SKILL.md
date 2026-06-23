@@ -43,6 +43,12 @@ If 2–3 sample paragraphs of the target author are provided, analyze their sent
 ## Style targets
 Vary sentence length (burstiness): mix short and long. Concrete nouns and verbs over abstractions. Active voice as the default. Cut hedging and marketing fluff.
 
+## Measure it (deterministic gate)
+`npx -y @adnova-group/muster humanize-score <file|->` returns a 0–100 AI-tell score (no LLM) with a
+per-category penalty breakdown. Run it on the rewrite to verify the tells are actually gone, and gate
+human-facing artifacts on it in CI (default pass ≥ 85). The score is the objective check on this skill's
+prose judgment — if it's low, the rewrite isn't done.
+
 ## Output
 1. The clean rewrite.
-2. A one-line **diagnosis**: which tell categories were removed (e.g. "stripped 3 Tier-1 words, 2 em dashes, one negative-parallelism, signposting opener").
+2. A one-line **diagnosis**: which tell categories were removed (e.g. "stripped 3 Tier-1 words, 2 em dashes, one negative-parallelism, signposting opener") — and the `humanize-score` if you ran it.

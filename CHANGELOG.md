@@ -5,6 +5,27 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-23
+
+### Added
+- **`muster-improver` agent + `improve` role** — a read-only post-run retrospective that mines the run STATE, escalations, and review-gate fix-loops for recurring friction and proposes user-gated edits to muster's own skills/agents/rules (proposes, never applies). Closes the self-improvement gap vs the atomic-claude role concept; dispatches on the top tier alongside the strategist.
+- **`muster humanize-score <file>`** + `src/humanizer-score.js` — a deterministic 0–100 AI-tell score (no LLM) with per-category capped penalties (em/en-dash & curly quotes, tiered vocab, banned openers, signposting, negative parallelism, copula avoidance, sycophancy, emoji). The CI-gateable measure behind the LLM humanizer rewrite (default pass ≥ 85).
+- **lintlang H3/H4/H7 coverage** in the prompt linter: `LINT-SCHEMA-003` (schema↔intent — fires when real tool schemas are passed via `prompt lint --tool-schema <file>`), `lintChat` + `prompt lint --chat <file>` (H7 role-ordering / role-bleed, incl. API content-block arrays), and `lintWorkflow` + `prompt lint --workflow <file>` (H4 context-boundary erosion — shared mutable-state artifacts across sibling prompts).
+- **`tool-call` and `trajectory` eval graders** (`prompt-eval.js`) — validity checks for prompts that must emit a function call or a multi-step agent trajectory (promptfoo `is-valid-function-call` analog).
+- **`trackOptimization`** (`prompt-optimize.js`) — a deterministic multi-round convergence controller (running-best + plateau patience) so an iterative optimize loop stops instead of running forever.
+- **`calibrateScores`** (`score.js`) — an optional per-judge per-criterion offset hook for cross-provider score comparability (identity no-op until offsets are empirically measured).
+- **Orchestrator hardening** — a pre-flight plan-conflict review before wave 1, `muster-strategist` root-cause dispatch on review-gate escalation (before the human prompt), and per-task git-worktree isolation for concurrent file-writing wave tasks.
+- **`book` pipeline** gains a premise-forge gate (5 scored variants behind a floor before drafting), a per-chapter scored loop, and a continuity-propagation ledger; plus targeted pipeline/skill currency fixes (blog-post GEO/answer-first + named-author E-E-A-T, ADR→MADR 4.0 status lifecycle, test-plan→ISO/IEC/IEEE 29119-3, canonical RICE scales, the 9 Lawrence story-splitting patterns, runbook triage decision-tree).
+- **Built-in skill enrichments** — humanizer (two-pass self-audit, tiered vocab, full tell taxonomy, voice calibration), research (cross-source corroboration + entailment-checked citations), scorer (LLM-judge bias guardrails), author (PASTOR + Schwartz routing, de-slop pass), prompt-smith (failure-reasons-as-actionable-side-info in the optimize loop).
+
+### Fixed
+- **ReDoS** in `lintWorkflow`'s `STATE_TOKEN` regex (catastrophic backtracking via `prompt lint --workflow`) — rewritten as non-overlapping anchored alternatives, which also removes the false positive on bare prose words.
+- `humanize-score` read unbounded stdin and duplicated the reader — hoisted the capped `readStdin`/`readText` helper to module scope and reused it.
+- `LINT-SCHEMA-003` field check now uses word boundaries (a required `id` is no longer satisfied by "provided"); humanizer-score emoji range narrowed to drop typographic-dingbat false positives and catch flag emoji; `lintChat` flattens API content-block arrays; `calibrateScores` rejects a non-finite offset; the fenced-JSON parser is deduplicated (`stripFence`/`isToolCallShape`).
+
+### Docs
+- Full muster asset drift audit ledger (`docs/audits/2026-06-23-muster-asset-drift-ledger.md`): every shipped asset traced to its source material with ranked, adopted improvements.
+
 ## [0.2.8] - 2026-06-18
 
 ### Added

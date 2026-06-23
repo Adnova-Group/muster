@@ -42,6 +42,15 @@ test("codeGrade returns null when no format is given (not applicable)", () => {
   assert.equal(codeGrade("anything", undefined), null);
 });
 
+test("codeGrade tool-call validates a function-call shape", () => {
+  assert.equal(codeGrade('{"name":"search","arguments":{"q":"x"}}', "tool-call"), 10);
+  assert.equal(codeGrade('```json\n{"tool":"get","input":{"id":1}}\n```', "tool-call"), 10);
+  assert.equal(codeGrade('{"name":"search"}', "tool-call"), 0);          // no arguments object
+  assert.equal(codeGrade('{"arguments":{"q":"x"}}', "tool-call"), 0);    // no tool name
+  assert.equal(codeGrade('{"name":"x","arguments":[1,2]}', "tool-call"), 0); // args not an object
+  assert.equal(codeGrade("just prose", "tool-call"), 0);
+});
+
 test("codeGrade python rejects prose but accepts real Python", () => {
   assert.equal(codeGrade("The quick brown fox (really) jumps.", "python"), 0);
   assert.equal(codeGrade("def add(a, b):\n    return a + b", "python"), 10);

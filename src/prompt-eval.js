@@ -35,7 +35,24 @@ function validatePython(s) {
   return delimitersOk && PY_SIGNAL.test(t) ? 10 : 0;
 }
 
-const CODE_GRADERS = { json: validateJson, regex: validateRegex, python: validatePython };
+// Tool/function-call validity (promptfoo `is-valid-function-call` analog): the output must
+// be a JSON object that names a tool and carries an object of arguments. Accepts the common
+// shapes (name/arguments, tool/input, function/parameters). In-process, no schema — pairs with
+// the agent-prompt lint rules when evaluating prompts that must emit a tool call.
+function validateToolCall(s) {
+  const t = String(s).trim();
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
+  let obj;
+  try { obj = JSON.parse(fenced ? fenced[1] : t); } catch { return 0; }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return 0;
+  const name = obj.name ?? obj.tool ?? obj.function ?? obj.tool_name;
+  const args = obj.arguments ?? obj.input ?? obj.parameters ?? obj.args;
+  const nameOk = typeof name === "string" && name.length > 0;
+  const argsOk = args !== null && typeof args === "object" && !Array.isArray(args);
+  return nameOk && argsOk ? 10 : 0;
+}
+
+const CODE_GRADERS = { json: validateJson, regex: validateRegex, python: validatePython, "tool-call": validateToolCall };
 
 export function codeGrade(output, format) {
   if (!format) return null;

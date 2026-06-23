@@ -49,6 +49,13 @@ severity, each with its source-cited rule id (e.g. `ANTH-XML-001`, `LINT-STOP-00
 prompt an app generates at runtime to spin up an agent, pass `--agent --tools` so the
 agent-only rules (imperative tool framing, stop conditions) apply.
 
+**lintlang H1–H7 coverage (be honest about the boundary):** H1 (tool-description ambiguity) and
+H2 (stop/termination) are covered by `LINT-TOOL-001`/`LINT-STOP-002`; H5 (implicit-instruction /
+negative framing) by `ANTH-POS-001`. H3 (schema↔intent mismatch), H4 (context-boundary erosion),
+and H7 (multi-turn role confusion) are **not linted** — the linter is pure and single-prompt, so it
+never sees the tool's JSON schema, sibling task contexts, or the conversation's turn structure. Flag
+these by judgment when reviewing; do not claim the linter caught them.
+
 If `passing` is already true and only `info` findings remain, stop here — a prompt that meets the bar is done.
 
 ## 2. Eval (empirical) — when a test set or success criteria exist
@@ -59,9 +66,13 @@ If `passing` is already true and only `info` findings remain, stop here — a pr
 2. For each case: interpolate the prompt, call the model, collect the output. For subjective
    quality, also call the model with an LLM-judge grader prompt that asks for
    strengths/weaknesses/reasoning **before** a 0–10 score (so it doesn't anchor on a
-   middling default). Code-gradable cases carry a `format` (`json|regex|python`). Note `json`/`regex` are real
-validity checks; `python` is a best-effort smoke test (balanced delimiters + a Python
-signal), not a guarantee — don't lean on it as the sole gate.
+   middling default). Code-gradable cases carry a `format` (`json|regex|python|tool-call`). Note `json`/`regex`/`tool-call`
+are real validity checks; `python` is a best-effort smoke test (balanced delimiters + a Python
+signal), not a guarantee — don't lean on it as the sole gate. Use `tool-call` for agent prompts that
+must emit a function call: it validates the output parses as an object naming a tool plus an arguments
+object (promptfoo `is-valid-function-call` analog). For richer agent checks (trajectory: tool-sequence,
+tool-args-match, step-count, goal-success) you need an agent runner that records the run — out of scope
+for the in-process grader; reach for promptfoo when a recorded trajectory is available.
 3. Write the collected results to a suite file: `{ "dataset": [{ "output", "format"?,
    "graderResponse"? }], "passThreshold": 7 }` and let the CLI grade deterministically:
 

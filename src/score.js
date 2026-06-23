@@ -8,8 +8,10 @@ export function calibrateScores(scores, offsets = {}, { min = 0, max = 3 } = {})
   for (const [c, v] of Object.entries(scores || {})) {
     if (typeof v !== "number" || !Number.isFinite(v))
       throw new Error(`calibrateScores: score for "${c}" must be a finite number, got ${v}`);
-    const off = offsets[c] || 0;
-    out[c] = Math.max(min, Math.min(max, v + off));
+    const off = offsets[c];
+    if (off !== undefined && (typeof off !== "number" || !Number.isFinite(off)))
+      throw new Error(`calibrateScores: offset for "${c}" must be a finite number, got ${off}`);
+    out[c] = Math.max(min, Math.min(max, v + (off || 0)));
   }
   return out;
 }

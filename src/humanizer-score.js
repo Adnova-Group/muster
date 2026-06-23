@@ -7,6 +7,11 @@
 
 // Each detector: { category, weight (penalty per hit), cap (max penalty from this category), re }.
 // `re` MUST be global (/g) so match counting works.
+// Weight rationale: em-dash/curly-quote is the single strongest tell (7); banned openers and
+// signposting are strong sentence-level tells (5–6); tier-1 vocab is a per-word tell (4); copula/
+// false-range are weaker (3). Caps ≈ 4–6 hits before a category saturates, so one repeated tell in a
+// long document can't alone drive the score to 0 — multiple tell *types* are what sink it. Values are
+// heuristic, not empirically calibrated; tune against scored examples, don't treat them as exact.
 const DETECTORS = [
   { category: "em/en-dash-or-curly-quote", weight: 7, cap: 28, re: /[—–“”‘’]/g },
   { category: "banned-opener", weight: 6, cap: 24, re: /(?:^|\n)\s*(?:Certainly|Moreover|Additionally|Furthermore|Indeed|Notably|Importantly|Ultimately|Overall)\b/gi },
@@ -15,7 +20,10 @@ const DETECTORS = [
   { category: "negative-parallelism", weight: 6, cap: 18, re: /\bnot just\b[^.\n]{1,60}?\b(?:it'?s|but)\b|\bit'?s not (?:about|just)\b[^.\n]{1,60}?\bit'?s\b/gi },
   { category: "copula-avoidance", weight: 3, cap: 12, re: /\b(?:serves as|boasts|stands as|functions as|plays a (?:crucial|key|vital|pivotal|significant) role)\b/gi },
   { category: "sycophancy", weight: 6, cap: 18, re: /\b(?:great question|i hope this helps|as an ai|happy to help|i'?m just an ai)\b/gi },
-  { category: "emoji", weight: 4, cap: 12, re: /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu },
+  // Emoji & pictographs (1F300–1FAFF) + regional-indicator flag letters (1F1E6–1F1FF). The old
+  // 2600–27BF block was dropped: it flagged ordinary typographic dingbats (✓ ★ ☎ ✏ ♻) as AI tells.
+  // ZWJ-sequence emoji still count — each component sits in 1F300–1FAFF.
+  { category: "emoji", weight: 4, cap: 12, re: /[\u{1F300}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}]/gu },
 ];
 
 // Score `text` for AI tells. Returns { score (0–100), passing, threshold, penalty, findings }.

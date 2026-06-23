@@ -18,4 +18,8 @@ Gather the evidence the phase needs, anchored to the outcome.
   This built-in is the fallback.
 - Collect market, competitor, and customer evidence relevant to the artifact. **Cite every source.**
 - Separate **fact** (sourced) from **claim** (assumption) — label assumptions explicitly.
+- **Cross-source corroboration** (gpt-researcher): promote a claim to **fact** only when ≥2 independent
+  sources agree; a single-source claim stays a labeled assumption, not a fact.
+- **Verify citations by entailment** (LLM-Cite / qraft): don't just attach a URL — check that the cited
+  source actually supports the sentence. Drop or downgrade a citation whose source doesn't entail the claim.
 - Return a short, cited evidence brief the author phase can build on; surface gaps to fill.

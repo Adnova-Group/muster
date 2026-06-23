@@ -5,8 +5,8 @@ import { ROLES } from "../src/roles.js";
 // The role vocabulary used to be duplicated in capabilities.js (array) and
 // catalog.js (Set). Both now import from roles.js — assert they observe the
 // identical set so a drift between consumers can never reappear silently.
-test("roles.js is the single source for the 22-role vocabulary", () => {
-  assert.equal(ROLES.length, 22, "expected 22 roles");
+test("roles.js is the single source for the 23-role vocabulary", () => {
+  assert.equal(ROLES.length, 23, "expected 23 roles");
   assert.equal(new Set(ROLES).size, ROLES.length, "roles must be unique");
 });
 

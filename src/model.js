@@ -6,9 +6,12 @@ const HAIKU = new Set(["code-navigation", "docs-research", "research"]);
 // "judge" is an intentional conceptual role OUTSIDE the resolved ROLES enum
 // (roles.js): the tournament skill (plugin/skills/tournament/SKILL.md) dispatches
 // a judge agent to score candidates. "architecture-review" is a canonical ROLES
-// member. Dead names (strategist, architect) removed — never passed to
+// member. "improve" is the retrospective self-improvement role (muster-improver):
+// peak-judgment, runs rarely (post-run), edits to muster's own skills/rules are
+// high-stakes — worth the top tier alongside architecture review.
+// Dead names (strategist, architect) removed — never passed to
 // modelForRole; muster-strategist is a provider id, not a role.
-const FABLE = new Set(["judge", "architecture-review"]);
+const FABLE = new Set(["judge", "architecture-review", "improve"]);
 
 // Ascending capability order. opus is included because it is a valid dispatch
 // tier via fallbackModelFor (fable degrades to opus) even though modelForRole

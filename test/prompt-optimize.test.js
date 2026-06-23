@@ -1,6 +1,27 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { proposeVariations, optimizePrompt, selectWinner } from "../src/prompt-optimize.js";
+import { proposeVariations, optimizePrompt, selectWinner, trackOptimization } from "../src/prompt-optimize.js";
+
+test("trackOptimization stops after `patience` rounds with no new best", () => {
+  const r = trackOptimization([5, 7, 7, 7], { patience: 2 });
+  assert.equal(r.bestTotal, 7);
+  assert.equal(r.bestRound, 1);
+  assert.equal(r.plateauRounds, 2);
+  assert.equal(r.shouldStop, true);
+  assert.equal(r.improved, false);
+});
+
+test("trackOptimization keeps going while it's still improving", () => {
+  const r = trackOptimization([5, 6, 8], { patience: 2 });
+  assert.equal(r.improved, true);
+  assert.equal(r.plateauRounds, 0);
+  assert.equal(r.shouldStop, false);
+});
+
+test("trackOptimization: empty history is a no-op, non-finite throws", () => {
+  assert.equal(trackOptimization([]).shouldStop, false);
+  assert.throws(() => trackOptimization([1, NaN]), /finite number/);
+});
 
 test("selectWinner throws when candidates omit the baseline row", () => {
   assert.throws(

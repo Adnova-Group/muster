@@ -28,4 +28,9 @@ at 2 (range compression), since the floor principle depends on an honest weakest
 order criteria are listed. When a criterion is genuinely borderline, rate it twice and take the consensus
 rather than one greedy number.
 
+**Cross-judge calibration** (optional): different judge models drift on the same rubric. `calibrateScores(scores, offsets)`
+(`src/score.js`) applies per-criterion offsets before gating so scores are comparable across providers. The offsets are
+**empirical** — measure them against human labels per judge model; until populated the table is empty and calibration is
+a deterministic no-op (it never silently distorts an un-calibrated run).
+
 Glass box: record the per-criterion scores + the evidence in the run STATE.

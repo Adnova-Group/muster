@@ -1,6 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scoreArtifact } from "../src/score.js";
+import { scoreArtifact, calibrateScores } from "../src/score.js";
+
+test("calibrateScores is identity with no offsets", () => {
+  const s = { a: 2, b: 3 };
+  assert.deepEqual(calibrateScores(s), s);
+  assert.deepEqual(calibrateScores(s, {}), s);
+});
+
+test("calibrateScores applies a per-criterion offset and clamps to [0,3]", () => {
+  const r = calibrateScores({ a: 2, b: 3, c: 0 }, { a: -1, b: +1, c: -1 });
+  assert.deepEqual(r, { a: 1, b: 3, c: 0 }); // b clamped at 3, c clamped at 0
+});
+
+test("calibrateScores throws on non-finite input", () => {
+  assert.throws(() => calibrateScores({ a: NaN }), /finite number/);
+});
 
 test("passes when floor + total met", () => {
   const r = scoreArtifact({ a: 3, b: 3, c: 2 }, { floor: 2, pass_total: 7 });

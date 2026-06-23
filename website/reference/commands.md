@@ -32,6 +32,7 @@ npx @adnova-group/muster <command> [args]
 | Command | What it does |
 | --- | --- |
 | `score <file>` | Score an artifact against a gate using the floor principle. |
+| `humanize-score <file> [--threshold N]` | Deterministic 0–100 AI-tell score for human-facing text (no LLM); the CI-gateable measure behind the humanizer rewrite. Reads stdin when the arg is `-` or absent. |
 | `prioritize <file> [--model rice\|ice\|wsjf\|weighted]` | Rank initiatives deterministically. See below. |
 
 ### Prioritization models

@@ -2,6 +2,9 @@
 # Phase structure inspired by book-genesis (felipelobomotta-blip/book-genesis-v4),
 # NousResearch/autonovel, Chapter Blog nonfiction outline, ProWritingAid,
 # Minto Pyramid/SCQA, StoryBrand SB7, and Before-After-Bridge.
+# Adopted from the upstream sweep (docs/audits): book-genesis premise-forge (scored
+# variants behind a floor before any drafting) + per-chapter scored loop, and
+# autonovel's continuity-propagation ledger (edits tracked as debts against a story bible).
 id: book
 domain: book
 title: Book
@@ -34,6 +37,8 @@ phases:
       nonfiction: thesis (Minto SCQA — Situation/Complication/Question/Answer), reader avatar,
       core framework (one big idea + 3-5 pillars), transformation promise, throughline/red thread;
       StoryBrand arc optional for self-help (hero=reader, guide=author).
+      Open a CONTINUITY LEDGER (the story bible): canonical facts — characters, world rules,
+      timeline, defined terms, key claims. Every later phase reads it; any change writes back.
 
   - id: architecture
     role: author
@@ -43,16 +48,33 @@ phases:
       (thesis->key ideas->evidence); validate every chapter advances the transformation
       promise (no orphan chapters).
 
+  - id: premise-forge
+    role: score
+    desc: >-
+      Before any drafting, forge the structure: generate 5 distinct premise/outline variants
+      (different angles, act structures, or chapter sequences), score each on the gate criteria,
+      and pick the strongest. GATE: the chosen variant must clear the rubric floor on every
+      criterion — if none clears, regenerate rather than draft on a weak spine. Drafting does not
+      start until a variant passes. (book-genesis premise-forge.)
+
   - id: drafting
     role: author
     desc: >-
       Draft chapter by chapter; consistent voice; concrete scenes/examples.
-      nonfiction: each chapter = concept (one idea) + proof (case/story/data) + how (steps) + bridge;
-      track throughline continuity across chapters.
+      nonfiction: each chapter = concept (one idea) + proof (case/story/data) + how (steps) + bridge.
+      PER-CHAPTER LOOP: after drafting each chapter, score it against the gate criteria — advance only
+      when it clears the floor; below floor, revise in place (cap 3 cycles, then flag for audit). Read
+      the continuity ledger before drafting and write any new canonical fact back to it; when an edit
+      contradicts an earlier chapter, record a propagation debt and reconcile it (do not leave the
+      ledger and the prose disagreeing).
 
   - id: audit
     role: code-review
-    desc: "Independent adversarial audit (structure, pacing, gaps, orphan chapters, throughline breaks) — blocks weak output."
+    desc: >-
+      Independent adversarial audit (structure, pacing, gaps, orphan chapters, throughline breaks) —
+      blocks weak output. Run a continuity-reconciliation pass against the ledger: every open
+      propagation debt must be closed and no chapter may contradict a canonical fact (timeline,
+      character knowledge, defined terms).
 
   - id: score
     role: score

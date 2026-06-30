@@ -21,6 +21,7 @@ Alongside the vendored material, Muster ships its own specialists in `plugin/age
 - **muster-reviewer**: verdict-emitting review
 - **muster-investigator**: read-only locator
 - **muster-strategist**: heavyweight reasoning
+- **muster-improver**: read-only post-run retrospective that proposes self-improvement edits
 
 ## License
 

@@ -19,7 +19,7 @@ The **model-facing layer** is what Claude Code loads as a plugin. It is markdown
 
 The router is the novel core. The problem it solves: you have an outcome and a pile of tools (some you installed, some Muster ships), and you need to pick the right tool for each piece of work, predictably.
 
-Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need. There are 21 of them (`src/roles.js`): `implement`, `code-review`, `test-author`, `debug`, `refactor`, `architecture-review`, `security-review`, `author`, `research`, `score`, `humanize`, and more. Roles are the stable interface. Pipelines and commands ask for a role, not for a specific tool.
+Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need. There are 23 of them (`src/roles.js`): `implement`, `code-review`, `test-author`, `debug`, `refactor`, `architecture-review`, `security-review`, `author`, `research`, `score`, `humanize`, `prompt-quality`, `improve`, and more. Roles are the stable interface. Pipelines and commands ask for a role, not for a specific tool.
 
 Each role resolves through a **ladder** of provider sources, best-available first:
 
@@ -72,7 +72,9 @@ Muster runs on the interactive Claude Code subscription. Model work goes through
 - Fan-out spends that same quota faster, since parallel subagents are parallel quota.
 - There is no separate runtime to deploy or key to manage.
 
-Orchestration loops until done via a Ralph-style primitive (`src/loop.js`). Each wave re-runs implement, review, and fix until the gate passes or the iteration cap escalates, so subagents drive toward the success criteria rather than stopping after one pass.
+Orchestration loops until done via a Ralph-style primitive (`src/loop.js`). Each wave re-runs implement, review, and fix until the gate passes or the iteration cap escalates, so subagents drive toward the success criteria rather than stopping after one pass. A pre-flight plan-conflict review runs before wave 1, the `muster-strategist` is dispatched for root-cause analysis when a review gate escalates (before any human prompt), and concurrent file-writing wave tasks each run in their own git worktree so parallel edits never collide.
+
+After a run, the `improve` role (the read-only `muster-improver` agent) mines the run STATE, escalations, and review-gate fix-loops for recurring friction and proposes user-gated edits to Muster's own skills, agents, and rules. It proposes; it never applies, and never edits during a run.
 
 Driving Muster remotely uses Claude Code's own features, not a transport Muster ships. A Routine can fire `/muster:autopilot` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session.
 

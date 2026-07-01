@@ -37,6 +37,7 @@ import { scoreHumanness } from "./humanizer-score.js";
 import { gradeCollected } from "./prompt-eval.js";
 import { proposeVariations, selectWinner } from "./prompt-optimize.js";
 import { discoverPrompts } from "./prompt-discover.js";
+import { fuse } from "./fusion.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -175,6 +176,12 @@ try {
   } else if (cmd === "pick") {
     const file = requireArg(rest, 0, "pick <candidates.json>: missing file path", fail);
     out(pickWinner(JSON.parse(await readFile(file, "utf8"))));
+  } else if (cmd === "fuse") {
+    const candidatesFile = requireArg(rest, 0, "fuse <candidates.json> <fusion-map.json>: missing candidates file path", fail);
+    const mapFile = requireArg(rest, 1, "fuse <candidates.json> <fusion-map.json>: missing fusion-map file path", fail);
+    const candidates = JSON.parse(await readFile(candidatesFile, "utf8"));
+    const map = JSON.parse(await readFile(mapFile, "utf8"));
+    out(fuse(candidates, map));
   } else if (cmd === "vendor") {
     const manifestUrl = new URL("../vendor/manifest.yaml", import.meta.url);
     const manifest = parseYaml(await readFile(manifestUrl, "utf8"));
@@ -314,7 +321,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

@@ -26,6 +26,7 @@ npx @adnova-group/muster <command> [args]
 | `next <manifest.json> [--done a,b]` | Single-agent driver: given completed task ids, return the next runnable task (and the full ready frontier). |
 | `plan-checklist <file>` | Render the plan as a checklist (`--done <ids>` ticks completed tasks). |
 | `tally <file>` / `pick <file>` | Tally tournament votes and pick a winner. |
+| `fuse <candidates.json> <fusion-map.json>` | Fusion decision engine: validates the debate map, applies the agreement gate, and either selects top-K candidates for synthesis (mode `fuse`) or falls back to the single best candidate (mode `fallback`). Deterministic, no LLM calls. |
 
 ## Scoring and prioritization
 

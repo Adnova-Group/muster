@@ -43,7 +43,7 @@ the manifest — the crew on paper is not the crew doing the work.
 3. For each wave, in order:
    a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task — the `PreToolUse` hook reads this marker to enforce the iron rule. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
-      - `mode: tournament` -> invoke the **tournament** skill for that task.
+      - `mode: tournament` -> invoke the **tournament** skill for that task (runs N competing agents, a judge scores each and produces a debate fusion map, then `muster fuse` decides: synthesize the top-K via a hardened synthesizer agent, or fall back to the best passing candidate when candidates already agree).
       - **Parallel isolation (concurrent file writers):** when a wave dispatches more than one task
         that writes files, give each its own git worktree (`isolation: "worktree"` on the Agent tool)
         so independent same-wave tasks cannot collide on the shared working tree; the post-barrier

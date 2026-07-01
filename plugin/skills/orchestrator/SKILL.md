@@ -82,10 +82,17 @@ the manifest — the crew on paper is not the crew doing the work.
         a review-gate escalation (step 3e) — the wave's OTHER tasks still complete and the barrier
         collects what succeeded; only the failed task escalates.
    b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point; review-gate fix agents are dispatched via the Agent tool after the barrier).
-   c. Invoke the **review-gate** skill over the wave's changes. The review→fix cycle loops: re-dispatch
+   c. Invoke the **review-gate** skill over the wave's changes. The review->fix cycle loops: re-dispatch
       fix attempts until the gate passes (`done`) or the iteration cap is hit (`max-iterations`), then
       escalate per step 3e below. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
-      `src/loop.js` — a plugin-user sees this value enforced by the review-gate skill).
+      `src/loop.js` -- a plugin-user sees this value enforced by the review-gate skill).
+      **Advisor escalation (worker-signaled):** if a dispatched worker returns a structured advice-request
+      (`{ question, context, decisionType, options? }`) instead of a final result, service it via the
+      **advisor** skill -- run `muster advise .muster/advice-request.json` (validates + returns
+      `{ advisorModel, request }`), check the consult budget (`consultBudget` in `src/advisor.js`;
+      default cap 3, `MUSTER_ADVISOR_MAX_CONSULTS`), dispatch a native advisor agent on `advisorModel`
+      (`fable->opus`), append the consult to STATE, and re-dispatch the worker with the advice injected.
+      The advisor informs; the worker owns the final decision. See `plugin/skills/advisor/SKILL.md`.
    d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
       plan checklist with completed tasks ticked (`npx -y @adnova-group/muster plan-checklist .muster/manifest.json
       --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.

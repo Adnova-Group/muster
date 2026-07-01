@@ -62,8 +62,8 @@ export function validateAdviceResponse(res) {
   }
   if (!("rationale" in res)) {
     errors.push("rationale: required field is missing");
-  } else if (typeof res.rationale !== "string") {
-    errors.push("rationale: must be a string");
+  } else if (typeof res.rationale !== "string" || res.rationale.trim() === "") {
+    errors.push("rationale: must be a non-empty string");
   }
   return { ok: errors.length === 0, errors };
 }

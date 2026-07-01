@@ -152,6 +152,18 @@ test("validateAdviceResponse: error when 'rationale' is missing", () => {
   assert.ok(r.errors.some(e => e.includes("rationale")), `errors must mention 'rationale': ${r.errors}`);
 });
 
+test("validateAdviceResponse: error when 'rationale' is empty string", () => {
+  const r = validateAdviceResponse({ ...VALID_RESPONSE, rationale: "" });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => e.includes("rationale")), `errors must mention 'rationale': ${r.errors}`);
+});
+
+test("validateAdviceResponse: error when 'rationale' is whitespace-only", () => {
+  const r = validateAdviceResponse({ ...VALID_RESPONSE, rationale: "   " });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => e.includes("rationale")), `errors must mention 'rationale': ${r.errors}`);
+});
+
 test("validateAdviceResponse: accumulates multiple errors for both missing fields", () => {
   const r = validateAdviceResponse({});
   assert.equal(r.ok, false);

@@ -39,7 +39,7 @@ Workers must be briefed to recognize FLAGGED decisions. A worker that is not tol
    ```
    (or `node src/cli.js advise ...` in the development tree). This validates the request shape and returns `{ advisorModel, request }` -- the model to dispatch and the validated request. If validation fails (non-zero exit), append `advisor-validate-failed` to STATE and treat the worker as though it returned a normal (best-effort) result; proceed without advice.
 
-3. **Check the consult budget.** Track consult count for the current task in STATE (`advisor-consults: <n>`). Call `consultBudget({ consults: n, maxConsults })` (from `src/advisor.js`, or read via the CLI's `advise` output -- `advisorModel` being returned already implies budget is available at call time; the orchestrator must track `n` itself in STATE).
+3. **Check the consult budget.** Track consult count for the current task in STATE (`advisor-consults[<taskId>]: <n>`). Call `consultBudget({ consults: n, maxConsults })` (from `src/advisor.js`). The CLI `advise` command does NOT check the budget -- the orchestrator MUST call `consultBudget` independently before dispatching; `advisorModel` in the CLI output only indicates which model to use, not that budget is available.
    - Default cap: **3** (`MUSTER_ADVISOR_MAX_CONSULTS` env, same guard as `maxConsultsLimit()` in `src/advisor.js`).
    - If `consult: false` (budget exhausted): append `advisor-budget-exhausted: proceeding best-effort` to STATE and skip to step 5.
    - If `consult: true`: continue to step 4.

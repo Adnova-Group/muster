@@ -207,6 +207,21 @@ test("fuse: env MUSTER_FUSE_MIN_DISAGREEMENT overrides threshold — low thresho
   }
 });
 
+test("fuse: negative MUSTER_FUSE_MIN_DISAGREEMENT clamps to default — agreement gate stays active", () => {
+  // Buggy behaviour: -5 is accepted → `0 < -5` is false → fuses (gate silently disabled).
+  // Fixed behaviour: -5 is rejected → default threshold 1 → `0 < 1` true → candidates-agree fallback.
+  const old = process.env.MUSTER_FUSE_MIN_DISAGREEMENT;
+  process.env.MUSTER_FUSE_MIN_DISAGREEMENT = "-5";
+  try {
+    const r = fuse(CANDIDATES_3, MAP_AGREE); // disagreementScore = 0
+    assert.equal(r.mode, "fallback");
+    assert.equal(r.reason, "candidates-agree");
+  } finally {
+    if (old === undefined) delete process.env.MUSTER_FUSE_MIN_DISAGREEMENT;
+    else process.env.MUSTER_FUSE_MIN_DISAGREEMENT = old;
+  }
+});
+
 // ---------------------------------------------------------------------------
 // 4. Top-K selection
 // ---------------------------------------------------------------------------
@@ -310,7 +325,7 @@ test("fuse: synthesizerInput falls back to text field when content is absent", (
     "should use text field when content is absent");
 });
 
-test("fuse: synthesizerInput falls back to id when neither content nor text is present", () => {
+test("fuse: synthesizerInput uses placeholder when neither content nor text is present (no id leak)", () => {
   const candidates = [
     { id: "bare-x", total: 9, passing: true },
     { id: "bare-y", total: 8, passing: true },
@@ -318,9 +333,11 @@ test("fuse: synthesizerInput falls back to id when neither content nor text is p
   ];
   const r = fuse(candidates, MAP_DISAGREEMENT);
   const contents = r.synthesizerInput.references.map(ref => ref.content);
-  // All should fall back to their ids
-  assert.ok(contents.every(c => ["bare-x", "bare-y", "bare-z"].includes(c)),
-    `all contents should be ids when no content/text: ${contents}`);
+  // Must use neutral placeholder, not leak candidate ids
+  assert.ok(contents.every(c => c === "[content unavailable]"),
+    `all contents should be the placeholder: ${contents}`);
+  assert.ok(!contents.some(c => ["bare-x", "bare-y", "bare-z"].includes(c)),
+    `content must not contain candidate ids: ${contents}`);
 });
 
 test("fuse: synthesizerInput includes fusionMap", () => {

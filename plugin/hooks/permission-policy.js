@@ -61,11 +61,11 @@ export function classifyDestructive(toolName, command) {
       .filter((t) => t.startsWith("-") && !t.startsWith("--"))
       .join("")
       .replace(/-/g, "");
-    if (flagChars.includes("r") && flagChars.includes("f")) {
+    if (flagChars.toLowerCase().includes("r") && flagChars.toLowerCase().includes("f")) {
       return "rm -rf";
     }
-    // Also check combined long-form: -rf or -fr in a single token
-    if (/\brm\s+[^|;&\n]*-[a-zA-Z]*r[a-zA-Z]*f|rm\s+[^|;&\n]*-[a-zA-Z]*f[a-zA-Z]*r/.test(command)) {
+    // Also check combined long-form: -rf or -fr in a single token (R/r and F/f)
+    if (/\brm\s+[^|;&\n]*-[a-zA-Z]*[rR][a-zA-Z]*[fF]|rm\s+[^|;&\n]*-[a-zA-Z]*[fF][a-zA-Z]*[rR]/.test(command)) {
       return "rm -rf";
     }
   }

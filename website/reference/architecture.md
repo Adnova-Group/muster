@@ -40,7 +40,7 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 | --- | --- | --- |
 | haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
 | sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| fable | the tournament `judge`, `architecture-review` | Heavy judgment |
+| fable | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
 | opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
 
 The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work. Set `MUSTER_MAX_TIER` to cap the highest tier Muster will use (e.g. `MUSTER_MAX_TIER=sonnet` keeps all work on sonnet and below).
@@ -76,6 +76,8 @@ Orchestration loops until done via a Ralph-style primitive (`src/loop.js`). Each
 
 After a run, the `improve` role (the read-only `muster-improver` agent) mines the run STATE, escalations, and review-gate fix-loops for recurring friction and proposes user-gated edits to Muster's own skills, agents, and rules. It proposes; it never applies, and never edits during a run.
 
+The `advisor` role lets a cheap-tier worker consult a stronger model (fable, degrading to opus) at a hard decision point. The worker returns a structured advice-request, a consult budget (`MUSTER_ADVISOR_MAX_CONSULTS`, default 3) bounds cost, the consult is logged to STATE (glass box), and the advice is fed back so the worker keeps the decision. The advisor informs; the worker decides. Native (Claude Code Agent-tool dispatch, no external server tools), autonomous-first (no human prompt).
+
 Driving Muster remotely uses Claude Code's own features, not a transport Muster ships. A Routine can fire `/muster:autopilot` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session.
 
 ## Session hooks
@@ -87,6 +89,8 @@ Muster ships three plugin-native hooks in `plugin/hooks/`. All are declared in `
 **`UserPromptSubmit`** (`user-prompt-submit.js`) implements two-tier drift reinforcement so sessions do not revert to default Claude behavior after compaction or a long run. It maintains a per-session turn counter and injects a short nudge every `MUSTER_NUDGE_EVERY` turns (default 3) and the full principles + verbs + routing policy every `MUSTER_NUDGE_EVERY * MUSTER_PRINCIPLES_EVERY` turns (default every 9 turns). Compaction re-fires `SessionStart` as a backstop.
 
 **`PreToolUse`** (`pre-tool-use.js`) enforces the wave-guard iron rule. While `.muster/wave-active` exists, any Edit, Write, NotebookEdit, or high-confidence Bash file write originating from the orchestrator main loop (not from a crew subagent) is blocked. Decision order: (1) subagent calls always allowed, (2) writes into `.muster/` always allowed (state bookkeeping), (3) allow if no wave marker exists, (4) allow if the marker is older than 60 minutes (stale or crashed wave), (5) honour `MUSTER_WAVE_GUARD`: `off` = silent allow, `warn` = allow with a reminder, unset or `deny` = deny. For Bash the guard is deliberately conservative (fail-open): only `sed -i`, `tee` to a non-exempt target, and `>` / `>>` redirects to non-exempt targets are denied. Exempt targets: `/dev/*`, `/tmp/*`, `.muster/*`.
+
+The same hook also applies a **post-run scale gate** once a run completes and `.muster/wave-active` is gone. Main-loop inline work that crosses the 3-file boundary (`MUSTER_INLINE_SCALE`, default 3) in a turn with no active wave is denied and routed to a verb. The gate counts both editor tools (Edit, Write, NotebookEdit) and high-confidence Bash file writes toward the per-turn limit. This closes the drift gap that SessionStart guidance and the UserPromptSubmit nudge could not hold in the post-run window.
 
 ## Vendoring
 

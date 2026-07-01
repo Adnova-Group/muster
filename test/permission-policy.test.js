@@ -35,6 +35,18 @@ test("classifyDestructive: rm -r /path -f matches", () => {
   assert.ok(classifyDestructive("Bash", "rm -r /some/path -f") !== null);
 });
 
+test("classifyDestructive: rm -Rf matches (uppercase R)", () => {
+  assert.ok(classifyDestructive("Bash", "rm -Rf /x") !== null);
+});
+
+test("classifyDestructive: rm -RF matches (uppercase R and F)", () => {
+  assert.ok(classifyDestructive("Bash", "rm -RF /x") !== null);
+});
+
+test("classifyDestructive: rm -fR matches (reversed flags, uppercase R)", () => {
+  assert.ok(classifyDestructive("Bash", "rm -fR /x") !== null);
+});
+
 test("classifyDestructive: git push --force matches", () => {
   assert.ok(classifyDestructive("Bash", "git push origin main --force") !== null);
 });
@@ -107,6 +119,10 @@ test("classifyDestructive: SELECT does not match", () => {
 
 test("classifyDestructive: rm -r without -f does not match", () => {
   assert.equal(classifyDestructive("Bash", "rm -r /some/path"), null);
+});
+
+test("classifyDestructive: rm -f file (force only, no recursive) does not match", () => {
+  assert.equal(classifyDestructive("Bash", "rm -f file.txt"), null);
 });
 
 test("classifyDestructive: null command returns null", () => {

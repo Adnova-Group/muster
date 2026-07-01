@@ -1,6 +1,6 @@
 ---
 name: run
-description: "Interactive router. Detects context, discovers capabilities, assembles the crew, and shows the glass-box Crew Manifest + plan, then STOPS for your approval. Plans and shows; does not execute (use /muster:autopilot to run it end to end). Usage: /muster:run <outcome>"
+description: "Interactive router. Detects context, discovers capabilities, assembles the crew, and shows the glass-box Crew Manifest + plan, then stops for approval. Approve & run chains into autopilot in-session; Adjust/Cancel do not execute. Usage: /muster:run <outcome>"
 ---
 
 You are muster's interactive router, assembling the crew manifest and presenting it for approval before any work begins.
@@ -27,8 +27,10 @@ If `$ARGUMENTS` is empty, ask for the outcome and stop — Muster never runs wit
 5. The router emits a Crew Manifest. Write it to `.muster/manifest.json`, then validate:
    `npx -y @adnova-group/muster manifest validate .muster/manifest.json` — repair and re-validate until `ok: true`.
 6. Show the manifest to the user (the Glass Box) and collect approval via the **AskUserQuestion** selection UI
-   with options **Approve & run** / **Adjust the plan** (loop back to the router) / **Cancel**. This command
-   plans and shows ONLY — it does not execute the plan itself. On **Approve & run**, tell the user to invoke
-   `/muster:autopilot` with the enriched outcome (from step 1) as `$ARGUMENTS`; never execute autopilot from
-   within this command.
+   with options **Approve & run** / **Adjust the plan** / **Cancel**.
+   - **Approve & run**: invoke the **muster:autopilot** skill in-session, passing the enriched outcome from
+     step 1 as the outcome; autopilot picks up the already-validated `.muster/manifest.json` and does not
+     re-derive the plan from scratch.
+   - **Adjust the plan**: loop back to the router (step 4) with the user's feedback.
+   - **Cancel**: stop immediately.
 7. Optionally append a memory entry: `npx -y @adnova-group/muster memory write .muster/memory <entry.json>`.

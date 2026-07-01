@@ -44,7 +44,7 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 | --- | --- | --- |
 | haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
 | sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| fable | the tournament `judge`, `architecture-review` | Heavy judgment |
+| fable | the tournament `judge`, `architecture-review`, `advisor` | Heavy judgment |
 | opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
 
 The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work: cheap models do the cheap parts, the expensive model is reserved for the calls that need it.

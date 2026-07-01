@@ -73,7 +73,8 @@ function minDisagreementThreshold() {
   const raw = process.env.MUSTER_FUSE_MIN_DISAGREEMENT;
   if (raw !== undefined && raw !== "") {
     const n = parseInt(raw, 10);
-    if (Number.isFinite(n)) return n;
+    // 0 = always-fuse (score < 0 never true); negatives are invalid and clamp to default.
+    if (Number.isFinite(n) && n >= 0) return n;
   }
   return 1;
 }
@@ -169,11 +170,10 @@ export function fuse(candidates, map, opts = {}) {
 
   // Build de-identified references: strip model/agent/id so the synthesizer
   // cannot exhibit self-bias toward a particular model or candidate identity.
-  // Content fallback order: content → text → id (wave 2 SKILL supplies content).
+  // Content fallback order: content → text → placeholder (wave 2 SKILL supplies content).
   const references = ordered.map((c, i) => ({
     index: i + 1,
-    // eslint-disable-next-line no-undefined -- explicit chain
-    content: c.content !== undefined ? c.content : c.text !== undefined ? c.text : c.id,
+    content: c.content ?? c.text ?? "[content unavailable]",
   }));
 
   return {

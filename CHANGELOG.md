@@ -5,6 +5,16 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-07-01
+
+### Added
+- **Fusion tournaments.** The agent tournament now synthesizes instead of discarding runners-up. A judge maps consensus, contradictions, partial-coverage, and blind-spots across all candidates; `muster fuse` decides fuse-vs-fallback (an agreement-gate skips synthesis when candidates already agree, fuses only the top-K, and de-identifies plus hash-orders them to curb position and self bias); a synthesizer then grafts the best of the top-K under a hardened anti-launder prompt. Winner-take-all stays as the deterministic fallback (`pickWinner`), tunable via `MUSTER_FUSE_MIN_DISAGREEMENT` and `MUSTER_FUSE_TOPK`. Native (no external server tools), grounded in Mixture-of-Agents and LLM-Blender.
+- **Advisor role (escalate-up).** A cheap-tier worker can consult a stronger model (fable, degrading to opus) at a hard decision point: it returns a structured advice-request, `muster advise` validates it, a consult budget bounds cost (`MUSTER_ADVISOR_MAX_CONSULTS`, default 3), the consult is logged to STATE, and the advice is fed back so the worker keeps the decision. The advisor informs; the worker decides. Native and autonomous-first (no human prompt).
+- **Post-run scale gate.** The `PreToolUse` hook now also guards the window after a run completes: main-loop inline work that crosses the 3-file boundary (`MUSTER_INLINE_SCALE`, default 3) in a turn with no active wave is denied and routed to a verb, counting both editor tools and high-confidence Bash writes. Closes the drift gap the advisory nudge alone could not hold.
+
+### Changed
+- **`/muster:run` "Approve & run" chains into `/muster:autopilot` in-session.** Approving a plan now runs it end to end without pasting a command; Adjust and Cancel stay plan-only.
+
 ## [0.3.0] - 2026-06-23
 
 ### Added

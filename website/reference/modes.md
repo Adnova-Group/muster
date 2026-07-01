@@ -25,6 +25,8 @@ Run and Autopilot both accept a GitHub issue reference (a bare number, `#123`, o
 
 Runs the whole lifecycle hands-off: branch, detect, route, run waves (parallel fan-out, tournaments, an adversarial review gate), commit per wave, then present the merge decision. It only stops for that merge decision or for an escalation.
 
+Tournaments synthesize rather than only pick one winner. The judge maps consensus, contradictions, partial coverage, and blind spots across candidates. `muster fuse` then either grafts the best of the top-K via a synthesizer (mode `fuse`) or falls back to the single best candidate (winner-take-all) when candidates already agree or only one passes.
+
 ```sh
 /muster:autopilot Resolve all open issues and update the README
 ```

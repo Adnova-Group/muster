@@ -25,7 +25,7 @@ npx @adnova-group/muster <command> [args]
 | `wave <file>` | Compute dependency-ordered execution waves from a manifest. |
 | `next <manifest.json> [--done a,b]` | Single-agent driver: given completed task ids, return the next runnable task (and the full ready frontier). |
 | `plan-checklist <file>` | Render the plan as a checklist (`--done <ids>` ticks completed tasks). |
-| `tally <file>` / `pick <file>` | Tally tournament votes and pick a winner. |
+| `tally <file>` / `pick <file>` | Tally tournament votes; pick selects the single best candidate (fallback ranker -- fuse is the default synthesis path). |
 | `fuse <candidates.json> <fusion-map.json>` | Fusion decision engine: validates the debate map, applies the agreement gate, and either selects top-K candidates for synthesis (mode `fuse`) or falls back to the single best candidate (mode `fallback`). Deterministic, no LLM calls. |
 | `advise <advice-request.json>` | Validate an advice request and emit the structured advisor dispatch input (`advisorModel` + `request`). Deterministic, no LLM calls. The advisor role resolves to the peak tier (fable, degrading to opus when fable is disabled). |
 

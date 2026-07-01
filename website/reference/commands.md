@@ -84,6 +84,13 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 | `assess <outcome>` | Deterministic gap-check: is the outcome clear enough to route? |
 | `steer <message>` | Classify a mid-run steering message (approve, stop, status, retarget). |
 
+## Permission gate
+
+| Command | What it does |
+| --- | --- |
+| `allow <toolName> [rest...] [--project]` | Capture a permission into the run store (`.muster/allow.run.json`, ephemeral) or the durable project store (`.muster-allow.json`, tracked). The `PreToolUse` hook reads these stores and auto-allows matching non-destructive calls. For Bash: `muster allow Bash npm test`. For editor tools: `muster allow Edit /src/foo.js`. Add `--project` for the tracked project store. |
+| `allow --list [--project]` | Print the current keys in the run store or the project store. |
+
 ## Ops and setup
 
 | Command | What it does |

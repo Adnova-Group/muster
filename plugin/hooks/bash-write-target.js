@@ -37,11 +37,13 @@ export function bashWriteTarget(command) {
   }
 
   // 2. tee to a non-exempt target
-  // Match: word boundary `tee`, optional -a flag, then the target token.
-  const teeMatch = command.match(/\btee\b\s+(?:-a\s+)?(\S+)/);
+  // Skip any leading flag tokens (-a, -i, --append, ...) and take the first
+  // non-flag token as the destination, consistent with the cp/mv handling below.
+  const teeMatch = command.match(/\btee\b([^|;&\n]*)/);
   if (teeMatch) {
-    const target = teeMatch[1];
-    if (!EXEMPT_TARGET_RE.test(target)) {
+    const tokens = teeMatch[1].trim().split(/\s+/).filter(Boolean);
+    const target = tokens.find((t) => !t.startsWith("-"));
+    if (target && !EXEMPT_TARGET_RE.test(target)) {
       return `tee ${target}`;
     }
   }

@@ -366,6 +366,14 @@ test("bashWriteTarget: npm test | tee out.log is a write", () => {
   assert.ok(bashWriteTarget("npm test | tee out.log") !== null, "tee to non-exempt file should match");
 });
 
+test("bashWriteTarget: tee flags are skipped, real filename is the fragment", () => {
+  // -i / --append must not be mistaken for the target (would be a wrong message
+  // and, before command-keying, a budget-collapse vector).
+  assert.equal(bashWriteTarget("cmd | tee -i out.log"), "tee out.log", "-i skipped");
+  assert.equal(bashWriteTarget("cmd | tee --append out.log"), "tee out.log", "--append skipped");
+  assert.equal(bashWriteTarget("cmd | tee -a /dev/stderr"), null, "flag skip still respects exempt target");
+});
+
 test("bashWriteTarget: echo x >> README.md is a write", () => {
   assert.ok(bashWriteTarget("echo x >> README.md") !== null, "append redirect to file should match");
 });

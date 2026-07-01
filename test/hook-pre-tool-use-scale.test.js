@@ -1,0 +1,393 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import os from "node:os";
+import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
+
+// Scale-gate: the post-run enforcement. With NO active wave, the orchestrator
+// main loop may edit 1-2 distinct files per turn (trivial/surgical falls
+// through), but the 3rd distinct file in one turn is orchestration-scale and is
+// gated back to a verb. This is the enforcement the advisory nudge could not
+// provide, covering the window AFTER a wave marker is removed.
+
+const HOOKDIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "plugin",
+  "hooks",
+);
+const PRE = path.join(HOOKDIR, "pre-tool-use.js");
+const UPS = path.join(HOOKDIR, "user-prompt-submit.js");
+
+function runPre(stdinText, env = {}) {
+  return spawnHook(PRE, stdinText, env);
+}
+
+// A no-wave working dir: .muster/ exists but no wave-active marker.
+function noWaveDir() {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-scale-test-"));
+  mkdirSync(path.join(dir, ".muster"), { recursive: true });
+  return dir;
+}
+
+function editPayload(filePath, cwd, sessionId, extra = {}) {
+  return JSON.stringify({
+    tool_name: "Edit",
+    tool_input: { file_path: filePath },
+    cwd,
+    session_id: sessionId,
+    ...extra,
+  });
+}
+
+function bashPayload(command, cwd, sessionId) {
+  return JSON.stringify({
+    tool_name: "Bash",
+    tool_input: { command },
+    cwd,
+    session_id: sessionId,
+  });
+}
+
+// Remove the per-session tmp budget file so tests don't contaminate each other.
+function clearBudget(sessionId) {
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
+  try { rmSync(path.join(os.tmpdir(), `muster-inline-${safe}`), { force: true }); } catch { /* ignore */ }
+}
+
+function decision(stdout) {
+  return JSON.parse(stdout).hookSpecificOutput.permissionDecision;
+}
+
+// ── core repro→fix: 1st & 2nd distinct file allowed, 3rd denied ─────────────
+test("no wave: 3rd distinct inline file edit in a turn is denied", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-core-1";
+  clearBudget(sid);
+  try {
+    const a = await runPre(editPayload("/proj/src/a.js", dir, sid));
+    const b = await runPre(editPayload("/proj/src/b.js", dir, sid));
+    const c = await runPre(editPayload("/proj/src/c.js", dir, sid));
+    assert.notEqual(decision(a.stdout), "deny", "1st file allowed");
+    assert.notEqual(decision(b.stdout), "deny", "2nd file allowed");
+    assert.equal(decision(c.stdout), "deny", "3rd distinct file denied");
+    assert.match(
+      JSON.parse(c.stdout).hookSpecificOutput.permissionDecisionReason,
+      /verb|\/muster:run|autopilot/i,
+      "deny reason routes to a verb",
+    );
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── re-editing the SAME file does not accumulate ────────────────────────────
+test("no wave: repeated edits to the same file never trip the gate", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-same-1";
+  clearBudget(sid);
+  try {
+    for (let i = 0; i < 5; i++) {
+      const r = await runPre(editPayload("/proj/src/only.js", dir, sid));
+      assert.notEqual(decision(r.stdout), "deny", `edit #${i + 1} to same file allowed`);
+    }
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── subagent edits are exempt and do not count toward the budget ────────────
+test("no wave: subagent (agent_id) edits never denied, don't consume budget", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-sub-1";
+  clearBudget(sid);
+  try {
+    for (let i = 0; i < 4; i++) {
+      const r = await runPre(
+        editPayload(`/proj/src/s${i}.js`, dir, sid, { agent_id: "sub-x" }),
+      );
+      assert.notEqual(decision(r.stdout), "deny", "subagent edit allowed");
+    }
+    // main-loop edits afterward still get a fresh 1-2 file budget
+    const m1 = await runPre(editPayload("/proj/src/m1.js", dir, sid));
+    const m2 = await runPre(editPayload("/proj/src/m2.js", dir, sid));
+    assert.notEqual(decision(m1.stdout), "deny");
+    assert.notEqual(decision(m2.stdout), "deny", "subagent edits didn't eat the budget");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── .muster/ writes are exempt (STATE bookkeeping) ──────────────────────────
+test("no wave: edits under .muster/ don't consume the scale budget", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-muster-1";
+  clearBudget(sid);
+  try {
+    for (let i = 0; i < 4; i++) {
+      const r = await runPre(editPayload(`.muster/note-${i}.md`, dir, sid));
+      assert.notEqual(decision(r.stdout), "deny", ".muster/ edit allowed");
+    }
+    const m1 = await runPre(editPayload("/proj/src/x.js", dir, sid));
+    const m2 = await runPre(editPayload("/proj/src/y.js", dir, sid));
+    assert.notEqual(decision(m1.stdout), "deny");
+    assert.notEqual(decision(m2.stdout), "deny", ".muster edits didn't eat the budget");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── MUSTER_WAVE_GUARD=off disables the scale gate ───────────────────────────
+test("no wave: MUSTER_WAVE_GUARD=off lets the 3rd file through", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-off-1";
+  clearBudget(sid);
+  try {
+    await runPre(editPayload("/proj/a.js", dir, sid), { MUSTER_WAVE_GUARD: "off" });
+    await runPre(editPayload("/proj/b.js", dir, sid), { MUSTER_WAVE_GUARD: "off" });
+    const c = await runPre(editPayload("/proj/c.js", dir, sid), { MUSTER_WAVE_GUARD: "off" });
+    assert.notEqual(decision(c.stdout), "deny", "off => no scale gate");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── MUSTER_WAVE_GUARD=warn allows but attaches a reminder ───────────────────
+test("no wave: MUSTER_WAVE_GUARD=warn allows 3rd file with a reminder", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-warn-1";
+  clearBudget(sid);
+  try {
+    await runPre(editPayload("/proj/a.js", dir, sid), { MUSTER_WAVE_GUARD: "warn" });
+    await runPre(editPayload("/proj/b.js", dir, sid), { MUSTER_WAVE_GUARD: "warn" });
+    const c = await runPre(editPayload("/proj/c.js", dir, sid), { MUSTER_WAVE_GUARD: "warn" });
+    const out = JSON.parse(c.stdout).hookSpecificOutput;
+    assert.notEqual(out.permissionDecision, "deny", "warn => allowed");
+    assert.match(out.additionalContext || "", /verb|\/muster:run|autopilot/i, "warn attaches a routing reminder");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── missing session_id => fail-open (preserves legacy behavior) ─────────────
+test("no wave: absent session_id disables the gate (fail-open)", async () => {
+  const dir = noWaveDir();
+  try {
+    // No session_id in payload; 3 distinct edits, none should deny.
+    const p = (f) => JSON.stringify({ tool_name: "Edit", tool_input: { file_path: f }, cwd: dir });
+    await runPre(p("/proj/a.js"));
+    await runPre(p("/proj/b.js"));
+    const c = await runPre(p("/proj/c.js"));
+    assert.notEqual(decision(c.stdout), "deny", "no session => no gate");
+  } finally {
+    cleanDir(dir);
+  }
+});
+
+// ── Bash escape hatch is closed: shell writes count toward the budget ───────
+test("no wave: a high-confidence Bash file write counts toward the scale budget", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-bash-1";
+  clearBudget(sid);
+  try {
+    const a = await runPre(editPayload("/proj/a.js", dir, sid));
+    const b = await runPre(editPayload("/proj/b.js", dir, sid));
+    // 3rd distinct mutation is a shell write — must be gated, not a bypass.
+    const c = await runPre(bashPayload("echo hi > /proj/c.js", dir, sid));
+    assert.notEqual(decision(a.stdout), "deny");
+    assert.notEqual(decision(b.stdout), "deny");
+    assert.equal(decision(c.stdout), "deny", "shell write is not an escape hatch");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── sed -i writes to distinct files each consume a budget slot (no key-collapse)
+test("no wave: distinct sed -i targets each consume budget (not one shared slot)", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-sedi-1";
+  clearBudget(sid);
+  try {
+    const a = await runPre(bashPayload("sed -i 's/x/y/' /proj/a.js", dir, sid));
+    const b = await runPre(bashPayload("sed -i 's/x/y/' /proj/b.js", dir, sid));
+    const c = await runPre(bashPayload("sed -i 's/x/y/' /proj/c.js", dir, sid));
+    assert.notEqual(decision(a.stdout), "deny", "1st sed -i allowed");
+    assert.notEqual(decision(b.stdout), "deny", "2nd sed -i allowed");
+    assert.equal(decision(c.stdout), "deny", "3rd distinct sed -i target denied — no key-collapse");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── mixed Edit + sed -i reaches the threshold together ──────────────────────
+test("no wave: Edit + sed -i to distinct files reach the scale threshold", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-sedi-2";
+  clearBudget(sid);
+  try {
+    await runPre(editPayload("/proj/a.js", dir, sid));
+    await runPre(bashPayload("sed -i 's/a/b/' /proj/b.js", dir, sid));
+    const c = await runPre(bashPayload("sed -i 's/a/b/' /proj/c.js", dir, sid));
+    assert.equal(decision(c.stdout), "deny", "editor + shell writes share one budget");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── non-write Bash never counts and never denies ────────────────────────────
+test("no wave: read-only Bash commands don't consume the budget or deny", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-bash-2";
+  clearBudget(sid);
+  try {
+    for (let i = 0; i < 5; i++) {
+      const r = await runPre(bashPayload(`ls -la /proj/dir${i}`, dir, sid));
+      assert.notEqual(decision(r.stdout), "deny", "read-only bash allowed");
+    }
+    // budget untouched: two edits still fall through
+    const m1 = await runPre(editPayload("/proj/x.js", dir, sid));
+    const m2 = await runPre(editPayload("/proj/y.js", dir, sid));
+    assert.notEqual(decision(m1.stdout), "deny");
+    assert.notEqual(decision(m2.stdout), "deny", "read-only bash didn't eat the budget");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── an active wave still routes through the wave-guard, not the scale gate ───
+test("active wave: first inline edit already denied by wave-guard (unchanged)", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-scale-test-"));
+  makeMarker(dir, "wave-099");
+  const sid = "scale-wave-1";
+  clearBudget(sid);
+  try {
+    const r = await runPre(editPayload("/proj/src/a.js", dir, sid));
+    assert.equal(decision(r.stdout), "deny", "wave-guard denies from the 1st file");
+    assert.match(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, /wave-099/);
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── MUSTER_INLINE_SCALE override lowers the threshold ───────────────────────
+test("no wave: MUSTER_INLINE_SCALE=2 denies the 2nd distinct file", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-env-1";
+  clearBudget(sid);
+  try {
+    const a = await runPre(editPayload("/proj/a.js", dir, sid), { MUSTER_INLINE_SCALE: "2" });
+    const b = await runPre(editPayload("/proj/b.js", dir, sid), { MUSTER_INLINE_SCALE: "2" });
+    assert.notEqual(decision(a.stdout), "deny", "1st allowed");
+    assert.equal(decision(b.stdout), "deny", "2nd denied at threshold 2");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── stale marker (>60min) applies the scale gate, not the wave-guard ────────
+test("stale marker: scale gate denies the 3rd distinct file (not wave-guard)", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-scale-test-"));
+  const stale = new Date(Date.now() - 61 * 60 * 1000);
+  makeMarker(dir, "wave-stale", { mtime: stale });
+  const sid = "scale-stale-1";
+  clearBudget(sid);
+  try {
+    await runPre(editPayload("/proj/a.js", dir, sid));
+    await runPre(editPayload("/proj/b.js", dir, sid));
+    const c = await runPre(editPayload("/proj/c.js", dir, sid));
+    const out = JSON.parse(c.stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "3rd file denied under stale marker");
+    assert.doesNotMatch(out.permissionDecisionReason, /wave-stale/, "scale-gate reason, not wave-guard");
+    assert.match(out.permissionDecisionReason, /autopilot|verb/i);
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── a denied file stays counted: the 4th distinct file is also denied ───────
+test("no wave: once tripped, subsequent distinct files stay denied", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-post-1";
+  clearBudget(sid);
+  try {
+    await runPre(editPayload("/proj/a.js", dir, sid));
+    await runPre(editPayload("/proj/b.js", dir, sid));
+    const c = await runPre(editPayload("/proj/c.js", dir, sid));
+    const d = await runPre(editPayload("/proj/d.js", dir, sid));
+    assert.equal(decision(c.stdout), "deny", "3rd denied");
+    assert.equal(decision(d.stdout), "deny", "4th also denied (denied file stayed counted)");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── all-punctuation session_id fails open in the PreToolUse gate ────────────
+test("no wave: all-punctuation session_id disables the gate (fail-open)", async () => {
+  const dir = noWaveDir();
+  try {
+    await runPre(editPayload("/proj/a.js", dir, "!!!"));
+    await runPre(editPayload("/proj/b.js", dir, "!!!"));
+    const c = await runPre(editPayload("/proj/c.js", dir, "!!!"));
+    assert.notEqual(decision(c.stdout), "deny", "unusable session id => no budget, no deny");
+  } finally {
+    cleanDir(dir);
+  }
+});
+
+// ── Bash write to an EXEMPT target doesn't consume budget in the no-wave gate ─
+test("no wave: Bash write to /tmp (exempt) consumes no scale budget", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-exempt-1";
+  clearBudget(sid);
+  try {
+    await runPre(editPayload("/proj/a.js", dir, sid));
+    await runPre(editPayload("/proj/b.js", dir, sid));
+    // exempt-target shell write as the 3rd operation: must NOT trip the gate
+    const t = await runPre(bashPayload("echo hi > /tmp/out.txt", dir, sid));
+    assert.notEqual(decision(t.stdout), "deny", "/tmp write is exempt, no budget consumed");
+    // ...and a genuine 3rd distinct file still trips it (the /tmp write used zero budget)
+    const c = await runPre(editPayload("/proj/c.js", dir, sid));
+    assert.equal(decision(c.stdout), "deny", "real 3rd file still denied");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── UserPromptSubmit resets the per-turn budget ─────────────────────────────
+test("a new user turn resets the scale budget", async () => {
+  const dir = noWaveDir();
+  const sid = "scale-reset-1";
+  clearBudget(sid);
+  try {
+    await runPre(editPayload("/proj/a.js", dir, sid));
+    await runPre(editPayload("/proj/b.js", dir, sid));
+    const c = await runPre(editPayload("/proj/c.js", dir, sid));
+    assert.equal(decision(c.stdout), "deny", "3rd file denied before reset");
+
+    // New user turn fires UserPromptSubmit for the same session.
+    await spawnHook(UPS, JSON.stringify({ session_id: sid, prompt: "keep going" }));
+
+    const d = await runPre(editPayload("/proj/d.js", dir, sid));
+    assert.notEqual(decision(d.stdout), "deny", "budget reset => new turn gets fresh allowance");
+  } finally {
+    clearBudget(sid);
+    cleanDir(dir);
+  }
+});

@@ -11,7 +11,7 @@ const HAIKU = new Set(["code-navigation", "docs-research", "research"]);
 // high-stakes — worth the top tier alongside architecture review.
 // Dead names (strategist, architect) removed — never passed to
 // modelForRole; muster-strategist is a provider id, not a role.
-const FABLE = new Set(["judge", "architecture-review", "improve"]);
+const FABLE = new Set(["judge", "architecture-review", "improve", "advisor"]);
 
 // Ascending capability order. opus is included because it is a valid dispatch
 // tier via fallbackModelFor (fable degrades to opus) even though modelForRole

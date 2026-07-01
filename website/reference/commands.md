@@ -27,6 +27,7 @@ npx @adnova-group/muster <command> [args]
 | `plan-checklist <file>` | Render the plan as a checklist (`--done <ids>` ticks completed tasks). |
 | `tally <file>` / `pick <file>` | Tally tournament votes and pick a winner. |
 | `fuse <candidates.json> <fusion-map.json>` | Fusion decision engine: validates the debate map, applies the agreement gate, and either selects top-K candidates for synthesis (mode `fuse`) or falls back to the single best candidate (mode `fallback`). Deterministic, no LLM calls. |
+| `advise <advice-request.json>` | Validate an advice request and emit the structured advisor dispatch input (`advisorModel` + `request`). Deterministic, no LLM calls. The advisor role resolves to the peak tier (fable, degrading to opus when fable is disabled). |
 
 ## Scoring and prioritization
 

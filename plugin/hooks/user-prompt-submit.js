@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE } from "./guidance.js";
+import { budgetFile, resetBudget, safeSession } from "./inline-budget.js";
 
 const EVENT = "UserPromptSubmit";
 
@@ -23,11 +24,11 @@ function posInt(value, fallback) {
 
 // Increment and persist a per-session turn counter; return the new count.
 function bumpTurn(sessionId) {
-  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-  // Guard: if sanitization yields an empty string, skip turn-counting entirely
-  // to avoid writing a bare shared file (muster-turns-) that causes cross-session
-  // collisions.
-  if (safe.length === 0) return null;
+  // Shared sanitization rule (inline-budget.js). Null when nothing usable remains:
+  // skip turn-counting rather than write a bare shared file (muster-turns-) that
+  // causes cross-session collisions.
+  const safe = safeSession(sessionId);
+  if (safe === null) return null;
   const file = path.join(os.tmpdir(), `muster-turns-${safe}`);
   let count = 0;
   try {
@@ -49,6 +50,14 @@ try {
   }
   const sessionId = typeof payload.session_id === "string" ? payload.session_id : undefined;
   const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+
+  // A new user turn resets the per-turn inline-edit scale budget that the
+  // PreToolUse scale gate reads (fresh allowance each turn). Runs for every
+  // turn, including slash commands.
+  if (typeof sessionId === "string" && sessionId.length > 0) {
+    const file = budgetFile(sessionId);
+    if (file) resetBudget(file);
+  }
 
   // Slash-command turns are explicit intent — never inject on them, and never count
   // them. Injecting context on a "/..." prompt is noise, and in a relayed/remote

@@ -37,6 +37,7 @@ import { scoreHumanness } from "./humanizer-score.js";
 import { gradeCollected } from "./prompt-eval.js";
 import { proposeVariations, selectWinner } from "./prompt-optimize.js";
 import { discoverPrompts } from "./prompt-discover.js";
+import { permissionKey, addKey, readStore } from "./permission.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -301,6 +302,47 @@ try {
     out(await initScratchpad(rest[1] || ".muster", rest[0]));
   } else if (cmd === "profile") {
     out(await readProfile());
+  } else if (cmd === "allow") {
+    // muster allow <toolName> [rest...] [--project]
+    // muster allow --list [--project]
+    //
+    // Capture path for the Learning Permission Gate (wave 2).
+    // Writes the permission key for the given tool call to the run store
+    // (.muster/allow.run.json, ephemeral) or the durable project store
+    // (.muster-allow.json, tracked). The PreToolUse hook reads these stores
+    // and auto-allows matching calls without bothering the user again.
+    //
+    // Key format mirrors permissionKey() in permission-policy.js:
+    //   Bash: "Bash:<full command string>"
+    //   Others: "<toolName>:<target path>"
+    const isList = rest.includes("--list");
+    const isProject = rest.includes("--project");
+    const storeArgs = rest.filter(a => a !== "--project" && a !== "--list");
+    const storePath = isProject
+      ? join(process.cwd(), ".muster-allow.json")
+      : join(process.cwd(), ".muster", "allow.run.json");
+
+    if (isList) {
+      const keys = readStore(storePath);
+      keys.forEach(k => process.stdout.write(k + "\n"));
+    } else {
+      const [toolName, ...cmdArgs] = storeArgs;
+      if (!toolName) fail("allow <toolName> [rest...] [--project|--list]: missing toolName");
+
+      const isBash = toolName === "Bash";
+      const command = isBash ? cmdArgs.join(" ") : "";
+      const toolTarget = isBash ? "" : (cmdArgs[0] || "");
+
+      const key = permissionKey(toolName, { command, target: toolTarget });
+
+      // Ensure the .muster/ directory exists for the run store.
+      if (!isProject) {
+        await mkdir(join(process.cwd(), ".muster"), { recursive: true });
+      }
+
+      addKey(storePath, key);
+      out({ ok: true, key, store: isProject ? "project" : "run" });
+    }
   } else if (cmd === "install") {
     out(await runInstall({ home: rest[0] || homedir() }));
   } else if (cmd === "uninstall") {
@@ -314,7 +356,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]|allow <toolName> [rest...] [--project]|allow --list [--project]>`);
   }
 } catch (e) {
   fail(formatError(e));

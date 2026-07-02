@@ -71,9 +71,12 @@ const hasXmlBlock = (text) => {
 const ACTION_VERB = /^(write|generate|classify|summari[sz]e|extract|identify|analy[sz]e|create|list|translate|rewrite|explain|compare|evaluate|produce|return|find|select|determine|draft|review)\b/i;
 // Negative-instruction phrasings. `no <verb>ing` is restricted to a small set of known
 // constraint verbs so ordinary noun phrases ("no existing context", "no meaning") are
-// not miscounted as negatives. Built per-call (not a shared /g literal) to avoid a
-// stateful `lastIndex` foot-gun.
+// not miscounted as negatives.
+// NEGATIVE_RE is a module-level singleton (hoisted from per-call `new RegExp`) to avoid
+// allocating a fresh RegExp on every lint call. Because it carries the /g flag, its
+// `lastIndex` is stateful — callers must reset it to 0 before each use.
 const NEGATIVE_SRC = "\\b(do not|don'?t|never|avoid|no\\s+(?:log|cach|retr|truncat|format|wrap|generat|output|process|nest|render)\\w*ing)\\b";
+const NEGATIVE_RE = new RegExp(NEGATIVE_SRC, "gi");
 
 export const RULES = [
   {
@@ -121,8 +124,9 @@ export const RULES = [
     title: "Prefer positive instructions over negative ones", source: BP,
     applies: () => true,
     pass: (t, c) => {
+      NEGATIVE_RE.lastIndex = 0; // reset before use — /g flag makes it stateful
       const s = stripCode(surface(t, c));
-      const neg = (s.match(new RegExp(NEGATIVE_SRC, "gi")) || []).length;
+      const neg = (s.match(NEGATIVE_RE) || []).length;
       // System/instruction prompts (esp. guardrail roles) legitimately use more
       // prohibitions ("read-only", "never modify"), so tolerate more before flagging.
       return neg <= (c.genre === "system" ? 5 : 2);

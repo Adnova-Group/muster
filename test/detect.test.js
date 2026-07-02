@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tmpProject } from "../test-support/helpers.js";
-import { detectProject } from "../src/detect.js";
+import { detectProject, hasPromptingSignal } from "../src/detect.js";
 
 const pexec = promisify(execFile);
 
@@ -102,4 +102,75 @@ test("populates vcs from a real git repo", async () => {
   assert.equal(typeof p.vcs.branch, "string");      // some branch name
   assert.equal(p.vcs.dirty, true);                   // untracked files present
   assert.equal(p.vcs.hasRemote, false);              // no remote added
+});
+
+// --- hasPromptingSignal (item 8) ---
+
+test("hasPromptingSignal: true when @anthropic-ai/sdk is in dependencies", async () => {
+  const dir = await tmpProject({
+    "package.json": { dependencies: { "@anthropic-ai/sdk": "0.30.0" } }
+  });
+  assert.equal(await hasPromptingSignal(dir), true);
+});
+
+test("hasPromptingSignal: true when AI SDK is in devDependencies", async () => {
+  const dir = await tmpProject({
+    "package.json": { devDependencies: { "openai": "4.0.0" } }
+  });
+  assert.equal(await hasPromptingSignal(dir), true);
+});
+
+test("hasPromptingSignal: false for a plain express project", async () => {
+  const dir = await tmpProject({
+    "package.json": { dependencies: { "express": "4.0.0" } }
+  });
+  assert.equal(await hasPromptingSignal(dir), false);
+});
+
+test("hasPromptingSignal: false and does not throw when package.json is absent", async () => {
+  const dir = await tmpProject({});
+  assert.equal(await hasPromptingSignal(dir), false);
+});
+
+// --- detectProject shapes (item 10) ---
+
+test("detectProject: backend shape from express dep", async () => {
+  const dir = await tmpProject({
+    "package.json": { dependencies: { "express": "4.0.0" } }
+  });
+  const p = await detectProject(dir);
+  assert.equal(p.shape, "backend");
+});
+
+test("detectProject: fullstack shape when both frontend and backend deps present", async () => {
+  const dir = await tmpProject({
+    "package.json": { dependencies: { "react": "18.0.0", "express": "4.0.0" } }
+  });
+  const p = await detectProject(dir);
+  assert.equal(p.shape, "fullstack");
+});
+
+test("detectProject: library shape from package.json main/exports without FE or BE", async () => {
+  const dir = await tmpProject({
+    "package.json": { main: "index.js", dependencies: { "lodash": "4.0.0" } }
+  });
+  const p = await detectProject(dir);
+  assert.equal(p.shape, "library");
+});
+
+test("detectProject: monorepo shape when pnpm-workspace.yaml present", async () => {
+  const dir = await tmpProject({
+    "package.json": { name: "root" },
+    "pnpm-workspace.yaml": "packages:\n  - packages/*"
+  });
+  const p = await detectProject(dir);
+  assert.equal(p.shape, "monorepo");
+});
+
+test("detectProject: monorepo shape when package.json has workspaces field", async () => {
+  const dir = await tmpProject({
+    "package.json": { workspaces: ["packages/*"] }
+  });
+  const p = await detectProject(dir);
+  assert.equal(p.shape, "monorepo");
 });

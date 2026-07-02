@@ -28,6 +28,21 @@ function extractHookFilename(command) {
   return m ? m[1] : null;
 }
 
+// Reads installed_plugins.json for the given home dir and locates the muster plugin entry.
+// Returns { found: false, reason } when the file is absent or has no muster entry, or
+// { found: true, musterKey, entries } when muster is present.  Called once per runDoctor
+// invocation so both plugin-staleness and install-integrity share a single file read.
+async function readMusterPluginEntry(home) {
+  const effectiveHome = home || homedir();
+  const installedPath = join(effectiveHome, ".claude/plugins/installed_plugins.json");
+  const installedJson = await readJson(installedPath);
+  if (!installedJson || !installedJson.plugins) return { found: false, reason: "no-file" };
+  const musterKey = Object.keys(installedJson.plugins).find(k => k.split("@")[0] === "muster");
+  if (!musterKey) return { found: false, reason: "no-entry" };
+  const entries = installedJson.plugins[musterKey];
+  return { found: true, musterKey, entries };
+}
+
 // Semver comparison: returns negative if a < b, 0 if equal, positive if a > b.
 // Only handles the numeric major.minor.patch form used by this project.
 function semverCompare(a, b) {
@@ -95,42 +110,36 @@ export async function runDoctor({ root, home } = {}) {
     }
   }
 
+  // Read once; shared by plugin-staleness and install-integrity to avoid two file reads.
+  const pluginEntry = await readMusterPluginEntry(home);
+
   // --- plugin staleness ---
   // Compare the installed muster plugin version against the version in the
   // repo's plugin manifest.  Missing installed_plugins.json or no muster entry
   // is fine — this is a dev machine without the plugin installed.
   {
-    const effectiveHome = home || homedir();
-    const installedPath = join(effectiveHome, ".claude/plugins/installed_plugins.json");
     const manifestPath = join(base, "plugin/.claude-plugin/plugin.json");
-
-    const installedJson = await readJson(installedPath);
     const manifestJson = await readJson(manifestPath);
     const repoVersion = manifestJson?.version;
 
-    if (!installedJson || !installedJson.plugins) {
-      // No install file — skip (ok for dev/CI)
-      checks.push({ name: "plugin-staleness", ok: true, detail: "no installed_plugins.json — skip" });
+    if (!pluginEntry.found) {
+      const detail = pluginEntry.reason === "no-file"
+        ? "no installed_plugins.json — skip"
+        : "muster not in installed_plugins.json — skip";
+      checks.push({ name: "plugin-staleness", ok: true, detail });
     } else {
-      // Find a key whose plugin name (before @) is "muster"
-      const musterKey = Object.keys(installedJson.plugins).find(k => k.split("@")[0] === "muster");
-      if (!musterKey) {
-        checks.push({ name: "plugin-staleness", ok: true, detail: "muster not in installed_plugins.json — skip" });
+      // The value is an array of objects; version may live on the first entry.
+      const installedVersion = Array.isArray(pluginEntry.entries) && pluginEntry.entries[0]?.version;
+      if (!installedVersion || !repoVersion) {
+        checks.push({ name: "plugin-staleness", ok: true, detail: "version info unavailable — skip" });
+      } else if (semverCompare(installedVersion, repoVersion) < 0) {
+        checks.push({
+          name: "plugin-staleness",
+          ok: false,
+          detail: `installed muster ${installedVersion} < repo ${repoVersion} — run: /plugin marketplace update muster, /plugin update muster, then restart Claude Code`
+        });
       } else {
-        // The value is an array of objects; version may live on the first entry.
-        const entries = installedJson.plugins[musterKey];
-        const installedVersion = Array.isArray(entries) && entries[0]?.version;
-        if (!installedVersion || !repoVersion) {
-          checks.push({ name: "plugin-staleness", ok: true, detail: "version info unavailable — skip" });
-        } else if (semverCompare(installedVersion, repoVersion) < 0) {
-          checks.push({
-            name: "plugin-staleness",
-            ok: false,
-            detail: `installed muster ${installedVersion} < repo ${repoVersion} — run: /plugin marketplace update muster, /plugin update muster, then restart Claude Code`
-          });
-        } else {
-          checks.push({ name: "plugin-staleness", ok: true, detail: `installed muster ${installedVersion} is current` });
-        }
+        checks.push({ name: "plugin-staleness", ok: true, detail: `installed muster ${installedVersion} is current` });
       }
     }
   }
@@ -141,39 +150,32 @@ export async function runDoctor({ root, home } = {}) {
   // cache directory means the plugin copy silently failed and hooks will never
   // load, even though the version string looks healthy.
   {
-    const effectiveHome = home || homedir();
-    const installedPath = join(effectiveHome, ".claude/plugins/installed_plugins.json");
-    const installedJson = await readJson(installedPath);
-
-    if (!installedJson || !installedJson.plugins) {
-      checks.push({ name: "install-integrity", ok: true, detail: "no installed_plugins.json — skip" });
+    if (!pluginEntry.found) {
+      const detail = pluginEntry.reason === "no-file"
+        ? "no installed_plugins.json — skip"
+        : "muster not in installed_plugins.json — skip";
+      checks.push({ name: "install-integrity", ok: true, detail });
     } else {
-      const musterKey = Object.keys(installedJson.plugins).find(k => k.split("@")[0] === "muster");
-      if (!musterKey) {
-        checks.push({ name: "install-integrity", ok: true, detail: "muster not in installed_plugins.json — skip" });
-      } else {
-        const entries = installedJson.plugins[musterKey];
-        const entry = Array.isArray(entries) ? entries[0] : null;
-        const installPath = entry?.installPath;
-        const remediation = `plugin cache is missing/incomplete — run: claude plugin uninstall muster@<marketplace> && claude plugin install muster@<marketplace>, then restart`;
+      const entry = Array.isArray(pluginEntry.entries) ? pluginEntry.entries[0] : null;
+      const installPath = entry?.installPath;
+      const remediation = `plugin cache is missing/incomplete — run: claude plugin uninstall muster@<marketplace> && claude plugin install muster@<marketplace>, then restart`;
 
-        if (!installPath) {
-          checks.push({ name: "install-integrity", ok: true, detail: "no installPath recorded — skip" });
-        } else if (!(await exists(installPath))) {
-          checks.push({
-            name: "install-integrity",
-            ok: false,
-            detail: `${remediation} (installPath not found: ${installPath})`
-          });
-        } else if (!(await exists(join(installPath, "hooks/hooks.json")))) {
-          checks.push({
-            name: "install-integrity",
-            ok: false,
-            detail: `${remediation} (hooks/hooks.json missing under: ${installPath})`
-          });
-        } else {
-          checks.push({ name: "install-integrity", ok: true, detail: `installPath verified: ${installPath}` });
-        }
+      if (!installPath) {
+        checks.push({ name: "install-integrity", ok: true, detail: "no installPath recorded — skip" });
+      } else if (!(await exists(installPath))) {
+        checks.push({
+          name: "install-integrity",
+          ok: false,
+          detail: `${remediation} (installPath not found: ${installPath})`
+        });
+      } else if (!(await exists(join(installPath, "hooks/hooks.json")))) {
+        checks.push({
+          name: "install-integrity",
+          ok: false,
+          detail: `${remediation} (hooks/hooks.json missing under: ${installPath})`
+        });
+      } else {
+        checks.push({ name: "install-integrity", ok: true, detail: `installPath verified: ${installPath}` });
       }
     }
   }

@@ -6,6 +6,25 @@ function pluginName(key) { return key.split("@")[0]; }
 
 async function readdirSafe(p) { try { return await readdir(p); } catch { return []; } }
 
+// Depth-limited walk shared by collectPluginAgents and collectPluginSkills.
+// When a directory named `dirName` is found at any depth, `collect` is called
+// with the full path to that directory. The walk recurses into siblings but not
+// into the matched directory itself (the per-leaf callback owns that traversal).
+// readdirSafe returns [] for files, so leaf entries terminate the recursion naturally.
+async function walkForSubdir(base, maxDepth, dirName, collect) {
+  async function walk(dir, depth) {
+    if (depth > maxDepth) return;
+    for (const entry of await readdirSafe(dir)) {
+      if (entry === dirName) {
+        await collect(join(dir, dirName));
+        continue;
+      }
+      await walk(join(dir, entry), depth + 1);
+    }
+  }
+  await walk(base, 0);
+}
+
 // Collect agent names (sans .md) from any agents/ dir found within `pluginsBase`.
 // Walks up to `maxDepth` directory levels, since installed plugins live at
 // varying depths (~/.claude/plugins/<plugin>/agents/ and the cache layout
@@ -13,20 +32,11 @@ async function readdirSafe(p) { try { return await readdir(p); } catch { return 
 // tolerant — a missing or unreadable dir is simply skipped.
 async function collectPluginAgents(pluginsBase, maxDepth = 4) {
   const found = [];
-  async function walk(dir, depth) {
-    if (depth > maxDepth) return;
-    for (const entry of await readdirSafe(dir)) {
-      if (entry === "agents") {
-        for (const f of await readdirSafe(join(dir, "agents"))) {
-          if (f.endsWith(".md")) found.push(f.slice(0, -3));
-        }
-        continue;
-      }
-      // Recurse; readdirSafe returns [] for files, so leaves terminate.
-      await walk(join(dir, entry), depth + 1);
+  await walkForSubdir(pluginsBase, maxDepth, "agents", async (agentsDir) => {
+    for (const f of await readdirSafe(agentsDir)) {
+      if (f.endsWith(".md")) found.push(f.slice(0, -3));
     }
-  }
-  await walk(pluginsBase, 0);
+  });
   return found;
 }
 
@@ -35,21 +45,12 @@ async function collectPluginAgents(pluginsBase, maxDepth = 4) {
 // the skill name. Walks up to `maxDepth` levels, tolerating missing dirs.
 async function collectPluginSkills(pluginsBase, maxDepth = 4) {
   const found = [];
-  async function walk(dir, depth) {
-    if (depth > maxDepth) return;
-    for (const entry of await readdirSafe(dir)) {
-      if (entry === "skills") {
-        for (const name of await readdirSafe(join(dir, "skills"))) {
-          const entries = await readdirSafe(join(dir, "skills", name));
-          if (entries.includes("SKILL.md")) found.push(name);
-        }
-        continue;
-      }
-      // Recurse; readdirSafe returns [] for files, so leaves terminate.
-      await walk(join(dir, entry), depth + 1);
+  await walkForSubdir(pluginsBase, maxDepth, "skills", async (skillsDir) => {
+    for (const name of await readdirSafe(skillsDir)) {
+      const entries = await readdirSafe(join(skillsDir, name));
+      if (entries.includes("SKILL.md")) found.push(name);
     }
-  }
-  await walk(pluginsBase, 0);
+  });
   return found;
 }
 

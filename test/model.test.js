@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { modelForRole, fallbackModelFor, capTier } from "../src/model.js";
+import { modelForRole, fallbackModelFor, capTier, floorAtSonnet } from "../src/model.js";
 
 test("mechanical roles -> haiku", () => {
   assert.equal(modelForRole("code-navigation"), "haiku");
@@ -199,4 +199,26 @@ test("MUSTER_ENABLE_FABLE set, no cap: resolveCapabilities resolves architecture
     if (prevCap === undefined) delete process.env.MUSTER_MAX_TIER; else process.env.MUSTER_MAX_TIER = prevCap;
     if (prevFable === undefined) delete process.env.MUSTER_ENABLE_FABLE; else process.env.MUSTER_ENABLE_FABLE = prevFable;
   }
+});
+
+// --- floorAtSonnet (item 9) ---
+
+test("floorAtSonnet: haiku is below sonnet, floors to sonnet", () => {
+  assert.equal(floorAtSonnet("haiku"), "sonnet");
+});
+
+test("floorAtSonnet: sonnet is at floor, returns sonnet unchanged", () => {
+  assert.equal(floorAtSonnet("sonnet"), "sonnet");
+});
+
+test("floorAtSonnet: fable is above sonnet, passes through unchanged", () => {
+  assert.equal(floorAtSonnet("fable"), "fable");
+});
+
+test("floorAtSonnet: undefined tier defaults to sonnet", () => {
+  assert.equal(floorAtSonnet(undefined), "sonnet");
+});
+
+test("floorAtSonnet: opus is above sonnet, passes through unchanged", () => {
+  assert.equal(floorAtSonnet("opus"), "opus");
 });

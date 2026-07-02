@@ -69,18 +69,18 @@ test("instructions cover the full autopilot/audit/diagnose lifecycle (dispatch c
   assert.match(instr, /branch/i, "autopilot branches first");
   assert.match(instr, /commit/i, "commits per wave");
   assert.match(instr, /merge/i, "presents the merge decision");
-  assert.match(instr, /muster_pick/, "tournament winner via muster_pick");
+  assert.match(instr, /muster_fuse/, "fusion gate via muster_fuse (muster_pick may appear as fallback ranker)");
   assert.match(instr, /muster_tally/, "review gate via muster_tally");
   assert.match(instr, /audit/i, "audit mode described");
   assert.match(instr, /diagnose/i, "diagnose mode described");
 });
 
-test("tools/list exposes exactly the 16 brain verbs, matching the MCPB manifest", async () => {
+test("tools/list exposes exactly the 19 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 17, "17 tools served");
+  assert.equal(served.length, 19, "19 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -144,6 +144,35 @@ test("cowork-probe: phases 1+2 pass against this checkout (CLI portable, contrac
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("tools/call: muster_advise validates an advice-request and returns advisorModel", async () => {
+  const request = { question: "Should we add caching here?", context: "Hot path, called 1000x/s.", decisionType: "architecture" };
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_advise", arguments: { request } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "valid advice-request must not error");
+  const out = JSON.parse(res.content[0].text);
+  assert.ok("advisorModel" in out, "output must contain advisorModel");
+});
+
+test("tools/call: muster_fuse validates candidates+fusion-map and returns a mode field", async () => {
+  const candidates = [
+    { id: "a", total: 3, passing: 2, content: "Alpha answer" },
+    { id: "b", total: 3, passing: 2, content: "Beta answer" },
+  ];
+  const fusionMap = {
+    consensus: ["Both use caching"],
+    contradictions: ["Alpha prefers Redis; Beta prefers in-memory"],
+    partialCoverage: [],
+    uniqueInsights: [],
+    blindSpots: [],
+  };
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_fuse", arguments: { candidates, fusionMap } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "valid fuse call must not error");
+  const out = JSON.parse(res.content[0].text);
+  assert.ok("mode" in out, "fuse output must contain a mode field");
+  assert.equal(out.mode, "fuse", `fusionMap with contradictions + 2 passing candidates must reach mode:fuse, not fallback (got: ${out.mode})`);
 });
 
 test("cowork-probe: grader rejects a bad dispatch run (exit 1)", async () => {

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
 
@@ -276,6 +276,9 @@ test("no wave: read-only Bash commands don't consume the budget or deny", async 
 test("active wave: first inline edit already denied by wave-guard (unchanged)", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "muster-scale-test-"));
   makeMarker(dir, "wave-099");
+  // Write run-active so the B-scoping logic sees a legitimately active wave
+  // (wave-guard fires, not scale-gate).
+  writeFileSync(path.join(dir, ".muster", "run-active"), "run-001");
   const sid = "scale-wave-1";
   clearBudget(sid);
   try {

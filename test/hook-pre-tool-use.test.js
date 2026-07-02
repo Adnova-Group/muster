@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { bashWriteTarget } from "../plugin/hooks/bash-write-target.js";
 import os from "node:os";
 import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
@@ -30,10 +30,15 @@ function editPayload(filePath, cwd, extra = {}) {
   });
 }
 
-// Create a temp dir with a wave-active marker and return tmpDir.
+// Create a temp dir with a wave-active marker AND a run-active marker, return tmpDir.
+// run-active signals a legitimately active run (required by the B-scoping logic to
+// distinguish a live wave from a crashed/orphaned one). Tests that use a stale mtime
+// still exercise the STALE_MS fallback path correctly (ageMs > STALE_MS fires first).
 function makeTmpMarker(waveId = "wave-001", mtime = null) {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-wg-test-"));
   makeMarker(tmpDir, waveId, mtime !== null ? { mtime } : {});
+  // Write run-active so the wave-guard sees a legitimately active wave.
+  writeFileSync(path.join(tmpDir, ".muster", "run-active"), "run-001");
   return tmpDir;
 }
 

@@ -119,35 +119,26 @@ export function bashWriteTarget(command) {
   // Strip input redirects `< file` (not output, not heredoc)
   stripped = stripped.replace(/<\s*\S+/g, "");
 
-  // A-SEC2 (narrow): before stripping quotes, scan redirect targets for the
-  // two injection sigils that path.normalize cannot evaluate at parse time:
-  //   $'  — ANSI-C hex quoting  (e.g. $'\x2e\x2e\x2f' → path traversal)
-  //   $(  — command substitution (e.g. $(cp a b) → arbitrary write)
-  // Must run BEFORE the quote-strip below: $'\x2e\x2e' would have its inner
-  // quotes stripped to $QUOTED, losing the $' marker.  A plain $VAR / ${VAR}
-  // redirect target is NOT denied here; it falls through to EXEMPT_TARGET_RE.
-  {
-    const redirSecRe = />{1,2}\s*(\S+)/g;
-    let sm;
-    while ((sm = redirSecRe.exec(stripped)) !== null) {
-      if (sm[1].includes("$'") || sm[1].includes("$(")) return `> ${sm[1]}`;
-    }
-  }
-
   // Strip quoted-string contents so `> ` inside them doesn't false-positive.
   // Handles balanced single- and double-quoted strings.
   // Runs AFTER sed/tee checks (those used the original string above) and
   // AFTER fd-dup/heredoc/input strips so those constructs are already gone.
-  // Runs AFTER the A-SEC2 sigil scan so $' tokens are still visible above.
+  // Note: $'\x2e' (ANSI-C) has its inner quotes stripped to $QUOTED here,
+  // preserving the leading `$` so the broad `$` check below still catches it.
   stripped = stripped.replace(/"[^"]*"|'[^']*'/g, "QUOTED");
 
-  // Now find >>? followed by a file token; deny if not exempt.
-  // Plain $VAR / ${VAR} in an exempt prefix (e.g. /tmp/$SESSION_ID) is
-  // allowed — the two dangerous sigils were already caught above.
+  // A-SEC2 (broad, fail-closed): deny any redirect target containing `$`.
+  // The hook cannot expand shell variables at parse time — $VAR, ${VAR},
+  // $'...' (ANSI-C quoting, inner quotes stripped to $QUOTED above), and
+  // $(...) (subshell) are all unresolvable and could bypass the exempt-prefix
+  // check (e.g. `> /tmp/$VAR` where VAR expands to `../etc/passwd`).
+  // Any `$` in a redirect target is therefore denied fail-closed.
+  // Escape hatch: MUSTER_WAVE_GUARD=warn.
   const redirRe = />{1,2}\s*(\S+)/g;
   let m;
   while ((m = redirRe.exec(stripped)) !== null) {
     const target = m[1];
+    if (target.includes("$")) return `> ${target}`;
     if (!EXEMPT_TARGET_RE.test(path.normalize(target))) {
       return `> ${target}`;
     }

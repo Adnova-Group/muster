@@ -930,14 +930,15 @@ test("bashWriteTarget: A-SEC5 tee with $( subshell in exempt-prefix path is deni
   );
 });
 
-// A-SEC2 (narrowed): plain $VAR redirect to an exempt prefix must be ALLOWED.
-// Before narrowing, any $ in the post-strip target was denied (over-blocking
-// legitimate constructs like `> /tmp/$SESSION_ID`).
-test("bashWriteTarget: A-SEC2 plain $VAR in exempt redirect target is allowed", () => {
+// A-SEC2 (re-broadened): plain $VAR redirect is DENIED even inside an exempt
+// prefix. The hook cannot expand variables at parse time — /tmp/$VAR where
+// VAR=../etc/passwd would bypass the exempt-prefix check. Fail-closed: any `$`
+// in a redirect target is denied. Escape hatch: MUSTER_WAVE_GUARD=warn.
+test("bashWriteTarget: A-SEC2 plain $VAR in exempt redirect target is denied (fail-closed)", () => {
   assert.equal(
     bashWriteTarget("node cmd > /tmp/$SESSION_ID"),
-    null,
-    "plain $VAR in /tmp/ redirect must be allowed (not a bypass sigil)",
+    "> /tmp/$SESSION_ID",
+    "plain $VAR in /tmp/ redirect must be denied (unresolvable variable, fail-closed)",
   );
 });
 

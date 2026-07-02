@@ -28,6 +28,15 @@ function extractHookFilename(command) {
   return m ? m[1] : null;
 }
 
+// Returns a human-readable skip-detail string for the two plugin checks (staleness +
+// install-integrity) when installed_plugins.json is absent or has no muster entry.
+// Avoids duplicating the same ternary in both check blocks.
+function pluginNotFoundDetail(entry) {
+  return entry.reason === "no-file"
+    ? "no installed_plugins.json — skip"
+    : "muster not in installed_plugins.json — skip";
+}
+
 // Reads installed_plugins.json for the given home dir and locates the muster plugin entry.
 // Returns { found: false, reason } when the file is absent or has no muster entry, or
 // { found: true, musterKey, entries } when muster is present.  Called once per runDoctor
@@ -123,10 +132,7 @@ export async function runDoctor({ root, home } = {}) {
     const repoVersion = manifestJson?.version;
 
     if (!pluginEntry.found) {
-      const detail = pluginEntry.reason === "no-file"
-        ? "no installed_plugins.json — skip"
-        : "muster not in installed_plugins.json — skip";
-      checks.push({ name: "plugin-staleness", ok: true, detail });
+      checks.push({ name: "plugin-staleness", ok: true, detail: pluginNotFoundDetail(pluginEntry) });
     } else {
       // The value is an array of objects; version may live on the first entry.
       const installedVersion = Array.isArray(pluginEntry.entries) && pluginEntry.entries[0]?.version;
@@ -151,10 +157,7 @@ export async function runDoctor({ root, home } = {}) {
   // load, even though the version string looks healthy.
   {
     if (!pluginEntry.found) {
-      const detail = pluginEntry.reason === "no-file"
-        ? "no installed_plugins.json — skip"
-        : "muster not in installed_plugins.json — skip";
-      checks.push({ name: "install-integrity", ok: true, detail });
+      checks.push({ name: "install-integrity", ok: true, detail: pluginNotFoundDetail(pluginEntry) });
     } else {
       const entry = Array.isArray(pluginEntry.entries) ? pluginEntry.entries[0] : null;
       const installPath = entry?.installPath;

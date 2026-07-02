@@ -9,6 +9,9 @@ const HAIKU = new Set(["code-navigation", "docs-research", "research"]);
 // member. "improve" is the retrospective self-improvement role (muster-improver):
 // peak-judgment, runs rarely (post-run), edits to muster's own skills/rules are
 // high-stakes — worth the top tier alongside architecture review.
+// "advisor" is also an intentional conceptual role outside ROLES: dispatched by the
+// advisor escalate-up pattern (muster_advise) for hard architectural decisions —
+// peak-judgment like judge, intentionally out of the ROLES enum.
 // Dead names (strategist, architect) removed — never passed to
 // modelForRole; muster-strategist is a provider id, not a role.
 const FABLE = new Set(["judge", "architecture-review", "improve", "advisor"]);

@@ -1,8 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { escapeRe } from "./keyword.js";
+import { resolveDir } from "./fs-util.js";
 
 export function validatePipeline(p) {
   const errors = [];
@@ -20,7 +20,7 @@ export function validatePipeline(p) {
 }
 
 export async function loadPipelines(dir) {
-  const base = dir instanceof URL ? fileURLToPath(dir) : dir;
+  const base = resolveDir(dir);
   const files = (await readdir(base)).filter(f => f.endsWith(".yaml") || f.endsWith(".yml"));
   const pipelines = [];
   for (const f of files) {

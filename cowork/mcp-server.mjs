@@ -124,7 +124,7 @@ async function callTool(name, args = {}) {
   if (tool.kind === "none") return runCli(tool.argv);
 
   // json2: serialize each payload to its own temp file; pass all paths in order onto the CLI argv.
-  // Single-payload tools (formerly kind:"json") use picks:(a)=>[payload] — one file, same effect.
+  // Single-payload tools use picks:(a)=>[payload] — one file, same effect.
   if (tool.kind === "json2") {
     const payloads = tool.picks(args);
     const dir = await mkdtemp(path.join(tmpdir(), "muster-mcp-"));

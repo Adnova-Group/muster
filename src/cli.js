@@ -67,15 +67,6 @@ const readText = async (arg) =>
 
 async function main() {
 const [cmd, ...rest] = process.argv.slice(2);
-// Lazy capability resolver: resolves on first call and caches for the lifetime of
-// this invocation. diagnose, audit, and signals all need caps — binding once avoids
-// three independent catalog + installed reads when only one branch actually runs.
-let _caps;
-const getCaps = async () => {
-  if (!_caps) _caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
-  return _caps;
-};
-
 try {
   if (cmd === "detect") {
     out(await detectProject(rest[0] || process.cwd()));
@@ -139,16 +130,13 @@ try {
     const file = requireArg(rest, 0, "advise <advice-request.json>: missing file path", fail);
     const req = JSON.parse(await readFile(file, "utf8"));
     const v = validateAdviceRequest(req);
-    if (!v.ok) {
-      v.errors.forEach(e => process.stderr.write(`advise: ${e}\n`));
-      process.exit(1);
-    }
+    if (!v.ok) fail(v.errors.join("\n"));
     out({ advisorModel: modelForRole("advisor"), request: req });
   } else if (cmd === "vendor") {
     const manifestUrl = new URL("../vendor/manifest.yaml", import.meta.url);
     const manifest = parseYaml(await readFile(manifestUrl, "utf8"));
     const v = validateVendorManifest(manifest);
-    if (!v.ok) { v.errors.forEach(e => process.stderr.write(`manifest: ${e}\n`)); process.exit(2); }
+    if (!v.ok) { process.stderr.write(`muster: ${v.errors.join("\n")}\n`); process.exit(2); }
     const repoRoot = dirFromImportMeta(import.meta.url, "../");
     const res = await runVendor({ repoRoot, manifest });
     res.warnings.forEach(w => process.stderr.write(`warn: ${w}\n`));
@@ -243,10 +231,10 @@ try {
     } else input = rest.join(" ");
     if (!input || !input.trim()) fail("diagnose <symptom> | --ci <file>: missing input");
     const failure = classifyFailure(input, { ci });
-    const caps = await getCaps();
+    const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
     out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
   } else if (cmd === "audit") {
-    const caps = await getCaps();
+    const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
     // Use the lightweight package.json-only check, not detectProject — audit must not
     // incur git spawns (it stays offline for CI / the MCP wrapper).
     const prompting = await hasPromptingSignal(rest[0] || process.cwd());
@@ -277,7 +265,7 @@ try {
   } else if (cmd === "signals") {
     const dir = rest[0] || process.cwd();
     const profile = await detectProject(dir);
-    const caps = await getCaps();
+    const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
     const sig = buildSignals(profile, caps);
     await mkdir(".muster", { recursive: true });
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));

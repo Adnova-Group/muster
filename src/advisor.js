@@ -1,9 +1,9 @@
-// advisor.js — pure advisor-core: validators + budget decision (phase 1).
+// advisor.js — pure advisor-core: validators + budget decision.
 //
 // Pure functions, no LLM calls, no Math.random / Date.now, no file I/O.
-// I/O (STATE ledger append) is the orchestrator's job in phase 2.
+// The calling SKILL supplies context and enriches state; I/O is the orchestrator's responsibility.
 
-import { envInt } from "./env-util.js";
+import { envInt, isPlainObject } from "./env-util.js";
 
 // ---------------------------------------------------------------------------
 // validateAdviceRequest
@@ -17,7 +17,7 @@ import { envInt } from "./env-util.js";
  * Optional: options (array).
  */
 export function validateAdviceRequest(req) {
-  if (!req || typeof req !== "object" || Array.isArray(req)) {
+  if (!isPlainObject(req)) {
     return { ok: false, errors: ["request: must be a non-null, non-array object"] };
   }
   const errors = [];
@@ -53,7 +53,7 @@ export function validateAdviceRequest(req) {
  * Required: recommendation (non-empty string), rationale (string).
  */
 export function validateAdviceResponse(res) {
-  if (!res || typeof res !== "object" || Array.isArray(res)) {
+  if (!isPlainObject(res)) {
     return { ok: false, errors: ["response: must be a non-null, non-array object"] };
   }
   const errors = [];

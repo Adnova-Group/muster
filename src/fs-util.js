@@ -1,6 +1,12 @@
 import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+// Normalizes a dir argument to a filesystem path string.
+// Accepts a URL instance (fileURLToPath) or a bare string — callers need not branch.
+export function resolveDir(dir) {
+  return dir instanceof URL ? fileURLToPath(dir) : dir;
+}
+
 // Resolves a relative path from a module's import.meta.url to a filesystem path.
 // Uses fileURLToPath so the result is correct on all platforms — in particular,
 // on native Windows Node a bare `new URL(rel, importMetaUrl).pathname` yields

@@ -3,3 +3,4 @@ node_modules/
 *.log
 tmp/
 cowork-dispatch-spec.json
+wave-*/

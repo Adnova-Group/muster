@@ -24,6 +24,8 @@ const PROMPT_DOC_DIR = /(^|\/)(?:\.claude|plugin)\/(?:agents|commands|skills|bui
 const NON_PROMPT_DIR = /(^|\/)(?:\.github|docs|website|node_modules)\//i;
 // Assignment to a prompt-ish identifier holding a backtick template literal.
 const ASSIGN = /\b(system|systemprompt|prompt|instructions|persona)\s*[:=]\s*`([\s\S]*?)`/gi;
+// 40 chars: excludes one-liner labels and short identifiers (e.g. `system = "You are helpful"`)
+// that match prompt-ish patterns but carry no real instruction content worth linting.
 const MIN_PROMPT_LEN = 40;
 
 // A leading YAML frontmatter block (--- ... ---). Captured so we can both detect the

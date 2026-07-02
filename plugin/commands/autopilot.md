@@ -52,5 +52,3 @@ When autopilot is fired by a Claude Code Routine (no interactive human present),
 - The outcome is supplied via the Routine's `text` field (API `/fire`) or the saved Routine config — the same `$ARGUMENTS` slot, nothing extra to wire.
 
 Glass box: branch, each commit, escalations, and the ticking checklist are recorded in STATE.
-
-Remove `.muster/run-active` after the merge decision (step 7) or on escalation exit.

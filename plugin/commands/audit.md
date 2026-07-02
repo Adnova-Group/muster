@@ -20,5 +20,3 @@ Drive the audit loop:
 7. **Escalate** if the fix-loop cap is hit on an item (record it in the ledger, continue the others). Then present the merge decision via the **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**.
 
 Reuses the orchestrator + review-gate; glass box records the per-dimension providers + the findings ledger. (vs `/muster:diagnose`, which is failure-first single-bug; audit is breadth-first whole-codebase.)
-
-Remove `.muster/run-active` after the merge decision (step 7) or on escalation exit.

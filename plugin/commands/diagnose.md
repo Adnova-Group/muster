@@ -27,5 +27,3 @@ If the failure description is empty, ask for a symptom or failing output and sto
 7. Escalate if the root cause can't be found or the gate can't pass within the cap. Then present merge.
 
 Reuses the orchestrator + review-gate; glass box records hypotheses, the chosen debug provider, and the root cause.
-
-Remove `.muster/run-active` after the merge decision or on escalation exit.

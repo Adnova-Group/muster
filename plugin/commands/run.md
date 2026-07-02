@@ -36,5 +36,3 @@ If `$ARGUMENTS` is empty, ask for the outcome and stop — Muster never runs wit
    - **Adjust the plan**: loop back to the router (step 4) with the user's feedback.
    - **Cancel**: stop immediately.
 7. Optionally append a memory entry: `npx -y @adnova-group/muster memory write .muster/memory <entry.json>`.
-
-Remove `.muster/run-active` on exit (Cancel, or before handing off to autopilot).

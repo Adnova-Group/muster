@@ -929,3 +929,32 @@ test("bashWriteTarget: A-SEC5 tee with $( subshell in exempt-prefix path is deni
     "tee target containing $( (subshell) inside exempt prefix must be denied",
   );
 });
+
+// A-SEC2 (narrowed): plain $VAR redirect to an exempt prefix must be ALLOWED.
+// Before narrowing, any $ in the post-strip target was denied (over-blocking
+// legitimate constructs like `> /tmp/$SESSION_ID`).
+test("bashWriteTarget: A-SEC2 plain $VAR in exempt redirect target is allowed", () => {
+  assert.equal(
+    bashWriteTarget("node cmd > /tmp/$SESSION_ID"),
+    null,
+    "plain $VAR in /tmp/ redirect must be allowed (not a bypass sigil)",
+  );
+});
+
+// A-SEC2 (narrowed): $( subshell in redirect target inside exempt prefix is DENIED.
+test("bashWriteTarget: A-SEC2 redirect with $( subshell in exempt prefix is denied", () => {
+  assert.ok(
+    bashWriteTarget("node x > /tmp/$(cp a b)") !== null,
+    "redirect target containing $( (command substitution) in exempt prefix must be denied",
+  );
+});
+
+// A-SEC2 (narrowed): $'\x2e\x2e' ANSI-C escape in redirect is DENIED (confirm
+// existing A-SEC2 test still holds after narrowing — covered above but
+// pinned explicitly here with the same command).
+test("bashWriteTarget: A-SEC2 $'\\x2e' ANSI-C escape in redirect is still denied after narrowing", () => {
+  assert.ok(
+    bashWriteTarget("node x > /tmp/$'\\x2e\\x2e\\x2fetc\\x2fpasswd'") !== null,
+    "$' ANSI-C redirect bypass must still be denied after narrowing",
+  );
+});

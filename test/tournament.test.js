@@ -30,3 +30,25 @@ test("ties broken by id ascending", () => {
   ]);
   assert.equal(r.winner, "alpha");
 });
+
+// CORE-2 — Array.isArray guard
+test("pickWinner: plain object returns clean escalation, no throw", () => {
+  const r = pickWinner({});
+  assert.equal(r.winner, null);
+  assert.equal(r.escalate, true);
+  assert.deepEqual(r.ranking, []);
+});
+
+test("pickWinner: null returns clean escalation, no throw", () => {
+  const r = pickWinner(null);
+  assert.equal(r.winner, null);
+  assert.equal(r.escalate, true);
+  assert.deepEqual(r.ranking, []);
+});
+
+test("pickWinner: scalar (number) returns clean escalation, no throw", () => {
+  const r = pickWinner(42);
+  assert.equal(r.winner, null);
+  assert.equal(r.escalate, true);
+  assert.deepEqual(r.ranking, []);
+});

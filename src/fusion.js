@@ -10,11 +10,12 @@
 //   4. Fuse: select top-K by score, de-identify, order by stable id-hash
 //      (decoupled from rank to kill position bias per LLM-Blender/MoA).
 //
-// NOTE (wave 2): candidate.content / candidate.text may be absent when rows
+// NOTE (phase 2): candidate.content / candidate.text may be absent when rows
 // come from .muster/candidates.json — the SKILL that calls fuse is responsible
 // for enriching rows with the full response text before passing them in.
 
 import { pickWinner } from "./tournament.js";
+import { envInt } from "./env-util.js";
 
 // ---------------------------------------------------------------------------
 // validateFusionMap
@@ -68,28 +69,18 @@ function stableHash(str) {
 /**
  * Compute the minimum-disagreement threshold from the environment.
  * Default: 1 (any single point of disagreement unlocks fusion).
+ * 0 = always-fuse; negatives or non-integer strings clamp to default.
  */
 function minDisagreementThreshold() {
-  const raw = process.env.MUSTER_FUSE_MIN_DISAGREEMENT;
-  if (raw !== undefined && raw !== "") {
-    const n = parseInt(raw, 10);
-    // 0 = always-fuse (score < 0 never true); negatives are invalid and clamp to default.
-    if (Number.isFinite(n) && n >= 0) return n;
-  }
-  return 1;
+  return envInt("MUSTER_FUSE_MIN_DISAGREEMENT", { min: 0, def: 1 });
 }
 
 /**
  * Compute the top-K limit from the environment.
- * Default: 3.
+ * Default: 3. Must be >= 1; negatives or non-integer strings clamp to default.
  */
 function topKLimit() {
-  const raw = process.env.MUSTER_FUSE_TOPK;
-  if (raw !== undefined && raw !== "") {
-    const n = parseInt(raw, 10);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  return 3;
+  return envInt("MUSTER_FUSE_TOPK", { min: 1, def: 3 });
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +111,11 @@ function topKLimit() {
  *   }
  */
 export function fuse(candidates, map, opts = {}) {
+  // Guard: candidates must be an array — malformed input returns a clean fallback.
+  if (!Array.isArray(candidates)) {
+    return { mode: "fallback", reason: "invalid-candidates", winner: pickWinner([]) };
+  }
+
   // 1. Validate fusion map — fail safe: never throw the tournament.
   const validation = validateFusionMap(map);
   if (!validation.ok) {

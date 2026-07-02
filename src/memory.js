@@ -31,8 +31,15 @@ export async function writeMemory(dir, entry) {
 
   const line = `- [${entry.title}](${entry.slug}.md) — ${entry.outcome}\n`;
   const indexPath = join(dir, "INDEX.md");
-  const head = (await exists(indexPath)) ? await readFile(indexPath, "utf8") : "# Muster memory index\n\n";
-  if (!head.includes(`${entry.slug}.md`)) await writeFile(indexPath, head + line);
+  // Use appendFile so concurrent writes of different slugs never overwrite each other.
+  // A sequential same-slug dedup check runs before the append; truly concurrent
+  // same-slug calls may still produce duplicate lines (narrow race), but data from
+  // other slugs is never lost.
+  const existing = (await exists(indexPath)) ? await readFile(indexPath, "utf8") : "";
+  if (!existing.includes(`${entry.slug}.md`)) {
+    const prefix = existing ? "" : "# Muster memory index\n\n";
+    await appendFile(indexPath, prefix + line);
+  }
 }
 
 export async function readMemory(dir, query) {

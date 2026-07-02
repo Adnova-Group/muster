@@ -1,7 +1,9 @@
-// advisor.js — pure advisor-core: validators + budget decision (wave 1).
+// advisor.js — pure advisor-core: validators + budget decision (phase 1).
 //
 // Pure functions, no LLM calls, no Math.random / Date.now, no file I/O.
-// I/O (STATE ledger append) is the orchestrator's job in wave 2.
+// I/O (STATE ledger append) is the orchestrator's job in phase 2.
+
+import { envInt } from "./env-util.js";
 
 // ---------------------------------------------------------------------------
 // validateAdviceRequest
@@ -75,18 +77,10 @@ export function validateAdviceResponse(res) {
 /**
  * Read the max-consults limit from env.
  * Default: 3. 0 = never-consult (budget immediately exhausted).
- * Negatives are invalid and clamp to the default 3.
- * Same guard as fuse's minDisagreementThreshold: Number.isFinite && n >= 0.
+ * Negatives or non-integer strings clamp to the default 3.
  */
 function maxConsultsLimit() {
-  const raw = process.env.MUSTER_ADVISOR_MAX_CONSULTS;
-  if (raw !== undefined && raw !== "") {
-    const n = parseInt(raw, 10);
-    // 0 = never-consult (consults < 0 is never true so consult is always false);
-    // negatives are invalid and clamp to default.
-    if (Number.isFinite(n) && n >= 0) return n;
-  }
-  return 3;
+  return envInt("MUSTER_ADVISOR_MAX_CONSULTS", { min: 0, def: 3 });
 }
 
 /**
@@ -98,10 +92,10 @@ function maxConsultsLimit() {
  *   maxConsults — override the env/default cap (caller-supplied)
  *
  * @returns {{ consult: boolean, reason: string }}
- *   { consult: true,  reason: 'consult'          } while consults < maxConsults
+ *   { consult: true,  reason: 'within-budget'    } while consults < maxConsults
  *   { consult: false, reason: 'budget-exhausted' } when cap is hit or exceeded
  */
 export function consultBudget({ consults, maxConsults = maxConsultsLimit() }) {
-  if (consults < maxConsults) return { consult: true, reason: "consult" };
+  if (consults < maxConsults) return { consult: true, reason: "within-budget" };
   return { consult: false, reason: "budget-exhausted" };
 }

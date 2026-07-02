@@ -222,6 +222,81 @@ test("fuse: negative MUSTER_FUSE_MIN_DISAGREEMENT clamps to default — agreemen
   }
 });
 
+test("fuse: MUSTER_FUSE_MIN_DISAGREEMENT='2.9' falls back to default 1 (float rejected, not parseInt-truncated to 2)", () => {
+  // Old parseInt("2.9",10) = 2 — silently wrong. New envInt rejects non-integer strings -> def=1.
+  const old = process.env.MUSTER_FUSE_MIN_DISAGREEMENT;
+  process.env.MUSTER_FUSE_MIN_DISAGREEMENT = "2.9";
+  try {
+    // MAP_DISAGREE score = 1; default threshold = 1 → fuse (not fallback as "2" would cause).
+    const r = fuse(CANDIDATES_3, MAP_DISAGREEMENT);
+    assert.equal(r.mode, "fuse", "2.9 must use default 1, allowing fuse when score=1");
+  } finally {
+    if (old === undefined) delete process.env.MUSTER_FUSE_MIN_DISAGREEMENT;
+    else process.env.MUSTER_FUSE_MIN_DISAGREEMENT = old;
+  }
+});
+
+test("fuse: MUSTER_FUSE_TOPK='-1' falls back to default 3 (COV-1: negative topK guard)", () => {
+  const candidates = [
+    { id: "a", total: 9, passing: true },
+    { id: "b", total: 8, passing: true },
+    { id: "c", total: 7, passing: true },
+    { id: "d", total: 6, passing: true },
+  ];
+  const old = process.env.MUSTER_FUSE_TOPK;
+  process.env.MUSTER_FUSE_TOPK = "-1";
+  try {
+    const r = fuse(candidates, MAP_DISAGREEMENT);
+    assert.equal(r.mode, "fuse");
+    assert.equal(r.topK.length, 3, "negative TOPK must fall back to default 3");
+  } finally {
+    if (old === undefined) delete process.env.MUSTER_FUSE_TOPK;
+    else process.env.MUSTER_FUSE_TOPK = old;
+  }
+});
+
+test("fuse: MUSTER_FUSE_TOPK='abc' falls back to default 3 (COV-1: junk topK guard)", () => {
+  const candidates = [
+    { id: "a", total: 9, passing: true },
+    { id: "b", total: 8, passing: true },
+    { id: "c", total: 7, passing: true },
+    { id: "d", total: 6, passing: true },
+  ];
+  const old = process.env.MUSTER_FUSE_TOPK;
+  process.env.MUSTER_FUSE_TOPK = "abc";
+  try {
+    const r = fuse(candidates, MAP_DISAGREEMENT);
+    assert.equal(r.mode, "fuse");
+    assert.equal(r.topK.length, 3, "junk TOPK must fall back to default 3");
+  } finally {
+    if (old === undefined) delete process.env.MUSTER_FUSE_TOPK;
+    else process.env.MUSTER_FUSE_TOPK = old;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// CORE-2 — Array.isArray guard on fuse()
+// ---------------------------------------------------------------------------
+
+test("fuse: non-array candidates (plain object) returns clean fallback, no throw", () => {
+  const r = fuse({}, MAP_DISAGREEMENT);
+  assert.equal(r.mode, "fallback");
+  assert.equal(r.reason, "invalid-candidates");
+  assert.ok("winner" in r, "fallback must include winner");
+});
+
+test("fuse: null candidates returns clean fallback, no throw", () => {
+  const r = fuse(null, MAP_DISAGREEMENT);
+  assert.equal(r.mode, "fallback");
+  assert.equal(r.reason, "invalid-candidates");
+});
+
+test("fuse: scalar candidates (number) returns clean fallback, no throw", () => {
+  const r = fuse(42, MAP_DISAGREEMENT);
+  assert.equal(r.mode, "fallback");
+  assert.equal(r.reason, "invalid-candidates");
+});
+
 // ---------------------------------------------------------------------------
 // 4. Top-K selection
 // ---------------------------------------------------------------------------

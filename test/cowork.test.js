@@ -164,14 +164,15 @@ test("tools/call: muster_fuse validates candidates+fusion-map and returns a mode
     consensus: ["Both use caching"],
     contradictions: ["Alpha prefers Redis; Beta prefers in-memory"],
     partialCoverage: [],
+    uniqueInsights: [],
     blindSpots: [],
   };
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_fuse", arguments: { candidates, fusionMap } } }]);
   const res = r[2].result;
   assert.equal(res.isError, false, "valid fuse call must not error");
   const out = JSON.parse(res.content[0].text);
-  assert.ok("mode" in out, "fuse output must contain a mode field (fuse|fallback)");
-  assert.ok(out.mode === "fuse" || out.mode === "fallback", `mode must be fuse or fallback, got: ${out.mode}`);
+  assert.ok("mode" in out, "fuse output must contain a mode field");
+  assert.equal(out.mode, "fuse", `fusionMap with contradictions + 2 passing candidates must reach mode:fuse, not fallback (got: ${out.mode})`);
 });
 
 test("cowork-probe: grader rejects a bad dispatch run (exit 1)", async () => {

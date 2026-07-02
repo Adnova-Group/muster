@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { envInt } from "../src/env-util.js";
+import { envInt, isPlainObject } from "../src/env-util.js";
 
 // ---------------------------------------------------------------------------
 // Helper: build a fake env object
@@ -123,3 +123,13 @@ test("envInt: reads from process.env by default", () => {
     else process.env.__ENVINT_TEST_VAR = prev;
   }
 });
+
+// ---------------------------------------------------------------------------
+// isPlainObject — canonical guard extracted from advisor.js + fusion.js
+// ---------------------------------------------------------------------------
+
+test("isPlainObject: null returns false", () => { assert.equal(isPlainObject(null), false); });
+test("isPlainObject: array returns false", () => { assert.equal(isPlainObject([]), false); });
+test("isPlainObject: plain object returns true", () => { assert.equal(isPlainObject({}), true); });
+test("isPlainObject: string returns false", () => { assert.equal(isPlainObject("s"), false); });
+test("isPlainObject: number returns false", () => { assert.equal(isPlainObject(3), false); });

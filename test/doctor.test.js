@@ -9,6 +9,18 @@ import { runDoctor } from "../src/doctor.js";
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
 describe("runDoctor", () => {
+  // B-C9: a root with NO catalog/ directory → catalog check ok:false
+  it("B-C9: catalog check ok:false when catalog/ directory is absent", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-nocatalog-"));
+    // Intentionally leave tmp empty — no catalog/ dir at all.
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "catalog");
+    assert.ok(check, "catalog check must exist");
+    assert.equal(check.ok, false, "missing catalog/ dir must cause ok:false");
+    // detail should contain an error message (ENOENT or similar)
+    assert.ok(check.detail && check.detail.length > 0, "detail must be non-empty");
+  });
+
   it("returns ok:true against the real repo root", async () => {
     // Use an empty home dir so the plugin-staleness check doesn't flag a
     // stale real installation and make this structural integration test fail.
@@ -63,6 +75,31 @@ describe("runDoctor hooks-integrity check", () => {
     assert.ok(check, "hooks-integrity check must exist");
     assert.equal(check.ok, false, "should fail on unknown event name");
     assert.match(check.detail, /NotARealEvent/, "detail must name the bad event");
+  });
+
+  // B-C10: hook command lacking ${CLAUDE_PLUGIN_ROOT} → extractHookFilename returns null → skip → ok:true
+  it("B-C10: hooks-integrity ok:true when hook command has no ${CLAUDE_PLUGIN_ROOT} (intentional skip)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-nopluginroot-"));
+    await mkdir(join(tmp, "catalog"), { recursive: true });
+    await mkdir(join(tmp, "pipelines"), { recursive: true });
+    await mkdir(join(tmp, "plugin/builtins/dummy"), { recursive: true });
+    await writeFile(join(tmp, "plugin/builtins/dummy/SKILL.md"), "# dummy");
+    await mkdir(join(tmp, "plugin/hooks"), { recursive: true });
+    // Hook command does NOT contain ${CLAUDE_PLUGIN_ROOT}/hooks/...
+    // extractHookFilename returns null → file-existence check is skipped → no problems.
+    const hooksWithoutPluginRoot = {
+      hooks: {
+        SessionStart: [
+          { hooks: [{ type: "command", command: "echo hello" }] },
+        ],
+      },
+    };
+    await writeFile(join(tmp, "plugin/hooks/hooks.json"), JSON.stringify(hooksWithoutPluginRoot));
+
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "hooks-integrity");
+    assert.ok(check, "hooks-integrity check must exist");
+    assert.equal(check.ok, true, "hook without CLAUDE_PLUGIN_ROOT must be skipped (ok:true)");
   });
 
   it("fails when a hook command references a .js file that does not exist", async () => {
@@ -246,6 +283,28 @@ describe("runDoctor version-parity check", () => {
     const check = result.checks.find(c => c.name === "version-parity");
     assert.ok(check, "version-parity check must exist");
     assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+  });
+
+  // B-C11: installed version NEWER than repo → ok:true (is current; semverCompare > 0 → else branch)
+  it("B-C11: ok:true when installed version is newer than repo version", async () => {
+    const { readJson } = await import("../src/fs-util.js");
+    const manifest = await readJson(join(repoRoot, "plugin/.claude-plugin/plugin.json"));
+    const repoVersion = manifest.version;
+    // Build a version one major bump ahead of the repo version so it is definitely newer.
+    const [maj, min, pat] = repoVersion.split(".").map(Number);
+    const newerVersion = `${maj + 1}.${min}.${pat}`;
+
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-newer-"));
+    await mkdir(join(fakeHome, ".claude/plugins"), { recursive: true });
+    await writeFile(
+      join(fakeHome, ".claude/plugins/installed_plugins.json"),
+      JSON.stringify({ version: 2, plugins: { "muster@official": [{ version: newerVersion }] } }),
+    );
+    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const check = result.checks.find(c => c.name === "plugin-staleness");
+    assert.ok(check, "plugin-staleness check must exist");
+    assert.equal(check.ok, true, `installed ${newerVersion} > repo ${repoVersion} → ok:true (current)`);
+    assert.match(check.detail, /is current/, "detail must say 'is current'");
   });
 
   it("fails and reports both versions when package.json and plugin.json versions differ", async () => {

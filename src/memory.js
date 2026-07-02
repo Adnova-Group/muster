@@ -61,12 +61,21 @@ export async function readMemory(dir, query) {
 // findings. They have no direct in-process production caller by design: the
 // orchestrator drives them through the CLI surface. Keep them exported.
 export async function appendState(dir, runId, line) {
+  // A-SEC7: guard runId before joining into a path (mirrors initScratchpad's
+  // runId check and writeMemory's slug check). A traversal runId like "../x"
+  // would write files outside the named store.
+  if (typeof runId !== "string" || runId.includes("/") || runId.includes("\\") || runId.includes(".."))
+    throw new Error(`appendState: invalid runId ${JSON.stringify(runId)} (no path separators or ..)`);
   await mkdir(dir, { recursive: true });
   await appendFile(join(dir, `${runId}.state.md`), line.replace(/\n/g, " ") + "\n");
 }
 
 // Run-record STATE API (intended public surface — see appendState above).
 export async function appendFollowup(dir, runId, finding) {
+  // A-SEC7: guard runId before joining into a path (mirrors initScratchpad's
+  // runId check and writeMemory's slug check).
+  if (typeof runId !== "string" || runId.includes("/") || runId.includes("\\") || runId.includes(".."))
+    throw new Error(`appendFollowup: invalid runId ${JSON.stringify(runId)} (no path separators or ..)`);
   await mkdir(dir, { recursive: true });
   await appendFile(join(dir, `${runId}.followups.md`), `- [${finding.severity}] ${finding.note}\n`);
 }

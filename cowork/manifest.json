@@ -58,16 +58,8 @@
     { "name": "muster_prioritize", "description": "Rank backlog items by RICE/ICE/WSJF/weighted." },
     { "name": "muster_pick", "description": "Pick the tournament winner from scored candidates." },
     { "name": "muster_tally", "description": "Tally adversarial review verdicts into a gate decision." },
-    {
-      "name": "muster_advise",
-      "description": "Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM.",
-      "inputSchema": { "type": "object", "properties": { "request": { "type": "object" } }, "required": ["request"] }
-    },
-    {
-      "name": "muster_fuse",
-      "description": "Fusion decision engine: validate the debate map, apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to the single best (mode fallback). Deterministic, no LLM.",
-      "inputSchema": { "type": "object", "properties": { "candidates": { "type": "array" }, "fusionMap": { "type": "object" } }, "required": ["candidates", "fusionMap"] }
-    }
+    { "name": "muster_advise", "description": "Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM." },
+    { "name": "muster_fuse", "description": "Fusion decision engine: validate the debate map, apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to the single best (mode fallback). Deterministic, no LLM." }
   ],
   "compatibility": {
     "runtimes": { "node": ">=20" }

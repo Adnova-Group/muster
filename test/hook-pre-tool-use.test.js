@@ -88,8 +88,10 @@ test("allow when no wave-active marker exists", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-wg-test-"));
   mkdirSync(path.join(tmpDir, ".muster"), { recursive: true }); // .muster exists but no marker
   try {
+    // Use an IN-CWD path so GUARD-SCOPE doesn't short-circuit; the no-marker
+    // branch is reached and scale-gate fires (fail-open: no session_id → allow).
     const { stdout, code } = await runRaw(
-      editPayload("/some/project/src/foo.js", tmpDir),
+      editPayload(path.join(tmpDir, "src", "foo.js"), tmpDir),
     );
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -123,8 +125,10 @@ test("allow when wave-active marker is older than 60 minutes (stale/crashed wave
   const staleTime = new Date(Date.now() - 61 * 60 * 1000);
   const tmpDir = makeTmpMarker("wave-001", staleTime);
   try {
+    // Use an IN-CWD path so GUARD-SCOPE doesn't short-circuit; the stale-marker
+    // branch is reached (ageMs > STALE_MS → scale-gate fail-open → allow).
     const { stdout, code } = await runRaw(
-      editPayload("/some/project/src/foo.js", tmpDir),
+      editPayload(path.join(tmpDir, "src", "foo.js"), tmpDir),
     );
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -209,7 +213,8 @@ test("allow when no wave-active: permissionDecision field must be absent", async
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-wg-test-"));
   mkdirSync(path.join(tmpDir, ".muster"), { recursive: true });
   try {
-    const { stdout } = await runRaw(editPayload("/some/project/src/foo.js", tmpDir));
+    // In-CWD path: exercises the no-marker code path (scale-gate fail-open → allow).
+    const { stdout } = await runRaw(editPayload(path.join(tmpDir, "src", "foo.js"), tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.hookEventName, "PreToolUse");
     assert.equal(out.permissionDecision, undefined, "allow path: permissionDecision must be ABSENT");
@@ -234,7 +239,8 @@ test("allow stale marker: permissionDecision field must be absent", async () => 
   const staleTime = new Date(Date.now() - 61 * 60 * 1000);
   const tmpDir = makeTmpMarker("wave-001", staleTime);
   try {
-    const { stdout } = await runRaw(editPayload("/some/project/src/foo.js", tmpDir));
+    // In-CWD path: exercises the stale-marker code path (scale-gate fail-open → allow).
+    const { stdout } = await runRaw(editPayload(path.join(tmpDir, "src", "foo.js"), tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.hookEventName, "PreToolUse");
     assert.equal(out.permissionDecision, undefined, "allow path: permissionDecision must be ABSENT");
@@ -359,6 +365,28 @@ test("deny NotebookEdit (notebook_path) when wave-active marker exists", async (
     assert.equal(out.hookEventName, "PreToolUse");
     assert.equal(out.permissionDecision, "deny", "NotebookEdit should be denied during wave");
     assert.match(out.permissionDecisionReason, /wave-notebook-1/, "reason includes wave id");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// ── B-C1: Write tool deny test (Write is in EDIT_TOOLS but was previously untested) ─
+test("deny Write tool (in-cwd file_path) when wave-active marker exists", async () => {
+  const tmpDir = makeTmpMarker("wave-write-1");
+  try {
+    // Write uses file_path (same as Edit) and is in EDIT_TOOLS → must be denied.
+    const { stdout, code } = await runRaw(
+      JSON.stringify({
+        tool_name: "Write",
+        tool_input: { file_path: path.join(tmpDir, "src", "new-file.js") },
+        cwd: tmpDir,
+      }),
+    );
+    assert.equal(code, 0, "hook always exits 0");
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(out.permissionDecision, "deny", "Write to in-cwd path must be denied during wave");
+    assert.match(out.permissionDecisionReason, /wave-write-1/, "reason includes wave id");
   } finally {
     cleanDir(tmpDir);
   }
@@ -828,4 +856,105 @@ test("GUARD-SCOPE: Edit to path INSIDE cwd is denied during active wave", async 
   } finally {
     cleanDir(tmpDir);
   }
+});
+
+// ── Wave A audit hardening tests ─────────────────────────────────────────────
+
+// A-SEC1: tee $'...' ANSI-C hex bypass — target with $' in an exempt prefix
+// path.normalize cannot evaluate shell ANSI-C escapes so /tmp/$'\x2e\x2e\x2f...'
+// would pass EXEMPT_TARGET_RE; the guard must detect $' and deny.
+test("bashWriteTarget: A-SEC1 tee with ANSI-C hex escape in exempt prefix is denied", () => {
+  // /tmp/$'\x2e\x2e\x2fetc\x2fpasswd' in bash resolves to /etc/passwd (path traversal).
+  // path.normalize sees the literal $ ' \ x chars and treats /tmp/ as a valid prefix.
+  assert.ok(
+    bashWriteTarget("tee /tmp/$'\\x2e\\x2e\\x2fetc\\x2fpasswd'") !== null,
+    "tee target containing $' (ANSI-C escape) inside exempt prefix must be denied",
+  );
+});
+
+// A-SEC2: redirect $'...' after quote-strip — embedded in exempt prefix
+// After single-quote strip the target becomes /tmp/$QUOTED which starts with /tmp/
+// and would pass EXEMPT_TARGET_RE; the guard must detect $ in post-strip target.
+test("bashWriteTarget: A-SEC2 redirect to $'...' embedded in exempt prefix is denied", () => {
+  // /tmp/$'\x2e\x2e\x2fetc\x2fpasswd' — after stripping the '...' part to QUOTED
+  // the token is /tmp/$QUOTED which looks exempt but contains a shell variable.
+  assert.ok(
+    bashWriteTarget("node x > /tmp/$'\\x2e\\x2e\\x2fetc\\x2fpasswd'") !== null,
+    "redirect to ANSI-C escape embedded in exempt prefix must be denied",
+  );
+});
+
+// A-SEC3a: sed -i"" double-quote suffix bypass
+// The regex \s-i(?:\s|$|') misses \" so `sed -i""` escapes the in-place check.
+test("bashWriteTarget: A-SEC3 sed -i\"\" double-quote suffix is a write", () => {
+  assert.ok(
+    bashWriteTarget('sed -i"" \'s/a/b/\' file.js') !== null,
+    'sed -i"" (BSD/GNU empty backup extension) must be detected as a write',
+  );
+});
+
+// A-SEC3b: sed --in-place long-form bypass
+// The regex only looks for \s-i; --in-place is never matched.
+test("bashWriteTarget: A-SEC3 sed --in-place long form is a write", () => {
+  assert.ok(
+    bashWriteTarget("sed --in-place 's/a/b/' file.js") !== null,
+    "sed --in-place must be detected as a write",
+  );
+});
+
+// A-SEC3c: sed --in-place=.bak with an extension
+test("bashWriteTarget: A-SEC3 sed --in-place=.bak is a write", () => {
+  assert.ok(
+    bashWriteTarget("sed --in-place=.bak 's/a/b/' file.js") !== null,
+    "sed --in-place=.bak must be detected as a write",
+  );
+});
+
+// A-SEC4: tee multi-target — first token is exempt, second is not
+// tokens.find() only examines the first non-flag token; /dev/null passes but
+// evil.js is never checked.
+test("bashWriteTarget: A-SEC4 tee /dev/null evil.js — second non-exempt target must be denied", () => {
+  assert.ok(
+    bashWriteTarget("tee /dev/null evil.js") !== null,
+    "tee with a second non-exempt target must be denied even when first is exempt",
+  );
+});
+
+// A-SEC5: $( subshell in tee path inside exempt prefix
+// /tmp/$(cp src dst) — first token after tee starts with /tmp/ so EXEMPT_TARGET_RE
+// passes, but the subshell executes cp and could write anywhere.
+test("bashWriteTarget: A-SEC5 tee with $( subshell in exempt-prefix path is denied", () => {
+  assert.ok(
+    bashWriteTarget("npm test | tee /tmp/$(cp src dst)") !== null,
+    "tee target containing $( (subshell) inside exempt prefix must be denied",
+  );
+});
+
+// A-SEC2 (narrowed): plain $VAR redirect to an exempt prefix must be ALLOWED.
+// Before narrowing, any $ in the post-strip target was denied (over-blocking
+// legitimate constructs like `> /tmp/$SESSION_ID`).
+test("bashWriteTarget: A-SEC2 plain $VAR in exempt redirect target is allowed", () => {
+  assert.equal(
+    bashWriteTarget("node cmd > /tmp/$SESSION_ID"),
+    null,
+    "plain $VAR in /tmp/ redirect must be allowed (not a bypass sigil)",
+  );
+});
+
+// A-SEC2 (narrowed): $( subshell in redirect target inside exempt prefix is DENIED.
+test("bashWriteTarget: A-SEC2 redirect with $( subshell in exempt prefix is denied", () => {
+  assert.ok(
+    bashWriteTarget("node x > /tmp/$(cp a b)") !== null,
+    "redirect target containing $( (command substitution) in exempt prefix must be denied",
+  );
+});
+
+// A-SEC2 (narrowed): $'\x2e\x2e' ANSI-C escape in redirect is DENIED (confirm
+// existing A-SEC2 test still holds after narrowing — covered above but
+// pinned explicitly here with the same command).
+test("bashWriteTarget: A-SEC2 $'\\x2e' ANSI-C escape in redirect is still denied after narrowing", () => {
+  assert.ok(
+    bashWriteTarget("node x > /tmp/$'\\x2e\\x2e\\x2fetc\\x2fpasswd'") !== null,
+    "$' ANSI-C redirect bypass must still be denied after narrowing",
+  );
 });

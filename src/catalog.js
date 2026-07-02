@@ -1,8 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { ROLES as ROLE_LIST } from "./roles.js";
+import { resolveDir } from "./fs-util.js";
 
 const ROLES = new Set(ROLE_LIST);
 const DETECT_KINDS = new Set(["plugin", "skill", "mcp_server", "agent"]);
@@ -30,7 +30,7 @@ export function validateCatalog(entries) {
 }
 
 export async function loadCatalog(dir) {
-  const base = dir instanceof URL ? fileURLToPath(dir) : dir;
+  const base = resolveDir(dir);
   const files = (await readdir(base)).filter(f => f.endsWith(".yaml") || f.endsWith(".yml"));
   let entries = [];
   for (const f of files) entries = entries.concat(parse(await readFile(join(base, f), "utf8")) || []);

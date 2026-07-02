@@ -3,6 +3,16 @@
 // Pure functions, no I/O side effects. Deterministic, no external dependencies.
 
 /**
+ * Returns true when x is a non-null, non-array plain object.
+ * Extracted from the common guard !x||typeof x!=="object"||Array.isArray(x)
+ * used across advisor.js and fusion.js validators; centralised here so both
+ * files import the same canonical form.
+ */
+export function isPlainObject(x) {
+  return x !== null && x !== undefined && typeof x === "object" && !Array.isArray(x);
+}
+
+/**
  * Read an integer from an environment variable.
  *
  * Rules (in order):

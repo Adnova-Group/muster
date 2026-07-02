@@ -96,6 +96,8 @@ export const RULES = [
     fix: "Open with a role, e.g. 'You are a senior X who ...' (system prompt preferred).",
   },
   {
+    // NOTE: XML-block check intentionally mirrors GUARD-SEP-003 (guardrails). Each fires
+    // on an independent axis: structural best-practice vs. prompt-injection defence.
     id: "ANTH-XML-001", severity: "warn", dimension: "structure",
     title: "Wrap interpolated/long content in descriptive XML tags", source: BP,
     applies: (t, c) => hasInterpolation(t, c),
@@ -196,6 +198,8 @@ export const RULES = [
     fix: "Require a supporting quote/citation for each factual claim.",
   },
   {
+    // NOTE: XML-block check intentionally mirrors ANTH-XML-001 (structure). Each fires
+    // on an independent axis: prompt-injection defence vs. structural best-practice.
     id: "GUARD-SEP-003", severity: "warn", dimension: "guardrails",
     title: "Separate untrusted/interpolated input from instructions", source: `${GUARD}/reduce-prompt-leak`,
     applies: (t, c) => hasInterpolation(t, c),

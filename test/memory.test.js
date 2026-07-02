@@ -4,7 +4,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { writeMemory, readMemory } from "../src/memory.js";
+import { writeMemory, readMemory, appendState, appendFollowup } from "../src/memory.js";
 
 // Pull the YAML frontmatter block (between the first two `---` fences) out of a
 // memory doc and parse it, so a test can assert on the *parsed* key set rather
@@ -136,4 +136,69 @@ test("readMemory on empty dir returns []", async () => {
 test("readMemory on a missing dir returns [] (ENOENT -> absent, no throw)", async () => {
   const missing = join(await dir(), "does", "not", "exist");
   assert.deepEqual(await readMemory(missing, "anything"), []);
+});
+
+// ── A-SEC7: appendState / appendFollowup runId path-traversal guard ───────────
+// appendState and appendFollowup join runId directly into a path. A traversal
+// runId like "../escape" would write STATE/followup files outside the named dir.
+// The guard (mirroring initScratchpad's runId check) must reject before any
+// mkdir or appendFile runs.
+
+test("A-SEC7: appendState rejects a runId with .. (path traversal)", async () => {
+  const d = await dir();
+  await assert.rejects(
+    () => appendState(d, "../escape", "some state line"),
+    /invalid runId/,
+    "appendState must throw on traversal runId",
+  );
+});
+
+test("A-SEC7: appendState rejects a runId with / separator", async () => {
+  const d = await dir();
+  await assert.rejects(
+    () => appendState(d, "a/b", "some state line"),
+    /invalid runId/,
+    "appendState must throw on runId containing /",
+  );
+});
+
+test("A-SEC7: appendState rejects a runId with \\ separator", async () => {
+  const d = await dir();
+  await assert.rejects(
+    () => appendState(d, "a\\b", "some state line"),
+    /invalid runId/,
+    "appendState must throw on runId containing \\",
+  );
+});
+
+test("A-SEC7: appendFollowup rejects a runId with .. (path traversal)", async () => {
+  const d = await dir();
+  await assert.rejects(
+    () => appendFollowup(d, "../escape", { severity: "P1", note: "test" }),
+    /invalid runId/,
+    "appendFollowup must throw on traversal runId",
+  );
+});
+
+test("A-SEC7: appendFollowup rejects a runId with / separator", async () => {
+  const d = await dir();
+  await assert.rejects(
+    () => appendFollowup(d, "a/b", { severity: "P1", note: "test" }),
+    /invalid runId/,
+    "appendFollowup must throw on runId containing /",
+  );
+});
+
+test("A-SEC7: appendState accepts a valid runId and writes correctly", async () => {
+  const d = await dir();
+  await appendState(d, "run-001", "checkpoint reached");
+  const content = await readFile(join(d, "run-001.state.md"), "utf8");
+  assert.match(content, /checkpoint reached/, "appendState must write the line");
+});
+
+test("A-SEC7: appendFollowup accepts a valid runId and writes correctly", async () => {
+  const d = await dir();
+  await appendFollowup(d, "run-002", { severity: "P2", note: "needs review" });
+  const content = await readFile(join(d, "run-002.followups.md"), "utf8");
+  assert.match(content, /needs review/, "appendFollowup must write the finding");
 });

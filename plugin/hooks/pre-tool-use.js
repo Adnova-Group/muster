@@ -12,6 +12,7 @@
 //      .muster/ — wave/state markers and orchestrator ledger.
 //      .claude/ — repo-local Claude/orchestrator settings written mid-wave.
 //      (For Bash: no path target; this gate is skipped.)
+//   2.5. ALLOW if target is outside the cwd tree (GUARD-SCOPE).
 //   3. No .muster/wave-active marker → applyScaleGate() (post-run window; may DENY).
 //   4. Orphaned or stale marker → applyScaleGate() likewise.
 //      Primary signal: .muster/run-active absent means no active run, so the

@@ -10,12 +10,12 @@
 //   4. Fuse: select top-K by score, de-identify, order by stable id-hash
 //      (decoupled from rank to kill position bias per LLM-Blender/MoA).
 //
-// NOTE (phase 2): candidate.content / candidate.text may be absent when rows
-// come from .muster/candidates.json — the SKILL that calls fuse is responsible
-// for enriching rows with the full response text before passing them in.
+// NOTE: candidate.content / candidate.text may be absent when rows come from
+// .muster/candidates.json — the calling SKILL is responsible for enriching rows
+// with the full response text before passing them in (pure function, no I/O).
 
 import { pickWinner } from "./tournament.js";
-import { envInt } from "./env-util.js";
+import { envInt, isPlainObject } from "./env-util.js";
 
 // ---------------------------------------------------------------------------
 // validateFusionMap
@@ -37,7 +37,7 @@ const REQUIRED_ARRAY_KEYS = [
  * required to exist.
  */
 export function validateFusionMap(map) {
-  if (!map || typeof map !== "object" || Array.isArray(map)) {
+  if (!isPlainObject(map)) {
     return { ok: false, errors: ["fusionMap: must be a non-null, non-array object"] };
   }
   const errors = [];
@@ -166,7 +166,7 @@ export function fuse(candidates, map, opts = {}) {
 
   // Build de-identified references: strip model/agent/id so the synthesizer
   // cannot exhibit self-bias toward a particular model or candidate identity.
-  // Content fallback order: content → text → placeholder (wave 2 SKILL supplies content).
+  // Content fallback order: content → text → placeholder (calling SKILL supplies content).
   const references = ordered.map((c, i) => ({
     index: i + 1,
     content: c.content ?? c.text ?? "[content unavailable]",

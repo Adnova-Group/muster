@@ -18,10 +18,10 @@
 // bodies (redirect-looking text between <<MARKER and closing MARKER may still
 // false-positive). Use MUSTER_WAVE_GUARD=warn as the escape hatch for both.
 //
-// KNOWN LIMITATION — tee first-target-only: `tee a b` (multi-target form)
-// only checks the first target token after `tee [-a]`. The second and
-// subsequent targets are not inspected. Low real-world risk (multi-target tee
-// is rare in agentic scripts) but documented here for completeness.
+//
+// tee multi-target: ALL non-flag tokens after `tee` are checked (A-SEC4).
+// `tee /dev/null evil.js` — both targets are inspected; the second non-exempt
+// one is caught. Previously only the first non-flag token was checked.
 //
 // Exemption targets (string-level, no fs resolution): /dev/*, /tmp/*, .muster/*
 // Targets are path.normalize()'d before testing so `.muster/../app.js` (which
@@ -34,21 +34,34 @@ const EXEMPT_TARGET_RE = /^(\/dev\/|\/tmp\/|\.muster\/)/;
 export function bashWriteTarget(command) {
   if (typeof command !== "string" || command.length === 0) return null;
 
-  // 1. sed -i
-  // Handles `sed -i '...' file`, `sed -n -i ...`, `sed -i'' ...`
-  if (/\bsed\b[^|;&\n]*?\s-i(?:\s|$|')/.test(command)) {
+  // 1. sed -i / sed --in-place
+  // Handles `sed -i '...' file`, `sed -n -i ...`, `sed -i'' ...`,
+  // `sed -i"" ...` (A-SEC3: double-quote suffix was previously missed),
+  // and `sed --in-place ...` / `sed --in-place=.bak ...` (long form, A-SEC3).
+  if (
+    /\bsed\b[^|;&\n]*?\s-i(?:\s|$|'|")/.test(command) ||
+    /\bsed\b[^|;&\n]*\s--in-place(?:\s|=|$)/.test(command)
+  ) {
     return "sed -i";
   }
 
   // 2. tee to a non-exempt target
-  // Skip any leading flag tokens (-a, -i, --append, ...) and take the first
-  // non-flag token as the destination, consistent with the cp/mv handling below.
+  // Iterate ALL non-flag tokens (A-SEC4: original only checked the first one,
+  // allowing `tee /dev/null evil.js` to pass). Deny on the first non-exempt
+  // token found.
+  // A-SEC1: if any token contains $' (ANSI-C quoting), path.normalize cannot
+  // evaluate the escape sequence — treat as ambiguous and deny.
+  // A-SEC5: if any token contains $( (subshell), the path is unresolvable
+  // at parse time — treat as ambiguous and deny.
   const teeMatch = command.match(/\btee\b([^|;&\n]*)/);
   if (teeMatch) {
     const tokens = teeMatch[1].trim().split(/\s+/).filter(Boolean);
-    const target = tokens.find((t) => !t.startsWith("-"));
-    if (target && !EXEMPT_TARGET_RE.test(path.normalize(target))) {
-      return `tee ${target}`;
+    for (const t of tokens) {
+      if (t.startsWith("-")) continue; // skip flag tokens
+      // A-SEC1 + A-SEC5: ANSI-C quote or subshell in path → ambiguous → deny
+      if (t.includes("$'") || t.includes("$(")) return `tee ${t}`;
+      // A-SEC4: deny on first non-exempt token (checks ALL targets, not just first)
+      if (!EXEMPT_TARGET_RE.test(path.normalize(t))) return `tee ${t}`;
     }
   }
 
@@ -105,13 +118,32 @@ export function bashWriteTarget(command) {
   stripped = stripped.replace(/<<[-]?\w+/g, "");
   // Strip input redirects `< file` (not output, not heredoc)
   stripped = stripped.replace(/<\s*\S+/g, "");
+
+  // A-SEC2 (narrow): before stripping quotes, scan redirect targets for the
+  // two injection sigils that path.normalize cannot evaluate at parse time:
+  //   $'  — ANSI-C hex quoting  (e.g. $'\x2e\x2e\x2f' → path traversal)
+  //   $(  — command substitution (e.g. $(cp a b) → arbitrary write)
+  // Must run BEFORE the quote-strip below: $'\x2e\x2e' would have its inner
+  // quotes stripped to $QUOTED, losing the $' marker.  A plain $VAR / ${VAR}
+  // redirect target is NOT denied here; it falls through to EXEMPT_TARGET_RE.
+  {
+    const redirSecRe = />{1,2}\s*(\S+)/g;
+    let sm;
+    while ((sm = redirSecRe.exec(stripped)) !== null) {
+      if (sm[1].includes("$'") || sm[1].includes("$(")) return `> ${sm[1]}`;
+    }
+  }
+
   // Strip quoted-string contents so `> ` inside them doesn't false-positive.
   // Handles balanced single- and double-quoted strings.
   // Runs AFTER sed/tee checks (those used the original string above) and
   // AFTER fd-dup/heredoc/input strips so those constructs are already gone.
+  // Runs AFTER the A-SEC2 sigil scan so $' tokens are still visible above.
   stripped = stripped.replace(/"[^"]*"|'[^']*'/g, "QUOTED");
 
-  // Now find >>? followed by a file token
+  // Now find >>? followed by a file token; deny if not exempt.
+  // Plain $VAR / ${VAR} in an exempt prefix (e.g. /tmp/$SESSION_ID) is
+  // allowed — the two dangerous sigils were already caught above.
   const redirRe = />{1,2}\s*(\S+)/g;
   let m;
   while ((m = redirRe.exec(stripped)) !== null) {

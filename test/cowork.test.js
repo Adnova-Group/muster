@@ -199,6 +199,79 @@ test("notifications/initialized produces no spurious reply", async () => {
   assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after notification");
 });
 
+// ── A-SEC6: stdin buffer overflow guard ─────────────────────────────────────
+// The stdin accumulator is unbounded; a client that sends >4 MB without a
+// newline would exhaust the server's heap. The cap must cause a clean exit
+// (not an uncaught exception crash) before the newline arrives.
+test("A-SEC6: stdin buffer >4 MB without newline causes clean non-zero exit", async () => {
+  const LIMIT = 4 * 1024 * 1024;
+  const OVER = LIMIT + 1;
+  const chunk = Buffer.alloc(OVER, 0x78); // 0x78 = 'x', no newline
+
+  const exitCode = await new Promise((resolve, reject) => {
+    const srv = spawn("node", [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+      cwd: rootDir,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const timer = setTimeout(() => { srv.kill("SIGKILL"); reject(new Error("A-SEC6 test timeout")); }, 8000);
+    srv.on("exit", (code) => { clearTimeout(timer); resolve(code); });
+    srv.on("error", (e) => { clearTimeout(timer); reject(e); });
+    // Write the oversized chunk without a newline so it accumulates in buffer.
+    srv.stdin.write(chunk);
+    // Leave stdin open — the server must self-terminate on overflow.
+  });
+
+  // Must exit non-zero (cap triggered) and with a code < 128 (not a signal kill).
+  assert.ok(exitCode !== null, "server must exit, not hang");
+  assert.notEqual(exitCode, 0, "overflow must cause non-zero exit (cap enforced)");
+  assert.ok(exitCode < 128, `expected a clean exit code < 128, got ${exitCode}`);
+});
+
+// ── B-C4: unknown tool name ───────────────────────────────────────────────────
+test("B-C4: tools/call with unknown tool name returns isError:true and 'unknown tool'", async () => {
+  const r = await rpc([INIT, {
+    jsonrpc: "2.0", id: 2, method: "tools/call",
+    params: { name: "muster_does_not_exist", arguments: {} },
+  }]);
+  const res = r[2].result;
+  assert.equal(res.isError, true, "unknown tool must return isError:true");
+  assert.match(res.content[0].text, /unknown tool/, "error text must mention 'unknown tool'");
+});
+
+// ── B-C6: garbled non-JSON line survival ─────────────────────────────────────
+// Server skips unparseable lines (continue in catch); valid subsequent request
+// must still be processed normally (the server must not crash).
+test("B-C6: garbled non-JSON line before a valid ping — server survives and replies", async () => {
+  const pingId = 42;
+  const result = await new Promise((resolve, reject) => {
+    const srv = spawn("node", [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+      cwd: rootDir, stdio: ["pipe", "pipe", "inherit"],
+    });
+    let buf = "";
+    const timer = setTimeout(() => { srv.kill(); reject(new Error("B-C6 timeout")); }, 15_000);
+    srv.stdout.setEncoding("utf8");
+    srv.stdout.on("data", (d) => {
+      buf += d;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.id === pingId) { clearTimeout(timer); srv.stdin.end(); resolve(msg); }
+        } catch { /* non-JSON output — ignore */ }
+      }
+    });
+    srv.on("error", reject);
+    // Send: INIT (required), then a garbled line, then a valid ping.
+    srv.stdin.write(JSON.stringify(INIT) + "\n");
+    srv.stdin.write("}{garbled non-JSON line that must be skipped\n");
+    srv.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: pingId, method: "ping" }) + "\n");
+  });
+  assert.deepEqual(result.result, {}, "ping reply must arrive after the garbled line is skipped");
+});
+
 test("cowork-probe: grader rejects a bad dispatch run (exit 1)", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "probe-test-"));
   const file = path.join(dir, "bad.json");

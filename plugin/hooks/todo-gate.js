@@ -23,10 +23,20 @@
 //
 // SELF-CONTAINED: imports only node: builtins. No src/ imports.
 
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, openSync, readSync, closeSync } from "node:fs";
 import path from "node:path";
 
 const EVENT = "PreToolUse";
+
+// Grace margin (ms) subtracted from run-active mtime before comparing TodoWrite
+// timestamps. Absorbs sub-second ISO 8601 flooring (e.g. "T10:00:05Z" parses to
+// T.000 while the marker mtime may be T.050) and minor clock skew. Bias-to-allow
+// is the stated policy for this gate.
+const GRACE_MS = 2000;
+
+// Max bytes to read from the transcript tail. Todo lists written this run are
+// near the end; reading the full file on a long session wastes memory.
+const TAIL_BYTES = 256 * 1024;
 
 // Self-contained emit — mirrors guidance.js pattern but copied here so this
 // hook ships stand-alone (plugin/hooks/* must not import from src/).
@@ -144,7 +154,20 @@ try {
 
   let transcriptText;
   try {
-    transcriptText = readFileSync(transcriptPath, "utf8");
+    const { size } = statSync(transcriptPath);
+    if (size <= TAIL_BYTES) {
+      transcriptText = readFileSync(transcriptPath, "utf8");
+    } else {
+      // Read only the tail — qualifying TodoWrites are near the end.
+      const buf = Buffer.allocUnsafe(TAIL_BYTES);
+      const fd = openSync(transcriptPath, "r");
+      try {
+        readSync(fd, buf, 0, TAIL_BYTES, size - TAIL_BYTES);
+      } finally {
+        closeSync(fd);
+      }
+      transcriptText = buf.toString("utf8");
+    }
   } catch {
     allow(); // Missing / unreadable → fail-open.
   }
@@ -155,7 +178,6 @@ try {
   // Scan JSONL lines.
   let parsedCleanly = true; // flipped to false if any non-empty line fails to parse
   let foundQualifyingByTimestamp = false; // TodoWrite with timestamp >= mtime
-  let foundAnyTodoWrite = false; // any TodoWrite at all (for fallback)
   let foundTodoWriteWithoutReadableTs = false; // for the "timestamps unreadable" fallback
 
   const lines = transcriptText.split("\n");
@@ -174,10 +196,8 @@ try {
     const { found, hasReadableTimestamp, timestampMs } = scanLine(obj);
     if (!found) continue;
 
-    foundAnyTodoWrite = true;
-
     if (hasReadableTimestamp) {
-      if (timestampMs >= runActiveMtime) {
+      if (timestampMs >= runActiveMtime - GRACE_MS) {
         foundQualifyingByTimestamp = true;
         break; // no need to scan further
       }
@@ -185,6 +205,7 @@ try {
     } else {
       // No readable timestamp on this entry.
       foundTodoWriteWithoutReadableTs = true;
+      break; // no need to scan further; fallback will ALLOW
     }
   }
 

@@ -304,7 +304,53 @@ test("todo-gate: TodoWrite before run-active mtime → DENY (pre-run todo)", asy
   }
 });
 
-// 13. TaskCreate (forward-compat name) qualifies as a todo-write → ALLOW
+// 13. Grace-boundary: TodoWrite ~1s BEFORE run-active mtime (within GRACE_MS=2s) → ALLOW
+test("todo-gate: TodoWrite ~1s before run-active mtime (within GRACE_MS) → ALLOW", async () => {
+  const { tmpDir, runActiveMtime } = makeLiveRun();
+  try {
+    // 1 second before the marker mtime — inside the 2 s grace window.
+    // Models the sub-second ISO-flooring case: a todo written at T.050 recorded
+    // as T.000 by a second-resolution clock still qualifies.
+    const nearBeforeTs = new Date(runActiveMtime - 1000).toISOString();
+    const transcriptPath = writeTranscript([toolUseLine("TodoWrite", nearBeforeTs)], tmpDir);
+
+    const { stdout, code } = await runGate(taskPayload(transcriptPath, tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(
+      out.permissionDecision,
+      undefined,
+      "within GRACE_MS → ALLOW (no sub-second false-deny)",
+    );
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// 14. Still-denies: TodoWrite 10s BEFORE run-active mtime (beyond GRACE_MS) → DENY
+test("todo-gate: TodoWrite 10s before run-active mtime (beyond GRACE_MS) → DENY", async () => {
+  const { tmpDir, runActiveMtime } = makeLiveRun();
+  try {
+    // 10 seconds before — clearly a pre-run todo that must not qualify.
+    const wellBeforeTs = new Date(runActiveMtime - 10000).toISOString();
+    const transcriptPath = writeTranscript([toolUseLine("TodoWrite", wellBeforeTs)], tmpDir);
+
+    const { stdout, code } = await runGate(taskPayload(transcriptPath, tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(
+      out.permissionDecision,
+      "deny",
+      "10 s before run (beyond GRACE_MS) → DENY (pre-run guard still works)",
+    );
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// 16. TaskCreate (forward-compat name) qualifies as a todo-write → ALLOW
 test("todo-gate: TaskCreate (forward-compat) qualifies → ALLOW", async () => {
   const { tmpDir, runActiveMtime } = makeLiveRun();
   try {
@@ -320,7 +366,7 @@ test("todo-gate: TaskCreate (forward-compat) qualifies → ALLOW", async () => {
   }
 });
 
-// 14. Empty transcript (no lines) + run-active → DENY
+// 17. Empty transcript (no lines) + run-active → DENY
 test("todo-gate: empty transcript + run-active → DENY", async () => {
   const { tmpDir } = makeLiveRun();
   try {

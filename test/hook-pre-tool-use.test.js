@@ -88,8 +88,10 @@ test("allow when no wave-active marker exists", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-wg-test-"));
   mkdirSync(path.join(tmpDir, ".muster"), { recursive: true }); // .muster exists but no marker
   try {
+    // Use an IN-CWD path so GUARD-SCOPE doesn't short-circuit; the no-marker
+    // branch is reached and scale-gate fires (fail-open: no session_id → allow).
     const { stdout, code } = await runRaw(
-      editPayload("/some/project/src/foo.js", tmpDir),
+      editPayload(path.join(tmpDir, "src", "foo.js"), tmpDir),
     );
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -123,8 +125,10 @@ test("allow when wave-active marker is older than 60 minutes (stale/crashed wave
   const staleTime = new Date(Date.now() - 61 * 60 * 1000);
   const tmpDir = makeTmpMarker("wave-001", staleTime);
   try {
+    // Use an IN-CWD path so GUARD-SCOPE doesn't short-circuit; the stale-marker
+    // branch is reached (ageMs > STALE_MS → scale-gate fail-open → allow).
     const { stdout, code } = await runRaw(
-      editPayload("/some/project/src/foo.js", tmpDir),
+      editPayload(path.join(tmpDir, "src", "foo.js"), tmpDir),
     );
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
@@ -209,7 +213,8 @@ test("allow when no wave-active: permissionDecision field must be absent", async
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-wg-test-"));
   mkdirSync(path.join(tmpDir, ".muster"), { recursive: true });
   try {
-    const { stdout } = await runRaw(editPayload("/some/project/src/foo.js", tmpDir));
+    // In-CWD path: exercises the no-marker code path (scale-gate fail-open → allow).
+    const { stdout } = await runRaw(editPayload(path.join(tmpDir, "src", "foo.js"), tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.hookEventName, "PreToolUse");
     assert.equal(out.permissionDecision, undefined, "allow path: permissionDecision must be ABSENT");
@@ -234,7 +239,8 @@ test("allow stale marker: permissionDecision field must be absent", async () => 
   const staleTime = new Date(Date.now() - 61 * 60 * 1000);
   const tmpDir = makeTmpMarker("wave-001", staleTime);
   try {
-    const { stdout } = await runRaw(editPayload("/some/project/src/foo.js", tmpDir));
+    // In-CWD path: exercises the stale-marker code path (scale-gate fail-open → allow).
+    const { stdout } = await runRaw(editPayload(path.join(tmpDir, "src", "foo.js"), tmpDir));
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.hookEventName, "PreToolUse");
     assert.equal(out.permissionDecision, undefined, "allow path: permissionDecision must be ABSENT");
@@ -359,6 +365,28 @@ test("deny NotebookEdit (notebook_path) when wave-active marker exists", async (
     assert.equal(out.hookEventName, "PreToolUse");
     assert.equal(out.permissionDecision, "deny", "NotebookEdit should be denied during wave");
     assert.match(out.permissionDecisionReason, /wave-notebook-1/, "reason includes wave id");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// ── B-C1: Write tool deny test (Write is in EDIT_TOOLS but was previously untested) ─
+test("deny Write tool (in-cwd file_path) when wave-active marker exists", async () => {
+  const tmpDir = makeTmpMarker("wave-write-1");
+  try {
+    // Write uses file_path (same as Edit) and is in EDIT_TOOLS → must be denied.
+    const { stdout, code } = await runRaw(
+      JSON.stringify({
+        tool_name: "Write",
+        tool_input: { file_path: path.join(tmpDir, "src", "new-file.js") },
+        cwd: tmpDir,
+      }),
+    );
+    assert.equal(code, 0, "hook always exits 0");
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(out.permissionDecision, "deny", "Write to in-cwd path must be denied during wave");
+    assert.match(out.permissionDecisionReason, /wave-write-1/, "reason includes wave id");
   } finally {
     cleanDir(tmpDir);
   }

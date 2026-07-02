@@ -227,6 +227,51 @@ test("A-SEC6: stdin buffer >4 MB without newline causes clean non-zero exit", as
   assert.ok(exitCode < 128, `expected a clean exit code < 128, got ${exitCode}`);
 });
 
+// ── B-C4: unknown tool name ───────────────────────────────────────────────────
+test("B-C4: tools/call with unknown tool name returns isError:true and 'unknown tool'", async () => {
+  const r = await rpc([INIT, {
+    jsonrpc: "2.0", id: 2, method: "tools/call",
+    params: { name: "muster_does_not_exist", arguments: {} },
+  }]);
+  const res = r[2].result;
+  assert.equal(res.isError, true, "unknown tool must return isError:true");
+  assert.match(res.content[0].text, /unknown tool/, "error text must mention 'unknown tool'");
+});
+
+// ── B-C6: garbled non-JSON line survival ─────────────────────────────────────
+// Server skips unparseable lines (continue in catch); valid subsequent request
+// must still be processed normally (the server must not crash).
+test("B-C6: garbled non-JSON line before a valid ping — server survives and replies", async () => {
+  const pingId = 42;
+  const result = await new Promise((resolve, reject) => {
+    const srv = spawn("node", [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+      cwd: rootDir, stdio: ["pipe", "pipe", "inherit"],
+    });
+    let buf = "";
+    const timer = setTimeout(() => { srv.kill(); reject(new Error("B-C6 timeout")); }, 15_000);
+    srv.stdout.setEncoding("utf8");
+    srv.stdout.on("data", (d) => {
+      buf += d;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.id === pingId) { clearTimeout(timer); srv.stdin.end(); resolve(msg); }
+        } catch { /* non-JSON output — ignore */ }
+      }
+    });
+    srv.on("error", reject);
+    // Send: INIT (required), then a garbled line, then a valid ping.
+    srv.stdin.write(JSON.stringify(INIT) + "\n");
+    srv.stdin.write("}{garbled non-JSON line that must be skipped\n");
+    srv.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: pingId, method: "ping" }) + "\n");
+  });
+  assert.deepEqual(result.result, {}, "ping reply must arrive after the garbled line is skipped");
+});
+
 test("cowork-probe: grader rejects a bad dispatch run (exit 1)", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "probe-test-"));
   const file = path.join(dir, "bad.json");

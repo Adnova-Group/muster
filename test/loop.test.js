@@ -36,6 +36,10 @@ test("reviewGateState: done still short-circuits before the cap", () => {
 test("DISPATCH_MAX_ATTEMPTS is 2", () => {
   assert.equal(DISPATCH_MAX_ATTEMPTS, 2);
 });
+// B-C8: boundary — attempt 0 (first invocation, before any attempt has been made)
+test("dispatchRetryState({attempt:0}) retries (boundary: below DISPATCH_MAX_ATTEMPTS)", () => {
+  assert.deepEqual(dispatchRetryState({ attempt: 0 }), { retry: true, reason: "retry" });
+});
 test("dispatchRetryState retries on first failure (attempt 1, not succeeded)", () => {
   assert.deepEqual(dispatchRetryState({ attempt: 1 }), { retry: true, reason: "retry" });
 });

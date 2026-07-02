@@ -6,7 +6,7 @@ Pick the mode that matches what you want.
 
 ## Plan and review: `/muster:run`
 
-The interactive router. It detects context, assembles the crew, and shows the glass-box manifest plus a plan, then **stops for your approval**. It plans and shows; it does not execute.
+The interactive router. It detects context, assembles the crew, and shows the glass-box manifest plus a plan, then **stops for your approval**. It plans and shows; selecting Approve & run chains into autopilot in-session, while Adjust and Cancel stay plan-only.
 
 ```sh
 /muster:run Add rate limiting to the public API with tests

@@ -32,6 +32,8 @@ export function resolveCapabilities(catalog, installed) {
       if (!chosen) {
         chosen = entry;
         // first qualifying entry == chosen; capture its rank here (single pass).
+        // Infinity = no uninstalled external can beat an installed provider regardless
+        // of its rank value, ensuring installed providers always win the recommendation gate.
         chosenRank = entry.source === "installed" ? (e.rank ?? Infinity) : (e.rank ?? 0);
       }
     }

@@ -124,13 +124,16 @@ async function gradeOne({ testCase, output, callModel, rubric }) {
 }
 
 // Suite-level report shared by gradeCollected and runEval: accuracy = passing/total.
-function summarize(results, passThreshold) {
+// Guards both ratios against an empty array (length === 0 → NaN) so the function
+// is safe to call with an empty results list even though the public APIs (gradeCollected
+// / runEval) already reject empty datasets before reaching this point.
+export function summarize(results, passThreshold) {
   const passing = results.filter(r => r.passing).length;
   return {
     results,
     total: results.length,
-    accuracy: passing / results.length,
-    averageScore: results.reduce((s, r) => s + r.score, 0) / results.length,
+    accuracy: results.length > 0 ? passing / results.length : 0,
+    averageScore: results.length > 0 ? results.reduce((s, r) => s + r.score, 0) / results.length : 0,
     passThreshold,
   };
 }

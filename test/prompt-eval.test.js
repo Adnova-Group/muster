@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   interpolate, codeGrade, buildGraderPrompt, parseGraderResponse, runEval, gradeCollected,
+  summarize,
 } from "../src/prompt-eval.js";
 
 test("gradeCollected scores pre-collected outputs offline", () => {
@@ -160,4 +161,15 @@ test("runEval without a format skips code grading and uses model score only", as
   });
   assert.equal(res.results[0].score, 4);
   assert.equal(res.accuracy, 0);
+});
+
+// --- summarize empty-array guard (item 5 correctness) ---
+
+test("summarize: empty results array produces accuracy=0 and averageScore=0 (not NaN)", () => {
+  const r = summarize([], 7);
+  assert.equal(r.total, 0);
+  assert.equal(r.accuracy, 0, "accuracy should be 0, not NaN, for empty results");
+  assert.equal(r.averageScore, 0, "averageScore should be 0, not NaN, for empty results");
+  assert.ok(!Number.isNaN(r.accuracy), "accuracy must not be NaN");
+  assert.ok(!Number.isNaN(r.averageScore), "averageScore must not be NaN");
 });

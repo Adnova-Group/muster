@@ -38,7 +38,7 @@ Muster's glass-box output style ships inside the plugin and applies automaticall
 
 | Mode | Command | What it does |
 | --- | --- | --- |
-| Run | `/muster:run <outcome>` | Plans, shows the crew manifest and plan, then stops for your approval. Does not execute. |
+| Run | `/muster:run <outcome>` | Plans, shows the crew manifest and plan, then stops for your approval. Approve & run chains into autopilot in-session; Adjust and Cancel stay plan-only. |
 | Autopilot | `/muster:autopilot <outcome>` | Hands-off lifecycle: branch, route, run waves, commit per wave, present the merge. Stops only for the merge decision or an escalation. |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first bug fix: reproduce, find root cause, fix, add a regression test, verify. No symptom-patching. |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions (seven when the project builds prompts or agents), then fixes everything with tests and verifies. |

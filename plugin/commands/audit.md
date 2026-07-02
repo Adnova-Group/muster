@@ -13,7 +13,7 @@ Drive the audit loop:
 
 1. **Seed** — `npx -y @adnova-group/muster audit` -> Crew Manifest at `.muster/manifest.json`; validate (`npx -y @adnova-group/muster manifest validate`).
 2. **Branch** — create a work branch off the base (never run on the base branch).
-3. **Parallel dimension sweep** — dispatch the chosen provider per dimension CONCURRENTLY, each READ-ONLY, on its role's model (architecture-review on fable, etc.): architecture, tech-debt, coverage, simplification, readability, security. Each returns findings: severity (P0/P1/P2), location (file:line), problem, suggested fix.
+3. **Parallel dimension sweep** — dispatch the chosen provider per dimension CONCURRENTLY, each READ-ONLY, on its role's model (architecture-review on fable, etc.): architecture, tech-debt, coverage, simplification, readability, security. If the crew manifest includes a `prompt-quality` member (i.e. `muster audit` detected a prompting signal -- an LLM/agent SDK dependency -- via `muster detect`), also dispatch the prompt-quality dimension concurrently in this wave. Each returns findings: severity (P0/P1/P2), location (file:line), problem, suggested fix.
 4. **Consolidate** — dedupe + rank all findings into a single ledger (by severity, then blast radius). Record the ledger in STATE (glass box).
 5. **Fix all** — via the orchestrator + Ralph loop: remediate every finding, TDD (failing test first where behavior changes). Defer an item only with an explicit written reason in the ledger. Keep the suite green per fix.
 6. **Verify** — run the **review-gate** + the full suite; must be green. Confirm no regressions.

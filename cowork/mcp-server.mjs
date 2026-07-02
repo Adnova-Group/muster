@@ -59,25 +59,16 @@ const COWORK_PROTOCOL = [
 const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("\n\n");
 
 // ── Tool catalog ──────────────────────────────────────────────────────────────
-// Three factory shapes — every TOOLS entry is built from one of these:
+// Two factory shapes — every TOOLS entry is built from one of these:
 //
 //   S(desc, prop, required?)  — "str": receives a single string arg, passed directly as a CLI arg.
-//   J(desc, props, required)  — "json": single object payload; available for future single-file tools.
 //   J2(desc, props, required) — "json2": one OR more payloads; each is written to its own temp file
 //                               and the paths are spread onto the CLI argv in order.
 //                               `picks` (plural, returns an ARRAY) not `pick` (singular).
-//
-// All json-kind tools currently use J2 (even single-payload ones), so the callTool json2 path
-// is the sole temp-file dispatch route.
 const S = (description, prop, required = true) => ({
   kind: "str", description,
   inputSchema: { type: "object", properties: { [prop]: { type: "string" } }, required: required ? [prop] : [] },
   prop,
-});
-// J is available for future single-file tools; current tools use J2 to avoid a duplicate dispatch branch.
-const J = (description, props, required) => ({
-  kind: "json", description,
-  inputSchema: { type: "object", properties: props, required },
 });
 // J2: `picks` returns an ARRAY of payloads (use `picks`, not `pick`) — each element becomes one temp file.
 const J2 = (description, props, required) => ({

@@ -104,6 +104,10 @@ Muster's runtime behavior can be tuned with environment variables:
 | `MUSTER_PRINCIPLES_EVERY` | `3` | Inject the full principles + verbs every N*K turns (K = this value; at defaults: nudge every 3, full every 9). |
 | `MUSTER_WAVE_GUARD` | `deny` | PreToolUse hook enforcement while a wave is active: `deny` blocks inline edits, `warn` allows with a reminder, `off` disables the guard. |
 | `MUSTER_MAX_TIER` | _(unset)_ | Caps the model tier policy (e.g. `opus` disables Fable, `sonnet` for budget mode); unset = no cap. Note: static agent frontmatter pins (e.g. muster-strategist) are not affected on direct invocation; in muster runs the dispatch override honors the cap. |
+| `MUSTER_INLINE_SCALE` | `3` | Post-run scale gate threshold. The Nth distinct file write in a single turn with no active wave is denied and routed to a verb (1-2 file turns fall through). |
+| `MUSTER_ADVISOR_MAX_CONSULTS` | `3` | Maximum advisor consults per run. Bounds the cost of workers escalating to the advisor role. Set to 0 to disable advisor consults. |
+| `MUSTER_FUSE_TOPK` | `3` | Maximum number of tournament candidates passed to the fusion synthesizer. Must be >= 1. |
+| `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis. Below this threshold `muster fuse` falls back to the single best candidate. Set to 0 to always fuse when >= 2 candidates pass. |
 
 ## Built on
 

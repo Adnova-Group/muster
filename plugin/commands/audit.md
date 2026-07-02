@@ -9,6 +9,8 @@ The scope: <scope>`$ARGUMENTS`</scope> (empty = whole repo; or a path/subsystem 
 
 Drive the audit loop:
 
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the verb/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after the merge decision (step 7) or on escalation exit. `SessionStart` on a fresh session clears a stale marker automatically.
+
 1. **Seed** — `npx -y @adnova-group/muster audit` -> Crew Manifest at `.muster/manifest.json`; validate (`npx -y @adnova-group/muster manifest validate`).
 2. **Branch** — create a work branch off the base (never run on the base branch).
 3. **Parallel dimension sweep** — dispatch the chosen provider per dimension CONCURRENTLY, each READ-ONLY, on its role's model (architecture-review on fable, etc.): architecture, tech-debt, coverage, simplification, readability, security. Each returns findings: severity (P0/P1/P2), location (file:line), problem, suggested fix.
@@ -18,3 +20,5 @@ Drive the audit loop:
 7. **Escalate** if the fix-loop cap is hit on an item (record it in the ledger, continue the others). Then present the merge decision via the **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**.
 
 Reuses the orchestrator + review-gate; glass box records the per-dimension providers + the findings ledger. (vs `/muster:diagnose`, which is failure-first single-bug; audit is breadth-first whole-codebase.)
+
+Remove `.muster/run-active` after the merge decision (step 7) or on escalation exit.

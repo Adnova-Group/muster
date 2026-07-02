@@ -11,6 +11,8 @@ Respond with a ticking checklist written to STATE at each step; every branch, co
 
 If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this hands-off run:
 
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 0) -- the verb/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after step 7 (merge decision) or on escalation exit. `SessionStart` on a fresh session clears a stale marker automatically.
+
 0. **Issue ref?** If `$ARGUMENTS` is a GitHub issue reference (`#N`, a bare number, or an issues URL), run `npx -y @adnova-group/muster issue "$ARGUMENTS"` and use the returned `outcome` (issue title + body) as the outcome for the rest of the run. If `gh` fails: attended → report and stop; unattended (Routine) → record the failure to the run report and stop (no outcome to run).
 1. **Branch** — create a work branch off the base (never run on the base branch) — for full isolation, create a git worktree under `.worktrees/<branch>/` (per superpowers using-git-worktrees) so the main workspace stays clean; a plain branch is fine otherwise.
 2. **Detect** — `npx -y @adnova-group/muster detect`. If `greenfield: true`, run the **greenfield** skill, then re-detect.
@@ -50,3 +52,5 @@ When autopilot is fired by a Claude Code Routine (no interactive human present),
 - The outcome is supplied via the Routine's `text` field (API `/fire`) or the saved Routine config — the same `$ARGUMENTS` slot, nothing extra to wire.
 
 Glass box: branch, each commit, escalations, and the ticking checklist are recorded in STATE.
+
+Remove `.muster/run-active` after the merge decision (step 7) or on escalation exit.

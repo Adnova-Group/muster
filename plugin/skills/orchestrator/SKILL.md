@@ -41,7 +41,7 @@ the manifest — the crew on paper is not the crew doing the work.
    This is a one-shot gate; the per-wave review loop (step 3c) remains the net for conflicts that only emerge from
    implementation.
 3. For each wave, in order:
-   a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task — the `PreToolUse` hook reads this marker to enforce the iron rule. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
+   a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task -- the `PreToolUse` hook reads this marker to enforce the iron rule. Note: `.muster/run-active` is a separate, verb-level marker (not per-wave); it is written by the invoking verb (run/autopilot/diagnose/audit) at invocation start and removed when the verb exits. A `.muster/wave-active` present without a `.muster/run-active` means the wave is orphaned or crashed; the `PreToolUse` hook treats it as stale and applies the scale-gate rather than the full wave-guard. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task (runs N competing agents, a judge scores each and produces a debate fusion map, then `muster fuse` decides: synthesize the top-K via a hardened synthesizer agent, or fall back to the best passing candidate when candidates already agree).
       - **Parallel isolation (concurrent file writers):** when a wave dispatches more than one task
@@ -125,3 +125,25 @@ free-interpret it. Map the returned action:
   retarget); take no action.
 
 Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.
+
+## Enforcement model: gates vs conventions
+
+**Principle:** enforce where mechanically sound; a gameable gate that fails open is worse than an honest, named convention.
+
+### GATES (deterministic, hook-enforced -- these BLOCK)
+
+- **Wave-guard:** while `.muster/wave-active` exists, any main-loop Edit/Write/NotebookEdit or high-confidence Bash file write is denied. Scoped by `.muster/run-active` (absent run-active = orphaned wave = scale-gate instead).
+- **Post-run scale-gate:** once the wave marker is gone, the main loop may touch at most `MUSTER_INLINE_SCALE - 1` (default: 2) distinct files per turn; the Nth file is denied and routed to a verb. Prevents post-run inline drift that the advisory nudge alone cannot hold.
+- **Meta-exempt roots:** `.muster/` and `.claude/` (in-cwd) are always allowed -- orchestrator bookkeeping and repo-local settings must never be blocked. Paths outside the project cwd are exempt by scope (cwd-relative gate).
+
+### CONVENTIONS (not gate-able; enforced by SKILL discipline)
+
+- **Todo-driving + crew-owner/state-in-subject:** the `PreToolUse` hook cannot see todo state or judge whether a task is multi-step -- that is runtime judgment, not a file-system observable.
+- **Verb selection:** intent classification (is this a bug fix? a new feature? a sweep?) is a model judgment call, not a deterministic signal the hook can test.
+- **Content-through-humanizer routing:** the routing decision is judgment; the OUTPUT rules (no em-dash, no banned openers) are enforced post-hoc by contract tests on committed artifacts.
+- **Glass-box narration:** narration is output content (the model's reply text), not a tool surface -- there is no hook point to enforce it.
+
+### REJECTED (with reasons)
+
+- **Verb-routing run-active BLOCK:** rejected. Between-wave writes are already `.muster/`-exempt or `agent_id`-exempt; adding a block on absent run-active would add no enforcement power and would false-block trivial multi-file edits outside a run.
+- **Transcript-scan todo gate:** rejected. Fragile (the hook can't reliably parse conversation state), gameable with one throwaway todo, and fails open -- a gate that fails open under mild pressure is worse than an honest convention.

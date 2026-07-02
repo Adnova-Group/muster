@@ -2,15 +2,26 @@
 // - marker survives source:"compact" and source:"resume"
 // - marker removed on "startup"/"clear"/missing-source
 // - uses payload.cwd when present
+// - run-active marker cleared on fresh sessions, survives mid-session sources
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mkdtempSync, existsSync,
+  mkdtempSync, existsSync, mkdirSync, writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
+
+/** Write `.muster/run-active` into an existing directory. */
+function makeRunMarker(dir, content = "run-001") {
+  mkdirSync(path.join(dir, ".muster"), { recursive: true });
+  writeFileSync(path.join(dir, ".muster", "run-active"), content);
+}
+
+function runActiveExists(dir) {
+  return existsSync(path.join(dir, ".muster", "run-active"));
+}
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -129,6 +140,79 @@ test("session-start: additionalContext includes routing-policy text", async () =
     assert.equal(code, 0);
     const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
     assert.match(ctx, /Default routing|humanizer/i, "routing policy text present in additionalContext");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// ── run-active marker lifecycle ──────────────────────────────────────────────
+
+// source:"startup" — run-active must be cleared (crashed verb)
+test("session-start: run-active marker removed on source:startup", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-ra-"));
+  makeRunMarker(tmpDir, "run-old");
+  try {
+    const payload = JSON.stringify({ source: "startup", session_id: "ra1", cwd: tmpDir });
+    const { stdout, code } = await runHookStdin(tmpDir, payload);
+    assert.equal(code, 0, "exit 0");
+    assert.doesNotThrow(() => JSON.parse(stdout), "valid JSON");
+    assert.ok(!runActiveExists(tmpDir), "run-active must be removed on startup");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// source:"clear" — run-active must be cleared
+test("session-start: run-active marker removed on source:clear", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-ra-"));
+  makeRunMarker(tmpDir, "run-old-2");
+  try {
+    const payload = JSON.stringify({ source: "clear", session_id: "ra2", cwd: tmpDir });
+    const { stdout, code } = await runHookStdin(tmpDir, payload);
+    assert.equal(code, 0, "exit 0");
+    assert.ok(!runActiveExists(tmpDir), "run-active must be removed on clear");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// missing source — run-active must be cleared (old-style payload)
+test("session-start: run-active marker removed when source field is absent", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-ra-"));
+  makeRunMarker(tmpDir, "run-nosrc");
+  try {
+    const payload = JSON.stringify({ session_id: "ra3", cwd: tmpDir });
+    const { stdout, code } = await runHookStdin(tmpDir, payload);
+    assert.equal(code, 0, "exit 0");
+    assert.ok(!runActiveExists(tmpDir), "run-active must be removed when source absent");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// source:"compact" — run-active must survive (mid-session, verb may still be running)
+test("session-start: run-active marker survives source:compact", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-ra-"));
+  makeRunMarker(tmpDir, "run-compact");
+  try {
+    const payload = JSON.stringify({ source: "compact", session_id: "ra4", cwd: tmpDir });
+    const { stdout, code } = await runHookStdin(tmpDir, payload);
+    assert.equal(code, 0, "exit 0");
+    assert.ok(runActiveExists(tmpDir), "run-active must survive compact (verb may still be running)");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// source:"resume" — run-active must survive
+test("session-start: run-active marker survives source:resume", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-ra-"));
+  makeRunMarker(tmpDir, "run-resume");
+  try {
+    const payload = JSON.stringify({ source: "resume", session_id: "ra5", cwd: tmpDir });
+    const { stdout, code } = await runHookStdin(tmpDir, payload);
+    assert.equal(code, 0, "exit 0");
+    assert.ok(runActiveExists(tmpDir), "run-active must survive resume");
   } finally {
     cleanDir(tmpDir);
   }

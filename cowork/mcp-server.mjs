@@ -44,7 +44,8 @@ const COWORK_PROTOCOL = [
   "2. muster_assess a thin outcome; muster_route / muster_domain to pick the pipeline.",
   "3. Assemble a crew manifest, muster_manifest_validate it, fix until ok.",
   "4. muster_wave gives dependency-ordered waves. Dispatch each wave's members as PARALLEL subagents (fall back to muster_next, one task at a time, only if fan-out is unavailable). Cross-wave order is fixed; intra-wave order is free.",
-  "5. The wave barrier is the gate: for a tournament, collect the candidates and muster_pick the winner; for review, dispatch adversarial reviewers and muster_tally their verdicts. Re-run the stated test signals before a wave counts as done. A failed gate re-scopes that wave, it does not stop the run.",
+  "5. The wave barrier is the gate. For a tournament -- a judge scores all candidates AND maps consensus/contradiction/partial-coverage/blind-spots into a debate map; call muster_fuse to decide fuse-vs-fallback (the agreement gate skips synthesis when candidates already agree; on mode fuse, a synthesizer grafts the top-K best; muster_pick is the fallback ranker when the gate declines fusion). For review -- dispatch adversarial reviewers and muster_tally their verdicts. Re-run the stated test signals before a wave counts as done. A failed gate re-scopes that wave, it does not stop the run.",
+  "5a. Advisor escalate-up: a worker facing a hard decision returns a structured advice-request instead of guessing; call muster_advise to validate the request and resolve the advisor model (fable->opus); dispatch the advisor on it and feed the advice back so the worker keeps the decision (advises, does not command). The consult budget is bounded -- log each consult and stop escalating once the limit is reached.",
   "6. Glass-box: state each routing decision and its evidence as you go.",
   "",
   "By intent (the muster verbs, driven in prose since there are no slash commands):",
@@ -66,6 +67,11 @@ const S = (description, prop, required = true) => ({
 });
 const J = (description, props, required) => ({
   kind: "json", description,
+  inputSchema: { type: "object", properties: props, required },
+});
+// J2: same shape as J but for tools that need TWO temp files (picks: array producer).
+const J2 = (description, props, required) => ({
+  kind: "json2", description,
   inputSchema: { type: "object", properties: props, required },
 });
 
@@ -90,6 +96,8 @@ const TOOLS = {
   muster_prioritize: { argv: ["prioritize"], ...J("Rank backlog items by RICE/ICE/WSJF/weighted.", { items: { type: "array" }, model: { type: "string", enum: ["rice", "ice", "wsjf", "weighted"] } }, ["items"]), pick: (a) => ({ items: a.items, model: a.model || "rice" }), flags: (a) => a.model ? ["--model", a.model] : [] },
   muster_pick: { argv: ["pick"], ...J("Pick the tournament winner from scored candidates.", { candidates: { type: "array" } }, ["candidates"]), pick: (a) => a.candidates },
   muster_tally: { argv: ["tally"], ...J("Tally adversarial review verdicts into a gate decision.", { verdicts: { type: "array" } }, ["verdicts"]), pick: (a) => a.verdicts },
+  muster_advise: { argv: ["advise"], ...J("Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM.", { request: { type: "object" } }, ["request"]), pick: (a) => a.request },
+  muster_fuse: { argv: ["fuse"], ...J2("Fusion decision engine: validate the debate map, apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to the single best (mode fallback). Deterministic, no LLM.", { candidates: { type: "array" }, fusionMap: { type: "object" } }, ["candidates", "fusionMap"]), picks: (a) => [a.candidates, a.fusionMap] },
 };
 
 // ── CLI invocation ──────────────────────────────────────────────────────────
@@ -112,6 +120,22 @@ async function callTool(name, args = {}) {
     return runCli(v != null && v !== "" ? [...tool.argv, String(v)] : tool.argv);
   }
   if (tool.kind === "none") return runCli(tool.argv);
+
+  // json2: serialize multiple payloads to separate temp files, pass paths in order
+  if (tool.kind === "json2") {
+    const payloads = tool.picks(args);
+    const dir = mkdtempSync(path.join(tmpdir(), "muster-mcp-"));
+    try {
+      const files = payloads.map((p, i) => {
+        const f = path.join(dir, `input-${i}.json`);
+        writeFileSync(f, JSON.stringify(p));
+        return f;
+      });
+      return await runCli([...tool.argv, ...files, ...(tool.flags ? tool.flags(args) : [])]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 
   // json: serialize the picked payload to a temp file, pass its path
   const payload = tool.pick(args);

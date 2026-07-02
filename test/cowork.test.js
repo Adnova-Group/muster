@@ -157,8 +157,8 @@ test("tools/call: muster_advise validates an advice-request and returns advisorM
 
 test("tools/call: muster_fuse validates candidates+fusion-map and returns a mode field", async () => {
   const candidates = [
-    { id: "a", total: 3, passing: 2, content: "Alpha answer" },
-    { id: "b", total: 3, passing: 2, content: "Beta answer" },
+    { id: "a", total: 3, passing: true, content: "Alpha answer" },
+    { id: "b", total: 3, passing: true, content: "Beta answer" },
   ];
   const fusionMap = {
     consensus: ["Both use caching"],
@@ -173,6 +173,30 @@ test("tools/call: muster_fuse validates candidates+fusion-map and returns a mode
   const out = JSON.parse(res.content[0].text);
   assert.ok("mode" in out, "fuse output must contain a mode field");
   assert.equal(out.mode, "fuse", `fusionMap with contradictions + 2 passing candidates must reach mode:fuse, not fallback (got: ${out.mode})`);
+  assert.ok(Array.isArray(out.synthesizerInput?.references), "synthesizerInput.references must be an array");
+  assert.ok(out.synthesizerInput?.fusionMap, "synthesizerInput.fusionMap must be present");
+});
+
+test("tools/call: muster_audit (kind=none) returns non-error JSON", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_audit", arguments: {} } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "muster_audit must not error");
+  assert.doesNotThrow(() => JSON.parse(res.content[0].text), "muster_audit output must be valid JSON");
+});
+
+test("ping returns an empty result object", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "ping" }]);
+  assert.deepEqual(r[2].result, {}, "ping result must be {}");
+});
+
+test("notifications/initialized produces no spurious reply", async () => {
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", method: "notifications/initialized" }, // notification: no id, server must not reply
+    { jsonrpc: "2.0", id: 2, method: "ping" },
+  ]);
+  assert.deepEqual(Object.keys(r).sort(), ["1", "2"], "server must not emit a reply to the notification");
+  assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after notification");
 });
 
 test("cowork-probe: grader rejects a bad dispatch run (exit 1)", async () => {

@@ -16,7 +16,8 @@
 // newline-delimited. No SDK dependency.
 
 import { execFile } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -28,7 +29,7 @@ import { PRINCIPLES, VERBS, ROUTING_POLICY } from "../plugin/hooks/guidance.js";
 const execFileP = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "src", "cli.js");
-const PROTOCOL_VERSION = "2025-06-18";
+const PROTOCOL_VERSION = "2025-06-18"; // MCP spec version date-string (matches the MCP specification header)
 // Single-source the version from package.json so serverInfo never drifts from the release.
 const VERSION = JSON.parse(readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;
 const SERVER_INFO = { name: "muster", version: VERSION };
@@ -58,18 +59,27 @@ const COWORK_PROTOCOL = [
 const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("\n\n");
 
 // ── Tool catalog ──────────────────────────────────────────────────────────────
-// Two argument shapes: `str` verbs take a string and pass it as one CLI arg; `json` verbs take
-// an object/string, get written to a temp file, and the path is passed to the file-based verb.
+// Three factory shapes — every TOOLS entry is built from one of these:
+//
+//   S(desc, prop, required?)  — "str": receives a single string arg, passed directly as a CLI arg.
+//   J(desc, props, required)  — "json": single object payload; available for future single-file tools.
+//   J2(desc, props, required) — "json2": one OR more payloads; each is written to its own temp file
+//                               and the paths are spread onto the CLI argv in order.
+//                               `picks` (plural, returns an ARRAY) not `pick` (singular).
+//
+// All json-kind tools currently use J2 (even single-payload ones), so the callTool json2 path
+// is the sole temp-file dispatch route.
 const S = (description, prop, required = true) => ({
   kind: "str", description,
   inputSchema: { type: "object", properties: { [prop]: { type: "string" } }, required: required ? [prop] : [] },
   prop,
 });
+// J is available for future single-file tools; current tools use J2 to avoid a duplicate dispatch branch.
 const J = (description, props, required) => ({
   kind: "json", description,
   inputSchema: { type: "object", properties: props, required },
 });
-// J2: same shape as J but for tools that need TWO temp files (picks: array producer).
+// J2: `picks` returns an ARRAY of payloads (use `picks`, not `pick`) — each element becomes one temp file.
 const J2 = (description, props, required) => ({
   kind: "json2", description,
   inputSchema: { type: "object", properties: props, required },
@@ -77,7 +87,7 @@ const J2 = (description, props, required) => ({
 
 const TOOLS = {
   // analysis verbs — string or no arg
-  muster_detect: { argv: ["detect"], ...S("Detect the project profile (languages, frameworks, VCS, test runner) for a directory.", "dir", false) },
+  muster_detect: { argv: ["detect"], ...S("Detect the project profile (languages, frameworks, VCS, test runner) for a directory. Always pass `dir` explicitly — omitting it analyzes the server's working directory, not the caller's project.", "dir", false) },
   muster_capabilities: { argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork's MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS).", "home", false) },
   muster_match: { argv: ["match"], ...S("Rank catalog providers against a free-text task by token overlap (no model call).", "task") },
   muster_domain: { argv: ["domain"], ...S("Classify an outcome into a work domain (software, product, content, ...).", "outcome") },
@@ -89,20 +99,21 @@ const TOOLS = {
   muster_audit: { argv: ["audit"], kind: "none", description: "Build the whole-codebase audit manifest (six parallel review dimensions).", inputSchema: { type: "object", properties: {} } },
 
   // gate/math verbs — JSON in, written to a temp file
-  muster_manifest_validate: { argv: ["manifest", "validate"], ...J("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), pick: (a) => a.manifest },
-  muster_wave: { argv: ["wave"], ...J("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), pick: (a) => a.manifest },
-  muster_next: { argv: ["next"], ...J("Single-agent driver: given a manifest and the ids completed so far, return the next runnable task plus the full ready frontier. Run `next`, append its id to `completed`, call again until done.", { manifest: { type: "object" }, completed: { type: "array", items: { type: "string" } } }, ["manifest"]), pick: (a) => a.manifest, flags: (a) => a.completed?.length ? ["--done", a.completed.join(",")] : [] },
-  muster_score: { argv: ["score"], ...J("Score an artifact's dimensions against a gate.", { scores: { type: "object" }, gate: { type: "object" } }, ["scores", "gate"]), pick: (a) => ({ scores: a.scores, gate: a.gate }) },
-  muster_prioritize: { argv: ["prioritize"], ...J("Rank backlog items by RICE/ICE/WSJF/weighted.", { items: { type: "array" }, model: { type: "string", enum: ["rice", "ice", "wsjf", "weighted"] } }, ["items"]), pick: (a) => ({ items: a.items, model: a.model || "rice" }), flags: (a) => a.model ? ["--model", a.model] : [] },
-  muster_pick: { argv: ["pick"], ...J("Pick the tournament winner from scored candidates.", { candidates: { type: "array" } }, ["candidates"]), pick: (a) => a.candidates },
-  muster_tally: { argv: ["tally"], ...J("Tally adversarial review verdicts into a gate decision.", { verdicts: { type: "array" } }, ["verdicts"]), pick: (a) => a.verdicts },
-  muster_advise: { argv: ["advise"], ...J("Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM.", { request: { type: "object" } }, ["request"]), pick: (a) => a.request },
+  muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
+  muster_wave: { argv: ["wave"], ...J2("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
+  muster_next: { argv: ["next"], ...J2("Single-agent driver: given a manifest and the ids completed so far, return the next runnable task plus the full ready frontier. Run `next`, append its id to `completed`, call again until done.", { manifest: { type: "object" }, completed: { type: "array", items: { type: "string" } } }, ["manifest"]), picks: (a) => [a.manifest], flags: (a) => a.completed?.length ? ["--done", a.completed.join(",")] : [] },
+  muster_score: { argv: ["score"], ...J2("Score an artifact's dimensions against a gate.", { scores: { type: "object" }, gate: { type: "object" } }, ["scores", "gate"]), picks: (a) => [{ scores: a.scores, gate: a.gate }] },
+  muster_prioritize: { argv: ["prioritize"], ...J2("Rank backlog items by RICE/ICE/WSJF/weighted.", { items: { type: "array" }, model: { type: "string", enum: ["rice", "ice", "wsjf", "weighted"] } }, ["items"]), picks: (a) => [{ items: a.items, model: a.model || "rice" }], flags: (a) => a.model ? ["--model", a.model] : [] },
+  muster_pick: { argv: ["pick"], ...J2("Pick the tournament winner from scored candidates.", { candidates: { type: "array" } }, ["candidates"]), picks: (a) => [a.candidates] },
+  muster_tally: { argv: ["tally"], ...J2("Tally adversarial review verdicts into a gate decision.", { verdicts: { type: "array" } }, ["verdicts"]), picks: (a) => [a.verdicts] },
+  muster_advise: { argv: ["advise"], ...J2("Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM.", { request: { type: "object" } }, ["request"]), picks: (a) => [a.request] },
   muster_fuse: { argv: ["fuse"], ...J2("Fusion decision engine: validate the debate map, apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to the single best (mode fallback). Deterministic, no LLM.", { candidates: { type: "array" }, fusionMap: { type: "object" } }, ["candidates", "fusionMap"]), picks: (a) => [a.candidates, a.fusionMap] },
 };
 
 // ── CLI invocation ──────────────────────────────────────────────────────────
 async function runCli(argv) {
   try {
+    // timeout: 60 s — generous for slow fuse/wave on large manifests; maxBuffer: 16 MB — large audit JSON
     const { stdout } = await execFileP("node", [CLI, ...argv], { cwd: process.cwd(), timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
     return { ok: true, text: stdout.trim() };
   } catch (e) {
@@ -121,31 +132,23 @@ async function callTool(name, args = {}) {
   }
   if (tool.kind === "none") return runCli(tool.argv);
 
-  // json2: serialize multiple payloads to separate temp files, pass paths in order
+  // json2: serialize each payload to its own temp file; pass all paths in order onto the CLI argv.
+  // Single-payload tools (formerly kind:"json") use picks:(a)=>[payload] — one file, same effect.
   if (tool.kind === "json2") {
     const payloads = tool.picks(args);
-    const dir = mkdtempSync(path.join(tmpdir(), "muster-mcp-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "muster-mcp-"));
     try {
-      const files = payloads.map((p, i) => {
-        const f = path.join(dir, `input-${i}.json`);
-        writeFileSync(f, JSON.stringify(p));
-        return f;
-      });
+      const files = await Promise.all(
+        payloads.map(async (p, i) => {
+          const f = path.join(dir, `input-${i}.json`);
+          await writeFile(f, JSON.stringify(p));
+          return f;
+        })
+      );
       return await runCli([...tool.argv, ...files, ...(tool.flags ? tool.flags(args) : [])]);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
     }
-  }
-
-  // json: serialize the picked payload to a temp file, pass its path
-  const payload = tool.pick(args);
-  const dir = mkdtempSync(path.join(tmpdir(), "muster-mcp-"));
-  const file = path.join(dir, "input.json");
-  try {
-    writeFileSync(file, JSON.stringify(payload));
-    return await runCli([...tool.argv, file, ...(tool.flags ? tool.flags(args) : [])]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
 }
 

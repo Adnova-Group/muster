@@ -52,10 +52,11 @@ npx @adnova-group/muster capabilities
 ## What the plugin adds
 
 - **Four slash commands**: `/muster:run`, `/muster:autopilot`, `/muster:diagnose`, `/muster:audit`.
-- **Three session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled:
+- **Four session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled:
   - **`SessionStart`** prepends Muster's working principles, the four verbs, a routing-policy reminder, and a one-line project detect to every session. Never writes to your `~/.claude` files.
   - **`UserPromptSubmit`** injects periodic drift-reinforcement nudges (every `MUSTER_NUDGE_EVERY` turns) and full principle reminders (every `MUSTER_NUDGE_EVERY * MUSTER_PRINCIPLES_EVERY` turns) so sessions stay on-model after compaction or long runs.
   - **`PreToolUse`** enforces two gates. While a wave is active (`.muster/wave-active` present), file writes from the orchestrator main loop are blocked, with behaviour controlled by `MUSTER_WAVE_GUARD` (`deny` / `warn` / `off`). After a run ends (no wave marker), a per-turn post-run scale gate (`MUSTER_INLINE_SCALE`, default 3) denies the Nth distinct inline file write in a single turn and routes it to a verb instead -- closing the drift window the advisory nudge alone cannot hold. Writes into `.muster/` and `.claude/` (in-cwd repo) are always exempt so orchestrator bookkeeping and repo-local settings are never blocked.
+  - **`PreToolUse` on `Task`** enforces the todo-driving gate. During a live run (`.muster/run-active` present), a subagent-wave dispatch is denied unless a native todo list was written since the run started, so plan progress stays visible in Claude Code's todo UI. Controlled by `MUSTER_TODO_GATE` (`deny` / `warn` / `off`); biased hard toward allow -- any uncertainty allows.
 - **Built-in agents and skills**, vendored from MIT-licensed upstreams plus Muster's own clean-room specialists.
 
 ## Uninstall

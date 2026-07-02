@@ -5,11 +5,20 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.2] - 2026-07-01
+## [0.3.2] - 2026-07-02
 
 ### Added
 - **Cowork MCP parity -- muster_fuse + muster_advise tools.** Two new MCP tools bring the Cowork surface to 0.3.1 feature parity: `muster_fuse` (fusion decision engine -- validate the debate map, apply the agreement gate, select top-K for synthesis or fall back to the single best; deterministic, no LLM) and `muster_advise` (validate an advice-request and resolve the advisor model fable->opus; deterministic, no LLM). Tool count: 17 -> 19.
 - **Fusion/advisor execution protocol in Cowork INSTRUCTIONS.** The wave-barrier step now teaches the full fusion flow (judge maps consensus/contradiction/partial-coverage/blind-spots -> muster_fuse decides fuse-vs-fallback -> synthesizer grafts top-K; muster_pick remains the fallback ranker) and adds an advisor escalate-up step (worker returns a structured advice-request -> muster_advise resolves the advisor model -> advisor dispatched and feeds advice back; worker keeps the decision; consult budget bounded).
+- **Todo-driving gate -- runs are mechanically todo-driven.** A new `PreToolUse` hook on the `Task` tool denies a subagent-wave dispatch during a live muster run unless a native todo list (`TodoWrite`/`TaskCreate`/`TaskUpdate`) was written since the run started, so plan progress stays visible in Claude Code's todo UI. Biased hard toward allow -- fail-open on any uncertainty, with a 2s grace margin against sub-second timestamp flooring -- and tunable via `MUSTER_TODO_GATE` (`off`/`warn`).
+- **Enforcement layer: run-active scoping + named limits.** `.claude/` meta-edits are exempt from the write gates, the post-run scale gate is scoped to the `run-active` marker with an explicit verb lifecycle, enforcement limits are named constants, and the post-hoc humanizer artifact contract is now covered by tests.
+
+### Changed
+- **Structure-first concision in the muster output style.** The output style now leads with structure (answer first, then support) and trims filler, derived from the atomic-claude concision rules.
+
+### Fixed
+- **Security: A-SEC2 re-broadened.** Any `$` in a Bash redirect target is denied (closes a variable-traversal of the write gate); the bash write-guard is hardened against parser-differential bypasses; and a SEC-1 path-normalization bypass in the hooks is closed.
+- **Whole-repo audit (waves 1-5 and A-D).** P1 fixes across src-core (env parsing, array guards, a memory race), hooks (guard scope, `applyGate`, hook `envInt`), and cowork (async `mkdtemp`, cwd footgun, json2 dedup); test-coverage additions incl. re-scoped wave-guard tests; public docs synced with the enforcement + fusion + issue-verb reality.
 
 ## [0.3.1] - 2026-07-01
 

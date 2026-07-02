@@ -134,11 +134,12 @@ Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inlin
 
 - **Wave-guard:** while `.muster/wave-active` exists, any main-loop Edit/Write/NotebookEdit or high-confidence Bash file write is denied. Scoped by `.muster/run-active` (absent run-active = orphaned wave = scale-gate instead).
 - **Post-run scale-gate:** once the wave marker is gone, the main loop may touch at most `MUSTER_INLINE_SCALE - 1` (default: 2) distinct files per turn; the Nth file is denied and routed to a verb. Prevents post-run inline drift that the advisory nudge alone cannot hold.
+- **Todo-driving gate:** during a live run (`.muster/run-active` present), a `Task` subagent dispatch is denied unless a native todo list (`TodoWrite`/`TaskCreate`/`TaskUpdate`) was written since the run started -- so create the todo list BEFORE dispatching wave 1. Fail-open on every uncertainty; `MUSTER_TODO_GATE=warn`/`off` to soften or disable.
 - **Meta-exempt roots:** `.muster/` and `.claude/` (in-cwd) are always allowed -- orchestrator bookkeeping and repo-local settings must never be blocked. Paths outside the project cwd are exempt by scope (cwd-relative gate).
 
 ### CONVENTIONS (not gate-able; enforced by SKILL discipline)
 
-- **Todo-driving + crew-owner/state-in-subject:** the `PreToolUse` hook cannot see todo state or judge whether a task is multi-step -- that is runtime judgment, not a file-system observable.
+- **Crew-owner/state-in-subject:** the `PreToolUse` hook cannot judge who owns a task or whether it is multi-step -- that is runtime judgment, not a file-system observable. (Todo-driving graduated to a gate in 0.3.2 -- see above.)
 - **Verb selection:** intent classification (is this a bug fix? a new feature? a sweep?) is a model judgment call, not a deterministic signal the hook can test.
 - **Content-through-humanizer routing:** the routing decision is judgment; the OUTPUT rules (no em-dash, no banned openers) are enforced post-hoc by contract tests on committed artifacts.
 - **Glass-box narration:** narration is output content (the model's reply text), not a tool surface -- there is no hook point to enforce it.
@@ -146,4 +147,4 @@ Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inlin
 ### REJECTED (with reasons)
 
 - **Verb-routing run-active BLOCK:** rejected. Between-wave writes are already `.muster/`-exempt or `agent_id`-exempt; adding a block on absent run-active would add no enforcement power and would false-block trivial multi-file edits outside a run.
-- **Transcript-scan todo gate:** rejected. Fragile (the hook can't reliably parse conversation state), gameable with one throwaway todo, and fails open -- a gate that fails open under mild pressure is worse than an honest convention.
+- **Transcript-scan todo gate:** rejected in 0.3.1, then revisited and built in 0.3.2 (`todo-gate.js`) once narrowed to dispatch time only -- a todo write since the `run-active` mtime is a bounded, mechanically checkable question, and the hard bias-to-allow decision order removes the fail-open objection. Still gameable with a throwaway todo (it enforces visibility, not compliance); accepted trade.

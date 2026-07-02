@@ -107,7 +107,7 @@ Driving Muster remotely uses Claude Code's own features, not a transport Muster 
 
 ## Session hooks
 
-Muster ships three plugin-native hooks in `plugin/hooks/`. All are declared in `plugin/hooks/hooks.json`, activate when muster is enabled, and are removed when muster is disabled. None write to the user's `~/.claude` files. Every hook is fail-safe: any error returns a minimal valid result and exits cleanly.
+Muster ships four plugin-native hooks in `plugin/hooks/`. All are declared in `plugin/hooks/hooks.json`, activate when muster is enabled, and are removed when muster is disabled. None write to the user's `~/.claude` files. Every hook is fail-safe: any error returns a minimal valid result and exits cleanly.
 
 **`SessionStart`** (`session-start.js`) delivers always-on guidance. A Claude Code plugin cannot auto-load a `CLAUDE.md`, but a `SessionStart` hook can return `additionalContext`, which Claude Code prepends to the session. The script emits the working principles, the four verbs, and a dependency-free project sniff of the current directory. It also clears any stale `.muster/wave-active` marker so a new session never inherits a crashed wave's state.
 
@@ -115,9 +115,11 @@ Muster ships three plugin-native hooks in `plugin/hooks/`. All are declared in `
 
 **`PreToolUse`** (`pre-tool-use.js`) enforces the wave-guard iron rule. While `.muster/wave-active` exists, any Edit, Write, NotebookEdit, or high-confidence Bash file write originating from the orchestrator main loop (not from a crew subagent) is blocked. Decision order: (1) subagent calls always allowed, (2) writes into `.muster/` or `.claude/` always allowed (STATE bookkeeping and repo-local settings), (3) if no wave marker exists, apply the per-turn scale gate (see below, may deny), (4) same when `wave-active` is present but `.muster/run-active` is absent (primary crashed-wave signal), or when the marker is older than 60 minutes (fallback stale detection), (5) with an active wave, honour `MUSTER_WAVE_GUARD`: `off` = silent allow, `warn` = allow with a reminder, unset or `deny` = deny. For Bash the guard is deliberately conservative (fail-open): only `sed -i`, `tee` to a non-exempt target, and `>` / `>>` redirects to non-exempt targets are denied; everything else allows. The command classifier lives in `bash-write-target.js` (pure, unit-testable). Exempt targets: `/dev/*`, `/tmp/*`, `.muster/*`. **Post-run scale gate:** the marker-based guard is intra-wave only, so once a run completes and the marker is removed the guard is inactive. That is the window where the orchestrator drifts back to inline work, and the advisory `UserPromptSubmit` nudge can't stop it (it's `additionalContext`, not a block, and it habituates). So in the no-wave state the hook additionally applies a per-turn *scale* gate: the main loop may touch 1-2 distinct files per turn (trivial/surgical falls through, per the routing policy), but the Nth distinct file (`MUSTER_INLINE_SCALE`, default 3, matching the surgeon "refuses 3+ files" boundary) is denied and routed to a verb. Both `Edit`/`Write`/`NotebookEdit` targets and high-confidence Bash file writes (via `bashWriteTarget`) count toward the budget, so the shell-write path is not an escape hatch. Read-only Bash passes through. Per-turn state lives in `os.tmpdir()` keyed by session (no repo litter), reset on each `UserPromptSubmit`; the count logic is pure and unit-tested in `inline-budget.js`. Honors the same `MUSTER_WAVE_GUARD` (`off`/`warn`/`deny`) override.
 
+**`PreToolUse` on `Task`** (`todo-gate.js`) enforces the todo-driving gate. During a live muster run (`.muster/run-active` present), dispatching a subagent wave via the `Task` tool is denied unless a native todo list was written since the run started, so plan progress stays visible in Claude Code's todo UI. The hook tail-reads the session transcript (last 256 KB) for a `TodoWrite`/`TaskCreate`/`TaskUpdate` tool call with a timestamp at or after the `run-active` mtime, minus a 2s grace margin (absorbs sub-second ISO 8601 flooring and minor clock skew). The decision order biases HARD toward allow: non-`Task` tools, no `run-active` marker, `MUSTER_TODO_GATE=off`, a missing/unreadable/unparseable transcript, or unreadable todo timestamps all allow (`warn` allows with a note); only a readable transcript with provably no qualifying todo write denies. Self-contained (node builtins only) and fail-open on any exception.
+
 ## Enforcement model: gates vs conventions
 
-Muster's PreToolUse hook enforces two deterministic GATES and leaves four categories to named conventions. Principle: enforce where mechanically sound; a gameable gate that fails open is worse than an honest, named convention.
+Muster's PreToolUse hooks enforce three deterministic GATES and leave four categories to named conventions. Principle: enforce where mechanically sound; a gameable gate that fails open is worse than an honest, named convention.
 
 ### GATES (deterministic, hook-enforced -- these block)
 
@@ -125,11 +127,13 @@ Muster's PreToolUse hook enforces two deterministic GATES and leaves four catego
 
 **Post-run scale-gate.** Once the wave marker is gone, the main loop may touch at most `MUSTER_INLINE_SCALE - 1` (default: 2) distinct files per turn; the Nth file triggers a deny and routes to a verb. This closes the post-run window where the advisory nudge alone cannot hold inline drift.
 
+**Todo-driving gate.** During a live run (`.muster/run-active` present), a `Task` subagent dispatch is denied unless a native todo list (`TodoWrite`/`TaskCreate`/`TaskUpdate`) was written since the run started. Transcript-tail scan with a 2s grace margin, fail-open on every uncertainty. Set `MUSTER_TODO_GATE=warn` to allow with a note, `off` to disable.
+
 **Meta-exempt roots.** `.muster/` and `.claude/` (in-cwd repo) are always allowed so orchestrator bookkeeping and repo-local settings are never blocked mid-wave. Paths outside the project cwd are already out of scope for the cwd-relative gate.
 
 ### CONVENTIONS (not gate-able; enforced by SKILL discipline)
 
-**Todo-driving and crew-owner/state-in-subject.** The PreToolUse hook cannot see todo state or judge whether a task is multi-step. That is runtime judgment, not a file-system observable.
+**Crew-owner/state-in-subject.** The PreToolUse hook cannot judge who owns a task or whether it is multi-step. That is runtime judgment, not a file-system observable. (Todo-driving graduated from this list to a gate in 0.3.2 -- see above.)
 
 **Verb selection.** Intent classification (bug fix vs feature vs sweep) is a model judgment call, not a deterministic signal the hook can test.
 
@@ -141,7 +145,7 @@ Muster's PreToolUse hook enforces two deterministic GATES and leaves four catego
 
 **Verb-routing run-active block.** Not built. Between-wave writes are already `.muster/`-exempt or `agent_id`-exempt; a block on absent run-active would add no enforcement power and would false-block trivial multi-file edits done outside a run.
 
-**Transcript-scan todo gate.** Not built. Fragile (the hook cannot reliably parse conversation state), gameable with a throwaway todo, and fails open. A gate that fails open under mild pressure is worse than an honest convention.
+**Transcript-scan todo gate.** Rejected in 0.3.1 as fragile and gameable, then revisited and built in 0.3.2 (`todo-gate.js`) once narrowed to dispatch time only: scanning the transcript tail for a todo write since the `run-active` mtime is a bounded, mechanically checkable question, and the hard bias-to-allow decision order removes the fail-open objection (uncertainty allows; only a readable, provably todo-free transcript denies). It remains gameable with a throwaway todo -- the gate enforces visibility, not compliance -- which is an accepted trade.
 
 ## Vendoring
 

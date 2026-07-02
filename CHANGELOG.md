@@ -5,6 +5,12 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-07-01
+
+### Added
+- **Cowork MCP parity -- muster_fuse + muster_advise tools.** Two new MCP tools bring the Cowork surface to 0.3.1 feature parity: `muster_fuse` (fusion decision engine -- validate the debate map, apply the agreement gate, select top-K for synthesis or fall back to the single best; deterministic, no LLM) and `muster_advise` (validate an advice-request and resolve the advisor model fable->opus; deterministic, no LLM). Tool count: 17 -> 19.
+- **Fusion/advisor execution protocol in Cowork INSTRUCTIONS.** The wave-barrier step now teaches the full fusion flow (judge maps consensus/contradiction/partial-coverage/blind-spots -> muster_fuse decides fuse-vs-fallback -> synthesizer grafts top-K; muster_pick remains the fallback ranker) and adds an advisor escalate-up step (worker returns a structured advice-request -> muster_advise resolves the advisor model -> advisor dispatched and feeds advice back; worker keeps the decision; consult budget bounded).
+
 ## [0.3.1] - 2026-07-01
 
 ### Added

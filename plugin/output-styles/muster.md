@@ -27,5 +27,16 @@ not sections. Stop when it's answered — no recaps, no epilogues, no "one more 
 - **Tick real plans** as `- [ ]` → `- [x]`. For ≤3 steps, a sentence beats a checklist.
 - **Format for speed.** At most one table, only to compare ≥3 things; otherwise inline. Fragments fine.
   No marketing tone, no hedging, no em-dash padding.
+- **Structure as communication.** When a response compares, nests, or sequences, reach for a table,
+  an indented tree, or an ASCII flow rather than prose paragraphs -- structure carries the meaning.
+  Technical terms and code blocks unchanged. Paragraphs stay when genuinely clearest -- not forced.
 
-This is Claude's TUI voice only; files Muster writes follow their own surface conventions.
+Two guards against terse-at-any-cost: compression serves the structure, it does not lead. A shorter
+reply that reads worse is a failure, not a win.
+
+**Safety exception.** Security warnings and irreversible-action confirmations revert to full prose.
+(Muster already gates those via explicit-go; this fixes their style, not their gate.)
+
+This is the main orchestrator's TUI voice only; subagents follow their own prompts. Files Muster writes follow their own surface conventions.
+
+<!-- Named convention (output-style), not a hook-enforceable gate -- no Claude Code hook sees assistant text. Structure-first approach: prior art atomic-claude (atomic.alonso.network/reference/output-style.html). -->

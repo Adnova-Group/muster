@@ -829,3 +829,75 @@ test("GUARD-SCOPE: Edit to path INSIDE cwd is denied during active wave", async 
     cleanDir(tmpDir);
   }
 });
+
+// ── Wave A audit hardening tests ─────────────────────────────────────────────
+
+// A-SEC1: tee $'...' ANSI-C hex bypass — target with $' in an exempt prefix
+// path.normalize cannot evaluate shell ANSI-C escapes so /tmp/$'\x2e\x2e\x2f...'
+// would pass EXEMPT_TARGET_RE; the guard must detect $' and deny.
+test("bashWriteTarget: A-SEC1 tee with ANSI-C hex escape in exempt prefix is denied", () => {
+  // /tmp/$'\x2e\x2e\x2fetc\x2fpasswd' in bash resolves to /etc/passwd (path traversal).
+  // path.normalize sees the literal $ ' \ x chars and treats /tmp/ as a valid prefix.
+  assert.ok(
+    bashWriteTarget("tee /tmp/$'\\x2e\\x2e\\x2fetc\\x2fpasswd'") !== null,
+    "tee target containing $' (ANSI-C escape) inside exempt prefix must be denied",
+  );
+});
+
+// A-SEC2: redirect $'...' after quote-strip — embedded in exempt prefix
+// After single-quote strip the target becomes /tmp/$QUOTED which starts with /tmp/
+// and would pass EXEMPT_TARGET_RE; the guard must detect $ in post-strip target.
+test("bashWriteTarget: A-SEC2 redirect to $'...' embedded in exempt prefix is denied", () => {
+  // /tmp/$'\x2e\x2e\x2fetc\x2fpasswd' — after stripping the '...' part to QUOTED
+  // the token is /tmp/$QUOTED which looks exempt but contains a shell variable.
+  assert.ok(
+    bashWriteTarget("node x > /tmp/$'\\x2e\\x2e\\x2fetc\\x2fpasswd'") !== null,
+    "redirect to ANSI-C escape embedded in exempt prefix must be denied",
+  );
+});
+
+// A-SEC3a: sed -i"" double-quote suffix bypass
+// The regex \s-i(?:\s|$|') misses \" so `sed -i""` escapes the in-place check.
+test("bashWriteTarget: A-SEC3 sed -i\"\" double-quote suffix is a write", () => {
+  assert.ok(
+    bashWriteTarget('sed -i"" \'s/a/b/\' file.js') !== null,
+    'sed -i"" (BSD/GNU empty backup extension) must be detected as a write',
+  );
+});
+
+// A-SEC3b: sed --in-place long-form bypass
+// The regex only looks for \s-i; --in-place is never matched.
+test("bashWriteTarget: A-SEC3 sed --in-place long form is a write", () => {
+  assert.ok(
+    bashWriteTarget("sed --in-place 's/a/b/' file.js") !== null,
+    "sed --in-place must be detected as a write",
+  );
+});
+
+// A-SEC3c: sed --in-place=.bak with an extension
+test("bashWriteTarget: A-SEC3 sed --in-place=.bak is a write", () => {
+  assert.ok(
+    bashWriteTarget("sed --in-place=.bak 's/a/b/' file.js") !== null,
+    "sed --in-place=.bak must be detected as a write",
+  );
+});
+
+// A-SEC4: tee multi-target — first token is exempt, second is not
+// tokens.find() only examines the first non-flag token; /dev/null passes but
+// evil.js is never checked.
+test("bashWriteTarget: A-SEC4 tee /dev/null evil.js — second non-exempt target must be denied", () => {
+  assert.ok(
+    bashWriteTarget("tee /dev/null evil.js") !== null,
+    "tee with a second non-exempt target must be denied even when first is exempt",
+  );
+});
+
+// A-SEC5: $( subshell in tee path inside exempt prefix
+// /tmp/$(cp src dst) — first token after tee starts with /tmp/ so EXEMPT_TARGET_RE
+// passes, but the subshell executes cp and could write anywhere.
+test("bashWriteTarget: A-SEC5 tee with $( subshell in exempt-prefix path is denied", () => {
+  assert.ok(
+    bashWriteTarget("npm test | tee /tmp/$(cp src dst)") !== null,
+    "tee target containing $( (subshell) inside exempt prefix must be denied",
+  );
+});

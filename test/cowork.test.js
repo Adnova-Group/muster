@@ -199,6 +199,34 @@ test("notifications/initialized produces no spurious reply", async () => {
   assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after notification");
 });
 
+// ── A-SEC6: stdin buffer overflow guard ─────────────────────────────────────
+// The stdin accumulator is unbounded; a client that sends >4 MB without a
+// newline would exhaust the server's heap. The cap must cause a clean exit
+// (not an uncaught exception crash) before the newline arrives.
+test("A-SEC6: stdin buffer >4 MB without newline causes clean non-zero exit", async () => {
+  const LIMIT = 4 * 1024 * 1024;
+  const OVER = LIMIT + 1;
+  const chunk = Buffer.alloc(OVER, 0x78); // 0x78 = 'x', no newline
+
+  const exitCode = await new Promise((resolve, reject) => {
+    const srv = spawn("node", [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+      cwd: rootDir,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const timer = setTimeout(() => { srv.kill("SIGKILL"); reject(new Error("A-SEC6 test timeout")); }, 8000);
+    srv.on("exit", (code) => { clearTimeout(timer); resolve(code); });
+    srv.on("error", (e) => { clearTimeout(timer); reject(e); });
+    // Write the oversized chunk without a newline so it accumulates in buffer.
+    srv.stdin.write(chunk);
+    // Leave stdin open — the server must self-terminate on overflow.
+  });
+
+  // Must exit non-zero (cap triggered) and with a code < 128 (not a signal kill).
+  assert.ok(exitCode !== null, "server must exit, not hang");
+  assert.notEqual(exitCode, 0, "overflow must cause non-zero exit (cap enforced)");
+  assert.ok(exitCode < 128, `expected a clean exit code < 128, got ${exitCode}`);
+});
+
 test("cowork-probe: grader rejects a bad dispatch run (exit 1)", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "probe-test-"));
   const file = path.join(dir, "bad.json");

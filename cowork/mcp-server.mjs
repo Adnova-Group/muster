@@ -180,10 +180,20 @@ async function handle(msg) {
   }
 }
 
+// A-SEC6: cap the stdin accumulator to prevent heap exhaustion when a client
+// sends data without a newline terminator (no-newline DoS). 4 MB is well above
+// any legitimate JSON-RPC request muster sends. On overflow: emit a one-line
+// diagnostic to stderr and exit cleanly (non-zero, not an uncaught exception).
+const STDIN_MAX_BYTES = 4 * 1024 * 1024;
+
 let buffer = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
+  if (Buffer.byteLength(buffer) > STDIN_MAX_BYTES) {
+    process.stderr.write("mcp-server: stdin buffer exceeded 4 MB cap; shutting down\n");
+    process.exit(1);
+  }
   let nl;
   while ((nl = buffer.indexOf("\n")) >= 0) {
     const line = buffer.slice(0, nl).trim();

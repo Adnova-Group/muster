@@ -18,17 +18,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { envInt } from "./env-util.js";
 
 // Distinct-file count at which an inline turn is treated as orchestration-scale.
 // Deny fires when the count REACHES this (so 1..N-1 fall through, the Nth is gated).
 export const DEFAULT_SCALE = 3;
 
 export function scaleThreshold(env = process.env) {
-  const n = Number.parseInt(env.MUSTER_INLINE_SCALE, 10);
-  // Reject n <= 1: a threshold of 1 would deny the very first file in every turn
+  // min: 2 — a threshold of 1 would deny the very first file in every turn
   // (no trivial/surgical fallthrough), which is what MUSTER_WAVE_GUARD is for.
-  // 1/0/junk therefore fall back to the default.
-  return Number.isInteger(n) && n > 1 ? n : DEFAULT_SCALE;
+  // Junk/negative/1 therefore fall back to the default.
+  return envInt("MUSTER_INLINE_SCALE", { min: 2, def: DEFAULT_SCALE }, env);
 }
 
 // Sanitize a session id for use in a filename; null if nothing usable remains.

@@ -90,6 +90,8 @@ function warnScaleAllow(count) {
 // confidence shell write (keyed on the whole command, NOT the static classifier
 // fragment — otherwise distinct `sed -i fileN` writes collapse into one slot and
 // slip the gate). Read-only Bash and edits without a concrete target pass free.
+//
+// applyScaleGate never returns (always allow/warn/deny -> exit)
 function applyScaleGate(payload, target, guard) {
   if (guard === "off") allow();
 
@@ -176,7 +178,16 @@ try {
     allow();
   }
 
+  // GUARD-SCOPE: targets outside the cwd tree are out of this hook's scope — allow.
+  // Prevents wave-guard and scale-gate from firing on unrelated paths (e.g. ~/.claude
+  // memory files edited by the user in a separate context) during an active wave.
+  const cwdAbs = path.resolve(cwd);
+  if (target && !target.startsWith(cwdAbs + path.sep) && target !== cwdAbs) {
+    allow();
+  }
+
   // Guard mode, needed by both the no-wave scale gate and the active-wave gate.
+  // Assigned before step 3 so applyScaleGate can share it.
   const guard = (process.env.MUSTER_WAVE_GUARD || "deny").toLowerCase();
 
   // 3. Check for the wave-active marker.
@@ -188,6 +199,9 @@ try {
     // Marker does not exist — no active wave. Apply the post-run scale gate.
     applyScaleGate(payload, target, guard);
   }
+  // Defensive: applyScaleGate always exits; this guard prevents any future
+  // refactor from falling through to markerStat.mtimeMs on an undefined stat.
+  if (!markerStat) allow();
 
   // 4. Stale marker (older than 60 minutes) — treat as no wave; same scale gate.
   const ageMs = Date.now() - markerStat.mtimeMs;
@@ -203,8 +217,7 @@ try {
     waveId = "unknown";
   }
 
-  // 5. Honour MUSTER_WAVE_GUARD (hoisted above step 3 because applyScaleGate,
-  //    called in the steps 3-4 no-wave fallthrough, also needs it).
+  // 5. Honour MUSTER_WAVE_GUARD (assigned before step 3 so applyScaleGate can share it).
   if (guard === "off") {
     allow();
   } else if (guard === "warn") {

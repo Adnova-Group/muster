@@ -14,6 +14,7 @@ import path from "node:path";
 import os from "node:os";
 import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE } from "./guidance.js";
 import { budgetFile, resetBudget, safeSession } from "./inline-budget.js";
+import { envInt } from "./env-util.js";
 
 const EVENT = "UserPromptSubmit";
 
@@ -72,8 +73,8 @@ try {
     process.exit(0);
   }
 
-  const N = posInt(process.env.MUSTER_NUDGE_EVERY, 3);
-  const K = posInt(process.env.MUSTER_PRINCIPLES_EVERY, 3);
+  const N = envInt("MUSTER_NUDGE_EVERY", { min: 1, def: 3 }, process.env);
+  const K = envInt("MUSTER_PRINCIPLES_EVERY", { min: 1, def: 3 }, process.env);
   const count = bumpTurn(sessionId);
 
   // count === null means the session_id sanitized to empty — skip nudging.

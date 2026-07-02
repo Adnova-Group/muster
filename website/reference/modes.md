@@ -13,7 +13,7 @@ Muster exposes four entry points as slash commands under the `muster:` namespace
 
 The interactive router. Its front half is an assess-then-interview step: `muster assess` does a deterministic gap-check on the outcome (too short, no success criteria, vague), and if the outcome is not clear, the interview skill runs an interactive requirements interview, one question at a time, behind an approval gate.
 
-Then it detects, routes, and shows the glass-box crew manifest plus the plan, and **stops**. Run plans and shows; it does not execute.
+Then it detects, routes, and shows the glass-box crew manifest plus the plan, and **stops**. Run plans and shows; selecting Approve & run chains into autopilot in-session, while Adjust and Cancel stay plan-only.
 
 ```sh
 /muster:run Add rate limiting to the public API with tests

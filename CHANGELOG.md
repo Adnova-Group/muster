@@ -229,6 +229,9 @@ publish to carry it.
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
+[0.3.2]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.2
+[0.3.1]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.1
+[0.3.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.0
 [0.2.6]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.6
 [0.2.5]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.5
 [0.2.4]: https://github.com/Adnova-Group/muster/releases/tag/v0.2.4

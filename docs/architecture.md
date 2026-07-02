@@ -15,7 +15,7 @@ Muster is split into two layers with a hard boundary between them.
 | Deterministic CLI | `src/*.js` | Plain Node ESM | No |
 | Model-facing | `plugin/` (commands, skills, agents) | Claude Code | Yes |
 
-The **CLI layer** is ordinary Node. It has a single runtime dependency (`yaml`), requires Node 20 or newer, and makes no LLM calls of any kind. It does the deterministic work: detecting the project, resolving roles to providers, ranking candidates by token overlap, scoring artifacts against a gate, computing RICE math, loading and validating pipelines. Anything that can be answered by code is answered by code. You can run every CLI verb in a terminal and read its JSON output without ever invoking a model.
+The **CLI layer** is ordinary Node. It has a single runtime dependency (`yaml`), requires Node 20 or newer, and makes no LLM calls of any kind. It does the deterministic work: detecting the project, resolving roles to providers, ranking candidates by token overlap, scoring artifacts against a gate, computing prioritization math, loading and validating pipelines. Anything that can be answered by code is answered by code. You can run every CLI verb in a terminal and read its JSON output without ever invoking a model.
 
 The **model-facing layer** is what Claude Code loads as a plugin. It is markdown: slash commands (`plugin/commands/`), skills (`plugin/skills/`), and agents (`plugin/agents/`). These files instruct the model how to drive a run. They call the CLI for every deterministic decision, then use Claude Code's built-in subagent dispatch to do the judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
 
@@ -23,7 +23,7 @@ The **model-facing layer** is what Claude Code loads as a plugin. It is markdown
 
 The router is the novel core. The problem it solves: you have an outcome and a pile of tools (some you installed, some Muster ships), and you need to pick the right tool for each piece of work, predictably.
 
-Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need. There are 21 of them (see `src/roles.js`): `implement`, `code-review`, `test-author`, `debug`, `refactor`, `architecture-review`, `security-review`, `author`, `research`, `score`, `humanize`, and so on. Roles are the stable interface. Pipelines and commands ask for a role, not for a specific tool.
+Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need. There are 23 of them (see `src/roles.js`): `implement`, `code-review`, `test-author`, `debug`, `refactor`, `architecture-review`, `security-review`, `author`, `research`, `score`, `humanize`, and so on. Roles are the stable interface. Pipelines and commands ask for a role, not for a specific tool.
 
 Each role resolves through a **ladder** of provider sources, best-available first:
 
@@ -44,7 +44,7 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 | --- | --- | --- |
 | haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
 | sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| fable | the tournament `judge`, `architecture-review`, `advisor` | Heavy judgment |
+| fable | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
 | opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
 
 The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work: cheap models do the cheap parts, the expensive model is reserved for the calls that need it.
@@ -71,13 +71,13 @@ Muster exposes four entry points as slash commands under the `muster:` namespace
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
 
-**Run** is the interactive router. Its front half is an assess-then-interview step: `muster assess` does a deterministic gap-check on the outcome (too short, no success criteria, vague), and if the outcome is not clear, the interview skill runs an interactive requirements interview, one question at a time, behind an approval gate. Then it detects, routes, and shows the glass-box crew manifest plus the plan, and stops. Run plans and shows; it does not execute.
+**Run** is the interactive router. Its front half is an assess-then-interview step: `muster assess` does a deterministic gap-check on the outcome (too short, no success criteria, vague), and if the outcome is not clear, the interview skill runs an interactive requirements interview, one question at a time, behind an approval gate. Then it detects, routes, and shows the glass-box crew manifest plus the plan, and stops. Selecting Approve & run chains into autopilot in-session; Adjust and Cancel stay plan-only.
 
-**Autopilot** runs the whole lifecycle hands-off: branch, detect, route, run waves (parallel fan-out, tournaments, an adversarial review gate), commit per wave, then present the merge decision. It only stops for that merge decision or for an escalation. It triggers the interview only on an actual information gap, and in unattended (Routine) mode it records the gap to the run report instead of blocking.
+**Autopilot** runs the whole lifecycle hands-off: branch, detect, route, run waves (parallel fan-out, tournaments with fusion synthesis, an adversarial review gate), commit per wave, then present the merge decision. It only stops for that merge decision or for an escalation. Tournaments synthesize rather than only pick one winner: the judge maps consensus, contradictions, partial coverage, and blind spots across candidates; `muster fuse` then grafts the best of the top-K via a synthesizer or falls back to the single best candidate when candidates already agree. Workers can also escalate up to a stronger model at a hard decision point via the advisor role; the advisor informs, the worker decides. It triggers the interview only on an actual information gap, and in unattended (Routine) mode it records the gap to the run report instead of blocking.
 
 **Diagnose** is failure-first. Reproduce, find the root cause via systematic debugging on the best available debug provider, fix, add a regression test, verify. No symptom-patching.
 
-**Audit** is the review-and-fix counterpart to diagnose: where diagnose is one bug, audit sweeps the whole codebase. It fans out six read-only dimension reviews in parallel (architecture, tech-debt, coverage, simplification, readability, security), each on the best provider for its role, consolidates the findings into one ranked ledger, then fixes everything with TDD and verifies through the review gate before presenting the merge.
+**Audit** is the review-and-fix counterpart to diagnose: where diagnose is one bug, audit sweeps the whole codebase. It fans out six read-only dimension reviews in parallel (architecture, tech-debt, coverage, simplification, readability, security), with a conditional seventh (prompt-quality) when the project builds prompts or agents, each on the best provider for its role, consolidates the findings into one ranked ledger, then fixes everything with TDD and verifies through the review gate before presenting the merge.
 
 ## Pipelines
 

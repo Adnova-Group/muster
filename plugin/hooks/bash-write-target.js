@@ -24,6 +24,10 @@
 // is rare in agentic scripts) but documented here for completeness.
 //
 // Exemption targets (string-level, no fs resolution): /dev/*, /tmp/*, .muster/*
+// Targets are path.normalize()'d before testing so `.muster/../app.js` (which
+// resolves OUTSIDE .muster/) is not incorrectly treated as exempt.
+
+import path from "node:path";
 
 const EXEMPT_TARGET_RE = /^(\/dev\/|\/tmp\/|\.muster\/)/;
 
@@ -43,7 +47,7 @@ export function bashWriteTarget(command) {
   if (teeMatch) {
     const tokens = teeMatch[1].trim().split(/\s+/).filter(Boolean);
     const target = tokens.find((t) => !t.startsWith("-"));
-    if (target && !EXEMPT_TARGET_RE.test(target)) {
+    if (target && !EXEMPT_TARGET_RE.test(path.normalize(target))) {
       return `tee ${target}`;
     }
   }
@@ -79,7 +83,7 @@ export function bashWriteTarget(command) {
       // Need at least 2 tokens: one source and one destination.
       if (nonFlagTokens.length >= 2) {
         const dest = nonFlagTokens[nonFlagTokens.length - 1];
-        if (!EXEMPT_TARGET_RE.test(dest)) {
+        if (!EXEMPT_TARGET_RE.test(path.normalize(dest))) {
           return `${cpMvMatch[1]} ${dest}`;
         }
       }
@@ -112,7 +116,7 @@ export function bashWriteTarget(command) {
   let m;
   while ((m = redirRe.exec(stripped)) !== null) {
     const target = m[1];
-    if (!EXEMPT_TARGET_RE.test(target)) {
+    if (!EXEMPT_TARGET_RE.test(path.normalize(target))) {
       return `> ${target}`;
     }
   }

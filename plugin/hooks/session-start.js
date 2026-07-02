@@ -35,6 +35,7 @@ const cwd = (typeof payload.cwd === "string" && payload.cwd.length > 0)
 // source "compact" or "resume" → mid-session; leave the marker intact.
 if (source === null || RESET_SOURCES.has(source)) {
   try { unlinkSync(path.join(cwd, ".muster", "wave-active")); } catch { /* not present — fine */ }
+  try { unlinkSync(path.join(cwd, ".muster", "run-active")); } catch { /* not present — fine */ }
 }
 
 try {

@@ -11,6 +11,8 @@ The user's outcome: `$ARGUMENTS`
 
 If `$ARGUMENTS` is empty, ask for the outcome and stop — Muster never runs without a stated outcome.
 
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (the verb/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate). Remove it when this verb exits: on Cancel, or when handing off to autopilot (autopilot writes its own on invocation). `SessionStart` on a fresh session clears a stale marker automatically.
+
 0. **Issue ref?** If `$ARGUMENTS` is a GitHub issue reference (`#N`, a bare number, or an issues URL), run
    `npx -y @adnova-group/muster issue "$ARGUMENTS"` and use the returned `outcome` (issue title + body) as the working
    outcome for everything below. If `gh` fails (no remote / not authed / no such issue), report it and stop.

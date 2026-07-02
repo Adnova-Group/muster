@@ -8,10 +8,16 @@
 //
 // Decision order:
 //   1. ALLOW if payload has agent_id (crew subagent — always allowed).
-//   2. ALLOW if the target path is under .muster/ (STATE bookkeeping is legit).
+//   2. ALLOW if the target path is under a META_EXEMPT root (.muster/ or .claude/).
+//      .muster/ — wave/state markers and orchestrator ledger.
+//      .claude/ — repo-local Claude/orchestrator settings written mid-wave.
 //      (For Bash: no path target; this gate is skipped.)
 //   3. No .muster/wave-active marker → applyScaleGate() (post-run window; may DENY).
-//   4. Marker older than 60 minutes (stale/crashed wave) → applyScaleGate() likewise.
+//   4. Orphaned or stale marker → applyScaleGate() likewise.
+//      Primary signal: .muster/run-active absent means no active run, so the
+//      wave-active marker is orphaned (crashed wave). Verbs write run-active at
+//      invocation start and clear it at end.
+//      Fallback: marker older than STALE_MS (60 min) catches missed clears.
 //   5. Active wave + MUSTER_WAVE_GUARD: "off" → silent allow; "warn" → allow with
 //      reminder; unset or "deny":
 //        Edit/Write/NotebookEdit → DENY.
@@ -22,6 +28,16 @@
 // files per turn (trivial/surgical falls through); the Nth distinct file
 // (MUSTER_INLINE_SCALE, default 3) is DENIED and routed to a verb. Per-turn budget
 // lives in inline-budget.js. Honors the same MUSTER_WAVE_GUARD override.
+//
+// META_EXEMPT_ROOTS — the shared exemption set (always allowed, no wave check):
+//   [".muster", ".claude"]
+//   Extend here, nowhere else.
+//
+// run-active scoping semantics:
+//   run-active PRESENT + fresh wave-active → wave-guard is active (step 5).
+//   run-active ABSENT  + any wave-active  → treated as orphaned/stale → scale-gate.
+//   run-active only relaxes/scopes; it never introduces a new block. When neither
+//   marker can be resolved the outer try/catch fail-safe applies.
 //
 // FAIL-SAFE: entire body wrapped in try/catch; any error → silent allow, exit 0.
 //
@@ -90,6 +106,8 @@ function warnScaleAllow(count) {
 // confidence shell write (keyed on the whole command, NOT the static classifier
 // fragment — otherwise distinct `sed -i fileN` writes collapse into one slot and
 // slip the gate). Read-only Bash and edits without a concrete target pass free.
+//
+// applyScaleGate never returns (always allow/warn/deny -> exit)
 function applyScaleGate(payload, target, guard) {
   if (guard === "off") allow();
 
@@ -169,14 +187,29 @@ try {
     ? (path.isAbsolute(rawTarget) ? rawTarget : path.resolve(cwd, rawTarget))
     : "";
 
-  // 2. Paths inside .muster/ are orchestrator STATE bookkeeping — always allowed.
+  // 2. Meta-exempt roots — orchestrator bookkeeping dirs always allowed.
+  //    .muster/ — wave/state markers and orchestrator ledger.
+  //    .claude/ — repo-local Claude/orchestrator settings written mid-wave.
   //    (Bash has no file_path/notebook_path; target is "" so this gate is skipped.)
-  const musterDir = path.resolve(cwd, ".muster") + path.sep;
-  if (target && (target === path.resolve(cwd, ".muster") || target.startsWith(musterDir))) {
+  //    To add a new exempt root, extend META_EXEMPT_ROOTS here and nowhere else.
+  const META_EXEMPT_ROOTS = [".muster", ".claude"];
+  for (const root of META_EXEMPT_ROOTS) {
+    const rootAbs = path.resolve(cwd, root);
+    if (target && (target === rootAbs || target.startsWith(rootAbs + path.sep))) {
+      allow();
+    }
+  }
+
+  // GUARD-SCOPE: targets outside the cwd tree are out of this hook's scope — allow.
+  // Prevents wave-guard and scale-gate from firing on unrelated paths (e.g. ~/.claude
+  // memory files edited by the user in a separate context) during an active wave.
+  const cwdAbs = path.resolve(cwd);
+  if (target && !target.startsWith(cwdAbs + path.sep) && target !== cwdAbs) {
     allow();
   }
 
   // Guard mode, needed by both the no-wave scale gate and the active-wave gate.
+  // Assigned before step 3 so applyScaleGate can share it.
   const guard = (process.env.MUSTER_WAVE_GUARD || "deny").toLowerCase();
 
   // 3. Check for the wave-active marker.
@@ -188,10 +221,27 @@ try {
     // Marker does not exist — no active wave. Apply the post-run scale gate.
     applyScaleGate(payload, target, guard);
   }
+  // Defensive: applyScaleGate always exits; this guard prevents any future
+  // refactor from falling through to markerStat.mtimeMs on an undefined stat.
+  if (!markerStat) allow();
 
-  // 4. Stale marker (older than 60 minutes) — treat as no wave; same scale gate.
+  // 4. Orphaned or stale marker — treat as no wave; apply the scale gate.
+  //    Primary signal: .muster/run-active absent means no run is in progress, so
+  //    the wave-active marker is orphaned (crashed/incomplete run). Verbs write
+  //    run-active at invocation start and clear it at end.
+  //    Fallback: if the wave-active marker is older than STALE_MS the run
+  //    almost certainly crashed regardless of run-active state.
+  //    run-active only relaxes/scopes — its absence NEVER introduces a new block;
+  //    behavior degrades to exactly today's scale-gate (fail-open preserved).
+  let runActivePresent = false;
+  try {
+    statSync(path.join(cwd, ".muster", "run-active"));
+    runActivePresent = true;
+  } catch {
+    runActivePresent = false;
+  }
   const ageMs = Date.now() - markerStat.mtimeMs;
-  if (ageMs > STALE_MS) {
+  if (!runActivePresent || ageMs > STALE_MS) {
     applyScaleGate(payload, target, guard);
   }
 
@@ -203,8 +253,7 @@ try {
     waveId = "unknown";
   }
 
-  // 5. Honour MUSTER_WAVE_GUARD (hoisted above step 3 because applyScaleGate,
-  //    called in the steps 3-4 no-wave fallthrough, also needs it).
+  // 5. Honour MUSTER_WAVE_GUARD (assigned before step 3 so applyScaleGate can share it).
   if (guard === "off") {
     allow();
   } else if (guard === "warn") {

@@ -175,9 +175,9 @@ test("validateAdviceResponse: accumulates multiple errors for both missing field
 // ---------------------------------------------------------------------------
 
 test("consultBudget: consult=true while consults < maxConsults", () => {
-  assert.deepEqual(consultBudget({ consults: 0, maxConsults: 3 }), { consult: true, reason: "consult" });
-  assert.deepEqual(consultBudget({ consults: 1, maxConsults: 3 }), { consult: true, reason: "consult" });
-  assert.deepEqual(consultBudget({ consults: 2, maxConsults: 3 }), { consult: true, reason: "consult" });
+  assert.deepEqual(consultBudget({ consults: 0, maxConsults: 3 }), { consult: true, reason: "within-budget" });
+  assert.deepEqual(consultBudget({ consults: 1, maxConsults: 3 }), { consult: true, reason: "within-budget" });
+  assert.deepEqual(consultBudget({ consults: 2, maxConsults: 3 }), { consult: true, reason: "within-budget" });
 });
 
 test("consultBudget: consult=false reason=budget-exhausted when consults == maxConsults", () => {
@@ -193,7 +193,7 @@ test("consultBudget: default maxConsults is 3 (from env or hardcoded default)", 
   delete process.env.MUSTER_ADVISOR_MAX_CONSULTS;
   try {
     // 2 < default 3 → should consult
-    assert.deepEqual(consultBudget({ consults: 2 }), { consult: true, reason: "consult" });
+    assert.deepEqual(consultBudget({ consults: 2 }), { consult: true, reason: "within-budget" });
     // 3 >= default 3 → exhausted
     assert.deepEqual(consultBudget({ consults: 3 }), { consult: false, reason: "budget-exhausted" });
   } finally {
@@ -209,7 +209,7 @@ test("MUSTER_ADVISOR_MAX_CONSULTS env overrides default: =5 allows 4 consults", 
   const prev = process.env.MUSTER_ADVISOR_MAX_CONSULTS;
   process.env.MUSTER_ADVISOR_MAX_CONSULTS = "5";
   try {
-    assert.deepEqual(consultBudget({ consults: 4 }), { consult: true, reason: "consult" });
+    assert.deepEqual(consultBudget({ consults: 4 }), { consult: true, reason: "within-budget" });
     assert.deepEqual(consultBudget({ consults: 5 }), { consult: false, reason: "budget-exhausted" });
   } finally {
     if (prev === undefined) delete process.env.MUSTER_ADVISOR_MAX_CONSULTS;
@@ -222,7 +222,7 @@ test("MUSTER_ADVISOR_MAX_CONSULTS negative clamps to default 3", () => {
   process.env.MUSTER_ADVISOR_MAX_CONSULTS = "-2";
   try {
     // With default 3: consults=2 → consult; consults=3 → exhausted
-    assert.deepEqual(consultBudget({ consults: 2 }), { consult: true, reason: "consult" });
+    assert.deepEqual(consultBudget({ consults: 2 }), { consult: true, reason: "within-budget" });
     assert.deepEqual(consultBudget({ consults: 3 }), { consult: false, reason: "budget-exhausted" });
   } finally {
     if (prev === undefined) delete process.env.MUSTER_ADVISOR_MAX_CONSULTS;
@@ -234,7 +234,7 @@ test("MUSTER_ADVISOR_MAX_CONSULTS junk value clamps to default 3", () => {
   const prev = process.env.MUSTER_ADVISOR_MAX_CONSULTS;
   process.env.MUSTER_ADVISOR_MAX_CONSULTS = "not-a-number";
   try {
-    assert.deepEqual(consultBudget({ consults: 2 }), { consult: true, reason: "consult" });
+    assert.deepEqual(consultBudget({ consults: 2 }), { consult: true, reason: "within-budget" });
     assert.deepEqual(consultBudget({ consults: 3 }), { consult: false, reason: "budget-exhausted" });
   } finally {
     if (prev === undefined) delete process.env.MUSTER_ADVISOR_MAX_CONSULTS;
@@ -247,6 +247,19 @@ test("MUSTER_ADVISOR_MAX_CONSULTS=0: never-consult (budget immediately exhausted
   process.env.MUSTER_ADVISOR_MAX_CONSULTS = "0";
   try {
     assert.deepEqual(consultBudget({ consults: 0 }), { consult: false, reason: "budget-exhausted" });
+  } finally {
+    if (prev === undefined) delete process.env.MUSTER_ADVISOR_MAX_CONSULTS;
+    else process.env.MUSTER_ADVISOR_MAX_CONSULTS = prev;
+  }
+});
+
+test("MUSTER_ADVISOR_MAX_CONSULTS='' (empty string): falls back to default 3", () => {
+  const prev = process.env.MUSTER_ADVISOR_MAX_CONSULTS;
+  process.env.MUSTER_ADVISOR_MAX_CONSULTS = "";
+  try {
+    // Empty string -> default 3: consults=2 within budget, consults=3 exhausted.
+    assert.deepEqual(consultBudget({ consults: 2 }), { consult: true, reason: "within-budget" });
+    assert.deepEqual(consultBudget({ consults: 3 }), { consult: false, reason: "budget-exhausted" });
   } finally {
     if (prev === undefined) delete process.env.MUSTER_ADVISOR_MAX_CONSULTS;
     else process.env.MUSTER_ADVISOR_MAX_CONSULTS = prev;

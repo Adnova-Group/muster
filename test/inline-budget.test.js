@@ -37,8 +37,10 @@ test("scaleThreshold: 1, 0, negatives, and junk fall back to default (n>1 guard)
   }
 });
 
-test("scaleThreshold: parseInt truncates a decimal (2.9 -> 2, honored)", () => {
-  assert.equal(scaleThreshold({ MUSTER_INLINE_SCALE: "2.9" }), 2);
+test("scaleThreshold: decimal '2.9' is not an integer and falls back to default (CORE-1 fix)", () => {
+  // Old behavior: parseInt truncated "2.9" -> 2 (silently wrong).
+  // New behavior: envInt rejects non-integer strings via /^-?\d+$/ regex -> DEFAULT_SCALE.
+  assert.equal(scaleThreshold({ MUSTER_INLINE_SCALE: "2.9" }), DEFAULT_SCALE);
 });
 
 // ── safeSession ─────────────────────────────────────────────────────────────

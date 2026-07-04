@@ -107,3 +107,35 @@ test("duplicate names across install records dedupe", async () => {
   assert.deepEqual(r.mcpServers, ["serena"]);
   assert.deepEqual(r.plugins, ["serena"]);
 });
+
+test("mixed index: any installPath switches to primary-only (pathless siblings not walked)", async () => {
+  const home = await tmpProject({
+    "install/withpath/.mcp.json": { withpath: { command: "node" } },
+    ".claude/plugins/cache/official/nopath/1.0.0/.mcp.json": { nopath: { command: "node" } }
+  });
+  await writeIndex(home, {
+    "withpath@official": [{ installPath: join(home, "install/withpath") }],
+    "nopath@official": [{}]
+  });
+  const r = await readPluginInventory(home);
+  assert.deepEqual(r.plugins.sort(), ["nopath", "withpath"], "both names reported");
+  assert.deepEqual(r.mcpServers, ["withpath"], "accepted limitation: pathless sibling's cache dir is not walked");
+});
+
+test("empty v2 index: nothing installed, stale cache is NOT walked", async () => {
+  const home = await tmpProject({
+    ".claude/plugins/installed_plugins.json": { version: 2, plugins: {} },
+    ".claude/plugins/cache/official/stale-plugin/9.9.9/.mcp.json": { staleServer: { command: "node" } }
+  });
+  const r = await readPluginInventory(home);
+  assert.deepEqual(r, { plugins: [], skills: [], agents: [], mcpServers: [] });
+});
+
+test("array-valued bare-map .mcp.json entries are not servers", async () => {
+  const home = await tmpProject({
+    "install/x/.mcp.json": { weird: [1, 2, 3], real: { command: "node" } }
+  });
+  await writeIndex(home, { "x@local": [{ installPath: join(home, "install/x") }] });
+  const r = await readPluginInventory(home);
+  assert.deepEqual(r.mcpServers, ["real"]);
+});

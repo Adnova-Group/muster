@@ -16,7 +16,7 @@ async function serversFromPluginRoot(root) {
     const wrapped = mcp.mcpServers && typeof mcp.mcpServers === "object" && !Array.isArray(mcp.mcpServers);
     const map = wrapped ? mcp.mcpServers : mcp;
     for (const [name, cfg] of Object.entries(map)) {
-      if (cfg && typeof cfg === "object") names.push(name);
+      if (cfg && typeof cfg === "object" && !Array.isArray(cfg)) names.push(name);
     }
   }
   const pj = await readJson(join(root, ".claude-plugin/plugin.json"));
@@ -81,23 +81,30 @@ export async function readPluginInventory(home) {
   const plugins = [], skills = [], agents = [], mcpServers = [];
 
   const index = await readJson(join(base, "installed_plugins.json"));
+  const hasIndex = !!(index && index.plugins && typeof index.plugins === "object" && !Array.isArray(index.plugins));
+  const keys = hasIndex ? Object.keys(index.plugins) : [];
   const roots = [];
-  if (index && index.plugins) {
-    for (const [key, records] of Object.entries(index.plugins)) {
-      plugins.push(pluginName(key));
-      for (const rec of Array.isArray(records) ? records : []) {
-        if (rec && typeof rec.installPath === "string") roots.push(rec.installPath);
-      }
+  for (const key of keys) {
+    plugins.push(pluginName(key));
+    for (const rec of Array.isArray(index.plugins[key]) ? index.plugins[key] : []) {
+      if (rec && typeof rec.installPath === "string") roots.push(rec.installPath);
     }
   }
 
   if (roots.length) {
+    // Primary path: at least one installPath is known. Documented all-or-nothing —
+    // a mixed index (some records with installPath, some without) takes this path
+    // only; pathless siblings' names are still reported but their contents (agents/
+    // skills/mcpServers) are not scanned (accepted limitation, pinned by test).
     for (const root of roots) {
       agents.push(...await agentsFromPluginRoot(root));
       skills.push(...await skillsFromPluginRoot(root));
       mcpServers.push(...await serversFromPluginRoot(root));
     }
-  } else {
+  } else if (!hasIndex || keys.length) {
+    // No index at all, or a v1-shaped index (keys but no installPath anywhere):
+    // best-effort walk. An index with ZERO keys skips this — it affirmatively
+    // says nothing is installed, and walking would resurrect stale cache dirs.
     await walkFallback(base, 4, { agents, skills, mcpServers });
   }
 

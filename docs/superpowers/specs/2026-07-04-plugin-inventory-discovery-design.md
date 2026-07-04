@@ -73,7 +73,12 @@ is the offered-but-not-installed trap. The walk covers both the shallow
 and the deep `plugins/cache/<marketplace>/<plugin>/<version>/` layout,
 collecting the same three kinds. For MCP servers, any directory within the
 depth limit that contains a `.mcp.json` or `.claude-plugin/` is treated as a
-plugin root and parsed with the same two-format logic.
+plugin root and parsed with the same two-format logic. An index that is
+present and valid but declares zero plugins short-circuits to an empty result
+— no walk (the index affirmatively says nothing is installed). A mixed index
+where some records carry installPath and others do not takes the primary path
+only; the pathless plugin's name is still reported but its contents are not
+scanned (accepted limitation, pinned by test).
 
 Error handling: fail-soft throughout, consistent with `readdirSafe`/`readJson`.
 Any missing or unreadable file/dir contributes nothing. The function never throws.

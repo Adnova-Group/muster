@@ -36,6 +36,59 @@ export function emit(obj) {
   process.stdout.write(JSON.stringify(obj));
 }
 
+// ── isDirective ───────────────────────────────────────────────────────────────
+// Deterministic, pure, case-insensitive detector for "directive-shaped" prompts:
+// an imperative verb (optionally preceded by a polite lead-in) as the prompt's
+// opening word. No I/O — used by user-prompt-submit.js to trigger an immediate
+// routing nudge instead of waiting for the periodic cadence.
+const DIRECTIVE_PREFIXES = [
+  "please",
+  "can you",
+  "could you",
+  "let's",
+  "lets",
+  "now",
+  "go",
+  "ok",
+  "okay",
+];
+
+const DIRECTIVE_VERBS = [
+  "fix",
+  "build",
+  "implement",
+  "add",
+  "create",
+  "write",
+  "refactor",
+  "migrate",
+  "update",
+  "remove",
+  "rename",
+  "convert",
+  "make",
+];
+
+function escapeForRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const PREFIX_ALT = DIRECTIVE_PREFIXES.map(escapeForRegex).join("|");
+const VERB_ALT = DIRECTIVE_VERBS.join("|");
+
+// Zero or more polite lead-ins, then one of the imperative verbs, as the whole
+// prompt's opening word (bounded by \b so "fixing"/"updates" etc. don't match).
+const DIRECTIVE_RE = new RegExp(`^(?:(?:${PREFIX_ALT})\\s+)*(?:${VERB_ALT})\\b`, "i");
+
+export function isDirective(prompt) {
+  if (typeof prompt !== "string") return false;
+  const trimmed = prompt.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.startsWith("/")) return false;
+  if (trimmed.endsWith("?")) return false;
+  return DIRECTIVE_RE.test(trimmed);
+}
+
 export function detect(cwd) {
   const has = (f) => {
     try {

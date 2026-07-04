@@ -1,8 +1,17 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import os from "node:os";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { spawnHook } from "./test-support/hook-helpers.js";
+import { spawnHook, cleanDir } from "./test-support/hook-helpers.js";
+
+// Directive-nudge tests need a run cwd guaranteed to have no `.muster/run-active`.
+// This repo's own cwd is not reliable for that (a live orchestrator run may be in
+// progress against this very tree), so give those tests an isolated, guaranteed-
+// clean cwd via payload.cwd rather than falling back to process.cwd().
+const NO_RUN_DIR = mkdtempSync(path.join(os.tmpdir(), "muster-ups-norun-"));
+after(() => cleanDir(NO_RUN_DIR));
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -32,6 +41,11 @@ function runTurn(sessionId, env = {}) {
 // One turn carrying a prompt (the UserPromptSubmit payload includes `prompt`).
 function runPrompt(sessionId, prompt, env = {}) {
   return runRaw(JSON.stringify({ session_id: sessionId, prompt }), env);
+}
+
+// One turn carrying a prompt and an explicit run cwd.
+function runPromptCwd(sessionId, prompt, cwd, env = {}) {
+  return runRaw(JSON.stringify({ session_id: sessionId, prompt, cwd }), env);
 }
 
 function ctxOf(stdout) {
@@ -172,4 +186,69 @@ test("session_id of only non-word chars sanitizes to empty: no file write, exits
 
   // Verify the bare file was NOT written.
   assert.ok(!existsSync(bareFile), "bare tmp file must not be written when session_id sanitizes to empty");
+});
+
+// ── directive-triggered nudge ──────────────────────────────────────────────────
+// Unlike the periodic tiers above, this nudge fires immediately (turn 1) when the
+// prompt is directive-shaped and no muster run is active — no waiting for a cadence.
+
+test("directive prompt, no run-active, fresh session: immediate routing nudge on turn 1", async () => {
+  const sid = uniqSession();
+  const { stdout, code } = await runPromptCwd(sid, "fix the flaky test", NO_RUN_DIR);
+  assert.equal(code, 0);
+  const ctx = ctxOf(stdout).additionalContext;
+  assert.match(ctx, /Default routing/i, "turn 1 directive nudge carries the routing policy");
+  assert.doesNotMatch(ctx, /muster principles:/, "directive nudge is not the full periodic payload");
+});
+
+test("second directive prompt, same session: no directive nudge (once-per-session)", async () => {
+  const sid = uniqSession();
+  await runPromptCwd(sid, "fix the flaky test", NO_RUN_DIR); // turn 1 — fires and writes the marker
+  const { stdout } = await runPromptCwd(sid, "fix another flaky test", NO_RUN_DIR); // turn 2
+  assert.ok(!("additionalContext" in ctxOf(stdout)), "turn 2 directive nudge suppressed (already fired this session)");
+});
+
+test("non-directive prompts do not trigger the immediate nudge", async () => {
+  const question = await runPromptCwd(uniqSession(), "how does the router work?", NO_RUN_DIR);
+  assert.ok(!("additionalContext" in ctxOf(question.stdout)), "question is not directive-shaped");
+
+  const chatter = await runPromptCwd(uniqSession(), "thanks, looks good", NO_RUN_DIR);
+  assert.ok(!("additionalContext" in ctxOf(chatter.stdout)), "conversational turn is not directive-shaped");
+});
+
+test("directive prompt with .muster/run-active present under the payload cwd: no directive nudge", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-ups-test-"));
+  try {
+    mkdirSync(path.join(dir, ".muster"), { recursive: true });
+    writeFileSync(path.join(dir, ".muster", "run-active"), "1");
+    const sid = uniqSession();
+    const { stdout, code } = await runPromptCwd(sid, "fix the bug", dir);
+    assert.equal(code, 0);
+    assert.ok(
+      !("additionalContext" in ctxOf(stdout)),
+      "directive nudge suppressed while a muster run is active in the payload cwd",
+    );
+  } finally {
+    cleanDir(dir);
+  }
+});
+
+test("polite prefix 'please fix the hook' nudges; 'can you explain the hook?' does not", async () => {
+  const polite = await runPromptCwd(uniqSession(), "please fix the hook", NO_RUN_DIR);
+  assert.match(ctxOf(polite.stdout).additionalContext, /Default routing/i, "polite prefix still directive-shaped");
+
+  const question = await runPromptCwd(uniqSession(), "can you explain the hook?", NO_RUN_DIR);
+  assert.ok(!("additionalContext" in ctxOf(question.stdout)), "question form is never directive-shaped");
+});
+
+test("directive nudge supersedes the periodic tier on the same turn (no double-inject)", async () => {
+  const sid = uniqSession();
+  await runPromptCwd(sid, "regular question about the codebase", NO_RUN_DIR); // turn 1 — silent
+  await runPromptCwd(sid, "another regular turn", NO_RUN_DIR); // turn 2 — silent
+  // turn 3 would normally be the periodic short-nudge turn; a directive prompt here
+  // must supersede that with the immediate routing nudge instead (not both/either).
+  const { stdout } = await runPromptCwd(sid, "fix the broken build", NO_RUN_DIR);
+  const ctx = ctxOf(stdout).additionalContext;
+  assert.match(ctx, /Default routing/i, "directive nudge wins on the periodic turn");
+  assert.doesNotMatch(ctx, /muster mode/i, "periodic short nudge is not also injected (no double-inject)");
 });

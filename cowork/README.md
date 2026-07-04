@@ -108,10 +108,11 @@ All configuration is environment variables, set either in the Route A `env` bloc
 
 ### How capabilities resolve
 
-`muster_capabilities` runs with `--cowork`, resolving providers from Cowork's MCP registry rather than `~/.claude`:
+`muster_capabilities` runs with `--cowork`, resolving providers from Cowork's own MCP registry. muster's registry scan also reads the Claude Code plugin installs on disk (`~/.claude/plugins`) -- Cowork itself doesn't load those plugins, but their MCP servers, agents, and skills still count as installed providers for routing, via the same shared plugin scanner as the Claude Code adapter:
 
-- **Local MCP servers** are read from `claude_desktop_config.json` (`mcpServers` keys). On Windows the MSIX-virtualized path is tried before `%APPDATA%\Claude`.
+- **Local MCP servers** are read from `claude_desktop_config.json` (`mcpServers` keys), plus any MCP servers shipped by an installed Claude Code plugin (`.mcp.json`, wrapped or bare-map, and inline `plugin.json` declarations). On Windows the MSIX-virtualized path is tried before `%APPDATA%\Claude`.
 - **MCPB extensions** are discovered by enumerating the `Claude Extensions/` directory and reading each `manifest.json` (there is no index file).
+- **Plugin agents and skills** installed under `~/.claude/plugins` count as installed providers too (driven by `installed_plugins.json` v2 `installPath` records), so roles like code-navigation, browser-control, and refactor resolve to an installed plugin (serena, playwright, code-simplifier) instead of a built-in fallback.
 - **Remote connectors** (Slack, Drive, GitHub, and so on) live in your cloud account, not on disk, so they cannot be auto-discovered. Declare the ones you want muster to treat as available via `MUSTER_COWORK_CONNECTORS=slack,drive`. The output marks `connectorsDiscoverable: false` so the gap stays visible.
 
 ### Operating on a repo

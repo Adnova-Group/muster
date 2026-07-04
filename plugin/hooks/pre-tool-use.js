@@ -30,6 +30,12 @@
 // (MUSTER_INLINE_SCALE, default 3) is DENIED and routed to a verb. Per-turn budget
 // lives in inline-budget.js. Honors the same MUSTER_WAVE_GUARD override.
 //
+// applyScaleGate also feeds a cumulative cross-turn counter (same file), so
+// careful 1-2-file-per-turn drift that never trips the per-turn gate still
+// gets a one-time WARN (never a deny) once the running total reaches the
+// scale threshold with no muster run active. Reset when a run starts (that
+// work is tracked/dispatched, not drift) and at SessionStart.
+//
 // META_EXEMPT_ROOTS — the shared exemption set (always allowed, no wave check):
 //   [".muster", ".claude"]
 //   Extend here, nowhere else.
@@ -49,7 +55,7 @@ import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { emit } from "./guidance.js";
 import { bashWriteTarget } from "./bash-write-target.js";
-import { budgetFile, recordFile, scaleThreshold } from "./inline-budget.js";
+import { budgetFile, recordFile, scaleThreshold, cumFile, recordCum, markNudged, resetCum } from "./inline-budget.js";
 
 const EVENT = "PreToolUse";
 const MARKER = ".muster/wave-active";
@@ -101,6 +107,18 @@ function warnScaleAllow(count) {
   );
 }
 
+// Cumulative cross-turn drift: fires once per session when the total distinct
+// inline-edited files (across turns, with no muster run active) reaches the
+// scale threshold. Always a WARN (allow + additionalContext) — never a deny;
+// the per-turn gate above is the only thing allowed to deny.
+function warnCumulativeDrift(count) {
+  warnWith(
+    `Inline drift: ${count} distinct files edited inline across turns with no muster run active. ` +
+    `Route sustained work through /muster:autopilot (or /muster:run to plan first). ` +
+    `This reminder fires once per session.`,
+  );
+}
+
 // No active wave: apply the per-turn scale gate. Allows, warns, or denies by
 // guard mode and how many distinct files this turn already touched. Budget key
 // is an edit tool's resolved target, OR the full Bash command for a high-
@@ -108,8 +126,18 @@ function warnScaleAllow(count) {
 // fragment — otherwise distinct `sed -i fileN` writes collapse into one slot and
 // slip the gate). Read-only Bash and edits without a concrete target pass free.
 //
+// Alongside the per-turn budget, also feeds a cumulative cross-turn counter
+// (inline-budget.js: cumFile/recordCum/markNudged/resetCum) so drift spread
+// carefully across many turns (1-2 files each, never tripping the per-turn
+// gate) still gets a one-time warning. Cumulative tracking only applies with
+// no muster run active (`cwd`/.muster/run-active absent) — while a run is
+// active this turn's edits are dispatched/tracked by the run, not drift, so
+// the cumulative counter is reset instead. The per-turn deny/warn above always
+// takes precedence: cumulative logic only runs when the per-turn gate would
+// otherwise allow.
+//
 // applyScaleGate never returns (always allow/warn/deny -> exit)
-function applyScaleGate(payload, target, guard) {
+function applyScaleGate(payload, target, guard, cwd) {
   if (guard === "off") allow();
 
   let key = null;
@@ -124,8 +152,33 @@ function applyScaleGate(payload, target, guard) {
   const file = budgetFile(payload.session_id);
   if (!file) allow(); // no usable session id — fail-open, preserves legacy behavior
 
+  // Cumulative cross-turn tracking (best-effort; never affects the per-turn
+  // deny/warn/allow decision path below).
+  let cumResult = null;
+  const cFile = cumFile(payload.session_id);
+  if (cFile) {
+    let runActive = false;
+    try {
+      statSync(path.join(cwd, ".muster", "run-active"));
+      runActive = true;
+    } catch {
+      runActive = false;
+    }
+    if (runActive) {
+      resetCum(cFile);
+    } else {
+      cumResult = recordCum(cFile, key);
+    }
+  }
+
   const count = recordFile(file, key);
-  if (count < scaleThreshold()) allow();
+  if (count < scaleThreshold()) {
+    if (cumResult && !cumResult.nudged && cumResult.count >= scaleThreshold()) {
+      markNudged(cFile);
+      warnCumulativeDrift(cumResult.count);
+    }
+    allow();
+  }
 
   if (guard === "warn") warnScaleAllow(count);
   denyScale(count);
@@ -220,7 +273,7 @@ try {
     markerStat = statSync(markerPath);
   } catch {
     // Marker does not exist — no active wave. Apply the post-run scale gate.
-    applyScaleGate(payload, target, guard);
+    applyScaleGate(payload, target, guard, cwd);
   }
   // Defensive: applyScaleGate always exits; this guard prevents any future
   // refactor from falling through to markerStat.mtimeMs on an undefined stat.
@@ -243,7 +296,7 @@ try {
   }
   const ageMs = Date.now() - markerStat.mtimeMs;
   if (!runActivePresent || ageMs > STALE_MS) {
-    applyScaleGate(payload, target, guard);
+    applyScaleGate(payload, target, guard, cwd);
   }
 
   // Read wave id from marker content, then sanitize.

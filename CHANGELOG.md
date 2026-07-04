@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Directive-triggered routing nudge (`UserPromptSubmit`).** A directive-shaped prompt (an imperative verb like fix/build/implement, optionally after a polite lead-in) fires an immediate one-time routing-policy reminder the first time it lands with no active muster run, instead of waiting for the periodic nudge cadence — then never fires again for that session. Conversational turns and questions are unaffected.
+- **Cumulative cross-turn inline-drift warning (`PreToolUse` scale gate).** The post-run scale gate now also tracks distinct inline-edited files across turns, not just within a single turn: once the running total reaches the scale threshold (`MUSTER_INLINE_SCALE`, default 3) with no muster run active, it warns once per session — catching careful 1-2-file-per-turn drift that never trips the per-turn gate. Warn-only (never a deny); state survives `/compact` and session resume, and resets at `SessionStart` (fresh session / `/clear`) and whenever a muster run is active.
+
 ### Fixed
 - **Plugin-aware provider discovery in both harness adapters.** Capability resolution now sees installed Claude Code plugins (`~/.claude/plugins`) in Cowork as well as Claude Code: plugin-shipped MCP servers (`.mcp.json` in both wrapped and bare-map formats, plus inline `plugin.json` declarations), plugin agents, and plugin skills all count as installed providers. Roles like code-navigation (serena), browser-control (playwright), and refactor (code-simplifier) resolve to the installed plugins instead of built-in fallbacks. Discovery is driven by `installed_plugins.json` v2 `installPath` records so only actually-installed plugins are reported; the path-less fallback walk skips `marketplaces/` (offered != installed). Shared scanner: `src/plugin-inventory.js`.
 

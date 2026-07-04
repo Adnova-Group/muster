@@ -9,11 +9,11 @@
 // Self-contained apart from sibling guidance.js. FAIL-SAFE: whole body in
 // try/catch; on ANY error or missing state, emit minimal valid JSON and exit 0.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE } from "./guidance.js";
-import { budgetFile, resetBudget, safeSession } from "./inline-budget.js";
+import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE, isDirective } from "./guidance.js";
+import { budgetFile, resetBudget, safeSession, directiveFile } from "./inline-budget.js";
 import { envInt } from "./env-util.js";
 
 const EVENT = "UserPromptSubmit";
@@ -86,6 +86,45 @@ try {
   let additionalContext;
   if (count % (N * K) === 0) additionalContext = `${PRINCIPLES}\n${VERBS}\n${ROUTING_POLICY}`;
   else if (count % N === 0) additionalContext = SHORT_NUDGE;
+
+  // Directive-triggered nudge: fires immediately (independent of the periodic
+  // cadence above) the first time a directive-shaped prompt lands with no active
+  // muster run — once per session, then never again. Supersedes whatever the
+  // periodic tier chose this turn (no double-inject). Best-effort: any failure
+  // here degrades to the periodic behavior computed above.
+  try {
+    if (isDirective(prompt)) {
+      const cwd =
+        typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : process.cwd();
+      let runActive = false;
+      try {
+        runActive = existsSync(path.join(cwd, ".muster", "run-active"));
+      } catch {
+        runActive = false;
+      }
+      if (!runActive) {
+        const markerFile = directiveFile(sessionId);
+        if (markerFile !== null) {
+          let alreadyNudged = false;
+          try {
+            alreadyNudged = existsSync(markerFile);
+          } catch {
+            alreadyNudged = false;
+          }
+          if (!alreadyNudged) {
+            additionalContext = ROUTING_POLICY;
+            try {
+              writeFileSync(markerFile, "1");
+            } catch {
+              /* best-effort */
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    /* directive nudge is best-effort; fall back to the periodic tier above */
+  }
 
   const out = { hookEventName: EVENT };
   if (additionalContext) out.additionalContext = additionalContext;

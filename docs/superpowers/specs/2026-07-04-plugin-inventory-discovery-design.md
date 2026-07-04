@@ -67,10 +67,13 @@ Primary path — read `<home>/.claude/plugins/installed_plugins.json`:
 Fallback path — when `installed_plugins.json` is missing, unparseable, or no
 record carries an `installPath` (v1 format): depth-limited walk (existing
 `walkForSubdir` machinery, which moves into this module) rooted at
-`<home>/.claude/plugins/cache/` only, collecting the same three kinds. For MCP
-servers, any directory within the depth limit that contains a `.mcp.json` is
-treated as a plugin root and parsed with the same two-format logic.
-`marketplaces/` is never walked — that is the offered-but-not-installed trap.
+`<home>/.claude/plugins/`, skipping the top-level `marketplaces/` entry — that
+is the offered-but-not-installed trap. The walk covers both the shallow
+`plugins/<plugin>/` layout (real: locally-developed plugins like claude-hud)
+and the deep `plugins/cache/<marketplace>/<plugin>/<version>/` layout,
+collecting the same three kinds. For MCP servers, any directory within the
+depth limit that contains a `.mcp.json` or `.claude-plugin/` is treated as a
+plugin root and parsed with the same two-format logic.
 
 Error handling: fail-soft throughout, consistent with `readdirSafe`/`readJson`.
 Any missing or unreadable file/dir contributes nothing. The function never throws.

@@ -86,7 +86,16 @@ export function isDirective(prompt) {
   if (trimmed.length === 0) return false;
   if (trimmed.startsWith("/")) return false;
   if (trimmed.endsWith("?")) return false;
-  return DIRECTIVE_RE.test(trimmed);
+  const match = DIRECTIVE_RE.exec(trimmed);
+  if (!match) return false;
+  // Tighten false positives: a verb immediately followed by ":" (a status
+  // update headline, e.g. "Update: shipped...") or by the word "for" (a
+  // noun-phrase headline, e.g. "Fix for the login bug is in review.") is not
+  // an imperative directive, even though it opens with a directive verb.
+  const rest = trimmed.slice(match[0].length);
+  if (/^\s*:/.test(rest)) return false;
+  if (/^\s+for\b/i.test(rest)) return false;
+  return true;
 }
 
 export function detect(cwd) {

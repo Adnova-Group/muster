@@ -8,7 +8,7 @@ import os from "node:os";
 import { cleanDir } from "./test-support/hook-helpers.js";
 
 // Import guidance.js detect directly.
-const { detect } = await import(
+const { detect, isDirective } = await import(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "plugin", "hooks", "guidance.js")
 );
 
@@ -131,4 +131,28 @@ test("detect: package.json + pyproject.toml → Node project (package.json wins)
   } finally {
     cleanDir(dir);
   }
+});
+
+// ── isDirective — false-positive tightening (F1) ────────────────────────────
+// A verb immediately followed by ":" or "for" is not an imperative directive —
+// it's a status update ("Update: shipped...") or a noun-phrase headline
+// ("Fix for the login bug is in review."). Everything else keeps matching.
+test("isDirective: 'Update: shipped the release last night.' is not a directive (colon after verb)", () => {
+  assert.equal(isDirective("Update: shipped the release last night."), false);
+});
+
+test("isDirective: 'Fix for the login bug is in review.' is not a directive ('for' after verb)", () => {
+  assert.equal(isDirective("Fix for the login bug is in review."), false);
+});
+
+test("isDirective: 'update the readme' is still a directive", () => {
+  assert.equal(isDirective("update the readme"), true);
+});
+
+test("isDirective: 'make sure you don't refactor this' is still a directive (instruction to act)", () => {
+  assert.equal(isDirective("make sure you don't refactor this"), true);
+});
+
+test("isDirective: 'fix for real this time' is not a directive (accepted cost of the 'for' rule)", () => {
+  assert.equal(isDirective("fix for real this time"), false);
 });

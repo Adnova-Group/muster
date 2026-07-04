@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE, isDirective } from "./guidance.js";
-import { budgetFile, resetBudget, safeSession } from "./inline-budget.js";
+import { budgetFile, resetBudget, safeSession, directiveFile } from "./inline-budget.js";
 import { envInt } from "./env-util.js";
 
 const EVENT = "UserPromptSubmit";
@@ -103,9 +103,8 @@ try {
         runActive = false;
       }
       if (!runActive) {
-        const safe = safeSession(sessionId);
-        if (safe !== null) {
-          const markerFile = path.join(os.tmpdir(), `muster-directive-${safe}`);
+        const markerFile = directiveFile(sessionId);
+        if (markerFile !== null) {
           let alreadyNudged = false;
           try {
             alreadyNudged = existsSync(markerFile);

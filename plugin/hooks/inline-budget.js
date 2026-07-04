@@ -67,6 +67,17 @@ export function cumFile(sessionId, tmp = os.tmpdir()) {
   return s ? path.join(tmp, `muster-cum-${s}`) : null;
 }
 
+// ── once-per-session directive-nudge marker ─────────────────────────────────
+//
+// Absolute path to the per-session directive-nudge marker file (see isDirective
+// in guidance.js / user-prompt-submit.js), or null if the session id is
+// unusable. Same safeSession/null pattern as cumFile, distinct filename so it
+// never collides with the budget/cumulative files.
+export function directiveFile(sessionId, tmp = os.tmpdir()) {
+  const s = safeSession(sessionId);
+  return s ? path.join(tmp, `muster-directive-${s}`) : null;
+}
+
 // Read the cumulative state: { files: string[], nudged: boolean }.
 // Missing/corrupt/malformed -> the empty shape (never throws).
 export function readCum(file) {

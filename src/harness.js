@@ -3,9 +3,12 @@ import { readJson, readdirSafe } from "./fs-util.js";
 import { readPluginInventory } from "./plugin-inventory.js";
 
 // --- Claude Cowork adapter ----------------------------------------------------
-// Cowork extends only through MCP: local MCP servers (claude_desktop_config.json),
-// MCPB/DXT desktop extensions (a Claude Extensions/ dir, no index file), and remote
-// connectors (cloud/account state, NOT on disk). See memory cowork-connector-storage.
+// Cowork's own registry extends through MCP: local MCP servers
+// (claude_desktop_config.json), MCPB/DXT desktop extensions (a Claude
+// Extensions/ dir, no index file), and remote connectors (cloud/account state,
+// NOT on disk — see memory cowork-connector-storage). Cowork sessions ALSO
+// load Claude Code plugins from ~/.claude/plugins, so the plugin inventory
+// (plugin-shipped MCP servers, agents, skills) merges into every lane.
 
 // Ordered candidate Claude config dirs for a platform. On Windows the MSIX-virtualized
 // path is the one the app actually reads, so it comes before the %APPDATA% fallback.
@@ -35,9 +38,10 @@ async function readExtensionNames(extDir) {
 }
 
 // Cowork-flavored readInstalled: same {plugins, skills, mcpServers, agents} shape
-// resolveCapabilities consumes, but only the mcpServers lane is populated (Cowork has
-// no Claude Code plugins/skills/agents). Local servers + extensions are discovered;
-// remote connectors cannot be (connectorsDiscoverable:false) and must be DECLARED.
+// resolveCapabilities consumes. Cowork registry discovery (local servers +
+// extensions) fills mcpServers; the Claude Code plugin inventory fills every
+// lane. Remote connectors cannot be discovered (connectorsDiscoverable:false)
+// and must be DECLARED.
 export async function readInstalledCowork(home, opts = {}) {
   const { platform = process.platform, declaredConnectors = [], dir } = opts;
   const dirs = dir ? [dir] : await coworkConfigDirs(home, platform);
@@ -53,13 +57,15 @@ export async function readInstalledCowork(home, opts = {}) {
     }
   }
 
+  const inv = await readPluginInventory(home);
+
   return {
-    plugins: [],
-    skills: [],
-    agents: [],
-    mcpServers: [...new Set([...discovered, ...declaredConnectors])],
+    plugins: inv.plugins,
+    skills: inv.skills,
+    agents: inv.agents,
+    mcpServers: [...new Set([...discovered, ...inv.mcpServers, ...declaredConnectors])],
     connectorsDiscoverable: false,
-    connectorsDeclared: [...new Set(declaredConnectors)],
+    connectorsDeclared: [...new Set(declaredConnectors)]
   };
 }
 

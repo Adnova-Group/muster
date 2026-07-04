@@ -41,7 +41,7 @@ test("readInstalledCowork: reads local mcpServers and enumerates Claude Extensio
   try {
     const r = await readInstalledCowork("/ignored", { dir });
     assert.deepEqual(r.mcpServers.sort(), ["bar", "baz", "foo"]);
-    assert.deepEqual([r.plugins, r.skills, r.agents], [[], [], []], "no plugin/skill/agent lanes in Cowork");
+    assert.deepEqual([r.plugins, r.skills, r.agents], [[], [], []], "no plugins installed in this fixture home");
     assert.equal(r.connectorsDiscoverable, false, "remote connectors are never disk-discoverable");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -61,4 +61,29 @@ test("readInstalledCowork: missing config dir yields empty providers, no throw",
   const r = await readInstalledCowork("/no/such/home", { dir: "/no/such/dir" });
   assert.deepEqual(r.mcpServers, []);
   assert.equal(r.connectorsDiscoverable, false);
+});
+
+test("readInstalledCowork: merges Claude Code plugin inventory into all lanes", async () => {
+  const home = fixture((d) => {
+    const install = path.join(d, ".claude/plugins/cache/official/serena/1.0.0");
+    mkdirSync(path.join(install, "agents"), { recursive: true });
+    writeFileSync(path.join(install, ".mcp.json"), JSON.stringify({ serena: { command: "uvx" } }));
+    writeFileSync(path.join(install, "agents/serena-agent.md"), "# serena agent");
+    writeFileSync(path.join(d, ".claude/plugins/installed_plugins.json"), JSON.stringify({
+      version: 2, plugins: { "serena@official": [{ installPath: install }] }
+    }));
+  });
+  const cfg = fixture((d) => {
+    writeFileSync(path.join(d, "claude_desktop_config.json"), JSON.stringify({ mcpServers: { foo: {} } }));
+  });
+  try {
+    const r = await readInstalledCowork(home, { dir: cfg });
+    assert.deepEqual(r.mcpServers.sort(), ["foo", "serena"], "registry + plugin servers merge");
+    assert.deepEqual(r.plugins, ["serena"], "plugin lane populated");
+    assert.deepEqual(r.agents, ["serena-agent"], "agent lane populated");
+    assert.equal(r.connectorsDiscoverable, false, "connector contract unchanged");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(cfg, { recursive: true, force: true });
+  }
 });

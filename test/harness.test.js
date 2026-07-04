@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { writeFile, mkdir } from "node:fs/promises";
+import { join, dirname } from "node:path";
 import { tmpProject } from "../test-support/helpers.js";
 import { readInstalled } from "../src/harness.js";
 
@@ -108,4 +110,19 @@ test("missing plugin skills dirs degrade silently", async () => {
   });
   const r = await readInstalled(home);
   assert.deepEqual(r.skills, []);
+});
+
+test("merges plugin-shipped mcp servers via installPath records", async () => {
+  const home = await tmpProject({
+    "install/serena/.mcp.json": { serena: { command: "uvx" } },
+    ".claude/settings.json": { mcpServers: { context7: {} } }
+  });
+  const idx = join(home, ".claude/plugins/installed_plugins.json");
+  await mkdir(dirname(idx), { recursive: true });
+  await writeFile(idx, JSON.stringify({
+    version: 2, plugins: { "serena@official": [{ installPath: join(home, "install/serena") }] }
+  }));
+  const r = await readInstalled(home);
+  assert.deepEqual(r.mcpServers.sort(), ["context7", "serena"]);
+  assert.deepEqual(r.plugins, ["serena"]);
 });

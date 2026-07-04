@@ -5,6 +5,11 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Plugin-aware provider discovery in both harness adapters.** Capability resolution now sees installed Claude Code plugins (`~/.claude/plugins`) in Cowork as well as Claude Code: plugin-shipped MCP servers (`.mcp.json` in both wrapped and bare-map formats, plus inline `plugin.json` declarations), plugin agents, and plugin skills all count as installed providers. Roles like code-navigation (serena), browser-control (playwright), and refactor (code-simplifier) resolve to the installed plugins instead of built-in fallbacks. Discovery is driven by `installed_plugins.json` v2 `installPath` records so only actually-installed plugins are reported; the path-less fallback walk skips `marketplaces/` (offered != installed). Shared scanner: `src/plugin-inventory.js`.
+
 ## [0.3.2] - 2026-07-02
 
 ### Added

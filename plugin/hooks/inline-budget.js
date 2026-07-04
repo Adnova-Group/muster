@@ -45,6 +45,64 @@ export function budgetFile(sessionId, tmp = os.tmpdir()) {
   return s ? path.join(tmp, `muster-inline-${s}`) : null;
 }
 
+// ── cumulative cross-turn drift counter ─────────────────────────────────────
+//
+// The per-turn budget above (budgetFile/readBudget/resetBudget/recordFile) is
+// wiped every UserPromptSubmit, so careful 1-2-file-per-turn inline work never
+// trips it no matter how many turns it spans. This second, cumulative counter
+// persists ACROSS turns (never reset by UserPromptSubmit) so that drift is
+// still visible: once the total distinct inline-edited files reaches the
+// scale threshold with no muster run active, the caller warns once per
+// session. It is reset when a muster run starts (the run tracks/dispatches
+// that work, so it's no longer "drift") and at SessionStart (fresh session).
+//
+// Same key space as the per-turn budget (resolved edit target, or the full
+// Bash command for a high-confidence shell write) so "the same file again"
+// never double-counts here either.
+
+// Absolute path to the per-session cumulative file, or null if the session id
+// is unusable. Distinct filename from budgetFile so the two never collide.
+export function cumFile(sessionId, tmp = os.tmpdir()) {
+  const s = safeSession(sessionId);
+  return s ? path.join(tmp, `muster-cum-${s}`) : null;
+}
+
+// Read the cumulative state: { files: string[], nudged: boolean }.
+// Missing/corrupt/malformed -> the empty shape (never throws).
+export function readCum(file) {
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8"));
+    const v = raw && typeof raw === "object" ? raw : {};
+    const files = Array.isArray(v.files) ? v.files.filter((x) => typeof x === "string") : [];
+    const nudged = Boolean(v.nudged);
+    return { files, nudged };
+  } catch {
+    return { files: [], nudged: false };
+  }
+}
+
+// Reset the cumulative state to empty (new session, or a muster run started).
+export function resetCum(file) {
+  try { writeFileSync(file, JSON.stringify({ files: [], nudged: false })); } catch { /* best-effort */ }
+}
+
+// Add `key` to the cumulative distinct-file set if absent, persist, and return
+// the resulting { count, nudged }. Re-adding an already-recorded key does not
+// increase the count (matches recordFile's re-edit semantics).
+export function recordCum(file, key) {
+  const state = readCum(file);
+  if (!state.files.includes(key)) state.files.push(key);
+  try { writeFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
+  return { count: state.files.length, nudged: state.nudged };
+}
+
+// Mark the once-per-session cumulative-drift warning as already fired.
+export function markNudged(file) {
+  const state = readCum(file);
+  state.nudged = true;
+  try { writeFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
+}
+
 // Read the turn's distinct-file set (array of strings). Missing/corrupt → [].
 export function readBudget(file) {
   try {

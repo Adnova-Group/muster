@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { cumFile, readCum } from "../plugin/hooks/inline-budget.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -106,5 +107,48 @@ test("session-start hook: emits full payload on a compact-source event (backstop
   assert.match(ctx, /muster principles:/, "full principles present after compact");
   for (const verb of ["run", "autopilot", "diagnose", "audit"]) {
     assert.match(ctx, new RegExp(verb), `mentions ${verb}`);
+  }
+});
+
+// ── cumulative cross-turn drift counter is reset on SessionStart ───────────
+test("session-start hook: resets the cumulative cross-turn drift counter for the session", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-cum-"));
+  const sid = "ss-cum-1";
+  const cFile = cumFile(sid, tmpdir());
+  await writeFile(cFile, JSON.stringify({ files: ["a.js", "b.js"], nudged: true }));
+  try {
+    const { code } = await runHookStdin(
+      dir,
+      JSON.stringify({ source: "startup", session_id: sid, cwd: dir }),
+    );
+    assert.equal(code, 0, "exit 0");
+    assert.deepEqual(
+      readCum(cFile),
+      { files: [], nudged: false },
+      "cumulative drift counter reset on SessionStart",
+    );
+  } finally {
+    await rm(cFile, { force: true });
+  }
+});
+
+test("session-start hook: resets the cumulative drift counter even on a compact-source event", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-cum2-"));
+  const sid = "ss-cum-2";
+  const cFile = cumFile(sid, tmpdir());
+  await writeFile(cFile, JSON.stringify({ files: ["a.js", "b.js", "c.js"], nudged: true }));
+  try {
+    const { code } = await runHookStdin(
+      dir,
+      JSON.stringify({ source: "compact", session_id: sid, cwd: dir }),
+    );
+    assert.equal(code, 0, "exit 0");
+    assert.deepEqual(
+      readCum(cFile),
+      { files: [], nudged: false },
+      "cumulative drift counter reset even on compact (fresh SessionStart invocation)",
+    );
+  } finally {
+    await rm(cFile, { force: true });
   }
 });

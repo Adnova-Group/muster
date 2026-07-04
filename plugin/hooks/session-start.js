@@ -10,6 +10,7 @@
 import { readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, detect } from "./guidance.js";
+import { cumFile, resetCum } from "./inline-budget.js";
 
 const EVENT = "SessionStart";
 
@@ -36,6 +37,15 @@ const cwd = (typeof payload.cwd === "string" && payload.cwd.length > 0)
 if (source === null || RESET_SOURCES.has(source)) {
   try { unlinkSync(path.join(cwd, ".muster", "wave-active")); } catch { /* not present — fine */ }
   try { unlinkSync(path.join(cwd, ".muster", "run-active")); } catch { /* not present — fine */ }
+}
+
+// Reset the cumulative cross-turn inline-drift counter (inline-budget.js) for
+// this session on every SessionStart invocation (including compact/resume —
+// each is a fresh hook invocation, and a stale counter from before a compact
+// would misattribute drift). Best-effort, fail-soft: resetCum never throws.
+if (typeof payload.session_id === "string" && payload.session_id.length > 0) {
+  const cFile = cumFile(payload.session_id);
+  if (cFile) resetCum(cFile);
 }
 
 try {

@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 // Normalizes a dir argument to a filesystem path string.
@@ -44,4 +44,10 @@ export async function readJson(p) {
     process.stderr.write(`muster: warning: ${p} is present but not valid JSON\n`);
     return null;
   }
+}
+
+// Directory listing with graceful degradation: a missing dir, a plain file, or
+// any unreadable path lists as empty rather than throwing.
+export async function readdirSafe(p) {
+  try { return await readdir(p); } catch { return []; }
 }

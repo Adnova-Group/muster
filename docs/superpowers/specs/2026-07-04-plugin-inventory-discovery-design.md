@@ -32,8 +32,8 @@ filesystem path per plugin. The v2 format records `installPath` per install.
   plugin-shipped MCP servers), not just MCP servers. An agents-only plugin like
   code-simplifier must resolve.
 - **Precision:** discovery is driven by `installed_plugins.json` v2 `installPath`
-  entries, so only actually-installed plugins are reported. Fallback walk is
-  restricted to `~/.claude/plugins/cache/` (never `marketplaces/`).
+  entries, so only actually-installed plugins are reported. Fallback walk roots
+  at `~/.claude/plugins/`, skipping only the top-level `marketplaces/` entry.
 - **Both adapters share one scanner** so the code path is tested once and server
   names match even when they differ from the plugin name.
 - **Structure:** the scanner is a new small module, `src/plugin-inventory.js`,

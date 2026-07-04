@@ -1,6 +1,6 @@
 {
   "name": "muster",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Glass-box agentic orchestrator: detect context, assemble the right crew, show the reasoning.",
   "author": {
     "name": "Adnova Group",

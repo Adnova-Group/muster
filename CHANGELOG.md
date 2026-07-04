@@ -5,7 +5,7 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.3] - 2026-07-04
 
 ### Added
 - **Directive-triggered routing nudge (`UserPromptSubmit`).** A directive-shaped prompt (an imperative verb like fix/build/implement, optionally after a polite lead-in) fires an immediate one-time routing-policy reminder the first time it lands with no active muster run, instead of waiting for the periodic nudge cadence — then never fires again for that session. Conversational turns and questions are unaffected.
@@ -247,6 +247,7 @@ publish to carry it.
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
+[0.3.3]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.0

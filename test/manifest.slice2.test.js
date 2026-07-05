@@ -81,6 +81,11 @@ test("rejects plan[].frozen containing an empty/whitespace-only string", () => {
     || r.errors.some(e => e === "plan[0].frozen must be an array of non-empty strings"));
 });
 
+test("accepts plan[].owns and plan[].frozen as empty arrays", () => {
+  const m = { ...base, plan: [{ id: "a", task: "A", mode: "single", owns: [], frozen: [] }] };
+  assert.deepEqual(validateManifest(m), { ok: true, errors: [] });
+});
+
 test("rejects plan[2].owns with path-specific index in error message", () => {
   const m = { ...base, plan: [
     { id: "a", task: "A", mode: "single" },

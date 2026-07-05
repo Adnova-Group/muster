@@ -32,6 +32,6 @@ Emit ONLY the Crew Manifest JSON matching this shape (validated by `muster manif
 ```json
 { "outcome": "...", "successCriteria": ["..."],
   "crew": [{ "stage": "...", "provider": "...", "source": "...", "model": "haiku|sonnet|opus|fable", "rationale": "...", "evidence": "...", "fallback": "..." }],
-  "recommendations": ["..."], "degradations": ["..."],
-  "plan": [{ "id": "t1", "task": "...", "mode": "single", "deps": [] }] }
+  "recommendations": ["..."], "degradations": ["..."], "mergeDisposition": "ask",
+  "plan": [{ "id": "t1", "task": "...", "mode": "single", "deps": [], "owns": ["..."], "frozen": ["..."] }] }
 ```

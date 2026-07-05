@@ -44,6 +44,12 @@ test("appends combined owns | frozen suffix, owns first", () => {
   assert.equal(md, "- [ ] a — scaffold CRUD [owns: a | frozen: c]");
 });
 
+test("task with owns: [] and frozen: [] renders byte-identical to no fences", () => {
+  const withEmpty = [{ id: "a", task: "scaffold CRUD", mode: "single", owns: [], frozen: [] }];
+  const md = renderPlanChecklist(withEmpty);
+  assert.equal(md, "- [ ] a — scaffold CRUD");
+});
+
 test("combined owns | frozen suffix works alongside tournament annotation", () => {
   const both = [{ id: "b", task: "token store", mode: "tournament", owns: ["a", "b"], frozen: ["c"] }];
   const md = renderPlanChecklist(both);

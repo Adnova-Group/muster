@@ -1,5 +1,13 @@
 const SOURCES = new Set(["installed", "builtin", "dynamic", "inline"]);
 const MODES = new Set(["single", "tournament"]);
+const MERGE_DISPOSITIONS = new Set(["merge-local", "merge-push", "pr", "keep", "ask"]);
+
+// A label list is opaque here: strings that name files/globs for downstream orchestration
+// (which task owns/must not touch which paths). No glob matching or overlap detection —
+// just shape validation: an array of non-empty (post-trim) strings.
+function isValidLabelArray(v) {
+  return Array.isArray(v) && v.every((s) => typeof s === "string" && s.trim().length > 0);
+}
 // Model tiers a crew member may dispatch on. `fable` is the top tier (above opus),
 // pre-accepted so a future fable-tier role validates without a schema change.
 const MODEL_TIERS = new Set(["haiku", "sonnet", "opus", "fable"]);
@@ -23,6 +31,8 @@ export function validateManifest(m) {
   });
   for (const f of ["recommendations", "degradations"])
     if (!Array.isArray(m[f])) errors.push(`${f}: must be an array`);
+  if (m.mergeDisposition !== undefined && !MERGE_DISPOSITIONS.has(m.mergeDisposition))
+    errors.push(`mergeDisposition: must be one of ${[...MERGE_DISPOSITIONS].join("|")}`);
   if (!Array.isArray(m.plan) || m.plan.length === 0) errors.push("plan: required non-empty array");
   else {
     const ids = new Set();
@@ -33,6 +43,10 @@ export function validateManifest(m) {
       if (multi && !p.id) errors.push(`plan[${i}].id: required when plan has multiple tasks`);
       if (p.id) { if (ids.has(p.id)) errors.push(`plan[${i}].id: duplicate id "${p.id}"`); ids.add(p.id); }
       if (p.deps !== undefined && !Array.isArray(p.deps)) errors.push(`plan[${i}].deps: must be an array`);
+      if (p.owns !== undefined && !isValidLabelArray(p.owns))
+        errors.push(`plan[${i}].owns must be an array of non-empty strings`);
+      if (p.frozen !== undefined && !isValidLabelArray(p.frozen))
+        errors.push(`plan[${i}].frozen must be an array of non-empty strings`);
     });
     m.plan.forEach((p, i) => {
       for (const d of (p.deps || [])) if (!ids.has(d)) errors.push(`plan[${i}].deps: unknown dep "${d}"`);

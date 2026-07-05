@@ -105,6 +105,34 @@ the manifest — the crew on paper is not the crew doing the work.
       (Routine) mode, record the strategist's root-cause to the run report instead of prompting.
 4. After the last wave, summarize the run and ensure FOLLOWUPS are recorded.
 
+## Return contract (every dispatch)
+
+Every crew brief MUST end with a return contract, so the orchestrator's per-task read stays a single pass:
+
+- **Implementers/builders** return raw data, <=2000 chars: files changed (as paths), test counts, deviations
+  one line each.
+- **Reviewers** return the verdict FIRST, then <=1500 chars of findings.
+- **No code snippets, stack traces, or file dumps** in any return, ever.
+- The orchestrator reads each subagent result exactly once (one TaskOutput) and does not re-read transcripts.
+- **No accumulation between waves:** git history and the run STATE are the record, not the orchestrator's
+  memory.
+
+## Scope fences
+
+When plan tasks carry `owns`/`frozen` fields, copy them into the brief verbatim as `OWNS:`/`FROZEN:` lines --
+the dispatched agent sees its fences in the same brief as the task text, never a paraphrase. Dispatch tasks in
+the same wave in parallel only when their `owns` sets are disjoint -- this is orchestrator judgment; the
+validator does not evaluate overlap between tasks.
+
+## Wave provenance (git notes)
+
+Immediately after each wave commit, attach a structured note recording the wave's intent, not just its diff:
+
+`git notes --ref=muster add -m '<one-line JSON: {"task":"<id>","decisions":["..."],"reviewCycles":N,"findingsFixed":["..."],"findingsAccepted":["..."]}' <commit sha>`
+
+Notes are repo-local provenance (not pushed by default) -- the review-gate skill reads them later to weigh the
+implementation against recorded intent, not just the diff (see review-gate's "Intent vs implementation").
+
 ## Channel steering (remote)
 
 When the orchestrator is driven remotely (Channels wired), a steering message may arrive mid-run as a

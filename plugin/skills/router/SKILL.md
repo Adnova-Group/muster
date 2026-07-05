@@ -21,7 +21,10 @@ You are given: an `outcome` string, a `ProjectProfile` JSON, an `AvailableCapabi
 - **Dynamic path.** If an installed plugin/MCP in `installedRaw` is clearly better for a role but absent from the catalog, you may choose it with `source: "dynamic"` and say why.
 - **Plan annotations.** Decompose the outcome into `plan` tasks; give each a short unique `id`, list
   its `deps` (ids it must follow), and tag `mode` `single` (well-known) or `tournament` (high-uncertainty
-  / quality-critical). Independent tasks share `deps: []` so they run in the same wave.
+  / quality-critical). Independent tasks share `deps: []` so they run in the same wave. Tasks intended for
+  the same wave (shared `deps: []` tier) SHOULD carry `owns` (files/dirs the task may touch) and `frozen`
+  (must-not-touch) arrays of opaque path strings, so the orchestrator can fence parallel dispatch;
+  single-task plans may omit them.
 
 ## Output
 Emit ONLY the Crew Manifest JSON matching this shape (validated by `muster manifest validate`):
@@ -29,6 +32,6 @@ Emit ONLY the Crew Manifest JSON matching this shape (validated by `muster manif
 ```json
 { "outcome": "...", "successCriteria": ["..."],
   "crew": [{ "stage": "...", "provider": "...", "source": "...", "model": "haiku|sonnet|opus|fable", "rationale": "...", "evidence": "...", "fallback": "..." }],
-  "recommendations": ["..."], "degradations": ["..."],
-  "plan": [{ "id": "t1", "task": "...", "mode": "single", "deps": [] }] }
+  "recommendations": ["..."], "degradations": ["..."], "mergeDisposition": "ask",
+  "plan": [{ "id": "t1", "task": "...", "mode": "single", "deps": [], "owns": ["..."], "frozen": ["..."] }] }
 ```

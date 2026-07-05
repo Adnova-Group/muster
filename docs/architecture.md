@@ -60,9 +60,9 @@ A provider resolves to one of four kinds, which decides how the orchestrator dis
 
 Dispatch honors `chosen.kind`: an agent routes by `subagent_type`, anything else gets a generic subagent with the relevant skill injected. The model override from per-role selection always applies, regardless of kind.
 
-## The four modes
+## The five modes
 
-Muster exposes four entry points as slash commands under the `muster:` namespace.
+Muster exposes five entry points as slash commands under the `muster:` namespace.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
@@ -70,10 +70,11 @@ Muster exposes four entry points as slash commands under the `muster:` namespace
 | Autopilot | `/muster:autopilot <outcome>` | Hands-off full lifecycle |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
+| Sprint | `/muster:sprint <backlog ref>` | Batch autopilot over every backlog item, one stop at the end |
 
 **Run** is the interactive router. Its front half is an assess-then-interview step: `muster assess` does a deterministic gap-check on the outcome (too short, no success criteria, vague), and if the outcome is not clear, the interview skill runs an interactive requirements interview, one question at a time, behind an approval gate. Then it detects, routes, and shows the glass-box crew manifest plus the plan, and stops. Selecting Approve & run chains into autopilot in-session; Adjust and Cancel stay plan-only.
 
-**Autopilot** runs the whole lifecycle hands-off: branch, detect, route, run waves (parallel fan-out, tournaments with fusion synthesis, an adversarial review gate), commit per wave, then present the merge decision. It only stops for that merge decision or for an escalation. Tournaments synthesize rather than only pick one winner: the judge maps consensus, contradictions, partial coverage, and blind spots across candidates; `muster fuse` then grafts the best of the top-K via a synthesizer or falls back to the single best candidate when candidates already agree. Workers can also escalate up to a stronger model at a hard decision point via the advisor role; the advisor informs, the worker decides. It triggers the interview only on an actual information gap, and in unattended (Routine) mode it records the gap to the run report instead of blocking.
+**Autopilot** runs the whole lifecycle hands-off: branch, detect, route, run waves (parallel fan-out, tournaments with fusion synthesis, an adversarial review gate), commit per wave, then present the merge decision. It only stops for that merge decision or for an escalation. Tournaments synthesize rather than only pick one winner: the judge maps consensus, contradictions, partial coverage, and blind spots across candidates; `muster fuse` then grafts the best of the top-K via a synthesizer or falls back to the single best candidate when candidates already agree. Workers can also escalate up to a stronger model at a hard decision point via the advisor role; the advisor informs, the worker decides. It triggers the interview only on an actual information gap, and in unattended (Routine) mode it records the gap to the run report instead of blocking. A pre-wave **spec gate** dispatches a fresh strategist-tier agent to probe the validated plan as a lazy-or-malicious implementer before wave 1; a `FAIL` loops the findings back to the router once, a second `FAIL` escalates, and the gate is skippable for trivial single-task plans. The finish step honors a manifest-declared `mergeDisposition` (`merge-local`/`merge-push`/`pr`/`keep`) by executing it without asking; absent or `ask` falls back to the interactive merge-decision prompt, and unattended (Routine) runs always downgrade `merge-local`/`merge-push` to `pr` rather than push to a base branch.
 
 **Diagnose** is failure-first. Reproduce, find the root cause via systematic debugging on the best available debug provider, fix, add a regression test, verify. No symptom-patching.
 
@@ -102,6 +103,8 @@ The practical consequences:
 - There is no separate runtime to deploy or key to manage. If you can run Claude Code, you can run Muster.
 
 Orchestration loops until done via a Ralph-style primitive (`src/loop.js`). `loopState({ iteration, maxIterations, done })` returns an object `{ continue: bool, reason: "done" | "max-iterations" | "iterate" }`. The review-gate fix-loop uses the dedicated `reviewGateState` helper, which caps at `REVIEW_GATE_MAX_ITERATIONS = 3` regardless of the caller's `maxIterations`. Each wave re-runs implement, review, and fix until the gate passes (`reason: "done"`) or the iteration cap escalates (`reason: "max-iterations"`), so subagents drive toward the success criteria rather than stopping after one pass.
+
+Plan tasks may also declare `owns`/`frozen` arrays -- opaque path-label strings validated by shape only, never by glob matching or overlap detection -- so the orchestrator can copy them into a dispatch brief as scope fences and dispatch same-wave tasks in parallel only when their `owns` sets are disjoint. Every dispatch brief also ends with a mandatory return contract: implementers return raw data (<=2000 chars), reviewers return a verdict first with <=1500 chars of findings, and the orchestrator reads each subagent result exactly once with no accumulation between waves -- git history and the run STATE are the record. Immediately after each wave commit, the orchestrator attaches a `git notes --ref=muster` record of that wave's intent (decisions, review cycles, findings fixed and accepted); the review gate reads it back on later waves to check the implementation against recorded intent, not just the diff against the spec.
 
 Driving Muster remotely uses Claude Code's own features, not a transport Muster ships. A Claude Code Routine can fire `/muster:autopilot` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session when a human wants to take over.
 

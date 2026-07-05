@@ -1,6 +1,6 @@
-# The four modes
+# The five modes
 
-Muster exposes four entry points as slash commands under the `muster:` namespace.
+Muster exposes five entry points as slash commands under the `muster:` namespace.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
@@ -8,6 +8,7 @@ Muster exposes four entry points as slash commands under the `muster:` namespace
 | Autopilot | `/muster:autopilot <outcome>` | Hands-off full lifecycle |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
+| Sprint | `/muster:sprint <backlog ref>` | Batch autopilot over every backlog item, one stop at the end |
 
 ## Run
 
@@ -48,6 +49,17 @@ The review-and-fix counterpart to diagnose. Where diagnose is one bug, audit swe
 ```sh
 /muster:audit
 /muster:audit src/payments
+```
+
+## Sprint
+
+The batch counterpart to autopilot. It resolves a backlog — `.muster/backlog.md`'s unchecked `- [ ]` items, each optionally carrying a `{disposition: ...}` annotation, or `issues:<label>` resolved via `gh issue list` — then runs the full autopilot lifecycle sequentially over every item, ticking each off as it completes.
+
+Per item, the declared disposition executes directly, without the merge-decision prompt: `ask` or an absent annotation coerces to `pr`, and in unattended mode `merge-local`/`merge-push` downgrade to `pr`. An escalated item never aborts the batch — it stays unchecked with an `{escalated}` annotation and the sprint moves on to the next item. Sprint stops exactly once, attended, at the end: a batch report covering every item.
+
+```sh
+/muster:sprint
+/muster:sprint issues:bug
 ```
 
 Next: the [CLI commands](/reference/commands) that power these modes.

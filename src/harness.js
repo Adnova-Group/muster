@@ -6,9 +6,10 @@ import { readPluginInventory } from "./plugin-inventory.js";
 // Cowork's own registry extends through MCP: local MCP servers
 // (claude_desktop_config.json), MCPB/DXT desktop extensions (a Claude
 // Extensions/ dir, no index file), and remote connectors (cloud/account state,
-// NOT on disk — see memory cowork-connector-storage). Cowork sessions ALSO
-// load Claude Code plugins from ~/.claude/plugins, so the plugin inventory
-// (plugin-shipped MCP servers, agents, skills) merges into every lane.
+// NOT on disk — see memory cowork-connector-storage). Cowork itself never
+// loads Claude Code plugins, but this adapter reads their install records on
+// disk (~/.claude/plugins), so the plugin inventory (plugin-shipped MCP
+// servers, agents, skills) still counts as installed providers in every lane.
 
 // Ordered candidate Claude config dirs for a platform. On Windows the MSIX-virtualized
 // path is the one the app actually reads, so it comes before the %APPDATA% fallback.

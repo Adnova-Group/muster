@@ -5,6 +5,18 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Pre-wave spec gate (`/muster:autopilot` step 4).** Before wave 1, a fresh strategist-tier agent on the `architecture-review` provider probes the validated manifest + plan as a lazy-or-malicious implementer (what's underspecified enough to skip, what satisfies the letter while missing intent) and verifies plan-cited files/symbols exist; `PASS` proceeds, a `FAIL` loops the findings back to the router once, and a second `FAIL` escalates. Skippable for trivial single-task plans.
+- **`/muster:sprint` -- batch verb.** A new slash command drives the full autopilot lifecycle sequentially over every item in a backlog (`.muster/backlog.md` checklist or `issues:<label>`), ticking each item off as it completes and continuing past an escalation instead of aborting the batch; exactly one attended stop at the end for the batch report.
+- **Manifest scope fences + merge-disposition fields.** `plan[].owns`/`plan[].frozen` validate as arrays of non-empty opaque path-label strings (no glob matching or overlap detection -- disjointness stays orchestrator judgment) and render as a compact `[owns: ... | frozen: ...]` suffix in `plan-checklist`; a new top-level `mergeDisposition` (`merge-local`/`merge-push`/`pr`/`keep`/`ask`, absent = `ask`) lets a manifest declare how autopilot's finish step should resolve without asking -- `merge-push` is attended-only, and unattended (Routine) runs always downgrade `merge-local`/`merge-push` to `pr`.
+- **Git-notes wave provenance (`refs/notes/muster`).** After each wave commit, the orchestrator attaches a structured note (`{task, decisions[], reviewCycles, findingsFixed[], findingsAccepted[]}`) recording the wave's intent, not just its diff -- repo-local by default, read back by the review gate on later waves.
+
+### Changed
+- **Orchestrator dispatch protocol -- return contracts.** Every crew brief now ends with a mandatory Return Contract: implementers return raw data (<=2000 chars), reviewers return verdict-first findings (<=1500 chars), no code snippets/stack traces/file dumps, and the orchestrator reads each subagent result exactly once with no accumulation between waves (git history and the run STATE are the record).
+- **Review-gate intent check.** Before verdicting, the review gate reads the wave's git note (when one exists) and checks the implementation against the recorded decisions, not just the diff against the spec -- a mismatch is a finding even when tests pass.
+
 ## [0.3.3] - 2026-07-04
 
 ### Added

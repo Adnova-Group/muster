@@ -51,7 +51,7 @@ npx @adnova-group/muster capabilities
 
 ## What the plugin adds
 
-- **Four slash commands**: `/muster:run`, `/muster:autopilot`, `/muster:diagnose`, `/muster:audit`.
+- **Five slash commands**: `/muster:run`, `/muster:autopilot`, `/muster:diagnose`, `/muster:audit`, `/muster:sprint`.
 - **Four session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled:
   - **`SessionStart`** prepends Muster's working principles, the four verbs, a routing-policy reminder, and a one-line project detect to every session. Never writes to your `~/.claude` files.
   - **`UserPromptSubmit`** injects periodic drift-reinforcement nudges (every `MUSTER_NUDGE_EVERY` turns) and full principle reminders (every `MUSTER_NUDGE_EVERY * MUSTER_PRINCIPLES_EVERY` turns) so sessions stay on-model after compaction or long runs. A directive-shaped prompt (fix/build/implement, etc.) with no active run also fires the routing-policy reminder immediately the first time it lands -- once per session, independent of the periodic cadence -- until `/clear` re-arms it.

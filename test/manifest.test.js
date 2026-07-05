@@ -66,3 +66,33 @@ test("inline crew member is exempt from the model requirement", () => {
   const r = validateManifest({ ...valid, crew: [inlineMember] });
   assert.deepEqual(r, { ok: true, errors: [] });
 });
+
+test("mergeDisposition is absent by default and that's valid", () => {
+  assert.deepEqual(validateManifest(valid), { ok: true, errors: [] });
+});
+
+for (const d of ["merge-local", "merge-push", "pr", "keep", "ask"]) {
+  test(`mergeDisposition accepts "${d}"`, () => {
+    const r = validateManifest({ ...valid, mergeDisposition: d });
+    assert.deepEqual(r, { ok: true, errors: [] });
+  });
+}
+
+test("mergeDisposition rejects an unknown value", () => {
+  const r = validateManifest({ ...valid, mergeDisposition: "squash" });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /mergeDisposition/.test(e) && /merge-local/.test(e) && /ask/.test(e)),
+    `expected enum-naming error, got ${JSON.stringify(r.errors)}`);
+});
+
+test("mergeDisposition rejects wrong casing", () => {
+  const r = validateManifest({ ...valid, mergeDisposition: "PR" });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /mergeDisposition/.test(e)));
+});
+
+test("validateManifest does not inject a default mergeDisposition", () => {
+  const m = { ...valid };
+  validateManifest(m);
+  assert.equal(Object.prototype.hasOwnProperty.call(m, "mergeDisposition"), false);
+});

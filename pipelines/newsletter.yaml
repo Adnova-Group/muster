@@ -4,7 +4,7 @@ title: Email Newsletter
 match: [newsletter, email newsletter, email digest, weekly roundup, broadcast email]
 phases:
   - { id: intake,                  role: brainstorm,    desc: "audience, goal, one theme, CTA" }
-  - { id: curate,                  role: docs-research, desc: "gather items, links, and insights worth sending" }
+  - { id: curate,                  role: docs-research, desc: "gather items, links, and insights worth sending; cross-run diff: load persisted baseline at docs/newsletter/signal-baseline.md (create-on-first-run if absent); report ONLY new or materially-changed signals vs baseline — unchanged signals get one summary count line, not re-reporting; append this run's reported signals with dates to the baseline file" }
   - { id: draft,                   role: author,        desc: "draft: strong open, scannable body, single clear CTA" }
   - { id: subject-lines,           role: author,        desc: "5+ subject lines: vary length (<=50 chars mobile), casing, curiosity type (number/question/personal); preview text <=37 chars; spam-trigger check; tournament-judge top 2" }
   - { id: deliverability-preflight, role: author,       desc: "no ALL-CAPS/multi-! subject; no spam words (FREE, ACT NOW, $$$); plain-text version; unsubscribe link; consistent from-name; inbox-placement note" }

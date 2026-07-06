@@ -5,8 +5,8 @@ import { ROLES } from "../src/roles.js";
 // The role vocabulary used to be duplicated in capabilities.js (array) and
 // catalog.js (Set). Both now import from roles.js — assert they observe the
 // identical set so a drift between consumers can never reappear silently.
-test("roles.js is the single source for the 23-role vocabulary", () => {
-  assert.equal(ROLES.length, 23, "expected 23 roles");
+test("roles.js is the single source for the 25-role vocabulary", () => {
+  assert.equal(ROLES.length, 25, "expected 25 roles");
   assert.equal(new Set(ROLES).size, ROLES.length, "roles must be unique");
 });
 
@@ -35,4 +35,20 @@ test("capabilities and catalog see the same role set", async () => {
 
   const bad = validateCatalog([{ ...entry, roles: ["not-a-real-role"] }]);
   assert.ok(!bad.ok, "catalog must reject a role outside roles.js");
+});
+
+test("the image and video roles resolve to their built-ins on a bare machine", async () => {
+  const { loadCatalog } = await import("../src/catalog.js");
+  const { resolveCapabilities } = await import("../src/capabilities.js");
+
+  const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
+  const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+
+  assert.equal(caps.roles["image"].chosen.id, "muster-image");
+  assert.equal(caps.roles["image"].chosen.source, "builtin");
+  assert.equal(caps.roles["image"].model, "sonnet", "image is not haiku/fable-tier — default sonnet");
+
+  assert.equal(caps.roles["video"].chosen.id, "muster-video");
+  assert.equal(caps.roles["video"].chosen.source, "builtin");
+  assert.equal(caps.roles["video"].model, "sonnet", "video is not haiku/fable-tier — default sonnet");
 });

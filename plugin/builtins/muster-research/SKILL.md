@@ -23,3 +23,16 @@ Gather the evidence the phase needs, anchored to the outcome.
 - **Verify citations by entailment** (LLM-Cite / qraft): don't just attach a URL — check that the cited
   source actually supports the sentence. Drop or downgrade a citation whose source doesn't entail the claim.
 - Return a short, cited evidence brief the author phase can build on; surface gaps to fill.
+
+## Document-ingestion contract (source documents: PDFs, transcripts, long notes)
+When this phase ingests source documents, work in this order — synthesis never skips ahead of it:
+
+1. **Deterministic retrieval map** — before any semantic search, build a lookup table (doc → section/page →
+   what's there) and consult it first. Note gaps explicitly ("no pricing section found") rather than
+   searching blind.
+2. **Fact ledger** — extract facts into rows `{fact, anchor, confidence, needs_review}` *before* synthesis.
+   Synthesis may only draw on ledger rows; a `needs_review` row must be resolved or carried forward as
+   flagged, never silently dropped or silently asserted.
+3. **Source anchors** — every extracted fact carries a stable anchor (file + page/section/line) so
+   downstream citations resolve. Anchors land in the `## Sources` list per the citation-check contract:
+   `- anchor: file+locator`, cited inline as `[src: anchor]` (see `citation-check` verb).

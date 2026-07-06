@@ -24,3 +24,13 @@
   roles: [prompt-quality]
   rank: 50
   provenance: { adapted_from: "Anthropic prompt-engineering + eval docs; lintlang taxonomy; promptfoo/promptimal patterns", license: Apache-2.0 }
+- id: muster-image
+  kind: builtin
+  roles: [image]
+  rank: 50
+  provenance: { inspired_by: "Muster (brand-constrained image-prompt authoring; muster never renders)", license: Apache-2.0 }
+- id: muster-video
+  kind: builtin
+  roles: [video]
+  rank: 50
+  provenance: { inspired_by: "Muster (radio-edit script tightening + shot-list/edit-plan authoring; muster never renders)", license: Apache-2.0 }

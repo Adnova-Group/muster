@@ -4,7 +4,7 @@ title: Customer Case Study
 match: [case study, customer story, success story, testimonial]
 phases:
   - { id: intake,             role: brainstorm,    desc: "customer, segment, the win, target buyer" }
-  - { id: synthesis,          role: docs-research, desc: "interview/notes synthesis; quotes; before/after metrics" }
+  - { id: synthesis,          role: docs-research, desc: "interview/notes synthesis; quotes; before/after metrics; for ingested source documents: build a section-map before searching, extract facts as {fact, anchor, confidence, needs_review} rows before synthesis, every fact anchored file+locator, anchors land in ## Sources as `- anchor: file+locator`, synthesis uses ledger rows only" }
   - { id: draft,              role: author,        desc: "Hero's Journey (customer=hero, product=guide); Challenge->Solution->Results (CSR); 600-1200 words; headline leads with a concrete metric" }
   - { id: metrics,            role: author,        desc: "verify + foreground the metrics; pull-quotes" }
   - { id: buyer-fit,          role: author,        desc: "reframe results for target buyer segment; next-step CTA + related social proof; confirm ICP match" }

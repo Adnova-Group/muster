@@ -38,15 +38,25 @@ export function pipelineForDomain(pipelines, domain) {
 }
 
 // Select a pipeline by matching the outcome against each pipeline's `match` keywords
-// (word-boundary). Returns null if none match — callers fall back to pipelineForDomain.
+// (word-boundary). Among all matches, the EARLIEST position in the outcome wins —
+// outcomes name the artifact at the head and the subject at the tail ("write a video
+// script about the product launch" is a video script). Position ties break by longer
+// phrase, then file order. Returns null if none match — callers fall back to
+// pipelineForDomain.
 export function pickPipeline(pipelines, outcome) {
   const text = (outcome || "");
+  let best = null;
   for (const p of pipelines) {
     for (const m of (p.match || [])) {
-      if (new RegExp(`\\b${escapeRe(m)}\\b`, "i").test(text)) return p;
+      const re = new RegExp(`\\b${escapeRe(m)}\\b`, "i");
+      const hit = re.exec(text);
+      if (!hit) continue;
+      if (!best || hit.index < best.index || (hit.index === best.index && m.length > best.len)) {
+        best = { p, index: hit.index, len: m.length };
+      }
     }
   }
-  return null;
+  return best ? best.p : null;
 }
 
 // Resolve the pipeline for an outcome: explicit match wins, else domain default.

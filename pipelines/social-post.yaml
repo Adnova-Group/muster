@@ -2,13 +2,13 @@ id: social-post
 domain: social
 title: Social Media Post
 phases:
-  - { id: intake,   role: brainstorm,  desc: "platform, audience, goal, one core idea, CTA" }
+  - { id: intake,   role: brainstorm,  desc: "platform, audience, goal, one core idea, CTA; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: angle,    role: author,      desc: "choose an angle + framework (AIDA / PAS / BAB / QUEST)" }
-  - { id: variants, role: author,      desc: "write 3+ hook/post variants; tournament-judge the strongest" }
+  - { id: variants, role: author,      desc: "write 3+ hook/post variants; calibrate register, jargon, and depth to the resolved audience profile; tournament-judge the strongest" }
   - { id: review,   role: code-review, desc: "adversarial review + platform-fit check" }
   - { id: score,    role: score,       desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:
-  criteria: [hook, clarity, brand-fit, platform-fit, cta]
+  criteria: [hook, clarity-for-audience, brand-fit, platform-fit, cta]
   floor: 2
   pass_total: 12

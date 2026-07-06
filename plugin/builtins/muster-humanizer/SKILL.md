@@ -42,6 +42,8 @@ Perfect-but-varied grammar, mixed registers, hard-to-fabricate specifics (names,
 ## Voice calibration
 If 2–3 sample paragraphs of the target author are provided, analyze their sentence-length variety, register, paragraph openings, punctuation habits, and recurring phrases — then match that voice instead of a generic one. If the intent or audience is ambiguous on a high-stakes artifact, ask one clarifying question before rewriting rather than guessing.
 
+If the artifact resolved a named voice profile from `docs/profiles/VOICE.md` during drafting, check the rewrite against that profile's anti-patterns list **first, before** the generic tiered-vocabulary and tell-taxonomy checks above — any anti-pattern hit is a finding. The voice profile is the sharper, sample-derived instrument; the generic checks above are the floor every artifact clears regardless of voice.
+
 ## Style targets
 Vary sentence length (burstiness): mix short and long. Concrete nouns and verbs over abstractions. Active voice as the default. Cut hedging and marketing fluff.
 

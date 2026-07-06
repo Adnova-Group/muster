@@ -1,0 +1,329 @@
+{
+  "description": "Empirical regression eval for the 6 mode prompts (plugin/commands/*.md): run, autopilot, sprint, runner, audit, diagnose. Each case names a deterministic `check` (see grade-lib.mjs) graded against either a checked-in fixture artifact or muster's own deterministic pipeline code (assessOutcome, parseIssueRef, classifyFailure/buildDiagnoseManifest, buildAuditManifest, computeSprintWaves, validateManifest). See README.md for the full case-shape contract and why each check is code-gradeable. `grading: \"model\"` cases have no deterministic `expect` and are excluded from the CI path (test/mode-evals.test.js, eval:modes) per the code >> model >> human cost order.",
+  "cases": [
+    {
+      "id": "diagnose-ci-fail-marker",
+      "mode": "diagnose",
+      "outcome": "Test suite: 3 failing\nFAIL test/payments.test.js\n  AssertionError: expected 200 to equal 402",
+      "check": "diagnose-classify",
+      "expect": { "mode": "ci" }
+    },
+    {
+      "id": "diagnose-bug-plain-description",
+      "mode": "diagnose",
+      "outcome": "Users report the checkout button does nothing when the cart has more than 10 items.",
+      "check": "diagnose-classify",
+      "expect": { "mode": "bug" }
+    },
+    {
+      "id": "diagnose-stacktrace-classification",
+      "mode": "diagnose",
+      "outcome": "TypeError: cannot read properties of undefined (reading 'id')\n    at renderCart (src/cart/render.js:42:18)",
+      "check": "diagnose-classify",
+      "expect": { "mode": "ci" }
+    },
+    {
+      "id": "diagnose-assert-keyword-classification",
+      "mode": "diagnose",
+      "outcome": "assert(total).toBe(42) fails intermittently in the pricing test",
+      "check": "diagnose-classify",
+      "expect": { "mode": "ci" }
+    },
+    {
+      "id": "diagnose-manifest-lifecycle-plan",
+      "mode": "diagnose",
+      "outcome": "Checkout total is off by the tax amount on orders with a discount code",
+      "check": "diagnose-manifest",
+      "expect": {
+        "validates": true,
+        "planIds": ["repro", "root-cause", "fix", "regression", "verify"],
+        "crewRoles": ["debug", "implement", "test-author", "code-review"]
+      }
+    },
+    {
+      "id": "diagnose-empty-input-stops",
+      "mode": "diagnose",
+      "outcome": "",
+      "check": "diagnose-classify",
+      "expect": { "throws": true }
+    },
+    {
+      "id": "diagnose-root-cause-quality",
+      "mode": "diagnose",
+      "outcome": "Intermittent 500s on the /checkout endpoint under load, no clear pattern in the logs.",
+      "grading": "model",
+      "rubric": "A good diagnose run finds the ACTUAL root cause (not a symptom patch), via a legible hypothesis table that starts cheap. Penalize: jumping straight to a fix with no reproduction, no hypothesis ordering, or a fix that doesn't match the confirmed cause.",
+      "expect": {}
+    },
+
+    {
+      "id": "audit-manifest-default-dimensions",
+      "mode": "audit",
+      "outcome": "Audit the whole repo for tech debt and security issues.",
+      "check": "audit-manifest",
+      "expect": {
+        "givenPromptingSignal": false,
+        "validates": true,
+        "planIdsInclude": ["audit-architecture", "audit-tech-debt", "audit-coverage", "audit-simplification", "audit-readability", "audit-security", "consolidate", "fix", "verify"],
+        "planIdsExclude": ["audit-prompt-quality"]
+      }
+    },
+    {
+      "id": "audit-manifest-prompting-signal",
+      "mode": "audit",
+      "outcome": "Audit the repo (it ships an agent SDK integration) for prompt quality plus the usual dimensions.",
+      "check": "audit-manifest",
+      "expect": { "givenPromptingSignal": true, "validates": true, "planIdsInclude": ["audit-prompt-quality"] }
+    },
+    {
+      "id": "audit-manifest-covers-review-dimensions",
+      "mode": "audit",
+      "outcome": "Audit the codebase end to end.",
+      "check": "audit-manifest",
+      "expect": {
+        "givenPromptingSignal": false,
+        "validates": true,
+        "crewCoversRoles": ["architecture-review", "tech-debt", "test-author", "refactor", "code-review", "security-review"]
+      }
+    },
+    {
+      "id": "audit-ledger-shape",
+      "mode": "audit",
+      "outcome": "A findings ledger produced by an audit sweep of the auth, API, and utils modules.",
+      "check": "audit-ledger",
+      "artifact": "fixtures/audit/ledger.md",
+      "expect": { "minFindings": 3, "sortedBySeverity": true }
+    },
+    {
+      "id": "audit-backlog-mode-wave-parseable",
+      "mode": "audit",
+      "outcome": "/muster:audit backlog — three independent findings written as backlog items.",
+      "check": "audit-backlog-waves",
+      "artifact": "fixtures/audit/backlog.md",
+      "expect": { "ok": true, "annotated": true, "waves": [["redact-tokens", "batch-profile-fetch", "consolidate-date-format"]] }
+    },
+    {
+      "id": "audit-findings-quality",
+      "mode": "audit",
+      "outcome": "Audit the payments module for security and tech-debt issues.",
+      "grading": "model",
+      "rubric": "A good audit finds real, specific findings (file:line, concrete problem, concrete fix) ranked by actual severity/blast-radius, not generic advice. Penalize: vague findings with no location, padding the ledger with nits ranked as P0, or missing an obvious high-severity issue in scope.",
+      "expect": {}
+    },
+
+    {
+      "id": "run-clear-outcome-skips-interview",
+      "mode": "run",
+      "outcome": "Add JWT authentication to the Express REST API, including tests, targeting 100% coverage on the auth middleware.",
+      "check": "assess",
+      "expect": { "clear": true }
+    },
+    {
+      "id": "run-vague-outcome-triggers-interview",
+      "mode": "run",
+      "outcome": "make it better",
+      "check": "assess",
+      "expect": { "clear": false, "signalsInclude": ["too-short", "no-success-criteria", "vague-only"] }
+    },
+    {
+      "id": "run-issue-ref-hash-form",
+      "mode": "run",
+      "outcome": "#42",
+      "check": "issue-ref",
+      "expect": { "isIssueRef": true, "number": 42 }
+    },
+    {
+      "id": "run-issue-ref-url-form",
+      "mode": "run",
+      "outcome": "https://github.com/Adnova-Group/muster/issues/128",
+      "check": "issue-ref",
+      "expect": { "isIssueRef": true, "number": 128 }
+    },
+    {
+      "id": "run-plain-outcome-not-issue-ref",
+      "mode": "run",
+      "outcome": "Add dark mode toggle to the settings page",
+      "check": "issue-ref",
+      "expect": { "isIssueRef": false }
+    },
+    {
+      "id": "run-parallel-manifest-fences",
+      "mode": "run",
+      "outcome": "Add JWT auth to the API and update the docs, in parallel.",
+      "check": "manifest",
+      "artifact": "fixtures/run/manifest-parallel.json",
+      "expect": { "validates": true, "requireFences": true, "expectRoles": ["implement", "test-author"], "nonInline": true }
+    },
+    {
+      "id": "run-single-task-manifest-no-fences-required",
+      "mode": "run",
+      "outcome": "Diagnose and fix the flaky retry test in the payments service.",
+      "check": "manifest",
+      "artifact": "fixtures/run/manifest-single.json",
+      "expect": { "validates": true, "requireFences": false, "expectRoles": ["debug", "implement"], "nonInline": true }
+    },
+    {
+      "id": "run-routing-appropriateness",
+      "mode": "run",
+      "outcome": "Add JWT authentication to the Express REST API, including tests.",
+      "grading": "model",
+      "rubric": "A good manifest routes this software task to an implementation provider plus a test author; the plan builds the endpoint then tests it. Penalize: content/author roles, missing tests, empty/all-inline crew.",
+      "expect": {}
+    },
+
+    {
+      "id": "autopilot-issue-ref-bare-number",
+      "mode": "autopilot",
+      "outcome": "128",
+      "check": "issue-ref",
+      "expect": { "isIssueRef": true, "number": 128 }
+    },
+    {
+      "id": "autopilot-vague-outcome-signals-recorded",
+      "mode": "autopilot",
+      "outcome": "fix it",
+      "check": "assess",
+      "expect": { "clear": false, "signalsInclude": ["too-short", "no-success-criteria", "vague-only"] }
+    },
+    {
+      "id": "autopilot-manifest-validates-non-inline",
+      "mode": "autopilot",
+      "outcome": "Add JWT auth to the API and update the docs, in parallel (hands-off run).",
+      "check": "manifest",
+      "artifact": "fixtures/run/manifest-parallel.json",
+      "expect": { "validates": true, "requireFences": true, "nonInline": true, "expectRoles": ["implement", "test-author"] }
+    },
+    {
+      "id": "autopilot-disposition-attended-no-downgrade",
+      "mode": "autopilot",
+      "outcome": "Ship the hotfix and merge it to base directly once green (attended session).",
+      "check": "disposition",
+      "expect": { "declared": "merge-push", "attended": true, "expected": "merge-push" }
+    },
+    {
+      "id": "autopilot-disposition-unattended-downgrades-to-pr",
+      "mode": "autopilot",
+      "outcome": "Ship the hotfix and merge it to base directly once green (fired from a Routine, unattended).",
+      "check": "disposition",
+      "expect": { "declared": "merge-push", "attended": false, "expected": "pr" }
+    },
+    {
+      "id": "autopilot-disposition-merge-local-unattended-downgrades",
+      "mode": "autopilot",
+      "outcome": "Refactor the utils module and merge locally when done (fired unattended).",
+      "check": "disposition",
+      "expect": { "declared": "merge-local", "attended": false, "expected": "pr" }
+    },
+    {
+      "id": "autopilot-wave-commit-message-format",
+      "mode": "autopilot",
+      "outcome": "Three waves of autopilot commits, one per green + reviewed wave.",
+      "check": "commit-message",
+      "input": "feat(wave 1): add JWT auth endpoint\nfeat(wave 2): add auth middleware tests\nfeat(wave 3): update docs for the new auth flow",
+      "expect": {}
+    },
+
+    {
+      "id": "sprint-plain-backlog-sequential-queue",
+      "mode": "sprint",
+      "outcome": "A plain backlog.md with two unannotated items — sequential queue mode, not wave mode.",
+      "check": "sprint-waves",
+      "input": "- [ ] Add a health-check endpoint returning 200 with uptime seconds\n- [ ] Add rate limiting to the public API, capped at 100 req/min per key\n",
+      "expect": { "ok": true, "annotated": false, "waves": [["item-1"], ["item-2"]] }
+    },
+    {
+      "id": "sprint-annotated-wave-mode",
+      "mode": "sprint",
+      "outcome": "An {id}/{deps}-annotated backlog: retry and logging are independent (wave 1), docs depends on both (wave 2), metrics is independent with disposition keep.",
+      "check": "sprint-waves",
+      "artifact": "fixtures/sprint/backlog.md",
+      "expect": {
+        "ok": true,
+        "annotated": true,
+        "waves": [["retry", "logging", "metrics"], ["docs"]],
+        "itemDispositions": { "retry": "pr", "logging": "pr", "docs": "pr", "metrics": "keep" }
+      }
+    },
+    {
+      "id": "sprint-escalated-item-stays-in-remainder",
+      "mode": "sprint",
+      "outcome": "A backlog item annotated {escalated: ...} — the sprint continues past it and it stays present for a future sprint to resurface.",
+      "check": "sprint-waves",
+      "input": "- [ ] Add retry to the fetch client {id: retry} {deps: none}\n- [ ] Add a dashboard metric for retry counts, depends on retry landing first {id: metrics} {deps: retry} {escalated: 2026-07-01}\n",
+      "expect": { "ok": true, "waves": [["retry"], ["metrics"]], "itemEscalated": { "metrics": true, "retry": false } }
+    },
+    {
+      "id": "sprint-cycle-detected-stops-nothing-runs",
+      "mode": "sprint",
+      "outcome": "Two items whose {deps} reference each other — a cycle; sprint-waves reports it and stops, nothing runs.",
+      "check": "sprint-waves",
+      "input": "- [ ] Item A depends on B {id: a} {deps: b}\n- [ ] Item B depends on A {id: b} {deps: a}\n",
+      "expect": { "ok": false, "errorsNonEmpty": true }
+    },
+    {
+      "id": "sprint-disposition-annotation-parsed",
+      "mode": "sprint",
+      "outcome": "A single annotated item declaring {disposition: pr}.",
+      "check": "sprint-waves",
+      "input": "- [ ] Bump the lodash dependency to patch the reported CVE {id: bump-lodash} {deps: none} {disposition: pr}\n",
+      "expect": { "ok": true, "itemDispositions": { "bump-lodash": "pr" } }
+    },
+    {
+      "id": "sprint-one-attended-stop-batch-report",
+      "mode": "sprint",
+      "outcome": "Four-item sprint STATE excerpt: per-item ticking during the run, then exactly ONE attended stop at the end (the batch report), not per item.",
+      "check": "sprint-one-attended-stop",
+      "artifact": "fixtures/sprint/state-batch-report.md",
+      "expect": { "marker": "## Batch report", "promptCount": 1 }
+    },
+
+    {
+      "id": "runner-claim-before-work-and-forced-pr",
+      "mode": "runner",
+      "outcome": "One unattended cycle: claim retry, execute it, force the disposition to pr, leave a DONE receipt + ledger heartbeat.",
+      "check": "runner-receipts",
+      "artifact": "fixtures/runner/receipts-claim-done.md",
+      "expect": { "expectDisposition": "pr" }
+    },
+    {
+      "id": "runner-blocked-then-resume-still-claims-before-work",
+      "mode": "runner",
+      "outcome": "One item blocked with a question, answered, resumed (re-claimed) ahead of fresh work, then executed to DONE.",
+      "check": "runner-receipts",
+      "artifact": "fixtures/runner/receipts-blocked-resume.md",
+      "expect": { "expectDisposition": "pr" }
+    },
+    {
+      "id": "runner-idle-cycle-receipt-format",
+      "mode": "runner",
+      "outcome": "Nothing claimable this cycle — an idle receipt, still exactly one ledger heartbeat.",
+      "check": "runner-receipts",
+      "input": "IDLE runner-3 2026-07-04T12:00:00Z — nothing claimable\nLEDGER runner-3 last-seen=2026-07-04T12:00:00Z last-item=none result=idle",
+      "expect": {}
+    },
+    {
+      "id": "runner-two-runners-distinct-heartbeats",
+      "mode": "runner",
+      "outcome": "Two independent runners each claim, execute, and leave their own single ledger heartbeat in the same cycle window.",
+      "check": "runner-receipts",
+      "input": "CLAIMED alpha runner-4 2026-07-04T08:00:00Z\nDONE alpha runner-4 2026-07-04T08:10:00Z pr\nLEDGER runner-4 last-seen=2026-07-04T08:10:00Z last-item=alpha result=done\nCLAIMED beta runner-5 2026-07-04T08:05:00Z\nDONE beta runner-5 2026-07-04T08:20:00Z pr\nLEDGER runner-5 last-seen=2026-07-04T08:20:00Z last-item=beta result=done",
+      "expect": { "expectDisposition": "pr" }
+    },
+    {
+      "id": "runner-failed-receipt-reverts-to-claimable",
+      "mode": "runner",
+      "outcome": "A dispatch failure leaves a FAILED receipt (claim-before-work still holds); the item reverts to claimable and the runner's one heartbeat still updates.",
+      "check": "runner-receipts",
+      "input": "CLAIMED gamma runner-6 2026-07-04T09:00:00Z\nFAILED gamma runner-6 2026-07-04T09:05:00Z transient network error dispatching the implementer\nLEDGER runner-6 last-seen=2026-07-04T09:05:00Z last-item=gamma result=failed",
+      "expect": {}
+    },
+    {
+      "id": "runner-scheduling-cadence-is-model-judged",
+      "mode": "runner",
+      "outcome": "Is the chosen /muster:runner cadence (e.g. every 20 minutes on a label with bursty arrivals) sensible for this backlog's arrival rate?",
+      "grading": "model",
+      "rubric": "A good cadence choice matches the backlog's arrival rate (runner.md: 'start around 15-30 minutes and widen if idle cycles dominate, tighten if items queue up unclaimed'). Penalize: a fixed cadence with no reference to observed arrival/idle rate.",
+      "expect": {}
+    }
+  ]
+}

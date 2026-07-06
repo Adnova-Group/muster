@@ -211,6 +211,50 @@ test("F5: a duplicate source anchor is a non-fatal warning, not a failure", () =
   assert.deepEqual(r.warnings[0].lines, [4, 5]);
 });
 
+test("F2b: a nested lower-level heading inside Sources does not end the section", () => {
+  const doc = [
+    "A cited claim [src: a].",
+    "",
+    "## Sources",
+    "- a: https://example.com",
+    "",
+    "### Notes on sourcing",
+    "",
+    "- b: https://example.com/b",
+    "",
+  ].join("\n");
+  const r = checkCitations(doc);
+  // The "### Notes" heading is a LOWER level (3 > 2) than "## Sources" (2), so it does
+  // NOT end the section -- "- b: ..." is still inside source-list territory and resolves
+  // as a source entry, not a claim paragraph.
+  assert.equal(r.ok, true);
+  assert.equal(r.claims, 1, "the nested-heading + list-under-it stay inside Sources, not counted as claims");
+  assert.deepEqual(r.danglingAnchors, []);
+});
+
+test("F2c: a second '## Sources' heading is not recognized as its own section -- it's treated as body", () => {
+  const doc = [
+    "A cited claim [src: a].",
+    "",
+    "## Sources",
+    "- a: https://example.com",
+    "",
+    "## Sources",
+    "- b: https://example.com/b",
+    "",
+    "A stray claim after the second heading with a dangling anchor [src: ghost].",
+    "",
+  ].join("\n");
+  const r = checkCitations(doc);
+  // v1 only recognizes the FIRST "Sources" heading; everything from the second "## Sources"
+  // heading onward is body prose again, so "- b: ..." is a claim paragraph (uncited, no
+  // [src: ...] in it) and the later dangling anchor must still be caught.
+  assert.equal(r.ok, false);
+  assert.equal(r.danglingAnchors.length, 1);
+  assert.equal(r.danglingAnchors[0].anchor, "ghost");
+  assert.ok(r.uncited.length > 0, "the second 'Sources' heading's body is scanned as ordinary prose");
+});
+
 test("no Sources section at all: every citation is dangling", () => {
   const doc = "A claim with a citation [src: report2024].";
   const r = checkCitations(doc);

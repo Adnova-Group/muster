@@ -52,6 +52,33 @@ test("initialize: serverInfo.version matches package.json, instructions carry mu
   assert.match(res.instructions, /muster principles/, "instructions inject guidance.js principles (hook replacement)");
 });
 
+// ── P1-8: contract pin — cowork→guidance coupling ───────────────────────────
+// mcp-server.mjs serves guidance-derived content (the `instructions` field above
+// is built from PRINCIPLES/VERBS/ROUTING_POLICY) by importing those named bindings
+// directly from plugin/hooks/guidance.js. If a hook refactor renames or drops one
+// of those exports, mcp-server.mjs breaks silently with no test naming the gap.
+// Import BOTH sides and compare: parse mcp-server.mjs's actual import statement,
+// then check every named import is really exported by guidance.js — a hook
+// refactor that drops/renames one of these fails this test loudly, by name.
+test("contract pin: mcp-server.mjs's guidance.js imports all exist in guidance.js's export surface", async () => {
+  const serverSrc = await read("cowork/mcp-server.mjs");
+  const importLine = serverSrc.match(/import\s*\{([^}]+)\}\s*from\s*["']\.\.\/plugin\/hooks\/guidance\.js["'];/);
+  assert.ok(importLine, "mcp-server.mjs must import named bindings from plugin/hooks/guidance.js");
+  const names = importLine[1].split(",").map((s) => s.trim()).filter(Boolean);
+  assert.ok(names.length > 0, "mcp-server.mjs must import at least one named binding from guidance.js");
+  const guidance = await import("../plugin/hooks/guidance.js");
+  for (const name of names) {
+    assert.ok(name in guidance, `guidance.js must export "${name}" (imported by mcp-server.mjs) — a hook refactor dropped/renamed it`);
+  }
+  // Pin today's exact set so a silent rename is caught even if the property check above
+  // would otherwise pass against some unrelated re-export.
+  assert.deepEqual(
+    names.slice().sort(),
+    ["PRINCIPLES", "ROUTING_POLICY", "VERBS"],
+    "mcp-server.mjs's guidance.js import set must stay exactly this triple",
+  );
+});
+
 test("instructions carry a Cowork execution protocol with the sequential (no-fan-out) fallback", async () => {
   const r = await rpc([INIT]);
   const instr = r[1].result.instructions;
@@ -189,6 +216,33 @@ test("error path: a CLI failure surfaces as isError, not a crash", async () => {
 test("unknown method returns JSON-RPC method-not-found", async () => {
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "no/such/method" }]);
   assert.equal(r[2].error.code, -32601);
+});
+
+// ── P2-20: 'str' kind, omitted optional arg hits the no-value argv branch ──
+// callTool's `kind === "str"` branch: `v != null && v !== "" ? [...tool.argv, String(v)] : tool.argv`.
+// muster_detect's `dir` prop is optional (S(..., "dir", false)) — omitting it must take the
+// `: tool.argv` side (no value appended), invoking the CLI with just ["detect"].
+test("tools/call: muster_detect with omitted optional dir arg hits the no-value argv branch (str kind)", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_detect", arguments: {} } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "omitted optional str arg must not error");
+  const detected = JSON.parse(res.content[0].text);
+  assert.ok(detected && typeof detected === "object", "detect output parses to an object (server's own cwd, no dir arg passed)");
+});
+
+// ── P2-20: an unknown-method NOTIFICATION (no id) is a silent no-op ─────────
+// `handle`'s default case only calls err() `if (!isNotification)` — an unrecognized
+// method arriving as a notification (no id) must produce no reply at all, and the
+// server must keep handling subsequent requests normally (mirrors the
+// notifications/initialized no-op test above, but for an unknown method).
+test("unknown-method notification (no id) produces no reply and the server keeps handling requests", async () => {
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", method: "notifications/some-unknown-thing" }, // notification: no id, unrecognized method
+    { jsonrpc: "2.0", id: 2, method: "ping" },
+  ]);
+  assert.deepEqual(Object.keys(r).sort(), ["1", "2"], "server must not emit a reply to the unknown-method notification");
+  assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after the notification");
 });
 
 test("cowork/manifest.json version tracks package.json", async () => {

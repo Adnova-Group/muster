@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync } from "node:fs";
 import { bashWriteTarget } from "../plugin/hooks/bash-write-target.js";
 import os from "node:os";
-import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
+import { cleanDir, makeMarker, makeRunActive, editPayload, spawnHook } from "./test-support/hook-helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -20,16 +20,6 @@ function runRaw(stdinText, env = {}) {
   return spawnHook(HOOK, stdinText, env);
 }
 
-// Build a payload for an Edit tool call targeting file_path, with the given cwd.
-function editPayload(filePath, cwd, extra = {}) {
-  return JSON.stringify({
-    tool_name: "Edit",
-    tool_input: { file_path: filePath },
-    cwd,
-    ...extra,
-  });
-}
-
 // Create a temp dir with a wave-active marker AND a run-active marker, return tmpDir.
 // run-active signals a legitimately active run (required by the B-scoping logic to
 // distinguish a live wave from a crashed/orphaned one). Tests that use a stale mtime
@@ -38,7 +28,7 @@ function makeTmpMarker(waveId = "wave-001", mtime = null) {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-wg-test-"));
   makeMarker(tmpDir, waveId, mtime !== null ? { mtime } : {});
   // Write run-active so the wave-guard sees a legitimately active wave.
-  writeFileSync(path.join(tmpDir, ".muster", "run-active"), "run-001");
+  makeRunActive(tmpDir);
   return tmpDir;
 }
 
@@ -644,6 +634,35 @@ test("bashWriteTarget: node -e with > in single-quoted expression is not a write
     null,
     "> inside single-quoted -e expression must return null",
   );
+});
+
+// ── P2-16: denyBash sanitizes the raw bashWriteTarget fragment ──────────────
+// The redirect-target fragment bash-write-target.js returns rides straight from
+// the untrusted Bash command string. A hostile fragment (control chars,
+// newlines, oversized) must be run through the same printable-ASCII+length-cap
+// sanitizer as sanitizeWaveId before it lands in permissionDecisionReason.
+test("Bash: deny reason sanitizes a hostile redirect-target fragment (control chars + 300 chars capped)", async () => {
+  const tmpDir = makeTmpMarker("wave-bash-hostile");
+  try {
+    // No whitespace inside the target (the redirect-target regex is \S+, so
+    // whitespace/newlines would just split it into a separate token) — the
+    // control chars below are non-whitespace and stay inside the one match.
+    const dirtyTarget = "A".repeat(300) + "\x00\x01\x1f\x7f" + "evil";
+    const { stdout, code } = await runRaw(bashPayload(`echo hi > ${dirtyTarget}`, tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "high-confidence redirect write still denied");
+    const reason = out.permissionDecisionReason;
+    assert.doesNotMatch(reason, /[\x00-\x1f\x7f]/, "no non-printable/control chars in the deny reason");
+    const match = reason.match(/matched: (.+?)\)\./);
+    assert.ok(match, "reason has expected 'matched: <fragment>).' shape");
+    assert.ok(
+      match[1].length <= 64,
+      `fragment embedded in the reason must be capped at 64 chars, got ${match[1].length}`,
+    );
+  } finally {
+    cleanDir(tmpDir);
+  }
 });
 
 test("Bash: deny reason names matched pattern and mentions MUSTER_WAVE_GUARD=warn", async () => {

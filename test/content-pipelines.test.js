@@ -25,6 +25,20 @@ test("each content/ops pipeline loads, resolves by domain, validates, and its ga
   }
 });
 
+test("skew guard: the publish optional-phase desc is byte-identical across blog-post, social-post, and lead-magnet", async () => {
+  const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
+  const ids = ["blog-post", "social-post", "lead-magnet"];
+  const descs = ids.map((id) => {
+    const p = ps.find((x) => x.id === id);
+    assert.ok(p, `missing pipeline ${id}`);
+    const publish = (p.optional_phases || []).find((ph) => ph.id === "publish");
+    assert.ok(publish, `${id} missing its publish optional phase`);
+    return publish.desc;
+  });
+  assert.equal(descs[1], descs[0], "social-post publish desc has drifted from blog-post's");
+  assert.equal(descs[2], descs[0], "lead-magnet publish desc has drifted from blog-post's");
+});
+
 test("classifyDomain routes content/ops outcomes to the right domain", () => {
   assert.equal(classifyDomain("write a blog post about onboarding").domain, "blog");
   assert.equal(classifyDomain("draft a linkedin post for the launch").domain, "social");

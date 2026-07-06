@@ -214,6 +214,25 @@ test("dep on a genuinely unknown id (not checked, not unchecked) still errors", 
   assert.ok(r.errors.some((e) => /unknown dep/i.test(e)), r.errors.join(" | "));
 });
 
+test("duplicate same-key annotation on one line -> last one wins (pinned behavior)", () => {
+  const backlog = "- [ ] Something {id: a} {id: b} {deps: none}";
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.deepEqual(Object.keys(r.items), ["b"]);
+  assert.deepEqual(r.waves, [["b"]]);
+});
+
+test("{deps: a,,b} filters out the empty entry between commas", () => {
+  const backlog = [
+    "- [ ] Task A {id: a} {deps: none}",
+    "- [ ] Task B {id: b} {deps: none}",
+    "- [ ] Task C {id: c} {deps: a,,b}",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.waves, [["a", "b"], ["c"]]);
+});
+
 test("checked item and unchecked item sharing an id -> duplicate id error (ambiguity is fatal)", () => {
   const backlog = [
     "- [x] Done thing {id: a}",

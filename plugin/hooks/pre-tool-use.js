@@ -200,13 +200,21 @@ function warnAllow(waveId) {
   warnWith(`muster wave ${waveId} is active — dispatch edits through the crew via the Agent tool instead of editing inline.`);
 }
 
-// Sanitize a waveId read from a marker file before interpolating into output.
+// Sanitize a string read from external input (a wave-marker's content, a
+// bash-command fragment matched by bash-write-target.js) before interpolating
+// it into a hook output string (permissionDecisionReason/additionalContext).
 // - strip non-printable ASCII (keep 0x20-0x7E)
-// - cap at 64 chars
-// - fall back to "unknown" if empty after sanitization
+// - cap at `maxLen` chars (default 64)
+// - fall back to `fallback` if empty after sanitization (default "unknown")
+function sanitizePrintable(raw, { maxLen = 64, fallback = "unknown" } = {}) {
+  const clean = raw.replace(/[^\x20-\x7E]/g, "").slice(0, maxLen).trim();
+  return clean.length > 0 ? clean : fallback;
+}
+
+// waveId sanitization: thin wrapper over sanitizePrintable (kept as its own
+// name at call sites for readability — same rules, default fallback/cap).
 function sanitizeWaveId(raw) {
-  const clean = raw.replace(/[^\x20-\x7E]/g, "").slice(0, 64).trim();
-  return clean.length > 0 ? clean : "unknown";
+  return sanitizePrintable(raw);
 }
 
 function deny(waveId) {
@@ -219,8 +227,12 @@ function deny(waveId) {
 }
 
 function denyBash(waveId, fragment) {
+  // fragment carries a slice of the raw Bash command (e.g. a redirect target)
+  // straight from bash-write-target.js — untrusted input. Sanitize the same
+  // way as waveId before it rides into permissionDecisionReason (P2-16).
+  const safeFragment = sanitizePrintable(fragment, { fallback: "(unprintable)" });
   denyWith(
-    `muster wave ${waveId} is active — this Bash command contains a high-confidence file write (matched: ${fragment}). ` +
+    `muster wave ${waveId} is active — this Bash command contains a high-confidence file write (matched: ${safeFragment}). ` +
     `Dispatch file writes through the crew (Agent tool) instead of running them inline. ` +
     `If no wave is actually running: rm .muster/wave-active. ` +
     `If this is a false positive (e.g. redirect-looking text inside a heredoc body): ` +

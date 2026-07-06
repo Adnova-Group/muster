@@ -8,7 +8,7 @@ import os from "node:os";
 import { cleanDir } from "./test-support/hook-helpers.js";
 
 // Import guidance.js detect directly.
-const { detect, isDirective, VOICE_NUDGE, SHORT_NUDGE, ROUTING_POLICY } = await import(
+const { detect, isDirective, VOICE_NUDGE, SHORT_NUDGE, ROUTING_POLICY, VERBS } = await import(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "plugin", "hooks", "guidance.js")
 );
 
@@ -172,4 +172,32 @@ test("ROUTING_POLICY carries the VOICE_NUDGE line (folded into the full-principl
     ROUTING_POLICY.includes(VOICE_NUDGE),
     "full-tier composition (PRINCIPLES+VERBS+ROUTING_POLICY) must include VOICE_NUDGE verbatim",
   );
+});
+
+// ── all six modes enumerated (P1-14) ────────────────────────────────────────
+// VERBS, SHORT_NUDGE, and ROUTING_POLICY's enumeration must all name every
+// mode, including the two batch/unattended ones (sprint, runner) — a nudge
+// that only lists run/autopilot/diagnose/audit silently steers directives
+// away from sprint and runner.
+test("VERBS lists all six modes, including sprint and runner", () => {
+  assert.match(VERBS, /\/muster:run\b/);
+  assert.match(VERBS, /\/muster:autopilot\b/);
+  assert.match(VERBS, /\/muster:diagnose\b/);
+  assert.match(VERBS, /\/muster:audit\b/);
+  assert.match(VERBS, /\/muster:sprint\b/);
+  assert.match(VERBS, /\/muster:runner\b/);
+});
+
+test("SHORT_NUDGE lists all six modes, including sprint and runner", () => {
+  assert.match(SHORT_NUDGE, /\/muster:run\b/);
+  assert.match(SHORT_NUDGE, /\/muster:autopilot\b/);
+  assert.match(SHORT_NUDGE, /\/muster:diagnose\b/);
+  assert.match(SHORT_NUDGE, /\/muster:audit\b/);
+  assert.match(SHORT_NUDGE, /\/muster:sprint\b/);
+  assert.match(SHORT_NUDGE, /\/muster:runner\b/);
+});
+
+test("ROUTING_POLICY's verb enumeration includes sprint and runner", () => {
+  assert.match(ROUTING_POLICY, /sprint/);
+  assert.match(ROUTING_POLICY, /runner/);
 });

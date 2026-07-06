@@ -7,9 +7,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import os from "node:os";
-import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
+import { cleanDir, makeMarker, makeRunActive, editPayload, spawnHook } from "./test-support/hook-helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -21,21 +21,6 @@ const HOOK = path.join(
 
 function runRaw(stdinText, env = {}) {
   return spawnHook(HOOK, stdinText, env);
-}
-
-function editPayload(filePath, cwd, extra = {}) {
-  return JSON.stringify({
-    tool_name: "Edit",
-    tool_input: { file_path: filePath },
-    cwd,
-    ...extra,
-  });
-}
-
-// Write .muster/run-active into an existing dir (creates .muster/ if needed).
-function makeRunActive(dir) {
-  mkdirSync(path.join(dir, ".muster"), { recursive: true });
-  writeFileSync(path.join(dir, ".muster", "run-active"), "run-001");
 }
 
 // Create a fresh wave-active dir (no stale mtime).

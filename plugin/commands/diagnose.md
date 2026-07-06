@@ -11,7 +11,7 @@ Respond with a structured debug record: one section per phase (hypothesis table,
 
 If the failure description is empty, ask for a symptom or failing output and stop. Otherwise drive the diagnose loop:
 
-**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the verb/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after the merge decision or on escalation exit. `SessionStart` on a fresh session clears a stale marker automatically.
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after the merge decision or on escalation exit. `SessionStart` on a fresh session clears a stale marker automatically.
 
 1. **Seed**: `npx -y @adnova-group/muster diagnose "<symptom>"` (or `--ci <file>` for pasted output) -> `{mode, manifest}`.
    Write the manifest to `.muster/manifest.json`; validate (`npx -y @adnova-group/muster manifest validate`).

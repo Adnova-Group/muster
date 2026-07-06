@@ -10,8 +10,17 @@ const DOMAIN_KEYWORDS = {
   newsletter: ["newsletter", "email newsletter"],
   sales: ["case study", "customer story", "sales deck", "battlecard"],
   book: ["book", "novel", "manuscript", "memoir"],
+  video: ["video script", "video content", "screencast", "b-roll", "shot list", "video edit", "youtube script", "video plan", "video"],
   software: ["implement", "refactor", "bug", "api", "endpoint", "function", "deploy"]
 };
+
+// The domain vocabulary the classifier knows about (used by doctor's
+// pipeline/domain alignment check — every pipelines/*.yaml `domain:` field
+// must be one of these; the reverse is NOT required, since a domain like
+// "software" legitimately has no content pipeline — the code route handles it).
+export function knownDomains() {
+  return Object.keys(DOMAIN_KEYWORDS);
+}
 
 export function classifyDomain(outcome, profile = {}, override) {
   if (override) return { domain: override, source: "override", confidence: 1 };

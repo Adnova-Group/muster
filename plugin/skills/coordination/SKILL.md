@@ -26,8 +26,9 @@ attribution note belongs in `website/about/credits.md` (out of scope here; flagg
    runner sharing a backlog/label IS a separate run, so its `runId` doubles as its coordination identity.
    No new identity infrastructure needed.
 2. **RECEIPTS** — every state change leaves a structured receipt: `CLAIMED` / `DONE` / `BLOCKED(reason,
-   question)` / `FAILED(reason)` / `IDLE` (a cycle that finds nothing claimable — no item exists to
-   annotate, so it folds into the runner's own LEDGER heartbeat rather than a fresh per-item line).
+   question)` / `FAILED(reason)` / `YIELD(losing runner conceding a claim race)` / `IDLE` (a cycle that
+   finds nothing claimable — no item exists to annotate, so it folds into the runner's own LEDGER
+   heartbeat rather than a fresh per-item line).
 3. **BLOCKED→RESUME** — a blocked item records its question; runners scan blocked items for an answer
    BEFORE claiming new work, and resume once answered.
 4. **LEDGER** — each runner maintains exactly ONE heartbeat entry (last seen, last item, result), edited
@@ -132,10 +133,14 @@ gh issue edit <N> --remove-label agent:working --add-label agent:done
 gh issue close <N> --comment "closed by muster sprint (<runner>)"
 ```
 
-**Blocked:**
+**Blocked:** `<question>` is free text the runner composes — it can quote backlog/issue content
+verbatim, so it can carry unescaped quotes, backticks, or `$(...)`. Write the body text to a scratch
+file with your file-write tool (never shell `echo`/`printf`, which re-exposes the exact same quoting
+hazard) and pass `--body-file`, never inline it into `--body "..."`, so hostile question text can't
+break the shell's quoting or get evaluated as a command substitution:
 ```
-gh issue comment <N> --body "MUSTER BLOCKED <runner> <ts>
-<question>"
+# write "MUSTER BLOCKED <runner> <ts>\n<question>" to <bodyfile> with your file-write tool, then:
+gh issue comment <N> --body-file <bodyfile>
 gh issue edit <N> --remove-label agent:working --add-label agent:needs-input
 ```
 **Resume scan** (run before claiming anything new):
@@ -152,9 +157,12 @@ window.
 
 **Failed** (revert to claimable, never silently drop the item — unless the retry-cap check during
 claim already redirected this issue to `agent:needs-input` instead):
+`<reason>` is free text (often a quoted error/log excerpt) — the same hostile-quoting risk as
+`<question>` above, so write the body to a scratch file with your file-write tool and use
+`--body-file`, never `--body "..."`:
 ```
-gh issue comment <N> --body "MUSTER FAILED <runner> <ts> attempt <n>
-<reason>"
+# write "MUSTER FAILED <runner> <ts> attempt <n>\n<reason>" to <bodyfile> with your file-write tool, then:
+gh issue comment <N> --body-file <bodyfile>
 gh issue edit <N> --remove-assignee "@me" --remove-label agent:working --add-label agent:todo
 ```
 `<n>` is this attempt's number: 1 + the prior-`MUSTER FAILED` count already read during claim.
@@ -167,19 +175,19 @@ gh issue create --title "MUSTER Coordination Ledger" --label muster:ledger \
   --body "One comment per runner, edited in place: last-seen, last item, result."
 gh issue pin <ledgerNum>
 ```
-Each cycle, find-then-edit (or first-create) your own comment:
+Each cycle, find-then-edit (or first-create) your own comment. `<N or item text>` can be raw backlog/
+issue text verbatim — the same hostile-quoting risk as `<question>`/`<reason>` above — so write the
+body to a scratch file with your file-write tool first, then reference it via `@<bodyfile>` (`gh api`'s
+`-F` reads a field's raw value from a file when given `@path`) or `--body-file <bodyfile>`, never
+inline the body into `-f body="..."` / `--body "..."`:
 ```
 gh issue view <ledgerNum> --json comments \
   --jq '.comments[] | select(.body | startswith("MUSTER LEDGER <runner> ")) | .id'
+# write "MUSTER LEDGER <runner> <ts>\nlast item: <N or item text>\nresult: <claimed|done|blocked|failed|idle>" to <bodyfile>, then:
 # found -> edit in place:
-gh api -X PATCH repos/{owner}/{repo}/issues/comments/<commentId> \
-  -f body="MUSTER LEDGER <runner> <ts>
-last item: <N or item text>
-result: <claimed|done|blocked|failed|idle>"
+gh api -X PATCH repos/{owner}/{repo}/issues/comments/<commentId> -F body=@<bodyfile>
 # not found -> first heartbeat:
-gh issue comment <ledgerNum> --body "MUSTER LEDGER <runner> <ts>
-last item: <N or item text>
-result: <claimed|done|blocked|failed|idle>"
+gh issue comment <ledgerNum> --body-file <bodyfile>
 ```
 On an idle cycle (nothing claimable), there is no item to reference: write `last item: none —
 nothing claimable` and `result: idle` into this SAME comment (found via the `MUSTER LEDGER <runner> `

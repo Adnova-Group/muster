@@ -1,6 +1,6 @@
 ---
 name: runner
-description: "Unattended one-cycle work-picker: resolves a work source, resumes an answered blocked item or claims exactly ONE available item, drives it through the full autopilot lifecycle disposition-forced to pr, leaves receipts, and stops — fired repeatedly by a Claude Code Routine/cron; the standing runner IS this verb invoked on a schedule. (vs /muster:sprint, which drains a whole backlog in one sitting.) Usage: /muster:runner [backlog path | issues:<label>]"
+description: "Unattended one-cycle work-picker: resolves a work source, resumes an answered blocked item or claims exactly ONE available item, drives it through the full autopilot lifecycle disposition-forced to pr, leaves receipts, and stops — fired repeatedly by a Claude Code Routine/cron; the standing runner IS this mode invoked on a schedule. (vs /muster:sprint, which drains a whole backlog in one sitting.) Usage: /muster:runner [backlog path | issues:<label>]"
 ---
 
 You are muster's runner: one unattended work cycle — resume or claim exactly ONE item, run it, leave a receipt, stop.
@@ -9,7 +9,7 @@ Respond with the cycle's receipt (idle / resumed / claimed, disposition executed
 
 <source>$ARGUMENTS</source>
 
-**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the verb/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after step 6. `SessionStart` on a fresh session clears a stale marker automatically.
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after step 6. `SessionStart` on a fresh session clears a stale marker automatically. `.muster/run-active` is owned by THIS outer mode (runner), not by the per-item autopilot pass: step 4's "run autopilot steps 1-8" excludes autopilot's own run-active preamble — the marker is written once at this cycle's invocation start and removed only at this cycle's own exit (step 6), never mid-item.
 
 Load the **coordination** skill before step 2 — every cycle shares state with other runners and humans.
 
@@ -18,7 +18,7 @@ Load the **coordination** skill before step 2 — every cycle shares state with 
 3. **Claim** — per the coordination protocol: skip already-claimed and escalated items, and respect the 2-failure retry cap (redirect to blocked rather than reclaiming). Claim the FIRST available item only, never more. Nothing available (empty, or every item claimed/escalated/blocked) → write an `idle` receipt to STATE and STOP.
 4. **Execute** — run the resumed/claimed item through autopilot steps 1-8 (branch, detect, route, spec gate, plan, orchestrate waves, escalation check, finish), applying BOTH of sprint.md's per-item overrides: step 3's info-gap never triggers the interview (best-effort defaults, gap signals recorded); step 8's merge decision is FORCED to `pr` — never `merge-local`/`merge-push`/`ask` — this cycle never touches the base branch unattended, and the coercion (declared value → `pr`) is noted in the receipt.
 5. **Receipts + ledger** — leave the item's terminal receipt (DONE/BLOCKED/FAILED) per the coordination protocol, then edit this runner's ONE ledger heartbeat in place (last-seen, last item, result). **On escalation** (step 4's escalation check trips): post a `FAILED` receipt (attempt-counted, the coordination protocol's existing format) AND mark the item escalated so step 3's "skip escalated" has a concrete artifact to check — Binding B: append `{escalated: <runId or date>}` (sprint.md's exact convention, reused not reinvented); Binding A: move the issue to `agent:needs-input` with a question comment (reusing the BLOCKED convention — there is no separate escalated label).
-6. **Stop** — exactly one item per cycle, however it resolved (done/escalated/blocked/idle). The schedule provides the loop, not this verb.
+6. **Stop** — exactly one item per cycle, however it resolved (done/escalated/blocked/idle). The schedule provides the loop, not this mode.
 
 **Scheduling** — fire `/muster:runner` from a Claude Code Routine on a timer, or from cron invoking the Claude Code CLI (e.g. `claude -p "/muster:runner issues:agent:todo"`). Cadence: match the backlog's arrival rate, not faster — an idle cycle is cheap, but firing far ahead of new items just piles up idle receipts; start around 15-30 minutes and widen if idle cycles dominate the ledger, tighten if items queue up unclaimed. Safety inventory: pr-only (step 4 never merges/pushes to base), the 2-failure retry cap bounds reclaim loops, and the claim lock (Binding A's comment-race window / Binding B's claim-then-verify) makes concurrent firing safe alongside `/muster:sprint`, other scheduled runners, and humans on the same backlog.
 

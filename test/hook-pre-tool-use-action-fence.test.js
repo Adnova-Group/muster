@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
-import { cleanDir, spawnHook } from "./test-support/hook-helpers.js";
+import { cleanDir, makeRunActive, spawnHook } from "./test-support/hook-helpers.js";
 import { classifyToolName, classifyBashCommand, classifyAction } from "../plugin/hooks/action-guard.js";
 
 const HOOK = path.join(
@@ -30,8 +30,7 @@ function runRaw(stdinText, env = {}) {
 // Build a tmp dir with .muster/run-active present (a live run).
 function makeRunDir() {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-action-fence-test-"));
-  mkdirSync(path.join(tmpDir, ".muster"), { recursive: true });
-  writeFileSync(path.join(tmpDir, ".muster", "run-active"), "run-001");
+  makeRunActive(tmpDir);
   return tmpDir;
 }
 
@@ -98,6 +97,22 @@ test("classifyToolName: a real sign-shaped tool name still classifies as sign", 
   assert.equal(classifyToolName("mcp__docusign__sign_document"), "sign");
 });
 
+// ── P1-6: matcher-vs-classifier split ───────────────────────────────────────
+// hooks.json's PreToolUse matcher is now the wide "mcp__.*" (see
+// hook-registration.test.js for the matcher-string pin) — it no longer filters
+// by keyword casing/shape, so EVERY mcp__* tool call reaches this hook. The
+// actual class narrowing (case-insensitive, word-boundary) happens here, in
+// classifyToolName. This test pins that an ALL-CAPS action word still
+// classifies correctly once the call reaches the classifier.
+test("classifyToolName: ALL-CAPS action word still classifies (case-insensitive)", () => {
+  assert.equal(classifyToolName("mcp__x__SEND_EMAIL"), "send");
+});
+
+// ── P1-12: purchase-class classification ────────────────────────────────────
+test("classifyToolName: purchase-shaped tool name classifies as purchase", () => {
+  assert.equal(classifyToolName("mcp__shop__purchase_item"), "purchase");
+});
+
 test("classifyBashCommand: npm publish classifies as publish", () => {
   assert.equal(classifyBashCommand("npm publish"), "publish");
 });
@@ -116,6 +131,11 @@ test("classifyBashCommand: curl -X POST classifies as send", () => {
 
 test("classifyBashCommand: gh pr merge classifies as submit", () => {
   assert.equal(classifyBashCommand("gh pr merge 42"), "submit");
+});
+
+// ── P1-12: git push --delete is ordered before the plain-push publish match ──
+test("classifyBashCommand: git push origin --delete foo classifies as delete-remote (not publish)", () => {
+  assert.equal(classifyBashCommand("git push origin --delete foo"), "delete-remote");
 });
 
 test("classifyBashCommand: unrelated command classifies as null", () => {
@@ -184,6 +204,25 @@ test("allow: SendUserFile is never action-classified, even with 'send' forbidden
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.notEqual(out.permissionDecision, "deny", "harness-internal SendUserFile must never be action-classified");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// ── P1-6: end-to-end, ALL-CAPS mcp tool name still denies via the fence ─────
+// The matcher (hooks.json) can't be exercised in-process — this hits the hook
+// itself with a payload shaped like what the "mcp__.*" matcher would forward.
+// See hook-registration.test.js for the matcher-string pin and the
+// classifyToolName case-handling unit test above for the classifier half.
+test("deny: ALL-CAPS mcp tool_name (mcp__x__SEND_EMAIL) when 'send' is forbidden and a run is active", async () => {
+  const tmpDir = makeRunDir();
+  writeForbidden(tmpDir, ["send"]);
+  try {
+    const { stdout, code } = await runRaw(mcpPayload("mcp__x__SEND_EMAIL", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "ALL-CAPS send-shaped tool must still be denied");
+    assert.match(out.permissionDecisionReason, /send/i, "reason names the forbidden class");
   } finally {
     cleanDir(tmpDir);
   }

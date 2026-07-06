@@ -4,7 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
-import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
+import {
+  cleanDir, makeMarker, makeRunActive,
+  editPayload as editPayloadBase, spawnHook,
+} from "./test-support/hook-helpers.js";
 import { cumFile, readCum } from "../plugin/hooks/inline-budget.js";
 
 // Scale-gate: the post-run enforcement. With NO active wave, the orchestrator
@@ -33,14 +36,12 @@ function noWaveDir() {
   return dir;
 }
 
+// This file's callers pass session_id as its own positional arg (distinct from
+// the canonical hook-helpers.js signature) — thin wrapper over the canonical
+// editPayload so the payload-construction logic itself stays in ONE place
+// (P2-19) without touching every one of this file's call sites.
 function editPayload(filePath, cwd, sessionId, extra = {}) {
-  return JSON.stringify({
-    tool_name: "Edit",
-    tool_input: { file_path: filePath },
-    cwd,
-    session_id: sessionId,
-    ...extra,
-  });
+  return editPayloadBase(filePath, cwd, { session_id: sessionId, ...extra });
 }
 
 function bashPayload(command, cwd, sessionId) {
@@ -285,7 +286,7 @@ test("active wave: first inline edit already denied by wave-guard (unchanged)", 
   makeMarker(dir, "wave-099");
   // Write run-active so the B-scoping logic sees a legitimately active wave
   // (wave-guard fires, not scale-gate).
-  writeFileSync(path.join(dir, ".muster", "run-active"), "run-001");
+  makeRunActive(dir);
   const sid = "scale-wave-1";
   clearBudget(sid);
   try {
@@ -517,7 +518,7 @@ test("cumulative drift: an active muster run resets the cumulative counter and d
   clearCum(sid);
   const cFile = cumFile(sid, os.tmpdir());
   writeFileSync(cFile, JSON.stringify({ files: ["x.js", "y.js"], nudged: false }));
-  writeFileSync(path.join(dir, ".muster", "run-active"), "run-001");
+  makeRunActive(dir);
   try {
     const r = await runPre(editPayload(path.join(dir, "src", "z.js"), dir, sid));
     assert.notEqual(decision(r.stdout), "deny", "per-turn behavior unchanged while a run is active");

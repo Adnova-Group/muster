@@ -1,9 +1,10 @@
 # Sprint protocol (Cowork-adapted)
 
-Condensed, Cowork-native port of `/muster:sprint`'s lifecycle (`plugin/commands/sprint.md`) — driving
-the full autopilot lifecycle sequentially over every item in a backlog, one attended stop at the end,
-served through `muster_sprint_protocol` so a Cowork session can follow it without the plugin loaded.
-Same intent, same guarantees where they port; the gaps below are named, not papered over.
+You are the Cowork session driving this sprint: a condensed, Cowork-native port of `/muster:sprint`'s
+lifecycle (`plugin/commands/sprint.md`) — driving the full autopilot lifecycle sequentially over every
+item in a backlog, one attended stop at the end, served through `muster_sprint_protocol` so a Cowork
+session can follow it without the plugin loaded. Same intent, same guarantees where they port; the gaps
+below are named, not papered over.
 
 ## What this session lacks — be honest about it
 
@@ -65,23 +66,28 @@ the item text as the outcome and its parsed disposition as `mergeDisposition` (d
 unannotated).
 
 - A malformed/unrecognized annotation is treated as unannotated (default `pr`) — record the malformed
-  annotation in STATE and the batch report; never guess an escalation or a merge from junk. A prior
-  sprint's `{escalated: ...}` is NOT malformed: run as unannotated (default `pr`), note it as resurfaced.
-- **No mid-sprint interviews.** A per-item `muster_assess` returning `clear:false` never triggers an
-  attended interview, even in an attended session — proceed with best-effort defaults, record the gap
+  annotation in STATE and the batch report; never guess an escalation or a merge from junk. The same
+  posture covers the item text itself: an item whose requirements can't be understood at all escalates
+  immediately rather than running on a guess — if you're unsure what it's asking, say so in STATE and
+  mark it escalated, the same path as any other escalation (below). A prior sprint's `{escalated: ...}`
+  is NOT malformed: run as unannotated (default `pr`), note it as resurfaced.
+- **No mid-sprint interviews.** A per-item `muster_assess` returning `clear:false` resolves with
+  best-effort defaults instead of an attended interview, even in an attended session — record the gap
   `signals` in STATE and the batch report, and let the item's PR be where the human closes the gap.
 - **On escalation** (spec-gate double-FAIL, fix-loop cap, a dispatch that still fails after its retry) —
   record it in STATE, leave that item's branch intact, mark it `escalated` in STATE and backlog.md, and
-  continue to the next item. An escalated item never aborts the sprint. A dependent of an escalated item
-  builds without that work (items branch off the current base tip) — order the backlog accordingly.
+  continue to the next item. The sprint always continues through an escalated item. A dependent of an
+  escalated item builds without that work (items branch off the current base tip) — order the backlog
+  accordingly.
 - **Step 8's override, here too** — inside this sprint no AskUserQuestion merge prompt fires per item;
   the declared disposition executes directly, `ask`/absent coerces to `pr`, noted in the batch report.
 - **Backlog drain** — after each item's disposition lands and its tick/annotation is written, re-resolve
   the backlog file (re-run `muster_sprint_waves`). New unchecked items not in the original snapshot are
-  admitted into the remainder; escalated/claimed items are never re-admitted this sprint — concretely,
-  admitted items are exactly those whose `items[id].claimed` is `null` in the re-resolve's JSON output; the
-  tool's JSON is the authority, never re-parse the raw `{claimed: ...}` annotation text yourself. An item
-  removed mid-sprint: drop it if not started (note in STATE), finish normally if already running.
+  admitted into the remainder; escalated/claimed items stay excluded from re-admission this sprint —
+  concretely, admitted items are exactly those whose `items[id].claimed` is `null` in the re-resolve's
+  JSON output; the tool's JSON is the authority, always deferred to rather than re-parsing the raw
+  `{claimed: ...}` annotation text yourself. An item removed mid-sprint: drop it if not started (note in
+  STATE), finish normally if already running.
 
 ## 4. Finish — the single attended stop
 
@@ -98,10 +104,16 @@ to keep out of it:
 - **CLAIM** — append `{claimed: <runner>@<ts>}` to an item's line before starting it; skip items already
   claimed by a different runner; claim-then-verify by re-reading the file.
 - **RECEIPTS** — one line per state change in STATE's `## Coordination` section: `CLAIMED` / `DONE` /
-  `BLOCKED <reason>` / `FAILED <reason>`.
+  `BLOCKED <reason>` / `HUMAN-HOLD <reason, question, authorizer>` / `FAILED <reason>`.
 - **BLOCKED -> RESUME** — scan for an `ANSWER <slug>: ...` line newer than the matching `BLOCKED` receipt
   before claiming anything new; resume ahead of fresh items when found.
-- **LEDGER** — exactly one heartbeat line per runner, edited in place, never appended twice.
+- **HUMAN-HOLD** — the narrower BLOCKED variant, for a question only one specific human can
+  authoritatively answer (external-effect approvals, scope changes, spend): append `{human-hold: <slug>}`
+  in place of `{blocked: <slug>}`, and resume only on an `ANSWER <slug> by <authorizer>: ...` line naming
+  that exact authorizer — any other reply leaves it held. Same file-based mechanism as BLOCKED; nothing
+  Claude-Code-specific to degrade here, so this session carries it in full.
+- **LEDGER** — exactly one heartbeat line per runner, edited in place, kept to that single entry rather
+  than appended twice.
 - A single-runner sprint may skip claim/scan (nothing to race against) but should still leave receipts
   for audit.
 

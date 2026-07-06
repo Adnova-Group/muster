@@ -93,11 +93,26 @@ digraph process {
 }
 ```
 
+## Pre-Flight Plan Review
+
+<!-- upstream obra/superpowers@b61b550: pre-flight plan-conflict batched review -->
+
+Before dispatching Task 1, scan the plan once for conflicts:
+
+- tasks that contradict each other or the plan's constraints
+- anything the plan explicitly mandates that a reviewer would otherwise flag as a defect (a test that asserts nothing, verbatim duplication of a logic block)
+
+Present everything you find to your human partner as one batched question — each finding beside the plan text that mandates it, asking which governs — before execution begins. Do not interrupt once per discovery mid-plan. If the scan is clean, proceed without comment. The review loop remains the net for conflicts that only surface during implementation.
+
 ## Model Selection
 
 Use the least powerful model that can handle each role to conserve cost and increase speed.
 
 **Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): use a fast, cheap model. Most implementation tasks are mechanical when the plan is well-specified.
+
+<!-- upstream obra/superpowers@cfe48c2: tiered implementer dispatch — cheapest tier for transcription, mid-tier floor for judgment -->
+
+**Tier by what the task demands, not file count alone.** When the plan's task text already spells out the code to write, the implementer's job is transcription plus testing — dispatch the cheapest capable tier. When the task is a prose description the implementer must turn into a design, use a mid-tier model as the floor; turns lost to a too-cheap model on judgment work cost more than the rate it saves. If the dispatched tier comes back BLOCKED or NEEDS_CONTEXT, escalate to the next tier rather than re-dispatching the same one unchanged (see Handling Implementer Status below).
 
 **Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): use a standard model.
 
@@ -125,6 +140,15 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 4. If the plan itself is wrong, escalate to the human
 
 **Never** ignore an escalation or force the same model to retry without changes. If the implementer said it's stuck, something needs to change.
+
+## Reviewer Attention
+
+<!-- upstream obra/superpowers@de4672b: constraints-as-attention-lens + reviewer risk budget -->
+
+Brief both the spec reviewer and the code quality reviewer with two things: the binding constraints and the named risks.
+
+- **Constraints direct the lens.** Copy the spec's binding requirements verbatim — exact values, formats, naming and platform rules, stated relationships like "same layout as X" — into what you hand the reviewer. A reviewer can only enforce what you give it; do not make it infer intent from your paraphrase.
+- **Risk is a budget, not free rein.** Reviewers judge the diff itself, not the broader codebase. When a risk in the diff is real (a changed lock, a shared API contract, mutable state read elsewhere), name it explicitly and let the reviewer spend one focused check confirming it — never an open-ended sweep.
 
 ## Prompt Templates
 

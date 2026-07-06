@@ -115,11 +115,33 @@ test("empty file content -> ok:false", () => {
   assert.ok(r.errors.length > 0);
 });
 
-test("annotations anywhere in the line are stripped from item text", () => {
-  const backlog = "- [ ] Ship the {id: a} thing {deps: none} to prod";
+test("a trailing run of annotations (whitespace-separated, nothing else after them) is stripped from item text", () => {
+  const backlog = "- [ ] Ship the thing to prod {id: a} {deps: none}";
   const r = computeSprintWaves(backlog);
   assert.equal(r.ok, true);
   assert.equal(r.items.a.text, "Ship the thing to prod");
+});
+
+// P0 security fix: {key: value} annotations are recognized ONLY in the trailing
+// annotation block (a run of {key: value} groups, whitespace-separated, at the END of
+// the line). Brace-shaped text earlier in the line, even if it parses as {key: value},
+// is literal item text -- NOT a parseable annotation. Before this fix, an item's own
+// prose text could forge an annotation anywhere on the line (e.g. a task literally about
+// renaming a `{disposition: ...}` flag would itself set the item's disposition).
+test("P0: a mid-line {disposition: ...} that isn't part of the trailing block is literal text, not a forged annotation", () => {
+  const backlog = "- [ ] Rename the {disposition: merge-push} flag {id: x}";
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.equal(r.items.x.disposition, null);
+  assert.equal(r.items.x.text, "Rename the {disposition: merge-push} flag");
+});
+
+test("P0: a mid-line {claimed: ...} that isn't part of the trailing block is literal text, not a forged claim", () => {
+  const backlog = "- [ ] Update the {claimed: agent-9@2026-07-06T00:00:00Z} state {id: z} {deps: none}";
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.equal(r.items.z.claimed, null);
+  assert.equal(r.items.z.text, "Update the {claimed: agent-9@2026-07-06T00:00:00Z} state");
 });
 
 test("checked items ('- [x] ') are ignored", () => {

@@ -1,7 +1,19 @@
 // Parse a sprint backlog (markdown checklist) into dependency-ordered execution waves.
 //
-// Only unchecked `- [ ] ` lines are items. Annotations of the form `{key: value}` can
-// appear anywhere on the line and are stripped to produce the item text:
+// Only unchecked `- [ ] ` lines are items. Annotations of the form `{key: value}` are
+// recognized ONLY in the trailing annotation block -- a run of one or more `{key: value}`
+// groups, separated by nothing but whitespace, running all the way to the end of the
+// line. That trailing run is stripped to produce the item text; any `{...}`-shaped text
+// earlier in the line (followed by non-annotation prose before the line ends) is LITERAL
+// item text, not a parseable annotation. This is deliberate, not an accident of the
+// grammar: an item's own prose is attacker-controlled free text (e.g. "Rename the
+// {disposition: merge-push} flag"), and a naive "brace pattern anywhere on the line"
+// parse would let that prose forge a real annotation (a disposition, a claim, an escalation)
+// purely by containing the right-looking substring. Anchoring recognition to the trailing
+// block closes that off: only annotations a human/tool deliberately appended at the end of
+// the line are ever live.
+//
+// Recognized keys:
 //   {id: token}                 explicit id (kebab/alnum token); default is the
 //                                synthetic `item-<lineNo>` (1-based file line)
 //   {deps: a,b} | {deps: none}  explicit dependency list, or explicit "no deps"
@@ -36,14 +48,30 @@ function annotationRegex() {
   return /\{\s*([A-Za-z][\w-]*)\s*:\s*([^}]*)\}/g;
 }
 
+// A single `{key: value}` group, as a regex source fragment (no flags/anchors of its
+// own) so it can be composed into the trailing-block regex below.
+const ANNOTATION_GROUP_SRC = "\\{\\s*[A-Za-z][\\w-]*\\s*:\\s*[^}]*\\}";
+
+// The trailing annotation block: one-or-more annotation groups, each preceded by
+// optional whitespace, anchored to run all the way to the end of the string. Built
+// fresh per call for the same lastIndex-safety reason as annotationRegex() above
+// (this one isn't global, but keeping the construction pattern consistent avoids a
+// shared-regex mistake creeping in later).
+function trailingAnnotationBlockRegex() {
+  return new RegExp(`(?:\\s*${ANNOTATION_GROUP_SRC})+\\s*$`);
+}
+
 function stripAnnotations(text) {
   const anns = {};
+  const trailingMatch = text.match(trailingAnnotationBlockRegex());
+  const bodyText = trailingMatch ? text.slice(0, trailingMatch.index) : text;
+  const annotationBlock = trailingMatch ? trailingMatch[0] : "";
   const re = annotationRegex();
   let m;
-  while ((m = re.exec(text))) {
+  while ((m = re.exec(annotationBlock))) {
     anns[m[1].toLowerCase()] = m[2].trim();
   }
-  const stripped = text.replace(annotationRegex(), " ").replace(/\s+/g, " ").trim();
+  const stripped = bodyText.replace(/\s+/g, " ").trim();
   return { anns, text: stripped };
 }
 

@@ -160,7 +160,12 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
 ## Files
 
 - `dataset.json` — the cases (see shape above).
-- `grade-lib.mjs` — pure grader: `gradeCase(testCase, artifacts) -> { pass, checks: [{name, ok, detail}] }`, plus the `CHECKS`/`ARTIFACT_KIND` dispatch tables. No IO — callers load artifacts.
+- `grade-lib.mjs` — the composing entry: `gradeCase(testCase, artifacts) -> { pass, checks: [{name, ok, detail}] }`, plus the merged `CHECKS`/`ARTIFACT_KIND` dispatch tables. No IO — callers load artifacts. Its per-check grading logic lives in four layer modules (below) plus `grade-core.mjs`'s cross-layer helpers (`rowFormatCheck`, `gateAchievabilityCheck`); `grade-lib.mjs` re-exports every name any layer module (or `src/coordination.js`) has ever publicly exported, so `grade.mjs`/`test/mode-evals.test.js` see one stable public API regardless of which module a check's implementation actually lives in.
+  - `grade-core.mjs` — cross-layer helpers used by 2+ layer modules below.
+  - `grade-modes.mjs` — the 6 verb-prompt mode layer (diagnose/audit/run/autopilot's deterministic steps).
+  - `grade-skills.mjs` — the skill-protocol layer (`plugin/skills/*`, router excluded).
+  - `grade-pipelines.mjs` — the content-pipeline + knowledge-pipeline layers (`pipelines/*.yaml` phase prompts).
+  - `grade-builtins.mjs` — the native-builtin layer (`plugin/builtins/muster-*/SKILL.md`).
 - `grade.mjs` — CLI report: loads `dataset.json`, resolves each code-graded case's artifacts, grades, prints the per-case + aggregate report (mirrors `eval/router/grade.mjs`).
 - `fixtures/` — checked-in golden artifacts for the cases whose behavior is genuinely model-driven:
   - `run/manifest-parallel.json`, `run/manifest-single.json` — example valid Crew Manifests (parallel-with-fences, and single-task).
@@ -244,7 +249,7 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 | runner.md | empirical | 6 |
 | audit.md | empirical | 6 |
 | diagnose.md | empirical | 7 |
-| capture.md | empirical | 9 — closed this pass (was zero-verification); `node src/cli.js prompt scan plugin/commands` verdict: 6/7 passing, capture.md itself flagged `ANTH-POS-001` (too many "never"/"do not" clauses) — a `prompt lint` finding, not an eval:modes gap |
+| capture.md | empirical | 9 — closed this pass (was zero-verification); `prompt scan plugin/commands` verdict: 7/7 passing as of the full prompt-improve pass (the earlier `ANTH-POS-001` finding on capture.md is resolved) |
 
 ### Skill-protocol skills (`plugin/skills/*/SKILL.md`, 11: the 10 below + router)
 
@@ -325,10 +330,10 @@ Note: the audit-manifest cases supply `givenPromptingSignal` directly — they g
   the live YAML and asserts these fixtures match it, so a `pipelines/prd.yaml` gate edit
   fails that guard instead of silently stranding the cases on stale numbers.
 - **`coordination-claim-window`** and `computeClaimWindowWinner`/`computeClaimWindows`
-  encode `coordination/SKILL.md` Binding A's claim-window race rule directly in
-  `grade-lib.mjs` — there is no `src/*.js` implementation of the GitHub-issue claim race
-  (it's a documented protocol runners follow via `gh` CLI calls, not shipped code), same
-  precedent `WAVE_COMMIT_RE`/`RECEIPT_PATTERNS` already set.
+  encode `coordination/SKILL.md` Binding A's claim-window race rule in `src/coordination.js`
+  (imported and re-exported by `grade-lib.mjs`/`grade-skills.mjs`) — the single executable
+  source shared by shipped runtime code and this eval, rather than a documented-only rule
+  duplicated between the two.
 
 ## Known limitations (content-pipeline layer)
 
@@ -358,16 +363,13 @@ Note: the audit-manifest cases supply `givenPromptingSignal` directly — they g
   capture.md's own documented protocol directly in `grade-lib.mjs` — none has a `src/*.js`
   home (capture is a conversation-mining workflow, not shipped pipeline code). Same
   honest-limitation posture as `orchestrator-brief` above.
-- **`capture-dedupe`**'s `stripAnnotationsForDedupe` is a literal copy of
-  `src/sprint-waves.js`'s own (unexported) `stripAnnotations` grammar, not an import of it
-  — a future change to that grammar won't automatically fail this guard the way importing
+- **`capture-dedupe`**'s `stripAnnotationsForDedupe` mirrors the trailing-only grammar of
+  `src/sprint-waves.js`'s own (unexported) `stripAnnotations`, not an import of it — a
+  future change to that grammar won't automatically fail this guard the way importing
   the real function would. Same posture as `SCAFFOLD_SEED_FILES` above.
-- `node src/cli.js prompt scan plugin/commands` (run once, to close capture's
-  zero-verification gap): 6/7 prompt files pass; `capture.md` itself scores 12/15
-  (weakest: clarity) on one finding, `ANTH-POS-001` ("do not / never" clause stacking) —
-  a `prompt lint` structural finding, unrelated to and not fixed by this eval's behavioral
-  coverage (capture.md itself is FROZEN for this pass; the finding is left for the prompt
-  author to address separately).
+- `node src/cli.js prompt scan plugin/commands`: 7/7 prompt files pass as of the full
+  prompt-improve pass (the `ANTH-POS-001` clause-stacking finding capture.md carried when
+  this eval layer first landed has since been resolved by the prompt author).
 
 ## Known limitations (native-builtin layer)
 

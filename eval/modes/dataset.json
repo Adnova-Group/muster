@@ -401,6 +401,14 @@
       "expect": { "winner": "bob", "terminalType": "DONE" }
     },
     {
+      "id": "coordination-claim-window-resets-after-blocked-terminal",
+      "mode": "coordination",
+      "outcome": "A plain BLOCKED receipt (not HUMAN-HOLD) is floor-resetting exactly like DONE/HUMAN-HOLD/FAILED -- a stale claim before it must never out-rank a fresh claim after it.",
+      "check": "coordination-claim-window",
+      "artifact": "fixtures/skills/coordination/claim-window-resets-after-blocked-terminal.md",
+      "expect": { "winner": "bob", "terminalType": "DONE" }
+    },
+    {
       "id": "coordination-claim-yield-excluded-from-floor",
       "mode": "coordination",
       "outcome": "coordination/SKILL.md's own rationale: the window floor is deliberately NOT the loser's YIELD timestamp -- if it were, a yield landing before the winner's own re-read would floor the winner's claim out of its own window and make the win undecidable.",

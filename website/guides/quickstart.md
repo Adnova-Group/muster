@@ -45,6 +45,8 @@ Breadth-first review and fix. It fans out six read-only dimension reviews in par
 /muster:audit src/payments
 ```
 
+Prefix with `backlog` to sweep read-only instead of fixing: `/muster:audit backlog` writes the ranked ledger to `.muster/backlog.md`, one item per finding-cluster, ready for `/muster:sprint` to run later.
+
 ## Inspect the routing yourself
 
 Because the CLI is deterministic and makes no model calls, you can run it in a terminal to see exactly how Muster would resolve work:

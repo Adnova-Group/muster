@@ -44,7 +44,7 @@ Muster's glass-box output style ships inside the plugin and applies automaticall
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions (seven when the project builds prompts or agents), then fixes everything with tests and verifies. |
 | Sprint | `/muster:sprint <backlog ref>` | Batch verb: runs the full autopilot lifecycle sequentially over every item in a backlog, ticking each off as it completes. An escalated item never aborts the sprint; one attended stop at the end for the batch report. |
 
-Run and Autopilot accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome. A thin outcome gets refined first: `muster assess` does a deterministic gap-check, and if the outcome is vague, an interview skill asks one question at a time behind an approval gate before any crew is assembled.
+Run and Autopilot accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome. A thin outcome gets refined first: `muster assess` does a deterministic gap-check, and if the outcome is vague, an interview skill asks one question at a time behind an approval gate before any crew is assembled. An outcome that decomposes into independent parts can instead be written to a sprint backlog (`.muster/backlog.md`) for `/muster:sprint` to run as a batch; `/muster:audit backlog [path]` fills the same backlog from audit's findings, sweeping read-only instead of fixing them inline.
 
 ## How it works
 

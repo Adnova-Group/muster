@@ -8,7 +8,7 @@ Muster exposes five entry points as slash commands under the `muster:` namespace
 | Autopilot | `/muster:autopilot <outcome>` | Hands-off full lifecycle |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
-| Sprint | `/muster:sprint <backlog ref>` | Batch autopilot over every backlog item, one stop at the end |
+| Sprint | `/muster:sprint <backlog ref>` | Batch autopilot over every backlog item, never interviewing mid-batch, one stop at the end |
 
 ## Run
 
@@ -51,11 +51,18 @@ The review-and-fix counterpart to diagnose. Where diagnose is one bug, audit swe
 /muster:audit src/payments
 ```
 
+A first token of `backlog` (`/muster:audit backlog [path]`) switches to a **backlog mode**: the same read-only dimension sweep and consolidated ledger, but no branch and no commits — instead of fixing, the ranked ledger is written to `.muster/backlog.md`, one assess-passable item per finding-cluster (duplicates skipped), for `/muster:sprint` to run later. Default mode is unchanged; a directory actually named `backlog` needs the `./backlog` form to stay in default mode.
+
+```sh
+/muster:audit backlog
+/muster:audit backlog src/payments
+```
+
 ## Sprint
 
-The batch counterpart to autopilot. It resolves a backlog — `.muster/backlog.md`'s unchecked `- [ ]` items, each optionally carrying a `{disposition: ...}` annotation, or `issues:<label>` resolved via `gh issue list` — then runs the full autopilot lifecycle sequentially over every item, ticking each off as it completes.
+The batch counterpart to autopilot. It resolves a backlog — `.muster/backlog.md`'s unchecked `- [ ]` items, each optionally carrying a `{disposition: ...}` annotation, or `issues:<label>` resolved via `gh issue list` — then runs the full autopilot lifecycle sequentially over every item, ticking each off as it completes. The backlog is usually generated rather than hand-written: an accepted interview decomposition writes one item per part, and `/muster:audit backlog` writes one item per finding — both match sprint's parser format exactly.
 
-Per item, the declared disposition executes directly, without the merge-decision prompt: `ask` or an absent annotation coerces to `pr`, and in unattended mode `merge-local`/`merge-push` downgrade to `pr`. An escalated item never aborts the batch — it stays unchecked with an `{escalated}` annotation and the sprint moves on to the next item. Sprint stops exactly once, attended, at the end: a batch report covering every item.
+Per item, the declared disposition executes directly, without the merge-decision prompt: `ask` or an absent annotation coerces to `pr`, and in unattended mode `merge-local`/`merge-push` downgrade to `pr`. An escalated item never aborts the batch — it stays unchecked with an `{escalated}` annotation and the sprint moves on to the next item. A per-item outcome that `muster assess` would normally send to interview never triggers one inside a sprint, even in an attended session — it proceeds with autopilot's Unattended (Routine) best-effort defaults, and the gap is recorded in STATE and the batch report instead; interviews belong at backlog-authoring time, not mid-batch. Sprint stops exactly once, attended, at the end: a batch report covering every item.
 
 ```sh
 /muster:sprint

@@ -46,16 +46,23 @@ An **ACCEPTED** split writes the backlog:
 - **Write each part** as an unchecked item to `.muster/backlog.md` — create the file if absent, append if
   present. NEVER remove, reorder, or rewrite existing lines.
 - **Item format** (must match `/muster:sprint`'s parser exactly): exactly one line per item —
-  `- [ ] <outcome text with success criteria folded inline as clauses>`, optionally ending with a
-  `{disposition: merge-local|merge-push|pr|keep}` annotation. Criteria fold inline as clauses, never as
-  sub-lines or nested bullets — a multi-line item is a format violation. Omit the annotation by default
+  `- [ ] <outcome text with success criteria folded inline as clauses>`, followed by any of `{id: ...}`,
+  `{deps: ...}`, `{disposition: ...}` annotations. Criteria fold inline as clauses, never as sub-lines or
+  nested bullets — a multi-line item is a format violation.
+- **Wave grammar** — every item gets `{id: <short-kebab-slug>}` (a label only; it never affects ordering).
+  A part that builds on an earlier one gets `{deps: <predecessor ids>}`; a genuinely independent part gets
+  `{deps: none}` **explicitly** — an item written without a `{deps}` annotation implicitly depends on
+  everything already written above it, so omitting it serializes what should run in parallel.
+- **Disposition** — optionally add `{disposition: merge-local|merge-push|pr|keep}`. Omit by default
   (`sprint` defaults unannotated items to `pr`); write it only when the user explicitly chose a
   disposition for that item during the interview.
 - **Measurable per item** — each item must embed at least one number or measurable keyword so
-  `npx -y @adnova-group/muster assess "<item text>"` returns `clear: true` standalone (`src/interview.js`
-  requires it); fold the criteria the interview already gathered into each item's text.
-- **Skip duplicates** — on append, skip any item whose text (compared with any `{...}` annotation
-  stripped) already exists in the file, checked or unchecked; record the skips.
+  `npx -y @adnova-group/muster assess "<item text>"` — run with every `{key: value}` annotation stripped
+  generically, so `{id}`/`{deps}`/`{disposition}` never count toward or against measurability — returns
+  `clear: true` standalone (`src/interview.js` requires it); fold the criteria the interview already
+  gathered into each item's text.
+- **Skip duplicates** — on append, skip any item whose text (compared with every `{key: value}` annotation
+  stripped generically) already exists in the file, checked or unchecked; record the skips.
 - **Glass box** — record the written items and the skips in the run STATE.
 - **Then** use **AskUserQuestion** to offer: run the **first item now** (the autopilot lifecycle), run the
   **whole backlog** now (`/muster:sprint`), or **just save** (stop here).

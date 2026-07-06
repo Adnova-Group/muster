@@ -62,9 +62,9 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
 
 When autopilot is fired by a Claude Code Routine (no interactive human present), steps 1–7 run identically — except the step 3 info-gap check must **not** block (there is no human to interview). Step 8 is non-interactive:
 
-- On `npx -y @adnova-group/muster assess` returning `clear: false`, **do not** trigger the interview. Record the gap (the `signals`) to the run report in STATE and proceed with best-effort defaults — autonomy still stops at the reviewable artifact (the PR), where the human can close the gap.
+- On `npx -y @adnova-group/muster assess` returning `clear: false`, proceed with best-effort defaults instead of the interview — record the gap (the `signals`) to the run report in STATE; autonomy still stops at the reviewable artifact (the PR), where the human can close the gap.
 - The merge **disposition**: `manifest.mergeDisposition` (step 8) takes precedence when set. When absent, fall back to the outcome text (e.g. "…then open a PR" / "…keep the branch"). **Default when neither is stated: open a Pull Request.**
-- **Never** auto-merge to a base branch and **never** push directly to main/master in unattended mode — autonomy stops at the reviewable artifact (the PR).
+- **Never** auto-merge to a base branch or push directly to main/master in unattended mode — autonomy stops at the reviewable artifact (the PR).
 - Escalations (fix-loop cap reached, tournament with no passing candidate, a spec-gate second FAIL, or a subagent dispatch that still fails after its retry) are written to the run report in STATE instead of blocking on an interactive prompt; the Routine result and any wired Channel can surface them to the human.
 - The outcome is supplied via the Routine's `text` field (API `/fire`) or the saved Routine config — the same `$ARGUMENTS` slot, nothing extra to wire.
 

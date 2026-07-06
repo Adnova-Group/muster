@@ -2,18 +2,24 @@
 // CI regression test (test/router-eval.test.js). No IO here — callers pass the manifests.
 import { validateManifest } from "../../src/manifest.js";
 
-// Every stage/role/provider name + plan-task word a manifest mentions, lowercased.
+// Every crew member's stage, lowercased. Stage is the role name verbatim — validateManifest
+// requires it, and every crew builder in this codebase sets it exactly — so it's the only
+// reliable match target for expected-role coverage.
 export function manifestTokens(m) {
   const t = new Set();
-  for (const c of m.crew || []) { if (c.stage) t.add(String(c.stage).toLowerCase()); if (c.provider) t.add(String(c.provider).toLowerCase()); }
-  for (const p of m.plan || []) if (p.task) String(p.task).toLowerCase().split(/\W+/).forEach(w => t.add(w));
+  for (const c of m.crew || []) if (c.stage) t.add(String(c.stage).toLowerCase());
   return t;
 }
 
+// Exact stage match, not substring/token overlap: this used to also fold in provider names
+// and plan-task words (split(/\W+/) on the task text) and match via `x.includes(r) ||
+// r.includes(x)`. A plan task ending in punctuation (e.g. "...findings.") makes split(/\W+/)
+// yield a trailing "" token, and `r.includes("")` is true for ANY role `r` — so that trailing
+// empty token alone made covers() report every expected role "covered" regardless of actual
+// crew composition (see eval/modes/grade-lib.mjs's roleCoverage / crewCoversRoles checks,
+// which document and avoid the same trap with the same exact-match fix).
 export function covers(m, role) {
-  const r = role.toLowerCase();
-  for (const x of manifestTokens(m)) if (x.includes(r) || r.includes(x)) return true;
-  return false;
+  return manifestTokens(m).has(role.toLowerCase());
 }
 
 // Deterministic code grade: 0 if not valid JSON / invalid manifest; 3 if valid but the

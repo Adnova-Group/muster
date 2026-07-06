@@ -61,3 +61,20 @@ test("a manifest missing model fails the code grade (the original defect)", () =
   const noModel = { outcome: "x", successCriteria: ["a"], crew: [{ stage: "implement", provider: "muster-builder", source: "builtin", rationale: "r", evidence: "e", fallback: "inline" }], recommendations: [], degradations: [], plan: [{ task: "do it", mode: "single" }] };
   assert.equal(codeGradeManifest(noModel, ["implement"]).score, 0, "missing model must score 0");
 });
+
+test("role coverage does not false-positive on a plan task's trailing-punctuation token (the trailing empty-string-token defect)", () => {
+  // A plan task ending in punctuation (e.g. "...findings.") makes split(/\W+/) yield a
+  // trailing "" token. "".includes(r) is false, but r.includes("") is true for ANY role
+  // r — so the old substring-based covers() falsely "covered" every expected role via that
+  // empty token alone, regardless of actual crew composition. Reproduces the gate-proven
+  // bug: a crew containing only `implement` must NOT cover security-review/code-review.
+  const implementOnly = {
+    outcome: "x", successCriteria: ["a"],
+    crew: [{ stage: "implement", provider: "muster-builder", source: "builtin", model: "sonnet", rationale: "r", evidence: "e", fallback: "inline" }],
+    recommendations: [], degradations: [],
+    plan: [{ task: "Audit the entire codebase for security vulnerabilities and remediate the findings.", mode: "single" }],
+  };
+  const g = codeGradeManifest(implementOnly, ["security-review", "code-review"]);
+  assert.match(g.reason, /role coverage 0\/2/, `expected 0/2 role coverage, got: ${g.reason}`);
+  assert.ok(g.score < 10, `an implement-only crew must not score full marks for security/code review coverage (got ${g.score})`);
+});

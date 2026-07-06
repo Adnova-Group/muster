@@ -1,0 +1,16 @@
+{
+  "scores": {
+    "problem-clarity": 3,
+    "outcome-alignment": 3,
+    "evidence": 2,
+    "scope-discipline": 2,
+    "dependency-clarity": 2,
+    "primary-metric": 2,
+    "guardrail-metrics": 2
+  },
+  "gate": {
+    "criteria": ["problem-clarity", "outcome-alignment", "evidence", "scope-discipline", "dependency-clarity", "primary-metric", "guardrail-metrics"],
+    "floor": 2,
+    "pass_total": 16
+  }
+}

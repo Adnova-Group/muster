@@ -1,0 +1,4 @@
+[
+  { "name": "beta-init", "reach": 100, "impact": 2, "confidence": 1, "effort": 2 },
+  { "name": "alpha-init", "reach": 100, "impact": 2, "confidence": 1, "effort": 2 }
+]

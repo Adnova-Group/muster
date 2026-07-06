@@ -1,0 +1,14 @@
+{
+  "candidates": [
+    { "id": "a", "total": 8, "passing": true, "content": "approach A solves via caching" },
+    { "id": "b", "total": 7, "passing": true, "content": "approach B solves via denormalization" },
+    { "id": "c", "total": 2, "passing": false, "content": "approach C is broken" }
+  ],
+  "fusionMap": {
+    "consensus": ["all candidates agree on the approach"],
+    "contradictions": [],
+    "partialCoverage": [],
+    "uniqueInsights": [],
+    "blindSpots": []
+  }
+}

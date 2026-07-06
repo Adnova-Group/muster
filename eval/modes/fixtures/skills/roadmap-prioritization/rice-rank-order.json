@@ -1,0 +1,5 @@
+[
+  { "name": "retry-backoff", "reach": 1000, "impact": 2, "confidence": 0.8, "effort": 2 },
+  { "name": "dashboard-metric", "reach": 200, "impact": 1, "confidence": 0.8, "effort": 1 },
+  { "name": "docs-refresh", "reach": 50, "impact": 0.5, "confidence": 1, "effort": 0.5 }
+]

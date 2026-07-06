@@ -25,10 +25,12 @@ The catalog spans software and knowledge work:
 
 - **Product**: PRD, epic, user-story, roadmap
 - **Business**: business-case, executive-summary, OKRs, competitive-battlecard
-- **Launch and comms**: launch-plan, release-notes, case-study
-- **Content**: blog-post, social-post, newsletter, lead-magnet, book (fiction and non-fiction)
+- **Launch and comms**: launch-plan, release-briefing (`release-notes.yaml`; three audience-split artifacts -- technical changelog, user briefing, announcement post -- from one draft phase), case-study
+- **Content**: blog-post, social-post, newsletter, lead-magnet, video-content, book (fiction and non-fiction)
 - **Engineering specs**: AI implementation spec, AI test plan
 - **Operations**: runbook
+
+Content pipelines that resolve an audience or a voice read named profiles from `docs/profiles/`: `AUDIENCES.md` (depth, jargon, altitude), `VOICE.md` (register, rhythm, anti-patterns), and `BRAND.md` (a visual anchor for the `image`/`video` roles) -- created or extended on first use, not hand-authored up front. Blog-post, lead-magnet, and social-post also carry an `optional_phases: [publish]` phase: skippable, terminal, and scoped to assembling the ready-to-publish packet and evidence -- never the deploy/post/send act itself, which stays behind the action-class fence.
 
 ## Roadmap prioritization
 

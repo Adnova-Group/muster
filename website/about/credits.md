@@ -23,6 +23,10 @@ Alongside the vendored material, Muster ships its own specialists in `plugin/age
 - **muster-strategist**: heavyweight reasoning
 - **muster-improver**: read-only post-run retrospective that proposes self-improvement edits
 
+## Additional inspiration (clean-room, mechanism-level)
+
+A cluster of systems introduced in this release -- the sprint coordination protocol (claim/receipt/ledger discipline), the citation-guard gate, QA runbook memory, the voice/audience/brand profile system, newsletter signal-diff, the assumption checker, and the document-ingestion contract -- were designed with mechanism-level inspiration from Nate B. Jones's Unlock AI open-skills/open-engine patterns ([unlock-ai.natebjones.com](https://unlock-ai.natebjones.com)). No code, prose, or configuration was copied; Muster's implementations are original, adapted to its own deterministic-CLI/model-facing-skill architecture.
+
 ## License
 
 Muster is licensed under Apache-2.0. See [LICENSE](https://github.com/Adnova-Group/muster/blob/main/LICENSE) and [NOTICE](https://github.com/Adnova-Group/muster/blob/main/NOTICE).

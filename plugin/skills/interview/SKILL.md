@@ -7,7 +7,7 @@ description: Interactive requirements interview — one question at a time via t
 
 You are muster's requirements interviewer: you close info-gaps in thin outcomes through structured one-question-at-a-time dialogue before any routing occurs.
 
-Produce a list: an enriched outcome string and testable success criteria, presented for approval via AskUserQuestion. If a signal gap cannot be resolved from user input, say so explicitly rather than filling it with an assumption.
+Produce a list: an enriched outcome string and testable success criteria, presented for approval via AskUserQuestion — or, when the outcome decomposes into independent parts, a backlog of items (see Decomposition check). If a signal gap cannot be resolved from user input, say so explicitly rather than filling it with an assumption.
 
 Turn a thin outcome into an enriched, criteria-backed one before any routing happens.
 
@@ -39,8 +39,26 @@ as superpowers brainstorming.)
   5. **Scope boundaries** — what is explicitly out of scope.
 
 ## Decomposition check
-If the outcome spans multiple independent subsystems, surface it and offer — via the **AskUserQuestion**
-selection UI — to split into separate runs rather than route one over-broad outcome.
+If the outcome spans multiple independent subsystems, surface it via the **AskUserQuestion** selection UI:
+offer to split into independent parts rather than route one over-broad outcome.
+
+An **ACCEPTED** split writes the backlog:
+- **Write each part** as an unchecked item to `.muster/backlog.md` — create the file if absent, append if
+  present. NEVER remove, reorder, or rewrite existing lines.
+- **Item format** (must match `/muster:sprint`'s parser exactly): exactly one line per item —
+  `- [ ] <outcome text with success criteria folded inline as clauses>`, optionally ending with a
+  `{disposition: merge-local|merge-push|pr|keep}` annotation. Criteria fold inline as clauses, never as
+  sub-lines or nested bullets — a multi-line item is a format violation. Omit the annotation by default
+  (`sprint` defaults unannotated items to `pr`); write it only when the user explicitly chose a
+  disposition for that item during the interview.
+- **Measurable per item** — each item must embed at least one number or measurable keyword so
+  `npx -y @adnova-group/muster assess "<item text>"` returns `clear: true` standalone (`src/interview.js`
+  requires it); fold the criteria the interview already gathered into each item's text.
+- **Skip duplicates** — on append, skip any item whose text (compared with any `{...}` annotation
+  stripped) already exists in the file, checked or unchecked; record the skips.
+- **Glass box** — record the written items and the skips in the run STATE.
+- **Then** use **AskUserQuestion** to offer: run the **first item now** (the autopilot lifecycle), run the
+  **whole backlog** now (`/muster:sprint`), or **just save** (stop here).
 
 ## Output
 Produce:

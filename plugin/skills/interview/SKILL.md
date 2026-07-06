@@ -29,13 +29,13 @@ as superpowers brainstorming.)
 ## One question at a time
 - Ask via the **AskUserQuestion** selection UI: 2-4 labeled options, multiple-choice wherever the answer
   space is enumerable. Free-text only when options genuinely don't fit.
-- **Never batch questions.** One question, wait for the answer, then the next.
+- **Ask one question at a time.** One question, wait for the answer, then the next.
 - Cover only the gaps the `signals` flagged, plus the essentials below, roughly in this order:
   1. **Purpose / problem** — what problem this solves, and why now.
   2. **Users** — who the target users are / who consumes the output.
   3. **Constraints** — tech, scope, deadline, what must not break.
   4. **Measurable success criteria** — push for at least one number/metric. This is what `assess`
-     flags most; do not accept a vague "works well."
+     flags most; require a concrete number or metric in place of a vague "works well."
   5. **Scope boundaries** — what is explicitly out of scope.
 
 ## Decomposition check
@@ -47,9 +47,9 @@ An **ACCEPTED** split writes the backlog:
   present. NEVER remove, reorder, or rewrite existing lines.
 - **Item format** (must match `/muster:sprint`'s parser exactly): exactly one line per item —
   `- [ ] <outcome text with success criteria folded inline as clauses>`, followed by any of `{id: ...}`,
-  `{deps: ...}`, `{disposition: ...}` annotations. Criteria fold inline as clauses, never as sub-lines or
-  nested bullets — a multi-line item is a format violation.
-- **Wave grammar** — every item gets `{id: <short-kebab-slug>}` (a label only; it never affects ordering).
+  `{deps: ...}`, `{disposition: ...}` annotations. Criteria fold inline as clauses, always on the single
+  item line rather than as sub-lines or nested bullets — a multi-line item is a format violation.
+- **Wave grammar** — every item gets `{id: <short-kebab-slug>}` (a label only, with no effect on ordering).
   A part that builds on an earlier one gets `{deps: <predecessor ids>}`; a genuinely independent part gets
   `{deps: none}` **explicitly** — an item written without a `{deps}` annotation implicitly depends on
   everything already written above it, so omitting it serializes what should run in parallel.
@@ -58,7 +58,7 @@ An **ACCEPTED** split writes the backlog:
   disposition for that item during the interview.
 - **Measurable per item** — each item must embed at least one number or measurable keyword so
   `npx -y @adnova-group/muster assess "<item text>"` — run with every `{key: value}` annotation stripped
-  generically, so `{id}`/`{deps}`/`{disposition}` never count toward or against measurability — returns
+  generically, so `{id}`/`{deps}`/`{disposition}` are excluded from measurability altogether — returns
   `clear: true` standalone (`src/interview.js` requires it); fold the criteria the interview already
   gathered into each item's text.
 - **Skip duplicates** — on append, skip any item whose text (compared with every `{key: value}` annotation

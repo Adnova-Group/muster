@@ -159,8 +159,8 @@ free-interpret it. Map the returned action:
 - **retarget** — a scope change: do NOT silently re-scope the run; record it as a follow-up and reply
   through the channel that it's been logged for the human to confirm (spec-as-current-truth: the
   manifest stays the single source).
-- **unknown** — reply through the channel asking the human to rephrase (approve / stop / status /
-  retarget); take no action.
+- **unknown** — say so rather than guessing at intent: reply through the channel asking the human to
+  rephrase (approve / stop / status / retarget); take no action until they clarify.
 
 Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.
 

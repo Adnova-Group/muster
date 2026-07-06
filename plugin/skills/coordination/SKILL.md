@@ -10,7 +10,7 @@ invocations, or humans and agents both touching the same backlog) from doing the
 from silently going quiet when one gets stuck.
 
 Return per-item the state it left the shared backlog/label in (claimed / done / blocked / failed) plus
-the receipt(s) written — a work-cycle never ends silently, even on failure.
+the receipt(s) written — a work-cycle always ends with a receipt, even on failure.
 
 Load this when a backlog (file or `issues:<label>`) may be worked by more than one runner concurrently.
 A single-runner sprint may skip the claim/scan steps (nothing to race against) but should still leave
@@ -40,9 +40,9 @@ attribution note belongs in `website/about/credits.md` (out of scope here; flagg
    scan for BOTH before claiming new work, HUMAN-HOLD first (its identity gate is the stricter of the
    two, so a resumable HUMAN-HOLD item should not sit behind newer plain-BLOCKED items in scan order).
 4. **LEDGER** — each runner maintains exactly ONE heartbeat entry (last seen, last item, result), edited
-   in place — never a growing pile of heartbeats.
-5. **One item per claim cycle** — claim, work, leave a receipt, THEN look for the next item. Never batch
-   claims ahead of work.
+   in place — a single entry throughout, not a growing pile of heartbeats.
+5. **One item per claim cycle** — claim, work, leave a receipt, THEN look for the next item, one claim
+   at a time, always after the prior item's work rather than batched ahead of it.
 6. **STANDING-CONTEXT PREFLIGHT** — once per cycle, before doing anything else this cycle (before CLAIM,
    before the resume scan), a runner checks whether the protocol text it is actually running on has
    drifted from the repo's current tip. Compare the commit each in-scope file was at when this session
@@ -59,15 +59,17 @@ attribution note belongs in `website/about/credits.md` (out of scope here; flagg
    scope — a new forbidden action, a new fence, a new binding, anything the runner was NOT already bound
    by — is never silently adopted: it is a HUMAN-HOLD (the authorizing human is whoever owns this repo's
    muster configuration), citing the file(s) and old/new hash(es) as the question, because a runner
-   cannot authorize its own scope expansion by reading it off disk. This composes with an item's own
-   resume/claim-window mechanics unchanged — a version mismatch is a property of the RUNNER's session,
-   never of an item's claim state.
+   cannot authorize its own scope expansion by reading it off disk. When it's ambiguous whether a diff
+   is confined or expands scope, say so in the HUMAN-HOLD question rather than guessing — the ambiguity
+   itself is reason enough to escalate. This composes with an item's own resume/claim-window mechanics
+   unchanged — a version mismatch is always a property of the RUNNER's session, not of an item's claim
+   state.
 
 An **escalation** (sprint.md's own terminal disposition — spec-gate cap, fix-loop cap) is not a new
 receipt type: it is a `FAILED` receipt (attempt-counted, per each binding's existing format) plus the
 item-level escalated-marker — Binding B's `{escalated: <runId or date>}` annotation, Binding A's move to
-`agent:needs-input` with a question comment — so a later claim scan skips it by that marker alone,
-never re-deriving it from the retry-cap math.
+`agent:needs-input` with a question comment — so a later claim scan relies on that marker alone,
+rather than re-deriving it from the retry-cap math.
 
 ## Binding A — GitHub issues (`issues:<label>`)
 
@@ -134,7 +136,7 @@ paginated, same reason as above:
 gh api repos/{owner}/{repo}/issues/<N>/comments --paginate --slurp --jq \
   'flatten | [.[] | select(.body | test("^MUSTER FAILED"))] | length'
 ```
-At 2 prior failures, do not recycle into another attempt — redirect to needs-input instead:
+At 2 prior failures, redirect to needs-input instead of recycling into another attempt:
 ```
 gh issue comment <N> --body "MUSTER BLOCKED <runner> <ts>
 retry cap reached (2 prior failures) — needs human input before another attempt"
@@ -165,16 +167,17 @@ gh issue close <N> --comment "closed by muster sprint (<runner>)"
 **Blocked:** `<question>` is free text the runner composes — it can quote backlog/issue content
 verbatim, so it can carry unescaped quotes, backticks, or `$(...)`. Write the body text to a scratch
 file with your file-write tool (never shell `echo`/`printf`, which re-exposes the exact same quoting
-hazard) and pass `--body-file`, never inline it into `--body "..."`, so hostile question text can't
-break the shell's quoting or get evaluated as a command substitution:
+hazard) and pass `--body-file` instead of inlining it into `--body "..."`, so hostile question text
+can't break the shell's quoting or get evaluated as a command substitution:
 ```
 # write "MUSTER BLOCKED <runner> <ts>\n<question>" to <bodyfile> with your file-write tool, then:
 gh issue comment <N> --body-file <bodyfile>
 gh issue edit <N> --remove-label agent:working --add-label agent:needs-input
 ```
 **Human-hold:** the narrower BLOCKED variant — raise it instead of BLOCKED when the question can only be
-authoritatively answered by one specific human (external-effect approval, scope change, spend), never by
-"any" replier. Reuses the SAME `agent:needs-input` label as BLOCKED rather than adding a new one: the
+authoritatively answered by one specific human (external-effect approval, scope change, spend),
+answerable only by that named authorizer, not by "any" replier. Reuses the SAME `agent:needs-input`
+label as BLOCKED rather than adding a new one: the
 bootstrap block above is a one-time idempotent cost either way, but a runner's resume scan already opens
 every `agent:needs-input` issue's full comment thread to find its latest receipt — this label already
 carries more than one underlying state (BLOCKED, and an escalation per the note above), told apart by
@@ -183,7 +186,7 @@ still need the comment read (to get the authorizer's login), plus its own bootst
 add/remove pair on every transition, for a distinction the receipt already carries for free — so
 receipt-discriminated single-label is the cleaner fit here, consistent with the escalated-item
 precedent. `<question>` carries the same hostile-quoting risk as BLOCKED's above — write the body to a
-scratch file and use `--body-file`, never inline it:
+scratch file and use `--body-file` instead of inlining it:
 ```
 # write "MUSTER HUMAN-HOLD <runner> <ts> authorizer=<login>\n<question>" to <bodyfile>, then:
 gh issue comment <N> --body-file <bodyfile>
@@ -215,11 +218,11 @@ subject to the same windowed race check as any other claim above — that `MUSTE
 HUMAN-HOLD` comment is itself the window floor, so the re-claim's `CLAIMED` naturally lands inside a
 fresh window.
 
-**Failed** (revert to claimable, never silently drop the item — unless the retry-cap check during
-claim already redirected this issue to `agent:needs-input` instead):
+**Failed** (revert to claimable, always leaving a record rather than silently dropping the item —
+unless the retry-cap check during claim already redirected this issue to `agent:needs-input` instead):
 `<reason>` is free text (often a quoted error/log excerpt) — the same hostile-quoting risk as
 `<question>` above, so write the body to a scratch file with your file-write tool and use
-`--body-file`, never `--body "..."`:
+`--body-file` in place of `--body "..."`:
 ```
 # write "MUSTER FAILED <runner> <ts> attempt <n>\n<reason>" to <bodyfile> with your file-write tool, then:
 gh issue comment <N> --body-file <bodyfile>
@@ -238,8 +241,8 @@ gh issue pin <ledgerNum>
 Each cycle, find-then-edit (or first-create) your own comment. `<N or item text>` can be raw backlog/
 issue text verbatim — the same hostile-quoting risk as `<question>`/`<reason>` above — so write the
 body to a scratch file with your file-write tool first, then reference it via `@<bodyfile>` (`gh api`'s
-`-F` reads a field's raw value from a file when given `@path`) or `--body-file <bodyfile>`, never
-inline the body into `-f body="..."` / `--body "..."`:
+`-F` reads a field's raw value from a file when given `@path`) or `--body-file <bodyfile>`, in place of
+inlining the body into `-f body="..."` / `--body "..."`:
 ```
 gh issue view <ledgerNum> --json comments \
   --jq '.comments[] | select(.body | startswith("MUSTER LEDGER <runner> ")) | .id'
@@ -260,8 +263,8 @@ to comment on).
 
 Extends the existing `{key: value}` grammar (`src/sprint-waves.js`) — its annotation strip is generic,
 so unknown keys pass through harmlessly: `{claimed:}`/`{blocked:}`/`{human-hold:}` parse, strip cleanly
-from item text, and never affect wave computation or the audit backlog-mode dedupe/assess rule (which
-already strips every `{key: value}` generically before comparing text). `{human-hold:}` is a distinct
+from item text, leaving wave computation and the audit backlog-mode dedupe/assess rule unaffected
+(which already strips every `{key: value}` generically before comparing text). `{human-hold:}` is a distinct
 key from `{blocked:}` rather than a reused one discriminated by receipt (contrast Binding A's
 `agent:needs-input` label decision above): this binding's annotations cost nothing extra to add — the
 generic strip already passes any unknown key through harmlessly, so there is no bootstrap/label-flip
@@ -272,12 +275,13 @@ an add/remove pair per transition. Verified live:
 
 **Coordination is orchestrator-level** — only the top-level `/muster:sprint` driver reads/writes
 `{claimed:}`/`{blocked:}`/`{human-hold:}`/`{attempts:}` annotations on backlog.md and the run STATE's
-`## Coordination` section below. Wave mode's per-item worktree runners (sprint.md's Isolation rule:
-runners never write the main STATE) never claim, never write these annotations, and never touch the
-Coordination section directly — the driver writes each item's `{claimed:}` annotation/receipt itself,
-before dispatching that item's worktree runner (the lock precedes any work, never deferred to
-wave-end), then transcribes each runner's returned outcome, via the existing per-item return contract,
-into its DONE/BLOCKED/HUMAN-HOLD/FAILED receipt and the ledger once the wave completes.
+`## Coordination` section below. Wave mode's per-item worktree runners (sprint.md's Isolation rule
+keeps them from writing the main STATE) leave claiming, annotation-writes, and the Coordination section
+to the driver as well, mirroring sprint.md's own Coordination section ("leave coordination state to the
+driver alone") — the driver writes each item's `{claimed:}` annotation/receipt itself, before
+dispatching that item's worktree runner (the lock always precedes any work, applied immediately rather
+than deferred to wave-end), then transcribes each runner's returned outcome, via the existing per-item
+return contract, into its DONE/BLOCKED/HUMAN-HOLD/FAILED receipt and the ledger once the wave completes.
 
 - **Claim** — append `{claimed: <runner>@<ts>}` to the item's line before starting work. Scan unchecked
   items top to bottom; skip any already carrying a `{claimed:}` from a DIFFERENT runner (your own prior
@@ -296,7 +300,8 @@ into its DONE/BLOCKED/HUMAN-HOLD/FAILED receipt and the ledger once the wave com
   LEDGER <runner> last-seen=<ts> last-item=<item-id> result=<claimed|done|blocked|human-hold|failed|idle>
   ```
   The `LEDGER` line is edited in place (find-and-replace your own prior `LEDGER <runner> ...` OR
-  `IDLE <runner> ...` line) — never appended twice; that is the one-heartbeat-per-runner rule. **IDLE**
+  `IDLE <runner> ...` line) — one entry maintained in place, not appended twice; that is the
+  one-heartbeat-per-runner rule. **IDLE**
   is that same edited-in-place slot, not a fresh line: a cycle that finds nothing claimable has no item
   to annotate (no `{claimed:}`/`{blocked:}`/`{human-hold:}`/`{escalated:}` touches anywhere), so the
   runner's one heartbeat entry reads `IDLE <runner> <ts> — nothing claimable` for that cycle instead of
@@ -320,8 +325,8 @@ into its DONE/BLOCKED/HUMAN-HOLD/FAILED receipt and the ledger once the wave com
   did it. On FAILED — a crash/dispatch failure, distinct from an escalation — strip `{claimed:}` back
   off the line, then bump `{attempts: n}` (absent → `{attempts: 1}`; present → increment) so retries
   are counted across runners/restarts, and write the `FAILED` receipt below. At `{attempts: 2}` (2
-  prior failures), do not leave the item freshly claimable: replace `{attempts: 2}` with
-  `{blocked: max-retries-<item-id>}` instead — the item-id makes the slug unique per item; a bare
+  prior failures), replace `{attempts: 2}` with `{blocked: max-retries-<item-id>}` instead of leaving
+  the item freshly claimable — the item-id makes the slug unique per item; a bare
   `{blocked: max-retries}` would collide across every capped item in the backlog, and a single
   `ANSWER max-retries: ...` would resume all of them at once — and write a `BLOCKED <item-id> <runner>
   <ts> retry cap reached (2 prior failures) — needs human input` receipt in place of the `FAILED` one —

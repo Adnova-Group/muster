@@ -74,4 +74,4 @@ A provider resolves to one of four kinds, which decides how it is dispatched:
 
 When a role resolves to an agent whose type is not yet dispatchable in the running session (for example, plugin agents installed before a restart), the orchestrator falls back to a generic subagent with the resolved provider's brief injected. The model override still applies, so model selection is never lost on the fallback.
 
-Next: [The four modes](/reference/modes).
+Next: [The five modes](/reference/modes).

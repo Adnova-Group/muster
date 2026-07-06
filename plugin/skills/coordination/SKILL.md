@@ -26,13 +26,20 @@ attribution note belongs in `website/about/credits.md` (out of scope here; flagg
    runner sharing a backlog/label IS a separate run, so its `runId` doubles as its coordination identity.
    No new identity infrastructure needed.
 2. **RECEIPTS** — every state change leaves a structured receipt: `CLAIMED` / `DONE` / `BLOCKED(reason,
-   question)` / `FAILED(reason)`.
+   question)` / `FAILED(reason)` / `IDLE` (a cycle that finds nothing claimable — no item exists to
+   annotate, so it folds into the runner's own LEDGER heartbeat rather than a fresh per-item line).
 3. **BLOCKED→RESUME** — a blocked item records its question; runners scan blocked items for an answer
    BEFORE claiming new work, and resume once answered.
 4. **LEDGER** — each runner maintains exactly ONE heartbeat entry (last seen, last item, result), edited
    in place — never a growing pile of heartbeats.
 5. **One item per claim cycle** — claim, work, leave a receipt, THEN look for the next item. Never batch
    claims ahead of work.
+
+An **escalation** (sprint.md's own terminal disposition — spec-gate cap, fix-loop cap) is not a new
+receipt type: it is a `FAILED` receipt (attempt-counted, per each binding's existing format) plus the
+item-level escalated-marker — Binding B's `{escalated: <runId or date>}` annotation, Binding A's move to
+`agent:needs-input` with a question comment — so a later claim scan skips it by that marker alone,
+never re-deriving it from the retry-cap math.
 
 ## Binding A — GitHub issues (`issues:<label>`)
 
@@ -168,12 +175,18 @@ gh issue view <ledgerNum> --json comments \
 gh api -X PATCH repos/{owner}/{repo}/issues/comments/<commentId> \
   -f body="MUSTER LEDGER <runner> <ts>
 last item: <N or item text>
-result: <claimed|done|blocked|failed>"
+result: <claimed|done|blocked|failed|idle>"
 # not found -> first heartbeat:
 gh issue comment <ledgerNum> --body "MUSTER LEDGER <runner> <ts>
 last item: <N or item text>
-result: <claimed|done|blocked|failed>"
+result: <claimed|done|blocked|failed|idle>"
 ```
+On an idle cycle (nothing claimable), there is no item to reference: write `last item: none —
+nothing claimable` and `result: idle` into this SAME comment (found via the `MUSTER LEDGER <runner> `
+prefix above, unchanged, so the next cycle's find still matches) — the runner's one ledger comment
+carries the same `IDLE <runner> <ts> — nothing claimable` heartbeat that Binding B writes below, just
+wrapped in this binding's existing template rather than posted as a fresh comment (there is no issue
+to comment on).
 
 ## Binding B — backlog.md
 
@@ -188,8 +201,10 @@ every `{key: value}` generically before comparing text). Verified live:
 `{claimed:}`/`{blocked:}`/`{attempts:}` annotations on backlog.md and the run STATE's `## Coordination`
 section below. Wave mode's per-item worktree runners (sprint.md's Isolation rule: runners never write
 the main STATE) never claim, never write these annotations, and never touch the Coordination section
-directly — each returns its outcome through the existing per-item return contract, and the driver
-transcribes that into CLAIMED/DONE/BLOCKED/FAILED receipts and the ledger once the wave completes.
+directly — the driver writes each item's `{claimed:}` annotation/receipt itself, before dispatching
+that item's worktree runner (the lock precedes any work, never deferred to wave-end), then transcribes
+each runner's returned outcome, via the existing per-item return contract, into its DONE/BLOCKED/FAILED
+receipt and the ledger once the wave completes.
 
 - **Claim** — append `{claimed: <runner>@<ts>}` to the item's line before starting work. Scan unchecked
   items top to bottom; skip any already carrying a `{claimed:}` from a DIFFERENT runner (your own prior
@@ -203,10 +218,15 @@ transcribes that into CLAIMED/DONE/BLOCKED/FAILED receipts and the ledger once t
   DONE <item-id> <runner> <ts> <disposition>
   BLOCKED <item-id> <runner> <ts> <question>
   FAILED <item-id> <runner> <ts> <reason>
-  LEDGER <runner> last-seen=<ts> last-item=<item-id> result=<claimed|done|blocked|failed>
+  IDLE <runner> <ts> — nothing claimable
+  LEDGER <runner> last-seen=<ts> last-item=<item-id> result=<claimed|done|blocked|failed|idle>
   ```
-  The `LEDGER` line is edited in place (find-and-replace your own prior `LEDGER <runner> ...` line) —
-  never appended twice; that is the one-heartbeat-per-runner rule.
+  The `LEDGER` line is edited in place (find-and-replace your own prior `LEDGER <runner> ...` OR
+  `IDLE <runner> ...` line) — never appended twice; that is the one-heartbeat-per-runner rule. **IDLE**
+  is that same edited-in-place slot, not a fresh line: a cycle that finds nothing claimable has no item
+  to annotate (no `{claimed:}`/`{blocked:}`/`{escalated:}` touches anywhere), so the runner's one
+  heartbeat entry reads `IDLE <runner> <ts> — nothing claimable` for that cycle instead of the usual
+  `last-seen=.../last-item=.../result=...` fields.
 - **Blocked→resume** — append `{blocked: <slug>}` to the item's line (replacing `{claimed:}`) and write
   the `BLOCKED` receipt with the question. Resume scan (before claiming anything new): search STATE's
   `## Coordination` section for an `ANSWER <slug>: <text>` line newer than the matching `BLOCKED ...

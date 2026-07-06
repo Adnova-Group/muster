@@ -29,7 +29,10 @@ update isn't silently dropped.
    connective prose?) and record a `pass`/`needs_review`/`fail` verdict per flagged paragraph. Flagged
    paragraphs fold into the reviewers' finding lists from step 2 — run the checker BEFORE dispatching
    those reviewers so the flags travel in their briefs; never a separate reviewer round. Artifact
-   delivery is blocked while any `fail` — from the guard or a reviewer's verdict — stands.
+   delivery is blocked while any `fail` — from the guard or a reviewer's verdict — stands. Artifacts from
+   an ingestion-bearing phase (one whose desc carries the doc-ingestion contract — anchored facts,
+   ledger-before-synthesis) are also checked for that discipline: a fact asserted in the artifact with no
+   traceable anchor is itself a finding, same severity handling as a dangling citation.
 4. **Intent vs implementation:** before verdicting, run `git notes --ref=muster show <wave commit>` when a
    note exists, and check the implementation against the RECORDED decisions (intent), not just the diff
    against the spec. A mismatch between recorded decisions and code is a finding even when tests pass.

@@ -18,18 +18,27 @@ export const VERBS =
   "Verbs: /muster:run (plan + show), /muster:autopilot (hands-off lifecycle), " +
   "/muster:diagnose (failure-first fix), /muster:audit (whole-codebase review-and-fix).";
 
-export const ROUTING_POLICY = [
-  "Default routing: in this muster repo, drive actionable prompts through muster —",
-  "route directives and substantive questions to the verbs (/muster:run · :autopilot ·",
-  ":diagnose · :audit) where applicable, and content/copy work through the muster content",
-  "pipeline (humanizer). Let conversational or trivial turns fall through. Honor explicit",
-  "/muster commands as given.",
-].join(" ");
+// Voice anti-drift: a single reinforcement line every nudge tier must carry, to
+// counter the output voice regressing over long sessions the same way routing does.
+export const VOICE_NUDGE =
+  "Voice: terse and decision-first — done = verified with evidence inline; no recaps, no process narration.";
+
+export const ROUTING_POLICY =
+  [
+    "Default routing: in this muster repo, drive actionable prompts through muster —",
+    "route directives and substantive questions to the verbs (/muster:run · :autopilot ·",
+    ":diagnose · :audit) where applicable, and content/copy work through the muster content",
+    "pipeline (humanizer). Let conversational or trivial turns fall through. Honor explicit",
+    "/muster commands as given.",
+  ].join(" ") +
+  " " +
+  VOICE_NUDGE;
 
 export const SHORT_NUDGE =
   "muster mode — drive directives through the muster verbs (don't default to plain inline " +
   "work), route copy/content through the humanizer, keep reasoning glass-box. Conversational " +
-  "turns fall through. Verbs: /muster:run · /muster:autopilot · /muster:diagnose · /muster:audit.";
+  "turns fall through. Verbs: /muster:run · /muster:autopilot · /muster:diagnose · /muster:audit. " +
+  VOICE_NUDGE;
 
 // Shared emit helper — writes a JSON object to stdout.
 export function emit(obj) {

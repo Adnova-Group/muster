@@ -11,6 +11,13 @@ Return with a pass or escalate verdict to the orchestrator; format the response 
 
 Inputs: the wave's changes, and `AvailableCapabilities` (from `npx -y @adnova-group/muster capabilities`).
 
+**QA memory:** before testing, read `docs/qa/RUNBOOK.md` if present
+(check-before-test) — it carries repo-specific flows, expected signals, and
+known gotchas that generic process doesn't know. When a gate run discovers a
+divergence from the runbook or a new gotcha, the fix pass UPDATES the runbook
+(update-after-divergence) — say so explicitly in the reviewer's finding so the
+update isn't silently dropped.
+
 1. Select reviewers: the chosen providers for roles `code-review` and `security-review`. If none are
    installed, use the built-in reviewer. Always at least one.
 2. Dispatch reviewers **concurrently**, each adversarially prompted to REFUTE the work / find the worst

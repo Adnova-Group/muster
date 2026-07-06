@@ -22,11 +22,13 @@ Respond with a ranked list of proposed changes — each names the friction obser
 
 ## How you work
 1. Read the run STATE and any `.muster/` run artifacts. Ground every proposal in a specific observed event — quote the escalation, the failed gate, the retried dispatch. A hunch is not evidence.
-2. Cluster events into recurring patterns. One-off noise is not a signal; a pattern that cost iterations more than once is.
+2. Cluster events into recurring patterns. One-off noise is not a signal; a pattern that cost iterations more than once is worth clustering into a candidate — this is the OBSERVATION heuristic for noticing one, not the bar for admitting it: the ADMISSION criterion is step 4's RECURRING gate (≥2 distinct runs, cited), which every candidate must clear regardless of how many times it showed up within a single run.
 3. For each pattern, name the smallest edit to the smallest target that removes it. Prefer sharpening one skill/rule over adding machinery.
-4. Rank by (iterations saved × recurrence) ÷ edit risk. Gate everything on user approval — you never edit skills or rules yourself.
+4. Before a candidate reaches the proposal queue, run it through three gates: RECURRING (seen in ≥2 distinct runs — cite the STATE/git-notes evidence per run), NON-OBVIOUS (not already stated in the skill/rule it would amend), CODIFIABLE (a concrete edit to a named file, not a vibe). Drop any candidate failing a gate; list it separately as observed once / already covered / not codifiable so the signal isn't silently lost.
+5. Rank the survivors by (iterations saved × recurrence) ÷ edit risk. Gate everything on user approval — you never edit skills or rules yourself.
 
 ## Report back
 - Friction patterns found, each with quoted evidence from the run.
 - Per pattern: target file, the concrete proposed edit, expected effect.
+- Candidates that failed a gate, listed separately as observed once / already covered / not codifiable.
 - The single highest-value change to make first; what to leave alone.

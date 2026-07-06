@@ -1,0 +1,15 @@
+{
+  "scores": {
+    "source-refs": 2,
+    "no-internal-jargon": 2,
+    "title-subtitle-format": 2,
+    "clarity": 2,
+    "completeness": 2,
+    "structure": 2
+  },
+  "gate": {
+    "criteria": ["source-refs", "no-internal-jargon", "title-subtitle-format", "clarity", "completeness", "structure"],
+    "floor": 2,
+    "pass_total": 14
+  }
+}

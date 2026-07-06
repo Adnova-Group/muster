@@ -1,0 +1,7 @@
+{
+  "audienceProfile": {
+    "name": "practitioner-devops",
+    "bannedJargon": ["synergy", "leverage", "paradigm shift", "circle back", "low-hanging fruit"]
+  },
+  "draft": "Your on-call rotation shouldn't feel like a fire drill every Tuesday. Here's the one alert-routing change that cut our team's 2am pages in half -- try it this week."
+}

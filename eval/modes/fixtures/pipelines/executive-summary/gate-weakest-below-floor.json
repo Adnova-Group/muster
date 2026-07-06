@@ -1,0 +1,15 @@
+{
+  "scores": {
+    "clarity": 3,
+    "one-page-discipline": 3,
+    "decision-focus": 1,
+    "evidence": 3,
+    "single-ask": 3,
+    "audience-calibrated": 3
+  },
+  "gate": {
+    "criteria": ["clarity", "one-page-discipline", "decision-focus", "evidence", "single-ask", "audience-calibrated"],
+    "floor": 2,
+    "pass_total": 14
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "artifactPath": "docs/lead-magnets/onboarding-checklist.pdf",
+  "imagePrompts": [
+    "Flat-lay illustration of a checklist with a coffee cup, warm palette, no text",
+    "Simple icon set: gear, checkmark, arrow, single accent color"
+  ],
+  "metadata": {
+    "title": "The 12-Point Onboarding Checklist",
+    "description": "A printable checklist for shipping a smoother first-week onboarding.",
+    "ogImage": "docs/lead-magnets/onboarding-checklist-og.png"
+  },
+  "visualVerify": {
+    "screenshot": "docs/lead-magnets/preview-screenshot.png",
+    "consoleEvidence": "no console errors on the landing-page preview render"
+  },
+  "checklist": ["quotes approved", "metrics cleared", "legal flag reviewed", "CTA link verified"],
+  "actionFenceStopped": true
+}

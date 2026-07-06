@@ -653,6 +653,183 @@
       "check": "roadmap-rice",
       "artifact": "fixtures/skills/roadmap-prioritization/rice-zero-effort.json",
       "expect": { "throws": true }
+    },
+
+    {
+      "id": "blog-post-citation-check-clean-sources",
+      "mode": "blog-post",
+      "outcome": "A blog-post research/draft excerpt whose E-E-A-T evidence claims each cite a resolving [src: x] anchor into the Sources list.",
+      "check": "citation-check",
+      "artifact": "fixtures/pipelines/blog-post/citations-clean.md",
+      "expect": { "ok": true, "minClaims": 2 }
+    },
+    {
+      "id": "blog-post-citation-check-dangling-anchor",
+      "mode": "blog-post",
+      "outcome": "The corrupt twin: one citation's anchor doesn't resolve to any Sources entry -- checkCitations auto-fails a dangling anchor.",
+      "check": "citation-check",
+      "artifact": "fixtures/pipelines/blog-post/citations-dangling-anchor.md",
+      "expect": { "ok": false }
+    },
+    {
+      "id": "blog-post-hook-and-originality-quality",
+      "mode": "blog-post",
+      "outcome": "Is this blog-post draft's hook, value delivery, and originality genuinely strong, or does it read as generic AI-drafted content dressed up with citations?",
+      "grading": "model",
+      "rubric": "A good blog-post draft opens with a hook that earns the read within the first 2 sentences, delivers a genuinely useful/non-obvious insight (not restated conventional wisdom), and answers the target query in the first ~200 words (GEO). Penalize: a generic listicle hook, zero original insight, or an FAQ block that pads rather than extracts.",
+      "expect": {}
+    },
+
+    {
+      "id": "social-post-audience-voice-clean-draft",
+      "mode": "social-post",
+      "outcome": "A social-post variant that resolves the audience profile's banned-jargon list and carries none of it.",
+      "check": "audience-voice-jargon",
+      "artifact": "fixtures/pipelines/social-post/audience-voice-clean.json",
+      "expect": { "clean": true }
+    },
+    {
+      "id": "social-post-audience-voice-jargon-violation",
+      "mode": "social-post",
+      "outcome": "The corrupt twin: the draft violates the resolved audience profile's own banned-jargon list.",
+      "check": "audience-voice-jargon",
+      "artifact": "fixtures/pipelines/social-post/audience-voice-jargon-violation.json",
+      "expect": { "clean": false }
+    },
+
+    {
+      "id": "newsletter-signal-diff-new-changed-dated-with-summary",
+      "mode": "newsletter",
+      "outcome": "The curate phase's cross-run diff report: only NEW/CHANGED signals are reported (each dated), unchanged signals collapse to one summary count line.",
+      "check": "signal-diff-baseline",
+      "artifact": "fixtures/pipelines/newsletter/signal-diff-clean.md",
+      "expect": { "newChangedDated": true, "hasSummaryLine": true, "reReportsUnchanged": false, "minNewOrChanged": 2 }
+    },
+    {
+      "id": "newsletter-signal-diff-rereports-unchanged-violation",
+      "mode": "newsletter",
+      "outcome": "The corrupt twin: unchanged signals are re-reported one-by-one instead of collapsing into one summary count line -- exactly the re-reporting the curate phase's rule forbids.",
+      "check": "signal-diff-baseline",
+      "artifact": "fixtures/pipelines/newsletter/signal-diff-violation.md",
+      "expect": { "hasSummaryLine": false, "reReportsUnchanged": true }
+    },
+
+    {
+      "id": "case-study-evidence-table-owned-actions",
+      "mode": "case-study",
+      "outcome": "The synthesis-phase evidence table: every decision|action row carries an owner + deadline, so nothing is flagged.",
+      "check": "evidence-table-shape",
+      "artifact": "fixtures/pipelines/case-study/evidence-table-clean.md",
+      "expect": { "rowsWellFormed": true, "minRows": 5, "unownedFlagCount": 0 }
+    },
+    {
+      "id": "case-study-evidence-table-unowned-action-flagged",
+      "mode": "case-study",
+      "outcome": "The corrupt twin: an action row has no owner and no deadline -- the yaml's own rule says this is flagged, not silently dropped.",
+      "check": "evidence-table-shape",
+      "artifact": "fixtures/pipelines/case-study/evidence-table-unowned-action.md",
+      "expect": { "rowsWellFormed": true, "unownedFlagCount": 1 }
+    },
+    {
+      "id": "case-study-hero-journey-narrative-quality",
+      "mode": "case-study",
+      "outcome": "Does this case-study draft actually land the Hero's Journey framing (customer=hero, product=guide), or does it read as a product feature list with a customer quote bolted on?",
+      "grading": "model",
+      "rubric": "A good case-study draft puts the customer's challenge and agency front and center, with the product cast as the guide/enabler, not the hero. Penalize: product-centric framing, a headline that doesn't lead with a concrete metric, or pull-quotes that feel inserted rather than load-bearing.",
+      "expect": {}
+    },
+
+    {
+      "id": "lead-magnet-publish-packet-complete",
+      "mode": "lead-magnet",
+      "outcome": "The optional publish-prep phase's packet: artifact + image prompts + metadata + a visual-verify pass, then it stops at the action fence for the human's go-ahead.",
+      "check": "publish-packet-shape",
+      "artifact": "fixtures/pipelines/lead-magnet/publish-packet-clean.json",
+      "expect": { "hasArtifactPath": true, "hasImagePrompts": true, "hasMetadata": true, "hasVisualVerify": true, "hasChecklist": true, "actionFenceStopped": true }
+    },
+    {
+      "id": "lead-magnet-publish-packet-incomplete-no-fence-stop",
+      "mode": "lead-magnet",
+      "outcome": "The corrupt twin: no console evidence, no checklist, and it does NOT stop at the action fence -- exactly what the publish phase's rule forbids.",
+      "check": "publish-packet-shape",
+      "artifact": "fixtures/pipelines/lead-magnet/publish-packet-missing-checklist.json",
+      "expect": { "hasVisualVerify": false, "hasChecklist": false, "actionFenceStopped": false }
+    },
+
+    {
+      "id": "release-notes-gate-floor-met-total-insufficient",
+      "mode": "release-notes",
+      "outcome": "Every release-notes gate criterion sits exactly at the floor (2): floor alone doesn't clear pass_total (14) at a 6-criterion total of 12.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/release-notes/gate-floor-insufficient.json",
+      "expect": { "total": 12, "weakestCriterion": "source-refs", "passing": false }
+    },
+    {
+      "id": "release-notes-gate-passing",
+      "mode": "release-notes",
+      "outcome": "Scores clearing both the floor and pass_total (14) for the real release-notes gate: passing.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/release-notes/gate-passing.json",
+      "expect": { "total": 14, "weakestCriterion": "title-subtitle-format", "passing": true }
+    },
+
+    {
+      "id": "video-content-humanizer-score-clean-script",
+      "mode": "video-content",
+      "outcome": "The humanize phase's final pass on a video script: no AI tells detected, the deterministic score clears the passing threshold.",
+      "check": "humanizer-score",
+      "artifact": "fixtures/pipelines/video-content/humanized-pass.md",
+      "expect": { "passing": true }
+    },
+    {
+      "id": "video-content-humanizer-score-ai-tell-laden-fails",
+      "mode": "video-content",
+      "outcome": "The corrupt twin: a script riddled with em-dashes, banned openers, tier-1 vocab, and an emoji -- scoreHumanness correctly fails it below the passing threshold.",
+      "check": "humanizer-score",
+      "artifact": "fixtures/pipelines/video-content/humanized-fail.md",
+      "expect": { "passing": false }
+    },
+
+    {
+      "id": "executive-summary-gate-floor-met-total-insufficient",
+      "mode": "executive-summary",
+      "outcome": "Every executive-summary gate criterion sits exactly at the floor (2): total (12) misses pass_total (14).",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/executive-summary/gate-floor-insufficient.json",
+      "expect": { "total": 12, "weakestCriterion": "clarity", "passing": false }
+    },
+    {
+      "id": "executive-summary-gate-weakest-below-floor-overrides-high-total",
+      "mode": "executive-summary",
+      "outcome": "A high total (16, well above pass_total) with decision-focus below the floor: the floor principle overrides the total -- still not passing.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/executive-summary/gate-weakest-below-floor.json",
+      "expect": { "total": 16, "weakestCriterion": "decision-focus", "passing": false }
+    },
+
+    {
+      "id": "competitive-battlecard-citation-check-clean-sources",
+      "mode": "competitive-battlecard",
+      "outcome": "The research phase's competitor facts and pricing claims are '(cited)' per the yaml -- each anchor resolves into the Sources list.",
+      "check": "citation-check",
+      "artifact": "fixtures/pipelines/competitive-battlecard/citations-clean.md",
+      "expect": { "ok": true, "minClaims": 2 }
+    },
+    {
+      "id": "competitive-battlecard-citation-check-dangling-anchor",
+      "mode": "competitive-battlecard",
+      "outcome": "The corrupt twin: a pricing claim's citation anchor doesn't resolve to any Sources entry.",
+      "check": "citation-check",
+      "artifact": "fixtures/pipelines/competitive-battlecard/citations-dangling-anchor.md",
+      "expect": { "ok": false }
+    },
+    {
+      "id": "competitive-battlecard-positioning-sharpness",
+      "mode": "competitive-battlecard",
+      "outcome": "Are this battlecard's differentiation claims and trap-setting discovery questions actually sharp and specific to this competitor, or generic enough to paste onto any rival?",
+      "grading": "model",
+      "rubric": "A good battlecard's positioning section names concrete, competitor-specific weaknesses and asks discovery questions that would surface them naturally in a live deal conversation. Penalize: generic 'we're better because we care' positioning, discovery questions any competitor's rep could deflect, or objection handling with no cited proof point.",
+      "expect": {}
     }
   ]
 }

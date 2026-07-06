@@ -301,6 +301,82 @@ test("roadmap-rice: real RICE math ranks correctly and fails loud on zero effort
   assert.equal(gradeCase({ check: "roadmap-rice", expect: { throws: true } }, [{ name: "z", reach: 1, impact: 1, confidence: 1, effort: 0 }]).pass, true);
 });
 
+// --- content-pipeline grade-lib unit tests (eval/modes extended to pipelines/*.yaml) ---
+
+test("citation-check: resolving [src: x] anchors pass; a dangling anchor fails an ok:true expectation", () => {
+  const clean = "A claim with a citation [src: a].\n\n## Sources\n- a: https://example.com/a\n";
+  assert.equal(gradeCase({ check: "citation-check", expect: { ok: true, minClaims: 1 } }, clean).pass, true);
+  const dangling = "A claim with a citation [src: missing].\n\n## Sources\n- a: https://example.com/a\n";
+  assert.equal(gradeCase({ check: "citation-check", expect: { ok: true } }, dangling).pass, false);
+  assert.equal(gradeCase({ check: "citation-check", expect: { ok: false } }, dangling).pass, true);
+});
+
+test("humanizer-score: a clean passage passes the threshold; an AI-tell-laden passage fails a passing:true expectation", () => {
+  const clean = "Open on a quiet office at dusk. The last engineer logs off for the night.";
+  assert.equal(gradeCase({ check: "humanizer-score", expect: { passing: true } }, clean).pass, true);
+  const tellLaden = "Let's dive in — we'll delve into a robust, seamless, cutting-edge paradigm that will truly elevate and foster synergy.";
+  assert.equal(gradeCase({ check: "humanizer-score", expect: { passing: true } }, tellLaden).pass, false);
+  assert.equal(gradeCase({ check: "humanizer-score", expect: { passing: false } }, tellLaden).pass, true);
+});
+
+test("evidence-table-shape: well-formed owned rows pass unownedFlagCount:0; an unowned action row fails that expectation", () => {
+  const header = "| type | value | source-anchor | confidence | needs_review | subject-approval-status | owner | deadline |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n";
+  const owned = header + "| action | ship it | notes.md:L1 | high | no | approved | jane | 2026-08-01 |\n";
+  assert.equal(gradeCase({ check: "evidence-table-shape", expect: { rowsWellFormed: true, unownedFlagCount: 0 } }, owned).pass, true);
+  const unowned = header + "| action | ship it | notes.md:L1 | high | no | approved | - | - |\n";
+  assert.equal(gradeCase({ check: "evidence-table-shape", expect: { unownedFlagCount: 0 } }, unowned).pass, false);
+  assert.equal(gradeCase({ check: "evidence-table-shape", expect: { unownedFlagCount: 1 } }, unowned).pass, true);
+});
+
+test("evidence-table-shape: a metric row with an empty source-anchor cell is malformed, not a passing uncited claim", () => {
+  const header = "| type | value | source-anchor | confidence | needs_review | subject-approval-status | owner | deadline |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n";
+  const uncited = header + "| metric | 40% reduction in onboarding time |  | high | no | approved | - | - |\n";
+  assert.equal(gradeCase({ check: "evidence-table-shape", expect: { rowsWellFormed: false } }, uncited).pass, true);
+  assert.equal(gradeCase({ check: "evidence-table-shape", expect: { rowsWellFormed: true } }, uncited).pass, false);
+});
+
+test("evidence-table-shape: a metric row with an empty subject-approval-status cell is malformed, not silently approved", () => {
+  const header = "| type | value | source-anchor | confidence | needs_review | subject-approval-status | owner | deadline |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n";
+  const unapproved = header + "| metric | 40% reduction in onboarding time | metrics.csv:L2 | high | no |  | - | - |\n";
+  assert.equal(gradeCase({ check: "evidence-table-shape", expect: { rowsWellFormed: false } }, unapproved).pass, true);
+  assert.equal(gradeCase({ check: "evidence-table-shape", expect: { rowsWellFormed: true } }, unapproved).pass, false);
+});
+
+test("signal-diff-baseline: dated NEW/CHANGED + a summary line pass; per-item unchanged re-reporting fails a hasSummaryLine:true expectation", () => {
+  const clean = "- NEW: a thing happened (2026-01-01)\n- unchanged: 3 signals (see baseline)\n";
+  assert.equal(gradeCase({ check: "signal-diff-baseline", expect: { newChangedDated: true, hasSummaryLine: true, reReportsUnchanged: false } }, clean).pass, true);
+  const violating = "- NEW: a thing happened (2026-01-01)\n- UNCHANGED: an old thing, still the same\n";
+  assert.equal(gradeCase({ check: "signal-diff-baseline", expect: { hasSummaryLine: true } }, violating).pass, false);
+  assert.equal(gradeCase({ check: "signal-diff-baseline", expect: { hasSummaryLine: false, reReportsUnchanged: true } }, violating).pass, true);
+});
+
+test("publish-packet-shape: a complete packet passes; a missing checklist/visual-verify/fence-stop each fail a true expectation", () => {
+  const complete = { artifactPath: "docs/x.pdf", imagePrompts: ["p"], metadata: { title: "t" }, visualVerify: { screenshot: "s.png", consoleEvidence: "clean" }, checklist: ["c"], actionFenceStopped: true };
+  assert.equal(gradeCase({ check: "publish-packet-shape", expect: { hasArtifactPath: true, hasImagePrompts: true, hasMetadata: true, hasVisualVerify: true, hasChecklist: true, actionFenceStopped: true } }, complete).pass, true);
+  const incomplete = { artifactPath: "docs/x.pdf", imagePrompts: ["p"], metadata: { title: "t" }, visualVerify: {}, checklist: [], actionFenceStopped: false };
+  assert.equal(gradeCase({ check: "publish-packet-shape", expect: { hasVisualVerify: true, hasChecklist: true, actionFenceStopped: true } }, incomplete).pass, false);
+  assert.equal(gradeCase({ check: "publish-packet-shape", expect: { hasVisualVerify: false, hasChecklist: false, actionFenceStopped: false } }, incomplete).pass, true);
+});
+
+test("audience-voice-jargon: a jargon-free draft passes clean:true; a draft violating the banned-jargon list fails it", () => {
+  const profile = { bannedJargon: ["leverage", "synergy"] };
+  const clean = gradeCase({ check: "audience-voice-jargon", expect: { clean: true } }, { audienceProfile: profile, draft: "Ship the fix this week." });
+  assert.equal(clean.pass, true);
+  const violating = gradeCase({ check: "audience-voice-jargon", expect: { clean: true } }, { audienceProfile: profile, draft: "Let's leverage this synergy." });
+  assert.equal(violating.pass, false);
+  assert.equal(gradeCase({ check: "audience-voice-jargon", expect: { clean: false } }, { audienceProfile: profile, draft: "Let's leverage this synergy." }).pass, true);
+});
+
+test("gate-achievability: parameterizes over ANY pipeline's real gate (not just prd) -- floor-met-but-short and a passing scenario both grade correctly", () => {
+  const gate = { criteria: ["a", "b"], floor: 2, pass_total: 5 };
+  const floorMetTotalShort = gradeCase({ check: "gate-achievability", expect: { total: 4, passing: false } }, { scores: { a: 2, b: 2 }, gate });
+  assert.equal(floorMetTotalShort.pass, true);
+  const passing = gradeCase({ check: "gate-achievability", expect: { total: 5, passing: true } }, { scores: { a: 2, b: 3 }, gate });
+  assert.equal(passing.pass, true);
+  const wrongExpectation = gradeCase({ check: "gate-achievability", expect: { passing: true } }, { scores: { a: 2, b: 2 }, gate });
+  assert.equal(wrongExpectation.pass, false);
+});
+
 test("gradeCase: unknown check name fails loudly instead of silently passing", () => {
   const g = gradeCase({ check: "not-a-real-check", expect: {} }, undefined);
   assert.equal(g.pass, false);
@@ -332,6 +408,22 @@ const SKILLS = [
   "prd-pipeline",
   "roadmap-prioritization",
 ];
+// The content-pipeline layer (eval/modes extended to pipelines/*.yaml phase prompts) --
+// the "honest graded subset" of the content pipelines (knowledge/software pipelines like
+// prd already have gate-achievability coverage from the skill-protocol layer above, so
+// they're not duplicated here). Each pipeline's `mode` is its own pipeline id (not a
+// generic "content-pipeline" bucket), same one-field convention MODES/SKILLS already set.
+const CONTENT_PIPELINES = [
+  "blog-post",
+  "social-post",
+  "newsletter",
+  "case-study",
+  "lead-magnet",
+  "release-notes",
+  "video-content",
+  "executive-summary",
+  "competitive-battlecard",
+];
 
 test("dataset covers all 6 mode prompts with at least 5 cases each, 30+ total", () => {
   const modeCases = dataset.cases.filter((c) => MODES.includes(c.mode));
@@ -349,11 +441,19 @@ test("dataset covers all 10 skill-protocol skills with at least 3 cases each, 33
   for (const skill of SKILLS) assert.ok((bySkill[skill] || 0) >= 3, `skill "${skill}" has only ${bySkill[skill] || 0} cases`);
 });
 
-test("every dataset case's mode is a known verb or skill name, and grade.mjs's row.mode is always a defined string", () => {
-  const known = new Set([...MODES, ...SKILLS]);
+test("dataset covers all 9 content pipelines with at least 2 cases each, 18+ total", () => {
+  const pipelineCases = dataset.cases.filter((c) => CONTENT_PIPELINES.includes(c.mode));
+  assert.ok(pipelineCases.length >= 18, `expected 18+ content-pipeline cases, got ${pipelineCases.length}`);
+  const byPipeline = {};
+  for (const c of pipelineCases) byPipeline[c.mode] = (byPipeline[c.mode] || 0) + 1;
+  for (const pipeline of CONTENT_PIPELINES) assert.ok((byPipeline[pipeline] || 0) >= 2, `pipeline "${pipeline}" has only ${byPipeline[pipeline] || 0} cases`);
+});
+
+test("every dataset case's mode is a known verb, skill, or content-pipeline name, and grade.mjs's row.mode is always a defined string", () => {
+  const known = new Set([...MODES, ...SKILLS, ...CONTENT_PIPELINES]);
   for (const c of dataset.cases) {
     assert.equal(typeof c.mode, "string", `${c.id}: "mode" must be a defined string (grade.mjs calls .padEnd() on it unconditionally)`);
-    assert.ok(known.has(c.mode), `${c.id}: unknown mode/skill "${c.mode}" — not in MODES or SKILLS`);
+    assert.ok(known.has(c.mode), `${c.id}: unknown mode/skill/pipeline "${c.mode}" — not in MODES, SKILLS, or CONTENT_PIPELINES`);
   }
 });
 
@@ -422,5 +522,20 @@ test("the prd-pipeline-shape fixture's id/domain/gate match the live pipelines/p
   for (const f of gateFixtures) {
     const g = JSON.parse(await read(`eval/modes/fixtures/skills/prd-pipeline/${f}`));
     assert.deepEqual(g.gate, live.gate, `${f}: gate must match the live pipelines/prd.yaml gate`);
+  }
+});
+
+test("the content-pipeline gate-achievability fixtures' gate matches each pipeline's live yaml (drift guard)", async () => {
+  const { parse } = await import("yaml");
+  const pipelineGateFixtures = {
+    "release-notes": ["gate-floor-insufficient.json", "gate-passing.json"],
+    "executive-summary": ["gate-floor-insufficient.json", "gate-weakest-below-floor.json"],
+  };
+  for (const [pipelineId, files] of Object.entries(pipelineGateFixtures)) {
+    const live = parse(await read(`pipelines/${pipelineId}.yaml`));
+    for (const f of files) {
+      const g = JSON.parse(await read(`eval/modes/fixtures/pipelines/${pipelineId}/${f}`));
+      assert.deepEqual(g.gate, live.gate, `${pipelineId}/${f}: gate must match the live pipelines/${pipelineId}.yaml gate`);
+    }
   }
 });

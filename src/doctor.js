@@ -6,6 +6,8 @@ import { parse as parseYaml } from "yaml";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { exists, readJson, readdirSafe } from "./fs-util.js";
 
 // All event names Claude Code recognises as valid hook event keys.
@@ -96,7 +98,65 @@ async function vendoredBuiltinIds(base) {
   return ids;
 }
 
-export async function runDoctor({ root, home } = {}) {
+// A plausible git commit sha (short or full form) inside a YAML comment line — 7-40 hex
+// chars. Case-normalised to lowercase by the caller before comparison.
+const SHA_TOKEN_RE = /\b[0-9a-f]{7,40}\b/gi;
+
+// Scans vendor/manifest.yaml's RAW text (not the parsed doc — YAML comments never survive
+// parsing) for commit shas mentioned in each source's own comment block: rolled-mechanism or
+// divergence notes, e.g. "(upstream gsd-core@d1f7ba8, #1592)" or "Re-pinned: 8e1262a -> 284be590".
+// A source's block runs from its `- id: <id>` header line to the next source's header (or EOF).
+// A note-sha that is itself a prefix of the source's OWN pinned `ref` is filtered out here —
+// that's the trivial "equal to the pin" case, already satisfied without a network round-trip.
+// Only `kind: github` sources with both `repo` and `ref` are checked; anything else has no
+// upstream to compare a note-sha against.
+function extractVendorNotes(raw, sources) {
+  const notes = [];
+  const headerRe = /^\s*-\s*id:\s*(\S+)/gm;
+  const headers = [];
+  let hm;
+  while ((hm = headerRe.exec(raw))) headers.push({ id: hm[1], index: hm.index });
+  for (let i = 0; i < headers.length; i++) {
+    const source = sources.find(s => s.id === headers[i].id);
+    if (!source || source.kind !== "github" || !source.ref || !source.repo) continue;
+    const start = headers[i].index;
+    const end = i + 1 < headers.length ? headers[i + 1].index : raw.length;
+    const segment = raw.slice(start, end);
+    const shas = new Set();
+    for (const line of segment.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("#")) continue;
+      for (const tok of trimmed.match(SHA_TOKEN_RE) || []) shas.add(tok.toLowerCase());
+    }
+    for (const sha of shas) {
+      if (source.ref.toLowerCase().startsWith(sha)) continue;
+      notes.push({ sourceId: source.id, repo: source.repo, ref: source.ref, sha });
+    }
+  }
+  return notes;
+}
+
+// Verifies one note-sha is an ancestor of (or equal to) its source's pinned ref via
+// `gh api repos/<repo>/compare/<sha>...<ref>`. GitHub's compare status is "ahead" or
+// "identical" when the note-sha has genuinely landed by the pin; "behind"/"diverged" means the
+// note is stale — it references a commit the pin hasn't actually reached (or has since drifted
+// past). Any exec failure (no `gh`, no auth, no network) is reported back as offline:true rather
+// than a failure — doctor runs offline, and this is the one check that needs a network round-trip.
+async function checkNoteAncestor(note, execImpl) {
+  try {
+    const { stdout } = await execImpl(
+      "gh",
+      ["api", `repos/${note.repo}/compare/${note.sha}...${note.ref}`, "--jq", ".status"],
+      { timeout: 8000 }
+    );
+    const status = String(stdout).trim();
+    return { ok: status === "ahead" || status === "identical", status };
+  } catch (e) {
+    return { offline: true, error: e };
+  }
+}
+
+export async function runDoctor({ root, home, exec } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   const checks = [];
 
@@ -299,6 +359,51 @@ export async function runDoctor({ root, home } = {}) {
       });
     } else {
       checks.push({ name: "version-parity", ok: true, detail: `both at ${pkgVersion}` });
+    }
+  }
+
+  // --- vendor note staleness ---
+  // vendor/manifest.yaml's comment blocks record which upstream commit rolled a mechanism into
+  // a hand-adapted builtin, or which commit a pin superseded. Those commit shas must actually be
+  // ancestors of (or equal to) the source's pinned `ref` — verified via `gh api .../compare`
+  // (network required). When gh/network is unavailable the check reports "skipped (offline)"
+  // instead of failing, matching how the plugin checks above treat unavailable environment
+  // state (e.g. missing installed_plugins.json) as a skip rather than a failure.
+  {
+    const manifestPath = join(base, "vendor/manifest.yaml");
+    const raw = await readFile(manifestPath, "utf8").catch(() => null);
+    if (raw === null) {
+      checks.push({ name: "vendor-note-staleness", ok: true, detail: "no vendor/manifest.yaml — skip" });
+    } else {
+      let manifest;
+      try { manifest = parseYaml(raw); } catch { manifest = null; }
+      const sources = manifest?.sources;
+      if (!Array.isArray(sources)) {
+        checks.push({ name: "vendor-note-staleness", ok: true, detail: "manifest unparsable — skip" });
+      } else {
+        const notes = extractVendorNotes(raw, sources);
+        if (notes.length === 0) {
+          checks.push({ name: "vendor-note-staleness", ok: true, detail: "no commit-sha notes found" });
+        } else {
+          const execImpl = exec || promisify(execFile);
+          let offline = false;
+          const stale = [];
+          for (const note of notes) {
+            const result = await checkNoteAncestor(note, execImpl);
+            if (result.offline) { offline = true; break; }
+            if (!result.ok) {
+              stale.push(`${note.sourceId}: ${note.sha} is not an ancestor of pinned ref ${note.ref} (status: ${result.status})`);
+            }
+          }
+          if (offline) {
+            checks.push({ name: "vendor-note-staleness", ok: true, detail: `skipped (offline) — ${notes.length} vendor note-sha(s) unverified` });
+          } else if (stale.length > 0) {
+            checks.push({ name: "vendor-note-staleness", ok: false, detail: `stale vendor note(s): ${stale.join("; ")}` });
+          } else {
+            checks.push({ name: "vendor-note-staleness", ok: true, detail: `${notes.length} vendor note-sha(s) verified ancestors of their pin` });
+          }
+        }
+      }
     }
   }
 

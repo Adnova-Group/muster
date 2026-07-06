@@ -77,7 +77,7 @@ After each item's disposition executes, sprint's **drain mode** re-resolves the 
 
 ## Runner
 
-The unattended, single-cycle counterpart to Sprint's batch drain — meant to be fired repeatedly by a Claude Code Routine or cron, not looped internally. Each invocation: resolve the source, resume an answered BLOCKED item ahead of claiming anything new, or claim exactly ONE available item; drive it through the full autopilot lifecycle with the merge disposition force-coerced to `pr` (a scheduled runner never touches the base branch unattended); leave a receipt; stop. The schedule provides the loop, not the verb.
+The unattended, single-cycle counterpart to Sprint's batch drain — meant to be fired repeatedly by a Claude Code Routine or cron, not looped internally. Each invocation: resolve the source, resume an answered BLOCKED or HUMAN-HOLD item ahead of claiming anything new (resume rules depend on the binding — see the coordination skill), or claim exactly ONE available item; drive it through the full autopilot lifecycle with the merge disposition force-coerced to `pr` (a scheduled runner never touches the base branch unattended); leave a receipt; stop. The schedule provides the loop, not the verb.
 
 ```sh
 /muster:runner

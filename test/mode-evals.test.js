@@ -14,6 +14,7 @@ import {
   isHumanHoldResumeAuthorized,
   SCAFFOLD_SEED_FILES,
   CAPTURE_EXCLUSION_REASONS,
+  resolveArtifactUrl,
 } from "../eval/modes/grade-lib.mjs";
 
 // CI regression guard for the mode-prompt eval (eval/modes/). Two jobs, mirroring
@@ -716,6 +717,20 @@ test("the sprint waves fixture's pinned output matches the checked-in waves.json
 test("package.json wires eval:modes to eval/modes/grade.mjs", async () => {
   const pkg = JSON.parse(await read("package.json"));
   assert.equal(pkg.scripts["eval:modes"], "node eval/modes/grade.mjs");
+});
+
+// [P2 sec] grade.mjs resolves dataset.json's `artifact` field into a fixture URL via
+// resolveArtifactUrl -- it must stay contained inside the eval/modes/ tree. dataset.json
+// is checked-in and reviewed today, but the containment check is cheap insurance against a
+// future artifact path (accidental or malicious) resolving outside the tree it's meant to
+// read from, same posture as any other path-traversal guard in this codebase.
+test("resolveArtifactUrl: a normal in-tree relative path resolves; a traversal path outside eval/modes/ throws a clear error", () => {
+  const base = new URL("../eval/modes/", import.meta.url);
+  const resolved = resolveArtifactUrl("fixtures/skills/coordination/claim-single-winner.md", base);
+  assert.ok(resolved.pathname.endsWith("fixtures/skills/coordination/claim-single-winner.md"));
+
+  assert.throws(() => resolveArtifactUrl("../../etc/passwd", base), /escapes|outside/i);
+  assert.throws(() => resolveArtifactUrl("../../../../../../etc/passwd", base), /escapes|outside/i);
 });
 
 test("the prd-pipeline-shape fixture's id/domain/gate match the live pipelines/prd.yaml (drift guard)", async () => {

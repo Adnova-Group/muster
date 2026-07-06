@@ -8,6 +8,12 @@ import { runDoctor } from "../src/doctor.js";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
+// Stub `gh` so real-repo integration tests below never depend on live network/gh-auth for
+// the vendor-note-staleness check — that check's own network-dependent behaviour (ahead,
+// diverged, offline) is exercised directly, with a per-scenario mocked exec, in its own
+// describe block further down.
+const noNetworkExec = async () => ({ stdout: "ahead\n" });
+
 describe("runDoctor", () => {
   // B-C9: a root with NO catalog/ directory → catalog check ok:false
   it("B-C9: catalog check ok:false when catalog/ directory is absent", async () => {
@@ -25,7 +31,7 @@ describe("runDoctor", () => {
     // Use an empty home dir so the plugin-staleness check doesn't flag a
     // stale real installation and make this structural integration test fail.
     const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-clean-"));
-    const result = await runDoctor({ root: new URL("../", import.meta.url), home: fakeHome });
+    const result = await runDoctor({ root: new URL("../", import.meta.url), home: fakeHome, exec: noNetworkExec });
     assert.equal(result.ok, true, `not ok: ${JSON.stringify(result.checks)}`);
     const names = result.checks.map(c => c.name);
     assert.ok(names.includes("catalog"), "missing catalog check");
@@ -33,6 +39,7 @@ describe("runDoctor", () => {
     assert.ok(names.includes("builtins"), "missing builtins check");
     assert.ok(names.includes("node>=20"), "missing node>=20 check");
     assert.ok(names.includes("hooks-integrity"), "missing hooks-integrity check");
+    assert.ok(names.includes("vendor-note-staleness"), "missing vendor-note-staleness check");
     assert.ok(names.includes("plugin-staleness"), "missing plugin-staleness check");
     assert.ok(names.includes("version-parity"), "missing version-parity check");
     const catalogCheck = result.checks.find(c => c.name === "catalog");
@@ -45,7 +52,7 @@ describe("runDoctor", () => {
 describe("runDoctor hooks-integrity check", () => {
   it("passes against the real repo (hooks.json is valid)", async () => {
     const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-hooksi-"));
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "hooks-integrity");
     assert.ok(check, "hooks-integrity check must exist");
     assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
@@ -132,7 +139,7 @@ describe("runDoctor hooks-integrity check", () => {
 describe("runDoctor domain-alignment check", () => {
   it("passes against the real repo (every pipeline domain is classifier-known)", async () => {
     const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-domali-"));
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "domain-alignment");
     assert.ok(check, "domain-alignment check must exist");
     assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
@@ -174,7 +181,7 @@ describe("runDoctor domain-alignment check", () => {
 describe("runDoctor skill-doc-refs check", () => {
   it("passes against the real repo (every SKILL.md docs/ reference resolves)", async () => {
     const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-"));
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "skill-doc-refs");
     assert.ok(check, "skill-doc-refs check must exist");
     assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
@@ -259,7 +266,7 @@ describe("runDoctor plugin-staleness check", () => {
   it("passes against the real repo when no installed_plugins.json exists (dev machine skip)", async () => {
     // Use a temp home with no .claude dir at all.
     const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-home-"));
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "plugin-staleness");
     assert.ok(check, "plugin-staleness check must exist");
     assert.equal(check.ok, true, `expected ok:true (no install) — detail: ${check.detail}`);
@@ -272,7 +279,7 @@ describe("runDoctor plugin-staleness check", () => {
       join(fakeHome, ".claude/plugins/installed_plugins.json"),
       JSON.stringify({ version: 2, plugins: { "other@official": [{}] } })
     );
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "plugin-staleness");
     assert.ok(check, "plugin-staleness check must exist");
     assert.equal(check.ok, true, "no muster entry → ok/skip");
@@ -286,7 +293,7 @@ describe("runDoctor plugin-staleness check", () => {
       join(fakeHome, ".claude/plugins/installed_plugins.json"),
       JSON.stringify({ version: 2, plugins: { "muster@official": [{ version: "0.2.0" }] } })
     );
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "plugin-staleness");
     assert.ok(check, "plugin-staleness check must exist");
     assert.equal(check.ok, false, "installed 0.2.0 < repo → should be flagged");
@@ -307,7 +314,7 @@ describe("runDoctor plugin-staleness check", () => {
       join(fakeHome, ".claude/plugins/installed_plugins.json"),
       JSON.stringify({ version: 2, plugins: { "muster@official": [{ version: repoVersion }] } })
     );
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "plugin-staleness");
     assert.ok(check, "plugin-staleness check must exist");
     assert.equal(check.ok, true, `installed == repo (${repoVersion}) → ok`);
@@ -319,7 +326,7 @@ describe("runDoctor plugin-staleness check", () => {
 describe("runDoctor install-integrity check", () => {
   it("skips (ok) when installed_plugins.json is absent", async () => {
     const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-ii-"));
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "install-integrity");
     assert.ok(check, "install-integrity check must exist");
     assert.equal(check.ok, true, `expected ok:true (no install file) — detail: ${check.detail}`);
@@ -332,7 +339,7 @@ describe("runDoctor install-integrity check", () => {
       join(fakeHome, ".claude/plugins/installed_plugins.json"),
       JSON.stringify({ version: 2, plugins: { "other@official": [{}] } })
     );
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "install-integrity");
     assert.ok(check, "install-integrity check must exist");
     assert.equal(check.ok, true, "no muster entry → ok/skip");
@@ -349,7 +356,7 @@ describe("runDoctor install-integrity check", () => {
         plugins: { "muster@official": [{ version: "0.2.4", installPath: missingPath }] }
       })
     );
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "install-integrity");
     assert.ok(check, "install-integrity check must exist");
     assert.equal(check.ok, false, "missing installPath dir → should fail");
@@ -372,7 +379,7 @@ describe("runDoctor install-integrity check", () => {
         plugins: { "muster@official": [{ version: "0.2.4", installPath }] }
       })
     );
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "install-integrity");
     assert.ok(check, "install-integrity check must exist");
     assert.equal(check.ok, false, "missing hooks/hooks.json → should fail");
@@ -393,7 +400,7 @@ describe("runDoctor install-integrity check", () => {
         plugins: { "muster@official": [{ version: "0.2.4", installPath }] }
       })
     );
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "install-integrity");
     assert.ok(check, "install-integrity check must exist");
     assert.equal(check.ok, true, `installPath and hooks/hooks.json present → should pass; detail: ${check.detail}`);
@@ -402,10 +409,138 @@ describe("runDoctor install-integrity check", () => {
 
 // ---------- version-parity ----------
 
+// ---------- vendor-note-staleness ----------
+
+describe("runDoctor vendor-note-staleness check", () => {
+  it("ok:true (skip) when vendor/manifest.yaml is absent", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-nomanifest-"));
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.ok(check, "vendor-note-staleness check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+    assert.match(check.detail, /no vendor\/manifest\.yaml/);
+  });
+
+  it("does not hit the network when the only referenced sha is a prefix of the pinned ref itself", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-trivial-"));
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    await writeFile(join(tmp, "vendor/manifest.yaml"), [
+      "sources:",
+      "  - id: acme",
+      "    kind: github",
+      "    repo: acme/tool",
+      "    # historical: this already rolled up to commit abc1234, no divergence",
+      "    ref: abc1234567890abc1234567890abc1234567890",
+      "    license: MIT",
+      "    items:",
+      "      - from: skills/example/SKILL.md",
+      "        id: acme-example",
+      "        roles: [implement]",
+      "",
+    ].join("\n"));
+    const exec = async () => { throw new Error("must not be called — trivial prefix match needs no network"); };
+    const result = await runDoctor({ root: tmp, exec });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.ok(check, "vendor-note-staleness check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+    assert.match(check.detail, /no commit-sha notes found/);
+  });
+
+  it("fails when a note-sha's compare status is not ahead/identical (stale/diverged note)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-stale-"));
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    await writeFile(join(tmp, "vendor/manifest.yaml"), [
+      "sources:",
+      "  - id: acme",
+      "    kind: github",
+      "    repo: acme/tool",
+      "    # rolled mechanism note referencing commit deadbeef1",
+      "    ref: 0123456789abcdef0123456789abcdef01234567",
+      "    license: MIT",
+      "    items:",
+      "      - from: skills/example/SKILL.md",
+      "        id: acme-example",
+      "        roles: [implement]",
+      "",
+    ].join("\n"));
+    const exec = async (cmd, args) => {
+      assert.equal(cmd, "gh");
+      assert.match(args.join(" "), /compare\/deadbeef1\.\.\.0123456789abcdef0123456789abcdef01234567/);
+      return { stdout: "diverged\n" };
+    };
+    const result = await runDoctor({ root: tmp, exec });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.ok(check, "vendor-note-staleness check must exist");
+    assert.equal(check.ok, false, "diverged note-sha must fail the check");
+    assert.match(check.detail, /deadbeef1/);
+    assert.match(check.detail, /acme/);
+  });
+
+  it("passes when the note-sha's compare status is ahead of the pinned ref", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-ok-"));
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    await writeFile(join(tmp, "vendor/manifest.yaml"), [
+      "sources:",
+      "  - id: acme",
+      "    kind: github",
+      "    repo: acme/tool",
+      "    # rolled mechanism note referencing commit deadbeef1",
+      "    ref: 0123456789abcdef0123456789abcdef01234567",
+      "    license: MIT",
+      "    items:",
+      "      - from: skills/example/SKILL.md",
+      "        id: acme-example",
+      "        roles: [implement]",
+      "",
+    ].join("\n"));
+    const exec = async () => ({ stdout: "ahead\n" });
+    const result = await runDoctor({ root: tmp, exec });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.ok(check, "vendor-note-staleness check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+  });
+
+  it("reports skipped (offline) rather than failing when gh/network is unavailable", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-offline-"));
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    await writeFile(join(tmp, "vendor/manifest.yaml"), [
+      "sources:",
+      "  - id: acme",
+      "    kind: github",
+      "    repo: acme/tool",
+      "    # rolled mechanism note referencing commit deadbeef1",
+      "    ref: 0123456789abcdef0123456789abcdef01234567",
+      "    license: MIT",
+      "    items:",
+      "      - from: skills/example/SKILL.md",
+      "        id: acme-example",
+      "        roles: [implement]",
+      "",
+    ].join("\n"));
+    const exec = async () => { throw new Error("spawn gh ENOENT"); };
+    const result = await runDoctor({ root: tmp, exec });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.ok(check, "vendor-note-staleness check must exist");
+    assert.equal(check.ok, true, "offline must be reported as ok:true (skip), not a failure");
+    assert.match(check.detail, /offline/i);
+  });
+
+  it("extracts real vendor/manifest.yaml notes and passes when gh reports every note-sha ahead of its pin", async () => {
+    const exec = async () => ({ stdout: "ahead\n" });
+    const result = await runDoctor({ root: repoRoot, exec });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.ok(check, "vendor-note-staleness check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+    // Sanity: the real manifest does carry commit-sha rolled-mechanism notes, so this
+    // must not silently short-circuit to the "no commit-sha notes found" empty case.
+    assert.doesNotMatch(check.detail, /no commit-sha notes found/);
+  });
+});
+
 describe("runDoctor version-parity check", () => {
   it("passes against the real repo (package.json and plugin.json versions match)", async () => {
     const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-vp-"));
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "version-parity");
     assert.ok(check, "version-parity check must exist");
     assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
@@ -426,7 +561,7 @@ describe("runDoctor version-parity check", () => {
       join(fakeHome, ".claude/plugins/installed_plugins.json"),
       JSON.stringify({ version: 2, plugins: { "muster@official": [{ version: newerVersion }] } }),
     );
-    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "plugin-staleness");
     assert.ok(check, "plugin-staleness check must exist");
     assert.equal(check.ok, true, `installed ${newerVersion} > repo ${repoVersion} → ok:true (current)`);

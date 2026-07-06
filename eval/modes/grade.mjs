@@ -7,7 +7,7 @@
 //
 // Usage: node eval/modes/grade.mjs
 import { readFile } from "node:fs/promises";
-import { gradeCase, ARTIFACT_KIND } from "./grade-lib.mjs";
+import { gradeCase, ARTIFACT_KIND, resolveArtifactUrl } from "./grade-lib.mjs";
 
 const here = new URL(".", import.meta.url);
 const dataset = JSON.parse(await readFile(new URL("dataset.json", here), "utf8"));
@@ -15,7 +15,10 @@ const dataset = JSON.parse(await readFile(new URL("dataset.json", here), "utf8")
 async function loadArtifacts(testCase) {
   const kind = ARTIFACT_KIND[testCase.check];
   if (!kind || kind === "none") return undefined;
-  const raw = testCase.artifact ? await readFile(new URL(testCase.artifact, here), "utf8") : testCase.input;
+  // [P2 sec] resolveArtifactUrl contains the fixture read to the eval/modes/ tree --
+  // see grade-core.mjs's header for why a bare `new URL(testCase.artifact, here)` isn't
+  // safe to pass straight to readFile.
+  const raw = testCase.artifact ? await readFile(resolveArtifactUrl(testCase.artifact, here), "utf8") : testCase.input;
   return kind === "json" ? JSON.parse(raw) : raw;
 }
 

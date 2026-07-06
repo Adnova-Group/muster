@@ -93,3 +93,30 @@ test("digit inside a filename/identifier does not count as a measurable and stay
   assert.equal(r2.clear, false, "a digit embedded in an identifier is not a measurable criterion");
   assert.ok(r2.signals.includes("no-success-criteria"), "config2 must still flag no-success-criteria");
 });
+
+// WHY: CRITERIA_KEYWORD + MEASURABLE_NEARBY is a SEPARATE clearing path from
+// CRITERIA_QUANTIFIED — a keyword ("improve"/"conversion"/"rate") co-occurring with a bare
+// comparative word ("above", with no number after it) must clear no-success-criteria on its
+// own. This outcome carries no digit at all, so CRITERIA_QUANTIFIED (every one of whose
+// alternatives requires a \d) structurally cannot be what clears it — pins that the
+// keyword+nearby path is independently sufficient, not just a redundant restatement of the
+// quantified path.
+test("keyword + nearby comparative word (no digit) alone drives clear:true, not via CRITERIA_QUANTIFIED", () => {
+  const text = "improve conversion rate above baseline across product lines";
+  assert.doesNotMatch(text, /\d/, "fixture must carry no digit, so CRITERIA_QUANTIFIED cannot be what matched");
+  const r = assessOutcome(text);
+  assert.equal(r.clear, true, "keyword('improve'/'conversion'/'rate') + nearby comparative('above') must clear on their own");
+  assert.deepEqual(r.signals, [], "a clear outcome must carry no signals");
+});
+
+// WHY: vague-only is deliberately rescued by ANY concrete token (quote/digit/proper-noun) so
+// a short, criteria-less, bare-vague-verb outcome that still names something specific isn't
+// double-penalized as "vague-only" on top of "too-short"/"no-success-criteria". This is the
+// positive rescue case — SPECIFIC must actually suppress vague-only, not just exist unused.
+test("a vague verb with a concrete quoted token rescues vague-only (too-short/no-success-criteria still apply)", () => {
+  const r = assessOutcome("fix the 'Login' button");
+  assert.equal(r.clear, false, "still too-short with no stated success criteria");
+  assert.ok(r.signals.includes("too-short"), "3 meaningful words must still flag too-short");
+  assert.ok(r.signals.includes("no-success-criteria"), "no metric/keyword must still flag no-success-criteria");
+  assert.ok(!r.signals.includes("vague-only"), "a quoted span ('Login') is a concrete token that must rescue vague-only");
+});

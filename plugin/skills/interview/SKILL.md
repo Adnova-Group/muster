@@ -48,7 +48,9 @@ An **ACCEPTED** split writes the backlog:
 - **Item format** (must match `/muster:sprint`'s parser exactly): exactly one line per item —
   `- [ ] <outcome text with success criteria folded inline as clauses>`, optionally ending with a
   `{disposition: merge-local|merge-push|pr|keep}` annotation. Criteria fold inline as clauses, never as
-  sub-lines or nested bullets — a multi-line item is a format violation.
+  sub-lines or nested bullets — a multi-line item is a format violation. Omit the annotation by default
+  (`sprint` defaults unannotated items to `pr`); write it only when the user explicitly chose a
+  disposition for that item during the interview.
 - **Measurable per item** — each item must embed at least one number or measurable keyword so
   `npx -y @adnova-group/muster assess "<item text>"` returns `clear: true` standalone (`src/interview.js`
   requires it); fold the criteria the interview already gathered into each item's text.

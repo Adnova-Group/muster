@@ -5,8 +5,13 @@
 // garbage, so signals only fire on clear evidence of underspecification.
 const STOPWORDS = new Set(["a", "an", "the", "to", "of", "and", "or", "for", "it", "this", "that"]);
 
-// A digit anywhere, or any measurable-criteria keyword, clears the no-success-criteria signal.
-const CRITERIA = /\b(metric|measure|success|criteria|kpi|target|goal|increase|decrease|reduce|improve|conversion|rate|latency|throughput|by \d)\b/i;
+// A measurable-criteria keyword, or a quantified pattern, clears the no-success-criteria signal:
+// multi-digit "by N", a bare "N%", a comparative quantifier ("at least/at most/above/below/
+// under/over/within") followed by a number, or "N consecutive". A bare digit alone does NOT
+// count — digits embedded in identifiers/filenames (e.g. "file2.js", "config2") are not
+// measurables, since \b requires a non-word boundary immediately before the digit run.
+const CRITERIA =
+  /\b(metric|measure|success|criteria|kpi|target|goal|increase|decrease|reduce|improve|conversion|rate|latency|throughput)\b|\bby \d+\b|\b\d+%|\b(?:at least|at most|above|below|under|over|within)\s+\d+\b|\b\d+\s+consecutive\b/i;
 
 // Bare imperative verbs that, on their own with no concrete object, signal a hand-wavy ask.
 const VAGUE_VERB = /^(make|do|build|fix|improve|help|handle|update|change)\b/i;

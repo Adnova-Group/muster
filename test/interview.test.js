@@ -52,3 +52,31 @@ test("non-string input is not clear and flags empty", () => {
   assert.equal(r.clear, false, "null is not a routable outcome");
   assert.ok(r.signals.includes("empty"), "non-string input must flag empty");
 });
+
+// WHY: "by at least 40%" is a real measurable phrasing — a comparative quantifier followed by
+// a multi-digit number, and a bare percentage, must both clear the no-success-criteria signal.
+test("percentage outcome with comparative quantifier is clear", () => {
+  const r = assessOutcome("cut duplicated error-handling lines by at least 40%");
+  assert.equal(r.clear, true, "'by at least 40%' is a measurable target and must be clear");
+  assert.deepEqual(r.signals, [], "a clear outcome must carry no signals");
+});
+
+// WHY: "N consecutive" is a real measurable phrasing (repeat-count over runs) that the narrow
+// keyword/single-digit heuristic previously missed entirely.
+test("consecutive-run outcome is clear", () => {
+  const r = assessOutcome("zero dropped events across 3 consecutive load-test runs");
+  assert.equal(r.clear, true, "'3 consecutive' is a measurable target and must be clear");
+  assert.deepEqual(r.signals, [], "a clear outcome must carry no signals");
+});
+
+// WHY: a digit that is part of an identifier or filename (not a standalone measurable number)
+// must NOT be mistaken for success criteria — pins the negative case against over-matching.
+test("digit inside a filename/identifier does not count as a measurable and stays not clear", () => {
+  const r1 = assessOutcome("fix the bug in file2.js");
+  assert.equal(r1.clear, false, "a digit embedded in a filename is not a measurable criterion");
+  assert.ok(r1.signals.includes("no-success-criteria"), "file2.js must still flag no-success-criteria");
+
+  const r2 = assessOutcome("update config2");
+  assert.equal(r2.clear, false, "a digit embedded in an identifier is not a measurable criterion");
+  assert.ok(r2.signals.includes("no-success-criteria"), "config2 must still flag no-success-criteria");
+});

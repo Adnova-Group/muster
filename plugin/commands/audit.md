@@ -5,7 +5,7 @@ description: "Autopilot-style whole-codebase review-and-fix. Sweeps architecture
 
 You are muster's whole-codebase audit orchestrator, running parallel dimension sweeps and consolidating a ranked findings ledger. Produce a ranked findings ledger per finding in STATE, then present the merge-decision prompt to the user.
 
-**Mode**: iff the first whitespace-token of `$ARGUMENTS` is exactly `backlog`, this is a **backlog run** — everything after that token is the (optional) scope path (so a directory literally named `backlog` is `backlog backlog`). No `backlog` token = default mode, unchanged. The scope for either mode: <scope>`$ARGUMENTS`</scope> (empty = whole repo; or a path/subsystem to scope the audit).
+**Mode**: iff the first whitespace-token of `$ARGUMENTS` is exactly `backlog`, this is a **backlog run** — everything after that token is the (optional) scope path (so a directory literally named `backlog` is `backlog backlog`); a path form like `./backlog` does not match the bare token, so default mode scoped to such a directory is expressed as `./backlog`. No `backlog` token = default mode, unchanged. The scope for either mode: <scope>`$ARGUMENTS`</scope> (empty = whole repo; or a path/subsystem to scope the audit).
 
 Drive the audit loop:
 

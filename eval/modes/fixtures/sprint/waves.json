@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "errors": [],
+  "waves": [
+    [
+      "retry",
+      "logging",
+      "metrics"
+    ],
+    [
+      "docs"
+    ]
+  ],
+  "items": {
+    "retry": {
+      "line": 1,
+      "text": "Add retry to the fetch client with backoff",
+      "disposition": "pr",
+      "escalated": false,
+      "claimed": null
+    },
+    "logging": {
+      "line": 2,
+      "text": "Add structured logging to the fetch client",
+      "disposition": "pr",
+      "escalated": false,
+      "claimed": null
+    },
+    "docs": {
+      "line": 3,
+      "text": "Document the new retry and logging behavior",
+      "disposition": "pr",
+      "escalated": false,
+      "claimed": null
+    },
+    "metrics": {
+      "line": 4,
+      "text": "Add a dashboard metric for retry counts",
+      "disposition": "keep",
+      "escalated": false,
+      "claimed": null
+    }
+  },
+  "annotated": true
+}

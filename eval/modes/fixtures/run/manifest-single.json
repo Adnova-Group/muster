@@ -1,0 +1,14 @@
+{
+  "outcome": "Diagnose and fix the flaky retry test in the payments service.",
+  "successCriteria": ["flaky test root-caused", "fix applied", "suite green"],
+  "crew": [
+    { "stage": "debug", "provider": "muster-builder", "source": "builtin", "model": "sonnet", "rationale": "diagnose the flake", "evidence": "detect: test suite present", "fallback": "inline" },
+    { "stage": "implement", "provider": "muster-builder", "source": "builtin", "model": "sonnet", "rationale": "apply the fix", "evidence": "detect: test suite present", "fallback": "inline" }
+  ],
+  "recommendations": [],
+  "degradations": [],
+  "mergeDisposition": "pr",
+  "plan": [
+    { "task": "diagnose and fix the flaky retry test", "mode": "single", "deps": [] }
+  ]
+}

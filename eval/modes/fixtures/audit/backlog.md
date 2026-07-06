@@ -1,0 +1,3 @@
+- [ ] Redact session tokens from error logs and add a regression test asserting 0 leaked tokens in logs {id: redact-tokens} {deps: none}
+- [ ] Batch the per-request profile fetch into a single join query, reducing queries per request from N+1 to 1 {id: batch-profile-fetch} {deps: none}
+- [ ] Consolidate the duplicated date-formatting logic in date.js and time.js into one shared formatter used by both call sites {id: consolidate-date-format} {deps: none}

@@ -1,0 +1,4 @@
+- [ ] Add retry to the fetch client with backoff {id: retry} {deps: none} {disposition: pr}
+- [ ] Add structured logging to the fetch client {id: logging} {deps: none} {disposition: pr}
+- [ ] Document the new retry and logging behavior {id: docs} {deps: retry,logging} {disposition: pr}
+- [ ] Add a dashboard metric for retry counts {id: metrics} {deps: none} {disposition: keep}

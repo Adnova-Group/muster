@@ -1,0 +1,16 @@
+{
+  "outcome": "Add JWT auth to the Express API and update the docs, in parallel.",
+  "successCriteria": ["JWT auth added with tests", "docs updated to describe the new auth flow", "suite green"],
+  "crew": [
+    { "stage": "implement", "provider": "muster-builder", "source": "builtin", "model": "sonnet", "rationale": "build JWT auth", "evidence": "detect: express api", "fallback": "inline" },
+    { "stage": "test-author", "provider": "muster-builder", "source": "builtin", "model": "sonnet", "rationale": "add auth tests", "evidence": "detect: express api", "fallback": "inline" },
+    { "stage": "docs-research", "provider": "muster-builder", "source": "builtin", "model": "haiku", "rationale": "update docs", "evidence": "detect: docs present", "fallback": "inline" }
+  ],
+  "recommendations": [],
+  "degradations": [],
+  "mergeDisposition": "pr",
+  "plan": [
+    { "id": "auth", "task": "implement JWT auth with tests", "mode": "single", "deps": [], "owns": ["src/auth/**"], "frozen": ["docs/**"] },
+    { "id": "docs", "task": "update docs for the new auth flow", "mode": "single", "deps": [], "owns": ["docs/**"], "frozen": ["src/auth/**"] }
+  ]
+}

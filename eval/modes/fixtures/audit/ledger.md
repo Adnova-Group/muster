@@ -1,0 +1,3 @@
+- P0 `src/auth/session.js:88` — session tokens are logged in plaintext on error — Fix: redact the token before logging and add a regression test asserting no token substring appears in logs.
+- P1 `src/api/routes/users.js:142` — N+1 query fetching the profile per request — Fix: batch the profile fetch into a single join query.
+- P2 `src/utils/date.js:21` — duplicated date-formatting logic also present in src/utils/time.js — Fix: consolidate into one shared formatter and update both call sites.

@@ -12,6 +12,28 @@ function isValidLabelArray(v) {
 // pre-accepted so a future fable-tier role validates without a schema change.
 const MODEL_TIERS = new Set(["haiku", "sonnet", "opus", "fable"]);
 
+// Fixed action-class vocabulary for the action-scoped fence (distinct from the
+// path-scoped owns/frozen fences). A crew brief's effective forbidden set is the
+// top-level forbiddenActions UNION the task's own forbiddenActions (additive,
+// never subtractive) -- validated identically at both levels here.
+const ACTION_CLASSES = new Set(["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
+
+// Validate an action-class array under `label` (e.g. "forbiddenActions" or
+// "plan[2].forbiddenActions"), pushing path-specific errors into `errors`.
+// Non-array is a single shape error; each unknown-class entry gets its own
+// indexed error so multiple bad entries are all surfaced, not just the first.
+function validateActionArray(v, label, errors) {
+  if (!Array.isArray(v)) {
+    errors.push(`${label} must be an array of action-class strings`);
+    return;
+  }
+  v.forEach((a, i) => {
+    if (typeof a !== "string" || !ACTION_CLASSES.has(a)) {
+      errors.push(`${label}[${i}]: unknown action class "${a}" (must be one of ${[...ACTION_CLASSES].join("|")})`);
+    }
+  });
+}
+
 export function validateManifest(m) {
   const errors = [];
   if (!m || typeof m !== "object") return { ok: false, errors: ["manifest must be an object"] };
@@ -33,6 +55,7 @@ export function validateManifest(m) {
     if (!Array.isArray(m[f])) errors.push(`${f}: must be an array`);
   if (m.mergeDisposition !== undefined && !MERGE_DISPOSITIONS.has(m.mergeDisposition))
     errors.push(`mergeDisposition: must be one of ${[...MERGE_DISPOSITIONS].join("|")}`);
+  if (m.forbiddenActions !== undefined) validateActionArray(m.forbiddenActions, "forbiddenActions", errors);
   if (!Array.isArray(m.plan) || m.plan.length === 0) errors.push("plan: required non-empty array");
   else {
     const ids = new Set();
@@ -47,6 +70,7 @@ export function validateManifest(m) {
         errors.push(`plan[${i}].owns must be an array of non-empty strings`);
       if (p.frozen !== undefined && !isValidLabelArray(p.frozen))
         errors.push(`plan[${i}].frozen must be an array of non-empty strings`);
+      if (p.forbiddenActions !== undefined) validateActionArray(p.forbiddenActions, `plan[${i}].forbiddenActions`, errors);
     });
     m.plan.forEach((p, i) => {
       for (const d of (p.deps || [])) if (!ids.has(d)) errors.push(`plan[${i}].deps: unknown dep "${d}"`);

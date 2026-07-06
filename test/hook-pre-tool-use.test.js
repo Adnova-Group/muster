@@ -786,6 +786,33 @@ test('Bash: allow cp "$(ls)" dst (ambiguous — fail-open) during active wave', 
   }
 });
 
+// ── F3: step 5's non-Bash deny only applies to EDIT_TOOLS, not any tool_name ──
+// The hooks.json matcher now also fires PreToolUse for send/sign/publish-named
+// MCP tools; step 5's catch-all "else deny(waveId)" must not treat those as
+// wave-guard file-write violations when no forbidden-actions fence applies —
+// wave-guard gates file writes (EDIT_TOOLS), not arbitrary tool calls.
+test("mid-wave: mcp send-named tool with no forbidden-actions configured is allowed", async () => {
+  const tmpDir = makeTmpMarker("wave-mcp-send-1");
+  try {
+    const { stdout, code } = await runRaw(
+      JSON.stringify({
+        tool_name: "mcp__gmail__send_email",
+        tool_input: {},
+        cwd: tmpDir,
+      }),
+    );
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.notEqual(
+      out.permissionDecision,
+      "deny",
+      "mid-wave mcp send-named tool with no forbidden-actions file must be allowed (wave-guard gates file writes, not arbitrary tools)",
+    );
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
 // ── SEC-1: path-traversal fix — normalize target before EXEMPT_TARGET_RE.test ─
 test("bashWriteTarget: tee .muster/../app.js is NOT exempt (path traversal)", () => {
   assert.ok(

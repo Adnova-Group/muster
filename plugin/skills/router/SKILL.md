@@ -32,6 +32,11 @@ Emit ONLY the Crew Manifest JSON matching this shape (validated by `muster manif
 ```json
 { "outcome": "...", "successCriteria": ["..."],
   "crew": [{ "stage": "...", "provider": "...", "source": "...", "model": "haiku|sonnet|opus|fable", "rationale": "...", "evidence": "...", "fallback": "..." }],
-  "recommendations": ["..."], "degradations": ["..."], "mergeDisposition": "ask",
+  "recommendations": ["..."], "degradations": ["..."], "mergeDisposition": "ask", "forbiddenActions": [],
   "plan": [{ "id": "t1", "task": "...", "mode": "single", "deps": [], "owns": ["..."], "frozen": ["..."] }] }
 ```
+
+`forbiddenActions` is optional: an array drawn from the fixed action-class set (`send`, `sign`, `submit`,
+`publish`, `purchase`, `delete-remote`) naming actions the run must not perform (e.g. sending an email,
+publishing a release). A `plan` task may carry its own `forbiddenActions` too, which ADDS to the top-level
+set for that task's brief.

@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-// muster PreToolUse hook — wave-guard + post-run scale gate.
+// muster PreToolUse hook — wave-guard + post-run scale gate + action-class fence.
 //
 // Keeps the orchestrator main loop from doing orchestration-scale work inline,
 // enforcing the iron rule: dispatch through the crew (Agent tool) instead. Two
 // regimes: a hard block WHILE a wave is active, and a softer per-turn scale gate
 // once the wave marker is gone (the post-run window the advisory nudge can't hold).
+// A third, independent dimension (the action-class fence) denies tool calls
+// that would perform a run-forbidden send/sign/submit/publish/purchase/
+// delete-remote action, regardless of wave state.
 //
 // Decision order:
 //   1. ALLOW if payload has agent_id (crew subagent — always allowed).
@@ -13,6 +16,11 @@
 //      .claude/ — repo-local Claude/orchestrator settings written mid-wave.
 //      (For Bash: no path target; this gate is skipped.)
 //   2.5. ALLOW if target is outside the cwd tree (GUARD-SCOPE).
+//   2.6. Action-class fence: if .muster/run-active AND .muster/forbidden-actions
+//        both exist, classify the tool call (action-guard.js) and DENY when it
+//        matches a listed class (honors MUSTER_ACTION_GUARD off|warn|deny).
+//        Fail-open (no-op) when either file is absent/unreadable, or no class
+//        matches. See action-guard.js for classification.
 //   3. No .muster/wave-active marker → applyScaleGate() (post-run window; may DENY).
 //   4. Orphaned or stale marker → applyScaleGate() likewise.
 //      Primary signal: .muster/run-active absent means no active run, so the
@@ -24,6 +32,9 @@
 //        Edit/Write/NotebookEdit → DENY.
 //        Bash → inspect command via bashWriteTarget(); DENY only on a
 //          high-confidence write match; ALLOW everything else (fail-open).
+//        Any other tool_name (e.g. a send/sign/publish-named MCP tool matched
+//          for the action-class fence above) → ALLOW; wave-guard gates file
+//          writes, not arbitrary tool calls.
 //
 // applyScaleGate (steps 3-4): with no wave, the main loop may touch 1-2 distinct
 // files per turn (trivial/surgical falls through); the Nth distinct file
@@ -55,6 +66,7 @@ import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { emit } from "./guidance.js";
 import { bashWriteTarget } from "./bash-write-target.js";
+import { classifyAction } from "./action-guard.js";
 import { budgetFile, recordFile, scaleThreshold, cumFile, recordCum, markNudged, resetCum } from "./inline-budget.js";
 
 const EVENT = "PreToolUse";
@@ -216,6 +228,24 @@ function denyBash(waveId, fragment) {
   );
 }
 
+// Action-class fence deny/warn — names the forbidden class and the override
+// (mirrors MUSTER_WAVE_GUARD semantics: remove the class from the file, or
+// soften/disable via MUSTER_ACTION_GUARD).
+function denyAction(cls) {
+  denyWith(
+    `Action class "${cls}" is forbidden for this run — this tool call would perform a ${cls} action. ` +
+    `If this class should not be forbidden: remove its line from .muster/forbidden-actions. ` +
+    `To soften or disable this check: set MUSTER_ACTION_GUARD=warn or off.`,
+  );
+}
+
+function warnActionAllow(cls) {
+  warnWith(
+    `Action class "${cls}" is forbidden for this run (MUSTER_ACTION_GUARD=warn) — allowing with a reminder. ` +
+    `Remove its line from .muster/forbidden-actions, or set MUSTER_ACTION_GUARD=off to silence this reminder.`,
+  );
+}
+
 try {
   let payload;
   try {
@@ -260,6 +290,37 @@ try {
   const cwdAbs = path.resolve(cwd);
   if (target && !target.startsWith(cwdAbs + path.sep) && target !== cwdAbs) {
     allow();
+  }
+
+  // 2.6. Action-class fence: a third fence dimension (action-scoped, alongside
+  //      the path-scoped owns/frozen fences). Requires BOTH .muster/run-active
+  //      (a run is live) AND .muster/forbidden-actions (one class per line,
+  //      written by the orchestrator from the manifest at run start) to exist —
+  //      either absent means this gate is a no-op (fail-open). Classification
+  //      lives in action-guard.js (tool_name keyword match for non-Bash tools;
+  //      high-confidence Bash external-effect patterns otherwise). Honors
+  //      MUSTER_ACTION_GUARD ("off" | "warn" | default deny), mirroring
+  //      MUSTER_WAVE_GUARD semantics. Placed before the wave/scale logic so it
+  //      applies regardless of wave state. Never throws past this block: any
+  //      failure (missing/unreadable file) falls through to the outer catch,
+  //      which is equivalent to "no-op" here since nothing was decided yet.
+  try {
+    statSync(path.join(cwd, ".muster", "run-active"));
+    const forbiddenRaw = readFileSync(path.join(cwd, ".muster", "forbidden-actions"), "utf8");
+    const forbidden = new Set(forbiddenRaw.split("\n").map((l) => l.trim()).filter(Boolean));
+    const cls = classifyAction(payload);
+    if (cls && forbidden.has(cls)) {
+      const actionGuard = (process.env.MUSTER_ACTION_GUARD || "deny").toLowerCase();
+      if (actionGuard === "warn") {
+        warnActionAllow(cls);
+      } else if (actionGuard !== "off") {
+        denyAction(cls);
+      }
+      // actionGuard === "off": fall through silently — no deny/warn, continue below.
+    }
+  } catch {
+    // .muster/run-active absent, .muster/forbidden-actions absent/unreadable,
+    // or no forbidden class matched — fail-open, continue to the wave/scale logic.
   }
 
   // Guard mode, needed by both the no-wave scale gate and the active-wave gate.
@@ -322,8 +383,15 @@ try {
       } else {
         allow();
       }
-    } else {
+    } else if (EDIT_TOOLS.has(payload.tool_name)) {
       deny(waveId);
+    } else {
+      // Wave-guard gates file writes (Edit/Write/NotebookEdit), not arbitrary
+      // tool calls. The PreToolUse matcher also fires on send/sign/publish-
+      // named tools (for the action-class fence above); absent that fence
+      // matching, any other tool_name reaching this point is out of scope for
+      // the wave-guard and falls through allowed.
+      allow();
     }
   }
 } catch {

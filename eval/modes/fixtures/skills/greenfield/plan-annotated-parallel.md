@@ -1,0 +1,3 @@
+- [ ] Write the design doc to docs/design/ {id: design} {deps: none}
+- [ ] Seed the README and AGENTS.md {id: seed-docs} {deps: none}
+- [ ] Re-detect the project shape now that scaffolding exists {id: redetect} {deps: design,seed-docs}

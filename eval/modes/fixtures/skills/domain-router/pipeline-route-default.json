@@ -1,0 +1,8 @@
+{
+  "pipelines": [
+    { "id": "prd", "domain": "pm", "default": true, "match": ["prd", "product requirements", "product spec", "feature spec", "product brief", "requirements doc"] },
+    { "id": "epic", "domain": "pm", "match": ["epic", "epics", "initiative", "theme", "capability epic"] }
+  ],
+  "outcome": "Draft the requirements for the new billing system.",
+  "domain": "pm"
+}

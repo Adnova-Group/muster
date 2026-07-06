@@ -1,0 +1,4 @@
+{
+  "created": [".gitignore", "docs/design/.gitkeep", "docs/plan/.gitkeep", "AGENTS.md"],
+  "skipped": [".git", "README.md"]
+}

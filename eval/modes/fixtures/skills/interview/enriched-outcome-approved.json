@@ -1,0 +1,8 @@
+{
+  "enrichedOutcome": "Add JWT authentication to the Express REST API, including tests, targeting 100% coverage on the auth middleware, so returning users can log in securely.",
+  "successCriteria": [
+    "100% test coverage on the auth middleware",
+    "login endpoint returns a signed JWT within 200ms",
+    "invalid credentials return 401 with no token issued"
+  ]
+}

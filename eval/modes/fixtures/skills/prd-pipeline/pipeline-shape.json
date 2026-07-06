@@ -1,0 +1,21 @@
+{
+  "id": "prd",
+  "domain": "pm",
+  "default": true,
+  "title": "Product Requirements Document",
+  "match": ["prd", "product requirements", "product spec", "feature spec", "product brief", "requirements doc"],
+  "phases": [
+    { "id": "intake", "role": "brainstorm", "desc": "clarify problem, audience, success metrics" },
+    { "id": "framing", "role": "brainstorm", "desc": "Jobs-to-be-Done framing" },
+    { "id": "research", "role": "docs-research", "desc": "gather evidence: market, competitor, customer context" },
+    { "id": "draft", "role": "author", "desc": "draft the PRD sections" },
+    { "id": "review", "role": "code-review", "desc": "adversarial review gate" },
+    { "id": "score", "role": "score", "desc": "score vs rubric, apply floor principle" },
+    { "id": "humanize", "role": "humanize", "desc": "final pass: strip AI tells for human delivery" }
+  ],
+  "gate": {
+    "criteria": ["problem-clarity", "outcome-alignment", "evidence", "scope-discipline", "dependency-clarity", "primary-metric", "guardrail-metrics"],
+    "floor": 2,
+    "pass_total": 16
+  }
+}

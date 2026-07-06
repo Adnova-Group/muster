@@ -1,0 +1,4 @@
+{
+  "recommendation": "Use JWT for statelessness across services.",
+  "rationale": "Multiple services need to validate tokens without a shared session store."
+}

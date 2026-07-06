@@ -1,0 +1,14 @@
+{
+  "candidates": [
+    { "id": "a", "total": 8, "passing": true, "content": "approach A" },
+    { "id": "b", "total": 5, "passing": false, "content": "approach B" },
+    { "id": "c", "total": 2, "passing": false, "content": "approach C" }
+  ],
+  "fusionMap": {
+    "consensus": ["both cache reads"],
+    "contradictions": ["disagree on cache invalidation strategy"],
+    "partialCoverage": [],
+    "uniqueInsights": ["a: uses write-through cache"],
+    "blindSpots": []
+  }
+}

@@ -1,0 +1,3 @@
+- [ ] Scaffold the repo (git init, docs/, .gitignore, README/AGENTS seeds)
+- [ ] Write the design doc to docs/design/
+- [ ] Write the checkbox plan to docs/plan/

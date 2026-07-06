@@ -1,0 +1,6 @@
+{
+  "question": "Should we use JWT or session cookies for auth?",
+  "context": "The task brief does not specify; both are viable, but this choice affects other services sharing the token.",
+  "decisionType": "architecture",
+  "options": ["JWT", "session cookies"]
+}

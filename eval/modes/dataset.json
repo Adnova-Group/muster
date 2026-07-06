@@ -324,6 +324,335 @@
       "grading": "model",
       "rubric": "A good cadence choice matches the backlog's arrival rate (runner.md: 'start around 15-30 minutes and widen if idle cycles dominate, tighten if items queue up unclaimed'). Penalize: a fixed cadence with no reference to observed arrival/idle rate.",
       "expect": {}
+    },
+
+    {
+      "id": "orchestrator-brief-parallel-fences",
+      "mode": "orchestrator",
+      "outcome": "A wave-1 dispatch brief for one of two concurrent same-wave tasks: the implementer's fences (OWNS/FROZEN) travel verbatim in the brief, plus the return-contract char cap.",
+      "check": "orchestrator-brief",
+      "artifact": "fixtures/skills/orchestrator/brief-parallel-fenced.md",
+      "expect": { "requireOwns": true, "requireFrozen": true, "requireForbiddenActions": false, "returnContractCaps": [2000] }
+    },
+    {
+      "id": "orchestrator-brief-single-task-no-fences-required",
+      "mode": "orchestrator",
+      "outcome": "A single-task wave has nothing else in flight to fence against, so its brief carries no OWNS/FROZEN lines -- still states the return-contract cap.",
+      "check": "orchestrator-brief",
+      "artifact": "fixtures/skills/orchestrator/brief-single-task.md",
+      "expect": { "requireOwns": false, "requireFrozen": false, "returnContractCaps": [2000] }
+    },
+    {
+      "id": "orchestrator-brief-reviewer-verdict-first-caps",
+      "mode": "orchestrator",
+      "outcome": "A reviewer's dispatch brief: FORBIDDEN ACTIONS fence present, and the return contract instructs the verdict FIRST plus the reviewer's own (tighter) char cap.",
+      "check": "orchestrator-brief",
+      "artifact": "fixtures/skills/orchestrator/brief-reviewer-verdict-caps.md",
+      "expect": { "requireForbiddenActions": true, "returnContractCaps": [1500], "verdictFirstInstruction": true }
+    },
+
+    {
+      "id": "review-gate-verdict-pass-clean",
+      "mode": "review-gate",
+      "outcome": "A reviewer's rendered response with only nit/risk findings: the verdict-first PASS is exactly what tallyReview (no blockers) implies.",
+      "check": "review-gate-verdict",
+      "artifact": "fixtures/skills/review-gate/verdict-pass-clean.md",
+      "expect": { "verdict": "PASS" }
+    },
+    {
+      "id": "review-gate-verdict-escalate-blocker",
+      "mode": "review-gate",
+      "outcome": "A reviewer's rendered response carrying one BLOCKER finding: the adversarial gate is not majority-vote, so a single blocker forces ESCALATE even alongside a nit.",
+      "check": "review-gate-verdict",
+      "artifact": "fixtures/skills/review-gate/verdict-escalate-blocker.md",
+      "expect": { "verdict": "ESCALATE" }
+    },
+    {
+      "id": "review-gate-verdict-escalate-cap-hit",
+      "mode": "review-gate",
+      "outcome": "The fix-loop cap (3 iterations) is hit with a blocker still standing: ESCALATE to the human, findings listed after the verdict.",
+      "check": "review-gate-verdict",
+      "artifact": "fixtures/skills/review-gate/verdict-escalate-cap-hit.md",
+      "expect": { "verdict": "ESCALATE" }
+    },
+
+    {
+      "id": "coordination-claim-single-winner",
+      "mode": "coordination",
+      "outcome": "Binding A (GitHub issues): a single claimant, no race -- claims, does the work, leaves a DONE receipt.",
+      "check": "coordination-claim-window",
+      "artifact": "fixtures/skills/coordination/claim-single-winner.md",
+      "expect": { "winner": "alice", "terminalType": "DONE" }
+    },
+    {
+      "id": "coordination-claim-race-earliest-wins",
+      "mode": "coordination",
+      "outcome": "Two runners claim the same issue moments apart; the earliest CLAIMED (by server timestamp) wins the race, the loser posts a YIELD and moves on.",
+      "check": "coordination-claim-window",
+      "artifact": "fixtures/skills/coordination/claim-race-earliest-wins.md",
+      "expect": { "winner": "alice", "terminalType": "DONE" }
+    },
+    {
+      "id": "coordination-claim-window-resets-after-terminal",
+      "mode": "coordination",
+      "outcome": "A stale claim from a prior, already-FAILED cycle must not out-rank a fresh re-claim -- the window floor resets at the last terminal receipt, so the fresh claimant wins even though the old claim's timestamp is earlier overall.",
+      "check": "coordination-claim-window",
+      "artifact": "fixtures/skills/coordination/claim-window-resets-after-terminal.md",
+      "expect": { "winner": "bob", "terminalType": "DONE" }
+    },
+    {
+      "id": "coordination-claim-yield-excluded-from-floor",
+      "mode": "coordination",
+      "outcome": "coordination/SKILL.md's own rationale: the window floor is deliberately NOT the loser's YIELD timestamp -- if it were, a yield landing before the winner's own re-read would floor the winner's claim out of its own window and make the win undecidable.",
+      "check": "coordination-claim-window",
+      "artifact": "fixtures/skills/coordination/claim-yield-excluded-from-floor.md",
+      "expect": { "winner": "alice" }
+    },
+
+    {
+      "id": "interview-trigger-vague-outcome",
+      "mode": "interview",
+      "outcome": "handle it",
+      "check": "assess",
+      "expect": { "clear": false, "signalsInclude": ["too-short", "no-success-criteria", "vague-only"] }
+    },
+    {
+      "id": "interview-enriched-outcome-approved",
+      "mode": "interview",
+      "outcome": "The interview's approved output: an enriched outcome plus successCriteria, ready for the router -- the enriched outcome must itself clear assessOutcome, not just read as more words.",
+      "check": "interview-enriched-outcome",
+      "artifact": "fixtures/skills/interview/enriched-outcome-approved.json",
+      "expect": { "clear": true, "minCriteria": 2 }
+    },
+    {
+      "id": "interview-backlog-item-measurable",
+      "mode": "interview",
+      "outcome": "A decomposition-check backlog item: {id}/{deps} annotations stripped generically (computeSprintWaves), the remaining text must stand on its own as measurable (assessOutcome).",
+      "check": "interview-backlog-measurable",
+      "input": "- [ ] Add a health-check endpoint returning 200 with a latency target under 50ms {id: health-check} {deps: none}\n",
+      "expect": { "id": "health-check", "clear": true }
+    },
+
+    {
+      "id": "tournament-fuse-synthesize",
+      "mode": "tournament",
+      "outcome": "Two passing candidates with a fusion map carrying real disagreement (a contradiction plus a unique insight): muster fuse selects both for synthesis.",
+      "check": "tournament-fuse",
+      "artifact": "fixtures/skills/tournament/fuse-synthesize.json",
+      "expect": { "mode": "fuse", "reason": "fusion", "topKCount": 2, "topKIncludes": ["a", "b"] }
+    },
+    {
+      "id": "tournament-fuse-fallback-candidates-agree",
+      "mode": "tournament",
+      "outcome": "A fusion map with no disagreement recorded: fusion adds no value, so muster fuse falls back winner-take-all instead of dispatching a synthesizer.",
+      "check": "tournament-fuse",
+      "artifact": "fixtures/skills/tournament/fuse-fallback-candidates-agree.json",
+      "expect": { "mode": "fallback", "reason": "candidates-agree", "winnerId": "a" }
+    },
+    {
+      "id": "tournament-fuse-fallback-invalid-map",
+      "mode": "tournament",
+      "outcome": "A malformed fusion map (missing a required array) fails safe: muster fuse never throws the tournament, it falls back winner-take-all.",
+      "check": "tournament-fuse",
+      "artifact": "fixtures/skills/tournament/fuse-fallback-invalid-map.json",
+      "expect": { "mode": "fallback", "reason": "invalid-map", "winnerId": "a" }
+    },
+    {
+      "id": "tournament-fuse-fallback-single-passing",
+      "mode": "tournament",
+      "outcome": "Only one candidate passes its success criteria: fusion needs at least 2 passing candidates, so muster fuse falls back to that sole passing candidate.",
+      "check": "tournament-fuse",
+      "artifact": "fixtures/skills/tournament/fuse-fallback-single-passing.json",
+      "expect": { "mode": "fallback", "reason": "single-or-none-passing", "winnerId": "a" }
+    },
+    {
+      "id": "tournament-fusion-map-valid-shape",
+      "mode": "tournament",
+      "outcome": "The judge's fusion map carries all five required arrays: validateFusionMap accepts it.",
+      "check": "tournament-fusion-map",
+      "artifact": "fixtures/skills/tournament/fusion-map-valid.json",
+      "expect": { "ok": true }
+    },
+    {
+      "id": "tournament-fusion-map-invalid-shape",
+      "mode": "tournament",
+      "outcome": "A fusion map missing the required blindSpots array: validateFusionMap rejects it (this IS correct behavior -- the map is malformed, not the validator).",
+      "check": "tournament-fusion-map",
+      "artifact": "fixtures/skills/tournament/fusion-map-invalid.json",
+      "expect": { "ok": false }
+    },
+
+    {
+      "id": "domain-router-classify-pm-roadmap-keyword",
+      "mode": "domain-router",
+      "outcome": "An outcome naming a roadmap/prioritization ask: classifyDomain matches the pm keyword vocabulary directly from the outcome text.",
+      "check": "domain-classify",
+      "artifact": "fixtures/skills/domain-router/classify-pm-roadmap.json",
+      "expect": { "domain": "pm", "source": "outcome" }
+    },
+    {
+      "id": "domain-router-classify-software-workspace-fallback",
+      "mode": "domain-router",
+      "outcome": "A vague outcome with no domain keyword, inside a real (non-greenfield) code workspace: classifyDomain falls back to software via the workspace signal, not the outcome text.",
+      "check": "domain-classify",
+      "artifact": "fixtures/skills/domain-router/classify-software-fallback.json",
+      "expect": { "domain": "software", "source": "workspace" }
+    },
+    {
+      "id": "domain-router-pipeline-route-epic-keyword-over-default",
+      "mode": "domain-router",
+      "outcome": "An outcome naming \"epic\" explicitly: routePipeline matches the epic pipeline's own keyword rather than falling through to pm's default (prd) pipeline.",
+      "check": "domain-pipeline-route",
+      "artifact": "fixtures/skills/domain-router/pipeline-route-epic.json",
+      "expect": { "pipelineId": "epic" }
+    },
+    {
+      "id": "domain-router-pipeline-route-default-fallback",
+      "mode": "domain-router",
+      "outcome": "An outcome with no pipeline-specific keyword match: routePipeline falls back to the pm domain's default pipeline (prd).",
+      "check": "domain-pipeline-route",
+      "artifact": "fixtures/skills/domain-router/pipeline-route-default.json",
+      "expect": { "pipelineId": "prd" }
+    },
+
+    {
+      "id": "advisor-request-valid",
+      "mode": "advisor",
+      "outcome": "A worker's advice-request with question/context/decisionType/options all present: validateAdviceRequest accepts it.",
+      "check": "advisor-request",
+      "artifact": "fixtures/skills/advisor/request-valid.json",
+      "expect": { "ok": true }
+    },
+    {
+      "id": "advisor-request-missing-question-invalid",
+      "mode": "advisor",
+      "outcome": "An advice-request missing the required question field: validateAdviceRequest rejects it (this IS correct behavior).",
+      "check": "advisor-request",
+      "artifact": "fixtures/skills/advisor/request-missing-question.json",
+      "expect": { "ok": false }
+    },
+    {
+      "id": "advisor-response-valid",
+      "mode": "advisor",
+      "outcome": "An advisor agent's response with recommendation + rationale both present: validateAdviceResponse accepts it.",
+      "check": "advisor-response",
+      "artifact": "fixtures/skills/advisor/response-valid.json",
+      "expect": { "ok": true }
+    },
+    {
+      "id": "advisor-response-empty-rationale-invalid",
+      "mode": "advisor",
+      "outcome": "An advisor response with an empty rationale string: validateAdviceResponse rejects it -- a bare recommendation with no justification doesn't fit the shape.",
+      "check": "advisor-response",
+      "artifact": "fixtures/skills/advisor/response-empty-rationale.json",
+      "expect": { "ok": false }
+    },
+    {
+      "id": "advisor-budget-within-cap",
+      "mode": "advisor",
+      "outcome": "A task's first consult, well under the default cap of 3: consultBudget allows it.",
+      "check": "advisor-budget",
+      "artifact": "fixtures/skills/advisor/budget-within.json",
+      "expect": { "consult": true, "reason": "within-budget" }
+    },
+    {
+      "id": "advisor-budget-exhausted-at-cap",
+      "mode": "advisor",
+      "outcome": "A task that has already used all 3 of its consults: consultBudget refuses a 4th, the worker proceeds best-effort.",
+      "check": "advisor-budget",
+      "artifact": "fixtures/skills/advisor/budget-exhausted.json",
+      "expect": { "consult": false, "reason": "budget-exhausted" }
+    },
+
+    {
+      "id": "greenfield-plan-sequential-checkbox",
+      "mode": "greenfield",
+      "outcome": "The greenfield checkbox plan (docs/plan/) is a plain unannotated `- [ ]` list -- the same generic checklist grammar sprint.md's queue mode consumes, reused here via computeSprintWaves rather than re-implemented.",
+      "check": "sprint-waves",
+      "artifact": "fixtures/skills/greenfield/plan-sequential.md",
+      "expect": { "ok": true, "annotated": false, "waves": [["item-1"], ["item-2"], ["item-3"]] }
+    },
+    {
+      "id": "greenfield-plan-annotated-parallel-steps",
+      "mode": "greenfield",
+      "outcome": "A greenfield plan with two independent bootstrap steps ({id}/{deps: none}) and a third that depends on both: the same computeSprintWaves wave computation applies even to a bootstrap plan, not just a backlog.",
+      "check": "sprint-waves",
+      "artifact": "fixtures/skills/greenfield/plan-annotated-parallel.md",
+      "expect": { "ok": true, "annotated": true, "waves": [["design", "seed-docs"], ["redetect"]] }
+    },
+    {
+      "id": "greenfield-scaffold-report-empty-dir",
+      "mode": "greenfield",
+      "outcome": "`muster setup` on a genuinely empty directory: every seed file (plus .git) is created, none skipped.",
+      "check": "greenfield-scaffold-shape",
+      "artifact": "fixtures/skills/greenfield/scaffold-report-empty-dir.json",
+      "expect": {}
+    },
+    {
+      "id": "greenfield-scaffold-report-existing-repo",
+      "mode": "greenfield",
+      "outcome": "`muster setup` on a directory that already has a .git and a README: those two are skipped, the remaining seed files are created -- created/skipped stay disjoint and still cover every seed file between them.",
+      "check": "greenfield-scaffold-shape",
+      "artifact": "fixtures/skills/greenfield/scaffold-report-existing-repo.json",
+      "expect": {}
+    },
+
+    {
+      "id": "prd-pipeline-shape-matches-real-yaml",
+      "mode": "prd-pipeline",
+      "outcome": "The real pipelines/prd.yaml pipeline (phases + gate) validates against validatePipeline -- a drift guard (test/mode-evals.test.js) pins this fixture against the live file.",
+      "check": "prd-pipeline-shape",
+      "artifact": "fixtures/skills/prd-pipeline/pipeline-shape.json",
+      "expect": { "ok": true }
+    },
+    {
+      "id": "prd-gate-floor-met-but-total-insufficient",
+      "mode": "prd-pipeline",
+      "outcome": "Every gate criterion sits exactly at the floor (2): the floor alone is not sufficient -- the total (14) misses pass_total (16), so the gate is not passing.",
+      "check": "prd-gate-achievability",
+      "artifact": "fixtures/skills/prd-pipeline/gate-floor-insufficient.json",
+      "expect": { "total": 14, "weakestCriterion": "problem-clarity", "passing": false }
+    },
+    {
+      "id": "prd-gate-passing-floor-and-total-met",
+      "mode": "prd-pipeline",
+      "outcome": "Scores clearing both the floor (every criterion >= 2) and pass_total (total = 16): the gate passes.",
+      "check": "prd-gate-achievability",
+      "artifact": "fixtures/skills/prd-pipeline/gate-passing.json",
+      "expect": { "total": 16, "weakestCriterion": "evidence", "passing": true }
+    },
+    {
+      "id": "prd-gate-weakest-below-floor-overrides-high-total",
+      "mode": "prd-pipeline",
+      "outcome": "A high total (19, well above pass_total) with one criterion (evidence) below the floor: the book-genesis floor principle overrides the total -- still not passing.",
+      "check": "prd-gate-achievability",
+      "artifact": "fixtures/skills/prd-pipeline/gate-weakest-below-floor.json",
+      "expect": { "total": 19, "weakestCriterion": "evidence", "passing": false }
+    },
+
+    {
+      "id": "roadmap-rice-rank-order-real-math",
+      "mode": "roadmap-prioritization",
+      "outcome": "Three initiatives with distinct RICE factors: prioritizeRICE computes (reach*impact*confidence)/effort per item and ranks them highest-score-first -- code does the math, not the model.",
+      "check": "roadmap-rice",
+      "artifact": "fixtures/skills/roadmap-prioritization/rice-rank-order.json",
+      "expect": { "rankOrder": ["retry-backoff", "dashboard-metric", "docs-refresh"], "scores": { "retry-backoff": 800 } }
+    },
+    {
+      "id": "roadmap-rice-tie-break-alphabetical",
+      "mode": "roadmap-prioritization",
+      "outcome": "Two initiatives that compute to an identical RICE score: the deterministic tie-break is ascending name, not arrival order or a coin flip.",
+      "check": "roadmap-rice",
+      "artifact": "fixtures/skills/roadmap-prioritization/rice-tie-break.json",
+      "expect": { "rankOrder": ["alpha-init", "beta-init"] }
+    },
+    {
+      "id": "roadmap-rice-zero-effort-throws",
+      "mode": "roadmap-prioritization",
+      "outcome": "An initiative with effort=0: prioritizeRICE fails loud (divide-by-zero guard) rather than silently ranking it infinitely valuable.",
+      "check": "roadmap-rice",
+      "artifact": "fixtures/skills/roadmap-prioritization/rice-zero-effort.json",
+      "expect": { "throws": true }
     }
   ]
 }

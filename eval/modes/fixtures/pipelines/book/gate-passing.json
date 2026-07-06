@@ -1,0 +1,30 @@
+{
+  "scores": {
+    "structure": 3,
+    "voice": 3,
+    "clarity": 2,
+    "coherence": 2,
+    "throughline": 2,
+    "market": 2,
+    "originality": 2,
+    "hook": 2,
+    "evidence": 2,
+    "actionability": 2
+  },
+  "gate": {
+    "criteria": [
+      "structure",
+      "voice",
+      "clarity",
+      "coherence",
+      "throughline",
+      "market",
+      "originality",
+      "hook",
+      "evidence",
+      "actionability"
+    ],
+    "floor": 2,
+    "pass_total": 20
+  }
+}

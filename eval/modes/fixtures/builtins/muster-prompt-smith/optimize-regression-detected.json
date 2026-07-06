@@ -1,0 +1,4 @@
+[
+  { "id": "baseline", "prompt": "Summarize the ticket.", "total": 15, "passing": false },
+  { "id": "add-role", "prompt": "You are an expert assistant specialized in this task.\n\nSummarize the ticket.", "total": 9, "passing": true }
+]

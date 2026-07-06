@@ -1,0 +1,22 @@
+{
+  "scores": {
+    "narrative-clarity": 3,
+    "scope-discipline": 3,
+    "outcome-alignment": 2,
+    "hypothesis-testability": 2,
+    "acceptance-criteria": 2,
+    "dependencies": 2
+  },
+  "gate": {
+    "criteria": [
+      "narrative-clarity",
+      "scope-discipline",
+      "outcome-alignment",
+      "hypothesis-testability",
+      "acceptance-criteria",
+      "dependencies"
+    ],
+    "floor": 2,
+    "pass_total": 14
+  }
+}

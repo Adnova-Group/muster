@@ -1,0 +1,24 @@
+{
+  "scores": {
+    "clarity": 3,
+    "completeness": 3,
+    "feasibility": 2,
+    "testability": 2,
+    "contract-completeness": 2,
+    "alternatives-documented": 2,
+    "observability-plan": 2
+  },
+  "gate": {
+    "criteria": [
+      "clarity",
+      "completeness",
+      "feasibility",
+      "testability",
+      "contract-completeness",
+      "alternatives-documented",
+      "observability-plan"
+    ],
+    "floor": 2,
+    "pass_total": 16
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "scores": {
+    "market-size": 3,
+    "financials": 3,
+    "roi": 2,
+    "risk": 2,
+    "feasibility": 2,
+    "clarity": 2
+  },
+  "gate": {
+    "criteria": [
+      "market-size",
+      "financials",
+      "roi",
+      "risk",
+      "feasibility",
+      "clarity"
+    ],
+    "floor": 2,
+    "pass_total": 14
+  }
+}

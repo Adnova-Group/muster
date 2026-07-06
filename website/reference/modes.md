@@ -1,6 +1,6 @@
-# The six modes
+# The seven modes
 
-Muster exposes six entry points as slash commands under the `muster:` namespace.
+Muster exposes seven entry points as slash commands under the `muster:` namespace.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Muster exposes six entry points as slash commands under the `muster:` namespace.
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
 | Sprint | `/muster:sprint <backlog ref>` | Batch autopilot over every backlog item, never interviewing mid-batch, one stop at the end |
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker: resume or claim exactly one item, run it, leave a receipt, stop |
+| Capture | `/muster:capture [hint]` | Mine the conversation into approval-gated backlog items, then stop -- no crew, no waves |
 
 ## Run
 
@@ -84,5 +85,20 @@ The unattended, single-cycle counterpart to Sprint's batch drain — meant to be
 ```
 
 Runner shares the same **coordination** skill as Sprint, so it composes safely with a running sprint, other scheduled runners, and humans working the same backlog or `issues:<label>` — the claim lock (Binding A's comment-race window, Binding B's claim-then-verify) is what makes concurrent firing safe. On escalation, Runner posts a `FAILED` receipt and marks the item escalated so the next cycle's claim step skips it; a 2-failure retry cap bounds reclaim loops before an item redirects to blocked rather than being retried forever.
+
+## Capture
+
+The third backlog generator, alongside the interview skill's decomposition check and Audit's backlog mode — so a sprint backlog never has to be hand-written. It turns a session's discussion into backlog items: research findings, design decisions, review residuals, or an explicit user directive like "add those 5". An optional hint scopes which part of the conversation to mine; empty scans the whole session so far.
+
+```sh
+/muster:capture
+/muster:capture the three findings from the audit we just discussed
+```
+
+Each candidate is traced to what was actually said — a quoted fragment or a named decision, never a musing floated without a decision behind it, work already completed this session, or anything the user explicitly parked ("later", "maybe", "not now"). More than 10 survivors triggers a cap: only the 10 most recent/decision-weighted candidates are presented, with the holdback count stated explicitly.
+
+Every surviving candidate runs the identical `assess`-passable validation and `.muster/backlog.md` dedupe the other two backlog generators use, capped at 2 reword attempts — an item still not measurable after that is offered marked **UNMEASURABLE** rather than forcing a fabricated metric. Nothing is written until you approve: an **AskUserQuestion** prompt offers Approve all, Edit (a revised item re-enters validation before re-offering), Drop, or Cancel (writes nothing) — the human gate on what enters the queue.
+
+Capture has no run-active lifecycle. It only ever writes `.muster/backlog.md` and never assembles a crew or dispatches a subagent wave itself, so it is not an outcome-runner the way the other six modes are — a `run-active` marker would gate nothing here, and is deliberately omitted rather than copied from the other command prompts.
 
 Next: the [CLI commands](/reference/commands) that power these modes.

@@ -30,6 +30,8 @@ Claude presents what SHOULD happen. User confirms or describes what's different.
 - Anything else → logged as issue, severity inferred
 
 No Pass/Fail buttons. No severity questions. Just: "Here's what should happen. Does it?"
+
+**Abstain rather than guess (#1154).** Some deliverables can't be verified this way at all — SUMMARY.md states *that* something changed but not what the correct observable behavior *is*. Fabricating an "expected" for one of these and letting a bare "yes" resolve it is the same failure as a verifier confidently mis-grading a check it was never told the answer to. When a test is genuinely non-inferable from the spec, abstain: `result: insufficient_spec`, never a guessed pass or fail. See `extract_tests` and `process_response` below.
 </philosophy>
 
 <template>
@@ -201,6 +203,22 @@ Examples:
 
 Skip internal/non-observable items (refactors, type changes, etc.).
 
+**Abstain on non-inferable deliverables — don't guess (#1154):**
+
+Some accomplishments describe *that* something changed without stating *what* the correct
+observable behavior is (e.g. "improved validation logic", "handled overlapping ranges",
+"fixed the edge case in retry logic") — the right answer is not inferable from SUMMARY.md
+alone. Before writing `expected:`, ask: is this observable behavior explicitly stated in
+SUMMARY.md (or CONTEXT.md / REQUIREMENTS.md), or am I inferring/guessing what it probably
+should do?
+
+- **Explicitly stated** → normal test, `expected:` quotes or paraphrases the stated behavior.
+- **Genuinely non-inferable** → do not invent a plausible-sounding `expected:` and present it
+  as settled fact. Mark the test `verification: backstop` and write `expected:` as the open
+  question itself (e.g. "SUMMARY.md doesn't specify how overlapping ranges should merge —
+  describe what you observe"). A bare "yes" against a fabricated expectation is a confident
+  guess the user has no way to catch. See `process_response` for how these resolve.
+
 **Cold-start smoke test injection:**
 
 After extracting tests from SUMMARYs, scan the SUMMARY files for modified/created file paths. If ANY path matches these patterns:
@@ -263,6 +281,7 @@ passed: 0
 issues: 0
 pending: [N]
 skipped: 0
+insufficient_spec: 0
 
 ## Gaps
 
@@ -302,6 +321,32 @@ Wait for user response (plain text, no AskUserQuestion).
 
 <step name="process_response">
 **Process user response and update file:**
+
+**Non-inferable tests resolve differently — check this first (#1154):**
+
+If the current test carries `verification: backstop` (set in `extract_tests`), do not
+resolve it through the pass/skip/blocked/issue branches below on a bare acknowledgement.
+"yes"/"y"/"ok"/"next"/empty is not explicit evidence for a check the spec never answered —
+the user may be confirming the interaction worked, not that the ambiguous behavior was
+correct.
+
+- If the response **explicitly describes the concrete behavior observed** (enough detail to
+  confirm or contradict the open question) → treat that description as explicit evidence and
+  fall through to the normal pass/issue branches below.
+- Otherwise (a bare acknowledgement, or a vague non-answer) → **abstain**:
+
+```
+### {N}. {name}
+expected: {expected}
+verification: backstop
+result: insufficient_spec
+reason: "abstained — non-inferable from spec; no explicit confirmation of the specific behavior observed"
+```
+
+Do not record pass. Do not record fail. This test does NOT go into the Gaps section as an
+ordinary defect — it is a spec ambiguity, not a code issue (same distinction as `blocked`
+tests, for a different reason). It surfaces in the completion summary and needs a human
+decision (clarify the spec, or write a held-out test), not a code fix.
 
 **If response indicates pass:**
 - Empty response, "yes", "y", "ok", "pass", "next", "approved", "✓"
@@ -345,7 +390,7 @@ blocked_by: {inferred tag}
 reason: "{verbatim user response}"
 ```
 
-Note: Blocked tests do NOT go into the Gaps section (they aren't code issues — they're prerequisite gates).
+Note: Blocked tests do NOT go into the Gaps section (they aren't code issues — they're prerequisite gates). Same for `insufficient_spec` tests — see the backstop-resolution branch above.
 
 **If response is anything else:**
 - Treat as issue description
@@ -415,11 +460,13 @@ Count results:
 - `pending_count`: tests with `result: [pending]`
 - `blocked_count`: tests with `result: blocked`
 - `skipped_no_reason`: tests with `result: skipped` and no `reason` field
+- `insufficient_spec_count`: tests with `result: insufficient_spec` (#1154 — abstained, non-inferable)
 
 ```
-if pending_count > 0 OR blocked_count > 0 OR skipped_no_reason > 0:
+if pending_count > 0 OR blocked_count > 0 OR skipped_no_reason > 0 OR insufficient_spec_count > 0:
   status: partial
-  # Session ended but not all tests resolved
+  # Session ended but not all tests resolved — an abstained insufficient_spec test is never
+  # silently rolled into "complete"; it needs a human decision same as a pending test
 else:
   status: complete
   # All tests have a definitive result (pass, issue, or skipped-with-reason)
@@ -450,16 +497,32 @@ Present summary:
 | Passed | {N}   |
 | Issues | {N}   |
 | Skipped| {N}   |
+[If insufficient_spec_count > 0:]
+| Insufficient Spec | {N} |
 
 [If issues > 0:]
 ### Issues Found
 
 [List from Issues section]
+
+[If insufficient_spec_count > 0:]
+### Insufficient Spec — Needs Human Decision (#1154)
+
+[List each abstained test's `expected` open question. These are spec ambiguities, not
+code defects — they do NOT feed `diagnose_issues` / gap-closure planning. Resolve by
+clarifying the spec or writing a held-out test, then re-run `/gsd:verify-work` to confirm.]
 ```
 
 **If issues > 0:** Proceed to `diagnose_issues`
 
-**If issues == 0:**
+**If issues == 0 AND insufficient_spec_count > 0:**
+
+Do not auto-transition the phase to complete in ROADMAP.md/STATE.md — an abstained
+non-inferable check is never silently absorbed into a clean phase-complete transition
+(#1154). Report the Insufficient Spec table above and stop; the user resolves each item
+(spec clarification or held-out test), then re-runs `/gsd:verify-work {phase}`.
+
+**If issues == 0 AND insufficient_spec_count == 0:**
 
 ```bash
 SECURITY_CFG=$(gsd_run query config-get workflow.security_enforcement --raw 2>/dev/null || echo "true")
@@ -776,6 +839,9 @@ On context reset: File shows last checkpoint. Resume from there.
 Default to **major** if unclear. User can correct if needed.
 
 **Never ask "how severe is this?"** - just infer and move on.
+
+This table applies to ordinary issues only — a `verification: backstop` test never reaches
+severity inference; see `process_response`'s abstain branch (#1154).
 </severity_inference>
 
 <success_criteria>
@@ -790,4 +856,5 @@ Default to **major** if unclear. User can correct if needed.
 - [ ] If issues: gsd-plan-checker verifies fix plans
 - [ ] If issues: revision loop until plans pass (max 3 iterations)
 - [ ] Ready for `/gsd:execute-phase --gaps-only` when complete
+- [ ] Non-inferable deliverables abstain via `insufficient_spec` instead of a guessed pass/fail (#1154) — never resolved by a bare acknowledgement, never auto-transitioned to phase-complete
 </success_criteria>

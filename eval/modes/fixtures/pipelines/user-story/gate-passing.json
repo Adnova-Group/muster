@@ -1,0 +1,22 @@
+{
+  "scores": {
+    "clarity": 3,
+    "user-value": 3,
+    "acceptance-criteria": 2,
+    "testability": 2,
+    "independence": 2,
+    "estimable": 2
+  },
+  "gate": {
+    "criteria": [
+      "clarity",
+      "user-value",
+      "acceptance-criteria",
+      "testability",
+      "independence",
+      "estimable"
+    ],
+    "floor": 2,
+    "pass_total": 14
+  }
+}

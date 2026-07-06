@@ -1,0 +1,2 @@
+- Chapter 1: The Vanishing Ledger (status: drafted)
+- Chapter 3: The Reconciliation (status: pending)

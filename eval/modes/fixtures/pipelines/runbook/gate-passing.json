@@ -1,0 +1,28 @@
+{
+  "scores": {
+    "completeness": 3,
+    "clarity": 3,
+    "safety": 2,
+    "validation": 2,
+    "rollback": 2,
+    "preconditions": 2,
+    "observability": 2,
+    "idempotency": 2,
+    "escalation-path": 2
+  },
+  "gate": {
+    "criteria": [
+      "completeness",
+      "clarity",
+      "safety",
+      "validation",
+      "rollback",
+      "preconditions",
+      "observability",
+      "idempotency",
+      "escalation-path"
+    ],
+    "floor": 2,
+    "pass_total": 18
+  }
+}

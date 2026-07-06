@@ -1,35 +1,69 @@
 sources:
   - id: superpowers
-    kind: local
+    kind: github
     repo: obra/superpowers
+    # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
+    # (was kind:local, tracking whatever superpowers plugin version was already
+    # installed; pinned here for reproducible vendoring, matching wshobson's shape).
+    # ref = obra/superpowers Superpowers 6 release (2026-06-16), commit 8e1262a
+    # "writing-plans: task right-sizing, Global Constraints header, per-task
+    # Interfaces blocks" — rolled into sp-plan/SKILL.md (muster-local frontmatter
+    # + intro paragraphs preserved):
+    #   1. Task Right-Sizing guidance (tasks sized to one reviewable slice).
+    #   2. Global Constraints header (plan-level constraints stated once,
+    #      inherited by every task).
+    #   3. Per-task Interfaces blocks (each task declares interfaces it
+    #      exposes/consumes).
+    #
+    # Re-pinned 2026-07-06: 8e1262a -> 284be590 (v6.0.0 tag commit), so the pin
+    # covers all three sp-subagents mechanisms rolled into sp-subagents/SKILL.md
+    # below (muster-local frontmatter + intro paragraphs preserved):
+    #   1. Pre-flight plan-conflict review (b61b550) — batch conflicts into one
+    #      question before Task 1 dispatch instead of interrupting mid-plan.
+    #   2. Tiered implementer dispatch (cfe48c28ac) — cheapest tier when the
+    #      plan already carries complete code; mid-tier floor for prose-only
+    #      task text.
+    #   3. Reviewer risk-budget (de4672b171) — constraints as the reviewer's
+    #      attention lens; named risks get one focused check, not an open
+    #      sweep.
+    # 284be590 pulls in 11 commits past 8e1262a, not just these three; the 9
+    # skills/ paths below still resolve at 284be590 (verified). Spot-diffed
+    # upstream against the vendored copies (2026-07-06): writing-plans is
+    # byte-identical; subagent-driven-development gained upstream text beyond
+    # the three rolled mechanisms (a narration line, a final-review
+    # model-choice note, a Red Flags plan-mandated-finding clause) that this
+    # roll does not adapt — left un-rolled, reported to the orchestrator
+    # rather than edited into the (hand-adapted, not mechanically synced)
+    # vendored SKILL.md.
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
     license: MIT
     items:
-      - from: brainstorming/SKILL.md
+      - from: skills/brainstorming/SKILL.md
         id: sp-brainstorm
         roles: [brainstorm]
-      - from: writing-plans/SKILL.md
+      - from: skills/writing-plans/SKILL.md
         id: sp-plan
         roles: [plan]
-      - from: test-driven-development/SKILL.md
+      - from: skills/test-driven-development/SKILL.md
         id: sp-tdd
         roles: [test-author]
-      - from: requesting-code-review/SKILL.md
+      - from: skills/requesting-code-review/SKILL.md
         id: sp-review
         roles: [code-review]
-      - from: receiving-code-review/SKILL.md
+      - from: skills/receiving-code-review/SKILL.md
         id: sp-review-recv
         roles: [code-review]
         rank: 48
-      - from: systematic-debugging/SKILL.md
+      - from: skills/systematic-debugging/SKILL.md
         id: sp-debug
         roles: [debug]
-      - from: verification-before-completion/SKILL.md
+      - from: skills/verification-before-completion/SKILL.md
         id: sp-verify
         roles: [test-author]
-      - from: subagent-driven-development/SKILL.md
+      - from: skills/subagent-driven-development/SKILL.md
         id: sp-subagents
         roles: [plan]
-      - from: dispatching-parallel-agents/SKILL.md
+      - from: skills/dispatching-parallel-agents/SKILL.md
         id: sp-parallel
         roles: [plan]
   - id: wshobson
@@ -235,7 +269,18 @@ sources:
     kind: github
     repo: open-gsd/gsd-core
     # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
-    ref: 85cfa5dc136200667e3044ef2827747880314e03
+    # Re-pinned 2026-07-06. Rolled mechanisms (hand-adapted into the muster builtins below,
+    # not a mechanical vendor diff — each upstream file's actual workflow differs from
+    # muster's, so the mechanism was ported into muster's existing voice/structure):
+    #   - honest-verifier abstain (insufficient_spec, never guess pass/fail) -> gsd-verify-work
+    #     (upstream gsd-core@1899538, #1154)
+    #   - plan:pre codebase-drift pre-check (warn-only, before planner spawns) -> gsd-plan-phase
+    #     (upstream gsd-core@d1f7ba8, #1592)
+    #   - must-NOT probe ("Must NOT Change" section -> must_haves.prohibitions) -> gsd-plan-phase
+    #     (upstream gsd-core@395fb51, #644)
+    #   - context_guard_mode (self-monitored context-budget checkpoint/handoff at wave
+    #     boundaries) -> gsd-execute-phase (upstream gsd-core@4eca5ac, #1452)
+    ref: 18995380ce8d85bccd8a3c64973664348b29cab8
     license: MIT
     items:
       - from: gsd-core/workflows/plan-phase.md

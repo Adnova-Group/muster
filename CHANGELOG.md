@@ -5,6 +5,18 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+> `v0.4.0` is already tagged (it points at the post-0.4.0 seven-dimension audit merge), and no `CHANGELOG.md` entry exists yet for the sprint train since -- so this work lands in a new `Unreleased` section rather than being folded retroactively into the already-cut `[0.4.0]` entry below.
+
+### Added
+- **`/muster:capture` -- the seventh mode.** A conversation-to-backlog generator: mines a session's discussion (research findings, design decisions, review residuals, an explicit user directive like "add those 5") into backlog items via the identical extract/validate/dedupe/write machinery the interview skill's decomposition check and `/muster:audit backlog` already use, capped at 10 surviving candidates and 2 reword attempts (an item still not measurable after that is offered marked `UNMEASURABLE` rather than forcing a fabricated metric). Nothing is written until an explicit **AskUserQuestion** approval (Approve all / Edit / Drop / Cancel); a Cancel writes nothing. Deliberately has no run-active lifecycle -- it only ever writes `.muster/backlog.md` and never assembles a crew or dispatches a subagent wave, so it is not among the guidance hooks' six routed verbs.
+- **Mode-prompt empirical eval harness (`eval/modes/`).** Code-graded regression coverage for the six mode prompts (`run`/`autopilot`/`diagnose`/`audit`/`sprint`/`runner`), extended to the 10 skill-protocol skills (orchestrator, review-gate, coordination, interview, tournament, domain-router, advisor, greenfield, prd-pipeline, roadmap-prioritization) and to phase prompts across all 9 content pipelines -- 101 cases total (94 code-graded against real deterministic functions or checked-in fixtures, 7 model-graded), gated by `npm test` / `npm run eval:modes`. Along the way, `eval/router`'s grade-lib `covers()` check was hardened from substring to exact stage matching (closes a trailing-empty-token false pass; zero golden flips).
+
+### Changed
+- **Docs: six modes -> seven modes.** `README.md`, `docs/architecture.md`, and the website's modes/index/concepts/install/quickstart pages now list Capture alongside the other six, with parity between each mode-table row and its own prose section. Two pre-existing stale "the four verbs" mentions (predating Sprint/Runner) were also corrected to "the six verbs" while auditing this text, with a note that Capture is deliberately excluded from that routed set.
+- **Mode-prompt style pass -- positive-imperative restructuring.** `/muster:autopilot`, `/muster:sprint`, and `/muster:runner` prompts were restructured toward positive-imperative phrasing plus explicit uncertainty allowances, verified against the mode-prompt eval scan (6/6) with each semantics-affecting hunk hand-checked.
+
 ## [0.4.0] - 2026-07-06
 
 ### Added

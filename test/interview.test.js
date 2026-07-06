@@ -69,6 +69,19 @@ test("consecutive-run outcome is clear", () => {
   assert.deepEqual(r.signals, [], "a clear outcome must carry no signals");
 });
 
+// WHY: gate-proven false-pass — a bare measurable keyword ("improve") padded with vague
+// intensifiers ("significantly") and no actual number/percent/comparative must NOT clear the
+// no-success-criteria signal. A keyword alone is not a metric; it must co-occur with a real
+// measurable (digit or comparative) to count.
+test("bare measurable keyword with no metric does not clear no-success-criteria", () => {
+  const r = assessOutcome("Improve user satisfaction ... significantly across all platforms...");
+  assert.equal(r.clear, false, "'improve' with no number/percent/comparative cannot be clear");
+  assert.ok(
+    r.signals.includes("no-success-criteria"),
+    "a bare keyword with no co-occurring measurable must flag no-success-criteria",
+  );
+});
+
 // WHY: a digit that is part of an identifier or filename (not a standalone measurable number)
 // must NOT be mistaken for success criteria — pins the negative case against over-matching.
 test("digit inside a filename/identifier does not count as a measurable and stays not clear", () => {

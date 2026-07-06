@@ -69,6 +69,17 @@ The unattended counterpart to Sprint, meant to be fired repeatedly by a Claude C
 
 Runner and Sprint share a claim/receipt/ledger discipline (the **coordination** skill), so a scheduled runner can safely work the same backlog or `issues:<label>` alongside an attended sprint or a human.
 
+## Turn a discussion into backlog items: `/muster:capture`
+
+Had a conversation that produced findings, decisions, or an explicit "add those 5" — but nothing has written them down yet? `/muster:capture [hint]` mines the session (or just the part `hint` scopes) for candidate backlog items, each traced back to what was actually said. Nothing is written until you approve the list; it never assembles a crew or runs anything itself.
+
+```sh
+/muster:capture
+/muster:capture the three findings from the audit we just discussed
+```
+
+Approve, and the items land in `.muster/backlog.md` alongside anything `/muster:audit backlog` or an interview decomposition already wrote there, ready for `/muster:sprint`.
+
 ## Inspect the routing yourself
 
 Because the CLI is deterministic and makes no model calls, you can run it in a terminal to see exactly how Muster would resolve work:

@@ -23,6 +23,9 @@ import { computeWaves } from "./wave.js";
 
 const CHECKBOX_RE = /^- \[ \] (.*)$/;
 
+// {id} tokens must be kebab/alnum: a letter or digit, then letters/digits/hyphens.
+const ID_TOKEN_RE = /^[a-z0-9][a-z0-9-]*$/i;
+
 // Fresh RegExp per call (both here and in the exec loop below) — a shared global
 // regex object carries `lastIndex` state across calls, which is an easy source of
 // skipped/duplicated matches when the same pattern is reused for both exec and replace.
@@ -43,10 +46,10 @@ function stripAnnotations(text) {
 
 export function computeSprintWaves(content) {
   if (typeof content !== "string") {
-    return { ok: false, errors: ["missing content: expected backlog text"], waves: [], items: {} };
+    return { ok: false, errors: ["missing content: expected backlog text"], waves: [], items: {}, annotated: false };
   }
   if (content.trim() === "") {
-    return { ok: false, errors: ["empty backlog: no content"], waves: [], items: {} };
+    return { ok: false, errors: ["empty backlog: no content"], waves: [], items: {}, annotated: false };
   }
 
   const raw = [];
@@ -55,8 +58,11 @@ export function computeSprintWaves(content) {
     if (!m) return;
     const lineNo = i + 1;
     const { anns, text } = stripAnnotations(m[1]);
+    const hasId = Object.prototype.hasOwnProperty.call(anns, "id");
     raw.push({
       lineNo,
+      hasId,
+      rawId: anns.id,
       id: anns.id || `item-${lineNo}`,
       text,
       hasDeps: Object.prototype.hasOwnProperty.call(anns, "deps"),
@@ -65,6 +71,19 @@ export function computeSprintWaves(content) {
       escalated: Object.prototype.hasOwnProperty.call(anns, "escalated"),
     });
   });
+
+  // annotated is the deterministic wave-mode trigger: true iff any parsed unchecked
+  // item carried an explicit {id} or {deps} annotation. Checked lines never reach
+  // `raw` (CHECKBOX_RE only matches unchecked "- [ ] " lines), so their annotations
+  // never count.
+  const annotated = raw.some((r) => r.hasId || r.hasDeps);
+
+  const idErrors = raw
+    .filter((r) => r.hasId && !ID_TOKEN_RE.test(r.rawId))
+    .map((r) => `invalid id '${r.rawId}' at line ${r.lineNo}`);
+  if (idErrors.length > 0) {
+    return { ok: false, errors: idErrors, waves: [], items: {}, annotated };
+  }
 
   // Build the explicit deps array every item needs for computeWaves. Items without a
   // {deps} annotation get every id parsed so far (implicit "depends on all above").
@@ -88,8 +107,8 @@ export function computeSprintWaves(content) {
 
   try {
     const computed = computeWaves(tasks);
-    return { ok: true, errors: [], waves: computed.map((w) => w.map((t) => t.id)), items };
+    return { ok: true, errors: [], waves: computed.map((w) => w.map((t) => t.id)), items, annotated };
   } catch (e) {
-    return { ok: false, errors: [e.message], waves: [], items };
+    return { ok: false, errors: [e.message], waves: [], items, annotated };
   }
 }

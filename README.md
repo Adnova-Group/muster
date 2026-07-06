@@ -111,6 +111,7 @@ Muster's runtime behavior can be tuned with environment variables:
 | `MUSTER_ADVISOR_MAX_CONSULTS` | `3` | Maximum advisor consults per run. Bounds the cost of workers escalating to the advisor role. Set to 0 to disable advisor consults. |
 | `MUSTER_FUSE_TOPK` | `3` | Maximum number of tournament candidates passed to the fusion synthesizer. Must be >= 1. |
 | `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis. Below this threshold `muster fuse` falls back to the single best candidate. Set to 0 to always fuse when >= 2 candidates pass. |
+| `MUSTER_SPRINT_PARALLEL` | `3` | Max concurrent item-runner subagents per wave in `/muster:sprint` wave mode; `0` = unbounded (wave-sized). Read by the sprint verb's orchestration protocol, not by library code. |
 
 ## Built on
 

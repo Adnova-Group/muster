@@ -118,7 +118,9 @@ try {
   } else if (cmd === "sprint-waves") {
     const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
     const content = await readFile(file, "utf8");
-    out(computeSprintWaves(content));
+    const r = computeSprintWaves(content);
+    out(r);
+    if (!r.ok) process.exit(2);
   } else if (cmd === "tally") {
     const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
     out(tallyReview(JSON.parse(await readFile(file, "utf8"))));

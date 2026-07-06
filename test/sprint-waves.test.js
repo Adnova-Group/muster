@@ -117,3 +117,52 @@ test("checked items ('- [x] ') are ignored", () => {
   assert.equal(r.ok, true);
   assert.deepEqual(r.waves, [["item-2"]]);
 });
+
+test("annotated:false for a plain backlog with no {id}/{deps} annotations", () => {
+  const backlog = [
+    "- [ ] Do first",
+    "- [ ] Do second",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.equal(r.annotated, false);
+});
+
+test("annotated:true when any unchecked item carries an explicit {id}", () => {
+  const backlog = [
+    "- [ ] Plain",
+    "- [ ] Named {id: a}",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.equal(r.annotated, true);
+});
+
+test("annotated:true when any unchecked item carries an explicit {deps}", () => {
+  const backlog = [
+    "- [ ] Plain",
+    "- [ ] Independent {deps: none}",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.equal(r.annotated, true);
+});
+
+test("annotated:false when {id}/{deps} annotations only appear on checked lines", () => {
+  const backlog = [
+    "- [x] Done already {id: a} {deps: none}",
+    "- [ ] Still todo",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.equal(r.annotated, false);
+  assert.deepEqual(r.waves, [["item-2"]]);
+});
+
+test("invalid {id} token (contains a space) -> ok:false with a named error", () => {
+  const backlog = "- [ ] Something {id: has space}";
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.waves, []);
+  assert.ok(r.errors.some((e) => /invalid id/i.test(e) && /has space/.test(e)), r.errors.join(" | "));
+});

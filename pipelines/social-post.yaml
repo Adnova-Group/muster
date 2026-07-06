@@ -4,10 +4,12 @@ title: Social Media Post
 phases:
   - { id: intake,   role: brainstorm,  desc: "platform, audience, goal, one core idea, CTA; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: angle,    role: author,      desc: "choose an angle + framework (AIDA / PAS / BAB / QUEST)" }
-  - { id: variants, role: author,      desc: "write 3+ hook/post variants; calibrate register, jargon, and depth to the resolved audience profile; tournament-judge the strongest" }
+  - { id: variants, role: author,      desc: "write 3+ hook/post variants; calibrate jargon, depth, and altitude to the resolved audience profile; resolve the voice profile in docs/profiles/VOICE.md and layer its register, rhythm, and anti-patterns on top (audience owns depth/jargon/altitude, voice owns register/rhythm/anti-patterns); tournament-judge the strongest" }
   - { id: review,   role: code-review, desc: "adversarial review + platform-fit check" }
   - { id: score,    role: score,       desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+optional_phases:
+  - { id: publish, role: author, desc: "OPTIONAL, skippable — terminal publish-prep phase; runs after humanize without replacing it as the pipeline's normal end. Assemble the publish packet: final artifact + OG/social image PROMPTS from the image role (if an audience/voice profile exists, keep visuals on-profile) + metadata/index entries per the seo role. Then a visual-verify recipe (browser-control role: load the rendered preview, capture screenshot + console evidence). STOP at the action fence — actual deploy/post/send actions are publish-class, gated by forbiddenActions (100% of publish actions require the human's explicit go); the phase output IS the ready-to-publish packet + verification evidence, never the act. Ends by writing the packet manifest (artifact paths, evidence, checklist) for audit" }
 gate:
   criteria: [hook, clarity-for-audience, brand-fit, platform-fit, cta]
   floor: 2

@@ -13,6 +13,8 @@ phases:
   - { id: review,           role: code-review,   desc: "adversarial review gate" }
   - { id: score,            role: score,         desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+optional_phases:
+  - { id: publish, role: author, desc: "OPTIONAL, skippable — terminal publish-prep phase; runs after humanize without replacing it as the pipeline's normal end. Assemble the publish packet: final artifact + OG/social image PROMPTS from the image role (if an audience/voice profile exists, keep visuals on-profile) + metadata/index entries per the seo role. Then a visual-verify recipe (browser-control role: load the rendered preview, capture screenshot + console evidence). STOP at the action fence — actual deploy/post/send actions are publish-class, gated by forbiddenActions (100% of publish actions require the human's explicit go); the phase output IS the ready-to-publish packet + verification evidence, never the act. Ends by writing the packet manifest (artifact paths, evidence, checklist) for audit" }
 gate:
   criteria: [audience-fit, value, actionability, headline-clarity, conversion-copy, design-readiness]
   floor: 2

@@ -15,6 +15,8 @@ Respond with a glass-box routing record: the chosen domain, pipeline (or softwar
 2. If `pipeline` is non-null, run it (the `prd-pipeline` skill is the reference shape: intake ->
    research -> draft -> review -> score, reusing the review-gate + floor-scored gate). The pipeline's
    `phases` name the roles; each resolves via the capability ladder (installed -> built-in -> inline).
+   If the selected pipeline defines `optional_phases`, run each only when the outcome explicitly asks
+   for it (e.g. publish-prep); otherwise the pipeline ends at its final `phases` entry.
 3. If `pipeline` is null:
    - `domain` software (or a code workspace) -> the normal software route -> Crew Manifest -> orchestrator.
    - else classify the work yourself (model judgment) and pick the closest pipeline, recording why.

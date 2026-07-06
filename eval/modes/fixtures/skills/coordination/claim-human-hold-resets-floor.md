@@ -1,0 +1,4 @@
+MUSTER CLAIMED alice 2026-01-01T08:00:00Z
+MUSTER HUMAN-HOLD alice 2026-01-01T08:05:00Z authorizer=bob — needs deploy approval before shipping
+MUSTER CLAIMED carol 2026-01-01T09:00:00Z
+MUSTER DONE carol 2026-01-01T09:10:00Z

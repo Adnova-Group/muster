@@ -1,0 +1,11 @@
+{
+  "candidates": [
+    { "text": "Add retry logic to the payments client", "excludedReason": null },
+    { "text": "Cache the profile fetch result", "excludedReason": null },
+    { "text": "Maybe we could rewrite this in Rust someday", "excludedReason": "musing-without-decision" },
+    { "text": "Ship the health-check endpoint", "excludedReason": "already-completed" },
+    { "text": "Add rate limiting to the public API", "excludedReason": "already-on-backlog" },
+    { "text": "Use Redis for session storage", "excludedReason": "superseded" },
+    { "text": "Explore GraphQL for the public API later", "excludedReason": "parked" }
+  ]
+}

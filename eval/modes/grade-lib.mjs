@@ -41,6 +41,12 @@ import { prioritizeRICE } from "../../src/prioritize.js";
 import { checkCitations } from "../../src/citation-guard.js";
 import { scoreHumanness } from "../../src/humanizer-score.js";
 import { escapeRe } from "../../src/keyword.js";
+// --- native-builtin layer (eval/modes extended to plugin/builtins/muster-*/SKILL.md, the
+// 7 built-in pipeline-role providers) -- selectWinner is prompt-smith's real decision
+// engine over already-scored candidates (the exact function `muster prompt optimize`
+// wraps), reused directly for its documented {winner, winnerPrompt, regression, escalate,
+// ranking} proposal shape, same precedent as scoreArtifact/prioritizeRICE above.
+import { selectWinner } from "../../src/prompt-optimize.js";
 
 // --- shared helpers -------------------------------------------------------------------
 
@@ -405,6 +411,11 @@ export const MUSTER_RECEIPT_PATTERNS = {
   CLAIMED: /^MUSTER CLAIMED (\S+) (\S+)(?:\s.*)?$/,
   DONE: /^MUSTER DONE (\S+) (\S+)(?:\s.*)?$/,
   BLOCKED: /^MUSTER BLOCKED (\S+) (\S+)(?:\s.*)?$/,
+  // HUMAN-HOLD is the narrower BLOCKED variant (coordination/SKILL.md): floor-resetting
+  // exactly like DONE/BLOCKED/FAILED (see computeClaimWindows below), but its resume gate
+  // is stricter -- only the named `authorizer=<login>` can answer it, see
+  // isHumanHoldResumeAuthorized/coordinationHumanHoldResumeCheck below.
+  "HUMAN-HOLD": /^MUSTER HUMAN-HOLD (\S+) (\S+)(?:\s.*)?$/,
   FAILED: /^MUSTER FAILED (\S+) (\S+)(?:\s.*)?$/,
   YIELD: /^MUSTER YIELD (\S+) (\S+)(?:\s.*)?$/,
 };
@@ -435,7 +446,7 @@ export function computeClaimWindows(events) {
   };
   for (const e of events) {
     if (e.type === "CLAIMED") claims.push(e);
-    else if (e.type === "DONE" || e.type === "BLOCKED" || e.type === "FAILED") {
+    else if (e.type === "DONE" || e.type === "BLOCKED" || e.type === "HUMAN-HOLD" || e.type === "FAILED") {
       resolve(e);
       floor = e.ts;
       claims = [];
@@ -469,10 +480,53 @@ function coordinationClaimWindowCheck(testCase, artifacts) {
   checks.push({ name: "losersYielded", ok: unyielded.length === 0, detail: unyielded.length ? `losing claimant(s) with no YIELD receipt: ${unyielded.map((l) => l.runner).join(", ")}` : `every losing claimant (${losers.map((l) => l.runner).join(", ") || "none"}) left a YIELD receipt` });
 
   if (expect.terminalType) {
-    const winnerTerminal = events.find((e) => e.runner === winner?.runner && (e.type === "DONE" || e.type === "BLOCKED" || e.type === "FAILED"));
+    const winnerTerminal = events.find((e) => e.runner === winner?.runner && (e.type === "DONE" || e.type === "BLOCKED" || e.type === "HUMAN-HOLD" || e.type === "FAILED"));
     checks.push({ name: "winnerTerminalReceipt", ok: winnerTerminal?.type === expect.terminalType, detail: `winner's terminal receipt type="${winnerTerminal?.type}", expected "${expect.terminalType}"` });
   }
   return checks;
+}
+
+// coordination/SKILL.md's HUMAN-HOLD resume rule (stricter than BLOCKED's "any reply"):
+// only a reply from the exact `authorizer=<login>` its own HUMAN-HOLD receipt named
+// resumes it -- matched by the replying comment's AUTHOR, not a body token (the inverse
+// of the CLAIMED race's own identity problem above, where the body token is authoritative
+// because runners share one GitHub login). Fixture convention (no real `gh` API here):
+// a non-MUSTER reply line is `REPLY <author>: <text>`, author = the comment's `.user.login`.
+const REPLY_LINE_RE = /^REPLY (\S+): (.+)$/;
+const HUMAN_HOLD_AUTHORIZER_RE = /authorizer=(\S+)/;
+
+export function isHumanHoldResumeAuthorized(lines) {
+  let authorizer = null;
+  let resumed = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const hh = MUSTER_RECEIPT_PATTERNS["HUMAN-HOLD"].exec(line);
+    if (hh) {
+      const m = HUMAN_HOLD_AUTHORIZER_RE.exec(line);
+      authorizer = m ? m[1] : null;
+      resumed = false;
+      continue;
+    }
+    if (authorizer && !resumed) {
+      const reply = REPLY_LINE_RE.exec(line);
+      if (reply && reply[1] === authorizer) resumed = true;
+    }
+  }
+  return { authorizer, resumed };
+}
+
+function coordinationHumanHoldResumeCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const lines = String(artifacts).split(/\r?\n/);
+  const { authorizer, resumed } = isHumanHoldResumeAuthorized(lines);
+  return [
+    {
+      name: "resumeAuthorized",
+      ok: resumed === expect.resumeAuthorized,
+      detail: `authorizer="${authorizer}", resumeAuthorized=${resumed}, expected ${expect.resumeAuthorized}`,
+    },
+  ];
 }
 
 // interview/SKILL.md: the approved output is `{enrichedOutcome, successCriteria}` --
@@ -676,6 +730,342 @@ function roadmapRiceCheck(testCase, artifacts) {
   return checks;
 }
 
+// --- capture checks (eval/modes extended to plugin/commands/capture.md, the 7th mode --
+// the conversation-to-backlog generator). capture.md documents its extract/validate/
+// dedupe/write machinery as protocol prose (no src/*.js home of its own), but three of
+// its five documented rules genuinely reuse real code already imported above
+// (assessOutcome for the reword-cap/UNMEASURABLE rule) or the SAME annotation grammar
+// src/sprint-waves.js documents (its `stripAnnotations` helper isn't exported, so the
+// dedupe check below copies that grammar directly -- same honest-limitation posture as
+// WAVE_COMMIT_RE/RECEIPT_PATTERNS above). The other two (the exclusions block, the cap-10
+// holdback arithmetic, and the approval-precedes-write ordering) have no src/*.js home
+// either -- graded directly here, same precedent as EVIDENCE_ROW_RE/SIGNAL_*_RE. ------
+
+// capture.md step 1's five documented exclusion reasons (never captured, even if raised):
+// a musing/opinion with no decision behind it; work already completed this session; an
+// item already on the backlog (dedupe below enforces this mechanically, this is intent-
+// level); an outcome later actioned/superseded in the same discussion (latest call wins);
+// anything the user explicitly parked. A candidate's `excludedReason` (if any) must name
+// one of these -- anything else is an invented reason, not a documented one.
+export const CAPTURE_EXCLUSION_REASONS = ["musing-without-decision", "already-completed", "already-on-backlog", "superseded", "parked"];
+
+function captureExclusionsCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const candidates = Array.isArray(artifacts?.candidates) ? artifacts.candidates : [];
+  const bad = candidates.filter((c) => c.excludedReason != null && !CAPTURE_EXCLUSION_REASONS.includes(c.excludedReason));
+  const checks = [{ name: "reasonsValid", ok: (bad.length === 0) === (expect.reasonsValid ?? true), detail: bad.length ? `undocumented exclusion reason(s): ${JSON.stringify(bad.map((c) => c.excludedReason))}` : "every excludedReason is one of the 5 documented exclusion rules" }];
+  if (expect.survivors) {
+    const survivors = candidates.filter((c) => c.excludedReason == null).map((c) => c.text);
+    checks.push({ name: "survivors", ok: JSON.stringify(survivors) === JSON.stringify(expect.survivors), detail: `survivors=${JSON.stringify(survivors)}, expected ${JSON.stringify(expect.survivors)}` });
+  }
+  return checks;
+}
+
+// capture.md step 1's cap: "if more than 10 candidates survive... present only the 10
+// most recent/decision-weighted... and state how many were held back". Pure arithmetic
+// over the counts a real capture run would report -- deterministic either way (no cap
+// triggered at <=10, or exactly `candidateCount - 10` held back above it).
+function captureCapHoldbackCheck(testCase, artifacts) {
+  const { candidateCount, presentedCount, heldBackStated } = artifacts || {};
+  const expectedPresented = Math.min(candidateCount, 10);
+  const expectedHeldBack = Math.max(candidateCount - 10, 0);
+  const arithmeticCorrect = presentedCount === expectedPresented && heldBackStated === expectedHeldBack && presentedCount <= 10;
+  return [{ name: "arithmeticCorrect", ok: arithmeticCorrect, detail: `presentedCount=${presentedCount} (expected ${expectedPresented}), heldBackStated=${heldBackStated} (expected ${expectedHeldBack})` }];
+}
+
+// capture.md step 2's assess-passable rule: fold in criteria "capped at 2 reword
+// attempts" -- if still not `clear: true` after 2 attempts, surface UNMEASURABLE with its
+// assess signals attached rather than fabricating a metric. Reuses the REAL assessOutcome
+// (src/interview.js) on every attempt (original + up to 2 rewords), the same gate
+// run.md's own vague-outcome cases already grade.
+function captureRewordCapCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const attempts = Array.isArray(artifacts?.attempts) ? artifacts.attempts : [];
+  const assessed = attempts.map((a) => assessOutcome(a));
+  const clearAt = assessed.findIndex((r) => r.clear);
+  const derivedStatus = clearAt !== -1 && clearAt <= 2 ? "clear" : "UNMEASURABLE";
+  const checks = [{ name: "finalStatus", ok: derivedStatus === expect.finalStatus, detail: `derived status "${derivedStatus}" (clear at attempt ${clearAt}), expected "${expect.finalStatus}"` }];
+  if (derivedStatus === "UNMEASURABLE") {
+    const lastSignals = assessed[assessed.length - 1]?.signals || [];
+    checks.push({ name: "signalsAttached", ok: lastSignals.length > 0, detail: `UNMEASURABLE surfaces signals=${JSON.stringify(lastSignals)}` });
+  }
+  return checks;
+}
+
+// capture.md step 4: "Nothing is written until the user approves" -- the AskUserQuestion
+// approval prompt must precede any WRITTEN marker in the transcript, and a Cancel flow
+// must carry no write at all. No src/*.js home (protocol ordering, not shipped code) --
+// graded the same way runner-receipts' claim-before-work ordering is: an index comparison
+// over a fixture transcript.
+function captureApprovalOrderCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const text = String(artifacts);
+  const approvalIdx = text.search(/^AskUserQuestion:/m);
+  const writeIdx = text.search(/^WRITTEN:/m);
+  const hasWrite = writeIdx !== -1;
+  const checks = [{ name: "expectWrite", ok: hasWrite === expect.expectWrite, detail: `WRITTEN marker present=${hasWrite}, expected ${expect.expectWrite}` }];
+  if (hasWrite) {
+    const ok = approvalIdx !== -1 && approvalIdx < writeIdx;
+    checks.push({ name: "approvalPrecedesWrite", ok, detail: ok ? "AskUserQuestion approval precedes the WRITTEN marker" : `approval index=${approvalIdx}, write index=${writeIdx} -- approval does not precede write` });
+  }
+  return checks;
+}
+
+// capture.md step 3's dedupe rule: strip every `{key: value}` annotation generically from
+// both the candidate and each existing backlog line's text, then compare -- a match skips
+// the candidate. src/sprint-waves.js's own `stripAnnotations` isn't exported, so this is a
+// literal copy of its documented grammar (same honest-limitation precedent as
+// WAVE_COMMIT_RE/RECEIPT_PATTERNS/SCAFFOLD_SEED_FILES above), not a re-derivation of a
+// divergent rule.
+function stripAnnotationsForDedupe(text) {
+  return String(text)
+    .replace(/\{\s*[A-Za-z][\w-]*\s*:\s*[^}]*\}/g, " ")
+    .replace(/^- \[[ xX]\]\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function captureDedupeCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const { existingBacklog, candidates } = artifacts || {};
+  const existingTexts = new Set(
+    String(existingBacklog || "")
+      .split(/\r?\n/)
+      .filter((l) => l.trim())
+      .map(stripAnnotationsForDedupe)
+  );
+  const kept = [];
+  const skipped = [];
+  for (const c of candidates || []) {
+    (existingTexts.has(stripAnnotationsForDedupe(c)) ? skipped : kept).push(c);
+  }
+  const checks = [];
+  if (expect.kept) checks.push({ name: "kept", ok: JSON.stringify(kept) === JSON.stringify(expect.kept), detail: `kept=${JSON.stringify(kept)}, expected ${JSON.stringify(expect.kept)}` });
+  if (expect.skipped) checks.push({ name: "skipped", ok: JSON.stringify(skipped) === JSON.stringify(expect.skipped), detail: `skipped=${JSON.stringify(skipped)}, expected ${JSON.stringify(expect.skipped)}` });
+  return checks;
+}
+
+// --- native-builtin checks (eval/modes extended to plugin/builtins/muster-*/SKILL.md) --
+
+// muster-image/SKILL.md's output contract: a "hero" prompt + 2+ "variant" prompts per
+// artifact, each self-contained (brand constraints inlined, never "match the brand
+// file"), each followed by an "Avoid:" negative-rules line. No src/*.js home (assembled
+// prose) -- graded structurally, same precedent as orchestrator-brief above.
+const IMAGE_HERO_RE = /^### .+ — hero\s*$/gm;
+const IMAGE_VARIANT_RE = /^### .+ — variant \d+\s*$/gm;
+const IMAGE_AVOID_LINE_RE = /^Avoid: .+$/gm;
+const IMAGE_BRAND_FILE_REFERENCE_RE = /match the brand file/i;
+const IMAGE_HEX_COLOR_RE = /#[0-9a-fA-F]{6}\b/;
+
+function imagePromptSetShapeCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const text = String(artifacts);
+  const heroCount = (text.match(IMAGE_HERO_RE) || []).length;
+  const variantCount = (text.match(IMAGE_VARIANT_RE) || []).length;
+  const avoidCount = (text.match(IMAGE_AVOID_LINE_RE) || []).length;
+  const checks = [];
+  if (expect.minHeroCount !== undefined) checks.push({ name: "heroCount", ok: heroCount >= expect.minHeroCount, detail: `${heroCount} hero section(s), expected >= ${expect.minHeroCount}` });
+  if (expect.minVariantCount !== undefined) checks.push({ name: "variantCount", ok: variantCount >= expect.minVariantCount, detail: `${variantCount} variant section(s), expected >= ${expect.minVariantCount}` });
+  if (expect.avoidPerSection !== undefined) {
+    const ok = avoidCount >= heroCount + variantCount;
+    checks.push({ name: "avoidPerSection", ok: ok === expect.avoidPerSection, detail: `${avoidCount} "Avoid:" line(s) for ${heroCount + variantCount} section(s), expected an Avoid line per section: ${expect.avoidPerSection}` });
+  }
+  if (expect.brandConstraintsInlined !== undefined) {
+    const ok = IMAGE_HEX_COLOR_RE.test(text);
+    checks.push({ name: "brandConstraintsInlined", ok: ok === expect.brandConstraintsInlined, detail: ok ? "a brand hex value is inlined in the prompt text" : "no inlined brand hex value found" });
+  }
+  if (expect.noBrandFileReference !== undefined) {
+    const hasRef = IMAGE_BRAND_FILE_REFERENCE_RE.test(text);
+    checks.push({ name: "noBrandFileReference", ok: !hasRef === expect.noBrandFileReference, detail: hasRef ? `prompt punts to the brand file instead of inlining constraints` : "no brand-file-reference punt found" });
+  }
+  return checks;
+}
+
+// muster-video/SKILL.md's b-roll shot-list output: `[MM:SS–MM:SS] shot description —
+// rationale`, one row per line. No src/*.js home -- graded the same way audit-ledger's
+// LEDGER_LINE_RE grades a findings ledger.
+const VIDEO_SHOT_ROW_RE = /^\[\d{2}:\d{2}[–-]\d{2}:\d{2}\]\s+.+[—-]\s*.+$/;
+
+function videoShotListShapeCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const lines = String(artifacts).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const bad = lines.filter((l) => !VIDEO_SHOT_ROW_RE.test(l));
+  const formatValid = bad.length === 0;
+  const checks = [{ name: "formatValid", ok: formatValid === (expect.formatValid ?? true), detail: formatValid ? `all ${lines.length} shot row(s) carry a [MM:SS-MM:SS] timestamp, a description, and a rationale` : `malformed shot row(s): ${JSON.stringify(bad)}` }];
+  if (expect.minRows !== undefined) checks.push({ name: "minRows", ok: lines.length >= expect.minRows, detail: `${lines.length} row(s), expected >= ${expect.minRows}` });
+  return checks;
+}
+
+// muster-humanizer/SKILL.md's voice-calibration rule: when a named voice profile
+// resolved, check the rewrite against ITS anti-patterns list FIRST, before the generic
+// tiered-vocabulary/tell-taxonomy checks -- "the voice profile is the sharper... instrument;
+// the generic checks... are the floor every artifact clears regardless of voice." Graded
+// as document-structure ordering (a voice-profile section preceding the generic-tells
+// section), no src/*.js home (a diagnosis-rendering rule, not shipped code).
+const HUMANIZER_VOICE_SECTION_RE = /^Voice-profile anti-patterns:.*$/m;
+const HUMANIZER_GENERIC_SECTION_RE = /^Generic tells:.*$/m;
+
+function humanizerPrecedenceCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const text = String(artifacts);
+  const voiceMatch = HUMANIZER_VOICE_SECTION_RE.exec(text);
+  const genericMatch = HUMANIZER_GENERIC_SECTION_RE.exec(text);
+  const hasVoice = !!voiceMatch;
+  const checks = [];
+  if (expect.hasVoiceProfileSection !== undefined) checks.push({ name: "hasVoiceSection", ok: hasVoice === expect.hasVoiceProfileSection, detail: `voice-profile section present=${hasVoice}, expected ${expect.hasVoiceProfileSection}` });
+  const hasGeneric = !!genericMatch;
+  checks.push({ name: "hasGenericSection", ok: hasGeneric, detail: hasGeneric ? "diagnosis carries a generic-tells section" : "diagnosis is missing its generic-tells section" });
+  if (hasVoice && hasGeneric) {
+    const ok = voiceMatch.index < genericMatch.index;
+    checks.push({ name: "voicePrecedesGeneric", ok, detail: ok ? "voice-profile anti-patterns are checked before the generic tells" : "generic tells precede the voice-profile check -- wrong precedence" });
+  }
+  return checks;
+}
+
+// muster-scorer/SKILL.md's stated contract: "For EACH criterion, assign 0-3" -- an
+// integer range gate-achievability's generic scoreArtifact doesn't itself enforce (it
+// only requires a finite number). This check adds that range constraint, then delegates
+// the floor-principle pass/fail to the REAL scoreArtifact (src/score.js), same function
+// gate-achievability/prd-gate-achievability already reuse.
+function scorerVerdictShapeCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const { scores, gate } = artifacts || {};
+  const entries = Object.entries(scores || {});
+  const inRange = entries.length > 0 && entries.every(([, v]) => Number.isInteger(v) && v >= 0 && v <= 3);
+  const checks = [{ name: "scoresInRange", ok: inRange === (expect.scoresInRange ?? true), detail: inRange ? "every criterion score is an integer in [0,3]" : `out-of-contract score(s): ${JSON.stringify(entries.filter(([, v]) => !(Number.isInteger(v) && v >= 0 && v <= 3)))}` }];
+  const r = scoreArtifact(scores, gate);
+  if (expect.passing !== undefined) checks.push({ name: "passing", ok: r.passing === expect.passing, detail: `passing=${r.passing}, expected ${expect.passing}` });
+  if (expect.weakestCriterion !== undefined) checks.push({ name: "weakestCriterion", ok: r.weakest.criterion === expect.weakestCriterion, detail: `weakest.criterion="${r.weakest.criterion}", expected "${expect.weakestCriterion}"` });
+  return checks;
+}
+
+// muster-prompt-smith/SKILL.md step 3's documented `muster prompt optimize` output shape
+// `{ winner, winnerPrompt, regression, escalate, ranking }` -- graded directly against the
+// REAL `selectWinner` (src/prompt-optimize.js), the exact function the CLI wraps.
+function promptSmithProposalCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const r = selectWinner(artifacts);
+  const checks = [];
+  if (expect.winner !== undefined) checks.push({ name: "winner", ok: r.winner === expect.winner, detail: `winner="${r.winner}", expected "${expect.winner}"` });
+  if (expect.regression !== undefined) checks.push({ name: "regression", ok: r.regression === expect.regression, detail: `regression=${r.regression}, expected ${expect.regression}` });
+  if (expect.escalate !== undefined) checks.push({ name: "escalate", ok: r.escalate === expect.escalate, detail: `escalate=${r.escalate}, expected ${expect.escalate}` });
+  return checks;
+}
+
+// muster-author/SKILL.md's stated output contract: "Pick a framework and follow it...
+// State which you used" (AIDA/PAS/BAB/QUEST/PASTOR) and "One clear CTA." No src/*.js
+// home (assembled copy, not shipped code) -- graded structurally, same precedent as
+// orchestrator-brief/image-prompt-set-shape above.
+const AUTHOR_FRAMEWORK_LINE_RE = /^Framework:\s*(AIDA|PAS|BAB|QUEST|PASTOR)\s*$/m;
+const AUTHOR_CTA_LINE_RE = /^CTA:\s*.+$/gm;
+
+function authorDraftShapeCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const text = String(artifacts);
+  const frameworkMatch = AUTHOR_FRAMEWORK_LINE_RE.exec(text);
+  const ctaMatches = text.match(AUTHOR_CTA_LINE_RE) || [];
+  const checks = [];
+  if (expect.framework !== undefined) checks.push({ name: "framework", ok: (frameworkMatch ? frameworkMatch[1] : null) === expect.framework, detail: `framework=${JSON.stringify(frameworkMatch ? frameworkMatch[1] : null)}, expected ${JSON.stringify(expect.framework)}` });
+  if (expect.ctaCount !== undefined) checks.push({ name: "ctaCount", ok: ctaMatches.length === expect.ctaCount, detail: `${ctaMatches.length} CTA line(s), expected ${expect.ctaCount}` });
+  return checks;
+}
+
+// --- knowledge-pipeline checks (eval/modes extended to the 11 remaining pipelines/*.yaml
+// -- ai-implementation-spec, ai-test-plan, book, business-case, epic, launch-plan, okrs,
+// prd, roadmap, runbook, user-story; epic/okrs/roadmap/prd reuse sprint-waves/assess/
+// roadmap-rice/evidence-table-shape directly, no new grader needed for those) ----------
+
+// runbook.yaml's steps phase: "numbered, copy-pasteable steps; expected output for each".
+const RUNBOOK_STEP_ROW_RE = /^\d+\.\s+`[^`]+`\s*(?:->|→)\s*expected:\s*.+$/;
+
+function runbookStepPairsCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const lines = String(artifacts).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const bad = lines.filter((l) => !RUNBOOK_STEP_ROW_RE.test(l));
+  const formatValid = bad.length === 0;
+  const checks = [{ name: "formatValid", ok: formatValid === (expect.formatValid ?? true), detail: formatValid ? `all ${lines.length} step(s) pair a copy-pasteable command with its expected output` : `malformed step row(s): ${JSON.stringify(bad)}` }];
+  if (expect.minSteps !== undefined) checks.push({ name: "minSteps", ok: lines.length >= expect.minSteps, detail: `${lines.length} step(s), expected >= ${expect.minSteps}` });
+  return checks;
+}
+
+// book.yaml's continuity-ledger-tracked chapter manifest: `- Chapter N: <title> (status:
+// drafted|scored|pending)`, sequential chapter numbers, no gaps/dupes.
+const BOOK_CHAPTER_ROW_RE = /^-\s*Chapter\s+(\d+):\s*.+\(status:\s*(drafted|scored|pending)\)$/;
+
+function bookChapterManifestCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const lines = String(artifacts).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const parsed = lines.map((l) => BOOK_CHAPTER_ROW_RE.exec(l));
+  const bad = lines.filter((_, i) => !parsed[i]);
+  const formatValid = bad.length === 0;
+  const checks = [{ name: "formatValid", ok: formatValid === (expect.formatValid ?? true), detail: formatValid ? `all ${lines.length} chapter row(s) carry a number, title, and status` : `malformed chapter row(s): ${JSON.stringify(bad)}` }];
+  if (bad.length === 0 && expect.sequential !== undefined) {
+    const numbers = parsed.map((m) => Number(m[1]));
+    const sequential = numbers.every((n, i) => n === i + 1);
+    checks.push({ name: "sequential", ok: sequential === expect.sequential, detail: sequential ? `chapter numbers are sequential 1..${numbers.length}` : `chapter numbers not sequential: ${JSON.stringify(numbers)}` });
+  }
+  return checks;
+}
+
+// ai-test-plan.yaml's cases phase: "per risk tier: happy/boundary/negative/security;
+// data+env+owner" -- a markdown table `| tier | type | data | env | owner |`.
+const AI_TEST_PLAN_ROW_RE = /^\|\s*(H|M|L)\s*\|\s*(happy|boundary|negative|security)\s*\|\s*([^|]*\S[^|]*?)\s*\|\s*([^|]*\S[^|]*?)\s*\|\s*([^|]*\S[^|]*?)\s*\|$/i;
+
+function aiTestPlanCaseTableCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const lines = String(artifacts)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("|") && !/^\|\s*tier\s*\|/i.test(l) && !/^\|[\s:-]+\|/.test(l));
+  const parsed = lines.map((l) => AI_TEST_PLAN_ROW_RE.exec(l));
+  const bad = lines.filter((_, i) => !parsed[i]);
+  const formatValid = bad.length === 0;
+  const checks = [{ name: "formatValid", ok: formatValid === (expect.formatValid ?? true), detail: formatValid ? `all ${lines.length} case row(s) carry a risk tier, type, data, env, and owner` : `malformed case row(s): ${JSON.stringify(bad)}` }];
+  if (bad.length === 0 && expect.typesInclude) {
+    const types = new Set(parsed.map((m) => m[2].toLowerCase()));
+    const missing = expect.typesInclude.filter((t) => !types.has(t));
+    checks.push({ name: "typesInclude", ok: missing.length === 0, detail: missing.length ? `missing case type(s): ${missing.join(", ")}` : `case table covers all of ${JSON.stringify(expect.typesInclude)}` });
+  }
+  return checks;
+}
+
+// user-story.yaml's acceptance phase: "Given/When/Then (Gherkin); happy path + 2+
+// edge/negative" -- scenario blocks each needing at least one Given/When/Then line.
+const GHERKIN_SCENARIO_RE = /^Scenario:\s*.+$/;
+const GHERKIN_STEP_RE = /^(Given|When|Then|And)\s+.+$/;
+
+function userStoryGherkinShapeCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const lines = String(artifacts).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const scenarios = [];
+  let current = null;
+  for (const l of lines) {
+    if (GHERKIN_SCENARIO_RE.test(l)) {
+      current = { title: l, steps: [] };
+      scenarios.push(current);
+    } else if (current && GHERKIN_STEP_RE.test(l)) {
+      current.steps.push(l);
+    }
+  }
+  const wellFormed = scenarios.length > 0 && scenarios.every((s) => /^Given/.test(s.steps[0] || "") && s.steps.some((st) => /^When/.test(st)) && s.steps.some((st) => /^Then/.test(st)));
+  const checks = [{ name: "scenariosWellFormed", ok: wellFormed === (expect.scenariosWellFormed ?? true), detail: wellFormed ? `${scenarios.length} scenario(s), each with Given/When/Then` : "a scenario is missing a Given/When/Then step" }];
+  if (expect.minScenarios !== undefined) checks.push({ name: "minScenarios", ok: scenarios.length >= expect.minScenarios, detail: `${scenarios.length} scenario(s), expected >= ${expect.minScenarios}` });
+  return checks;
+}
+
+// ai-implementation-spec.yaml's adr phase (MADR 4.0): "status lifecycle
+// proposed|accepted|deprecated|superseded-by ADR-XXXX".
+const ADR_ROW_RE = /^ADR-(\d+):.*status:\s*(proposed|accepted|deprecated|superseded-by ADR-\d+)\s*$/;
+
+function adrStatusLifecycleCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const lines = String(artifacts).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const parsed = lines.map((l) => ADR_ROW_RE.exec(l));
+  const bad = lines.filter((_, i) => !parsed[i]);
+  const formatValid = bad.length === 0;
+  return [{ name: "formatValid", ok: formatValid === (expect.formatValid ?? true), detail: formatValid ? `all ${lines.length} ADR row(s) carry a lifecycle status in {proposed, accepted, deprecated, superseded-by ADR-N}` : `ADR row(s) with an invalid or missing status: ${JSON.stringify(bad)}` }];
+}
+
 // --- content-pipeline checks (eval/modes extended to pipelines/*.yaml phase prompts) ---
 
 // A research phase's inline claims (blog-post's E-E-A-T sources, competitive-battlecard's
@@ -863,6 +1253,23 @@ export const ARTIFACT_KIND = {
   "publish-packet-shape": "json",
   "audience-voice-jargon": "json",
   "gate-achievability": "json",
+  "coordination-human-hold-resume": "text",
+  "capture-exclusions": "json",
+  "capture-cap-holdback": "json",
+  "capture-reword-cap": "json",
+  "capture-approval-order": "text",
+  "capture-dedupe": "json",
+  "image-prompt-set-shape": "text",
+  "video-shot-list-shape": "text",
+  "humanizer-precedence": "text",
+  "scorer-verdict-shape": "json",
+  "prompt-smith-optimize-proposal": "json",
+  "author-draft-shape": "text",
+  "runbook-step-pairs": "text",
+  "book-chapter-manifest": "text",
+  "ai-test-plan-case-table": "text",
+  "user-story-gherkin-shape": "text",
+  "adr-status-lifecycle": "text",
 };
 
 export const CHECKS = {
@@ -902,6 +1309,23 @@ export const CHECKS = {
   "publish-packet-shape": publishPacketShapeCheck,
   "audience-voice-jargon": audienceVoiceJargonCheck,
   "gate-achievability": gateAchievabilityCheck,
+  "coordination-human-hold-resume": coordinationHumanHoldResumeCheck,
+  "capture-exclusions": captureExclusionsCheck,
+  "capture-cap-holdback": captureCapHoldbackCheck,
+  "capture-reword-cap": captureRewordCapCheck,
+  "capture-approval-order": captureApprovalOrderCheck,
+  "capture-dedupe": captureDedupeCheck,
+  "image-prompt-set-shape": imagePromptSetShapeCheck,
+  "video-shot-list-shape": videoShotListShapeCheck,
+  "humanizer-precedence": humanizerPrecedenceCheck,
+  "scorer-verdict-shape": scorerVerdictShapeCheck,
+  "prompt-smith-optimize-proposal": promptSmithProposalCheck,
+  "author-draft-shape": authorDraftShapeCheck,
+  "runbook-step-pairs": runbookStepPairsCheck,
+  "book-chapter-manifest": bookChapterManifestCheck,
+  "ai-test-plan-case-table": aiTestPlanCaseTableCheck,
+  "user-story-gherkin-shape": userStoryGherkinShapeCheck,
+  "adr-status-lifecycle": adrStatusLifecycleCheck,
 };
 
 // Grade one case against its (already-loaded) artifacts. Never throws: a grader exception

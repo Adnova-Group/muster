@@ -1,0 +1,4 @@
+[
+  { "id": "baseline", "prompt": "Summarize the ticket.", "total": 8, "passing": true },
+  { "id": "add-examples", "prompt": "Summarize the ticket.\n\n<example>\n<input>EXAMPLE INPUT</input>\n<output>IDEAL OUTPUT</output>\n</example>", "total": 12, "passing": true }
+]

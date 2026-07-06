@@ -1,0 +1,5 @@
+MUSTER CLAIMED alice 2026-01-01T08:00:00Z
+MUSTER HUMAN-HOLD alice 2026-01-01T08:05:00Z authorizer=bob — needs deploy approval
+REPLY bob: approved, ship it
+MUSTER CLAIMED alice 2026-01-01T09:00:00Z
+MUSTER DONE alice 2026-01-01T09:10:00Z

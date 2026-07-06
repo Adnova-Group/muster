@@ -1,0 +1,22 @@
+{
+  "scores": {
+    "coverage": 3,
+    "evidence": 3,
+    "scoring-rigor": 2,
+    "sequencing": 2,
+    "outcome-alignment": 2,
+    "feasibility": 2
+  },
+  "gate": {
+    "criteria": [
+      "coverage",
+      "evidence",
+      "scoring-rigor",
+      "sequencing",
+      "outcome-alignment",
+      "feasibility"
+    ],
+    "floor": 2,
+    "pass_total": 14
+  }
+}

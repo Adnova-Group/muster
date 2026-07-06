@@ -1,0 +1,22 @@
+{
+  "scores": {
+    "outcome-not-output": 3,
+    "measurability": 3,
+    "stretch-graded": 2,
+    "alignment": 2,
+    "focus": 2,
+    "baseline-present": 2
+  },
+  "gate": {
+    "criteria": [
+      "outcome-not-output",
+      "measurability",
+      "stretch-graded",
+      "alignment",
+      "focus",
+      "baseline-present"
+    ],
+    "floor": 2,
+    "pass_total": 14
+  }
+}

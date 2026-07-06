@@ -1,0 +1,22 @@
+{
+  "scores": {
+    "coverage": 3,
+    "clarity": 3,
+    "prioritization": 2,
+    "test-data-strategy": 2,
+    "suspension-criteria": 2,
+    "done-definition": 2
+  },
+  "gate": {
+    "criteria": [
+      "coverage",
+      "clarity",
+      "prioritization",
+      "test-data-strategy",
+      "suspension-criteria",
+      "done-definition"
+    ],
+    "floor": 2,
+    "pass_total": 14
+  }
+}

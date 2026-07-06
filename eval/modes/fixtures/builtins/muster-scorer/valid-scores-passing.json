@@ -1,0 +1,4 @@
+{
+  "scores": { "clarity": 3, "evidence": 2, "actionability": 3 },
+  "gate": { "criteria": ["clarity", "evidence", "actionability"], "floor": 2, "pass_total": 7 }
+}

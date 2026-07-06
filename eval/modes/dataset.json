@@ -830,6 +830,432 @@
       "grading": "model",
       "rubric": "A good battlecard's positioning section names concrete, competitor-specific weaknesses and asks discovery questions that would surface them naturally in a live deal conversation. Penalize: generic 'we're better because we care' positioning, discovery questions any competitor's rep could deflect, or objection handling with no cited proof point.",
       "expect": {}
+    },
+
+    {
+      "id": "coordination-human-hold-resets-window",
+      "mode": "coordination",
+      "outcome": "A HUMAN-HOLD receipt (the narrower BLOCKED variant, external-effect approval) is floor-resetting exactly like DONE/BLOCKED/FAILED -- a stale claim before it must never out-rank a fresh claim after it.",
+      "check": "coordination-claim-window",
+      "artifact": "fixtures/skills/coordination/claim-human-hold-resets-floor.md",
+      "expect": { "winner": "carol", "terminalType": "DONE" }
+    },
+    {
+      "id": "coordination-human-hold-resume-wrong-party-inert",
+      "mode": "coordination",
+      "outcome": "coordination/SKILL.md's stricter HUMAN-HOLD resume gate: only the exact authorizer named in the HUMAN-HOLD receipt can resume it -- any other human's reply is inert, unlike plain BLOCKED where any reply resumes.",
+      "check": "coordination-human-hold-resume",
+      "artifact": "fixtures/skills/coordination/human-hold-resume-wrong-party.md",
+      "expect": { "resumeAuthorized": false }
+    },
+    {
+      "id": "coordination-human-hold-resume-authorized-party",
+      "mode": "coordination",
+      "outcome": "A reply from the exact authorizer named in the HUMAN-HOLD receipt resumes it.",
+      "check": "coordination-human-hold-resume",
+      "artifact": "fixtures/skills/coordination/human-hold-resume-authorized.md",
+      "expect": { "resumeAuthorized": true }
+    },
+
+    {
+      "id": "capture-exclusions-block-completeness",
+      "mode": "capture",
+      "outcome": "A candidate list mining a session's discussion: two genuine decisions survive, and one candidate per documented exclusion rule (musing, already-completed, already-on-backlog, superseded, parked) is correctly excluded.",
+      "check": "capture-exclusions",
+      "artifact": "fixtures/capture/exclusions-candidates.json",
+      "expect": { "reasonsValid": true, "survivors": ["Add retry logic to the payments client", "Cache the profile fetch result"] }
+    },
+    {
+      "id": "capture-exclusions-undocumented-reason-rejected",
+      "mode": "capture",
+      "outcome": "A candidate excluded for a reason that isn't one of capture.md's 5 documented exclusion rules -- an invented reason, not a real one.",
+      "check": "capture-exclusions",
+      "artifact": "fixtures/capture/exclusions-invalid-reason.json",
+      "expect": { "reasonsValid": false }
+    },
+    {
+      "id": "capture-cap-holdback-under-ten-no-cap-triggered",
+      "mode": "capture",
+      "outcome": "6 surviving candidates: under the cap of 10, so all 6 present and nothing is held back.",
+      "check": "capture-cap-holdback",
+      "artifact": "fixtures/capture/cap-holdback-under-cap.json",
+      "expect": {}
+    },
+    {
+      "id": "capture-cap-holdback-over-ten-arithmetic",
+      "mode": "capture",
+      "outcome": "14 surviving candidates: capture.md's cap presents only the 10 most recent/decision-weighted and states the other 4 were held back.",
+      "check": "capture-cap-holdback",
+      "artifact": "fixtures/capture/cap-holdback-over-cap.json",
+      "expect": {}
+    },
+    {
+      "id": "capture-reword-cap-clears-by-second-attempt",
+      "mode": "capture",
+      "outcome": "An item folds in criteria across its 2 allowed reword attempts and clears assess-passable on the second -- within the cap, so it's captured as a normal measurable item, not UNMEASURABLE.",
+      "check": "capture-reword-cap",
+      "artifact": "fixtures/capture/reword-cap-becomes-clear.json",
+      "expect": { "finalStatus": "clear" }
+    },
+    {
+      "id": "capture-reword-cap-surfaces-unmeasurable",
+      "mode": "capture",
+      "outcome": "An item stays vague across the original attempt plus both allowed rewords -- the 2-reword cap is hit, so it's surfaced UNMEASURABLE with its assess signals attached rather than a fabricated metric.",
+      "check": "capture-reword-cap",
+      "artifact": "fixtures/capture/reword-cap-stays-unmeasurable.json",
+      "expect": { "finalStatus": "UNMEASURABLE" }
+    },
+    {
+      "id": "capture-approval-precedes-write",
+      "mode": "capture",
+      "outcome": "The user approves all candidates via the AskUserQuestion prompt, and only THEN does capture write to .muster/backlog.md -- approval strictly precedes the write.",
+      "check": "capture-approval-order",
+      "artifact": "fixtures/capture/approve-then-write.md",
+      "expect": { "expectWrite": true }
+    },
+    {
+      "id": "capture-cancel-writes-nothing",
+      "mode": "capture",
+      "outcome": "The user selects Cancel at the approval prompt -- capture exits without writing anything to the backlog.",
+      "check": "capture-approval-order",
+      "artifact": "fixtures/capture/cancel-skips-write.md",
+      "expect": { "expectWrite": false }
+    },
+    {
+      "id": "capture-dedupe-sans-annotation",
+      "mode": "capture",
+      "outcome": "A candidate whose text (annotations stripped generically) already matches an existing backlog line is skipped as a duplicate; a genuinely new candidate is kept.",
+      "check": "capture-dedupe",
+      "artifact": "fixtures/capture/dedupe-candidates.json",
+      "expect": { "kept": ["Add retry logic to the payments client"], "skipped": ["Add rate limiting to the public API {mentioned: in review}"] }
+    },
+
+    {
+      "id": "muster-research-fact-ledger-clean",
+      "mode": "muster-research",
+      "outcome": "muster-research's document-ingestion contract: facts extracted into `{fact, anchor, confidence, needs_review}` rows before synthesis -- reuses the evidence-table-shape check's `fact` row type directly.",
+      "check": "evidence-table-shape",
+      "artifact": "fixtures/builtins/muster-research/fact-ledger-clean.md",
+      "expect": { "rowsWellFormed": true, "minRows": 3, "unownedFlagCount": 0 }
+    },
+    {
+      "id": "muster-research-fact-ledger-missing-anchor",
+      "mode": "muster-research",
+      "outcome": "The corrupt twin: a fact row with no source anchor -- every extracted fact must carry a stable anchor so downstream citations resolve.",
+      "check": "evidence-table-shape",
+      "artifact": "fixtures/builtins/muster-research/fact-ledger-missing-anchor.md",
+      "expect": { "rowsWellFormed": false }
+    },
+    {
+      "id": "muster-image-prompt-set-hero-plus-variants",
+      "mode": "muster-image",
+      "outcome": "muster-image's per-artifact prompt set: one hero + 2+ inline variants, each self-contained with brand hex values inlined and a negative-rules \"Avoid:\" line.",
+      "check": "image-prompt-set-shape",
+      "artifact": "fixtures/builtins/muster-image/prompt-set-clean.md",
+      "expect": { "minHeroCount": 1, "minVariantCount": 2, "avoidPerSection": true, "brandConstraintsInlined": true, "noBrandFileReference": true }
+    },
+    {
+      "id": "muster-image-prompt-set-brand-file-punt-violation",
+      "mode": "muster-image",
+      "outcome": "The corrupt twin: only 1 variant, no inlined hex values, and the prompt punts with \"match the brand file\" -- exactly what the contract forbids (\"never write 'match the brand file' -- write out the actual constraints\").",
+      "check": "image-prompt-set-shape",
+      "artifact": "fixtures/builtins/muster-image/prompt-set-brand-file-punt.md",
+      "expect": { "brandConstraintsInlined": false, "noBrandFileReference": false, "avoidPerSection": false }
+    },
+    {
+      "id": "muster-video-shot-list-timestamped-rows",
+      "mode": "muster-video",
+      "outcome": "muster-video's b-roll shot list: `[MM:SS-MM:SS] shot description -- rationale` rows, one per line, anchored to the script section they cover.",
+      "check": "video-shot-list-shape",
+      "artifact": "fixtures/builtins/muster-video/shot-list-clean.md",
+      "expect": { "formatValid": true, "minRows": 3 }
+    },
+    {
+      "id": "muster-video-shot-list-malformed-rows",
+      "mode": "muster-video",
+      "outcome": "The corrupt twin: one row with no rationale at all and one with an unpadded timestamp -- both violate the documented row shape.",
+      "check": "video-shot-list-shape",
+      "artifact": "fixtures/builtins/muster-video/shot-list-missing-rationale.md",
+      "expect": { "formatValid": false }
+    },
+    {
+      "id": "muster-humanizer-voice-profile-precedes-generic",
+      "mode": "muster-humanizer",
+      "outcome": "When a named voice profile resolved during drafting, the rewrite's diagnosis checks the profile's own anti-patterns list FIRST, before the generic tiered-vocabulary/tell-taxonomy checks.",
+      "check": "humanizer-precedence",
+      "artifact": "fixtures/builtins/muster-humanizer/precedence-voice-first-clean.md",
+      "expect": { "hasVoiceProfileSection": true }
+    },
+    {
+      "id": "muster-humanizer-no-profile-generic-floor-still-applies",
+      "mode": "muster-humanizer",
+      "outcome": "No named voice profile resolved -- the generic tells check is still the floor every artifact clears regardless of voice, with no voice-profile section required.",
+      "check": "humanizer-precedence",
+      "artifact": "fixtures/builtins/muster-humanizer/precedence-no-profile-baseline.md",
+      "expect": { "hasVoiceProfileSection": false }
+    },
+    {
+      "id": "muster-scorer-verdict-scores-in-range-and-passing",
+      "mode": "muster-scorer",
+      "outcome": "muster-scorer's stated contract: assign each criterion 0-3, write `{scores, gate}`, then the floor principle (REAL scoreArtifact) decides pass/fail.",
+      "check": "scorer-verdict-shape",
+      "artifact": "fixtures/builtins/muster-scorer/valid-scores-passing.json",
+      "expect": { "scoresInRange": true, "passing": true, "weakestCriterion": "evidence" }
+    },
+    {
+      "id": "muster-scorer-verdict-out-of-range-score-caught",
+      "mode": "muster-scorer",
+      "outcome": "The corrupt twin: a criterion scored 4, outside the documented 0-3 range -- caught even though the generic floor-principle math alone wouldn't flag it.",
+      "check": "scorer-verdict-shape",
+      "artifact": "fixtures/builtins/muster-scorer/invalid-range-score.json",
+      "expect": { "scoresInRange": false }
+    },
+    {
+      "id": "muster-prompt-smith-optimize-proposal-improvement",
+      "mode": "muster-prompt-smith",
+      "outcome": "`muster prompt optimize`'s real decision engine (selectWinner) picks a stronger non-baseline variation with no regression.",
+      "check": "prompt-smith-optimize-proposal",
+      "artifact": "fixtures/builtins/muster-prompt-smith/optimize-improvement-no-regression.json",
+      "expect": { "winner": "add-examples", "regression": false, "escalate": false }
+    },
+    {
+      "id": "muster-prompt-smith-optimize-proposal-regression-flagged",
+      "mode": "muster-prompt-smith",
+      "outcome": "The regression guard: the only passing variation scores below the pinned baseline -- selectWinner flags it rather than silently shipping a weaker prompt.",
+      "check": "prompt-smith-optimize-proposal",
+      "artifact": "fixtures/builtins/muster-prompt-smith/optimize-regression-detected.json",
+      "expect": { "winner": "add-role", "regression": true, "escalate": false }
+    },
+    {
+      "id": "muster-author-draft-states-framework-and-single-cta",
+      "mode": "muster-author",
+      "outcome": "muster-author's stated output contract: pick a framework and state which one you used (PAS here), and carry exactly one clear CTA.",
+      "check": "author-draft-shape",
+      "artifact": "fixtures/builtins/muster-author/draft-framework-cta-shape.md",
+      "expect": { "framework": "PAS", "ctaCount": 1 }
+    },
+    {
+      "id": "muster-author-draft-missing-framework-multiple-ctas",
+      "mode": "muster-author",
+      "outcome": "The corrupt twin: no framework named and two competing CTAs -- exactly what \"pick a framework... one clear CTA\" forbids.",
+      "check": "author-draft-shape",
+      "artifact": "fixtures/builtins/muster-author/draft-missing-framework-multiple-ctas.md",
+      "expect": { "framework": null, "ctaCount": 2 }
+    },
+
+    {
+      "id": "epic-gate-achievability-passing",
+      "mode": "epic",
+      "outcome": "Scores clearing both the floor and pass_total for the real epic.yaml gate.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/epic/gate-passing.json",
+      "expect": { "total": 14, "weakestCriterion": "outcome-alignment", "passing": true }
+    },
+    {
+      "id": "epic-breakdown-sequenced-by-dependency",
+      "mode": "epic",
+      "outcome": "epic.yaml's breakdown phase: story-splitting output sequenced by risk + dependency -- the same {id}/{deps} checkbox grammar sprint.md consumes, reused via computeSprintWaves rather than a bespoke row format.",
+      "check": "sprint-waves",
+      "artifact": "fixtures/pipelines/epic/breakdown-story-waves.md",
+      "expect": { "ok": true, "annotated": true, "waves": [["workflow-steps", "tax-variation"], ["sequence"]] }
+    },
+    {
+      "id": "okrs-gate-achievability-passing",
+      "mode": "okrs",
+      "outcome": "Scores clearing both the floor and pass_total for the real okrs.yaml gate.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/okrs/gate-passing.json",
+      "expect": { "total": 14, "weakestCriterion": "stretch-graded", "passing": true }
+    },
+    {
+      "id": "okrs-key-result-measurable",
+      "mode": "okrs",
+      "outcome": "Increase weekly active users from 40% to 55% by Q3 end.",
+      "check": "assess",
+      "expect": { "clear": true }
+    },
+    {
+      "id": "okrs-key-result-vague-fails-measurability",
+      "mode": "okrs",
+      "outcome": "Improve user satisfaction.",
+      "check": "assess",
+      "expect": { "clear": false, "signalsInclude": ["too-short"] }
+    },
+    {
+      "id": "runbook-gate-achievability-passing",
+      "mode": "runbook",
+      "outcome": "Scores clearing both the floor and pass_total for the real runbook.yaml gate.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/runbook/gate-passing.json",
+      "expect": { "total": 20, "weakestCriterion": "safety", "passing": true }
+    },
+    {
+      "id": "runbook-steps-command-expected-output-pairs",
+      "mode": "runbook",
+      "outcome": "runbook.yaml's steps phase: numbered, copy-pasteable steps with an expected output for each.",
+      "check": "runbook-step-pairs",
+      "artifact": "fixtures/pipelines/runbook/steps-command-pairs.md",
+      "expect": { "formatValid": true, "minSteps": 3 }
+    },
+    {
+      "id": "runbook-steps-missing-expected-output",
+      "mode": "runbook",
+      "outcome": "The corrupt twin: a step with no stated expected output -- the pair is incomplete.",
+      "check": "runbook-step-pairs",
+      "artifact": "fixtures/pipelines/runbook/steps-missing-expected-output.md",
+      "expect": { "formatValid": false }
+    },
+    {
+      "id": "book-gate-achievability-passing",
+      "mode": "book",
+      "outcome": "Scores clearing both the floor and pass_total for the real book.yaml gate.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/book/gate-passing.json",
+      "expect": { "total": 22, "weakestCriterion": "clarity", "passing": true }
+    },
+    {
+      "id": "book-chapter-manifest-sequential",
+      "mode": "book",
+      "outcome": "book.yaml's continuity-ledger-tracked chapter manifest: sequential chapter numbers, each carrying a drafted/scored/pending status.",
+      "check": "book-chapter-manifest",
+      "artifact": "fixtures/pipelines/book/chapter-manifest-sequential.md",
+      "expect": { "formatValid": true, "sequential": true }
+    },
+    {
+      "id": "book-chapter-manifest-gap-flagged",
+      "mode": "book",
+      "outcome": "The corrupt twin: chapter 2 is missing from the manifest -- a gap, not silently renumbered.",
+      "check": "book-chapter-manifest",
+      "artifact": "fixtures/pipelines/book/chapter-manifest-gap.md",
+      "expect": { "formatValid": true, "sequential": false }
+    },
+    {
+      "id": "ai-test-plan-gate-achievability-passing",
+      "mode": "ai-test-plan",
+      "outcome": "Scores clearing both the floor and pass_total for the real ai-test-plan.yaml gate.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/ai-test-plan/gate-passing.json",
+      "expect": { "total": 14, "weakestCriterion": "prioritization", "passing": true }
+    },
+    {
+      "id": "ai-test-plan-case-table-covers-risk-types",
+      "mode": "ai-test-plan",
+      "outcome": "ai-test-plan.yaml's cases phase: per risk tier, happy/boundary/negative/security cases each carrying data+env+owner.",
+      "check": "ai-test-plan-case-table",
+      "artifact": "fixtures/pipelines/ai-test-plan/case-table-clean.md",
+      "expect": { "formatValid": true, "typesInclude": ["happy", "boundary", "negative", "security"] }
+    },
+    {
+      "id": "ai-test-plan-case-table-missing-owner",
+      "mode": "ai-test-plan",
+      "outcome": "The corrupt twin: a case row with no owner cell.",
+      "check": "ai-test-plan-case-table",
+      "artifact": "fixtures/pipelines/ai-test-plan/case-table-missing-owner.md",
+      "expect": { "formatValid": false }
+    },
+    {
+      "id": "ai-implementation-spec-gate-achievability-passing",
+      "mode": "ai-implementation-spec",
+      "outcome": "Scores clearing both the floor and pass_total for the real ai-implementation-spec.yaml gate.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/ai-implementation-spec/gate-passing.json",
+      "expect": { "total": 16, "weakestCriterion": "feasibility", "passing": true }
+    },
+    {
+      "id": "ai-implementation-spec-adr-status-lifecycle-valid",
+      "mode": "ai-implementation-spec",
+      "outcome": "ai-implementation-spec.yaml's adr phase (MADR 4.0): a status lifecycle of proposed|accepted|deprecated|superseded-by ADR-XXXX.",
+      "check": "adr-status-lifecycle",
+      "artifact": "fixtures/pipelines/ai-implementation-spec/adr-status-lifecycle-clean.md",
+      "expect": { "formatValid": true }
+    },
+    {
+      "id": "ai-implementation-spec-adr-status-invalid-caught",
+      "mode": "ai-implementation-spec",
+      "outcome": "The corrupt twin: an ADR carrying an undocumented status (\"in-review\") outside the lifecycle enum.",
+      "check": "adr-status-lifecycle",
+      "artifact": "fixtures/pipelines/ai-implementation-spec/adr-status-invalid.md",
+      "expect": { "formatValid": false }
+    },
+    {
+      "id": "business-case-gate-achievability-passing",
+      "mode": "business-case",
+      "outcome": "Scores clearing both the floor and pass_total for the real business-case.yaml gate. No structural property is pinned for this pipeline's own phase prose beyond its gate criteria names (market-size/financials/roi are numeric asks but no literal row grammar is documented) -- skipped honestly, see README's coverage table.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/business-case/gate-passing.json",
+      "expect": { "total": 14, "weakestCriterion": "roi", "passing": true }
+    },
+    {
+      "id": "launch-plan-gate-achievability-passing",
+      "mode": "launch-plan",
+      "outcome": "Scores clearing both the floor and pass_total for the real launch-plan.yaml gate. RACI is named as a gate criterion but no literal RACI-table row grammar is documented in the phase prose -- skipped honestly, see README's coverage table.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/launch-plan/gate-passing.json",
+      "expect": { "total": 16, "weakestCriterion": "RACI", "passing": true }
+    },
+    {
+      "id": "roadmap-gate-achievability-passing",
+      "mode": "roadmap",
+      "outcome": "Scores clearing both the floor and pass_total for the real roadmap.yaml gate.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/roadmap/gate-passing.json",
+      "expect": { "total": 14, "weakestCriterion": "scoring-rigor", "passing": true }
+    },
+    {
+      "id": "roadmap-rice-scorer-ranks-initiatives",
+      "mode": "roadmap",
+      "outcome": "roadmap.yaml's prioritize phase: \"run the deterministic RICE scorer (muster prioritize)\" -- the same real prioritizeRICE the roadmap-prioritization skill layer already reuses, parameterized over this pipeline's own initiatives.",
+      "check": "roadmap-rice",
+      "artifact": "fixtures/pipelines/roadmap/rice-rank-order.json",
+      "expect": { "rankOrder": ["onboarding-flow", "dark-mode"] }
+    },
+    {
+      "id": "user-story-gate-achievability-passing",
+      "mode": "user-story",
+      "outcome": "Scores clearing both the floor and pass_total for the real user-story.yaml gate.",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/user-story/gate-passing.json",
+      "expect": { "total": 14, "weakestCriterion": "acceptance-criteria", "passing": true }
+    },
+    {
+      "id": "user-story-gherkin-scenarios-well-formed",
+      "mode": "user-story",
+      "outcome": "user-story.yaml's acceptance phase: Given/When/Then (Gherkin) scenarios, happy path + 2 edge/negative.",
+      "check": "user-story-gherkin-shape",
+      "artifact": "fixtures/pipelines/user-story/acceptance-gherkin-scenarios.md",
+      "expect": { "scenariosWellFormed": true, "minScenarios": 3 }
+    },
+    {
+      "id": "user-story-gherkin-missing-then-flagged",
+      "mode": "user-story",
+      "outcome": "The corrupt twin: a scenario with a Given/When but no Then.",
+      "check": "user-story-gherkin-shape",
+      "artifact": "fixtures/pipelines/user-story/acceptance-gherkin-missing-then.md",
+      "expect": { "scenariosWellFormed": false }
+    },
+    {
+      "id": "prd-gate-achievability-passing-content-pipeline-layer",
+      "mode": "prd",
+      "outcome": "Scores clearing both the floor and pass_total for the real prd.yaml gate, parameterized the same way the content-pipeline layer's other 11 knowledge pipelines are (distinct from the skill-protocol layer's own \"prd-pipeline\" mode cases above, which grade the same gate via a different dispatch).",
+      "check": "gate-achievability",
+      "artifact": "fixtures/pipelines/prd/gate-passing.json",
+      "expect": { "total": 16, "weakestCriterion": "evidence", "passing": true }
+    },
+    {
+      "id": "prd-intake-structured-row-owned",
+      "mode": "prd",
+      "outcome": "prd.yaml's intake phase: raw notes/brain-dumps extracted into `{decision|action|fact, owner, deadline, source-anchor}` rows -- reuses evidence-table-shape's row grammar directly.",
+      "check": "evidence-table-shape",
+      "artifact": "fixtures/pipelines/prd/intake-rows-clean.md",
+      "expect": { "rowsWellFormed": true, "minRows": 3, "unownedFlagCount": 0 }
+    },
+    {
+      "id": "prd-intake-unowned-action-flagged",
+      "mode": "prd",
+      "outcome": "The corrupt twin: an action row with no owner/deadline -- prd.yaml's own words, \"unowned actions and undated deadlines are flagged, not silently dropped.\"",
+      "check": "evidence-table-shape",
+      "artifact": "fixtures/pipelines/prd/intake-rows-unowned-action.md",
+      "expect": { "unownedFlagCount": 1 }
     }
   ]
 }

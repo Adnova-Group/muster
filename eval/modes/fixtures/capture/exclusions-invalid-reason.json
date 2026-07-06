@@ -1,0 +1,6 @@
+{
+  "candidates": [
+    { "text": "Add retry logic to the payments client", "excludedReason": null },
+    { "text": "Rewrite the whole auth layer", "excludedReason": "because-I-said-so" }
+  ]
+}

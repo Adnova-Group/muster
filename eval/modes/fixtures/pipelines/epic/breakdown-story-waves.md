@@ -1,0 +1,3 @@
+- [ ] Split epic into workflow-step stories: submit order, validate payment, confirm shipment {id: workflow-steps} {deps: none}
+- [ ] Split out the business-rule variation for international tax handling {id: tax-variation} {deps: none}
+- [ ] Sequence the risk-ordered story map once both splits land {id: sequence} {deps: workflow-steps,tax-variation}

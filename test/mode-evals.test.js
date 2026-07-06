@@ -11,7 +11,9 @@ import {
   MUSTER_RECEIPT_PATTERNS,
   computeClaimWindows,
   computeClaimWindowWinner,
+  isHumanHoldResumeAuthorized,
   SCAFFOLD_SEED_FILES,
+  CAPTURE_EXCLUSION_REASONS,
 } from "../eval/modes/grade-lib.mjs";
 
 // CI regression guard for the mode-prompt eval (eval/modes/). Two jobs, mirroring
@@ -174,8 +176,37 @@ test("coordination-claim-window: MUSTER_RECEIPT_PATTERNS classify every receipt 
   assert.match("MUSTER CLAIMED alice 2026-01-01T00:00:00Z", MUSTER_RECEIPT_PATTERNS.CLAIMED);
   assert.match("MUSTER DONE alice 2026-01-01T00:00:00Z", MUSTER_RECEIPT_PATTERNS.DONE);
   assert.match("MUSTER BLOCKED alice 2026-01-01T00:00:00Z the question", MUSTER_RECEIPT_PATTERNS.BLOCKED);
+  assert.match("MUSTER HUMAN-HOLD alice 2026-01-01T00:00:00Z authorizer=bob the question", MUSTER_RECEIPT_PATTERNS["HUMAN-HOLD"]);
   assert.match("MUSTER FAILED alice 2026-01-01T00:00:00Z the reason", MUSTER_RECEIPT_PATTERNS.FAILED);
   assert.match("MUSTER YIELD alice 2026-01-01T00:00:00Z lost the race", MUSTER_RECEIPT_PATTERNS.YIELD);
+});
+
+test("computeClaimWindows: HUMAN-HOLD resets the window floor exactly like DONE/BLOCKED/FAILED", () => {
+  const events = [
+    { type: "CLAIMED", runner: "alice", ts: "2026-01-01T08:00:00Z" },
+    { type: "HUMAN-HOLD", runner: "alice", ts: "2026-01-01T08:05:00Z" },
+    { type: "CLAIMED", runner: "carol", ts: "2026-01-01T09:00:00Z" },
+    { type: "DONE", runner: "carol", ts: "2026-01-01T09:10:00Z" },
+  ];
+  const { current } = computeClaimWindows(events);
+  assert.equal(current.winner.runner, "carol");
+  assert.equal(gradeCase({ check: "coordination-claim-window", expect: { winner: "carol", terminalType: "DONE" } }, "MUSTER CLAIMED alice 2026-01-01T08:00:00Z\nMUSTER HUMAN-HOLD alice 2026-01-01T08:05:00Z authorizer=bob\nMUSTER CLAIMED carol 2026-01-01T09:00:00Z\nMUSTER DONE carol 2026-01-01T09:10:00Z").pass, true);
+});
+
+test("isHumanHoldResumeAuthorized: only a reply from the named authorizer resumes; any other replier is inert", () => {
+  const wrongParty = isHumanHoldResumeAuthorized(["MUSTER HUMAN-HOLD alice 2026-01-01T08:05:00Z authorizer=bob", "REPLY carol: looks fine to me"]);
+  assert.equal(wrongParty.authorizer, "bob");
+  assert.equal(wrongParty.resumed, false);
+  const rightParty = isHumanHoldResumeAuthorized(["MUSTER HUMAN-HOLD alice 2026-01-01T08:05:00Z authorizer=bob", "REPLY bob: approved"]);
+  assert.equal(rightParty.resumed, true);
+});
+
+test("coordination-human-hold-resume: a wrong-party reply fails a resumeAuthorized:true expectation; the authorizer's own reply passes it", () => {
+  const wrongParty = "MUSTER HUMAN-HOLD alice 2026-01-01T08:05:00Z authorizer=bob\nREPLY carol: looks fine to me";
+  assert.equal(gradeCase({ check: "coordination-human-hold-resume", expect: { resumeAuthorized: false } }, wrongParty).pass, true);
+  assert.equal(gradeCase({ check: "coordination-human-hold-resume", expect: { resumeAuthorized: true } }, wrongParty).pass, false);
+  const rightParty = "MUSTER HUMAN-HOLD alice 2026-01-01T08:05:00Z authorizer=bob\nREPLY bob: approved";
+  assert.equal(gradeCase({ check: "coordination-human-hold-resume", expect: { resumeAuthorized: true } }, rightParty).pass, true);
 });
 
 test("coordination-claim-window: the earliest in-window claim wins and the loser's yield is required; an unyielded loser fails", () => {
@@ -387,12 +418,165 @@ test("every check in CHECKS has a matching ARTIFACT_KIND entry", () => {
   for (const name of Object.keys(CHECKS)) assert.ok(name in ARTIFACT_KIND, `CHECKS.${name} has no ARTIFACT_KIND entry`);
 });
 
+// --- capture grade-lib unit tests (eval/modes extended to plugin/commands/capture.md,
+// the 7th mode) ------------------------------------------------------------------------
+
+test("capture-exclusions: a documented exclusion reason passes; an undocumented one fails a reasonsValid:true expectation", () => {
+  const candidates = [{ text: "keep me", excludedReason: null }, { text: "drop me", excludedReason: "already-completed" }];
+  const good = gradeCase({ check: "capture-exclusions", expect: { reasonsValid: true, survivors: ["keep me"] } }, { candidates });
+  assert.equal(good.pass, true);
+  const invented = [{ text: "keep me", excludedReason: null }, { text: "drop me", excludedReason: "vibes" }];
+  assert.equal(gradeCase({ check: "capture-exclusions", expect: { reasonsValid: true } }, { candidates: invented }).pass, false);
+  assert.equal(gradeCase({ check: "capture-exclusions", expect: { reasonsValid: false } }, { candidates: invented }).pass, true);
+  assert.ok(CAPTURE_EXCLUSION_REASONS.includes("already-completed"));
+});
+
+test("capture-cap-holdback: correct 10-cap arithmetic passes under and over the cap; wrong arithmetic fails", () => {
+  assert.equal(gradeCase({ check: "capture-cap-holdback", expect: {} }, { candidateCount: 6, presentedCount: 6, heldBackStated: 0 }).pass, true);
+  assert.equal(gradeCase({ check: "capture-cap-holdback", expect: {} }, { candidateCount: 14, presentedCount: 10, heldBackStated: 4 }).pass, true);
+  assert.equal(gradeCase({ check: "capture-cap-holdback", expect: {} }, { candidateCount: 14, presentedCount: 10, heldBackStated: 3 }).pass, false);
+  assert.equal(gradeCase({ check: "capture-cap-holdback", expect: {} }, { candidateCount: 14, presentedCount: 12, heldBackStated: 4 }).pass, false);
+});
+
+test("capture-reword-cap: clearing assessOutcome within the 2-reword cap reports clear; staying vague reports UNMEASURABLE with signals attached", () => {
+  const clears = gradeCase({ check: "capture-reword-cap", expect: { finalStatus: "clear" } }, { attempts: ["make it faster", "make the checkout endpoint faster", "Reduce checkout endpoint p95 latency to under 200ms"] });
+  assert.equal(clears.pass, true);
+  const staysVague = gradeCase({ check: "capture-reword-cap", expect: { finalStatus: "UNMEASURABLE" } }, { attempts: ["make it better", "improve the user experience across the board", "make things feel smoother and more pleasant overall"] });
+  assert.equal(staysVague.pass, true);
+  assert.equal(gradeCase({ check: "capture-reword-cap", expect: { finalStatus: "clear" } }, { attempts: ["make it better"] }).pass, false);
+});
+
+test("capture-approval-order: a WRITTEN marker after AskUserQuestion passes; a Cancel flow with no write passes an expectWrite:false expectation", () => {
+  const approved = "AskUserQuestion: Approve all\nUser selected: Approve all\n\nWRITTEN: item-1";
+  assert.equal(gradeCase({ check: "capture-approval-order", expect: { expectWrite: true } }, approved).pass, true);
+  const cancelled = "AskUserQuestion: Cancel\nUser selected: Cancel (capture nothing)";
+  assert.equal(gradeCase({ check: "capture-approval-order", expect: { expectWrite: false } }, cancelled).pass, true);
+  const writeBeforeApproval = "WRITTEN: item-1\nAskUserQuestion: Approve all";
+  const bad = gradeCase({ check: "capture-approval-order", expect: { expectWrite: true } }, writeBeforeApproval);
+  assert.equal(bad.pass, false);
+  assert.equal(bad.checks.find((c) => c.name === "approvalPrecedesWrite").ok, false);
+});
+
+test("capture-dedupe: a candidate matching an existing (annotation-stripped) line is skipped; a new one is kept", () => {
+  const artifacts = { existingBacklog: "- [ ] Add rate limiting {id: rate-limit} {deps: none}\n", candidates: ["Add rate limiting {mentioned: again}", "Add a brand-new item"] };
+  const g = gradeCase({ check: "capture-dedupe", expect: { kept: ["Add a brand-new item"], skipped: ["Add rate limiting {mentioned: again}"] } }, artifacts);
+  assert.equal(g.pass, true);
+});
+
+// --- native-builtin grade-lib unit tests (eval/modes extended to plugin/builtins/muster-*) -
+
+test("image-prompt-set-shape: hero+2 variants with inlined hex + Avoid lines pass; a single variant punting to the brand file fails", () => {
+  const clean = "### a — hero\ntext #112233\nAvoid: x\n\n### a — variant 1\ntext #112233\nAvoid: x\n\n### a — variant 2\ntext #112233\nAvoid: x";
+  assert.equal(gradeCase({ check: "image-prompt-set-shape", expect: { minHeroCount: 1, minVariantCount: 2, avoidPerSection: true, brandConstraintsInlined: true, noBrandFileReference: true } }, clean).pass, true);
+  const punt = "### a — hero\nmatch the brand file\n\n### a — variant 1\nmatch the brand file";
+  assert.equal(gradeCase({ check: "image-prompt-set-shape", expect: { brandConstraintsInlined: false, noBrandFileReference: false, avoidPerSection: false } }, punt).pass, true);
+  assert.equal(gradeCase({ check: "image-prompt-set-shape", expect: { minVariantCount: 2 } }, punt).pass, false);
+});
+
+test("video-shot-list-shape: well-formed timestamped rows pass; a missing rationale or unpadded timestamp fails a formatValid:true expectation", () => {
+  const clean = "[00:00–00:10] a shot — why it matters\n[00:10–00:20] another shot — why it matters";
+  assert.equal(gradeCase({ check: "video-shot-list-shape", expect: { formatValid: true, minRows: 2 } }, clean).pass, true);
+  const bad = "[00:00-00:10] a shot with no rationale\n[5:00-5:10] unpadded — rationale";
+  assert.equal(gradeCase({ check: "video-shot-list-shape", expect: { formatValid: true } }, bad).pass, false);
+  assert.equal(gradeCase({ check: "video-shot-list-shape", expect: { formatValid: false } }, bad).pass, true);
+});
+
+test("humanizer-precedence: a voice-profile section before the generic-tells section passes; reversed order fails", () => {
+  const correct = "Voice-profile anti-patterns: none\nGeneric tells: stripped 1 word";
+  assert.equal(gradeCase({ check: "humanizer-precedence", expect: { hasVoiceProfileSection: true } }, correct).pass, true);
+  const reversed = "Generic tells: stripped 1 word\nVoice-profile anti-patterns: none";
+  const bad = gradeCase({ check: "humanizer-precedence", expect: { hasVoiceProfileSection: true } }, reversed);
+  assert.equal(bad.pass, false);
+  assert.equal(bad.checks.find((c) => c.name === "voicePrecedesGeneric").ok, false);
+  const noProfile = "Generic tells: stripped 1 word";
+  assert.equal(gradeCase({ check: "humanizer-precedence", expect: { hasVoiceProfileSection: false } }, noProfile).pass, true);
+});
+
+test("humanizer-precedence: the checked-in reversed-order fixture (unit-test-only -- voicePrecedesGeneric isn't expect-comparable, so it can't be a dataset case) fails the same way", async () => {
+  const reversedFixture = await read("eval/modes/fixtures/builtins/muster-humanizer/precedence-order-reversed.md");
+  const bad = gradeCase({ check: "humanizer-precedence", expect: { hasVoiceProfileSection: true } }, reversedFixture);
+  assert.equal(bad.pass, false);
+  assert.equal(bad.checks.find((c) => c.name === "voicePrecedesGeneric").ok, false);
+});
+
+test("scorer-verdict-shape: integer 0-3 scores passing the floor pass; an out-of-contract score (e.g. 4) fails a scoresInRange:true expectation even though the floor math alone wouldn't catch it", () => {
+  const gate = { criteria: ["a", "b"], floor: 2, pass_total: 5 };
+  assert.equal(gradeCase({ check: "scorer-verdict-shape", expect: { scoresInRange: true, passing: true } }, { scores: { a: 2, b: 3 }, gate }).pass, true);
+  const outOfRange = gradeCase({ check: "scorer-verdict-shape", expect: { scoresInRange: true } }, { scores: { a: 4, b: 3 }, gate });
+  assert.equal(outOfRange.pass, false);
+  assert.equal(gradeCase({ check: "scorer-verdict-shape", expect: { scoresInRange: false } }, { scores: { a: 4, b: 3 }, gate }).pass, true);
+});
+
+test("prompt-smith-optimize-proposal: a stronger non-baseline winner reports no regression; a passing candidate below a failed baseline's total reports regression", () => {
+  const improved = [{ id: "baseline", prompt: "p", total: 8, passing: true }, { id: "add-examples", prompt: "p2", total: 12, passing: true }];
+  assert.equal(gradeCase({ check: "prompt-smith-optimize-proposal", expect: { winner: "add-examples", regression: false } }, improved).pass, true);
+  const regressed = [{ id: "baseline", prompt: "p", total: 15, passing: false }, { id: "add-role", prompt: "p2", total: 9, passing: true }];
+  assert.equal(gradeCase({ check: "prompt-smith-optimize-proposal", expect: { winner: "add-role", regression: true } }, regressed).pass, true);
+  assert.equal(gradeCase({ check: "prompt-smith-optimize-proposal", expect: { regression: false } }, regressed).pass, false);
+});
+
+test("author-draft-shape: a stated framework + single CTA pass; no framework and multiple CTAs are correctly detected as such", () => {
+  const clean = "Framework: PAS\n\nbody text\n\nCTA: buy now.";
+  assert.equal(gradeCase({ check: "author-draft-shape", expect: { framework: "PAS", ctaCount: 1 } }, clean).pass, true);
+  const bad = "just buy it\n\nCTA: buy now.\nCTA: also read this.";
+  assert.equal(gradeCase({ check: "author-draft-shape", expect: { framework: null, ctaCount: 2 } }, bad).pass, true);
+  assert.equal(gradeCase({ check: "author-draft-shape", expect: { framework: "PAS" } }, bad).pass, false);
+});
+
+// --- knowledge-pipeline grade-lib unit tests (eval/modes extended to the 11 remaining
+// pipelines/*.yaml -- epic/okrs/roadmap/prd reuse sprint-waves/assess/roadmap-rice/
+// evidence-table-shape directly and are already covered by those checks' own unit tests
+// above) ----------------------------------------------------------------------------
+
+test("runbook-step-pairs: numbered command->expected pairs pass; a step missing its expected output fails a formatValid:true expectation", () => {
+  const clean = "1. `cmd1` -> expected: ok\n2. `cmd2` -> expected: ok";
+  assert.equal(gradeCase({ check: "runbook-step-pairs", expect: { formatValid: true, minSteps: 2 } }, clean).pass, true);
+  const bad = "1. `cmd1` -> expected: ok\n2. `cmd2`";
+  assert.equal(gradeCase({ check: "runbook-step-pairs", expect: { formatValid: true } }, bad).pass, false);
+  assert.equal(gradeCase({ check: "runbook-step-pairs", expect: { formatValid: false } }, bad).pass, true);
+});
+
+test("book-chapter-manifest: sequential numbered chapters pass; a gap in numbering fails a sequential:true expectation", () => {
+  const sequential = "- Chapter 1: A (status: drafted)\n- Chapter 2: B (status: pending)";
+  assert.equal(gradeCase({ check: "book-chapter-manifest", expect: { formatValid: true, sequential: true } }, sequential).pass, true);
+  const gap = "- Chapter 1: A (status: drafted)\n- Chapter 3: C (status: pending)";
+  assert.equal(gradeCase({ check: "book-chapter-manifest", expect: { sequential: true } }, gap).pass, false);
+  assert.equal(gradeCase({ check: "book-chapter-manifest", expect: { formatValid: true, sequential: false } }, gap).pass, true);
+});
+
+test("ai-test-plan-case-table: a well-formed risk/type/data/env/owner table passes; a row missing its owner cell fails formatValid:true", () => {
+  const header = "| tier | type | data | env | owner |\n| --- | --- | --- | --- | --- |\n";
+  const clean = header + "| H | happy | d | e | o |\n";
+  assert.equal(gradeCase({ check: "ai-test-plan-case-table", expect: { formatValid: true, typesInclude: ["happy"] } }, clean).pass, true);
+  const bad = header + "| H | happy | d | e | |\n";
+  assert.equal(gradeCase({ check: "ai-test-plan-case-table", expect: { formatValid: true } }, bad).pass, false);
+  assert.equal(gradeCase({ check: "ai-test-plan-case-table", expect: { formatValid: false } }, bad).pass, true);
+});
+
+test("user-story-gherkin-shape: Given/When/Then scenarios pass; a scenario missing Then fails a scenariosWellFormed:true expectation", () => {
+  const clean = "Scenario: happy path\nGiven a thing\nWhen it happens\nThen the outcome";
+  assert.equal(gradeCase({ check: "user-story-gherkin-shape", expect: { scenariosWellFormed: true, minScenarios: 1 } }, clean).pass, true);
+  const bad = "Scenario: happy path\nGiven a thing\nWhen it happens";
+  assert.equal(gradeCase({ check: "user-story-gherkin-shape", expect: { scenariosWellFormed: true } }, bad).pass, false);
+  assert.equal(gradeCase({ check: "user-story-gherkin-shape", expect: { scenariosWellFormed: false } }, bad).pass, true);
+});
+
+test("adr-status-lifecycle: a valid proposed|accepted|deprecated|superseded-by status passes; an undocumented status fails formatValid:true", () => {
+  const clean = "ADR-001: x -- status: accepted\nADR-002: y -- status: superseded-by ADR-9";
+  assert.equal(gradeCase({ check: "adr-status-lifecycle", expect: { formatValid: true } }, clean).pass, true);
+  const bad = "ADR-001: x -- status: in-review";
+  assert.equal(gradeCase({ check: "adr-status-lifecycle", expect: { formatValid: true } }, bad).pass, false);
+  assert.equal(gradeCase({ check: "adr-status-lifecycle", expect: { formatValid: false } }, bad).pass, true);
+});
+
 // --- dataset + fixtures: the checked-in material grades green ---------------------------
 
 const dataset = JSON.parse(await read("eval/modes/dataset.json"));
-const MODES = ["run", "autopilot", "sprint", "runner", "audit", "diagnose"];
+// "capture" is the 7th mode prompt (plugin/commands/capture.md) — a conversation-to-backlog
+// generator with no Run-active lifecycle of its own, closed out alongside the other 6.
+const MODES = ["run", "autopilot", "sprint", "runner", "audit", "diagnose", "capture"];
 // The skill-protocol layer (plugin/skills/*, router excluded — it already has
-// eval:router). Every case's `mode` field names either one of the 6 verb prompts above
+// eval:router). Every case's `mode` field names either one of the 7 mode prompts above
 // OR one of these 10 skills — a single field, not a second "skill" key, because grade.mjs
 // (frozen: `${r.mode.padEnd(9)}`) reads `mode` unconditionally on every row and would
 // throw on a case that left it undefined.
@@ -424,8 +608,20 @@ const CONTENT_PIPELINES = [
   "executive-summary",
   "competitive-battlecard",
 ];
+// The native-builtin layer (eval/modes extended to plugin/builtins/muster-*/SKILL.md) --
+// the 7 built-in pipeline-role providers (the gsd-*/sp-*/wsh-* builtins are vendored
+// generic technique skills, not muster's own pipeline-role prompts, and are out of scope
+// for this eval — see README's coverage table).
+const BUILTINS = ["muster-research", "muster-image", "muster-video", "muster-humanizer", "muster-scorer", "muster-prompt-smith", "muster-author"];
+// The knowledge-pipeline layer (eval/modes extended to the 11 remaining pipelines/*.yaml
+// not already covered by the content-pipeline layer above: ai-implementation-spec,
+// ai-test-plan, book, business-case, epic, launch-plan, okrs, prd, roadmap, runbook,
+// user-story). `prd`'s own pipeline-id mode is distinct from the skill-protocol layer's
+// `prd-pipeline` mode above — same real pipelines/prd.yaml gate, dispatched twice by
+// design (see the dataset case's own comment).
+const KNOWLEDGE_PIPELINES = ["ai-implementation-spec", "ai-test-plan", "book", "business-case", "epic", "launch-plan", "okrs", "prd", "roadmap", "runbook", "user-story"];
 
-test("dataset covers all 6 mode prompts with at least 5 cases each, 30+ total", () => {
+test("dataset covers all 7 mode prompts with at least 5 cases each, 30+ total", () => {
   const modeCases = dataset.cases.filter((c) => MODES.includes(c.mode));
   assert.ok(modeCases.length >= 30, `expected 30+ mode cases, got ${modeCases.length}`);
   const byMode = {};
@@ -449,11 +645,27 @@ test("dataset covers all 9 content pipelines with at least 2 cases each, 18+ tot
   for (const pipeline of CONTENT_PIPELINES) assert.ok((byPipeline[pipeline] || 0) >= 2, `pipeline "${pipeline}" has only ${byPipeline[pipeline] || 0} cases`);
 });
 
-test("every dataset case's mode is a known verb, skill, or content-pipeline name, and grade.mjs's row.mode is always a defined string", () => {
-  const known = new Set([...MODES, ...SKILLS, ...CONTENT_PIPELINES]);
+test("dataset covers all 7 native builtins with at least 2 cases each, 14+ total", () => {
+  const builtinCases = dataset.cases.filter((c) => BUILTINS.includes(c.mode));
+  assert.ok(builtinCases.length >= 14, `expected 14+ native-builtin cases, got ${builtinCases.length}`);
+  const byBuiltin = {};
+  for (const c of builtinCases) byBuiltin[c.mode] = (byBuiltin[c.mode] || 0) + 1;
+  for (const builtin of BUILTINS) assert.ok((byBuiltin[builtin] || 0) >= 2, `builtin "${builtin}" has only ${byBuiltin[builtin] || 0} cases`);
+});
+
+test("dataset covers all 11 knowledge pipelines with at least 1 gate-achievability case each, 11+ total", () => {
+  const pipelineCases = dataset.cases.filter((c) => KNOWLEDGE_PIPELINES.includes(c.mode));
+  assert.ok(pipelineCases.length >= 11, `expected 11+ knowledge-pipeline cases, got ${pipelineCases.length}`);
+  const byPipeline = {};
+  for (const c of pipelineCases) byPipeline[c.mode] = (byPipeline[c.mode] || 0) + 1;
+  for (const pipeline of KNOWLEDGE_PIPELINES) assert.ok((byPipeline[pipeline] || 0) >= 1, `knowledge pipeline "${pipeline}" has only ${byPipeline[pipeline] || 0} cases`);
+});
+
+test("every dataset case's mode is a known verb, skill, content-pipeline, builtin, or knowledge-pipeline name, and grade.mjs's row.mode is always a defined string", () => {
+  const known = new Set([...MODES, ...SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES]);
   for (const c of dataset.cases) {
     assert.equal(typeof c.mode, "string", `${c.id}: "mode" must be a defined string (grade.mjs calls .padEnd() on it unconditionally)`);
-    assert.ok(known.has(c.mode), `${c.id}: unknown mode/skill/pipeline "${c.mode}" — not in MODES, SKILLS, or CONTENT_PIPELINES`);
+    assert.ok(known.has(c.mode), `${c.id}: unknown mode/skill/pipeline "${c.mode}" — not in MODES, SKILLS, CONTENT_PIPELINES, BUILTINS, or KNOWLEDGE_PIPELINES`);
   }
 });
 
@@ -537,5 +749,41 @@ test("the content-pipeline gate-achievability fixtures' gate matches each pipeli
       const g = JSON.parse(await read(`eval/modes/fixtures/pipelines/${pipelineId}/${f}`));
       assert.deepEqual(g.gate, live.gate, `${pipelineId}/${f}: gate must match the live pipelines/${pipelineId}.yaml gate`);
     }
+  }
+});
+
+test("the 11 knowledge-pipeline gate-achievability fixtures' gate matches each pipeline's live yaml (drift guard)", async () => {
+  const { parse } = await import("yaml");
+  for (const pipelineId of KNOWLEDGE_PIPELINES) {
+    const live = parse(await read(`pipelines/${pipelineId}.yaml`));
+    const g = JSON.parse(await read(`eval/modes/fixtures/pipelines/${pipelineId}/gate-passing.json`));
+    assert.deepEqual(g.gate, live.gate, `${pipelineId}/gate-passing.json: gate must match the live pipelines/${pipelineId}.yaml gate`);
+  }
+});
+
+// --- coverage-table drift guard (eval/modes/README.md's coverage table) -----------------
+// The README's coverage table enumerates every prompt surface this eval suite is
+// responsible for. This test asserts the table's own universe (the 5 layers already
+// tracked above: MODES/SKILLS/CONTENT_PIPELINES/BUILTINS/KNOWLEDGE_PIPELINES, plus the
+// router skill counted separately since it has its own eval:router) against the ACTUAL
+// file inventory via glob counts, so a new command/skill/builtin/pipeline file added later
+// makes this test fail instead of letting the table silently go stale.
+test("coverage-table surfaces match the actual file inventory (glob counts) — table can't silently stale", async () => {
+  const { readdir } = await import("node:fs/promises");
+  const commandFiles = (await readdir(new URL("../plugin/commands", import.meta.url))).filter((f) => f.endsWith(".md"));
+  assert.equal(commandFiles.length, MODES.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length} (MODES, one per mode prompt)`);
+
+  const skillDirs = await readdir(new URL("../plugin/skills", import.meta.url));
+  assert.equal(skillDirs.length, SKILLS.length + 1, `plugin/skills/* has ${skillDirs.length} dir(s), expected ${SKILLS.length + 1} (10 SKILLS + router, which has its own eval:router)`);
+
+  const builtinDirs = (await readdir(new URL("../plugin/builtins", import.meta.url))).filter((d) => d.startsWith("muster-"));
+  assert.equal(builtinDirs.length, BUILTINS.length, `plugin/builtins/muster-*/ has ${builtinDirs.length} dir(s), expected ${BUILTINS.length} (BUILTINS)`);
+
+  const pipelineFiles = (await readdir(new URL("../pipelines", import.meta.url))).filter((f) => f.endsWith(".yaml"));
+  assert.equal(pipelineFiles.length, CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length, `pipelines/*.yaml has ${pipelineFiles.length} file(s), expected ${CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length} (9 CONTENT_PIPELINES + 11 KNOWLEDGE_PIPELINES)`);
+
+  const readmeText = await read("eval/modes/README.md");
+  for (const name of [...MODES, ...SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
+    assert.ok(readmeText.includes(name), `README's coverage table is missing surface "${name}"`);
   }
 });

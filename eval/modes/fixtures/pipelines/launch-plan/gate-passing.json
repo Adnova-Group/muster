@@ -1,0 +1,24 @@
+{
+  "scores": {
+    "completeness": 3,
+    "timeline": 3,
+    "RACI": 2,
+    "risk-coverage": 2,
+    "beachhead-defined": 2,
+    "post-launch-plan": 2,
+    "success-metrics": 2
+  },
+  "gate": {
+    "criteria": [
+      "completeness",
+      "timeline",
+      "RACI",
+      "risk-coverage",
+      "beachhead-defined",
+      "post-launch-plan",
+      "success-metrics"
+    ],
+    "floor": 2,
+    "pass_total": 16
+  }
+}

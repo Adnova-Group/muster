@@ -1,0 +1,7 @@
+{
+  "attempts": [
+    "make it faster",
+    "make the checkout endpoint faster",
+    "Reduce checkout endpoint p95 latency to under 200ms"
+  ]
+}

@@ -1,0 +1,4 @@
+[
+  { "name": "onboarding-flow", "reach": 500, "impact": 2, "confidence": 0.8, "effort": 2 },
+  { "name": "dark-mode", "reach": 200, "impact": 1, "confidence": 0.5, "effort": 1 }
+]

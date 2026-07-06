@@ -33,6 +33,22 @@ const PROTOCOL_VERSION = "2025-06-18"; // MCP spec version date-string (matches 
 // Single-source the version from package.json so serverInfo never drifts from the release.
 const VERSION = JSON.parse(readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;
 const SERVER_INFO = { name: "muster", version: VERSION };
+// Sprint's Cowork-adapted playbook — static content served verbatim (muster_sprint_protocol
+// below), same trick as VERSION above: read once at module load, relative to this script so it
+// survives being invoked from any cwd.
+//
+// Read failure (file missing/unreadable) must NOT crash the whole server at module load — every
+// other tool would go down with it. Catch it here, keep SPRINT_PROTOCOL null, and record a named
+// fallback error text; muster_sprint_protocol's tool handler (below) turns that into an isError
+// response naming the missing file, instead of the process dying before it can even start.
+const SPRINT_PROTOCOL_PATH = path.join(HERE, "sprint-protocol.md");
+let SPRINT_PROTOCOL = null;
+let SPRINT_PROTOCOL_ERROR = null;
+try {
+  SPRINT_PROTOCOL = readFileSync(SPRINT_PROTOCOL_PATH, "utf8").trim();
+} catch (e) {
+  SPRINT_PROTOCOL_ERROR = `muster_sprint_protocol: missing or unreadable file ${SPRINT_PROTOCOL_PATH} (${e.code || e.message})`;
+}
 
 // Cowork has no muster orchestrator skill / slash commands — only these MCP tools plus your own
 // subagent dispatch (confirmed to support parallel fan-out and per-call model override). So the
@@ -101,6 +117,11 @@ const TOOLS = {
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_wave: { argv: ["wave"], ...J2("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_sprint_waves: { argv: ["sprint-waves"], ...T("Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations (returns waves JSON; annotated:false means the backlog is unannotated/sequential).", "backlog") },
+  muster_sprint_protocol: {
+    kind: "static", text: SPRINT_PROTOCOL, error: SPRINT_PROTOCOL_ERROR,
+    description: "Returns the Cowork-adapted sprint orchestration playbook (cowork/sprint-protocol.md): backlog resolution, sprint-waves, sequential wave execution (the degradation path IS the path here — no isolated parallel item-runners), claim/receipt discipline, honest disposition defaults, and what Cowork lacks vs the Claude Code plugin.",
+    inputSchema: { type: "object", properties: {} },
+  },
   muster_next: { argv: ["next"], ...J2("Single-agent driver: given a manifest and the ids completed so far, return the next runnable task plus the full ready frontier. Run `next`, append its id to `completed`, call again until done.", { manifest: { type: "object" }, completed: { type: "array", items: { type: "string" } } }, ["manifest"]), picks: (a) => [a.manifest], flags: (a) => a.completed?.length ? ["--done", a.completed.join(",")] : [] },
   muster_score: { argv: ["score"], ...J2("Score an artifact's dimensions against a gate.", { scores: { type: "object" }, gate: { type: "object" } }, ["scores", "gate"]), picks: (a) => [{ scores: a.scores, gate: a.gate }] },
   muster_prioritize: { argv: ["prioritize"], ...J2("Rank backlog items by RICE/ICE/WSJF/weighted.", { items: { type: "array" }, model: { type: "string", enum: ["rice", "ice", "wsjf", "weighted"] } }, ["items"]), picks: (a) => [{ items: a.items, model: a.model || "rice" }], flags: (a) => a.model ? ["--model", a.model] : [] },
@@ -131,6 +152,9 @@ async function callTool(name, args = {}) {
     return runCli(v != null && v !== "" ? [...tool.argv, String(v)] : tool.argv);
   }
   if (tool.kind === "none") return runCli(tool.argv);
+  // static: no CLI call at all — return pre-loaded file content verbatim (muster_sprint_protocol).
+  // A load-time read failure (tool.error set) surfaces as isError instead of serving `null` text.
+  if (tool.kind === "static") return tool.error ? { ok: false, text: tool.error } : { ok: true, text: tool.text };
 
   // text: write the single string payload verbatim (no JSON.stringify) to one temp file,
   // then invoke the CLI with that file's path — mirrors json2's temp-file handoff for

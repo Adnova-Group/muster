@@ -8,6 +8,8 @@
 //   {disposition: merge-local|merge-push|pr|keep|ask}
 //   {escalated: ...}            presence marks the item escalated (bool in output;
 //                                the annotation's value is a free-text reason, discarded)
+//   {claimed: runner@ts}        coordination claim; the raw runner-string value is
+//                                surfaced verbatim as items[id].claimed, or null if absent
 //
 // Dependency semantics (pinned): an item WITHOUT a {deps} annotation implicitly
 // depends on EVERY item above it in the file, regardless of id — the default is
@@ -22,6 +24,7 @@
 import { computeWaves } from "./wave.js";
 
 const CHECKBOX_RE = /^- \[ \] (.*)$/;
+const CHECKED_CHECKBOX_RE = /^- \[[xX]\] (.*)$/;
 
 // {id} tokens must be kebab/alnum: a letter or digit, then letters/digits/hyphens.
 const ID_TOKEN_RE = /^[a-z0-9][a-z0-9-]*$/i;
@@ -53,23 +56,38 @@ export function computeSprintWaves(content) {
   }
 
   const raw = [];
+  // checkedIds: ids (explicit {id} or synthetic item-<line>) of already-checked
+  // ("- [x] ") lines. These never become tasks/items, but a {deps} reference to one
+  // is satisfied by definition — it's resolved (dropped) before wave computation
+  // rather than erroring as an unknown dep.
+  const checkedIds = new Set();
   content.split(/\r?\n/).forEach((line, i) => {
-    const m = CHECKBOX_RE.exec(line.replace(/^\s+/, ""));
-    if (!m) return;
+    const trimmed = line.replace(/^\s+/, "");
     const lineNo = i + 1;
-    const { anns, text } = stripAnnotations(m[1]);
-    const hasId = Object.prototype.hasOwnProperty.call(anns, "id");
-    raw.push({
-      lineNo,
-      hasId,
-      rawId: anns.id,
-      id: anns.id || `item-${lineNo}`,
-      text,
-      hasDeps: Object.prototype.hasOwnProperty.call(anns, "deps"),
-      depsRaw: anns.deps,
-      disposition: Object.prototype.hasOwnProperty.call(anns, "disposition") ? anns.disposition : null,
-      escalated: Object.prototype.hasOwnProperty.call(anns, "escalated"),
-    });
+    const m = CHECKBOX_RE.exec(trimmed);
+    if (m) {
+      const { anns, text } = stripAnnotations(m[1]);
+      const hasId = Object.prototype.hasOwnProperty.call(anns, "id");
+      raw.push({
+        lineNo,
+        hasId,
+        rawId: anns.id,
+        id: anns.id || `item-${lineNo}`,
+        text,
+        hasDeps: Object.prototype.hasOwnProperty.call(anns, "deps"),
+        depsRaw: anns.deps,
+        disposition: Object.prototype.hasOwnProperty.call(anns, "disposition") ? anns.disposition : null,
+        escalated: Object.prototype.hasOwnProperty.call(anns, "escalated"),
+        claimed: Object.prototype.hasOwnProperty.call(anns, "claimed") ? anns.claimed : null,
+      });
+      return;
+    }
+    const cm = CHECKED_CHECKBOX_RE.exec(trimmed);
+    if (cm) {
+      const { anns } = stripAnnotations(cm[1]);
+      const hasId = Object.prototype.hasOwnProperty.call(anns, "id");
+      checkedIds.add(hasId ? anns.id : `item-${lineNo}`);
+    }
   });
 
   // annotated is the deterministic wave-mode trigger: true iff any parsed unchecked
@@ -85,6 +103,15 @@ export function computeSprintWaves(content) {
     return { ok: false, errors: idErrors, waves: [], items: {}, annotated };
   }
 
+  // A checked line and an unchecked line sharing an id is ambiguous — which one does
+  // a {deps: x} reference actually mean? Fatal, same as an unchecked/unchecked clash.
+  const collisionErrors = [...new Set(raw.map((r) => r.id).filter((id) => checkedIds.has(id)))].map(
+    (id) => `duplicate id "${id}": used by both a checked and an unchecked item`
+  );
+  if (collisionErrors.length > 0) {
+    return { ok: false, errors: collisionErrors, waves: [], items: {}, annotated };
+  }
+
   // Build the explicit deps array every item needs for computeWaves. Items without a
   // {deps} annotation get every id parsed so far (implicit "depends on all above").
   const idsSoFar = [];
@@ -96,13 +123,17 @@ export function computeSprintWaves(content) {
     } else {
       deps = idsSoFar.slice();
     }
+    // Deps referencing a checked (already-satisfied) item resolve immediately — drop
+    // them before wave computation. Anything left that isn't a real unchecked id
+    // still hits computeWaves' unknown-dep check below.
+    deps = deps.filter((d) => !checkedIds.has(d));
     idsSoFar.push(r.id);
     return { id: r.id, deps };
   });
 
   const items = {};
   for (const r of raw) {
-    items[r.id] = { line: r.lineNo, text: r.text, disposition: r.disposition, escalated: r.escalated };
+    items[r.id] = { line: r.lineNo, text: r.text, disposition: r.disposition, escalated: r.escalated, claimed: r.claimed };
   }
 
   try {

@@ -54,6 +54,7 @@
     { "name": "muster_manifest_validate", "description": "Validate a crew manifest's shape and dependency graph." },
     { "name": "muster_wave", "description": "Compute dependency-ordered execution waves." },
     { "name": "muster_sprint_waves", "description": "Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations (returns waves JSON; annotated:false means the backlog is unannotated/sequential)." },
+    { "name": "muster_sprint_protocol", "description": "Returns the Cowork-adapted sprint orchestration playbook: backlog resolution, sprint-waves, sequential wave execution, claim/receipt discipline, honest disposition defaults, and what Cowork lacks vs the Claude Code plugin." },
     { "name": "muster_next", "description": "Single-agent driver: next runnable task given completed ids." },
     { "name": "muster_score", "description": "Score an artifact against a gate." },
     { "name": "muster_prioritize", "description": "Rank backlog items by RICE/ICE/WSJF/weighted." },

@@ -8,7 +8,7 @@ import os from "node:os";
 import { cleanDir } from "./test-support/hook-helpers.js";
 
 // Import guidance.js detect directly.
-const { detect, isDirective } = await import(
+const { detect, isDirective, VOICE_NUDGE, SHORT_NUDGE, ROUTING_POLICY } = await import(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "plugin", "hooks", "guidance.js")
 );
 
@@ -155,4 +155,21 @@ test("isDirective: 'make sure you don't refactor this' is still a directive (ins
 
 test("isDirective: 'fix for real this time' is not a directive (accepted cost of the 'for' rule)", () => {
   assert.equal(isDirective("fix for real this time"), false);
+});
+
+// ── VOICE_NUDGE — anti-drift voice line carried by every nudge tier ────────
+test("VOICE_NUDGE: exported and non-empty", () => {
+  assert.equal(typeof VOICE_NUDGE, "string");
+  assert.ok(VOICE_NUDGE.trim().length > 0, "VOICE_NUDGE must be a non-empty string");
+});
+
+test("SHORT_NUDGE carries the VOICE_NUDGE line", () => {
+  assert.ok(SHORT_NUDGE.includes(VOICE_NUDGE), "short nudge tier must include VOICE_NUDGE verbatim");
+});
+
+test("ROUTING_POLICY carries the VOICE_NUDGE line (folded into the full-principles tier)", () => {
+  assert.ok(
+    ROUTING_POLICY.includes(VOICE_NUDGE),
+    "full-tier composition (PRINCIPLES+VERBS+ROUTING_POLICY) must include VOICE_NUDGE verbatim",
+  );
 });

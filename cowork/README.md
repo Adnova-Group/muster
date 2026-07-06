@@ -8,7 +8,7 @@ Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-
 
 ## What you get
 
-Twenty tools, plus an execution protocol that teaches the agent how to drive them:
+Twenty-one tools, plus an execution protocol that teaches the agent how to drive them:
 
 | Tool | Does |
 | --- | --- |
@@ -22,6 +22,7 @@ Twenty tools, plus an execution protocol that teaches the agent how to drive the
 | `muster_diagnose` / `muster_audit` | Build the diagnose / whole-codebase audit manifest |
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
 | `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
+| `muster_sprint_protocol` | Return the Cowork-adapted sprint playbook (no args) -- see below |
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_score` / `muster_prioritize` | Score against a gate / rank a backlog |
 | `muster_pick` / `muster_tally` | Tournament winner / review-gate decision |
@@ -29,6 +30,12 @@ Twenty tools, plus an execution protocol that teaches the agent how to drive the
 | `muster_advise` | Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM. |
 
 muster's principles, routing policy, and a per-mode execution protocol (the core loop plus the autopilot/audit/diagnose/run lifecycles) ride in the server's MCP `instructions`. That replaces the SessionStart and UserPromptSubmit hooks the Claude Code plugin uses.
+
+### Sprint on Cowork
+
+`muster_sprint_protocol` (no arguments) returns `cowork/sprint-protocol.md` verbatim -- a condensed, Cowork-native port of the Claude Code plugin's `/muster:sprint` lifecycle: backlog resolution against `.muster/backlog.md`, calling `muster_sprint_waves` for dependency order, the per-item autopilot lifecycle, and claim/receipt discipline for shared backlogs. Call it at the start of a sprint the same way you'd load the slash command's protocol on Claude Code.
+
+Be honest about what does not port: Cowork has no hooks (no wave-guard, no scale-gate, no action-class fence), no slash verbs, and no isolated per-item worktree runners, so sprint's parallel wave-mode dispatch has no safe Cowork equivalent -- every wave runs sequentially, one item at a time, in the main tree; that degradation path *is* the path here, not a fallback. And with no wave-guard hook bounding a direct-to-base merge, a `merge-local`/`merge-push` disposition executes with no structural safety net beyond the session's own diligence -- prefer `pr`/`keep` when authoring a backlog for a Cowork sprint. The full caveats live in the protocol file itself.
 
 ## Prerequisites
 
@@ -81,7 +88,7 @@ In Cowork, prompt:
 
 > List your `muster_*` tools, then call `muster_detect` on `&lt;path to a project&gt;`.
 
-You should see all twenty tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
+You should see all twenty-one tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
 
 ## Install (Route B): MCPB desktop extension
 

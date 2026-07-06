@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, execFile } from "node:child_process";
@@ -75,14 +75,46 @@ test("instructions cover the full autopilot/audit/diagnose lifecycle (dispatch c
   assert.match(instr, /diagnose/i, "diagnose mode described");
 });
 
-test("tools/list exposes exactly the 20 brain verbs, matching the MCPB manifest", async () => {
+test("tools/list exposes exactly the 21 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 20, "20 tools served");
+  assert.equal(served.length, 21, "21 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
+});
+
+test("tools/call: muster_sprint_protocol returns the sprint playbook text with key protocol markers", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_protocol", arguments: {} } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "muster_sprint_protocol must not error");
+  const text = res.content[0].text;
+  assert.match(text, /wave/i, "mentions wave-mode execution");
+  assert.match(text, /claim/i, "mentions claim discipline");
+  assert.match(text, /\bpr\b/i, "mentions the pr disposition");
+  const onDisk = await read("cowork/sprint-protocol.md");
+  assert.equal(text, onDisk.trim(), "served text must match the checked-in cowork/sprint-protocol.md verbatim (drift guard)");
+});
+
+test("F3: missing cowork/sprint-protocol.md at module load does not crash the server; muster_sprint_protocol surfaces isError naming the file", async () => {
+  const protocolPath = path.join(rootDir, "cowork", "sprint-protocol.md");
+  const backupPath = path.join(rootDir, "cowork", "sprint-protocol.md.f3-test-bak");
+  renameSync(protocolPath, backupPath);
+  try {
+    // Server must still start and answer other requests (ping) with the file gone.
+    const r = await rpc([
+      INIT,
+      { jsonrpc: "2.0", id: 2, method: "ping" },
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_sprint_protocol", arguments: {} } },
+    ]);
+    assert.deepEqual(r[2].result, {}, "server stays alive and answers unrelated requests");
+    const res = r[3].result;
+    assert.equal(res.isError, true, "missing sprint-protocol.md must surface as isError, not crash the server");
+    assert.match(res.content[0].text, /sprint-protocol\.md/, "error text names the missing file");
+  } finally {
+    renameSync(backupPath, protocolPath);
+  }
 });
 
 test("string verb: muster_route returns valid JSON with a domain", async () => {

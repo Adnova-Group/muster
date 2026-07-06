@@ -89,6 +89,20 @@ test("dispositions and escalated annotations carry into items", () => {
   assert.equal(r.items.b.escalated, true);
 });
 
+test("{claimed} annotation surfaces verbatim on the item", () => {
+  const backlog = "- [ ] Grab this {id: a} {claimed: agent-2@2026-07-06T12:00:00Z} {deps: none}";
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.equal(r.items.a.claimed, "agent-2@2026-07-06T12:00:00Z");
+});
+
+test("no {claimed} annotation -> claimed is null", () => {
+  const backlog = "- [ ] Unclaimed {id: a} {deps: none}";
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.equal(r.items.a.claimed, null);
+});
+
 test("missing content (not a string) -> ok:false", () => {
   const r = computeSprintWaves(undefined);
   assert.equal(r.ok, false);
@@ -165,4 +179,48 @@ test("invalid {id} token (contains a space) -> ok:false with a named error", () 
   assert.equal(r.ok, false);
   assert.deepEqual(r.waves, []);
   assert.ok(r.errors.some((e) => /invalid id/i.test(e) && /has space/.test(e)), r.errors.join(" | "));
+});
+
+test("dep on a checked item resolves as satisfied -- mixed chain a[x], b{deps:a}, c{deps:b}", () => {
+  const backlog = [
+    "- [x] Already done {id: a}",
+    "- [ ] Depends on done {id: b} {deps: a}",
+    "- [ ] Depends on b {id: c} {deps: b}",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.waves, [["b"], ["c"]]);
+  assert.equal(r.items.a, undefined);
+});
+
+test("dep on a checked item's synthetic item-<line> id resolves as satisfied", () => {
+  const backlog = [
+    "- [x] Done without explicit id",
+    "- [ ] Needs it {id: b} {deps: item-1}",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.waves, [["b"]]);
+});
+
+test("dep on a genuinely unknown id (not checked, not unchecked) still errors", () => {
+  const backlog = [
+    "- [x] Already done {id: a}",
+    "- [ ] Depends on ghost {id: b} {deps: ghost}",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some((e) => /unknown dep/i.test(e)), r.errors.join(" | "));
+});
+
+test("checked item and unchecked item sharing an id -> duplicate id error (ambiguity is fatal)", () => {
+  const backlog = [
+    "- [x] Done thing {id: a}",
+    "- [ ] Todo thing {id: a}",
+  ].join("\n");
+  const r = computeSprintWaves(backlog);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.waves, []);
+  assert.ok(r.errors.some((e) => /duplicate/i.test(e)), r.errors.join(" | "));
 });

@@ -6,18 +6,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mkdtempSync, existsSync, mkdirSync, writeFileSync,
+  mkdtempSync, existsSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
-import { cleanDir, makeMarker, spawnHook } from "./test-support/hook-helpers.js";
-
-/** Write `.muster/run-active` into an existing directory. */
-function makeRunMarker(dir, content = "run-001") {
-  mkdirSync(path.join(dir, ".muster"), { recursive: true });
-  writeFileSync(path.join(dir, ".muster", "run-active"), content);
-}
+import { cleanDir, makeMarker, makeRunActive as makeRunMarker, spawnHook } from "./test-support/hook-helpers.js";
 
 function runActiveExists(dir) {
   return existsSync(path.join(dir, ".muster", "run-active"));

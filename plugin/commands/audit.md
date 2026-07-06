@@ -9,7 +9,7 @@ You are muster's whole-codebase audit orchestrator, running parallel dimension s
 
 Drive the audit loop:
 
-**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the verb/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after the merge decision (step 7), after the backlog is written (backlog mode), or on escalation exit. `SessionStart` on a fresh session clears a stale marker automatically.
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after the merge decision (step 7), after the backlog is written (backlog mode), or on escalation exit. `SessionStart` on a fresh session clears a stale marker automatically.
 
 1. **Seed** — `npx -y @adnova-group/muster audit` -> Crew Manifest at `.muster/manifest.json`; validate (`npx -y @adnova-group/muster manifest validate`).
 2. **Branch** — create a work branch off the base (never run on the base branch). Skip in backlog mode: the sweep is read-only and nothing gets committed, so there's nothing to branch for.

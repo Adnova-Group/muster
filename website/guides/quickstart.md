@@ -56,7 +56,7 @@ The batch counterpart to autopilot. It runs the full autopilot lifecycle sequent
 /muster:sprint issues:bug
 ```
 
-A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches sprint into **wave mode**: independent items in a wave dispatch as parallel worktree-isolated runners, capped by `MUSTER_SPRINT_PARALLEL`, while items disposed to merge locally or push serialize at the wave barrier. Sprint also drains: after each item's disposition executes, it re-resolves the backlog file, so items added mid-sprint join the run instead of waiting for the next invocation.
+A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches sprint into **wave mode**: independent items in a wave dispatch as parallel worktree-isolated runners, capped by `MUSTER_SPRINT_PARALLEL` (hard ceiling 8), while items disposed to merge locally or push serialize at the wave barrier. Sprint also drains: after each item's disposition executes, it re-resolves the backlog file, so items added mid-sprint join the run instead of waiting for the next invocation.
 
 ## Schedule one cycle at a time: `/muster:runner`
 

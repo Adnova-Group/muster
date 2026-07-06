@@ -127,6 +127,132 @@ describe("runDoctor hooks-integrity check", () => {
   });
 });
 
+// ---------- pipeline/domain alignment ----------
+
+describe("runDoctor domain-alignment check", () => {
+  it("passes against the real repo (every pipeline domain is classifier-known)", async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-domali-"));
+    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const check = result.checks.find(c => c.name === "domain-alignment");
+    assert.ok(check, "domain-alignment check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+  });
+
+  it("fails when a pipeline's domain is not in the classifier's vocabulary", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-domali-bad-"));
+    await mkdir(join(tmp, "catalog"), { recursive: true });
+    await mkdir(join(tmp, "pipelines"), { recursive: true });
+    await writeFile(join(tmp, "pipelines/bogus.yaml"), [
+      "id: bogus-pipeline",
+      "domain: not-a-real-domain",
+      "phases:",
+      "  - { id: draft, role: author }",
+      "gate: { criteria: [clarity], floor: 1, pass_total: 1 }",
+      "",
+    ].join("\n"));
+
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "domain-alignment");
+    assert.ok(check, "domain-alignment check must exist");
+    assert.equal(check.ok, false, "unknown pipeline domain must fail the check");
+    assert.match(check.detail, /bogus-pipeline/, "detail must name the offending pipeline");
+    assert.match(check.detail, /not-a-real-domain/, "detail must name the unknown domain");
+  });
+
+  it("skips (ok) when the pipelines/ dir itself fails to load", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-domali-noload-"));
+    // No pipelines/ dir at all -> loadPipelines throws -> domain-alignment has nothing to check.
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "domain-alignment");
+    assert.ok(check, "domain-alignment check must exist");
+    assert.equal(check.ok, true, "missing pipelines/ dir should skip, not fail, domain-alignment");
+  });
+});
+
+// ---------- skill doc references ----------
+
+describe("runDoctor skill-doc-refs check", () => {
+  it("passes against the real repo (every SKILL.md docs/ reference resolves)", async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-"));
+    const result = await runDoctor({ root: repoRoot, home: fakeHome });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+  });
+
+  it("fails when a plugin/skills SKILL.md cites a docs/ file that does not exist", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-missing-"));
+    await mkdir(join(tmp, "plugin/skills/example"), { recursive: true });
+    await writeFile(
+      join(tmp, "plugin/skills/example/SKILL.md"),
+      "Read `docs/qa/GHOST.md` before starting.\n"
+    );
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, false, "missing referenced doc must fail the check");
+    assert.match(check.detail, /docs\/qa\/GHOST\.md/, "detail must name the missing doc path");
+  });
+
+  it("passes when the referenced docs/ file exists on disk", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-ok-"));
+    await mkdir(join(tmp, "plugin/skills/example"), { recursive: true });
+    await mkdir(join(tmp, "docs/qa"), { recursive: true });
+    await writeFile(join(tmp, "docs/qa/RUNBOOK.md"), "# runbook\n");
+    await writeFile(
+      join(tmp, "plugin/skills/example/SKILL.md"),
+      "Read `docs/qa/RUNBOOK.md` before starting.\n"
+    );
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+  });
+
+  it("ignores a docs/ path immediately preceded by 'default' (an output destination, not a required existing doc)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-default-"));
+    await mkdir(join(tmp, "plugin/skills/example"), { recursive: true });
+    await writeFile(
+      join(tmp, "plugin/skills/example/SKILL.md"),
+      "Write the roadmap doc — default `docs/roadmap.md`, or a user-named path.\n"
+    );
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, true, "a 'default docs/x' output-destination mention must not be required to exist");
+  });
+
+  it("ignores docs/ references from a vendored builtin (its docs/ refs point at the upstream repo, not this one)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-vendored-"));
+    await mkdir(join(tmp, "plugin/builtins/gsd-execute-phase"), { recursive: true });
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    await writeFile(
+      join(tmp, "plugin/builtins/gsd-execute-phase/SKILL.md"),
+      "Reference: `docs/research/some-upstream-doc.md`.\n"
+    );
+    await writeFile(
+      join(tmp, "vendor/manifest.yaml"),
+      [
+        "sources:",
+        "  - id: gsd",
+        "    kind: github",
+        "    repo: open-gsd/gsd-core",
+        "    ref: 0000000000000000000000000000000000000000",
+        "    license: MIT",
+        "    items:",
+        "      - from: gsd-core/workflows/execute-phase.md",
+        "        id: gsd-execute-phase",
+        "        roles: [implement]",
+        "",
+      ].join("\n")
+    );
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, true, "a vendored builtin's docs/ reference must not be checked against this repo");
+  });
+});
+
 // ---------- plugin staleness ----------
 
 describe("runDoctor plugin-staleness check", () => {

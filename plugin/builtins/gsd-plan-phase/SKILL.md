@@ -754,6 +754,37 @@ Display: `Schema files detected ({SCHEMA_ORM}) — [BLOCKING] push task will be 
 
 **If no schema-relevant files detected:** Skip silently to step 6.
 
+## 5.75. Codebase Map Freshness Pre-Check (drift plan:pre gate, #1592)
+
+Non-blocking, warn-only. Surfaces a stale codebase map *before* the planner spawns and
+writes tasks against outdated assumptions, instead of only being caught after the fact by
+`execute-phase`'s `codebase_drift_gate` (`execute:wave:post`). Gated on a dedicated toggle,
+independent of the schema drift gate — this checks structural drift (does the codebase
+still look like the map says), not schema drift.
+
+```bash
+PLAN_DRIFT_PRECHECK=$(gsd_run query config-get workflow.plan_drift_precheck 2>/dev/null || echo "true")
+```
+
+**If `PLAN_DRIFT_PRECHECK` is `false`:** Skip to step 6.
+
+Run the same structural-drift check `codebase_drift_gate` runs post-execution:
+
+```bash
+DRIFT=$(gsd_run query verify.codebase-drift 2>/dev/null || echo '{"skipped":true}')
+```
+
+Parse for `skipped`, `action_required`, `message`.
+
+**This gate never blocks planning and never spawns the codebase mapper at plan time** — it
+only reports what `codebase_drift_gate` would find. If `skipped` is true or
+`action_required` is false, continue silently to step 6.
+
+**If `action_required` is true:** print `message` verbatim (it ends with a
+`/gsd:map-codebase` pointer) and continue to step 6 regardless of whether the map gets
+refreshed first — planning proceeds either way. (The blocking `auto-remap` behavior stays
+where it already lives, at `execute:wave:post`; this pre-check is deliberately warn-only.)
+
 ## 6. Check Existing Plans
 
 ```bash
@@ -961,6 +992,7 @@ Output consumed by /gsd:execute-phase. Plans need:
 - Tasks in XML format with read_first and acceptance_criteria fields (MANDATORY on every task)
 - Verification criteria
 - must_haves for goal-backward verification
+- **"Must NOT Change" section (MANDATORY, #644)** — the must-NOT probe: before finalizing tasks, explicitly ask what this phase must NOT break. List every invariant, existing contract, other phase's passing test, config default, or security/behavioral guarantee this phase's tasks must leave untouched. Each item gets a `verification: test | judgment` tier (`test` — a pre-existing or new test can assert the invariant holds; `judgment` — no test exists, human review confirms at verify time) and is lifted into the plan's `must_haves.prohibitions` sibling block — NOT `must_haves.truths` (a must-NOT is a negative check; `truths` keeps positive-observable semantics only). If nothing must-NOT is identified beyond the obvious ("don't break the build"), say so explicitly — do not silently omit the section.
 - **"Artifacts this phase produces" section (MANDATORY)** — list every symbol this phase creates: decorators, classes, functions, CLI flags, struct/dataclass fields, new file paths. The plan-review-convergence source-grounding pass reads this section to exclude newly-created symbols from drift verification; omitting it causes new symbols to be flagged for acknowledgement.
 </downstream_consumer>
 
@@ -1006,6 +1038,7 @@ Every task MUST include these fields — they are NOT optional:
 - [ ] Waves assigned for parallel execution
 - [ ] must_haves derived from phase goal
 - [ ] Every PLAN.md includes an "Artifacts this phase produces" section listing symbols created by this phase (decorators, classes, functions, CLI flags, struct/dataclass fields, new file paths)
+- [ ] Every PLAN.md includes a "Must NOT Change" section — must-NOT invariants lifted into `must_haves.prohibitions` (no silent drops, #644)
 </quality_gate>
 ```
 

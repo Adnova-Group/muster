@@ -35,6 +35,7 @@ import { parseIssueRef, resolveIssue } from "./issue.js";
 import { classifySteer } from "./steer.js";
 import { lintPrompt, lintChat, lintWorkflow } from "./prompt-lint.js";
 import { scoreHumanness } from "./humanizer-score.js";
+import { checkCitations } from "./citation-guard.js";
 import { gradeCollected } from "./prompt-eval.js";
 import { proposeVariations, selectWinner } from "./prompt-optimize.js";
 import { scanRepoPrompts } from "./prompt-scan.js";
@@ -207,6 +208,15 @@ try {
     const text = await readText(rest[0]);
     const threshold = Number(flagValue(rest, "--threshold")) || undefined;
     out(scoreHumanness(text, threshold ? { threshold } : {}));
+  } else if (cmd === "citation-check") {
+    // Deterministic citation guard for research/content artifacts: every `[src: anchor]` must
+    // resolve against the trailing "Sources" list; dangling anchors fail loud (exit 2). Paragraphs
+    // with zero citations are reported for a reviewer's judgment call, not auto-failed (see
+    // plugin/skills/review-gate/SKILL.md). Reads stdin when the file arg is `-` or absent.
+    const text = await readText(rest[0]);
+    const r = checkCitations(text);
+    out(r);
+    if (!r.ok) process.exit(2);
   } else if (cmd === "prioritize") {
     const file = requireArg(rest, 0, "prioritize <file> [--model rice|ice|wsjf|weighted]: missing file", fail);
     const parsed = JSON.parse(await readFile(file, "utf8"));
@@ -278,7 +288,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

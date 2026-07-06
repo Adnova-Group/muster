@@ -1,0 +1,7 @@
+{
+  "audienceProfile": {
+    "name": "practitioner-devops",
+    "bannedJargon": ["synergy", "leverage", "paradigm shift", "circle back", "low-hanging fruit"]
+  },
+  "draft": "Let's leverage our on-call synergy to embrace this paradigm shift in alert routing."
+}

@@ -1,0 +1,14 @@
+{
+  "artifactPath": "docs/lead-magnets/onboarding-checklist.pdf",
+  "imagePrompts": [
+    "Flat-lay illustration of a checklist with a coffee cup, warm palette, no text"
+  ],
+  "metadata": {
+    "title": "The 12-Point Onboarding Checklist"
+  },
+  "visualVerify": {
+    "screenshot": "docs/lead-magnets/preview-screenshot.png"
+  },
+  "checklist": [],
+  "actionFenceStopped": false
+}

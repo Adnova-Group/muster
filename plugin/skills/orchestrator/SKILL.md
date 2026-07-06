@@ -124,6 +124,16 @@ the dispatched agent sees its fences in the same brief as the task text, never a
 the same wave in parallel only when their `owns` sets are disjoint -- this is orchestrator judgment; the
 validator does not evaluate overlap between tasks.
 
+A third dimension is action-scoped, not path-scoped: at run start, write the manifest's top-level
+`forbiddenActions` to `.muster/forbidden-actions` (one class per line) -- the `PreToolUse` hook reads this
+file to deny matching tool calls for the run's duration. The file carries only the TOP-LEVEL set (the hook
+reads the file alone, never a task's own `forbiddenActions`); per-task additions stay brief-level discipline.
+For each task, copy the effective set (top-level `forbiddenActions` UNION the task's own `forbiddenActions`,
+if any) into its brief as a `FORBIDDEN ACTIONS:` line, same as `OWNS`/`FROZEN`. Remove
+`.muster/forbidden-actions` immediately before executing the run's declared merge disposition -- fences guard
+the work phase, and the declared disposition is the human-authorized exit -- and in any case no later than
+when the run closes.
+
 ## Wave provenance (git notes)
 
 Immediately after each wave commit, attach a structured note recording the wave's intent, not just its diff:

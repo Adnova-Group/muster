@@ -75,12 +75,12 @@ test("instructions cover the full autopilot/audit/diagnose lifecycle (dispatch c
   assert.match(instr, /diagnose/i, "diagnose mode described");
 });
 
-test("tools/list exposes exactly the 19 brain verbs, matching the MCPB manifest", async () => {
+test("tools/list exposes exactly the 20 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 19, "19 tools served");
+  assert.equal(served.length, 20, "20 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -100,6 +100,43 @@ test("json verb: muster_wave computes dependency-ordered waves (diamond)", async
   assert.equal(waves.length, 2, "diamond collapses to 2 waves");
   assert.deepEqual(waves[0].map((s) => s.id), ["a"]);
   assert.deepEqual(waves[1].map((s) => s.id).sort(), ["b", "c"]);
+});
+
+test("file verb: muster_sprint_waves computes dependency-ordered waves from a backlog's {id}/{deps} annotations", async () => {
+  const backlog = [
+    "- [ ] Task A {id: a}",
+    "- [ ] Task B {id: b} {deps: a}",
+    "- [ ] Task C {id: c} {deps: a}",
+  ].join("\n");
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } }]);
+  const res = JSON.parse(r[2].result.content[0].text);
+  assert.equal(r[2].result.isError, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.annotated, true, "explicit {id}/{deps} annotations mark the backlog annotated");
+  assert.deepEqual(res.waves[0], ["a"]);
+  assert.deepEqual(res.waves[1].sort(), ["b", "c"]);
+});
+
+test("file verb: muster_sprint_waves on an unannotated backlog returns annotated:false, sequential waves", async () => {
+  const backlog = ["- [ ] Do first", "- [ ] Do second"].join("\n");
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } }]);
+  const res = JSON.parse(r[2].result.content[0].text);
+  assert.equal(r[2].result.isError, false);
+  assert.equal(res.ok, true);
+  assert.equal(res.annotated, false, "no {id}/{deps} annotations -> unannotated/sequential");
+  assert.deepEqual(res.waves, [["item-1"], ["item-2"]]);
+});
+
+test("file verb: muster_sprint_waves surfaces ok:false backlog errors (exit 2) the same way manifest_validate does", async () => {
+  const backlog = "- [ ] Task A {id: not valid!}";
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } }]);
+  // Sibling behavior (muster_manifest_validate): the CLI exits 2 on ok:false, execFile
+  // rejects, and the server surfaces that as isError:true — the JSON payload (still
+  // parseable, still carrying ok:false + errors) rides in the error text verbatim.
+  const res = JSON.parse(r[2].result.content[0].text);
+  assert.equal(r[2].result.isError, true, "CLI exit 2 on ok:false surfaces as isError:true, matching muster_manifest_validate");
+  assert.equal(res.ok, false);
+  assert.ok(res.errors.length > 0, "invalid id annotation reported in errors");
 });
 
 test("json verb: muster_next drives sequentially (completed ids -> next runnable task)", async () => {

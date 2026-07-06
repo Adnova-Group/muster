@@ -59,12 +59,15 @@ const COWORK_PROTOCOL = [
 const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("\n\n");
 
 // ── Tool catalog ──────────────────────────────────────────────────────────────
-// Two factory shapes — every TOOLS entry is built from one of these:
+// Three factory shapes — every TOOLS entry is built from one of these:
 //
 //   S(desc, prop, required?)  — "str": receives a single string arg, passed directly as a CLI arg.
 //   J2(desc, props, required) — "json2": one OR more payloads; each is written to its own temp file
-//                               and the paths are spread onto the CLI argv in order.
+//                               (JSON.stringify'd) and the paths are spread onto the CLI argv in order.
 //                               `picks` (plural, returns an ARRAY) not `pick` (singular).
+//   T(desc, prop, required?)  — "text": a single string payload written VERBATIM (no JSON.stringify)
+//                               to one temp file, whose path is passed as the CLI arg — for verbs
+//                               whose CLI takes a file path but whose content is plain text, not JSON.
 const S = (description, prop, required = true) => ({
   kind: "str", description,
   inputSchema: { type: "object", properties: { [prop]: { type: "string" } }, required: required ? [prop] : [] },
@@ -74,6 +77,11 @@ const S = (description, prop, required = true) => ({
 const J2 = (description, props, required) => ({
   kind: "json2", description,
   inputSchema: { type: "object", properties: props, required },
+});
+const T = (description, prop, required = true) => ({
+  kind: "text", description,
+  inputSchema: { type: "object", properties: { [prop]: { type: "string" } }, required: required ? [prop] : [] },
+  prop,
 });
 
 const TOOLS = {
@@ -92,6 +100,7 @@ const TOOLS = {
   // gate/math verbs — JSON in, written to a temp file
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_wave: { argv: ["wave"], ...J2("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
+  muster_sprint_waves: { argv: ["sprint-waves"], ...T("Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations (returns waves JSON; annotated:false means the backlog is unannotated/sequential).", "backlog") },
   muster_next: { argv: ["next"], ...J2("Single-agent driver: given a manifest and the ids completed so far, return the next runnable task plus the full ready frontier. Run `next`, append its id to `completed`, call again until done.", { manifest: { type: "object" }, completed: { type: "array", items: { type: "string" } } }, ["manifest"]), picks: (a) => [a.manifest], flags: (a) => a.completed?.length ? ["--done", a.completed.join(",")] : [] },
   muster_score: { argv: ["score"], ...J2("Score an artifact's dimensions against a gate.", { scores: { type: "object" }, gate: { type: "object" } }, ["scores", "gate"]), picks: (a) => [{ scores: a.scores, gate: a.gate }] },
   muster_prioritize: { argv: ["prioritize"], ...J2("Rank backlog items by RICE/ICE/WSJF/weighted.", { items: { type: "array" }, model: { type: "string", enum: ["rice", "ice", "wsjf", "weighted"] } }, ["items"]), picks: (a) => [{ items: a.items, model: a.model || "rice" }], flags: (a) => a.model ? ["--model", a.model] : [] },
@@ -122,6 +131,20 @@ async function callTool(name, args = {}) {
     return runCli(v != null && v !== "" ? [...tool.argv, String(v)] : tool.argv);
   }
   if (tool.kind === "none") return runCli(tool.argv);
+
+  // text: write the single string payload verbatim (no JSON.stringify) to one temp file,
+  // then invoke the CLI with that file's path — mirrors json2's temp-file handoff for
+  // verbs whose CLI arg is a file path but whose content is plain text (e.g. a backlog).
+  if (tool.kind === "text") {
+    const dir = await mkdtemp(path.join(tmpdir(), "muster-mcp-"));
+    try {
+      const f = path.join(dir, "input.txt");
+      await writeFile(f, args[tool.prop] ?? "");
+      return await runCli([...tool.argv, f]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
 
   // json2: serialize each payload to its own temp file; pass all paths in order onto the CLI argv.
   // Single-payload tools use picks:(a)=>[payload] — one file, same effect.

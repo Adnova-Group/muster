@@ -5,7 +5,7 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-07-06
 
 ### Added
 - **Pre-wave spec gate (`/muster:autopilot` step 4).** Before wave 1, a fresh strategist-tier agent on the `architecture-review` provider probes the validated manifest + plan as a lazy-or-malicious implementer (what's underspecified enough to skip, what satisfies the letter while missing intent) and verifies plan-cited files/symbols exist; `PASS` proceeds, a `FAIL` loops the findings back to the router once, and a second `FAIL` escalates. Skippable for trivial single-task plans.
@@ -269,6 +269,7 @@ publish to carry it.
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
+[0.4.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.4.0
 [0.3.3]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.1

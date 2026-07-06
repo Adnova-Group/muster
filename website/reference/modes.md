@@ -1,6 +1,6 @@
-# The five modes
+# The six modes
 
-Muster exposes five entry points as slash commands under the `muster:` namespace.
+Muster exposes six entry points as slash commands under the `muster:` namespace.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
@@ -9,6 +9,7 @@ Muster exposes five entry points as slash commands under the `muster:` namespace
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
 | Sprint | `/muster:sprint <backlog ref>` | Batch autopilot over every backlog item, never interviewing mid-batch, one stop at the end |
+| Runner | `/muster:runner [source]` | Unattended one-cycle work-picker: resume or claim exactly one item, run it, leave a receipt, stop |
 
 ## Run
 
@@ -66,9 +67,22 @@ Per item, the declared disposition executes directly, without the merge-decision
 
 An item can also carry `{id: token}` and `{deps: a,b}` annotations (or `{deps: none}`) instead of a plain description — an item without `{deps}` implicitly depends on every item above it in the file, so `{deps: none}` is how an item declares independence; `muster sprint-waves` computes the dependency-ordered waves. Any annotated item switches the batch to **wave mode**: waves replace the flat sequential queue, and within a wave `pr`/`keep` items dispatch as parallel item-runner subagents, each in its own git worktree, capped at `MUSTER_SPRINT_PARALLEL` concurrent runners (default 3, `0` = unbounded) — `merge-local`/`merge-push` items then run sequentially at the wave barrier in the main tree, and the next wave forks off the post-barrier base. A dependent of an unmerged predecessor forks that predecessor's branch tip and stacks its PR on top (`--base <predecessor-branch>`), merging bottom-up; an escalated predecessor escalates its dependents too, never forking a partial tip. Wave mode only triggers off a file backlog — `issues:<label>` backlogs have no annotation grammar and always run the sequential queue — and a harness that cannot dispatch parallel subagents falls back to running the same waves sequentially in the main tree.
 
+After each item's disposition executes, sprint's **drain mode** re-resolves the backlog file instead of working from a fixed snapshot: newly added unchecked items join the running batch, and a just-completed item (now checked) immediately satisfies any `{deps}` reference to it, so a dependent added mid-sprint isn't blocked on a stale reference. Escalated or already-claimed items are never re-admitted. When a backlog or `issues:<label>` may be worked by more than one runner at once, sprint loads the **coordination** skill: CLAIM an item before touching it, leave a RECEIPT (DONE/BLOCKED/FAILED) on every state change, scan BLOCKED items for an answer before claiming new work, and keep one LEDGER heartbeat per runner — safe alongside other sprints, `/muster:runner` instances, and humans on the same backlog.
+
 ```sh
 /muster:sprint
 /muster:sprint issues:bug
 ```
+
+## Runner
+
+The unattended, single-cycle counterpart to Sprint's batch drain — meant to be fired repeatedly by a Claude Code Routine or cron, not looped internally. Each invocation: resolve the source, resume an answered BLOCKED item ahead of claiming anything new, or claim exactly ONE available item; drive it through the full autopilot lifecycle with the merge disposition force-coerced to `pr` (a scheduled runner never touches the base branch unattended); leave a receipt; stop. The schedule provides the loop, not the verb.
+
+```sh
+/muster:runner
+/muster:runner issues:agent:todo
+```
+
+Runner shares the same **coordination** skill as Sprint, so it composes safely with a running sprint, other scheduled runners, and humans working the same backlog or `issues:<label>` — the claim lock (Binding A's comment-race window, Binding B's claim-then-verify) is what makes concurrent firing safe. On escalation, Runner posts a `FAILED` receipt and marks the item escalated so the next cycle's claim step skips it; a 2-failure retry cap bounds reclaim loops before an item redirects to blocked rather than being retried forever.
 
 Next: the [CLI commands](/reference/commands) that power these modes.

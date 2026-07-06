@@ -56,7 +56,18 @@ The batch counterpart to autopilot. It runs the full autopilot lifecycle sequent
 /muster:sprint issues:bug
 ```
 
-A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches sprint into **wave mode**: independent items in a wave dispatch as parallel worktree-isolated runners, capped by `MUSTER_SPRINT_PARALLEL`, while items disposed to merge locally or push serialize at the wave barrier.
+A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches sprint into **wave mode**: independent items in a wave dispatch as parallel worktree-isolated runners, capped by `MUSTER_SPRINT_PARALLEL`, while items disposed to merge locally or push serialize at the wave barrier. Sprint also drains: after each item's disposition executes, it re-resolves the backlog file, so items added mid-sprint join the run instead of waiting for the next invocation.
+
+## Schedule one cycle at a time: `/muster:runner`
+
+The unattended counterpart to Sprint, meant to be fired repeatedly by a Claude Code Routine or cron rather than run once over a whole backlog: each cycle resumes an answered blocked item or claims exactly one available item, drives it through the full autopilot lifecycle force-coerced to a `pr` disposition, leaves a receipt, and stops.
+
+```sh
+/muster:runner
+/muster:runner issues:agent:todo
+```
+
+Runner and Sprint share a claim/receipt/ledger discipline (the **coordination** skill), so a scheduled runner can safely work the same backlog or `issues:<label>` alongside an attended sprint or a human.
 
 ## Inspect the routing yourself
 

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // muster PreToolUse hook — todo-driving enforcement gate.
 //
-// Prevents the orchestrator from dispatching a subagent wave (Task tool) during
-// a live muster run without first creating a native todo list, so plan progress
-// stays visible in Claude Code's todo UI.
+// Prevents the orchestrator from dispatching a subagent wave (the Task or Agent
+// tool, depending on harness version — see DISPATCH_TOOLS below) during a live
+// muster run without first creating a native todo list, so plan progress stays
+// visible in Claude Code's todo UI.
 //
 // Decision order (bias HARD toward ALLOW on any uncertainty —
 // a false deny that blocks a legit dispatch is worse than an occasional miss):
-//   1. tool_name !== "Task"  → ALLOW (not a subagent dispatch)
+//   1. tool_name not in DISPATCH_TOOLS ("Task"/"Agent") → ALLOW (not a subagent dispatch)
 //   2. .muster/run-active absent in cwd → ALLOW (no live muster run)
 //   3. MUSTER_TODO_GATE=off  → ALLOW; =warn → ALLOW with additionalContext note
 //   4. Read transcript_path. Missing/unreadable/unparseable → ALLOW (fail-open).
@@ -68,6 +69,10 @@ function warnWith(additionalContext) {
 // Tool names that qualify as "a todo list was created".
 const QUALIFYING_TOOLS = new Set(["TodoWrite", "TaskCreate", "TaskUpdate"]);
 
+// Tool names that count as a subagent-dispatch call. Older harnesses named this
+// tool "Task"; current Claude Code names it "Agent". Gate both.
+const DISPATCH_TOOLS = new Set(["Task", "Agent"]);
+
 // Scan a parsed JSONL line for a qualifying tool_use entry.
 // Returns { found, hasReadableTimestamp, timestampMs }.
 function scanLine(obj) {
@@ -121,8 +126,8 @@ try {
     allow();
   }
 
-  // 1. Only gate the Task (subagent-dispatch) tool.
-  if (payload.tool_name !== "Task") allow();
+  // 1. Only gate subagent-dispatch tools (Task or Agent).
+  if (!DISPATCH_TOOLS.has(payload.tool_name)) allow();
 
   // 2. Resolve cwd; check for the run-active marker.
   const cwd =

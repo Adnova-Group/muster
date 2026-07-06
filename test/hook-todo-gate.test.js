@@ -78,6 +78,20 @@ function taskPayload(transcriptPath, cwd, extra = {}) {
   });
 }
 
+// Same shape as taskPayload but for an arbitrary dispatch-tool name (e.g. "Agent") —
+// current Claude Code harnesses name the subagent dispatch tool "Agent" rather
+// than "Task".
+function dispatchPayload(toolName, transcriptPath, cwd, extra = {}) {
+  return JSON.stringify({
+    tool_name: toolName,
+    tool_input: { description: "do work" },
+    transcript_path: transcriptPath,
+    cwd,
+    session_id: "sess-test",
+    ...extra,
+  });
+}
+
 // ── Spawn helper ──────────────────────────────────────────────────────────────
 
 function runGate(stdinText, env = {}) {
@@ -375,6 +389,67 @@ test("todo-gate: empty transcript + run-active → DENY", async () => {
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, "deny", "empty transcript → DENY");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// 18. Agent-named dispatch (current Claude Code harness name) + no TodoWrite → DENY
+test("todo-gate: Agent dispatch during live run with no todo in transcript → DENY", async () => {
+  const { tmpDir } = makeLiveRun();
+  try {
+    const ts = new Date(Date.now() + 5000).toISOString(); // future — definitely post-run
+    const transcriptPath = writeTranscript([toolUseLine("Agent", ts)], tmpDir);
+
+    const { stdout, code } = await runGate(dispatchPayload("Agent", transcriptPath, tmpDir));
+    assert.equal(code, 0, "hook exits 0");
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(out.permissionDecision, "deny", "Agent dispatch without a todo should DENY");
+    assert.match(
+      out.permissionDecisionReason,
+      /todo-driven|TodoWrite|todo list/i,
+      "reason mentions todo requirement",
+    );
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// 19. Agent-named dispatch + qualifying TaskCreate since run start → ALLOW
+test("todo-gate: Agent dispatch with qualifying TaskCreate → ALLOW", async () => {
+  const { tmpDir, runActiveMtime } = makeLiveRun();
+  try {
+    const afterRunTs = new Date(runActiveMtime + 5000).toISOString();
+    const transcriptPath = writeTranscript([toolUseLine("TaskCreate", afterRunTs)], tmpDir);
+
+    const { stdout, code } = await runGate(dispatchPayload("Agent", transcriptPath, tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(out.permissionDecision, undefined, "Agent dispatch with a recent TaskCreate → ALLOW");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// 20. Non-dispatch tool (Bash) → ALLOW regardless, gate only fires on Task|Agent
+test("todo-gate: non-dispatch tool (Bash) → ALLOW", async () => {
+  const { tmpDir } = makeLiveRun();
+  try {
+    const { stdout, code } = await runGate(
+      JSON.stringify({
+        tool_name: "Bash",
+        tool_input: { command: "echo hi" },
+        transcript_path: path.join(tmpDir, "transcript.jsonl"),
+        cwd: tmpDir,
+        session_id: "sess-z",
+      }),
+    );
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(out.permissionDecision, undefined, "non-dispatch tool → ALLOW");
   } finally {
     cleanDir(tmpDir);
   }

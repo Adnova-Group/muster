@@ -6,6 +6,7 @@ import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves, nextTasks } from "./wave.js";
+import { computeSprintWaves } from "./sprint-waves.js";
 import { tallyReview } from "./review.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
@@ -114,6 +115,12 @@ try {
     if (!Array.isArray(m.plan)) fail("next: manifest has no 'plan' array");
     const doneArg = flagValue(rest, "--done");
     out(nextTasks(m.plan, doneArg ? doneArg.split(",") : []));
+  } else if (cmd === "sprint-waves") {
+    const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
+    const content = await readFile(file, "utf8");
+    const r = computeSprintWaves(content);
+    out(r);
+    if (!r.ok) process.exit(2);
   } else if (cmd === "tally") {
     const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
     out(tallyReview(JSON.parse(await readFile(file, "utf8"))));
@@ -271,7 +278,7 @@ try {
     await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
     out(sig);
   } else {
-    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+    fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
   }
 } catch (e) {
   fail(formatError(e));

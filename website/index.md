@@ -30,8 +30,8 @@ features:
     title: Code over model
     details: A deterministic Node CLI owns routing, scoring, and validation. No LLM calls. Reproducible by construction. The model is reserved for judgment.
   - icon: 🚦
-    title: Four modes
-    details: Run plans and shows. Autopilot runs the full lifecycle hands-off. Diagnose fixes one bug failure-first. Audit sweeps the whole codebase.
+    title: Five modes
+    details: Run plans and shows. Autopilot runs the full lifecycle hands-off. Diagnose fixes one bug failure-first. Audit sweeps the whole codebase. Sprint runs a whole backlog in one sitting.
   - icon: 🔒
     title: No extra services
     details: No separate model API, no runtime to deploy, no keys to manage. It draws your interactive Claude Code subscription. If you can run Claude Code, you can run Muster.

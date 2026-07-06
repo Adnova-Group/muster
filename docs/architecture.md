@@ -49,6 +49,8 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 
 The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work: cheap models do the cheap parts, the expensive model is reserved for the calls that need it.
 
+Fable can be disabled platform-wide, so `modelForRole` (`src/model.js`) degrades it to opus deterministically by default -- set `MUSTER_ENABLE_FABLE=1` to opt back in once the tier is available. `MUSTER_MAX_TIER` (e.g. `sonnet`) caps the highest tier Muster will use regardless.
+
 ## Provider kinds
 
 A provider resolves to one of four kinds, which decides how the orchestrator dispatches it:

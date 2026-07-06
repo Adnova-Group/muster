@@ -8,7 +8,7 @@ Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-
 
 ## What you get
 
-Nineteen tools, plus an execution protocol that teaches the agent how to drive them:
+Twenty tools, plus an execution protocol that teaches the agent how to drive them:
 
 | Tool | Does |
 | --- | --- |
@@ -21,6 +21,7 @@ Nineteen tools, plus an execution protocol that teaches the agent how to drive t
 | `muster_steer` | Classify a mid-run steer message |
 | `muster_diagnose` / `muster_audit` | Build the diagnose / whole-codebase audit manifest |
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
+| `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_score` / `muster_prioritize` | Score against a gate / rank a backlog |
 | `muster_pick` / `muster_tally` | Tournament winner / review-gate decision |
@@ -80,7 +81,7 @@ In Cowork, prompt:
 
 > List your `muster_*` tools, then call `muster_detect` on `&lt;path to a project&gt;`.
 
-You should see all nineteen tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
+You should see all twenty tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
 
 ## Install (Route B): MCPB desktop extension
 

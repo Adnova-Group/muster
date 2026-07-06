@@ -47,6 +47,17 @@ Breadth-first review and fix. It fans out six read-only dimension reviews in par
 
 Prefix with `backlog` to sweep read-only instead of fixing: `/muster:audit backlog` writes the ranked ledger to `.muster/backlog.md`, one item per finding-cluster, ready for `/muster:sprint` to run later.
 
+## Batch a backlog: `/muster:sprint`
+
+The batch counterpart to autopilot. It runs the full autopilot lifecycle sequentially over every item in a backlog (`.muster/backlog.md` by default), ticking each one off as it completes. An escalated item never aborts the batch -- it stays unchecked and the sprint moves on. There is exactly one attended stop, at the end, for the batch report.
+
+```sh
+/muster:sprint
+/muster:sprint issues:bug
+```
+
+A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches sprint into **wave mode**: independent items in a wave dispatch as parallel worktree-isolated runners, capped by `MUSTER_SPRINT_PARALLEL`, while items disposed to merge locally or push serialize at the wave barrier.
+
 ## Inspect the routing yourself
 
 Because the CLI is deterministic and makes no model calls, you can run it in a terminal to see exactly how Muster would resolve work:

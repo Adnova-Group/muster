@@ -164,6 +164,21 @@ test("manifestWarnings: a surface-implying skill with surface left unset (undefi
   assert.ok(!w.some(x => /surface/i.test(x)), `expected no surface warning, got ${JSON.stringify(w)}`);
 });
 
+test("manifestWarnings: a task binding skills that imply two different surfaces joins both in one warning", () => {
+  const m = {
+    ...base,
+    plan: [{ id: "t1", task: "build a branded settings page", mode: "single", surface: "none",
+      skills: [{ id: "frontend-design", rationale: "r" }, { id: "muster-humanizer", rationale: "r" }] }],
+  };
+  const inventory = skillsInventory.concat(
+    { id: "frontend-design", source: "builtin" },
+    { id: "muster-humanizer", source: "builtin" }
+  );
+  const w = manifestWarnings(m, inventory);
+  assert.ok(w.some(x => /t1/.test(x) && /surface/i.test(x) && /ui\/copy/.test(x)),
+    `expected a single warning naming both implied surfaces, got ${JSON.stringify(w)}`);
+});
+
 test("manifestWarnings: a non-surface-implying skill binding on a surface:none task does not warn", () => {
   const m = {
     ...base,

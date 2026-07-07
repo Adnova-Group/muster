@@ -12,6 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from "node:f
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import {
   collectScanFiles,
   scanRepoPrompts,
@@ -150,4 +151,35 @@ test("C7: chmod 000 subdir — collectScanFiles does not throw; readable sibling
     try { chmodSync(restrictedDir, 0o755); } catch { /* ignore if dir was never created */ }
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ── D1: repo-wide prompt-lint backlog is clean (backlog item prompt-lint-backlog) ──────
+// Pins the deliverable itself: `node src/cli.js prompt scan .` must report zero failing
+// files across the real repo. Before this item's fix, plugin/commands/run.md, autopilot.md,
+// and sprint.md failed ANTH-ROLE-001 (no persona) and ANTH-FMT-001 (no output format) --
+// they are intentional 8-line legacy-alias stubs (frontmatter + one heads-up guidance line
+// + a Read-and-execute directive) with no persona/output-format prose BY DESIGN, and
+// test/mode-evals.test.js's "alias-shape equivalence" test hard-pins each stub's body to
+// EXACTLY those 2 paragraphs -- adding persona/format prose to satisfy the linter would
+// fatten the stub and break that guard. The fix instead adds an inline
+// `<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: ... -->` directive appended (via a
+// single newline, no blank line) onto the END of each stub's existing heads-up paragraph,
+// not as a new third paragraph -- so both invariants (this test's 0-failing gate AND the
+// alias-shape guard's exact-2-paragraph pin) hold simultaneously. Scans the real repo root
+// (not a synthetic fixture) since the deliverable is specifically "the live tree scans
+// clean", not "the scanner mechanism works on fixtures" (already covered by C2/C3/C5/C7
+// above).
+test("repo-wide prompt-lint backlog is clean: scanRepoPrompts(repoRoot) reports zero failing files", async () => {
+  const repoRoot = fileURLToPath(new URL("../", import.meta.url));
+  const result = await scanRepoPrompts(repoRoot);
+  const failing = result.prompts.filter((p) => !p.passing);
+  assert.deepEqual(
+    failing.map((f) => f.file),
+    [],
+    `expected 0 failing files from a repo-wide prompt scan, got: ${JSON.stringify(
+      failing.map((f) => ({ file: f.file, findings: f.findings })),
+      null,
+      2,
+    )}`,
+  );
 });

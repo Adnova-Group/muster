@@ -115,7 +115,13 @@ async function main() {
       const file = requireArg(rest, 1, "manifest validate <file>: missing file path", fail);
       const obj = JSON.parse(await readFile(file, "utf8"));
       const r = validateManifest(obj);
-      const warnings = manifestWarnings(obj);
+      // Cross-check plan[].skills bindings against the same live skills inventory
+      // `capabilities`/`match --skills` resolve (resolveCapabilities().skills), so a
+      // hallucinated or uninstalled bound id is actually caught here, not just at the
+      // manifestWarnings unit level.
+      const catalog = await loadCatalog(CATALOG_DIR);
+      const { skills } = resolveCapabilities(catalog, await readInstalled(homedir()));
+      const warnings = manifestWarnings(obj, skills);
       out(warnings.length ? { ...r, warnings } : r);
       if (!r.ok) process.exit(2);
     // ── memory + ops: local memory read/write ──

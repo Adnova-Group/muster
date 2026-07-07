@@ -88,16 +88,31 @@ test("detectScope: an existing file (no .md ext) with '- [ ]' items -> backlog",
 });
 
 test("detectScope: an existing file with no checklist items is NOT a backlog -> item", async () => {
+  // Deliberately no extension: post-WIDEN, "notes.txt" would itself satisfy rule 1's
+  // ref-shape match regardless of content (same rationale as the does-not-exist test
+  // above) -- this test targets rule 2's no-checklist-content degrade path specifically.
   const r = await withTempDir(async (dir) => {
-    await writeFile(join(dir, "notes.txt"), "just some prose, no checklist here\n");
-    return detectScope({ cwd: dir, text: "notes.txt" });
+    await writeFile(join(dir, "notes"), "just some prose, no checklist here\n");
+    return detectScope({ cwd: dir, text: "notes" });
   });
   assert.equal(r.scope, "item");
 });
 
 test("detectScope: a named file that does not exist -> item (not a crash)", async () => {
-  const r = await withTempDir(async (dir) => detectScope({ cwd: dir, text: "does-not-exist.txt" }));
+  // Deliberately no extension: post-WIDEN, an extension-shaped token (e.g.
+  // "does-not-exist.txt") now parses as a rule-1 backlog file ref regardless of
+  // existence -- the same "parseability alone is enough, existence is the caller's job"
+  // stance the .md form already had (see the whitespace-free-.md-token test above, whose
+  // fixture is also never created on disk). This test targets rule 2's missing-file
+  // degrade path specifically, so it must stay decoupled from rule 1's ref-shape match.
+  const r = await withTempDir(async (dir) => detectScope({ cwd: dir, text: "does-not-exist" }));
   assert.equal(r.scope, "item");
+});
+
+test("detectScope: an extension-shaped candidate that does not exist still parses as a backlog ref via rule 1 (WIDEN decision, existence not required)", async () => {
+  const r = await withTempDir(async (dir) => detectScope({ cwd: dir, text: "does-not-exist.txt" }));
+  assert.equal(r.scope, "backlog");
+  assert.ok(r.signals.some((s) => s.includes("does-not-exist.txt")), `signals: ${JSON.stringify(r.signals)}`);
 });
 
 // Degrade paths the module comment claims but were previously untested: naming a
@@ -141,6 +156,50 @@ test("detectScope: an unreadable (chmod 000) file candidate -> item, no throw (E
       await chmod(filePath, 0o644).catch(() => {});
     }
   });
+});
+
+// --- traversal-rejection: rule 2's readFile must never escape cwd -----------------------
+// P0: rule 2 reads whatever file `text` names. Pre-fix, a relative "../" candidate resolved
+// (via path.join) outside cwd, and an absolute candidate was passed straight through
+// (`isAbsolute(trimmed) ? trimmed : ...`) -- both let untrusted CLI/issue text drive an
+// arbitrary filesystem read. The guard (mirroring src/memory.js's slug/runId checks) must
+// reject both BEFORE any join()/readFile() happens, so a file that would otherwise have
+// been read (and, if it looked like a checklist, flipped the scope to "backlog") is instead
+// never touched at all.
+
+test("detectScope: a relative '../' candidate that resolves to a real checklist file outside cwd is never read -> item, not backlog", async () => {
+  const r = await withTempDir(async (parent) => {
+    const child = join(parent, "child");
+    await mkdir(child);
+    // If the guard didn't fire, cwd-relative join(child, "../secret.md") would resolve to
+    // parent/secret.md, which exists and has an unchecked item -- pre-fix this would have
+    // flipped the scope to "backlog".
+    await writeFile(join(parent, "secret.md"), "- [ ] leaked item\n");
+    return detectScope({ cwd: child, text: "../secret.md" });
+  });
+  assert.equal(r.scope, "item");
+});
+
+test("detectScope: a '..' segment buried mid-path is also never read -> item, not backlog", async () => {
+  const r = await withTempDir(async (parent) => {
+    const child = join(parent, "child");
+    await mkdir(child);
+    await writeFile(join(parent, "secret.md"), "- [ ] leaked item\n");
+    return detectScope({ cwd: child, text: "sub/../../secret.md" });
+  });
+  assert.equal(r.scope, "item");
+});
+
+test("detectScope: an absolute-path candidate naming a real checklist file is never read -> item, not backlog", async () => {
+  // Deliberately no extension: an extension-shaped absolute path (e.g. "*.md") would also
+  // satisfy rule 1's parseBacklogRef-based parseability signal (parseability alone doesn't
+  // require existence and is out of this guard's scope -- rule 1 does no IO either way),
+  // which would mask the rule-2 read-guard path this test targets.
+  const r = await withTempDir(async (outside) => {
+    await writeFile(join(outside, "outside-backlog"), "- [ ] leaked item\n");
+    return withTempDir(async (cwd) => detectScope({ cwd, text: join(outside, "outside-backlog") }));
+  });
+  assert.equal(r.scope, "item");
 });
 
 // --- rule 3: bare invocation with a live default .muster/backlog.md --------------------
@@ -211,6 +270,35 @@ test("detectScope: an invalid linear: ref (empty key) -> item, with the same dis
     '"linear:" reads as an outcome, not a backlog ref',
     "malformed-ref signal must not collapse to the generic outcome-sentence wording"
   );
+});
+
+// --- signal sanitization: ANSI escapes and Unicode bidi-control chars must never reach
+// the AskUserQuestion approval-UI echo -- an ANSI CSI sequence can rewrite terminal/UI
+// chrome, and a bidi-control char (Trojan-Source style) can make an excerpt visually
+// reorder without changing its underlying bytes. Both are stripped outright, not merely
+// collapsed like whitespace. ---------------------------------------------------------
+
+test("detectScope: an ANSI escape sequence in the outcome text is stripped from the signal", async () => {
+  const text = "\x1b[31mAdd dark mode\x1b[0m toggle to settings";
+  const r = await withTempDir(async (dir) => detectScope({ cwd: dir, text }));
+  assert.equal(r.scope, "item");
+  const [signal] = r.signals;
+  assert.ok(!/\x1b/.test(signal), `signal must not contain a raw ESC byte: ${JSON.stringify(signal)}`);
+  assert.ok(signal.includes("Add dark mode"), `signal must retain the surrounding text: ${signal}`);
+});
+
+test("detectScope: Unicode bidi-control characters in the outcome text are stripped from the signal", async () => {
+  // U+202E is RIGHT-TO-LEFT OVERRIDE -- a classic Trojan-Source spoofing character;
+  // U+200E/U+200F (LRM/RLM) are the other common invisible bidi marks.
+  const RLO = "‮";
+  const LRM = "‎";
+  const text = `Add dark mode ${RLO}toggle${LRM} to settings`;
+  const r = await withTempDir(async (dir) => detectScope({ cwd: dir, text }));
+  assert.equal(r.scope, "item");
+  const [signal] = r.signals;
+  const BIDI_CONTROL_RE = /[‎‏؜‪-‮⁦-⁩]/;
+  assert.ok(!BIDI_CONTROL_RE.test(signal), `signal must not contain a bidi-control char: ${JSON.stringify(signal)}`);
+  assert.ok(signal.includes("toggle"), `signal must retain the surrounding text: ${signal}`);
 });
 
 // --- signal sanitization: raw user text must never interpolate unbounded/unescaped ----

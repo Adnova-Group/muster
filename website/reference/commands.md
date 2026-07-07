@@ -13,6 +13,7 @@ npx @adnova-group/muster <command> [args]
 | `detect` | Sniff the current project: languages, shape, greenfield flag. |
 | `capabilities` | Walk the resolution ladder for every role; report the winner, full fallback chain, recommendations, and model. |
 | `match <task>` | Rank every catalog provider against a free-text task by deterministic token overlap. |
+| `match --skills <task> [--stack <csv>]` | Skills mode: rank the live skills inventory against the task text, and separately suggest stack→skill mappings (`{ranked, suggested}`). Signals for the suggestions default to tokens parsed from the task text; `--stack <csv>` (e.g. `--stack nextjs,supabase`) overrides them. Each suggestion carries a `missing` flag (present in the live inventory or not) — deterministic, no LLM calls. |
 | `route <outcome>` | Resolve which pipeline an outcome routes to. |
 | `domain <outcome>` | Classify an outcome into a domain (pm, business, content, ops, software). |
 | `pipeline <id\|domain>` | Show the resolved pipeline definition. |

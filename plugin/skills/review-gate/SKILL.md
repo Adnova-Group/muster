@@ -42,3 +42,34 @@ update isn't silently dropped.
 7. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking).
 
 Return pass (all clear) or escalate (cap hit with remaining blockers) to the orchestrator.
+
+## Surface-type definition-of-done gates
+
+These three gates are **additive** to every criterion above — they never replace, soften, or
+substitute for the existing review-gate procedure. A gate FIRES the moment ANY of its listed
+trigger classes hits. The reviewer records, per fired gate, which trigger fired and what evidence
+resolved it. A fired gate with no recorded evidence is an automatic FAIL for the wave.
+
+1. **Design/UX gate** — triggers: the plan task's `surface` field is `"ui"`; OR the task's `skills`
+   binding includes `frontend-design` (or any skill tagged design/frontend); OR the wave diff touches
+   UI file-globs (`components/**`, `app/**/page.*`, `app/**/layout.*`, `*.css`, `*.scss`). When fired:
+   the wave cannot PASS without a design/UX review pass. Reviewer selection mirrors step 1's
+   reviewer-selection fallback above: the chosen provider for role `frontend`
+   (`AvailableCapabilities.roles.frontend.chosen`); if none installed, fall back to the built-in
+   reviewer running an explicit design-review checklist — always at least one. Findings addressed —
+   visual hierarchy, spacing, contrast, empty/error states, microcopy tone for the product's audience.
+   Evidence must quote the specific element/state the reviewer looked at (e.g. the empty-state
+   component, the mobile breakpoint) and the reviewer's verbatim note on it — a list of category
+   names ("checked spacing, contrast, empty states") is not evidence.
+2. **Humanizer gate** — triggers: `surface` is `"copy"`; OR the task's `skills` binding includes
+   `muster-humanizer` (or any skill tagged humanizer/copy-review); OR the diff adds/edits
+   customer-facing copy (user-visible strings, marketing/report/email text, chat prompts that produce
+   end-user prose). When fired: the copy must pass the muster humanizer pipeline (`humanize` +
+   `humanize-score`) before PASS. Evidence must quote the specific string/copy reviewed and the
+   reviewer's verbatim note on it, the same bar as the Design/UX gate above — a list of category
+   names is not evidence.
+3. **Live-verification gate** — triggers: `surface` is `"integration"`; OR the task's `skills`
+   binding includes `sp-verify` (or any skill tagged verification/integration-testing); OR the wave
+   claims an integration works (external API, OAuth flow, DB migration, deploy). When fired: PASS
+   requires live evidence — the actual command/request and its observed result recorded in the
+   review, not inference from unit tests.

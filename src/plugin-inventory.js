@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { readJson, readdirSafe } from "./fs-util.js";
 
 // installed_plugins.json keys are "name@marketplace".
@@ -42,6 +43,141 @@ async function skillsFromPluginRoot(root) {
     if ((await readdirSafe(join(skillsDir, name))).includes("SKILL.md")) found.push(name);
   }
   return found;
+}
+
+// Extracts the `description:` field from a SKILL.md's YAML frontmatter (the
+// block between the first pair of `---` lines). resolveCapabilities
+// (src/capabilities.js) is synchronous — it's reused by several un-awaited
+// call sites in cli.js — so the skills-inventory description lookup can't
+// route through this module's async readJson/readdirSafe helpers. Kept
+// fail-soft like the rest of this file: a missing file or absent frontmatter
+// degrades to "" rather than throwing.
+//
+// Deliberately NOT a full YAML parse: a plain scalar `description:` value is
+// legitimately allowed to contain a mid-string ": " (e.g. muster's own
+// router/orchestrator SKILL.md read "... Glass-box: every choice ..."), and
+// that reads as a nested flow-mapping to a strict parser, which throws. A
+// targeted line extraction sidesteps that entirely — this only ever needs a
+// single scalar value, never the rest of the frontmatter's structure.
+function descriptionFromSkillMdSync(path) {
+  let text;
+  try { text = readFileSync(path, "utf8"); } catch { return ""; }
+  const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fm) return "";
+  const lines = fm[1].split(/\r?\n/);
+  const descLine = lines.find((l) => /^description:/.test(l));
+  if (descLine === undefined) return "";
+  let value = descLine.slice("description:".length).trim();
+  // Block scalar indicator (`|` literal or `>` folded, optional chomping
+  // modifier) with no inline value: the real content is the indented lines
+  // that follow. Degrade to just the first of those rather than reproducing
+  // YAML's block-scalar joining/indentation rules.
+  if (/^[|>][-+]?\d*$/.test(value)) {
+    const first = lines.slice(lines.indexOf(descLine) + 1).find((l) => l.trim() !== "");
+    return first ? first.trim() : "";
+  }
+  // Strip one layer of matching surrounding quotes.
+  if (value.length >= 2) {
+    const first = value[0], last = value[value.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      value = value.slice(1, -1);
+    }
+  }
+  return value;
+}
+
+// Synchronous, cached directory listing. `cache.dirs` maps an absolute
+// directory path to its Dirent[] listing (or [] when unreadable) so a cache
+// object shared across many findSkillMdSync calls — one resolveCapabilities
+// call covers every currently-installed skill name — reads each directory at
+// most once instead of re-walking the whole plugins tree from scratch per
+// skill name. `cache` is a plain object owned by the caller (ultimately
+// resolveCapabilities); there is no module-level shared state.
+function readdirSyncCached(dir, cache) {
+  if (!cache.dirs) cache.dirs = new Map();
+  if (cache.dirs.has(dir)) return cache.dirs.get(dir);
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { entries = []; }
+  cache.dirs.set(dir, entries);
+  return entries;
+}
+
+// Synchronously reads installed_plugins.json's installPath records straight
+// off disk (this whole lookup path must stay synchronous — see
+// descriptionFromSkillMdSync's note above, this module's async readJson
+// can't be used here). Cached on `cache.installPaths` so a shared cache
+// parses the index at most once. Mirrors readPluginInventory's own v2-shape
+// handling; fail-soft like the rest of this file.
+function installPathsFromIndexSync(pluginsBase, cache) {
+  if (cache.installPaths) return cache.installPaths;
+  let index = null;
+  try { index = JSON.parse(readFileSync(join(pluginsBase, "installed_plugins.json"), "utf8")); } catch { index = null; }
+  const paths = [];
+  if (index && index.plugins && typeof index.plugins === "object" && !Array.isArray(index.plugins)) {
+    for (const recs of Object.values(index.plugins)) {
+      for (const rec of Array.isArray(recs) ? recs : []) {
+        if (rec && typeof rec.installPath === "string") paths.push(rec.installPath);
+      }
+    }
+  }
+  cache.installPaths = paths;
+  return paths;
+}
+
+// Search for <base>/**/skills/<name>/SKILL.md. Resolves via
+// installed_plugins.json's authoritative installPath records first — the
+// plugins/cache/ dir holds every version ever installed, stale ones
+// included, and a name-only directory-order walk can hit a stale one before
+// the actually-installed version (live-observed: an old cached 0.2.4 instead
+// of the active 0.4.0). Only falls back to the depth-limited walk (mirrors
+// walkFallback's shape: never descends into a top-level marketplaces/ —
+// that lists what a marketplace OFFERS, not what's installed) when the
+// index lookup misses — no index, or none of its installPaths ship this
+// skill. `cache` is threaded down from the caller (see readdirSyncCached /
+// installPathsFromIndexSync above) so repeated lookups for different skill
+// names share one walk.
+function findSkillMdSync(base, name, maxDepth = 4, cache = {}) {
+  for (const installPath of installPathsFromIndexSync(base, cache)) {
+    const candidate = join(installPath, "skills", name, "SKILL.md");
+    if (existsSync(candidate)) return candidate;
+  }
+
+  function walk(dir, depth, atBase) {
+    const entries = readdirSyncCached(dir, cache);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (atBase && entry.name === "marketplaces") continue;
+      if (entry.name === "skills") {
+        const candidate = join(dir, "skills", name, "SKILL.md");
+        if (existsSync(candidate)) return candidate;
+        continue;
+      }
+      if (depth < maxDepth) {
+        const found = walk(join(dir, entry.name), depth + 1, false);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  return walk(base, 0, true);
+}
+
+// Synchronous description lookup for an already-known installed skill name
+// (the caller — resolveCapabilities — already has the authoritative name via
+// `installed.skills`; this only needs to locate its SKILL.md and parse the
+// description). Checks <home>/.claude/skills/<name>/SKILL.md first (the
+// harness.js own-skills lane), then falls back to findSkillMdSync (installed
+// _plugins.json installPath resolution, then a depth-limited walk).
+// Fail-soft: "" when nothing is found or unreadable. `cache` is optional —
+// a fresh call site gets its own one-shot cache — but resolveCapabilities
+// passes one shared object through its whole skills-inventory loop so the
+// underlying plugins-tree walk happens at most once per directory, however
+// many installed skill names it looks up.
+export function installedSkillDescription(home, name, cache = {}) {
+  const direct = join(home, ".claude/skills", name, "SKILL.md");
+  if (existsSync(direct)) return descriptionFromSkillMdSync(direct);
+  const found = findSkillMdSync(join(home, ".claude/plugins"), name, 4, cache);
+  return found ? descriptionFromSkillMdSync(found) : "";
 }
 
 // Fallback for installs that record no installPath (v1 index shape) or no

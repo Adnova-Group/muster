@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchProviders } from "../src/match.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
+import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask, lastColonSegment } from "../src/match.js";
+
+const pexecFile = promisify(execFile);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, "..");
+const CLI = join(REPO_ROOT, "src/cli.js");
+function runCli(args) { return pexecFile(process.execPath, [CLI, ...args], { cwd: REPO_ROOT }); }
 
 // A debugging task should rank a debug-role entry above an unrelated one.
 test("ranks a role-matching entry above an unrelated one", () => {
@@ -77,4 +87,179 @@ test("returns the documented shape", () => {
   const catalog = [{ id: "wsh-debugger", roles: ["debug"], kind: "agent", rank: 50 }];
   const [e] = matchProviders("debug", catalog);
   assert.deepEqual(Object.keys(e).sort(), ["id", "kind", "matched", "roles", "score", "source"].sort());
+});
+
+// ---------------------------------------------------------------------------
+// matchSkills — same weighted-bag ranking, scoped to the {id, source, description}
+// skills-inventory shape resolveCapabilities returns (no roles/keywords fields).
+// ---------------------------------------------------------------------------
+
+test("matchSkills: id-token match scores above description-only match", () => {
+  const skills = [
+    { id: "muster-humanizer", source: "builtin", description: "" },
+    { id: "profiler-x", source: "builtin", description: "tunes humanizer-adjacent tone of copy" },
+  ];
+  const r = matchSkills("humanizer pass on the copy", skills);
+  assert.equal(r[0].id, "muster-humanizer");
+  assert.ok(r[0].score > r.find(e => e.id === "profiler-x").score);
+});
+
+test("matchSkills: empty/non-string task returns []", () => {
+  const skills = [{ id: "x", source: "builtin", description: "" }];
+  assert.deepEqual(matchSkills("", skills), []);
+  assert.deepEqual(matchSkills(null, skills), []);
+});
+
+test("matchSkills: no overlap -> []", () => {
+  const skills = [{ id: "unrelated-thing", source: "builtin", description: "nothing shared" }];
+  assert.deepEqual(matchSkills("zzz qqq", skills), []);
+});
+
+// Parity with matchProviders' installed boost: an equal-scoring installed skill edges
+// out an equal-scoring builtin one (a present skill outranks a same-token builtin
+// fallback).
+test("matchSkills: installed edges out an equal-scoring builtin (+1 installed boost)", () => {
+  const skills = [
+    { id: "builtin-humanizer", source: "builtin", description: "" },
+    { id: "installed-humanizer", source: "installed", description: "" },
+  ];
+  const r = matchSkills("humanizer", skills);
+  assert.equal(r[0].id, "installed-humanizer");
+  assert.ok(r[0].score > r.find(e => e.id === "builtin-humanizer").score);
+});
+
+test("matchSkills: returns the documented shape", () => {
+  const skills = [{ id: "muster-humanizer", source: "builtin", description: "" }];
+  const [e] = matchSkills("humanizer", skills);
+  assert.deepEqual(Object.keys(e).sort(), ["id", "matched", "score", "source"].sort());
+});
+
+// ---------------------------------------------------------------------------
+// suggestSkillsForStack — deterministic stack→skill map. missing:true when the
+// suggested id isn't present in the live skills inventory (the router's gap protocol).
+// ---------------------------------------------------------------------------
+
+test("suggestSkillsForStack: nextjs framework suggests the three vercel skills (real un-namespaced ids)", () => {
+  const r = suggestSkillsForStack({ frameworks: ["next"] }, []);
+  const ids = r.map(s => s.id).sort();
+  // ids match the real, un-namespaced on-disk skill-dir names (nextjs/shadcn/ai-sdk), not
+  // a colon-namespaced `vercel:*` form — that form is never a real installed skill id.
+  assert.deepEqual(ids, ["ai-sdk", "nextjs", "shadcn"]);
+  assert.ok(r.every(s => s.missing === true), "none installed -> all missing");
+  assert.ok(r.every(s => typeof s.reason === "string" && s.reason.length > 0));
+});
+
+test("suggestSkillsForStack: nextjs framework skills resolve missing:false against an inventory containing nextjs/shadcn/ai-sdk", () => {
+  const inventory = [
+    { id: "nextjs", source: "installed" },
+    { id: "shadcn", source: "installed" },
+    { id: "ai-sdk", source: "installed" },
+  ];
+  const r = suggestSkillsForStack({ frameworks: ["next"] }, inventory);
+  assert.equal(r.length, 3);
+  assert.ok(r.every(s => s.missing === false), "all three resolve against a live-shaped skills inventory");
+});
+
+test("suggestSkillsForStack: last-colon-segment matching is namespace-insensitive in either direction", () => {
+  // inventory id is colon-namespaced, mapped suggestion id is bare -> still resolves.
+  const r1 = suggestSkillsForStack({ frameworks: ["supabase"] }, [{ id: "vendor:supabase", source: "installed" }]);
+  assert.equal(r1[0].missing, false, "bare suggestion id matches a namespaced inventory id");
+
+  // symmetric: lastColonSegment agrees regardless of which side carries the namespace,
+  // so a future namespaced STACK_SKILL_MAP entry would equally match a bare inventory id.
+  assert.equal(lastColonSegment("vercel:nextjs"), lastColonSegment("nextjs"));
+  assert.equal(lastColonSegment("nextjs"), lastColonSegment("vercel:nextjs"));
+});
+
+test("suggestSkillsForStack: supabase framework suggests the supabase skill", () => {
+  const r = suggestSkillsForStack({ frameworks: ["supabase"] }, []);
+  assert.deepEqual(r.map(s => s.id), ["supabase"]);
+  assert.equal(r[0].missing, true);
+});
+
+test("suggestSkillsForStack: an installed id is not flagged missing", () => {
+  const r = suggestSkillsForStack({ frameworks: ["supabase"] }, [{ id: "supabase", source: "installed" }]);
+  assert.equal(r[0].missing, false);
+});
+
+test("suggestSkillsForStack: user-facing UI keyword suggests frontend-design + design/UX skills", () => {
+  const r = suggestSkillsForStack({ keywords: ["ui"] }, []);
+  assert.ok(r.some(s => s.id === "frontend-design"));
+  assert.ok(r.length >= 2, "should include frontend-design plus at least one design/UX skill");
+});
+
+test("suggestSkillsForStack: customer-facing copy keyword suggests the humanizer skill", () => {
+  const r = suggestSkillsForStack({ keywords: ["copy"] }, []);
+  assert.deepEqual(r.map(s => s.id), ["muster-humanizer"]);
+});
+
+test("suggestSkillsForStack: integration/external-API keyword suggests the verification skill", () => {
+  const r = suggestSkillsForStack({ keywords: ["api"] }, []);
+  assert.deepEqual(r.map(s => s.id), ["sp-verify"]);
+});
+
+test("suggestSkillsForStack: unknown framework/keyword -> []", () => {
+  assert.deepEqual(suggestSkillsForStack({ frameworks: ["cobol"], keywords: ["nonsense"] }, []), []);
+});
+
+test("suggestSkillsForStack: no duplicate ids across overlapping triggers", () => {
+  const r = suggestSkillsForStack({ frameworks: ["next", "next"], keywords: ["ui", "page"] }, []);
+  const ids = r.map(s => s.id);
+  assert.deepEqual(ids, [...new Set(ids)]);
+});
+
+// ---------------------------------------------------------------------------
+// signalsFromTask — free-text -> ProjectProfile-style signals (default source for
+// the CLI's stack suggestions when no --stack/profile is supplied).
+// ---------------------------------------------------------------------------
+
+test("signalsFromTask: tokenizes into frameworks + keywords", () => {
+  const s = signalsFromTask("build a Next.js chat page over Supabase with a branded report");
+  assert.ok(s.frameworks.includes("next"));
+  assert.ok(s.frameworks.includes("supabase"));
+  assert.ok(s.keywords.includes("page"));
+  assert.ok(s.keywords.includes("branded"));
+});
+
+// ---------------------------------------------------------------------------
+// CLI wiring: `match --skills <task> [--stack <csv>]`
+// ---------------------------------------------------------------------------
+
+test("cli wire: match --skills returns {ranked, suggested}", async () => {
+  const { stdout } = await runCli(["match", "--skills", "humanizer pass please"]);
+  const parsed = JSON.parse(stdout);
+  assert.ok(Array.isArray(parsed.ranked), "'ranked' must be an array");
+  assert.ok(Array.isArray(parsed.suggested), "'suggested' must be an array");
+});
+
+// Note: `missing` reflects the CALLING MACHINE's real ~/.claude inventory (same as
+// every other capabilities-driven verb — see cli-wire.test.js's capabilities tests),
+// so this only pins the parts that hold on any machine: the suggestion ids themselves
+// (the real, un-namespaced on-disk skill-dir names — nextjs/shadcn/ai-sdk, not a
+// colon-namespaced vercel:* form) and that `missing` is always a boolean. The
+// deterministic missing:false / namespace-insensitive-matching behavior itself is
+// pinned above against a controlled inventory (see the suggestSkillsForStack tests).
+test("cli wire: match --skills on a Next.js/Supabase task suggests nextjs/shadcn/ai-sdk/supabase/frontend/humanizer skills with missing flags", async () => {
+  const { stdout } = await runCli(["match", "--skills", "build a Next.js chat page over Supabase with a branded report"]);
+  const { suggested } = JSON.parse(stdout);
+  const byId = Object.fromEntries(suggested.map(s => [s.id, s]));
+  for (const id of ["nextjs", "shadcn", "ai-sdk", "supabase", "frontend-design", "muster-humanizer"]) {
+    assert.ok(id in byId, `expected suggestion for ${id}`);
+    assert.equal(typeof byId[id].missing, "boolean", `${id}.missing must be boolean`);
+  }
+});
+
+test("cli wire: match --skills --stack overrides the task-text-derived signals", async () => {
+  const { stdout } = await runCli(["match", "--skills", "totally unrelated task text", "--stack", "supabase"]);
+  const { suggested } = JSON.parse(stdout);
+  assert.deepEqual(suggested.map(s => s.id), ["supabase"]);
+});
+
+test("cli wire: match --skills missing task fails", async () => {
+  try {
+    await runCli(["match", "--skills"]);
+    assert.fail("should have exited non-zero");
+  } catch (err) {
+    assert.ok(err.code !== 0);
+  }
 });

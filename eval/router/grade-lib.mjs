@@ -1,6 +1,7 @@
 // Pure grading logic for the router eval, shared by the CLI report (grade.mjs) and the
 // CI regression test (test/router-eval.test.js). No IO here — callers pass the manifests.
 import { validateManifest } from "../../src/manifest.js";
+import { lastColonSegment } from "../../src/match.js";
 
 // Every crew member's stage, lowercased. Stage is the role name verbatim — validateManifest
 // requires it, and every crew builder in this codebase sets it exactly — so it's the only
@@ -46,4 +47,37 @@ export function gradeCase({ manifest, judgeScore, expectRoles, passThreshold = 7
   const model = Math.max(0, Math.min(10, Number(judgeScore) || 0));
   const score = (code.score + model) / 2;
   return { code: code.score, model, score, passing: score >= passThreshold, note: code.reason };
+}
+
+// --- Skill-binding assertions (Luca regression, t7) -------------------------------------
+// "skills[] is non-empty" is an explicit anti-pattern: a router could bind an arbitrary or
+// wrong skill and still pass a bare non-empty check. These helpers assert against the
+// ACTUAL bound skill id — compared via last-colon-segment, namespace-insensitive, mirroring
+// src/match.js's lastColonSegment — and require both prose fields (rationale, evidence) to
+// carry real content, not just be present-but-blank.
+
+// True if `task.skills` contains a binding whose last-colon-segment id matches `wantId`
+// AND that binding carries non-empty rationale + evidence strings.
+export function bindsSkill(task, wantId) {
+  const want = lastColonSegment(wantId).toLowerCase();
+  return (task?.skills || []).some(s =>
+    s && typeof s.id === "string" && lastColonSegment(s.id).toLowerCase() === want &&
+    typeof s.rationale === "string" && s.rationale.trim().length > 0 &&
+    typeof s.evidence === "string" && s.evidence.trim().length > 0
+  );
+}
+
+// True if the manifest's `degradations` array records a skill-gap line for `techniqueId`
+// (last-colon-segment, case-insensitive substring match against the free-text line).
+export function hasSkillGapDegradation(manifest, techniqueId) {
+  const want = lastColonSegment(techniqueId).toLowerCase();
+  return (manifest?.degradations || []).some(d =>
+    typeof d === "string" && d.toLowerCase().includes("skill-gap") && d.toLowerCase().includes(want));
+}
+
+// True if the manifest's `recommendations` array proposes a fix naming `techniqueId` — not
+// just a bare mention, the gap protocol requires a concrete next step (author/install).
+export function hasSkillGapRecommendation(manifest, techniqueId) {
+  const want = lastColonSegment(techniqueId).toLowerCase();
+  return (manifest?.recommendations || []).some(r => typeof r === "string" && r.toLowerCase().includes(want));
 }

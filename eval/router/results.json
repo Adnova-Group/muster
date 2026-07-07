@@ -7,6 +7,7 @@
     { "id": "blog-post",         "judgeScore": 9, "judgeReason": "Author + humanize ending, SEO bonus, no software roles." },
     { "id": "fix-failing-test",  "judgeScore": 9, "judgeReason": "Failure-first reproduce/root-cause before fix, regression test + full-suite verify." },
     { "id": "refactor-utils",    "judgeScore": 9, "judgeReason": "Refactor provider, characterization baseline, behavior-preservation, scoped diff review." },
-    { "id": "research-vectordb", "judgeScore": 9, "judgeReason": "Research + docs-research providers, evidence via context7, cited recommendation doc." }
+    { "id": "research-vectordb", "judgeScore": 9, "judgeReason": "Research + docs-research providers, evidence via context7, cited recommendation doc." },
+    { "id": "luca-finance-poc", "judgeScore": 9, "judgeReason": "Schema/UI/copy/OAuth tasks each carry the correct skill binding and surface tag with distinct rationale+evidence; the ai-sdk stack gap is flagged in degradations with a recommendation, not silently dropped." }
   ]
 }

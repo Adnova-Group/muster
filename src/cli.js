@@ -29,7 +29,7 @@ import { runInstall, runUninstall } from "./install.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
 import { dirFromImportMeta } from "./fs-util.js";
-import { matchProviders } from "./match.js";
+import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
 import { classifySteer } from "./steer.js";
@@ -87,6 +87,24 @@ async function main() {
         installed = await readInstalled(home);
       }
       out(resolveCapabilities(catalog, installed));
+    } else if (cmd === "match" && rest.includes("--skills")) {
+      // Skills mode: rank the live skills inventory by keyword overlap against the task
+      // text (matchSkills), and separately suggest stack→skill mappings (deterministic,
+      // no LLM). Signals for the stack map come from --stack <csv> when given, else are
+      // derived from the task text itself (signalsFromTask) so a bare `match --skills
+      // "<task>"` still surfaces stack-relevant skills without an extra flag.
+      const task = flagValue(rest, "--skills");
+      if (!task) fail("match --skills <task>: missing task");
+      const catalog = await loadCatalog(CATALOG_DIR);
+      const { skills } = resolveCapabilities(catalog, await readInstalled(homedir()));
+      const ranked = matchSkills(task, skills);
+      const stackArg = flagValue(rest, "--stack");
+      const signals = stackArg
+        ? { frameworks: stackArg.split(",").map(s => s.trim().toLowerCase()).filter(Boolean),
+            languages: [], keywords: stackArg.split(",").map(s => s.trim().toLowerCase()).filter(Boolean) }
+        : signalsFromTask(task);
+      const suggested = suggestSkillsForStack(signals, skills);
+      out({ ranked, suggested });
     } else if (cmd === "match") {
       if (!rest[0]) fail("match <task>: missing task");
       const catalog = await loadCatalog(CATALOG_DIR);
@@ -299,7 +317,7 @@ async function main() {
       await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
       out(sig);
     } else {
-      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match <task>|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
     }
   } catch (e) {
     fail(formatError(e));

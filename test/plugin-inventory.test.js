@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { tmpProject } from "../test-support/helpers.js";
-import { readPluginInventory } from "../src/plugin-inventory.js";
+import { readPluginInventory, installedSkillDescription } from "../src/plugin-inventory.js";
 
 // installed_plugins.json must reference absolute installPaths inside the tmp
 // home, which aren't known until tmpProject returns — hence written after.
@@ -138,4 +138,48 @@ test("array-valued bare-map .mcp.json entries are not servers", async () => {
   await writeIndex(home, { "x@local": [{ installPath: join(home, "install/x") }] });
   const r = await readPluginInventory(home);
   assert.deepEqual(r.mcpServers, ["real"]);
+});
+
+// ---------------------------------------------------------------------------
+// installedSkillDescription: the plugins-lane skill-description lookup used
+// by capabilities.js's skills inventory (see capabilities.test.js for the
+// SKILL.md-frontmatter-parsing regression coverage).
+// ---------------------------------------------------------------------------
+
+test("installedSkillDescription resolves via installed_plugins.json's installPath, not directory-order (which would hit a stale cached version first)", async () => {
+  const home = await tmpProject({
+    // Directory order would hit 0.2.4 before 0.4.0 (lexical order), which is
+    // exactly the live bug: a name-only walk returned muster 0.2.4 (stale)
+    // instead of the actually-installed 0.4.0.
+    ".claude/plugins/cache/official/thing/0.2.4/skills/my-skill/SKILL.md":
+      "---\ndescription: stale v0.2.4 description\n---\n",
+    ".claude/plugins/cache/official/thing/0.4.0/skills/my-skill/SKILL.md":
+      "---\ndescription: current v0.4.0 description\n---\n"
+  });
+  await writeIndex(home, {
+    "thing@official": [{ installPath: join(home, ".claude/plugins/cache/official/thing/0.4.0") }]
+  });
+  assert.equal(installedSkillDescription(home, "my-skill"), "current v0.4.0 description");
+});
+
+test("installedSkillDescription: a shared cache reads each plugins directory at most once across multiple skill lookups", async () => {
+  const home = await tmpProject({
+    // No installed_plugins.json here -- forces the bounded fallback walk, the
+    // path the perf finding was about.
+    ".claude/plugins/cache/official/plugin-a/1.0.0/skills/skill-a/SKILL.md": "---\ndescription: a\n---\n",
+    ".claude/plugins/cache/official/plugin-b/1.0.0/skills/skill-b/SKILL.md": "---\ndescription: b\n---\n"
+  });
+  const cache = {};
+  assert.equal(installedSkillDescription(home, "skill-a", cache), "a");
+  const officialDir = join(home, ".claude/plugins/cache/official");
+  const listingAfterFirst = cache.dirs && cache.dirs.get(officialDir);
+  assert.ok(listingAfterFirst, "shared cache must record the directory listing it already read");
+
+  assert.equal(installedSkillDescription(home, "skill-b", cache), "b");
+  const listingAfterSecond = cache.dirs.get(officialDir);
+  assert.equal(
+    listingAfterSecond,
+    listingAfterFirst,
+    "second lookup must reuse the cached listing (same reference), not re-read the directory"
+  );
 });

@@ -143,6 +143,35 @@ if any) into its brief as a `FORBIDDEN ACTIONS:` line, same as `OWNS`/`FROZEN`. 
 the work phase, and the declared disposition is the human-authorized exit -- and in any case no later than
 when the run closes.
 
+## Required skills (brief binding)
+
+When a plan task carries a `skills: [{id, rationale}]` binding (per the manifest schema), every brief
+dispatched for that task -- builder AND reviewer -- MUST include a `REQUIRED SKILLS -- load before
+working:` block, one line per binding, carrying the skill's `id`, its resolvable `source` looked up from
+`AvailableCapabilities.skills` by that `id` (id + source is enough to locate the skill --
+installed/builtin/dynamic), and its `rationale` verbatim from the manifest, same discipline as
+`OWNS`/`FROZEN` above. The block carries one added instruction: the dispatched subagent loads/reads each
+listed skill BEFORE starting work, and its report proves it -- one line it actually read from the
+skill's own content, quoted verbatim; an id echo alone is NOT proof of load. The builder's report MUST
+also carry one `skillsUsed`/`skillsSkipped` line per binding: `skillsSkipped` requires a stated reason,
+never a bare skip. A binding the report is silent on is an automatic review-gate finding -- not an
+inference the orchestrator makes after the fact, and not left to reviewer discretion (glass-box,
+fail-loud).
+
+- **Reviewer briefs** carry the identical REQUIRED SKILLS block, plus one added duty: the reviewer
+  checks that the builder's report carries a `skillsUsed`/`skillsSkipped` line for each required
+  binding -- used with its quoted proof line, or skipped with a stated reason. A binding the report is
+  silent on is itself an automatic review finding, by rule, not a judgment call the reviewer weighs.
+- **No binding, no invention:** a task with no `skills` array gets no REQUIRED SKILLS block, and the
+  orchestrator does NOT invent one at dispatch time -- binding tasks to skills is the router's job, not
+  this one; this skill only carries forward whatever binding the manifest already holds.
+- **Surface line:** when the task carries a `surface` field, add one line to the brief naming the gate
+  that awaits: `surface: ui` -> the Design/UX gate, `surface: copy` -> the Humanizer gate, `surface:
+  integration` -> the Live-verification gate, `surface: none` -> no surface-type gate applies. This is a
+  heads-up only, e.g. `surface: ui -- the review gate's Design/UX gate will fire` -- see review-gate's
+  "Surface-type definition-of-done gates" section (`plugin/skills/review-gate/SKILL.md`) for what each
+  gate actually checks; do not duplicate its rules here.
+
 ## Wave provenance (git notes)
 
 Immediately after each wave commit, attach a structured note recording the wave's intent, not just its diff:

@@ -18,6 +18,35 @@ const MODEL_TIERS = new Set(["haiku", "sonnet", "opus", "fable"]);
 // never subtractive) -- validated identically at both levels here.
 const ACTION_CLASSES = new Set(["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
 
+// Shared surface taxonomy: the router assigns a task's `surface`, and the review
+// gate keys its definition-of-done checks off the same value (design/UX pass for
+// "ui", humanizer pipeline for "copy", live verification for "integration"). Both
+// per-task fields below are OPTIONAL -- a manifest that omits them must still
+// validate, so pre-existing manifests (authored before this schema addition)
+// keep working unchanged.
+const SURFACES = new Set(["ui", "copy", "integration", "none"]);
+
+// Validate an optional per-task `skills: [{id, rationale}]` array. Each entry
+// names a bound skill and why it was bound; malformed entries surface an error
+// naming the task (by id, falling back to its task label) and the specific defect
+// so a router/orchestrator author can find and fix the offending binding fast.
+function validateSkillsArray(v, taskLabel, errors) {
+  if (!Array.isArray(v)) {
+    errors.push(`plan task "${taskLabel}".skills: must be an array of {id, rationale}`);
+    return;
+  }
+  v.forEach((s, j) => {
+    if (!s || typeof s !== "object") {
+      errors.push(`plan task "${taskLabel}".skills[${j}]: must be an object with id and rationale`);
+      return;
+    }
+    if (typeof s.id !== "string" || s.id.trim().length === 0)
+      errors.push(`plan task "${taskLabel}".skills[${j}].id: required non-empty string`);
+    if (typeof s.rationale !== "string" || s.rationale.trim().length === 0)
+      errors.push(`plan task "${taskLabel}".skills[${j}].rationale: required non-empty string`);
+  });
+}
+
 // Validate an action-class array under `label` (e.g. "forbiddenActions" or
 // "plan[2].forbiddenActions"), pushing path-specific errors into `errors`.
 // Non-array is a single shape error; each unknown-class entry gets its own
@@ -71,6 +100,10 @@ export function validateManifest(m) {
       if (p.frozen !== undefined && !isValidLabelArray(p.frozen))
         errors.push(`plan[${i}].frozen must be an array of non-empty strings`);
       if (p.forbiddenActions !== undefined) validateActionArray(p.forbiddenActions, `plan[${i}].forbiddenActions`, errors);
+      const taskLabel = p.id || p.task || `plan[${i}]`;
+      if (p.skills !== undefined) validateSkillsArray(p.skills, taskLabel, errors);
+      if (p.surface !== undefined && !SURFACES.has(p.surface))
+        errors.push(`plan task "${taskLabel}".surface: must be one of ${[...SURFACES].join("|")}`);
     });
     m.plan.forEach((p, i) => {
       for (const d of (p.deps || [])) if (!ids.has(d)) errors.push(`plan[${i}].deps: unknown dep "${d}"`);

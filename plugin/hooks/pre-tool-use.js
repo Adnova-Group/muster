@@ -102,20 +102,25 @@ function getBashFragment(payload) {
   return bashWriteTarget(bashCommand(payload));
 }
 
-// Scale-gate messages — action-first: lead with the instruction, rationale in parens.
+// Scale-gate messages — action-first: lead with the instruction, rationale in
+// parens. Lead with the current verbs (/muster:go, /muster:plan); legacy
+// aliases (/muster:autopilot, /muster:run) are mentioned once as a still-works
+// aside — mirrors guidance.js's VERBS/SHORT_NUDGE shape.
 function denyScale(count) {
   denyWith(
-    `Route this through /muster:autopilot (or /muster:run to plan first). ` +
+    `Route this through /muster:go (or /muster:plan to plan first). ` +
     `Reason: ${count} distinct files touched inline this turn with no active wave — ` +
     `orchestration-scale work belongs in a reviewed wave via the crew, not inline. ` +
-    `Trivial 1-2 file edits fall through. Override (session-level): set MUSTER_WAVE_GUARD=warn or off.`,
+    `Trivial 1-2 file edits fall through. Aliases /muster:autopilot, /muster:run still work. ` +
+    `Override (session-level): set MUSTER_WAVE_GUARD=warn or off.`,
   );
 }
 
 function warnScaleAllow(count) {
   warnWith(
-    `Route orchestration-scale work through /muster:autopilot, not inline ` +
-    `(${count} distinct files touched inline this turn with no active wave).`,
+    `Route orchestration-scale work through /muster:go, not inline ` +
+    `(${count} distinct files touched inline this turn with no active wave). ` +
+    `Aliases /muster:autopilot, /muster:run still work.`,
   );
 }
 
@@ -126,8 +131,8 @@ function warnScaleAllow(count) {
 function warnCumulativeDrift(count) {
   warnWith(
     `Inline drift: ${count} distinct files edited inline across turns with no muster run active. ` +
-    `Route sustained work through /muster:autopilot (or /muster:run to plan first). ` +
-    `This reminder fires once per session.`,
+    `Route sustained work through /muster:go (or /muster:plan to plan first). ` +
+    `Aliases /muster:autopilot, /muster:run still work. This reminder fires once per session.`,
   );
 }
 

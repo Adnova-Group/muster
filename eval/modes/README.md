@@ -31,9 +31,9 @@ deterministic pipeline code, not model output:
 | mode step | deterministic surface |
 |---|---|
 | plan/go step 0 (issue ref?) | `parseIssueRef` (`src/issue.js`) |
-| plan-backlog step 0b (backlog ref? — batch-plan mode) | `parseBacklogRef` (`src/batch-plan.js`) |
+| plan-backlog.md B1 / go-backlog.md step 1 (backlog ref? — batch-plan mode) | `parseBacklogRef` (`src/batch-plan.js`) |
 | plan-backlog's conflict flags | `crossItemConflicts` (`src/batch-plan.js`) |
-| plan-backlog's drain ordering | `computeSprintWaves` (`src/sprint-waves.js`), the same authoritative call go-backlog makes |
+| plan-backlog's run order | `computeSprintWaves` (`src/sprint-waves.js`), the same authoritative call go-backlog makes |
 | plan/go info-gap check | `assessOutcome` (`src/interview.js`) |
 | diagnose step 1 (seed) | `classifyFailure` + `buildDiagnoseManifest` (`src/diagnose.js`) |
 | audit step 1 (seed) | `buildAuditManifest` (`src/audit.js`) |
@@ -181,7 +181,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
 - `fixtures/` — checked-in golden artifacts for the cases whose behavior is genuinely model-driven:
   - `plan/manifest-parallel.json`, `plan/manifest-single.json` — example valid Crew Manifests (parallel-with-fences, and single-task); also reused by the `go` mode's own manifest case (`go-manifest-validates-non-inline`) — `go`'s hands-off manifest-validation step is the identical `plan`-front-half behavior, so it shares the fixture rather than duplicating it.
   - `plan-backlog/batch-owns-overlap.json`, `plan-backlog/batch-owns-disjoint.json` — `crossItemConflicts` inputs (an overlapping fence pair, and a disjoint set with one unfenced item).
-  - `sprint/backlog.md` + `sprint/waves.json` — an `{id}`/`{deps}`-annotated backlog and its `computeSprintWaves` output (the `waves.json` values are pinned into `dataset.json`'s `expect.waves` too, so a `computeSprintWaves` regression fails the eval, not just the fixture record); shared by both `plan-backlog`'s drain-ordering case and `go-backlog`'s own wave case, since they exercise the exact same authoritative computation.
+  - `sprint/backlog.md` + `sprint/waves.json` — an `{id}`/`{deps}`-annotated backlog and its `computeSprintWaves` output (the `waves.json` values are pinned into `dataset.json`'s `expect.waves` too, so a `computeSprintWaves` regression fails the eval, not just the fixture record); shared by both `plan-backlog`'s run-ordering case and `go-backlog`'s own wave case, since they exercise the exact same authoritative computation.
   - `sprint/state-batch-report.md` — a run STATE excerpt demonstrating the "one attended stop" protocol invariant.
   - `runner/receipts-claim-done.md`, `runner/receipts-blocked-resume.md` — `## Coordination` receipt trails.
   - `audit/ledger.md` — a findings ledger (severity/location/problem/fix).
@@ -229,7 +229,7 @@ npm run eval:modes             # same as the first command, via package.json
 
 As of this writing: 168 total cases (160 code-graded, 100% passing + 8 model-graded) — 58
 mode-prompt cases across the 8 `MODES` (`plan`: 8, `plan-backlog`: 9 — its batch-plan form
-carries the backlog-ref grammar, drain ordering reusing `sprint-waves`, conflict flags, and
+carries the backlog-ref grammar, run order reusing `sprint-waves`, conflict flags, and
 a model-graded approval-gate rubric — `go`: 7, `go-backlog`: 6, `runner`: 6, `audit`: 6,
 `diagnose`: 7, `capture`: 9), 48 skill-protocol cases (41 original + 3 coordination
 HUMAN-HOLD extension cases + 2 muster-runner dispatch-contract cases + 2 review-gate
@@ -260,7 +260,7 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 | surface | tier | cases |
 |---|---|---|
 | plan.md | empirical | 8 — the single-outcome front half (assess x2, issue-ref x3, manifest x2, a model-graded routing-appropriateness rubric); unchanged from run.md's own front half pre-migration |
-| plan-backlog.md | empirical | 9 — the batch-plan form (backlog-ref grammar x5, drain ordering via `sprint-waves`, conflict flags x2, a model-graded approval-gate rubric); unchanged from run.md's own batch-plan form pre-migration |
+| plan-backlog.md | empirical | 9 — the batch-plan form (backlog-ref grammar x5, run order via `sprint-waves`, conflict flags x2, a model-graded approval-gate rubric); unchanged from run.md's own batch-plan form pre-migration |
 | go.md | empirical | 7 |
 | go-backlog.md | empirical | 6 |
 | runner.md | empirical | 6 |

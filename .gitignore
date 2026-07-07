@@ -4,3 +4,4 @@ node_modules/
 tmp/
 cowork-dispatch-spec.json
 wave-*/
+.worktrees/

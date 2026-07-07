@@ -65,21 +65,46 @@ function semverCompare(a, b) {
   return (aMaj - bMaj) || (aMin - bMin) || (aPat - bPat);
 }
 
-// Extract concrete (extensioned) docs/ paths that a SKILL.md asserts must already exist.
-// Only backtick-quoted, literal references count — e.g. `docs/qa/RUNBOOK.md` — never a bare
-// directory mention (no extension, e.g. `docs/plan/`) and never one immediately preceded by
-// "default " (e.g. "default `docs/roadmap.md`"), which documents a future OUTPUT destination
-// in the target project, not a doc this repo is expected to already ship.
+// Extract concrete (extensioned) docs/ paths a SKILL.md references, alongside the match index
+// (needed by isCreateOnFirstUseRef below to inspect the surrounding wording). Only backtick-quoted,
+// literal references count — e.g. `docs/qa/RUNBOOK.md` — never a bare directory mention (no
+// extension, e.g. `docs/plan/`) and never one immediately preceded by "default " (e.g. "default
+// `docs/roadmap.md`"), which documents a future OUTPUT destination in the target project, not a
+// doc this repo is expected to already ship.
 function extractDocsPaths(content) {
   const re = /`(docs\/[A-Za-z0-9/_.-]+\.[A-Za-z0-9]+)`/g;
-  const paths = [];
+  const refs = [];
   let m;
   while ((m = re.exec(content))) {
     const before = content.slice(Math.max(0, m.index - 20), m.index);
     if (/default\s+$/i.test(before)) continue;
-    paths.push(m[1]);
+    refs.push({ path: m[1], index: m.index });
   }
-  return paths;
+  return refs;
+}
+
+// A docs/ reference belongs to the create-on-first-use convention layer when the SKILL.md's OWN
+// nearby wording treats the file as optional / not-yet-created rather than as a repo doc that must
+// already exist. This is derived from the actual phrasing muster's SKILLs use around such
+// references — never a hardcoded directory allowlist — so a hard-required reference under the same
+// directory (e.g. a docs/qa/ path with no such wording) still hard-fails when missing:
+//   - "if present" / "if `docs/x` exists" (review-gate, muster-video)
+//   - "if the file is missing" (muster-image)
+//   - "or the project's equivalent" (muster-image — this repo's own copy is just one instance)
+// plus a second signal for phrasing that conditions on the reference without an exists/missing/
+// present keyword (e.g. muster-humanizer's "If the artifact resolved a named voice profile from
+// `docs/profiles/VOICE.md` ..."): the reference sits inside a clause opened by "if " with no
+// sentence-ending punctuation between the "if" and the reference.
+const CREATE_ON_FIRST_USE_RE = /\bif\s+(present|it exists|[a-z0-9`/_.-]*\s*(exists|missing))\b|\bor the project'?s equivalent\b/i;
+
+function isCreateOnFirstUseRef(content, index) {
+  const before = content.slice(Math.max(0, index - 150), index);
+  const window = before + content.slice(index, Math.min(content.length, index + 150));
+  if (CREATE_ON_FIRST_USE_RE.test(window)) return true;
+
+  const lastIf = before.toLowerCase().lastIndexOf("if ");
+  if (lastIf === -1) return false;
+  return !/[.!?]/.test(before.slice(lastIf + 3));
 }
 
 // Reads vendor/manifest.yaml and returns the Set of vendored builtin ids (the `sp-`/`wsh-`/
@@ -210,15 +235,23 @@ export async function runDoctor({ root, home, exec } = {}) {
       }
 
       const missing = [];
+      const conventionAbsent = [];
       for (const file of skillFiles) {
         const content = await readFile(file, "utf8");
-        for (const docPath of extractDocsPaths(content)) {
-          if (!(await exists(join(base, docPath)))) missing.push(`${docPath} (referenced by ${file})`);
+        for (const { path: docPath, index } of extractDocsPaths(content)) {
+          if (await exists(join(base, docPath))) continue;
+          if (isCreateOnFirstUseRef(content, index)) {
+            conventionAbsent.push(docPath);
+          } else {
+            missing.push(`${docPath} (referenced by ${file})`);
+          }
         }
       }
 
       if (missing.length > 0) {
         checks.push({ name: "skill-doc-refs", ok: false, detail: `missing doc(s) referenced by SKILL.md: ${missing.join(", ")}` });
+      } else if (conventionAbsent.length > 0) {
+        checks.push({ name: "skill-doc-refs", ok: true, detail: `${skillFiles.length} skill file(s) checked — absent (created on first use): ${conventionAbsent.join(", ")}` });
       } else {
         checks.push({ name: "skill-doc-refs", ok: true, detail: `${skillFiles.length} skill file(s) checked` });
       }

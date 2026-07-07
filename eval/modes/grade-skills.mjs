@@ -90,6 +90,43 @@ function reviewGateVerdictCheck(testCase, artifacts) {
   return checks;
 }
 
+// review-gate/SKILL.md's "Mutant-kill gate" section: a wave introducing a new test or eval
+// guard PASSes only with a demonstrated kill (the mutation, the failing output, the
+// byte-identical restore) recorded in the review evidence. No src/*.js pure function backs
+// a gate's prose (it's assembled doc text, not data) -- this grades a checked-in fixture
+// copy of the section's text structurally, same tier orchestrator-brief above. A
+// "corrupt-twin" fixture with the evidence shape thinned (see
+// fixtures/skills/review-gate/mutant-kill-rule-missing-evidence-shape.md) demonstrates the
+// check itself catches a silently eroded rule -- exactly the failure mode the rule it grades
+// exists to prevent.
+const MUTANT_KILL_HEADING_RE = /^## Mutant-kill gate$/m;
+const MUTATION_STEP_RE = /\*\*The mutation\*\*/;
+const FAILING_OUTPUT_STEP_RE = /\*\*The failing output\*\*/;
+const BYTE_IDENTICAL_RESTORE_STEP_RE = /\*\*The byte-identical restore\*\*/;
+const AUTOMATIC_FAIL_RE = /automatic FAIL/;
+
+function reviewGateMutantKillRuleCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const text = String(artifacts);
+  const checks = [];
+  const requirePattern = (name, want, re, okDetail, missDetail) => {
+    if (want === undefined) return;
+    const has = re.test(text);
+    checks.push({ name, ok: has === want, detail: has ? okDetail : missDetail });
+  };
+  requirePattern("rulePresent", expect.rulePresent, MUTANT_KILL_HEADING_RE,
+    "Mutant-kill gate heading is present", "no '## Mutant-kill gate' heading found");
+  requirePattern("mutationStep", expect.requiresMutationStep, MUTATION_STEP_RE,
+    "states the mutation evidence step", "missing the 'The mutation' evidence step");
+  requirePattern("failingOutputStep", expect.requiresFailingOutputStep, FAILING_OUTPUT_STEP_RE,
+    "states the failing-output evidence step", "missing the 'The failing output' evidence step");
+  requirePattern("byteIdenticalRestoreStep", expect.requiresByteIdenticalRestoreStep, BYTE_IDENTICAL_RESTORE_STEP_RE,
+    "states the byte-identical-restore evidence step", "missing the 'The byte-identical restore' evidence step");
+  requirePattern("automaticFailOnMissingEvidence", expect.requiresAutomaticFailOnMissingEvidence, AUTOMATIC_FAIL_RE,
+    "states the automatic-FAIL default for missing evidence", "missing the automatic-FAIL-on-no-evidence statement");
+  return checks;
+}
+
 // coordination/SKILL.md Binding A (GitHub issues): comments are `MUSTER
 // CLAIMED|DONE|BLOCKED|FAILED|YIELD <runner> <ts>`, first line fixed, free-text detail
 // may follow on later (non-MUSTER-prefixed) lines of the SAME comment -- those are
@@ -523,6 +560,7 @@ export const ARTIFACT_KIND = {
   "runner-dispatch-brief": "text",
   "runner-return-receipts": "text",
   "review-gate-verdict": "text",
+  "review-gate-mutant-kill-rule": "text",
   "coordination-claim-window": "text",
   "interview-enriched-outcome": "json",
   "interview-backlog-measurable": "text",
@@ -550,6 +588,7 @@ export const CHECKS = {
   "runner-dispatch-brief": runnerDispatchBriefCheck,
   "runner-return-receipts": runnerReturnReceiptsCheck,
   "review-gate-verdict": reviewGateVerdictCheck,
+  "review-gate-mutant-kill-rule": reviewGateMutantKillRuleCheck,
   "coordination-claim-window": coordinationClaimWindowCheck,
   "interview-enriched-outcome": interviewEnrichedOutcomeCheck,
   "interview-backlog-measurable": interviewBacklogMeasurableCheck,

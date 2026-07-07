@@ -188,7 +188,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
   - `audit/backlog.md` — an audit backlog-mode write, checked for wave-parseability.
   - `skills/` — the skill-protocol layer's fixtures, two categories:
     - **Genuinely model-produced artifacts** (mirrors the categories above): `orchestrator/brief-*.md` (rendered dispatch briefs), `review-gate/verdict-*.md` (rendered reviewer verdict + findings), `coordination/claim-*.md` (Binding A GitHub-issue-style `MUSTER ...` comment threads), `greenfield/plan-*.md` + `greenfield/scaffold-report-*.json` (a bootstrap checkbox plan and a `muster setup` result).
-    - **Deterministic function-input fixtures** (small, hand-authored to hit a specific branch of a real `src/*.js` function — same spirit as the 6-mode layer's inline `sprint-waves`/`runner-receipts` `input` snippets, just as checked-in files per the `"json"`-kind convention above): `tournament/*.json` (candidates + fusion maps for `fuse`), `domain-router/*.json` (`classifyDomain`/`routePipeline` inputs), `advisor/*.json` (request/response/budget shapes), `interview/enriched-outcome-approved.json`, `prd-pipeline/*.json` (a real-`prd.yaml`-shaped pipeline object + 3 gate-score scenarios), `roadmap-prioritization/*.json` (RICE item arrays).
+    - **Deterministic function-input fixtures** (small, hand-authored to hit a specific branch of a real `src/*.js` function — same spirit as the 6-mode layer's inline `sprint-waves`/`runner-receipts` `input` snippets, just as checked-in files per the `"json"`-kind convention above): `tournament/*.json` (candidates + fusion maps for `fuse`), `domain-router/*.json` (`classifyDomain`/`routePipeline` inputs), `advisor/*.json` (request/response/budget shapes), `interview/enriched-outcome-approved.json`, `prd-pipeline/*.json` (a real-`prd.yaml`-shaped pipeline object + 3 gate-score scenarios), `roadmap-prioritization/*.json` (RICE item arrays), `review-gate/mutant-kill-rule-*.md` (a drift-guarded byte-identical copy of the live SKILL.md's own "Mutant-kill gate" section, plus a corrupt-twin with the evidence shape thinned).
   - `pipelines/` — the content-pipeline layer's fixtures, one **passing + one violating
     ("corrupt-twin") variant per graded property**, hand-authored to hit a specific pipeline
     phase's documented rule (no live pipeline run backs these, same posture as the
@@ -227,12 +227,13 @@ node --test test/mode-evals.test.js
 npm run eval:modes             # same as the first command, via package.json
 ```
 
-As of this writing: 166 total cases (158 code-graded, 100% passing + 8 model-graded) — 58
+As of this writing: 168 total cases (160 code-graded, 100% passing + 8 model-graded) — 58
 mode-prompt cases across the 8 `MODES` (`plan`: 8, `plan-backlog`: 9 — its batch-plan form
 carries the backlog-ref grammar, drain ordering reusing `sprint-waves`, conflict flags, and
 a model-graded approval-gate rubric — `go`: 7, `go-backlog`: 6, `runner`: 6, `audit`: 6,
-`diagnose`: 7, `capture`: 9), 46 skill-protocol cases (41 original + 3 coordination
-HUMAN-HOLD extension cases + 2 muster-runner dispatch-contract cases), 21 content-pipeline cases (>= 2 per pipeline across all 9), 14
+`diagnose`: 7, `capture`: 9), 48 skill-protocol cases (41 original + 3 coordination
+HUMAN-HOLD extension cases + 2 muster-runner dispatch-contract cases + 2 review-gate
+mutant-kill-rule cases), 21 content-pipeline cases (>= 2 per pipeline across all 9), 14
 native-builtin cases (2 per builtin across all 7), and 27 knowledge-pipeline cases (11
 gate-achievability + 16 structural, across the 11 pipelines — see the coverage table below
 for the exact per-pipeline breakdown, including the 2 pipelines with no structural case,
@@ -290,7 +291,7 @@ heads-up line names the correct replacement command).
 | surface | tier | cases |
 |---|---|---|
 | orchestrator | empirical | 3 |
-| review-gate | empirical | 3 |
+| review-gate | empirical | 5 (3 verdict-shape + 2 mutant-kill-rule presence/shape) |
 | coordination | empirical | 10 (5 original + 3 HUMAN-HOLD extension + 2 muster-runner dispatch-contract: the brief a driver sends the lifecycle agent and the return receipts it demands back, graded against `fixtures/agents/*` — the protocol `plugin/agents/muster-runner.md`'s "Dispatch contract" section documents) |
 | interview | empirical | 3 |
 | tournament | empirical | 6 |

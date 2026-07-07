@@ -1,3 +1,5 @@
+import { matchFrontmatter } from "./frontmatter.js";
+
 // Repo prompt-discovery: locate candidate prompts in a codebase so the audit's
 // prompt-quality dimension can lint them. Pure + deterministic — given a list of
 // { path, content } it returns the prompts it found, no IO of its own.
@@ -28,13 +30,14 @@ const ASSIGN = /\b(system|systemprompt|prompt|instructions|persona)\s*[:=]\s*`([
 // that match prompt-ish patterns but carry no real instruction content worth linting.
 const MIN_PROMPT_LEN = 40;
 
-// A leading YAML frontmatter block (--- ... ---). Captured so we can both detect the
-// agent/skill/command convention and strip it before linting (so the lint reads the
-// instruction body, not the `name:`/`description:` header).
-const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
-
+// A leading YAML frontmatter block (--- ... ---), via the shared matcher —
+// used to both detect the agent/skill/command convention and strip it before
+// linting (so the lint reads the instruction body, not the `name:`/
+// `description:` header).
 export function stripFrontmatter(content) {
-  return String(content).replace(FRONTMATTER, "");
+  const str = String(content);
+  const m = matchFrontmatter(str);
+  return m ? m.rest : str;
 }
 
 export function isPromptFile(path) {
@@ -49,7 +52,7 @@ function isPromptDoc(path, content) {
   if (!MD_EXT.test(path)) return false;
   if (NON_PROMPT_DIR.test(path)) return false;
   if (PROMPT_DOC_DIR.test(path)) return true;
-  const fm = (content.match(FRONTMATTER) || [""])[0];
+  const fm = matchFrontmatter(content)?.raw || "";
   return /\bname:\s*\S/.test(fm) && /\bdescription:\s*\S/.test(fm);
 }
 

@@ -312,7 +312,7 @@ an add/remove pair per transition. Verified live:
 keeps them from writing the main STATE) leave claiming, annotation-writes, and the Coordination section
 to the driver as well, mirroring sprint.md's own Coordination section ("leave coordination state to the
 driver alone") — the driver writes each item's `{claimed:}` annotation/receipt itself, before
-dispatching that item's worktree runner (the lock always precedes any work, applied immediately rather
+dispatching that item's worktree runner (subagent type `muster-runner` when the session registry carries it, else the generic-subagent fallback with the same brief) (the lock always precedes any work, applied immediately rather
 than deferred to wave-end), then transcribes each runner's returned outcome, via the existing per-item
 return contract, into its DONE/BLOCKED/HUMAN-HOLD/FAILED receipt and the ledger once the wave completes.
 

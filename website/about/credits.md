@@ -22,6 +22,7 @@ Alongside the vendored material, Muster ships its own specialists in `plugin/age
 - **muster-investigator**: read-only locator
 - **muster-strategist**: heavyweight reasoning
 - **muster-improver**: read-only post-run retrospective that proposes self-improvement edits
+- **muster-runner**: single-item lifecycle driver — TDD build, explicit-PASS review gate, receipts-backed PR (the dispatchable subagent form of the runner mode)
 
 ## Additional inspiration (clean-room, mechanism-level)
 

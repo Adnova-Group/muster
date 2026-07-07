@@ -160,7 +160,7 @@ test("B: fresh wave-active + run-active ABSENT → scale-gate path (1st edit all
 });
 
 // B-3: wave-active PRESENT + run-active ABSENT → 3rd distinct file denied via
-//      scale-gate (not wave-guard: reason mentions autopilot/verb, not wave id).
+//      scale-gate (not wave-guard: reason leads with /muster:go, not wave id).
 test("B: fresh wave-active + run-active ABSENT → 3rd edit denied via scale-gate reasoning", async () => {
   const tmpDir = makeFreshWaveDir("wave-b3");
   // Deliberately do NOT create run-active.
@@ -172,8 +172,8 @@ test("B: fresh wave-active + run-active ABSENT → 3rd edit denied via scale-gat
     const { stdout } = await runRaw(editPayload(path.join(tmpDir, "src", "c.js"), tmpDir, { session_id: sid }));
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, "deny", "3rd distinct file must be denied");
-    // Must be scale-gate deny (mentions autopilot/verb), NOT wave-guard deny (would mention wave-b3).
-    assert.match(out.permissionDecisionReason, /autopilot|verb/i, "deny via scale-gate message");
+    // Must be scale-gate deny (leads with /muster:go), NOT wave-guard deny (would mention wave-b3).
+    assert.match(out.permissionDecisionReason, /\/muster:go\b/, "deny via scale-gate message leads with /muster:go");
     assert.doesNotMatch(out.permissionDecisionReason, /wave-b3/,
       "scale-gate deny must not mention the wave-id (not a wave-guard deny)");
   } finally {
@@ -198,8 +198,8 @@ test("B: no wave-active + no run-active → scale-gate exactly as today", async 
     assert.equal(decision(c.stdout), "deny", "3rd file denied by scale-gate (same as today)");
     assert.match(
       JSON.parse(c.stdout).hookSpecificOutput.permissionDecisionReason,
-      /autopilot|verb/i,
-      "scale-gate deny reason routes to a verb",
+      /\/muster:go\b/,
+      "scale-gate deny reason leads with /muster:go",
     );
   } finally {
     clearBudget(sid);
@@ -222,7 +222,7 @@ test("B: stale wave-active (>60min) + no run-active → scale-gate (unchanged)",
     assert.equal(out.permissionDecision, "deny", "3rd file denied under stale marker");
     assert.doesNotMatch(out.permissionDecisionReason, /wave-b5-stale/,
       "deny reason is scale-gate, not wave-guard");
-    assert.match(out.permissionDecisionReason, /autopilot|verb/i);
+    assert.match(out.permissionDecisionReason, /\/muster:go\b/, "deny reason leads with /muster:go");
   } finally {
     clearBudget(sid);
     cleanDir(tmpDir);

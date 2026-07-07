@@ -64,14 +64,19 @@ rather than re-deriving it from the retry-cap math.
 
 Compare the commit each in-scope file/path was at when this session first read it (recorded once, at
 that first read) against its CURRENT commit. The fingerprint set is every file a runner's behavior is
-actually bound by, not just this skill and its two callers — drift in the hook layer or in autopilot's
-own forbidden-action list is exactly the kind of silent scope-widening this preflight exists to catch:
-`plugin/skills/coordination/SKILL.md`, `plugin/commands/sprint.md`, `plugin/commands/runner.md`,
-`plugin/commands/autopilot.md`, `plugin/hooks/`. One `git log` call over the whole set (its output is a
+actually bound by, not just this skill and its two callers — drift in the hook layer or in go.md's own
+forbidden-action list is exactly the kind of silent scope-widening this preflight exists to catch. The
+set names the LIVE behavior files, not their legacy-alias redirects: `plugin/commands/sprint.md` and
+`plugin/commands/autopilot.md` are now 8-line stubs that only read-and-execute
+`plugin/commands/go-backlog.md` and `plugin/commands/go.md` respectively (per the mode/plan/go verb
+rename) and will never again carry the behavior they're named for, so this preflight watches their live
+targets instead:
+`plugin/skills/coordination/SKILL.md`, `plugin/commands/go-backlog.md`, `plugin/commands/go.md`,
+`plugin/commands/runner.md`, `plugin/hooks/`. One `git log` call over the whole set (its output is a
 single fingerprint hash — the latest commit touching ANY of these paths):
 ```
-git log -1 --format=%h -- plugin/skills/coordination/SKILL.md plugin/commands/sprint.md \
-  plugin/commands/runner.md plugin/commands/autopilot.md plugin/hooks/
+git log -1 --format=%h -- plugin/skills/coordination/SKILL.md plugin/commands/go-backlog.md \
+  plugin/commands/go.md plugin/commands/runner.md plugin/hooks/
 ```
 No change in hash: proceed. A changed hash: `git diff <recorded-hash> <current-hash> -- <same paths>`,
 then classify it deterministically — a named file+pattern list, not judgment:
@@ -543,7 +548,7 @@ team-admin-configured and no MCP tool creates one, so part of this needs a human
   widen if idle cycles dominate).
 
 **Standing-context preflight / retry cap / escalation** — inherits the core mechanism unchanged; the
-fingerprint set (SKILL.md/sprint.md/runner.md/autopilot.md/hooks/) already covers this binding's own
+fingerprint set (SKILL.md/go-backlog.md/go.md/runner.md/hooks/) already covers this binding's own
 text, so there is no new file to watch. Only delta: the escalation item-level marker (mirrors Binding
 A/B) is a move to the blocked status with a question comment, discriminated from BLOCKED/HUMAN-HOLD
 purely by the receipt body — identical reuse reasoning as above.

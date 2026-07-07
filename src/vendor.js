@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
 import { modelForRole, maxTier, floorAtSonnet } from "./model.js";
+import { matchFrontmatter } from "./frontmatter.js";
 
 // Allowlist of tools vendored agent frontmatter may reference.
 // Derived from the tools lines in plugin/agents/wsh-*.md (all use the same set)
@@ -56,9 +57,9 @@ export function validateVendorManifest(doc) {
 }
 
 export function splitFrontmatter(text) {
-  const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const m = matchFrontmatter(text);
   if (!m) return { data: {}, body: text };
-  return { data: parse(m[1]) || {}, body: m[2] };
+  return { data: parse(m.body) || {}, body: m.rest };
 }
 
 export function toBuiltin(sourceText, item, source) {

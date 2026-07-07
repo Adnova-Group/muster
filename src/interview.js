@@ -3,7 +3,7 @@
 // makes the final call; this is the pre-filter that keeps a one-line "fix it" from being routed as
 // if it were a spec. Conservative by design — over-flagging wastes a question, under-flagging routes
 // garbage, so signals only fire on clear evidence of underspecification.
-const STOPWORDS = new Set(["a", "an", "the", "to", "of", "and", "or", "for", "it", "this", "that"]);
+import { STOPWORDS } from "./keyword.js";
 
 // A quantified pattern clears the no-success-criteria signal on its own: multi-digit "by N",
 // a bare "N%", a comparative quantifier ("at least/at most/above/below/under/over/within")

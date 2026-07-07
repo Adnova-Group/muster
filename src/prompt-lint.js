@@ -7,6 +7,7 @@
 // finding traces back to the guidance. Prefer code over the model: every check here is
 // a regex/heuristic, never an API call.
 import { scoreArtifact } from "./score.js";
+import { escapeRe } from "./keyword.js";
 
 const BP = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices";
 const GUARD = "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails";
@@ -171,7 +172,7 @@ export const RULES = [
     pass: (t, c) => {
       const s = surface(t, c).toLowerCase();
       // Word-boundary match, not substring: a required field "id" must not be satisfied by "provided".
-      const refs = (w) => new RegExp(`\\b${String(w).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(s);
+      const refs = (w) => new RegExp(`\\b${escapeRe(String(w).toLowerCase())}\\b`).test(s);
       return c.tools.every((tool) => {
         const name = (tool && tool.name) || "";
         if (!name || !refs(name)) return false; // a tool the prompt never names cannot be driven correctly

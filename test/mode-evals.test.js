@@ -180,26 +180,67 @@ test("runner-dispatch-brief: a brief carrying the full dispatch contract passes;
   const expectAll = { requireItemId: true, requireOutcome: true, requireIsolation: true, requireBase: true, requireDisposition: "pr", requireSourceRef: true };
   assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, full).pass, true);
 
-  // The runner's own rule is BLOCKED on any missing brief input — so each omission must grade as a failing brief.
-  const noIsolation = full.replace(/^ISOLATION: .*\n/m, "");
-  assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, noIsolation).pass, false);
+  // The runner's own rule is BLOCKED on any missing brief input — so each omission must
+  // grade as a failing brief. One field mutated per case, so per-check attribution is real.
   const wrongDisposition = full.replace("DISPOSITION: pr", "DISPOSITION: merge");
-  assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, wrongDisposition).pass, false);
+  const wd = gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, wrongDisposition);
+  assert.equal(wd.pass, false);
+  assert.equal(wd.checks.find((c) => c.name === "disposition").ok, false);
+  assert.equal(wd.checks.find((c) => c.name === "itemId").ok, true);
+
   const noReturnContract = full.replace(/RETURN CONTRACT.*$/m, "Just report back whatever.");
-  assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, noReturnContract).pass, false);
+  const nrc = gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, noReturnContract);
+  assert.equal(nrc.pass, false);
+  assert.equal(nrc.checks.find((c) => c.name === "returnContractPresent").ok, false);
+
+  // The base ref is anchored to the ISOLATION line: an ISOLATION line without a base ref
+  // fails baseRef even when unrelated prose ("database migration") carries the word "base".
+  const baseMissing = full
+    .replace("ISOLATION: worktree .worktrees/retry on branch item/retry, base main @ abc1234", "ISOLATION: worktree .worktrees/retry on branch item/retry")
+    .replace("OUTCOME: retries with backoff.", "OUTCOME: retries for the database migration with backoff.");
+  const bm = gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, baseMissing);
+  assert.equal(bm.pass, false);
+  assert.equal(bm.checks.find((c) => c.name === "baseRef").ok, false);
+  assert.equal(bm.checks.find((c) => c.name === "isolation").ok, true);
+
+  // Removing the whole ISOLATION line fails isolation AND baseRef — coupled by design.
+  const noIsolation = full.replace(/^ISOLATION: .*\n/m, "");
+  const ni = gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, noIsolation);
+  assert.equal(ni.pass, false);
+  assert.equal(ni.checks.find((c) => c.name === "isolation").ok, false);
 });
 
-test("runner-return-receipts: receipts with verdict/PR/files/pasted-tests pass; a missing verdict or paraphrased tests fail", () => {
+test("runner-return-receipts: receipts with verdict/PR/files/pasted-green-tests pass; a missing verdict, paraphrased or red tests each fail", () => {
   const full = "ITEM: retry — disposition pr\nPR: https://github.com/x/y/pull/7\n\nFiles touched:\n- src/retry.js — backoff\n\nTests (pasted, not paraphrased):\n- baseline: `npm test` -> 10 passed, 0 failed\n- final: `npm test` -> 12 passed, 0 failed\n\nReview gate: VERDICT: PASS after 1 fix loop";
   const expectAll = { requireVerdictPass: true, requirePrUrl: true, requireFilesTouched: true, requireTestEvidence: true, requireFixLoopCount: true };
   assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, full).pass, true);
 
-  const noVerdict = full.replace("VERDICT: PASS after 1 fix loop", "looked fine to me");
-  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, noVerdict).pass, false);
+  // A clean pass phrased "with no fix loops" is valid receipts grammar too.
+  const cleanNoLoops = full.replace("after 1 fix loop", "with no fix loops");
+  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, cleanNoLoops).pass, true);
+
+  // One field mutated per case, so per-check attribution is real.
+  const noVerdict = full.replace("VERDICT: PASS after", "all good after");
+  const nv = gradeCase({ check: "runner-return-receipts", expect: expectAll }, noVerdict);
+  assert.equal(nv.pass, false);
+  assert.equal(nv.checks.find((c) => c.name === "verdictPass").ok, false);
+  assert.equal(nv.checks.find((c) => c.name === "fixLoopCount").ok, true);
+
   const paraphrasedTests = full.replace(/- baseline: .*\n- final: .*\n/, "- all tests green\n");
-  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, paraphrasedTests).pass, false);
+  const pt = gradeCase({ check: "runner-return-receipts", expect: expectAll }, paraphrasedTests);
+  assert.equal(pt.pass, false);
+  assert.equal(pt.checks.find((c) => c.name === "testEvidence").ok, false);
+
+  // Receipts prove GREEN: a red final run fails testEvidence even though digits + "passed" appear.
+  const redFinal = full.replace("- final: `npm test` -> 12 passed, 0 failed", "- final: `npm test` -> 0 passed, 12 failed");
+  const rf = gradeCase({ check: "runner-return-receipts", expect: expectAll }, redFinal);
+  assert.equal(rf.pass, false);
+  assert.equal(rf.checks.find((c) => c.name === "testEvidence").ok, false);
+
   const noPr = full.replace(/^PR: .*\n/m, "");
-  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, noPr).pass, false);
+  const np = gradeCase({ check: "runner-return-receipts", expect: expectAll }, noPr);
+  assert.equal(np.pass, false);
+  assert.equal(np.checks.find((c) => c.name === "prUrl").ok, false);
 });
 
 test("review-gate-verdict: a verdict-first PASS/ESCALATE matching the tallied findings passes; a verdict contradicting the findings fails", () => {

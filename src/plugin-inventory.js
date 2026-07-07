@@ -2,6 +2,7 @@ import { join, dirname } from "node:path";
 import { readFileSync, readdirSync, existsSync, lstatSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { readJson, readdirSafe } from "./fs-util.js";
+import { matchFrontmatter } from "./frontmatter.js";
 
 // True when `p` is itself a symlink. lstat (unlike stat/existsSync/readFile,
 // which all follow the final path component) reports on the link itself, so
@@ -109,9 +110,9 @@ function descriptionFromSkillMdSync(path) {
   if (isSymlinkSync(path) || isSymlinkSync(dirname(path)) || isSymlinkSync(dirname(dirname(path)))) return "";
   let text;
   try { text = readFileSync(path, "utf8"); } catch { return ""; }
-  const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const fm = matchFrontmatter(text);
   if (!fm) return "";
-  const lines = fm[1].split(/\r?\n/);
+  const lines = fm.body.split(/\r?\n/);
   const descLine = lines.find((l) => /^description:/.test(l));
   if (descLine === undefined) return "";
   let value = descLine.slice("description:".length).trim();

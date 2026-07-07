@@ -63,6 +63,32 @@ test("toBuiltin derives name/description when source has no frontmatter", () => 
   assert.match(r.content, /body/);
 });
 
+// Regression: vendor.js's frontmatter regex was NOT CRLF-tolerant (unlike
+// plugin-inventory.js and prompt-discover.js's own hand-rolled matchers),
+// so a CRLF-terminated vendored source silently lost its frontmatter —
+// splitFrontmatter fell through to the no-match path ({data: {}, body: text})
+// and the parsed name/description were dropped without warning.
+test("splitFrontmatter parses CRLF-terminated frontmatter (previously silently dropped)", () => {
+  const crlfSrc = "---\r\nname: crlf-skill\r\ndescription: CRLF sourced\r\n---\r\n\r\n# CRLF Skill\r\nBody with CRLF endings.\r\n";
+  const { data, body } = splitFrontmatter(crlfSrc);
+  assert.equal(data.name, "crlf-skill");
+  assert.equal(data.description, "CRLF sourced");
+  assert.match(body, /CRLF Skill/);
+});
+
+test("toBuiltin merges provenance frontmatter from a CRLF-terminated source (previously silently lost)", () => {
+  const crlfSrc = "---\r\nname: crlf-skill\r\ndescription: CRLF sourced\r\n---\r\n\r\n# CRLF Skill\r\nBody with CRLF endings.\r\n";
+  const crlfItem = { from: "crlf/SKILL.md", id: "sp-crlf", roles: ["brainstorm"] };
+  const r = toBuiltin(crlfSrc, crlfItem, source);
+  // Introspect the generated frontmatter itself (not a raw content match — before the
+  // fix, the source's own leaked, unparsed frontmatter text also contains the literal
+  // substring "name: crlf-skill" in the body, which would make a plain /name: crlf-skill/
+  // match pass for the wrong reason).
+  const { data } = splitFrontmatter(r.content);
+  assert.equal(data.name, "crlf-skill", "source frontmatter name must be parsed, not fallen back to item.id");
+  assert.match(r.content, /CRLF Skill/);
+});
+
 test("toBuiltin is idempotent", () => {
   assert.equal(toBuiltin(src, item, source).content, toBuiltin(src, item, source).content);
 });

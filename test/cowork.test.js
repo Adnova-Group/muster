@@ -102,6 +102,68 @@ test("instructions cover the full autopilot/audit/diagnose lifecycle (dispatch c
   assert.match(instr, /diagnose/i, "diagnose mode described");
 });
 
+// ── verb rename: cowork/mcp-server.mjs, cowork/sprint-protocol.md, cowork/README.md ─────────
+// These three surfaces enumerated the pre-rename verbs (autopilot/audit/diagnose/run) with no
+// plan/go/plan-backlog/go-backlog anywhere, and sprint-protocol.md cited plugin/commands/sprint.md
+// (now an 8-line alias stub) as the source of "the full autopilot lifecycle" instead of citing
+// go-backlog.md where that content now lives. Pin the new lexicon so a future rename regression
+// is caught by name, not just by a stale-prose report.
+test("verb-rename: COWORK_PROTOCOL's By-intent list uses plan/go/plan-backlog/go-backlog, not the pre-rename autopilot/run bullets", async () => {
+  const r = await rpc([INIT]);
+  const instr = r[1].result.instructions;
+  assert.match(instr, /- plan \(approve-first\)/, "plan bullet present");
+  assert.match(instr, /- go \(hands-off\)/, "go bullet present");
+  assert.match(instr, /plan-backlog/, "plan-backlog named in the by-intent list");
+  assert.match(instr, /go-backlog/, "go-backlog named in the by-intent list");
+  assert.doesNotMatch(instr, /- autopilot \(/, "no pre-rename autopilot bullet");
+  assert.doesNotMatch(instr, /- run: do the core loop/, "no pre-rename run bullet");
+  assert.match(
+    instr,
+    /Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog\./,
+    "aliases noted once, matching guidance.js's convention",
+  );
+});
+
+test("verb-rename: sprint-protocol.md cites go-backlog.md (not the sprint.md alias stub) and uses go, not autopilot", async () => {
+  const text = await read("cowork/sprint-protocol.md");
+  const norm = text.replace(/\s+/g, " ");
+  assert.match(norm, /port of `\/muster:go-backlog`'s lifecycle \(`plugin\/commands\/go-backlog\.md`\)/, "citation repoints to go-backlog.md");
+  assert.doesNotMatch(text, /plugin\/commands\/sprint\.md/, "no more citation of the alias-stub sprint.md");
+  assert.match(norm, /driving the full go lifecycle sequentially/, "'go lifecycle', not 'autopilot lifecycle'");
+  assert.match(norm, /single go pass/, "'go pass', not 'autopilot pass'");
+  assert.match(norm, /There is no `\/muster:go-backlog` grammar/, "no-slash-verbs bullet cites the current verb name");
+  assert.match(norm, /the "Degradation" path in `go-backlog\.md`/, "Degradation citation repoints to go-backlog.md");
+  assert.match(norm, /`\/muster:sprint` still works as the legacy alias of `\/muster:go-backlog`/, "alias noted once");
+  assert.match(text, /## Sprint/, "the '## Sprint' STATE-heading cross-repo convention stays untouched");
+});
+
+test("verb-rename: README.md enumeration uses plan/go/plan-backlog/go-backlog and cites /muster:go-backlog", async () => {
+  const text = await read("cowork/README.md");
+  const norm = text.replace(/\s+/g, " ");
+  assert.match(norm, /full orchestration lifecycle \(plan, go, plan-backlog, diagnose, audit, go-backlog\)/, "lifecycle enumeration uses the new lexicon");
+  assert.doesNotMatch(norm, /\(autopilot, audit, diagnose\)/, "no pre-rename enumeration");
+  assert.match(norm, /the core loop plus the plan\/go\/plan-backlog\/diagnose\/audit\/go-backlog lifecycles/, "protocol-summary sentence uses the new lexicon");
+  assert.doesNotMatch(norm, /autopilot\/audit\/diagnose\/run lifecycles/, "no pre-rename lifecycle slash-list");
+  assert.match(norm, /Claude Code plugin's `\/muster:go-backlog` lifecycle/, "sprint citation repoints to /muster:go-backlog");
+  assert.doesNotMatch(norm, /Claude Code plugin's `\/muster:sprint` lifecycle/, "no more citation of the pre-rename /muster:sprint verb");
+  assert.match(norm, /the per-item go lifecycle/, "per-item lifecycle uses go, not autopilot");
+  assert.doesNotMatch(norm, /the per-item autopilot lifecycle/, "no pre-rename per-item autopilot phrase");
+  assert.match(norm, /legacy aliases/i, "aliases noted once");
+});
+
+test("verb-rename: zero pre-rename verb-name citations remain in the 3 cowork surfaces outside their one alias note", async () => {
+  const files = ["cowork/mcp-server.mjs", "cowork/sprint-protocol.md", "cowork/README.md"];
+  for (const f of files) {
+    const raw = await read(f);
+    // Drop the line(s) whose whole purpose is noting the still-working legacy aliases -- those
+    // are allowed, and required, to name the pre-rename verbs exactly once.
+    const withoutAliasNotes = raw.split("\n").filter((line) => !/legacy alias/i.test(line)).join("\n");
+    assert.doesNotMatch(withoutAliasNotes, /\bautopilot\b/i, `${f}: no bare "autopilot" outside the alias note`);
+    assert.doesNotMatch(withoutAliasNotes, /plugin\/commands\/sprint\.md/, `${f}: no citation of the alias-stub sprint.md`);
+    assert.doesNotMatch(withoutAliasNotes, /`\/muster:sprint`/, `${f}: no bare /muster:sprint citation outside the alias note`);
+  }
+});
+
 test("tools/list exposes exactly the 21 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);

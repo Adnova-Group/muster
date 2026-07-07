@@ -457,3 +457,18 @@ test("src/ header comments: no src/*.js file cites a dead mode-file step (run.md
     assert.deepEqual(hits, [], `src/${f} cites a dead mode-file step as a live reference: ${JSON.stringify(hits)}`);
   }
 });
+
+// ── residue 4: "run.md step 0b" is gone even from historical-attribution comments ──
+// eval/modes/grade-modes.mjs and test/batch-plan.test.js legitimately attribute the
+// batch-ref grammar to the pre-migration run.md (historical, not a live reference —
+// so residue 3's HISTORICAL_MARKER_RE allowance already lets them cite "run.md" by
+// name). But "step 0b" is a specific step number that no longer exists in any doc
+// after the rename, historical or not: a reader can't verify or find "step 0b"
+// anywhere. These two comments must name the file as historical without citing that
+// dead step number.
+test('eval/modes/grade-modes.mjs and test/batch-plan.test.js no longer cite "run.md step 0b" (dead step number) even as historical attribution', async () => {
+  for (const f of ["eval/modes/grade-modes.mjs", "test/batch-plan.test.js"]) {
+    const text = await read(f);
+    assert.ok(!/run\.md step 0b/i.test(text), `${f} still cites the dead "run.md step 0b" step number`);
+  }
+});

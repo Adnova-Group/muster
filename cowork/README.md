@@ -4,7 +4,7 @@ Muster's deterministic brain, packaged as a local MCP server for [Claude Cowork]
 
 Cowork extends only through MCP and MCPB desktop extensions. It has no plugin, skill, slash-command, or hook primitives, so the Claude Code plugin does not load there. What ports is muster's deterministic core: project detection, capability and domain routing, gate scoring, RICE prioritization, and wave planning. That core is plain Node with no model calls. Cowork runs the local MCP server natively on the device (the agent loop), and its verbs are exposed here as MCP tools.
 
-Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-call model override, so the full orchestration lifecycle (autopilot, audit, diagnose) runs here, not just the router.
+Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-call model override, so the full orchestration lifecycle (plan, go, plan-backlog, diagnose, audit, go-backlog) runs here, not just the router. (Claude Code's legacy aliases -- `/muster:run`, `/muster:autopilot`, `/muster:sprint` -- still work there too, mapping to `/muster:plan`, `/muster:go`, `/muster:go-backlog` respectively; noted once since this file uses the new names throughout.)
 
 ## What you get
 
@@ -29,11 +29,11 @@ Twenty-one tools, plus an execution protocol that teaches the agent how to drive
 | `muster_fuse` | Fusion decision engine -- apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to single best (mode fallback). Deterministic, no LLM. |
 | `muster_advise` | Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM. |
 
-muster's principles, routing policy, and a per-mode execution protocol (the core loop plus the autopilot/audit/diagnose/run lifecycles) ride in the server's MCP `instructions`. That replaces the SessionStart and UserPromptSubmit hooks the Claude Code plugin uses.
+muster's principles, routing policy, and a per-mode execution protocol (the core loop plus the plan/go/plan-backlog/diagnose/audit/go-backlog lifecycles) ride in the server's MCP `instructions`. That replaces the SessionStart and UserPromptSubmit hooks the Claude Code plugin uses.
 
 ### Sprint on Cowork
 
-`muster_sprint_protocol` (no arguments) returns `cowork/sprint-protocol.md` verbatim -- a condensed, Cowork-native port of the Claude Code plugin's `/muster:sprint` lifecycle: backlog resolution against `.muster/backlog.md`, calling `muster_sprint_waves` for dependency order, the per-item autopilot lifecycle, and claim/receipt discipline for shared backlogs. Call it at the start of a sprint the same way you'd load the slash command's protocol on Claude Code.
+`muster_sprint_protocol` (no arguments) returns `cowork/sprint-protocol.md` verbatim -- a condensed, Cowork-native port of the Claude Code plugin's `/muster:go-backlog` lifecycle: backlog resolution against `.muster/backlog.md`, calling `muster_sprint_waves` for dependency order, the per-item go lifecycle, and claim/receipt discipline for shared backlogs. Call it at the start of a sprint the same way you'd load the slash command's protocol on Claude Code.
 
 Be honest about what does not port: Cowork has no hooks (no wave-guard, no scale-gate, no action-class fence), no slash verbs, and no isolated per-item worktree runners, so sprint's parallel wave-mode dispatch has no safe Cowork equivalent -- every wave runs sequentially, one item at a time, in the main tree; that degradation path *is* the path here, not a fallback. And with no wave-guard hook bounding a direct-to-base merge, a `merge-local`/`merge-push` disposition executes with no structural safety net beyond the session's own diligence -- prefer `pr`/`keep` when authoring a backlog for a Cowork sprint. The full caveats live in the protocol file itself.
 

@@ -1,10 +1,13 @@
 # Sprint protocol (Cowork-adapted)
 
-You are the Cowork session driving this sprint: a condensed, Cowork-native port of `/muster:sprint`'s
-lifecycle (`plugin/commands/sprint.md`) — driving the full autopilot lifecycle sequentially over every
+You are the Cowork session driving this sprint: a condensed, Cowork-native port of `/muster:go-backlog`'s
+lifecycle (`plugin/commands/go-backlog.md`) — driving the full go lifecycle sequentially over every
 item in a backlog, one attended stop at the end, served through `muster_sprint_protocol` so a Cowork
 session can follow it without the plugin loaded. Same intent, same guarantees where they port; the gaps
 below are named, not papered over.
+
+`/muster:sprint` still works as the legacy alias of `/muster:go-backlog`, kept for backward
+compatibility, not deprecated on any schedule.
 
 ## What this session lacks — be honest about it
 
@@ -13,8 +16,8 @@ below are named, not papered over.
   file edits while a wave is active, forcing dispatch through the crew instead), no scale-gate, no
   action-class fence (the hook-level block on send/sign/submit/publish/purchase/delete-remote calls).
   None of that exists here — this session's own discipline is the only enforcement there is.
-- **No slash verbs.** There is no `/muster:sprint` grammar; drive this protocol in prose against the
-  `muster_*` MCP tools plus your own subagent dispatch.
+- **No slash verbs.** There is no `/muster:go-backlog` grammar; drive this protocol in prose against
+  the `muster_*` MCP tools plus your own subagent dispatch.
 - **No auto-loaded coordination skill.** `plugin/skills/coordination/SKILL.md` isn't loaded for you.
   If more than one runner might touch this backlog at once, apply its mechanism yourself (Claim/receipt
   discipline, below) — orchestrator-level only, exactly as the skill specifies.
@@ -23,8 +26,8 @@ below are named, not papered over.
   Cowork equivalent — there is no hook to exempt from in the first place. Cowork's own subagent fan-out
   is confirmed to work in general (see this server's core-loop instructions above), and it still applies
   **inside** a single item's own crew/waves. But running MULTIPLE backlog items concurrently, each in its
-  own worktree, has no validated isolation model here. So: **the "Degradation" path in `sprint.md` —
-  every wave executed sequentially, one item at a time, in the main tree — IS the path for Cowork
+  own worktree, has no validated isolation model here. So: **the "Degradation" path in `go-backlog.md`
+  — every wave executed sequentially, one item at a time, in the main tree — IS the path for Cowork
   sprints, not a fallback.** Say this plainly in STATE so nobody assumes parallel item throughput.
 - **No `gh`-issue binding here.** This document covers the FILE backlog source only
   (`.muster/backlog.md`). `issues:<label>` is out of scope.
@@ -57,7 +60,7 @@ annotation appended instead, so a later sprint can resurface it.
 
 ## 3. Per item, sequentially
 
-For each item, in wave/queue order, run the same per-item lifecycle as a single autopilot pass — ported
+For each item, in wave/queue order, run the same per-item lifecycle as a single go pass — ported
 through this server's core loop (`muster_detect`/`muster_capabilities`, `muster_route`/`muster_domain`,
 `muster_assess` as the spec gate, a crew manifest validated with `muster_manifest_validate`, waves from
 `muster_wave` dispatched — that item's OWN crew may still fan out in parallel, this constraint is only

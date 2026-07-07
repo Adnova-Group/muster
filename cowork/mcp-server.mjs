@@ -66,10 +66,13 @@ const COWORK_PROTOCOL = [
   "6. Glass-box: state each routing decision and its evidence as you go.",
   "",
   "By intent (the muster verbs, driven in prose since there are no slash commands):",
-  "- autopilot (hands-off): create a branch FIRST, run the core loop wave by wave, commit after each green wave, then STOP and present the merge decision. Only halt early for an escalation.",
+  "- plan (approve-first): do the core loop through the manifest and plan, then STOP for approval. Plan and show; do not execute.",
+  "- go (hands-off): create a branch FIRST, run the core loop wave by wave, commit after each green wave, then STOP and present the merge decision. Only halt early for an escalation.",
+  "- plan-backlog / go-backlog (batch): the backlog form of plan/go -- route every item up front (plan-backlog) or clear the whole backlog sequentially, one attended stop at the end (go-backlog); call muster_sprint_protocol for this session's Cowork-adapted batch playbook.",
   "- audit: fan out the six read-only review dimensions (architecture, tech-debt, coverage, simplification, readability, security) as parallel subagents, consolidate one ranked ledger, then fix with TDD and verify through the gate before presenting the merge.",
   "- diagnose (one bug): reproduce first, find the root cause, fix, add a regression test, verify. No symptom-patching.",
-  "- run: do the core loop through the manifest and plan, then STOP for approval. Plan and show; do not execute.",
+  "",
+  "Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog.",
 ].join("\n");
 
 const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("\n\n");

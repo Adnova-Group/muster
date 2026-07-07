@@ -21,7 +21,7 @@ test("README has no dead links to removed internal docs", async () => {
 });
 
 test("public prose carries no em-dashes (humanizer rule)", async () => {
-  for (const f of ["README.md", "docs/architecture.md", "CONTRIBUTING.md"]) {
+  for (const f of ["README.md", "docs/architecture.md", "CONTRIBUTING.md", "docs/anti-patterns.md"]) {
     const text = await read(f);
     assert.ok(!text.includes("—"), `${f} must be em-dash free`);
   }
@@ -74,7 +74,7 @@ test("CHANGELOG.md contains a heading for the current version", async () => {
 //              negative-parallelism: none of these belong in technical documentation;
 //              false-positive risk is negligible, and all currently score clean.
 
-const GATED_PROSE = ["README.md", "docs/architecture.md", "CONTRIBUTING.md"];
+const GATED_PROSE = ["README.md", "docs/architecture.md", "CONTRIBUTING.md", "docs/anti-patterns.md"];
 
 test("public prose carries no sycophancy AI-tells (humanizer gate)", async () => {
   // "great question", "as an AI", "happy to help" never belong in technical docs.

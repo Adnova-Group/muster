@@ -171,6 +171,12 @@ fail-loud).
   heads-up only, e.g. `surface: ui -- the review gate's Design/UX gate will fire` -- see review-gate's
   "Surface-type definition-of-done gates" section (`plugin/skills/review-gate/SKILL.md`) for what each
   gate actually checks; do not duplicate its rules here.
+- **Known anti-patterns:** before dispatching, skim `docs/anti-patterns.md` if present -- muster's
+  versioned ledger of caught failure classes (symptom, root cause, the guard now in place; not shipped
+  in a packed install) -- for any entry that matches the task's shape, and name it in the brief as a
+  one-line heads-up, e.g. `anti-pattern: #2 colon-description frontmatter parse -- see
+  docs/anti-patterns.md`. No match, or no file, needs no line; this is a targeted reminder, not a
+  mandatory recap of the whole ledger.
 
 ## Wave provenance (git notes)
 

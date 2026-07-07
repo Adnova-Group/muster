@@ -102,6 +102,15 @@ test("parseBacklogRef: an ordinary single-dot extension token is unaffected by t
   assert.deepEqual(parseBacklogRef("notes.txt"), { kind: "file", path: "notes.txt" });
 });
 
+test("parseBacklogRef: a bare version/decimal token is classified as a file ref -- accepted, documented tradeoff of the widened FILE_TOKEN_RE", () => {
+  // "3.14" and "v2.0" are whitespace-free tokens ending in a dot-suffix, so they satisfy
+  // the same shape test a real filename would. Excluding numeric-looking extensions would
+  // need content/allowlist logic this pure, IO-free function deliberately doesn't have --
+  // pinned here as a known characteristic, not a regression.
+  assert.deepEqual(parseBacklogRef("3.14"), { kind: "file", path: "3.14" });
+  assert.deepEqual(parseBacklogRef("v2.0"), { kind: "file", path: "v2.0" });
+});
+
 // --- crossItemConflicts: the batch plan's advisory cross-item file-conflict flags --------
 // Deliberately ADVISORY, never a gate: manifest fences stay opaque path labels
 // (validateManifest does no glob matching; disjointness stays orchestrator judgment).

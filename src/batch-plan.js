@@ -41,7 +41,13 @@
 // Any whitespace-free token ending in a dot-extension (WIDEN decision: not restricted to
 // `.md`) -- the trailing extension is what distinguishes a file-shaped token from a bare
 // word/issue-number ("#42" must stay an outcome, per the fixture below) or an outcome
-// sentence, without needing IO to decide.
+// sentence, without needing IO to decide. Accepted tradeoff: a bare version/decimal token
+// (e.g. "3.14", "v2.0") also satisfies this shape test and is classified kind:"file" --
+// distinguishing "looks like a number" from "looks like a filename" would need content or
+// an allowlist this pure, IO-free function deliberately doesn't have (existence is the
+// caller's job, same stance the .md-only grammar always had); a plain-outcome argument
+// that happens to be a bare version number is a narrow, documented edge case, not a new
+// hole opened by the widen.
 const FILE_TOKEN_RE = /\.[^\s./\\]+$/;
 
 export function parseBacklogRef(text) {

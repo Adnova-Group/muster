@@ -154,14 +154,20 @@ const STACK_SKILL_MAP = {
       { id: "supabase", reason: "Supabase detected as the backend/data layer" },
     ],
   },
+  // Each keyword group's optional `surface` tag names the review-gate surface type
+  // (see manifest.js's SURFACES) this group's skills imply -- the single source
+  // impliedSurfaceForSkillId below derives its reverse lookup from, so the two can't
+  // drift apart into two hand-maintained id lists.
   keywords: [
     {
       // user-facing UI work
+      surface: "ui",
       triggers: ["ui", "frontend", "page", "screen", "component", "design", "layout"],
       skills: DESIGN_UX_SKILLS,
     },
     {
       // customer-facing copy
+      surface: "copy",
       triggers: ["copy", "content", "marketing", "brand", "branded", "messaging", "tone", "report"],
       skills: [
         { id: "muster-humanizer", reason: "customer-facing copy should pass an AI-tell humanizer review" },
@@ -169,6 +175,7 @@ const STACK_SKILL_MAP = {
     },
     {
       // integration/external-API claims
+      surface: "integration",
       triggers: ["api", "integration", "webhook", "external", "thirdparty", "third-party"],
       skills: [
         { id: "sp-verify", reason: "integration/external-API claims should go through verification-before-completion" },
@@ -186,6 +193,27 @@ export function lastColonSegment(id) {
   const s = String(id ?? "");
   const i = s.lastIndexOf(":");
   return i === -1 ? s : s.slice(i + 1);
+}
+
+// Reverse lookup: does binding this skill id imply one of the review gate's surface
+// types (ui/copy/integration)? Genuinely derived from STACK_SKILL_MAP.keywords' own
+// `surface` tag + skills list (not a second, hand-typed copy of the id lists) -- a
+// future change to STACK_SKILL_MAP (a renamed id, an added copy/integration skill)
+// cannot silently drift out of sync with this reverse lookup, because there is only
+// one list. Namespace-insensitive (lastColonSegment), matching every other id
+// comparison in this file. Returns null when the id implies no particular surface.
+const SURFACE_IMPLYING_SKILL_IDS = STACK_SKILL_MAP.keywords.reduce((bySurface, group) => {
+  if (!group.surface) return bySurface;
+  bySurface[group.surface] = (bySurface[group.surface] || []).concat(group.skills.map((s) => s.id));
+  return bySurface;
+}, {});
+
+export function impliedSurfaceForSkillId(id) {
+  const seg = lastColonSegment(id).toLowerCase();
+  for (const [surface, ids] of Object.entries(SURFACE_IMPLYING_SKILL_IDS)) {
+    if (ids.some((i) => lastColonSegment(i).toLowerCase() === seg)) return surface;
+  }
+  return null;
 }
 
 export function suggestSkillsForStack(signals = {}, inventory = []) {

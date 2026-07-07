@@ -43,24 +43,31 @@ async function serversFromPluginRoot(root) {
   return names;
 }
 
-// Agent names (sans .md) from <root>/agents/.
+// Agent names (sans .md) from <root>/agents/. A symlinked agents/ dir is
+// rejected before it's ever listed — a malicious plugin's own repo content
+// can ship "agents" as a symlink just as easily as "skills" below.
 async function agentsFromPluginRoot(root) {
-  return (await readdirSafe(join(root, "agents")))
+  const agentsDir = join(root, "agents");
+  if (await isSymlink(agentsDir)) return [];
+  return (await readdirSafe(agentsDir))
     .filter((f) => f.endsWith(".md"))
     .map((f) => f.slice(0, -3));
 }
 
 // Skill names from <root>/skills/<name>/SKILL.md — the directory name is the
-// skill name. Both the per-skill directory AND the terminal SKILL.md are
-// rejected when symlinked, not just listed-and-trusted: a malicious plugin
-// could point either outside its own root (e.g. a whole skill dir symlinked
-// at some unrelated directory that happens to contain a real, non-symlink
-// SKILL.md — lstat only inspects the FINAL path component, so checking just
-// the file misses a symlinked directory one level up) to get a bogus skill
-// registered from content it never actually shipped.
+// skill name. Every level of this fixed 3-deep shape (the skills/ dir
+// itself, the per-skill name dir, and the terminal SKILL.md) is rejected
+// when symlinked, not just the last one listed-and-trusted: a malicious
+// plugin could point any of the three outside its own root (e.g. a whole
+// skill dir, or even skills/ itself, symlinked at some unrelated directory
+// that happens to contain a real, non-symlink SKILL.md — lstat only
+// inspects the FINAL path component, so checking just the file, or just one
+// directory up, misses a symlink planted at the other levels) to get a
+// bogus skill registered from content it never actually shipped.
 async function skillsFromPluginRoot(root) {
   const found = [];
   const skillsDir = join(root, "skills");
+  if (await isSymlink(skillsDir)) return found;
   for (const name of await readdirSafe(skillsDir)) {
     const skillDir = join(skillsDir, name);
     if (await isSymlink(skillDir)) continue;
@@ -87,16 +94,19 @@ async function skillsFromPluginRoot(root) {
 // targeted line extraction sidesteps that entirely — this only ever needs a
 // single scalar value, never the rest of the frontmatter's structure.
 function descriptionFromSkillMdSync(path) {
-  // A symlinked SKILL.md -- or a symlinked skill DIRECTORY one level up --
-  // could point outside the plugin root entirely (e.g. at an arbitrary
-  // system file); readFileSync/existsSync both follow either. lstat only
-  // inspects the FINAL path component, so checking `path` alone misses a
-  // symlinked containing directory (`skills/<name>` itself symlinked at a
-  // target that happens to hold a real, non-symlink SKILL.md) -- both must
-  // be checked. Both of this function's callers (the direct
-  // home/.claude/skills check and findSkillMdSync's returned candidate)
-  // funnel through here, so guarding this one choke point covers both.
-  if (isSymlinkSync(path) || isSymlinkSync(dirname(path))) return "";
+  // `path` always has the fixed 3-deep shape <root>/skills/<name>/SKILL.md
+  // (root being home/.claude/skills, an installPath, or a walked plugin
+  // dir). Any of its 3 components below root -- the skills/ segment itself,
+  // the per-skill name dir, or the terminal SKILL.md -- can be a symlink
+  // planted by a malicious plugin's own repo content, pointing outside its
+  // root; readFileSync/existsSync all follow every one of them. lstat only
+  // inspects the FINAL component of whatever path it's given, so checking
+  // `path` alone (or even just one level up) missed the skills/ segment
+  // itself being the symlink -- a live-caught gap. All 3 fixed levels are
+  // checked here, the one choke point both of this function's callers (the
+  // direct home/.claude/skills check and findSkillMdSync's returned
+  // candidate, from either its installPath or walk lane) funnel through.
+  if (isSymlinkSync(path) || isSymlinkSync(dirname(path)) || isSymlinkSync(dirname(dirname(path)))) return "";
   let text;
   try { text = readFileSync(path, "utf8"); } catch { return ""; }
   const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);

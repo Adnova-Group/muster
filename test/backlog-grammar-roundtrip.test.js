@@ -65,10 +65,12 @@ async function readsAsChecklist(cwd, rawSegment) {
 }
 
 // Mirrors src/scope.js's isTraversalUnsafe exactly: an absolute path or any ".."
-// substring. parseBacklogRef's own shape check only rejects the ".." case (an absolute
-// file-shaped token still parses as kind:"file" -- confirmed live against the real
-// function, not assumed) -- this is why both consumer files now apply this refusal
-// directly in their own prose rather than trusting either upstream primitive alone.
+// substring. parseBacklogRef's own shape check now rejects both shapes too (the
+// parseref-abs-guard fix -- confirmed live against the real function, not assumed), so
+// this duplicates that coverage for the ref-shaped arm; it stays the ONLY gate for the
+// readable-checklist-content fallback (arm 2), which never goes through parseBacklogRef
+// at all -- that arm's own consumer-prose refusal is why this helper still earns its
+// keep here.
 function isUnsafePath(rawSegment) {
   return typeof rawSegment !== "string" || isAbsolute(rawSegment) || rawSegment.includes("..");
 }
@@ -150,12 +152,15 @@ test("round-trip: every representative scope:'backlog' verdict is consumable by 
 
 // --- negative round-trip: a traversal-shaped or absolute candidate must never be
 // consumable by either delegate's documented resolution, even when it resolves to a REAL
-// checklist file -- this is the exact gap a review pass caught pre-fix: parseBacklogRef's
-// file-ref shape check rejects a ".." substring but NOT an absolute path (confirmed live:
-// parseBacklogRef("/tmp/x.md") still returns kind:"file"), so a naive "resolve whatever
-// parseBacklogRef or a bare read accepts" reading of the documented grammar would have let
-// an absolute-path candidate through. Both consumer files now apply the refusal directly
-// in their own prose rather than assuming either upstream primitive already covers it. ---
+// checklist file. Pre-parseref-abs-guard, this was a real gap: parseBacklogRef's file-ref
+// shape check rejected a ".." substring but NOT an absolute path (parseBacklogRef("/tmp/x.md")
+// used to return kind:"file"), so a naive "resolve whatever parseBacklogRef or a bare read
+// accepts" reading of the documented grammar would have let an absolute-path candidate
+// through -- both consumer files carried compensating refusal prose to cover it. Now
+// parseBacklogRef itself rejects an absolute path the same way it rejects a ".." substring,
+// so the ref-shaped arm (below) is guarded upstream; the readable-checklist-content
+// fallback (arm 2, never ref-shaped) still applies its own refusal directly in
+// plan-backlog.md's rule-2 bullet, since no code path guards that arm. ---
 
 test("round-trip: a relative '..'-bearing candidate that resolves to a real checklist file outside cwd is never consumable by either delegate", async () => {
   await withTempDir(async (parent) => {
@@ -180,7 +185,7 @@ test("round-trip: a relative '..'-bearing candidate that resolves to a real chec
   });
 });
 
-test("round-trip: an absolute-path candidate naming a real checklist file is never consumable by either delegate, even though parseBacklogRef alone does not reject it", async () => {
+test("round-trip: an absolute-path candidate naming a real checklist file is never consumable by either delegate", async () => {
   await withTempDir(async (outside) => {
     const absolutePath = join(outside, "outside-backlog.md");
     await writeFile(absolutePath, "- [ ] leaked item\n");
@@ -188,8 +193,8 @@ test("round-trip: an absolute-path candidate naming a real checklist file is nev
     const ref = parseBacklogRef(absolutePath);
     assert.equal(
       ref.kind,
-      "file",
-      "sanity: parseBacklogRef's file-ref shape check alone does NOT reject an absolute path (only a '..' substring trips it)"
+      "invalid",
+      "sanity: parseBacklogRef itself now rejects an absolute path the same way it rejects a '..' substring (parseref-abs-guard)"
     );
     await withTempDir(async (cwd) => {
       const readable = await readsAsChecklist(cwd, absolutePath);
@@ -198,7 +203,7 @@ test("round-trip: an absolute-path candidate naming a real checklist file is nev
       assert.equal(
         consumable(ref, readable, absolutePath),
         false,
-        "an absolute-path candidate must never be consumable by either delegate's documented resolution, even though parseBacklogRef classifies it kind:\"file\""
+        "an absolute-path candidate must never be consumable by either delegate's documented resolution"
       );
     });
   });
@@ -235,20 +240,36 @@ test("prose pin: plan-backlog.md B1 no longer restricts the file-ref form to '.m
   );
 });
 
-test("prose pin: go-backlog.md step 1 explicitly refuses an absolute path, not just a '..'-bearing one", async () => {
+// --- parseref-abs-guard: parseBacklogRef itself now rejects an absolute path (kind:
+// "invalid"), the same way it already rejected a ".." substring -- retiring the
+// compensating absolute-refusal prose PR #22 had bolted onto both consumer files to cover
+// the gap. These pins now assert the OPPOSITE of the old ones above: the stale over-claim
+// text ("parseBacklogRef alone does not reject" an absolute path) must be gone, since it
+// is no longer true, while an absolute path must still be mentioned as one of the
+// rejected shapes (accurate, not compensating -- it just names what parseBacklogRef does).
+
+test("prose pin: go-backlog.md step 1 no longer claims parseBacklogRef's shape check leaves an absolute path unguarded", async () => {
   const text = await readFile(join(REPO_ROOT, "plugin/commands/go-backlog.md"), "utf8");
+  assert.ok(
+    !/shape check alone only rejects a `\.\.` substring/.test(text),
+    "go-backlog.md step 1 still carries the stale compensating claim that parseBacklogRef's shape check alone only rejects '..'"
+  );
   assert.match(
     text,
-    /given as absolute/,
-    "go-backlog.md step 1 should explicitly refuse an absolute-path candidate (parseBacklogRef alone does not reject one)"
+    /an absolute path is never read/,
+    "go-backlog.md step 1 should still document that an absolute path is never read (now via parseBacklogRef itself, not compensating prose)"
   );
 });
 
-test("prose pin: plan-backlog.md B1 explicitly refuses an absolute path on the file-ref bullet, not just a '..'-bearing one", async () => {
+test("prose pin: plan-backlog.md B1 no longer claims parseBacklogRef's file-ref shape check leaves an absolute path unguarded", async () => {
   const text = await readFile(join(REPO_ROOT, "plugin/commands/plan-backlog.md"), "utf8");
+  assert.ok(
+    !/file-ref shape check alone does not reject this/.test(text),
+    "plan-backlog.md B1 still carries the stale compensating claim that parseBacklogRef's file-ref shape check alone does not reject an absolute path"
+  );
   assert.match(
     text,
-    /a resolved path given as absolute/,
-    "plan-backlog.md B1's file-ref bullet should explicitly refuse an absolute-path candidate (parseBacklogRef alone does not reject one)"
+    /or an absolute path/,
+    "plan-backlog.md B1's file-ref bullet should still document an absolute path as one of the kind:invalid shapes (now via parseBacklogRef itself, not compensating prose)"
   );
 });

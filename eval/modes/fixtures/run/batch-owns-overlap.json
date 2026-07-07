@@ -1,0 +1,7 @@
+{
+  "items": [
+    { "id": "auth", "owns": ["src/auth/**", "test/auth/**"] },
+    { "id": "sessions", "owns": ["src/auth/session.js"] },
+    { "id": "docs", "owns": ["docs/**"] }
+  ]
+}

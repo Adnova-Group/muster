@@ -170,6 +170,73 @@
       "rubric": "A good manifest routes this software task to an implementation provider plus a test author; the plan builds the endpoint then tests it. Penalize: content/author roles, missing tests, empty/all-inline crew.",
       "expect": {}
     },
+    {
+      "id": "run-backlog-ref-file-form",
+      "mode": "run",
+      "outcome": ".muster/backlog.md",
+      "check": "backlog-ref",
+      "expect": { "kind": "file", "path": ".muster/backlog.md" }
+    },
+    {
+      "id": "run-backlog-ref-issues-form",
+      "mode": "run",
+      "outcome": "issues:sprint-1",
+      "check": "backlog-ref",
+      "expect": { "kind": "issues", "label": "sprint-1" }
+    },
+    {
+      "id": "run-backlog-ref-linear-form",
+      "mode": "run",
+      "outcome": "linear:MUS",
+      "check": "backlog-ref",
+      "expect": { "kind": "linear", "key": "MUS" }
+    },
+    {
+      "id": "run-plain-outcome-not-backlog-ref",
+      "mode": "run",
+      "outcome": "Fix the broken links in README.md",
+      "check": "backlog-ref",
+      "expect": { "kind": "outcome" }
+    },
+    {
+      "id": "run-batch-empty-issues-label-invalid",
+      "mode": "run",
+      "outcome": "issues:",
+      "check": "backlog-ref",
+      "expect": { "kind": "invalid" }
+    },
+    {
+      "id": "run-batch-plan-drain-ordering",
+      "mode": "run",
+      "outcome": "Batch-plan mode renders drain ordering from the SAME authoritative wave computation sprint uses: an annotated backlog's plan shows retry/logging/metrics in wave 1, docs in wave 2.",
+      "check": "sprint-waves",
+      "artifact": "fixtures/sprint/backlog.md",
+      "expect": { "ok": true, "annotated": true, "waves": [["retry", "logging", "metrics"], ["docs"]] }
+    },
+    {
+      "id": "run-batch-conflicts-overlap-flagged",
+      "mode": "run",
+      "outcome": "Two batch items whose fence labels overlap on a path boundary (src/auth/** covers src/auth/session.js) are flagged as a cross-item conflict pair in the batch plan; the disjoint docs item is not.",
+      "check": "batch-conflicts",
+      "artifact": "fixtures/run/batch-owns-overlap.json",
+      "expect": { "conflictPairs": [["auth", "sessions"]], "unfenced": [], "overlapsInclude": ["src/auth/** ~ src/auth/session.js"] }
+    },
+    {
+      "id": "run-batch-conflicts-disjoint-clean",
+      "mode": "run",
+      "outcome": "Batch items with disjoint fence trees produce zero conflict flags; an item with no fence data is reported unfenced instead of guessed at.",
+      "check": "batch-conflicts",
+      "artifact": "fixtures/run/batch-owns-disjoint.json",
+      "expect": { "conflictPairs": [], "unfenced": ["metrics"] }
+    },
+    {
+      "id": "run-batch-plan-approval-gate",
+      "mode": "run",
+      "outcome": "/muster:run .muster/backlog.md on a three-item backlog.",
+      "grading": "model",
+      "rubric": "A good batch-plan response routes every item up front and renders ONE batch plan (per-item crew summaries, drain ordering, conflict flags), then stops at an AskUserQuestion with Approve & drain / Adjust the plan / Cancel. Penalize: any item executing before approval, Adjust triggering execution instead of re-routing, Cancel leaving work started, or per-item approval stops instead of one batch stop.",
+      "expect": {}
+    },
 
     {
       "id": "autopilot-issue-ref-bare-number",

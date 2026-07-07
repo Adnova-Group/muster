@@ -14,6 +14,8 @@ The interactive router. It detects context, assembles the crew, and shows the gl
 
 If the outcome is thin, Muster runs a deterministic gap-check (`muster assess`) and, if needed, an interview that asks one question at a time behind an approval gate before any crew is assembled.
 
+Run also takes a backlog ref (`/muster:run .muster/backlog.md`, `issues:<label>`, or `linear:<key>`) to plan a whole batch first: every item is routed up front into one batch plan — per-item crews, drain ordering, cross-item conflict flags — and Approve & drain chains into the sprint drain; nothing executes before that approval.
+
 ## Hands-off delivery: `/muster:autopilot`
 
 The full lifecycle, hands-off. It branches, routes, runs waves (parallel fan-out, tournaments, an adversarial review gate), commits per wave, then presents the merge decision. It only stops for that decision or an escalation.

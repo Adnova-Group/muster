@@ -42,6 +42,7 @@ import { scanRepoPrompts } from "./prompt-scan.js";
 import { fuse } from "./fusion.js";
 import { validateAdviceRequest } from "./advisor.js";
 import { modelForRole } from "./model.js";
+import { detectScope } from "./scope.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -254,7 +255,7 @@ async function main() {
       if (!rest[0]) fail("pipeline <domain|id>: missing arg");
       const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
       out(pipelineForDomain(ps, rest[0]) || ps.find(p => p.id === rest[0]) || null);
-    // ── routing (cont.): domain classification, pipeline routing, diagnose/audit modes, issue/assess/steer ──
+    // ── routing (cont.): domain classification, pipeline routing, diagnose/audit modes, issue/assess/steer/scope ──
     } else if (cmd === "domain") {
       const { override, outcome } = parseDomainArgs(rest);
       if (!outcome) fail("domain <outcome> [--domain x]: missing outcome");
@@ -294,6 +295,11 @@ async function main() {
     } else if (cmd === "steer") {
       if (!rest[0]) fail("steer <message>: missing message");
       out(classifySteer(rest.join(" ")));
+    } else if (cmd === "scope") {
+      // Deterministic backlog-vs-item scope detection for the plan/go verb family. An
+      // empty rest (bare `muster scope`) is a valid input (rule 3's bare-invocation
+      // case), so unlike most verbs above there is no missing-arg fail() here.
+      out(await detectScope({ cwd: process.cwd(), text: rest.join(" ") }));
     // ── memory + ops (cont.): doctor, scratchpad, profile, install/uninstall, signals ──
     } else if (cmd === "doctor") {
       const r = await runDoctor({ root: new URL("../", import.meta.url) });
@@ -317,7 +323,7 @@ async function main() {
       await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
       out(sig);
     } else {
-      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
     }
   } catch (e) {
     fail(formatError(e));

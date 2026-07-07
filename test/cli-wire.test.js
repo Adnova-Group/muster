@@ -173,6 +173,41 @@ test("cli wire: manifest validate exits 2 on invalid manifest", async () => {
   }
 });
 
+// manifest validate is wired to the real resolveCapabilities().skills inventory (same
+// call used by capabilities/match --skills elsewhere in this file), so a hallucinated
+// bound skill id trips manifestWarnings' inventory check for real, not just at the
+// unit level. "totally-fake-nonexistent-skill-xyz" cannot resolve on any machine's
+// live ~/.claude inventory, so this holds regardless of the calling environment.
+test("cli wire: manifest validate surfaces a warning for a bound skill id absent from the live inventory", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-cli-wire-"));
+  try {
+    const fixture = join(tmp, "manifest.hallucinated-skill.json");
+    await writeFile(fixture, JSON.stringify({
+      outcome: "Add rate limiting",
+      successCriteria: ["429 past N req/min", "tests green"],
+      crew: [{ stage: "navigate", provider: "grep", source: "builtin", model: "sonnet", rationale: "no LSP", evidence: "no serena", fallback: "inline" }],
+      recommendations: [], degradations: [],
+      plan: [{ id: "t1", task: "middleware", mode: "single",
+        skills: [{ id: "totally-fake-nonexistent-skill-xyz", rationale: "r" }] }],
+    }));
+    const { stdout } = await run(["manifest", "validate", fixture]);
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.ok, true, "an unresolved skill id is a warning, not a validation error");
+    assert.ok(Array.isArray(parsed.warnings), "missing 'warnings' key");
+    assert.ok(parsed.warnings.some(w => /totally-fake-nonexistent-skill-xyz/.test(w)),
+      `expected an inventory warning, got ${JSON.stringify(parsed.warnings)}`);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("cli wire: manifest validate on a fixture with no skills bindings has no warnings key", async () => {
+  const fixture = join(REPO_ROOT, "test/fixtures/manifest.valid.json");
+  const { stdout } = await run(["manifest", "validate", fixture]);
+  const parsed = JSON.parse(stdout);
+  assert.ok(!("warnings" in parsed), "a manifest with no skills bindings should carry no warnings key");
+});
+
 // ---------------------------------------------------------------------------
 // plan-checklist <fixture>
 // ---------------------------------------------------------------------------

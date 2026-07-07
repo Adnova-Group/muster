@@ -84,8 +84,12 @@ test("remote-text reanchor: the data-wrap directive is byte-identical (canonical
 
 test("remote-text reanchor: go-backlog.md and muster-runner.md each carry the directive once per substitution point they own", async () => {
   const goBacklog = await read("plugin/commands/go-backlog.md");
-  const occurrences = goBacklog.split(DIRECTIVE).length - 1;
-  assert.equal(occurrences, 2, "go-backlog.md owns two substitution points (issues:/linear:) — expected the directive twice");
+  const goBacklogOccurrences = goBacklog.split(DIRECTIVE).length - 1;
+  assert.equal(goBacklogOccurrences, 2, "go-backlog.md owns two substitution points (issues:/linear:) — expected the directive twice");
+
+  const musterRunner = await read("plugin/agents/muster-runner.md");
+  const musterRunnerOccurrences = musterRunner.split(DIRECTIVE).length - 1;
+  assert.equal(musterRunnerOccurrences, 1, "muster-runner.md owns one substitution point (BRIEF outcome-text) — expected the directive once");
 });
 
 test("remote-text reanchor: prompt-lint passes on all 4 files (system genre, matching the real repo-wide scan)", async () => {

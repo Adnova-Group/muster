@@ -1,3 +1,5 @@
+import { isAbsolute } from "node:path";
+
 // Batch-plan support for /muster:plan-backlog's backlog-ref form (plan-backlog.md's B1
 // step + its B4 "Render ONE batch plan" section; run.md/sprint.md are now dead alias
 // stubs, kept only for one-line heads-up compatibility): pure, deterministic functions
@@ -12,10 +14,14 @@
 //     and no ".." substring -> a backlog FILE ref (existence/readability is the caller's
 //     job -- sprint-waves is authoritative and its ok:false stops the run; a pure
 //     function does no IO, so this is a shape check only, never a filesystem check)
-//   - that same file-shaped token but carrying a ".." substring -> invalid (a traversal
-//     attempt must never resolve to kind:"file" -- downstream consumers treat kind:"file"
-//     as a green light to read the path; mirrors src/memory.js's writeMemory/appendState
-//     slug/runId guard, which rejects the same ".." substring before a join())
+//   - that same file-shaped token but carrying a ".." substring, OR given as an absolute
+//     path (node:path's isAbsolute -- POSIX-absolute or a Windows drive-letter/UNC path)
+//     -> invalid (neither shape must ever resolve to kind:"file" -- downstream consumers
+//     (sprint-waves' caller among them) treat kind:"file" as a green light to read the
+//     path directly, and an absolute path needs no traversal at all to name an
+//     out-of-project file; mirrors src/memory.js's writeMemory/appendState slug/runId
+//     guard and src/scope.js's own isTraversalUnsafe, both of which reject the same two
+//     shapes before a join()/read())
 //   - `issues:<label>`  -> the GitHub-issues source (coordination Binding A)
 //   - `linear:<key>`    -> the Linear source (coordination Binding C)
 //   - `issues:`/`linear:` with nothing after the colon -> invalid (report and stop;
@@ -65,6 +71,14 @@ export function parseBacklogRef(text) {
     return { kind: "linear", key };
   }
   if (!/\s/.test(t) && FILE_TOKEN_RE.test(t)) {
+    // Absolute-path guard (mirrors src/scope.js's isTraversalUnsafe): an absolute path
+    // names an out-of-project file outright, no ".." traversal needed at all -- checked
+    // before the ".." substring check below so both shapes share one "invalid" outcome
+    // path rather than an absolute-and-traversal token silently short-circuiting on
+    // whichever check happened to run first.
+    if (isAbsolute(t)) {
+      return { kind: "invalid", reason: "file ref must not be an absolute path" };
+    }
     // Traversal guard (mirrors src/memory.js's writeMemory/appendState/appendFollowup
     // slug/runId check): a ".." substring anywhere in an otherwise file-shaped token
     // must never resolve to kind:"file" -- plan-backlog.md B1 and go-backlog.md step 1

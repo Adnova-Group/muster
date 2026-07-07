@@ -4,11 +4,17 @@ export function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
 // Shared stopword set for src/match.js's ranker and src/interview.js's outcome-clarity
 // heuristic. Reconciled from the two lists that had already diverged (match.js lacked
-// "or"; interview.js lacked "with"/"is"/"in"/"on") into one union, verified behavior-
-// preserving for both callers: match.js's tokenize() already drops sub-3-char tokens
-// before the stopword check, so "or" (2 chars) was already filtered regardless; and
-// interview.js's meaningful-word-count boundary was checked against its test suite +
-// eval:modes/eval:router with no regression.
+// "or"; interview.js lacked "with"/"is"/"in"/"on") into one union.
+// For match.js this is a true no-op: tokenize() already drops sub-3-char tokens before
+// the stopword check runs, so "or" (2 chars) was already filtered regardless of whether
+// it was in STOPWORDS.
+// For interview.js this is a disclosed, narrow behavior change, NOT a proven no-op:
+// "with"/"is"/"in"/"on" are now excluded from its meaningful-word count too (it has no
+// length-based rescue the way match.js's tokenize() does), which can flip `tooShort`
+// false->true for an outcome sitting right at the 6-word boundary that happens to use
+// one of these four words. test/interview.test.js + eval:modes/eval:router show no
+// regression against the current corpus, but that is evidence against today's fixtures,
+// not a formal guarantee for every future outcome string.
 export const STOPWORDS = new Set([
   "a", "an", "and", "for", "in", "is", "it", "of", "on", "or", "that", "the", "this", "to", "with",
 ]);

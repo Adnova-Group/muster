@@ -120,8 +120,10 @@ the model chooses to comply.
 
 **Claude Code binding.** `plugin/hooks/hooks.json` registers four scripts against Claude
 Code's hook lifecycle: `SessionStart`, `UserPromptSubmit`, and `PreToolUse` twice over (once
-matched against `Edit|Write|NotebookEdit|Bash` for the wave-guard/scale-gate/action-fence trio
-in `plugin/hooks/pre-tool-use.js`, once matched against `Task|Agent` for the todo-gate in
+matched against `Edit|Write|NotebookEdit|Bash|mcp__.*` -- the `mcp__.*` arm widened onto the
+matcher so the action-class fence also sees MCP tool calls -- for the wave-guard/scale-gate/
+action-fence trio in `plugin/hooks/pre-tool-use.js`, once matched against `Task|Agent` for the
+todo-gate in
 `plugin/hooks/todo-gate.js`). `docs/architecture.md`'s "Enforcement model: gates vs
 conventions" section, mirrored in `plugin/skills/orchestrator/SKILL.md`, already draws the
 line this document needs: four gates are hook-enforced (wave-guard, post-run scale-gate,
@@ -213,12 +215,13 @@ mechanically.
 actually installed before routing a role to one, rather than assuming or hard-coding a fixed
 list.
 
-**Claude Code binding.** `src/harness.js`'s `readInstalled()` (via `src/plugin-inventory.js`
-and `src/installed.js`) reads Claude Code's own on-disk plugin registry:
+**Claude Code binding.** `src/harness.js`'s `readInstalled()` (via `src/plugin-inventory.js`'s
+`readPluginInventory()`) reads Claude Code's own on-disk plugin registry:
 `~/.claude/plugins/installed_plugins.json` (`installPath`-keyed records, `name@marketplace`)
 plus `~/.claude/settings.json`'s `mcpServers` map and the `~/.claude/skills/` and
 `~/.claude/agents/` directories. `src/capabilities.js`'s `resolveCapabilities()` walks the role
-ladder against whatever this scan returns, terminating at `inline` when nothing is installed.
+ladder against whatever this scan returns, using `src/installed.js`'s `isInstalled()` to check
+each catalog entry against it, and terminates at `inline` when nothing is installed.
 
 **Degradation ladder (no plugin registry to scan).** Muster already ships a second, working
 binding for this exact primitive, which makes the ladder concrete rather than hypothetical

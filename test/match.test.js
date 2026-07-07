@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask, lastColonSegment, impliedSurfaceForSkillId } from "../src/match.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const pexecFile = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -57,7 +58,7 @@ test("installed external edges out an equal-scoring builtin", () => {
   assert.equal(r[0].source, "installed");
   assert.equal(r.find(e => e.id === "builtin-debug").source, "builtin");
   // not-installed external would be source "external"
-  const r2 = matchProviders("debug this", catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  const r2 = matchProviders("debug this", catalog, bareCapabilities());
   assert.equal(r2.find(e => e.id === "ext-debug").source, "external");
 });
 

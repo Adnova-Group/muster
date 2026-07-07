@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isInstalled } from "../src/installed.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 // ---------------------------------------------------------------------------
 // isInstalled unit tests
@@ -9,13 +10,13 @@ import { isInstalled } from "../src/installed.js";
 // Entries with no detect field must return false without throwing.
 test("isInstalled: entry with no detect field returns false", () => {
   const entry = { id: "no-detect", kind: "external", roles: ["implement"] };
-  assert.equal(isInstalled(entry, { plugins: [], skills: [], mcpServers: [], agents: [] }), false);
+  assert.equal(isInstalled(entry, bareCapabilities()), false);
 });
 
 // Entries where detect exists but detect.match is absent must return false.
 test("isInstalled: entry with detect but no detect.match returns false", () => {
   const entry = { id: "no-match", kind: "external", roles: ["implement"], detect: { kind: "mcp_server" } };
-  assert.equal(isInstalled(entry, { plugins: [], skills: [], mcpServers: [], agents: [] }), false);
+  assert.equal(isInstalled(entry, bareCapabilities()), false);
 });
 
 // Non-external entries must return false regardless of detect.

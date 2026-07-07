@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { loadCatalog } from "../src/catalog.js";
 import { matchProviders } from "../src/match.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const CATALOG = new URL("../catalog/", import.meta.url);
-const bare = { plugins: [], skills: [], mcpServers: [], agents: [] };
+const bare = bareCapabilities();
 
 test("description-search ranks a relevant specialist over the real catalog", async () => {
   const catalog = await loadCatalog(CATALOG);

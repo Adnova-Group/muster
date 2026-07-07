@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { modelForRole, fallbackModelFor, capTier, floorAtSonnet } from "../src/model.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 test("mechanical roles -> haiku", () => {
   assert.equal(modelForRole("code-navigation"), "haiku");
@@ -156,7 +157,7 @@ test("MUSTER_MAX_TIER=sonnet: resolveCapabilities caps architecture-review to so
   process.env.MUSTER_MAX_TIER = "sonnet";
   try {
     const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
-    const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+    const caps = resolveCapabilities(catalog, bareCapabilities());
     assert.equal(caps.roles["architecture-review"].model, "sonnet",
       "architecture-review should be capped from fable to sonnet when MUSTER_MAX_TIER=sonnet");
   } finally {
@@ -174,7 +175,7 @@ test("no cap, fable disabled (default): resolveCapabilities degrades architectur
   delete process.env.MUSTER_ENABLE_FABLE;
   try {
     const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
-    const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+    const caps = resolveCapabilities(catalog, bareCapabilities());
     assert.equal(caps.roles["architecture-review"].model, "opus",
       "architecture-review should degrade fable->opus by default so dispatch never chokes");
   } finally {
@@ -192,7 +193,7 @@ test("MUSTER_ENABLE_FABLE set, no cap: resolveCapabilities resolves architecture
   process.env.MUSTER_ENABLE_FABLE = "1";
   try {
     const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
-    const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+    const caps = resolveCapabilities(catalog, bareCapabilities());
     assert.equal(caps.roles["architecture-review"].model, "fable",
       "architecture-review should resolve to fable when opted in and no cap is set");
   } finally {

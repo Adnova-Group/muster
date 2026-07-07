@@ -6,6 +6,7 @@ import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { modelForRole } from "../src/model.js";
 import { toAgent } from "../src/vendor.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 // This file asserts uncapped modelForRole policy (frontmatter must match raw role→model).
 // Ensure MUSTER_MAX_TIER never leaks in from a caller's environment and silently
@@ -43,9 +44,7 @@ test("each muster agent id appears with kind: agent", async () => {
 
 test("agent roles resolve to a chosen provider with kind 'agent'", async () => {
   const catalog = await loadCatalog(catalogDir);
-  const { roles } = resolveCapabilities(catalog, {
-    plugins: [], skills: [], mcpServers: [], agents: []
-  });
+  const { roles } = resolveCapabilities(catalog, bareCapabilities());
   for (const role of ["implement", "code-review", "code-navigation", "architecture-review"]) {
     assert.equal(roles[role].chosen.kind, "agent", `${role} should resolve to an agent`);
   }

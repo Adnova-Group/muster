@@ -6,6 +6,7 @@ import { parse } from "yaml";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { splitFrontmatter, modelForRoles } from "../src/vendor.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const catalogDir = new URL("../catalog/", import.meta.url);
 const agentsFile = new URL("../catalog/agents.generated.yaml", import.meta.url);
@@ -45,7 +46,7 @@ test("each vendored agent id has a matching plugin/agents/<id>.md with frontmatt
 
 test("core software roles each resolve to SOME provider on a bare machine", async () => {
   const catalog = await loadCatalog(catalogDir);
-  const res = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  const res = resolveCapabilities(catalog, bareCapabilities());
   const required = ["security-review", "debug", "frontend", "test-author", "refactor", "architecture-review"];
   for (const role of required) {
     const chosen = res.roles[role]?.chosen;

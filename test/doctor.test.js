@@ -258,6 +258,53 @@ describe("runDoctor skill-doc-refs check", () => {
     assert.ok(check, "skill-doc-refs check must exist");
     assert.equal(check.ok, true, "a vendored builtin's docs/ reference must not be checked against this repo");
   });
+
+  it("reports ok:true with 'absent (created on first use)' when a create-on-first-use convention doc is missing (postfix 'if present' wording)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-cofu-postfix-"));
+    await mkdir(join(tmp, "plugin/skills/example"), { recursive: true });
+    // No docs/ tree at all — matches the npm-packed install, which never ships docs/.
+    await writeFile(
+      join(tmp, "plugin/skills/example/SKILL.md"),
+      "Before testing, read `docs/qa/RUNBOOK.md` if present (check-before-test).\n"
+    );
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+    assert.match(check.detail, /absent \(created on first use\)/, "detail must say absent (created on first use)");
+    assert.match(check.detail, /docs\/qa\/RUNBOOK\.md/, "detail must name the convention-layer doc");
+  });
+
+  it("reports ok:true with 'absent (created on first use)' when a create-on-first-use convention doc is missing (conditional-clause wording, no exists/missing keyword)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-cofu-clause-"));
+    await mkdir(join(tmp, "plugin/builtins/example"), { recursive: true });
+    await writeFile(
+      join(tmp, "plugin/builtins/example/SKILL.md"),
+      "If the artifact resolved a named voice profile from `docs/profiles/VOICE.md` during drafting, check against it.\n"
+    );
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
+    assert.match(check.detail, /absent \(created on first use\)/, "detail must say absent (created on first use)");
+  });
+
+  it("simulates the npm-packed install (real plugin/skills + plugin/builtins SKILLs, no docs/ tree at all) and stays ok:true", async () => {
+    // This is the actual bug reproduction: `npm pack` never ships docs/ (see package.json
+    // "files"), so a packed install's doctor run has plugin/**/SKILL.md referencing
+    // docs/qa/RUNBOOK.md and docs/profiles/{VOICE,BRAND}.md with nothing on disk to back them.
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-packed-"));
+    await mkdir(join(tmp, "plugin"), { recursive: true });
+    await cp(join(repoRoot, "plugin/skills"), join(tmp, "plugin/skills"), { recursive: true });
+    await cp(join(repoRoot, "plugin/builtins"), join(tmp, "plugin/builtins"), { recursive: true });
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    await cp(join(repoRoot, "vendor/manifest.yaml"), join(tmp, "vendor/manifest.yaml"));
+    // No docs/ directory at all — the packed-install condition.
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, true, `packed install must stay ok:true — detail: ${check.detail}`);
+  });
 });
 
 // ---------- plugin staleness ----------

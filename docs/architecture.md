@@ -169,6 +169,10 @@ Muster's PreToolUse hooks enforce four deterministic GATES and leave four catego
 
 **Transcript-scan todo gate.** Rejected in 0.3.1 as fragile and gameable, then revisited and built in 0.3.2 (`todo-gate.js`) once narrowed to dispatch time only: scanning the transcript tail for a todo write since the `run-active` mtime is a bounded, mechanically checkable question, and the hard bias-to-allow decision order removes the fail-open objection (uncertainty allows; only a readable, provably todo-free transcript denies). It remains gameable with a throwaway todo -- the gate enforces visibility, not compliance -- which is an accepted trade.
 
+## Multi-runtime: the binding interface
+
+"Multi-runtime" above names an aspiration this document does not itself make falsifiable: everything described so far is Claude Code's own subagent dispatch, hooks, AskUserQuestion, and git worktrees, not an abstraction over them. `docs/binding-interface.md` names the six harness primitives muster's modes actually consume (dispatch, ask, enforce, isolate, receipts, capability scan), binds each one to its exact Claude Code mechanism with file references, grep-audits every AskUserQuestion/Agent-tool/hook/worktree mention in plugin prose against that map, and states what each primitive becomes on a harness with no subagent dispatch and no hook system. It is a doc-only artifact: nothing here changes behavior, and the one candidate follow-up it names (an AGENTS.md adapter for the enforce primitive's context-injection role) is recorded as parked, not built.
+
 ## Vendoring
 
 Muster ships a curated set of built-in skills and agents, imported from upstream projects rather than hand-copied. `vendor/manifest.yaml` lists every source (repository, license, ref) and the specific items pulled from each, mapped to the Muster roles they serve. `muster vendor` generates the built-ins into `plugin/` and writes provenance into `NOTICE`.

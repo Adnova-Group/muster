@@ -23,7 +23,7 @@ The **model-facing layer** is markdown that Claude Code loads as a plugin. It in
 
 ## Roles and the resolution ladder
 
-Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need (`implement`, `code-review`, `test-author`, `debug`, `security-review`, `author`, `research`, `score`, `humanize`, `prompt-quality`, `improve`, `image`, `video`, and more — 25 in all). Roles are the stable interface: pipelines and commands ask for a role, not for a specific tool.
+Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need (`implement`, `code-review`, `test-author`, `debug`, `security-review`, `author`, `research`, `score`, `humanize`, `prompt-quality`, `improve`, `image`, `video`, `lifecycle`, and more — 26 in all). Roles are the stable interface: pipelines and commands ask for a role, not for a specific tool.
 
 Each role resolves through a **ladder** of provider sources, best available first:
 

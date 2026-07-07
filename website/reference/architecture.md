@@ -19,7 +19,7 @@ The **model-facing layer** is what Claude Code loads as a plugin. It is markdown
 
 The router is the novel core. The problem it solves: you have an outcome and a pile of tools (some you installed, some Muster ships), and you need to pick the right tool for each piece of work, predictably.
 
-Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need. There are 25 of them (`src/roles.js`): `implement`, `code-review`, `test-author`, `debug`, `refactor`, `architecture-review`, `security-review`, `author`, `research`, `score`, `humanize`, `prompt-quality`, `improve`, `image`, `video`, and more. Roles are the stable interface. Pipelines and commands ask for a role, not for a specific tool.
+Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need. There are 26 of them (`src/roles.js`): `implement`, `code-review`, `test-author`, `debug`, `refactor`, `architecture-review`, `security-review`, `author`, `research`, `score`, `humanize`, `prompt-quality`, `improve`, `image`, `video`, `lifecycle`, and more. Roles are the stable interface. Pipelines and commands ask for a role, not for a specific tool.
 
 Each role resolves through a **ladder** of provider sources, best-available first:
 

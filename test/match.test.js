@@ -263,3 +263,17 @@ test("cli wire: match --skills missing task fails", async () => {
     assert.ok(err.code !== 0);
   }
 });
+
+// Flag-collision guard: when --skills is immediately followed by another flag (no task
+// text supplied), the CLI must not swallow that flag token as the task — it must fail
+// with the same "missing task" error as the bare `match --skills` case above, not exit 0
+// with nonsense ranked/suggested results built from the literal string "--stack".
+test("cli wire: match --skills --stack foo (no task text) fails rather than treating --stack as the task", async () => {
+  try {
+    await runCli(["match", "--skills", "--stack", "foo"]);
+    assert.fail("should have exited non-zero");
+  } catch (err) {
+    assert.ok(err.code !== 0, "exit code must be non-zero");
+    assert.match(err.stderr, /missing task/i, "stderr must explain the missing task, not silently succeed");
+  }
+});

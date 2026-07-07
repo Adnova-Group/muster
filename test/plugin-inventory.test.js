@@ -284,3 +284,49 @@ test("skillsFromPluginRoot (async fallback path): a symlinked skill DIRECTORY is
   const r = await readPluginInventory(home);
   assert.deepEqual(r.skills, ["real-skill"], "a symlinked skill dir must not be listed");
 });
+
+// The tests above symlink skills/<name>. A plugin can instead symlink the
+// skills/ SEGMENT ITSELF (one level higher) at some unrelated directory that
+// happens to hold a genuine, non-symlink <name>/SKILL.md underneath it --
+// lstat only inspects the FINAL component, so a guard checking just the
+// skill-name dir and the file (but not skills/ itself) misses this. Exercised
+// via the PRIMARY installPath codepath (readPluginInventory's roots.length
+// branch, and installedSkillDescription's installPath lane), which calls
+// skillsFromPluginRoot(root)/findSkillMdSync directly -- unlike the async
+// fallback walk, nothing upstream of these already screened the "skills" name
+// for being a symlink.
+test("skillsFromPluginRoot (primary installPath path): a symlinked 'skills' directory itself is not followed", async () => {
+  const outside = await tmpProject({ "my-skill/SKILL.md": SECRET_SKILL_MD });
+  const home = await tmpProject({});
+  await mkdir(join(home, "install/thing"), { recursive: true });
+  await symlink(outside, join(home, "install/thing/skills"), "dir");
+  await writeIndex(home, { "thing@official": [{ installPath: join(home, "install/thing") }] });
+
+  const r = await readPluginInventory(home);
+  assert.deepEqual(r.skills, [], "a symlinked skills/ dir itself must not be walked");
+});
+
+test("installedSkillDescription (plugins lane, via installPath): a symlinked 'skills' directory itself is not followed", async () => {
+  const outside = await tmpProject({ "my-skill/SKILL.md": SECRET_SKILL_MD });
+  const home = await tmpProject({});
+  await mkdir(join(home, "install/thing"), { recursive: true });
+  await symlink(outside, join(home, "install/thing/skills"), "dir");
+  await writeIndex(home, { "thing@official": [{ installPath: join(home, "install/thing") }] });
+
+  assert.equal(installedSkillDescription(home, "my-skill"), "", "must not follow the symlinked skills/ dir");
+});
+
+// Same class, the agentsFromPluginRoot nit the review flagged alongside the
+// skills gap: a symlinked agents/ dir would otherwise surface names from
+// wherever it points (no content read, but still directory-structure
+// disclosure from outside the plugin's own root).
+test("agentsFromPluginRoot (primary installPath path): a symlinked 'agents' directory itself is not followed", async () => {
+  const outside = await tmpProject({ "leaked-agent.md": "# leaked agent" });
+  const home = await tmpProject({});
+  await mkdir(join(home, "install/thing"), { recursive: true });
+  await symlink(outside, join(home, "install/thing/agents"), "dir");
+  await writeIndex(home, { "thing@official": [{ installPath: join(home, "install/thing") }] });
+
+  const r = await readPluginInventory(home);
+  assert.deepEqual(r.agents, [], "a symlinked agents/ dir itself must not be walked");
+});

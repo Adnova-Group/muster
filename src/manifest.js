@@ -1,3 +1,5 @@
+import { lastColonSegment, impliedSurfaceForSkillId } from "./match.js";
+
 const SOURCES = new Set(["installed", "builtin", "dynamic", "inline"]);
 const MODES = new Set(["single", "tournament"]);
 const MERGE_DISPOSITIONS = new Set(["merge-local", "merge-push", "pr", "keep", "ask"]);
@@ -116,7 +118,14 @@ export function validateManifest(m) {
 // An all-inline crew almost always means capability resolution was skipped — builtins (e.g.
 // `implement -> muster-builder`) resolve for nearly every role, so a hand-authored inline-only
 // crew silently bypasses routing and runs everything in-context. muster fails loud, so surface it.
-export function manifestWarnings(m) {
+//
+// `skillsInventory` is OPTIONAL (resolveCapabilities().skills, i.e. `{id, source,
+// description}[]`) — it is the live inventory a bound plan[].skills[].id is checked
+// against. When omitted, the bound-skill-id-resolves check is skipped entirely rather
+// than assuming every binding is unresolved (existing callers that don't run
+// resolveCapabilities() first get no false positives). Passing an explicit `[]` is a
+// deliberate "nothing is installed" inventory and will flag every binding.
+export function manifestWarnings(m, skillsInventory) {
   const warnings = [];
   const crew = Array.isArray(m?.crew) ? m.crew : [];
   if (crew.length > 0 && crew.every((c) => c && c.source === "inline")) {
@@ -126,5 +135,59 @@ export function manifestWarnings(m) {
         "a hand-authored all-inline crew bypasses routing."
     );
   }
+
+  const plan = Array.isArray(m?.plan) ? m.plan : [];
+  // Namespace-insensitive (lastColonSegment), matching every other id comparison
+  // against a live inventory elsewhere in the codebase (see match.js). `null` means
+  // "no inventory was supplied" -> the per-binding resolution check below is skipped.
+  const inventorySegments = Array.isArray(skillsInventory)
+    ? new Set(skillsInventory.map((e) => lastColonSegment(String(e?.id ?? "")).toLowerCase()))
+    : null;
+
+  plan.forEach((p, i) => {
+    if (!p || typeof p !== "object") return; // shape errors are validateManifest's job
+    const taskLabel = p.id || p.task || `plan[${i}]`;
+    const skills = Array.isArray(p.skills) ? p.skills : [];
+
+    // Bound-skill-id-resolves check: a hallucinated or uninstalled id passes
+    // validateSkillsArray's shape check (non-empty id+rationale) but was never cross-
+    // checked against what's actually resolvable -- do that here, non-fatally.
+    if (inventorySegments) {
+      skills.forEach((s, j) => {
+        if (!s || typeof s.id !== "string" || !s.id.trim()) return; // shape errors handled by validateManifest
+        if (!inventorySegments.has(lastColonSegment(s.id).toLowerCase())) {
+          warnings.push(
+            `plan task "${taskLabel}".skills[${j}].id "${s.id}": not found in resolveCapabilities().skills -- ` +
+              "likely a hallucinated or uninstalled skill id (bound skills must resolve in the live inventory)."
+          );
+        }
+      });
+    }
+
+    // Surface-mismatch check: this needs a stack signal to compare surface against,
+    // and the manifest schema doesn't carry raw stack/keyword signals per task --
+    // only the task's own bound skills. So this is scoped to what IS checkable from
+    // manifest data alone: a task that binds a skill known to imply a ui/copy/
+    // integration surface (the same groupings suggestSkillsForStack uses) but sets
+    // surface explicitly to "none" told the review gate to skip a DoD check its own
+    // crew composition says it needs. A task with NO surface field at all, or a
+    // ui/copy/integration task-text signal with no corresponding skill bound, is a
+    // real gap this cannot catch (no per-task stack signal lives in the manifest) --
+    // see plugin/skills/router/SKILL.md's Surface assignment note for that residual limit.
+    if (p.surface === "none") {
+      const implied = [...new Set(
+        skills
+          .map((s) => (s && typeof s.id === "string" ? impliedSurfaceForSkillId(s.id) : null))
+          .filter(Boolean)
+      )];
+      if (implied.length > 0) {
+        warnings.push(
+          `plan task "${taskLabel}": binds skill(s) implying surface ${implied.join("/")} but surface is set to ` +
+            `"none" -- the review gate's ${implied.join("/")} definition-of-done check(s) will be skipped.`
+        );
+      }
+    }
+  });
+
   return warnings;
 }

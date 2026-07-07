@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { tmpProject } from "../test-support/helpers.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const catalog = [
   { id: "serena", kind: "external", roles: ["code-navigation"], rank: 90, recommended: true,
@@ -50,12 +51,12 @@ const agentCatalog = [
 ];
 
 test("agent builtin resolves with chosen.kind === agent", () => {
-  const a = resolveCapabilities(agentCatalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  const a = resolveCapabilities(agentCatalog, bareCapabilities());
   assert.deepEqual(a.roles["plan"].chosen, { id: "muster-agent-planner", source: "builtin", kind: "agent" });
 });
 
 test("builtin skill resolves with chosen.kind === skill", () => {
-  const a = resolveCapabilities(agentCatalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  const a = resolveCapabilities(agentCatalog, bareCapabilities());
   assert.deepEqual(a.roles["brainstorm"].chosen, { id: "muster-skill-planner", source: "builtin", kind: "skill" });
 });
 

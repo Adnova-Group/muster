@@ -117,6 +117,15 @@ Every crew brief MUST end with a return contract, so the orchestrator's per-task
 - **No accumulation between waves:** git history and the run STATE are the record, not the orchestrator's
   memory.
 
+## Task board
+
+Alongside STATE, maintain one harness-visible task per work item (plan task, sprint item, or fix-wave
+slice) via the harness's task tools when present: create it at dispatch, flip to in_progress when the
+item's builder launches, completed when its merge lands. Umbrella tasks may group but never replace
+per-item entries -- STATE is the glass-box ledger, the board is the user's live progress surface, both
+maintained, neither substituting for the other. Fail-soft: a harness with no task tools relies on STATE
+alone (note this once).
+
 ## Scope fences
 
 When plan tasks carry `owns`/`frozen` fields, copy them into the brief verbatim as `OWNS:`/`FROZEN:` lines --

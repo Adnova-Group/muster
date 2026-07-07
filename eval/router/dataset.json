@@ -38,6 +38,23 @@
       "task": "Research and recommend a vector database for our RAG pipeline.",
       "expectRoles": ["research", "docs-research"],
       "rubric": "A good manifest routes to a research provider that gathers and synthesizes evidence and ends with a cited recommendation. Penalize: jumping to implementation, no evidence/sources, code-heavy crew."
+    },
+    {
+      "id": "luca-finance-poc",
+      "task": "Build a proof-of-concept AI finance chat app over QuickBooks for a prospective customer demo: a chat UI over live QuickBooks data, a branded monthly report, and a deterministic forecast.",
+      "expectRoles": ["implement", "frontend", "humanize"],
+      "rubric": "A good manifest is multi-surface: a schema/migration task bound to the supabase skill, a chat-UI task bound to nextjs/shadcn plus a design skill and tagged surface ui, a branded-report task bound to the humanizer and tagged surface copy, and a QBO OAuth task bound to sp-verify and tagged surface integration. Every binding carries distinct rationale (why this task) and evidence (the quoted signal). Penalize: any skills[] that is merely non-empty without matching these ids, missing surface tags, an unflagged ai-sdk gap (the fixture's inventory deliberately omits it), or bindings that reuse one field as both rationale and evidence.",
+      "note": "Regression case (t7): the original failure was a Next.js+Supabase customer-facing app built without supabase/vercel/design/humanizer/verification skills ever firing. This case's golden manifest is the guard: strip its plan[].skills and this case's dedicated skill-binding assertions in test/router-eval.test.js must fail.",
+      "profile": { "frameworks": ["nextjs", "supabase"], "languages": ["typescript"], "context": "customer-facing" },
+      "skillsInventory": [
+        { "id": "nextjs", "source": "installed", "description": "Next.js App Router routing/rendering patterns." },
+        { "id": "shadcn", "source": "installed", "description": "shadcn/ui component library for React." },
+        { "id": "supabase", "source": "installed", "description": "Supabase schema, auth, and RLS patterns." },
+        { "id": "frontend-design", "source": "installed", "description": "Dedicated frontend design pass for user-facing UI." },
+        { "id": "muster-humanizer", "source": "builtin", "description": "Strip AI-tell phrasing from customer-facing copy." },
+        { "id": "sp-verify", "source": "builtin", "description": "Verification-before-completion for integration claims." }
+      ],
+      "expectedSkillGap": "ai-sdk"
     }
   ]
 }

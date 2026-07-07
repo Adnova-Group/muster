@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { validateManifest } from "../src/manifest.js";
-import { codeGradeManifest, gradeCase } from "../eval/router/grade-lib.mjs";
+import { suggestSkillsForStack, lastColonSegment } from "../src/match.js";
+import { codeGradeManifest, gradeCase, bindsSkill, hasSkillGapDegradation, hasSkillGapRecommendation } from "../eval/router/grade-lib.mjs";
 
 // CI regression guard for the router eval (eval/router/). A PR runner cannot call the
 // model, so this does NOT re-run the router. It guards the deterministic contract instead:
@@ -77,4 +78,88 @@ test("role coverage does not false-positive on a plan task's trailing-punctuatio
   const g = codeGradeManifest(implementOnly, ["security-review", "code-review"]);
   assert.match(g.reason, /role coverage 0\/2/, `expected 0/2 role coverage, got: ${g.reason}`);
   assert.ok(g.score < 10, `an implement-only crew must not score full marks for security/code review coverage (got ${g.score})`);
+});
+
+// ---------------------------------------------------------------------------
+// Luca regression (t7): the failure this guards was a Next.js+Supabase customer-facing
+// app routed live, where supabase/vercel/design/humanizer/verification skills never fired.
+// The manifest still "validated" and had non-empty crew/plan — so "skills[] non-empty" is
+// NOT a sufficient guard (a router could bind an arbitrary/wrong skill and still clear a
+// bare non-empty check). These assertions check the ACTUAL bound skill id (last-colon-
+// segment, namespace-insensitive) per task type, the surface tag, non-empty rationale AND
+// evidence on every binding, and that a deliberately-missing stack-mapped skill (ai-sdk)
+// surfaces as a skill-gap degradation + a recommendation proposing a fix. If a future
+// router-prompt edit drops any of these bindings from the golden manifest, this case
+// flips red — that's the point.
+// ---------------------------------------------------------------------------
+
+const lucaCase = dataset.cases.find(c => c.id === "luca-finance-poc");
+const lucaManifestPromise = read(`eval/router/out/${lucaCase.id}.json`).then(JSON.parse);
+
+function taskByKeyword(manifest, keyword) {
+  return manifest.plan.find(p => p.task.toLowerCase().includes(keyword.toLowerCase()));
+}
+
+test("Luca regression: schema/migration task binds a supabase skill, surface integration|none", async () => {
+  const m = await lucaManifestPromise;
+  const t = taskByKeyword(m, "schema");
+  assert.ok(t, "expected a schema/migration plan task in the Luca golden manifest");
+  assert.ok(bindsSkill(t, "supabase"), `schema task must bind a skill whose last-colon-segment is "supabase" with non-empty rationale+evidence, got: ${JSON.stringify(t.skills)}`);
+  assert.ok(["integration", "none"].includes(t.surface), `schema task surface must be "integration" or "none", got: ${t.surface}`);
+});
+
+test("Luca regression: chat UI task binds nextjs and/or shadcn AND a design/frontend skill, surface ui", async () => {
+  const m = await lucaManifestPromise;
+  const t = taskByKeyword(m, "chat ui");
+  assert.ok(t, "expected a chat-UI plan task in the Luca golden manifest");
+  assert.ok(bindsSkill(t, "nextjs") || bindsSkill(t, "shadcn"), `chat UI task must bind nextjs and/or shadcn, got: ${JSON.stringify(t.skills)}`);
+  assert.ok(bindsSkill(t, "frontend-design") || (t.skills || []).some(s => /design/i.test(lastColonSegment(s.id || ""))),
+    `chat UI task must bind a design/frontend skill, got: ${JSON.stringify(t.skills)}`);
+  assert.equal(t.surface, "ui", `chat UI task surface must be "ui", got: ${t.surface}`);
+});
+
+test("Luca regression: branded-report/copy task binds the humanizer skill, surface copy", async () => {
+  const m = await lucaManifestPromise;
+  const t = taskByKeyword(m, "branded monthly report");
+  assert.ok(t, "expected a branded-report/copy plan task in the Luca golden manifest");
+  assert.ok(bindsSkill(t, "muster-humanizer") || (t.skills || []).some(s => /humaniz/i.test(lastColonSegment(s.id || ""))),
+    `copy task must bind muster-humanizer or a humanizer-tagged skill, got: ${JSON.stringify(t.skills)}`);
+  assert.equal(t.surface, "copy", `copy task surface must be "copy", got: ${t.surface}`);
+});
+
+test("Luca regression: QBO OAuth task binds the verification skill, surface integration", async () => {
+  const m = await lucaManifestPromise;
+  const t = taskByKeyword(m, "oauth integration");
+  assert.ok(t, "expected a QBO OAuth integration plan task in the Luca golden manifest");
+  assert.ok(bindsSkill(t, "sp-verify") || (t.skills || []).some(s => /verif/i.test(lastColonSegment(s.id || ""))),
+    `OAuth task must bind sp-verify or a verification-tagged skill, got: ${JSON.stringify(t.skills)}`);
+  assert.equal(t.surface, "integration", `OAuth task surface must be "integration", got: ${t.surface}`);
+});
+
+test("Luca regression: every skill binding in the plan carries non-empty rationale AND evidence (distinct fields)", async () => {
+  const m = await lucaManifestPromise;
+  let bindingCount = 0;
+  for (const p of m.plan) {
+    for (const s of (p.skills || [])) {
+      bindingCount++;
+      assert.ok(typeof s.rationale === "string" && s.rationale.trim().length > 0, `${p.id} skill "${s.id}" missing rationale`);
+      assert.ok(typeof s.evidence === "string" && s.evidence.trim().length > 0, `${p.id} skill "${s.id}" missing evidence`);
+      assert.notEqual(s.rationale, s.evidence, `${p.id} skill "${s.id}" rationale and evidence must not be the same field doing double duty`);
+    }
+  }
+  assert.ok(bindingCount >= 4, `expected at least 4 skill bindings across the Luca plan, found ${bindingCount}`);
+});
+
+test("Luca regression: a stack-mapped missing skill (ai-sdk) surfaces as a skill-gap degradation + recommendation", async () => {
+  const m = await lucaManifestPromise;
+  // Prove the fixture is honest: the deliberately-incomplete inventory really is missing
+  // this skill per the live deterministic stack map (src/match.js), not just hand-asserted.
+  const signals = { frameworks: lucaCase.profile.frameworks, languages: lucaCase.profile.languages, keywords: [] };
+  const suggestions = suggestSkillsForStack(signals, lucaCase.skillsInventory);
+  const gap = suggestions.find(s => lastColonSegment(s.id) === lastColonSegment(lucaCase.expectedSkillGap));
+  assert.ok(gap, `expected suggestSkillsForStack to suggest "${lucaCase.expectedSkillGap}" for this fixture's ProjectProfile signals`);
+  assert.equal(gap.missing, true, `"${lucaCase.expectedSkillGap}" must be flagged missing:true against the fixture's deliberately-incomplete skillsInventory`);
+
+  assert.ok(hasSkillGapDegradation(m, lucaCase.expectedSkillGap), `golden manifest degradations must record a skill-gap for "${lucaCase.expectedSkillGap}", got: ${JSON.stringify(m.degradations)}`);
+  assert.ok(hasSkillGapRecommendation(m, lucaCase.expectedSkillGap), `golden manifest recommendations must propose a fix for the "${lucaCase.expectedSkillGap}" gap, got: ${JSON.stringify(m.recommendations)}`);
 });

@@ -67,6 +67,10 @@ test("flagValue: finds the flag regardless of position", () => {
   assert.equal(flagValue(["--ci", "ci.txt", "extra"], "--ci"), "ci.txt");
 });
 
+test("flagValue: returns undefined when the following token is itself a flag, not a value", () => {
+  assert.equal(flagValue(["match", "--skills", "--stack", "foo"], "--skills"), undefined);
+});
+
 test("formatError: friendly one-liner without DEBUG", () => {
   const e = new Error("boom");
   assert.equal(formatError(e, {}), "boom");

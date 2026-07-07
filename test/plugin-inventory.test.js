@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, symlink } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { tmpProject } from "../test-support/helpers.js";
 import { readPluginInventory, installedSkillDescription } from "../src/plugin-inventory.js";
@@ -182,4 +182,66 @@ test("installedSkillDescription: a shared cache reads each plugins directory at 
     listingAfterFirst,
     "second lookup must reuse the cached listing (same reference), not re-read the directory"
   );
+});
+
+// ---------------------------------------------------------------------------
+// Symlink guards: a malicious plugin cannot escape its own root via a
+// symlinked directory (walkFallback) or a symlinked SKILL.md (the terminal
+// read, sync and async paths) to make the inventory walk ingest system-wide
+// files.
+// ---------------------------------------------------------------------------
+
+test("walkFallback: a symlinked directory is not followed into the outside tree", async () => {
+  const home = await tmpProject({
+    ".claude/plugins/real-plugin/.mcp.json": { real: { command: "node" } }
+  });
+  // Attacker-controlled directory OUTSIDE the plugins tree — if walkFallback
+  // followed a symlink to it, its .mcp.json would be ingested as if it were
+  // a legitimately-installed plugin's server.
+  const outside = await tmpProject({ ".mcp.json": { leaked: { command: "node" } } });
+  await symlink(outside, join(home, ".claude/plugins/evil"), "dir");
+
+  const r = await readPluginInventory(home);
+  assert.deepEqual(r.mcpServers, ["real"], "the symlinked dir's contents must not be walked");
+});
+
+// Frontmatter-shaped, not plain text: descriptionFromSkillMdSync's frontmatter
+// regex would otherwise fail to match plain text and return "" anyway,
+// making a plain-text fixture pass even with no symlink guard at all (a
+// false-negative-prone test). This shape makes an unguarded read observably
+// leak the secret as the parsed description.
+const SECRET_SKILL_MD = "---\ndescription: TOP-SECRET-LEAKED-CONTENT\n---\n";
+
+test("installedSkillDescription (harness own-skills lane): a symlinked SKILL.md is not read", async () => {
+  const secretHome = await tmpProject({ "secret.txt": SECRET_SKILL_MD });
+  const home = await tmpProject({});
+  const skillDir = join(home, ".claude/skills/my-skill");
+  await mkdir(skillDir, { recursive: true });
+  await symlink(join(secretHome, "secret.txt"), join(skillDir, "SKILL.md"), "file");
+
+  assert.equal(installedSkillDescription(home, "my-skill"), "", "must not read through the symlink");
+});
+
+test("installedSkillDescription (plugins lane, via installPath): a symlinked SKILL.md is not read", async () => {
+  const secretHome = await tmpProject({ "secret.txt": SECRET_SKILL_MD });
+  const home = await tmpProject({});
+  const skillDir = join(home, "install/thing/skills/my-skill");
+  await mkdir(skillDir, { recursive: true });
+  await symlink(join(secretHome, "secret.txt"), join(skillDir, "SKILL.md"), "file");
+  await writeIndex(home, { "thing@official": [{ installPath: join(home, "install/thing") }] });
+
+  assert.equal(installedSkillDescription(home, "my-skill"), "", "must not read through the symlink");
+});
+
+test("skillsFromPluginRoot (async fallback path): a symlinked SKILL.md is not registered as an installed skill", async () => {
+  const secretHome = await tmpProject({ "secret.txt": SECRET_SKILL_MD });
+  const home = await tmpProject({
+    ".claude/plugins/real-plugin/skills/real-skill/SKILL.md": "# real skill"
+  });
+  const evilSkillDir = join(home, ".claude/plugins/real-plugin/skills/evil-skill");
+  await mkdir(evilSkillDir, { recursive: true });
+  await symlink(join(secretHome, "secret.txt"), join(evilSkillDir, "SKILL.md"), "file");
+
+  const r = await readPluginInventory(home);
+  assert.deepEqual(r.skills, ["real-skill"], "a skill whose SKILL.md is a symlink must not be listed");
 });

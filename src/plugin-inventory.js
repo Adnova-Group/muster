@@ -1,6 +1,22 @@
 import { join } from "node:path";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, lstatSync } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { readJson, readdirSafe } from "./fs-util.js";
+
+// True when `p` is itself a symlink. lstat (unlike stat/existsSync/readFile,
+// which all follow the final path component) reports on the link itself, so
+// this is the one check that can veto reading or recursing through it. A
+// missing/unreadable path reports false — the caller's own subsequent
+// read/stat already fail-soft on absence; this only needs to veto genuine
+// symlinks, not paper over other lstat failures.
+async function isSymlink(p) {
+  try { return (await lstat(p)).isSymbolicLink(); }
+  catch { return false; }
+}
+function isSymlinkSync(p) {
+  try { return lstatSync(p).isSymbolicLink(); }
+  catch { return false; }
+}
 
 // installed_plugins.json keys are "name@marketplace".
 function pluginName(key) { return key.split("@")[0]; }
@@ -35,12 +51,18 @@ async function agentsFromPluginRoot(root) {
 }
 
 // Skill names from <root>/skills/<name>/SKILL.md — the directory name is the
-// skill name.
+// skill name. A SKILL.md that is itself a symlink is rejected, not just
+// listed-and-trusted: a malicious plugin could point it outside its own root
+// (e.g. at an arbitrary system file) to get a bogus skill registered from
+// content it never actually shipped.
 async function skillsFromPluginRoot(root) {
   const found = [];
   const skillsDir = join(root, "skills");
   for (const name of await readdirSafe(skillsDir)) {
-    if ((await readdirSafe(join(skillsDir, name))).includes("SKILL.md")) found.push(name);
+    const skillMd = join(skillsDir, name, "SKILL.md");
+    if ((await readdirSafe(join(skillsDir, name))).includes("SKILL.md") && !(await isSymlink(skillMd))) {
+      found.push(name);
+    }
   }
   return found;
 }
@@ -60,6 +82,14 @@ async function skillsFromPluginRoot(root) {
 // targeted line extraction sidesteps that entirely — this only ever needs a
 // single scalar value, never the rest of the frontmatter's structure.
 function descriptionFromSkillMdSync(path) {
+  // A symlinked SKILL.md could point outside the plugin root entirely (e.g.
+  // at an arbitrary system file); readFileSync/existsSync both follow it, so
+  // this lstat check is the only thing standing between a malicious plugin
+  // and reading system-wide files through this terminal read. Both of this
+  // function's callers (the direct home/.claude/skills check and
+  // findSkillMdSync's returned candidate) funnel through here, so guarding
+  // this one choke point covers both.
+  if (isSymlinkSync(path)) return "";
   let text;
   try { text = readFileSync(path, "utf8"); } catch { return ""; }
   const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -197,6 +227,13 @@ async function walkFallback(base, maxDepth, out) {
     }
     for (const entry of entries) {
       if (atBase && entry === "marketplaces") continue;
+      // A malicious plugin can ship a symlinked directory (e.g. evil ->
+      // $HOME) to escape its own root; plain readdir/recursion follows it
+      // and would walk the target system-wide. lstat (which does NOT follow
+      // the final symlink, unlike readdir) vetoes descending into one —
+      // checked before the agents/skills special-cases too, since either of
+      // those names could itself be the symlink.
+      if (await isSymlink(join(dir, entry))) continue;
       if (entry === "agents") { out.agents.push(...await agentsFromPluginRoot(dir)); continue; }
       if (entry === "skills") { out.skills.push(...await skillsFromPluginRoot(dir)); continue; }
       await walk(join(dir, entry), depth + 1, false);

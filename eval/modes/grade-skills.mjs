@@ -444,8 +444,79 @@ function captureDedupeCheck(testCase, artifacts) {
   return checks;
 }
 
+// plugin/agents/muster-runner.md's "## Dispatch contract" section: the protocol between
+// a driver (go-backlog wave mode / coordination's per-item worktree runners) and the
+// muster-runner lifecycle agent. Like orchestrator-brief, no src/*.js pure function backs
+// a brief or a receipts report (assembled prose) -- both directions of the contract are
+// graded structurally against checked-in golden fixtures (fixtures/agents/*).
+const RUNNER_ITEM_LINE_RE = /^ITEM: \S+/m;
+const RUNNER_OUTCOME_LINE_RE = /^OUTCOME: .+$/m;
+const RUNNER_ISOLATION_LINE_RE = /^ISOLATION: .*(worktree|branch).*$/m;
+const RUNNER_BASE_RE = /base\s+\S+/i;
+const RUNNER_DISPOSITION_LINE_RE = /^DISPOSITION: (\S+)/m;
+const RUNNER_SOURCE_LINE_RE = /^SOURCE: \S+/m;
+const RUNNER_RETURN_CONTRACT_RE = /return contract/i;
+const RUNNER_VERDICT_PASS_RE = /VERDICT: PASS/;
+const RUNNER_PR_LINE_RE = /^PR: https?:\/\/\S+/m;
+const RUNNER_FILES_TOUCHED_RE = /^Files touched:\n(?:- .+\n?)+/m;
+const RUNNER_TEST_BASELINE_RE = /^- baseline: .+->.*\d+ pass/m;
+const RUNNER_TEST_FINAL_RE = /^- final: .+->.*\d+ pass/m;
+const RUNNER_FIX_LOOP_COUNT_RE = /\d+ fix loop/;
+
+function runnerDispatchBriefCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const text = String(artifacts);
+  const checks = [];
+  const requireLine = (name, want, re) => {
+    if (want === undefined) return;
+    const has = re.test(text);
+    checks.push({ name, ok: has === want, detail: `${name} line present=${has}, expected ${want}` });
+  };
+  requireLine("itemId", expect.requireItemId, RUNNER_ITEM_LINE_RE);
+  requireLine("outcome", expect.requireOutcome, RUNNER_OUTCOME_LINE_RE);
+  requireLine("isolation", expect.requireIsolation, RUNNER_ISOLATION_LINE_RE);
+  requireLine("baseRef", expect.requireBase, RUNNER_BASE_RE);
+  requireLine("sourceRef", expect.requireSourceRef, RUNNER_SOURCE_LINE_RE);
+  if (expect.requireDisposition !== undefined) {
+    const m = RUNNER_DISPOSITION_LINE_RE.exec(text);
+    const got = m ? m[1] : null;
+    checks.push({ name: "disposition", ok: got === expect.requireDisposition, detail: `DISPOSITION: ${got ?? "(missing)"}, expected ${expect.requireDisposition}` });
+  }
+  // Unconditional, same posture as orchestrator-brief's returnContractPresent: a dispatch
+  // without a stated return contract leaves the runner's receipts to chance.
+  const rc = RUNNER_RETURN_CONTRACT_RE.test(text);
+  checks.push({ name: "returnContractPresent", ok: rc, detail: rc ? "brief states a return contract" : "brief has no return-contract block" });
+  return checks;
+}
+
+function runnerReturnReceiptsCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const text = String(artifacts);
+  const checks = [];
+  const requirePattern = (name, want, re, okDetail, missDetail) => {
+    if (want === undefined) return;
+    const has = re.test(text);
+    checks.push({ name, ok: has === want, detail: has ? okDetail : missDetail });
+  };
+  requirePattern("verdictPass", expect.requireVerdictPass, RUNNER_VERDICT_PASS_RE,
+    "receipts carry the explicit VERDICT: PASS line", "no explicit VERDICT: PASS line -- the gate verdict is the receipt that matters most");
+  requirePattern("prUrl", expect.requirePrUrl, RUNNER_PR_LINE_RE,
+    "receipts carry the PR URL", "no PR: <url> line in the receipts");
+  requirePattern("filesTouched", expect.requireFilesTouched, RUNNER_FILES_TOUCHED_RE,
+    "receipts list the files touched", "no 'Files touched:' list in the receipts");
+  if (expect.requireTestEvidence !== undefined) {
+    const has = RUNNER_TEST_BASELINE_RE.test(text) && RUNNER_TEST_FINAL_RE.test(text);
+    checks.push({ name: "testEvidence", ok: has === expect.requireTestEvidence, detail: has ? "baseline + final test results are pasted" : "missing pasted baseline and/or final test results" });
+  }
+  requirePattern("fixLoopCount", expect.requireFixLoopCount, RUNNER_FIX_LOOP_COUNT_RE,
+    "receipts state the fix-loop count", "receipts do not state how many fix loops the gate took");
+  return checks;
+}
+
 export const ARTIFACT_KIND = {
   "orchestrator-brief": "text",
+  "runner-dispatch-brief": "text",
+  "runner-return-receipts": "text",
   "review-gate-verdict": "text",
   "coordination-claim-window": "text",
   "interview-enriched-outcome": "json",
@@ -471,6 +542,8 @@ export const ARTIFACT_KIND = {
 
 export const CHECKS = {
   "orchestrator-brief": orchestratorBriefCheck,
+  "runner-dispatch-brief": runnerDispatchBriefCheck,
+  "runner-return-receipts": runnerReturnReceiptsCheck,
   "review-gate-verdict": reviewGateVerdictCheck,
   "coordination-claim-window": coordinationClaimWindowCheck,
   "interview-enriched-outcome": interviewEnrichedOutcomeCheck,

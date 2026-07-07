@@ -175,6 +175,33 @@ test("orchestrator-brief: fences + return-contract caps present passes; a missin
   assert.equal(gradeCase({ check: "orchestrator-brief", expect: { returnContractCaps: [2000] } }, noReturnContract).pass, false);
 });
 
+test("runner-dispatch-brief: a brief carrying the full dispatch contract passes; each missing input fails", () => {
+  const full = "ITEM: retry\nOUTCOME: retries with backoff.\nISOLATION: worktree .worktrees/retry on branch item/retry, base main @ abc1234\nDISPOSITION: pr\nSOURCE: backlog.md#retry\n\nRETURN CONTRACT: receipts, <= 2000 chars.";
+  const expectAll = { requireItemId: true, requireOutcome: true, requireIsolation: true, requireBase: true, requireDisposition: "pr", requireSourceRef: true };
+  assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, full).pass, true);
+
+  // The runner's own rule is BLOCKED on any missing brief input — so each omission must grade as a failing brief.
+  const noIsolation = full.replace(/^ISOLATION: .*\n/m, "");
+  assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, noIsolation).pass, false);
+  const wrongDisposition = full.replace("DISPOSITION: pr", "DISPOSITION: merge");
+  assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, wrongDisposition).pass, false);
+  const noReturnContract = full.replace(/RETURN CONTRACT.*$/m, "Just report back whatever.");
+  assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, noReturnContract).pass, false);
+});
+
+test("runner-return-receipts: receipts with verdict/PR/files/pasted-tests pass; a missing verdict or paraphrased tests fail", () => {
+  const full = "ITEM: retry — disposition pr\nPR: https://github.com/x/y/pull/7\n\nFiles touched:\n- src/retry.js — backoff\n\nTests (pasted, not paraphrased):\n- baseline: `npm test` -> 10 passed, 0 failed\n- final: `npm test` -> 12 passed, 0 failed\n\nReview gate: VERDICT: PASS after 1 fix loop";
+  const expectAll = { requireVerdictPass: true, requirePrUrl: true, requireFilesTouched: true, requireTestEvidence: true, requireFixLoopCount: true };
+  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, full).pass, true);
+
+  const noVerdict = full.replace("VERDICT: PASS after 1 fix loop", "looked fine to me");
+  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, noVerdict).pass, false);
+  const paraphrasedTests = full.replace(/- baseline: .*\n- final: .*\n/, "- all tests green\n");
+  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, paraphrasedTests).pass, false);
+  const noPr = full.replace(/^PR: .*\n/m, "");
+  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, noPr).pass, false);
+});
+
 test("review-gate-verdict: a verdict-first PASS/ESCALATE matching the tallied findings passes; a verdict contradicting the findings fails", () => {
   const cleanPass = "VERDICT: PASS\n\n- NIT: minor naming nit.";
   assert.equal(gradeCase({ check: "review-gate-verdict", expect: { verdict: "PASS" } }, cleanPass).pass, true);

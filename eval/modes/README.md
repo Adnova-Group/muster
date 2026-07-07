@@ -227,12 +227,12 @@ node --test test/mode-evals.test.js
 npm run eval:modes             # same as the first command, via package.json
 ```
 
-As of this writing: 164 total cases (156 code-graded, 100% passing + 8 model-graded) — 58
+As of this writing: 166 total cases (158 code-graded, 100% passing + 8 model-graded) — 58
 mode-prompt cases across the 8 `MODES` (`plan`: 8, `plan-backlog`: 9 — its batch-plan form
 carries the backlog-ref grammar, drain ordering reusing `sprint-waves`, conflict flags, and
 a model-graded approval-gate rubric — `go`: 7, `go-backlog`: 6, `runner`: 6, `audit`: 6,
-`diagnose`: 7, `capture`: 9), 43 skill-protocol cases (40 + 3 coordination HUMAN-HOLD
-extension cases), 21 content-pipeline cases (>= 2 per pipeline across all 9), 14
+`diagnose`: 7, `capture`: 9), 45 skill-protocol cases (40 + 3 coordination HUMAN-HOLD
+extension cases + 2 muster-runner dispatch-contract cases), 21 content-pipeline cases (>= 2 per pipeline across all 9), 14
 native-builtin cases (2 per builtin across all 7), and 27 knowledge-pipeline cases (11
 gate-achievability + 16 structural, across the 11 pipelines — see the coverage table below
 for the exact per-pipeline breakdown, including the 2 pipelines with no structural case,
@@ -291,7 +291,7 @@ heads-up line names the correct replacement command).
 |---|---|---|
 | orchestrator | empirical | 3 |
 | review-gate | empirical | 3 |
-| coordination | empirical | 7 (4 original + 3 HUMAN-HOLD extension) |
+| coordination | empirical | 9 (4 original + 3 HUMAN-HOLD extension + 2 muster-runner dispatch-contract: the brief a driver sends the lifecycle agent and the return receipts it demands back, graded against `fixtures/agents/*` — the protocol `plugin/agents/muster-runner.md`'s "Dispatch contract" section documents) |
 | interview | empirical | 3 |
 | tournament | empirical | 6 |
 | domain-router | empirical | 4 |

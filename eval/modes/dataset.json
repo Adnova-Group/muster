@@ -931,6 +931,22 @@
       "artifact": "fixtures/skills/coordination/human-hold-resume-authorized.md",
       "expect": { "resumeAuthorized": true }
     },
+    {
+      "id": "coordination-runner-dispatch-brief-contract",
+      "mode": "coordination",
+      "outcome": "A driver (go-backlog wave mode / concurrent-sprint coordination) dispatches one claimed item to the muster-runner lifecycle agent. The brief carries every input the agent's dispatch contract requires: item id + outcome, isolation target (worktree/branch + base ref), forced disposition, the source ref receipts point back to, and a return contract.",
+      "check": "runner-dispatch-brief",
+      "artifact": "fixtures/agents/runner-dispatch-brief.md",
+      "expect": { "requireItemId": true, "requireOutcome": true, "requireIsolation": true, "requireBase": true, "requireDisposition": "pr", "requireSourceRef": true }
+    },
+    {
+      "id": "coordination-runner-return-receipts-contract",
+      "mode": "coordination",
+      "outcome": "The muster-runner agent's return receipts after a clean cycle: item id + PR URL, files touched, pasted (not paraphrased) baseline+final test evidence, and the review gate's explicit verdict with its fix-loop count.",
+      "check": "runner-return-receipts",
+      "artifact": "fixtures/agents/runner-return-receipts.md",
+      "expect": { "requireVerdictPass": true, "requirePrUrl": true, "requireFilesTouched": true, "requireTestEvidence": true, "requireFixLoopCount": true }
+    },
 
     {
       "id": "capture-exclusions-block-completeness",

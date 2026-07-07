@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { loopState } from "../src/loop.js";
 
 // Ralph domain: the loop-until-done primitive drives orchestration, and the
-// orchestration surfaces (orchestrator skill, autopilot command) actually wire it in.
+// orchestration surfaces (orchestrator skill, go command) actually wire it in.
 
 test("the ralph loop drives orchestration until done or the cap escalates", () => {
   // iterate while there is work and budget left
@@ -18,7 +18,9 @@ test("the ralph loop drives orchestration until done or the cap escalates", () =
 test("orchestration surfaces wire the ralph loop primitive by name", async () => {
   const surfaces = [
     new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url),
-    new URL("../plugin/commands/autopilot.md", import.meta.url)
+    // go.md is the canonical hands-off runner now (autopilot.md is a legacy alias stub —
+    // see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+    new URL("../plugin/commands/go.md", import.meta.url)
   ];
   for (const url of surfaces) {
     const text = await readFile(url, "utf8");

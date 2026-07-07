@@ -68,7 +68,7 @@ export default defineConfig({
           text: "Reference",
           items: [
             { text: "Concepts", link: "/reference/concepts" },
-            { text: "The seven modes", link: "/reference/modes" },
+            { text: "The eight modes", link: "/reference/modes" },
             { text: "CLI commands", link: "/reference/commands" },
             { text: "Pipelines", link: "/reference/pipelines" },
             { text: "Architecture", link: "/reference/architecture" },
@@ -87,7 +87,7 @@ export default defineConfig({
           text: "Reference",
           items: [
             { text: "Concepts", link: "/reference/concepts" },
-            { text: "The seven modes", link: "/reference/modes" },
+            { text: "The eight modes", link: "/reference/modes" },
             { text: "CLI commands", link: "/reference/commands" },
             { text: "Pipelines", link: "/reference/pipelines" },
             { text: "Architecture", link: "/reference/architecture" },

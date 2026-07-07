@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolveCapabilities } from "../src/capabilities.js";
+import { tmpProject } from "../test-support/helpers.js";
 
 const catalog = [
   { id: "serena", kind: "external", roles: ["code-navigation"], rank: 90, recommended: true,
@@ -70,4 +71,97 @@ test("debug role resolves to a built-in on a bare machine (not inline)", async (
   assert.ok(a.roles["debug"], "debug role must exist");
   assert.equal(a.roles["debug"].chosen.source, "builtin");
   assert.notEqual(a.roles["debug"].chosen.id, "inline");
+});
+
+// ---------------------------------------------------------------------------
+// skills inventory: skills: [{id, source, description}]
+// ---------------------------------------------------------------------------
+
+test("skills inventory: installed skill description is parsed from SKILL.md frontmatter (~/.claude/skills lane)", async () => {
+  const home = await tmpProject({
+    ".claude/skills/my-skill/SKILL.md":
+      "---\nname: my-skill\ndescription: Parses frontmatter to find installed skill descriptions.\n---\n# My Skill\n"
+  });
+  const a = resolveCapabilities(catalog, { plugins: [], skills: ["my-skill"], mcpServers: [] }, home);
+  const found = a.skills.find(s => s.id === "my-skill");
+  assert.ok(found, "installed skill must appear in the skills inventory");
+  assert.equal(found.source, "installed");
+  assert.ok(found.description.length > 0, "installed skill description must be non-empty");
+  assert.equal(found.description, "Parses frontmatter to find installed skill descriptions.");
+});
+
+test("skills inventory: plugin-shipped skill (nested under .claude/plugins) also resolves a description", async () => {
+  const home = await tmpProject({
+    // marketplace OFFERS this — must never be matched (mirrors plugin-inventory.js's own rule)
+    ".claude/plugins/marketplaces/kw/offered/skills/plugin-skill/SKILL.md":
+      "---\ndescription: offered, not installed — must not win\n---\n",
+    ".claude/plugins/cache/official/plugin-skill/1.0.0/skills/plugin-skill/SKILL.md":
+      "---\ndescription: Ships with an installed plugin.\n---\n# Plugin skill\n"
+  });
+  const a = resolveCapabilities(catalog, { plugins: [], skills: ["plugin-skill"], mcpServers: [] }, home);
+  const found = a.skills.find(s => s.id === "plugin-skill");
+  assert.equal(found.description, "Ships with an installed plugin.");
+});
+
+test("skills inventory: missing SKILL.md degrades to an empty description, never throws", async () => {
+  const home = await tmpProject({});
+  assert.doesNotThrow(() => resolveCapabilities(catalog, { plugins: [], skills: ["ghost-skill"], mcpServers: [] }, home));
+  const a = resolveCapabilities(catalog, { plugins: [], skills: ["ghost-skill"], mcpServers: [] }, home);
+  const found = a.skills.find(s => s.id === "ghost-skill");
+  assert.equal(found.description, "");
+});
+
+test("skills inventory: builtin skills carry their catalog description", () => {
+  const withDesc = [
+    ...catalog,
+    { id: "muster-described", kind: "builtin", roles: ["plan"], rank: 10, description: "A described builtin skill.",
+      provenance: { adapted_from: "Muster", license: "Apache-2.0" } }
+  ];
+  const a = resolveCapabilities(withDesc, { plugins: [], skills: [], mcpServers: [] });
+  const found = a.skills.find(s => s.id === "muster-described");
+  assert.deepEqual(found, { id: "muster-described", source: "builtin", description: "A described builtin skill." });
+});
+
+test("skills inventory: builtin skill without a catalog description degrades to an empty string, not undefined", () => {
+  const a = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [] });
+  const found = a.skills.find(s => s.id === "muster-grep-nav");
+  assert.deepEqual(found, { id: "muster-grep-nav", source: "builtin", description: "" });
+});
+
+test("skills inventory: an installed skill takes precedence over a same-id builtin entry (no duplicate)", async () => {
+  const home = await tmpProject({});
+  const a = resolveCapabilities(catalog, { plugins: [], skills: ["muster-grep-nav"], mcpServers: [] }, home);
+  const matches = a.skills.filter(s => s.id === "muster-grep-nav");
+  assert.equal(matches.length, 1, "no duplicate entries for the same id");
+  assert.equal(matches[0].source, "installed");
+});
+
+// Regression: a plain scalar `description:` whose value contains a mid-string
+// ": " (e.g. muster's own router/orchestrator/domain-router skills, which all
+// read "... Glass-box: every choice ...") is not valid as a YAML flow-mapping
+// value; parsing the whole frontmatter block with a strict YAML parser throws
+// on it, and the old blanket catch degraded it to "". The description line
+// must be pulled out with a targeted, scalar-safe extraction instead.
+test("skills inventory: a description containing a mid-string colon-space parses in full, not via a strict YAML parse", async () => {
+  const home = await tmpProject({
+    ".claude/skills/glass-box-skill/SKILL.md":
+      "---\nname: glass-box-skill\ndescription: Assemble a thing from parts. Glass-box: every choice carries rationale, evidence, and fallback.\n---\n# Glass box skill\n"
+  });
+  const a = resolveCapabilities(catalog, { plugins: [], skills: ["glass-box-skill"], mcpServers: [] }, home);
+  const found = a.skills.find(s => s.id === "glass-box-skill");
+  assert.ok(found, "installed skill must appear in the skills inventory");
+  assert.equal(
+    found.description,
+    "Assemble a thing from parts. Glass-box: every choice carries rationale, evidence, and fallback."
+  );
+});
+
+test("skills inventory: a quoted description strips its surrounding quotes", async () => {
+  const home = await tmpProject({
+    ".claude/skills/quoted-skill/SKILL.md":
+      '---\nname: quoted-skill\ndescription: "Has a colon: right here, and is quoted."\n---\n'
+  });
+  const a = resolveCapabilities(catalog, { plugins: [], skills: ["quoted-skill"], mcpServers: [] }, home);
+  const found = a.skills.find(s => s.id === "quoted-skill");
+  assert.equal(found.description, "Has a colon: right here, and is quoted.");
 });

@@ -1,6 +1,8 @@
+import { homedir } from "node:os";
 import { modelForRole } from "./model.js";
 import { ROLES } from "./roles.js";
 import { isInstalled } from "./installed.js";
+import { installedSkillDescription } from "./plugin-inventory.js";
 
 // Dispatch type for a resolved provider: "agent" | "mcp" | "skill".
 function providerType(entry) {
@@ -13,7 +15,11 @@ function providerType(entry) {
   return "skill";
 }
 
-export function resolveCapabilities(catalog, installed) {
+// `home` is a 3rd, optional parameter (defaulting to the real home dir) so
+// cli.js's existing 2-arg call sites (frozen, un-awaited) are unaffected,
+// while tests can pin it to a fixture dir for deterministic installed-skill
+// description lookups. See plugin-inventory.js's installedSkillDescription.
+export function resolveCapabilities(catalog, installed, home = homedir()) {
   const roles = {};
   for (const role of ROLES) {
     const forRole = catalog.filter(e => e.roles.includes(role)).sort((a, b) => b.rank - a.rank);
@@ -48,5 +54,28 @@ export function resolveCapabilities(catalog, installed) {
     }
     roles[role] = { chosen, chain, recommendations, model: modelForRole(role) };
   }
-  return { roles, installedRaw: installed };
+
+  // Skills inventory: every currently-installed skill (name from
+  // installed.skills, description parsed from its SKILL.md frontmatter) plus
+  // every catalog builtin not already covered by an installed skill of the
+  // same id — installed wins on a name collision, matching the roles ladder's
+  // installed-beats-builtin precedence.
+  const skills = [];
+  const seen = new Set();
+  // One shared cache for this call's whole installed-skills loop (see
+  // installedSkillDescription / findSkillMdSync in plugin-inventory.js) —
+  // every skill name shares the same plugins-tree walk instead of each
+  // re-walking it from scratch. Call-scoped, not module-level state.
+  const skillDescriptionCache = {};
+  for (const name of new Set(installed.skills || [])) {
+    seen.add(name);
+    skills.push({ id: name, source: "installed", description: installedSkillDescription(home, name, skillDescriptionCache) });
+  }
+  for (const e of catalog) {
+    if (e.kind !== "builtin" || seen.has(e.id)) continue;
+    seen.add(e.id);
+    skills.push({ id: e.id, source: "builtin", description: e.description || "" });
+  }
+
+  return { roles, installedRaw: installed, skills };
 }

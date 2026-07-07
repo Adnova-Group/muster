@@ -57,6 +57,51 @@ test("parseBacklogRef: empty and non-string inputs are outcomes (run.md's empty-
   assert.deepEqual(parseBacklogRef(undefined), { kind: "outcome" });
 });
 
+// --- WIDEN decision: file kind accepts any readable-checklist-shaped extension, not
+// just .md -- existence/readability stays the caller's job (sprint-waves), same as the
+// pre-widen .md-only stance. ------------------------------------------------------------
+
+test("parseBacklogRef: a non-.md extension (e.g. .txt) is still a file ref (WIDEN decision)", () => {
+  assert.deepEqual(parseBacklogRef("TODO.txt"), { kind: "file", path: "TODO.txt" });
+  assert.deepEqual(parseBacklogRef("docs/checklist.yaml"), { kind: "file", path: "docs/checklist.yaml" });
+});
+
+test("parseBacklogRef: case-insensitive -- ISSUES:/LINEAR: prefixes and any-case extensions all match", () => {
+  assert.deepEqual(parseBacklogRef("ISSUES:sprint-1"), { kind: "issues", label: "sprint-1" });
+  assert.deepEqual(parseBacklogRef("Issues:sprint-1"), { kind: "issues", label: "sprint-1" });
+  assert.deepEqual(parseBacklogRef("LINEAR:MUS"), { kind: "linear", key: "MUS" });
+  assert.deepEqual(parseBacklogRef(".muster/BACKLOG.MD"), { kind: "file", path: ".muster/BACKLOG.MD" });
+  assert.deepEqual(parseBacklogRef("notes.TXT"), { kind: "file", path: "notes.TXT" });
+});
+
+// --- traversal-rejection: a ".." path segment in an otherwise file-shaped token must
+// never resolve to kind:"file" -- downstream consumers (plan-backlog.md B1, go-backlog.md
+// step 1) treat kind:"file" as a green light to read/run sprint-waves against `path`. ----
+
+test("parseBacklogRef: a '..' segment in an otherwise file-shaped token is invalid, not a silent file ref", () => {
+  const r = parseBacklogRef("../secrets.md");
+  assert.equal(r.kind, "invalid");
+  assert.match(r.reason, /\.\./);
+});
+
+test("parseBacklogRef: a '..' segment buried mid-path is also invalid", () => {
+  const r = parseBacklogRef("docs/../../etc/passwd.md");
+  assert.equal(r.kind, "invalid");
+});
+
+test("parseBacklogRef: a literal '..' substring in a filename (not a traversal segment) still trips the guard", () => {
+  // "notes..txt" has a literal ".." substring in the filename itself, not a directory
+  // traversal segment -- still flagged invalid under the memory.js-style substring guard
+  // (mirrors writeMemory's slug check exactly), which deliberately trades a rare false
+  // positive for a simple, auditable check over a segment-aware parser.
+  const r = parseBacklogRef("notes..txt");
+  assert.equal(r.kind, "invalid");
+});
+
+test("parseBacklogRef: an ordinary single-dot extension token is unaffected by the traversal guard", () => {
+  assert.deepEqual(parseBacklogRef("notes.txt"), { kind: "file", path: "notes.txt" });
+});
+
 // --- crossItemConflicts: the batch plan's advisory cross-item file-conflict flags --------
 // Deliberately ADVISORY, never a gate: manifest fences stay opaque path labels
 // (validateManifest does no glob matching; disjointness stays orchestrator judgment).
@@ -137,4 +182,27 @@ test("crossItemConflicts: pair order follows input order and each pair appears o
 test("crossItemConflicts: non-array input degrades to empty results, never throws", () => {
   assert.deepEqual(crossItemConflicts(undefined), { conflicts: [], unfenced: [] });
   assert.deepEqual(crossItemConflicts("nope"), { conflicts: [], unfenced: [] });
+});
+
+// --- backslash-fence-overlap: normalizeFenceLabel must strip a glob segment wherever it
+// falls in the path (not just a trailing one), on backslash-separated (Windows-style)
+// labels as well as forward-slash ones -- the pre-fix version only stripped a *trailing*
+// glob, so a mid-path glob on a backslash label silently escaped normalization and a real
+// overlap went unflagged. ------------------------------------------------------------
+
+test("crossItemConflicts: a mid-path glob on a backslash-separated label is normalized and flagged (previously a false negative)", () => {
+  const r = crossItemConflicts([
+    { id: "wildcard", owns: ["src\\auth\\*\\session.js"] },
+    { id: "literal", owns: ["src\\auth\\session.js"] },
+  ]);
+  assert.equal(r.conflicts.length, 1, `expected an overlap flag; got ${JSON.stringify(r)}`);
+  assert.deepEqual([r.conflicts[0].a, r.conflicts[0].b], ["wildcard", "literal"]);
+});
+
+test("crossItemConflicts: forward-slash mid-path glob normalizes the same way as the backslash form", () => {
+  const r = crossItemConflicts([
+    { id: "wildcard", owns: ["src/auth/*/session.js"] },
+    { id: "literal", owns: ["src/auth/session.js"] },
+  ]);
+  assert.equal(r.conflicts.length, 1);
 });

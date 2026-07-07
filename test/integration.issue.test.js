@@ -28,9 +28,11 @@ test("resolveIssue surfaces a clear error when gh fails", async () => {
   await assert.rejects(() => resolveIssue("1", { exec: failExec }), /issue|gh/i);
 });
 
-test("run + autopilot resolve an issue ref before routing", async () => {
-  const run = await readFile(new URL("../plugin/commands/run.md", import.meta.url), "utf8");
-  assert.match(run, /muster issue/, "run must resolve issue refs");
-  const auto = await readFile(new URL("../plugin/commands/autopilot.md", import.meta.url), "utf8");
-  assert.match(auto, /muster issue/, "autopilot must resolve issue refs");
+test("plan + go resolve an issue ref before routing", async () => {
+  // plan.md/go.md are the canonical homes now (run.md/autopilot.md are legacy alias
+  // stubs — see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+  const plan = await readFile(new URL("../plugin/commands/plan.md", import.meta.url), "utf8");
+  assert.match(plan, /muster issue/, "plan must resolve issue refs");
+  const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
+  assert.match(go, /muster issue/, "go must resolve issue refs");
 });

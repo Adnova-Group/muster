@@ -15,7 +15,7 @@ export const PRINCIPLES = [
 ].join("\n");
 
 export const VERBS =
-  "Verbs: /muster:run (plan + show), /muster:autopilot (hands-off lifecycle), " +
+  "Verbs: /muster:run (plan + show; a backlog ref batch-plans first), /muster:autopilot (hands-off lifecycle), " +
   "/muster:diagnose (failure-first fix), /muster:audit (whole-codebase review-and-fix), " +
   "/muster:sprint (batch backlog drain), /muster:runner (unattended one-cycle work-picker).";
 

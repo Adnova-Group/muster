@@ -93,6 +93,24 @@ test("issue-ref: issue-shaped input passes, plain text fails an isIssueRef:true 
   assert.equal(gradeCase({ check: "issue-ref", outcome: "Add a feature", expect: { isIssueRef: false } }, undefined).pass, true);
 });
 
+test("backlog-ref: each ref form classifies, and a plain outcome fails a file expectation", () => {
+  assert.equal(gradeCase({ check: "backlog-ref", outcome: ".muster/backlog.md", expect: { kind: "file", path: ".muster/backlog.md" } }, undefined).pass, true);
+  assert.equal(gradeCase({ check: "backlog-ref", outcome: "issues:sprint-1", expect: { kind: "issues", label: "sprint-1" } }, undefined).pass, true);
+  assert.equal(gradeCase({ check: "backlog-ref", outcome: "linear:MUS", expect: { kind: "linear", key: "MUS" } }, undefined).pass, true);
+  assert.equal(gradeCase({ check: "backlog-ref", outcome: "issues:", expect: { kind: "invalid" } }, undefined).pass, true);
+  assert.equal(gradeCase({ check: "backlog-ref", outcome: "Add dark mode to settings", expect: { kind: "file" } }, undefined).pass, false);
+  assert.equal(gradeCase({ check: "backlog-ref", outcome: "Add dark mode to settings", expect: { kind: "outcome" } }, undefined).pass, true);
+});
+
+test("batch-conflicts: overlap flagged + unfenced reported pass; a wrong pair expectation fails", () => {
+  const overlap = { items: [{ id: "auth", owns: ["src/auth/**"] }, { id: "sessions", owns: ["src/auth/session.js"] }, { id: "docs", owns: ["docs/**"] }] };
+  assert.equal(gradeCase({ check: "batch-conflicts", expect: { conflictPairs: [["auth", "sessions"]], unfenced: [] } }, overlap).pass, true);
+  assert.equal(gradeCase({ check: "batch-conflicts", expect: { conflictPairs: [["auth", "docs"]] } }, overlap).pass, false);
+  const disjoint = { items: [{ id: "retry", owns: ["src/fetch/**"] }, { id: "metrics", owns: [] }] };
+  assert.equal(gradeCase({ check: "batch-conflicts", expect: { conflictPairs: [], unfenced: ["metrics"] } }, disjoint).pass, true);
+  assert.equal(gradeCase({ check: "batch-conflicts", expect: { conflictPairs: [], unfenced: [] } }, disjoint).pass, false);
+});
+
 test("manifest: valid + fenced + covered manifest passes; invalid, unfenced, all-inline each fail", () => {
   const validParallel = { outcome: "o", successCriteria: ["c"], crew: [{ stage: "implement", provider: "p", source: "builtin", model: "sonnet", rationale: "r", evidence: "e", fallback: "inline" }], recommendations: [], degradations: [], plan: [{ id: "a", task: "t1", mode: "single", deps: [], owns: ["src/**"] }, { id: "b", task: "t2", mode: "single", deps: [], owns: ["docs/**"] }] };
   assert.equal(gradeCase({ check: "manifest", expect: { validates: true, requireFences: true, expectRoles: ["implement"], nonInline: true } }, validParallel).pass, true);

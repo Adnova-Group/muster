@@ -5,6 +5,11 @@ All notable changes to `@adnova-group/muster` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`/muster:run <backlog ref>` -- batch-plan form.** Run becomes Sprint's plan-first counterpart: a backlog ref (a backlog `.md` path, `issues:<label>`, or `linear:<key>` -- `parseBacklogRef` in the new `src/batch-plan.js` pins the grammar, and an empty label/key is malformed rather than silently routed as an outcome) routes EVERY item up front against one shared detect/capabilities context, never interviewing mid-batch, and renders ONE batch plan: per-item crew summaries, the drain ordering (`sprint-waves` stays authoritative, so annotated backlogs preview their wave structure), and advisory cross-item conflict flags wherever concurrent items' `plan[].owns` fences overlap on a path boundary (`crossItemConflicts`; unfenced items are listed, never guessed at -- fences stay opaque labels and disjointness stays orchestrator judgment). Nothing executes before the AskUserQuestion gate: Approve & drain chains into the sprint drain in-session, Adjust re-routes and re-renders, Cancel exits with nothing executed. Direct `/muster:sprint` invocation is unchanged, and a plain outcome runs the single-outcome path byte-identically. Eval coverage: 9 new run cases (backlog-ref grammar, drain ordering, conflict-flag fixtures, a model-graded approval-gate rubric), `eval:modes` 156/156 code-graded.
+
 ## [0.4.0] - 2026-07-06
 
 ### Added

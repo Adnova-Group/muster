@@ -12,6 +12,7 @@ import { assessOutcome } from "../../src/interview.js";
 import { parseIssueRef } from "../../src/issue.js";
 import { classifyFailure, buildDiagnoseManifest } from "../../src/diagnose.js";
 import { buildAuditManifest } from "../../src/audit.js";
+import { parseBacklogRef, crossItemConflicts } from "../../src/batch-plan.js";
 import { rowFormatCheck } from "./grade-core.mjs";
 
 // Fences invariant (run.md/autopilot.md: parallel plan tasks must carry owns/frozen so
@@ -210,6 +211,43 @@ function issueRefCheck(testCase) {
   return checks;
 }
 
+// run.md step 0b: the batch-ref grammar (file | issues:<label> | linear:<key> |
+// outcome | invalid) that decides whether run plans a single outcome or renders the
+// batch plan. Grades src/batch-plan.js's parseBacklogRef directly, same tier as
+// issue-ref grading parseIssueRef.
+function backlogRefCheck(testCase) {
+  const expect = testCase.expect || {};
+  const r = parseBacklogRef(testCase.outcome);
+  const checks = [{ name: "kind", ok: r.kind === expect.kind, detail: `parseBacklogRef(outcome).kind = "${r.kind}", expected "${expect.kind}"` }];
+  if (expect.path != null) checks.push({ name: "path", ok: r.path === expect.path, detail: `path=${r.path}, expected ${expect.path}` });
+  if (expect.label != null) checks.push({ name: "label", ok: r.label === expect.label, detail: `label=${r.label}, expected ${expect.label}` });
+  if (expect.key != null) checks.push({ name: "key", ok: r.key === expect.key, detail: `key=${r.key}, expected ${expect.key}` });
+  return checks;
+}
+
+// run.md's Batch plan section: cross-item file-conflict flags over per-item fence
+// labels (the union of each item manifest's plan[].owns). Advisory flags, never a
+// gate. Artifact: JSON `{ items: [{id, owns: [...]}] }` (or a bare array).
+function batchConflictsCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const items = Array.isArray(artifacts) ? artifacts : artifacts && artifacts.items;
+  const r = crossItemConflicts(items);
+  const checks = [];
+  if (expect.conflictPairs !== undefined) {
+    const pairs = r.conflicts.map((c) => [c.a, c.b]);
+    checks.push({ name: "conflictPairs", ok: JSON.stringify(pairs) === JSON.stringify(expect.conflictPairs), detail: `conflict pairs ${JSON.stringify(pairs)}, expected ${JSON.stringify(expect.conflictPairs)}` });
+  }
+  if (expect.unfenced !== undefined) {
+    checks.push({ name: "unfenced", ok: JSON.stringify(r.unfenced) === JSON.stringify(expect.unfenced), detail: `unfenced ${JSON.stringify(r.unfenced)}, expected ${JSON.stringify(expect.unfenced)}` });
+  }
+  if (expect.overlapsInclude) {
+    const all = r.conflicts.flatMap((c) => c.overlaps);
+    const missing = expect.overlapsInclude.filter((o) => !all.includes(o));
+    checks.push({ name: "overlapsInclude", ok: missing.length === 0, detail: missing.length ? `missing overlap(s): ${missing.join(", ")} (got ${JSON.stringify(all)})` : `overlaps include ${JSON.stringify(expect.overlapsInclude)}` });
+  }
+  return checks;
+}
+
 function manifestCheck(testCase, artifacts) {
   const expect = testCase.expect || {};
   const v = validateManifest(artifacts);
@@ -295,6 +333,8 @@ export const ARTIFACT_KIND = {
   "audit-backlog-waves": "text",
   assess: "none",
   "issue-ref": "none",
+  "backlog-ref": "none",
+  "batch-conflicts": "json",
   manifest: "json",
   "sprint-waves": "text",
   "sprint-one-attended-stop": "text",
@@ -311,6 +351,8 @@ export const CHECKS = {
   "audit-backlog-waves": sprintWavesCheck,
   assess: assessCheck,
   "issue-ref": issueRefCheck,
+  "backlog-ref": backlogRefCheck,
+  "batch-conflicts": batchConflictsCheck,
   manifest: manifestCheck,
   "sprint-waves": sprintWavesCheck,
   "sprint-one-attended-stop": oneAttendedStopCheck,

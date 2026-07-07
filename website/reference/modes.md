@@ -4,7 +4,7 @@ Muster exposes seven entry points as slash commands under the `muster:` namespac
 
 | Mode | Command | Shape |
 | --- | --- | --- |
-| Run | `/muster:run <outcome>` | Plan and show, then stop for approval |
+| Run | `/muster:run <outcome \| backlog ref>` | Plan and show, then stop for approval; a backlog ref plans the whole batch first |
 | Autopilot | `/muster:autopilot <outcome>` | Hands-off full lifecycle |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
@@ -23,6 +23,17 @@ Then it detects, routes, and shows the glass-box crew manifest plus the plan, an
 ```
 
 Run and Autopilot both accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome.
+
+### Batch-plan form
+
+Run also accepts the same backlog refs as Sprint — a backlog `.md` path, `issues:<label>`, or `linear:<key>` — and becomes Sprint's plan-first counterpart: every backlog item is routed up front against one shared detect/capabilities context (a vague item is flagged, never interviewed mid-batch), and ONE batch plan is rendered showing per-item crew summaries, the drain ordering (`muster sprint-waves` stays authoritative, so an annotated backlog previews its wave structure), and advisory cross-item conflict flags wherever two concurrent items' `owns` fences overlap on a path boundary (an item with no fences is listed as unfenced rather than guessed at).
+
+Nothing executes before the approval gate. **Approve & drain** chains into the Sprint drain in-session, which owns the batch from there — per-item lifecycle, escalations, ticking, and the single batch report at the end. **Adjust the plan** re-routes the named items and re-renders the plan; **Cancel** exits with nothing executed. Direct `/muster:sprint` invocation is unchanged.
+
+```sh
+/muster:run .muster/backlog.md
+/muster:run issues:sprint-1
+```
 
 ## Autopilot
 

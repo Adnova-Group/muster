@@ -832,6 +832,21 @@ test("the sprint waves fixture's pinned output matches the checked-in waves.json
   assert.deepEqual(computeSprintWaves(backlog), pinned);
 });
 
+// review-gate/SKILL.md's prose can't be imported like sprint-waves'/prd.yaml's real code/data
+// can (it's assembled doc text -- same "no src/*.js home" posture as orchestrator-brief), so
+// this drift guard reads the LIVE SKILL.md directly and asserts the checked-in
+// mutant-kill-rule-clean.md fixture is byte-identical to its "## Mutant-kill gate" section --
+// a future edit to review-gate/SKILL.md that silently drops or thins the rule fails this test
+// instead of the fixture quietly going stale.
+test("the review-gate mutant-kill-rule fixture matches the live plugin/skills/review-gate/SKILL.md section (drift guard)", async () => {
+  const live = await read("plugin/skills/review-gate/SKILL.md");
+  const headingIndex = live.indexOf("## Mutant-kill gate");
+  assert.ok(headingIndex >= 0, "plugin/skills/review-gate/SKILL.md must contain a '## Mutant-kill gate' section");
+  const liveSection = live.slice(headingIndex);
+  const fixture = await read("eval/modes/fixtures/skills/review-gate/mutant-kill-rule-clean.md");
+  assert.equal(liveSection, fixture, "fixtures/skills/review-gate/mutant-kill-rule-clean.md must be byte-identical to the live SKILL.md's '## Mutant-kill gate' section onward");
+});
+
 test("package.json wires eval:modes to eval/modes/grade.mjs", async () => {
   const pkg = JSON.parse(await read("package.json"));
   assert.equal(pkg.scripts["eval:modes"], "node eval/modes/grade.mjs");

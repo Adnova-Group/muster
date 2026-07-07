@@ -206,9 +206,9 @@
       "expect": { "kind": "invalid" }
     },
     {
-      "id": "plan-backlog-drain-ordering",
+      "id": "plan-backlog-run-ordering",
       "mode": "plan-backlog",
-      "outcome": "Batch-plan mode renders drain ordering from the SAME authoritative wave computation sprint uses: an annotated backlog's plan shows retry/logging/metrics in wave 1, docs in wave 2.",
+      "outcome": "Batch-plan mode renders run order from the SAME authoritative wave computation sprint uses: an annotated backlog's plan shows retry/logging/metrics in wave 1, docs in wave 2.",
       "check": "sprint-waves",
       "artifact": "fixtures/sprint/backlog.md",
       "expect": { "ok": true, "annotated": true, "waves": [["retry", "logging", "metrics"], ["docs"]] }
@@ -234,7 +234,7 @@
       "mode": "plan-backlog",
       "outcome": "/muster:run .muster/backlog.md on a three-item backlog.",
       "grading": "model",
-      "rubric": "A good batch-plan response routes every item up front and renders ONE batch plan (per-item crew summaries, drain ordering, conflict flags), then stops at an AskUserQuestion with Approve & drain / Adjust the plan / Cancel. Penalize: any item executing before approval, Adjust triggering execution instead of re-routing, Cancel leaving work started, or per-item approval stops instead of one batch stop.",
+      "rubric": "A good batch-plan response routes every item up front and renders ONE batch plan (per-item crew summaries, run order, conflict flags), then stops at an AskUserQuestion with Approve & clear / Adjust the plan / Cancel. Penalize: any item executing before approval, Adjust triggering execution instead of re-routing, Cancel leaving work started, or per-item approval stops instead of one batch stop.",
       "expect": {}
     },
 

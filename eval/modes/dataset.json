@@ -1,5 +1,5 @@
 {
-  "description": "Empirical regression eval for the 6 mode prompts (plugin/commands/*.md): run, autopilot, sprint, runner, audit, diagnose. Each case names a deterministic `check` (see grade-lib.mjs) graded against either a checked-in fixture artifact or muster's own deterministic pipeline code (assessOutcome, parseIssueRef, classifyFailure/buildDiagnoseManifest, buildAuditManifest, computeSprintWaves, validateManifest). See README.md for the full case-shape contract and why each check is code-gradeable. `grading: \"model\"` cases have no deterministic `expect` and are excluded from the CI path (test/mode-evals.test.js, eval:modes) per the code >> model >> human cost order.",
+  "description": "Empirical regression eval for the 8 mode prompts (plugin/commands/*.md): plan, plan-backlog, go, go-backlog, runner, audit, diagnose, capture. (run/autopilot/sprint are now thin legacy alias stubs delegating to plan/go/go-backlog -- graded structurally in test/mode-evals.test.js, not via dataset cases here.) Each case names a deterministic `check` (see grade-lib.mjs) graded against either a checked-in fixture artifact or muster's own deterministic pipeline code (assessOutcome, parseIssueRef, classifyFailure/buildDiagnoseManifest, buildAuditManifest, computeSprintWaves, validateManifest). See README.md for the full case-shape contract and why each check is code-gradeable. `grading: \"model\"` cases have no deterministic `expect` and are excluded from the CI path (test/mode-evals.test.js, eval:modes) per the code >> model >> human cost order.",
   "cases": [
     {
       "id": "diagnose-ci-fail-marker",
@@ -112,126 +112,126 @@
     },
 
     {
-      "id": "run-clear-outcome-skips-interview",
-      "mode": "run",
+      "id": "plan-clear-outcome-skips-interview",
+      "mode": "plan",
       "outcome": "Add JWT authentication to the Express REST API, including tests, targeting 100% coverage on the auth middleware.",
       "check": "assess",
       "expect": { "clear": true }
     },
     {
-      "id": "run-vague-outcome-triggers-interview",
-      "mode": "run",
+      "id": "plan-vague-outcome-triggers-interview",
+      "mode": "plan",
       "outcome": "make it better",
       "check": "assess",
       "expect": { "clear": false, "signalsInclude": ["too-short", "no-success-criteria", "vague-only"] }
     },
     {
-      "id": "run-issue-ref-hash-form",
-      "mode": "run",
+      "id": "plan-issue-ref-hash-form",
+      "mode": "plan",
       "outcome": "#42",
       "check": "issue-ref",
       "expect": { "isIssueRef": true, "number": 42 }
     },
     {
-      "id": "run-issue-ref-url-form",
-      "mode": "run",
+      "id": "plan-issue-ref-url-form",
+      "mode": "plan",
       "outcome": "https://github.com/Adnova-Group/muster/issues/128",
       "check": "issue-ref",
       "expect": { "isIssueRef": true, "number": 128 }
     },
     {
-      "id": "run-plain-outcome-not-issue-ref",
-      "mode": "run",
+      "id": "plan-plain-outcome-not-issue-ref",
+      "mode": "plan",
       "outcome": "Add dark mode toggle to the settings page",
       "check": "issue-ref",
       "expect": { "isIssueRef": false }
     },
     {
-      "id": "run-parallel-manifest-fences",
-      "mode": "run",
+      "id": "plan-parallel-manifest-fences",
+      "mode": "plan",
       "outcome": "Add JWT auth to the API and update the docs, in parallel.",
       "check": "manifest",
-      "artifact": "fixtures/run/manifest-parallel.json",
+      "artifact": "fixtures/plan/manifest-parallel.json",
       "expect": { "validates": true, "requireFences": true, "expectRoles": ["implement", "test-author"], "nonInline": true }
     },
     {
-      "id": "run-single-task-manifest-no-fences-required",
-      "mode": "run",
+      "id": "plan-single-task-manifest-no-fences-required",
+      "mode": "plan",
       "outcome": "Diagnose and fix the flaky retry test in the payments service.",
       "check": "manifest",
-      "artifact": "fixtures/run/manifest-single.json",
+      "artifact": "fixtures/plan/manifest-single.json",
       "expect": { "validates": true, "requireFences": false, "expectRoles": ["debug", "implement"], "nonInline": true }
     },
     {
-      "id": "run-routing-appropriateness",
-      "mode": "run",
+      "id": "plan-routing-appropriateness",
+      "mode": "plan",
       "outcome": "Add JWT authentication to the Express REST API, including tests.",
       "grading": "model",
       "rubric": "A good manifest routes this software task to an implementation provider plus a test author; the plan builds the endpoint then tests it. Penalize: content/author roles, missing tests, empty/all-inline crew.",
       "expect": {}
     },
     {
-      "id": "run-backlog-ref-file-form",
-      "mode": "run",
+      "id": "plan-backlog-ref-file-form",
+      "mode": "plan-backlog",
       "outcome": ".muster/backlog.md",
       "check": "backlog-ref",
       "expect": { "kind": "file", "path": ".muster/backlog.md" }
     },
     {
-      "id": "run-backlog-ref-issues-form",
-      "mode": "run",
+      "id": "plan-backlog-ref-issues-form",
+      "mode": "plan-backlog",
       "outcome": "issues:sprint-1",
       "check": "backlog-ref",
       "expect": { "kind": "issues", "label": "sprint-1" }
     },
     {
-      "id": "run-backlog-ref-linear-form",
-      "mode": "run",
+      "id": "plan-backlog-ref-linear-form",
+      "mode": "plan-backlog",
       "outcome": "linear:MUS",
       "check": "backlog-ref",
       "expect": { "kind": "linear", "key": "MUS" }
     },
     {
-      "id": "run-plain-outcome-not-backlog-ref",
-      "mode": "run",
+      "id": "plan-backlog-plain-outcome-not-backlog-ref",
+      "mode": "plan-backlog",
       "outcome": "Fix the broken links in README.md",
       "check": "backlog-ref",
       "expect": { "kind": "outcome" }
     },
     {
-      "id": "run-batch-empty-issues-label-invalid",
-      "mode": "run",
+      "id": "plan-backlog-empty-issues-label-invalid",
+      "mode": "plan-backlog",
       "outcome": "issues:",
       "check": "backlog-ref",
       "expect": { "kind": "invalid" }
     },
     {
-      "id": "run-batch-plan-drain-ordering",
-      "mode": "run",
+      "id": "plan-backlog-drain-ordering",
+      "mode": "plan-backlog",
       "outcome": "Batch-plan mode renders drain ordering from the SAME authoritative wave computation sprint uses: an annotated backlog's plan shows retry/logging/metrics in wave 1, docs in wave 2.",
       "check": "sprint-waves",
       "artifact": "fixtures/sprint/backlog.md",
       "expect": { "ok": true, "annotated": true, "waves": [["retry", "logging", "metrics"], ["docs"]] }
     },
     {
-      "id": "run-batch-conflicts-overlap-flagged",
-      "mode": "run",
+      "id": "plan-backlog-conflicts-overlap-flagged",
+      "mode": "plan-backlog",
       "outcome": "Two batch items whose fence labels overlap on a path boundary (src/auth/** covers src/auth/session.js) are flagged as a cross-item conflict pair in the batch plan; the disjoint docs item is not.",
       "check": "batch-conflicts",
-      "artifact": "fixtures/run/batch-owns-overlap.json",
+      "artifact": "fixtures/plan-backlog/batch-owns-overlap.json",
       "expect": { "conflictPairs": [["auth", "sessions"]], "unfenced": [], "overlapsInclude": ["src/auth/** ~ src/auth/session.js"] }
     },
     {
-      "id": "run-batch-conflicts-disjoint-clean",
-      "mode": "run",
+      "id": "plan-backlog-conflicts-disjoint-clean",
+      "mode": "plan-backlog",
       "outcome": "Batch items with disjoint fence trees produce zero conflict flags; an item with no fence data is reported unfenced instead of guessed at.",
       "check": "batch-conflicts",
-      "artifact": "fixtures/run/batch-owns-disjoint.json",
+      "artifact": "fixtures/plan-backlog/batch-owns-disjoint.json",
       "expect": { "conflictPairs": [], "unfenced": ["metrics"] }
     },
     {
-      "id": "run-batch-plan-approval-gate",
-      "mode": "run",
+      "id": "plan-backlog-approval-gate",
+      "mode": "plan-backlog",
       "outcome": "/muster:run .muster/backlog.md on a three-item backlog.",
       "grading": "model",
       "rubric": "A good batch-plan response routes every item up front and renders ONE batch plan (per-item crew summaries, drain ordering, conflict flags), then stops at an AskUserQuestion with Approve & drain / Adjust the plan / Cancel. Penalize: any item executing before approval, Adjust triggering execution instead of re-routing, Cancel leaving work started, or per-item approval stops instead of one batch stop.",
@@ -239,51 +239,51 @@
     },
 
     {
-      "id": "autopilot-issue-ref-bare-number",
-      "mode": "autopilot",
+      "id": "go-issue-ref-bare-number",
+      "mode": "go",
       "outcome": "128",
       "check": "issue-ref",
       "expect": { "isIssueRef": true, "number": 128 }
     },
     {
-      "id": "autopilot-vague-outcome-signals-recorded",
-      "mode": "autopilot",
+      "id": "go-vague-outcome-signals-recorded",
+      "mode": "go",
       "outcome": "fix it",
       "check": "assess",
       "expect": { "clear": false, "signalsInclude": ["too-short", "no-success-criteria", "vague-only"] }
     },
     {
-      "id": "autopilot-manifest-validates-non-inline",
-      "mode": "autopilot",
+      "id": "go-manifest-validates-non-inline",
+      "mode": "go",
       "outcome": "Add JWT auth to the API and update the docs, in parallel (hands-off run).",
       "check": "manifest",
-      "artifact": "fixtures/run/manifest-parallel.json",
+      "artifact": "fixtures/plan/manifest-parallel.json",
       "expect": { "validates": true, "requireFences": true, "nonInline": true, "expectRoles": ["implement", "test-author"] }
     },
     {
-      "id": "autopilot-disposition-attended-no-downgrade",
-      "mode": "autopilot",
+      "id": "go-disposition-attended-no-downgrade",
+      "mode": "go",
       "outcome": "Ship the hotfix and merge it to base directly once green (attended session).",
       "check": "disposition",
       "expect": { "declared": "merge-push", "attended": true, "expected": "merge-push" }
     },
     {
-      "id": "autopilot-disposition-unattended-downgrades-to-pr",
-      "mode": "autopilot",
+      "id": "go-disposition-unattended-downgrades-to-pr",
+      "mode": "go",
       "outcome": "Ship the hotfix and merge it to base directly once green (fired from a Routine, unattended).",
       "check": "disposition",
       "expect": { "declared": "merge-push", "attended": false, "expected": "pr" }
     },
     {
-      "id": "autopilot-disposition-merge-local-unattended-downgrades",
-      "mode": "autopilot",
+      "id": "go-disposition-merge-local-unattended-downgrades",
+      "mode": "go",
       "outcome": "Refactor the utils module and merge locally when done (fired unattended).",
       "check": "disposition",
       "expect": { "declared": "merge-local", "attended": false, "expected": "pr" }
     },
     {
-      "id": "autopilot-wave-commit-message-format",
-      "mode": "autopilot",
+      "id": "go-wave-commit-message-format",
+      "mode": "go",
       "outcome": "Three waves of autopilot commits, one per green + reviewed wave.",
       "check": "commit-message",
       "input": "feat(wave 1): add JWT auth endpoint\nfeat(wave 2): add auth middleware tests\nfeat(wave 3): update docs for the new auth flow",
@@ -291,16 +291,16 @@
     },
 
     {
-      "id": "sprint-plain-backlog-sequential-queue",
-      "mode": "sprint",
+      "id": "go-backlog-plain-backlog-sequential-queue",
+      "mode": "go-backlog",
       "outcome": "A plain backlog.md with two unannotated items — sequential queue mode, not wave mode.",
       "check": "sprint-waves",
       "input": "- [ ] Add a health-check endpoint returning 200 with uptime seconds\n- [ ] Add rate limiting to the public API, capped at 100 req/min per key\n",
       "expect": { "ok": true, "annotated": false, "waves": [["item-1"], ["item-2"]] }
     },
     {
-      "id": "sprint-annotated-wave-mode",
-      "mode": "sprint",
+      "id": "go-backlog-annotated-wave-mode",
+      "mode": "go-backlog",
       "outcome": "An {id}/{deps}-annotated backlog: retry and logging are independent (wave 1), docs depends on both (wave 2), metrics is independent with disposition keep.",
       "check": "sprint-waves",
       "artifact": "fixtures/sprint/backlog.md",
@@ -312,32 +312,32 @@
       }
     },
     {
-      "id": "sprint-escalated-item-stays-in-remainder",
-      "mode": "sprint",
+      "id": "go-backlog-escalated-item-stays-in-remainder",
+      "mode": "go-backlog",
       "outcome": "A backlog item annotated {escalated: ...} — the sprint continues past it and it stays present for a future sprint to resurface.",
       "check": "sprint-waves",
       "input": "- [ ] Add retry to the fetch client {id: retry} {deps: none}\n- [ ] Add a dashboard metric for retry counts, depends on retry landing first {id: metrics} {deps: retry} {escalated: 2026-07-01}\n",
       "expect": { "ok": true, "waves": [["retry"], ["metrics"]], "itemEscalated": { "metrics": true, "retry": false } }
     },
     {
-      "id": "sprint-cycle-detected-stops-nothing-runs",
-      "mode": "sprint",
+      "id": "go-backlog-cycle-detected-stops-nothing-runs",
+      "mode": "go-backlog",
       "outcome": "Two items whose {deps} reference each other — a cycle; sprint-waves reports it and stops, nothing runs.",
       "check": "sprint-waves",
       "input": "- [ ] Item A depends on B {id: a} {deps: b}\n- [ ] Item B depends on A {id: b} {deps: a}\n",
       "expect": { "ok": false, "errorsNonEmpty": true }
     },
     {
-      "id": "sprint-disposition-annotation-parsed",
-      "mode": "sprint",
+      "id": "go-backlog-disposition-annotation-parsed",
+      "mode": "go-backlog",
       "outcome": "A single annotated item declaring {disposition: pr}.",
       "check": "sprint-waves",
       "input": "- [ ] Bump the lodash dependency to patch the reported CVE {id: bump-lodash} {deps: none} {disposition: pr}\n",
       "expect": { "ok": true, "itemDispositions": { "bump-lodash": "pr" } }
     },
     {
-      "id": "sprint-one-attended-stop-batch-report",
-      "mode": "sprint",
+      "id": "go-backlog-one-attended-stop-batch-report",
+      "mode": "go-backlog",
       "outcome": "Four-item sprint STATE excerpt: per-item ticking during the run, then exactly ONE attended stop at the end (the batch report), not per item.",
       "check": "sprint-one-attended-stop",
       "artifact": "fixtures/sprint/state-batch-report.md",
@@ -930,6 +930,22 @@
       "check": "coordination-human-hold-resume",
       "artifact": "fixtures/skills/coordination/human-hold-resume-authorized.md",
       "expect": { "resumeAuthorized": true }
+    },
+    {
+      "id": "coordination-runner-dispatch-brief-contract",
+      "mode": "coordination",
+      "outcome": "A driver (go-backlog wave mode / concurrent-sprint coordination) dispatches one claimed item to the muster-runner lifecycle agent. The brief carries every input the agent's dispatch contract requires: item id + outcome, isolation target (worktree/branch + base ref), forced disposition, the source ref receipts point back to, and a return contract.",
+      "check": "runner-dispatch-brief",
+      "artifact": "fixtures/agents/runner-dispatch-brief.md",
+      "expect": { "requireItemId": true, "requireOutcome": true, "requireIsolation": true, "requireBase": true, "requireDisposition": "pr", "requireSourceRef": true }
+    },
+    {
+      "id": "coordination-runner-return-receipts-contract",
+      "mode": "coordination",
+      "outcome": "The muster-runner agent's return receipts after a clean cycle: item id + PR URL, files touched, pasted (not paraphrased) baseline+final test evidence, and the review gate's explicit verdict with its fix-loop count.",
+      "check": "runner-return-receipts",
+      "artifact": "fixtures/agents/runner-return-receipts.md",
+      "expect": { "requireVerdictPass": true, "requirePrUrl": true, "requireFilesTouched": true, "requireTestEvidence": true, "requireFixLoopCount": true }
     },
 
     {

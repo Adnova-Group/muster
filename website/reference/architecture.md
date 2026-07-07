@@ -19,7 +19,7 @@ The **model-facing layer** is what Claude Code loads as a plugin. It is markdown
 
 The router is the novel core. The problem it solves: you have an outcome and a pile of tools (some you installed, some Muster ships), and you need to pick the right tool for each piece of work, predictably.
 
-Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need. There are 25 of them (`src/roles.js`): `implement`, `code-review`, `test-author`, `debug`, `refactor`, `architecture-review`, `security-review`, `author`, `research`, `score`, `humanize`, `prompt-quality`, `improve`, `image`, `video`, and more. Roles are the stable interface. Pipelines and commands ask for a role, not for a specific tool.
+Muster names a fixed vocabulary of **roles**, the kinds of work a crew might need. There are 26 of them (`src/roles.js`): `implement`, `code-review`, `test-author`, `debug`, `refactor`, `architecture-review`, `security-review`, `author`, `research`, `score`, `humanize`, `prompt-quality`, `improve`, `image`, `video`, `lifecycle`, and more. Roles are the stable interface. Pipelines and commands ask for a role, not for a specific tool.
 
 Each role resolves through a **ladder** of provider sources, best-available first:
 
@@ -84,13 +84,13 @@ Tournament synthesis is tunable via two env vars: `MUSTER_FUSE_TOPK` (default 3)
 
 The `advisor` role lets a cheap-tier worker consult a stronger model (fable, degrading to opus) at a hard decision point. The worker returns a structured advice-request, a consult budget (`MUSTER_ADVISOR_MAX_CONSULTS`, default 3) bounds cost, the consult is logged to STATE (glass box), and the advice is fed back so the worker keeps the decision. The advisor informs; the worker decides. Native (Claude Code Agent-tool dispatch, no external server tools), autonomous-first (no human prompt).
 
-Driving Muster remotely uses Claude Code's own features, not a transport Muster ships. A Routine can fire `/muster:autopilot` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session.
+Driving Muster remotely uses Claude Code's own features, not a transport Muster ships. A Routine can fire `/muster:go` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session.
 
 ## Session hooks
 
 Muster ships four plugin-native hooks in `plugin/hooks/`. All are declared in `plugin/hooks/hooks.json`, activate when Muster is enabled, and are removed when Muster is disabled. None write to your `~/.claude` files. Every hook is fail-safe: any error returns a minimal valid result and exits cleanly.
 
-**`SessionStart`** (`session-start.js`) delivers always-on guidance. A Claude Code plugin cannot auto-load a `CLAUDE.md`, but a `SessionStart` hook can return `additionalContext`, which Claude Code prepends to the session. The script emits the working principles, the six verbs (Capture is deliberately excluded -- a backlog generator, not a routed outcome-runner), a routing-policy reminder (route directives through Muster by default), and a dependency-free project sniff of the current directory. It also clears any stale `.muster/wave-active` marker so a new session never inherits a crashed wave's state.
+**`SessionStart`** (`session-start.js`) delivers always-on guidance. A Claude Code plugin cannot auto-load a `CLAUDE.md`, but a `SessionStart` hook can return `additionalContext`, which Claude Code prepends to the session. The script emits the working principles, the seven verbs (Capture is deliberately excluded -- a backlog generator, not a routed outcome-runner), a routing-policy reminder (route directives through Muster by default), and a dependency-free project sniff of the current directory. It also clears any stale `.muster/wave-active` marker so a new session never inherits a crashed wave's state.
 
 **`UserPromptSubmit`** (`user-prompt-submit.js`) implements two-tier drift reinforcement so sessions do not revert to default Claude behavior after compaction or a long run. It maintains a per-session turn counter and injects a short nudge every `MUSTER_NUDGE_EVERY` turns (default 3) and the full principles + verbs + routing policy every `MUSTER_NUDGE_EVERY * MUSTER_PRINCIPLES_EVERY` turns (default every 9 turns). Compaction re-fires `SessionStart` as a backstop. A directive-shaped prompt (an imperative verb like fix/build/implement, optionally after a polite lead-in; "Update:"/"Fix for" declaratives and questions are excluded) also fires the routing-policy reminder immediately the first time it lands with no active Muster run -- once per session, superseding whatever the periodic tier chose that turn -- until `/clear` re-arms it.
 

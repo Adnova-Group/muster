@@ -5,9 +5,12 @@ import { ROLES } from "../src/roles.js";
 // The role vocabulary used to be duplicated in capabilities.js (array) and
 // catalog.js (Set). Both now import from roles.js — assert they observe the
 // identical set so a drift between consumers can never reappear silently.
-test("roles.js is the single source for the 25-role vocabulary", () => {
-  assert.equal(ROLES.length, 25, "expected 25 roles");
+test("roles.js is the single source for the 26-role vocabulary", () => {
+  assert.equal(ROLES.length, 26, "expected 26 roles");
   assert.equal(new Set(ROLES).size, ROLES.length, "roles must be unique");
+  // lifecycle: the single-item lifecycle-driver role (muster-runner) — added with the
+  // dispatchable lifecycle agent, same precedent as `improve` (muster-improver).
+  assert.ok(ROLES.includes("lifecycle"), "lifecycle role must be in the vocabulary");
 });
 
 test("capabilities and catalog see the same role set", async () => {

@@ -175,6 +175,74 @@ test("orchestrator-brief: fences + return-contract caps present passes; a missin
   assert.equal(gradeCase({ check: "orchestrator-brief", expect: { returnContractCaps: [2000] } }, noReturnContract).pass, false);
 });
 
+test("runner-dispatch-brief: a brief carrying the full dispatch contract passes; each missing input fails", () => {
+  const full = "ITEM: retry\nOUTCOME: retries with backoff.\nISOLATION: worktree .worktrees/retry on branch item/retry, base main @ abc1234\nDISPOSITION: pr\nSOURCE: backlog.md#retry\n\nRETURN CONTRACT: receipts, <= 2000 chars.";
+  const expectAll = { requireItemId: true, requireOutcome: true, requireIsolation: true, requireBase: true, requireDisposition: "pr", requireSourceRef: true };
+  assert.equal(gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, full).pass, true);
+
+  // The runner's own rule is BLOCKED on any missing brief input — so each omission must
+  // grade as a failing brief. One field mutated per case, so per-check attribution is real.
+  const wrongDisposition = full.replace("DISPOSITION: pr", "DISPOSITION: merge");
+  const wd = gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, wrongDisposition);
+  assert.equal(wd.pass, false);
+  assert.equal(wd.checks.find((c) => c.name === "disposition").ok, false);
+  assert.equal(wd.checks.find((c) => c.name === "itemId").ok, true);
+
+  const noReturnContract = full.replace(/RETURN CONTRACT.*$/m, "Just report back whatever.");
+  const nrc = gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, noReturnContract);
+  assert.equal(nrc.pass, false);
+  assert.equal(nrc.checks.find((c) => c.name === "returnContractPresent").ok, false);
+
+  // The base ref is anchored to the ISOLATION line: an ISOLATION line without a base ref
+  // fails baseRef even when unrelated prose ("database migration") carries the word "base".
+  const baseMissing = full
+    .replace("ISOLATION: worktree .worktrees/retry on branch item/retry, base main @ abc1234", "ISOLATION: worktree .worktrees/retry on branch item/retry")
+    .replace("OUTCOME: retries with backoff.", "OUTCOME: retries for the database migration with backoff.");
+  const bm = gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, baseMissing);
+  assert.equal(bm.pass, false);
+  assert.equal(bm.checks.find((c) => c.name === "baseRef").ok, false);
+  assert.equal(bm.checks.find((c) => c.name === "isolation").ok, true);
+
+  // Removing the whole ISOLATION line fails isolation AND baseRef — coupled by design.
+  const noIsolation = full.replace(/^ISOLATION: .*\n/m, "");
+  const ni = gradeCase({ check: "runner-dispatch-brief", expect: expectAll }, noIsolation);
+  assert.equal(ni.pass, false);
+  assert.equal(ni.checks.find((c) => c.name === "isolation").ok, false);
+});
+
+test("runner-return-receipts: receipts with verdict/PR/files/pasted-green-tests pass; a missing verdict, paraphrased or red tests each fail", () => {
+  const full = "ITEM: retry — disposition pr\nPR: https://github.com/x/y/pull/7\n\nFiles touched:\n- src/retry.js — backoff\n\nTests (pasted, not paraphrased):\n- baseline: `npm test` -> 10 passed, 0 failed\n- final: `npm test` -> 12 passed, 0 failed\n\nReview gate: VERDICT: PASS after 1 fix loop";
+  const expectAll = { requireVerdictPass: true, requirePrUrl: true, requireFilesTouched: true, requireTestEvidence: true, requireFixLoopCount: true };
+  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, full).pass, true);
+
+  // A clean pass phrased "with no fix loops" is valid receipts grammar too.
+  const cleanNoLoops = full.replace("after 1 fix loop", "with no fix loops");
+  assert.equal(gradeCase({ check: "runner-return-receipts", expect: expectAll }, cleanNoLoops).pass, true);
+
+  // One field mutated per case, so per-check attribution is real.
+  const noVerdict = full.replace("VERDICT: PASS after", "all good after");
+  const nv = gradeCase({ check: "runner-return-receipts", expect: expectAll }, noVerdict);
+  assert.equal(nv.pass, false);
+  assert.equal(nv.checks.find((c) => c.name === "verdictPass").ok, false);
+  assert.equal(nv.checks.find((c) => c.name === "fixLoopCount").ok, true);
+
+  const paraphrasedTests = full.replace(/- baseline: .*\n- final: .*\n/, "- all tests green\n");
+  const pt = gradeCase({ check: "runner-return-receipts", expect: expectAll }, paraphrasedTests);
+  assert.equal(pt.pass, false);
+  assert.equal(pt.checks.find((c) => c.name === "testEvidence").ok, false);
+
+  // Receipts prove GREEN: a red final run fails testEvidence even though digits + "passed" appear.
+  const redFinal = full.replace("- final: `npm test` -> 12 passed, 0 failed", "- final: `npm test` -> 0 passed, 12 failed");
+  const rf = gradeCase({ check: "runner-return-receipts", expect: expectAll }, redFinal);
+  assert.equal(rf.pass, false);
+  assert.equal(rf.checks.find((c) => c.name === "testEvidence").ok, false);
+
+  const noPr = full.replace(/^PR: .*\n/m, "");
+  const np = gradeCase({ check: "runner-return-receipts", expect: expectAll }, noPr);
+  assert.equal(np.pass, false);
+  assert.equal(np.checks.find((c) => c.name === "prUrl").ok, false);
+});
+
 test("review-gate-verdict: a verdict-first PASS/ESCALATE matching the tallied findings passes; a verdict contradicting the findings fails", () => {
   const cleanPass = "VERDICT: PASS\n\n- NIT: minor naming nit.";
   assert.equal(gradeCase({ check: "review-gate-verdict", expect: { verdict: "PASS" } }, cleanPass).pass, true);
@@ -591,11 +659,29 @@ test("adr-status-lifecycle: a valid proposed|accepted|deprecated|superseded-by s
 // --- dataset + fixtures: the checked-in material grades green ---------------------------
 
 const dataset = JSON.parse(await read("eval/modes/dataset.json"));
-// "capture" is the 7th mode prompt (plugin/commands/capture.md) — a conversation-to-backlog
-// generator with no Run-active lifecycle of its own, closed out alongside the other 6.
-const MODES = ["run", "autopilot", "sprint", "runner", "audit", "diagnose", "capture"];
+// "capture" is a mode prompt (plugin/commands/capture.md) — a conversation-to-backlog
+// generator with no Run-active lifecycle of its own, closed out alongside the others.
+//
+// DECISION (vl-t6, closing the net): run.md/autopilot.md/sprint.md were the original
+// verb prompts; the verb-lexicon work (vl-t2/vl-t3/vl-t4) moved their real behavior to
+// plan.md/plan-backlog.md (run's single-outcome front half + its batch-plan form split
+// into two files) and go.md/go-backlog.md (autopilot's and sprint's hands-off behavior,
+// renamed), leaving run/autopilot/sprint as thin 8-line alias stubs (frontmatter + one
+// guidance line + a Read-and-execute directive) with NO behavior of their own left to
+// grade empirically. MODES therefore names the 8 real verb prompts (the 4 renamed ones
+// plus the 4 unchanged ones); ALIASES below documents run/autopilot/sprint's target and
+// gets a structural "alias-class check" instead of dataset.json cases (same posture this
+// eval already takes for prose-only surfaces with no independent behavior to fixture --
+// see the "alias-shape equivalence"/"alias-guidance" tests near the end of this file). No
+// dataset.json case may declare mode:"run"/"autopilot"/"sprint" (enforced below) --
+// PR #5's original run.md cases were migrated to plan/plan-backlog (see the case-count
+// floor test), and the pre-existing autopilot/sprint cases were relabeled to go/go-backlog
+// for the same reason (their `check`s test go.md/go-backlog.md's real deterministic
+// steps, not the alias stub files' 2-line bodies).
+const MODES = ["plan", "plan-backlog", "go", "go-backlog", "runner", "audit", "diagnose", "capture"];
+const ALIASES = { run: "plan", autopilot: "go", sprint: "go-backlog" };
 // The skill-protocol layer (plugin/skills/*, router excluded — it already has
-// eval:router). Every case's `mode` field names either one of the 7 mode prompts above
+// eval:router). Every case's `mode` field names either one of the 8 mode prompts above
 // OR one of these 10 skills — a single field, not a second "skill" key, because grade.mjs
 // (frozen: `${r.mode.padEnd(9)}`) reads `mode` unconditionally on every row and would
 // throw on a case that left it undefined.
@@ -640,12 +726,26 @@ const BUILTINS = ["muster-research", "muster-image", "muster-video", "muster-hum
 // design (see the dataset case's own comment).
 const KNOWLEDGE_PIPELINES = ["ai-implementation-spec", "ai-test-plan", "book", "business-case", "epic", "launch-plan", "okrs", "prd", "roadmap", "runbook", "user-story"];
 
-test("dataset covers all 7 mode prompts with at least 5 cases each, 30+ total", () => {
+test("dataset covers all 8 mode prompts with at least 5 cases each, 40+ total", () => {
   const modeCases = dataset.cases.filter((c) => MODES.includes(c.mode));
-  assert.ok(modeCases.length >= 30, `expected 30+ mode cases, got ${modeCases.length}`);
+  assert.ok(modeCases.length >= 40, `expected 40+ mode cases, got ${modeCases.length}`);
   const byMode = {};
   for (const c of modeCases) byMode[c.mode] = (byMode[c.mode] || 0) + 1;
   for (const mode of MODES) assert.ok((byMode[mode] || 0) >= 5, `mode "${mode}" has only ${byMode[mode] || 0} cases`);
+});
+
+test("no dataset case declares an alias name as its mode (run/autopilot/sprint are alias-class-checked structurally, not via dataset cases)", () => {
+  for (const c of dataset.cases) {
+    assert.ok(!(c.mode in ALIASES), `${c.id}: mode "${c.mode}" is an alias name — alias behavior is graded structurally (see the alias-shape/alias-guidance tests below), not via a dataset case`);
+  }
+});
+
+// [vl-t6] CASE-COUNT FLOOR: PR #5's run.md batch-plan cases (and the earlier
+// autopilot/sprint cases) were migrated (relabeled to plan/plan-backlog/go/go-backlog),
+// never deleted -- this pins the pre-migration total so a future "migrate by deleting the
+// inconvenient half" can't silently shrink coverage.
+test("dataset case-count floor: total >= 164 (pre-t6-migration baseline)", () => {
+  assert.ok(dataset.cases.length >= 164, `expected >=164 total dataset cases (the pre-migration baseline), got ${dataset.cases.length}`);
 });
 
 test("dataset covers all 10 skill-protocol skills with at least 3 cases each, 33+ total", () => {
@@ -798,13 +898,15 @@ test("the 11 knowledge-pipeline gate-achievability fixtures' gate matches each p
 // The README's coverage table enumerates every prompt surface this eval suite is
 // responsible for. This test asserts the table's own universe (the 5 layers already
 // tracked above: MODES/SKILLS/CONTENT_PIPELINES/BUILTINS/KNOWLEDGE_PIPELINES, plus the
-// router skill counted separately since it has its own eval:router) against the ACTUAL
-// file inventory via glob counts, so a new command/skill/builtin/pipeline file added later
-// makes this test fail instead of letting the table silently go stale.
+// router skill counted separately since it has its own eval:router, plus the ALIASES
+// documented above) against the ACTUAL file inventory via glob counts, so a new
+// command/skill/builtin/pipeline file added later makes this test fail instead of letting
+// the table silently go stale.
 test("coverage-table surfaces match the actual file inventory (glob counts) — table can't silently stale", async () => {
   const { readdir } = await import("node:fs/promises");
+  const aliasNames = Object.keys(ALIASES);
   const commandFiles = (await readdir(new URL("../plugin/commands", import.meta.url))).filter((f) => f.endsWith(".md"));
-  assert.equal(commandFiles.length, MODES.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length} (MODES, one per mode prompt)`);
+  assert.equal(commandFiles.length, MODES.length + aliasNames.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length + aliasNames.length} (${MODES.length} MODES + ${aliasNames.length} ALIASES)`);
 
   const skillDirs = await readdir(new URL("../plugin/skills", import.meta.url));
   assert.equal(skillDirs.length, SKILLS.length + 1, `plugin/skills/* has ${skillDirs.length} dir(s), expected ${SKILLS.length + 1} (10 SKILLS + router, which has its own eval:router)`);
@@ -816,7 +918,54 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   assert.equal(pipelineFiles.length, CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length, `pipelines/*.yaml has ${pipelineFiles.length} file(s), expected ${CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length} (9 CONTENT_PIPELINES + 11 KNOWLEDGE_PIPELINES)`);
 
   const readmeText = await read("eval/modes/README.md");
-  for (const name of [...MODES, ...SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
+  for (const name of [...MODES, ...aliasNames, ...SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
     assert.ok(readmeText.includes(name), `README's coverage table is missing surface "${name}"`);
+  }
+});
+
+// --- alias-class checks (run.md/autopilot.md/sprint.md) --------------------------------
+// Aliases carry no dataset.json cases (see the DECISION comment above MODES/ALIASES) --
+// these structural checks are their entire eval coverage: (a) shape equivalence pins an
+// alias to ONLY frontmatter + one guidance line + a Read-and-execute directive, so a
+// future edit can't silently fatten an alias back into real logic; (b) the guidance line
+// names the correct replacement command, per alias.
+
+test("alias-shape equivalence: run.md/autopilot.md/sprint.md contain ONLY frontmatter + a guidance line + a Read-and-execute directive whose target file exists", async () => {
+  for (const [alias, target] of Object.entries(ALIASES)) {
+    const text = await read(`plugin/commands/${alias}.md`);
+    const fmMatch = text.match(/^---\n[\s\S]*?\n---\n/);
+    assert.ok(fmMatch, `${alias}.md must open with a --- frontmatter block`);
+    const body = text.slice(fmMatch[0].length).trim();
+    const paragraphs = body.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+    assert.equal(paragraphs.length, 2, `${alias}.md body must be exactly 2 paragraphs (a guidance line + a Read-and-execute directive) — found ${paragraphs.length}, alias may have fattened back into real logic`);
+    const [guidance, directive] = paragraphs;
+    assert.match(guidance, /^Heads-up for the user/, `${alias}.md's first paragraph must be the heads-up guidance line`);
+    assert.match(directive, /^Read plugin\/commands\/[\w-]+\.md /, `${alias}.md's second paragraph must be the Read-and-execute directive`);
+    const targetMatch = directive.match(/^Read plugin\/commands\/([\w-]+)\.md /);
+    assert.equal(targetMatch[1], target, `${alias}.md must delegate to ${target}.md — found "${targetMatch[1]}.md"`);
+    assert.match(directive, /execute its instructions exactly, with the arguments given to this command\.$/, `${alias}.md's directive must execute the target's instructions exactly, passing arguments through unchanged`);
+    await read(`plugin/commands/${target}.md`); // throws (ENOENT) if the named target file doesn't exist
+  }
+});
+
+test("alias-guidance: each alias's heads-up line names the correct replacement command", async () => {
+  for (const [alias, target] of Object.entries(ALIASES)) {
+    const text = await read(`plugin/commands/${alias}.md`);
+    assert.match(text, new RegExp(`/muster:${alias} is now /muster:${target}\\b`), `${alias}.md's guidance line must name /muster:${target} as its replacement`);
+  }
+});
+
+// --- scope-confirm coverage (plan.md / go.md) -------------------------------------------
+// plan.md and go.md are the two bare-verb entry points that resolve scope (item vs.
+// backlog) before doing anything else — both must invoke the real `muster scope` CLI,
+// require citing its `signals` verbatim (never paraphrased) in any confirm, and announce
+// the artifact they're about to produce before step 0/1 runs.
+
+test("scope-confirm coverage: plan.md and go.md invoke muster scope, require verbatim signals, and announce the artifact", async () => {
+  for (const file of ["plan", "go"]) {
+    const text = await read(`plugin/commands/${file}.md`);
+    assert.match(text, /muster scope/, `${file}.md must invoke muster scope`);
+    assert.match(text, /every string in `signals`\s*\*\*verbatim\*\*/, `${file}.md must require citing signals verbatim, not paraphrased`);
+    assert.match(text, /Announce the artifact/, `${file}.md must announce the artifact it will produce`);
   }
 });

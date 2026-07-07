@@ -18,8 +18,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { ROLES } from "../src/roles.js";
+import { escapeRe } from "../src/keyword.js";
 import { sliceMdSection } from "./test-support/md-section-helpers.js";
 
 const root = new URL("../", import.meta.url);
@@ -328,4 +329,131 @@ test("fix-iteration cap: orchestrator.md and muster-runner.md quote review-gate.
     runnerMd.includes(`${word} fix loops`),
     `muster-runner.md must read "${word} fix loops" verbatim (review-gate/SKILL.md's REVIEW_GATE_MAX_ITERATIONS is canonical)`
   );
+});
+
+// ── residue scan: verb-rename leftovers outside the plugin/ prose scan ─────
+// Every test above is a "shared term, quoted in N known places" pattern (TERM_REGISTRY).
+// The tests below are a DIFFERENT shape — not quote-site matching but residue scanning:
+// they pin surfaces that a `/muster:X` verb rename can drift on but that live outside
+// plugin/commands, plugin/skills, plugin/agents (this file's original scope), namely
+// cowork/'s MCP prose, plugin/hooks/'s scale-gate messages, and src/'s header comments.
+// A prior rename (cowork MCP verbs, pre-tool-use.js scale-gate messages, run.md-step-0b
+// header comments) left stale vocabulary on all three that this file's original scope
+// never reached; each test below pins one surface so the next rename cannot repeat that.
+// Deliberately NOT added to TERM_REGISTRY above -- these aren't "canonical source, quoted
+// elsewhere" pairs, they're "must not reference the pre-rename vocabulary outside an
+// explicitly named allowance" scans.
+
+// ── residue 1: cowork/ prose — pre-rename verb citations ───────────────────
+// Before the cowork rename (PR #17), the legacy verbs were named directly; after it,
+// each of the three cowork/ prose files carries exactly ONE alias-note line that still
+// cites the pre-rename verbs (run/autopilot/sprint) on purpose, as backward-compatibility
+// documentation -- everywhere else in the file must use the current names (plan/go/
+// go-backlog). A pre-rename citation is either the slash form (`/muster:run`, matched
+// with a trailing word boundary so `/muster:runner` does not false-positive) or the
+// bare arrow-mapping form mcp-server.mjs's alias line uses ("run -> plan"). Returns the
+// 1-based line numbers carrying at least one such citation; a healthy file has exactly
+// one entry (the alias-note line) in this array.
+function findPreRenameVerbLines(text) {
+  const re = /\/muster:(?:run|autopilot|sprint)\b|\b(?:run|autopilot|sprint)\s*->\s*[a-z-]+/gi;
+  const hitLines = [];
+  text.split("\n").forEach((line, i) => {
+    re.lastIndex = 0; // stateful global regex — reset before every .test() call
+    if (re.test(line)) hitLines.push(i + 1);
+  });
+  return hitLines;
+}
+
+test("cowork/ prose: mcp-server.mjs, sprint-protocol.md, and README.md cite pre-rename verbs (run/autopilot/sprint) only on their one alias-note line", async () => {
+  const targets = [
+    { path: "cowork/mcp-server.mjs", aliasLine: 75 },
+    { path: "cowork/sprint-protocol.md", aliasLine: 9 },
+    { path: "cowork/README.md", aliasLine: 7 },
+  ];
+  for (const { path, aliasLine } of targets) {
+    const text = await read(path);
+    const hitLines = findPreRenameVerbLines(text);
+    assert.deepEqual(
+      hitLines,
+      [aliasLine],
+      `${path} must cite pre-rename verbs (run/autopilot/sprint) only on its alias-note line ${aliasLine}; found citations on line(s) ${JSON.stringify(hitLines)}`
+    );
+  }
+});
+
+// ── residue 2: plugin/hooks/ scale-gate messages — lead with current verbs ─
+// pre-tool-use.js's three scale-gate message builders (denyScale, warnScaleAllow,
+// warnCumulativeDrift) execute hook-side effects at module load (they read stdin
+// synchronously), so this file can never be `import`ed by a test -- it is read as
+// TEXT and each function body sliced out by name, the same live-extraction approach
+// this file already uses for src/manifest.js's SURFACES and muster-reviewer.md's
+// severity tags. Each message must instruct via the CURRENT verb (`/muster:go`)
+// before it mentions the legacy aliases (`/muster:autopilot`, `/muster:run`) as a
+// still-works aside -- action first, compatibility footnote second.
+function extractFunctionBody(hookSrc, functionName) {
+  const re = new RegExp(`function ${escapeRe(functionName)}\\([^)]*\\)\\s*\\{\\n([\\s\\S]*?)\\n\\}`, "m");
+  const m = hookSrc.match(re);
+  assert.ok(m, `could not find function ${functionName}(...) in pre-tool-use.js`);
+  return m[1];
+}
+
+test("scale-gate messages: denyScale/warnScaleAllow/warnCumulativeDrift lead with /muster:go before mentioning the legacy aliases", async () => {
+  const hookSrc = await read("plugin/hooks/pre-tool-use.js");
+  const fns = ["denyScale", "warnScaleAllow", "warnCumulativeDrift"];
+  for (const fn of fns) {
+    const body = extractFunctionBody(hookSrc, fn);
+    const newVerbIdx = body.indexOf("/muster:go");
+    assert.ok(newVerbIdx >= 0, `${fn}'s message must instruct via /muster:go`);
+    const aliasIdx = Math.min(
+      ...["/muster:autopilot", "/muster:run"].map((a) => {
+        const i = body.indexOf(a);
+        return i === -1 ? Infinity : i;
+      })
+    );
+    assert.ok(Number.isFinite(aliasIdx), `${fn}'s message must mention the legacy aliases (/muster:autopilot, /muster:run)`);
+    assert.ok(
+      newVerbIdx < aliasIdx,
+      `${fn}'s message must lead with /muster:go (index ${newVerbIdx}) before its legacy-alias mention (index ${aliasIdx})`
+    );
+  }
+  assert.equal(fns.length, 3, "sanity: expected exactly 3 scale-gate message builders checked");
+});
+
+// ── residue 3: src/ header comments — no live citation of a dead mode-file step ──
+// run.md, sprint.md, and autopilot.md were retired to one-line alias stubs (their
+// step-numbered content moved to plan.md/go.md/go-backlog.md). A src/ comment MAY
+// still name one of them historically (e.g. "run.md/sprint.md are now dead alias
+// stubs" — src/batch-plan.js's header) but must never cite a SPECIFIC STEP in a dead
+// file ("run.md step 0b") as if it were still the doc to consult — that citation
+// only makes sense against a step-numbered file, and the numbering no longer exists
+// there. A citation counts as historical (allowed) when a marker word (dead/legacy/
+// "now ... alias"/former/renamed) appears within the surrounding ~200-char window;
+// otherwise it is flagged as a live reference to content that no longer exists.
+const DEAD_MODE_FILES = ["run.md", "sprint.md", "autopilot.md"];
+const HISTORICAL_MARKER_RE = /\bdead\b|\blegacy\b|\bnow (?:a |an )?(?:legacy )?alias\b|\bformer(?:ly)?\b|\brenamed\b/i;
+
+function findLiveDeadModeFileStepCitations(src) {
+  const hits = [];
+  for (const file of DEAD_MODE_FILES) {
+    const re = new RegExp(`${escapeRe(file)}\\s+step\\b`, "gi");
+    let m;
+    while ((m = re.exec(src))) {
+      const windowStart = Math.max(0, m.index - 200);
+      const window = src.slice(windowStart, m.index + m[0].length + 50);
+      if (!HISTORICAL_MARKER_RE.test(window)) {
+        hits.push({ file, snippet: src.slice(Math.max(0, m.index - 40), m.index + 60).trim() });
+      }
+    }
+  }
+  return hits;
+}
+
+test("src/ header comments: no src/*.js file cites a dead mode-file step (run.md/sprint.md/autopilot.md step N) as a live, non-historical reference", async () => {
+  const files = (await readdir(new URL("../src/", import.meta.url))).filter((f) => f.endsWith(".js"));
+  assert.ok(files.length >= 10, "sanity: expected many src/*.js files to scan");
+  for (const f of files) {
+    const text = await read(`src/${f}`);
+    const hits = findLiveDeadModeFileStepCitations(text);
+    assert.deepEqual(hits, [], `src/${f} cites a dead mode-file step as a live reference: ${JSON.stringify(hits)}`);
+  }
 });

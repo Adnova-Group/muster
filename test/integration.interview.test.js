@@ -12,22 +12,26 @@ test("assessOutcome gates the interview: thin -> not clear, rich -> clear", () =
   assert.equal(assessOutcome("reduce checkout API p95 latency to under 300ms for mobile users").clear, true);
 });
 
-test("run.md runs the gap-check + interview as its front half, before routing", async () => {
-  const run = await readFile(new URL("../plugin/commands/run.md", import.meta.url), "utf8");
-  assert.match(run, /muster assess/, "run must run the assess gap-check");
-  assert.match(run, /\binterview\b/, "run must invoke the interview skill");
+test("plan.md runs the gap-check + interview as its front half, before routing", async () => {
+  // plan.md is the canonical home now (run.md is a legacy alias stub whose front half
+  // is unchanged — see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+  const plan = await readFile(new URL("../plugin/commands/plan.md", import.meta.url), "utf8");
+  assert.match(plan, /muster assess/, "plan must run the assess gap-check");
+  assert.match(plan, /\binterview\b/, "plan must invoke the interview skill");
   // the assess/interview must precede the router invocation (anchor on the invocation,
   // not the bare word "router" which also appears in the frontmatter description)
-  assert.ok(run.indexOf("muster assess") < run.indexOf("the **router** skill"), "assess must come before routing");
+  assert.ok(plan.indexOf("muster assess") < plan.indexOf("the **router** skill"), "assess must come before routing");
 });
 
-test("autopilot triggers the interview on a gap, but never blocks when unattended", async () => {
-  const auto = await readFile(new URL("../plugin/commands/autopilot.md", import.meta.url), "utf8");
-  assert.match(auto, /muster assess/, "autopilot must run the gap-check");
-  assert.match(auto, /\binterview\b/, "autopilot must reference the interview for attended gaps");
+test("go.md triggers the interview on a gap, but never blocks when unattended", async () => {
+  // go.md is the canonical hands-off runner now (autopilot.md is a legacy alias stub —
+  // see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+  const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
+  assert.match(go, /muster assess/, "go must run the gap-check");
+  assert.match(go, /\binterview\b/, "go must reference the interview for attended gaps");
   // unattended path records the gap rather than interviewing
-  assert.match(auto, /Unattended|Routine/, "autopilot must keep the unattended subsection");
-  assert.match(auto, /run report|STATE/, "unattended gap must be recorded, not block");
+  assert.match(go, /Unattended|Routine/, "go must keep the unattended subsection");
+  assert.match(go, /run report|STATE/, "unattended gap must be recorded, not block");
 });
 
 test("the interview skill uses AskUserQuestion and holds a hard approval gate", async () => {

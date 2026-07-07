@@ -1,8 +1,11 @@
 # Mode-prompt eval harness
 
-An empirical eval of the 7 mode prompts (`plugin/commands/*.md`: `run`, `autopilot`,
-`sprint`, `runner`, `audit`, `diagnose`, `capture`), the 10 skill-protocol skills they
-delegate to (`plugin/skills/*` — `orchestrator`, `review-gate`, `coordination`,
+An empirical eval of the 8 mode prompts (`plugin/commands/*.md`: `plan`, `plan-backlog`,
+`go`, `go-backlog`, `runner`, `audit`, `diagnose`, `capture`) plus the 3 legacy alias
+stubs that delegate to them (`run` -> `plan`, `autopilot` -> `go`, `sprint` ->
+`go-backlog` — thin 8-line files graded structurally, not via dataset cases; see "Alias
+stubs" below), the 10 skill-protocol skills they delegate to (`plugin/skills/*` —
+`orchestrator`, `review-gate`, `coordination`,
 `interview`, `tournament`, `domain-router`, `advisor`, `greenfield`, `prd-pipeline`,
 `roadmap-prioritization`; `router` is excluded, it already has its own `eval:router`),
 the 7 native-builtin pipeline-role providers (`plugin/builtins/muster-*/SKILL.md` —
@@ -22,21 +25,26 @@ lint`).
 ## Why (and how) this is code-gradeable without a model
 
 `eval/router` grades a single artifact per case: the manifest a live router run produced.
-The 6 modes don't reduce to one artifact each — but several of their steps are themselves
+The modes don't reduce to one artifact each — but several of their steps are themselves
 deterministic pipeline code, not model output:
 
 | mode step | deterministic surface |
 |---|---|
-| run/autopilot step 0 (issue ref?) | `parseIssueRef` (`src/issue.js`) |
-| run step 0b (backlog ref? — batch-plan mode) | `parseBacklogRef` (`src/batch-plan.js`) |
-| run's batch-plan conflict flags | `crossItemConflicts` (`src/batch-plan.js`) |
-| run's batch-plan drain ordering | `computeSprintWaves` (`src/sprint-waves.js`), the same authoritative call sprint makes |
-| run/autopilot info-gap check | `assessOutcome` (`src/interview.js`) |
+| plan/go step 0 (issue ref?) | `parseIssueRef` (`src/issue.js`) |
+| plan-backlog step 0b (backlog ref? — batch-plan mode) | `parseBacklogRef` (`src/batch-plan.js`) |
+| plan-backlog's conflict flags | `crossItemConflicts` (`src/batch-plan.js`) |
+| plan-backlog's drain ordering | `computeSprintWaves` (`src/sprint-waves.js`), the same authoritative call go-backlog makes |
+| plan/go info-gap check | `assessOutcome` (`src/interview.js`) |
 | diagnose step 1 (seed) | `classifyFailure` + `buildDiagnoseManifest` (`src/diagnose.js`) |
 | audit step 1 (seed) | `buildAuditManifest` (`src/audit.js`) |
-| any manifest (run/autopilot/diagnose/audit) | `validateManifest` (`src/manifest.js`) |
-| sprint's backlog consumption | `computeSprintWaves` (`src/sprint-waves.js`) |
-| runner's disposition/commit conventions | regexes we own in `grade-lib.mjs` (`WAVE_COMMIT_RE`, `RECEIPT_PATTERNS`), encoding the literal grammar `coordination/SKILL.md` and `autopilot.md` document |
+| any manifest (plan/go/diagnose/audit) | `validateManifest` (`src/manifest.js`) |
+| go-backlog's backlog consumption | `computeSprintWaves` (`src/sprint-waves.js`) |
+| runner's disposition/commit conventions | regexes we own in `grade-lib.mjs` (`WAVE_COMMIT_RE`, `RECEIPT_PATTERNS`), encoding the literal grammar `coordination/SKILL.md` and `go.md` document |
+
+(Historical note: these `check` names — `sprint-waves`, `sprint-one-attended-stop` in
+`grade-lib.mjs`, and the `run`/`sprint` prefixes in some fixture paths carried over
+before the vl-t6 mode migration — are unchanged grader/fixture identifiers, not mode
+names; they still name the real deterministic functions/fixtures they always did.)
 
 The skill-protocol layer extends the same rule — most skills wrap a deterministic
 function too, reused directly rather than re-implemented as a fixture-only check:
@@ -122,11 +130,11 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
 
 ```jsonc
 {
-  "id": "run-parallel-manifest-fences",     // unique
-  "mode": "run",                             // one of the 7 mode prompts (MODES, incl. capture), one of the 10 skill names (SKILLS), one of the 7 native-builtin names (BUILTINS), OR one of the 20 pipeline ids split across CONTENT_PIPELINES (9) and KNOWLEDGE_PIPELINES (11) — see test/mode-evals.test.js. A single field, all five layers share it (grade.mjs, frozen, calls `.padEnd()` on `row.mode` unconditionally)
+  "id": "plan-parallel-manifest-fences",     // unique
+  "mode": "plan",                            // one of the 8 mode prompts (MODES, incl. capture — NEVER an alias name; run/autopilot/sprint are graded structurally, see "Alias stubs" below), one of the 10 skill names (SKILLS), one of the 7 native-builtin names (BUILTINS), OR one of the 20 pipeline ids split across CONTENT_PIPELINES (9) and KNOWLEDGE_PIPELINES (11) — see test/mode-evals.test.js. A single field, all five layers share it (grade.mjs, frozen, calls `.padEnd()` on `row.mode` unconditionally)
   "outcome": "Add JWT auth to the API and update the docs, in parallel.", // the user input this case models (also the literal string fed to a pure fn, when `check` reads `outcome` directly)
   "check": "manifest",                       // which grade-lib.mjs grader to dispatch to
-  "artifact": "fixtures/run/manifest-parallel.json", // OPTIONAL: path (relative to eval/modes/) to a checked-in fixture
+  "artifact": "fixtures/plan/manifest-parallel.json", // OPTIONAL: path (relative to eval/modes/) to a checked-in fixture
   "input": "…",                              // OPTIONAL: inline data in place of a fixture file (short backlog/receipts snippets)
   "expect": { "validates": true, "requireFences": true, "expectRoles": ["implement", "test-author"], "nonInline": true },
   "grading": "code"                          // OPTIONAL, default "code". "model" cases carry a `rubric` instead of a gradeable `expect` and are excluded from the CI path.
@@ -142,7 +150,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
   they're computed purely from `outcome`. The skill-protocol layer's `"json"`-kind checks
   (tournament/domain-router/advisor/prd-pipeline/roadmap-prioritization/interview) always
   use `artifact` (a small checked-in fixture file under `fixtures/skills/<skill>/`), same
-  convention the 6-mode layer's `manifest` check already used — never inline `input` for
+  convention the mode layer's `manifest` check already used — never inline `input` for
   `"json"` kind, to keep `dataset.json` free of hand-escaped JSON-in-JSON. The
   content-pipeline layer's `"json"`-kind checks (`gate-achievability`,
   `publish-packet-shape`, `audience-voice-jargon`) follow the same rule, under
@@ -152,7 +160,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
 - `expect` fields are per-`check` (documented as comments beside each grader function in
   `grade-lib.mjs`); every field present adds one assertion. Every dataset case's `expect`
   is a **golden claim about correct behavior** (including cases whose correct behavior is
-  rejection — e.g. `sprint-cycle-detected-stops-nothing-runs` expects `ok:false`). Pass/fail
+  rejection — e.g. `go-backlog-cycle-detected-stops-nothing-runs` expects `ok:false`). Pass/fail
   behavior of the *grader itself* (does it correctly flag a malformed fixture) is unit
   tested directly in `test/mode-evals.test.js`, not via dataset cases.
 - `grading: "model"` cases carry a `rubric` (mirroring `eval/router`'s dataset shape) and
@@ -165,14 +173,15 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
 - `dataset.json` — the cases (see shape above).
 - `grade-lib.mjs` — the composing entry: `gradeCase(testCase, artifacts) -> { pass, checks: [{name, ok, detail}] }`, plus the merged `CHECKS`/`ARTIFACT_KIND` dispatch tables. No IO — callers load artifacts. Its per-check grading logic lives in four layer modules (below) plus `grade-core.mjs`'s cross-layer helpers (`rowFormatCheck`, `gateAchievabilityCheck`); `grade-lib.mjs` re-exports every name any layer module (or `src/coordination.js`) has ever publicly exported, so `grade.mjs`/`test/mode-evals.test.js` see one stable public API regardless of which module a check's implementation actually lives in.
   - `grade-core.mjs` — cross-layer helpers used by 2+ layer modules below.
-  - `grade-modes.mjs` — the 6 verb-prompt mode layer (diagnose/audit/run/autopilot's deterministic steps).
+  - `grade-modes.mjs` — the verb-prompt mode layer (diagnose/audit/plan/plan-backlog/go/go-backlog's deterministic steps — file/check names inside this module still say `run`/`sprint` in places, e.g. `sprint-waves`, since those are grader/fixture identifiers, not mode names; see the "Why (and how)" historical note above).
   - `grade-skills.mjs` — the skill-protocol layer (`plugin/skills/*`, router excluded).
   - `grade-pipelines.mjs` — the content-pipeline + knowledge-pipeline layers (`pipelines/*.yaml` phase prompts).
   - `grade-builtins.mjs` — the native-builtin layer (`plugin/builtins/muster-*/SKILL.md`).
 - `grade.mjs` — CLI report: loads `dataset.json`, resolves each code-graded case's artifacts, grades, prints the per-case + aggregate report (mirrors `eval/router/grade.mjs`).
 - `fixtures/` — checked-in golden artifacts for the cases whose behavior is genuinely model-driven:
-  - `run/manifest-parallel.json`, `run/manifest-single.json` — example valid Crew Manifests (parallel-with-fences, and single-task).
-  - `sprint/backlog.md` + `sprint/waves.json` — an `{id}`/`{deps}`-annotated backlog and its `computeSprintWaves` output (the `waves.json` values are pinned into `dataset.json`'s `expect.waves` too, so a `computeSprintWaves` regression fails the eval, not just the fixture record).
+  - `plan/manifest-parallel.json`, `plan/manifest-single.json` — example valid Crew Manifests (parallel-with-fences, and single-task); also reused by the `go` mode's own manifest case (`go-manifest-validates-non-inline`) — `go`'s hands-off manifest-validation step is the identical `plan`-front-half behavior, so it shares the fixture rather than duplicating it.
+  - `plan-backlog/batch-owns-overlap.json`, `plan-backlog/batch-owns-disjoint.json` — `crossItemConflicts` inputs (an overlapping fence pair, and a disjoint set with one unfenced item).
+  - `sprint/backlog.md` + `sprint/waves.json` — an `{id}`/`{deps}`-annotated backlog and its `computeSprintWaves` output (the `waves.json` values are pinned into `dataset.json`'s `expect.waves` too, so a `computeSprintWaves` regression fails the eval, not just the fixture record); shared by both `plan-backlog`'s drain-ordering case and `go-backlog`'s own wave case, since they exercise the exact same authoritative computation.
   - `sprint/state-batch-report.md` — a run STATE excerpt demonstrating the "one attended stop" protocol invariant.
   - `runner/receipts-claim-done.md`, `runner/receipts-blocked-resume.md` — `## Coordination` receipt trails.
   - `audit/ledger.md` — a findings ledger (severity/location/problem/fix).
@@ -192,7 +201,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
     - `video-content/humanized-pass.md` + `humanized-fail.md` — a clean script vs. one riddled with AI tells, for `scoreHumanness`.
     - `release-notes/gate-floor-insufficient.json` + `gate-passing.json`, `executive-summary/gate-floor-insufficient.json` + `gate-weakest-below-floor.json` — real per-pipeline `{scores, gate}` inputs for `scoreArtifact`, demonstrating the floor-principle math generalizes past prd.
     - The 11 knowledge pipelines each get `<pipeline>/gate-passing.json` (a real `{scores, gate}` pair clearing that pipeline's own live `pipelines/<pipeline>.yaml` gate), plus a clean/violating structural-property pair where one is graded: `epic/breakdown-story-waves.md` (sprint-waves), `okrs` (inline `assess` outcomes, no fixture needed), `roadmap/rice-rank-order.json` (roadmap-rice), `prd/intake-rows-clean.md` + `intake-rows-unowned-action.md` (evidence-table-shape), `runbook/steps-command-pairs.md` + `steps-missing-expected-output.md`, `book/chapter-manifest-sequential.md` + `chapter-manifest-gap.md`, `ai-test-plan/case-table-clean.md` + `case-table-missing-owner.md`, `user-story/acceptance-gherkin-scenarios.md` + `acceptance-gherkin-missing-then.md`, `ai-implementation-spec/adr-status-lifecycle-clean.md` + `adr-status-invalid.md`. `business-case` and `launch-plan` carry only their gate fixture (skipped honestly, see above).
-  - `capture/` — the capture-layer's fixtures (the 7th mode): `exclusions-candidates.json` + `exclusions-invalid-reason.json` (the 5 documented exclusion rules), `cap-holdback-under-cap.json` + `cap-holdback-over-cap.json` (the cap-10 holdback arithmetic), `reword-cap-becomes-clear.json` + `reword-cap-stays-unmeasurable.json` (the 2-reword cap → UNMEASURABLE surfacing, via real `assessOutcome`), `approve-then-write.md` + `cancel-skips-write.md` (approval-precedes-write ordering), `dedupe-candidates.json` (dedupe sans-annotation).
+  - `capture/` — the capture-layer's fixtures: `exclusions-candidates.json` + `exclusions-invalid-reason.json` (the 5 documented exclusion rules), `cap-holdback-under-cap.json` + `cap-holdback-over-cap.json` (the cap-10 holdback arithmetic), `reword-cap-becomes-clear.json` + `reword-cap-stays-unmeasurable.json` (the 2-reword cap → UNMEASURABLE surfacing, via real `assessOutcome`), `approve-then-write.md` + `cancel-skips-write.md` (approval-precedes-write ordering), `dedupe-candidates.json` (dedupe sans-annotation).
   - `builtins/` — the native-builtin layer's fixtures, one directory per `muster-*` provider: `muster-research/fact-ledger-clean.md` + `fact-ledger-missing-anchor.md`, `muster-image/prompt-set-clean.md` + `prompt-set-brand-file-punt.md`, `muster-video/shot-list-clean.md` + `shot-list-missing-rationale.md`, `muster-humanizer/precedence-voice-first-clean.md` + `precedence-order-reversed.md` (unit-test-only — see below) + `precedence-no-profile-baseline.md`, `muster-scorer/valid-scores-passing.json` + `invalid-range-score.json`, `muster-prompt-smith/optimize-improvement-no-regression.json` + `optimize-regression-detected.json`, `muster-author/draft-framework-cta-shape.md` + `draft-missing-framework-multiple-ctas.md`.
   - `skills/coordination/` also carries the HUMAN-HOLD extension's fixtures: `claim-human-hold-resets-floor.md` (a HUMAN-HOLD receipt floor-resets the claim window exactly like DONE/BLOCKED/FAILED), `human-hold-resume-wrong-party.md` + `human-hold-resume-authorized.md` (only the named `authorizer=<login>`'s reply resumes it, per `coordination/SKILL.md`'s stricter HUMAN-HOLD resume gate).
 
@@ -219,14 +228,16 @@ npm run eval:modes             # same as the first command, via package.json
 ```
 
 As of this writing: 164 total cases (156 code-graded, 100% passing + 8 model-graded) — 58
-7-mode cases (49 across the original 6 + 9 `capture` cases; run's count runs richest since
-its batch-plan form adds 9 cases of its own: the backlog-ref grammar, drain ordering
-reusing `sprint-waves`, conflict flags, and a model-graded approval-gate rubric), 43
-skill-protocol cases (40 + 3 coordination HUMAN-HOLD extension cases), 21 content-pipeline
-cases (>= 2 per pipeline across all 9), 14 native-builtin cases (2 per builtin across all
-7), and 27 knowledge-pipeline cases (11 gate-achievability + 16 structural, across the 11
-pipelines — see the coverage table below for the exact per-pipeline breakdown, including
-the 2 pipelines with no structural case, skipped honestly).
+mode-prompt cases across the 8 `MODES` (`plan`: 8, `plan-backlog`: 9 — its batch-plan form
+carries the backlog-ref grammar, drain ordering reusing `sprint-waves`, conflict flags, and
+a model-graded approval-gate rubric — `go`: 7, `go-backlog`: 6, `runner`: 6, `audit`: 6,
+`diagnose`: 7, `capture`: 9), 43 skill-protocol cases (40 + 3 coordination HUMAN-HOLD
+extension cases), 21 content-pipeline cases (>= 2 per pipeline across all 9), 14
+native-builtin cases (2 per builtin across all 7), and 27 knowledge-pipeline cases (11
+gate-achievability + 16 structural, across the 11 pipelines — see the coverage table below
+for the exact per-pipeline breakdown, including the 2 pipelines with no structural case,
+skipped honestly). The 3 legacy alias stubs (`run`/`autopilot`/`sprint`) carry zero dataset
+cases by design — see "Alias stubs" in the coverage table below.
 
 To refresh the model-graded cases (`grading: "model"`): follow `eval/router/README.md`'s
 "How to run" pattern (a subagent produces the artifact and/or a judge score) — out of
@@ -243,17 +254,36 @@ stale. Tiers: **empirical** (>=1 code-graded dataset case grades it directly),
 **static** (covered only by `muster prompt lint`/`prompt scan` structural linting, not by
 this eval), **deliberate-none** (out of scope for this eval, with a stated reason).
 
-### Mode prompts (`plugin/commands/*.md`, 7)
+### Mode prompts (`plugin/commands/*.md`, 8 of the 11 files there — the other 3 are alias stubs, see below)
 
 | surface | tier | cases |
 |---|---|---|
-| run.md | empirical | 17 — 8 original + 9 batch-plan (backlog-ref grammar, drain ordering via `sprint-waves`, conflict flags, a model-graded approval-gate rubric) |
-| autopilot.md | empirical | 7 |
-| sprint.md | empirical | 6 |
+| plan.md | empirical | 8 — the single-outcome front half (assess x2, issue-ref x3, manifest x2, a model-graded routing-appropriateness rubric); unchanged from run.md's own front half pre-migration |
+| plan-backlog.md | empirical | 9 — the batch-plan form (backlog-ref grammar x5, drain ordering via `sprint-waves`, conflict flags x2, a model-graded approval-gate rubric); unchanged from run.md's own batch-plan form pre-migration |
+| go.md | empirical | 7 |
+| go-backlog.md | empirical | 6 |
 | runner.md | empirical | 6 |
 | audit.md | empirical | 6 |
 | diagnose.md | empirical | 7 |
 | capture.md | empirical | 9 — closed this pass (was zero-verification); `prompt scan plugin/commands` verdict: 7/7 passing as of the full prompt-improve pass (the earlier `ANTH-POS-001` finding on capture.md is resolved) |
+
+### Alias stubs (`plugin/commands/*.md`, the remaining 3 of the 11 files there)
+
+`run`, `autopilot`, and `sprint` are legacy names kept working for backward compatibility
+— each is now an 8-line stub (frontmatter + one heads-up guidance line + a
+Read-and-execute directive) with no behavior of its own left to grade empirically. They
+carry **zero** `dataset.json` cases by design (see the DECISION comment beside
+`MODES`/`ALIASES` in `test/mode-evals.test.js`) — coverage is a **structural alias-class
+check** instead: alias-shape equivalence (the file is ONLY frontmatter + guidance line +
+a Read-and-execute directive naming a target file that exists — pins the shape so a
+future edit can't silently fatten an alias back into real logic) and alias-guidance (the
+heads-up line names the correct replacement command).
+
+| surface | tier | cases |
+|---|---|---|
+| run.md -> plan.md | structural (alias-class check) | 0 — no independent behavior to grade; see `test/mode-evals.test.js`'s "alias-shape equivalence"/"alias-guidance" tests |
+| autopilot.md -> go.md | structural (alias-class check) | 0 — same alias-class check |
+| sprint.md -> go-backlog.md | structural (alias-class check) | 0 — same alias-class check |
 
 ### Skill-protocol skills (`plugin/skills/*/SKILL.md`, 11: the 10 below + router)
 

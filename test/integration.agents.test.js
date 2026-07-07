@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const CATALOG = new URL("../catalog/", import.meta.url);
 const AGENTS_DIR = new URL("../plugin/agents/", import.meta.url);
@@ -29,7 +30,7 @@ test("muster agents credit atomic as inspiration; vendored agents carry MIT prov
 test("the ladder prefers installed external agent > muster agent > skill", async () => {
   const catalog = await loadCatalog(CATALOG);
   // bare machine: implement has no installed external -> a muster agent wins over any skill
-  const bare = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  const bare = resolveCapabilities(catalog, bareCapabilities());
   assert.equal(bare.roles.implement.chosen.kind, "agent", "muster agent should win implement on a bare machine");
   assert.equal(bare.roles.implement.chosen.id, "muster-builder", "builder is the default implementer (rank 56)");
 

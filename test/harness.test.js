@@ -4,6 +4,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { tmpProject } from "../test-support/helpers.js";
 import { readInstalled } from "../src/harness.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 test("reads plugin ids from installed_plugins.json", async () => {
   const home = await tmpProject({
@@ -18,7 +19,7 @@ test("reads plugin ids from installed_plugins.json", async () => {
 test("missing files degrade to empty, never throw", async () => {
   const home = await tmpProject({});
   const r = await readInstalled(home);
-  assert.deepEqual(r, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  assert.deepEqual(r, bareCapabilities());
 });
 
 test("reads mcp servers from settings", async () => {

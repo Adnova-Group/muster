@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadCatalog } from "../src/catalog.js";
 import { matchProviders } from "../src/match.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const CATALOG = new URL("../catalog/", import.meta.url);
-const bare = { plugins: [], skills: [], mcpServers: [], agents: [] };
+const bare = bareCapabilities();
 
 // The expanded multi-domain specialist roster is reachable via description-search,
 // even where the task doesn't map to a fixed role.

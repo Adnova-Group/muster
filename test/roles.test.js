@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ROLES } from "../src/roles.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 // The role vocabulary used to be duplicated in capabilities.js (array) and
 // catalog.js (Set). Both now import from roles.js — assert they observe the
@@ -21,7 +22,7 @@ test("capabilities and catalog see the same role set", async () => {
   const { validateCatalog } = await import("../src/catalog.js");
 
   // capabilities: which roles get a manifest entry
-  const caps = resolveCapabilities([], { plugins: [], skills: [], mcpServers: [], agents: [] });
+  const caps = resolveCapabilities([], bareCapabilities());
   const capRoles = new Set(Object.keys(caps.roles));
 
   // catalog: a fabricated entry tagged with every role must validate clean
@@ -45,7 +46,7 @@ test("the image and video roles resolve to their built-ins on a bare machine", a
   const { resolveCapabilities } = await import("../src/capabilities.js");
 
   const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
-  const caps = resolveCapabilities(catalog, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  const caps = resolveCapabilities(catalog, bareCapabilities());
 
   assert.equal(caps.roles["image"].chosen.id, "muster-image");
   assert.equal(caps.roles["image"].chosen.source, "builtin");

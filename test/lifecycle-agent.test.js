@@ -6,6 +6,8 @@ import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { matchProviders } from "../src/match.js";
 import { modelForRole } from "../src/model.js";
+import { bareCapabilities } from "./test-support/capabilities-helpers.js";
+import { sliceMdSection } from "./test-support/md-section-helpers.js";
 
 // muster-runner: the dispatchable single-item lifecycle agent. These tests pin its
 // DISPATCH CONTRACT deterministically (code >> model): the brief inputs it requires,
@@ -19,7 +21,7 @@ delete process.env.MUSTER_MAX_TIER;
 
 const catalogDir = new URL("../catalog/", import.meta.url);
 const defUrl = new URL("../plugin/agents/muster-runner.md", import.meta.url);
-const BARE = { plugins: [], skills: [], mcpServers: [], agents: [] };
+const BARE = bareCapabilities();
 
 async function readDef() {
   return readFile(defUrl, "utf8");
@@ -28,9 +30,9 @@ async function readDef() {
 // The brief-input / receipts assertions run against the "## Dispatch contract" section
 // alone, so incidental prose elsewhere in the def can never satisfy them.
 function dispatchContractSection(src) {
-  const m = src.match(/^## Dispatch contract\n([\s\S]*?)(?=\n## )/m);
-  assert.ok(m, "def must carry an explicit '## Dispatch contract' section");
-  return m[1];
+  const section = sliceMdSection(src, "Dispatch contract");
+  assert.ok(section, "def must carry an explicit '## Dispatch contract' section");
+  return section;
 }
 
 test("catalog entry: muster-runner is an agent with primary role lifecycle", async () => {

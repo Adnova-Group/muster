@@ -42,3 +42,25 @@ update isn't silently dropped.
 7. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking).
 
 Return pass (all clear) or escalate (cap hit with remaining blockers) to the orchestrator.
+
+## Surface-type definition-of-done gates
+
+These three gates are **additive** to every criterion above — they never replace, soften, or
+substitute for the existing review-gate procedure. A gate FIRES the moment ANY of its listed
+trigger classes hits. The reviewer records, per fired gate, which trigger fired and what evidence
+resolved it. A fired gate with no recorded evidence is an automatic FAIL for the wave.
+
+1. **Design/UX gate** — triggers: the plan task's `surface` field is `"ui"`; OR the task's `skills`
+   binding includes a design/frontend skill; OR the wave diff touches UI file-globs
+   (`components/**`, `app/**/page.*`, `app/**/layout.*`, `*.css`, `*.scss`). When fired: the wave
+   cannot PASS without a design/UX review pass (frontend/design provider from
+   `AvailableCapabilities`) with findings addressed — visual hierarchy, spacing, contrast,
+   empty/error states, microcopy tone for the product's audience.
+2. **Humanizer gate** — triggers: `surface` is `"copy"`; OR bindings include a humanizer skill; OR
+   the diff adds/edits customer-facing copy (user-visible strings, marketing/report/email text,
+   chat prompts that produce end-user prose). When fired: the copy must pass the muster humanizer
+   pipeline (`humanize` + `humanize-score`) before PASS.
+3. **Live-verification gate** — triggers: `surface` is `"integration"`; OR bindings include a
+   verification skill; OR the wave claims an integration works (external API, OAuth flow, DB
+   migration, deploy). When fired: PASS requires live evidence — the actual command/request and
+   its observed result recorded in the review, not inference from unit tests.

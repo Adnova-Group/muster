@@ -259,6 +259,25 @@ test("review-gate-verdict: a verdict-first PASS/ESCALATE matching the tallied fi
   assert.equal(gradeCase({ check: "review-gate-verdict", expect: {} }, verdictNotFirst).checks.find((c) => c.name === "verdictFirst").ok, false);
 });
 
+test("review-gate-mutant-kill-rule: the full evidence shape passes; a thinned rule missing a required step fails", () => {
+  const fullExpect = { rulePresent: true, requiresMutationStep: true, requiresFailingOutputStep: true, requiresByteIdenticalRestoreStep: true, requiresAutomaticFailOnMissingEvidence: true };
+  const full = "## Mutant-kill gate\n\n1. **The mutation** -- ...\n2. **The failing output** -- ...\n3. **The byte-identical restore** -- ...\n\nA fired gate with no recorded evidence in this shape is an automatic FAIL for the wave.";
+  assert.equal(gradeCase({ check: "review-gate-mutant-kill-rule", expect: fullExpect }, full).pass, true);
+
+  const noRule = "Some unrelated section with no mutant-kill content at all.";
+  const nr = gradeCase({ check: "review-gate-mutant-kill-rule", expect: { rulePresent: true } }, noRule);
+  assert.equal(nr.pass, false);
+  assert.equal(nr.checks.find((c) => c.name === "rulePresent").ok, false);
+
+  // A "corrupt-twin" thinning: keeps steps 1-2 and the heading, drops step 3
+  // (byte-identical restore) and the automatic-FAIL default entirely.
+  const thinned = "## Mutant-kill gate\n\n1. **The mutation** -- ...\n2. **The failing output** -- ...";
+  assert.equal(gradeCase({ check: "review-gate-mutant-kill-rule", expect: fullExpect }, thinned).pass, false, "the full-shape expectation must fail against a thinned rule");
+  const thinnedGraded = gradeCase({ check: "review-gate-mutant-kill-rule", expect: { rulePresent: true, requiresMutationStep: true, requiresFailingOutputStep: true, requiresByteIdenticalRestoreStep: false, requiresAutomaticFailOnMissingEvidence: false } }, thinned);
+  assert.equal(thinnedGraded.pass, true);
+  assert.equal(thinnedGraded.checks.find((c) => c.name === "byteIdenticalRestoreStep").ok, true);
+});
+
 test("coordination-claim-window: MUSTER_RECEIPT_PATTERNS classify every receipt type", () => {
   assert.match("MUSTER CLAIMED alice 2026-01-01T00:00:00Z", MUSTER_RECEIPT_PATTERNS.CLAIMED);
   assert.match("MUSTER DONE alice 2026-01-01T00:00:00Z", MUSTER_RECEIPT_PATTERNS.DONE);
@@ -830,6 +849,21 @@ test("the sprint waves fixture's pinned output matches the checked-in waves.json
   const backlog = await read("eval/modes/fixtures/sprint/backlog.md");
   const pinned = JSON.parse(await read("eval/modes/fixtures/sprint/waves.json"));
   assert.deepEqual(computeSprintWaves(backlog), pinned);
+});
+
+// review-gate/SKILL.md's prose can't be imported like sprint-waves'/prd.yaml's real code/data
+// can (it's assembled doc text -- same "no src/*.js home" posture as orchestrator-brief), so
+// this drift guard reads the LIVE SKILL.md directly and asserts the checked-in
+// mutant-kill-rule-clean.md fixture is byte-identical to its "## Mutant-kill gate" section --
+// a future edit to review-gate/SKILL.md that silently drops or thins the rule fails this test
+// instead of the fixture quietly going stale.
+test("the review-gate mutant-kill-rule fixture matches the live plugin/skills/review-gate/SKILL.md section (drift guard)", async () => {
+  const live = await read("plugin/skills/review-gate/SKILL.md");
+  const headingIndex = live.indexOf("## Mutant-kill gate");
+  assert.ok(headingIndex >= 0, "plugin/skills/review-gate/SKILL.md must contain a '## Mutant-kill gate' section");
+  const liveSection = live.slice(headingIndex);
+  const fixture = await read("eval/modes/fixtures/skills/review-gate/mutant-kill-rule-clean.md");
+  assert.equal(liveSection, fixture, "fixtures/skills/review-gate/mutant-kill-rule-clean.md must be byte-identical to the live SKILL.md's '## Mutant-kill gate' section onward");
 });
 
 test("package.json wires eval:modes to eval/modes/grade.mjs", async () => {

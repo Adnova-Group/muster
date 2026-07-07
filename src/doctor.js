@@ -94,7 +94,10 @@ function extractDocsPaths(content) {
 // plus a second signal for phrasing that conditions on the reference without an exists/missing/
 // present keyword (e.g. muster-humanizer's "If the artifact resolved a named voice profile from
 // `docs/profiles/VOICE.md` ..."): the reference sits inside a clause opened by "if " with no
-// sentence-ending punctuation between the "if" and the reference.
+// clause-ending punctuation — ".", "!", "?", OR A COMMA — between the "if" and the reference. A
+// comma before the reference closes the conditional clause early (e.g. "If the run is attended,
+// read `docs/x.md`" makes the read hard-required, not conditional on the file's existence);
+// muster-humanizer's own VOICE.md wording has no comma before its reference, so it still passes.
 const CREATE_ON_FIRST_USE_RE = /\bif\s+(present|it exists|[a-z0-9`/_.-]*\s*(exists|missing))\b|\bor the project'?s equivalent\b/i;
 
 function isCreateOnFirstUseRef(content, index) {
@@ -104,7 +107,7 @@ function isCreateOnFirstUseRef(content, index) {
 
   const lastIf = before.toLowerCase().lastIndexOf("if ");
   if (lastIf === -1) return false;
-  return !/[.!?]/.test(before.slice(lastIf + 3));
+  return !/[.!?,]/.test(before.slice(lastIf + 3));
 }
 
 // Reads vendor/manifest.yaml and returns the Set of vendored builtin ids (the `sp-`/`wsh-`/

@@ -118,6 +118,10 @@ Use the least powerful model that can handle each role to conserve cost and incr
 
 **Architecture, design, and review tasks**: use the most capable available model.
 
+<!-- upstream obra/superpowers@e97faafb5: final-review tier pin -->
+
+The final code reviewer dispatched after all tasks complete is one of these — dispatch it on the most capable available model explicitly, not whatever model your session happens to be running.
+
 **Task complexity signals:**
 - Touches 1-2 files with a complete spec → cheap model
 - Touches multiple files with integration concerns → standard model
@@ -279,6 +283,8 @@ Done!
 - Let implementer self-review replace actual review (both are needed)
 - **Start code quality review before spec compliance is ✅** (wrong order)
 - Move to next task while either review has open issues
+<!-- upstream obra/superpowers@530476fd0: plan-mandated findings escalate to the human -->
+- Dismiss a reviewer finding because "the plan mandated it" — a plan-mandated finding is the human's call, like any plan conflict: present the finding beside the plan text that mandates it and ask which governs (same escalation as Pre-Flight Plan Review, just surfaced mid-task instead of before Task 1)
 
 **If subagent asks questions:**
 - Answer clearly and completely

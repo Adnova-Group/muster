@@ -41,7 +41,8 @@ If empty, ask for the outcome and stop (outcome-anchored). Otherwise drive this 
    **without pausing** at gates. Each wave loops until criteria are met via the Ralph loop (`loopState`
    in `src/loop.js`): orchestrator iterates implement→review→fix until the wave's gate passes or the
    iteration cap escalates — see step 7 below. After each green + reviewed wave: commit (`feat(wave N): <summary>`)
-   and re-render the checklist with completed ids (`--done …`) into the run STATE.
+   and re-render the checklist with completed ids (`--done …`) into the run STATE. Maintain the orchestrator
+   skill's task-board discipline per plan task (create at dispatch, in_progress at launch, completed at merge).
 7. **Escalation** — if a review gate escalates (fix-loop cap), a tournament has no passing candidate,
    the spec gate FAILs a second time, or a subagent dispatch that still fails after its retry, STOP and
    report the unresolved items; the branch stays intact.

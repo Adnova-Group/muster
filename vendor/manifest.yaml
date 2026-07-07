@@ -29,12 +29,21 @@ sources:
     # 284be590 pulls in 11 commits past 8e1262a, not just these three; the 9
     # skills/ paths below still resolve at 284be590 (verified). Spot-diffed
     # upstream against the vendored copies (2026-07-06): writing-plans is
-    # byte-identical; subagent-driven-development gained upstream text beyond
-    # the three rolled mechanisms (a narration line, a final-review
-    # model-choice note, a Red Flags plan-mandated-finding clause) that this
-    # roll does not adapt — left un-rolled, reported to the orchestrator
-    # rather than edited into the (hand-adapted, not mechanically synced)
-    # vendored SKILL.md.
+    # byte-identical. subagent-driven-development's remaining upstream-only
+    # text is resolved as of 2026-07-06 (zero undecided divergence):
+    #   - Final-review model-choice note (e97faafb5) — adapted: folded into
+    #     the existing "review tasks -> most capable model" bullet as an
+    #     explicit-dispatch clarification for the final code reviewer, a
+    #     step muster's process already has.
+    #   - Red Flags plan-mandated-finding clause (530476fd0) — adapted: added
+    #     to the Never list; mirrors muster's Pre-Flight Plan Review
+    #     escalation ("ask which governs"), just triggered mid-task instead
+    #     of pre-flight.
+    #   - Narration-cadence line (e97faafb5) — accepted-divergent: cites "the
+    #     ledger" (upstream's progress.md/Durable-Progress file), a structure
+    #     muster's single-file SKILL.md deliberately doesn't carry; narration
+    #     cadence here is already governed globally by
+    #     plugin/output-styles/muster.md.
     ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
     license: MIT
     items:

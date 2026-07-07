@@ -85,8 +85,8 @@ test("no wave: 3rd distinct inline file edit in a turn is denied", async () => {
     assert.equal(decision(c.stdout), "deny", "3rd distinct file denied");
     assert.match(
       JSON.parse(c.stdout).hookSpecificOutput.permissionDecisionReason,
-      /verb|\/muster:run|autopilot/i,
-      "deny reason routes to a verb",
+      /\/muster:go\b/,
+      "deny reason leads with /muster:go",
     );
   } finally {
     clearBudget(sid);
@@ -180,7 +180,7 @@ test("no wave: MUSTER_WAVE_GUARD=warn allows 3rd file with a reminder", async ()
     const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid), { MUSTER_WAVE_GUARD: "warn" });
     const out = JSON.parse(c.stdout).hookSpecificOutput;
     assert.notEqual(out.permissionDecision, "deny", "warn => allowed");
-    assert.match(out.additionalContext || "", /verb|\/muster:run|autopilot/i, "warn attaches a routing reminder");
+    assert.match(out.additionalContext || "", /\/muster:go\b/, "warn attaches a routing reminder leading with /muster:go");
   } finally {
     clearBudget(sid);
     cleanDir(dir);
@@ -330,7 +330,7 @@ test("stale marker: scale gate denies the 3rd distinct file (not wave-guard)", a
     const out = JSON.parse(c.stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, "deny", "3rd file denied under stale marker");
     assert.doesNotMatch(out.permissionDecisionReason, /wave-stale/, "scale-gate reason, not wave-guard");
-    assert.match(out.permissionDecisionReason, /autopilot|verb/i);
+    assert.match(out.permissionDecisionReason, /\/muster:go\b/, "deny reason leads with /muster:go");
   } finally {
     clearBudget(sid);
     cleanDir(dir);

@@ -6,6 +6,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDoctor } from "../src/doctor.js";
 
+// [vl-t6] Verified while closing the verb-lexicon red set: src/doctor.js has NO
+// command-file wording dependency — none of its checks (catalog, pipelines, builtins,
+// hooks-integrity, domain-alignment, skill-doc-refs, plugin-staleness, install-integrity,
+// version-parity, vendor-note-staleness) reads plugin/commands/*.md at all; skill-doc-refs
+// only walks plugin/skills/**/SKILL.md and plugin/builtins/**/SKILL.md. So the run/
+// autopilot/sprint -> plan/plan-backlog/go/go-backlog verb-lexicon migration (and any
+// future rewording of plugin/commands/*.md) needs no doctor pin here — do not invent one.
+
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
 // Stub `gh` so real-repo integration tests below never depend on live network/gh-auth for

@@ -25,6 +25,14 @@ async function readDef() {
   return readFile(defUrl, "utf8");
 }
 
+// The brief-input / receipts assertions run against the "## Dispatch contract" section
+// alone, so incidental prose elsewhere in the def can never satisfy them.
+function dispatchContractSection(src) {
+  const m = src.match(/^## Dispatch contract\n([\s\S]*?)(?=\n## )/m);
+  assert.ok(m, "def must carry an explicit '## Dispatch contract' section");
+  return m[1];
+}
+
 test("catalog entry: muster-runner is an agent with primary role lifecycle", async () => {
   const catalog = await loadCatalog(catalogDir);
   const entry = catalog.find(e => e.id === "muster-runner");
@@ -73,9 +81,9 @@ test("frontmatter: name/description/tools/model present, model matches role poli
 });
 
 test("dispatch contract: the brief inputs the runner requires are named", async () => {
-  const src = await readDef();
-  // A dispatcher reading the def must see exactly what the BRIEF must carry.
-  assert.match(src, /## Dispatch contract/i, "def must carry an explicit dispatch-contract section");
+  // A dispatcher reading the def must see exactly what the BRIEF must carry — in the
+  // contract section itself, not scattered incidental prose.
+  const section = dispatchContractSection(await readDef());
   for (const input of [
     /\bitem\b.*\bid\b|\bid\b.*\bitem\b/i, // the work item id
     /outcome|brief/i,                      // the outcome / brief text
@@ -83,18 +91,18 @@ test("dispatch contract: the brief inputs the runner requires are named", async 
     /\bbase\b/i,                           // base ref
     /disposition/i,                        // forced disposition (pr)
   ]) {
-    assert.match(src, input, `brief input ${input} must be named in the def`);
+    assert.match(section, input, `brief input ${input} must be named in the dispatch-contract section`);
   }
 });
 
 test("dispatch contract: receipts the runner must return are named", async () => {
-  const src = await readDef();
-  assert.match(src, /receipts/i);
-  assert.match(src, /files touched|files changed/i, "receipts must include files touched");
-  assert.match(src, /pasted, not paraphrased|pasted output|paste.*output/i,
+  const section = dispatchContractSection(await readDef());
+  assert.match(section, /receipts/i);
+  assert.match(section, /files touched|files changed/i, "receipts must include files touched");
+  assert.match(section, /pasted, not paraphrased|pasted output|paste.*output/i,
     "test evidence must be pasted, not paraphrased");
-  assert.match(src, /VERDICT: PASS/, "receipts must carry the reviewer's explicit verdict");
-  assert.match(src, /PR (URL|link)/i, "receipts must carry the PR URL (or the blocker)");
+  assert.match(section, /VERDICT: PASS/, "receipts must carry the reviewer's explicit verdict");
+  assert.match(section, /PR (URL|link)/i, "receipts must carry the PR URL (or the blocker)");
 });
 
 test("gate rules: explicit PASS, re-review after fixes, bounded loop, fail-loud", async () => {

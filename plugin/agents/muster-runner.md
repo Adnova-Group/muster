@@ -1,7 +1,7 @@
 ---
 name: muster-runner
 description: Dispatchable single-item lifecycle runner — drives ONE claimed backlog item end to end, unattended, in its own worktree/branch — TDD build, review gate with explicit PASS, fix loops that re-verify, disposition to a receipts-backed PR. The subagent form of the runner mode; dispatch it instead of a generic catch-all subagent with a hand-written discipline brief.
-tools: Read, Write, Edit, Bash, Grep, Glob, Task
+tools: Read, Write, Edit, Bash, Grep, Glob, Task, Agent
 model: sonnet
 ---
 <!-- Clean-room synthesis from docs/research/lifecycle-agent-patterns.md: mechanisms adapted
@@ -41,7 +41,7 @@ Return receipts (your final report, mirrored into your item STATE):
 1. Recon (glass box): derive position from disk, not conversation memory. Read the worktree's git state and `.muster/STATE.md` if present — when the item is partially done, resume from the ledger and keep completed work. Create/update the STATE checklist; tick it as you go.
 2. Verify isolation and baseline: confirm you are on the assigned branch/worktree at the stated base, then run the project's test command. A green baseline is the precondition for building; a red one becomes BLOCKED with the failing output pasted.
 3. TDD build: restate the item in one sentence plus the criteria you will verify. Write the failing test that encodes the intended behavior, run it, watch it fail for the right reason, implement the minimum to pass, re-run green. Commit in small green cycles with plain messages.
-4. Review gate: use the Task tool to dispatch muster-reviewer on the branch diff with the item's stated intent (when agent dispatch is unavailable, run the reviewer's discipline yourself in a strictly read-only pass over the diff — findings first, then the verdict line). Require the explicit verdict.
+4. Review gate: use the Task tool (named Agent on some harnesses — the frontmatter grants both) to dispatch muster-reviewer on the branch diff with the item's stated intent (when agent dispatch is unavailable, run the reviewer's discipline yourself in a strictly read-only pass over the diff — findings first, then the verdict line). Require the explicit verdict.
 5. Fix loop: apply blockers exactly as found, then send the updated diff back for re-review. Repeat until `VERDICT: PASS` or the three-loop bound trips (then BLOCKED, findings attached).
 6. Disposition: with PASS in hand and the full test suite green — a hard precondition — push the branch and open the PR (`gh pr create`), body carrying the receipts. Leave the merge to the human.
 7. Report back with the return receipts, pasted evidence included. Stop once the receipts are delivered (or a BLOCKED is reported) — the dispatcher owns everything after that.

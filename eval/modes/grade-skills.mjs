@@ -452,16 +452,21 @@ function captureDedupeCheck(testCase, artifacts) {
 const RUNNER_ITEM_LINE_RE = /^ITEM: \S+/m;
 const RUNNER_OUTCOME_LINE_RE = /^OUTCOME: .+$/m;
 const RUNNER_ISOLATION_LINE_RE = /^ISOLATION: .*(worktree|branch).*$/m;
-const RUNNER_BASE_RE = /base\s+\S+/i;
+// Anchored to the ISOLATION line: a stray "database"/"codebase" in outcome prose must not
+// satisfy the base-ref requirement.
+const RUNNER_BASE_RE = /^ISOLATION: .*\bbase\b\s+\S+/m;
 const RUNNER_DISPOSITION_LINE_RE = /^DISPOSITION: (\S+)/m;
 const RUNNER_SOURCE_LINE_RE = /^SOURCE: \S+/m;
 const RUNNER_RETURN_CONTRACT_RE = /return contract/i;
 const RUNNER_VERDICT_PASS_RE = /VERDICT: PASS/;
 const RUNNER_PR_LINE_RE = /^PR: https?:\/\/\S+/m;
 const RUNNER_FILES_TOUCHED_RE = /^Files touched:\n(?:- .+\n?)+/m;
-const RUNNER_TEST_BASELINE_RE = /^- baseline: .+->.*\d+ pass/m;
-const RUNNER_TEST_FINAL_RE = /^- final: .+->.*\d+ pass/m;
-const RUNNER_FIX_LOOP_COUNT_RE = /\d+ fix loop/;
+// Receipts prove GREEN, not merely pasted: a result line must show a passed count AND a
+// zero failed count ("0 passed, 12 failed" carries digits + "passed" yet is red).
+const RUNNER_TEST_BASELINE_RE = /^- baseline: .+->.*\b\d+ passed?\b.*\b0 failed\b/m;
+const RUNNER_TEST_FINAL_RE = /^- final: .+->.*\b\d+ passed?\b.*\b0 failed\b/m;
+// "no fix loops" is as valid as "1 fix loop" — the def mandates the count, not digits.
+const RUNNER_FIX_LOOP_COUNT_RE = /\b(\d+|no) fix loops?\b/;
 
 function runnerDispatchBriefCheck(testCase, artifacts) {
   const expect = testCase.expect || {};

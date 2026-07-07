@@ -223,6 +223,18 @@ export const DEFAULT_GATE = { floor: 1, pass_total: 10 };
 //   <!-- prompt-lint-disable ANTH-POS-001: reason -->
 // The proper way to handle a legitimate exception (an orchestration prompt that must
 // stack prohibitions) — explicit and reviewable, not by mangling the prompt.
+//
+// Scope is whole-text (the entire `text` a caller passes to lintPrompt), never
+// line- or block-scoped — a disable directive anywhere in the document suppresses
+// the named rule for the WHOLE lintPrompt() call on that document, not just the
+// lines near the comment. This is not a missing feature to add on request: every
+// rule's `pass(text, ctx)` (e.g. ANTH-POS-001's NEGATIVE_RE tally) is itself computed
+// over the full surface text, not per line, so there is no per-line/per-block
+// "applicable" unit to disable narrower than the whole document without reworking
+// every rule to be region-aware. For a file with one exempt directive stacked among
+// otherwise-lintable prose (e.g. go.md/go-backlog.md's never-push-to-main /
+// never-auto-merge guarantees), file scope is therefore the tightest granularity
+// this mechanism can offer today.
 function disabledRules(text) {
   const ids = new Set();
   const re = /prompt-lint-disable[:\s]+([A-Z][A-Z0-9-]*(?:\s*,\s*[A-Z][A-Z0-9-]*)*)/gi;

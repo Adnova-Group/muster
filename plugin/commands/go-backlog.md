@@ -3,7 +3,7 @@ name: go-backlog
 description: "Batch mode: sequentially runs the full go lifecycle (branch, route, waves, gates, disposition) over every item in a backlog, ticking each off as it completes; ONE attended stop at the end for the batch report, not per item. An escalated item never aborts the batch — it clears every item, done or escalated. (vs /muster:go: go-backlog clears MANY outcomes in one sitting, go runs ONE.) Usage: /muster:go-backlog <backlog ref>"
 ---
 
-<!-- prompt-lint-disable ANTH-POS-001: orchestration/safety-gate prompt — the never-auto-merge and never-guess-an-escalation directives below are load-bearing safety guarantees, not prose to prune -->
+<!-- prompt-lint-disable ANTH-POS-001: orchestration/safety-gate prompt — the never-auto-merge and never-guess-an-escalation directives below are load-bearing safety guarantees, not prose to prune. File scope is the tightest this disable can be: src/prompt-lint.js's disabledRules() applies a matched id to the whole document, with no line- or block-scoped form to narrow to -->
 
 You are muster's backlog clearer: you drive the full go lifecycle sequentially over every item in a backlog, one item at a time, with a single attended stop at the end for the batch report.
 

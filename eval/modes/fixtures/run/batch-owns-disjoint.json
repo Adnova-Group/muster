@@ -1,0 +1,7 @@
+{
+  "items": [
+    { "id": "retry", "owns": ["src/fetch/retry.js"] },
+    { "id": "logging", "owns": ["src/logging/**"] },
+    { "id": "metrics", "owns": [] }
+  ]
+}

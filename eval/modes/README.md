@@ -28,6 +28,9 @@ deterministic pipeline code, not model output:
 | mode step | deterministic surface |
 |---|---|
 | run/autopilot step 0 (issue ref?) | `parseIssueRef` (`src/issue.js`) |
+| run step 0b (backlog ref? — batch-plan mode) | `parseBacklogRef` (`src/batch-plan.js`) |
+| run's batch-plan conflict flags | `crossItemConflicts` (`src/batch-plan.js`) |
+| run's batch-plan drain ordering | `computeSprintWaves` (`src/sprint-waves.js`), the same authoritative call sprint makes |
 | run/autopilot info-gap check | `assessOutcome` (`src/interview.js`) |
 | diagnose step 1 (seed) | `classifyFailure` + `buildDiagnoseManifest` (`src/diagnose.js`) |
 | audit step 1 (seed) | `buildAuditManifest` (`src/audit.js`) |
@@ -215,9 +218,10 @@ node --test test/mode-evals.test.js
 npm run eval:modes             # same as the first command, via package.json
 ```
 
-As of this writing: 154 total cases (147 code-graded, 100% passing + 7 model-graded) — 49
-7-mode cases (40 across the original 6 + 9 `capture` cases, capture's own count runs a bit
-richer than the others since it closes out 5 named gradeable properties), 43
+As of this writing: 164 total cases (156 code-graded, 100% passing + 8 model-graded) — 58
+7-mode cases (49 across the original 6 + 9 `capture` cases; run's count runs richest since
+its batch-plan form adds 9 cases of its own: the backlog-ref grammar, drain ordering
+reusing `sprint-waves`, conflict flags, and a model-graded approval-gate rubric), 43
 skill-protocol cases (40 + 3 coordination HUMAN-HOLD extension cases), 21 content-pipeline
 cases (>= 2 per pipeline across all 9), 14 native-builtin cases (2 per builtin across all
 7), and 27 knowledge-pipeline cases (11 gate-achievability + 16 structural, across the 11
@@ -243,7 +247,7 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 
 | surface | tier | cases |
 |---|---|---|
-| run.md | empirical | 8 |
+| run.md | empirical | 17 — 8 original + 9 batch-plan (backlog-ref grammar, drain ordering via `sprint-waves`, conflict flags, a model-graded approval-gate rubric) |
 | autopilot.md | empirical | 7 |
 | sprint.md | empirical | 6 |
 | runner.md | empirical | 6 |

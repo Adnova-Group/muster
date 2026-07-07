@@ -157,8 +157,9 @@ test("C7: chmod 000 subdir — collectScanFiles does not throw; readable sibling
 // Pins the deliverable itself: `node src/cli.js prompt scan .` must report zero failing
 // files across the real repo. Before this item's fix, plugin/commands/run.md, autopilot.md,
 // and sprint.md failed ANTH-ROLE-001 (no persona) and ANTH-FMT-001 (no output format) --
-// they are intentional 8-line legacy-alias stubs (frontmatter + one heads-up guidance line
-// + a Read-and-execute directive) with no persona/output-format prose BY DESIGN, and
+// they are intentional thin legacy-alias stubs (frontmatter + one heads-up guidance line
+// + a Read-and-execute directive; 9 lines after this fix's added disable-comment line) with
+// no persona/output-format prose BY DESIGN, and
 // test/mode-evals.test.js's "alias-shape equivalence" test hard-pins each stub's body to
 // EXACTLY those 2 paragraphs -- adding persona/format prose to satisfy the linter would
 // fatten the stub and break that guard. The fix instead adds an inline

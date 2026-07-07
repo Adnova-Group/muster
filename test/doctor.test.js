@@ -304,6 +304,29 @@ describe("runDoctor skill-doc-refs check", () => {
     const check = result.checks.find(c => c.name === "skill-doc-refs");
     assert.ok(check, "skill-doc-refs check must exist");
     assert.equal(check.ok, true, `packed install must stay ok:true — detail: ${check.detail}`);
+    // Pin the 4 real convention-layer wordings this check must keep blessing: review-gate's
+    // RUNBOOK.md ("if present"), muster-humanizer's VOICE.md (bare "if" clause, no exists/missing
+    // keyword), and muster-image's + muster-video's BRAND.md ("or the project's equivalent" /
+    // "if `docs/profiles/BRAND.md` exists"). A regression here would misclassify any of these as
+    // hard-missing (ok:false) since the packed install ships no docs/ tree at all.
+    assert.match(check.detail, /absent \(created on first use\)/, "all 4 real refs must stay create-on-first-use");
+    assert.match(check.detail, /docs\/qa\/RUNBOOK\.md/, "review-gate's RUNBOOK.md ref must stay blessed");
+    assert.match(check.detail, /docs\/profiles\/VOICE\.md/, "muster-humanizer's VOICE.md ref must stay blessed");
+    assert.match(check.detail, /docs\/profiles\/BRAND\.md/, "BRAND.md refs (muster-image, muster-video) must stay blessed");
+  });
+
+  it("hard-fails when a comma closes the 'if' clause before the doc reference (the clause is about run conditions, not the file's existence)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-skilldocs-cofu-comma-"));
+    await mkdir(join(tmp, "plugin/skills/example"), { recursive: true });
+    await writeFile(
+      join(tmp, "plugin/skills/example/SKILL.md"),
+      "If the run is attended, read `docs/qa/REQUIRED.md` before dispatch.\n"
+    );
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "skill-doc-refs");
+    assert.ok(check, "skill-doc-refs check must exist");
+    assert.equal(check.ok, false, "a comma-closed 'if' clause must not bless the reference as create-on-first-use");
+    assert.match(check.detail, /docs\/qa\/REQUIRED\.md/, "detail must name the wrongly-blessed doc path");
   });
 });
 

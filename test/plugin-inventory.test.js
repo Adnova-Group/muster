@@ -245,3 +245,42 @@ test("skillsFromPluginRoot (async fallback path): a symlinked SKILL.md is not re
   const r = await readPluginInventory(home);
   assert.deepEqual(r.skills, ["real-skill"], "a skill whose SKILL.md is a symlink must not be listed");
 });
+
+// The 4 tests above symlink only the terminal SKILL.md FILE. A plugin can
+// instead symlink the SKILL's OWN DIRECTORY at some unrelated location that
+// happens to hold a genuine, non-symlink SKILL.md -- lstat inspects only the
+// FINAL path component, so a guard that checks just the SKILL.md file misses
+// this: the symlinked directory is transparently traversed, and the real
+// file at the far end passes an SKILL.md-only symlink check clean.
+const secretSkillMdFile = "secret-skill/SKILL.md";
+
+test("installedSkillDescription (harness own-skills lane): a symlinked skill DIRECTORY is not followed", async () => {
+  const outside = await tmpProject({ [secretSkillMdFile]: SECRET_SKILL_MD });
+  const home = await tmpProject({});
+  await mkdir(join(home, ".claude/skills"), { recursive: true });
+  await symlink(join(outside, "secret-skill"), join(home, ".claude/skills/my-skill"), "dir");
+
+  assert.equal(installedSkillDescription(home, "my-skill"), "", "must not follow the symlinked skill dir");
+});
+
+test("installedSkillDescription (plugins lane, via installPath): a symlinked skill DIRECTORY is not followed", async () => {
+  const outside = await tmpProject({ [secretSkillMdFile]: SECRET_SKILL_MD });
+  const home = await tmpProject({});
+  await mkdir(join(home, "install/thing/skills"), { recursive: true });
+  await symlink(join(outside, "secret-skill"), join(home, "install/thing/skills/my-skill"), "dir");
+  await writeIndex(home, { "thing@official": [{ installPath: join(home, "install/thing") }] });
+
+  assert.equal(installedSkillDescription(home, "my-skill"), "", "must not follow the symlinked skill dir");
+});
+
+test("skillsFromPluginRoot (async fallback path): a symlinked skill DIRECTORY is not registered as an installed skill", async () => {
+  const outside = await tmpProject({ [secretSkillMdFile]: SECRET_SKILL_MD });
+  const home = await tmpProject({
+    ".claude/plugins/real-plugin/skills/real-skill/SKILL.md": "# real skill"
+  });
+  await mkdir(join(home, ".claude/plugins/real-plugin/skills"), { recursive: true });
+  await symlink(join(outside, "secret-skill"), join(home, ".claude/plugins/real-plugin/skills/evil-skill"), "dir");
+
+  const r = await readPluginInventory(home);
+  assert.deepEqual(r.skills, ["real-skill"], "a symlinked skill dir must not be listed");
+});

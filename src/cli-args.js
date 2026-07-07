@@ -24,11 +24,17 @@ export function requireArg(rest, idx, usage, fail) {
 }
 
 // Optional `--flag value` lookup. Returns the token after `name`, or undefined when
-// the flag is absent or has no following value. Mirrors the `rest.indexOf('--flag');
+// the flag is absent, has no following value, or the following token is itself another
+// flag (starts with "--"). That last case matters: no caller's value is legitimately
+// flag-shaped, so a bare `--foo --bar` must never read "--bar" as --foo's value — that
+// silently swallows --bar's own meaning and, for callers that only check truthiness
+// (e.g. `match --skills`), lets the literal flag string masquerade as real input
+// instead of failing loud on the missing value. Mirrors the `rest.indexOf('--flag');
 // rest[i+1]` idiom the dispatch branches repeat.
 export function flagValue(rest, name) {
   const i = rest.indexOf(name);
-  return i >= 0 ? rest[i + 1] : undefined;
+  const v = i >= 0 ? rest[i + 1] : undefined;
+  return v !== undefined && v.startsWith("--") ? undefined : v;
 }
 
 // Format a caught error for stderr: full stack under DEBUG, friendly message otherwise.

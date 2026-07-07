@@ -442,6 +442,22 @@
       "artifact": "fixtures/skills/review-gate/verdict-escalate-cap-hit.md",
       "expect": { "verdict": "ESCALATE" }
     },
+    {
+      "id": "review-gate-mutant-kill-rule-present",
+      "mode": "review-gate",
+      "outcome": "review-gate/SKILL.md's Mutant-kill gate section: a wave introducing a new test or eval guard PASSes only with a demonstrated kill (the mutation, the failing output, the byte-identical restore) recorded in the review evidence.",
+      "check": "review-gate-mutant-kill-rule",
+      "artifact": "fixtures/skills/review-gate/mutant-kill-rule-clean.md",
+      "expect": { "rulePresent": true, "requiresMutationStep": true, "requiresFailingOutputStep": true, "requiresByteIdenticalRestoreStep": true, "requiresAutomaticFailOnMissingEvidence": true }
+    },
+    {
+      "id": "review-gate-mutant-kill-rule-thinning-caught",
+      "mode": "review-gate",
+      "outcome": "A corrupt twin of the Mutant-kill gate with the byte-identical-restore evidence step and the automatic-FAIL default silently dropped: the check must catch the thinning rather than silently passing a weakened rule.",
+      "check": "review-gate-mutant-kill-rule",
+      "artifact": "fixtures/skills/review-gate/mutant-kill-rule-missing-evidence-shape.md",
+      "expect": { "rulePresent": true, "requiresMutationStep": true, "requiresFailingOutputStep": true, "requiresByteIdenticalRestoreStep": false, "requiresAutomaticFailOnMissingEvidence": false }
+    },
 
     {
       "id": "coordination-claim-single-winner",

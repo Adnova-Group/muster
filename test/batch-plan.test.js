@@ -102,6 +102,30 @@ test("parseBacklogRef: an ordinary single-dot extension token is unaffected by t
   assert.deepEqual(parseBacklogRef("notes.txt"), { kind: "file", path: "notes.txt" });
 });
 
+// --- absolute-path rejection: an absolute file-shaped token must never resolve to
+// kind:"file" either -- sprint-waves.js's caller (go-backlog.md step 1 / plan-backlog.md
+// B1) treats kind:"file" as a green light to read `path` directly, and an absolute path
+// (unlike a relative "../" segment) needs no traversal at all to reach outside the
+// project: it names an out-of-project file outright. Mirrors the ".." guard immediately
+// above; isAbsolute is node:path's own platform-aware check (POSIX-absolute or a Windows
+// drive-letter/UNC path), not a hand-rolled leading-slash test.
+
+test("parseBacklogRef: an absolute .md path is invalid, not a silent file ref", () => {
+  const r = parseBacklogRef("/etc/passwd.md");
+  assert.equal(r.kind, "invalid");
+  assert.match(r.reason, /absolute/);
+});
+
+test("parseBacklogRef: an absolute path is rejected even with no '..' segment present", () => {
+  const r = parseBacklogRef("/tmp/backlog.md");
+  assert.equal(r.kind, "invalid");
+});
+
+test("parseBacklogRef: surrounding whitespace does not hide an absolute path from the guard", () => {
+  const r = parseBacklogRef("  /tmp/backlog.md  ");
+  assert.equal(r.kind, "invalid");
+});
+
 test("parseBacklogRef: a bare version/decimal token is classified as a file ref -- accepted, documented tradeoff of the widened FILE_TOKEN_RE", () => {
   // "3.14" and "v2.0" are whitespace-free tokens ending in a dot-suffix, so they satisfy
   // the same shape test a real filename would. Excluding numeric-looking extensions would

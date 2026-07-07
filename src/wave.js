@@ -17,7 +17,9 @@ export function computeWaves(tasks) {
 
   while (remaining.length) {
     const ready = remaining.filter(t => (t.deps || []).every(d => done.has(d)));
-    if (ready.length === 0) throw new Error("cycle detected in task deps");
+    if (ready.length === 0) {
+      throw new Error(`cycle detected in task deps (unresolved: ${remaining.map(t => t.id).join(", ")})`);
+    }
     waves.push(ready);
     for (const t of ready) done.add(t.id);
     remaining = remaining.filter(t => !done.has(t.id));

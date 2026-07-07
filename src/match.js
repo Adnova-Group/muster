@@ -3,21 +3,17 @@
 // without collapsing everything into the fixed role enum. Used by `muster match <task>`.
 
 import { isInstalled } from "./installed.js";
+import { tokenize } from "./keyword.js";
 
-const STOPWORDS = new Set([
-  "the", "and", "for", "with", "this", "that", "a", "an", "to", "of", "it", "is", "in", "on",
-]);
-
-// lowercase, split on non-alphanumerics, drop <3-char tokens and stopwords. Caller dedupes.
-function tokenize(text) {
-  if (typeof text !== "string") return [];
-  return text.toLowerCase().split(/[^a-z0-9]+/)
-    .filter(t => t.length >= 3 && !STOPWORDS.has(t));
-}
+// Weighted-bag scoring constants shared by matchProviders and matchSkills below.
+const TOKEN_WEIGHT_HIGH = 3; // id (split on -/_[/:]), roles, keywords
+const TOKEN_WEIGHT_LOW = 1;  // description tokens
+const INSTALLED_BOOST = 1;   // present-tool tiebreak over an equal-scoring fallback
+const DEFAULT_LIMIT = 8;
 
 export function matchProviders(task, catalog, installed = {}, opts = {}) {
   if (typeof task !== "string" || !task.trim()) return [];
-  const limit = opts.limit ?? 8;
+  const limit = opts.limit ?? DEFAULT_LIMIT;
 
   const taskTokens = [...new Set(tokenize(task))];
   if (taskTokens.length === 0) return [];
@@ -32,18 +28,18 @@ export function matchProviders(task, catalog, installed = {}, opts = {}) {
       if (weight > prev) bag.set(token, weight);
     };
 
-    // HIGH weight (3): id (split on - and _), each role, each keyword.
-    for (const t of String(entry.id || "").toLowerCase().split(/[-_]+/)) add(t, 3);
+    // HIGH weight: id (split on - and _), each role, each keyword.
+    for (const t of String(entry.id || "").toLowerCase().split(/[-_]+/)) add(t, TOKEN_WEIGHT_HIGH);
     for (const role of entry.roles || []) {
-      for (const t of String(role).toLowerCase().split(/[-_]+/)) add(t, 3);
+      for (const t of String(role).toLowerCase().split(/[-_]+/)) add(t, TOKEN_WEIGHT_HIGH);
     }
     if (Array.isArray(entry.keywords)) {
       for (const kw of entry.keywords) {
-        for (const t of String(kw).toLowerCase().split(/[-_]+/)) add(t, 3);
+        for (const t of String(kw).toLowerCase().split(/[-_]+/)) add(t, TOKEN_WEIGHT_HIGH);
       }
     }
-    // LOW weight (1): description tokens (same tokenize/stopword treatment).
-    if (entry.description) for (const t of tokenize(entry.description)) add(t, 1);
+    // LOW weight: description tokens (same tokenize/stopword treatment).
+    if (entry.description) for (const t of tokenize(entry.description)) add(t, TOKEN_WEIGHT_LOW);
 
     let score = 0;
     const matched = [];
@@ -57,7 +53,7 @@ export function matchProviders(task, catalog, installed = {}, opts = {}) {
     let source;
     if (entry.kind === "external" && isInstalled(entry, installed)) {
       source = "installed";
-      score += 1;
+      score += INSTALLED_BOOST;
     } else if (entry.kind === "builtin" || entry.kind === "agent") {
       source = "builtin";
     } else {
@@ -79,11 +75,11 @@ export function matchProviders(task, catalog, installed = {}, opts = {}) {
 
 // Same weighted-bag ranking as matchProviders, scoped to the skills-inventory shape
 // resolveCapabilities returns ({id, source, description} — no roles/keywords fields,
-// so the bag is just id tokens (HIGH weight 3) + description tokens (LOW weight 1)).
+// so the bag is just id tokens (HIGH weight) + description tokens (LOW weight)).
 // Used by `muster match --skills <task>`.
 export function matchSkills(task, skills, opts = {}) {
   if (typeof task !== "string" || !task.trim()) return [];
-  const limit = opts.limit ?? 8;
+  const limit = opts.limit ?? DEFAULT_LIMIT;
 
   const taskTokens = [...new Set(tokenize(task))];
   if (taskTokens.length === 0) return [];
@@ -97,10 +93,10 @@ export function matchSkills(task, skills, opts = {}) {
       if (weight > prev) bag.set(token, weight);
     };
 
-    // HIGH weight (3): id, split on -, _ and : (skill ids may be colon-namespaced, e.g. vercel:nextjs).
-    for (const t of String(entry.id || "").toLowerCase().split(/[-_:]+/)) add(t, 3);
-    // LOW weight (1): description tokens (same tokenize/stopword treatment).
-    if (entry.description) for (const t of tokenize(entry.description)) add(t, 1);
+    // HIGH weight: id, split on -, _ and : (skill ids may be colon-namespaced, e.g. vercel:nextjs).
+    for (const t of String(entry.id || "").toLowerCase().split(/[-_:]+/)) add(t, TOKEN_WEIGHT_HIGH);
+    // LOW weight: description tokens (same tokenize/stopword treatment).
+    if (entry.description) for (const t of tokenize(entry.description)) add(t, TOKEN_WEIGHT_LOW);
 
     let score = 0;
     const matched = [];
@@ -110,9 +106,9 @@ export function matchSkills(task, skills, opts = {}) {
     }
     if (score === 0) continue;
 
-    // Same +1 installed boost as matchProviders: a present skill edges out an
+    // Same installed boost as matchProviders: a present skill edges out an
     // equal-scoring builtin fallback for the same tokens.
-    if (entry.source === "installed") score += 1;
+    if (entry.source === "installed") score += INSTALLED_BOOST;
 
     results.push({ id: entry.id, score, source: entry.source, matched });
   }

@@ -96,3 +96,77 @@ test("validateManifest does not inject a default mergeDisposition", () => {
   validateManifest(m);
   assert.equal(Object.prototype.hasOwnProperty.call(m, "mergeDisposition"), false);
 });
+
+// Per-task `skills` and `surface` are both optional. A manifest that omits them
+// entirely (the `valid` fixture above) must keep validating -- backward compat
+// for every manifest authored before this schema addition.
+test("plan tasks without skills/surface still validate (backward-compat)", () => {
+  assert.deepEqual(validateManifest(valid), { ok: true, errors: [] });
+});
+
+test("accepts a plan task with well-formed skills and a valid surface", () => {
+  const m = {
+    ...valid,
+    plan: [{
+      task: "middleware",
+      mode: "single",
+      skills: [{ id: "supabase", rationale: "task touches supabase schema" }],
+      surface: "integration"
+    }]
+  };
+  assert.deepEqual(validateManifest(m), { ok: true, errors: [] });
+});
+
+for (const s of ["ui", "copy", "integration", "none"]) {
+  test(`surface accepts "${s}"`, () => {
+    const m = { ...valid, plan: [{ task: "middleware", mode: "single", surface: s }] };
+    assert.deepEqual(validateManifest(m), { ok: true, errors: [] });
+  });
+}
+
+test("rejects a malformed skills entry (missing rationale), naming the task", () => {
+  const m = {
+    ...valid,
+    plan: [{
+      id: "t3",
+      task: "middleware",
+      mode: "single",
+      skills: [{ id: "supabase" }]
+    }]
+  };
+  const r = validateManifest(m);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /t3/.test(e) && /rationale/.test(e)),
+    `expected an error naming the task id and the missing-rationale defect, got ${JSON.stringify(r.errors)}`);
+});
+
+test("rejects a skills entry with an empty id", () => {
+  const m = {
+    ...valid,
+    plan: [{
+      id: "t3",
+      task: "middleware",
+      mode: "single",
+      skills: [{ id: "  ", rationale: "r" }]
+    }]
+  };
+  const r = validateManifest(m);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /t3/.test(e) && /id/.test(e)),
+    `expected an error naming the task id and the id defect, got ${JSON.stringify(r.errors)}`);
+});
+
+test("rejects a non-array skills field", () => {
+  const m = { ...valid, plan: [{ id: "t3", task: "middleware", mode: "single", skills: "supabase" }] };
+  const r = validateManifest(m);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /t3/.test(e) && /skills/.test(e)));
+});
+
+test("rejects a bad surface value, naming the task", () => {
+  const m = { ...valid, plan: [{ id: "t3", task: "middleware", mode: "single", surface: "backend" }] };
+  const r = validateManifest(m);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /t3/.test(e) && /surface/.test(e) && /ui/.test(e) && /none/.test(e)),
+    `expected an enum-naming surface error scoped to the task, got ${JSON.stringify(r.errors)}`);
+});

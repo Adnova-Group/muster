@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
-import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask, lastColonSegment } from "../src/match.js";
+import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask, lastColonSegment, impliedSurfaceForSkillId } from "../src/match.js";
 
 const pexecFile = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -206,6 +206,35 @@ test("suggestSkillsForStack: no duplicate ids across overlapping triggers", () =
   const r = suggestSkillsForStack({ frameworks: ["next", "next"], keywords: ["ui", "page"] }, []);
   const ids = r.map(s => s.id);
   assert.deepEqual(ids, [...new Set(ids)]);
+});
+
+// ---------------------------------------------------------------------------
+// impliedSurfaceForSkillId — reverse lookup used by manifest.js's surface-mismatch
+// warning: does binding this skill id imply a ui/copy/integration surface?
+// ---------------------------------------------------------------------------
+
+test("impliedSurfaceForSkillId: a design/UX skill implies surface ui", () => {
+  assert.equal(impliedSurfaceForSkillId("frontend-design"), "ui");
+  assert.equal(impliedSurfaceForSkillId("wsh-design-system-patterns"), "ui");
+  assert.equal(impliedSurfaceForSkillId("wsh-responsive-design"), "ui");
+});
+
+test("impliedSurfaceForSkillId: the humanizer skill implies surface copy", () => {
+  assert.equal(impliedSurfaceForSkillId("muster-humanizer"), "copy");
+});
+
+test("impliedSurfaceForSkillId: sp-verify implies surface integration", () => {
+  assert.equal(impliedSurfaceForSkillId("sp-verify"), "integration");
+});
+
+test("impliedSurfaceForSkillId: an id with no surface implication returns null", () => {
+  assert.equal(impliedSurfaceForSkillId("muster-builder"), null);
+  assert.equal(impliedSurfaceForSkillId("totally-unrelated-skill"), null);
+});
+
+test("impliedSurfaceForSkillId: namespace-insensitive, same as lastColonSegment elsewhere", () => {
+  assert.equal(impliedSurfaceForSkillId("vendor:frontend-design"), "ui");
+  assert.equal(impliedSurfaceForSkillId("vendor:muster-humanizer"), "copy");
 });
 
 // ---------------------------------------------------------------------------

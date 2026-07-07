@@ -188,6 +188,26 @@ export function lastColonSegment(id) {
   return i === -1 ? s : s.slice(i + 1);
 }
 
+// Reverse lookup: does binding this skill id imply one of the review gate's surface
+// types (ui/copy/integration)? Built from the same DESIGN_UX_SKILLS / humanizer /
+// sp-verify groupings suggestSkillsForStack already uses, so the two stay in sync by
+// construction rather than by two hand-maintained lists drifting apart. Namespace-
+// insensitive (lastColonSegment), matching every other id comparison in this file.
+// Returns null when the id implies no particular surface.
+const SURFACE_IMPLYING_SKILL_IDS = {
+  ui: DESIGN_UX_SKILLS.map((s) => s.id),
+  copy: ["muster-humanizer"],
+  integration: ["sp-verify"],
+};
+
+export function impliedSurfaceForSkillId(id) {
+  const seg = lastColonSegment(id).toLowerCase();
+  for (const [surface, ids] of Object.entries(SURFACE_IMPLYING_SKILL_IDS)) {
+    if (ids.some((i) => lastColonSegment(i).toLowerCase() === seg)) return surface;
+  }
+  return null;
+}
+
 export function suggestSkillsForStack(signals = {}, inventory = []) {
   const installedLastSegments = new Set(inventory.map(e => lastColonSegment(e.id)));
   const suggestions = [];

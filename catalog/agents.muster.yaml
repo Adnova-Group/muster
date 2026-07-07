@@ -40,3 +40,9 @@
   rank: 55
   description: Read-only retrospective — mines a completed run's STATE, escalations, and review-gate fix-loops for recurring friction, then proposes user-gated edits to muster's own skills/agents/rules. Proposes, never applies; never edits during a run.
   provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-runner
+  kind: agent
+  roles: [lifecycle]
+  rank: 55
+  description: Dispatchable single-item lifecycle runner — drives ONE claimed backlog item end to end, unattended, in its own worktree/branch — TDD build, review gate with explicit PASS, fix loops that re-verify, disposition to a receipts-backed PR. The subagent form of the runner mode; dispatch it instead of a generic catch-all subagent with a hand-written discipline brief.
+  provenance: { inspired_by: "clean-room synthesis, docs/research/lifecycle-agent-patterns.md (obra/superpowers MIT, wshobson/agents MIT, Anthropic subagent docs)", license: "Apache-2.0" }

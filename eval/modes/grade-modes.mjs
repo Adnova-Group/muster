@@ -211,10 +211,11 @@ function issueRefCheck(testCase) {
   return checks;
 }
 
-// run.md step 0b: the batch-ref grammar (file | issues:<label> | linear:<key> |
-// outcome | invalid) that decides whether run plans a single outcome or renders the
-// batch plan. Grades src/batch-plan.js's parseBacklogRef directly, same tier as
-// issue-ref grading parseIssueRef.
+// The batch-ref grammar (file | issues:<label> | linear:<key> | outcome | invalid),
+// formerly documented in the pre-rename run.md, now lives in plan-backlog.md's B1
+// step; it decides whether run plans a single outcome or renders the batch plan.
+// Grades src/batch-plan.js's parseBacklogRef directly, same tier as issue-ref
+// grading parseIssueRef.
 function backlogRefCheck(testCase) {
   const expect = testCase.expect || {};
   const r = parseBacklogRef(testCase.outcome);

@@ -105,8 +105,16 @@ test("surface taxonomy: orchestrator.md's surface-line tokens match manifest.js'
 // "## Surface-type definition-of-done gates" headings, each carrying the
 // `surface` value that fires it.
 function extractGateSurfaceMap(reviewGateMd) {
-  const section = reviewGateMd.split("## Surface-type definition-of-done gates")[1];
-  assert.ok(section, "review-gate/SKILL.md is missing the surface-type gates section");
+  const rest = reviewGateMd.split("## Surface-type definition-of-done gates")[1];
+  assert.ok(rest, "review-gate/SKILL.md is missing the surface-type gates section");
+  // Scope to this section only (up to the next `## ` heading, e.g. the
+  // Mutant-kill gate section) — its own numbered evidence-shape list
+  // ("1. **The mutation**" etc.) matches the same heading pattern below,
+  // and an unscoped scan would over-count. This was the checker's own
+  // known tripwire: legitimate additions to other gate sections vs actual
+  // drift in the surface-type gates must stay distinguishable.
+  const nextHeadingIdx = rest.search(/\n## /);
+  const section = nextHeadingIdx === -1 ? rest : rest.slice(0, nextHeadingIdx);
   const headingRe = /\d+\.\s+\*\*([^*]+)\*\*/g;
   const headings = [...section.matchAll(headingRe)].map((m) => ({ name: m[1], index: m.index }));
   assert.equal(headings.length, 3, "expected exactly 3 surface-type gates");

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseBacklogRef, crossItemConflicts } from "../src/batch-plan.js";
 
 // --- parseBacklogRef: the batch-ref grammar formerly documented in the pre-rename run.md, now in plan-backlog.md's B1 step --------------------------------
-// Mirrors sprint.md step 1's three source forms (file / issues:<label> / linear:<key>),
+// Mirrors go-backlog.md step 1's three source forms (file / issues:<label> / linear:<key>),
 // plus the "everything else is an outcome" default that keeps /muster:run's single-outcome
 // path byte-identical for plain outcomes.
 

@@ -472,3 +472,13 @@ test('eval/modes/grade-modes.mjs and test/batch-plan.test.js no longer cite "run
     assert.ok(!/run\.md step 0b/i.test(text), `${f} still cites the dead "run.md step 0b" step number`);
   }
 });
+
+// ── residue 5: "sprint.md step 1" is gone too -- sprint.md is a dead alias stub, its
+// step-numbered content moved to go-backlog.md step 1 (src/batch-plan.js's own header
+// already cites the live "go-backlog.md step 1" location). test/batch-plan.test.js's
+// parseBacklogRef header comment still cited "sprint.md step 1" -- reworded to name the
+// live go-backlog.md location, same historical-comment-cleanup pattern as residue 4.
+test('test/batch-plan.test.js no longer cites "sprint.md step 1" (dead step reference; the live grammar location is go-backlog.md step 1)', async () => {
+  const text = await read("test/batch-plan.test.js");
+  assert.ok(!/sprint\.md step 1/i.test(text), 'test/batch-plan.test.js still cites the stale "sprint.md step 1" reference');
+});

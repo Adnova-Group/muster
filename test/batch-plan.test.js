@@ -127,12 +127,15 @@ test("parseBacklogRef: surrounding whitespace does not hide an absolute path fro
 });
 
 // --- cross-platform absolute-path rejection: node:path's isAbsolute is platform-dynamic
-// -- on a POSIX runtime it returns false for a Windows drive-letter path ("C:\x") or a
-// Windows UNC path ("\\server\x"), so a Windows-absolute token would otherwise slip through
+// -- on a POSIX runtime it returns false for a Windows drive-letter path ("C:\x"), a
+// Windows UNC path ("\\server\x"), or a Windows-rooted path with a single leading
+// backslash ("\x" -- path.win32.isAbsolute treats this as absolute too, not just the
+// double-backslash UNC form), so a Windows-absolute token would otherwise slip through
 // this guard as merely "relative" (kind:"file") when run on a POSIX host, even though the
 // exact same batch plan run on Windows would reject it via isAbsolute. Explicit drive-letter
-// (/^[A-Za-z]:[\\/]/) and UNC (/^\\\\/) checks alongside isAbsolute make the guard's verdict
-// platform-independent instead of platform-dynamic.
+// (/^[A-Za-z]:[\\/]/) and backslash-rooted (/^\\/, which also covers the double-backslash
+// UNC form) checks alongside isAbsolute make the guard's verdict platform-independent
+// instead of platform-dynamic.
 
 test("parseBacklogRef: a Windows drive-letter path (C:\\x.md) is invalid, same as a POSIX absolute path", () => {
   const r = parseBacklogRef("C:\\x.md");
@@ -142,6 +145,12 @@ test("parseBacklogRef: a Windows drive-letter path (C:\\x.md) is invalid, same a
 
 test("parseBacklogRef: a Windows UNC path (\\\\server\\x.md) is invalid, same as a POSIX absolute path", () => {
   const r = parseBacklogRef("\\\\server\\x.md");
+  assert.equal(r.kind, "invalid");
+  assert.match(r.reason, /absolute/);
+});
+
+test("parseBacklogRef: a single-leading-backslash Windows-rooted path (\\x.md) is invalid too, not just the double-backslash UNC form", () => {
+  const r = parseBacklogRef("\\x.md");
   assert.equal(r.kind, "invalid");
   assert.match(r.reason, /absolute/);
 });

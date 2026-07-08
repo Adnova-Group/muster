@@ -67,13 +67,17 @@ function countUncheckedItems(content) {
   return n;
 }
 
-// Windows drive-letter ("C:\x" or "C:/x") and UNC ("\\server\x") path shapes. node:path's
-// isAbsolute is platform-DYNAMIC: on a POSIX runtime it returns false for both of these, so
-// a Windows-absolute candidate would otherwise slip through isTraversalUnsafe as merely
-// "relative" and reach join()/readFile() below (mirrors src/batch-plan.js's parseBacklogRef
-// guard, which carries the identical pair for the same reason).
+// Windows drive-letter ("C:\x" or "C:/x") and backslash-rooted ("\x", including the
+// double-backslash UNC form "\\server\x") path shapes. node:path's isAbsolute is
+// platform-DYNAMIC: on a POSIX runtime it returns false for all of these (path.win32.isAbsolute
+// treats a single leading backslash as absolute too, not just the double-backslash UNC
+// form), so a Windows-absolute candidate would otherwise slip through isTraversalUnsafe as
+// merely "relative" and reach join()/readFile() below (mirrors src/batch-plan.js's
+// parseBacklogRef guard, which carries the identical pair for the same reason).
 const WINDOWS_DRIVE_RE = /^[A-Za-z]:[\\/]/;
-const WINDOWS_UNC_RE = /^\\\\/;
+// A single leading backslash also matches the double-backslash UNC form, so this one
+// pattern covers both shapes.
+const WINDOWS_UNC_RE = /^\\/;
 
 // Traversal guard (mirrors src/memory.js's writeMemory/appendState/appendFollowup
 // slug/runId checks): rejects an absolute path (POSIX or Windows-shaped) or any ".."

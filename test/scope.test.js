@@ -203,9 +203,11 @@ test("detectScope: an absolute-path candidate naming a real checklist file is ne
 });
 
 // --- cross-platform traversal rejection: node:path's isAbsolute is platform-dynamic -- on
-// a POSIX runtime it returns false for a Windows drive-letter path ("C:\x") or a Windows
-// UNC path ("\\server\x"), so isTraversalUnsafe's isAbsolute-only check would otherwise
-// wave a Windows-absolute candidate through as merely "relative". These two candidates are
+// a POSIX runtime it returns false for a Windows drive-letter path ("C:\x"), a Windows UNC
+// path ("\\server\x"), or a Windows-rooted path with a single leading backslash ("\x" --
+// path.win32.isAbsolute treats this as absolute too, not just the double-backslash UNC
+// form), so isTraversalUnsafe's isAbsolute-only check would otherwise wave a
+// Windows-absolute candidate through as merely "relative". These candidates are
 // deliberately extension-free so parseBacklogRef's own (separately guarded) file-shape
 // match never fires, isolating rule 2's readBacklogCandidate/isTraversalUnsafe guard from
 // batch-plan.js's parseBacklogRef guard. The fixture file is written INSIDE cwd itself
@@ -226,6 +228,14 @@ test("detectScope: a Windows UNC-shaped candidate (\\\\server\\x) is never read 
   const r = await withTempDir(async (cwd) => {
     await writeFile(join(cwd, "\\\\server\\x"), "- [ ] leaked item\n");
     return detectScope({ cwd, text: "\\\\server\\x" });
+  });
+  assert.equal(r.scope, "item");
+});
+
+test("detectScope: a single-leading-backslash Windows-rooted candidate (\\x) is never read -> item, not backlog", async () => {
+  const r = await withTempDir(async (cwd) => {
+    await writeFile(join(cwd, "\\x"), "- [ ] leaked item\n");
+    return detectScope({ cwd, text: "\\x" });
   });
   assert.equal(r.scope, "item");
 });

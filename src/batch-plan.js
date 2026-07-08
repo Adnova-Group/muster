@@ -60,14 +60,18 @@ import { isAbsolute } from "node:path";
 const FILE_TOKEN_RE = /\.[^\s./\\]+$/;
 
 // node:path's isAbsolute is platform-dynamic: on a POSIX runtime it returns false for a
-// Windows drive-letter path ("C:\x") or a Windows UNC path ("\\server\x"), so a
+// Windows drive-letter path ("C:\x"), a Windows UNC path ("\\server\x"), or a
+// Windows-rooted path with a single leading backslash ("\x" -- path.win32.isAbsolute
+// treats this as absolute too, not just the double-backslash UNC form), so a
 // Windows-absolute token would otherwise slip through this guard as merely "relative"
 // (kind:"file") when this code runs on a POSIX host -- even though the exact same ref
 // would be caught by isAbsolute on Windows. These two checks make the guard's verdict
 // platform-independent instead of platform-dynamic (mirrors src/scope.js's
 // isTraversalUnsafe, which carries the identical pair for the same reason).
 const WINDOWS_DRIVE_RE = /^[A-Za-z]:[\\/]/;
-const WINDOWS_UNC_RE = /^\\\\/;
+// A single leading backslash also matches the double-backslash UNC form, so this one
+// pattern covers both shapes.
+const WINDOWS_UNC_RE = /^\\/;
 
 export function parseBacklogRef(text) {
   if (typeof text !== "string") return { kind: "outcome" };

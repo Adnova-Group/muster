@@ -202,6 +202,44 @@ test("detectScope: an absolute-path candidate naming a real checklist file is ne
   assert.equal(r.scope, "item");
 });
 
+// --- cross-platform traversal rejection: node:path's isAbsolute is platform-dynamic -- on
+// a POSIX runtime it returns false for a Windows drive-letter path ("C:\x"), a Windows UNC
+// path ("\\server\x"), or a Windows-rooted path with a single leading backslash ("\x" --
+// path.win32.isAbsolute treats this as absolute too, not just the double-backslash UNC
+// form), so isTraversalUnsafe's isAbsolute-only check would otherwise wave a
+// Windows-absolute candidate through as merely "relative". These candidates are
+// deliberately extension-free so parseBacklogRef's own (separately guarded) file-shape
+// match never fires, isolating rule 2's readBacklogCandidate/isTraversalUnsafe guard from
+// batch-plan.js's parseBacklogRef guard. The fixture file is written INSIDE cwd itself
+// (not an "outside" dir) because on a POSIX join(), a backslash is an ordinary filename
+// character rather than a separator -- "C:\Users\x" resolves to a literal in-cwd filename,
+// not an escape. That proves the guard rejects the SHAPE outright (platform-independent),
+// not merely "does this join happen to escape cwd on this host".
+
+test("detectScope: a Windows drive-letter-shaped candidate (C:\\Users\\x) is never read -> item, not backlog", async () => {
+  const r = await withTempDir(async (cwd) => {
+    await writeFile(join(cwd, "C:\\Users\\x"), "- [ ] leaked item\n");
+    return detectScope({ cwd, text: "C:\\Users\\x" });
+  });
+  assert.equal(r.scope, "item");
+});
+
+test("detectScope: a Windows UNC-shaped candidate (\\\\server\\x) is never read -> item, not backlog", async () => {
+  const r = await withTempDir(async (cwd) => {
+    await writeFile(join(cwd, "\\\\server\\x"), "- [ ] leaked item\n");
+    return detectScope({ cwd, text: "\\\\server\\x" });
+  });
+  assert.equal(r.scope, "item");
+});
+
+test("detectScope: a single-leading-backslash Windows-rooted candidate (\\x) is never read -> item, not backlog", async () => {
+  const r = await withTempDir(async (cwd) => {
+    await writeFile(join(cwd, "\\x"), "- [ ] leaked item\n");
+    return detectScope({ cwd, text: "\\x" });
+  });
+  assert.equal(r.scope, "item");
+});
+
 // --- rule 3: bare invocation with a live default .muster/backlog.md --------------------
 
 test("detectScope: empty text + live .muster/backlog.md (>=1 unchecked) -> backlog", async () => {

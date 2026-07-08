@@ -3,7 +3,7 @@
 An empirical eval of the 8 mode prompts (`plugin/commands/*.md`: `plan`, `plan-backlog`,
 `go`, `go-backlog`, `runner`, `audit`, `diagnose`, `capture`) plus the 3 legacy alias
 stubs that delegate to them (`run` -> `plan`, `autopilot` -> `go`, `sprint` ->
-`go-backlog` — thin 8-line files graded structurally, not via dataset cases; see "Alias
+`go-backlog` — thin, minimal files graded structurally, not via dataset cases; see "Alias
 stubs" below), the 10 skill-protocol skills they delegate to (`plugin/skills/*` —
 `orchestrator`, `review-gate`, `coordination`,
 `interview`, `tournament`, `domain-router`, `advisor`, `greenfield`, `prd-pipeline`,
@@ -271,7 +271,7 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 ### Alias stubs (`plugin/commands/*.md`, the remaining 3 of the 11 files there)
 
 `run`, `autopilot`, and `sprint` are legacy names kept working for backward compatibility
-— each is now an 8-line stub (frontmatter + one heads-up guidance line + a
+— each is now a minimal delegation stub (frontmatter + one heads-up guidance line + a
 Read-and-execute directive) with no behavior of its own left to grade empirically. They
 carry **zero** `dataset.json` cases by design (see the DECISION comment beside
 `MODES`/`ALIASES` in `test/mode-evals.test.js`) — coverage is a **structural alias-class

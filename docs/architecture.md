@@ -141,6 +141,8 @@ Muster ships four plugin-native hooks in `plugin/hooks/`. All are declared in `p
 
 Muster's PreToolUse hooks enforce four deterministic GATES and leave four categories to named conventions. Principle: enforce where mechanically sound; a gameable gate that fails open is worse than an honest, named convention.
 
+Muster keeps a running ledger of caught failure classes in `docs/anti-patterns.md`: each entry names the symptom, the root cause, and the guard that now exists, so a fixed bug does not slip back in under a new name. The orchestrator's brief-construction prose and the `muster-improver` agent both read it.
+
 ### GATES (deterministic, hook-enforced -- these block)
 
 **Wave-guard.** While `.muster/wave-active` exists, any main-loop Edit, Write, NotebookEdit, or high-confidence Bash file write is denied. The scale-gate applies instead when the companion `.muster/run-active` is absent (orphaned or crashed wave). Set `MUSTER_WAVE_GUARD=warn` to allow with a reminder (useful when the guard hits a genuine false positive); set it to `off` to disable.

@@ -67,14 +67,28 @@ function countUncheckedItems(content) {
   return n;
 }
 
+// Windows drive-letter ("C:\x" or "C:/x") and UNC ("\\server\x") path shapes. node:path's
+// isAbsolute is platform-DYNAMIC: on a POSIX runtime it returns false for both of these, so
+// a Windows-absolute candidate would otherwise slip through isTraversalUnsafe as merely
+// "relative" and reach join()/readFile() below (mirrors src/batch-plan.js's parseBacklogRef
+// guard, which carries the identical pair for the same reason).
+const WINDOWS_DRIVE_RE = /^[A-Za-z]:[\\/]/;
+const WINDOWS_UNC_RE = /^\\\\/;
+
 // Traversal guard (mirrors src/memory.js's writeMemory/appendState/appendFollowup
-// slug/runId checks): rejects an absolute path or any ".." substring before it ever
-// reaches join()/readFile(). Without this, untrusted CLI/issue text landed directly in a
-// real filesystem read with no boundary check at all -- P0 arbitrary-file-read: a relative
-// "../../etc/passwd" traversed outside cwd via path.join, and an absolute candidate was
-// passed straight through unmodified.
+// slug/runId checks): rejects an absolute path (POSIX or Windows-shaped) or any ".."
+// substring before it ever reaches join()/readFile(). Without this, untrusted CLI/issue
+// text landed directly in a real filesystem read with no boundary check at all -- P0
+// arbitrary-file-read: a relative "../../etc/passwd" traversed outside cwd via path.join,
+// and an absolute candidate was passed straight through unmodified.
 function isTraversalUnsafe(rawSegment) {
-  return typeof rawSegment !== "string" || isAbsolute(rawSegment) || rawSegment.includes("..");
+  return (
+    typeof rawSegment !== "string" ||
+    isAbsolute(rawSegment) ||
+    WINDOWS_DRIVE_RE.test(rawSegment) ||
+    WINDOWS_UNC_RE.test(rawSegment) ||
+    rawSegment.includes("..")
+  );
 }
 
 // Reads `safeCwd`-joined `rawSegment` if it passes the traversal guard, exists, and is a

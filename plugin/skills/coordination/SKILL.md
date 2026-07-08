@@ -67,7 +67,7 @@ that first read) against its CURRENT commit. The fingerprint set is every file a
 actually bound by, not just this skill and its two callers — drift in the hook layer or in go.md's own
 forbidden-action list is exactly the kind of silent scope-widening this preflight exists to catch. The
 set names the LIVE behavior files, not their legacy-alias redirects: `plugin/commands/sprint.md` and
-`plugin/commands/autopilot.md` are now 8-line stubs that only read-and-execute
+`plugin/commands/autopilot.md` are now minimal delegation stubs that only read-and-execute
 `plugin/commands/go-backlog.md` and `plugin/commands/go.md` respectively (per the mode/plan/go verb
 rename) and will never again carry the behavior they're named for, so this preflight watches their live
 targets instead:

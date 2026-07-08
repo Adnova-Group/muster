@@ -685,7 +685,7 @@ const dataset = JSON.parse(await read("eval/modes/dataset.json"));
 // verb prompts; the verb-lexicon work (vl-t2/vl-t3/vl-t4) moved their real behavior to
 // plan.md/plan-backlog.md (run's single-outcome front half + its batch-plan form split
 // into two files) and go.md/go-backlog.md (autopilot's and sprint's hands-off behavior,
-// renamed), leaving run/autopilot/sprint as thin 8-line alias stubs (frontmatter + one
+// renamed), leaving run/autopilot/sprint as thin, minimal alias stubs (frontmatter + one
 // guidance line + a Read-and-execute directive) with NO behavior of their own left to
 // grade empirically. MODES therefore names the 8 real verb prompts (the 4 renamed ones
 // plus the 4 unchanged ones); ALIASES below documents run/autopilot/sprint's target and

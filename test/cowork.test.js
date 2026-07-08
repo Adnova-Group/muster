@@ -105,7 +105,7 @@ test("instructions cover the full autopilot/audit/diagnose lifecycle (dispatch c
 // ── verb rename: cowork/mcp-server.mjs, cowork/sprint-protocol.md, cowork/README.md ─────────
 // These three surfaces enumerated the pre-rename verbs (autopilot/audit/diagnose/run) with no
 // plan/go/plan-backlog/go-backlog anywhere, and sprint-protocol.md cited plugin/commands/sprint.md
-// (now an 8-line alias stub) as the source of "the full autopilot lifecycle" instead of citing
+// (now a minimal delegation stub) as the source of "the full autopilot lifecycle" instead of citing
 // go-backlog.md where that content now lives. Pin the new lexicon so a future rename regression
 // is caught by name, not just by a stale-prose report.
 test("verb-rename: COWORK_PROTOCOL's By-intent list uses plan/go/plan-backlog/go-backlog, not the pre-rename autopilot/run bullets", async () => {

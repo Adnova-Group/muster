@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseBacklogRef, crossItemConflicts } from "../src/batch-plan.js";
 
 // --- parseBacklogRef: the batch-ref grammar formerly documented in the pre-rename run.md, now in plan-backlog.md's B1 step --------------------------------
-// Mirrors sprint.md step 1's three source forms (file / issues:<label> / linear:<key>),
+// Mirrors go-backlog.md step 1's three source forms (file / issues:<label> / linear:<key>),
 // plus the "everything else is an outcome" default that keeps /muster:run's single-outcome
 // path byte-identical for plain outcomes.
 
@@ -124,6 +124,35 @@ test("parseBacklogRef: an absolute path is rejected even with no '..' segment pr
 test("parseBacklogRef: surrounding whitespace does not hide an absolute path from the guard", () => {
   const r = parseBacklogRef("  /tmp/backlog.md  ");
   assert.equal(r.kind, "invalid");
+});
+
+// --- cross-platform absolute-path rejection: node:path's isAbsolute is platform-dynamic
+// -- on a POSIX runtime it returns false for a Windows drive-letter path ("C:\x"), a
+// Windows UNC path ("\\server\x"), or a Windows-rooted path with a single leading
+// backslash ("\x" -- path.win32.isAbsolute treats this as absolute too, not just the
+// double-backslash UNC form), so a Windows-absolute token would otherwise slip through
+// this guard as merely "relative" (kind:"file") when run on a POSIX host, even though the
+// exact same batch plan run on Windows would reject it via isAbsolute. Explicit drive-letter
+// (/^[A-Za-z]:[\\/]/) and backslash-rooted (/^\\/, which also covers the double-backslash
+// UNC form) checks alongside isAbsolute make the guard's verdict platform-independent
+// instead of platform-dynamic.
+
+test("parseBacklogRef: a Windows drive-letter path (C:\\x.md) is invalid, same as a POSIX absolute path", () => {
+  const r = parseBacklogRef("C:\\x.md");
+  assert.equal(r.kind, "invalid");
+  assert.match(r.reason, /absolute/);
+});
+
+test("parseBacklogRef: a Windows UNC path (\\\\server\\x.md) is invalid, same as a POSIX absolute path", () => {
+  const r = parseBacklogRef("\\\\server\\x.md");
+  assert.equal(r.kind, "invalid");
+  assert.match(r.reason, /absolute/);
+});
+
+test("parseBacklogRef: a single-leading-backslash Windows-rooted path (\\x.md) is invalid too, not just the double-backslash UNC form", () => {
+  const r = parseBacklogRef("\\x.md");
+  assert.equal(r.kind, "invalid");
+  assert.match(r.reason, /absolute/);
 });
 
 test("parseBacklogRef: a bare version/decimal token is classified as a file ref -- accepted, documented tradeoff of the widened FILE_TOKEN_RE", () => {

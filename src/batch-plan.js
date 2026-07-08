@@ -15,13 +15,16 @@ import { isAbsolute } from "node:path";
 //     job -- sprint-waves is authoritative and its ok:false stops the run; a pure
 //     function does no IO, so this is a shape check only, never a filesystem check)
 //   - that same file-shaped token but carrying a ".." substring, OR given as an absolute
-//     path (node:path's isAbsolute -- POSIX-absolute or a Windows drive-letter/UNC path)
+//     path (node:path's isAbsolute -- POSIX-absolute on a POSIX runtime, or Windows-absolute
+//     on a Windows runtime; isAbsolute is platform-DYNAMIC, so a Windows drive-letter/UNC
+//     path is caught explicitly alongside it -- WINDOWS_DRIVE_RE/WINDOWS_UNC_RE below --
+//     rather than relying on isAbsolute alone to catch it on a POSIX host)
 //     -> invalid (neither shape must ever resolve to kind:"file" -- downstream consumers
 //     (sprint-waves' caller among them) treat kind:"file" as a green light to read the
 //     path directly, and an absolute path needs no traversal at all to name an
 //     out-of-project file; mirrors src/memory.js's writeMemory/appendState slug/runId
-//     guard and src/scope.js's own isTraversalUnsafe, both of which reject the same two
-//     shapes before a join()/read())
+//     guard and src/scope.js's own isTraversalUnsafe, both of which reject the same shapes
+//     before a join()/read())
 //   - `issues:<label>`  -> the GitHub-issues source (coordination Binding A)
 //   - `linear:<key>`    -> the Linear source (coordination Binding C)
 //   - `issues:`/`linear:` with nothing after the colon -> invalid (report and stop;
@@ -56,6 +59,20 @@ import { isAbsolute } from "node:path";
 // hole opened by the widen.
 const FILE_TOKEN_RE = /\.[^\s./\\]+$/;
 
+// node:path's isAbsolute is platform-dynamic: on a POSIX runtime it returns false for a
+// Windows drive-letter path ("C:\x"), a Windows UNC path ("\\server\x"), or a
+// Windows-rooted path with a single leading backslash ("\x" -- path.win32.isAbsolute
+// treats this as absolute too, not just the double-backslash UNC form), so a
+// Windows-absolute token would otherwise slip through this guard as merely "relative"
+// (kind:"file") when this code runs on a POSIX host -- even though the exact same ref
+// would be caught by isAbsolute on Windows. These two checks make the guard's verdict
+// platform-independent instead of platform-dynamic (mirrors src/scope.js's
+// isTraversalUnsafe, which carries the identical pair for the same reason).
+const WINDOWS_DRIVE_RE = /^[A-Za-z]:[\\/]/;
+// A single leading backslash also matches the double-backslash UNC form, so this one
+// pattern covers both shapes.
+const WINDOWS_UNC_RE = /^\\/;
+
 export function parseBacklogRef(text) {
   if (typeof text !== "string") return { kind: "outcome" };
   const t = text.trim();
@@ -75,8 +92,10 @@ export function parseBacklogRef(text) {
     // names an out-of-project file outright, no ".." traversal needed at all -- checked
     // before the ".." substring check below so both shapes share one "invalid" outcome
     // path rather than an absolute-and-traversal token silently short-circuiting on
-    // whichever check happened to run first.
-    if (isAbsolute(t)) {
+    // whichever check happened to run first. isAbsolute alone is platform-dynamic (see
+    // WINDOWS_DRIVE_RE/WINDOWS_UNC_RE above), so a Windows drive-letter or UNC path is
+    // rejected explicitly alongside it.
+    if (isAbsolute(t) || WINDOWS_DRIVE_RE.test(t) || WINDOWS_UNC_RE.test(t)) {
       return { kind: "invalid", reason: "file ref must not be an absolute path" };
     }
     // Traversal guard (mirrors src/memory.js's writeMemory/appendState/appendFollowup

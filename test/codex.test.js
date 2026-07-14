@@ -91,12 +91,38 @@ function runCodexHook(payload, cwd = repoRoot, hookPath = join(repoRoot, "codex"
 test("Codex policy pins the four tier/model/reasoning combinations", () => {
   assert.deepEqual(CODEX_MODEL_POLICY, {
     haiku: { model: "gpt-5.6-luna", reasoning: "high" },
-    sonnet: { model: "gpt-5.6-terra", reasoning: "xhigh" },
+    sonnet: { model: "gpt-5.6-terra", reasoning: "high" },
     opus: { model: "gpt-5.6-sol", reasoning: "high" },
     fable: { model: "gpt-5.6-sol", reasoning: "max" }
   });
   assert.deepEqual(codexModelForTier("haiku"), CODEX_MODEL_POLICY.haiku);
   assert.throws(() => codexModelForTier("unknown"), /unknown Muster model tier/);
+});
+
+test("Codex generated profiles apply manifest reasoning overrides and reviewer sandbox policy", async () => {
+  const mapping = JSON.parse(await readFile(join(repoRoot, "codex", "agents.manifest.json"), "utf8"));
+  const expected = {
+    "muster-builder": { tier: "sonnet", reasoning: "high", readOnly: false },
+    "muster-investigator": { tier: "haiku", reasoning: "high", readOnly: true },
+    "wsh-code-reviewer": { tier: "sonnet", reasoning: "high", readOnly: true },
+    "wsh-security-auditor": { tier: "sonnet", reasoning: "xhigh", readOnly: true },
+    "wsh-api-documenter": { tier: "sonnet", reasoning: "medium", readOnly: false },
+    "wsh-business-analyst": { tier: "sonnet", reasoning: "medium", readOnly: false },
+    "wsh-content-marketer": { tier: "sonnet", reasoning: "medium", readOnly: false },
+    "wsh-customer-support": { tier: "sonnet", reasoning: "medium", readOnly: false },
+    "wsh-test-automator": { tier: "sonnet", reasoning: "medium", readOnly: false },
+    "wsh-tutorial-engineer": { tier: "sonnet", reasoning: "medium", readOnly: false }
+  };
+  for (const [id, policy] of Object.entries(expected)) {
+    const config = mapping.agents[id];
+    assert.equal(config.tier, policy.tier, `${id} must retain its model tier`);
+    assert.equal(config.reasoning ?? CODEX_MODEL_POLICY[config.tier].reasoning, policy.reasoning, `${id} reasoning policy`);
+    assert.equal(Boolean(config.readOnly), policy.readOnly, `${id} read-only policy`);
+    const profile = await readFile(join(selectedRelease.releaseRoot, "profiles", `${id}.toml`), "utf8");
+    assert.match(profile, new RegExp(`model = ${JSON.stringify(CODEX_MODEL_POLICY[policy.tier].model)}`), `${id} model`);
+    assert.match(profile, new RegExp(`model_reasoning_effort = ${JSON.stringify(policy.reasoning)}`), `${id} reasoning`);
+    assert.match(profile, new RegExp(`sandbox_mode = ${JSON.stringify(policy.readOnly ? "read-only" : "workspace-write")}`), `${id} sandbox`);
+  }
 });
 
 test("Codex adapter preserves shared cap and Fable fallback resolution", () => {

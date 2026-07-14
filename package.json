@@ -44,10 +44,12 @@
     "NOTICE",
     ".agents/plugins/marketplace.json",
     ".agents/plugins/bootstrap/muster",
-    ".agents/plugins/selections/000000000016-ff1035e9863875581a9b07f76092b2e797b4e9dcfd11177f267ba90fcaf7d234.json",
-    ".agents/plugins/selections/000000000015-8c6c5930bb7b4273d1fee2ddaf6593e6ea48338052d6cf174dbe9167fc6cc697.json",
-    ".agents/plugins/releases/ff1035e9863875581a9b07f76092b2e797b4e9dcfd11177f267ba90fcaf7d234",
-    ".agents/plugins/releases/8c6c5930bb7b4273d1fee2ddaf6593e6ea48338052d6cf174dbe9167fc6cc697"
+    ".agents/plugins/selections/000000000021-e845400fae99039b0d14deeb14058694aa8fd0dec3213d0066dca313f7fc1ffb.json",
+    ".agents/plugins/selections/000000000017-5738ff8f4d45ace36acf8203b6d533bd61acd038da98961e588c15d50cfaff7d.json",
+    ".agents/plugins/selections/000000000020-42ea0d019b9d4beece13470c1f38c80604e031f4e3341dcfa26ce370af6db238.json",
+    ".agents/plugins/releases/e845400fae99039b0d14deeb14058694aa8fd0dec3213d0066dca313f7fc1ffb",
+    ".agents/plugins/releases/5738ff8f4d45ace36acf8203b6d533bd61acd038da98961e588c15d50cfaff7d",
+    ".agents/plugins/releases/42ea0d019b9d4beece13470c1f38c80604e031f4e3341dcfa26ce370af6db238"
   ],
   "engines": {
     "node": ">=20"

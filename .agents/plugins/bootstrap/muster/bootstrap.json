@@ -213,18 +213,18 @@
     },
     {
       "path": "runtime/muster-mcp.mjs",
-      "sha256": "3acde0ab7bfab77431fff7403e93eee09aaa278022d5ca77c3920723c0ac6abd",
-      "size": 435
+      "sha256": "e98795535b22dec3cd3af3d96eabc3c2099a9bb1cba2d52838b17925076bdfe6",
+      "size": 421
     },
     {
       "path": "runtime/muster.mjs",
-      "sha256": "35a2e9caf6b58f92e9417fbfbbb3e7cace054893ccffaecbe4db07413bc9e634",
-      "size": 431
+      "sha256": "dc4a49fd258b59086b70610b2920c1f21d852ce234281dc377bb1d96cb9c9abc",
+      "size": 417
     },
     {
       "path": "runtime/resolve-release.mjs",
-      "sha256": "bc6ed357aa7f33ea1666fa1b98d0c61f6695fc4a30642dd2fdb02b1ad528b4fd",
-      "size": 870
+      "sha256": "146104264713074e32b9d05c92b6540a395a64c1c807c4e635ef319dc7925b5f",
+      "size": 8939
     },
     {
       "path": "runtime/sprint-protocol.md",
@@ -602,5 +602,5 @@
       "size": 802
     }
   ],
-  "digest": "272d926d18a4c638a41052c922b9d7ea51ffcf3b7df854c7bb6f0a626d043856"
+  "digest": "4348f25e4f72414018ea1c29bdfb097048d526c2f38f9c80e005ef0a282dabb6"
 }

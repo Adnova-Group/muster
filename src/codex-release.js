@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import { lstat, mkdir, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
@@ -6,6 +7,17 @@ const RELEASE_FORMAT = 1;
 const GENERATION = /^[a-f0-9]{64}$/;
 const slash = value => value.replaceAll("\\", "/");
 const sha256 = value => createHash("sha256").update(value).digest("hex");
+
+async function readRegularJson(path, label, maxBytes = 64 * 1024) {
+  let handle;
+  try {
+    await ordinary(path, "file", label);
+    handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > maxBytes) throw new Error(`${label} must be a bounded regular file: ${path}`);
+    return JSON.parse(await handle.readFile("utf8"));
+  } finally { if (handle) await handle.close().catch(() => {}); }
+}
 
 function contained(base, target, label) {
   const rel = relative(resolve(base), resolve(target));
@@ -172,7 +184,41 @@ async function releaseResult(repoRoot, generation) {
   if (!GENERATION.test(generation || "")) throw new Error("selected Codex generation is invalid");
   const releaseRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "releases", generation]);
   const metadata = await validateCodexRelease(releaseRoot, generation);
+  await registerGenerationLease(repoRoot, generation);
   return { generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata };
+}
+
+async function registerGenerationLease(repoRoot, generation) {
+  const root = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases", generation], { create: true });
+  const record = { format: RELEASE_FORMAT, pid: process.pid, processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), touchedAt: Date.now(), generation };
+  await atomicWritePointer(join(root, `${process.pid}.json`), JSON.stringify(record, null, 2) + "\n", rename);
+}
+
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code === "EPERM"; }
+}
+
+async function activeLeaseGenerations(repoRoot) {
+  const leasesRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases"], { create: true });
+  const active = new Set();
+  for (const generation of await readdir(leasesRoot)) {
+    if (!GENERATION.test(generation)) throw new Error(`invalid Codex generation lease directory: ${generation}`);
+    const dir = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases", generation]);
+    for (const name of await readdir(dir)) {
+      const path = join(dir, name);
+      let record;
+      try { record = await readRegularJson(path, "Codex generation lease"); }
+      catch { await rm(path, { force: true }); continue; }
+      const coherent = record?.format === RELEASE_FORMAT && record.generation === generation && /^\d+\.json$/.test(name)
+        && record.pid === Number(name.slice(0, -5)) && Number.isFinite(record.processStartedAt) && Number.isFinite(record.touchedAt);
+      if (coherent && processAlive(record.pid)) active.add(generation);
+      else await rm(path, { force: true });
+    }
+    if ((await readdir(dir)).length === 0) await rm(dir, { recursive: true });
+  }
+  return active;
 }
 
 function validSelection(record, name, bootstrapDigest) {
@@ -215,7 +261,7 @@ export async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, re
   const candidates = names.filter(name => SELECTION.test(name)).sort().reverse();
   for (const name of candidates) {
     try {
-      const record = JSON.parse(await readFile(join(repoRoot, ".agents", "plugins", "selections", name), "utf8"));
+      const record = await readRegularJson(join(repoRoot, ".agents", "plugins", "selections", name), "Codex selection record");
       if (!validSelection(record, name, bootstrap.digest)) continue;
       return await releaseResult(repoRoot, record.generation);
     } catch { /* corrupt/incomplete newest selections fall back to an older complete generation */ }
@@ -288,27 +334,61 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
 
   const selectionsRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "selections"], { create: true });
   const names = await readdir(selectionsRoot);
-  let selectionName = names.find(name => name.endsWith(`-${metadata.generation}.json`));
-  if (!selectionName) {
-    const sequence = Math.max(0, ...names.map(name => Number(name.match(SELECTION)?.[1] || 0))) + 1;
-    const name = `${String(sequence).padStart(12, "0")}-${metadata.generation}.json`;
-    const record = { format: RELEASE_FORMAT, sequence, generation: metadata.generation, bootstrapDigest };
-    await atomicWritePointer(join(selectionsRoot, name), JSON.stringify(record, null, 2) + "\n", replacePointer);
-    selectionName = name;
+  const validRecord = async (name, generation) => {
+    try {
+      const record = await readRegularJson(join(selectionsRoot, name), "Codex selection record");
+      return validSelection(record, name, bootstrapDigest) && record.generation === generation;
+    } catch { return false; }
+  };
+  let selectionName;
+  for (const name of names.filter(name => name.endsWith(`-${metadata.generation}.json`)).sort().reverse()) {
+    if (await validRecord(name, metadata.generation)) { selectionName = name; break; }
   }
-  await pruneCodexHistory({ releasesRoot, selectionsRoot, currentGeneration: metadata.generation, initialGeneration: stable.musterBootstrap.initialGeneration });
+  let nextSequence = Math.max(0, ...names.map(name => Number(name.match(SELECTION)?.[1] || 0))) + 1;
+  let lastAppendedGeneration = null;
+  const appendSelection = async generation => {
+    const sequence = nextSequence++;
+    const name = `${String(sequence).padStart(12, "0")}-${generation}.json`;
+    const record = { format: RELEASE_FORMAT, sequence, generation, bootstrapDigest };
+    await atomicWritePointer(join(selectionsRoot, name), JSON.stringify(record, null, 2) + "\n", replacePointer);
+    names.push(name);
+    lastAppendedGeneration = generation;
+    return name;
+  };
+  if (!selectionName) {
+    selectionName = await appendSelection(metadata.generation);
+  }
+  const ordered = [...new Set(names.filter(name => SELECTION.test(name)).sort().reverse().map(name => name.match(SELECTION)[2]))];
+  const prior = ordered.find(generation => generation !== metadata.generation && generation !== stable.musterBootstrap.initialGeneration);
+  const activeLeases = await activeLeaseGenerations(repoRoot);
+  const keep = new Set([metadata.generation, stable.musterBootstrap.initialGeneration, prior, ...activeLeases].filter(Boolean));
+  for (const generation of keep) {
+    let coherent = false;
+    for (const name of names.filter(name => name.endsWith(`-${generation}.json`))) if (await validRecord(name, generation)) coherent = true;
+    if (!coherent) await appendSelection(generation);
+  }
+  let highestCoherentGeneration = null;
+  for (const name of names.filter(name => SELECTION.test(name)).sort().reverse()) {
+    const generation = name.match(SELECTION)[2];
+    if (await validRecord(name, generation)) { highestCoherentGeneration = generation; break; }
+  }
+  if ((lastAppendedGeneration && lastAppendedGeneration !== metadata.generation) || highestCoherentGeneration !== metadata.generation) {
+    selectionName = await appendSelection(metadata.generation);
+  }
+  await pruneCodexHistory({ repoRoot, releasesRoot, selectionsRoot, keep, bootstrapDigest });
   return { generation: metadata.generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), selectionName };
 }
 
-async function pruneCodexHistory({ releasesRoot, selectionsRoot, currentGeneration, initialGeneration }) {
+async function pruneCodexHistory({ repoRoot, releasesRoot, selectionsRoot, keep, bootstrapDigest }) {
   const selectionNames = (await readdir(selectionsRoot)).filter(name => SELECTION.test(name)).sort().reverse();
-  const ordered = [...new Set(selectionNames.map(name => name.match(SELECTION)[2]))];
-  const prior = ordered.find(generation => generation !== currentGeneration && generation !== initialGeneration);
-  const keep = new Set([currentGeneration, initialGeneration, prior].filter(Boolean));
+  const retainedSelectionGenerations = new Set();
   for (const name of selectionNames) {
     const path = join(selectionsRoot, name), generation = name.match(SELECTION)[2];
     await ordinary(path, "file", "Codex selection record");
-    if (!keep.has(generation)) await rm(path);
+    let coherent = false;
+    try { coherent = validSelection(await readRegularJson(path, "Codex selection record"), name, bootstrapDigest); } catch { /* remove malformed selectors */ }
+    if (!keep.has(generation) || !coherent || retainedSelectionGenerations.has(generation)) await rm(path);
+    else retainedSelectionGenerations.add(generation);
   }
   for (const generation of await readdir(releasesRoot)) {
     const path = join(releasesRoot, generation);
@@ -317,6 +397,7 @@ async function pruneCodexHistory({ releasesRoot, selectionsRoot, currentGenerati
     if (!keep.has(generation)) {
       await assertRegularTree(path);
       await rm(path, { recursive: true });
+      await rm(join(repoRoot, ".agents", "plugins", "leases", generation), { recursive: true, force: true });
     }
   }
 }

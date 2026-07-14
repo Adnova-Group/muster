@@ -21,6 +21,14 @@ if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster"
   || marketplace.plugins[0].source?.path !== "./.agents/plugins/bootstrap/muster"
   || !/^[a-f0-9]{64}$/.test(marketplace.musterBootstrap?.digest || "")
   || !/^[a-f0-9]{64}$/.test(marketplace.musterBootstrap?.initialGeneration || "")) fail("marketplace does not expose the immutable Muster bootstrap contract");
+const selectionNames = (await readdir(join(root, ".agents", "plugins", "selections"))).filter(name => /^\d{12}-[a-f0-9]{64}\.json$/.test(name));
+let selectedContract = false;
+for (const name of selectionNames) {
+  const record = await json(join(root, ".agents", "plugins", "selections", name));
+  if (record.generation === selected.generation && record.bootstrapDigest === marketplace.musterBootstrap.digest) selectedContract = true;
+  if (record.bootstrapDigest !== marketplace.musterBootstrap.digest) fail(`selection ${name} does not match the immutable bootstrap digest`);
+}
+if (!selectedContract) fail("selected release lacks a direct selector coherent with the marketplace/bootstrap digest");
 if (manifest.name !== "muster" || manifest.version !== pkg.version) fail("plugin manifest version is not package version");
 if (!manifest.skills || !manifest.mcpServers || manifest.hooks !== undefined) fail("plugin manifest must expose skills and MCP without advertising inert plugin-bundled hooks");
 if (Object.keys(mapping.agents || {}).length !== CODEX_COUNTS.agents) fail("mapping does not contain all agent profiles");
@@ -94,7 +102,7 @@ const coordination = await readFile(join(plugin, "skills", "coordination", "SKIL
 if (!coordination.includes("plugin cache is not a Git checkout") || /git log -1 --format/.test(coordination)) fail("coordination preflight is not package-cache safe");
 const orchestrator = await readFile(join(plugin, "skills", "orchestrator", "SKILL.md"), "utf8");
 if (/generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK|permissionDecision/.test(orchestrator)) fail("orchestrator overclaims Codex dispatch or hook enforcement");
-const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "completion and message receipts", "newly ready work", "live agents", "executable steps", "HUMAN-HOLD", "merge decision"];
+const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "timeout is only a heartbeat", "Never tight-poll", "never prompt the user", "live agents", "executable steps", "HUMAN-HOLD", "merge decision"];
 for (const [name, path] of [
   ["adapter", join(plugin, "runtime", "codex-skill-adapter.md")],
   ["orchestrator", join(plugin, "skills", "orchestrator", "SKILL.md")],
@@ -102,6 +110,7 @@ for (const [name, path] of [
 ]) {
   const text = await readFile(path, "utf8");
   for (const marker of watchMarkers) if (!text.includes(marker)) fail(`${name} lacks agent watch invariant marker ${marker}`);
+  if (text.indexOf("collaboration.wait_agent") > text.indexOf("collaboration.list_agents")) fail(`${name} polls agent state before its first event-driven wait`);
 }
 if (native.length !== CODEX_COUNTS.nativeSkills || builtins.length !== CODEX_COUNTS.builtinSkills) fail("source skill count drift");
 if ((await readdir(join(root, "pipelines"))).filter(n => n.endsWith(".yaml")).length !== CODEX_COUNTS.pipelines) fail("pipeline count drift");

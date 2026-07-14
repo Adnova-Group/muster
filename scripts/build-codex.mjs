@@ -31,12 +31,26 @@ const modes = {
 
 async function ensure(dir) { await mkdir(dir, { recursive: true }); }
 async function write(path, content) { await ensure(dirname(path)); await writeFile(path, content, "utf8"); }
+const leaseStaleMs = Math.max(1_000, Number(process.env.MUSTER_CODEX_BUILD_LEASE_STALE_MS) || 5 * 60 * 1000);
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code === "EPERM"; }
+}
 async function cleanStaleStages() {
   await ensure(pluginParent);
   for (const entry of await readdir(pluginParent, { withFileTypes: true })) {
     if (!entry.name.startsWith(".muster-build-")) continue;
     const path = join(pluginParent, entry.name), stat = await lstat(path);
     if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`stale Codex build stage must be an ordinary directory: ${path}`);
+    let lease = null;
+    try {
+      const leasePath = join(path, ".lease.json"), leaseStat = await lstat(leasePath);
+      if (leaseStat.isSymbolicLink() || !leaseStat.isFile()) throw new Error(`Codex build lease must be a regular file: ${leasePath}`);
+      lease = JSON.parse(await readFile(leasePath, "utf8"));
+    } catch (error) { if (error.code !== "ENOENT") throw error; }
+    const startedAt = Number(lease?.startedAt || stat.mtimeMs);
+    if (Date.now() - startedAt < leaseStaleMs || processAlive(Number(lease?.pid))) continue;
     await assertRegularTree(path);
     await rm(path, { recursive: true, force: true });
   }
@@ -135,7 +149,7 @@ function adaptCoordinationForCodex(text) {
   const section = `## Standing-context preflight\n\nThe installed Codex plugin cache is not a Git checkout, so do not run \`git log\` against plugin paths. At the first read in a runner cycle, record the plugin version from \`${"${PLUGIN_ROOT}"}/package.json\` and a SHA-256 fingerprint over these installed behavior paths: \`skills/coordination/SKILL.md\`, \`commands/go-backlog.md\`, \`commands/go.md\`, and \`commands/runner.md\`. Compute the fingerprint with the host's available SHA-256 tool, sorting paths before hashing. Muster's Codex hooks are installed outside the plugin cache: also locate the selected managed runtime at the git root's \`.codex/muster/hooks/\` or \`$CODEX_HOME/muster/hooks/\` and fingerprint its files plus the sibling Muster ownership manifest. If neither managed hook runtime can be proven, say "I don't know whether the standing context is unchanged," leave a HUMAN-HOLD receipt, and stop.\n\nBefore a later claim or resume in the same cycle, recompute both fingerprints. Unchanged version and fingerprints proceed. Any change means the installed standing context changed or was tampered with during the cycle: leave a HUMAN-HOLD receipt naming the old/new version and hashes, preserve the claim state, and stop. A packaged plugin cannot safely classify such an in-place mutation as confined because there is no authoritative Git history in the cache. A newly started cycle reads the newly installed immutable version and managed hook runtime as its fresh baseline.\n\n`;
   return text.slice(0, start) + section + text.slice(end);
 }
-const agentWatchProtocol = `## Agent watch invariant\n\n<!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->\n\nAfter every dispatch, retain every canonical agent id returned by \`collaboration.spawn_agent\`. While any agent remains live, call \`collaboration.list_agents\`, process all completion and message receipts, dispatch any newly ready work whose dependencies are satisfied, then call \`collaboration.wait_agent\` with a timeout of at most 60 seconds. Repeat this watch cycle; a timeout or unchanged status is not completion.\n\nDo not send the final answer, clear active run/wave state, or stop watching while live agents or executable steps remain. Stop only when all work is terminal, an explicit approval or HUMAN-HOLD requires user input, a proven blocker leaves no ready work, or a merge decision requires the user. Hooks are advisory and never replace this watch cycle.\n`;
+const agentWatchProtocol = `## Agent watch invariant\n\n<!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->\n\nAfter every dispatch, retain every canonical agent id returned by \`collaboration.spawn_agent\` and immediately call \`collaboration.wait_agent\` with a timeout of at most 60 seconds. A message or completion receipt wakes the watch immediately. After each wake, process the mailbox receipts first, call \`collaboration.list_agents\` exactly once to reconcile live state, dispatch any newly ready work whose dependencies are satisfied, and, while any agent remains live, immediately call \`collaboration.wait_agent\` again. A timeout is only a heartbeat: reconcile once and return to waiting; it is not completion. Never tight-poll \`collaboration.list_agents\` and never prompt the user merely because workers are still running.\n\nDo not send the final answer, clear active run/wave state, or stop watching while live agents or executable steps remain. Stop only when all work is terminal, an explicit approval or HUMAN-HOLD requires user input, a proven blocker leaves no ready work, or a merge decision requires the user. Hooks are advisory and never replace this watch cycle.\n`;
 function adaptOrchestratorForCodex(text) {
   let result = text.replace(/- \*\*Hard gate:\*\*[\s\S]*?false positive\.\n/, "- **Codex hook support:** Muster's trusted `PreToolUse` hook surfaces a policy warning when a write-capable wave appears outside a detected worktree. Codex cannot reliably deny every subagent or unified-shell action, so the orchestrator must still enforce dispatch, ownership, and worktree isolation explicitly.\n");
   result = result.replace("give each its own git worktree (`isolation: \"worktree\"` on the Codex subagent dispatcher)", "create a separate git worktree for each task, start the dispatched Codex subagent in that worktree, and record the path/base SHA in its brief");
@@ -254,6 +268,7 @@ async function buildBootstrapCandidate(destination) {
 try {
 await cleanStaleStages();
 stagingRoot = await mkdtemp(join(pluginParent, ".muster-build-"));
+await write(join(stagingRoot, ".lease.json"), JSON.stringify({ format: 1, pid: process.pid, startedAt: Date.now() }) + "\n");
 plugin = join(stagingRoot, "release", "plugin");
 runtime = join(plugin, "runtime");
 profiles = join(stagingRoot, "release", "profiles");
@@ -272,6 +287,7 @@ await Promise.all([
   cp(join(root, "pipelines"), join(plugin, "pipelines"), { recursive: true }),
   cp(join(root, "vendor"), join(plugin, "vendor"), { recursive: true }),
   cp(join(root, "codex", "skill-adapter.md"), join(runtime, "codex-skill-adapter.md")),
+  cp(join(root, "codex", "hooks"), join(runtime, "install-hooks"), { recursive: true }),
   cp(join(root, "cowork", "sprint-protocol.md"), join(runtime, "sprint-protocol.md"))
 ]);
 const codexCatalogPath = join(plugin, "catalog", "builtins.muster.yaml");
@@ -376,12 +392,25 @@ const published = await publishCodexRelease({
   }
 });
 const packageFiles = (pkg.files || []).filter(item => item !== ".agents" && !item.startsWith(".agents/"));
-packageFiles.push(
-  ".agents/plugins/marketplace.json",
-  ".agents/plugins/bootstrap/muster",
-  `.agents/plugins/selections/${published.selectionName}`,
-  `.agents/plugins/releases/${published.generation}`
-);
+const allSelections = (await readdir(join(root, ".agents", "plugins", "selections")))
+  .filter(name => /^\d{12}-[a-f0-9]{64}\.json$/.test(name)).sort().reverse();
+const initialGeneration = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap.initialGeneration;
+const retainedGenerations = [];
+for (const generation of [published.generation, initialGeneration, ...allSelections.map(name => name.match(/-([a-f0-9]{64})\.json$/)[1])]) {
+  if (!retainedGenerations.includes(generation) && retainedGenerations.length < 3) retainedGenerations.push(generation);
+}
+const retainedSelections = [];
+for (const generation of retainedGenerations) {
+  const name = allSelections.find(candidate => candidate.endsWith(`-${generation}.json`));
+  if (!name) throw new Error(`Codex package LKG generation lacks a coherent selection: ${generation}`);
+  retainedSelections.push(name);
+}
+if (retainedGenerations.length < 1 || retainedGenerations.length > 3 || !retainedGenerations.includes(published.generation)) {
+  throw new Error("Codex package retention must contain only the selected generation and at most two LKG generations");
+}
+packageFiles.push(".agents/plugins/marketplace.json", ".agents/plugins/bootstrap/muster");
+packageFiles.push(...retainedSelections.map(name => `.agents/plugins/selections/${name}`));
+packageFiles.push(...retainedGenerations.map(generation => `.agents/plugins/releases/${generation}`));
 await write(join(root, "package.json"), JSON.stringify({ ...pkg, files: packageFiles }, null, 2) + "\n");
 } finally {
   if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true });

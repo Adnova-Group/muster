@@ -1,6 +1,6 @@
 ---
 name: audit
-description: "Autopilot-style whole-codebase review-and-fix. Sweeps architecture, tech-debt, test-coverage, simplification/reuse/duplication, readability/maintainability, and security in parallel via the best available provider per dimension, consolidates a ranked findings ledger, then fixes everything (TDD) and verifies. Usage: $muster-audit [path or empty = whole repo]; $muster-audit backlog [path] to sweep read-only into a ranked backlog instead of fixing."
+description: "Autopilot-style whole-codebase review-and-fix. Sweeps architecture, tech-debt, test-coverage, simplification/reuse/duplication, readability/maintainability, and security in capacity-bounded batches via the best available provider per dimension, consolidates a ranked findings ledger, then fixes everything (TDD) and verifies. Usage: $muster-audit [path or empty = whole repo]; $muster-audit backlog [path] to sweep read-only into a ranked backlog instead of fixing."
 ---
 
 ## Codex harness binding
@@ -8,7 +8,7 @@ description: "Autopilot-style whole-codebase review-and-fix. Sweeps architecture
 Read `${PLUGIN_ROOT}/runtime/codex-skill-adapter.md` before following this command. Its Codex tool, named-profile dispatch, bounded-context-fork, input, mode-name, and plugin-root bindings override legacy harness names below; this command's domain rules and gates remain authoritative.
 
 
-You are muster's whole-codebase audit orchestrator, running parallel dimension sweeps and consolidating a ranked findings ledger. Produce a ranked findings ledger per finding in STATE, then present the merge-decision prompt to the user.
+You are muster's whole-codebase audit orchestrator, running capacity-batched dimension sweeps and consolidating a ranked findings ledger. Produce a ranked findings ledger per finding in STATE, then present the merge-decision prompt to the user.
 
 **Mode**: iff the first whitespace-token of `$ARGUMENTS` is exactly `backlog`, this is a **backlog run** — everything after that token is the (optional) scope path (so a directory literally named `backlog` is `backlog backlog`); a path form like `./backlog` does not match the bare token, so default mode scoped to such a directory is expressed as `./backlog`. No `backlog` token = default mode, unchanged. The scope for either mode: <scope>`$ARGUMENTS`</scope> (empty = whole repo; or a path/subsystem to scope the audit).
 
@@ -16,9 +16,14 @@ Drive the audit loop:
 
 **Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker Muster's Codex lifecycle hooks use for state diagnostics. Remove it after the merge decision (step 7), after the backlog is written (backlog mode), or on escalation exit. Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.
 
-1. **Seed** — `node ${PLUGIN_ROOT}/runtime/muster.mjs audit` prints the Crew Manifest JSON to stdout; capture that exact JSON and write it to `.muster/manifest.json`; validate (`node ${PLUGIN_ROOT}/runtime/muster.mjs manifest validate .muster/manifest.json --codex`).
+1. **Seed** — `node ${PLUGIN_ROOT}/runtime/muster.mjs audit --codex` prints the Crew Manifest JSON to stdout; capture that exact JSON and write it to `.muster/manifest.json`; validate (`node ${PLUGIN_ROOT}/runtime/muster.mjs manifest validate .muster/manifest.json --codex`).
 2. **Branch** — create a work branch off the base (never run on the base branch). Skip in backlog mode: the sweep is read-only and nothing gets committed, so there's nothing to branch for.
-3. **Parallel dimension sweep** — dispatch the chosen provider per dimension CONCURRENTLY, each READ-ONLY, on its role's model (architecture-review on fable, etc.): architecture, tech-debt, coverage, simplification, readability, security. If the crew manifest includes a `prompt-quality` member (i.e. `muster audit` detected a prompting signal -- an LLM/agent SDK dependency -- via `muster detect`), also dispatch the prompt-quality dimension concurrently in this wave. Each returns findings: severity (P0/P1/P2), location (file:line), problem, suggested fix. Identical in both modes.
+3. **Capacity-batched dimension sweep (Codex)** — The six core dimensions remain independent and READ-ONLY: architecture, tech-debt, coverage, simplification, readability, and security. Each uses the chosen provider on its role's model and returns severity (P0/P1/P2), location (file:line), problem, and suggested fix. Identical in both modes.
+   - **Capacity:** Codex permits four total agents in this run (this orchestrator plus at most three workers). Determine the currently available worker slots, cap the batch width at three, and never dispatch more workers than the live capacity permits.
+   - **Batching:** Dispatch the maximum available subset concurrently, wait at a barrier until every worker in that batch finishes, then dispatch the next subset. Repeat until all six core dimensions complete. Do not claim full six-way concurrency.
+   - **Receipt:** Before the first dispatch, append `CAPACITY-DEGRADED requested=6 available-worker-slots=<n> batches=<batch composition>` to STATE. Record the exact ordered dimension ids in each batch; the composition must cover every core dimension exactly once.
+   - **Optional prompt audit:** If the crew manifest includes `prompt-quality`, keep it READ-ONLY and place it in the same capacity-bounded batching sequence without displacing any core dimension.
+   - **Barrier gate:** Consolidation is forbidden until all six core dimension receipts, plus the optional prompt-quality receipt when selected, are present.
 Maintain a board task per dimension here and per fix slice in step 5 (the orchestrator skill's task-board discipline).
 4. **Consolidate** — dedupe + rank all findings into a single ledger (by severity, then blast radius). Record the ledger in STATE (glass box). Identical in both modes.
 5. **Fix all** — via the orchestrator + Ralph loop: remediate every finding, TDD (failing test first where behavior changes). Defer an item only with an explicit written reason in the ledger. Keep the suite green per fix.
@@ -32,3 +37,5 @@ Maintain a board task per dimension here and per fix slice in step 5 (the orches
 7. **Escalate** if the fix-loop cap is hit on an item (record it in the ledger, continue the others). Then present the merge decision via the **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**. Backlog mode skips this too — instead, **finish** by reporting the written backlog (items added + items skipped as duplicates) and suggesting `$muster-go-backlog` to run it.
 
 Reuses the orchestrator + review-gate; glass box records the per-dimension providers + the findings ledger. (vs `$muster-diagnose`, which is failure-first single-bug; audit is breadth-first whole-codebase.)
+
+<!-- prompt-lint-disable ANTH-POS-001: Codex compatibility transformation preserves the source workflow's safety directives and treats its deterministic STATE receipts as the evidence contract. -->

@@ -18,7 +18,7 @@ If the failure description is empty, ask for a symptom or failing output and sto
 
 **Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker Muster's Codex lifecycle hooks use for state diagnostics. Remove it after the merge decision or on escalation exit. Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.
 
-1. **Seed**: `node ${PLUGIN_ROOT}/runtime/muster.mjs diagnose "<symptom>"` (or `--ci <file>` for pasted output) prints `{mode, manifest}` JSON to stdout.
+1. **Seed**: `node ${PLUGIN_ROOT}/runtime/muster.mjs diagnose --codex "<symptom>"` (or `--ci <file>` for pasted output) prints `{mode, manifest}` JSON to stdout.
    Extract the emitted `manifest` object and write that object to `.muster/manifest.json`; validate (`node ${PLUGIN_ROOT}/runtime/muster.mjs manifest validate .muster/manifest.json --codex`).
 2. **Reproduce** (plan: `repro`) — confirm the failure reproduces. If it can't be reproduced, report and stop.
 3. **Root cause** (plan: `root-cause`, role `debug`) — dispatch the chosen `debug` provider (an installed

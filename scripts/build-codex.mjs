@@ -88,16 +88,32 @@ function adaptCommandForCodex(text, name) {
       .replace("Write the manifest to `.muster/manifest.json`", "Extract the emitted `manifest` object and write that object to `.muster/manifest.json`");
   }
   if (name === "audit.md") {
-    result = result.replace(
-      "` -> Crew Manifest at `.muster/manifest.json`",
-      "` prints the Crew Manifest JSON to stdout; capture that exact JSON and write it to `.muster/manifest.json`"
-    );
+    result = result
+      .replace(
+        "` -> Crew Manifest at `.muster/manifest.json`",
+        "` prints the Crew Manifest JSON to stdout; capture that exact JSON and write it to `.muster/manifest.json`"
+      )
+      .replace("in parallel via the best available provider per dimension", "in capacity-bounded batches via the best available provider per dimension")
+      .replace("running parallel dimension sweeps", "running capacity-batched dimension sweeps");
+    const sweepStart = result.indexOf("3. **Parallel dimension sweep**");
+    const boardStart = result.indexOf("Maintain a board task per dimension", sweepStart);
+    if (sweepStart < 0 || boardStart < 0) throw new Error("audit dimension-sweep section not found");
+    const capacitySweep = [
+      "3. **Capacity-batched dimension sweep (Codex)** — The six core dimensions remain independent and READ-ONLY: architecture, tech-debt, coverage, simplification, readability, and security. Each uses the chosen provider on its role's model and returns severity (P0/P1/P2), location (file:line), problem, and suggested fix. Identical in both modes.",
+      "   - **Capacity:** Codex permits four total agents in this run (this orchestrator plus at most three workers). Determine the currently available worker slots, cap the batch width at three, and never dispatch more workers than the live capacity permits.",
+      "   - **Batching:** Dispatch the maximum available subset concurrently, wait at a barrier until every worker in that batch finishes, then dispatch the next subset. Repeat until all six core dimensions complete. Do not claim full six-way concurrency.",
+      "   - **Receipt:** Before the first dispatch, append `CAPACITY-DEGRADED requested=6 available-worker-slots=<n> batches=<batch composition>` to STATE. Record the exact ordered dimension ids in each batch; the composition must cover every core dimension exactly once.",
+      "   - **Optional prompt audit:** If the crew manifest includes `prompt-quality`, keep it READ-ONLY and place it in the same capacity-bounded batching sequence without displacing any core dimension.",
+      "   - **Barrier gate:** Consolidation is forbidden until all six core dimension receipts, plus the optional prompt-quality receipt when selected, are present."
+    ].join("\n");
+    result = result.slice(0, sweepStart) + capacitySweep + "\n" + result.slice(boardStart);
   }
   const directives = {
     "run.md": "ANTH-XML-001, GUARD-SEP-003",
     "autopilot.md": "ANTH-XML-001, GUARD-SEP-003",
     "sprint.md": "ANTH-XML-001, GUARD-SEP-003",
     "plan-backlog.md": "ANTH-POS-001",
+    "audit.md": "ANTH-POS-001",
     "runner.md": "ANTH-POS-001, GUARD-CITE-002"
   };
   if (directives[name]) result += `\n<!-- prompt-lint-disable ${directives[name]}: Codex compatibility transformation preserves the source workflow's safety directives and treats its deterministic STATE receipts as the evidence contract. -->\n`;
@@ -136,6 +152,8 @@ function bindBundledCodexCli(text) {
     .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} capabilities(?! --codex)`, "g"), `${cli} capabilities --codex`)
     .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} match(?! --codex)`, "g"), `${cli} match --codex`)
     .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} assess(?! --codex)`, "g"), `${cli} assess --codex`)
+    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} diagnose(?! --codex)`, "g"), `${cli} diagnose --codex`)
+    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} audit(?! --codex)`, "g"), `${cli} audit --codex`)
     .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} manifest validate(?! --codex)`, "g"), `${cli} manifest validate --codex`);
 }
 const codexSkillId = name => name.startsWith("gsd-") ? `muster-${name}` : name;
@@ -267,8 +285,9 @@ await ensure(runtime);
 // them, so only inject createRequire for bundled CommonJS dependencies such as
 // yaml; do not add another shebang.
 const requireBanner = 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);';
-await build({ entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), bundle: true, platform: "node", format: "esm", target: "node20", banner: { js: requireBanner } });
-await build({ entryPoints: [join(root, "src", "cli.js")], outfile: join(plugin, "src", "cli.js"), bundle: true, platform: "node", format: "esm", target: "node20", banner: { js: requireBanner } });
+const bundleOptions = { bundle: true, platform: "node", format: "esm", target: "node20", preserveSymlinks: true };
+await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), banner: { js: requireBanner } });
+await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(plugin, "src", "cli.js"), banner: { js: requireBanner } });
 const sharedMcpSource = await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8");
 const codexMcpSource = sharedMcpSource
   .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")
@@ -277,7 +296,7 @@ const codexMcpSource = sharedMcpSource
   .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]');
 if (!codexMcpSource.includes('["capabilities", "--codex"]') || codexMcpSource.includes('["capabilities", "--cowork"]')) throw new Error("Codex MCP capability adapter was not applied");
 if (!codexMcpSource.includes('muster_assess: { argv: ["assess", "--codex"]')) throw new Error("Codex MCP assess adapter was not applied");
-await build({ stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs"), bundle: true, platform: "node", format: "esm", target: "node20" });
+await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
 await write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
 await write(join(plugin, "src", "package.json"), JSON.stringify({ type: "module" }) + "\n");
 

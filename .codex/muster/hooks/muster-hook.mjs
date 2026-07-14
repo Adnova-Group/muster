@@ -158,63 +158,111 @@ const staleHookLock = (state, now) => {
   return now - leaseStartedAt >= LOCK_LEASE_MS;
 };
 
-function privateHookRetirement(path) {
+function defaultHookRetirementModeCapability({ stat }) {
+  return (stat.mode & 0o777) !== 0o777;
+}
+
+function assertPrivateHookRetirementDirectory(dir, { expectedStat = null, requirePrivateMode = true } = {}) {
+  const stat = lstatSync(dir);
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  const ownerMismatch = process.platform !== "win32" && typeof uid === "number" && stat.uid !== uid;
+  const ownerChanged = expectedStat && stat.uid !== expectedStat.uid;
+  const directoryChanged = expectedStat && !sameHookLockInode(stat, expectedStat);
+  const unsafeMode = requirePrivateMode && process.platform !== "win32"
+    && ((stat.mode & 0o700) !== 0o700 || (stat.mode & 0o077) !== 0);
+  if (stat.isSymbolicLink() || !stat.isDirectory() || ownerMismatch || ownerChanged || directoryChanged || unsafeMode) {
+    throw new Error(`unsafe hook lock retirement directory: ${dir}`);
+  }
+  return stat;
+}
+
+function privateHookRetirement(path, { modeCapability = defaultHookRetirementModeCapability } = {}) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const dir = join(dirname(path), `.muster-retired-${process.pid}-${digest(`${Date.now()}:${Math.random()}`)}`);
     try { mkdirSync(dir, { mode: 0o700 }); }
     catch (error) { if (error.code === "EEXIST" && attempt < 7) continue; throw error; }
     const stat = lstatSync(dir);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`unsafe hook lock retirement directory: ${dir}`);
-    return { dir, path: join(dir, "lock") };
+    const requirePrivateMode = modeCapability({ dir, stat });
+    if (typeof requirePrivateMode !== "boolean") throw new Error(`invalid hook retirement mode capability for ${dir}`);
+    assertPrivateHookRetirementDirectory(dir, { expectedStat: stat, requirePrivateMode });
+    return { dir, path: join(dir, "lock"), stat, expectedStat: stat, requirePrivateMode };
   }
   throw new Error(`could not create hook lock retirement directory for ${path}`);
 }
 
-function restoreRetiredHookLock(path, retired, stat) {
-  const current = lstatSync(retired);
+function removeEmptyHookRetirementDirectory(retirement) {
+  assertPrivateHookRetirementDirectory(retirement.dir, retirement);
+  rmdirSync(retirement.dir);
+}
+
+function restoreRetiredHookLock(path, retirement, stat) {
+  assertPrivateHookRetirementDirectory(retirement.dir, retirement);
+  const current = lstatSync(retirement.path);
   if (!sameHookLockInode(current, stat)) return false;
-  try { linkSync(retired, path); }
+  try { linkSync(retirement.path, path); }
   catch (error) { if (error.code === "EEXIST") return false; throw error; }
   const restored = lstatSync(path);
   if (!sameHookLockInode(restored, stat)) throw new Error(`hook lock restore changed identity: ${path}`);
-  rmSync(retired);
-  rmdirSync(dirname(retired));
+  assertPrivateHookRetirementDirectory(retirement.dir, retirement);
+  rmSync(retirement.path);
+  removeEmptyHookRetirementDirectory(retirement);
   return true;
 }
 
-function restoreQuarantinedHookLock(path, quarantine, stat) {
-  const retirement = privateHookRetirement(quarantine);
+function restoreQuarantinedHookLock(path, quarantine, stat, { modeCapability } = {}) {
+  const retirement = privateHookRetirement(quarantine, { modeCapability });
   try { renameSync(quarantine, retirement.path); }
   catch (error) {
-    try { rmdirSync(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    try { removeEmptyHookRetirementDirectory(retirement); } catch { /* preserve an ambiguous retirement directory */ }
     if (error.code === "ENOENT") return false;
     throw error;
   }
-  return restoreRetiredHookLock(path, retirement.path, stat);
+  return restoreRetiredHookLock(path, retirement, stat);
 }
 
-function retireOwnedHookLock(path, expectedStat, expectedRecord, { restorePath = path, stale = null } = {}) {
-  const retirement = privateHookRetirement(path);
+function retireOwnedHookLock(path, expectedStat, expectedRecord, {
+  restorePath = path,
+  stale = null,
+  afterRetirement = () => {},
+  modeCapability
+} = {}) {
+  let current;
+  try { current = readHookLock(path); }
+  catch { return false; }
+  if (!sameHookLockInode(current.stat, expectedStat) || !sameHookLockOwner(current.record, expectedRecord)) return false;
+  const retirement = privateHookRetirement(path, { modeCapability });
   try { renameSync(path, retirement.path); }
   catch (error) {
-    try { rmdirSync(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    try { removeEmptyHookRetirementDirectory(retirement); } catch { /* preserve an ambiguous retirement directory */ }
     if (error.code === "ENOENT") return false;
     throw error;
   }
+  afterRetirement({ dir: retirement.dir, path: retirement.path, sourcePath: path });
+  assertPrivateHookRetirementDirectory(retirement.dir, retirement);
   let retired;
   try { retired = readHookLock(retirement.path); }
   catch { return false; }
-  if (!sameHookLockInode(retired.stat, expectedStat) || !sameHookLockOwner(retired.record, expectedRecord)
-    || stale && !stale(retired)) {
-    restoreRetiredHookLock(restorePath, retirement.path, retired.stat);
+  if (!sameHookLockInode(retired.stat, expectedStat) || !sameHookLockOwner(retired.record, expectedRecord)) {
     return false;
   }
+  if (stale && !stale(retired)) {
+    restoreRetiredHookLock(restorePath, retirement, expectedStat);
+    return false;
+  }
+  assertPrivateHookRetirementDirectory(retirement.dir, retirement);
+  const final = readHookLock(retirement.path);
+  if (!sameHookLockInode(final.stat, expectedStat) || !sameHookLockOwner(final.record, expectedRecord)) return false;
   rmSync(retirement.path);
-  rmdirSync(retirement.dir);
+  removeEmptyHookRetirementDirectory(retirement);
   return true;
 }
 
-export function reclaimStaleLock(path, now, { afterQuarantine = () => {}, afterValidation = () => {} } = {}) {
+export function reclaimStaleLock(path, now, {
+  afterQuarantine = () => {},
+  afterValidation = () => {},
+  afterRetirement = () => {},
+  modeCapability = defaultHookRetirementModeCapability
+} = {}) {
   let current;
   try { current = readHookLock(path); }
   catch (error) { if (error.code === "ENOENT") return false; throw error; }
@@ -227,13 +275,21 @@ export function reclaimStaleLock(path, now, { afterQuarantine = () => {}, afterV
     const quarantined = readHookLock(quarantine);
     if (!sameHookLockInode(quarantined.stat, current.stat) || !sameHookLockOwner(quarantined.record, current.record)
       || !staleHookLock(quarantined, now)) {
-      restoreQuarantinedHookLock(path, quarantine, quarantined.stat);
+      restoreQuarantinedHookLock(path, quarantine, quarantined.stat, { modeCapability });
       return false;
     }
     afterValidation({ path, quarantine });
-    return retireOwnedHookLock(quarantine, quarantined.stat, quarantined.record, {
+    const finalCandidate = readHookLock(quarantine);
+    if (!sameHookLockInode(finalCandidate.stat, quarantined.stat) || !sameHookLockOwner(finalCandidate.record, quarantined.record)
+      || !staleHookLock(finalCandidate, now)) {
+      restoreQuarantinedHookLock(path, quarantine, finalCandidate.stat, { modeCapability });
+      return false;
+    }
+    return retireOwnedHookLock(quarantine, finalCandidate.stat, finalCandidate.record, {
       restorePath: path,
-      stale: state => staleHookLock(state, now)
+      stale: state => staleHookLock(state, now),
+      afterRetirement,
+      modeCapability
     });
   } catch (error) {
     // Preserve ambiguous retired entries; never delete a pathname whose owner
@@ -242,7 +298,11 @@ export function reclaimStaleLock(path, now, { afterQuarantine = () => {}, afterV
   }
 }
 
-export function withShardLock(dir, name, callback, now = Date.now(), { beforeRelease = () => {} } = {}) {
+export function withShardLock(dir, name, callback, now = Date.now(), {
+  beforeRelease = () => {},
+  afterRetirement = () => {},
+  modeCapability = defaultHookRetirementModeCapability
+} = {}) {
   const path = join(dir, name);
   const token = digest(`${process.pid}:${now}:${name}:${Math.random()}`);
   let fd;
@@ -253,7 +313,7 @@ export function withShardLock(dir, name, callback, now = Date.now(), { beforeRel
       break;
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
-      if (attempt === 0 && reclaimStaleLock(path, now)) continue;
+      if (attempt === 0 && reclaimStaleLock(path, now, { afterRetirement, modeCapability })) continue;
       return false;
     }
   }
@@ -264,8 +324,8 @@ export function withShardLock(dir, name, callback, now = Date.now(), { beforeRel
       const current = readHookLock(path);
       if (!sameHookLockOwner(current.record, { token, pid: process.pid, createdAt: now, format: 1 })) return false;
       beforeRelease({ path });
-      if (!retireOwnedHookLock(path, current.stat, current.record)) return false;
-    } catch { /* a replaced lock is not ours to remove */ }
+      if (!retireOwnedHookLock(path, current.stat, current.record, { afterRetirement, modeCapability })) return false;
+    } catch { return false; /* a replaced or unsafe lock is not ours to remove */ }
   }
   return true;
 }

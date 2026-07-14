@@ -1,0 +1,15 @@
+id: release-notes
+domain: pm
+title: Release Briefing
+match: [release notes, changelog, what's new, patch notes, release briefing]
+phases:
+  - { id: intake,   role: brainstorm,    desc: "release scope; identify the three audiences: developers (technical changelog), users (briefing), public (announcement)" }
+  - { id: facts,    role: docs-research, desc: "extract fact rows from the release diff/changelog: change description + source (commit/PR ref) + date per entry; no analysis, no framing, no categorization" }
+  - { id: draft,    role: author,        desc: "produce THREE audience-split artifacts in one pass: (1) TECHNICAL CHANGELOG - classify each fact row into Keep a Changelog categories (Added/Changed/Deprecated/Removed/Fixed/Security); every entry keeps its source commit/PR ref + date; note semver bump; (2) USER BRIEFING - what changed, why it matters, upgrade notes; benefit-framed, zero internal-only jargon; (3) ANNOUNCEMENT POST - short, benefit-led; standardized 'Title: Subtitle' header format" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate across all three artifacts: verify changelog source refs, briefing plain language, announcement format" }
+  - { id: score,    role: score,         desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,      desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery, across all three artifacts" }
+gate:
+  criteria: [source-refs, no-internal-jargon, title-subtitle-format, clarity, completeness, structure]
+  floor: 2
+  pass_total: 14

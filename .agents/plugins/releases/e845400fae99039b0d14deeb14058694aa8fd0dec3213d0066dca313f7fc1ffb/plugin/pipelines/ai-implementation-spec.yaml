@@ -1,0 +1,16 @@
+id: ai-implementation-spec
+domain: pm
+title: Implementation Spec
+match: [implementation spec, technical spec, ai implementation spec, tech spec, design doc, RFC, system design]
+phases:
+  - { id: intake,       role: brainstorm,  desc: "feature, constraints, success criteria" }
+  - { id: architecture, role: author,      desc: "approach, components, data flow, tradeoffs" }
+  - { id: adr,          role: author,      desc: "Architecture Decision Records (MADR 4.0): Context, Decision Drivers, Considered Options (pros/cons), Decision, Consequences, Confirmation; status lifecycle proposed|accepted|deprecated|superseded-by ADR-XXXX" }
+  - { id: interfaces,   role: author,      desc: "interfaces/contracts, edge cases, error handling" }
+  - { id: risks,        role: author,      desc: "risks+mitigations; rollout (flag/canary/phased); observability (metrics, alerts); rollback triggers" }
+  - { id: review,       role: code-review, desc: "adversarial review gate" }
+  - { id: score,        role: score,       desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [clarity, completeness, feasibility, testability, contract-completeness, alternatives-documented, observability-plan]
+  floor: 2
+  pass_total: 16

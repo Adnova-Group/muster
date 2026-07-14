@@ -4,7 +4,7 @@ import { modelForRole } from "./model.js";
 // Claude-like tiers in model.js and translate only when emitting Codex config.
 export const CODEX_MODEL_POLICY = Object.freeze({
   haiku: Object.freeze({ model: "gpt-5.6-luna", reasoning: "high" }),
-  sonnet: Object.freeze({ model: "gpt-5.6-terra", reasoning: "xhigh" }),
+  sonnet: Object.freeze({ model: "gpt-5.6-terra", reasoning: "high" }),
   opus: Object.freeze({ model: "gpt-5.6-sol", reasoning: "high" }),
   fable: Object.freeze({ model: "gpt-5.6-sol", reasoning: "max" })
 });

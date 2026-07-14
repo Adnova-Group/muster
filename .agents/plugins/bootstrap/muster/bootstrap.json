@@ -13,8 +13,8 @@
     },
     {
       "path": "agents/muster-builder.toml",
-      "sha256": "f4f35f85c4813f021be0bd0faddf93fee802bfdf26a1282490813f468d0ab5c1",
-      "size": 2027
+      "sha256": "02e8877614bacb0928cc04c8f17f3bc3cadd12ca0bda5c59ff3532808b2cce88",
+      "size": 2026
     },
     {
       "path": "agents/muster-improver.toml",
@@ -28,13 +28,13 @@
     },
     {
       "path": "agents/muster-reviewer.toml",
-      "sha256": "80e6643837fbab7210c003ca8d7bc288b6e2ea0e4fae58b57aa13d255a812b01",
-      "size": 1687
+      "sha256": "7b81c09534feb396b3dbeeb3e6af3b6d5865519a78edeb5a1b23f4efb4b7df25",
+      "size": 1686
     },
     {
       "path": "agents/muster-runner.toml",
-      "sha256": "b4431278ca9e6f01638a9fb445bd699a09caefb3b6af63bd69895668d4fd3fd2",
-      "size": 6115
+      "sha256": "ac4fb08120a9dd010b1eeb576518651ace952bccb0a4f975cf58b8a4d00e39e8",
+      "size": 6114
     },
     {
       "path": "agents/muster-strategist.toml",
@@ -43,13 +43,13 @@
     },
     {
       "path": "agents/muster-surgeon.toml",
-      "sha256": "7115ebf380c7c6d2ff8b0c8132a6a9ee14d0885e1de0aaddfd91496046d15d50",
-      "size": 2031
+      "sha256": "0110b5e0903650b0bb7442d8e38491256a33d0268b85325b69879f483a1d778e",
+      "size": 2030
     },
     {
       "path": "agents/wsh-api-documenter.toml",
-      "sha256": "4087c87fb3d3dc37729db30db3c0ecadbb09a5bea27a690bd97c3b0bae456da5",
-      "size": 7789
+      "sha256": "c6eb84c20f9ab93936408802e97c03e9e14b8d7d37677eec6be2c1bc54260d6f",
+      "size": 7790
     },
     {
       "path": "agents/wsh-backend-architect.toml",
@@ -58,8 +58,8 @@
     },
     {
       "path": "agents/wsh-business-analyst.toml",
-      "sha256": "65caeeccc754d557e5d8122585f92e99ee6a2ef350ae51be83b0570cecd30df0",
-      "size": 7628
+      "sha256": "f5bf3105c2f8e7a5a7166376c1c42afbe824681df49e29966799153c09cf74d5",
+      "size": 7629
     },
     {
       "path": "agents/wsh-cloud-architect.toml",
@@ -68,43 +68,43 @@
     },
     {
       "path": "agents/wsh-code-reviewer.toml",
-      "sha256": "f0bccc65ab191b2a700d208180e4ffb4c2c261255003a23e3c5c4c3f8fc6788a",
-      "size": 8799
+      "sha256": "d260a18bb55408e75013bd77815ee6926a7e6ec5ad73f9c65fc63f438809f5e1",
+      "size": 8759
     },
     {
       "path": "agents/wsh-content-marketer.toml",
-      "sha256": "bcd5b01ae7f80751f788bf7bdae59ce21bf351c6d76dfa3cbe66c5bd5d32a720",
-      "size": 8543
+      "sha256": "d42b9c427850b924489485685d46e7bdff7eeed79ea4efd98db2bad7fd93a947",
+      "size": 8544
     },
     {
       "path": "agents/wsh-customer-support.toml",
-      "sha256": "9f16c5b2f0caf7923467b4ccc1afc8df7c0343da698faa3175efd5a30d4c3245",
-      "size": 8676
+      "sha256": "dd92c676be65b9a64302010974425428d8e3dd08d9373cca34b6580af52573be",
+      "size": 8677
     },
     {
       "path": "agents/wsh-data-engineer.toml",
-      "sha256": "0ac001d92f292c4f3f8cbafb007fcefaa064c0b8ddaf7dcdfeea9fca6ff0b56a",
-      "size": 11678
+      "sha256": "e51d445590fed40d03adb82c820f18b20d5964e4d2d5e94c79a7ecf21c00520e",
+      "size": 11677
     },
     {
       "path": "agents/wsh-data-scientist.toml",
-      "sha256": "9472bd6edd98e28c125918f3f4bab1296cb3483e69b7fae31e68f5ee4279d93b",
-      "size": 10357
+      "sha256": "f0d97aa890df64b5458955814c4b32d9b933186b1ebecdc6d3a7362d9c59a168",
+      "size": 10356
     },
     {
       "path": "agents/wsh-database-optimizer.toml",
-      "sha256": "f5e4ba9315abb0c6ba725e554218c0c737e1ed16f31d21d60409d93c333ebd3e",
-      "size": 10380
+      "sha256": "8db3bddc76b5757a2cf32382559ce0a42f37218daf7e571c60312e702006bf0f",
+      "size": 10379
     },
     {
       "path": "agents/wsh-debugger.toml",
-      "sha256": "eadb9cc028a9feca306a4001d60c9a5d2eb113f92d762648dad8b7bf514c295a",
-      "size": 1175
+      "sha256": "248d87435a05f72443f165fc9f431881f9b42f9d5e7c8931e23eeb38a3c403bf",
+      "size": 1174
     },
     {
       "path": "agents/wsh-devops-troubleshooter.toml",
-      "sha256": "42e69af77dd3f8b4dfc13c74da384a57e83f9494141f2db14680d5df0f875cf0",
-      "size": 9860
+      "sha256": "777d795742d8b494948d7b42acacd5092fda0220fa0409d9b18d38b0691c6269",
+      "size": 9859
     },
     {
       "path": "agents/wsh-docs-architect.toml",
@@ -113,38 +113,38 @@
     },
     {
       "path": "agents/wsh-frontend-developer.toml",
-      "sha256": "7675369cbcc64cb305626af85f64b8377b9a196bab5fb316372757468e4b2a60",
-      "size": 7133
+      "sha256": "dc69732d11fd5abd29ccf4e00868375f4442cbecb315ab4b9fde8ccb1f3e8fe9",
+      "size": 7132
     },
     {
       "path": "agents/wsh-legacy-modernizer.toml",
-      "sha256": "83f152f3dcc4456b1a71709d6962159fd7ba76227b7916fc5dd2db26d7d5c45b",
-      "size": 1671
+      "sha256": "8fe4b8d295eaf6bddf8793f2395a04c686d3b1aef23c6e9cfbaaa4d197f77a8b",
+      "size": 1670
     },
     {
       "path": "agents/wsh-ml-engineer.toml",
-      "sha256": "5ae9b051a1ed2515c02525a30283eade9d94850f784194ea034c2c7a8e6594b2",
-      "size": 9289
+      "sha256": "3d1b27871132937ac29cbcdae898a137537fd1c4d5a1a1404539b3f11a1cc2ec",
+      "size": 9288
     },
     {
       "path": "agents/wsh-prompt-engineer.toml",
-      "sha256": "cafe443e8465fa5dbdbb45b13656a3c3948f204a6428cedf2d6c4c1fe7715bad",
-      "size": 11525
+      "sha256": "757543d7abeccf30ba999c6ccb576b676c579005f13645cde951e216fdc58603",
+      "size": 11524
     },
     {
       "path": "agents/wsh-security-auditor.toml",
-      "sha256": "aa503d055b84401415f100025dde22b0bba063561ea39c0907e6a50bc020bbc2",
-      "size": 2513
+      "sha256": "aba2a5ab23f84c477698f3d8f74b905a54fdb3d8d07ef71e9f14af33735714bd",
+      "size": 2474
     },
     {
       "path": "agents/wsh-test-automator.toml",
-      "sha256": "dfea1bead20e2006422e14b1ff28afd267a520b370dcdc7014261fb6b52bd2b6",
-      "size": 2526
+      "sha256": "a85ceaa3ae6b6136ff58112b66ef3e746b9f3d3e79aff58fd0c37bf56f6a5784",
+      "size": 2527
     },
     {
       "path": "agents/wsh-tutorial-engineer.toml",
-      "sha256": "5f0c0d07580ddf3a2c4cddd439402e3467dddf5495e77ff4ac2c0f04578baf0b",
-      "size": 4804
+      "sha256": "534d04fed203c1c7eea6d85fb76d581bdc410448a12d084665b1c8e34a387808",
+      "size": 4805
     },
     {
       "path": "commands/audit.md",
@@ -223,8 +223,8 @@
     },
     {
       "path": "runtime/resolve-release.mjs",
-      "sha256": "7d934e97bc0ab72de6a22dcd93cad0dc3f135615cf85240b60b499d0e38075be",
-      "size": 20112
+      "sha256": "a9fe3719a539b1403eebe430f1a4940612abef0c4839b12ee3c14f880643ced7",
+      "size": 27342
     },
     {
       "path": "runtime/sprint-protocol.md",
@@ -602,5 +602,5 @@
       "size": 926
     }
   ],
-  "digest": "e385a35632551ac1e06568c72d3d212bd579e1aba8bd4b1e5af82a9bcfa95c36"
+  "digest": "a7ac06dfd2db1c194dd293337f6921ff8c0423cd983c3f3f6bea95b136ff2f15"
 }

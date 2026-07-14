@@ -10,7 +10,7 @@ let stagingRoot, plugin, runtime, profiles, modeDir, pkg, mapping;
 
 const policy = {
   haiku: { model: "gpt-5.6-luna", reasoning: "high" },
-  sonnet: { model: "gpt-5.6-terra", reasoning: "xhigh" },
+  sonnet: { model: "gpt-5.6-terra", reasoning: "high" },
   opus: { model: "gpt-5.6-sol", reasoning: "high" },
   fable: { model: "gpt-5.6-sol", reasoning: "max" }
 };
@@ -213,7 +213,12 @@ async function adaptPortedSkills(names) {
 function profileToml(id, source, config) {
   const body = source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
   const description = frontmatter(source, "description") || `${id} Muster specialist.`;
-  const model = policy[config.tier];
+  const defaultModel = policy[config.tier];
+  if (!defaultModel) throw new Error(`unknown Codex profile tier for ${id}: ${config.tier}`);
+  if (config.reasoning !== undefined && !["medium", "high", "xhigh", "max"].includes(config.reasoning)) {
+    throw new Error(`invalid Codex profile reasoning override for ${id}: ${config.reasoning}`);
+  }
+  const model = { ...defaultModel, reasoning: config.reasoning ?? defaultModel.reasoning };
   const isolation = config.readOnly
     ? "Remain read-only. Do not edit files or run commands that mutate the workspace."
     : "Before writing, verify the task is running in an isolated git worktree; do not write directly on a base branch.";

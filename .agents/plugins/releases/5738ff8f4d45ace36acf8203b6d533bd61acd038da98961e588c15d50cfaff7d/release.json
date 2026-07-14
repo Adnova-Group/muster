@@ -1,0 +1,1242 @@
+{
+  "format": 1,
+  "packageVersion": "0.5.0",
+  "files": [
+    {
+      "path": "plugin/.codex-plugin/plugin.json",
+      "sha256": "8f38bbb94f8a457a0bb72cc3e5805704386752b42794d6e6ba49903e319e68d3",
+      "size": 1205
+    },
+    {
+      "path": "plugin/.mcp.json",
+      "sha256": "7126c00d6dfa73d48843fedab772c6b07c1debcbd6b2936679c2b2781e75dd20",
+      "size": 150
+    },
+    {
+      "path": "plugin/agents/muster-builder.toml",
+      "sha256": "02e8877614bacb0928cc04c8f17f3bc3cadd12ca0bda5c59ff3532808b2cce88",
+      "size": 2026
+    },
+    {
+      "path": "plugin/agents/muster-improver.toml",
+      "sha256": "54505d914a8e0214cba4e72baa5897f3e7e32ecc7ab033e73234fa3798a87bfe",
+      "size": 3691
+    },
+    {
+      "path": "plugin/agents/muster-investigator.toml",
+      "sha256": "717650d7a406944f2c9c74f2f23e1603f02dac07c2dd1ee5fb6dc556c468c323",
+      "size": 1743
+    },
+    {
+      "path": "plugin/agents/muster-reviewer.toml",
+      "sha256": "7b81c09534feb396b3dbeeb3e6af3b6d5865519a78edeb5a1b23f4efb4b7df25",
+      "size": 1686
+    },
+    {
+      "path": "plugin/agents/muster-runner.toml",
+      "sha256": "ac4fb08120a9dd010b1eeb576518651ace952bccb0a4f975cf58b8a4d00e39e8",
+      "size": 6114
+    },
+    {
+      "path": "plugin/agents/muster-strategist.toml",
+      "sha256": "cec8545e5848d0a37ab66e3dee40a8e0ea8bc82e1a019844cafabb9d188f4ee7",
+      "size": 2213
+    },
+    {
+      "path": "plugin/agents/muster-surgeon.toml",
+      "sha256": "0110b5e0903650b0bb7442d8e38491256a33d0268b85325b69879f483a1d778e",
+      "size": 2030
+    },
+    {
+      "path": "plugin/agents/wsh-api-documenter.toml",
+      "sha256": "c6eb84c20f9ab93936408802e97c03e9e14b8d7d37677eec6be2c1bc54260d6f",
+      "size": 7790
+    },
+    {
+      "path": "plugin/agents/wsh-backend-architect.toml",
+      "sha256": "90001870d25148129840246d0bfa2e511230f3b88ff62cc4af0a381aca154f4a",
+      "size": 18700
+    },
+    {
+      "path": "plugin/agents/wsh-business-analyst.toml",
+      "sha256": "f5bf3105c2f8e7a5a7166376c1c42afbe824681df49e29966799153c09cf74d5",
+      "size": 7629
+    },
+    {
+      "path": "plugin/agents/wsh-cloud-architect.toml",
+      "sha256": "389537b89d2fd495273d3c31e80d5307cb14a30c9abe9b6b287d2131ee89a123",
+      "size": 8081
+    },
+    {
+      "path": "plugin/agents/wsh-code-reviewer.toml",
+      "sha256": "d260a18bb55408e75013bd77815ee6926a7e6ec5ad73f9c65fc63f438809f5e1",
+      "size": 8759
+    },
+    {
+      "path": "plugin/agents/wsh-content-marketer.toml",
+      "sha256": "d42b9c427850b924489485685d46e7bdff7eeed79ea4efd98db2bad7fd93a947",
+      "size": 8544
+    },
+    {
+      "path": "plugin/agents/wsh-customer-support.toml",
+      "sha256": "dd92c676be65b9a64302010974425428d8e3dd08d9373cca34b6580af52573be",
+      "size": 8677
+    },
+    {
+      "path": "plugin/agents/wsh-data-engineer.toml",
+      "sha256": "e51d445590fed40d03adb82c820f18b20d5964e4d2d5e94c79a7ecf21c00520e",
+      "size": 11677
+    },
+    {
+      "path": "plugin/agents/wsh-data-scientist.toml",
+      "sha256": "f0d97aa890df64b5458955814c4b32d9b933186b1ebecdc6d3a7362d9c59a168",
+      "size": 10356
+    },
+    {
+      "path": "plugin/agents/wsh-database-optimizer.toml",
+      "sha256": "8db3bddc76b5757a2cf32382559ce0a42f37218daf7e571c60312e702006bf0f",
+      "size": 10379
+    },
+    {
+      "path": "plugin/agents/wsh-debugger.toml",
+      "sha256": "248d87435a05f72443f165fc9f431881f9b42f9d5e7c8931e23eeb38a3c403bf",
+      "size": 1174
+    },
+    {
+      "path": "plugin/agents/wsh-devops-troubleshooter.toml",
+      "sha256": "777d795742d8b494948d7b42acacd5092fda0220fa0409d9b18d38b0691c6269",
+      "size": 9859
+    },
+    {
+      "path": "plugin/agents/wsh-docs-architect.toml",
+      "sha256": "37c8d6b83f5ca15dea5525deea4de353077bace95a086662414e98861d99fb5c",
+      "size": 4125
+    },
+    {
+      "path": "plugin/agents/wsh-frontend-developer.toml",
+      "sha256": "dc69732d11fd5abd29ccf4e00868375f4442cbecb315ab4b9fde8ccb1f3e8fe9",
+      "size": 7132
+    },
+    {
+      "path": "plugin/agents/wsh-legacy-modernizer.toml",
+      "sha256": "8fe4b8d295eaf6bddf8793f2395a04c686d3b1aef23c6e9cfbaaa4d197f77a8b",
+      "size": 1670
+    },
+    {
+      "path": "plugin/agents/wsh-ml-engineer.toml",
+      "sha256": "3d1b27871132937ac29cbcdae898a137537fd1c4d5a1a1404539b3f11a1cc2ec",
+      "size": 9288
+    },
+    {
+      "path": "plugin/agents/wsh-prompt-engineer.toml",
+      "sha256": "757543d7abeccf30ba999c6ccb576b676c579005f13645cde951e216fdc58603",
+      "size": 11524
+    },
+    {
+      "path": "plugin/agents/wsh-security-auditor.toml",
+      "sha256": "aba2a5ab23f84c477698f3d8f74b905a54fdb3d8d07ef71e9f14af33735714bd",
+      "size": 2474
+    },
+    {
+      "path": "plugin/agents/wsh-test-automator.toml",
+      "sha256": "a85ceaa3ae6b6136ff58112b66ef3e746b9f3d3e79aff58fd0c37bf56f6a5784",
+      "size": 2527
+    },
+    {
+      "path": "plugin/agents/wsh-tutorial-engineer.toml",
+      "sha256": "534d04fed203c1c7eea6d85fb76d581bdc410448a12d084665b1c8e34a387808",
+      "size": 4805
+    },
+    {
+      "path": "plugin/catalog/agents.generated.yaml",
+      "sha256": "feb5a4f607479919da8b1f8b128637f4a0cdc5f3c1be29f6491fdaa29b22bc6e",
+      "size": 9951
+    },
+    {
+      "path": "plugin/catalog/agents.muster.yaml",
+      "sha256": "3a69ed433f5ec16aebfb30308713fa7ee726586136c748cee5d3f33e8ceced63",
+      "size": 3344
+    },
+    {
+      "path": "plugin/catalog/builtins.generated.yaml",
+      "sha256": "b8b2f455e71a9d26bf151da5effdccd62ecbf11ef0de4c4d126402354fb9ee8e",
+      "size": 9272
+    },
+    {
+      "path": "plugin/catalog/builtins.muster.yaml",
+      "sha256": "556503edabe8677e8d9be782446e0da4784b721ec8ddd37d492c5c758b6d9944",
+      "size": 1425
+    },
+    {
+      "path": "plugin/catalog/software.yaml",
+      "sha256": "4fa3cce90ada09c7a0db9fb51ca543f6692983f4d56ea7a86dfaa5df5a9ad812",
+      "size": 2607
+    },
+    {
+      "path": "plugin/commands/audit.md",
+      "sha256": "0a31906e17df70e07318684f4e059038fac5840673c89c84e4a0c62e21f8e19e",
+      "size": 7448
+    },
+    {
+      "path": "plugin/commands/autopilot.md",
+      "sha256": "6c2b0a86b04bb68300d64d753737a244b092101518afc02fb3973443ac052ad7",
+      "size": 1296
+    },
+    {
+      "path": "plugin/commands/capture.md",
+      "sha256": "2b96ffe0b62a1c8695881b67134a90671edcedf7b9f378bb597a3305896ca7c0",
+      "size": 6042
+    },
+    {
+      "path": "plugin/commands/diagnose.md",
+      "sha256": "ed11a3acb60a3950402720e2ffb9b8a9a50d68f2937a9ccbdf586c276c83c68b",
+      "size": 3087
+    },
+    {
+      "path": "plugin/commands/go-backlog.md",
+      "sha256": "6b7ed8dbb124160ff9acb457b2195ec477241b797f5d8be27fe6e4f4272b8f51",
+      "size": 17578
+    },
+    {
+      "path": "plugin/commands/go.md",
+      "sha256": "69c7d525efb083d5c7d93df97d8999519fecc68f63cf567cb46fde0b8e84ee74",
+      "size": 11002
+    },
+    {
+      "path": "plugin/commands/plan-backlog.md",
+      "sha256": "c0ac4dbb9a8734d7ae58f3c5d2b9ef86ccd39ea44b2d02baa85932015481170c",
+      "size": 12437
+    },
+    {
+      "path": "plugin/commands/plan.md",
+      "sha256": "c826a64978a565fe3dd72d315fb9dd8ffe261cf3c86e7d6e9e100851525331c2",
+      "size": 7153
+    },
+    {
+      "path": "plugin/commands/run.md",
+      "sha256": "dd1a06099314822f8211acba39fe5c81b5b8670125d3457a9db32684f5704f94",
+      "size": 1316
+    },
+    {
+      "path": "plugin/commands/runner.md",
+      "sha256": "b1da6e084347be946c2f66fc643e57a30531aac6caf6b55ed9203e91af6d0d87",
+      "size": 6379
+    },
+    {
+      "path": "plugin/commands/sprint.md",
+      "sha256": "d42c40acb660e658d775196d4fb1687d697d95b9387200e9bb755cc33da5b33c",
+      "size": 1345
+    },
+    {
+      "path": "plugin/package.json",
+      "sha256": "bc865168af566e72b6c4d06c64c92bdb4a5c705faee7d8ca8a33e6bf4306d866",
+      "size": 25
+    },
+    {
+      "path": "plugin/pipelines/ai-implementation-spec.yaml",
+      "sha256": "19214d7d924d359fd57aab11c5889a3c647a578ab29716add795e8f674f526bc",
+      "size": 1216
+    },
+    {
+      "path": "plugin/pipelines/ai-test-plan.yaml",
+      "sha256": "cd8bb3a4abd062625ebb708b45ade595f82744d7fd13c48f82ef0660f8551d04",
+      "size": 1059
+    },
+    {
+      "path": "plugin/pipelines/blog-post.yaml",
+      "sha256": "d81188fb208b54dda9682a22d952a18100d8fde89e3fe304e2db833cf3767ae3",
+      "size": 2078
+    },
+    {
+      "path": "plugin/pipelines/book.yaml",
+      "sha256": "82309102dbe2c18d4ee908109b095ade92bee6867592035c426f36a596f0483f",
+      "size": 4199
+    },
+    {
+      "path": "plugin/pipelines/business-case.yaml",
+      "sha256": "1979efd6dd9735b0a8422f22184360e761c192e44fbdaf839e5f016ad20f4980",
+      "size": 896
+    },
+    {
+      "path": "plugin/pipelines/case-study.yaml",
+      "sha256": "59148afc3e150dd3688992936e6182be590bfcfe8c9f551607e07c22648d576d",
+      "size": 2148
+    },
+    {
+      "path": "plugin/pipelines/competitive-battlecard.yaml",
+      "sha256": "239156090b5069d38f90a92744e862e10ccd47ac08470ddcf60e172aa8cd44b8",
+      "size": 1210
+    },
+    {
+      "path": "plugin/pipelines/epic.yaml",
+      "sha256": "516c9cf5b09330faa042b91aee93030caad6bee45e774b012066a60d13e9d462",
+      "size": 1243
+    },
+    {
+      "path": "plugin/pipelines/executive-summary.yaml",
+      "sha256": "2801ebf2b3b53667cd9500af3887e9004f43f1a93562f7f3293081597e95a827",
+      "size": 1119
+    },
+    {
+      "path": "plugin/pipelines/launch-plan.yaml",
+      "sha256": "daca4f3e0c15a13f9efb5f5eb25e523367e2153ae7c3f12bb88fdc889b9d54ca",
+      "size": 1292
+    },
+    {
+      "path": "plugin/pipelines/lead-magnet.yaml",
+      "sha256": "98ce88f679a082f6c1ebba6422b418b72341223fffbb0665867b59dd85cdbfd4",
+      "size": 1843
+    },
+    {
+      "path": "plugin/pipelines/newsletter.yaml",
+      "sha256": "8c9302b9231e88437304d0cadefdf209949266ef4be9b9e5dfafaab3bbd48a29",
+      "size": 1974
+    },
+    {
+      "path": "plugin/pipelines/okrs.yaml",
+      "sha256": "af2dbd901e0146e4b3616225dbcf50fc1a9e493a15c9716eab481857cffb5509",
+      "size": 1051
+    },
+    {
+      "path": "plugin/pipelines/prd.yaml",
+      "sha256": "583642fff9caa4b8ffa149fa41aba05dce04967c9aa9a7f59f95175ab48453b5",
+      "size": 2214
+    },
+    {
+      "path": "plugin/pipelines/release-notes.yaml",
+      "sha256": "b89c8d16a166f1c44f391a5ea5e0f787531367b98163a84c588c5266d545cf85",
+      "size": 1584
+    },
+    {
+      "path": "plugin/pipelines/roadmap.yaml",
+      "sha256": "3478aa4577c5b795e56defcb49a808d9a22d1c634c280753150f4166da0bd931",
+      "size": 1383
+    },
+    {
+      "path": "plugin/pipelines/runbook.yaml",
+      "sha256": "b8b0a1cc6ef599d2293b57d16eb3d9c598f3b19d7b7b825ccaa49ab6d3222245",
+      "size": 2020
+    },
+    {
+      "path": "plugin/pipelines/social-post.yaml",
+      "sha256": "d332404e28e8c4c86bf4543ec413e211c4fcdf6a1c6a345d42ce6f7e5ed1d07f",
+      "size": 1549
+    },
+    {
+      "path": "plugin/pipelines/user-story.yaml",
+      "sha256": "c4d84f1542d22d2f9ed5c48d9d53f1da77191e06747e56133bb74b6c12b87ef5",
+      "size": 869
+    },
+    {
+      "path": "plugin/pipelines/video-content.yaml",
+      "sha256": "0e3a95e8439d6ff799eade1311edc947aa62227bbe748032cc9f4f0053e90bf8",
+      "size": 1159
+    },
+    {
+      "path": "plugin/runtime/codex-skill-adapter.md",
+      "sha256": "1ed2d1759fad77c85d742abfce076a57062d9e382663e96db196fb24ad69d4e5",
+      "size": 5203
+    },
+    {
+      "path": "plugin/runtime/install-hooks/action-guard.mjs",
+      "sha256": "b76cd87b59c6156845ca85bd5afdbb77e250d1ecd7ace8b7e5dd8b95b10203cc",
+      "size": 1509
+    },
+    {
+      "path": "plugin/runtime/install-hooks/hooks.json",
+      "sha256": "7926b1e3426b98202eb3ea731ea95ee5fe7283ed3d92408ec627bc85f81037b3",
+      "size": 1981
+    },
+    {
+      "path": "plugin/runtime/install-hooks/muster-hook.mjs",
+      "sha256": "21abd84e13d9840ea3cd095e6af30e4c760c360db0dc4fc160515fbb7f60cd99",
+      "size": 17986
+    },
+    {
+      "path": "plugin/runtime/muster-mcp.mjs",
+      "sha256": "833a5d9f49d17e68f2dea0988854e244d08d43dae462c921e9fc1c79ff05b481",
+      "size": 15996
+    },
+    {
+      "path": "plugin/runtime/muster.mjs",
+      "sha256": "772fb200f02f67b2702120b9ec640532f55e0af5dc3141d7bce5b5875892c977",
+      "size": 493605
+    },
+    {
+      "path": "plugin/runtime/sprint-protocol.md",
+      "sha256": "318a85fa53b68e48f733a0fe2a4dc52fe44f5bc9a54659ca6cee5c1c623ebaf8",
+      "size": 11169
+    },
+    {
+      "path": "plugin/skills/advisor/SKILL.md",
+      "sha256": "282442479dac866febf11ffc745a3d3b7cbadf72417a315c4f0b4e724b16eee7",
+      "size": 6787
+    },
+    {
+      "path": "plugin/skills/autopilot/SKILL.md",
+      "sha256": "016582171e57bd9d083d6fd2715ce3f7f697df60fde16294abe3bf7f19c9ccd2",
+      "size": 2364
+    },
+    {
+      "path": "plugin/skills/coordination/SKILL.md",
+      "sha256": "e6ebc86c76896c08c792b6d088f737f8bc6b32dd61788c372c63aaad9942b2e2",
+      "size": 39237
+    },
+    {
+      "path": "plugin/skills/domain-router/SKILL.md",
+      "sha256": "09b9e2bb753fc3fdd31a5b2fd5d56825140dc7332fec10d31c61a4e23dc5a91c",
+      "size": 2063
+    },
+    {
+      "path": "plugin/skills/greenfield/SKILL.md",
+      "sha256": "9a0c97a59dcfd8a87530745a8e8b011a7c620ee60e359a92a45fd7712e0edad7",
+      "size": 1740
+    },
+    {
+      "path": "plugin/skills/interview/SKILL.md",
+      "sha256": "31bd665681172cb45c6c845d88e31396894ade81cef42ce62312e1e605101f3e",
+      "size": 6110
+    },
+    {
+      "path": "plugin/skills/muster/SKILL.md",
+      "sha256": "25028335613211278ae0a6f0be60662fc0a70cd83aadcc3dc89f1fc07a4db92a",
+      "size": 2369
+    },
+    {
+      "path": "plugin/skills/muster-audit/SKILL.md",
+      "sha256": "b27c1dd6a7a1bacc026bfdd1e7a5ee30e54a9b400d3fb8c6ed6f47f690c4c3a2",
+      "size": 2458
+    },
+    {
+      "path": "plugin/skills/muster-author/SKILL.md",
+      "sha256": "3af4a126c2d6ea427b8f13c54dd5e05d83ddb2a39a1158dd05851d7658ff0e24",
+      "size": 2529
+    },
+    {
+      "path": "plugin/skills/muster-capture/SKILL.md",
+      "sha256": "042179faff5c6f2ef620b5b9483c54a0630d7f55c1d2f69eb7c224cf97aa80b2",
+      "size": 2436
+    },
+    {
+      "path": "plugin/skills/muster-diagnose/SKILL.md",
+      "sha256": "02afeb8144f6adfff61bfa93f89d4ad6d0b218caadabe8df3dbf1fc07a506bd6",
+      "size": 2448
+    },
+    {
+      "path": "plugin/skills/muster-go/SKILL.md",
+      "sha256": "aa67c2034f16b0c9e317586f852a3313689c64e17a133adeaf75798604e5f0a2",
+      "size": 2502
+    },
+    {
+      "path": "plugin/skills/muster-go-backlog/SKILL.md",
+      "sha256": "912b90ba829e50d0e3861aedb886f04011218d95d1beaeea4103b4604e96d887",
+      "size": 2454
+    },
+    {
+      "path": "plugin/skills/muster-gsd-execute-phase/SKILL.md",
+      "sha256": "2d4ee79f1f6dc9a90c6ce4a3978040e2202770750250a25099ce274f983a5d1f",
+      "size": 4126
+    },
+    {
+      "path": "plugin/skills/muster-gsd-plan-phase/SKILL.md",
+      "sha256": "59e79f59d36ecaf6946f0d9d4c0930bd935292c77c956edd294793697d99284b",
+      "size": 3884
+    },
+    {
+      "path": "plugin/skills/muster-gsd-verify-work/SKILL.md",
+      "sha256": "dbfe9555f2f5ccefa1dbc81dfeaeb7f7364416511213d6ee405094f8e27db08e",
+      "size": 3084
+    },
+    {
+      "path": "plugin/skills/muster-humanizer/SKILL.md",
+      "sha256": "c63f238023097fcc1997a7689739c8997233d7d6b7a6a6c42032180683746d65",
+      "size": 5651
+    },
+    {
+      "path": "plugin/skills/muster-image/SKILL.md",
+      "sha256": "f236bf8b724eb3acb036cd632cc5709b652bd6f0f8aefa217c5a5aaa55bb6a7b",
+      "size": 2948
+    },
+    {
+      "path": "plugin/skills/muster-plan/SKILL.md",
+      "sha256": "7b5d9fe0719216b50ed413b73e1b77dce5d43dacd8823bb2ff211f70f89a1513",
+      "size": 2466
+    },
+    {
+      "path": "plugin/skills/muster-plan-backlog/SKILL.md",
+      "sha256": "f5d7f2538debb2201a9c6aba55e6d99989af4223cea6658b5f15528ca6ca0ac6",
+      "size": 2428
+    },
+    {
+      "path": "plugin/skills/muster-prompt-smith/SKILL.md",
+      "sha256": "7e605443a1f4056f0acb46228eaa660b562bd53557ac3ec146ca729b963c8f49",
+      "size": 7888
+    },
+    {
+      "path": "plugin/skills/muster-research/SKILL.md",
+      "sha256": "f5143c10100187394647dda25a024b7654584ec2bbe6e6d00b01f186f842b1d9",
+      "size": 2677
+    },
+    {
+      "path": "plugin/skills/muster-runner/SKILL.md",
+      "sha256": "cec82c9c125cabf44a668170f2b6395f3e3c5b78f4301fb4659cd8c4b54dc141",
+      "size": 2438
+    },
+    {
+      "path": "plugin/skills/muster-scorer/SKILL.md",
+      "sha256": "02405592a1123144761b2516308b4a32aceb9ed1e957f575cff515f038b5fc6d",
+      "size": 2640
+    },
+    {
+      "path": "plugin/skills/muster-video/SKILL.md",
+      "sha256": "f327c1f448c3af43ecc9b02dbc9ebc1a0e5a9ac1e09cd9ba14540ed0e347a5de",
+      "size": 3047
+    },
+    {
+      "path": "plugin/skills/orchestrator/SKILL.md",
+      "sha256": "11e21f9163303944da7bfd7b587d9d7401344d11b2963f25bc7eb58b06648e56",
+      "size": 19256
+    },
+    {
+      "path": "plugin/skills/prd-pipeline/SKILL.md",
+      "sha256": "d6beccb36febd4d14db1b7445e68e8b076444c2f078262c42b56c3ba20c21a34",
+      "size": 2176
+    },
+    {
+      "path": "plugin/skills/review-gate/SKILL.md",
+      "sha256": "e539a429ce5466a31bfdfb56939a78496850410ce7ccd6e9533f1ebb00fc2e31",
+      "size": 7710
+    },
+    {
+      "path": "plugin/skills/roadmap-prioritization/SKILL.md",
+      "sha256": "cd8e610cf65d26b35b1b36dcde6cf45e238327be9f2fde000017d355f0559f34",
+      "size": 4753
+    },
+    {
+      "path": "plugin/skills/router/SKILL.md",
+      "sha256": "898b9c130502bf78830ab48df42ad3adaf88596cba20d5bd90874e2b19867db2",
+      "size": 8185
+    },
+    {
+      "path": "plugin/skills/run/SKILL.md",
+      "sha256": "80efb8ca8c194a65e84a39ef28bf5695b850548d9e1c2d1179bb5bc2a5dae19f",
+      "size": 2344
+    },
+    {
+      "path": "plugin/skills/sp-brainstorm/SKILL.md",
+      "sha256": "281423504176c3358b22de2b7152f69bba442b5891b942fe896d016a80db4ce6",
+      "size": 11277
+    },
+    {
+      "path": "plugin/skills/sp-brainstorm/scripts/frame-template.html",
+      "sha256": "6a8a4e58bd6a44b904e2e3c57de774481d909204597e1498de53f1b2fecc4c4e",
+      "size": 8094
+    },
+    {
+      "path": "plugin/skills/sp-brainstorm/scripts/helper.js",
+      "sha256": "43c6d69954a46ec34a2a262bcc62a9a7e83e839c739f199cb72646d397c686e3",
+      "size": 5615
+    },
+    {
+      "path": "plugin/skills/sp-brainstorm/scripts/server.cjs",
+      "sha256": "2d2961ea8d11f56c5f4c3a1a68d22709efa5d7601a2246d8c880774e7e9e8412",
+      "size": 25693
+    },
+    {
+      "path": "plugin/skills/sp-brainstorm/scripts/start-server.sh",
+      "sha256": "a4e5ae84275bcaacd2f84345afeabe59cf7b00ba080e123da7cc1fb226f12847",
+      "size": 6908
+    },
+    {
+      "path": "plugin/skills/sp-brainstorm/scripts/stop-server.sh",
+      "sha256": "0b5ccbbd57f62d3ed88993f7940b5ee0e5c0fc9b21c550c623da4f6292e47daf",
+      "size": 3263
+    },
+    {
+      "path": "plugin/skills/sp-brainstorm/spec-document-reviewer-prompt.md",
+      "sha256": "819163104fa3fb8105126d899f68e051ea0dace59bad6e1721e6390e13ac880d",
+      "size": 2011
+    },
+    {
+      "path": "plugin/skills/sp-brainstorm/visual-companion.md",
+      "sha256": "1c43a31ef0f91d1e2580ba35eb8f1190989f1b8cfbb08c38c2a0e78159b2c54b",
+      "size": 13348
+    },
+    {
+      "path": "plugin/skills/sp-debug/CREATION-LOG.md",
+      "sha256": "d1384c9193ea0df441c5302933ab308a3c7ebd77157dfc24215fcd512371d855",
+      "size": 4521
+    },
+    {
+      "path": "plugin/skills/sp-debug/SKILL.md",
+      "sha256": "f5286868ef73e8b2730a6dfb02d837553d345920f174d2b9edd3d410fae5bb3b",
+      "size": 10933
+    },
+    {
+      "path": "plugin/skills/sp-debug/condition-based-waiting-example.ts",
+      "sha256": "40ae5ebe497fdf310200e43fe986552546d0a22837c0d39e855db1cfd33eb88e",
+      "size": 5054
+    },
+    {
+      "path": "plugin/skills/sp-debug/condition-based-waiting.md",
+      "sha256": "64a78ea9b0be7208ab4e7aa3e03faf2a4468e9dd2a6b0857fa1c23bc41c5e469",
+      "size": 3780
+    },
+    {
+      "path": "plugin/skills/sp-debug/defense-in-depth.md",
+      "sha256": "1a0b07cdd312d646d2c3ad46f87c21208a4dd1c5d811d1feff01e2ca9c456916",
+      "size": 3914
+    },
+    {
+      "path": "plugin/skills/sp-debug/find-polluter.sh",
+      "sha256": "6462747eae9b175ac145b78bcfaeab755654a75e32637f08eb633f065a9e1d7c",
+      "size": 1528
+    },
+    {
+      "path": "plugin/skills/sp-debug/root-cause-tracing.md",
+      "sha256": "843390305e6f8abfb0a39685791d8f9db1d39f57397793fc905177c4d086e43e",
+      "size": 5580
+    },
+    {
+      "path": "plugin/skills/sp-debug/test-academic.md",
+      "sha256": "494db120e99a3fe4bb1c2808b0e8158f699270bfd21d883cedd21c56faa4ecfd",
+      "size": 917
+    },
+    {
+      "path": "plugin/skills/sp-debug/test-pressure-1.md",
+      "sha256": "a2b517bff7e5830cdd253b19e429210ce5113868f322553f63f7dd6dc6843294",
+      "size": 2164
+    },
+    {
+      "path": "plugin/skills/sp-debug/test-pressure-2.md",
+      "sha256": "48a9c3f90cacdceea968026d13969657f139b0f7f4ddfc4c884b8d83362b9188",
+      "size": 2547
+    },
+    {
+      "path": "plugin/skills/sp-debug/test-pressure-3.md",
+      "sha256": "9a7e1124982e72abc1017f1515873d62af707972e1bb6302aa98a805b71fc39a",
+      "size": 2956
+    },
+    {
+      "path": "plugin/skills/sp-parallel/SKILL.md",
+      "sha256": "cbd8ede84e86678d5c3bc60d812f5367b369415820be797ed6abce0fce1cc85c",
+      "size": 7109
+    },
+    {
+      "path": "plugin/skills/sp-plan/SKILL.md",
+      "sha256": "74d4686688777e95ed25125b70e5f84d49cd05988fbaf0bafcae8c9cf0b7719d",
+      "size": 7684
+    },
+    {
+      "path": "plugin/skills/sp-plan/plan-document-reviewer-prompt.md",
+      "sha256": "9a5b5841be1d2df0863fb61b37a4139256d37ad80d91ac5feae88785c062ef05",
+      "size": 1977
+    },
+    {
+      "path": "plugin/skills/sp-review/SKILL.md",
+      "sha256": "82088246a444ab6db3913207b689f51f92966edb365985fdc7d7909005775aa1",
+      "size": 3448
+    },
+    {
+      "path": "plugin/skills/sp-review/code-reviewer.md",
+      "sha256": "e3b37735e5ba2d93d7d19fffda8530eeb20a1a47a260003e08479bac72cc5c8c",
+      "size": 5477
+    },
+    {
+      "path": "plugin/skills/sp-review-recv/SKILL.md",
+      "sha256": "779b088ccf3d91eec772cfc1bf81b3303db2c9a4ce01d54dbbac44943f3570f2",
+      "size": 6853
+    },
+    {
+      "path": "plugin/skills/sp-subagents/SKILL.md",
+      "sha256": "abcab8a56e3e7a6951c40d38423f78cb6c20fef943af1902a67fe408706f8c0c",
+      "size": 16212
+    },
+    {
+      "path": "plugin/skills/sp-subagents/implementer-prompt.md",
+      "sha256": "dec337fb37aa484b5d86d54eafe3c33d98fdfb2e140dd33f4397ed8a26768fa4",
+      "size": 5786
+    },
+    {
+      "path": "plugin/skills/sp-subagents/scripts/review-package",
+      "sha256": "0c0629f6e2c46fc8bf68dcfb8a247ab24eb548b7004fe494035e6fcba9b5cdfb",
+      "size": 1350
+    },
+    {
+      "path": "plugin/skills/sp-subagents/scripts/sdd-workspace",
+      "sha256": "9430befaff459ed862415b700c1a9efe45fd34838a684802a1d8320de0c3a007",
+      "size": 888
+    },
+    {
+      "path": "plugin/skills/sp-subagents/scripts/task-brief",
+      "sha256": "5380283f00bffa99ab82ae78482b7d248abe10655129c72ca7050bdc0b6a85e1",
+      "size": 1102
+    },
+    {
+      "path": "plugin/skills/sp-subagents/task-reviewer-prompt.md",
+      "sha256": "7bef115479a9127c7c3bbcaa8527a5a7519a3f8a3141c697afc0f25f5dce87a5",
+      "size": 8183
+    },
+    {
+      "path": "plugin/skills/sp-tdd/SKILL.md",
+      "sha256": "bd46ea94b8247179209101dc20e55c121a3a29b61d146afdbc43e9c28c5515a7",
+      "size": 10609
+    },
+    {
+      "path": "plugin/skills/sp-tdd/testing-anti-patterns.md",
+      "sha256": "7b8a0b679724f78e621ac03fd8838e75c468299ba4036df263d0cb10d2b7a14f",
+      "size": 8515
+    },
+    {
+      "path": "plugin/skills/sp-verify/SKILL.md",
+      "sha256": "cde8de501cef3f1bb04a122abd809d47d4e922442b2a4b357bdd5289f558021a",
+      "size": 4847
+    },
+    {
+      "path": "plugin/skills/sprint/SKILL.md",
+      "sha256": "748c873328fdc995558a7435a9c82ec9f540b380969a4d6eec077f7c215cfb13",
+      "size": 2368
+    },
+    {
+      "path": "plugin/skills/tournament/SKILL.md",
+      "sha256": "ccd7586de20d14f74c242ddba11e6f85dd42dac24deef74c0dbb0c05eba844da",
+      "size": 6379
+    },
+    {
+      "path": "plugin/skills/wsh-api-design-principles/SKILL.md",
+      "sha256": "3f0f1d9658f1439185a9c03e43e55c713b6ad11e4c43f8f2b940203170f24f38",
+      "size": 4186
+    },
+    {
+      "path": "plugin/skills/wsh-api-design-principles/assets/api-design-checklist.md",
+      "sha256": "1efa03cd128d8c627b2558b876dccdc9ddfb3f47c4a0f56be1ca8234fd34e240",
+      "size": 4148
+    },
+    {
+      "path": "plugin/skills/wsh-api-design-principles/assets/rest-api-template.py",
+      "sha256": "b359cda817740ee2cd3c9a901d7d5a14178cc0e2dcb46b75af053e5cc4d6012c",
+      "size": 5323
+    },
+    {
+      "path": "plugin/skills/wsh-api-design-principles/references/details.md",
+      "sha256": "bffa65b30d12bb0b933195a62a641423ea6a5fffe1d608cc1a5cb6e66df3a2e5",
+      "size": 10072
+    },
+    {
+      "path": "plugin/skills/wsh-api-design-principles/references/graphql-schema-design.md",
+      "sha256": "e2357e0654d9322a4929bf91ce3cb6b48cd2ede52d8a53d08701c23d8b7abee7",
+      "size": 9269
+    },
+    {
+      "path": "plugin/skills/wsh-api-design-principles/references/rest-best-practices.md",
+      "sha256": "634efafe2c42e40cf161c795ee4749b8cf34ae86881a885fa659ba2b9622f7c6",
+      "size": 7835
+    },
+    {
+      "path": "plugin/skills/wsh-architecture-decision-records/SKILL.md",
+      "sha256": "dad5eeb3a615f8ff34051cc2df38e93affb6af0002628ada423e3c4be4ddd998",
+      "size": 13484
+    },
+    {
+      "path": "plugin/skills/wsh-architecture-patterns/SKILL.md",
+      "sha256": "40ed6f54325e329746bff490b66ce57992abb1b0d5ba2ec18bd1072699b79a92",
+      "size": 8638
+    },
+    {
+      "path": "plugin/skills/wsh-architecture-patterns/references/advanced-patterns.md",
+      "sha256": "d573a3d24e1ee696765d33bacea3b34699d19eb76ab6da3ddc72cc20ba6cb5e8",
+      "size": 15593
+    },
+    {
+      "path": "plugin/skills/wsh-architecture-patterns/references/details.md",
+      "sha256": "286050353631289a16023d4f14e2b05715649a8a5f8866aa0a7aae70043b89c1",
+      "size": 11257
+    },
+    {
+      "path": "plugin/skills/wsh-async-python-patterns/SKILL.md",
+      "sha256": "77174a66e60acee7e1be8b0301c375aed0414859bb4a5aa384382c9d3d9ee2ae",
+      "size": 8113
+    },
+    {
+      "path": "plugin/skills/wsh-async-python-patterns/references/details.md",
+      "sha256": "f01711ef05331af56af8afb60cacc24d9e863401826416eafdd0ef60a1801e80",
+      "size": 12787
+    },
+    {
+      "path": "plugin/skills/wsh-attack-tree-construction/SKILL.md",
+      "sha256": "eb3fc7cc4675e9156b052314e2191f9ef85ae11357f7e5fd1d1f242d9f5acc99",
+      "size": 3345
+    },
+    {
+      "path": "plugin/skills/wsh-attack-tree-construction/references/details.md",
+      "sha256": "b5fa8aa4fa23df8f4a9550c0ed330a3d226bbade87e927f335e5a4229cf89f37",
+      "size": 20081
+    },
+    {
+      "path": "plugin/skills/wsh-code-review-excellence/SKILL.md",
+      "sha256": "79468a703e2b4b25c818f26c0b8b5600903ee05756eb4d861df4a58bb2cf2eab",
+      "size": 13945
+    },
+    {
+      "path": "plugin/skills/wsh-debugging-strategies/SKILL.md",
+      "sha256": "ebc073709e8605b21eec93a39eaf95c0157b5449d13d2e039f4b8271f1ac28a4",
+      "size": 12537
+    },
+    {
+      "path": "plugin/skills/wsh-dependency-upgrade/SKILL.md",
+      "sha256": "52d0216bdfeb020a7da666f3695bdfa82690266b648f9aa6cc21b3909379e216",
+      "size": 8295
+    },
+    {
+      "path": "plugin/skills/wsh-design-system-patterns/SKILL.md",
+      "sha256": "0c38ad7ee476a24a4b8f7ff20d2cdfbaed67b9f3c32487e8bbf81e82e6c0dfa5",
+      "size": 4719
+    },
+    {
+      "path": "plugin/skills/wsh-design-system-patterns/references/component-architecture.md",
+      "sha256": "0ec7e3efc2cd3351c20e1fb9128f829197254c45890bd70c660dce17e00cf531",
+      "size": 15557
+    },
+    {
+      "path": "plugin/skills/wsh-design-system-patterns/references/design-tokens.md",
+      "sha256": "8e6136c30e25fa0a3da88dcaf5e2231fcae42e5fe62f2453e205d1ae8b1458e4",
+      "size": 11533
+    },
+    {
+      "path": "plugin/skills/wsh-design-system-patterns/references/details.md",
+      "sha256": "a41719fc33bf9a005d63be13da0ba97b208edc0f76e6185647802dec6e4fa8d6",
+      "size": 5830
+    },
+    {
+      "path": "plugin/skills/wsh-design-system-patterns/references/theming-architecture.md",
+      "sha256": "43e0316ae7b1a2ba6283167acbc12aaebb8f4a27d7487f654c879ff4825f185a",
+      "size": 12629
+    },
+    {
+      "path": "plugin/skills/wsh-e2e-testing-patterns/SKILL.md",
+      "sha256": "2707b9cd8f369d2d5bfd830631ed7d0e06b4720b644322e85c6b5147e14dbdd4",
+      "size": 4608
+    },
+    {
+      "path": "plugin/skills/wsh-e2e-testing-patterns/references/details.md",
+      "sha256": "c9a5651822fcafd49dd30ca30b950975c21e297ec59c3ae3a10424e5ab4c14eb",
+      "size": 10550
+    },
+    {
+      "path": "plugin/skills/wsh-go-concurrency-patterns/SKILL.md",
+      "sha256": "2f6cc008ec10e35e9fd0817ba1fd231619dd18c5dde70e9992b68cf302842140",
+      "size": 3564
+    },
+    {
+      "path": "plugin/skills/wsh-go-concurrency-patterns/references/details.md",
+      "sha256": "9e47d22be88a597015d38e5af906c91ce9ff3ffc09368d1f96c6f64041bfcaf8",
+      "size": 11200
+    },
+    {
+      "path": "plugin/skills/wsh-javascript-testing-patterns/SKILL.md",
+      "sha256": "84a569de800a2def70683bf782e97958aff0384ef918d251dadc849d034a6e04",
+      "size": 15260
+    },
+    {
+      "path": "plugin/skills/wsh-javascript-testing-patterns/references/advanced-testing-patterns.md",
+      "sha256": "96106bb02e869e21a304f7a0538ab01976c4655ceb70f9b942a660fa3f5af82f",
+      "size": 13101
+    },
+    {
+      "path": "plugin/skills/wsh-microservices-patterns/SKILL.md",
+      "sha256": "d307489cca781dce88d098a4cd69eb208386be3371c46bbce9a9e4f813069774",
+      "size": 2742
+    },
+    {
+      "path": "plugin/skills/wsh-microservices-patterns/references/details.md",
+      "sha256": "9ae2b5d2dc8f06dd9a670a131e55c74f640cc577013355636b2b96ffbc0bc369",
+      "size": 14719
+    },
+    {
+      "path": "plugin/skills/wsh-multi-reviewer-patterns/SKILL.md",
+      "sha256": "30efa70bfcdd0f8c7ff11191d8d7913598383f37d34c286bedc342cb4a337381",
+      "size": 5809
+    },
+    {
+      "path": "plugin/skills/wsh-multi-reviewer-patterns/references/review-dimensions.md",
+      "sha256": "ca25913583485cf02f2c63019f8fa83dcea6c5d7d490a51c34c6334a1b03499f",
+      "size": 4371
+    },
+    {
+      "path": "plugin/skills/wsh-nextjs-app-router-patterns/SKILL.md",
+      "sha256": "2590fb290289a35a4fb6a88e7c67d241fb7d625146f72fc281563aac944e960e",
+      "size": 4418
+    },
+    {
+      "path": "plugin/skills/wsh-nextjs-app-router-patterns/references/details.md",
+      "sha256": "211f705331728937743445948ecbafa2aeb18483f0b60b837b6cdd9da4059d06",
+      "size": 10203
+    },
+    {
+      "path": "plugin/skills/wsh-nodejs-backend-patterns/SKILL.md",
+      "sha256": "c6472539c0837f738cfc69da6478a8aa82e9feec32463564b9d0d69d73425201",
+      "size": 2595
+    },
+    {
+      "path": "plugin/skills/wsh-nodejs-backend-patterns/references/advanced-patterns.md",
+      "sha256": "d9f439fca92f27517b440a69e7128afbd6ca3c21a61af11d6f12a4bab2f76eec",
+      "size": 9669
+    },
+    {
+      "path": "plugin/skills/wsh-nodejs-backend-patterns/references/details.md",
+      "sha256": "9556d354c46be91825da45766f6cf6ca7e8ce363a29d0479ccda642acf5dd103",
+      "size": 15310
+    },
+    {
+      "path": "plugin/skills/wsh-openapi-spec-generation/SKILL.md",
+      "sha256": "739cecccc66d58b25d6e182667b45d6fd22d857d2e11b0c8c801bc212bc6d2a6",
+      "size": 2907
+    },
+    {
+      "path": "plugin/skills/wsh-openapi-spec-generation/references/code-first-and-tooling.md",
+      "sha256": "c6ebf5d66976586d2a079df880c738d376aa1ce286fa0b6e3508bb8c6205dc12",
+      "size": 12026
+    },
+    {
+      "path": "plugin/skills/wsh-openapi-spec-generation/references/details.md",
+      "sha256": "d58f90756be0261cda02c3ac6caab7f4e2966c52b4ed9a7bfdb2d65a7b55d1cf",
+      "size": 12201
+    },
+    {
+      "path": "plugin/skills/wsh-performance-engineer/SKILL.md",
+      "sha256": "0b1910936d295ed1cb907fdb24ec5e831eb89c0af3657a5c66c63e3df2f9a2e9",
+      "size": 10866
+    },
+    {
+      "path": "plugin/skills/wsh-performance-engineer/frontend-developer.md",
+      "sha256": "cee8412bc21a43f142539968b59627e5d4528100be3f41156e679fe69d1f7b09",
+      "size": 7048
+    },
+    {
+      "path": "plugin/skills/wsh-performance-engineer/observability-engineer.md",
+      "sha256": "8be61eaa8bfc1a7ea732bf327471953c1d2e25a51f750bc0502bfb9d0e2ea2ae",
+      "size": 12809
+    },
+    {
+      "path": "plugin/skills/wsh-performance-engineer/performance-engineer.md",
+      "sha256": "f861688c0204e42d611c50ff9bb821881f7906d1912bf14d516e6c4020ad94aa",
+      "size": 10648
+    },
+    {
+      "path": "plugin/skills/wsh-python-anti-patterns/SKILL.md",
+      "sha256": "40a1fd2c91c2029d51f3ac571c48e03cd520525e6b0c2358bc57319513f49c0e",
+      "size": 8731
+    },
+    {
+      "path": "plugin/skills/wsh-python-design-patterns/SKILL.md",
+      "sha256": "76e7006438b58a9647587d721f4a9c32c47987d7a0403f04a87937b51ef9f27c",
+      "size": 5365
+    },
+    {
+      "path": "plugin/skills/wsh-python-design-patterns/references/details.md",
+      "sha256": "2597211ac16ec219c180533d596295dab52f925216de4adde8233e5a2b31dfec",
+      "size": 11260
+    },
+    {
+      "path": "plugin/skills/wsh-python-testing-patterns/SKILL.md",
+      "sha256": "5f0e0c8172e9e594dbf62d5913703b9bfabcaee5842631d17be22355cbbe2a23",
+      "size": 7986
+    },
+    {
+      "path": "plugin/skills/wsh-python-testing-patterns/references/advanced-patterns.md",
+      "sha256": "7a4fc633cc45fb8abe92f9f7815c3f83d5b81e26d038df10015f1bc68170103b",
+      "size": 9718
+    },
+    {
+      "path": "plugin/skills/wsh-python-testing-patterns/references/details.md",
+      "sha256": "953b3cbd0791534ff3ae9467039f2671ccbe2e311ae3c14e487975314a444f09",
+      "size": 9534
+    },
+    {
+      "path": "plugin/skills/wsh-react-modernization/SKILL.md",
+      "sha256": "bf1362762ab43cacb3c3a3dee859320cc49e3e576aebd7e46f9ef6897d74d5ac",
+      "size": 7410
+    },
+    {
+      "path": "plugin/skills/wsh-react-modernization/references/details.md",
+      "sha256": "702ee4ac8f83bf05fbc74fefa379c74919222ee7d65df06cf37f411c98dde13c",
+      "size": 4700
+    },
+    {
+      "path": "plugin/skills/wsh-react-state-management/SKILL.md",
+      "sha256": "facab9a1cc7f1cacac1e0ae0ce82da3b9a0f322225661247ad3035d9803372a4",
+      "size": 4832
+    },
+    {
+      "path": "plugin/skills/wsh-react-state-management/references/details.md",
+      "sha256": "6246d7c66c9840d8802a7d436311f174ba9655b87e7285af596adb9811415ae9",
+      "size": 8014
+    },
+    {
+      "path": "plugin/skills/wsh-responsive-design/SKILL.md",
+      "sha256": "7c1c51ff23678649056afc8958d3d1c8156e978cacf79e93eb783705e15ffe91",
+      "size": 2635
+    },
+    {
+      "path": "plugin/skills/wsh-responsive-design/references/breakpoint-strategies.md",
+      "sha256": "3068c170f607b08d5f5850e6c889c9ac5495880323b9f9c06f9cc78c3175d3a2",
+      "size": 10922
+    },
+    {
+      "path": "plugin/skills/wsh-responsive-design/references/container-queries.md",
+      "sha256": "8e4601e33fe692415a1c4a909c924ed58e513d0b5562c7cb00602c5825b58bc8",
+      "size": 10177
+    },
+    {
+      "path": "plugin/skills/wsh-responsive-design/references/details.md",
+      "sha256": "4cd4709f0dcf7fa35b3f75de7e9b9bafae7de215100389f5451126341652874b",
+      "size": 10931
+    },
+    {
+      "path": "plugin/skills/wsh-responsive-design/references/fluid-layouts.md",
+      "sha256": "5e958e2b9c9a4fac02e603792c138dd932779a4f3f7171e83f79404d221ed5d6",
+      "size": 10995
+    },
+    {
+      "path": "plugin/skills/wsh-sast-configuration/SKILL.md",
+      "sha256": "78a39c97a2c626e1c4deb46023661a78c7a83c82c0cb52fa177e53a0684cbef1",
+      "size": 6057
+    },
+    {
+      "path": "plugin/skills/wsh-seo-structure-architect/SKILL.md",
+      "sha256": "524e83b58897a18700f84bc0ce0c9bb5683a4c29e949e3984a6db46cb168f744",
+      "size": 2932
+    },
+    {
+      "path": "plugin/skills/wsh-seo-structure-architect/seo-keyword-strategist.md",
+      "sha256": "7c75213eaa9db3e0dbf6da72ef1c8c7694c12c977fd298249799fca5703e4743",
+      "size": 2508
+    },
+    {
+      "path": "plugin/skills/wsh-seo-structure-architect/seo-meta-optimizer.md",
+      "sha256": "9a16f7aa577d0eeeb90a2997f1efb2d0c4a8788439d8a0b1c057b92199a629f4",
+      "size": 2465
+    },
+    {
+      "path": "plugin/skills/wsh-seo-structure-architect/seo-snippet-hunter.md",
+      "sha256": "0aa88cca2720da036d1741f346ddfc01aff5cb2d49492faba1a0181b22c5df9e",
+      "size": 2737
+    },
+    {
+      "path": "plugin/skills/wsh-seo-structure-architect/seo-structure-architect.md",
+      "sha256": "eddfe249aee075a904ccf07d2db182cc58664da641f7f7b9f4ef4f17a0b1b4ef",
+      "size": 2664
+    },
+    {
+      "path": "plugin/skills/wsh-signed-audit-trails-recipe/SKILL.md",
+      "sha256": "18d7336eaf1a59c2f978929e9aa19592f109ff23ba64626327c609f054943478",
+      "size": 3972
+    },
+    {
+      "path": "plugin/skills/wsh-stride-analysis-patterns/SKILL.md",
+      "sha256": "e44884961755fa443c115e17a1617cc9e755409a5701357242bace72c239d23e",
+      "size": 3290
+    },
+    {
+      "path": "plugin/skills/wsh-stride-analysis-patterns/references/details.md",
+      "sha256": "4770e576152c504076048960f0600c425d741daf877f25277861b85d365b1ffe",
+      "size": 18763
+    },
+    {
+      "path": "plugin/skills/wsh-tailwind-design-system/SKILL.md",
+      "sha256": "4090508cbe1b2adee920750e51e361840e932c84dd9d1dcad789eb244ae8aa2a",
+      "size": 5804
+    },
+    {
+      "path": "plugin/skills/wsh-tailwind-design-system/references/advanced-patterns.md",
+      "sha256": "e63f284659e6553336054049aa2e3ffcc6d51be44f7c5fd97142912c0ae23a41",
+      "size": 8372
+    },
+    {
+      "path": "plugin/skills/wsh-tailwind-design-system/references/details.md",
+      "sha256": "fcfa18cd03612ba5decfb64ebf0725292f6ca360b6fe6b5c5fe1a6b229079747",
+      "size": 10943
+    },
+    {
+      "path": "plugin/skills/wsh-threat-mitigation-mapping/SKILL.md",
+      "sha256": "1a3cfdc5b324b0f751b0095f3fbceae78c735d767a9c7613bc4fbf20ee0240e9",
+      "size": 3958
+    },
+    {
+      "path": "plugin/skills/wsh-threat-mitigation-mapping/references/details.md",
+      "sha256": "bc9c3ae703925fb6444b4c7d007c0e414b046f985d40786698d258ef2ae101c1",
+      "size": 23845
+    },
+    {
+      "path": "plugin/skills/wsh-typescript-advanced-types/SKILL.md",
+      "sha256": "035d0658ba5b5d7d867c481c49b72d9b9bd78b0c455a1f6c2175cd200f9c8614",
+      "size": 8690
+    },
+    {
+      "path": "plugin/skills/wsh-typescript-advanced-types/references/details.md",
+      "sha256": "abb6bd757f5957b9ae2bf97d4c5b5735a6b8df0ebd1e987b4b476e34dbdbfd4c",
+      "size": 9291
+    },
+    {
+      "path": "plugin/skills/wsh-wcag-audit-patterns/SKILL.md",
+      "sha256": "7aa2abaeaca275b4e0788630fe8791a19d25683dc01565d7f7665d46147ff91f",
+      "size": 3221
+    },
+    {
+      "path": "plugin/skills/wsh-wcag-audit-patterns/references/details.md",
+      "sha256": "388e604aab4312a6743e6c864152ce68797376635e4e24f242b792aeee51f325",
+      "size": 10236
+    },
+    {
+      "path": "plugin/src/cli.js",
+      "sha256": "772fb200f02f67b2702120b9ec640532f55e0af5dc3141d7bce5b5875892c977",
+      "size": 493605
+    },
+    {
+      "path": "plugin/src/package.json",
+      "sha256": "1239d4d885dcad42201a27ed9324f8f0f760b78700d8db9ced39a511cffe7eae",
+      "size": 18
+    },
+    {
+      "path": "plugin/vendor/manifest.yaml",
+      "sha256": "1a21c21f17799f519c7139ce95a748ab4d3e80881e75138c1069d4f594158cdd",
+      "size": 14226
+    },
+    {
+      "path": "profiles/muster-builder.toml",
+      "sha256": "02e8877614bacb0928cc04c8f17f3bc3cadd12ca0bda5c59ff3532808b2cce88",
+      "size": 2026
+    },
+    {
+      "path": "profiles/muster-improver.toml",
+      "sha256": "54505d914a8e0214cba4e72baa5897f3e7e32ecc7ab033e73234fa3798a87bfe",
+      "size": 3691
+    },
+    {
+      "path": "profiles/muster-investigator.toml",
+      "sha256": "717650d7a406944f2c9c74f2f23e1603f02dac07c2dd1ee5fb6dc556c468c323",
+      "size": 1743
+    },
+    {
+      "path": "profiles/muster-reviewer.toml",
+      "sha256": "7b81c09534feb396b3dbeeb3e6af3b6d5865519a78edeb5a1b23f4efb4b7df25",
+      "size": 1686
+    },
+    {
+      "path": "profiles/muster-runner.toml",
+      "sha256": "ac4fb08120a9dd010b1eeb576518651ace952bccb0a4f975cf58b8a4d00e39e8",
+      "size": 6114
+    },
+    {
+      "path": "profiles/muster-strategist.toml",
+      "sha256": "cec8545e5848d0a37ab66e3dee40a8e0ea8bc82e1a019844cafabb9d188f4ee7",
+      "size": 2213
+    },
+    {
+      "path": "profiles/muster-surgeon.toml",
+      "sha256": "0110b5e0903650b0bb7442d8e38491256a33d0268b85325b69879f483a1d778e",
+      "size": 2030
+    },
+    {
+      "path": "profiles/wsh-api-documenter.toml",
+      "sha256": "c6eb84c20f9ab93936408802e97c03e9e14b8d7d37677eec6be2c1bc54260d6f",
+      "size": 7790
+    },
+    {
+      "path": "profiles/wsh-backend-architect.toml",
+      "sha256": "90001870d25148129840246d0bfa2e511230f3b88ff62cc4af0a381aca154f4a",
+      "size": 18700
+    },
+    {
+      "path": "profiles/wsh-business-analyst.toml",
+      "sha256": "f5bf3105c2f8e7a5a7166376c1c42afbe824681df49e29966799153c09cf74d5",
+      "size": 7629
+    },
+    {
+      "path": "profiles/wsh-cloud-architect.toml",
+      "sha256": "389537b89d2fd495273d3c31e80d5307cb14a30c9abe9b6b287d2131ee89a123",
+      "size": 8081
+    },
+    {
+      "path": "profiles/wsh-code-reviewer.toml",
+      "sha256": "d260a18bb55408e75013bd77815ee6926a7e6ec5ad73f9c65fc63f438809f5e1",
+      "size": 8759
+    },
+    {
+      "path": "profiles/wsh-content-marketer.toml",
+      "sha256": "d42b9c427850b924489485685d46e7bdff7eeed79ea4efd98db2bad7fd93a947",
+      "size": 8544
+    },
+    {
+      "path": "profiles/wsh-customer-support.toml",
+      "sha256": "dd92c676be65b9a64302010974425428d8e3dd08d9373cca34b6580af52573be",
+      "size": 8677
+    },
+    {
+      "path": "profiles/wsh-data-engineer.toml",
+      "sha256": "e51d445590fed40d03adb82c820f18b20d5964e4d2d5e94c79a7ecf21c00520e",
+      "size": 11677
+    },
+    {
+      "path": "profiles/wsh-data-scientist.toml",
+      "sha256": "f0d97aa890df64b5458955814c4b32d9b933186b1ebecdc6d3a7362d9c59a168",
+      "size": 10356
+    },
+    {
+      "path": "profiles/wsh-database-optimizer.toml",
+      "sha256": "8db3bddc76b5757a2cf32382559ce0a42f37218daf7e571c60312e702006bf0f",
+      "size": 10379
+    },
+    {
+      "path": "profiles/wsh-debugger.toml",
+      "sha256": "248d87435a05f72443f165fc9f431881f9b42f9d5e7c8931e23eeb38a3c403bf",
+      "size": 1174
+    },
+    {
+      "path": "profiles/wsh-devops-troubleshooter.toml",
+      "sha256": "777d795742d8b494948d7b42acacd5092fda0220fa0409d9b18d38b0691c6269",
+      "size": 9859
+    },
+    {
+      "path": "profiles/wsh-docs-architect.toml",
+      "sha256": "37c8d6b83f5ca15dea5525deea4de353077bace95a086662414e98861d99fb5c",
+      "size": 4125
+    },
+    {
+      "path": "profiles/wsh-frontend-developer.toml",
+      "sha256": "dc69732d11fd5abd29ccf4e00868375f4442cbecb315ab4b9fde8ccb1f3e8fe9",
+      "size": 7132
+    },
+    {
+      "path": "profiles/wsh-legacy-modernizer.toml",
+      "sha256": "8fe4b8d295eaf6bddf8793f2395a04c686d3b1aef23c6e9cfbaaa4d197f77a8b",
+      "size": 1670
+    },
+    {
+      "path": "profiles/wsh-ml-engineer.toml",
+      "sha256": "3d1b27871132937ac29cbcdae898a137537fd1c4d5a1a1404539b3f11a1cc2ec",
+      "size": 9288
+    },
+    {
+      "path": "profiles/wsh-prompt-engineer.toml",
+      "sha256": "757543d7abeccf30ba999c6ccb576b676c579005f13645cde951e216fdc58603",
+      "size": 11524
+    },
+    {
+      "path": "profiles/wsh-security-auditor.toml",
+      "sha256": "aba2a5ab23f84c477698f3d8f74b905a54fdb3d8d07ef71e9f14af33735714bd",
+      "size": 2474
+    },
+    {
+      "path": "profiles/wsh-test-automator.toml",
+      "sha256": "a85ceaa3ae6b6136ff58112b66ef3e746b9f3d3e79aff58fd0c37bf56f6a5784",
+      "size": 2527
+    },
+    {
+      "path": "profiles/wsh-tutorial-engineer.toml",
+      "sha256": "534d04fed203c1c7eea6d85fb76d581bdc410448a12d084665b1c8e34a387808",
+      "size": 4805
+    }
+  ],
+  "generation": "5738ff8f4d45ace36acf8203b6d533bd61acd038da98961e588c15d50cfaff7d"
+}

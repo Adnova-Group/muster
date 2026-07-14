@@ -43,12 +43,16 @@ for (const family of ["superpowers", "wshobson-agents"]) {
 const profiles = await files(profilesRoot);
 if (profiles.filter(n => n.endsWith(".toml")).length !== CODEX_COUNTS.agents) fail("generated agent profile count is wrong");
 for (const [id, config] of Object.entries(mapping.agents)) {
+  const expected = CODEX_MODEL_POLICY[config.tier];
+  if (!expected) fail(`${id} has an unknown model tier`);
+  if (config.reasoning !== undefined && !["medium", "high", "xhigh", "max"].includes(config.reasoning)) fail(`${id} has an invalid reasoning override`);
+  if (config.readOnly !== undefined && typeof config.readOnly !== "boolean") fail(`${id} has an invalid read/write policy`);
   const name = `${id}.toml`;
   if (!profiles.includes(name)) fail(`missing generated profile ${name}`);
   const text = await readFile(join(profilesRoot, name), "utf8");
   if (!/^name\s*=/m.test(text) || !/^description\s*=/m.test(text) || !/^developer_instructions\s*=/m.test(text)) fail(`${name} is not a custom-agent profile`);
-  const expected = CODEX_MODEL_POLICY[config.tier];
-  if (!text.includes(`model = ${JSON.stringify(expected.model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(expected.reasoning)}`)) fail(`${name} does not match its model policy`);
+  const reasoning = config.reasoning ?? expected.reasoning;
+  if (!text.includes(`model = ${JSON.stringify(expected.model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(reasoning)}`)) fail(`${name} does not match its model policy`);
   if (!text.includes(`sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`)) fail(`${name} does not match its read/write policy`);
 }
 const skills = new Set(await dirs(join(plugin, "skills")));

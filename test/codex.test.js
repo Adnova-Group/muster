@@ -15,6 +15,16 @@ const root = new URL("../", import.meta.url);
 const repoRoot = new URL("../", import.meta.url).pathname;
 const response = stdout => async () => ({ stdout });
 const execFile = promisify(execFileCb);
+const canonicalMusterMarketplace = {
+  name: "muster",
+  root: "/tmp/codex-muster-marketplace",
+  marketplaceSource: { sourceType: "git", source: "https://github.com/Adnova-Group/muster.git" }
+};
+const localMusterMarketplace = {
+  name: "muster",
+  root: repoRoot,
+  marketplaceSource: { sourceType: "local", source: repoRoot }
+};
 
 function packagedMcpTools() {
   return new Promise((resolve, reject) => {
@@ -298,8 +308,9 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
   await writeFile(join(cwd, ".codex", "hooks.json"), JSON.stringify(userHook, null, 2));
   const execFile = async (_bin, args) => {
     if (args[0] === "--version") return { stdout: "codex-cli test" };
-    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [{ name: "muster" }] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [canonicalMusterMarketplace] }) };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [{ pluginId: "muster@muster", installed: true }] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "refreshed" };
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
   const result = await runCodexInstall({ cwd, home, repoRoot, execFile });
@@ -422,13 +433,86 @@ test("Codex install refreshes an older installed plugin version", async () => {
   const execFile = async (_bin, args) => {
     calls.push(args.join(" "));
     if (args[0] === "--version") return { stdout: "codex-cli test" };
-    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [{ name: "muster" }] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [canonicalMusterMarketplace] }) };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [{ pluginId: "muster@muster", installed: true, version: "0.4.9" }] }) };
     if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "updated" };
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
   await runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile });
   assert.ok(calls.includes("plugin add muster@muster"));
+});
+
+test("Codex install refreshes an already-installed same-version local plugin", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-same-version-")), calls = [];
+  const plugin = JSON.parse(await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", ".codex-plugin", "plugin.json"), "utf8"));
+  const execFile = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [localMusterMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [{ pluginId: "muster@muster", installed: true, enabled: true, version: plugin.version }] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "refreshed" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile });
+  assert.ok(calls.includes("plugin add muster@muster"));
+});
+
+test("Codex install accepts the canonical GitHub marketplace provenance", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-canonical-")), calls = [];
+  const execFile = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [canonicalMusterMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "refreshed" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile });
+  assert.ok(calls.includes("plugin add muster@muster"));
+});
+
+test("Codex install accepts the exact local marketplace across WSL drive-path casing", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-local-")), calls = [];
+  const localRoot = repoRoot
+    .replace(/^\/mnt\/([a-z])\//i, (_match, drive) => `/mnt/${drive.toUpperCase()}/`)
+    .replace(/\/users\//i, "/USERS/");
+  const localMarketplace = { name: "muster", root: localRoot, marketplaceSource: { sourceType: "local", source: localRoot } };
+  const execFile = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [localMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "refreshed" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile });
+  assert.ok(calls.includes("plugin add muster@muster"));
+});
+
+test("Codex install rejects an attacker-controlled muster marketplace without mutation", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-collision-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), calls = [];
+  const attackerMarketplace = {
+    name: "muster",
+    root: join(tmp, "attacker"),
+    marketplaceSource: { sourceType: "local", source: join(tmp, "attacker") }
+  };
+  const execFile = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [attackerMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "hijacked" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await assert.rejects(
+    () => runCodexInstall({ cwd, home, repoRoot, execFile }),
+    /Codex marketplace conflict.*codex plugin marketplace remove muster/
+  );
+  assert.equal(calls.includes("plugin list --available --json"), false);
+  assert.equal(calls.includes("plugin add muster@muster"), false);
+  await assert.rejects(() => readFile(join(cwd, ".codex", "agents", ".muster-managed.json"), "utf8"));
+  await assert.rejects(() => readFile(join(cwd, ".codex", "muster", ".muster-managed.json"), "utf8"));
 });
 
 test("Codex install rolls profiles and marketplace back when plugin registration fails", async () => {

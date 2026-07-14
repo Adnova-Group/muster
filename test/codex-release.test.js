@@ -390,7 +390,6 @@ test("concurrent pointer readers observe only exact old or new coherent snapshot
   for (let i = 0; i < 100; i++) {
     if (i === 50) releaseSwap();
     const selected = await resolveCodexRelease(root);
-    assert.equal(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"), stableMarketplace);
     const [runtime, profile] = await Promise.all([
       readFile(join(selected.pluginRoot, "runtime", "muster.mjs"), "utf8"),
       readFile(join(selected.profilesRoot, "muster-builder.toml"), "utf8")
@@ -401,6 +400,9 @@ test("concurrent pointer readers observe only exact old or new coherent snapshot
     snapshots.add(`${selected.generation}:${pluginMarker}:${profileMarker}`);
   }
   const next = await publishing;
+  const finalMarketplace = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"));
+  assert.equal(finalMarketplace.plugins[0].source.path, `./.agents/plugins/releases/${next.generation}/plugin`);
+  assert.notEqual(JSON.stringify(finalMarketplace), stableMarketplace);
   assert.deepEqual(snapshots, new Set([
     `${oldRelease.generation}:old:old`,
     `${next.generation}:new:new`

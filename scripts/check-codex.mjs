@@ -17,8 +17,9 @@ const json = async (path) => JSON.parse(await readFile(path, "utf8"));
 const [pkg, marketplace, manifest, mapping, upstreams, assetManifest] = await Promise.all([
   json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "codex/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
 ]);
+const advertisedGeneration = marketplace.plugins?.[0]?.source?.path?.match(/^\.\/\.agents\/plugins\/releases\/([a-f0-9]{64})\/plugin$/)?.[1];
 if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster"
-  || marketplace.plugins[0].source?.path !== "./.agents/plugins/bootstrap/muster"
+  || advertisedGeneration !== selected.generation
   || !/^[a-f0-9]{64}$/.test(marketplace.musterBootstrap?.digest || "")
   || !/^[a-f0-9]{64}$/.test(marketplace.musterBootstrap?.initialGeneration || "")) fail("marketplace does not expose the immutable Muster bootstrap contract");
 const selectionNames = (await readdir(join(root, ".agents", "plugins", "selections"))).filter(name => /^\d{12}-[a-f0-9]{64}\.json$/.test(name));

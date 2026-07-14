@@ -14,6 +14,7 @@ const FORMAT = 1;
 const GENERATION = /^[a-f0-9]{64}$/;
 const SELECTION = /^(\d{12})-([a-f0-9]{64})\.json$/;
 const STABLE_BOOTSTRAP_PATH = "./.agents/plugins/bootstrap/muster";
+const RELEASE_PLUGIN_PATH = /^\.\/\.agents\/plugins\/releases\/([a-f0-9]{64})\/plugin$/;
 const LEASE = /^(\d+)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/;
 const sha256 = value => createHash("sha256").update(value).digest("hex");
 const slash = value => value.replaceAll("\\", "/");
@@ -461,7 +462,8 @@ export async function resolveCodexRelease(repoRoot, { retries = 4, lease } = {})
   }
   const contract = pointer?.musterBootstrap;
   const pluginPath = pointer?.plugins?.find(item => item?.name === "muster")?.source?.path;
-  if (pointer?.name !== "muster" || pluginPath !== STABLE_BOOTSTRAP_PATH || contract?.format !== FORMAT
+  const advertisedGeneration = pluginPath?.match(RELEASE_PLUGIN_PATH)?.[1] || null;
+  if (pointer?.name !== "muster" || (pluginPath !== STABLE_BOOTSTRAP_PATH && !advertisedGeneration) || contract?.format !== FORMAT
     || !GENERATION.test(contract?.digest || "") || !GENERATION.test(contract?.initialGeneration || "")) {
     throw new Error("Codex marketplace is missing a valid immutable bootstrap contract");
   }
@@ -475,7 +477,12 @@ export async function resolveCodexRelease(repoRoot, { retries = 4, lease } = {})
       await pause(5 * (attempt + 1));
     }
   }
-  for (const name of names.filter(item => SELECTION.test(item)).sort().reverse()) {
+  const candidates = names.filter(item => SELECTION.test(item)).sort().reverse();
+  if (advertisedGeneration) candidates.sort((left, right) => {
+    const leftAdvertised = left.endsWith(`-${advertisedGeneration}.json`), rightAdvertised = right.endsWith(`-${advertisedGeneration}.json`);
+    return leftAdvertised === rightAdvertised ? right.localeCompare(left) : leftAdvertised ? -1 : 1;
+  });
+  for (const name of candidates) {
     try {
       const match = name.match(SELECTION);
       const recordPath = join(repoRoot, ".agents", "plugins", "selections", name);

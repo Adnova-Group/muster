@@ -1,4 +1,5 @@
-import { lstat, mkdir, open, readFile, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { link, lstat, mkdir, open, readFile, realpath, rename, rmdir, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
@@ -117,14 +118,16 @@ function parseScopeLock(text, path) {
 }
 
 async function readScopeLock(path) {
-  const stat = await regularFileState(path);
-  if (!stat) return null;
-  let text;
-  try { text = await readFile(path, "utf8"); }
-  catch (error) { if (error.code === "ENOENT") return null; throw error; }
-  const current = await regularFileState(path);
-  if (!current || current.dev !== stat.dev || current.ino !== stat.ino) return null;
-  return { stat: current, lock: parseScopeLock(text, path) };
+  const before = await regularFileState(path);
+  if (!before) return null;
+  let handle;
+  try {
+    handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.dev !== before.dev || stat.ino !== before.ino) return null;
+    return { stat, lock: parseScopeLock(await handle.readFile("utf8"), path) };
+  } catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  finally { if (handle) await handle.close().catch(() => {}); }
 }
 
 function processOwnsScopeLock(pid) {
@@ -143,7 +146,20 @@ async function releaseScopeLock(path, token) {
   await unlink(path);
 }
 
-async function recoverStaleScopeLock(path) {
+const sameScopeLockInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const sameScopeLockOwner = (left, right) => left.token === right.token && left.pid === right.pid
+  && left.createdAt === right.createdAt && left.owner === right.owner && left.format === right.format;
+
+async function restoreQuarantinedScopeLock(path, quarantine, stat) {
+  try { await link(quarantine, path); }
+  catch (error) { if (error.code === "EEXIST") return false; throw error; }
+  const restored = await lstat(path);
+  if (!sameScopeLockInode(restored, stat)) throw new Error(`Codex managed-scope lock restore changed identity: ${path}`);
+  await unlink(quarantine);
+  return true;
+}
+
+async function recoverStaleScopeLock(path, { afterQuarantine = async () => {} } = {}) {
   const recoveryPath = `${path}.recover`, token = randomUUID();
   try {
     await writeExclusiveSafe(recoveryPath, scopeLockText(token));
@@ -155,18 +171,39 @@ async function recoverStaleScopeLock(path) {
   try {
     const state = await readScopeLock(path);
     if (!state || !staleScopeLock(state)) return false;
-    const rechecked = await readScopeLock(path);
-    if (!rechecked || rechecked.lock.token !== state.lock.token || rechecked.stat.dev !== state.stat.dev || rechecked.stat.ino !== state.stat.ino) return false;
-    await unlink(path);
+    const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID()}`;
+    try { await rename(path, quarantine); }
+    catch (error) { if (error.code === "ENOENT") return true; throw error; }
+    try {
+      await afterQuarantine({ path, quarantine });
+      const quarantined = await readScopeLock(quarantine);
+      if (!quarantined || !sameScopeLockInode(quarantined.stat, state.stat)
+        || !sameScopeLockOwner(quarantined.lock, state.lock) || !staleScopeLock(quarantined)) {
+        if (quarantined) await restoreQuarantinedScopeLock(path, quarantine, quarantined.stat);
+        return false;
+      }
+      const final = await readScopeLock(quarantine);
+      if (!final || !sameScopeLockInode(final.stat, quarantined.stat) || !sameScopeLockOwner(final.lock, quarantined.lock)) {
+        if (final) await restoreQuarantinedScopeLock(path, quarantine, final.stat);
+        return false;
+      }
+      await unlink(quarantine);
+    } catch (error) {
+      try {
+        const stranded = await readScopeLock(quarantine);
+        if (stranded) await restoreQuarantinedScopeLock(path, quarantine, stranded.stat);
+      } catch { /* fail closed: never unlink an ambiguous quarantined owner */ }
+      throw error;
+    }
     return true;
   } finally {
     await releaseScopeLock(recoveryPath, token);
   }
 }
 
-async function acquireScopeLock(home) {
+async function acquireScopeLock(home, { maxAttempts = 1_000, afterQuarantine = async () => {} } = {}) {
   const path = scopeRegistryLockPath(home), token = randomUUID();
-  for (let attempt = 0; attempt < 1_000; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       await writeExclusiveSafe(path, scopeLockText(token));
       return { path, token };
@@ -174,14 +211,14 @@ async function acquireScopeLock(home) {
       if (error.code !== "EEXIST") throw error;
     }
     const state = await readScopeLock(path);
-    if (!state || staleScopeLock(state) && await recoverStaleScopeLock(path)) continue;
+    if (!state || staleScopeLock(state) && await recoverStaleScopeLock(path, { afterQuarantine })) continue;
     await pause(10);
   }
   throw new Error(`Codex managed-scope lock did not become available: ${path}`);
 }
 
-async function withScopeRegistryTransaction(home, action) {
-  const held = await acquireScopeLock(home);
+async function withScopeRegistryTransaction(home, action, lockOptions) {
+  const held = await acquireScopeLock(home, lockOptions);
   try { return await action(await readScopeRegistry(home)); }
   finally { await releaseScopeLock(held.path, held.token); }
 }
@@ -410,7 +447,7 @@ async function registerPlugin(execFile, dryRun, repoRoot) {
   }
 }
 
-export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault } = {}) {
+export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
@@ -490,7 +527,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         await restoreFilesystem(originals, changed);
         throw error;
       }
-    });
+    }, scopeLockOptions);
   } else {
     actions = present ? await registerPlugin(execFile, true, distributionRoot) : [];
   }

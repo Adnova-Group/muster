@@ -783,6 +783,68 @@ test("Codex recovers a valid stale managed-scope lock and rejects unsafe locks",
   await assert.rejects(() => readFile(join(unsafeCwd, ".codex", "agents", ".muster-managed.json"), "utf8"));
 });
 
+test("Codex managed-scope stale-lock reclaim never deletes a replacement owner", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-lock-race-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+  const lockPath = join(registryDir, "install-scopes.json.lock"), absent = async () => { throw new Error("not found"); };
+  await mkdir(registryDir, { recursive: true });
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  await writeFile(lockPath, JSON.stringify({ format: 1, owner: "muster", pid: 2_147_483_647, token: "stale", createdAt: old.getTime() }) + "\n");
+  await utimes(lockPath, old, old);
+  const replacement = { format: 1, owner: "muster", pid: process.pid, token: "fresh-owner", createdAt: Date.now() };
+  let interleaved = false;
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot, execFile: absent,
+    scopeLockOptions: {
+      maxAttempts: 1,
+      afterQuarantine: async () => {
+        interleaved = true;
+        await writeFile(lockPath, JSON.stringify(replacement) + "\n", { flag: "wx" });
+      }
+    }
+  }), /lock did not become available/);
+  assert.equal(interleaved, true, "test did not interleave a replacement after quarantine");
+  assert.equal(JSON.parse(await readFile(lockPath, "utf8")).token, replacement.token);
+});
+
+test("Codex hook stale-lock reclaim never deletes replacement capacity or cleanup owners", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-lock-race-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const hookUrl = new URL("../codex/hooks/muster-hook.mjs", import.meta.url).href;
+  const script = `
+    import { writeFileSync, readFileSync, utimesSync } from "node:fs";
+    import { join } from "node:path";
+    const hook = await import(${JSON.stringify(hookUrl)});
+    if (typeof hook.reclaimStaleLock !== "function") throw new Error("hook lock reclaimer is not exported");
+    const dir = process.argv[1], old = Date.now() - 10 * 60 * 1000, results = [];
+    for (const name of [".capacity-lock", ".cleanup-lock"]) {
+      const lockPath = join(dir, name);
+      writeFileSync(lockPath, JSON.stringify({ format: 1, pid: 99999999, createdAt: old, token: "stale" }) + "\\n");
+      utimesSync(lockPath, new Date(old), new Date(old));
+      const replacement = { format: 1, pid: process.pid, createdAt: Date.now(), token: \`fresh-\${name}\` };
+      const reclaimed = hook.reclaimStaleLock(lockPath, Date.now(), {
+        afterQuarantine: () => writeFileSync(lockPath, JSON.stringify(replacement) + "\\n", { flag: "wx" })
+      });
+      results.push({ reclaimed, token: JSON.parse(readFileSync(lockPath, "utf8")).token, expected: replacement.token });
+    }
+    process.stdout.write(JSON.stringify(results));
+  `;
+  const stdout = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", script, tmp], { stdio: ["pipe", "pipe", "pipe"] });
+    let output = "", error = "";
+    child.stdout.setEncoding("utf8"); child.stdout.on("data", chunk => { output += chunk; });
+    child.stderr.setEncoding("utf8"); child.stderr.on("data", chunk => { error += chunk; });
+    child.on("error", reject);
+    child.on("exit", code => code === 0 ? resolve(output) : reject(new Error(error || `hook race child exited ${code}`)));
+    child.stdin.end();
+  });
+  assert.deepEqual(JSON.parse(stdout), [
+    { reclaimed: true, token: "fresh-.capacity-lock", expected: "fresh-.capacity-lock" },
+    { reclaimed: true, token: "fresh-.cleanup-lock", expected: "fresh-.cleanup-lock" }
+  ]);
+});
+
 test("Codex ownership dry-runs never create registry locks or entries", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-dry-run-"));
   const home = join(tmp, "home"), cwd = join(tmp, "project"), absent = async () => { throw new Error("not found"); };

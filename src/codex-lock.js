@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { lstat, open, readFile, unlink, utimes } from "node:fs/promises";
+import { link, lstat, open, readFile, rename, unlink, utimes } from "node:fs/promises";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -38,13 +38,24 @@ async function readLock(path, maxBytes = 16 * 1024) {
   } finally { if (handle) await handle.close().catch(() => {}); }
 }
 
-async function reclaimStale(path, { staleMs, maxStaleMs }) {
-  let current;
-  try { current = await readLock(path); }
+const sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const sameLockOwner = (left, right) => typeof left?.token === "string" && left.token.length > 0
+  && left.token === right?.token && left.pid === right?.pid
+  && left.processIdentity === right?.processIdentity && left.createdAt === right?.createdAt;
+
+async function restoreQuarantinedLock(path, quarantine, stat) {
+  try { await link(quarantine, path); }
   catch (error) {
-    if (error.code === "ENOENT") return true;
+    if (error.code === "EEXIST") return false;
     throw error;
   }
+  const restored = await lstat(path);
+  if (!sameInode(restored, stat)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
+  await unlink(quarantine);
+  return true;
+}
+
+async function lockIsStale(current, { staleMs, maxStaleMs }) {
   const age = Date.now() - current.stat.mtimeMs;
   if (age < staleMs) return false;
   const pid = Number(current.record?.pid);
@@ -54,17 +65,50 @@ async function reclaimStale(path, { staleMs, maxStaleMs }) {
   const sameProcess = alive && recordedIdentity && actualIdentity && recordedIdentity === actualIdentity;
   if (sameProcess && age < maxStaleMs) return false;
   if (alive && (!recordedIdentity || !actualIdentity) && age < maxStaleMs) return false;
+  return true;
+}
 
-  const after = await lstat(path);
-  if (after.dev !== current.stat.dev || after.ino !== current.stat.ino || after.size !== current.stat.size || after.mtimeMs !== current.stat.mtimeMs) return false;
-  await unlink(path);
+export async function reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine = async () => {} }) {
+  let current;
+  try { current = await readLock(path); }
+  catch (error) {
+    if (error.code === "ENOENT") return true;
+    throw error;
+  }
+  if (!sameLockOwner(current.record, current.record) || !await lockIsStale(current, { staleMs, maxStaleMs })) return false;
+
+  const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID()}`;
+  try { await rename(path, quarantine); }
+  catch (error) { if (error.code === "ENOENT") return true; throw error; }
+  try {
+    await afterQuarantine({ path, quarantine });
+    const quarantined = await readLock(quarantine);
+    if (!sameInode(quarantined.stat, current.stat) || !sameLockOwner(quarantined.record, current.record)
+      || !await lockIsStale(quarantined, { staleMs, maxStaleMs })) {
+      await restoreQuarantinedLock(path, quarantine, quarantined.stat);
+      return false;
+    }
+    const final = await readLock(quarantine);
+    if (!sameInode(final.stat, quarantined.stat) || !sameLockOwner(final.record, quarantined.record)) {
+      await restoreQuarantinedLock(path, quarantine, final.stat);
+      return false;
+    }
+    await unlink(quarantine);
+  } catch (error) {
+    try {
+      const stranded = await readLock(quarantine);
+      await restoreQuarantinedLock(path, quarantine, stranded.stat);
+    } catch { /* fail closed: never unlink an ambiguous quarantined owner */ }
+    throw error;
+  }
   return true;
 }
 
 export async function withCodexFileLock(path, callback, {
   staleMs = 60_000,
   maxStaleMs = 15 * 60_000,
-  timeoutMs = 30_000
+  timeoutMs = 30_000,
+  afterQuarantine = async () => {}
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
@@ -81,7 +125,7 @@ export async function withCodexFileLock(path, callback, {
     } catch (error) {
       if (handle) { await handle.close().catch(() => {}); handle = null; }
       if (error.code !== "EEXIST") throw error;
-      if (await reclaimStale(path, { staleMs, maxStaleMs })) continue;
+      if (await reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine })) continue;
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
       await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
     }

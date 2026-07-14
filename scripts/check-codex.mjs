@@ -42,17 +42,24 @@ for (const family of ["superpowers", "wshobson-agents"]) {
 }
 const profiles = await files(profilesRoot);
 if (profiles.filter(n => n.endsWith(".toml")).length !== CODEX_COUNTS.agents) fail("generated agent profile count is wrong");
+const legacyProfiles = await files(join(root, "codex", "agents")).catch(error => {
+  if (error.code === "ENOENT") return [];
+  throw error;
+});
+if (legacyProfiles.some(name => name.endsWith(".toml"))) fail("deprecated static codex/agents profiles must not coexist with generated release profiles");
 for (const [id, config] of Object.entries(mapping.agents)) {
   const expected = CODEX_MODEL_POLICY[config.tier];
   if (!expected) fail(`${id} has an unknown model tier`);
   if (config.reasoning !== undefined && !["medium", "high", "xhigh", "max"].includes(config.reasoning)) fail(`${id} has an invalid reasoning override`);
+  if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) fail(`${id} has an invalid model override`);
   if (config.readOnly !== undefined && typeof config.readOnly !== "boolean") fail(`${id} has an invalid read/write policy`);
   const name = `${id}.toml`;
   if (!profiles.includes(name)) fail(`missing generated profile ${name}`);
   const text = await readFile(join(profilesRoot, name), "utf8");
   if (!/^name\s*=/m.test(text) || !/^description\s*=/m.test(text) || !/^developer_instructions\s*=/m.test(text)) fail(`${name} is not a custom-agent profile`);
   const reasoning = config.reasoning ?? expected.reasoning;
-  if (!text.includes(`model = ${JSON.stringify(expected.model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(reasoning)}`)) fail(`${name} does not match its model policy`);
+  const model = config.model ?? expected.model;
+  if (!text.includes(`model = ${JSON.stringify(model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(reasoning)}`)) fail(`${name} does not match its model policy`);
   if (!text.includes(`sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`)) fail(`${name} does not match its read/write policy`);
 }
 const skills = new Set(await dirs(join(plugin, "skills")));

@@ -2,18 +2,14 @@ import { build } from "esbuild";
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CODEX_MODEL_POLICY } from "../src/codex.js";
 import { assertRegularFile, assertRegularTree, prepareCodexBootstrap, publishCodexRelease } from "../src/codex-release.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const pluginParent = join(root, ".agents", "plugins");
 let stagingRoot, plugin, runtime, profiles, modeDir, pkg, mapping;
 
-const policy = {
-  haiku: { model: "gpt-5.6-luna", reasoning: "high" },
-  sonnet: { model: "gpt-5.6-terra", reasoning: "high" },
-  opus: { model: "gpt-5.6-sol", reasoning: "high" },
-  fable: { model: "gpt-5.6-sol", reasoning: "max" }
-};
+const policy = CODEX_MODEL_POLICY;
 
 const modes = {
   "muster-plan": { command: "plan", purpose: "plan one outcome, assemble and validate a crew manifest, then stop for approval" },
@@ -218,7 +214,10 @@ function profileToml(id, source, config) {
   if (config.reasoning !== undefined && !["medium", "high", "xhigh", "max"].includes(config.reasoning)) {
     throw new Error(`invalid Codex profile reasoning override for ${id}: ${config.reasoning}`);
   }
-  const model = { ...defaultModel, reasoning: config.reasoning ?? defaultModel.reasoning };
+  if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) {
+    throw new Error(`invalid Codex profile model override for ${id}: ${config.model}`);
+  }
+  const model = { model: config.model ?? defaultModel.model, reasoning: config.reasoning ?? defaultModel.reasoning };
   const isolation = config.readOnly
     ? "Remain read-only. Do not edit files or run commands that mutate the workspace."
     : "Before writing, verify the task is running in an isolated git worktree; do not write directly on a base branch.";

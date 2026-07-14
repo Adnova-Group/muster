@@ -88,41 +88,68 @@ function runCodexHook(payload, cwd = repoRoot, hookPath = join(repoRoot, "codex"
   });
 }
 
-test("Codex policy pins the four tier/model/reasoning combinations", () => {
+test("Codex policy preserves the conceptual Fable fallback without routine max effort", () => {
   assert.deepEqual(CODEX_MODEL_POLICY, {
     haiku: { model: "gpt-5.6-luna", reasoning: "high" },
-    sonnet: { model: "gpt-5.6-terra", reasoning: "high" },
+    sonnet: { model: "gpt-5.6-luna", reasoning: "xhigh" },
     opus: { model: "gpt-5.6-sol", reasoning: "high" },
-    fable: { model: "gpt-5.6-sol", reasoning: "max" }
+    fable: { model: "gpt-5.6-sol", reasoning: "high" }
   });
   assert.deepEqual(codexModelForTier("haiku"), CODEX_MODEL_POLICY.haiku);
+  assert.deepEqual(codexModelForTier("fable"), codexModelForTier("opus"), "Fable adapts to the user's Sol/high preference");
+  assert.ok(Object.values(CODEX_MODEL_POLICY).every(policy => policy.reasoning !== "max"), "no conceptual default uses max effort");
   assert.throws(() => codexModelForTier("unknown"), /unknown Muster model tier/);
 });
 
-test("Codex generated profiles apply manifest reasoning overrides and reviewer sandbox policy", async () => {
+test("Codex role profiles use the evidence-backed lanes and preserve sandbox policy", async () => {
   const mapping = JSON.parse(await readFile(join(repoRoot, "codex", "agents.manifest.json"), "utf8"));
   const expected = {
-    "muster-builder": { tier: "sonnet", reasoning: "high", readOnly: false },
-    "muster-investigator": { tier: "haiku", reasoning: "high", readOnly: true },
-    "wsh-code-reviewer": { tier: "sonnet", reasoning: "high", readOnly: true },
-    "wsh-security-auditor": { tier: "sonnet", reasoning: "xhigh", readOnly: true },
-    "wsh-api-documenter": { tier: "sonnet", reasoning: "medium", readOnly: false },
-    "wsh-business-analyst": { tier: "sonnet", reasoning: "medium", readOnly: false },
-    "wsh-content-marketer": { tier: "sonnet", reasoning: "medium", readOnly: false },
-    "wsh-customer-support": { tier: "sonnet", reasoning: "medium", readOnly: false },
-    "wsh-test-automator": { tier: "sonnet", reasoning: "medium", readOnly: false },
-    "wsh-tutorial-engineer": { tier: "sonnet", reasoning: "medium", readOnly: false }
+    "muster-investigator": { tier: "haiku", model: "gpt-5.6-luna", reasoning: "high", readOnly: true },
+    "muster-surgeon": { tier: "sonnet", model: "gpt-5.6-terra", reasoning: "high", readOnly: false },
+    "wsh-api-documenter": { tier: "sonnet", model: "gpt-5.6-terra", reasoning: "high", readOnly: false },
+    "wsh-tutorial-engineer": { tier: "sonnet", model: "gpt-5.6-terra", reasoning: "high", readOnly: false },
+    "muster-reviewer": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: true },
+    "wsh-code-reviewer": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: true },
+    "wsh-business-analyst": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-content-marketer": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-customer-support": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-data-scientist": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "muster-builder": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "muster-runner": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-debugger": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-devops-troubleshooter": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-frontend-developer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-legacy-modernizer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-data-engineer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-database-optimizer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-ml-engineer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-prompt-engineer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-test-automator": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "muster-improver": { tier: "fable", model: "gpt-5.6-sol", reasoning: "high", readOnly: true },
+    "muster-strategist": { tier: "fable", model: "gpt-5.6-sol", reasoning: "high", readOnly: true },
+    "wsh-backend-architect": { tier: "opus", model: "gpt-5.6-sol", reasoning: "high", readOnly: false },
+    "wsh-cloud-architect": { tier: "opus", model: "gpt-5.6-sol", reasoning: "high", readOnly: false },
+    "wsh-docs-architect": { tier: "opus", model: "gpt-5.6-sol", reasoning: "high", readOnly: false },
+    "wsh-security-auditor": { tier: "opus", model: "gpt-5.6-sol", reasoning: "high", readOnly: true }
   };
+  assert.equal(Object.keys(mapping.agents).length, Object.keys(expected).length, "all 27 Codex roles are classified");
   for (const [id, policy] of Object.entries(expected)) {
     const config = mapping.agents[id];
     assert.equal(config.tier, policy.tier, `${id} must retain its model tier`);
     assert.equal(config.reasoning ?? CODEX_MODEL_POLICY[config.tier].reasoning, policy.reasoning, `${id} reasoning policy`);
+    assert.equal(config.model ?? CODEX_MODEL_POLICY[config.tier].model, policy.model, `${id} model policy`);
     assert.equal(Boolean(config.readOnly), policy.readOnly, `${id} read-only policy`);
     const profile = await readFile(join(selectedRelease.releaseRoot, "profiles", `${id}.toml`), "utf8");
-    assert.match(profile, new RegExp(`model = ${JSON.stringify(CODEX_MODEL_POLICY[policy.tier].model)}`), `${id} model`);
+    assert.match(profile, new RegExp(`model = ${JSON.stringify(policy.model)}`), `${id} model`);
     assert.match(profile, new RegExp(`model_reasoning_effort = ${JSON.stringify(policy.reasoning)}`), `${id} reasoning`);
     assert.match(profile, new RegExp(`sandbox_mode = ${JSON.stringify(policy.readOnly ? "read-only" : "workspace-write")}`), `${id} sandbox`);
   }
+  assert.ok(Object.values(mapping.agents).every(config => (config.reasoning ?? CODEX_MODEL_POLICY[config.tier].reasoning) !== "max"), "no role uses routine max effort");
+});
+
+test("Codex validation accepts removal of the obsolete static profile files", async () => {
+  const { stdout } = await execFile("node", ["scripts/check-codex.mjs"], { cwd: repoRoot });
+  assert.match(stdout, /"ok": true/);
 });
 
 test("Codex adapter preserves shared cap and Fable fallback resolution", () => {

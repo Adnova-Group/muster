@@ -34,6 +34,25 @@ const execFile = promisify(execFileCb);
 const TEST_BOOTSTRAP_DIGEST = createHash("sha256").update(JSON.stringify(bootstrapPayload)).digest("hex");
 const publish = options => publishCodexRelease({ allowBootstrapMigration: true, bootstrapDigest: TEST_BOOTSTRAP_DIGEST, ...options });
 
+function fakeLeaseClock(start = Date.now() - 6 * 60 * 1000) {
+  let current = start, heartbeat = null;
+  const timer = { unref() {} };
+  return {
+    options: {
+      now: () => current,
+      setInterval: callback => { heartbeat = callback; return timer; },
+      clearInterval: () => { heartbeat = null; },
+      addExitListener() {},
+      removeExitListener() {}
+    },
+    async advance(milliseconds) {
+      current += milliseconds;
+      assert.equal(typeof heartbeat, "function", "lease heartbeat was not scheduled");
+      await heartbeat();
+    }
+  };
+}
+
 async function tempRepo(t) {
   const root = await mkdtemp(join(tmpdir(), "muster-codex-release-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -255,6 +274,20 @@ test("parallel source resolution writes one collision-safe generation lease", as
   assert.deepEqual(leases, [`${process.pid}.json`]);
 });
 
+test("source resolver renews a generation lease beyond five minutes and releases it explicitly", async t => {
+  const root = await tempRepo(t), clock = fakeLeaseClock();
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "source-long-g1"), packageVersion: "0.5.0" });
+  const leased = await publish({ repoRoot: root, stagedRelease: await candidate(root, "source-long-g2"), packageVersion: "0.5.0" });
+  const selected = await resolveCodexReleaseWithOptions(root, { lease: clock.options });
+  assert.equal(selected.generation, leased.generation);
+  await clock.advance(6 * 60 * 1000);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "source-long-g3"), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "source-long-g4"), packageVersion: "0.5.0" });
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), "renewed source lease did not retain its generation");
+  await selected.lease.close();
+  assert.deepEqual(await readdir(join(root, ".agents", "plugins", "leases", leased.generation)), []);
+});
+
 test("cached resolver revalidates an asset at the point of use", async t => {
   const root = await tempRepo(t);
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-point-of-use"), packageVersion: "0.5.0" });
@@ -269,6 +302,20 @@ test("parallel cached resolution writes collision-safe lease temporaries", async
   const published = await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-parallel-lease"), packageVersion: "0.5.0" });
   const selected = await Promise.all(Array.from({ length: 128 }, () => resolveCachedRelease(root)));
   assert.ok(selected.every(item => item.generation === published.generation));
+});
+
+test("cached resolver renews a generation lease beyond five minutes and releases it explicitly", async t => {
+  const root = await tempRepo(t), clock = fakeLeaseClock();
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-long-g1"), packageVersion: "0.5.0" });
+  const leased = await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-long-g2"), packageVersion: "0.5.0" });
+  const selected = await resolveCachedRelease(root, { lease: clock.options });
+  assert.equal(selected.generation, leased.generation);
+  await clock.advance(6 * 60 * 1000);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-long-g3"), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-long-g4"), packageVersion: "0.5.0" });
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), "renewed cached lease did not retain its generation");
+  await selected.lease.close();
+  assert.deepEqual(await readdir(join(root, ".agents", "plugins", "leases", leased.generation)), []);
 });
 
 test("divergent publishers serialize selection and pruning as one transaction", async t => {

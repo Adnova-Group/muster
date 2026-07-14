@@ -57,13 +57,27 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
   }
   await assert.rejects(execFile(process.execPath, [resolver, "skill", "../../escape"], { cwd: cache, env }), /invalid bootstrap skill id/);
   const resolverModule = await import(`${pathToFileURL(resolver).href}?parallel=${Date.now()}`);
-  const parallel = await Promise.all(Array.from({ length: 128 }, () => resolverModule.resolveCodexRelease(cache)));
+  let leaseNow = Date.now() - 6 * 60 * 1000, heartbeat;
+  const lease = {
+    now: () => leaseNow,
+    setInterval: callback => { heartbeat = callback; return { unref() {} }; },
+    clearInterval() {},
+    addExitListener() {},
+    removeExitListener() {}
+  };
+  const parallel = await Promise.all(Array.from({ length: 128 }, () => resolverModule.resolveCodexRelease(cache, { lease })));
   assert.equal(new Set(parallel.map(item => item.generation)).size, 1);
   const selectedObject = parallel[0], selectedSkill = join(selectedObject.pluginRoot, "skills", "muster", "SKILL.md");
+  assert.equal(typeof heartbeat, "function", "packed resolver did not schedule its lease heartbeat");
+  leaseNow += 6 * 60 * 1000;
+  await heartbeat();
+  const leaseRecord = JSON.parse(await readFile(join(cache, ".agents", "plugins", "leases", selectedObject.generation, `${process.pid}.json`), "utf8"));
+  assert.equal(leaseRecord.touchedAt, leaseNow, "packed resolver did not renew its lease beyond five minutes");
   const selectedSkillOriginal = await readFile(selectedSkill);
   await writeFile(selectedSkill, "ATTACKER-CONTROLLED-SKILL-AFTER-VALIDATION\n");
   await assert.rejects(resolverModule.readSelectedAsset(selectedObject, "plugin/skills/muster/SKILL.md"), /changed after release validation/);
   await writeFile(selectedSkill, selectedSkillOriginal);
+  await selectedObject.lease.close();
   const detected = JSON.parse((await execFile(process.execPath, [join(bootstrap, "muster.mjs"), "detect", cache], { cwd: cache, env })).stdout);
   assert.equal(typeof detected.greenfield, "boolean");
   const mcp = await mcpSmoke(join(bootstrap, "muster-mcp.mjs"), cache, env);

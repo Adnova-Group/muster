@@ -8,6 +8,40 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
 import { resolveCodexRelease } from "./codex-release.js";
 
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+  return value;
+}
+
+const same = (left, right) => JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
+const groupCommands = group => (group?.hooks || []).flatMap(hook => [hook?.command, hook?.commandWindows, hook?.command_windows]);
+const isMusterHookGroup = group => groupCommands(group).some(command => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs"));
+
+function ownsExactHookGroups(config, owner) {
+  if (!config?.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks) || !owner?.hookGroups || typeof owner.hookGroups !== "object" || Array.isArray(owner.hookGroups)) return false;
+  const expected = [];
+  for (const [event, groups] of Object.entries(owner.hookGroups)) {
+    if (!Array.isArray(groups)) return false;
+    for (const group of groups) {
+      if (!isMusterHookGroup(group)) return false;
+      expected.push({ event, group });
+    }
+  }
+  const actual = [];
+  for (const [event, groups] of Object.entries(config.hooks)) {
+    if (!Array.isArray(groups)) return false;
+    for (const group of groups) if (isMusterHookGroup(group)) actual.push({ event, group });
+  }
+  if (expected.length === 0 || actual.length !== expected.length) return false;
+  for (const owned of expected) {
+    const index = actual.findIndex(candidate => candidate.event === owned.event && same(candidate.group, owned.group));
+    if (index < 0) return false;
+    actual.splice(index, 1);
+  }
+  return actual.length === 0;
+}
+
 export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
@@ -67,29 +101,28 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   let selectedBootstrapDigest = null;
   try { selectedBootstrapDigest = JSON.parse(await readFile(join(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest; } catch { /* reported as stale below */ }
   for (const dir of hookHomes) {
+    const manifestPath = join(dir, "muster", ".muster-managed.json");
+    if (!(await exists(manifestPath))) continue;
     try {
       const [config, owner] = await Promise.all([
         readFile(join(dir, "hooks.json"), "utf8").then(JSON.parse),
-        readFile(join(dir, "muster", ".muster-managed.json"), "utf8").then(JSON.parse)
+        readFile(manifestPath, "utf8").then(JSON.parse)
       ]);
-      const commandIsMuster = group => (group?.hooks || []).some(hook => [hook.command, hook.commandWindows, hook.command_windows]
-        .some(command => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs")));
-      const configured = hookEvents.every(event => (config.hooks?.[event] || []).some(commandIsMuster));
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
       const runtime = await Promise.all(hookFiles.map(file => readFile(join(dir, "muster", "hooks", file))));
       const hash = createHash("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
-      const coherent = owner.owner === "muster" && configured && owner.generation === selected?.generation
+      const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.generation === selected?.generation
         && owner.bootstrapDigest === selectedBootstrapDigest && owner.hookHash === hash.digest("hex");
       if (coherent) hookStatuses.push(dir); else staleHookScopes.push(dir);
-    } catch { /* inspect the next supported scope */ }
+    } catch { staleHookScopes.push(dir); }
   }
-  const hookStatus = hookStatuses[0] || null;
+  const hookStatus = staleHookScopes.length === 0 ? hookStatuses[0] || null : null;
   checks.push({ name: "codex-hooks", ok: Boolean(hookStatus), detail: hookStatus
     ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks`
-    : staleHookScopes.length ? `managed lifecycle hooks are stale at ${staleHookScopes.join(", ")}; rerun muster install codex for each scope` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
+    : staleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${staleHookScopes.join(", ")}; rerun muster install codex for each scope` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
   checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0, detail: staleHookScopes.length
-    ? "Project/user hook copies are not generation/hash coherent, so exactly-once dedupe cannot be asserted; refresh every stale scope"
+    ? "Project/user hook copies are not generation/hash/exact-group coherent, so exactly-once dedupe cannot be asserted; refresh every stale scope"
     : hookStatuses.length > 1
     ? "Muster hooks are installed at both project and user scopes; atomic runtime dedupe suppresses identical logical event emissions across copies"
     : "No project and user Muster hook overlap detected; runtime dedupe remains active for repeated logical events" });

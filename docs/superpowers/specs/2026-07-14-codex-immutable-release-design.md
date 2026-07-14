@@ -28,7 +28,7 @@ The selected generation lives at:
 
 `.agents/plugins/marketplace.json` permanently names `./.agents/plugins/bootstrap/muster`. That fixed bootstrap exposes the complete skill/command/agent/MCP surface and delegates to a validated generation selected by append-only `.agents/plugins/selections/<sequence>-<generation>.json` records. The marketplace and bootstrap carry one shared content digest and are rewritten only during explicit offline bootstrap maintenance followed by a Codex restart. Normal release publication never replaces either public path.
 
-The resolver retries transient `ENOENT`/`EACCES` cache reads, skips corrupt or incomplete newest selections, and falls back to the next complete LKG or the bootstrap's initial generation. It records a PID/start-time generation lease under `.agents/plugins/leases/` before returning a release. Retention keeps current, initial/LKG, the newest prior LKG, and additional live-leased generations. Stale/dead leases are reclaimed; a four-generation overlap may temporarily retain a fourth live generation. npm packages include only the bounded current/LKG selector and release artifacts, not arbitrary locally leased history.
+The resolver retries transient `ENOENT`/`EACCES` cache reads, skips corrupt or incomplete newest selections, and falls back to the next complete LKG or the bootstrap's initial generation. It records a PID/start-time generation lease under `.agents/plugins/leases/` before returning a release. Retention is bounded to current plus the initial and newest prior LKG, with additional generations retained only while protected by a live lease; stale/dead leases are reclaimed. A four-generation overlap may temporarily retain a fourth live generation. npm packages include only the bounded current/LKG selector and release artifacts, not arbitrary locally leased history.
 
 ## Build and publication transaction
 
@@ -43,7 +43,7 @@ The resolver retries transient `ENOENT`/`EACCES` cache reads, skips corrupt or i
 
 ## Resolution and installation
 
-A shared resolver validates the stable marketplace/bootstrap contract, selector digest, release containment, metadata, hashes, and ordinary-file topology before returning `pluginRoot` and `profilesRoot`. The cache bootstrap resolver is self-contained and imports only Node built-ins or sibling bootstrap files. `check:codex`, installers, package tests, and generated-runtime tests use the same contract. Project and user ownership manifests record generation/bootstrap/hook hashes; a CODEX_HOME registry tracks every managed project and user scope so uninstall removes the shared plugin only after proving no managed scope remains.
+A shared resolver validates the stable marketplace/bootstrap contract, selector digest, release containment, metadata, hashes, and ordinary-file topology before returning `pluginRoot` and `profilesRoot`. The cache bootstrap resolver is self-contained and imports only Node built-ins or sibling bootstrap files. `check:codex`, installers, package tests, and generated-runtime tests use the same contract. Project and user ownership manifests record generation/bootstrap/hook hashes and the exact owned hook groups; doctor compares each configured Muster group semantically exactly (event, matcher, commands, timeout, and options) before reporting hook health. A CODEX_HOME registry tracks every managed project and user scope so uninstall removes the shared plugin only after proving no managed scope remains.
 
 Codex inventory continues to trust enabled plugin JSON for active plugin paths. The existing Codex-only strict plugin-kind marker remains in place; Claude resolution retains its original cross-lane semantics.
 
@@ -51,11 +51,11 @@ Codex inventory continues to trust enabled plugin JSON for active plugin paths. 
 
 The generated Codex adapter, orchestrator, every primary mode, and every alias state the same invariant:
 
-- After each `collaboration.spawn_agent`, enter a watch/receipt loop using `collaboration.wait_agent`, then `collaboration.list_agents` to establish current live state.
+- After each `collaboration.spawn_agent`, use event-driven, wait-first continuation: call `collaboration.wait_agent` for the next event, then `collaboration.list_agents` to establish current live state. Do not replace this with polling or arbitrary sleeps.
 - Record completion/failure receipts and dispatch the next dependency-eligible manifest work.
 - Do not finalize while any live agent or executable manifest step remains.
 - Valid stops are: all work complete; explicit approval or HUMAN-HOLD; a proven blocker; or the workflow's merge decision.
-- Hooks provide diagnostics only and cannot prove agent liveness.
+- Hooks provide lifecycle context, diagnostics, and supported policy warnings only; they cannot prove agent liveness or enforce every shell/subagent action.
 
 ## Failure behavior
 

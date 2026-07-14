@@ -5,6 +5,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -50,11 +51,19 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
   const selected = (await execFile(process.execPath, [resolver, "plugin"], { cwd: cache, env })).stdout.trim();
   assert.ok(selected.startsWith(resolve(cache)), selected);
   for (const name of primary) {
-    const skill = (await execFile(process.execPath, [resolver, "skill", name], { cwd: cache, env })).stdout.trim();
-    assert.match(await readFile(skill, "utf8"), new RegExp(`name: ${name}`));
+    const skill = (await execFile(process.execPath, [resolver, "skill", name], { cwd: cache, env })).stdout;
+    assert.match(skill, new RegExp(`name: ${name}`));
     await execFile(process.execPath, [resolver, "command", name.replace(/^muster-/, "")], { cwd: cache, env });
   }
   await assert.rejects(execFile(process.execPath, [resolver, "skill", "../../escape"], { cwd: cache, env }), /invalid bootstrap skill id/);
+  const resolverModule = await import(`${pathToFileURL(resolver).href}?parallel=${Date.now()}`);
+  const parallel = await Promise.all(Array.from({ length: 128 }, () => resolverModule.resolveCodexRelease(cache)));
+  assert.equal(new Set(parallel.map(item => item.generation)).size, 1);
+  const selectedObject = parallel[0], selectedSkill = join(selectedObject.pluginRoot, "skills", "muster", "SKILL.md");
+  const selectedSkillOriginal = await readFile(selectedSkill);
+  await writeFile(selectedSkill, "ATTACKER-CONTROLLED-SKILL-AFTER-VALIDATION\n");
+  await assert.rejects(resolverModule.readSelectedAsset(selectedObject, "plugin/skills/muster/SKILL.md"), /changed after release validation/);
+  await writeFile(selectedSkill, selectedSkillOriginal);
   const detected = JSON.parse((await execFile(process.execPath, [join(bootstrap, "muster.mjs"), "detect", cache], { cwd: cache, env })).stdout);
   assert.equal(typeof detected.greenfield, "boolean");
   const mcp = await mcpSmoke(join(bootstrap, "muster-mcp.mjs"), cache, env);

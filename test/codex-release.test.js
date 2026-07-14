@@ -54,6 +54,102 @@ function fakeLeaseClock(start = Date.now() - 6 * 60 * 1000) {
   };
 }
 
+function leaseRuntime() {
+  let added = 0, removed = 0, cleared = 0;
+  return {
+    options: {
+      setInterval: () => ({ unref() {} }),
+      clearInterval: () => { cleared++; },
+      addExitListener: () => { added++; },
+      removeExitListener: () => { removed++; }
+    },
+    counts: () => ({ added, removed, cleared })
+  };
+}
+
+async function freshModule(relativePath, label) {
+  return import(`${new URL(relativePath, import.meta.url).href}?${label}-${Date.now()}-${Math.random()}`);
+}
+
+async function assertNamespaceSafeLeases(t, { label, load, resolve }) {
+  const root = await tempRepo(t);
+  const published = await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-namespace`), packageVersion: "0.5.0" });
+  const [leftModule, rightModule] = await Promise.all([load(`${label}-left`), load(`${label}-right`)]);
+  const left = await resolve(leftModule, root, leaseRuntime().options);
+  const right = await resolve(rightModule, root, leaseRuntime().options);
+  const leases = (await readdir(join(root, ".agents", "plugins", "leases", published.generation))).sort();
+  assert.equal(leases.length, 2, `${label} resolver collapsed independent same-PID lease owners`);
+  assert.notEqual(leases[0], leases[1]);
+  await left.lease.close();
+  await right.lease.close();
+}
+
+async function assertBoundedLeaseListeners(t, { label, load, resolve }) {
+  const runtime = leaseRuntime(), selected = [];
+  const module = await load(`${label}-listener-controller`);
+  for (let index = 0; index < 12; index++) {
+    const root = await tempRepo(t);
+    await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-listener-${index}`), packageVersion: "0.5.0" });
+    selected.push(await resolve(module, root, runtime.options));
+  }
+  assert.equal(runtime.counts().added, 1, `${label} resolver accumulated process exit listeners`);
+  await Promise.all(selected.map(item => item.lease.close()));
+  assert.deepEqual(runtime.counts(), { added: 1, removed: 1, cleared: 12 });
+}
+
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+async function assertAtomicPublishVsRenew(t, { label, resolve }) {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-atomic-g1`), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-atomic-g2`), packageVersion: "0.5.0" });
+  let staged;
+  const replacementStaged = new Promise(resolve => { staged = resolve; });
+  let continueReplacement;
+  const replacementMayContinue = new Promise(resolve => { continueReplacement = resolve; });
+  const selected = await resolve(root, {
+    lease: {
+      ...leaseRuntime().options,
+      replaceLease: async (temporary, destination) => {
+        staged();
+        await replacementMayContinue;
+        await rename(temporary, destination);
+      }
+    }
+  });
+  const original = JSON.parse(await readFile(selected.lease.path, "utf8"));
+  const renewing = selected.lease.renew();
+  const didStage = await Promise.race([replacementStaged.then(() => true), wait(100).then(() => false)]);
+  assert.equal(didStage, true, `${label} renewal did not stage an atomic replacement`);
+  assert.deepEqual(JSON.parse(await readFile(selected.lease.path, "utf8")), original, `${label} renewal exposed a truncated live lease`);
+  let published = false;
+  const publishing = publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-atomic-g3`), packageVersion: "0.5.0" }).then(result => { published = true; return result; });
+  await wait(20);
+  assert.equal(published, false, `${label} publisher scanned a lease while its renewal transaction was active`);
+  continueReplacement();
+  await renewing;
+  await publishing;
+  await selected.lease.close();
+}
+
+async function assertCleanupPreservesReplacement(t, { label, resolve }) {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-cleanup`), packageVersion: "0.5.0" });
+  let cleanupCalls = 0;
+  const selected = await resolve(root, {
+    lease: {
+      ...leaseRuntime().options,
+      beforeLeaseCleanup: async ({ path }) => {
+        cleanupCalls++;
+        await writeFile(path, JSON.stringify({ token: "replacement-owner", preserved: true }) + "\n");
+      }
+    }
+  });
+  await selected.lease.close();
+  assert.equal(cleanupCalls, 1, `${label} cleanup was not identity-revalidated before deletion`);
+  assert.deepEqual(JSON.parse(await readFile(selected.lease.path, "utf8")), { token: "replacement-owner", preserved: true });
+}
+
 async function tempRepo(t) {
   const root = await mkdtemp(join(tmpdir(), "muster-codex-release-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -252,11 +348,12 @@ test("release retention preserves an actively leased generation and reclaims its
   const root = await tempRepo(t);
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "g1"), packageVersion: "0.5.0" });
   const g2 = await publish({ repoRoot: root, stagedRelease: await candidate(root, "g2"), packageVersion: "0.5.0" });
-  assert.equal((await resolveCodexRelease(root)).generation, g2.generation);
+  const selected = await resolveCodexRelease(root);
+  assert.equal(selected.generation, g2.generation);
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "g3"), packageVersion: "0.5.0" });
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "g4"), packageVersion: "0.5.0" });
   assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), "active g2 was garbage-collected by g4");
-  const lease = join(root, ".agents", "plugins", "leases", g2.generation, `${process.pid}.json`);
+  const lease = selected.lease.path;
   const stale = JSON.parse(await readFile(lease, "utf8"));
   stale.processStartedAt = 0;
   stale.touchedAt = 0;
@@ -264,6 +361,7 @@ test("release retention preserves an actively leased generation and reclaims its
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "g5"), packageVersion: "0.5.0" });
   assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), false, "stale leased generation was not reclaimed");
   assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).length <= 3);
+  await selected.lease.close();
 });
 
 test("parallel source resolution writes one collision-safe generation lease", async t => {
@@ -272,7 +370,69 @@ test("parallel source resolution writes one collision-safe generation lease", as
   const selected = await Promise.all(Array.from({ length: 128 }, () => resolveCodexRelease(root)));
   assert.ok(selected.every(item => item.generation === published.generation));
   const leases = await readdir(join(root, ".agents", "plugins", "leases", published.generation));
-  assert.deepEqual(leases, [`${process.pid}.json`]);
+  assert.equal(leases.length, 1);
+  assert.match(leases[0], new RegExp(`^${process.pid}-[0-9a-f-]{36}\\.json$`));
+  await selected[0].lease.close();
+});
+
+test("source resolver gives independent same-PID namespaces collision-resistant leases", async t => {
+  await assertNamespaceSafeLeases(t, {
+    label: "source",
+    load: label => freshModule("../src/codex-release.js", label),
+    resolve: (module, root, lease) => module.resolveCodexReleaseWithOptions(root, { lease })
+  });
+});
+
+test("cached resolver gives independent same-PID namespaces collision-resistant leases", async t => {
+  await assertNamespaceSafeLeases(t, {
+    label: "cached",
+    load: label => freshModule("../codex/bootstrap/resolve-release.mjs", label),
+    resolve: (module, root, lease) => module.resolveCodexRelease(root, { lease })
+  });
+});
+
+test("source resolver shares and releases one exit listener for bounded lease controllers", async t => {
+  await assertBoundedLeaseListeners(t, {
+    label: "source",
+    load: label => freshModule("../src/codex-release.js", label),
+    resolve: (module, root, lease) => module.resolveCodexReleaseWithOptions(root, { lease })
+  });
+});
+
+test("cached resolver shares and releases one exit listener for bounded lease controllers", async t => {
+  await assertBoundedLeaseListeners(t, {
+    label: "cached",
+    load: label => freshModule("../codex/bootstrap/resolve-release.mjs", label),
+    resolve: (module, root, lease) => module.resolveCodexRelease(root, { lease })
+  });
+});
+
+test("source renewal atomically retains a live lease while publication waits", async t => {
+  await assertAtomicPublishVsRenew(t, {
+    label: "source",
+    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
+  });
+});
+
+test("cached renewal atomically retains a live lease while publication waits", async t => {
+  await assertAtomicPublishVsRenew(t, {
+    label: "cached",
+    resolve: (root, options) => resolveCachedRelease(root, options)
+  });
+});
+
+test("source cleanup preserves a replacement lease owner", async t => {
+  await assertCleanupPreservesReplacement(t, {
+    label: "source",
+    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
+  });
+});
+
+test("cached cleanup preserves a replacement lease owner", async t => {
+  await assertCleanupPreservesReplacement(t, {
+    label: "cached",
+    resolve: (root, options) => resolveCachedRelease(root, options)
+  });
 });
 
 test("source resolver renews a generation lease beyond five minutes and releases it explicitly", async t => {

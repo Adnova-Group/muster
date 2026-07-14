@@ -76,3 +76,24 @@ test("every hook event in hooks.json appears in website/reference/architecture.m
     `architecture.md is missing these hook events from hooks.json: ${missing.join(", ")}`
   );
 });
+
+test("architecture docs name every network-capable CLI boundary and offline behavior", async () => {
+  const docs = await Promise.all([
+    read("docs/architecture.md"),
+    read("website/reference/architecture.md"),
+  ]);
+  for (const doc of docs) {
+    assert.doesNotMatch(doc, /one carve-out is the `issue` verb/);
+    for (const command of ["`issue`", "`vendor`", "`doctor`"]) assert.match(doc, new RegExp(command));
+    assert.match(doc, /offline/i);
+  }
+});
+
+test("command reference documents safe help, install style ownership, and signals target output", async () => {
+  const commands = await read("website/reference/commands.md");
+  assert.match(commands, /`help \[command\]`/);
+  assert.match(commands, /`muster <command> --help`/);
+  assert.match(commands, /output-styles\/muster\.md/);
+  assert.match(commands, /\[dir\]\/\.muster\/signals\.json/);
+  assert.doesNotMatch(commands, /Run any verb with no arguments to see its usage/);
+});

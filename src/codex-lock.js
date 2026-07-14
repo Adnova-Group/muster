@@ -44,19 +44,29 @@ const sameLockOwner = (left, right) => typeof left?.token === "string" && left.t
   && left.token === right?.token && left.pid === right?.pid
   && left.processIdentity === right?.processIdentity && left.createdAt === right?.createdAt;
 
+async function assertPrivateRetirementDirectory(dir) {
+  const stat = await lstat(dir);
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  const ownerMismatch = process.platform !== "win32" && typeof uid === "number" && stat.uid !== uid;
+  const unsafeMode = process.platform !== "win32" && ((stat.mode & 0o700) !== 0o700 || (stat.mode & 0o077) !== 0);
+  if (stat.isSymbolicLink() || !stat.isDirectory() || ownerMismatch || unsafeMode) {
+    throw new Error(`unsafe Codex transaction retirement directory: ${dir}`);
+  }
+}
+
 async function privateRetirement(path) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const dir = join(dirname(path), `.muster-retired-${process.pid}-${randomUUID()}`);
     try { await mkdir(dir, { mode: 0o700 }); }
     catch (error) { if (error.code === "EEXIST" && attempt < 7) continue; throw error; }
-    const stat = await lstat(dir);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`unsafe Codex transaction retirement directory: ${dir}`);
+    await assertPrivateRetirementDirectory(dir);
     return { dir, path: join(dir, "lock") };
   }
   throw new Error(`could not create Codex transaction retirement directory for ${path}`);
 }
 
 async function restoreRetiredLock(path, retired, stat) {
+  await assertPrivateRetirementDirectory(dirname(retired));
   const current = await lstat(retired);
   if (!sameInode(current, stat)) return false;
   try { await link(retired, path); }
@@ -84,7 +94,11 @@ async function restoreQuarantinedLock(path, quarantine, stat) {
   return restoreRetiredLock(path, retirement.path, stat);
 }
 
-async function retireOwnedLock(path, expectedStat, expectedRecord, { stale = null, restorePath = path } = {}) {
+async function retireOwnedLock(path, expectedStat, expectedRecord, {
+  stale = null,
+  restorePath = path,
+  afterRetirement = async () => {}
+} = {}) {
   const retirement = await privateRetirement(path);
   try { await rename(path, retirement.path); }
   catch (error) {
@@ -92,16 +106,21 @@ async function retireOwnedLock(path, expectedStat, expectedRecord, { stale = nul
     if (error.code === "ENOENT") return false;
     throw error;
   }
+  await afterRetirement({ dir: retirement.dir, path: retirement.path, sourcePath: path });
+  await assertPrivateRetirementDirectory(retirement.dir);
   let retired;
   try { retired = await readLock(retirement.path); }
   catch { return false; }
-  if (!sameInode(retired.stat, expectedStat) || !sameLockOwner(retired.record, expectedRecord)
-    || stale && !await stale(retired)) {
-    await restoreRetiredLock(restorePath, retirement.path, retired.stat);
+  if (!sameInode(retired.stat, expectedStat) || !sameLockOwner(retired.record, expectedRecord)) {
+    return false;
+  }
+  if (stale && !await stale(retired)) {
+    await restoreRetiredLock(restorePath, retirement.path, expectedStat);
     return false;
   }
   // The final identity check happens after the atomic move into a private
   // retirement directory. Never validate a public pathname and then delete it.
+  await assertPrivateRetirementDirectory(retirement.dir);
   await unlink(retirement.path);
   await rmdir(retirement.dir);
   return true;
@@ -120,7 +139,13 @@ async function lockIsStale(current, { staleMs, maxStaleMs }) {
   return true;
 }
 
-export async function reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine = async () => {}, afterValidation = async () => {} }) {
+export async function reclaimStaleCodexFileLock(path, {
+  staleMs,
+  maxStaleMs,
+  afterQuarantine = async () => {},
+  afterValidation = async () => {},
+  afterRetirement = async () => {}
+}) {
   let current;
   try { current = await readLock(path); }
   catch (error) {
@@ -143,7 +168,8 @@ export async function reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, aft
     await afterValidation({ path, quarantine });
     if (!await retireOwnedLock(quarantine, quarantined.stat, quarantined.record, {
       stale: state => lockIsStale(state, { staleMs, maxStaleMs }),
-      restorePath: path
+      restorePath: path,
+      afterRetirement
     })) return false;
   } catch (error) {
     // The stale candidate has already left the public pathname. Preserve any
@@ -159,6 +185,7 @@ export async function withCodexFileLock(path, callback, {
   timeoutMs = 30_000,
   afterQuarantine = async () => {},
   afterValidation = async () => {},
+  afterRetirement = async () => {},
   beforeRelease = async () => {}
 } = {}) {
   const token = randomUUID();
@@ -176,7 +203,7 @@ export async function withCodexFileLock(path, callback, {
     } catch (error) {
       if (handle) { await handle.close().catch(() => {}); handle = null; }
       if (error.code !== "EEXIST") throw error;
-      if (await reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine, afterValidation })) continue;
+      if (await reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine, afterValidation, afterRetirement })) continue;
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
       await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
     }
@@ -196,7 +223,7 @@ export async function withCodexFileLock(path, callback, {
       const current = await readLock(path);
       if (current.record?.token !== token) return;
       await beforeRelease({ path });
-      if (!await retireOwnedLock(path, current.stat, current.record)) {
+      if (!await retireOwnedLock(path, current.stat, current.record, { afterRetirement })) {
         throw new Error(`Codex transaction lock ownership changed: ${path}`);
       }
     } catch (error) { if (error.code !== "ENOENT") throw error; }

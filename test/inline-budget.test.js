@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync, statSync, readdirSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import {
@@ -44,23 +44,29 @@ test("scaleThreshold: decimal '2.9' is not an integer and falls back to default 
 });
 
 // ── safeSession ─────────────────────────────────────────────────────────────
-test("safeSession: keeps word chars, null on empty/unusable", () => {
-  assert.equal(safeSession("abc-123_XY"), "abc-123_XY");
-  assert.equal(safeSession("a/b c.d"), "abcd");
-  assert.equal(safeSession("!!!"), null);
+test("safeSession: hashes the exact non-empty session id without collisions or disclosure", () => {
+  assert.match(safeSession("abc-123_XY"), /^[a-f0-9]{64}$/);
+  assert.notEqual(safeSession("a/b c.d"), safeSession("abcd"));
+  assert.notEqual(safeSession("a/b"), safeSession("ab"));
+  assert.match(safeSession("!!!"), /^[a-f0-9]{64}$/);
   assert.equal(safeSession(""), null);
   assert.equal(safeSession(undefined), null);
   assert.equal(safeSession(42), null);
 });
 
 // ── budgetFile ──────────────────────────────────────────────────────────────
-test("budgetFile: null for an all-punctuation session id", () => {
-  assert.equal(budgetFile("!!!"), null);
+test("budgetFile: null only for a missing or empty session id", () => {
+  assert.match(budgetFile("!!!"), /muster-inline-[a-f0-9]{64}$/);
   assert.equal(budgetFile(undefined), null);
 });
 
-test("budgetFile: builds a muster-inline-<safe> path under tmp", () => {
-  assert.equal(budgetFile("sess-1", "/tmp"), path.join("/tmp", "muster-inline-sess-1"));
+test("budgetFile: creates a private state directory and uses a hashed filename", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "muster-state-parent-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const file = budgetFile("sess-1", tmp);
+  assert.equal(path.dirname(file).startsWith(tmp + path.sep), true);
+  assert.match(path.basename(file), /^muster-inline-[a-f0-9]{64}$/);
+  if (process.platform !== "win32") assert.equal(statSync(path.dirname(file)).mode & 0o077, 0, "state dir is private");
 });
 
 // ── readBudget ──────────────────────────────────────────────────────────────
@@ -116,4 +122,19 @@ test("resetBudget: tolerates an unwritable path (best-effort, no throw)", () => 
     assert.doesNotThrow(() => resetBudget(dir));
   } finally { rmSync(dir, { recursive: true, force: true }); }
   assert.ok(!existsSync(path.join(dir, "nope")));
+});
+
+test("state reads and replacements reject a symlink file without touching its victim", (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-ib-symlink-"));
+  const victim = path.join(dir, "victim");
+  const file = path.join(dir, "budget");
+  writeFileSync(victim, JSON.stringify(["secret"]));
+  try { symlinkSync(victim, file); }
+  catch (error) { rmSync(dir, { recursive: true, force: true }); t.skip(`symlinks unavailable: ${error.code}`); return; }
+  try {
+    assert.deepEqual(readBudget(file), []);
+    resetBudget(file);
+    assert.equal(readFileSync(victim, "utf8"), JSON.stringify(["secret"]));
+    assert.equal(readdirSync(dir).some((name) => name.includes(".muster-tmp-")), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

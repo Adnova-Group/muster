@@ -1,7 +1,9 @@
 import { parse, stringify } from "yaml";
-import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
-import { join, dirname, sep } from "node:path";
+import { mkdir, readdir, lstat, realpath, open, rename, unlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { join, dirname, sep, resolve, relative, isAbsolute, basename } from "node:path";
 import { homedir, tmpdir } from "node:os";
+import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
@@ -21,6 +23,111 @@ const DEFAULT_TOOLS = "Read, Grep, Glob, Edit, Bash";
 const ID_RE = /^[a-zA-Z0-9_-]+$/;
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF_RE = /^[A-Za-z0-9_.\/~^-]+$/;
+const NOFOLLOW = constants.O_NOFOLLOW || 0;
+
+function contained(root, candidate) {
+  const rel = relative(root, candidate);
+  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+async function lstatIfExists(path) {
+  try { return await lstat(path); }
+  catch (error) { if (error?.code === "ENOENT") return null; throw error; }
+}
+
+async function canonicalDirectory(path, label) {
+  const info = await lstatIfExists(path);
+  if (!info?.isDirectory() || info.isSymbolicLink()) throw new Error(`unsafe ${label} path: root must be a real directory`);
+  return realpath(path);
+}
+
+async function readSourceRegular(root, itemPath) {
+  const canonicalRoot = await canonicalDirectory(root, "source");
+  const target = resolve(canonicalRoot, itemPath);
+  if (!contained(canonicalRoot, target)) throw new Error("unsafe source path: traversal outside source root");
+  const rel = relative(canonicalRoot, target);
+  let cursor = canonicalRoot;
+  for (const [index, part] of rel.split(sep).filter(Boolean).entries()) {
+    cursor = join(cursor, part);
+    const info = await lstatIfExists(cursor);
+    if (!info) return null;
+    const final = index === rel.split(sep).filter(Boolean).length - 1;
+    if (info.isSymbolicLink() || (final ? !info.isFile() : !info.isDirectory()))
+      throw new Error("unsafe source path: symlink or special component");
+  }
+  const canonicalTarget = await realpath(target);
+  if (!contained(canonicalRoot, canonicalTarget)) throw new Error("unsafe source path: canonical escape");
+  let handle;
+  try {
+    handle = await open(target, constants.O_RDONLY | NOFOLLOW);
+    if (!(await handle.stat()).isFile()) throw new Error("unsafe source path: item is not a regular file");
+    return await handle.readFile("utf8");
+  } catch (error) {
+    if (["ELOOP", "EMLINK", "EINVAL"].includes(error?.code)) throw new Error("unsafe source path: no-follow open rejected item");
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function ensureOutputDirectory(root, directory) {
+  if (!contained(root, directory)) throw new Error("unsafe output path: traversal outside repoRoot");
+  const parts = relative(root, directory).split(sep).filter(Boolean);
+  let cursor = root;
+  for (const part of parts) {
+    cursor = join(cursor, part);
+    let info = await lstatIfExists(cursor);
+    if (!info) {
+      await mkdir(cursor, { mode: 0o755 });
+      info = await lstat(cursor);
+    }
+    if (info.isSymbolicLink() || !info.isDirectory())
+      throw new Error(`unsafe output path: ${cursor} is a symlink or special component`);
+    const canonical = await realpath(cursor);
+    if (!contained(root, canonical)) throw new Error("unsafe output path: canonical ancestry escapes repoRoot");
+  }
+}
+
+async function readOutputRegular(path) {
+  const info = await lstatIfExists(path);
+  if (!info) return null;
+  if (info.isSymbolicLink() || !info.isFile()) throw new Error(`unsafe output path: ${path} is not a regular file`);
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | NOFOLLOW);
+    if (!(await handle.stat()).isFile()) throw new Error(`unsafe output path: ${path} is not a regular file`);
+    return await handle.readFile();
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function atomicPublish(root, relativePath, content) {
+  const target = resolve(root, relativePath);
+  if (!contained(root, target)) throw new Error("unsafe output path: traversal outside repoRoot");
+  await ensureOutputDirectory(root, dirname(target));
+  await readOutputRegular(target); // reject an existing symlink/special file
+  const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content);
+  const temp = join(dirname(target), `.${basename(target)}.${process.pid}.${randomBytes(12).toString("hex")}.muster-tmp-`);
+  let handle;
+  try {
+    handle = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | NOFOLLOW, 0o600);
+    await handle.writeFile(bytes);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    const staged = await readOutputRegular(temp);
+    if (!staged || Buffer.compare(staged, bytes) !== 0) throw new Error("unsafe output path: staged publication verification failed");
+    await ensureOutputDirectory(root, dirname(target));
+    await readOutputRegular(target); // reject ancestry/target swaps before publication
+    await rename(temp, target);
+    const published = await readOutputRegular(target);
+    if (!published || Buffer.compare(published, bytes) !== 0) throw new Error("unsafe output path: publication verification failed");
+  } finally {
+    await handle?.close();
+    try { await unlink(temp); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+  }
+}
 
 export function validateVendorManifest(doc) {
   const errors = [];
@@ -226,6 +333,7 @@ async function fetchSourceRoot(source, home) {
 }
 
 export async function runVendor({ home = homedir(), repoRoot = process.cwd(), manifest } = {}) {
+  const outputRoot = await canonicalDirectory(repoRoot, "output");
   const warnings = [];
   const builtinEntries = [];
   const agentEntries = [];
@@ -243,20 +351,21 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
         warnings.push(`${source.id}: item ${item.from} is outside of source root — skipping (traversal attempt)`);
         continue;
       }
-      if (!(await exists(srcPath))) { warnings.push(`${source.id}: missing item ${item.from}`); continue; }
-      const text = await readFile(srcPath, "utf8");
+      let text;
+      try { text = await readSourceRegular(root, item.from); }
+      catch (error) { warnings.push(`${source.id}: unsafe source path for ${item.from}: ${error.message}`); continue; }
+      if (text === null) { warnings.push(`${source.id}: missing item ${item.from}`); continue; }
       const isAgent = item.as === "agent";
       const { path, content, catalogEntry } = isAgent
         ? toAgent(text, item, source)
         : toBuiltin(text, item, source);
-      const abs = join(repoRoot, path);
+      const abs = join(outputRoot, path);
       // Guard: abs output path must stay within repoRoot (no traversal via item.id).
-      if (!abs.startsWith(repoRoot + sep)) {
+      if (!contained(outputRoot, abs)) {
         warnings.push(`${source.id}: item.id "${item.id}" would write outside repoRoot — skipping`);
         continue;
       }
-      await mkdir(dirname(abs), { recursive: true });
-      await writeFile(abs, content);
+      await atomicPublish(outputRoot, path, content);
       (isAgent ? agentEntries : builtinEntries).push(catalogEntry);
     }
   }
@@ -267,9 +376,9 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
   // Only overwrite a generated catalog when we actually produced entries of that kind,
   // so a partial/agent-only re-vendor can't clobber the other file on fetch failure.
   if (builtinEntries.length > 0)
-    await writeFile(join(repoRoot, "catalog/builtins.generated.yaml"), YAML_BANNER + stringify(builtinEntries, { lineWidth: 0 }));
+    await atomicPublish(outputRoot, "catalog/builtins.generated.yaml", YAML_BANNER + stringify(builtinEntries, { lineWidth: 0 }));
   if (agentEntries.length > 0)
-    await writeFile(join(repoRoot, "catalog/agents.generated.yaml"), YAML_BANNER + stringify(agentEntries, { lineWidth: 0 }));
-  await writeFile(join(repoRoot, "NOTICE"), generateNotice(allEntries));
+    await atomicPublish(outputRoot, "catalog/agents.generated.yaml", YAML_BANNER + stringify(agentEntries, { lineWidth: 0 }));
+  await atomicPublish(outputRoot, "NOTICE", generateNotice(allEntries));
   return { count: allEntries.length, builtins: builtinEntries.length, agents: agentEntries.length, warnings };
 }

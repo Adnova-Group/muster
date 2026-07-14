@@ -5,6 +5,7 @@ import os from "node:os";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawnHook, cleanDir } from "./test-support/hook-helpers.js";
+import { turnFile } from "../plugin/hooks/inline-budget.js";
 
 // Directive-nudge tests need a run cwd guaranteed to have no `.muster/run-active`.
 // This repo's own cwd is not reliable for that (a live orchestrator run may be in
@@ -164,10 +165,9 @@ test("malformed stdin: valid JSON, exit 0, no nudge (fail-safe)", async () => {
   assert.ok(!("additionalContext" in ctxOf(stdout)), "garbage stdin -> no nudge");
 });
 
-// ── session_id that sanitizes to empty string must not write the bare tmp file ─
-test("session_id of only non-word chars sanitizes to empty: no file write, exits 0, valid JSON", async () => {
-  // "!!!" sanitizes to "" via replace(/[^a-zA-Z0-9_-]/g, "")
-  const badId = "!!!";
+// ── punctuation ids are hashed, never written literally to the temp namespace ─
+test("session_id of only punctuation is hashed and counted without a legacy bare file", async () => {
+  const exactId = "!!!";
 
   // Remove the bare file if it pre-exists (from old hook versions) so we can
   // verify the fixed hook does not (re-)create it.
@@ -175,17 +175,31 @@ test("session_id of only non-word chars sanitizes to empty: no file write, exits
   const path = await import("node:path");
   const { existsSync, rmSync } = await import("node:fs");
   const bareFile = path.default.join(os.default.tmpdir(), "muster-turns-");
+  const hashedFile = turnFile(exactId);
   try { rmSync(bareFile); } catch { /* not present — fine */ }
+  try { rmSync(hashedFile); } catch { /* not present — fine */ }
 
-  const { stdout, code } = await runRaw(JSON.stringify({ session_id: badId }));
+  const { stdout, code } = await runRaw(JSON.stringify({ session_id: exactId }), { MUSTER_NUDGE_EVERY: "1" });
   assert.equal(code, 0, "exit 0");
   assert.doesNotThrow(() => JSON.parse(stdout), "stdout is valid JSON");
   const out = ctxOf(stdout);
-  // Must not nudge (turn-counting is skipped)
-  assert.ok(!("additionalContext" in out), "empty sanitized session_id -> no nudge (turn-counting skipped)");
+  assert.match(out.additionalContext, /muster mode/i, "punctuation-only exact id is counted");
 
   // Verify the bare file was NOT written.
-  assert.ok(!existsSync(bareFile), "bare tmp file must not be written when session_id sanitizes to empty");
+  assert.ok(!existsSync(bareFile), "legacy bare tmp file must not be written");
+  try { rmSync(hashedFile); } catch { /* best-effort test cleanup */ }
+});
+
+test("formerly colliding session ids retain independent turn counters", async () => {
+  const env = { MUSTER_NUDGE_EVERY: "2" };
+  const slashy = `collision/${process.pid}-${Math.random()}`;
+  const compact = slashy.replace(/[^a-zA-Z0-9_-]/g, "");
+  const firstA = await runTurn(slashy, env);
+  const firstB = await runTurn(compact, env);
+  assert.ok(!("additionalContext" in ctxOf(firstA.stdout)), "first exact id is turn 1");
+  assert.ok(!("additionalContext" in ctxOf(firstB.stdout)), "formerly colliding exact id is independently turn 1");
+  assert.match(ctxOf((await runTurn(slashy, env)).stdout).additionalContext, /muster mode/i);
+  assert.match(ctxOf((await runTurn(compact, env)).stdout).additionalContext, /muster mode/i);
 });
 
 // ── directive-triggered nudge ──────────────────────────────────────────────────

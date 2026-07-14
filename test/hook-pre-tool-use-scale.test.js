@@ -8,7 +8,7 @@ import {
   cleanDir, makeMarker, makeRunActive,
   editPayload as editPayloadBase, spawnHook,
 } from "./test-support/hook-helpers.js";
-import { cumFile, readCum } from "../plugin/hooks/inline-budget.js";
+import { budgetFile, cumFile, readCum } from "../plugin/hooks/inline-budget.js";
 
 // Scale-gate: the post-run enforcement. With NO active wave, the orchestrator
 // main loop may edit 1-2 distinct files per turn (trivial/surgical falls
@@ -55,14 +55,14 @@ function bashPayload(command, cwd, sessionId) {
 
 // Remove the per-session tmp budget file so tests don't contaminate each other.
 function clearBudget(sessionId) {
-  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-  try { rmSync(path.join(os.tmpdir(), `muster-inline-${safe}`), { force: true }); } catch { /* ignore */ }
+  const file = budgetFile(sessionId);
+  if (file) try { rmSync(file, { force: true }); } catch { /* ignore */ }
 }
 
 // Remove the per-session cumulative cross-turn file.
 function clearCum(sessionId) {
-  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-  try { rmSync(path.join(os.tmpdir(), `muster-cum-${safe}`), { force: true }); } catch { /* ignore */ }
+  const file = cumFile(sessionId);
+  if (file) try { rmSync(file, { force: true }); } catch { /* ignore */ }
 }
 
 function decision(stdout) {
@@ -355,14 +355,14 @@ test("no wave: once tripped, subsequent distinct files stay denied", async () =>
   }
 });
 
-// ── all-punctuation session_id fails open in the PreToolUse gate ────────────
-test("no wave: all-punctuation session_id disables the gate (fail-open)", async () => {
+// ── all non-empty exact session ids participate in the PreToolUse gate ──────
+test("no wave: all-punctuation session_id is hashed and gated", async () => {
   const dir = noWaveDir();
   try {
     await runPre(editPayload(path.join(dir, "a.js"), dir, "!!!"));
     await runPre(editPayload(path.join(dir, "b.js"), dir, "!!!"));
     const c = await runPre(editPayload(path.join(dir, "c.js"), dir, "!!!"));
-    assert.notEqual(decision(c.stdout), "deny", "unusable session id => no budget, no deny");
+    assert.equal(decision(c.stdout), "deny", "exact punctuation id gets its own budget");
   } finally {
     cleanDir(dir);
   }

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { cp, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -888,6 +888,149 @@ test("Codex reclaims a crashed stale managed-scope recovery sentinel", async t =
   await runCodexInstall({ cwd, home, repoRoot, execFile: absent, scopeLockOptions: { maxAttempts: 2 } });
   await assert.rejects(() => readFile(lockPath, "utf8"));
   await assert.rejects(() => readFile(recoveryPath, "utf8"));
+});
+
+test("Codex reclaims forged and long-lived live-PID recovery sentinels", async t => {
+  const absent = async () => { throw new Error("not found"); };
+  const recover = async (label, ageMs, processIdentity) => {
+    const tmp = await mkdtemp(join(tmpdir(), `muster-codex-${label}-live-recovery-`));
+    const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+    const lockPath = join(registryDir, "install-scopes.json.lock"), recoveryPath = `${lockPath}.recover`;
+    const old = new Date(Date.now() - ageMs);
+    const record = (token, pid, identity) => JSON.stringify({ format: 1, owner: "muster", pid, processIdentity: identity, token, createdAt: old.getTime() }) + "\n";
+    t.after(() => rm(tmp, { recursive: true, force: true }));
+    await mkdir(registryDir, { recursive: true });
+    await writeFile(lockPath, record("stale-main", 2_147_483_647, null));
+    await writeFile(recoveryPath, record("live-recovery", process.pid, processIdentity));
+    await utimes(lockPath, old, old);
+    await utimes(recoveryPath, old, old);
+    await runCodexInstall({ cwd, home, repoRoot, execFile: absent, scopeLockOptions: { maxAttempts: 2 } });
+    await assert.rejects(() => readFile(lockPath, "utf8"));
+    await assert.rejects(() => readFile(recoveryPath, "utf8"));
+  };
+  await recover("forged", 10 * 60 * 1000, "forged-process-identity");
+  await recover("hard-expiry", 20 * 60 * 1000, null);
+});
+
+test("Codex retirement preserves replaced components and fails closed on weak private permissions", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-retirement-component-"));
+  const replacement = { format: 1, pid: process.pid, processIdentity: "replacement", createdAt: Date.now(), token: "replacement-owner" };
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+
+  let retired;
+  const lockPath = join(tmp, "general.lock");
+  await assert.rejects(withCodexFileLock(lockPath, async () => {}, {
+    afterRetirement: async state => {
+      retired = state.path;
+      await unlink(retired);
+      await writeFile(retired, JSON.stringify(replacement) + "\n", { flag: "wx" });
+    }
+  }), /lock ownership changed/i);
+  assert.equal(JSON.parse(await readFile(retired, "utf8")).token, replacement.token);
+
+  let weakRetirement;
+  const weakLock = join(tmp, "weak-permission.lock");
+  await assert.rejects(withCodexFileLock(weakLock, async () => {}, {
+    afterRetirement: async state => {
+      weakRetirement = state.dir;
+      await chmod(weakRetirement, 0o777);
+    }
+  }), /retirement directory/i);
+  assert.equal((await lstat(weakRetirement)).mode & 0o077, 0o077);
+});
+
+test("Codex scope and hook retirement preserve replacement components", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-retirement-surface-"));
+  const absent = async () => { throw new Error("not found"); };
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+
+  const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+  const scopeLock = join(registryDir, "install-scopes.json.lock"), scopeReplacement = { format: 1, owner: "muster", pid: process.pid, processIdentity: "replacement", token: "scope-replacement", createdAt: Date.now() };
+  await mkdir(registryDir, { recursive: true });
+  await writeFile(scopeLock, JSON.stringify({ format: 1, owner: "muster", pid: 2_147_483_647, token: "stale-scope", createdAt: old.getTime() }) + "\n");
+  await utimes(scopeLock, old, old);
+  let scopeRetired;
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot, execFile: absent,
+    scopeLockOptions: {
+      maxAttempts: 1,
+      afterRetirement: async state => {
+        if (scopeRetired) return;
+        scopeRetired = state.path;
+        await unlink(scopeRetired);
+        await writeFile(scopeRetired, JSON.stringify(scopeReplacement) + "\n", { flag: "wx" });
+      }
+    }
+  }), /lock did not become available/);
+  assert.equal(JSON.parse(await readFile(scopeRetired, "utf8")).token, scopeReplacement.token);
+
+  const weakHome = join(tmp, "weak-home"), weakCwd = join(tmp, "weak-project");
+  let weakScopeRetirement;
+  await assert.rejects(runCodexInstall({
+    cwd: weakCwd, home: weakHome, repoRoot, execFile: absent,
+    scopeLockOptions: {
+      afterRetirement: async state => {
+        weakScopeRetirement = state.dir;
+        await chmod(weakScopeRetirement, 0o777);
+      }
+    }
+  }), /retirement directory/i);
+  assert.equal((await lstat(weakScopeRetirement)).mode & 0o077, 0o077);
+
+  const componentHome = join(tmp, "component-home"), componentCwd = join(tmp, "component-project");
+  let componentScopeRetired;
+  const componentReplacement = { format: 1, owner: "muster", pid: process.pid, processIdentity: "replacement", token: "scope-release-replacement", createdAt: Date.now() };
+  await assert.rejects(runCodexInstall({
+    cwd: componentCwd, home: componentHome, repoRoot, execFile: absent,
+    scopeLockOptions: {
+      afterRetirement: async state => {
+        componentScopeRetired = state.path;
+        await unlink(componentScopeRetired);
+        await writeFile(componentScopeRetired, JSON.stringify(componentReplacement) + "\n", { flag: "wx" });
+      }
+    }
+  }), /lock ownership changed/i);
+  assert.equal(JSON.parse(await readFile(componentScopeRetired, "utf8")).token, componentReplacement.token);
+
+  const hookUrl = new URL("../codex/hooks/muster-hook.mjs", import.meta.url).href;
+  const script = `
+    import { chmodSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    const hook = await import(${JSON.stringify(hookUrl)});
+    const dir = process.argv[1], replacement = { format: 1, pid: process.pid, createdAt: Date.now(), token: "hook-replacement" };
+    let retired = null;
+    const released = hook.withShardLock(dir, ".hook-lock", () => {}, Date.now(), {
+      afterRetirement: state => {
+        retired = state.path;
+        rmSync(retired);
+        writeFileSync(retired, JSON.stringify(replacement) + "\\n", { flag: "wx" });
+      }
+    });
+    let weakDirectory = null;
+    const weakReleased = hook.withShardLock(dir, ".hook-weak-lock", () => {}, Date.now(), {
+      afterRetirement: state => {
+        weakDirectory = state.dir;
+        chmodSync(weakDirectory, 0o777);
+      }
+    });
+    process.stdout.write(JSON.stringify({
+      released,
+      token: JSON.parse(readFileSync(retired, "utf8")).token,
+      weakReleased,
+      weakMode: lstatSync(weakDirectory).mode & 0o077
+    }));
+  `;
+  const stdout = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", script, tmp], { stdio: ["pipe", "pipe", "pipe"] });
+    let output = "", error = "";
+    child.stdout.setEncoding("utf8"); child.stdout.on("data", chunk => { output += chunk; });
+    child.stderr.setEncoding("utf8"); child.stderr.on("data", chunk => { error += chunk; });
+    child.on("error", reject);
+    child.on("exit", code => code === 0 ? resolve(output) : reject(new Error(error || `hook retirement child exited ${code}`)));
+    child.stdin.end();
+  });
+  assert.deepEqual(JSON.parse(stdout), { released: false, token: "hook-replacement", weakReleased: false, weakMode: 0o077 });
 });
 
 test("Codex hook stale-lock reclaim never deletes replacement capacity or cleanup owners", async t => {

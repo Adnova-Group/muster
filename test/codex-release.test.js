@@ -14,6 +14,7 @@ import {
   validateCodexRelease
 } from "../src/codex-release.js";
 import { readSelectedAsset, resolveCodexRelease as resolveCachedRelease } from "../codex/bootstrap/resolve-release.mjs";
+import { withCodexFileLock } from "../src/codex-lock.js";
 
 async function write(path, content) {
   await mkdir(dirname(path), { recursive: true });
@@ -347,6 +348,26 @@ test("publication reclaims a crashed stale writer lock", async t => {
   const result = await publish({ repoRoot: root, stagedRelease: await candidate(root, "after-crash"), packageVersion: "0.5.0" });
   assert.equal((await resolveCodexRelease(root)).generation, result.generation);
   await assert.rejects(readFile(lock, "utf8"));
+});
+
+test("publication stale-lock reclaim never deletes a replacement owner", async t => {
+  const root = await tempRepo(t), lock = join(root, ".agents", "plugins", ".publication.lock");
+  await writeFile(lock, JSON.stringify({ format: 1, pid: 99999999, processIdentity: "dead", createdAt: 0, token: "crashed" }));
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(lock, old, old);
+  const replacement = { format: 1, pid: process.pid, processIdentity: "replacement", createdAt: Date.now(), token: "fresh-owner" };
+  let interleaved = false;
+  await assert.rejects(withCodexFileLock(lock, async () => {
+    throw new Error("replacement owner was bypassed");
+  }, {
+      timeoutMs: 0,
+      afterQuarantine: async () => {
+        interleaved = true;
+        await writeFile(lock, JSON.stringify(replacement) + "\n", { flag: "wx" });
+      }
+  }), /timed out waiting for Codex transaction lock/);
+  assert.equal(interleaved, true, "test did not interleave a replacement after quarantine");
+  assert.equal(JSON.parse(await readFile(lock, "utf8")).token, replacement.token);
 });
 
 test("normal publication fails closed on bootstrap surface drift with maintenance guidance", async t => {

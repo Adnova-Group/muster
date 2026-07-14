@@ -180,6 +180,7 @@ export async function resolveCodexRelease(repoRoot) {
 }
 
 const STABLE_BOOTSTRAP_PATH = "./.agents/plugins/bootstrap/muster";
+const RELEASE_PLUGIN_PATH = /^\.\/\.agents\/plugins\/releases\/([a-f0-9]{64})\/plugin$/;
 const SELECTION = /^(\d{12})-([a-f0-9]{64})\.json$/;
 const LEASE = /^(\d+)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/;
 const LEGACY_LEASE = /^(\d+)\.json$/;
@@ -427,7 +428,8 @@ export async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, re
   if (pointerError) throw pointerError;
   const bootstrap = pointer?.musterBootstrap;
   const pluginPath = pointer?.plugins?.find(plugin => plugin?.name === "muster")?.source?.path;
-  if (pointer?.name !== "muster" || pluginPath !== STABLE_BOOTSTRAP_PATH || bootstrap?.format !== RELEASE_FORMAT
+  const advertisedGeneration = pluginPath?.match(RELEASE_PLUGIN_PATH)?.[1] || null;
+  if (pointer?.name !== "muster" || (pluginPath !== STABLE_BOOTSTRAP_PATH && !advertisedGeneration) || bootstrap?.format !== RELEASE_FORMAT
     || !GENERATION.test(bootstrap?.initialGeneration || "") || !GENERATION.test(bootstrap?.digest || "")) {
     throw new Error("Codex marketplace is missing a valid immutable Muster bootstrap contract");
   }
@@ -446,6 +448,10 @@ export async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, re
     }
   }
   const candidates = names.filter(name => SELECTION.test(name)).sort().reverse();
+  if (advertisedGeneration) candidates.sort((left, right) => {
+    const leftAdvertised = left.endsWith(`-${advertisedGeneration}.json`), rightAdvertised = right.endsWith(`-${advertisedGeneration}.json`);
+    return leftAdvertised === rightAdvertised ? right.localeCompare(left) : leftAdvertised ? -1 : 1;
+  });
   for (const name of candidates) {
     try {
       const record = await readRegularJson(join(repoRoot, ".agents", "plugins", "selections", name), "Codex selection record");
@@ -510,7 +516,8 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
     throw new Error("Codex marketplace does not describe the Muster plugin");
   }
   const plugin = stable.plugins.find(item => item.name === "muster");
-  const alreadyStable = plugin.source?.path === STABLE_BOOTSTRAP_PATH && stable.musterBootstrap?.format === RELEASE_FORMAT;
+  const alreadyStable = (plugin.source?.path === STABLE_BOOTSTRAP_PATH || RELEASE_PLUGIN_PATH.test(plugin.source?.path || ""))
+    && stable.musterBootstrap?.format === RELEASE_FORMAT;
   if (!alreadyStable) {
     if (!allowBootstrapMigration && await regularFileExists(pointerPath)) {
       throw new Error("Codex bootstrap maintenance required: stop Codex/Desktop, then run MUSTER_CODEX_BOOTSTRAP_MAINTENANCE=1 npm run build:codex");
@@ -572,6 +579,8 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
     }
     await pruneCodexHistory({ repoRoot, releasesRoot, selectionsRoot, keep, bootstrapDigest });
   });
+  plugin.source = { ...plugin.source, source: "local", path: `./.agents/plugins/releases/${metadata.generation}/plugin` };
+  await atomicWritePointer(pointerPath, JSON.stringify(stable, null, 2) + "\n", replacePointer);
   return { generation: metadata.generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), selectionName };
   });
 }

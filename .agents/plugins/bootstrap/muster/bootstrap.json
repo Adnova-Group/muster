@@ -223,8 +223,8 @@
     },
     {
       "path": "runtime/resolve-release.mjs",
-      "sha256": "a9fe3719a539b1403eebe430f1a4940612abef0c4839b12ee3c14f880643ced7",
-      "size": 27342
+      "sha256": "97148277e2ee55cd79809f7cc7c378c9c1e1e757a47c5181d4fd5e84caf64b79",
+      "size": 27887
     },
     {
       "path": "runtime/sprint-protocol.md",
@@ -602,5 +602,5 @@
       "size": 926
     }
   ],
-  "digest": "cb4efff21c32180a6ef4c132169ee102d22616b6e6f12cc27202226513a19f1f"
+  "digest": "ad810da95de1f1bc73bceab7b230e554d4ac629acf2eea84234621771ab4e24b"
 }

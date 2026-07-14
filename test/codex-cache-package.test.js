@@ -107,4 +107,27 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
   const releaseFallback = (await execFile(process.execPath, [resolver, "plugin"], { cwd: cache, env })).stdout.trim();
   assert.equal(releaseFallback, selectorFallback);
 
+  const marketplace = JSON.parse(await readFile(join(cache, ".agents", "plugins", "marketplace.json"), "utf8"));
+  const sourcePath = marketplace.plugins.find(plugin => plugin.name === "muster")?.source?.path;
+  assert.match(sourcePath || "", /^\.\/\.agents\/plugins\/releases\/[a-f0-9]{64}\/plugin$/,
+    "Codex must cache the complete immutable release, not a checkout-relative bootstrap");
+  const sourcePlugin = resolve(cache, sourcePath);
+  const version = JSON.parse(await readFile(join(sourcePlugin, ".codex-plugin", "plugin.json"), "utf8")).version;
+  const realCache = join(tmp, "real-codex-home", "plugins", "cache", "muster", "muster", version);
+  await mkdir(join(realCache, ".."), { recursive: true });
+  await cp(sourcePlugin, realCache, { recursive: true });
+  await rm(join(cache, ".agents"), { recursive: true, force: true });
+  for (const name of primary) {
+    const skill = await readFile(join(realCache, "skills", name, "SKILL.md"), "utf8");
+    assert.match(skill, new RegExp(`name: ${name}`));
+    assert.doesNotMatch(skill, /# Immutable Muster bootstrap/);
+  }
+  const cachedDetected = JSON.parse((await execFile(process.execPath, [join(realCache, "runtime", "muster.mjs"), "detect", cache], {
+    cwd: tmp,
+    env: { ...process.env, CODEX_HOME: join(tmp, "real-codex-home") }
+  })).stdout);
+  assert.equal(typeof cachedDetected.greenfield, "boolean");
+  const cachedMcp = await mcpSmoke(join(realCache, "runtime", "muster-mcp.mjs"), tmp, env);
+  assert.equal(cachedMcp.find(message => message.id === 2)?.result?.tools?.length, 21);
+
 });

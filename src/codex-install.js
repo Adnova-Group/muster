@@ -140,68 +140,121 @@ function staleScopeLock(state) {
     && !processOwnsScopeLock(state.lock.pid);
 }
 
-async function releaseScopeLock(path, token) {
-  const state = await readScopeLock(path);
-  if (!state || state.lock.token !== token) throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
-  await unlink(path);
-}
-
 const sameScopeLockInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
 const sameScopeLockOwner = (left, right) => left.token === right.token && left.pid === right.pid
   && left.createdAt === right.createdAt && left.owner === right.owner && left.format === right.format;
 
-async function restoreQuarantinedScopeLock(path, quarantine, stat) {
-  try { await link(quarantine, path); }
+async function privateScopeRetirement(path) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const dir = join(dirname(path), `.muster-retired-${process.pid}-${randomUUID()}`);
+    try { await mkdir(dir, { mode: 0o700 }); }
+    catch (error) { if (error.code === "EEXIST" && attempt < 7) continue; throw error; }
+    const stat = await lstat(dir);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`unsafe Codex managed-scope retirement directory: ${dir}`);
+    return { dir, path: join(dir, "lock") };
+  }
+  throw new Error(`could not create Codex managed-scope retirement directory for ${path}`);
+}
+
+async function restoreRetiredScopeLock(path, retired, stat) {
+  const current = await lstat(retired);
+  if (!sameScopeLockInode(current, stat)) return false;
+  try { await link(retired, path); }
   catch (error) { if (error.code === "EEXIST") return false; throw error; }
   const restored = await lstat(path);
   if (!sameScopeLockInode(restored, stat)) throw new Error(`Codex managed-scope lock restore changed identity: ${path}`);
-  await unlink(quarantine);
+  await unlink(retired);
+  await rmdir(dirname(retired));
   return true;
 }
 
-async function recoverStaleScopeLock(path, { afterQuarantine = async () => {} } = {}) {
-  const recoveryPath = `${path}.recover`, token = randomUUID();
-  try {
-    await writeExclusiveSafe(recoveryPath, scopeLockText(token));
-  } catch (error) {
-    if (error.code !== "EEXIST") throw error;
-    await readScopeLock(recoveryPath);
+async function restoreQuarantinedScopeLock(path, quarantine, stat) {
+  const retirement = await privateScopeRetirement(quarantine);
+  try { await rename(quarantine, retirement.path); }
+  catch (error) {
+    try { await rmdir(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  return restoreRetiredScopeLock(path, retirement.path, stat);
+}
+
+async function retireOwnedScopeLock(path, expectedStat, expectedLock, { restorePath = path, stale = null } = {}) {
+  const retirement = await privateScopeRetirement(path);
+  try { await rename(path, retirement.path); }
+  catch (error) {
+    try { await rmdir(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  let retired;
+  try { retired = await readScopeLock(retirement.path); }
+  catch { return false; }
+  if (!retired || !sameScopeLockInode(retired.stat, expectedStat) || !sameScopeLockOwner(retired.lock, expectedLock)
+    || stale && !stale(retired)) {
+    if (retired) await restoreRetiredScopeLock(restorePath, retirement.path, retired.stat);
     return false;
   }
+  await unlink(retirement.path);
+  await rmdir(retirement.dir);
+  return true;
+}
+
+async function releaseScopeLock(path, token, { beforeRelease = async () => {} } = {}) {
+  const state = await readScopeLock(path);
+  if (!state || state.lock.token !== token) throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
+  await beforeRelease({ path });
+  if (!await retireOwnedScopeLock(path, state.stat, state.lock)) {
+    throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
+  }
+}
+
+async function acquireRecoveryScopeLock(path, token) {
+  try {
+    await writeExclusiveSafe(path, scopeLockText(token));
+    return true;
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+  }
+  const state = await readScopeLock(path);
+  if (!state || !staleScopeLock(state)) return false;
+  if (!await retireOwnedScopeLock(path, state.stat, state.lock, { stale: staleScopeLock })) return false;
+  try {
+    await writeExclusiveSafe(path, scopeLockText(token));
+    return true;
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  }
+}
+
+async function recoverStaleScopeLock(path, { afterQuarantine = async () => {}, afterValidation = async () => {} } = {}) {
+  const recoveryPath = `${path}.recover`, token = randomUUID();
+  if (!await acquireRecoveryScopeLock(recoveryPath, token)) return false;
   try {
     const state = await readScopeLock(path);
     if (!state || !staleScopeLock(state)) return false;
     const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID()}`;
     try { await rename(path, quarantine); }
     catch (error) { if (error.code === "ENOENT") return true; throw error; }
-    try {
-      await afterQuarantine({ path, quarantine });
-      const quarantined = await readScopeLock(quarantine);
-      if (!quarantined || !sameScopeLockInode(quarantined.stat, state.stat)
-        || !sameScopeLockOwner(quarantined.lock, state.lock) || !staleScopeLock(quarantined)) {
-        if (quarantined) await restoreQuarantinedScopeLock(path, quarantine, quarantined.stat);
-        return false;
-      }
-      const final = await readScopeLock(quarantine);
-      if (!final || !sameScopeLockInode(final.stat, quarantined.stat) || !sameScopeLockOwner(final.lock, quarantined.lock)) {
-        if (final) await restoreQuarantinedScopeLock(path, quarantine, final.stat);
-        return false;
-      }
-      await unlink(quarantine);
-    } catch (error) {
-      try {
-        const stranded = await readScopeLock(quarantine);
-        if (stranded) await restoreQuarantinedScopeLock(path, quarantine, stranded.stat);
-      } catch { /* fail closed: never unlink an ambiguous quarantined owner */ }
-      throw error;
+    await afterQuarantine({ path, quarantine });
+    const quarantined = await readScopeLock(quarantine);
+    if (!quarantined || !sameScopeLockInode(quarantined.stat, state.stat)
+      || !sameScopeLockOwner(quarantined.lock, state.lock) || !staleScopeLock(quarantined)) {
+      if (quarantined) await restoreQuarantinedScopeLock(path, quarantine, quarantined.stat);
+      return false;
     }
-    return true;
+    await afterValidation({ path, quarantine });
+    return retireOwnedScopeLock(quarantine, quarantined.stat, quarantined.lock, {
+      restorePath: path,
+      stale: staleScopeLock
+    });
   } finally {
     await releaseScopeLock(recoveryPath, token);
   }
 }
 
-async function acquireScopeLock(home, { maxAttempts = 1_000, afterQuarantine = async () => {} } = {}) {
+async function acquireScopeLock(home, { maxAttempts = 1_000, afterQuarantine = async () => {}, afterValidation = async () => {} } = {}) {
   const path = scopeRegistryLockPath(home), token = randomUUID();
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -211,7 +264,7 @@ async function acquireScopeLock(home, { maxAttempts = 1_000, afterQuarantine = a
       if (error.code !== "EEXIST") throw error;
     }
     const state = await readScopeLock(path);
-    if (!state || staleScopeLock(state) && await recoverStaleScopeLock(path, { afterQuarantine })) continue;
+    if (!state || staleScopeLock(state) && await recoverStaleScopeLock(path, { afterQuarantine, afterValidation })) continue;
     await pause(10);
   }
   throw new Error(`Codex managed-scope lock did not become available: ${path}`);
@@ -220,7 +273,7 @@ async function acquireScopeLock(home, { maxAttempts = 1_000, afterQuarantine = a
 async function withScopeRegistryTransaction(home, action, lockOptions) {
   const held = await acquireScopeLock(home, lockOptions);
   try { return await action(await readScopeRegistry(home)); }
-  finally { await releaseScopeLock(held.path, held.token); }
+  finally { await releaseScopeLock(held.path, held.token, lockOptions); }
 }
 
 async function atomicWriteSafe(path, content) {

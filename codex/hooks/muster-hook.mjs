@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { closeSync, constants as fsConstants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyAction } from "./action-guard.mjs";
@@ -158,16 +158,63 @@ const staleHookLock = (state, now) => {
   return now - leaseStartedAt >= LOCK_LEASE_MS;
 };
 
-function restoreQuarantinedHookLock(path, quarantine, stat) {
-  try { linkSync(quarantine, path); }
+function privateHookRetirement(path) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const dir = join(dirname(path), `.muster-retired-${process.pid}-${digest(`${Date.now()}:${Math.random()}`)}`);
+    try { mkdirSync(dir, { mode: 0o700 }); }
+    catch (error) { if (error.code === "EEXIST" && attempt < 7) continue; throw error; }
+    const stat = lstatSync(dir);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`unsafe hook lock retirement directory: ${dir}`);
+    return { dir, path: join(dir, "lock") };
+  }
+  throw new Error(`could not create hook lock retirement directory for ${path}`);
+}
+
+function restoreRetiredHookLock(path, retired, stat) {
+  const current = lstatSync(retired);
+  if (!sameHookLockInode(current, stat)) return false;
+  try { linkSync(retired, path); }
   catch (error) { if (error.code === "EEXIST") return false; throw error; }
   const restored = lstatSync(path);
   if (!sameHookLockInode(restored, stat)) throw new Error(`hook lock restore changed identity: ${path}`);
-  rmSync(quarantine);
+  rmSync(retired);
+  rmdirSync(dirname(retired));
   return true;
 }
 
-export function reclaimStaleLock(path, now, { afterQuarantine = () => {} } = {}) {
+function restoreQuarantinedHookLock(path, quarantine, stat) {
+  const retirement = privateHookRetirement(quarantine);
+  try { renameSync(quarantine, retirement.path); }
+  catch (error) {
+    try { rmdirSync(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  return restoreRetiredHookLock(path, retirement.path, stat);
+}
+
+function retireOwnedHookLock(path, expectedStat, expectedRecord, { restorePath = path, stale = null } = {}) {
+  const retirement = privateHookRetirement(path);
+  try { renameSync(path, retirement.path); }
+  catch (error) {
+    try { rmdirSync(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  let retired;
+  try { retired = readHookLock(retirement.path); }
+  catch { return false; }
+  if (!sameHookLockInode(retired.stat, expectedStat) || !sameHookLockOwner(retired.record, expectedRecord)
+    || stale && !stale(retired)) {
+    restoreRetiredHookLock(restorePath, retirement.path, retired.stat);
+    return false;
+  }
+  rmSync(retirement.path);
+  rmdirSync(retirement.dir);
+  return true;
+}
+
+export function reclaimStaleLock(path, now, { afterQuarantine = () => {}, afterValidation = () => {} } = {}) {
   let current;
   try { current = readHookLock(path); }
   catch (error) { if (error.code === "ENOENT") return false; throw error; }
@@ -183,23 +230,19 @@ export function reclaimStaleLock(path, now, { afterQuarantine = () => {} } = {})
       restoreQuarantinedHookLock(path, quarantine, quarantined.stat);
       return false;
     }
-    const final = readHookLock(quarantine);
-    if (!sameHookLockInode(final.stat, quarantined.stat) || !sameHookLockOwner(final.record, quarantined.record)) {
-      restoreQuarantinedHookLock(path, quarantine, final.stat);
-      return false;
-    }
-    rmSync(quarantine);
-    return true;
+    afterValidation({ path, quarantine });
+    return retireOwnedHookLock(quarantine, quarantined.stat, quarantined.record, {
+      restorePath: path,
+      stale: state => staleHookLock(state, now)
+    });
   } catch (error) {
-    try {
-      const stranded = readHookLock(quarantine);
-      restoreQuarantinedHookLock(path, quarantine, stranded.stat);
-    } catch { /* fail closed: never unlink an ambiguous quarantined owner */ }
+    // Preserve ambiguous retired entries; never delete a pathname whose owner
+    // cannot be bound after the final move.
     throw error;
   }
 }
 
-function withShardLock(dir, name, callback, now = Date.now()) {
+export function withShardLock(dir, name, callback, now = Date.now(), { beforeRelease = () => {} } = {}) {
   const path = join(dir, name);
   const token = digest(`${process.pid}:${now}:${name}:${Math.random()}`);
   let fd;
@@ -218,9 +261,10 @@ function withShardLock(dir, name, callback, now = Date.now()) {
   finally {
     closeSync(fd);
     try {
-      const stat = lstatSync(path);
-      const owner = stat.isFile() && !stat.isSymbolicLink() ? JSON.parse(readFileSync(path, "utf8")) : null;
-      if (owner?.token === token) rmSync(path, { force: true });
+      const current = readHookLock(path);
+      if (!sameHookLockOwner(current.record, { token, pid: process.pid, createdAt: now, format: 1 })) return false;
+      beforeRelease({ path });
+      if (!retireOwnedHookLock(path, current.stat, current.record)) return false;
     } catch { /* a replaced lock is not ours to remove */ }
   }
   return true;

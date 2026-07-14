@@ -11,7 +11,7 @@ import { tallyReview } from "./review.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
@@ -49,6 +49,7 @@ import { modelForRole } from "./model.js";
 import { detectScope } from "./scope.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -84,6 +85,12 @@ async function resolveModeCapabilities(args) {
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   try {
+    // Help is resolved before every command branch so even mutating verbs are safe to
+    // inspect (`muster install --help`, `muster signals --help`, etc.).
+    if (cmd === "help" || cmd === "--help" || cmd === "-h" || rest.includes("--help") || rest.includes("-h")) {
+      process.stdout.write(USAGE + "\n");
+      return;
+    }
     // ── routing: project detection, capability discovery, task→provider matching ──
     if (cmd === "detect") {
       out(await detectProject(rest[0] || process.cwd()));
@@ -277,8 +284,12 @@ async function main() {
       // Deterministic 0-100 AI-tell score for human-facing text — the CI-gateable measure behind
       // the LLM humanizer. Reads a file path or capped stdin (shared readText helper).
       const text = await readText(rest[0]);
-      const threshold = Number(flagValue(rest, "--threshold")) || undefined;
-      out(scoreHumanness(text, threshold ? { threshold } : {}));
+      const thresholdArg = flagValue(rest, "--threshold");
+      const threshold = thresholdArg === undefined ? undefined : Number(thresholdArg);
+      if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 0 || threshold > 100)) {
+        fail("humanize-score --threshold must be a finite number between 0 and 100");
+      }
+      out(scoreHumanness(text, threshold === undefined ? {} : { threshold }));
     } else if (cmd === "citation-check") {
       // Deterministic citation guard for research/content artifacts: every `[src: anchor]` must
       // resolve against the trailing "Sources" list; dangling anchors fail loud (exit 2). Paragraphs
@@ -369,15 +380,16 @@ async function main() {
         out(await runCodexUninstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));
       } else out(await runUninstall({ home: rest[0] || homedir() }));
     } else if (cmd === "signals") {
-      const dir = rest[0] || process.cwd();
+      const dir = resolve(rest[0] || process.cwd());
       const profile = await detectProject(dir);
       const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
       const sig = buildSignals(profile, caps);
-      await mkdir(".muster", { recursive: true });
-      await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
+      const signalsDir = join(dir, ".muster");
+      await mkdir(signalsDir, { recursive: true });
+      await writeFile(join(signalsDir, "signals.json"), JSON.stringify(sig, null, 2));
       out(sig);
     } else {
-      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork] [--codex]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]>`);
+      fail(`unknown command: ${[cmd, ...rest].join(" ")}\n${USAGE}`);
     }
   } catch (e) {
     fail(formatError(e));

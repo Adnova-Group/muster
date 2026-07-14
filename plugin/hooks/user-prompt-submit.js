@@ -9,11 +9,13 @@
 // Self-contained apart from sibling guidance.js. FAIL-SAFE: whole body in
 // try/catch; on ANY error or missing state, emit minimal valid JSON and exit 0.
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE, isDirective } from "./guidance.js";
-import { budgetFile, resetBudget, safeSession, directiveFile } from "./inline-budget.js";
+import {
+  budgetFile, resetBudget, directiveFile, turnFile, readStateText,
+  replaceState, stateFileExists,
+} from "./inline-budget.js";
 import { envInt } from "./env-util.js";
 
 const EVENT = "UserPromptSubmit";
@@ -25,20 +27,18 @@ function posInt(value, fallback) {
 
 // Increment and persist a per-session turn counter; return the new count.
 function bumpTurn(sessionId) {
-  // Shared sanitization rule (inline-budget.js). Null when nothing usable remains:
-  // skip turn-counting rather than write a bare shared file (muster-turns-) that
-  // causes cross-session collisions.
-  const safe = safeSession(sessionId);
-  if (safe === null) return null;
-  const file = path.join(os.tmpdir(), `muster-turns-${safe}`);
+  // Exact-id hashing and private state location are shared with the other hook
+  // state files. Missing/empty ids skip counting rather than share a filename.
+  const file = turnFile(sessionId);
+  if (file === null) return null;
   let count = 0;
   try {
-    count = posInt(readFileSync(file, "utf8").trim(), 0); // missing/junk -> 0
+    count = posInt((readStateText(file) || "").trim(), 0); // missing/junk -> 0
   } catch {
     count = 0;
   }
   count += 1;
-  writeFileSync(file, String(count));
+  replaceState(file, String(count));
   return count;
 }
 
@@ -107,14 +107,14 @@ try {
         if (markerFile !== null) {
           let alreadyNudged = false;
           try {
-            alreadyNudged = existsSync(markerFile);
+            alreadyNudged = stateFileExists(markerFile);
           } catch {
             alreadyNudged = false;
           }
           if (!alreadyNudged) {
             additionalContext = ROUTING_POLICY;
             try {
-              writeFileSync(markerFile, "1");
+              replaceState(markerFile, "1");
             } catch {
               /* best-effort */
             }

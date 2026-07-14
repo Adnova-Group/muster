@@ -1,0 +1,48 @@
+# Muster-authored agent definitions (role specialists). Clean-room: inspired by atomic's
+# role taxonomy, authored fresh for muster. Discovered by Claude Code from plugin/agents/.
+# rank 55 sits just above the rank-50 vendored skills so a muster agent is preferred over a
+# bare skill for the same role (capabilities sorts by rank descending).
+# Convention: roles[0] is the PRIMARY role for each agent — it drives the modelForRole
+# policy assertion in test/agents.muster.test.js.  Place a new agent's governing role first.
+- id: muster-surgeon
+  kind: agent
+  roles: [implement]
+  rank: 55
+  description: Surgical 1-2 file edits — typos, single-function rewrites, mechanical renames, one-callsite fixes. Hard-refuses anything touching 3+ files.
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-builder
+  kind: agent
+  roles: [implement]
+  rank: 56 # default implementer: cohesion-bounded, handles N files; outranks surgeon (refuses 3+)
+  description: Feature-checkpoint builder for one cohesive slice (endpoint + service + dto + test) across however many files it takes. Refuses cross-cutting or architecturally ambiguous work.
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-reviewer
+  kind: agent
+  roles: [code-review]
+  rank: 55
+  description: Read-only diff/branch reviewer. One severity-tagged line per finding, no praise, no scope creep. Re-runs the stated test signals and ends with an explicit verdict.
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-investigator
+  kind: agent
+  roles: [code-navigation]
+  rank: 55
+  description: Read-only code locator. Answers "where is X / what calls Y / map this dir" as a file:line table. Refuses to suggest fixes or speculate on design.
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-strategist
+  kind: agent
+  roles: [architecture-review, plan]
+  rank: 55
+  description: Read-only heavyweight reasoning — revise plans, audit specs/designs, surface hidden assumptions and tradeoffs. Answers "is this the right approach?", not "is this code correct?". Does not implement.
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-improver
+  kind: agent
+  roles: [improve]
+  rank: 55
+  description: Read-only retrospective — mines a completed run's STATE, escalations, and review-gate fix-loops for recurring friction, then proposes user-gated edits to muster's own skills/agents/rules. Proposes, never applies; never edits during a run.
+  provenance: { inspired_by: "atomic-claude role concept", license: "Apache-2.0" }
+- id: muster-runner
+  kind: agent
+  roles: [lifecycle]
+  rank: 55
+  description: Dispatchable single-item lifecycle runner — drives ONE claimed backlog item end to end, unattended, in its own worktree/branch — TDD build, review gate with explicit PASS, fix loops that re-verify, disposition to a receipts-backed PR. The subagent form of the runner mode; dispatch it instead of a generic catch-all subagent with a hand-written discipline brief.
+  provenance: { inspired_by: "clean-room synthesis, docs/research/lifecycle-agent-patterns.md (obra/superpowers MIT, wshobson/agents MIT, Anthropic subagent docs)", license: "Apache-2.0" }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { link, lstat, open, readFile, rename, unlink, utimes } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, rmdir, unlink, utimes } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -43,15 +44,66 @@ const sameLockOwner = (left, right) => typeof left?.token === "string" && left.t
   && left.token === right?.token && left.pid === right?.pid
   && left.processIdentity === right?.processIdentity && left.createdAt === right?.createdAt;
 
-async function restoreQuarantinedLock(path, quarantine, stat) {
-  try { await link(quarantine, path); }
+async function privateRetirement(path) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const dir = join(dirname(path), `.muster-retired-${process.pid}-${randomUUID()}`);
+    try { await mkdir(dir, { mode: 0o700 }); }
+    catch (error) { if (error.code === "EEXIST" && attempt < 7) continue; throw error; }
+    const stat = await lstat(dir);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`unsafe Codex transaction retirement directory: ${dir}`);
+    return { dir, path: join(dir, "lock") };
+  }
+  throw new Error(`could not create Codex transaction retirement directory for ${path}`);
+}
+
+async function restoreRetiredLock(path, retired, stat) {
+  const current = await lstat(retired);
+  if (!sameInode(current, stat)) return false;
+  try { await link(retired, path); }
   catch (error) {
     if (error.code === "EEXIST") return false;
     throw error;
   }
   const restored = await lstat(path);
   if (!sameInode(restored, stat)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
-  await unlink(quarantine);
+  // `retired` is inside a fresh 0700 directory created for this operation, so
+  // deleting it cannot race a replacement at the public lock pathname.
+  await unlink(retired);
+  await rmdir(dirname(retired));
+  return true;
+}
+
+async function restoreQuarantinedLock(path, quarantine, stat) {
+  const retirement = await privateRetirement(quarantine);
+  try { await rename(quarantine, retirement.path); }
+  catch (error) {
+    try { await rmdir(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  return restoreRetiredLock(path, retirement.path, stat);
+}
+
+async function retireOwnedLock(path, expectedStat, expectedRecord, { stale = null, restorePath = path } = {}) {
+  const retirement = await privateRetirement(path);
+  try { await rename(path, retirement.path); }
+  catch (error) {
+    try { await rmdir(retirement.dir); } catch { /* leave an ambiguous retirement directory intact */ }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  let retired;
+  try { retired = await readLock(retirement.path); }
+  catch { return false; }
+  if (!sameInode(retired.stat, expectedStat) || !sameLockOwner(retired.record, expectedRecord)
+    || stale && !await stale(retired)) {
+    await restoreRetiredLock(restorePath, retirement.path, retired.stat);
+    return false;
+  }
+  // The final identity check happens after the atomic move into a private
+  // retirement directory. Never validate a public pathname and then delete it.
+  await unlink(retirement.path);
+  await rmdir(retirement.dir);
   return true;
 }
 
@@ -68,7 +120,7 @@ async function lockIsStale(current, { staleMs, maxStaleMs }) {
   return true;
 }
 
-export async function reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine = async () => {} }) {
+export async function reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine = async () => {}, afterValidation = async () => {} }) {
   let current;
   try { current = await readLock(path); }
   catch (error) {
@@ -88,17 +140,14 @@ export async function reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, aft
       await restoreQuarantinedLock(path, quarantine, quarantined.stat);
       return false;
     }
-    const final = await readLock(quarantine);
-    if (!sameInode(final.stat, quarantined.stat) || !sameLockOwner(final.record, quarantined.record)) {
-      await restoreQuarantinedLock(path, quarantine, final.stat);
-      return false;
-    }
-    await unlink(quarantine);
+    await afterValidation({ path, quarantine });
+    if (!await retireOwnedLock(quarantine, quarantined.stat, quarantined.record, {
+      stale: state => lockIsStale(state, { staleMs, maxStaleMs }),
+      restorePath: path
+    })) return false;
   } catch (error) {
-    try {
-      const stranded = await readLock(quarantine);
-      await restoreQuarantinedLock(path, quarantine, stranded.stat);
-    } catch { /* fail closed: never unlink an ambiguous quarantined owner */ }
+    // The stale candidate has already left the public pathname. Preserve any
+    // ambiguous retirement entry rather than deleting an owner we cannot bind.
     throw error;
   }
   return true;
@@ -108,7 +157,9 @@ export async function withCodexFileLock(path, callback, {
   staleMs = 60_000,
   maxStaleMs = 15 * 60_000,
   timeoutMs = 30_000,
-  afterQuarantine = async () => {}
+  afterQuarantine = async () => {},
+  afterValidation = async () => {},
+  beforeRelease = async () => {}
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
@@ -125,7 +176,7 @@ export async function withCodexFileLock(path, callback, {
     } catch (error) {
       if (handle) { await handle.close().catch(() => {}); handle = null; }
       if (error.code !== "EEXIST") throw error;
-      if (await reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine })) continue;
+      if (await reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine, afterValidation })) continue;
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
       await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
     }
@@ -143,7 +194,11 @@ export async function withCodexFileLock(path, callback, {
     clearInterval(heartbeat);
     try {
       const current = await readLock(path);
-      if (current.record?.token === token) await unlink(path);
+      if (current.record?.token !== token) return;
+      await beforeRelease({ path });
+      if (!await retireOwnedLock(path, current.stat, current.record)) {
+        throw new Error(`Codex transaction lock ownership changed: ${path}`);
+      }
     } catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 }

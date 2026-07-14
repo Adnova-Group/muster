@@ -13,6 +13,7 @@ import { formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../s
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { adaptCatalogForCodex, codexFallbackSkillId } from "../src/codex-catalog.js";
 import { resolveCodexRelease } from "../src/codex-release.js";
+import { withCodexFileLock } from "../src/codex-lock.js";
 
 const root = new URL("../", import.meta.url);
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -808,6 +809,87 @@ test("Codex managed-scope stale-lock reclaim never deletes a replacement owner",
   assert.equal(JSON.parse(await readFile(lockPath, "utf8")).token, replacement.token);
 });
 
+test("Codex final stale-lock validation binds general and managed-scope deletion before release", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-final-lock-validation-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const absent = async () => { throw new Error("not found"); };
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+
+  const generalLock = join(tmp, "publication.lock");
+  await writeFile(generalLock, JSON.stringify({ format: 1, pid: 2_147_483_647, processIdentity: "dead", createdAt: old.getTime(), token: "stale-general" }) + "\n");
+  await utimes(generalLock, old, old);
+  const staleGeneralReplacement = { format: 1, pid: process.pid, processIdentity: "fresh", createdAt: Date.now(), token: "fresh-general-stale" };
+  await assert.rejects(withCodexFileLock(generalLock, async () => {
+    throw new Error("replacement owner was bypassed");
+  }, {
+    timeoutMs: 0,
+    afterValidation: async ({ quarantine }) => {
+      await unlink(quarantine);
+      await writeFile(quarantine, JSON.stringify(staleGeneralReplacement) + "\n", { flag: "wx" });
+    }
+  }), /timed out waiting for Codex transaction lock/);
+  assert.equal(JSON.parse(await readFile(generalLock, "utf8")).token, staleGeneralReplacement.token);
+
+  await unlink(generalLock);
+  const normalGeneralReplacement = { format: 1, pid: process.pid, processIdentity: "fresh", createdAt: Date.now(), token: "fresh-general-release" };
+  await assert.rejects(withCodexFileLock(generalLock, async () => {}, {
+    beforeRelease: async ({ path }) => {
+      await unlink(path);
+      await writeFile(path, JSON.stringify(normalGeneralReplacement) + "\n", { flag: "wx" });
+    }
+  }), /lock ownership changed/i);
+  assert.equal(JSON.parse(await readFile(generalLock, "utf8")).token, normalGeneralReplacement.token);
+
+  const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+  const scopeLock = join(registryDir, "install-scopes.json.lock");
+  await mkdir(registryDir, { recursive: true });
+  await writeFile(scopeLock, JSON.stringify({ format: 1, owner: "muster", pid: 2_147_483_647, token: "stale-scope", createdAt: old.getTime() }) + "\n");
+  await utimes(scopeLock, old, old);
+  const staleScopeReplacement = { format: 1, owner: "muster", pid: process.pid, token: "fresh-scope-stale", createdAt: Date.now() };
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot, execFile: absent,
+    scopeLockOptions: {
+      maxAttempts: 1,
+      afterValidation: async ({ quarantine }) => {
+        await unlink(quarantine);
+        await writeFile(quarantine, JSON.stringify(staleScopeReplacement) + "\n", { flag: "wx" });
+      }
+    }
+  }), /lock did not become available/);
+  assert.equal(JSON.parse(await readFile(scopeLock, "utf8")).token, staleScopeReplacement.token);
+
+  await unlink(scopeLock);
+  const normalScopeReplacement = { format: 1, owner: "muster", pid: process.pid, token: "fresh-scope-release", createdAt: Date.now() };
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot, execFile: absent,
+    scopeLockOptions: {
+      beforeRelease: async ({ path }) => {
+        await unlink(path);
+        await writeFile(path, JSON.stringify(normalScopeReplacement) + "\n", { flag: "wx" });
+      }
+    }
+  }), /lock ownership changed/i);
+  assert.equal(JSON.parse(await readFile(scopeLock, "utf8")).token, normalScopeReplacement.token);
+});
+
+test("Codex reclaims a crashed stale managed-scope recovery sentinel", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-stale-recovery-sentinel-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+  const lockPath = join(registryDir, "install-scopes.json.lock"), recoveryPath = `${lockPath}.recover`;
+  const absent = async () => { throw new Error("not found"); };
+  await mkdir(registryDir, { recursive: true });
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  const stale = token => JSON.stringify({ format: 1, owner: "muster", pid: 2_147_483_647, token, createdAt: old.getTime() }) + "\n";
+  await writeFile(lockPath, stale("stale-main"));
+  await writeFile(recoveryPath, stale("stale-recovery"));
+  await utimes(lockPath, old, old);
+  await utimes(recoveryPath, old, old);
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent, scopeLockOptions: { maxAttempts: 2 } });
+  await assert.rejects(() => readFile(lockPath, "utf8"));
+  await assert.rejects(() => readFile(recoveryPath, "utf8"));
+});
+
 test("Codex hook stale-lock reclaim never deletes replacement capacity or cleanup owners", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-lock-race-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
@@ -843,6 +925,57 @@ test("Codex hook stale-lock reclaim never deletes replacement capacity or cleanu
     { reclaimed: true, token: "fresh-.capacity-lock", expected: "fresh-.capacity-lock" },
     { reclaimed: true, token: "fresh-.cleanup-lock", expected: "fresh-.cleanup-lock" }
   ]);
+});
+
+test("Codex hook binds final stale and normal release deletion to its retirement path", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-final-lock-validation-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const hookUrl = new URL("../codex/hooks/muster-hook.mjs", import.meta.url).href;
+  const script = `
+    import { readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    const hook = await import(${JSON.stringify(hookUrl)});
+    const dir = process.argv[1], now = Date.now(), old = now - 10 * 60 * 1000;
+    const stalePath = join(dir, ".stale-lock");
+    writeFileSync(stalePath, JSON.stringify({ format: 1, pid: 99999999, createdAt: old, token: "stale" }) + "\\n");
+    utimesSync(stalePath, new Date(old), new Date(old));
+    const staleReplacement = { format: 1, pid: process.pid, createdAt: now, token: "fresh-stale" };
+    const staleReclaimed = hook.reclaimStaleLock(stalePath, now, {
+      afterValidation: ({ quarantine }) => {
+        rmSync(quarantine);
+        writeFileSync(quarantine, JSON.stringify(staleReplacement) + "\\n", { flag: "wx" });
+      }
+    });
+    const normalPath = join(dir, ".normal-lock");
+    const normalReplacement = { format: 1, pid: process.pid, createdAt: now, token: "fresh-normal" };
+    const normalReleased = hook.withShardLock(dir, ".normal-lock", () => {}, now, {
+      beforeRelease: ({ path }) => {
+        rmSync(path);
+        writeFileSync(path, JSON.stringify(normalReplacement) + "\\n", { flag: "wx" });
+      }
+    });
+    process.stdout.write(JSON.stringify({
+      staleReclaimed,
+      staleToken: JSON.parse(readFileSync(stalePath, "utf8")).token,
+      normalReleased,
+      normalToken: JSON.parse(readFileSync(normalPath, "utf8")).token
+    }));
+  `;
+  const stdout = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", script, tmp], { stdio: ["pipe", "pipe", "pipe"] });
+    let output = "", error = "";
+    child.stdout.setEncoding("utf8"); child.stdout.on("data", chunk => { output += chunk; });
+    child.stderr.setEncoding("utf8"); child.stderr.on("data", chunk => { error += chunk; });
+    child.on("error", reject);
+    child.on("exit", code => code === 0 ? resolve(output) : reject(new Error(error || `hook final validation child exited ${code}`)));
+    child.stdin.end();
+  });
+  assert.deepEqual(JSON.parse(stdout), {
+    staleReclaimed: false,
+    staleToken: "fresh-stale",
+    normalReleased: false,
+    normalToken: "fresh-normal"
+  });
 });
 
 test("Codex ownership dry-runs never create registry locks or entries", async () => {

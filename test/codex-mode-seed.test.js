@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -10,11 +10,22 @@ const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
 const cli = join(repoRoot, "src", "cli.js");
 
-async function runMode(project, args) {
+async function configureCodex(project, plugins = []) {
   const home = join(project, "home");
+  const bin = join(project, "bin");
+  await mkdir(bin, { recursive: true });
+  const executable = join(bin, "codex");
+  const pluginJson = JSON.stringify({ installed: plugins });
+  await writeFile(executable, `#!${process.execPath}\nconst command = process.argv[2];\nconsole.log(command === "plugin" ? ${JSON.stringify(pluginJson)} : "[]");\n`);
+  await chmod(executable, 0o755);
+  return { home, bin };
+}
+
+async function runMode(project, args, codex) {
+  const { home, bin } = codex;
   const { stdout } = await execFile(process.execPath, [cli, ...args], {
     cwd: project,
-    env: { ...process.env, HOME: home, CODEX_HOME: join(home, ".codex"), PATH: "" },
+    env: { ...process.env, HOME: home, CODEX_HOME: join(home, ".codex"), PATH: `${bin}:${process.env.PATH || ""}` },
     timeout: 10_000,
     maxBuffer: 4 * 1024 * 1024
   });
@@ -27,9 +38,10 @@ function crewMember(manifest, stage) {
 
 test("Codex audit and diagnose seeds use bundled agents when live external providers are absent", async () => {
   const project = await mkdtemp(join(tmpdir(), "muster-codex-seed-bare-"));
+  const codex = await configureCodex(project);
   const [audit, diagnose] = await Promise.all([
-    runMode(project, ["audit", "--codex"]),
-    runMode(project, ["diagnose", "--codex", "button does not respond"])
+    runMode(project, ["audit", "--codex"], codex),
+    runMode(project, ["diagnose", "--codex", "button does not respond"], codex)
   ]);
   assert.deepEqual(crewMember(audit, "architecture-review"), {
     stage: "architecture-review", provider: "muster-strategist", source: "builtin", model: "opus",
@@ -39,14 +51,29 @@ test("Codex audit and diagnose seeds use bundled agents when live external provi
   assert.equal(crewMember(diagnose.manifest, "debug").source, "builtin");
 });
 
-test("Codex audit and diagnose seeds prefer enabled live external providers", async () => {
+test("Codex plugin detection ignores a same-named custom agent profile", async () => {
+  const project = await mkdtemp(join(tmpdir(), "muster-codex-seed-profile-"));
+  const agents = join(project, ".codex", "agents");
+  await mkdir(agents, { recursive: true });
+  await writeFile(join(agents, "agents.toml"), "name = 'agents'\n");
+  const codex = await configureCodex(project);
+  const [audit, diagnose] = await Promise.all([
+    runMode(project, ["audit", "--codex"], codex),
+    runMode(project, ["diagnose", "--codex", "button does not respond"], codex)
+  ]);
+  assert.equal(crewMember(audit, "architecture-review").provider, "muster-strategist");
+  assert.equal(crewMember(diagnose.manifest, "debug").provider, "wsh-debugger");
+});
+
+test("Codex audit and diagnose prefer a plugin only when live plugin JSON enables it", async () => {
   const project = await mkdtemp(join(tmpdir(), "muster-codex-seed-live-"));
   const agents = join(project, ".codex", "agents");
   await mkdir(agents, { recursive: true });
   await writeFile(join(agents, "agents.toml"), "name = 'agents'\n");
+  const codex = await configureCodex(project, [{ name: "agents", installed: true, enabled: true }]);
   const [audit, diagnose] = await Promise.all([
-    runMode(project, ["audit", "--codex"]),
-    runMode(project, ["diagnose", "--codex", "button does not respond"])
+    runMode(project, ["audit", "--codex"], codex),
+    runMode(project, ["diagnose", "--codex", "button does not respond"], codex)
   ]);
   for (const stage of ["architecture-review", "tech-debt", "security-review"]) {
     assert.equal(crewMember(audit, stage).provider, "wshobson-agents", stage);

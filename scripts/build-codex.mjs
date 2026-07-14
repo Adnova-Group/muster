@@ -1,12 +1,20 @@
 import { build } from "esbuild";
-import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { execFile as execFileCb } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, truncate, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const plugin = join(root, ".agents", "plugins", "plugins", "muster");
+const execFile = promisify(execFileCb);
+const livePlugin = join(root, ".agents", "plugins", "plugins", "muster");
+const pluginParent = dirname(livePlugin);
+await mkdir(pluginParent, { recursive: true });
+const stagingRoot = await mkdtemp(join(pluginParent, ".muster-build-"));
+const plugin = join(stagingRoot, "plugin");
 const runtime = join(plugin, "runtime");
-const profiles = join(root, "codex", "agents");
+const liveProfiles = join(root, "codex", "agents");
+const profiles = join(stagingRoot, "profiles");
 const modeDir = join(plugin, "skills");
 const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const mapping = JSON.parse(await readFile(join(root, "codex", "agents.manifest.json"), "utf8"));
@@ -34,6 +42,61 @@ const modes = {
 
 async function ensure(dir) { await mkdir(dir, { recursive: true }); }
 async function write(path, content) { await ensure(dirname(path)); await writeFile(path, content, "utf8"); }
+async function treeEntries(rootDir) {
+  const dirs = [], files = [];
+  async function walk(dir, prefix = "") {
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); }
+    catch (error) { if (error.code === "ENOENT") return; throw error; }
+    for (const entry of entries) {
+      const relativePath = prefix ? join(prefix, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        dirs.push(relativePath);
+        await walk(join(dir, entry.name), relativePath);
+      } else files.push(relativePath);
+    }
+  }
+  await walk(rootDir);
+  return { dirs, files };
+}
+async function publishTreeAtomically(staged, live) {
+  await ensure(live);
+  // GNU mv maps --exchange to renameat2(RENAME_EXCHANGE), switching the
+  // complete sibling trees in one syscall. This is the publication path on
+  // Linux/WSL; unsupported platforms fall back to safe file publication.
+  if (process.platform !== "win32") {
+    try { await execFile("mv", ["--exchange", "--no-target-directory", staged, live]); return; }
+    catch { /* exchange unsupported or cross-device: use portable fallback */ }
+  }
+  const [next, previous] = await Promise.all([treeEntries(staged), treeEntries(live)]);
+  const nextDirs = new Set(next.dirs), nextFiles = new Set(next.files);
+  for (const path of next.dirs.sort((a, b) => a.length - b.length)) await ensure(join(live, path));
+  // Same-version refreshes are the common live-marketplace path. Preserve
+  // byte-identical files in place so even filesystems with weak replace
+  // semantics (notably WSL-mounted NTFS) expose no unlink/relink window.
+  // Changed text stays at the registered path; new/binary files use rename.
+  for (const path of next.files) {
+    const stagedPath = join(staged, path), livePath = join(live, path);
+    const stagedContent = await readFile(stagedPath);
+    let liveContent = null;
+    try { liveContent = await readFile(livePath); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (liveContent?.equals(stagedContent)) continue;
+    if (liveContent && !liveContent.includes(0) && !stagedContent.includes(0)) {
+      // Portable fallback for filesystems without directory exchange. Keep the
+      // registered path present, replace its complete text in one write, pad
+      // away any old tail, then trim only harmless trailing spaces.
+      const padded = Buffer.alloc(Math.max(liveContent.length, stagedContent.length), 0x20);
+      stagedContent.copy(padded);
+      await writeFile(livePath, padded, { flag: "r+" });
+      await truncate(livePath, stagedContent.length);
+    } else await rename(stagedPath, livePath);
+  }
+  for (const path of previous.files) if (!nextFiles.has(path)) await rm(join(live, path), { force: true });
+  for (const path of previous.dirs.sort((a, b) => b.length - a.length)) {
+    if (!nextDirs.has(path)) await rm(join(live, path), { recursive: true, force: true });
+  }
+}
 function frontmatter(text, field) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   const line = m?.[1].match(new RegExp(`^${field}:\\s*(.+)$`, "m"));
@@ -213,19 +276,7 @@ function modeSkill(name, mode) {
   return `---\nname: ${name}\ndescription: ${JSON.stringify(`Use for Muster orchestration when the user asks to ${mode.purpose}. Explicitly invoke with $${name}.`)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n`;
 }
 
-await Promise.all([
-  rm(join(plugin, "skills"), { recursive: true, force: true }),
-  rm(join(plugin, "agents"), { recursive: true, force: true }),
-  rm(join(plugin, "runtime"), { recursive: true, force: true }),
-  rm(join(plugin, "src"), { recursive: true, force: true }),
-  rm(join(plugin, "catalog"), { recursive: true, force: true }),
-  rm(join(plugin, "pipelines"), { recursive: true, force: true }),
-  rm(join(plugin, "vendor"), { recursive: true, force: true }),
-  rm(join(plugin, "commands"), { recursive: true, force: true }),
-  rm(join(plugin, "hooks"), { recursive: true, force: true }),
-  rm(profiles, { recursive: true, force: true })
-]);
-
+try {
 await Promise.all([ensure(plugin), ensure(runtime)]);
 
 await Promise.all([
@@ -311,3 +362,11 @@ await write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({
   keywords: ["orchestration", "agents", "pipelines", "mcp", "codex"], skills: "./skills/", mcpServers: "./.mcp.json",
   interface: { displayName: "Muster", shortDescription: "Glass-box agentic orchestration for Codex.", longDescription: "Muster provides deterministic routing, custom-agent profiles, pipeline workflows, and the complete MCP toolset.", developerName: "Adnova Group", category: "Productivity", capabilities: ["Read", "Write"], websiteURL: "https://adnova-group.github.io/muster/", defaultPrompt: ["Plan this feature with Muster.", "Run a Muster audit of this repository.", "Use Muster to clear this backlog."] }
 }, null, 2) + "\n");
+
+await Promise.all([
+  publishTreeAtomically(plugin, livePlugin),
+  publishTreeAtomically(profiles, liveProfiles)
+]);
+} finally {
+  await rm(stagingRoot, { recursive: true, force: true });
+}

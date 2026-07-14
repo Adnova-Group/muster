@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isInstalled } from "../src/installed.js";
+import { adaptCatalogForCodex } from "../src/codex-catalog.js";
 import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,14 @@ test("isInstalled: agent kind always returns false (only external resolves via i
 test("isInstalled: external matches via installed.plugins", () => {
   const entry = { id: "my-plugin", kind: "external", detect: { kind: "plugin", match: "my-plugin" } };
   assert.equal(isInstalled(entry, { plugins: ["my-plugin"], skills: [], mcpServers: [], agents: [] }), true);
+});
+
+test("Codex plugin detection does not match a custom profile while Claude semantics stay unchanged", () => {
+  const entry = { id: "wshobson-agents", kind: "external", roles: ["debug"], detect: { kind: "plugin", match: "agents" } };
+  const installed = { plugins: [], skills: [], mcpServers: [], agents: ["agents"] };
+  assert.equal(isInstalled(entry, installed), true, "shared Claude detection remains cross-lane");
+  const [codexEntry] = adaptCatalogForCodex([entry], installed);
+  assert.equal(isInstalled(codexEntry, installed), false, "Codex plugin detection requires live plugin JSON");
 });
 
 // Match against mcpServers array.

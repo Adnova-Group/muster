@@ -7978,6 +7978,9 @@ function maxTier(models) {
 function isInstalled(entry, installed) {
   if (entry.kind !== "external" || !entry.detect?.match) return false;
   const m = entry.detect.match;
+  if (entry.detect.codexStrictKind) {
+    return (installed.plugins || []).includes(m);
+  }
   return (installed.plugins || []).includes(m) || (installed.skills || []).includes(m) || (installed.mcpServers || []).includes(m) || (installed.agents || []).includes(m);
 }
 
@@ -10017,7 +10020,7 @@ function adaptCatalogForCodex(catalog, installed) {
   const fallback = [];
   for (const entry of catalog) {
     if (entry.kind !== "builtin") {
-      fallback.push(entry);
+      fallback.push(entry.kind === "external" && entry.detect?.kind === "plugin" ? { ...entry, detect: { ...entry.detect, codexStrictKind: true } } : entry);
       continue;
     }
     const nativeId = nativeSkillId(entry.id);

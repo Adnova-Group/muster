@@ -2,7 +2,7 @@
 
 import { resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { resolveCodexRelease } from "../../../../../src/codex-release.js";
+import { resolveCodexRelease } from "./resolve-release.mjs";
 
 const pluginRoot = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const selected = await resolveCodexRelease(resolve(pluginRoot, "../../../.."));

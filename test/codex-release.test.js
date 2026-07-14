@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import { createHash } from "node:crypto";
+import { execFile as execFileCb } from "node:child_process";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import {
   assertRegularTree,
   publishCodexRelease,
@@ -27,6 +29,7 @@ async function candidate(root, marker) {
 }
 
 const bootstrapPayload = { format: 1, files: [] };
+const execFile = promisify(execFileCb);
 const TEST_BOOTSTRAP_DIGEST = createHash("sha256").update(JSON.stringify(bootstrapPayload)).digest("hex");
 const publish = options => publishCodexRelease({ allowBootstrapMigration: true, bootstrapDigest: TEST_BOOTSTRAP_DIGEST, ...options });
 
@@ -208,6 +211,37 @@ test("selection retries transient failures and falls back to complete bootstrap 
   const newest = (await readdir(selections)).sort().at(-1);
   await writeFile(join(selections, newest), "{corrupt\n");
   assert.equal((await resolveCodexRelease(root)).generation, old.generation);
+});
+
+test("selector scan skips symlink and FIFO records without following or blocking", { skip: process.platform === "win32" }, async t => {
+  const root = await tempRepo(t);
+  const old = await publish({ repoRoot: root, stagedRelease: await candidate(root, "old-special"), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "new-special"), packageVersion: "0.5.0" });
+  const selections = join(root, ".agents", "plugins", "selections"), outside = join(root, "outside-selector.json");
+  await writeFile(outside, JSON.stringify({ format: 1, sequence: 999999999999, generation: old.generation, bootstrapDigest: TEST_BOOTSTRAP_DIGEST }));
+  await execFile("mkfifo", [join(selections, `999999999998-${old.generation}.json`)]);
+  await symlink(outside, join(selections, `999999999999-${old.generation}.json`));
+  const started = Date.now(), selected = await resolveCodexRelease(root);
+  assert.ok(Date.now() - started < 2_000, "FIFO selector blocked resolution");
+  assert.notEqual(selected.generation, undefined);
+  assert.equal(await readFile(outside, "utf8"), JSON.stringify({ format: 1, sequence: 999999999999, generation: old.generation, bootstrapDigest: TEST_BOOTSTRAP_DIGEST }));
+});
+
+test("release retention preserves an actively leased generation and reclaims its stale lease", async t => {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "g1"), packageVersion: "0.5.0" });
+  const g2 = await publish({ repoRoot: root, stagedRelease: await candidate(root, "g2"), packageVersion: "0.5.0" });
+  assert.equal((await resolveCodexRelease(root)).generation, g2.generation);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "g3"), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "g4"), packageVersion: "0.5.0" });
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), "active g2 was garbage-collected by g4");
+  const lease = join(root, ".agents", "plugins", "leases", g2.generation, `${process.pid}.json`);
+  const stale = JSON.parse(await readFile(lease, "utf8"));
+  stale.pid = 99999999;
+  await writeFile(lease, JSON.stringify(stale));
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "g5"), packageVersion: "0.5.0" });
+  assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), false, "stale leased generation was not reclaimed");
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).length <= 3);
 });
 
 test("normal publication fails closed on bootstrap surface drift with maintenance guidance", async t => {

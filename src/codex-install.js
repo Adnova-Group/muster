@@ -1,4 +1,5 @@
-import { lstat, mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
@@ -18,6 +19,7 @@ const HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
 const codexHome = home => process.env.CODEX_HOME || join(home, ".codex");
 const agentsDir = (scope, cwd, home) => scope === "user" ? join(codexHome(home), "agents") : join(cwd, ".codex", "agents");
 const configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join(cwd, ".codex");
+const scopeRegistryPath = home => join(codexHome(home), "muster", "install-scopes.json");
 async function ordinaryDirectoryPath(path, { create = false } = {}) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
@@ -55,6 +57,32 @@ const readJson = async path => { try { return JSON.parse(await readSafe(path, "u
   if (/symlink|ordinary|regular/i.test(error.message)) throw error;
   return null;
 } };
+
+async function readScopeRegistry(home) {
+  const path = scopeRegistryPath(home), present = await safeExists(path);
+  if (!present) return { path, present: false, entries: [] };
+  const registry = await readJson(path);
+  if (registry?.format !== 1 || !Array.isArray(registry.entries)) throw new Error(`Codex managed-scope registry is invalid: ${path}`);
+  const entries = [], seen = new Set();
+  for (const entry of registry.entries) {
+    if (!entry || !["project", "user"].includes(entry.scope) || typeof entry.configDir !== "string" || !isAbsolute(entry.configDir)) {
+      throw new Error(`Codex managed-scope registry has an invalid entry: ${path}`);
+    }
+    const key = `${entry.scope}:${entry.configDir}`;
+    if (seen.has(key)) throw new Error(`Codex managed-scope registry has a duplicate entry: ${path}`);
+    seen.add(key); entries.push({ scope: entry.scope, configDir: entry.configDir });
+  }
+  return { path, present: true, entries };
+}
+
+async function scopeEntry(scope, cwd, home) {
+  const dir = configDir(scope, cwd, home);
+  try { return { scope, configDir: await realpath(dir) }; }
+  catch (error) { if (error.code === "ENOENT") return { scope, configDir: resolve(dir) }; throw error; }
+}
+
+const sameScopeEntry = (left, right) => left.scope === right.scope && left.configDir === right.configDir;
+const registryText = entries => JSON.stringify({ format: 1, owner: "muster", entries }, null, 2) + "\n";
 
 async function atomicWriteSafe(path, content) {
   const parent = dirname(path);
@@ -148,7 +176,7 @@ function shellCommand(path) {
   return { command: `node ${posix}`, commandWindows: `node "${windows}"` };
 }
 
-async function prepareHooks({ scope, cwd, home, root }) {
+async function prepareHooks({ scope, cwd, home, hookSourceRoot, generation, bootstrapDigest }) {
   const dir = configDir(scope, cwd, home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
   await ordinaryDirectoryPath(dir);
@@ -172,7 +200,7 @@ async function prepareHooks({ scope, cwd, home, root }) {
   }
   if (previous) config = removeOwnedHookGroups(config, previous.hookGroups, configPath);
 
-  const templatePath = join(root, "codex", "hooks", "hooks.json");
+  const templatePath = join(hookSourceRoot, "hooks.json");
   const template = await readJson(templatePath);
   if (!template?.hooks || typeof template.hooks !== "object") throw new Error(`Codex hook template is missing or malformed: ${templatePath}`);
   const runtimeScript = join(runtimeDir, "hooks", "muster-hook.mjs");
@@ -183,14 +211,17 @@ async function prepareHooks({ scope, cwd, home, root }) {
     hook.commandWindows = command.commandWindows;
   }
   for (const [event, groups] of Object.entries(hookGroups)) config.hooks[event] = [...(config.hooks[event] || []), ...groups];
+  const sourceFiles = new Map([
+    ["hooks/muster-hook.mjs", join(hookSourceRoot, "muster-hook.mjs")],
+    ["hooks/action-guard.mjs", join(hookSourceRoot, "action-guard.mjs")]
+  ]);
+  const hookHash = createHash("sha256");
+  for (const [file, sourcePath] of sourceFiles) hookHash.update(file).update("\0").update(await readSafe(sourcePath));
   return {
     dir, runtimeDir, manifestPath, manifestExists, configPath, configExists, config,
     staleFiles: (previous?.files || []).filter(file => !HOOK_FILES.includes(file)),
-    manifest: { format: 1, owner: "muster", files: HOOK_FILES, hookConfigCreated: previous?.hookConfigCreated ?? !configExists, hookGroups },
-    sourceFiles: new Map([
-      ["hooks/muster-hook.mjs", join(root, "codex", "hooks", "muster-hook.mjs")],
-      ["hooks/action-guard.mjs", join(root, "codex", "hooks", "action-guard.mjs")]
-    ])
+    manifest: { format: 1, owner: "muster", files: HOOK_FILES, generation, bootstrapDigest, hookHash: hookHash.digest("hex"), hookConfigCreated: previous?.hookConfigCreated ?? !configExists, hookGroups },
+    sourceFiles
   };
 }
 
@@ -211,26 +242,39 @@ function normalizedLocalRoot(value) {
   if (typeof value !== "string" || !value.trim()) return null;
   const input = value.trim().replaceAll("\\", "/");
   const drive = input.match(/^([a-z]):\/(.*)$/i);
-  return (drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2]}` : resolve(input)).replace(/\/+$/, "").toLowerCase();
+  return (drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2]}` : resolve(input)).replace(/\/+$/, "");
 }
 
-function sameLocalRoot(left, right) {
+async function sameLocalRoot(left, right) {
   const actual = normalizedLocalRoot(left), expected = normalizedLocalRoot(right);
   if (!actual || !expected) return false;
-  return actual === expected;
+  try {
+    const canonical = async path => {
+      try { return await realpath(path); }
+      catch (error) {
+        if (!/^\/mnt\/[a-z](?:\/|$)/i.test(path)) throw error;
+        return realpath(path.toLowerCase());
+      }
+    };
+    const [actualPath, expectedPath] = await Promise.all([canonical(actual), canonical(expected)]);
+    const [actualStat, expectedStat] = await Promise.all([lstat(actualPath), lstat(expectedPath)]);
+    return actualStat.isDirectory() && expectedStat.isDirectory()
+      && actualStat.dev === expectedStat.dev && actualStat.ino === expectedStat.ino;
+  } catch { return false; }
 }
 
-function trustedMusterMarketplace(item, repoRoot) {
+async function trustedMusterMarketplace(item, repoRoot) {
   const source = item?.marketplaceSource;
   return source?.sourceType === "local"
-    && sameLocalRoot(item.root, repoRoot)
-    && sameLocalRoot(source.source, repoRoot);
+    && await sameLocalRoot(item.root, repoRoot)
+    && await sameLocalRoot(source.source, repoRoot);
 }
 
 async function existingMusterMarketplace(execFile, repoRoot) {
   const result = await runJson(execFile, ["plugin", "marketplace", "list", "--json"]);
   const matches = Array.isArray(result?.marketplaces) ? result.marketplaces.filter(item => item.name === "muster") : [];
-  if (matches.some(item => !trustedMusterMarketplace(item, repoRoot))) {
+  const trusted = await Promise.all(matches.map(item => trustedMusterMarketplace(item, repoRoot)));
+  if (trusted.some(value => !value)) {
     throw new Error(`Codex marketplace conflict: "muster" is registered from an unexpected source. Run "codex plugin marketplace remove muster", then rerun muster install codex.`);
   }
   return matches[0];
@@ -278,7 +322,8 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const manifest = await readJson(manifestPath);
   const manifestExists = await safeExists(manifestPath);
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
-  const hooks = await prepareHooks({ scope, cwd, home, root });
+  const hookSourceRoot = pluginRoot ? join(root, "runtime", "install-hooks") : join(root, "codex", "hooks");
+  const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, generation: selected.metadata.generation, bootstrapDigest });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
   const staleFiles = managedFiles.filter(file => !files.includes(file));
   for (const file of files) {
@@ -299,6 +344,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     await ordinaryDirectoryPath(dir, { create: true });
     originals = new Map(); changed = [];
     try {
+      const registry = await readScopeRegistry(home);
+      const currentScope = await scopeEntry(scope, cwd, home);
+      await snapshot(originals, changed, registry.path);
+      await atomicWriteSafe(registry.path, registryText([...registry.entries.filter(entry => !sameScopeEntry(entry, currentScope)), currentScope]));
       for (const file of files) {
         const destination = join(dir, file);
         await snapshot(originals, changed, destination);
@@ -365,18 +414,21 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   }
   const hookFiles = hookManifest ? hookManifest.files.map(file => join(hookRuntimeDir, file)) : [];
   const present = await codexAvailable({ execFile });
-  const otherScope = scope === "project" ? "user" : "project";
-  const otherDir = agentsDir(otherScope, cwd, home), otherManifestPath = join(otherDir, MANIFEST);
-  let otherManaged = false;
-  if (await ordinaryDirectoryPath(otherDir)) {
-    const otherManifest = await readJson(otherManifestPath);
-    if (await safeExists(otherManifestPath)) {
-      validateManagedFiles(otherManifest, otherDir, otherManifestPath);
-      otherManaged = true;
-    }
-  }
   const ownsScope = manifestExists || hookManifestExists;
-  const removePlugin = present && ownsScope && !otherManaged;
+  const registry = await readScopeRegistry(home);
+  const currentScope = await scopeEntry(scope, cwd, home);
+  const liveScopes = [];
+  for (const entry of registry.entries) {
+    if (sameScopeEntry(entry, currentScope)) continue;
+    if (!(await ordinaryDirectoryPath(entry.configDir))) continue;
+    const entryAgents = join(entry.configDir, "agents"), entryManifest = join(entryAgents, MANIFEST);
+    if (!(await ordinaryDirectoryPath(entryAgents))) continue;
+    if (!(await safeExists(entryManifest))) continue;
+    validateManagedFiles(await readJson(entryManifest), entryAgents, entryManifest);
+    liveScopes.push(entry);
+  }
+  const ownershipCertain = registry.present;
+  const removePlugin = present && ownsScope && ownershipCertain && liveScopes.length === 0;
   const planned = [
     ...files.map(path => ({ op: "remove", path })),
     ...hookFiles.map(path => ({ op: "remove", path })),
@@ -385,6 +437,8 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   if (!dryRun) {
     const originals = new Map(), changed = [];
     try {
+      await snapshot(originals, changed, registry.path);
+      await atomicWriteSafe(registry.path, registryText(liveScopes));
       for (const file of files) { await snapshot(originals, changed, file); await removeSafe(file); }
       if (manifestExists) { await snapshot(originals, changed, manifestPath); await removeSafe(manifestPath); }
       for (const file of hookFiles) { await snapshot(originals, changed, file); await removeSafe(file); }
@@ -405,6 +459,6 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
     if (removePlugin) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN]); } catch { /* already absent is idempotent */ }
   }
   return { ok: true, target: "codex", scope, dryRun, files: planned,
-    plugin: present ? { removed: !dryRun && removePlugin, retained: otherManaged } : { removed: false, skipped: "codex-not-found" },
+    plugin: present ? { removed: !dryRun && removePlugin, retained: liveScopes.length > 0, ownershipCertain } : { removed: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster uninstall codex --scope ${scope}`] };
 }

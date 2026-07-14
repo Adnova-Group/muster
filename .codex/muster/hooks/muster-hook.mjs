@@ -117,6 +117,7 @@ function ensureDirectory(path) {
 const CLEANUP_INTERVAL_MS = 60 * 1000;
 const RECORD_TTL_MS = 24 * 60 * 60 * 1000;
 const RECORDS_PER_SHARD = 64;
+const LOCK_STALE_MS = 5 * 60 * 1000;
 
 function regularRecords(dir) {
   const records = [];
@@ -130,17 +131,50 @@ function regularRecords(dir) {
   return records;
 }
 
-function withShardLock(dir, name, callback) {
+function lockOwnerAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code === "EPERM"; }
+}
+
+function reclaimStaleLock(path, now) {
+  const before = lstatSync(path);
+  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`unsafe hook lock: ${path}`);
+  if (now - before.mtimeMs < LOCK_STALE_MS) return false;
+  let owner;
+  try { owner = JSON.parse(readFileSync(path, "utf8")); } catch { owner = null; }
+  if (lockOwnerAlive(Number(owner?.pid))) return false;
+  const after = lstatSync(path);
+  if (after.isSymbolicLink() || !after.isFile() || after.mtimeMs !== before.mtimeMs || after.size !== before.size) return false;
+  rmSync(path, { force: true });
+  return true;
+}
+
+function withShardLock(dir, name, callback, now = Date.now()) {
   const path = join(dir, name);
+  const token = digest(`${process.pid}:${now}:${name}:${Math.random()}`);
   let fd;
-  try { fd = openSync(path, "wx", 0o600); }
-  catch (error) { if (error.code === "EEXIST") return; throw error; }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fd = openSync(path, "wx", 0o600);
+      writeFileSync(fd, JSON.stringify({ format: 1, pid: process.pid, createdAt: now, token }) + "\n", "utf8");
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (attempt === 0 && reclaimStaleLock(path, now)) continue;
+      return false;
+    }
+  }
   try { callback(); }
   finally {
     closeSync(fd);
-    const stat = lstatSync(path);
-    if (stat.isFile() && !stat.isSymbolicLink()) rmSync(path, { force: true });
+    try {
+      const stat = lstatSync(path);
+      const owner = stat.isFile() && !stat.isSymbolicLink() ? JSON.parse(readFileSync(path, "utf8")) : null;
+      if (owner?.token === token) rmSync(path, { force: true });
+    } catch { /* a replaced lock is not ours to remove */ }
   }
+  return true;
 }
 
 function cleanupEventRecords(dir, now = Date.now()) {
@@ -167,7 +201,7 @@ function cleanupEventRecords(dir, now = Date.now()) {
         if (stat.isFile() && !stat.isSymbolicLink()) rmSync(staged, { force: true });
       } catch { /* already renamed */ }
     }
-  });
+  }, now);
 }
 
 function enforceShardCapacity(dir, preserve) {

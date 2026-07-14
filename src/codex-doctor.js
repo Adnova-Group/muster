@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { CODEX_COUNTS } from "./codex.js";
@@ -13,7 +14,14 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // plugin root itself. Support both layouts without requiring npm at runtime.
   const isPluginRoot = await exists(join(base, ".codex-plugin", "plugin.json"));
   let selected = null;
-  if (!isPluginRoot) {
+  let distributionRoot = base;
+  if (isPluginRoot) {
+    try {
+      const releaseRoot = dirname(base), metadata = JSON.parse(await readFile(join(releaseRoot, "release.json"), "utf8"));
+      selected = { generation: metadata.generation, metadata, releaseRoot, pluginRoot: base, profilesRoot: join(base, "agents") };
+      distributionRoot = resolve(releaseRoot, "../../../..");
+    } catch { /* plugin checks below report malformed cache layout */ }
+  } else {
     try { selected = await resolveCodexRelease(base); }
     catch { /* report the selected-release failure through the plugin/profile checks */ }
   }
@@ -41,7 +49,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const hookHomes = [...new Set([join(cwd, ".codex"), codexHome || process.env.CODEX_HOME || join(homedir(), ".codex")])];
   if (selected) {
     let bootstrapDigest = null;
-    try { bootstrapDigest = JSON.parse(await readFile(join(base, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest; } catch { /* selected release check reports the root failure */ }
+    try { bootstrapDigest = JSON.parse(await readFile(join(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest; } catch { /* selected release check reports the root failure */ }
     const installations = [];
     for (const dir of hookHomes) {
       try {
@@ -55,6 +63,9 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       : installations.length ? `${installations.length} managed scope(s) match generation ${selected.generation}` : "no managed profile scopes detected" });
   }
   const hookStatuses = [];
+  const staleHookScopes = [];
+  let selectedBootstrapDigest = null;
+  try { selectedBootstrapDigest = JSON.parse(await readFile(join(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest; } catch { /* reported as stale below */ }
   for (const dir of hookHomes) {
     try {
       const [config, owner] = await Promise.all([
@@ -64,15 +75,22 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       const commandIsMuster = group => (group?.hooks || []).some(hook => [hook.command, hook.commandWindows, hook.command_windows]
         .some(command => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs")));
       const configured = hookEvents.every(event => (config.hooks?.[event] || []).some(commandIsMuster));
-      const runtime = await Promise.all(["muster-hook.mjs", "action-guard.mjs"].map(file => exists(join(dir, "muster", "hooks", file))));
-      if (owner.owner === "muster" && configured && runtime.every(Boolean)) hookStatuses.push(dir);
+      const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
+      const runtime = await Promise.all(hookFiles.map(file => readFile(join(dir, "muster", "hooks", file))));
+      const hash = createHash("sha256");
+      for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
+      const coherent = owner.owner === "muster" && configured && owner.generation === selected?.generation
+        && owner.bootstrapDigest === selectedBootstrapDigest && owner.hookHash === hash.digest("hex");
+      if (coherent) hookStatuses.push(dir); else staleHookScopes.push(dir);
     } catch { /* inspect the next supported scope */ }
   }
   const hookStatus = hookStatuses[0] || null;
   checks.push({ name: "codex-hooks", ok: Boolean(hookStatus), detail: hookStatus
     ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks`
-    : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
-  checks.push({ name: "codex-hooks-overlap", ok: true, detail: hookStatuses.length > 1
+    : staleHookScopes.length ? `managed lifecycle hooks are stale at ${staleHookScopes.join(", ")}; rerun muster install codex for each scope` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
+  checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0, detail: staleHookScopes.length
+    ? "Project/user hook copies are not generation/hash coherent, so exactly-once dedupe cannot be asserted; refresh every stale scope"
+    : hookStatuses.length > 1
     ? "Muster hooks are installed at both project and user scopes; atomic runtime dedupe suppresses identical logical event emissions across copies"
     : "No project and user Muster hook overlap detected; runtime dedupe remains active for repeated logical events" });
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -123,10 +123,36 @@ test("repeated Codex build reuses the same immutable generation", async t => {
   const stale = join(checkout, ".agents", "plugins", ".muster-build-stale");
   await mkdir(stale, { recursive: true });
   await writeFile(join(stale, "abandoned.txt"), "stale\n");
-  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 });
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  await utimes(stale, old, old);
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000, env: { ...process.env, MUSTER_CODEX_BUILD_LEASE_STALE_MS: "1000" } });
   await assert.rejects(readFile(join(stale, "abandoned.txt"), "utf8"));
   const first = await selectedSnapshot(checkout);
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 });
   const second = await selectedSnapshot(checkout);
   assert.deepEqual(second, first);
+});
+
+test("overlapping Codex builders preserve active stages and reclaim only stale crashed stages", { skip: process.platform === "win32" }, async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-overlap-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const checkout = join(tmp, "checkout");
+  await mkdir(checkout, { recursive: true });
+  await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
+  await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
+  const first = spawn(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, stdio: ["ignore", "pipe", "pipe"] });
+  let activeStage;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const names = await readdir(join(checkout, ".agents", "plugins")).catch(() => []);
+    activeStage = names.find(name => name.startsWith(".muster-build-"));
+    if (activeStage && await readFile(join(checkout, ".agents", "plugins", activeStage, ".lease.json"), "utf8").catch(() => null)) break;
+    await new Promise(done => setTimeout(done, 10));
+  }
+  assert.ok(activeStage, "first builder did not publish its lease");
+  process.kill(first.pid, "SIGSTOP");
+  try {
+    await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000, env: { ...process.env, MUSTER_CODEX_BUILD_LEASE_STALE_MS: "1000" } });
+    assert.ok((await readdir(join(checkout, ".agents", "plugins"))).includes(activeStage), "second builder removed the live first stage");
+  } finally { process.kill(first.pid, "SIGCONT"); }
+  await new Promise((resolve, reject) => first.once("close", code => code === 0 ? resolve() : reject(new Error(`first builder exited ${code}`))));
 });

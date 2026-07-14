@@ -48,6 +48,11 @@ If either fails, the fix is almost always a docs edit, not a code edit.
   check is the invariant above, read fresh from the run's own summary line.
 - Full run takes ~15s. If you only touched one area, run the narrower pattern
   in Flow 2/3 first and save the full run for the pre-merge gate.
+- Do not overlap whole-suite invocations. Codex package/cache tests rebuild and
+  inspect immutable release fixtures; serialize `npm test` and use the final
+  non-overlapping run as the gate receipt. A 2026-07-14 integration run saw a
+  transient failure only while output-recovery invocations overlapped; the
+  subsequent serialized 1,626-test barrier passed with zero failures.
 
 ---
 
@@ -167,6 +172,45 @@ env-override matrix per hook.
   the transcript only counts if its timestamp is AFTER the marker's mtime.
   Clean up your tmpdir between runs — a stale marker with an old mtime will
   make a fresh TodoWrite look like it predates the run.
+
+---
+
+## Flow 4: Codex hook health and bounded dedupe
+
+Codex hooks are installed in project (`<cwd>/.codex`) and/or user
+(`$CODEX_HOME`) layers. Run the focused regression coverage while changing
+their runtime or installer contract:
+
+```
+node --test --test-name-pattern='expires a forged|requires exact owned' test/codex.test.js
+```
+
+**Expected signals:** both tests pass. The doctor test installs the project
+layer from source and the user layer from the selected cache release, then
+requires `codex-hooks` and `codex-hooks-overlap` to be healthy. Doctor compares
+the installed Muster groups against their ownership manifest exactly by event,
+matcher, command/`commandWindows`, timeout, and every other group option,
+alongside generation, bootstrap digest, and runtime hash. A changed matcher,
+timeout, command, or duplicate owned group makes hook health fail; refresh that
+scope with `muster install codex`.
+
+**Exact-once reporting:** project and user configuration layers can both invoke
+Muster. Only when every managed layer is exact-manifest coherent may doctor say
+that atomic runtime dedupe suppresses an identical logical event across copies.
+If either layer is stale or modified, doctor reports dedupe as uncertain rather
+than claiming exactly-once behavior.
+
+**Capacity behavior:** event records are capped at 64 per shard. Cleanup and
+capacity locks use a short, bounded lease because their operations are
+idempotent; an expired or forged lock is reclaimed even if its recorded PID is
+currently live. A fresh lock still wins, and a racing cleanup safely retries or
+leaves the next event to retry without following links or deleting unowned
+files.
+
+**Codex limitation:** these hooks provide lifecycle context, diagnostics, and
+supported policy warnings. They do not prove subagent liveness and cannot
+reliably enforce every unified-shell or subagent action; write-capable waves
+still require isolated worktrees and event-driven, wait-first receipt handling.
 
 ---
 

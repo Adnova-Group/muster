@@ -51,6 +51,8 @@ The model comes back as `roles[<role>].model` from `muster capabilities`, and th
 
 Fable can be disabled platform-wide, so `modelForRole` (`src/model.js`) degrades it to opus deterministically by default -- set `MUSTER_ENABLE_FABLE=1` to opt back in once the tier is available. `MUSTER_MAX_TIER` (e.g. `sonnet`) caps the highest tier Muster will use regardless.
 
+Codex profiles translate conceptual tiers with an evidence-backed policy: Haiku is Luna/high, Sonnet is Luna/xhigh, and Opus and Fable are both Sol/high. That retains `MUSTER_MAX_TIER` and Fable fallback semantics without routine `max` effort. `codex/agents.manifest.json` records the role rationale and supports narrowly scoped `model` and `reasoning` overrides: bounded mechanical roles use Terra/high, routine implementation uses Sol/medium, and security remains Sol/high. The generator and `check:codex` validate those overrides. Review and investigation profiles are explicitly read-only in the same manifest.
+
 ## Provider kinds
 
 A provider resolves to one of four kinds, which decides how the orchestrator dispatches it:

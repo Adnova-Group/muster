@@ -6,10 +6,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node '/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "command": "node '.codex/muster/hooks/muster-hook.mjs'",
             "timeout": 10,
             "statusMessage": "Loading Muster orchestration context",
-            "commandWindows": "node \"/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+            "commandWindows": "node \".codex/muster/hooks/muster-hook.mjs\""
           }
         ]
       }
@@ -19,9 +19,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node '/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "command": "node '.codex/muster/hooks/muster-hook.mjs'",
             "timeout": 10,
-            "commandWindows": "node \"/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+            "commandWindows": "node \".codex/muster/hooks/muster-hook.mjs\""
           }
         ]
       }
@@ -32,10 +32,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node '/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "command": "node '.codex/muster/hooks/muster-hook.mjs'",
             "timeout": 10,
             "statusMessage": "Checking Muster worktree policy",
-            "commandWindows": "node \"/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+            "commandWindows": "node \".codex/muster/hooks/muster-hook.mjs\""
           }
         ]
       }
@@ -46,9 +46,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node '/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "command": "node '.codex/muster/hooks/muster-hook.mjs'",
             "timeout": 10,
-            "commandWindows": "node \"/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+            "commandWindows": "node \".codex/muster/hooks/muster-hook.mjs\""
           }
         ]
       }
@@ -58,10 +58,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node '/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "command": "node '.codex/muster/hooks/muster-hook.mjs'",
             "timeout": 10,
             "statusMessage": "Loading Muster agent policy",
-            "commandWindows": "node \"/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+            "commandWindows": "node \".codex/muster/hooks/muster-hook.mjs\""
           }
         ]
       }
@@ -71,9 +71,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node '/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "command": "node '.codex/muster/hooks/muster-hook.mjs'",
             "timeout": 10,
-            "commandWindows": "node \"/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+            "commandWindows": "node \".codex/muster/hooks/muster-hook.mjs\""
           }
         ]
       }
@@ -83,9 +83,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node '/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "command": "node '.codex/muster/hooks/muster-hook.mjs'",
             "timeout": 10,
-            "commandWindows": "node \"/mnt/c/Users/[redacted]/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+            "commandWindows": "node \".codex/muster/hooks/muster-hook.mjs\""
           }
         ]
       }

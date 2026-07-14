@@ -6,6 +6,9 @@
 export function isInstalled(entry, installed) {
   if (entry.kind !== "external" || !entry.detect?.match) return false;
   const m = entry.detect.match;
+  if (entry.detect.codexStrictKind) {
+    return (installed.plugins || []).includes(m);
+  }
   return (installed.plugins || []).includes(m)
     || (installed.skills || []).includes(m)
     || (installed.mcpServers || []).includes(m)

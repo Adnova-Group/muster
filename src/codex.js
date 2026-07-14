@@ -4,9 +4,11 @@ import { modelForRole } from "./model.js";
 // Claude-like tiers in model.js and translate only when emitting Codex config.
 export const CODEX_MODEL_POLICY = Object.freeze({
   haiku: Object.freeze({ model: "gpt-5.6-luna", reasoning: "high" }),
-  sonnet: Object.freeze({ model: "gpt-5.6-terra", reasoning: "xhigh" }),
+  sonnet: Object.freeze({ model: "gpt-5.6-luna", reasoning: "xhigh" }),
   opus: Object.freeze({ model: "gpt-5.6-sol", reasoning: "high" }),
-  fable: Object.freeze({ model: "gpt-5.6-sol", reasoning: "max" })
+  // Preserve the conceptual peak tier and its fallback resolution while using
+  // the user's preferred Sol/high adapter policy instead of routine max effort.
+  fable: Object.freeze({ model: "gpt-5.6-sol", reasoning: "high" })
 });
 
 export function codexModelForTier(tier) {

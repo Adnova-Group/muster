@@ -32,7 +32,9 @@ export function adaptCatalogForCodex(catalog, installed) {
 
   for (const entry of catalog) {
     if (entry.kind !== "builtin") {
-      fallback.push(entry);
+      fallback.push(entry.kind === "external" && entry.detect?.kind === "plugin"
+        ? { ...entry, detect: { ...entry.detect, codexStrictKind: true } }
+        : entry);
       continue;
     }
 

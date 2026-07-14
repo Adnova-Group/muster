@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "muster": {
+      "command": "node",
+      "args": [
+        "./runtime/muster-mcp.mjs"
+      ],
+      "cwd": "."
+    }
+  }
+}

@@ -5,9 +5,9 @@
     "hooks/muster-hook.mjs",
     "hooks/action-guard.mjs"
   ],
-  "generation": "f81c8a247a4e905acc66bd5694e61eb38244e080ec9abe6d2617e23ce61d933c",
-  "bootstrapDigest": "4348f25e4f72414018ea1c29bdfb097048d526c2f38f9c80e005ef0a282dabb6",
-  "hookHash": "7fe745a008b4840e2622d5b421a1b8c74d0eba493a738729b98d9b4e6cd6ac9e",
+  "generation": "8c6c5930bb7b4273d1fee2ddaf6593e6ea48338052d6cf174dbe9167fc6cc697",
+  "bootstrapDigest": "3047f0951b7aace3a91871d70dc43593eea1547388ed8488fa3d8a08340c77a7",
+  "hookHash": "7a006eb93ca80548a2501d1cb1bb59d618d700295eb7c6beb186d415e0443ab9",
   "hookConfigCreated": true,
   "hookGroups": {
     "SessionStart": [

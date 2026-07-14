@@ -349,8 +349,8 @@
     },
     {
       "path": "plugin/runtime/install-hooks/muster-hook.mjs",
-      "sha256": "fd036064040f9e7b0eef6cb664e3fd5718d1c41fc08a7aca83cb4abf1a97a264",
-      "size": 12678
+      "sha256": "c8ab4231019541dbeb1be6ebbe3e98dac759fbc149dae6f576500bfd8527ad32",
+      "size": 15162
     },
     {
       "path": "plugin/runtime/muster-mcp.mjs",
@@ -359,8 +359,8 @@
     },
     {
       "path": "plugin/runtime/muster.mjs",
-      "sha256": "e2065f45d03d37a55f3361e2efcbff8522997d739e44e1cb4c146461fd2cebf8",
-      "size": 463494
+      "sha256": "7215d4fa5f1b7f445da42bce52ec7cf62799fac56c70b624f543300b5e94ee4d",
+      "size": 477300
     },
     {
       "path": "plugin/runtime/sprint-protocol.md",
@@ -1089,8 +1089,8 @@
     },
     {
       "path": "plugin/src/cli.js",
-      "sha256": "e2065f45d03d37a55f3361e2efcbff8522997d739e44e1cb4c146461fd2cebf8",
-      "size": 463494
+      "sha256": "7215d4fa5f1b7f445da42bce52ec7cf62799fac56c70b624f543300b5e94ee4d",
+      "size": 477300
     },
     {
       "path": "plugin/src/package.json",
@@ -1238,5 +1238,5 @@
       "size": 4804
     }
   ],
-  "generation": "f81c8a247a4e905acc66bd5694e61eb38244e080ec9abe6d2617e23ce61d933c"
+  "generation": "8c6c5930bb7b4273d1fee2ddaf6593e6ea48338052d6cf174dbe9167fc6cc697"
 }

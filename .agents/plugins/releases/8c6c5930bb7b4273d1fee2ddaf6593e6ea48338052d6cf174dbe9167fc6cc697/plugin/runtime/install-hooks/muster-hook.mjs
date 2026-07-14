@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyAction } from "./action-guard.mjs";
@@ -117,7 +117,10 @@ function ensureDirectory(path) {
 const CLEANUP_INTERVAL_MS = 60 * 1000;
 const RECORD_TTL_MS = 24 * 60 * 60 * 1000;
 const RECORDS_PER_SHARD = 64;
-const LOCK_STALE_MS = 5 * 60 * 1000;
+// Cleanup callbacks only delete expired records or trim an overfull shard. They are
+// idempotent, so a bounded lease prevents a forged or paused live PID from blocking
+// capacity recovery indefinitely.
+const LOCK_LEASE_MS = 30 * 1000;
 
 function regularRecords(dir) {
   const records = [];
@@ -131,23 +134,69 @@ function regularRecords(dir) {
   return records;
 }
 
-function lockOwnerAlive(pid) {
-  if (!Number.isInteger(pid) || pid < 1) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error.code === "EPERM"; }
+function readHookLock(path) {
+  let fd;
+  try {
+    const before = lstatSync(path);
+    if (before.isSymbolicLink() || !before.isFile()) throw new Error(`unsafe hook lock: ${path}`);
+    fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.dev !== before.dev || stat.ino !== before.ino) throw new Error(`unsafe hook lock: ${path}`);
+    let record = null;
+    try { record = JSON.parse(readFileSync(fd, "utf8")); } catch { /* invalid owners fail closed below */ }
+    return { stat, record };
+  } finally { if (fd !== undefined) closeSync(fd); }
 }
 
-function reclaimStaleLock(path, now) {
-  const before = lstatSync(path);
-  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`unsafe hook lock: ${path}`);
-  if (now - before.mtimeMs < LOCK_STALE_MS) return false;
-  let owner;
-  try { owner = JSON.parse(readFileSync(path, "utf8")); } catch { owner = null; }
-  if (lockOwnerAlive(Number(owner?.pid))) return false;
-  const after = lstatSync(path);
-  if (after.isSymbolicLink() || !after.isFile() || after.mtimeMs !== before.mtimeMs || after.size !== before.size) return false;
-  rmSync(path, { force: true });
+const sameHookLockInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const sameHookLockOwner = (left, right) => typeof left?.token === "string" && left.token.length > 0
+  && left.token === right?.token && left.pid === right?.pid
+  && left.createdAt === right?.createdAt && left.format === right?.format;
+const staleHookLock = (state, now) => {
+  const createdAt = Number(state.record?.createdAt);
+  const leaseStartedAt = Number.isFinite(createdAt) ? Math.min(createdAt, state.stat.mtimeMs) : state.stat.mtimeMs;
+  return now - leaseStartedAt >= LOCK_LEASE_MS;
+};
+
+function restoreQuarantinedHookLock(path, quarantine, stat) {
+  try { linkSync(quarantine, path); }
+  catch (error) { if (error.code === "EEXIST") return false; throw error; }
+  const restored = lstatSync(path);
+  if (!sameHookLockInode(restored, stat)) throw new Error(`hook lock restore changed identity: ${path}`);
+  rmSync(quarantine);
   return true;
+}
+
+export function reclaimStaleLock(path, now, { afterQuarantine = () => {} } = {}) {
+  let current;
+  try { current = readHookLock(path); }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  if (!sameHookLockOwner(current.record, current.record) || !staleHookLock(current, now)) return false;
+  const quarantine = `${path}.muster-reclaim-${process.pid}-${digest(`${now}:${Math.random()}`)}`;
+  try { renameSync(path, quarantine); }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  try {
+    afterQuarantine({ path, quarantine });
+    const quarantined = readHookLock(quarantine);
+    if (!sameHookLockInode(quarantined.stat, current.stat) || !sameHookLockOwner(quarantined.record, current.record)
+      || !staleHookLock(quarantined, now)) {
+      restoreQuarantinedHookLock(path, quarantine, quarantined.stat);
+      return false;
+    }
+    const final = readHookLock(quarantine);
+    if (!sameHookLockInode(final.stat, quarantined.stat) || !sameHookLockOwner(final.record, quarantined.record)) {
+      restoreQuarantinedHookLock(path, quarantine, final.stat);
+      return false;
+    }
+    rmSync(quarantine);
+    return true;
+  } catch (error) {
+    try {
+      const stranded = readHookLock(quarantine);
+      restoreQuarantinedHookLock(path, quarantine, stranded.stat);
+    } catch { /* fail closed: never unlink an ambiguous quarantined owner */ }
+    throw error;
+  }
 }
 
 function withShardLock(dir, name, callback, now = Date.now()) {

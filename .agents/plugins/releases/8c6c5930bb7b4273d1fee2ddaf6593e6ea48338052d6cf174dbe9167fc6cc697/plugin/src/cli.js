@@ -8578,7 +8578,7 @@ function pickWinner(candidates) {
 
 // src/cli.js
 import { homedir as homedir9 } from "node:os";
-import { readFile as readFile14, writeFile as writeFile7, mkdir as mkdir7 } from "node:fs/promises";
+import { readFile as readFile15, writeFile as writeFile7, mkdir as mkdir7 } from "node:fs/promises";
 
 // src/pipeline.js
 var import_yaml3 = __toESM(require_dist(), 1);
@@ -9556,8 +9556,9 @@ async function runUninstall({ home = homedir6() } = {}) {
 }
 
 // src/codex-install.js
-import { lstat as lstat3, mkdir as mkdir6, open as open2, readFile as readFile10, realpath, rename as rename2, rmdir, unlink } from "node:fs/promises";
-import { createHash as createHash2 } from "node:crypto";
+import { constants as fsConstants2 } from "node:fs";
+import { link as link2, lstat as lstat4, mkdir as mkdir6, open as open3, readFile as readFile11, realpath, rename as rename3, rmdir, unlink as unlink2 } from "node:fs/promises";
+import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
 import { basename, dirname as dirname4, isAbsolute as isAbsolute2, join as join15, parse as parse4, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 import { homedir as homedir7 } from "node:os";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
@@ -9565,27 +9566,45 @@ import { execFile as execFileCb2 } from "node:child_process";
 import { promisify as promisify6 } from "node:util";
 
 // src/codex-release.js
-import { createHash } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
-import { lstat as lstat2, mkdir as mkdir5, open, readFile as readFile9, readdir as readdir9, rename, rm as rm2, writeFile as writeFile6 } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { closeSync, constants as fsConstants, linkSync, openSync, readFileSync as readFileSync2, renameSync, rmSync } from "node:fs";
+import { lstat as lstat3, mkdir as mkdir5, open as open2, readFile as readFile10, readdir as readdir9, rename as rename2, rm as rm2, writeFile as writeFile6 } from "node:fs/promises";
 import { isAbsolute, join as join14, relative, resolve } from "node:path";
+
+// src/codex-lock.js
+import { link, lstat as lstat2, open, readFile as readFile9, rename, unlink, utimes } from "node:fs/promises";
+async function processStartIdentity(pid = process.pid) {
+  if (process.platform !== "linux" || !Number.isInteger(pid) || pid < 1) return null;
+  try {
+    const stat2 = await readFile9(`/proc/${pid}/stat`, "utf8");
+    const close = stat2.lastIndexOf(")");
+    const fields = stat2.slice(close + 2).trim().split(/\s+/);
+    const startTicks = fields[19];
+    return /^\d+$/.test(startTicks || "") ? `linux-proc-start:${startTicks}` : null;
+  } catch {
+    return null;
+  }
+}
+
+// src/codex-release.js
 var RELEASE_FORMAT = 1;
 var GENERATION = /^[a-f0-9]{64}$/;
 var slash = (value) => value.replaceAll("\\", "/");
 var sha256 = (value) => createHash("sha256").update(value).digest("hex");
-async function readRegularJson(path, label, maxBytes = 64 * 1024) {
+async function readRegular(path, label, maxBytes = 32 * 1024 * 1024) {
   let handle;
   try {
     await ordinary(path, "file", label);
-    handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    handle = await open2(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
     const stat2 = await handle.stat();
     if (!stat2.isFile() || stat2.size > maxBytes) throw new Error(`${label} must be a bounded regular file: ${path}`);
-    return JSON.parse(await handle.readFile("utf8"));
+    return await handle.readFile();
   } finally {
     if (handle) await handle.close().catch(() => {
     });
   }
 }
+var readRegularJson = async (path, label, maxBytes = 64 * 1024) => JSON.parse((await readRegular(path, label, maxBytes)).toString("utf8"));
 function contained(base, target, label) {
   const rel = relative(resolve(base), resolve(target));
   if (!rel || rel === ".") return;
@@ -9596,7 +9615,7 @@ function contained(base, target, label) {
 async function ordinary(path, expected, label) {
   let stat2;
   try {
-    stat2 = await lstat2(path);
+    stat2 = await lstat3(path);
   } catch (error) {
     throw new Error(`${label} is missing: ${path}`, { cause: error });
   }
@@ -9613,7 +9632,7 @@ async function repositoryDirectory(repoRoot, parts, { create = false } = {}) {
     current = join14(current, part);
     let stat2;
     try {
-      stat2 = await lstat2(current);
+      stat2 = await lstat3(current);
     } catch (error) {
       if (error.code !== "ENOENT" || !create) throw new Error(`repository directory is missing: ${current}`, { cause: error });
       try {
@@ -9621,7 +9640,7 @@ async function repositoryDirectory(repoRoot, parts, { create = false } = {}) {
       } catch (mkdirError) {
         if (mkdirError.code !== "EEXIST") throw mkdirError;
       }
-      stat2 = await lstat2(current);
+      stat2 = await lstat3(current);
     }
     if (stat2.isSymbolicLink() || !stat2.isDirectory()) throw new Error(`repository path must be an ordinary directory: ${current}`);
   }
@@ -9636,14 +9655,14 @@ async function assertRegularTree(root) {
     for (const name of entries) {
       const path = join14(dir, name);
       contained(root, path, "tree entry");
-      const stat2 = await lstat2(path);
+      const stat2 = await lstat3(path);
       if (stat2.isSymbolicLink()) throw new Error(`tree entry must not be a symlink: ${path}`);
       const rel = slash(relative(root, path));
       if (stat2.isDirectory()) {
         dirs.push(rel);
         await walk(path);
       } else if (stat2.isFile()) {
-        const content = await readFile9(path);
+        const content = await readRegular(path, "tree entry");
         files.push({ path: rel, sha256: sha256(content), size: content.length });
       } else throw new Error(`tree entry must be a regular file or directory: ${path}`);
     }
@@ -9659,7 +9678,7 @@ async function createCodexBootstrapMetadata(bootstrapRoot) {
 }
 async function validateCodexBootstrap(bootstrapRoot) {
   await ordinary(join14(bootstrapRoot, "bootstrap.json"), "file", "bootstrap metadata");
-  const metadata = JSON.parse(await readFile9(join14(bootstrapRoot, "bootstrap.json"), "utf8"));
+  const metadata = await readRegularJson(join14(bootstrapRoot, "bootstrap.json"), "bootstrap metadata", 4 * 1024 * 1024);
   if (metadata?.format !== RELEASE_FORMAT || !GENERATION.test(metadata.digest || "") || !Array.isArray(metadata.files)) {
     throw new Error("Codex bootstrap metadata has an invalid contract");
   }
@@ -9685,7 +9704,7 @@ async function validateCodexRelease(releaseRoot, expectedGeneration) {
   await ordinary(join14(releaseRoot, "release.json"), "file", "release metadata");
   let metadata;
   try {
-    metadata = JSON.parse(await readFile9(join14(releaseRoot, "release.json"), "utf8"));
+    metadata = await readRegularJson(join14(releaseRoot, "release.json"), "release metadata", 4 * 1024 * 1024);
   } catch (error) {
     throw new Error(`release metadata is invalid: ${releaseRoot}`, { cause: error });
   }
@@ -9706,7 +9725,7 @@ async function readPointer(repoRoot) {
   await ordinary(path, "file", "Codex marketplace pointer");
   let pointer;
   try {
-    pointer = JSON.parse(await readFile9(path, "utf8"));
+    pointer = await readRegularJson(path, "Codex marketplace pointer", 1024 * 1024);
   } catch (error) {
     throw new Error("Codex marketplace pointer is invalid JSON", { cause: error });
   }
@@ -9717,25 +9736,137 @@ async function resolveCodexRelease(repoRoot) {
 }
 var STABLE_BOOTSTRAP_PATH = "./.agents/plugins/bootstrap/muster";
 var SELECTION = /^(\d{12})-([a-f0-9]{64})\.json$/;
-async function releaseResult(repoRoot, generation) {
+async function releaseResult(repoRoot, generation, leaseOptions) {
   if (!GENERATION.test(generation || "")) throw new Error("selected Codex generation is invalid");
   const releaseRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "releases", generation]);
   const metadata = await validateCodexRelease(releaseRoot, generation);
-  await registerGenerationLease(repoRoot, generation);
-  return { generation, releaseRoot, pluginRoot: join14(releaseRoot, "plugin"), profilesRoot: join14(releaseRoot, "profiles"), metadata };
+  const lease = await registerGenerationLease(repoRoot, generation, leaseOptions);
+  return { generation, releaseRoot, pluginRoot: join14(releaseRoot, "plugin"), profilesRoot: join14(releaseRoot, "profiles"), metadata, lease };
 }
-async function registerGenerationLease(repoRoot, generation) {
+var LEASE_HEARTBEAT_INTERVAL_MS = 60 * 1e3;
+var leaseControllers = /* @__PURE__ */ new Map();
+async function renewLease(path, token, record) {
+  let handle;
+  try {
+    handle = await open2(path, fsConstants.O_RDWR | (fsConstants.O_NOFOLLOW || 0));
+    const stat2 = await handle.stat();
+    if (!stat2.isFile() || stat2.size > 64 * 1024) throw new Error(`unsafe Codex generation lease: ${path}`);
+    const current = JSON.parse(await handle.readFile("utf8"));
+    if (current?.token !== token) throw new Error(`Codex generation lease ownership changed: ${path}`);
+    const content = Buffer.from(JSON.stringify(record, null, 2) + "\n");
+    await handle.truncate(0);
+    await handle.write(content, 0, content.length, 0);
+    await handle.sync();
+  } finally {
+    if (handle) await handle.close().catch(() => {
+    });
+  }
+}
+function removeLeaseSync(path, token) {
+  const quarantine = `${path}.reclaim-${process.pid}-${randomUUID()}`;
+  let fd;
+  try {
+    fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const current = JSON.parse(readFileSync2(fd, "utf8"));
+    if (current?.token !== token) return;
+    closeSync(fd);
+    fd = void 0;
+    renameSync(path, quarantine);
+    fd = openSync(quarantine, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const quarantined = JSON.parse(readFileSync2(fd, "utf8"));
+    closeSync(fd);
+    fd = void 0;
+    if (quarantined?.token === token) rmSync(quarantine);
+    else {
+      try {
+        linkSync(quarantine, path);
+        rmSync(quarantine);
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  } finally {
+    if (fd !== void 0) try {
+      closeSync(fd);
+    } catch {
+    }
+  }
+}
+async function registerGenerationLease(repoRoot, generation, leaseOptions = {}) {
+  const key = `${resolve(repoRoot)}\0${generation}`;
+  if (leaseControllers.has(key)) return leaseControllers.get(key);
+  const creating = createGenerationLease(repoRoot, generation, leaseOptions, key);
+  leaseControllers.set(key, creating);
+  try {
+    const controller = await creating;
+    if (leaseControllers.get(key) === creating) leaseControllers.set(key, controller);
+    return controller;
+  } catch (error) {
+    if (leaseControllers.get(key) === creating) leaseControllers.delete(key);
+    throw error;
+  }
+}
+async function createGenerationLease(repoRoot, generation, leaseOptions, key) {
   const root = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases", generation], { create: true });
-  const record = { format: RELEASE_FORMAT, pid: process.pid, processStartedAt: Math.floor(Date.now() - process.uptime() * 1e3), touchedAt: Date.now(), generation };
-  await atomicWritePointer(join14(root, `${process.pid}.json`), JSON.stringify(record, null, 2) + "\n", rename);
+  const token = randomUUID(), path = join14(root, `${process.pid}.json`);
+  const now = leaseOptions.now || Date.now;
+  const setIntervalFn = leaseOptions.setInterval || setInterval;
+  const clearIntervalFn = leaseOptions.clearInterval || clearInterval;
+  const addExitListener = leaseOptions.addExitListener || ((event, listener) => process.once(event, listener));
+  const removeExitListener = leaseOptions.removeExitListener || ((event, listener) => process.removeListener(event, listener));
+  const identity = await processStartIdentity();
+  const base = { format: RELEASE_FORMAT, pid: process.pid, processIdentity: identity, processStartedAt: Math.floor(Date.now() - process.uptime() * 1e3), generation, token };
+  const record = () => ({ ...base, touchedAt: now() });
+  await atomicWritePointer(path, JSON.stringify(record(), null, 2) + "\n", rename2);
+  let closed = false, renewal = Promise.resolve();
+  const renew = () => {
+    if (closed) return renewal;
+    renewal = renewal.catch(() => {
+    }).then(() => renewLease(path, token, record())).catch((error) => {
+      if (["ENOENT", "ENOTDIR"].includes(error?.code)) stop();
+      else throw error;
+    });
+    return renewal;
+  };
+  const timer = setIntervalFn(() => renew().catch(() => {
+  }), LEASE_HEARTBEAT_INTERVAL_MS);
+  timer?.unref?.();
+  const onExit = () => {
+    try {
+      removeLeaseSync(path, token);
+    } catch {
+    }
+  };
+  addExitListener("exit", onExit);
+  function stop() {
+    if (closed) return;
+    closed = true;
+    clearIntervalFn(timer);
+    removeExitListener("exit", onExit);
+    if (leaseControllers.get(key) === controller) leaseControllers.delete(key);
+  }
+  const controller = {
+    path,
+    renew,
+    async close() {
+      stop();
+      await renewal.catch(() => {
+      });
+      removeLeaseSync(path, token);
+    }
+  };
+  return controller;
 }
+var LEASE_HEARTBEAT_MAX_AGE_MS = 5 * 60 * 1e3;
 function validSelection(record, name, bootstrapDigest) {
   const match = name.match(SELECTION);
   return record?.format === RELEASE_FORMAT && record.sequence === Number(match?.[1]) && record.generation === match?.[2] && record.bootstrapDigest === bootstrapDigest;
 }
 var transient = (error) => ["ENOENT", "EACCES", "EPERM", "EBUSY"].includes(error?.code);
 var pause = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
-async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelections } = {}) {
+async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelections, lease } = {}) {
   let pointerError;
   let pointer;
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -9773,28 +9904,36 @@ async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelec
     try {
       const record = await readRegularJson(join14(repoRoot, ".agents", "plugins", "selections", name), "Codex selection record");
       if (!validSelection(record, name, bootstrap.digest)) continue;
-      return await releaseResult(repoRoot, record.generation);
+      return await releaseResult(repoRoot, record.generation, lease);
     } catch {
     }
   }
-  return releaseResult(repoRoot, bootstrap.initialGeneration);
+  return releaseResult(repoRoot, bootstrap.initialGeneration, lease);
 }
 async function atomicWritePointer(path, content, replacePointer) {
-  const temporary = `${path}.muster-${process.pid}-${Date.now()}.tmp`;
+  let temporary;
   let handle;
   try {
-    handle = await open(temporary, "wx", 384);
+    for (let attempt = 0; attempt < 8; attempt++) {
+      temporary = `${path}.muster-${process.pid}-${randomUUID()}.tmp`;
+      try {
+        handle = await open2(temporary, "wx", 384);
+        break;
+      } catch (error) {
+        if (error.code !== "EEXIST" || attempt === 7) throw error;
+      }
+    }
     await handle.writeFile(content, "utf8");
     await handle.sync();
     await handle.close();
     handle = null;
     await ordinary(temporary, "file", "staged marketplace pointer");
-    JSON.parse(await readFile9(temporary, "utf8"));
+    JSON.parse(await readFile10(temporary, "utf8"));
     await replacePointer(temporary, path);
   } finally {
     if (handle) await handle.close().catch(() => {
     });
-    await rm2(temporary, { force: true });
+    if (temporary) await rm2(temporary, { force: true });
   }
 }
 
@@ -9804,10 +9943,12 @@ var CODEX_PLUGIN = "muster@muster";
 var MANIFEST = ".muster-managed.json";
 var PROFILE_FILENAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/;
 var HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
+var SCOPE_LOCK_STALE_MS = 5 * 6e4;
 var codexHome = (home) => process.env.CODEX_HOME || join15(home, ".codex");
 var agentsDir = (scope, cwd, home) => scope === "user" ? join15(codexHome(home), "agents") : join15(cwd, ".codex", "agents");
 var configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join15(cwd, ".codex");
 var scopeRegistryPath = (home) => join15(codexHome(home), "muster", "install-scopes.json");
+var scopeRegistryLockPath = (home) => `${scopeRegistryPath(home)}.lock`;
 async function ordinaryDirectoryPath(path, { create = false } = {}) {
   const absolute = resolve2(path), root = parse4(absolute).root;
   let current = root;
@@ -9815,7 +9956,7 @@ async function ordinaryDirectoryPath(path, { create = false } = {}) {
     current = join15(current, part);
     let stat2;
     try {
-      stat2 = await lstat3(current);
+      stat2 = await lstat4(current);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
       if (!create) return false;
@@ -9824,7 +9965,7 @@ async function ordinaryDirectoryPath(path, { create = false } = {}) {
       } catch (mkdirError) {
         if (mkdirError.code !== "EEXIST") throw mkdirError;
       }
-      stat2 = await lstat3(current);
+      stat2 = await lstat4(current);
     }
     if (stat2.isSymbolicLink() || !stat2.isDirectory()) throw new Error(`Codex configuration ancestry must be an ordinary directory: ${current}`);
   }
@@ -9834,7 +9975,7 @@ async function regularFileState(path) {
   await ordinaryDirectoryPath(dirname4(path));
   let stat2;
   try {
-    stat2 = await lstat3(path);
+    stat2 = await lstat4(path);
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
@@ -9847,7 +9988,7 @@ async function safeExists(path) {
 }
 async function readSafe(path, encoding = "utf8") {
   if (!await regularFileState(path)) throw new Error(`Codex configuration file is missing: ${path}`);
-  return readFile10(path, encoding);
+  return readFile11(path, encoding);
 }
 var readJson2 = async (path) => {
   try {
@@ -9885,6 +10026,158 @@ async function scopeEntry(scope, cwd, home) {
 }
 var sameScopeEntry = (left, right) => left.scope === right.scope && left.configDir === right.configDir;
 var registryText = (entries) => JSON.stringify({ format: 1, owner: "muster", entries }, null, 2) + "\n";
+var scopeLockText = (token) => JSON.stringify({ format: 1, owner: "muster", pid: process.pid, token, createdAt: Date.now() }) + "\n";
+var pause2 = (milliseconds) => new Promise((resolve4) => setTimeout(resolve4, milliseconds));
+async function writeExclusiveSafe(path, content) {
+  await ordinaryDirectoryPath(dirname4(path), { create: true });
+  await regularFileState(path);
+  let handle, created = false;
+  try {
+    handle = await open3(path, "wx", 384);
+    created = true;
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {
+    });
+    if (created) try {
+      await unlink2(path);
+    } catch (unlinkError) {
+      if (unlinkError.code !== "ENOENT") throw unlinkError;
+    }
+    throw error;
+  }
+  await handle.close();
+}
+function parseScopeLock(text, path) {
+  let lock;
+  try {
+    lock = JSON.parse(text);
+  } catch {
+    throw new Error(`Codex managed-scope lock is invalid: ${path}`);
+  }
+  if (lock?.format !== 1 || lock.owner !== "muster" || !Number.isSafeInteger(lock.pid) || lock.pid < 1 || typeof lock.token !== "string" || !lock.token || !Number.isFinite(lock.createdAt) || lock.createdAt < 0) {
+    throw new Error(`Codex managed-scope lock is invalid: ${path}`);
+  }
+  return lock;
+}
+async function readScopeLock(path) {
+  const before = await regularFileState(path);
+  if (!before) return null;
+  let handle;
+  try {
+    handle = await open3(path, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW || 0));
+    const stat2 = await handle.stat();
+    if (!stat2.isFile() || stat2.dev !== before.dev || stat2.ino !== before.ino) return null;
+    return { stat: stat2, lock: parseScopeLock(await handle.readFile("utf8"), path) };
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  } finally {
+    if (handle) await handle.close().catch(() => {
+    });
+  }
+}
+function processOwnsScopeLock(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== "ESRCH";
+  }
+}
+function staleScopeLock(state) {
+  return Date.now() - Math.max(state.lock.createdAt, state.stat.mtimeMs) >= SCOPE_LOCK_STALE_MS && !processOwnsScopeLock(state.lock.pid);
+}
+async function releaseScopeLock(path, token) {
+  const state = await readScopeLock(path);
+  if (!state || state.lock.token !== token) throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
+  await unlink2(path);
+}
+var sameScopeLockInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+var sameScopeLockOwner = (left, right) => left.token === right.token && left.pid === right.pid && left.createdAt === right.createdAt && left.owner === right.owner && left.format === right.format;
+async function restoreQuarantinedScopeLock(path, quarantine, stat2) {
+  try {
+    await link2(quarantine, path);
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  }
+  const restored = await lstat4(path);
+  if (!sameScopeLockInode(restored, stat2)) throw new Error(`Codex managed-scope lock restore changed identity: ${path}`);
+  await unlink2(quarantine);
+  return true;
+}
+async function recoverStaleScopeLock(path, { afterQuarantine = async () => {
+} } = {}) {
+  const recoveryPath = `${path}.recover`, token = randomUUID2();
+  try {
+    await writeExclusiveSafe(recoveryPath, scopeLockText(token));
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    await readScopeLock(recoveryPath);
+    return false;
+  }
+  try {
+    const state = await readScopeLock(path);
+    if (!state || !staleScopeLock(state)) return false;
+    const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID2()}`;
+    try {
+      await rename3(path, quarantine);
+    } catch (error) {
+      if (error.code === "ENOENT") return true;
+      throw error;
+    }
+    try {
+      await afterQuarantine({ path, quarantine });
+      const quarantined = await readScopeLock(quarantine);
+      if (!quarantined || !sameScopeLockInode(quarantined.stat, state.stat) || !sameScopeLockOwner(quarantined.lock, state.lock) || !staleScopeLock(quarantined)) {
+        if (quarantined) await restoreQuarantinedScopeLock(path, quarantine, quarantined.stat);
+        return false;
+      }
+      const final = await readScopeLock(quarantine);
+      if (!final || !sameScopeLockInode(final.stat, quarantined.stat) || !sameScopeLockOwner(final.lock, quarantined.lock)) {
+        if (final) await restoreQuarantinedScopeLock(path, quarantine, final.stat);
+        return false;
+      }
+      await unlink2(quarantine);
+    } catch (error) {
+      try {
+        const stranded = await readScopeLock(quarantine);
+        if (stranded) await restoreQuarantinedScopeLock(path, quarantine, stranded.stat);
+      } catch {
+      }
+      throw error;
+    }
+    return true;
+  } finally {
+    await releaseScopeLock(recoveryPath, token);
+  }
+}
+async function acquireScopeLock(home, { maxAttempts = 1e3, afterQuarantine = async () => {
+} } = {}) {
+  const path = scopeRegistryLockPath(home), token = randomUUID2();
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      await writeExclusiveSafe(path, scopeLockText(token));
+      return { path, token };
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+    const state = await readScopeLock(path);
+    if (!state || staleScopeLock(state) && await recoverStaleScopeLock(path, { afterQuarantine })) continue;
+    await pause2(10);
+  }
+  throw new Error(`Codex managed-scope lock did not become available: ${path}`);
+}
+async function withScopeRegistryTransaction(home, action, lockOptions) {
+  const held = await acquireScopeLock(home, lockOptions);
+  try {
+    return await action(await readScopeRegistry(home));
+  } finally {
+    await releaseScopeLock(held.path, held.token);
+  }
+}
 async function atomicWriteSafe(path, content) {
   const parent = dirname4(path);
   await ordinaryDirectoryPath(parent, { create: true });
@@ -9892,7 +10185,7 @@ async function atomicWriteSafe(path, content) {
   const temporary = join15(parent, `.${basename(path)}.muster-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
   let handle;
   try {
-    handle = await open2(temporary, "wx", 384);
+    handle = await open3(temporary, "wx", 384);
     await handle.writeFile(content, "utf8");
     await handle.sync();
     await handle.close();
@@ -9900,12 +10193,12 @@ async function atomicWriteSafe(path, content) {
     await regularFileState(temporary);
     await ordinaryDirectoryPath(parent);
     await regularFileState(path);
-    await rename2(temporary, path);
+    await rename3(temporary, path);
   } finally {
     if (handle) await handle.close().catch(() => {
     });
     try {
-      await unlink(temporary);
+      await unlink2(temporary);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -9913,7 +10206,7 @@ async function atomicWriteSafe(path, content) {
 }
 async function removeSafe(path) {
   const stat2 = await regularFileState(path);
-  if (stat2) await unlink(path);
+  if (stat2) await unlink2(path);
 }
 var profileFiles = async (root) => (await readdirSafe(root)).filter((name) => name.endsWith(".toml")).sort();
 var run = (execFile6, args) => execFile6("codex", args, { timeout: 3e4, maxBuffer: 4 * 1024 * 1024 });
@@ -9973,10 +10266,17 @@ function removeOwnedHookGroups(config, owned, configPath) {
   }
   return next;
 }
+function formatCodexWindowsPath(path) {
+  const normalized = path.replaceAll("\\", "/");
+  const wslDrive = normalized.match(/^\/mnt\/([a-z])(?:\/(.*))?$/i);
+  if (wslDrive) return `${wslDrive[1].toUpperCase()}:/${wslDrive[2] || ""}`.replace(/\/$/, "");
+  const windowsDrive = normalized.match(/^([a-z]):\/(.*)$/i);
+  return windowsDrive ? `${windowsDrive[1].toUpperCase()}:/${windowsDrive[2]}` : normalized;
+}
 function shellCommand(path) {
   if (/[\r\n\0]/.test(path)) throw new Error(`Codex hook path contains unsupported control characters: ${path}`);
   const posix = `'${path.replaceAll("'", `'\\''`)}'`;
-  const windows = path.replaceAll("\\", "/").replaceAll('"', '\\"');
+  const windows = formatCodexWindowsPath(path).replaceAll('"', '\\"');
   return { command: `node ${posix}`, commandWindows: `node "${windows}"` };
 }
 async function prepareHooks({ scope, cwd, home, hookSourceRoot, generation, bootstrapDigest }) {
@@ -10053,7 +10353,7 @@ async function sameLocalRoot(left, right) {
   const actual = normalizedLocalRoot(left), expected = normalizedLocalRoot(right);
   if (!actual || !expected) return false;
   try {
-    const canonical = async (path) => {
+    const canonical2 = async (path) => {
       try {
         return await realpath(path);
       } catch (error) {
@@ -10061,8 +10361,8 @@ async function sameLocalRoot(left, right) {
         return realpath(path.toLowerCase());
       }
     };
-    const [actualPath, expectedPath] = await Promise.all([canonical(actual), canonical(expected)]);
-    const [actualStat, expectedStat] = await Promise.all([lstat3(actualPath), lstat3(expectedPath)]);
+    const [actualPath, expectedPath] = await Promise.all([canonical2(actual), canonical2(expected)]);
+    const [actualStat, expectedStat] = await Promise.all([lstat4(actualPath), lstat4(expectedPath)]);
     return actualStat.isDirectory() && expectedStat.isDirectory() && actualStat.dev === expectedStat.dev && actualStat.ino === expectedStat.ino;
   } catch {
     return false;
@@ -10106,7 +10406,7 @@ async function registerPlugin(execFile6, dryRun, repoRoot) {
     throw error;
   }
 }
-async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir7(), repoRoot, execFile: execFile6 = execFileDefault2 } = {}) {
+async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir7(), repoRoot, execFile: execFile6 = execFileDefault2, scopeLockOptions } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath4(new URL("../", import.meta.url));
   const pluginRoot = await exists(join15(root, ".codex-plugin", "plugin.json"));
@@ -10144,52 +10444,50 @@ async function runCodexInstall({ scope = "project", dryRun = false, cwd = proces
     { op: "merge", path: hooks.configPath }
   ];
   let originals, changed;
+  let actions = [];
   if (!dryRun) {
-    await ordinaryDirectoryPath(dir, { create: true });
     originals = /* @__PURE__ */ new Map();
     changed = [];
-    try {
-      const registry = await readScopeRegistry(home);
-      const currentScope = await scopeEntry(scope, cwd, home);
-      await snapshot(originals, changed, registry.path);
-      await atomicWriteSafe(registry.path, registryText([...registry.entries.filter((entry) => !sameScopeEntry(entry, currentScope)), currentScope]));
-      for (const file of files) {
-        const destination = join15(dir, file);
-        await snapshot(originals, changed, destination);
-        await atomicWriteSafe(destination, await readFile10(join15(source, file), "utf8"));
+    await withScopeRegistryTransaction(home, async (registry) => {
+      await ordinaryDirectoryPath(dir, { create: true });
+      try {
+        const currentScope = await scopeEntry(scope, cwd, home);
+        await snapshot(originals, changed, registry.path);
+        await atomicWriteSafe(registry.path, registryText([...registry.entries.filter((entry) => !sameScopeEntry(entry, currentScope)), currentScope]));
+        for (const file of files) {
+          const destination = join15(dir, file);
+          await snapshot(originals, changed, destination);
+          await atomicWriteSafe(destination, await readFile11(join15(source, file), "utf8"));
+        }
+        for (const file of staleFiles) {
+          const destination = join15(dir, file);
+          await snapshot(originals, changed, destination);
+          await removeSafe(destination);
+        }
+        await snapshot(originals, changed, manifestPath);
+        await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, generation: selected.metadata.generation, bootstrapDigest }, null, 2) + "\n");
+        for (const [file, sourcePath] of hooks.sourceFiles) {
+          const destination = join15(hooks.runtimeDir, file);
+          await snapshot(originals, changed, destination);
+          await atomicWriteSafe(destination, await readFile11(sourcePath, "utf8"));
+        }
+        for (const file of hooks.staleFiles) {
+          const destination = join15(hooks.runtimeDir, file);
+          await snapshot(originals, changed, destination);
+          await removeSafe(destination);
+        }
+        await snapshot(originals, changed, hooks.configPath);
+        await atomicWriteSafe(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
+        await snapshot(originals, changed, hooks.manifestPath);
+        await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
+        actions = present ? await registerPlugin(execFile6, false, distributionRoot) : [];
+      } catch (error) {
+        await restoreFilesystem(originals, changed);
+        throw error;
       }
-      for (const file of staleFiles) {
-        const destination = join15(dir, file);
-        await snapshot(originals, changed, destination);
-        await removeSafe(destination);
-      }
-      await snapshot(originals, changed, manifestPath);
-      await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, generation: selected.metadata.generation, bootstrapDigest }, null, 2) + "\n");
-      for (const [file, sourcePath] of hooks.sourceFiles) {
-        const destination = join15(hooks.runtimeDir, file);
-        await snapshot(originals, changed, destination);
-        await atomicWriteSafe(destination, await readFile10(sourcePath, "utf8"));
-      }
-      for (const file of hooks.staleFiles) {
-        const destination = join15(hooks.runtimeDir, file);
-        await snapshot(originals, changed, destination);
-        await removeSafe(destination);
-      }
-      await snapshot(originals, changed, hooks.configPath);
-      await atomicWriteSafe(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
-      await snapshot(originals, changed, hooks.manifestPath);
-      await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
-    } catch (error) {
-      await restoreFilesystem(originals, changed);
-      throw error;
-    }
-  }
-  let actions = [];
-  try {
-    actions = present ? await registerPlugin(execFile6, dryRun, distributionRoot) : [];
-  } catch (error) {
-    if (!dryRun) await restoreFilesystem(originals, changed);
-    throw error;
+    }, scopeLockOptions);
+  } else {
+    actions = present ? await registerPlugin(execFile6, true, distributionRoot) : [];
   }
   return {
     ok: true,
@@ -10202,6 +10500,19 @@ async function runCodexInstall({ scope = "project", dryRun = false, cwd = proces
     plugin: present ? { registered: !dryRun, actions } : { registered: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${scope}`]
   };
+}
+async function remainingManagedScopes(registry, currentScope) {
+  const liveScopes = [];
+  for (const entry of registry.entries) {
+    if (sameScopeEntry(entry, currentScope)) continue;
+    if (!await ordinaryDirectoryPath(entry.configDir)) continue;
+    const entryAgents = join15(entry.configDir, "agents"), entryManifest = join15(entryAgents, MANIFEST);
+    if (!await ordinaryDirectoryPath(entryAgents)) continue;
+    if (!await safeExists(entryManifest)) continue;
+    validateManagedFiles(await readJson2(entryManifest), entryAgents, entryManifest);
+    liveScopes.push(entry);
+  }
+  return liveScopes;
 }
 async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir7(), execFile: execFile6 = execFileDefault2 } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
@@ -10227,26 +10538,18 @@ async function runCodexUninstall({ scope = "project", dryRun = false, cwd = proc
   const hookFiles = hookManifest ? hookManifest.files.map((file) => join15(hookRuntimeDir, file)) : [];
   const present = await codexAvailable({ execFile: execFile6 });
   const ownsScope = manifestExists || hookManifestExists;
-  const registry = await readScopeRegistry(home);
   const currentScope = await scopeEntry(scope, cwd, home);
-  const liveScopes = [];
-  for (const entry of registry.entries) {
-    if (sameScopeEntry(entry, currentScope)) continue;
-    if (!await ordinaryDirectoryPath(entry.configDir)) continue;
-    const entryAgents = join15(entry.configDir, "agents"), entryManifest = join15(entryAgents, MANIFEST);
-    if (!await ordinaryDirectoryPath(entryAgents)) continue;
-    if (!await safeExists(entryManifest)) continue;
-    validateManagedFiles(await readJson2(entryManifest), entryAgents, entryManifest);
-    liveScopes.push(entry);
-  }
-  const ownershipCertain = registry.present;
-  const removePlugin = present && ownsScope && ownershipCertain && liveScopes.length === 0;
+  let liveScopes = [], ownershipCertain = false, removePlugin = false;
   const planned = [
     ...files.map((path) => ({ op: "remove", path })),
     ...hookFiles.map((path) => ({ op: "remove", path })),
     ...hookManifest ? [{ op: removeHookConfig ? "remove" : "merge", path: hookConfigPath }] : []
   ];
-  if (!dryRun) {
+  const uninstallScope = async (registry) => {
+    liveScopes = await remainingManagedScopes(registry, currentScope);
+    ownershipCertain = registry.present;
+    removePlugin = present && ownsScope && ownershipCertain && liveScopes.length === 0;
+    if (dryRun) return;
     const originals = /* @__PURE__ */ new Map(), changed = [];
     try {
       await snapshot(originals, changed, registry.path);
@@ -10285,7 +10588,9 @@ async function runCodexUninstall({ scope = "project", dryRun = false, cwd = proc
       await run(execFile6, ["plugin", "remove", CODEX_PLUGIN]);
     } catch {
     }
-  }
+  };
+  if (dryRun) await uninstallScope(await readScopeRegistry(home));
+  else await withScopeRegistryTransaction(home, uninstallScope);
   return {
     ok: true,
     target: "codex",
@@ -10298,7 +10603,7 @@ async function runCodexUninstall({ scope = "project", dryRun = false, cwd = proc
 }
 
 // src/codex-doctor.js
-import { readFile as readFile11, readdir as readdir10 } from "node:fs/promises";
+import { readFile as readFile12, readdir as readdir10 } from "node:fs/promises";
 import { createHash as createHash3 } from "node:crypto";
 import { dirname as dirname5, join as join16, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
@@ -10322,6 +10627,37 @@ var CODEX_COUNTS = Object.freeze({
 });
 
 // src/codex-doctor.js
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  return value;
+}
+var same2 = (left, right) => JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
+var groupCommands2 = (group) => (group?.hooks || []).flatMap((hook) => [hook?.command, hook?.commandWindows, hook?.command_windows]);
+var isMusterHookGroup = (group) => groupCommands2(group).some((command) => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs"));
+function ownsExactHookGroups(config, owner) {
+  if (!config?.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks) || !owner?.hookGroups || typeof owner.hookGroups !== "object" || Array.isArray(owner.hookGroups)) return false;
+  const expected = [];
+  for (const [event, groups] of Object.entries(owner.hookGroups)) {
+    if (!Array.isArray(groups)) return false;
+    for (const group of groups) {
+      if (!isMusterHookGroup(group)) return false;
+      expected.push({ event, group });
+    }
+  }
+  const actual = [];
+  for (const [event, groups] of Object.entries(config.hooks)) {
+    if (!Array.isArray(groups)) return false;
+    for (const group of groups) if (isMusterHookGroup(group)) actual.push({ event, group });
+  }
+  if (expected.length === 0 || actual.length !== expected.length) return false;
+  for (const owned of expected) {
+    const index = actual.findIndex((candidate) => candidate.event === owned.event && same2(candidate.group, owned.group));
+    if (index < 0) return false;
+    actual.splice(index, 1);
+  }
+  return actual.length === 0;
+}
 async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2, execFile: execFile6 } = {}) {
   const base = root instanceof URL ? fileURLToPath5(root) : root || process.cwd();
   const isPluginRoot = await exists(join16(base, ".codex-plugin", "plugin.json"));
@@ -10329,7 +10665,7 @@ async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2
   let distributionRoot = base;
   if (isPluginRoot) {
     try {
-      const releaseRoot = dirname5(base), metadata = JSON.parse(await readFile11(join16(releaseRoot, "release.json"), "utf8"));
+      const releaseRoot = dirname5(base), metadata = JSON.parse(await readFile12(join16(releaseRoot, "release.json"), "utf8"));
       selected = { generation: metadata.generation, metadata, releaseRoot, pluginRoot: base, profilesRoot: join16(base, "agents") };
       distributionRoot = resolve3(releaseRoot, "../../../..");
     } catch {
@@ -10346,8 +10682,8 @@ async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2
   checks.push({ name: "codex-cli", ok: available, detail: available ? "codex detected on PATH" : "codex not found \u2014 profiles can be installed, plugin registration is skipped" });
   try {
     const [manifest, pkg] = await Promise.all([
-      readFile11(join16(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),
-      readFile11(join16(plugin, "package.json"), "utf8").then(JSON.parse)
+      readFile12(join16(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),
+      readFile12(join16(plugin, "package.json"), "utf8").then(JSON.parse)
     ]);
     checks.push({ name: "codex-plugin", ok: manifest.name === "muster" && manifest.version === pkg.version, detail: `muster ${manifest.version || "unknown"}` });
   } catch (error) {
@@ -10369,13 +10705,13 @@ async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2
   if (selected) {
     let bootstrapDigest = null;
     try {
-      bootstrapDigest = JSON.parse(await readFile11(join16(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest;
+      bootstrapDigest = JSON.parse(await readFile12(join16(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest;
     } catch {
     }
     const installations = [];
     for (const dir of hookHomes) {
       try {
-        const owner = JSON.parse(await readFile11(join16(dir, "agents", ".muster-managed.json"), "utf8"));
+        const owner = JSON.parse(await readFile12(join16(dir, "agents", ".muster-managed.json"), "utf8"));
         installations.push({ dir, ok: owner.owner === "muster" && owner.generation === selected.generation && owner.bootstrapDigest === bootstrapDigest });
       } catch {
       }
@@ -10387,30 +10723,31 @@ async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2
   const staleHookScopes = [];
   let selectedBootstrapDigest = null;
   try {
-    selectedBootstrapDigest = JSON.parse(await readFile11(join16(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest;
+    selectedBootstrapDigest = JSON.parse(await readFile12(join16(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest;
   } catch {
   }
   for (const dir of hookHomes) {
+    const manifestPath = join16(dir, "muster", ".muster-managed.json");
+    if (!await exists(manifestPath)) continue;
     try {
       const [config, owner] = await Promise.all([
-        readFile11(join16(dir, "hooks.json"), "utf8").then(JSON.parse),
-        readFile11(join16(dir, "muster", ".muster-managed.json"), "utf8").then(JSON.parse)
+        readFile12(join16(dir, "hooks.json"), "utf8").then(JSON.parse),
+        readFile12(manifestPath, "utf8").then(JSON.parse)
       ]);
-      const commandIsMuster = (group) => (group?.hooks || []).some((hook) => [hook.command, hook.commandWindows, hook.command_windows].some((command) => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs")));
-      const configured = hookEvents.every((event) => (config.hooks?.[event] || []).some(commandIsMuster));
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
-      const runtime = await Promise.all(hookFiles.map((file) => readFile11(join16(dir, "muster", "hooks", file))));
+      const runtime = await Promise.all(hookFiles.map((file) => readFile12(join16(dir, "muster", "hooks", file))));
       const hash = createHash3("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
-      const coherent = owner.owner === "muster" && configured && owner.generation === selected?.generation && owner.bootstrapDigest === selectedBootstrapDigest && owner.hookHash === hash.digest("hex");
+      const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.generation === selected?.generation && owner.bootstrapDigest === selectedBootstrapDigest && owner.hookHash === hash.digest("hex");
       if (coherent) hookStatuses.push(dir);
       else staleHookScopes.push(dir);
     } catch {
+      staleHookScopes.push(dir);
     }
   }
-  const hookStatus = hookStatuses[0] || null;
-  checks.push({ name: "codex-hooks", ok: Boolean(hookStatus), detail: hookStatus ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks` : staleHookScopes.length ? `managed lifecycle hooks are stale at ${staleHookScopes.join(", ")}; rerun muster install codex for each scope` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
-  checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0, detail: staleHookScopes.length ? "Project/user hook copies are not generation/hash coherent, so exactly-once dedupe cannot be asserted; refresh every stale scope" : hookStatuses.length > 1 ? "Muster hooks are installed at both project and user scopes; atomic runtime dedupe suppresses identical logical event emissions across copies" : "No project and user Muster hook overlap detected; runtime dedupe remains active for repeated logical events" });
+  const hookStatus = staleHookScopes.length === 0 ? hookStatuses[0] || null : null;
+  checks.push({ name: "codex-hooks", ok: Boolean(hookStatus), detail: hookStatus ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks` : staleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${staleHookScopes.join(", ")}; rerun muster install codex for each scope` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
+  checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0, detail: staleHookScopes.length ? "Project/user hook copies are not generation/hash/exact-group coherent, so exactly-once dedupe cannot be asserted; refresh every stale scope" : hookStatuses.length > 1 ? "Muster hooks are installed at both project and user scopes; atomic runtime dedupe suppresses identical logical event emissions across copies" : "No project and user Muster hook overlap detected; runtime dedupe remains active for repeated logical events" });
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
     const inventory = await readCodexInventory({ cwd, codexHome: codexHome2, execFile: execFile6 });
@@ -11171,7 +11508,7 @@ var PY_SIGNAL = /\b(def|class|import|from|return|for|while|if|elif|else|with|lam
 function validatePython(s) {
   const t = String(s).trim();
   if (!t) return 0;
-  const balanced = (open3, close) => t.split(open3).length - 1 === t.split(close).length - 1;
+  const balanced = (open4, close) => t.split(open4).length - 1 === t.split(close).length - 1;
   const delimitersOk = balanced("(", ")") && balanced("[", "]") && balanced("{", "}");
   return delimitersOk && PY_SIGNAL.test(t) ? 10 : 0;
 }
@@ -11345,7 +11682,7 @@ function selectWinner(candidates) {
 }
 
 // src/prompt-scan.js
-import { readdir as readdir11, readFile as readFile12 } from "node:fs/promises";
+import { readdir as readdir11, readFile as readFile13 } from "node:fs/promises";
 import { join as join17, relative as relative3, extname } from "node:path";
 
 // src/prompt-discover.js
@@ -11456,7 +11793,7 @@ async function collectScanFiles(root) {
       if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;
       let content;
       try {
-        content = await readFile12(full, "utf8");
+        content = await readFile13(full, "utf8");
       } catch {
         continue;
       }
@@ -11617,7 +11954,7 @@ function validateAdviceRequest(req) {
 }
 
 // src/scope.js
-import { readFile as readFile13 } from "node:fs/promises";
+import { readFile as readFile14 } from "node:fs/promises";
 import { isAbsolute as isAbsolute4, join as join18 } from "node:path";
 
 // src/batch-plan.js
@@ -11678,7 +12015,7 @@ function isTraversalUnsafe(rawSegment) {
 async function readBacklogCandidate(safeCwd, rawSegment) {
   if (isTraversalUnsafe(rawSegment)) return { readable: false, count: 0 };
   try {
-    const content = await readFile13(join18(safeCwd, rawSegment), "utf8");
+    const content = await readFile14(join18(safeCwd, rawSegment), "utf8");
     return { readable: true, count: countUncheckedItems(content) };
   } catch {
     return { readable: false, count: 0 };
@@ -11757,7 +12094,7 @@ function readStdin() {
     process.stdin.on("error", reject);
   });
 }
-var readText = async (arg) => !arg || arg === "-" || arg.startsWith("--") ? await readStdin() : await readFile14(arg, "utf8");
+var readText = async (arg) => !arg || arg === "-" || arg.startsWith("--") ? await readStdin() : await readFile15(arg, "utf8");
 async function resolveModeCapabilities(args) {
   const catalog = await loadCatalog(CATALOG_DIR);
   const codex = args.includes("--codex");
@@ -11809,7 +12146,7 @@ async function main() {
     } else if (cmd === "manifest" && rest[0] === "validate") {
       const args = rest.filter((arg) => arg !== "--codex");
       const file = requireArg(args, 1, "manifest validate <file>: missing file path", fail);
-      const obj = JSON.parse(await readFile14(file, "utf8"));
+      const obj = JSON.parse(await readFile15(file, "utf8"));
       const r = validateManifest(obj);
       const catalog = await loadCatalog(CATALOG_DIR);
       const codex = rest.includes("--codex");
@@ -11825,7 +12162,7 @@ async function main() {
     } else if (cmd === "memory" && rest[0] === "write") {
       const dir = requireArg(rest, 1, "memory write <dir> <entry.json>: missing args", fail);
       const entryFile = requireArg(rest, 2, "memory write <dir> <entry.json>: missing args", fail);
-      const entry = JSON.parse(await readFile14(entryFile, "utf8"));
+      const entry = JSON.parse(await readFile15(entryFile, "utf8"));
       await writeMemory(dir, entry);
       out({ ok: true });
     } else if (cmd === "memory" && rest[0] === "read") {
@@ -11833,42 +12170,42 @@ async function main() {
       out(await readMemory(rest[1], rest[2] || ""));
     } else if (cmd === "wave") {
       const file = requireArg(rest, 0, "wave <manifest.json>: missing file path", fail);
-      const m = JSON.parse(await readFile14(file, "utf8"));
+      const m = JSON.parse(await readFile15(file, "utf8"));
       if (!Array.isArray(m.plan)) fail("wave: manifest has no 'plan' array");
       out(computeWaves(m.plan));
     } else if (cmd === "next") {
       const file = requireArg(rest, 0, "next <manifest.json> [--done a,b]: missing file path", fail);
-      const m = JSON.parse(await readFile14(file, "utf8"));
+      const m = JSON.parse(await readFile15(file, "utf8"));
       if (!Array.isArray(m.plan)) fail("next: manifest has no 'plan' array");
       const doneArg = flagValue(rest, "--done");
       out(nextTasks(m.plan, doneArg ? doneArg.split(",") : []));
     } else if (cmd === "sprint-waves") {
       const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
-      const content = await readFile14(file, "utf8");
+      const content = await readFile15(file, "utf8");
       const r = computeSprintWaves(content);
       out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "tally") {
       const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
-      out(tallyReview(JSON.parse(await readFile14(file, "utf8"))));
+      out(tallyReview(JSON.parse(await readFile15(file, "utf8"))));
     } else if (cmd === "pick") {
       const file = requireArg(rest, 0, "pick <candidates.json>: missing file path", fail);
-      out(pickWinner(JSON.parse(await readFile14(file, "utf8"))));
+      out(pickWinner(JSON.parse(await readFile15(file, "utf8"))));
     } else if (cmd === "fuse") {
       const candidatesFile = requireArg(rest, 0, "fuse <candidates.json> <fusion-map.json>: missing candidates file path", fail);
       const mapFile = requireArg(rest, 1, "fuse <candidates.json> <fusion-map.json>: missing fusion-map file path", fail);
-      const candidates = JSON.parse(await readFile14(candidatesFile, "utf8"));
-      const map = JSON.parse(await readFile14(mapFile, "utf8"));
+      const candidates = JSON.parse(await readFile15(candidatesFile, "utf8"));
+      const map = JSON.parse(await readFile15(mapFile, "utf8"));
       out(fuse(candidates, map));
     } else if (cmd === "advise") {
       const file = requireArg(rest, 0, "advise <advice-request.json>: missing file path", fail);
-      const req = JSON.parse(await readFile14(file, "utf8"));
+      const req = JSON.parse(await readFile15(file, "utf8"));
       const v = validateAdviceRequest(req);
       if (!v.ok) fail(v.errors.join("\n"));
       out({ advisorModel: modelForRole("advisor"), request: req });
     } else if (cmd === "vendor") {
       const manifestUrl = new URL("../vendor/manifest.yaml", import.meta.url);
-      const manifest = (0, import_yaml6.parse)(await readFile14(manifestUrl, "utf8"));
+      const manifest = (0, import_yaml6.parse)(await readFile15(manifestUrl, "utf8"));
       const v = validateVendorManifest(manifest);
       if (!v.ok) {
         process.stderr.write(`muster: ${v.errors.join("\n")}
@@ -11884,23 +12221,23 @@ async function main() {
       out(await scaffoldProject(rest[0] || process.cwd()));
     } else if (cmd === "plan-checklist") {
       const file = requireArg(rest, 0, "plan-checklist <manifest.json> [--done a,b]: missing file path", fail);
-      const m = JSON.parse(await readFile14(file, "utf8"));
+      const m = JSON.parse(await readFile15(file, "utf8"));
       const doneArg = flagValue(rest, "--done");
       const done = doneArg ? doneArg.split(",") : [];
       process.stdout.write(renderPlanChecklist(m.plan || [], done) + "\n");
     } else if (cmd === "score") {
       const file = requireArg(rest, 0, "score <file.json>: missing file path ({scores, gate})", fail);
-      const { scores, gate } = JSON.parse(await readFile14(file, "utf8"));
+      const { scores, gate } = JSON.parse(await readFile15(file, "utf8"));
       out(scoreArtifact(scores, gate));
     } else if (cmd === "prompt") {
       const sub = rest[0];
       if (sub === "lint" && rest.includes("--chat")) {
         const file = flagValue(rest, "--chat");
-        const messages = JSON.parse(file ? await readFile14(file, "utf8") : await readStdin());
+        const messages = JSON.parse(file ? await readFile15(file, "utf8") : await readStdin());
         out(lintChat(messages));
       } else if (sub === "lint" && rest.includes("--workflow")) {
         const file = flagValue(rest, "--workflow");
-        const prompts = JSON.parse(file ? await readFile14(file, "utf8") : await readStdin());
+        const prompts = JSON.parse(file ? await readFile15(file, "utf8") : await readStdin());
         out(lintWorkflow(prompts));
       } else if (sub === "lint" || sub === "variations") {
         const text = await readText(rest[1]);
@@ -11909,18 +12246,18 @@ async function main() {
         else if (rest.includes("--task")) ctx.genre = "task";
         const schemaFile = flagValue(rest, "--tool-schema");
         if (schemaFile) {
-          const parsed = JSON.parse(await readFile14(schemaFile, "utf8"));
+          const parsed = JSON.parse(await readFile15(schemaFile, "utf8"));
           ctx.tools = Array.isArray(parsed) ? parsed : parsed.tools;
           ctx.isAgent = true;
         }
         out(sub === "lint" ? lintPrompt(text, ctx) : proposeVariations(text, ctx));
       } else if (sub === "eval") {
         const file = requireArg(rest, 1, "prompt eval <suite.json>: missing suite ({dataset:[{output,format?,graderResponse?}], passThreshold?})", fail);
-        const suite = JSON.parse(await readFile14(file, "utf8"));
+        const suite = JSON.parse(await readFile15(file, "utf8"));
         out(gradeCollected(suite));
       } else if (sub === "optimize") {
         const file = requireArg(rest, 1, "prompt optimize <file.json>: missing file ({candidates:[{id,prompt?,total,passing}]})", fail);
-        const { candidates } = JSON.parse(await readFile14(file, "utf8"));
+        const { candidates } = JSON.parse(await readFile15(file, "utf8"));
         out(selectWinner(candidates));
       } else if (sub === "scan") {
         out(await scanRepoPrompts(rest[1] || process.cwd()));
@@ -11938,7 +12275,7 @@ async function main() {
       if (!r.ok) process.exit(2);
     } else if (cmd === "prioritize") {
       const file = requireArg(rest, 0, "prioritize <file> [--model rice|ice|wsjf|weighted]: missing file", fail);
-      const parsed = JSON.parse(await readFile14(file, "utf8"));
+      const parsed = JSON.parse(await readFile15(file, "utf8"));
       const items = Array.isArray(parsed) ? parsed : parsed.items;
       const model = flagValue(rest, "--model") || (Array.isArray(parsed) ? "rice" : parsed.model || "rice");
       out(prioritize(items, model));
@@ -11964,7 +12301,7 @@ async function main() {
       if (ci) {
         const ciFile = flagValue(args, "--ci");
         if (!ciFile) fail("diagnose --ci <file>: missing file");
-        input = await readFile14(ciFile, "utf8");
+        input = await readFile15(ciFile, "utf8");
       } else input = args.join(" ");
       if (!input || !input.trim()) fail("diagnose <symptom> | --ci <file>: missing input");
       const failure = classifyFailure(input, { ci });

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -177,6 +177,28 @@ test("packaged Codex CLI runs without a consumer npm install", async () => {
   const { stdout } = await execFile("node", [runtime, "detect", repoRoot], { cwd: repoRoot });
   const result = JSON.parse(stdout);
   assert.equal(result.vcs.isRepo, true);
+});
+
+test("Codex bundles are reproducible from symlinked dependency worktrees", async () => {
+  const checkout = await mkdtemp(join(tmpdir(), "muster-codex-build-worktree-"));
+  try {
+    for (const path of ["package.json", "scripts", "src", "plugin", "catalog", "pipelines", "vendor", "codex", "cowork"]) {
+      await cp(join(repoRoot, path), join(checkout, path), { recursive: true });
+    }
+    await symlink(join(repoRoot, "node_modules"), join(checkout, "node_modules"), "dir");
+    await execFile("node", [join(checkout, "scripts", "build-codex.mjs")], { cwd: checkout });
+    for (const relative of [
+      join("runtime", "muster.mjs"),
+      join("runtime", "muster-mcp.mjs"),
+      join("src", "cli.js")
+    ]) {
+      const packaged = await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", relative), "utf8");
+      const rebuilt = await readFile(join(checkout, ".agents", "plugins", "plugins", "muster", relative), "utf8");
+      assert.equal(rebuilt, packaged, `${relative} must be byte-identical across checkout roots`);
+    }
+  } finally {
+    await rm(checkout, { recursive: true, force: true });
+  }
 });
 
 test("packaged Codex workflows use the bundled CLI and Codex-native mode names", async () => {

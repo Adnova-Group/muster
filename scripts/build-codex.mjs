@@ -267,8 +267,18 @@ await ensure(runtime);
 // them, so only inject createRequire for bundled CommonJS dependencies such as
 // yaml; do not add another shebang.
 const requireBanner = 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);';
-await build({ entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), bundle: true, platform: "node", format: "esm", target: "node20", banner: { js: requireBanner } });
-await build({ entryPoints: [join(root, "src", "cli.js")], outfile: join(plugin, "src", "cli.js"), bundle: true, platform: "node", format: "esm", target: "node20", banner: { js: requireBanner } });
+const cliBundleOptions = {
+  absWorkingDir: root,
+  entryPoints: ["src/cli.js"],
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node20",
+  preserveSymlinks: true,
+  banner: { js: requireBanner }
+};
+await build({ ...cliBundleOptions, outfile: join(runtime, "muster.mjs") });
+await build({ ...cliBundleOptions, outfile: join(plugin, "src", "cli.js") });
 const sharedMcpSource = await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8");
 const codexMcpSource = sharedMcpSource
   .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")

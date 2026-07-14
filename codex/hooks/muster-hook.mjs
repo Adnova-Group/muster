@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyAction } from "./action-guard.mjs";
@@ -114,15 +114,69 @@ function ensureDirectory(path) {
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`unsafe hook event directory: ${path}`);
 }
 
-function cleanupEventRecords(dir, now = Date.now()) {
+const CLEANUP_INTERVAL_MS = 60 * 1000;
+const RECORD_TTL_MS = 24 * 60 * 60 * 1000;
+const RECORDS_PER_SHARD = 64;
+
+function regularRecords(dir) {
+  const records = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!/^[a-f0-9]{64}\.json$/.test(entry.name)) continue;
     const path = join(dir, entry.name);
     if (!contained(dir, path)) continue;
     const stat = lstatSync(path);
-    if (!stat.isFile() || stat.isSymbolicLink()) continue;
-    if (now - stat.mtimeMs > 24 * 60 * 60 * 1000) rmSync(path, { force: true });
+    if (stat.isFile() && !stat.isSymbolicLink()) records.push({ path, mtimeMs: stat.mtimeMs });
   }
+  return records;
+}
+
+function withShardLock(dir, name, callback) {
+  const path = join(dir, name);
+  let fd;
+  try { fd = openSync(path, "wx", 0o600); }
+  catch (error) { if (error.code === "EEXIST") return; throw error; }
+  try { callback(); }
+  finally {
+    closeSync(fd);
+    const stat = lstatSync(path);
+    if (stat.isFile() && !stat.isSymbolicLink()) rmSync(path, { force: true });
+  }
+}
+
+function cleanupEventRecords(dir, now = Date.now()) {
+  const stamp = join(dir, ".cleanup-stamp");
+  try {
+    const stat = lstatSync(stamp);
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`unsafe hook cleanup stamp: ${stamp}`);
+    if (now - stat.mtimeMs < CLEANUP_INTERVAL_MS) return;
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  withShardLock(dir, ".cleanup-lock", () => {
+    for (const record of regularRecords(dir)) if (now - record.mtimeMs > RECORD_TTL_MS) rmSync(record.path, { force: true });
+    const staged = join(dir, `.cleanup-stamp-${process.pid}-${now}.tmp`);
+    let fd;
+    try {
+      fd = openSync(staged, "wx", 0o600);
+      writeFileSync(fd, `${now}\n`, "utf8");
+      closeSync(fd);
+      fd = null;
+      renameSync(staged, stamp);
+    } finally {
+      if (fd !== null && fd !== undefined) try { closeSync(fd); } catch { /* cleanup below */ }
+      try {
+        const stat = lstatSync(staged);
+        if (stat.isFile() && !stat.isSymbolicLink()) rmSync(staged, { force: true });
+      } catch { /* already renamed */ }
+    }
+  });
+}
+
+function enforceShardCapacity(dir, preserve) {
+  withShardLock(dir, ".capacity-lock", () => {
+    const records = regularRecords(dir).sort((left, right) => left.mtimeMs - right.mtimeMs || left.path.localeCompare(right.path));
+    for (const record of records.slice(0, Math.max(0, records.length - RECORDS_PER_SHARD))) {
+      if (record.path !== preserve) rmSync(record.path, { force: true });
+    }
+  });
 }
 
 function claimEmission(input, event) {
@@ -134,9 +188,12 @@ function claimEmission(input, event) {
     if (!contained(home, muster) || !contained(home, dir)) throw new Error("hook event directory escaped CODEX_HOME");
     ensureDirectory(muster);
     ensureDirectory(dir);
-    cleanupEventRecords(dir);
-    record = join(dir, `${eventKey(input, event)}.json`);
-    if (!contained(dir, record)) throw new Error("hook event record escaped its directory");
+    const key = eventKey(input, event), shard = join(dir, key.slice(0, 2));
+    if (!contained(dir, shard)) throw new Error("hook event shard escaped its directory");
+    ensureDirectory(shard);
+    cleanupEventRecords(shard);
+    record = join(shard, `${key}.json`);
+    if (!contained(shard, record)) throw new Error("hook event record escaped its directory");
     try { fd = openSync(record, "wx", 0o600); }
     catch (error) {
       if (error.code !== "EEXIST") throw error;
@@ -147,6 +204,7 @@ function claimEmission(input, event) {
     writeFileSync(fd, JSON.stringify({ format: 1, event, createdAt: new Date().toISOString() }) + "\n", "utf8");
     closeSync(fd);
     fd = null;
+    enforceShardCapacity(shard, record);
     return true;
   } catch (error) {
     if (fd !== null) try { closeSync(fd); } catch { /* fail open */ }

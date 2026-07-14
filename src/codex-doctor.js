@@ -39,6 +39,21 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   checks.push({ name: "codex-runtime", ok: missing.length === 0, detail: missing.length ? `missing: ${missing.join(", ")}` : "bundled runtime and MCP entrypoint present" });
   const hookEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"];
   const hookHomes = [...new Set([join(cwd, ".codex"), codexHome || process.env.CODEX_HOME || join(homedir(), ".codex")])];
+  if (selected) {
+    let bootstrapDigest = null;
+    try { bootstrapDigest = JSON.parse(await readFile(join(base, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest; } catch { /* selected release check reports the root failure */ }
+    const installations = [];
+    for (const dir of hookHomes) {
+      try {
+        const owner = JSON.parse(await readFile(join(dir, "agents", ".muster-managed.json"), "utf8"));
+        installations.push({ dir, ok: owner.owner === "muster" && owner.generation === selected.generation && owner.bootstrapDigest === bootstrapDigest });
+      } catch { /* scope is not managed */ }
+    }
+    const stale = installations.filter(item => !item.ok);
+    checks.push({ name: "codex-install-generation", ok: stale.length === 0, detail: stale.length
+      ? `installed profiles do not match selected generation/bootstrap at: ${stale.map(item => item.dir).join(", ")}; rerun muster install codex`
+      : installations.length ? `${installations.length} managed scope(s) match generation ${selected.generation}` : "no managed profile scopes detected" });
+  }
   const hookStatuses = [];
   for (const dir of hookHomes) {
     try {

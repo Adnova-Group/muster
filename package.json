@@ -33,7 +33,6 @@
     "src",
     "plugin",
     ".claude-plugin",
-    ".agents",
     "codex",
     "catalog",
     "pipelines",
@@ -42,7 +41,11 @@
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    ".agents/plugins/marketplace.json",
+    ".agents/plugins/bootstrap/muster",
+    ".agents/plugins/selections/000000000002-31b01621d80360fecb828bd220ec80ded2d051f8ac0443d267c3b2343a395ffa.json",
+    ".agents/plugins/releases/31b01621d80360fecb828bd220ec80ded2d051f8ac0443d267c3b2343a395ffa"
   ],
   "engines": {
     "node": ">=20"

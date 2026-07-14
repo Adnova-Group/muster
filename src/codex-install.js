@@ -1,6 +1,6 @@
-import { cp, mkdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
 import { exists, readdirSafe } from "./fs-util.js";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
@@ -11,7 +11,6 @@ import { resolveCodexRelease } from "./codex-release.js";
 const execFileDefault = promisify(execFileCb);
 export const CODEX_MARKETPLACE = "Adnova-Group/muster";
 export const CODEX_PLUGIN = "muster@muster";
-const CODEX_MARKETPLACE_URL = "https://github.com/Adnova-Group/muster.git";
 const MANIFEST = ".muster-managed.json";
 const PROFILE_FILENAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/;
 const HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
@@ -19,7 +18,70 @@ const HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
 const codexHome = home => process.env.CODEX_HOME || join(home, ".codex");
 const agentsDir = (scope, cwd, home) => scope === "user" ? join(codexHome(home), "agents") : join(cwd, ".codex", "agents");
 const configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join(cwd, ".codex");
-const readJson = async path => { try { return JSON.parse(await readFile(path, "utf8")); } catch { return null; } };
+async function ordinaryDirectoryPath(path, { create = false } = {}) {
+  const absolute = resolve(path), root = parse(absolute).root;
+  let current = root;
+  for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+    current = join(current, part);
+    let stat;
+    try { stat = await lstat(current); }
+    catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      if (!create) return false;
+      try { await mkdir(current, { mode: 0o700 }); }
+      catch (mkdirError) { if (mkdirError.code !== "EEXIST") throw mkdirError; }
+      stat = await lstat(current);
+    }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Codex configuration ancestry must be an ordinary directory: ${current}`);
+  }
+  return true;
+}
+
+async function regularFileState(path) {
+  await ordinaryDirectoryPath(dirname(path));
+  let stat;
+  try { stat = await lstat(path); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`Codex configuration target must be a regular file: ${path}`);
+  return stat;
+}
+
+async function safeExists(path) { return Boolean(await regularFileState(path)); }
+async function readSafe(path, encoding = "utf8") {
+  if (!(await regularFileState(path))) throw new Error(`Codex configuration file is missing: ${path}`);
+  return readFile(path, encoding);
+}
+const readJson = async path => { try { return JSON.parse(await readSafe(path, "utf8")); } catch (error) {
+  if (/symlink|ordinary|regular/i.test(error.message)) throw error;
+  return null;
+} };
+
+async function atomicWriteSafe(path, content) {
+  const parent = dirname(path);
+  await ordinaryDirectoryPath(parent, { create: true });
+  await regularFileState(path);
+  const temporary = join(parent, `.${basename(path)}.muster-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
+  let handle;
+  try {
+    handle = await open(temporary, "wx", 0o600);
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await regularFileState(temporary);
+    await ordinaryDirectoryPath(parent);
+    await regularFileState(path);
+    await rename(temporary, path);
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+    try { await unlink(temporary); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+}
+
+async function removeSafe(path) {
+  const stat = await regularFileState(path);
+  if (stat) await unlink(path);
+}
 const profileFiles = async root => (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort();
 const run = (execFile, args) => execFile("codex", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
 async function runJson(execFile, args) { return JSON.parse((await run(execFile, args)).stdout); }
@@ -89,7 +151,9 @@ function shellCommand(path) {
 async function prepareHooks({ scope, cwd, home, root }) {
   const dir = configDir(scope, cwd, home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
-  const manifestExists = await exists(manifestPath), configExists = await exists(configPath);
+  await ordinaryDirectoryPath(dir);
+  await ordinaryDirectoryPath(runtimeDir);
+  const manifestExists = await safeExists(manifestPath), configExists = await safeExists(configPath);
   const manifestRaw = manifestExists ? await readJson(manifestPath) : null;
   const previous = manifestExists ? validateHookManifest(manifestRaw, runtimeDir, manifestPath) : null;
   let config = { hooks: {} };
@@ -132,36 +196,32 @@ async function prepareHooks({ scope, cwd, home, root }) {
 
 async function snapshot(originals, changed, path) {
   if (originals.has(path)) return;
-  originals.set(path, await exists(path) ? await readFile(path, "utf8") : null);
+  originals.set(path, await safeExists(path) ? await readSafe(path, "utf8") : null);
   changed.push(path);
 }
 
 async function restoreFilesystem(originals, changed) {
   for (const destination of [...changed].reverse()) {
-    if (originals.get(destination) === null) await rm(destination, { force: true });
-    else {
-      await mkdir(dirname(destination), { recursive: true });
-      await writeFile(destination, originals.get(destination), "utf8");
-    }
+    if (originals.get(destination) === null) await removeSafe(destination);
+    else await atomicWriteSafe(destination, originals.get(destination));
   }
 }
 
 function normalizedLocalRoot(value) {
   if (typeof value !== "string" || !value.trim()) return null;
-  return resolve(value.trim()).replaceAll("\\", "/");
+  const input = value.trim().replaceAll("\\", "/");
+  const drive = input.match(/^([a-z]):\/(.*)$/i);
+  return (drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2]}` : resolve(input)).replace(/\/+$/, "").toLowerCase();
 }
 
 function sameLocalRoot(left, right) {
   const actual = normalizedLocalRoot(left), expected = normalizedLocalRoot(right);
   if (!actual || !expected) return false;
-  if (actual === expected) return true;
-  const wslDrive = /^\/mnt\/[a-z](?:\/|$)/i;
-  return wslDrive.test(actual) && wslDrive.test(expected) && actual.toLowerCase() === expected.toLowerCase();
+  return actual === expected;
 }
 
 function trustedMusterMarketplace(item, repoRoot) {
   const source = item?.marketplaceSource;
-  if (source?.sourceType === "git") return source.source === CODEX_MARKETPLACE_URL;
   return source?.sourceType === "local"
     && sameLocalRoot(item.root, repoRoot)
     && sameLocalRoot(source.source, repoRoot);
@@ -177,12 +237,12 @@ async function existingMusterMarketplace(execFile, repoRoot) {
 }
 
 async function registerPlugin(execFile, dryRun, repoRoot) {
-  if (dryRun) return [`codex plugin marketplace add ${CODEX_MARKETPLACE}`, `codex plugin add ${CODEX_PLUGIN}`];
+  if (dryRun) return [`codex plugin marketplace add ${repoRoot}`, `codex plugin add ${CODEX_PLUGIN}`];
   let marketplaceAdded = false, pluginAdded = false;
   try {
     const marketplace = await existingMusterMarketplace(execFile, repoRoot);
     if (!marketplace) {
-      await run(execFile, ["plugin", "marketplace", "add", CODEX_MARKETPLACE]);
+      await run(execFile, ["plugin", "marketplace", "add", repoRoot]);
       marketplaceAdded = true;
     }
     await runJson(execFile, ["plugin", "list", "--available", "--json"]);
@@ -200,22 +260,33 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
-  const source = pluginRoot ? join(root, "agents") : (await resolveCodexRelease(root)).profilesRoot;
+  const selected = pluginRoot
+    ? { metadata: JSON.parse(await readSafe(join(dirname(root), "release.json"))), releaseRoot: dirname(root) }
+    : await resolveCodexRelease(root);
+  const distributionRoot = pluginRoot ? resolve(selected.releaseRoot, "../../../..") : root;
+  const pointer = JSON.parse(await readSafe(join(distributionRoot, ".agents", "plugins", "marketplace.json")));
+  const bootstrapDigest = pointer?.musterBootstrap?.digest;
+  if (!/^[a-f0-9]{64}$/.test(selected.metadata?.generation || "") || !/^[a-f0-9]{64}$/.test(bootstrapDigest || "")) {
+    throw new Error("Codex installation source is missing a coherent release generation/bootstrap contract");
+  }
+  const source = pluginRoot ? join(root, "agents") : selected.profilesRoot;
   const files = await profileFiles(source);
   if (!files.length) throw new Error("Codex profiles are missing; run npm run build:codex first");
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
+  await ordinaryDirectoryPath(configDir(scope, cwd, home));
+  await ordinaryDirectoryPath(dir);
   const manifest = await readJson(manifestPath);
-  const manifestExists = await exists(manifestPath);
+  const manifestExists = await safeExists(manifestPath);
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
   const hooks = await prepareHooks({ scope, cwd, home, root });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
   const staleFiles = managedFiles.filter(file => !files.includes(file));
   for (const file of files) {
     const destination = join(dir, file);
-    if (await exists(destination) && !managed.has(resolve(destination))) throw new Error(`Codex profile conflict: ${destination}. Move it or remove it, then rerun muster install codex.`);
+    if (await safeExists(destination) && !managed.has(resolve(destination))) throw new Error(`Codex profile conflict: ${destination}. Move it or remove it, then rerun muster install codex.`);
   }
   const present = await codexAvailable({ execFile });
-  if (present && !dryRun) await existingMusterMarketplace(execFile, root);
+  if (present && !dryRun) await existingMusterMarketplace(execFile, distributionRoot);
   const planned = [
     ...files.map(file => ({ op: "write", path: join(dir, file) })),
     ...staleFiles.map(file => ({ op: "remove", path: join(dir, file) })),
@@ -225,37 +296,35 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   ];
   let originals, changed;
   if (!dryRun) {
-    await mkdir(dir, { recursive: true });
+    await ordinaryDirectoryPath(dir, { create: true });
     originals = new Map(); changed = [];
     try {
       for (const file of files) {
         const destination = join(dir, file);
         await snapshot(originals, changed, destination);
-        await cp(join(source, file), destination);
+        await atomicWriteSafe(destination, await readFile(join(source, file), "utf8"));
       }
       for (const file of staleFiles) {
         const destination = join(dir, file);
         await snapshot(originals, changed, destination);
-        await rm(destination, { force: true });
+        await removeSafe(destination);
       }
       await snapshot(originals, changed, manifestPath);
-      await writeFile(manifestPath, JSON.stringify({ format: 1, owner: "muster", files }, null, 2) + "\n", "utf8");
+      await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, generation: selected.metadata.generation, bootstrapDigest }, null, 2) + "\n");
       for (const [file, sourcePath] of hooks.sourceFiles) {
         const destination = join(hooks.runtimeDir, file);
-        await mkdir(dirname(destination), { recursive: true });
         await snapshot(originals, changed, destination);
-        await cp(sourcePath, destination);
+        await atomicWriteSafe(destination, await readFile(sourcePath, "utf8"));
       }
       for (const file of hooks.staleFiles) {
         const destination = join(hooks.runtimeDir, file);
         await snapshot(originals, changed, destination);
-        await rm(destination, { force: true });
+        await removeSafe(destination);
       }
-      await mkdir(dirname(hooks.configPath), { recursive: true });
       await snapshot(originals, changed, hooks.configPath);
-      await writeFile(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n", "utf8");
+      await atomicWriteSafe(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
       await snapshot(originals, changed, hooks.manifestPath);
-      await writeFile(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n", "utf8");
+      await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
     } catch (error) {
       await restoreFilesystem(originals, changed);
       throw error;
@@ -263,7 +332,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   }
   let actions = [];
   try {
-    actions = present ? await registerPlugin(execFile, dryRun, root) : [];
+    actions = present ? await registerPlugin(execFile, dryRun, distributionRoot) : [];
   } catch (error) {
     if (!dryRun) await restoreFilesystem(originals, changed);
     throw error;
@@ -275,12 +344,16 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
 
 export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile = execFileDefault } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
-  const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST), manifest = await readJson(manifestPath);
-  const manifestExists = await exists(manifestPath);
+  const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
+  await ordinaryDirectoryPath(configDir(scope, cwd, home));
+  await ordinaryDirectoryPath(dir);
+  const manifest = await readJson(manifestPath);
+  const manifestExists = await safeExists(manifestPath);
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
   const files = managedFiles.map(file => join(dir, file));
   const hookDir = configDir(scope, cwd, home), hookRuntimeDir = join(hookDir, "muster"), hookManifestPath = join(hookRuntimeDir, MANIFEST), hookConfigPath = join(hookDir, "hooks.json");
-  const hookManifestExists = await exists(hookManifestPath), hookConfigExists = await exists(hookConfigPath);
+  await ordinaryDirectoryPath(hookRuntimeDir);
+  const hookManifestExists = await safeExists(hookManifestPath), hookConfigExists = await safeExists(hookConfigPath);
   const hookManifest = hookManifestExists ? validateHookManifest(await readJson(hookManifestPath), hookRuntimeDir, hookManifestPath) : null;
   let hookConfig = null, removeHookConfig = false;
   if (hookManifest) {
@@ -292,6 +365,18 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   }
   const hookFiles = hookManifest ? hookManifest.files.map(file => join(hookRuntimeDir, file)) : [];
   const present = await codexAvailable({ execFile });
+  const otherScope = scope === "project" ? "user" : "project";
+  const otherDir = agentsDir(otherScope, cwd, home), otherManifestPath = join(otherDir, MANIFEST);
+  let otherManaged = false;
+  if (await ordinaryDirectoryPath(otherDir)) {
+    const otherManifest = await readJson(otherManifestPath);
+    if (await safeExists(otherManifestPath)) {
+      validateManagedFiles(otherManifest, otherDir, otherManifestPath);
+      otherManaged = true;
+    }
+  }
+  const ownsScope = manifestExists || hookManifestExists;
+  const removePlugin = present && ownsScope && !otherManaged;
   const planned = [
     ...files.map(path => ({ op: "remove", path })),
     ...hookFiles.map(path => ({ op: "remove", path })),
@@ -300,23 +385,26 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   if (!dryRun) {
     const originals = new Map(), changed = [];
     try {
-      for (const file of files) { await snapshot(originals, changed, file); await rm(file, { force: true }); }
-      if (manifestExists) { await snapshot(originals, changed, manifestPath); await rm(manifestPath, { force: true }); }
-      for (const file of hookFiles) { await snapshot(originals, changed, file); await rm(file, { force: true }); }
-      if (hookManifestExists) { await snapshot(originals, changed, hookManifestPath); await rm(hookManifestPath, { force: true }); }
+      for (const file of files) { await snapshot(originals, changed, file); await removeSafe(file); }
+      if (manifestExists) { await snapshot(originals, changed, manifestPath); await removeSafe(manifestPath); }
+      for (const file of hookFiles) { await snapshot(originals, changed, file); await removeSafe(file); }
+      if (hookManifestExists) { await snapshot(originals, changed, hookManifestPath); await removeSafe(hookManifestPath); }
       if (hookManifest) {
         await snapshot(originals, changed, hookConfigPath);
-        if (removeHookConfig) await rm(hookConfigPath, { force: true });
-        else await writeFile(hookConfigPath, JSON.stringify(hookConfig, null, 2) + "\n", "utf8");
+        if (removeHookConfig) await removeSafe(hookConfigPath);
+        else await atomicWriteSafe(hookConfigPath, JSON.stringify(hookConfig, null, 2) + "\n");
       }
     } catch (error) {
       await restoreFilesystem(originals, changed);
       throw error;
     }
-    for (const empty of [join(hookRuntimeDir, "hooks"), hookRuntimeDir]) try { await rmdir(empty); } catch { /* preserve non-empty user content */ }
-    if (present) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN]); } catch { /* already absent is idempotent */ }
+    for (const empty of [join(hookRuntimeDir, "hooks"), hookRuntimeDir]) try {
+      await ordinaryDirectoryPath(empty);
+      await rmdir(empty);
+    } catch { /* preserve non-empty user content */ }
+    if (removePlugin) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN]); } catch { /* already absent is idempotent */ }
   }
   return { ok: true, target: "codex", scope, dryRun, files: planned,
-    plugin: present ? { removed: !dryRun } : { removed: false, skipped: "codex-not-found" },
+    plugin: present ? { removed: !dryRun && removePlugin, retained: otherManaged } : { removed: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster uninstall codex --scope ${scope}`] };
 }

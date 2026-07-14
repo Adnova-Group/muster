@@ -9,7 +9,7 @@ import { lintPrompt } from "./prompt-lint.js";
 import { discoverPrompts } from "./prompt-discover.js";
 
 export const SCAN_SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage",
-  ".next", ".nuxt", ".worktrees", ".muster", ".agents", "vendor", "__pycache__"]);
+  ".next", ".nuxt", ".worktrees", ".muster", "vendor", "__pycache__"]);
 export const SCAN_TEXT_EXT = new Set([".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".rb",
   ".go", ".java", ".md", ".txt", ".prompt", ".tmpl", ".json", ".yaml", ".yml"]);
 export const SCAN_MAX_FILE = 256 * 1024;
@@ -24,7 +24,11 @@ export async function collectScanFiles(root) {
     for (const e of ents) {
       if (files.length >= SCAN_MAX_FILES) return;
       const full = join(dir, e.name);
-      if (e.isDirectory()) { if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full); continue; }
+      if (e.isDirectory()) {
+        const rel = relative(root, full).replaceAll("\\", "/");
+        if (!SCAN_SKIP_DIRS.has(e.name) && rel !== ".agents/plugins/releases") await walk(full);
+        continue;
+      }
       if (!e.isFile()) continue;
       const isPromptName = /\.(prompt|tmpl)$/i.test(e.name);
       if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;

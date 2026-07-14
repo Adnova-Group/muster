@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { cp, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY, codexModelForRole, codexModelForTier } from "../src/codex.js";
@@ -21,8 +22,8 @@ const response = stdout => async () => ({ stdout });
 const execFile = promisify(execFileCb);
 const canonicalMusterMarketplace = {
   name: "muster",
-  root: "/tmp/codex-muster-marketplace",
-  marketplaceSource: { sourceType: "git", source: "https://github.com/Adnova-Group/muster.git" }
+  root: repoRoot,
+  marketplaceSource: { sourceType: "local", source: repoRoot }
 };
 const localMusterMarketplace = {
   name: "muster",
@@ -317,9 +318,28 @@ test("Codex hook emits each logical event once across concurrent installed copie
 
   const victim = join(tmp, "stale-cleanup-victim.txt");
   await writeFile(victim, "keep\n");
-  await symlink(victim, join(codexHome, "muster", "hook-events", `${"a".repeat(64)}.json`));
+  await mkdir(join(codexHome, "muster", "hook-events", "aa"));
+  await symlink(victim, join(codexHome, "muster", "hook-events", "aa", `${"a".repeat(64)}.json`));
   await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-3", prompt: "muster audit", cwd: tmp }, tmp, join(copies[0], "muster-hook.mjs"), { CODEX_HOME: codexHome });
   assert.equal(await readFile(victim, "utf8"), "keep\n");
+});
+
+test("Codex hook dedupe bounds cleanup work and records per shard", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-load-")), codexHome = join(tmp, "codex-home");
+  const payload = { hook_event_name: "UserPromptSubmit", session_id: "load", turn_id: "turn-1", prompt: "muster audit", cwd: tmp };
+  const key = createHash("sha256").update(JSON.stringify(["UserPromptSubmit", "load", "turn-1", ""])).digest("hex");
+  const shard = join(codexHome, "muster", "hook-events", key.slice(0, 2));
+  await mkdir(shard, { recursive: true });
+  await Promise.all(Array.from({ length: 512 }, (_, index) => {
+    const name = createHash("sha256").update(`seed-${index}`).digest("hex");
+    return writeFile(join(shard, `${name}.json`), "{}\n");
+  }));
+  const started = Date.now();
+  const output = await runCodexHook(payload, tmp, join(repoRoot, "codex", "hooks", "muster-hook.mjs"), { CODEX_HOME: codexHome });
+  assert.ok(output.hookSpecificOutput);
+  assert.ok(Date.now() - started < 5_000, "bounded shard cleanup must not scan an unbounded global event history");
+  const records = (await readdir(shard)).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
+  assert.ok(records.length <= 64, `expected at most 64 records in one shard, got ${records.length}`);
 });
 
 test("Codex fallbacks are self-contained and package referenced skill assets", async () => {
@@ -372,6 +392,8 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
   const agents = join(cwd, ".codex", "agents");
   const manifest = JSON.parse(await readFile(join(agents, ".muster-managed.json"), "utf8"));
   assert.equal(manifest.files.length, CODEX_COUNTS.agents);
+  assert.equal(manifest.generation, selectedRelease.generation);
+  assert.equal(manifest.bootstrapDigest, JSON.parse(await readFile(join(repoRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap.digest);
   assert.equal(result.hooks, 7);
   const hooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
   assert.ok(hooks.hooks.Stop.some(group => group.hooks?.[0]?.command === "printf user-hook"));
@@ -415,6 +437,122 @@ test("Codex uninstall rejects traversal in a managed manifest", async () => {
   const absent = async () => { throw new Error("not found"); };
   await assert.rejects(() => runCodexUninstall({ cwd, home, repoRoot, execFile: absent }), /Invalid Muster-owned Codex profile/);
   assert.equal(await readFile(victim, "utf8"), "keep me\n");
+});
+
+test("Codex install rejects symlinked configuration ancestry and targets without touching victims", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-install-symlink-"));
+  const absent = async () => { throw new Error("not found"); };
+  const cases = [
+    [".codex directory", async (cwd, victim) => {
+      await mkdir(victim, { recursive: true });
+      await writeFile(join(victim, "sentinel.txt"), "keep\n");
+      await symlink(victim, join(cwd, ".codex"));
+      return async () => assert.deepEqual(await readdir(victim), ["sentinel.txt"]);
+    }],
+    ["agents directory", async (cwd, victim) => {
+      await mkdir(join(cwd, ".codex"), { recursive: true });
+      await mkdir(victim, { recursive: true });
+      await writeFile(join(victim, "sentinel.txt"), "keep\n");
+      await symlink(victim, join(cwd, ".codex", "agents"));
+      return async () => assert.deepEqual(await readdir(victim), ["sentinel.txt"]);
+    }],
+    ["muster directory", async (cwd, victim) => {
+      await mkdir(join(cwd, ".codex"), { recursive: true });
+      await mkdir(victim, { recursive: true });
+      await writeFile(join(victim, "sentinel.txt"), "keep\n");
+      await symlink(victim, join(cwd, ".codex", "muster"));
+      return async () => assert.deepEqual(await readdir(victim), ["sentinel.txt"]);
+    }],
+    ["hooks.json", async (cwd, victim) => {
+      await mkdir(join(cwd, ".codex"), { recursive: true });
+      const bytes = '{"hooks":{}}\n';
+      await writeFile(victim, bytes);
+      await symlink(victim, join(cwd, ".codex", "hooks.json"));
+      return async () => assert.equal(await readFile(victim, "utf8"), bytes);
+    }],
+    ["agents manifest", async (cwd, victim) => {
+      const agents = join(cwd, ".codex", "agents");
+      await mkdir(agents, { recursive: true });
+      const bytes = JSON.stringify({ format: 1, owner: "muster", files: [] }) + "\n";
+      await writeFile(victim, bytes);
+      await symlink(victim, join(agents, ".muster-managed.json"));
+      return async () => {
+        assert.equal(await readFile(victim, "utf8"), bytes);
+        assert.deepEqual(await readdir(agents), [".muster-managed.json"]);
+      };
+    }]
+  ];
+  for (const [name, setup] of cases) await t.test(name, async () => {
+    const cwd = join(tmp, name.replaceAll(/[^a-z]+/gi, "-")), victim = join(tmp, `${name.replaceAll(/[^a-z]+/gi, "-")}-victim`);
+    await mkdir(cwd, { recursive: true });
+    const verify = await setup(cwd, victim);
+    await assert.rejects(() => runCodexInstall({ cwd, home: join(tmp, "home"), repoRoot, execFile: absent }), /symlink|ordinary|regular/i);
+    await verify();
+  });
+});
+
+test("Codex uninstall rejects symlinked configuration ancestry and targets without touching victims", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-uninstall-symlink-"));
+  const absent = async () => { throw new Error("not found"); };
+  const managedProfiles = JSON.stringify({ format: 1, owner: "muster", files: ["victim.toml"] }) + "\n";
+  const managedHooks = JSON.stringify({ format: 1, owner: "muster", files: ["hooks/victim.mjs"], hookGroups: {} }) + "\n";
+  const cases = [
+    [".codex directory", async (cwd, victim) => {
+      await mkdir(join(victim, "agents"), { recursive: true });
+      await writeFile(join(victim, "agents", ".muster-managed.json"), managedProfiles);
+      await writeFile(join(victim, "agents", "victim.toml"), "keep\n");
+      await symlink(victim, join(cwd, ".codex"));
+      return async () => assert.equal(await readFile(join(victim, "agents", "victim.toml"), "utf8"), "keep\n");
+    }],
+    ["agents directory", async (cwd, victim) => {
+      await mkdir(join(cwd, ".codex"), { recursive: true });
+      await mkdir(victim, { recursive: true });
+      await writeFile(join(victim, ".muster-managed.json"), managedProfiles);
+      await writeFile(join(victim, "victim.toml"), "keep\n");
+      await symlink(victim, join(cwd, ".codex", "agents"));
+      return async () => assert.equal(await readFile(join(victim, "victim.toml"), "utf8"), "keep\n");
+    }],
+    ["agents manifest", async (cwd, victim) => {
+      const agents = join(cwd, ".codex", "agents");
+      await mkdir(agents, { recursive: true });
+      await writeFile(join(agents, "victim.toml"), "keep\n");
+      await writeFile(victim, managedProfiles);
+      await symlink(victim, join(agents, ".muster-managed.json"));
+      return async () => assert.equal(await readFile(join(agents, "victim.toml"), "utf8"), "keep\n");
+    }],
+    ["muster directory", async (cwd, victim) => {
+      await mkdir(join(cwd, ".codex"), { recursive: true });
+      await mkdir(join(victim, "hooks"), { recursive: true });
+      await writeFile(join(victim, ".muster-managed.json"), managedHooks);
+      await writeFile(join(victim, "hooks", "victim.mjs"), "keep\n");
+      await symlink(victim, join(cwd, ".codex", "muster"));
+      return async () => assert.equal(await readFile(join(victim, "hooks", "victim.mjs"), "utf8"), "keep\n");
+    }],
+    ["hook manifest", async (cwd, victim) => {
+      const runtime = join(cwd, ".codex", "muster"), hook = join(runtime, "hooks", "victim.mjs");
+      await mkdir(dirname(hook), { recursive: true });
+      await writeFile(hook, "keep\n");
+      await writeFile(victim, managedHooks);
+      await symlink(victim, join(runtime, ".muster-managed.json"));
+      return async () => assert.equal(await readFile(hook, "utf8"), "keep\n");
+    }],
+    ["hooks.json", async (cwd, victim) => {
+      const runtime = join(cwd, ".codex", "muster");
+      await mkdir(runtime, { recursive: true });
+      await writeFile(join(runtime, ".muster-managed.json"), JSON.stringify({ format: 1, owner: "muster", files: [], hookGroups: {} }));
+      const bytes = '{"hooks":{},"keep":true}\n';
+      await writeFile(victim, bytes);
+      await symlink(victim, join(cwd, ".codex", "hooks.json"));
+      return async () => assert.equal(await readFile(victim, "utf8"), bytes);
+    }]
+  ];
+  for (const [name, setup] of cases) await t.test(name, async () => {
+    const cwd = join(tmp, name.replaceAll(/[^a-z]+/gi, "-")), victim = join(tmp, `${name.replaceAll(/[^a-z]+/gi, "-")}-victim`);
+    await mkdir(cwd, { recursive: true });
+    const verify = await setup(cwd, victim);
+    await assert.rejects(() => runCodexUninstall({ cwd, home: join(tmp, "home"), execFile: absent }), /symlink|ordinary|regular/i);
+    await verify();
+  });
 });
 
 test("Codex upgrade and uninstall clean historical managed profiles", async () => {
@@ -498,6 +636,26 @@ test("Codex doctor reports project/user hook overlap as a deduped advisory", asy
   assert.match(overlap?.detail || "", /project and user.*runtime dedupe/i);
 });
 
+test("Codex uninstall retains the shared plugin until the final managed scope is removed", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-dual-scope-")), cwd = join(tmp, "project"), home = join(tmp, "home"), calls = [];
+  const execFile = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [localMusterMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    return { stdout: "" };
+  };
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile });
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile });
+  calls.length = 0;
+  const first = await runCodexUninstall({ scope: "project", cwd, home, execFile });
+  assert.equal(first.plugin.retained, true);
+  assert.equal(calls.includes("plugin remove muster@muster"), false);
+  const last = await runCodexUninstall({ scope: "user", cwd, home, execFile });
+  assert.equal(last.plugin.removed, true);
+  assert.equal(calls.filter(call => call === "plugin remove muster@muster").length, 1);
+});
+
 test("Codex install refreshes an older installed plugin version", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-upgrade-")), calls = [];
   const execFile = async (_bin, args) => {
@@ -527,18 +685,18 @@ test("Codex install refreshes an already-installed same-version local plugin", a
   assert.ok(calls.includes("plugin add muster@muster"));
 });
 
-test("Codex install accepts the canonical GitHub marketplace provenance", async () => {
+test("Codex install rejects a mutable GitHub marketplace generation", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-canonical-")), calls = [];
   const execFile = async (_bin, args) => {
     calls.push(args.join(" "));
     if (args[0] === "--version") return { stdout: "codex-cli test" };
-    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [canonicalMusterMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [{ name: "muster", root: "/tmp/muster", marketplaceSource: { sourceType: "git", source: "https://github.com/Adnova-Group/muster.git" } }] }) };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
     if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "refreshed" };
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
-  await runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile });
-  assert.ok(calls.includes("plugin add muster@muster"));
+  await assert.rejects(runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile }), /marketplace conflict/i);
+  assert.equal(calls.includes("plugin add muster@muster"), false);
 });
 
 test("Codex install accepts the exact local marketplace across WSL drive-path casing", async () => {

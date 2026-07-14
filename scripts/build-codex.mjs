@@ -2,7 +2,7 @@ import { build } from "esbuild";
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertRegularFile, assertRegularTree, publishCodexRelease } from "../src/codex-release.js";
+import { assertRegularFile, assertRegularTree, prepareCodexBootstrap, publishCodexRelease } from "../src/codex-release.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const pluginParent = join(root, ".agents", "plugins");
@@ -221,6 +221,36 @@ function modeSkill(name, mode) {
   return `---\nname: ${name}\ndescription: ${JSON.stringify(`Use for Muster orchestration when the user asks to ${mode.purpose}. Explicitly invoke with $${name}.`)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n\n${agentWatchProtocol}`;
 }
 
+async function buildBootstrapCandidate(destination) {
+  const wrapper = (header, kind, name) => `${header}\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Bootstrap delegates to the role and output contract in the validated selected release. -->\n\n# Immutable Muster bootstrap\n\nRun \`node \${PLUGIN_ROOT}/runtime/resolve-release.mjs ${kind} ${name}\` and read the absolute path it prints. Follow that selected, validated immutable release file as the authoritative workflow. If resolution fails, stop with the diagnostic; never use a partial or unvalidated generation.\n`;
+  await cp(join(plugin, "agents"), join(destination, "agents"), { recursive: true });
+  const manifest = JSON.parse(await readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8"));
+  manifest.version = "0.0.0-bootstrap";
+  await write(join(destination, ".codex-plugin", "plugin.json"), JSON.stringify(manifest, null, 2) + "\n");
+  await write(join(destination, ".mcp.json"), JSON.stringify({ mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } } }, null, 2) + "\n");
+  await write(join(destination, "package.json"), JSON.stringify({ version: "0.0.0-bootstrap", private: true }, null, 2) + "\n");
+  await ensure(join(destination, "runtime"));
+  for (const name of await readdir(join(plugin, "skills"))) {
+    const source = await readFile(join(plugin, "skills", name, "SKILL.md"), "utf8");
+    const header = source.match(/^---\r?\n[\s\S]*?\r?\n---/)?.[0];
+    if (!header) throw new Error(`bootstrap skill lacks frontmatter: ${name}`);
+    await write(join(destination, "skills", name, "SKILL.md"), wrapper(header, "skill", name));
+  }
+  for (const file of await readdir(join(plugin, "commands"))) {
+    if (!file.endsWith(".md")) continue;
+    const source = await readFile(join(plugin, "commands", file), "utf8");
+    const header = source.match(/^---\r?\n[\s\S]*?\r?\n---/)?.[0] || "";
+    await write(join(destination, "commands", file), wrapper(header, "command", file.slice(0, -3)));
+  }
+  await Promise.all([
+    cp(join(root, "codex", "bootstrap", "resolve-release.mjs"), join(destination, "runtime", "resolve-release.mjs")),
+    cp(join(root, "codex", "bootstrap", "muster.mjs"), join(destination, "runtime", "muster.mjs")),
+    cp(join(root, "codex", "bootstrap", "muster-mcp.mjs"), join(destination, "runtime", "muster-mcp.mjs"))
+  ]);
+  await write(join(destination, "runtime", "codex-skill-adapter.md"), "# Immutable Muster bootstrap adapter\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs adapter` and read the absolute path it prints. Read and apply that validated release adapter.\n");
+  await write(join(destination, "runtime", "sprint-protocol.md"), "# Immutable Muster bootstrap protocol\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs sprint` and read the absolute path it prints. Read and apply that validated release protocol.\n");
+}
+
 try {
 await cleanStaleStages();
 stagingRoot = await mkdtemp(join(pluginParent, ".muster-build-"));
@@ -320,21 +350,39 @@ await write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({
   interface: { displayName: "Muster", shortDescription: "Glass-box agentic orchestration for Codex.", longDescription: "Muster provides deterministic routing, custom-agent profiles, pipeline workflows, and the complete MCP toolset.", developerName: "Adnova Group", category: "Productivity", capabilities: ["Read", "Write"], websiteURL: "https://adnova-group.github.io/muster/", defaultPrompt: ["Plan this feature with Muster.", "Run a Muster audit of this repository.", "Use Muster to clear this backlog."] }
 }, null, 2) + "\n");
 
-await publishCodexRelease({
+const stagedBootstrap = join(stagingRoot, "bootstrap", "muster");
+await buildBootstrapCandidate(stagedBootstrap);
+const bootstrap = await prepareCodexBootstrap({
+  repoRoot: root,
+  stagedBootstrap,
+  allowMaintenance: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1"
+});
+
+const published = await publishCodexRelease({
   repoRoot: root,
   stagedRelease: join(stagingRoot, "release"),
   packageVersion: pkg.version,
+  bootstrapDigest: bootstrap.digest,
+  allowBootstrapMigration: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1",
   marketplaceTemplate: {
     name: "muster",
     interface: { displayName: "Muster" },
     plugins: [{
       name: "muster",
-      source: { source: "local", path: "./.agents/plugins/releases/pending/plugin" },
+      source: { source: "local", path: "./.agents/plugins/bootstrap/muster" },
       policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
       category: "Productivity"
     }]
   }
 });
+const packageFiles = (pkg.files || []).filter(item => item !== ".agents" && !item.startsWith(".agents/"));
+packageFiles.push(
+  ".agents/plugins/marketplace.json",
+  ".agents/plugins/bootstrap/muster",
+  `.agents/plugins/selections/${published.selectionName}`,
+  `.agents/plugins/releases/${published.generation}`
+);
+await write(join(root, "package.json"), JSON.stringify({ ...pkg, files: packageFiles }, null, 2) + "\n");
 } finally {
   if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true });
 }

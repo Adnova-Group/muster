@@ -1,23 +1,25 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { lstat, mkdir, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { processAlive, processStartIdentity, withCodexFileLock } from "./codex-lock.js";
 
 const RELEASE_FORMAT = 1;
 const GENERATION = /^[a-f0-9]{64}$/;
 const slash = value => value.replaceAll("\\", "/");
 const sha256 = value => createHash("sha256").update(value).digest("hex");
 
-async function readRegularJson(path, label, maxBytes = 64 * 1024) {
+async function readRegular(path, label, maxBytes = 32 * 1024 * 1024) {
   let handle;
   try {
     await ordinary(path, "file", label);
     handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size > maxBytes) throw new Error(`${label} must be a bounded regular file: ${path}`);
-    return JSON.parse(await handle.readFile("utf8"));
+    return await handle.readFile();
   } finally { if (handle) await handle.close().catch(() => {}); }
 }
+const readRegularJson = async (path, label, maxBytes = 64 * 1024) => JSON.parse((await readRegular(path, label, maxBytes)).toString("utf8"));
 
 function contained(base, target, label) {
   const rel = relative(resolve(base), resolve(target));
@@ -72,7 +74,7 @@ export async function assertRegularTree(root) {
         dirs.push(rel);
         await walk(path);
       } else if (stat.isFile()) {
-        const content = await readFile(path);
+        const content = await readRegular(path, "tree entry");
         files.push({ path: rel, sha256: sha256(content), size: content.length });
       } else throw new Error(`tree entry must be a regular file or directory: ${path}`);
     }
@@ -95,7 +97,7 @@ export async function createCodexBootstrapMetadata(bootstrapRoot) {
 
 export async function validateCodexBootstrap(bootstrapRoot) {
   await ordinary(join(bootstrapRoot, "bootstrap.json"), "file", "bootstrap metadata");
-  const metadata = JSON.parse(await readFile(join(bootstrapRoot, "bootstrap.json"), "utf8"));
+  const metadata = await readRegularJson(join(bootstrapRoot, "bootstrap.json"), "bootstrap metadata", 4 * 1024 * 1024);
   if (metadata?.format !== RELEASE_FORMAT || !GENERATION.test(metadata.digest || "") || !Array.isArray(metadata.files)) {
     throw new Error("Codex bootstrap metadata has an invalid contract");
   }
@@ -149,7 +151,7 @@ export async function createCodexReleaseMetadata(releaseRoot, packageVersion) {
 export async function validateCodexRelease(releaseRoot, expectedGeneration) {
   await ordinary(join(releaseRoot, "release.json"), "file", "release metadata");
   let metadata;
-  try { metadata = JSON.parse(await readFile(join(releaseRoot, "release.json"), "utf8")); }
+  try { metadata = await readRegularJson(join(releaseRoot, "release.json"), "release metadata", 4 * 1024 * 1024); }
   catch (error) { throw new Error(`release metadata is invalid: ${releaseRoot}`, { cause: error }); }
   if (metadata?.format !== RELEASE_FORMAT || !GENERATION.test(metadata.generation || "") || !Array.isArray(metadata.files)) {
     throw new Error(`release metadata has an invalid contract: ${releaseRoot}`);
@@ -168,7 +170,7 @@ async function readPointer(repoRoot) {
   const path = join(repoRoot, ".agents", "plugins", "marketplace.json");
   await ordinary(path, "file", "Codex marketplace pointer");
   let pointer;
-  try { pointer = JSON.parse(await readFile(path, "utf8")); }
+  try { pointer = await readRegularJson(path, "Codex marketplace pointer", 1024 * 1024); }
   catch (error) { throw new Error("Codex marketplace pointer is invalid JSON", { cause: error }); }
   return { path, pointer };
 }
@@ -190,15 +192,11 @@ async function releaseResult(repoRoot, generation) {
 
 async function registerGenerationLease(repoRoot, generation) {
   const root = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases", generation], { create: true });
-  const record = { format: RELEASE_FORMAT, pid: process.pid, processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), touchedAt: Date.now(), generation };
+  const record = { format: RELEASE_FORMAT, pid: process.pid, processIdentity: await processStartIdentity(), processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), touchedAt: Date.now(), generation };
   await atomicWritePointer(join(root, `${process.pid}.json`), JSON.stringify(record, null, 2) + "\n", rename);
 }
 
-function processAlive(pid) {
-  if (!Number.isInteger(pid) || pid < 1) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error.code === "EPERM"; }
-}
+const LEASE_HEARTBEAT_MAX_AGE_MS = 5 * 60 * 1000;
 
 async function activeLeaseGenerations(repoRoot) {
   const leasesRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases"], { create: true });
@@ -213,8 +211,13 @@ async function activeLeaseGenerations(repoRoot) {
       catch { await rm(path, { force: true }); continue; }
       const coherent = record?.format === RELEASE_FORMAT && record.generation === generation && /^\d+\.json$/.test(name)
         && record.pid === Number(name.slice(0, -5)) && Number.isFinite(record.processStartedAt) && Number.isFinite(record.touchedAt);
-      if (coherent && processAlive(record.pid)) active.add(generation);
-      else await rm(path, { force: true });
+      const heartbeatAge = Date.now() - record.touchedAt;
+      const fresh = coherent && heartbeatAge >= -30_000 && heartbeatAge <= LEASE_HEARTBEAT_MAX_AGE_MS;
+      const actualIdentity = fresh && processAlive(record.pid) ? await processStartIdentity(record.pid) : null;
+      const identityMatches = actualIdentity
+        ? record.processIdentity === actualIdentity
+        : fresh && processAlive(record.pid) && (record.processIdentity === null || record.processIdentity === undefined);
+      if (fresh && identityMatches) active.add(generation); else await rm(path, { force: true });
     }
     if ((await readdir(dir)).length === 0) await rm(dir, { recursive: true });
   }
@@ -270,10 +273,14 @@ export async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, re
 }
 
 async function atomicWritePointer(path, content, replacePointer) {
-  const temporary = `${path}.muster-${process.pid}-${Date.now()}.tmp`;
+  let temporary;
   let handle;
   try {
-    handle = await open(temporary, "wx", 0o600);
+    for (let attempt = 0; attempt < 8; attempt++) {
+      temporary = `${path}.muster-${process.pid}-${randomUUID()}.tmp`;
+      try { handle = await open(temporary, "wx", 0o600); break; }
+      catch (error) { if (error.code !== "EEXIST" || attempt === 7) throw error; }
+    }
     await handle.writeFile(content, "utf8");
     await handle.sync();
     await handle.close();
@@ -283,13 +290,15 @@ async function atomicWritePointer(path, content, replacePointer) {
     await replacePointer(temporary, path);
   } finally {
     if (handle) await handle.close().catch(() => {});
-    await rm(temporary, { force: true });
+    if (temporary) await rm(temporary, { force: true });
   }
 }
 
 export async function publishCodexRelease({ repoRoot, stagedRelease, packageVersion, marketplaceTemplate, bootstrapDigest = "b".repeat(64), replacePointer = rename, allowBootstrapMigration = false }) {
   const metadata = await createCodexReleaseMetadata(stagedRelease, packageVersion);
   await writeFile(join(stagedRelease, "release.json"), JSON.stringify(metadata, null, 2) + "\n", { flag: "wx" });
+  const pluginsRoot = await repositoryDirectory(repoRoot, [".agents", "plugins"], { create: true });
+  return withCodexFileLock(join(pluginsRoot, ".publication.lock"), async () => {
   const releasesRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "releases"], { create: true });
   await assertRegularTree(releasesRoot);
   const releaseRoot = join(releasesRoot, metadata.generation);
@@ -377,6 +386,7 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
   }
   await pruneCodexHistory({ repoRoot, releasesRoot, selectionsRoot, keep, bootstrapDigest });
   return { generation: metadata.generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), selectionName };
+  });
 }
 
 async function pruneCodexHistory({ repoRoot, releasesRoot, selectionsRoot, keep, bootstrapDigest }) {

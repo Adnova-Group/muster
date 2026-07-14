@@ -236,7 +236,7 @@ function modeSkill(name, mode) {
 }
 
 async function buildBootstrapCandidate(destination) {
-  const wrapper = (header, kind, name) => `${header}\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Bootstrap delegates to the role and output contract in the validated selected release. -->\n\n# Immutable Muster bootstrap\n\nRun \`node \${PLUGIN_ROOT}/runtime/resolve-release.mjs ${kind} ${name}\` and read the absolute path it prints. Follow that selected, validated immutable release file as the authoritative workflow. If resolution fails, stop with the diagnostic; never use a partial or unvalidated generation.\n`;
+  const wrapper = (header, kind, name) => `${header}\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Bootstrap delegates to the role and output contract in the validated selected release. -->\n\n# Immutable Muster bootstrap\n\nRun \`node \${PLUGIN_ROOT}/runtime/resolve-release.mjs ${kind} ${name}\`. The command revalidates the selected asset through a no-follow file descriptor and writes its verified contents to stdout. Follow those contents as the authoritative workflow; never follow a release pathname printed or inferred before validation. If resolution fails, stop with the diagnostic; never use a partial or unvalidated generation.\n`;
   await cp(join(plugin, "agents"), join(destination, "agents"), { recursive: true });
   const manifest = JSON.parse(await readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8"));
   manifest.version = "0.0.0-bootstrap";
@@ -261,8 +261,8 @@ async function buildBootstrapCandidate(destination) {
     cp(join(root, "codex", "bootstrap", "muster.mjs"), join(destination, "runtime", "muster.mjs")),
     cp(join(root, "codex", "bootstrap", "muster-mcp.mjs"), join(destination, "runtime", "muster-mcp.mjs"))
   ]);
-  await write(join(destination, "runtime", "codex-skill-adapter.md"), "# Immutable Muster bootstrap adapter\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs adapter` and read the absolute path it prints. Read and apply that validated release adapter.\n");
-  await write(join(destination, "runtime", "sprint-protocol.md"), "# Immutable Muster bootstrap protocol\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs sprint` and read the absolute path it prints. Read and apply that validated release protocol.\n");
+  await write(join(destination, "runtime", "codex-skill-adapter.md"), "# Immutable Muster bootstrap adapter\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs adapter`; it writes the no-follow, point-of-use revalidated adapter contents to stdout. Read and apply those contents.\n");
+  await write(join(destination, "runtime", "sprint-protocol.md"), "# Immutable Muster bootstrap protocol\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs sprint`; it writes the no-follow, point-of-use revalidated protocol contents to stdout. Read and apply those contents.\n");
 }
 
 try {

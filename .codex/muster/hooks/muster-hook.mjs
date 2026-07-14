@@ -117,7 +117,10 @@ function ensureDirectory(path) {
 const CLEANUP_INTERVAL_MS = 60 * 1000;
 const RECORD_TTL_MS = 24 * 60 * 60 * 1000;
 const RECORDS_PER_SHARD = 64;
-const LOCK_STALE_MS = 5 * 60 * 1000;
+// Cleanup callbacks only delete expired records or trim an overfull shard. They are
+// idempotent, so a bounded lease prevents a forged or paused live PID from blocking
+// capacity recovery indefinitely.
+const LOCK_LEASE_MS = 30 * 1000;
 
 function regularRecords(dir) {
   const records = [];
@@ -131,23 +134,21 @@ function regularRecords(dir) {
   return records;
 }
 
-function lockOwnerAlive(pid) {
-  if (!Number.isInteger(pid) || pid < 1) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error.code === "EPERM"; }
-}
-
 function reclaimStaleLock(path, now) {
-  const before = lstatSync(path);
+  let before;
+  try { before = lstatSync(path); }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
   if (before.isSymbolicLink() || !before.isFile()) throw new Error(`unsafe hook lock: ${path}`);
-  if (now - before.mtimeMs < LOCK_STALE_MS) return false;
-  let owner;
-  try { owner = JSON.parse(readFileSync(path, "utf8")); } catch { owner = null; }
-  if (lockOwnerAlive(Number(owner?.pid))) return false;
-  const after = lstatSync(path);
+  let createdAt;
+  try { createdAt = Number(JSON.parse(readFileSync(path, "utf8"))?.createdAt); } catch { createdAt = NaN; }
+  const leaseStartedAt = Number.isFinite(createdAt) ? Math.min(createdAt, before.mtimeMs) : before.mtimeMs;
+  if (now - leaseStartedAt < LOCK_LEASE_MS) return false;
+  let after;
+  try { after = lstatSync(path); }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
   if (after.isSymbolicLink() || !after.isFile() || after.mtimeMs !== before.mtimeMs || after.size !== before.size) return false;
-  rmSync(path, { force: true });
-  return true;
+  try { rmSync(path); return true; }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
 }
 
 function withShardLock(dir, name, callback, now = Date.now()) {

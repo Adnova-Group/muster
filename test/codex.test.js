@@ -2,14 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { cp, mkdtemp, mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY, codexModelForRole, codexModelForTier } from "../src/codex.js";
 import { readCodexInventory } from "../src/codex-inventory.js";
-import { runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
+import { formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { adaptCatalogForCodex, codexFallbackSkillId } from "../src/codex-catalog.js";
 import { resolveCodexRelease } from "../src/codex-release.js";
@@ -351,17 +351,23 @@ test("Codex hook dedupe bounds cleanup work and records per shard", async () => 
   await Promise.all([".cleanup-lock", ".capacity-lock"].map(name => assert.rejects(readFile(join(shard, name), "utf8"))));
 });
 
-test("Codex hook never steals a live-owner shard lock", async () => {
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-live-lock-")), codexHome = join(tmp, "codex-home");
-  const payload = { hook_event_name: "UserPromptSubmit", session_id: "live-lock", turn_id: "turn-1", prompt: "muster audit", cwd: tmp };
-  const key = createHash("sha256").update(JSON.stringify(["UserPromptSubmit", "live-lock", "turn-1", ""])).digest("hex");
+test("Codex hook expires a forged live-PID capacity lock and enforces the shard cap", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-expired-live-lock-")), codexHome = join(tmp, "codex-home");
+  const payload = { hook_event_name: "UserPromptSubmit", session_id: "expired-live-lock", turn_id: "turn-1", prompt: "muster audit", cwd: tmp };
+  const key = createHash("sha256").update(JSON.stringify(["UserPromptSubmit", "expired-live-lock", "turn-1", ""])).digest("hex");
   const shard = join(codexHome, "muster", "hook-events", key.slice(0, 2));
   await mkdir(shard, { recursive: true });
+  await Promise.all(Array.from({ length: 64 }, (_, index) => {
+    const name = createHash("sha256").update(`expired-live-lock-${index}`).digest("hex");
+    return writeFile(join(shard, `${name}.json`), "{}\n");
+  }));
   const lock = join(shard, ".capacity-lock"), old = new Date(Date.now() - 10 * 60 * 1000);
-  await writeFile(lock, JSON.stringify({ format: 1, pid: process.pid, createdAt: old.getTime(), token: "live" }) + "\n");
+  await writeFile(lock, JSON.stringify({ format: 1, pid: process.pid, createdAt: old.getTime(), token: "forged-live" }) + "\n");
   await utimes(lock, old, old);
   assert.ok((await runCodexHook(payload, tmp, join(repoRoot, "codex", "hooks", "muster-hook.mjs"), { CODEX_HOME: codexHome })).hookSpecificOutput);
-  assert.match(await readFile(lock, "utf8"), /"live"/);
+  const records = (await readdir(shard)).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
+  assert.ok(records.length <= 64, `expired live-PID lock must not bypass the shard cap, got ${records.length}`);
+  await assert.rejects(readFile(lock, "utf8"));
 });
 
 test("Codex fallbacks are self-contained and package referenced skill assets", async () => {
@@ -662,6 +668,37 @@ test("Codex doctor reports project/user hook overlap as a deduped advisory", asy
   assert.match(overlap?.detail || "", /project and user.*runtime dedupe/i);
 });
 
+test("Codex doctor requires exact owned hook groups from source and cache installs", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-doctor-exact-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent });
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot: selectedPluginRoot, execFile: absent });
+
+  const healthy = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  assert.equal(healthy.checks.find(check => check.name === "codex-hooks")?.ok, true);
+  assert.equal(healthy.checks.find(check => check.name === "codex-hooks-overlap")?.ok, true);
+
+  const hooksPath = join(cwd, ".codex", "hooks.json");
+  const original = JSON.parse(await readFile(hooksPath, "utf8"));
+  for (const [label, mutate] of [
+    ["matcher", hooks => { hooks.hooks.SessionStart.find(group => group.hooks?.some(hook => hook.command.includes("/muster/hooks/muster-hook.mjs"))).matcher = "resume"; }],
+    ["timeout", hooks => { hooks.hooks.PreToolUse.find(group => group.hooks?.some(hook => hook.command.includes("/muster/hooks/muster-hook.mjs"))).hooks[0].timeout = 11; }]
+  ]) {
+    const drifted = structuredClone(original);
+    mutate(drifted);
+    await writeFile(hooksPath, JSON.stringify(drifted, null, 2));
+    const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+    assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false, `${label} drift must fail hook health`);
+    assert.equal(report.checks.find(check => check.name === "codex-hooks-overlap")?.ok, false, `${label} drift must make dedupe reporting uncertain`);
+  }
+  await writeFile(hooksPath, JSON.stringify(original, null, 2));
+  await unlink(join(codexHome, "hooks.json"));
+  const missingUserConfig = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  assert.equal(missingUserConfig.checks.find(check => check.name === "codex-hooks")?.ok, false, "a managed scope missing hooks.json must fail hook health");
+  assert.equal(missingUserConfig.checks.find(check => check.name === "codex-hooks-overlap")?.ok, false, "a missing managed scope must make dedupe reporting uncertain");
+});
+
 test("Codex uninstall retains the shared plugin until the final managed scope is removed", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-dual-scope-")), cwd = join(tmp, "project"), home = join(tmp, "home"), calls = [];
   const execFile = async (_bin, args) => {
@@ -701,6 +738,76 @@ test("Codex managed-scope registry retains the plugin across multiple projects i
     assert.equal((await runCodexUninstall({ cwd: projects[order[1]], home, execFile })).plugin.removed, true);
     assert.equal(calls.filter(call => call === "plugin remove muster@muster").length, 1);
   }
+});
+
+test("Codex concurrent installs preserve every managed project owner", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-concurrent-install-"));
+  const home = join(tmp, "home"), projects = ["a", "b", "c", "d"].map(name => join(tmp, `project-${name}`));
+  const absent = async () => { throw new Error("not found"); };
+  await Promise.all(projects.map(cwd => runCodexInstall({ cwd, home, repoRoot: selectedPluginRoot, execFile: absent })));
+  const registry = JSON.parse(await readFile(join(home, ".codex", "muster", "install-scopes.json"), "utf8"));
+  assert.deepEqual(new Set(registry.entries.map(entry => entry.configDir)), new Set(projects.map(cwd => join(cwd, ".codex"))));
+});
+
+test("Codex concurrent uninstalls retain the plugin until one final removal", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-concurrent-uninstall-"));
+  const home = join(tmp, "home"), projects = ["a", "b"].map(name => join(tmp, `project-${name}`)), calls = [];
+  const execFile = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [localMusterMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    return { stdout: "" };
+  };
+  for (const cwd of projects) await runCodexInstall({ cwd, home, repoRoot, execFile });
+  calls.length = 0;
+  await Promise.all(projects.map(cwd => runCodexUninstall({ cwd, home, execFile })));
+  assert.equal(calls.filter(call => call === "plugin remove muster@muster").length, 1);
+});
+
+test("Codex recovers a valid stale managed-scope lock and rejects unsafe locks", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-stale-lock-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+  const lockPath = join(registryDir, "install-scopes.json.lock"), absent = async () => { throw new Error("not found"); };
+  await mkdir(registryDir, { recursive: true });
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  await writeFile(lockPath, JSON.stringify({ format: 1, owner: "muster", pid: 2_147_483_647, token: "stale", createdAt: old.getTime() }) + "\n");
+  await utimes(lockPath, old, old);
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+  await assert.rejects(() => readFile(lockPath, "utf8"));
+
+  const unsafeCwd = join(tmp, "unsafe-project");
+  await writeFile(lockPath, "not-json\n");
+  await assert.rejects(() => runCodexInstall({ cwd: unsafeCwd, home, repoRoot, execFile: absent }), /lock.*invalid|invalid.*lock/i);
+  await assert.rejects(() => lstat(join(unsafeCwd, ".codex")));
+  await assert.rejects(() => readFile(join(unsafeCwd, ".codex", "agents", ".muster-managed.json"), "utf8"));
+});
+
+test("Codex ownership dry-runs never create registry locks or entries", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-dry-run-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "project"), absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ cwd, home, repoRoot, dryRun: true, execFile: absent });
+  await assert.rejects(() => readFile(join(home, ".codex", "muster", "install-scopes.json"), "utf8"));
+  await assert.rejects(() => readFile(join(home, ".codex", "muster", "install-scopes.json.lock"), "utf8"));
+});
+
+test("Codex commandWindows maps WSL drive paths to their Windows equivalent", async t => {
+  const tmp = await mkdtemp(join(repoRoot, ".muster-codex-wsl-command-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), absent = async () => { throw new Error("not found"); };
+  assert.match(cwd, /^\/mnt\/c\//i, "fixture must exercise a real WSL C: path");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+  const hooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
+  const commandWindows = hooks.hooks.SessionStart[0].hooks[0].commandWindows;
+  const expectedPath = `C:${join(cwd.slice("/mnt/c".length), ".codex", "muster", "hooks", "muster-hook.mjs").replaceAll("\\", "/")}`;
+  assert.equal(commandWindows, `node "${expectedPath}"`);
+});
+
+test("Codex commandWindows treats native Windows and WSL drives alike without normalizing POSIX case", () => {
+  assert.equal(formatCodexWindowsPath("C:\\Work\\Muster\\hook.mjs"), "C:/Work/Muster/hook.mjs");
+  assert.equal(formatCodexWindowsPath("c:\\Work\\Muster\\hook.mjs"), "C:/Work/Muster/hook.mjs");
+  assert.equal(formatCodexWindowsPath("/mnt/c/Work/Muster/hook.mjs"), "C:/Work/Muster/hook.mjs");
+  assert.equal(formatCodexWindowsPath("/tmp/CaseSensitive/Muster/hook.mjs"), "/tmp/CaseSensitive/Muster/hook.mjs");
 });
 
 test("Codex install refreshes an older installed plugin version", async () => {

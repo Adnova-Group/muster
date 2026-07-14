@@ -1,3 +1,3 @@
 # Immutable Muster bootstrap protocol
 
-Run `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs sprint` and read the absolute path it prints. Read and apply that validated release protocol.
+Run `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs sprint`; it writes the no-follow, point-of-use revalidated protocol contents to stdout. Read and apply those contents.

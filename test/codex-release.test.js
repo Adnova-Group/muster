@@ -2,7 +2,7 @@ import { test } from "node:test";
 import { createHash } from "node:crypto";
 import { execFile as execFileCb } from "node:child_process";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -13,6 +13,7 @@ import {
   resolveCodexReleaseWithOptions,
   validateCodexRelease
 } from "../src/codex-release.js";
+import { readSelectedAsset, resolveCodexRelease as resolveCachedRelease } from "../codex/bootstrap/resolve-release.mjs";
 
 async function write(path, content) {
   await mkdir(dirname(path), { recursive: true });
@@ -237,11 +238,68 @@ test("release retention preserves an actively leased generation and reclaims its
   assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), "active g2 was garbage-collected by g4");
   const lease = join(root, ".agents", "plugins", "leases", g2.generation, `${process.pid}.json`);
   const stale = JSON.parse(await readFile(lease, "utf8"));
-  stale.pid = 99999999;
+  stale.processStartedAt = 0;
+  stale.touchedAt = 0;
   await writeFile(lease, JSON.stringify(stale));
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "g5"), packageVersion: "0.5.0" });
   assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), false, "stale leased generation was not reclaimed");
   assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).length <= 3);
+});
+
+test("parallel source resolution writes one collision-safe generation lease", async t => {
+  const root = await tempRepo(t);
+  const published = await publish({ repoRoot: root, stagedRelease: await candidate(root, "parallel-lease"), packageVersion: "0.5.0" });
+  const selected = await Promise.all(Array.from({ length: 128 }, () => resolveCodexRelease(root)));
+  assert.ok(selected.every(item => item.generation === published.generation));
+  const leases = await readdir(join(root, ".agents", "plugins", "leases", published.generation));
+  assert.deepEqual(leases, [`${process.pid}.json`]);
+});
+
+test("cached resolver revalidates an asset at the point of use", async t => {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-point-of-use"), packageVersion: "0.5.0" });
+  const selected = await resolveCachedRelease(root);
+  const skill = join(selected.pluginRoot, "skills", "muster", "SKILL.md");
+  await writeFile(skill, "ATTACKER-CONTROLLED-SKILL-AFTER-VALIDATION\n");
+  await assert.rejects(readSelectedAsset(selected, "plugin/skills/muster/SKILL.md"), /changed after release validation/);
+});
+
+test("parallel cached resolution writes collision-safe lease temporaries", async t => {
+  const root = await tempRepo(t);
+  const published = await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-parallel-lease"), packageVersion: "0.5.0" });
+  const selected = await Promise.all(Array.from({ length: 128 }, () => resolveCachedRelease(root)));
+  assert.ok(selected.every(item => item.generation === published.generation));
+});
+
+test("divergent publishers serialize selection and pruning as one transaction", async t => {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "initial"), packageVersion: "0.5.0" });
+  let active = 0, maxActive = 0;
+  const replacePointer = async (source, destination) => {
+    active++;
+    maxActive = Math.max(maxActive, active);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    try { await rename(source, destination); } finally { active--; }
+  };
+  const [left, right] = await Promise.all([
+    publish({ repoRoot: root, stagedRelease: await candidate(root, "divergent-left"), packageVersion: "0.5.0", replacePointer }),
+    publish({ repoRoot: root, stagedRelease: await candidate(root, "divergent-right"), packageVersion: "0.5.0", replacePointer })
+  ]);
+  assert.equal(maxActive, 1, "publisher critical sections overlapped");
+  for (const published of [left, right]) assert.equal((await validateCodexRelease(published.releaseRoot, published.generation)).generation, published.generation);
+  const names = (await readdir(join(root, ".agents", "plugins", "selections"))).sort();
+  assert.equal(new Set(names.map(name => name.slice(0, 12))).size, names.length, "selector sequences collided");
+  assert.ok([left.generation, right.generation].includes((await resolveCodexRelease(root)).generation));
+});
+
+test("publication reclaims a crashed stale writer lock", async t => {
+  const root = await tempRepo(t), lock = join(root, ".agents", "plugins", ".publication.lock");
+  await writeFile(lock, JSON.stringify({ format: 1, pid: 99999999, processIdentity: "dead", createdAt: 0, token: "crashed" }));
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(lock, old, old);
+  const result = await publish({ repoRoot: root, stagedRelease: await candidate(root, "after-crash"), packageVersion: "0.5.0" });
+  assert.equal((await resolveCodexRelease(root)).generation, result.generation);
+  await assert.rejects(readFile(lock, "utf8"));
 });
 
 test("normal publication fails closed on bootstrap surface drift with maintenance guidance", async t => {

@@ -1,5 +1,5 @@
 import { lstat, mkdir, open, readFile, realpath, rename, rmdir, unlink } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
@@ -15,11 +15,13 @@ export const CODEX_PLUGIN = "muster@muster";
 const MANIFEST = ".muster-managed.json";
 const PROFILE_FILENAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/;
 const HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
+const SCOPE_LOCK_STALE_MS = 5 * 60_000;
 
 const codexHome = home => process.env.CODEX_HOME || join(home, ".codex");
 const agentsDir = (scope, cwd, home) => scope === "user" ? join(codexHome(home), "agents") : join(cwd, ".codex", "agents");
 const configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join(cwd, ".codex");
 const scopeRegistryPath = home => join(codexHome(home), "muster", "install-scopes.json");
+const scopeRegistryLockPath = home => `${scopeRegistryPath(home)}.lock`;
 async function ordinaryDirectoryPath(path, { create = false } = {}) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
@@ -83,6 +85,106 @@ async function scopeEntry(scope, cwd, home) {
 
 const sameScopeEntry = (left, right) => left.scope === right.scope && left.configDir === right.configDir;
 const registryText = entries => JSON.stringify({ format: 1, owner: "muster", entries }, null, 2) + "\n";
+
+const scopeLockText = token => JSON.stringify({ format: 1, owner: "muster", pid: process.pid, token, createdAt: Date.now() }) + "\n";
+const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+async function writeExclusiveSafe(path, content) {
+  await ordinaryDirectoryPath(dirname(path), { create: true });
+  await regularFileState(path);
+  let handle, created = false;
+  try {
+    handle = await open(path, "wx", 0o600);
+    created = true;
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    if (created) try { await unlink(path); } catch (unlinkError) { if (unlinkError.code !== "ENOENT") throw unlinkError; }
+    throw error;
+  }
+  await handle.close();
+}
+
+function parseScopeLock(text, path) {
+  let lock;
+  try { lock = JSON.parse(text); } catch { throw new Error(`Codex managed-scope lock is invalid: ${path}`); }
+  if (lock?.format !== 1 || lock.owner !== "muster" || !Number.isSafeInteger(lock.pid) || lock.pid < 1
+    || typeof lock.token !== "string" || !lock.token || !Number.isFinite(lock.createdAt) || lock.createdAt < 0) {
+    throw new Error(`Codex managed-scope lock is invalid: ${path}`);
+  }
+  return lock;
+}
+
+async function readScopeLock(path) {
+  const stat = await regularFileState(path);
+  if (!stat) return null;
+  let text;
+  try { text = await readFile(path, "utf8"); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  const current = await regularFileState(path);
+  if (!current || current.dev !== stat.dev || current.ino !== stat.ino) return null;
+  return { stat: current, lock: parseScopeLock(text, path) };
+}
+
+function processOwnsScopeLock(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code !== "ESRCH"; }
+}
+
+function staleScopeLock(state) {
+  return Date.now() - Math.max(state.lock.createdAt, state.stat.mtimeMs) >= SCOPE_LOCK_STALE_MS
+    && !processOwnsScopeLock(state.lock.pid);
+}
+
+async function releaseScopeLock(path, token) {
+  const state = await readScopeLock(path);
+  if (!state || state.lock.token !== token) throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
+  await unlink(path);
+}
+
+async function recoverStaleScopeLock(path) {
+  const recoveryPath = `${path}.recover`, token = randomUUID();
+  try {
+    await writeExclusiveSafe(recoveryPath, scopeLockText(token));
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    await readScopeLock(recoveryPath);
+    return false;
+  }
+  try {
+    const state = await readScopeLock(path);
+    if (!state || !staleScopeLock(state)) return false;
+    const rechecked = await readScopeLock(path);
+    if (!rechecked || rechecked.lock.token !== state.lock.token || rechecked.stat.dev !== state.stat.dev || rechecked.stat.ino !== state.stat.ino) return false;
+    await unlink(path);
+    return true;
+  } finally {
+    await releaseScopeLock(recoveryPath, token);
+  }
+}
+
+async function acquireScopeLock(home) {
+  const path = scopeRegistryLockPath(home), token = randomUUID();
+  for (let attempt = 0; attempt < 1_000; attempt++) {
+    try {
+      await writeExclusiveSafe(path, scopeLockText(token));
+      return { path, token };
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+    const state = await readScopeLock(path);
+    if (!state || staleScopeLock(state) && await recoverStaleScopeLock(path)) continue;
+    await pause(10);
+  }
+  throw new Error(`Codex managed-scope lock did not become available: ${path}`);
+}
+
+async function withScopeRegistryTransaction(home, action) {
+  const held = await acquireScopeLock(home);
+  try { return await action(await readScopeRegistry(home)); }
+  finally { await releaseScopeLock(held.path, held.token); }
+}
 
 async function atomicWriteSafe(path, content) {
   const parent = dirname(path);
@@ -169,10 +271,18 @@ function removeOwnedHookGroups(config, owned, configPath) {
   return next;
 }
 
+export function formatCodexWindowsPath(path) {
+  const normalized = path.replaceAll("\\", "/");
+  const wslDrive = normalized.match(/^\/mnt\/([a-z])(?:\/(.*))?$/i);
+  if (wslDrive) return `${wslDrive[1].toUpperCase()}:/${wslDrive[2] || ""}`.replace(/\/$/, "");
+  const windowsDrive = normalized.match(/^([a-z]):\/(.*)$/i);
+  return windowsDrive ? `${windowsDrive[1].toUpperCase()}:/${windowsDrive[2]}` : normalized;
+}
+
 function shellCommand(path) {
   if (/[\r\n\0]/.test(path)) throw new Error(`Codex hook path contains unsupported control characters: ${path}`);
   const posix = `'${path.replaceAll("'", `'\\''`)}'`;
-  const windows = path.replaceAll("\\", "/").replaceAll('"', '\\"');
+  const windows = formatCodexWindowsPath(path).replaceAll('"', '\\"');
   return { command: `node ${posix}`, commandWindows: `node "${windows}"` };
 }
 
@@ -340,55 +450,67 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     { op: "merge", path: hooks.configPath }
   ];
   let originals, changed;
-  if (!dryRun) {
-    await ordinaryDirectoryPath(dir, { create: true });
-    originals = new Map(); changed = [];
-    try {
-      const registry = await readScopeRegistry(home);
-      const currentScope = await scopeEntry(scope, cwd, home);
-      await snapshot(originals, changed, registry.path);
-      await atomicWriteSafe(registry.path, registryText([...registry.entries.filter(entry => !sameScopeEntry(entry, currentScope)), currentScope]));
-      for (const file of files) {
-        const destination = join(dir, file);
-        await snapshot(originals, changed, destination);
-        await atomicWriteSafe(destination, await readFile(join(source, file), "utf8"));
-      }
-      for (const file of staleFiles) {
-        const destination = join(dir, file);
-        await snapshot(originals, changed, destination);
-        await removeSafe(destination);
-      }
-      await snapshot(originals, changed, manifestPath);
-      await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, generation: selected.metadata.generation, bootstrapDigest }, null, 2) + "\n");
-      for (const [file, sourcePath] of hooks.sourceFiles) {
-        const destination = join(hooks.runtimeDir, file);
-        await snapshot(originals, changed, destination);
-        await atomicWriteSafe(destination, await readFile(sourcePath, "utf8"));
-      }
-      for (const file of hooks.staleFiles) {
-        const destination = join(hooks.runtimeDir, file);
-        await snapshot(originals, changed, destination);
-        await removeSafe(destination);
-      }
-      await snapshot(originals, changed, hooks.configPath);
-      await atomicWriteSafe(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
-      await snapshot(originals, changed, hooks.manifestPath);
-      await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
-    } catch (error) {
-      await restoreFilesystem(originals, changed);
-      throw error;
-    }
-  }
   let actions = [];
-  try {
-    actions = present ? await registerPlugin(execFile, dryRun, distributionRoot) : [];
-  } catch (error) {
-    if (!dryRun) await restoreFilesystem(originals, changed);
-    throw error;
+  if (!dryRun) {
+    originals = new Map(); changed = [];
+    await withScopeRegistryTransaction(home, async registry => {
+      await ordinaryDirectoryPath(dir, { create: true });
+      try {
+        const currentScope = await scopeEntry(scope, cwd, home);
+        await snapshot(originals, changed, registry.path);
+        await atomicWriteSafe(registry.path, registryText([...registry.entries.filter(entry => !sameScopeEntry(entry, currentScope)), currentScope]));
+        for (const file of files) {
+          const destination = join(dir, file);
+          await snapshot(originals, changed, destination);
+          await atomicWriteSafe(destination, await readFile(join(source, file), "utf8"));
+        }
+        for (const file of staleFiles) {
+          const destination = join(dir, file);
+          await snapshot(originals, changed, destination);
+          await removeSafe(destination);
+        }
+        await snapshot(originals, changed, manifestPath);
+        await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, generation: selected.metadata.generation, bootstrapDigest }, null, 2) + "\n");
+        for (const [file, sourcePath] of hooks.sourceFiles) {
+          const destination = join(hooks.runtimeDir, file);
+          await snapshot(originals, changed, destination);
+          await atomicWriteSafe(destination, await readFile(sourcePath, "utf8"));
+        }
+        for (const file of hooks.staleFiles) {
+          const destination = join(hooks.runtimeDir, file);
+          await snapshot(originals, changed, destination);
+          await removeSafe(destination);
+        }
+        await snapshot(originals, changed, hooks.configPath);
+        await atomicWriteSafe(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
+        await snapshot(originals, changed, hooks.manifestPath);
+        await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
+        actions = present ? await registerPlugin(execFile, false, distributionRoot) : [];
+      } catch (error) {
+        await restoreFilesystem(originals, changed);
+        throw error;
+      }
+    });
+  } else {
+    actions = present ? await registerPlugin(execFile, true, distributionRoot) : [];
   }
   return { ok: true, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
     plugin: present ? { registered: !dryRun, actions } : { registered: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${scope}`] };
+}
+
+async function remainingManagedScopes(registry, currentScope) {
+  const liveScopes = [];
+  for (const entry of registry.entries) {
+    if (sameScopeEntry(entry, currentScope)) continue;
+    if (!(await ordinaryDirectoryPath(entry.configDir))) continue;
+    const entryAgents = join(entry.configDir, "agents"), entryManifest = join(entryAgents, MANIFEST);
+    if (!(await ordinaryDirectoryPath(entryAgents))) continue;
+    if (!(await safeExists(entryManifest))) continue;
+    validateManagedFiles(await readJson(entryManifest), entryAgents, entryManifest);
+    liveScopes.push(entry);
+  }
+  return liveScopes;
 }
 
 export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile = execFileDefault } = {}) {
@@ -415,26 +537,18 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   const hookFiles = hookManifest ? hookManifest.files.map(file => join(hookRuntimeDir, file)) : [];
   const present = await codexAvailable({ execFile });
   const ownsScope = manifestExists || hookManifestExists;
-  const registry = await readScopeRegistry(home);
   const currentScope = await scopeEntry(scope, cwd, home);
-  const liveScopes = [];
-  for (const entry of registry.entries) {
-    if (sameScopeEntry(entry, currentScope)) continue;
-    if (!(await ordinaryDirectoryPath(entry.configDir))) continue;
-    const entryAgents = join(entry.configDir, "agents"), entryManifest = join(entryAgents, MANIFEST);
-    if (!(await ordinaryDirectoryPath(entryAgents))) continue;
-    if (!(await safeExists(entryManifest))) continue;
-    validateManagedFiles(await readJson(entryManifest), entryAgents, entryManifest);
-    liveScopes.push(entry);
-  }
-  const ownershipCertain = registry.present;
-  const removePlugin = present && ownsScope && ownershipCertain && liveScopes.length === 0;
+  let liveScopes = [], ownershipCertain = false, removePlugin = false;
   const planned = [
     ...files.map(path => ({ op: "remove", path })),
     ...hookFiles.map(path => ({ op: "remove", path })),
     ...(hookManifest ? [{ op: removeHookConfig ? "remove" : "merge", path: hookConfigPath }] : [])
   ];
-  if (!dryRun) {
+  const uninstallScope = async registry => {
+    liveScopes = await remainingManagedScopes(registry, currentScope);
+    ownershipCertain = registry.present;
+    removePlugin = present && ownsScope && ownershipCertain && liveScopes.length === 0;
+    if (dryRun) return;
     const originals = new Map(), changed = [];
     try {
       await snapshot(originals, changed, registry.path);
@@ -457,7 +571,9 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
       await rmdir(empty);
     } catch { /* preserve non-empty user content */ }
     if (removePlugin) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN]); } catch { /* already absent is idempotent */ }
-  }
+  };
+  if (dryRun) await uninstallScope(await readScopeRegistry(home));
+  else await withScopeRegistryTransaction(home, uninstallScope);
   return { ok: true, target: "codex", scope, dryRun, files: planned,
     plugin: present ? { removed: !dryRun && removePlugin, retained: liveScopes.length > 0, ownershipCertain } : { removed: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster uninstall codex --scope ${scope}`] };

@@ -3,9 +3,11 @@
 // This resolver is intentionally self-contained. Codex may copy only the
 // marketplace plugin into its cache, where checkout-relative src/ imports and
 // package node_modules do not exist.
-import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const FORMAT = 1;
@@ -27,6 +29,26 @@ async function ordinary(path, kind, label) {
   if (stat.isSymbolicLink() || (kind === "directory" ? !stat.isDirectory() : !stat.isFile())) {
     throw new Error(`${label} must be an ordinary ${kind}: ${path}`);
   }
+}
+
+async function readRegular(path, label, maxBytes = 32 * 1024 * 1024) {
+  let handle;
+  try {
+    await ordinary(path, "file", label);
+    handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > maxBytes) throw new Error(`${label} must be a bounded regular file: ${path}`);
+    return await handle.readFile();
+  } finally { if (handle) await handle.close().catch(() => {}); }
+}
+
+async function processStartIdentity(pid = process.pid) {
+  if (process.platform !== "linux") return null;
+  try {
+    const stat = await readFile(`/proc/${pid}/stat`, "utf8"), close = stat.lastIndexOf(")");
+    const value = stat.slice(close + 2).trim().split(/\s+/)[19];
+    return /^\d+$/.test(value || "") ? `linux-proc-start:${value}` : null;
+  } catch { return null; }
 }
 
 async function directory(root, parts, { create = false } = {}) {
@@ -58,7 +80,7 @@ async function regularTree(root, excluded = new Set()) {
       if (stat.isSymbolicLink()) throw new Error(`content must not be a symlink: ${path}`);
       if (stat.isDirectory()) await walk(path);
       else if (stat.isFile() && !excluded.has(rel)) {
-        const content = await readFile(path);
+        const content = await readRegular(path, "release content");
         files.push({ path: rel, sha256: sha256(content), size: content.length });
       } else if (!stat.isFile()) throw new Error(`content must be a regular file: ${path}`);
     }
@@ -69,7 +91,7 @@ async function regularTree(root, excluded = new Set()) {
 
 async function validateBootstrap(root, expectedDigest) {
   await ordinary(join(root, "bootstrap.json"), "file", "bootstrap metadata");
-  const metadata = JSON.parse(await readFile(join(root, "bootstrap.json"), "utf8"));
+  const metadata = JSON.parse((await readRegular(join(root, "bootstrap.json"), "bootstrap metadata", 1024 * 1024)).toString("utf8"));
   const files = await regularTree(root, new Set(["bootstrap.json"]));
   const digest = sha256(JSON.stringify({ format: FORMAT, files }));
   if (metadata?.format !== FORMAT || metadata.digest !== digest || digest !== expectedDigest
@@ -78,7 +100,7 @@ async function validateBootstrap(root, expectedDigest) {
 
 async function validateRelease(root, expectedGeneration) {
   await ordinary(join(root, "release.json"), "file", "release metadata");
-  const metadata = JSON.parse(await readFile(join(root, "release.json"), "utf8"));
+  const metadata = JSON.parse((await readRegular(join(root, "release.json"), "release metadata", 4 * 1024 * 1024)).toString("utf8"));
   if (metadata?.format !== FORMAT || metadata.generation !== expectedGeneration || !Array.isArray(metadata.files)) {
     throw new Error("Codex release metadata contract mismatch");
   }
@@ -93,22 +115,27 @@ async function releaseResult(repoRoot, generation) {
   const releaseRoot = await directory(repoRoot, [".agents", "plugins", "releases", generation]);
   const metadata = await validateRelease(releaseRoot, generation);
   await registerLease(repoRoot, generation);
-  return { generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata };
+  return { repoRoot, generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata };
 }
 
 async function registerLease(repoRoot, generation) {
   const root = await directory(repoRoot, [".agents", "plugins", "leases", generation], { create: true });
-  const path = join(root, `${process.pid}.json`), temporary = join(root, `.${process.pid}-${Date.now()}.tmp`);
-  const record = { format: FORMAT, pid: process.pid, processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), touchedAt: Date.now(), generation };
+  const path = join(root, `${process.pid}.json`);
+  const record = { format: FORMAT, pid: process.pid, processIdentity: await processStartIdentity(), processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), touchedAt: Date.now(), generation };
   let handle;
+  let temporary;
   try {
-    handle = await open(temporary, "wx", 0o600);
+    for (let attempt = 0; attempt < 8; attempt++) {
+      temporary = join(root, `.${process.pid}-${randomUUID()}.tmp`);
+      try { handle = await open(temporary, "wx", 0o600); break; }
+      catch (error) { if (error.code !== "EEXIST" || attempt === 7) throw error; }
+    }
     await handle.writeFile(JSON.stringify(record, null, 2) + "\n", "utf8");
     await handle.sync(); await handle.close(); handle = null;
     await rename(temporary, path);
   } finally {
     if (handle) await handle.close().catch(() => {});
-    await rm(temporary, { force: true });
+    if (temporary) await rm(temporary, { force: true });
   }
 }
 
@@ -119,7 +146,7 @@ export async function resolveCodexRelease(repoRoot, { retries = 4 } = {}) {
     try {
       const path = join(repoRoot, ".agents", "plugins", "marketplace.json");
       await ordinary(path, "file", "marketplace");
-      pointer = JSON.parse(await readFile(path, "utf8"));
+      pointer = JSON.parse((await readRegular(path, "marketplace", 1024 * 1024)).toString("utf8"));
       break;
     } catch (error) {
       if (!transient(error) || attempt === retries - 1) throw error;
@@ -147,13 +174,49 @@ export async function resolveCodexRelease(repoRoot, { retries = 4 } = {}) {
       const match = name.match(SELECTION);
       const recordPath = join(repoRoot, ".agents", "plugins", "selections", name);
       await ordinary(recordPath, "file", "selection record");
-      const record = JSON.parse(await readFile(recordPath, "utf8"));
+      const record = JSON.parse((await readRegular(recordPath, "selection record", 64 * 1024)).toString("utf8"));
       if (record?.format !== FORMAT || record.sequence !== Number(match[1]) || record.generation !== match[2]
         || record.bootstrapDigest !== contract.digest) continue;
       return await releaseResult(repoRoot, record.generation);
     } catch { /* use the next complete immutable selection */ }
   }
   return releaseResult(repoRoot, contract.initialGeneration);
+}
+
+export async function readSelectedAsset(selected, relativePath, maxBytes = 32 * 1024 * 1024) {
+  const normalized = slash(relativePath || "");
+  if (!normalized || normalized.startsWith("/") || normalized.split("/").includes("..")) throw new Error(`invalid selected asset path: ${JSON.stringify(relativePath)}`);
+  const path = join(selected.releaseRoot, ...normalized.split("/"));
+  if (!contained(selected.releaseRoot, path)) throw new Error("selected asset escaped its release");
+  const expected = selected.metadata.files.find(file => file.path === normalized);
+  if (!expected) throw new Error(`selected asset is not in release metadata: ${normalized}`);
+  const content = await readRegular(path, "selected release asset", maxBytes);
+  if (content.length !== expected.size || sha256(content) !== expected.sha256) throw new Error(`selected asset changed after release validation: ${normalized}`);
+  return content;
+}
+
+export async function materializeSelectedRuntime(selected, name) {
+  if (!/^(?:muster|muster-mcp)\.mjs$/.test(name || "")) throw new Error(`invalid selected runtime: ${JSON.stringify(name)}`);
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-runtime-"));
+  const releaseRoot = join(dir, ".agents", "plugins", "releases", selected.generation);
+  const writeSnapshot = async (path, content) => {
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    let handle;
+    try { handle = await open(path, "wx", 0o600); await handle.writeFile(content); await handle.sync(); }
+    finally { if (handle) await handle.close().catch(() => {}); }
+  };
+  try {
+    for (const file of selected.metadata.files) {
+      if (!file.path.startsWith("plugin/")) continue;
+      await writeSnapshot(join(releaseRoot, ...file.path.split("/")), await readSelectedAsset(selected, file.path));
+    }
+    await writeSnapshot(join(releaseRoot, "release.json"), Buffer.from(JSON.stringify(selected.metadata, null, 2) + "\n"));
+    await writeSnapshot(join(dir, ".agents", "plugins", "marketplace.json"), await readRegular(join(selected.repoRoot, ".agents", "plugins", "marketplace.json"), "marketplace", 1024 * 1024));
+    return { dir, path: join(releaseRoot, "plugin", "runtime", name) };
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 const ownPath = fileURLToPath(import.meta.url);
@@ -164,15 +227,15 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(ownPath)) {
   if (["skill", "command"].includes(kind) && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
     throw new Error(`invalid bootstrap ${kind} id: ${JSON.stringify(name)}`);
   }
-  const paths = {
-    plugin: selected.pluginRoot,
-    skill: join(selected.pluginRoot, "skills", name, "SKILL.md"),
-    command: join(selected.pluginRoot, "commands", `${name}.md`),
-    adapter: join(selected.pluginRoot, "runtime", "codex-skill-adapter.md"),
-    sprint: join(selected.pluginRoot, "runtime", "sprint-protocol.md")
+  const assets = {
+    skill: `plugin/skills/${name}/SKILL.md`,
+    command: `plugin/commands/${name}.md`,
+    adapter: "plugin/runtime/codex-skill-adapter.md",
+    sprint: "plugin/runtime/sprint-protocol.md"
   };
-  if (!paths[kind]) throw new Error(`unknown bootstrap resolution kind: ${kind}`);
-  if (kind !== "plugin" && !contained(selected.pluginRoot, paths[kind])) throw new Error("bootstrap resolution escaped the selected plugin");
-  await ordinary(paths[kind], kind === "plugin" ? "directory" : "file", `bootstrap ${kind}`);
-  process.stdout.write(`${paths[kind]}\n`);
+  if (kind === "plugin") process.stdout.write(`${selected.pluginRoot}\n`);
+  else {
+    if (!assets[kind]) throw new Error(`unknown bootstrap resolution kind: ${kind}`);
+    process.stdout.write(await readSelectedAsset(selected, assets[kind]));
+  }
 }

@@ -374,6 +374,30 @@ test("pointer swap failure keeps the prior coherent generation selected", async 
   assert.match(await readFile(join(selected.profilesRoot, "muster-builder.toml"), "utf8"), /"old"/);
 });
 
+test("successive marketplace swap failures retain the still-advertised generation", async t => {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "bootstrap"), packageVersion: "0.5.0" });
+  const advertised = await publish({ repoRoot: root, stagedRelease: await candidate(root, "advertised"), packageVersion: "0.5.0" });
+  const failMarketplaceSwap = async (source, destination) => {
+    if (destination.endsWith("marketplace.json")) throw new Error("injected marketplace swap failure");
+    await rename(source, destination);
+  };
+
+  for (const marker of ["orphan", "retry"]) {
+    await assert.rejects(publish({
+      repoRoot: root,
+      stagedRelease: await candidate(root, marker),
+      packageVersion: "0.5.0",
+      replacePointer: failMarketplaceSwap
+    }), /injected marketplace swap failure/);
+  }
+
+  const marketplace = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"));
+  assert.equal(marketplace.plugins[0].source.path, `./.agents/plugins/releases/${advertised.generation}/plugin`);
+  assert.equal(await readFile(join(advertised.pluginRoot, "runtime", "muster.mjs"), "utf8"), 'export const generation = "advertised";\n');
+  assert.equal((await resolveCodexRelease(root)).generation, advertised.generation);
+});
+
 test("concurrent pointer readers observe only exact old or new coherent snapshots", async t => {
   const root = await tempRepo(t);
   const oldRelease = await publish({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0" });

@@ -516,6 +516,7 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
     throw new Error("Codex marketplace does not describe the Muster plugin");
   }
   const plugin = stable.plugins.find(item => item.name === "muster");
+  const advertisedGeneration = plugin.source?.path?.match(RELEASE_PLUGIN_PATH)?.[1] || null;
   const alreadyStable = (plugin.source?.path === STABLE_BOOTSTRAP_PATH || RELEASE_PLUGIN_PATH.test(plugin.source?.path || ""))
     && stable.musterBootstrap?.format === RELEASE_FORMAT;
   if (!alreadyStable) {
@@ -563,7 +564,7 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
   await withLeaseRegistryTransaction(repoRoot, async () => {
     const activeLeases = await activeLeaseGenerations(repoRoot);
     await afterLeaseScan({ generation: metadata.generation, selectionName, activeLeases: new Set(activeLeases) });
-    const keep = new Set([metadata.generation, stable.musterBootstrap.initialGeneration, prior, ...activeLeases].filter(Boolean));
+    const keep = new Set([metadata.generation, stable.musterBootstrap.initialGeneration, advertisedGeneration, prior, ...activeLeases].filter(Boolean));
     for (const generation of keep) {
       let coherent = false;
       for (const name of names.filter(name => name.endsWith(`-${generation}.json`))) if (await validRecord(name, generation)) coherent = true;

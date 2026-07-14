@@ -8578,7 +8578,7 @@ function pickWinner(candidates) {
 
 // src/cli.js
 import { homedir as homedir9 } from "node:os";
-import { readFile as readFile15, writeFile as writeFile7, mkdir as mkdir7 } from "node:fs/promises";
+import { readFile as readFile15, writeFile as writeFile7, mkdir as mkdir8 } from "node:fs/promises";
 
 // src/pipeline.js
 var import_yaml3 = __toESM(require_dist(), 1);
@@ -9556,22 +9556,36 @@ async function runUninstall({ home = homedir6() } = {}) {
 }
 
 // src/codex-install.js
-import { lstat as lstat4, mkdir as mkdir6, open as open3, readFile as readFile11, realpath, rename as rename2, rmdir, unlink as unlink2 } from "node:fs/promises";
-import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
-import { basename, dirname as dirname4, isAbsolute as isAbsolute2, join as join15, parse as parse4, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { constants as fsConstants3 } from "node:fs";
+import { link as link2, lstat as lstat4, mkdir as mkdir7, open as open3, readFile as readFile11, realpath, rename as rename3, rmdir as rmdir2, unlink as unlink2 } from "node:fs/promises";
+import { createHash as createHash2, randomUUID as randomUUID3 } from "node:crypto";
+import { basename, dirname as dirname5, isAbsolute as isAbsolute2, join as join16, parse as parse4, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 import { homedir as homedir7 } from "node:os";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { execFile as execFileCb2 } from "node:child_process";
 import { promisify as promisify6 } from "node:util";
 
 // src/codex-release.js
-import { createHash, randomUUID } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
-import { lstat as lstat3, mkdir as mkdir5, open as open2, readFile as readFile10, readdir as readdir9, rename, rm as rm2, writeFile as writeFile6 } from "node:fs/promises";
-import { isAbsolute, join as join14, relative, resolve } from "node:path";
+import { createHash, randomUUID as randomUUID2 } from "node:crypto";
+import { closeSync, constants as fsConstants2, linkSync, openSync, readFileSync as readFileSync2, renameSync, rmSync } from "node:fs";
+import { lstat as lstat3, mkdir as mkdir6, open as open2, readFile as readFile10, readdir as readdir9, rename as rename2, rm as rm2, writeFile as writeFile6 } from "node:fs/promises";
+import { isAbsolute, join as join15, relative, resolve } from "node:path";
 
 // src/codex-lock.js
-import { lstat as lstat2, open, readFile as readFile9, unlink, utimes } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
+import { link, lstat as lstat2, mkdir as mkdir5, open, readFile as readFile9, rename, rmdir, unlink, utimes } from "node:fs/promises";
+import { dirname as dirname4, join as join14 } from "node:path";
+var pause = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
 async function processStartIdentity(pid = process.pid) {
   if (process.platform !== "linux" || !Number.isInteger(pid) || pid < 1) return null;
   try {
@@ -9584,6 +9598,203 @@ async function processStartIdentity(pid = process.pid) {
     return null;
   }
 }
+async function readLock(path, maxBytes = 16 * 1024) {
+  let handle;
+  try {
+    const before = await lstat2(path);
+    if (before.isSymbolicLink() || !before.isFile() || before.size > maxBytes) throw new Error(`unsafe Codex transaction lock: ${path}`);
+    handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const stat2 = await handle.stat();
+    if (!stat2.isFile() || stat2.size > maxBytes) throw new Error(`unsafe Codex transaction lock: ${path}`);
+    let record = null;
+    try {
+      record = JSON.parse(await handle.readFile("utf8"));
+    } catch {
+    }
+    return { record, stat: stat2 };
+  } finally {
+    if (handle) await handle.close().catch(() => {
+    });
+  }
+}
+var sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+var sameLockOwner = (left, right) => typeof left?.token === "string" && left.token.length > 0 && left.token === right?.token && left.pid === right?.pid && left.processIdentity === right?.processIdentity && left.createdAt === right?.createdAt;
+async function privateRetirement(path) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const dir = join14(dirname4(path), `.muster-retired-${process.pid}-${randomUUID()}`);
+    try {
+      await mkdir5(dir, { mode: 448 });
+    } catch (error) {
+      if (error.code === "EEXIST" && attempt < 7) continue;
+      throw error;
+    }
+    const stat2 = await lstat2(dir);
+    if (stat2.isSymbolicLink() || !stat2.isDirectory()) throw new Error(`unsafe Codex transaction retirement directory: ${dir}`);
+    return { dir, path: join14(dir, "lock") };
+  }
+  throw new Error(`could not create Codex transaction retirement directory for ${path}`);
+}
+async function restoreRetiredLock(path, retired, stat2) {
+  const current = await lstat2(retired);
+  if (!sameInode(current, stat2)) return false;
+  try {
+    await link(retired, path);
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  }
+  const restored = await lstat2(path);
+  if (!sameInode(restored, stat2)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
+  await unlink(retired);
+  await rmdir(dirname4(retired));
+  return true;
+}
+async function restoreQuarantinedLock(path, quarantine, stat2) {
+  const retirement = await privateRetirement(quarantine);
+  try {
+    await rename(quarantine, retirement.path);
+  } catch (error) {
+    try {
+      await rmdir(retirement.dir);
+    } catch {
+    }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  return restoreRetiredLock(path, retirement.path, stat2);
+}
+async function retireOwnedLock(path, expectedStat, expectedRecord, { stale = null, restorePath = path } = {}) {
+  const retirement = await privateRetirement(path);
+  try {
+    await rename(path, retirement.path);
+  } catch (error) {
+    try {
+      await rmdir(retirement.dir);
+    } catch {
+    }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  let retired;
+  try {
+    retired = await readLock(retirement.path);
+  } catch {
+    return false;
+  }
+  if (!sameInode(retired.stat, expectedStat) || !sameLockOwner(retired.record, expectedRecord) || stale && !await stale(retired)) {
+    await restoreRetiredLock(restorePath, retirement.path, retired.stat);
+    return false;
+  }
+  await unlink(retirement.path);
+  await rmdir(retirement.dir);
+  return true;
+}
+async function lockIsStale(current, { staleMs, maxStaleMs }) {
+  const age = Date.now() - current.stat.mtimeMs;
+  if (age < staleMs) return false;
+  const pid = Number(current.record?.pid);
+  const alive = processAlive(pid);
+  const actualIdentity = alive ? await processStartIdentity(pid) : null;
+  const recordedIdentity = typeof current.record?.processIdentity === "string" ? current.record.processIdentity : null;
+  const sameProcess = alive && recordedIdentity && actualIdentity && recordedIdentity === actualIdentity;
+  if (sameProcess && age < maxStaleMs) return false;
+  if (alive && (!recordedIdentity || !actualIdentity) && age < maxStaleMs) return false;
+  return true;
+}
+async function reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine = async () => {
+}, afterValidation = async () => {
+} }) {
+  let current;
+  try {
+    current = await readLock(path);
+  } catch (error) {
+    if (error.code === "ENOENT") return true;
+    throw error;
+  }
+  if (!sameLockOwner(current.record, current.record) || !await lockIsStale(current, { staleMs, maxStaleMs })) return false;
+  const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID()}`;
+  try {
+    await rename(path, quarantine);
+  } catch (error) {
+    if (error.code === "ENOENT") return true;
+    throw error;
+  }
+  try {
+    await afterQuarantine({ path, quarantine });
+    const quarantined = await readLock(quarantine);
+    if (!sameInode(quarantined.stat, current.stat) || !sameLockOwner(quarantined.record, current.record) || !await lockIsStale(quarantined, { staleMs, maxStaleMs })) {
+      await restoreQuarantinedLock(path, quarantine, quarantined.stat);
+      return false;
+    }
+    await afterValidation({ path, quarantine });
+    if (!await retireOwnedLock(quarantine, quarantined.stat, quarantined.record, {
+      stale: (state) => lockIsStale(state, { staleMs, maxStaleMs }),
+      restorePath: path
+    })) return false;
+  } catch (error) {
+    throw error;
+  }
+  return true;
+}
+async function withCodexFileLock(path, callback, {
+  staleMs = 6e4,
+  maxStaleMs = 15 * 6e4,
+  timeoutMs = 3e4,
+  afterQuarantine = async () => {
+  },
+  afterValidation = async () => {
+  },
+  beforeRelease = async () => {
+  }
+} = {}) {
+  const token = randomUUID();
+  const processIdentity = await processStartIdentity();
+  const started = Date.now();
+  let handle;
+  for (; ; ) {
+    try {
+      handle = await open(path, "wx", 384);
+      await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
+      await handle.sync();
+      await handle.close();
+      handle = null;
+      break;
+    } catch (error) {
+      if (handle) {
+        await handle.close().catch(() => {
+        });
+        handle = null;
+      }
+      if (error.code !== "EEXIST") throw error;
+      if (await reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine, afterValidation })) continue;
+      if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
+      await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
+    }
+  }
+  const heartbeat = setInterval(async () => {
+    try {
+      const current = await readLock(path);
+      if (current.record?.token === token) await utimes(path, /* @__PURE__ */ new Date(), /* @__PURE__ */ new Date());
+    } catch {
+    }
+  }, Math.max(1e3, Math.floor(staleMs / 3)));
+  heartbeat.unref();
+  try {
+    return await callback();
+  } finally {
+    clearInterval(heartbeat);
+    try {
+      const current = await readLock(path);
+      if (current.record?.token !== token) return;
+      await beforeRelease({ path });
+      if (!await retireOwnedLock(path, current.stat, current.record)) {
+        throw new Error(`Codex transaction lock ownership changed: ${path}`);
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+}
 
 // src/codex-release.js
 var RELEASE_FORMAT = 1;
@@ -9594,7 +9805,7 @@ async function readRegular(path, label, maxBytes = 32 * 1024 * 1024) {
   let handle;
   try {
     await ordinary(path, "file", label);
-    handle = await open2(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    handle = await open2(path, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW || 0));
     const stat2 = await handle.stat();
     if (!stat2.isFile() || stat2.size > maxBytes) throw new Error(`${label} must be a bounded regular file: ${path}`);
     return await handle.readFile();
@@ -9628,14 +9839,14 @@ async function repositoryDirectory(repoRoot, parts, { create = false } = {}) {
   await ordinary(repoRoot, "directory", "repository root");
   let current = repoRoot;
   for (const part of parts) {
-    current = join14(current, part);
+    current = join15(current, part);
     let stat2;
     try {
       stat2 = await lstat3(current);
     } catch (error) {
       if (error.code !== "ENOENT" || !create) throw new Error(`repository directory is missing: ${current}`, { cause: error });
       try {
-        await mkdir5(current);
+        await mkdir6(current);
       } catch (mkdirError) {
         if (mkdirError.code !== "EEXIST") throw mkdirError;
       }
@@ -9652,7 +9863,7 @@ async function assertRegularTree(root) {
     const entries = await readdir9(dir);
     entries.sort();
     for (const name of entries) {
-      const path = join14(dir, name);
+      const path = join15(dir, name);
       contained(root, path, "tree entry");
       const stat2 = await lstat3(path);
       if (stat2.isSymbolicLink()) throw new Error(`tree entry must not be a symlink: ${path}`);
@@ -9676,8 +9887,8 @@ async function createCodexBootstrapMetadata(bootstrapRoot) {
   return { ...payload, digest: sha256(JSON.stringify(payload)) };
 }
 async function validateCodexBootstrap(bootstrapRoot) {
-  await ordinary(join14(bootstrapRoot, "bootstrap.json"), "file", "bootstrap metadata");
-  const metadata = await readRegularJson(join14(bootstrapRoot, "bootstrap.json"), "bootstrap metadata", 4 * 1024 * 1024);
+  await ordinary(join15(bootstrapRoot, "bootstrap.json"), "file", "bootstrap metadata");
+  const metadata = await readRegularJson(join15(bootstrapRoot, "bootstrap.json"), "bootstrap metadata", 4 * 1024 * 1024);
   if (metadata?.format !== RELEASE_FORMAT || !GENERATION.test(metadata.digest || "") || !Array.isArray(metadata.files)) {
     throw new Error("Codex bootstrap metadata has an invalid contract");
   }
@@ -9700,10 +9911,10 @@ async function createCodexReleaseMetadata(releaseRoot, packageVersion) {
   return metadataFor(packageVersion, files);
 }
 async function validateCodexRelease(releaseRoot, expectedGeneration) {
-  await ordinary(join14(releaseRoot, "release.json"), "file", "release metadata");
+  await ordinary(join15(releaseRoot, "release.json"), "file", "release metadata");
   let metadata;
   try {
-    metadata = await readRegularJson(join14(releaseRoot, "release.json"), "release metadata", 4 * 1024 * 1024);
+    metadata = await readRegularJson(join15(releaseRoot, "release.json"), "release metadata", 4 * 1024 * 1024);
   } catch (error) {
     throw new Error(`release metadata is invalid: ${releaseRoot}`, { cause: error });
   }
@@ -9720,7 +9931,7 @@ async function validateCodexRelease(releaseRoot, expectedGeneration) {
 }
 async function readPointer(repoRoot) {
   await repositoryDirectory(repoRoot, [".agents", "plugins"]);
-  const path = join14(repoRoot, ".agents", "plugins", "marketplace.json");
+  const path = join15(repoRoot, ".agents", "plugins", "marketplace.json");
   await ordinary(path, "file", "Codex marketplace pointer");
   let pointer;
   try {
@@ -9735,17 +9946,188 @@ async function resolveCodexRelease(repoRoot) {
 }
 var STABLE_BOOTSTRAP_PATH = "./.agents/plugins/bootstrap/muster";
 var SELECTION = /^(\d{12})-([a-f0-9]{64})\.json$/;
-async function releaseResult(repoRoot, generation) {
+async function releaseResult(repoRoot, generation, leaseOptions) {
   if (!GENERATION.test(generation || "")) throw new Error("selected Codex generation is invalid");
   const releaseRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "releases", generation]);
   const metadata = await validateCodexRelease(releaseRoot, generation);
-  await registerGenerationLease(repoRoot, generation);
-  return { generation, releaseRoot, pluginRoot: join14(releaseRoot, "plugin"), profilesRoot: join14(releaseRoot, "profiles"), metadata };
+  const lease = await registerGenerationLease(repoRoot, generation, leaseOptions);
+  return { generation, releaseRoot, pluginRoot: join15(releaseRoot, "plugin"), profilesRoot: join15(releaseRoot, "profiles"), metadata, lease };
 }
-async function registerGenerationLease(repoRoot, generation) {
+var LEASE_HEARTBEAT_INTERVAL_MS = 60 * 1e3;
+var leaseControllers = /* @__PURE__ */ new Map();
+var leaseExitPools = [];
+var defaultAddExitListener = (event, listener) => process.once(event, listener);
+var defaultRemoveExitListener = (event, listener) => process.removeListener(event, listener);
+var leaseLockPath = (path) => `${path}.lifecycle.lock`;
+function retainLeaseExitCleanup(addExitListener, removeExitListener, key, cleanup) {
+  let pool = leaseExitPools.find((candidate) => candidate.addExitListener === addExitListener && candidate.removeExitListener === removeExitListener);
+  if (!pool) {
+    pool = { addExitListener, removeExitListener, cleanups: /* @__PURE__ */ new Map() };
+    pool.listener = () => {
+      for (const callback of pool.cleanups.values()) {
+        try {
+          callback();
+        } catch {
+        }
+      }
+      pool.cleanups.clear();
+    };
+    leaseExitPools.push(pool);
+    addExitListener("exit", pool.listener);
+  }
+  pool.cleanups.set(key, cleanup);
+  return () => {
+    if (!pool.cleanups.delete(key) || pool.cleanups.size) return;
+    removeExitListener("exit", pool.listener);
+    leaseExitPools.splice(leaseExitPools.indexOf(pool), 1);
+  };
+}
+async function leaseIdentity(path, token) {
+  let handle;
+  try {
+    await ordinary(path, "file", "Codex generation lease");
+    handle = await open2(path, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW || 0));
+    const stat2 = await handle.stat();
+    if (!stat2.isFile() || stat2.size > 64 * 1024) throw new Error(`unsafe Codex generation lease: ${path}`);
+    const record = JSON.parse(await handle.readFile("utf8"));
+    if (record?.token !== token) throw new Error(`Codex generation lease ownership changed: ${path}`);
+    return stat2;
+  } finally {
+    if (handle) await handle.close().catch(() => {
+    });
+  }
+}
+var sameLeaseIdentity = (left, right) => left.dev === right.dev && left.ino === right.ino;
+async function renewLease(path, token, record, replaceLease = rename2) {
+  return withCodexFileLock(leaseLockPath(path), async () => {
+    const initial = await leaseIdentity(path, token);
+    await atomicWritePointer(path, JSON.stringify(record, null, 2) + "\n", async (temporary, destination) => {
+      const current = await leaseIdentity(path, token);
+      if (!sameLeaseIdentity(initial, current)) throw new Error(`Codex generation lease changed during renewal: ${path}`);
+      await replaceLease(temporary, destination);
+    });
+  });
+}
+function removeLeaseSync(path, token) {
+  const quarantine = `${path}.reclaim-${process.pid}-${randomUUID2()}`;
+  let fd;
+  try {
+    fd = openSync(path, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW || 0));
+    const current = JSON.parse(readFileSync2(fd, "utf8"));
+    if (current?.token !== token) return;
+    closeSync(fd);
+    fd = void 0;
+    renameSync(path, quarantine);
+    fd = openSync(quarantine, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW || 0));
+    const quarantined = JSON.parse(readFileSync2(fd, "utf8"));
+    closeSync(fd);
+    fd = void 0;
+    if (quarantined?.token === token) rmSync(quarantine);
+    else {
+      try {
+        linkSync(quarantine, path);
+        rmSync(quarantine);
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  } finally {
+    if (fd !== void 0) try {
+      closeSync(fd);
+    } catch {
+    }
+  }
+}
+var leaseOwnershipChanged = (error) => error?.code === "ENOENT" || /lease ownership changed/.test(error?.message || "");
+async function removeLease(path, token, beforeLeaseCleanup) {
+  try {
+    return await withCodexFileLock(leaseLockPath(path), async () => {
+      let initial;
+      try {
+        initial = await leaseIdentity(path, token);
+      } catch (error) {
+        if (leaseOwnershipChanged(error)) return false;
+        throw error;
+      }
+      await beforeLeaseCleanup?.({ path, token });
+      let current;
+      try {
+        current = await leaseIdentity(path, token);
+      } catch (error) {
+        if (leaseOwnershipChanged(error)) return false;
+        throw error;
+      }
+      if (!sameLeaseIdentity(initial, current)) return false;
+      removeLeaseSync(path, token);
+      return true;
+    });
+  } catch (error) {
+    if (["ENOENT", "ENOTDIR"].includes(error?.code)) return false;
+    throw error;
+  }
+}
+async function registerGenerationLease(repoRoot, generation, leaseOptions = {}) {
+  const key = `${resolve(repoRoot)}\0${generation}`;
+  if (leaseControllers.has(key)) return leaseControllers.get(key);
+  const creating = createGenerationLease(repoRoot, generation, leaseOptions, key);
+  leaseControllers.set(key, creating);
+  try {
+    const controller = await creating;
+    if (leaseControllers.get(key) === creating) leaseControllers.set(key, controller);
+    return controller;
+  } catch (error) {
+    if (leaseControllers.get(key) === creating) leaseControllers.delete(key);
+    throw error;
+  }
+}
+async function createGenerationLease(repoRoot, generation, leaseOptions, key) {
   const root = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases", generation], { create: true });
-  const record = { format: RELEASE_FORMAT, pid: process.pid, processIdentity: await processStartIdentity(), processStartedAt: Math.floor(Date.now() - process.uptime() * 1e3), touchedAt: Date.now(), generation };
-  await atomicWritePointer(join14(root, `${process.pid}.json`), JSON.stringify(record, null, 2) + "\n", rename);
+  const token = randomUUID2(), path = join15(root, `${process.pid}-${token}.json`);
+  const now = leaseOptions.now || Date.now;
+  const setIntervalFn = leaseOptions.setInterval || setInterval;
+  const clearIntervalFn = leaseOptions.clearInterval || clearInterval;
+  const addExitListener = leaseOptions.addExitListener || defaultAddExitListener;
+  const removeExitListener = leaseOptions.removeExitListener || defaultRemoveExitListener;
+  const replaceLease = leaseOptions.replaceLease || rename2;
+  const beforeLeaseCleanup = leaseOptions.beforeLeaseCleanup;
+  const identity = await processStartIdentity();
+  const base = { format: RELEASE_FORMAT, pid: process.pid, processIdentity: identity, processStartedAt: Math.floor(Date.now() - process.uptime() * 1e3), generation, token };
+  const record = () => ({ ...base, touchedAt: now() });
+  await atomicWritePointer(path, JSON.stringify(record(), null, 2) + "\n", rename2);
+  let closed = false, renewal = Promise.resolve();
+  const renew = () => {
+    if (closed) return renewal;
+    renewal = renewal.catch(() => {
+    }).then(() => renewLease(path, token, record(), replaceLease)).catch((error) => {
+      if (["ENOENT", "ENOTDIR"].includes(error?.code)) stop();
+      else throw error;
+    });
+    return renewal;
+  };
+  const timer = setIntervalFn(() => renew().catch(() => {
+  }), LEASE_HEARTBEAT_INTERVAL_MS);
+  timer?.unref?.();
+  const releaseExitCleanup = retainLeaseExitCleanup(addExitListener, removeExitListener, `${path}\0${token}`, () => removeLeaseSync(path, token));
+  function stop() {
+    if (closed) return;
+    closed = true;
+    clearIntervalFn(timer);
+    releaseExitCleanup();
+    if (leaseControllers.get(key) === controller) leaseControllers.delete(key);
+  }
+  const controller = {
+    path,
+    renew,
+    async close() {
+      stop();
+      await renewal.catch(() => {
+      });
+      await removeLease(path, token, beforeLeaseCleanup);
+    }
+  };
+  return controller;
 }
 var LEASE_HEARTBEAT_MAX_AGE_MS = 5 * 60 * 1e3;
 function validSelection(record, name, bootstrapDigest) {
@@ -9753,8 +10135,8 @@ function validSelection(record, name, bootstrapDigest) {
   return record?.format === RELEASE_FORMAT && record.sequence === Number(match?.[1]) && record.generation === match?.[2] && record.bootstrapDigest === bootstrapDigest;
 }
 var transient = (error) => ["ENOENT", "EACCES", "EPERM", "EBUSY"].includes(error?.code);
-var pause = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
-async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelections } = {}) {
+var pause2 = (ms) => new Promise((resolve4) => setTimeout(resolve4, ms));
+async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelections, lease } = {}) {
   let pointerError;
   let pointer;
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -9765,7 +10147,7 @@ async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelec
     } catch (error) {
       pointerError = error;
       if (!transient(error.cause || error)) throw error;
-      await pause(5 * (attempt + 1));
+      await pause2(5 * (attempt + 1));
     }
   }
   if (pointerError) throw pointerError;
@@ -9780,30 +10162,30 @@ async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelec
   let names = [];
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      names = readSelections ? await readSelections() : await readdir9(join14(repoRoot, ".agents", "plugins", "selections"));
+      names = readSelections ? await readSelections() : await readdir9(join15(repoRoot, ".agents", "plugins", "selections"));
       break;
     } catch (error) {
       if (!transient(error) || attempt === retries - 1) break;
-      await pause(5 * (attempt + 1));
+      await pause2(5 * (attempt + 1));
     }
   }
   const candidates = names.filter((name) => SELECTION.test(name)).sort().reverse();
   for (const name of candidates) {
     try {
-      const record = await readRegularJson(join14(repoRoot, ".agents", "plugins", "selections", name), "Codex selection record");
+      const record = await readRegularJson(join15(repoRoot, ".agents", "plugins", "selections", name), "Codex selection record");
       if (!validSelection(record, name, bootstrap.digest)) continue;
-      return await releaseResult(repoRoot, record.generation);
+      return await releaseResult(repoRoot, record.generation, lease);
     } catch {
     }
   }
-  return releaseResult(repoRoot, bootstrap.initialGeneration);
+  return releaseResult(repoRoot, bootstrap.initialGeneration, lease);
 }
 async function atomicWritePointer(path, content, replacePointer) {
   let temporary;
   let handle;
   try {
     for (let attempt = 0; attempt < 8; attempt++) {
-      temporary = `${path}.muster-${process.pid}-${randomUUID()}.tmp`;
+      temporary = `${path}.muster-${process.pid}-${randomUUID2()}.tmp`;
       try {
         handle = await open2(temporary, "wx", 384);
         break;
@@ -9832,16 +10214,16 @@ var MANIFEST = ".muster-managed.json";
 var PROFILE_FILENAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/;
 var HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
 var SCOPE_LOCK_STALE_MS = 5 * 6e4;
-var codexHome = (home) => process.env.CODEX_HOME || join15(home, ".codex");
-var agentsDir = (scope, cwd, home) => scope === "user" ? join15(codexHome(home), "agents") : join15(cwd, ".codex", "agents");
-var configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join15(cwd, ".codex");
-var scopeRegistryPath = (home) => join15(codexHome(home), "muster", "install-scopes.json");
+var codexHome = (home) => process.env.CODEX_HOME || join16(home, ".codex");
+var agentsDir = (scope, cwd, home) => scope === "user" ? join16(codexHome(home), "agents") : join16(cwd, ".codex", "agents");
+var configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join16(cwd, ".codex");
+var scopeRegistryPath = (home) => join16(codexHome(home), "muster", "install-scopes.json");
 var scopeRegistryLockPath = (home) => `${scopeRegistryPath(home)}.lock`;
 async function ordinaryDirectoryPath(path, { create = false } = {}) {
   const absolute = resolve2(path), root = parse4(absolute).root;
   let current = root;
   for (const part of relative2(root, absolute).split(sep2).filter(Boolean)) {
-    current = join15(current, part);
+    current = join16(current, part);
     let stat2;
     try {
       stat2 = await lstat4(current);
@@ -9849,7 +10231,7 @@ async function ordinaryDirectoryPath(path, { create = false } = {}) {
       if (error.code !== "ENOENT") throw error;
       if (!create) return false;
       try {
-        await mkdir6(current, { mode: 448 });
+        await mkdir7(current, { mode: 448 });
       } catch (mkdirError) {
         if (mkdirError.code !== "EEXIST") throw mkdirError;
       }
@@ -9860,7 +10242,7 @@ async function ordinaryDirectoryPath(path, { create = false } = {}) {
   return true;
 }
 async function regularFileState(path) {
-  await ordinaryDirectoryPath(dirname4(path));
+  await ordinaryDirectoryPath(dirname5(path));
   let stat2;
   try {
     stat2 = await lstat4(path);
@@ -9915,9 +10297,9 @@ async function scopeEntry(scope, cwd, home) {
 var sameScopeEntry = (left, right) => left.scope === right.scope && left.configDir === right.configDir;
 var registryText = (entries) => JSON.stringify({ format: 1, owner: "muster", entries }, null, 2) + "\n";
 var scopeLockText = (token) => JSON.stringify({ format: 1, owner: "muster", pid: process.pid, token, createdAt: Date.now() }) + "\n";
-var pause2 = (milliseconds) => new Promise((resolve4) => setTimeout(resolve4, milliseconds));
+var pause3 = (milliseconds) => new Promise((resolve4) => setTimeout(resolve4, milliseconds));
 async function writeExclusiveSafe(path, content) {
-  await ordinaryDirectoryPath(dirname4(path), { create: true });
+  await ordinaryDirectoryPath(dirname5(path), { create: true });
   await regularFileState(path);
   let handle, created = false;
   try {
@@ -9950,18 +10332,21 @@ function parseScopeLock(text, path) {
   return lock;
 }
 async function readScopeLock(path) {
-  const stat2 = await regularFileState(path);
-  if (!stat2) return null;
-  let text;
+  const before = await regularFileState(path);
+  if (!before) return null;
+  let handle;
   try {
-    text = await readFile11(path, "utf8");
+    handle = await open3(path, fsConstants3.O_RDONLY | (fsConstants3.O_NOFOLLOW || 0));
+    const stat2 = await handle.stat();
+    if (!stat2.isFile() || stat2.dev !== before.dev || stat2.ino !== before.ino) return null;
+    return { stat: stat2, lock: parseScopeLock(await handle.readFile("utf8"), path) };
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
+  } finally {
+    if (handle) await handle.close().catch(() => {
+    });
   }
-  const current = await regularFileState(path);
-  if (!current || current.dev !== stat2.dev || current.ino !== stat2.ino) return null;
-  return { stat: current, lock: parseScopeLock(text, path) };
 }
 function processOwnsScopeLock(pid) {
   try {
@@ -9974,34 +10359,140 @@ function processOwnsScopeLock(pid) {
 function staleScopeLock(state) {
   return Date.now() - Math.max(state.lock.createdAt, state.stat.mtimeMs) >= SCOPE_LOCK_STALE_MS && !processOwnsScopeLock(state.lock.pid);
 }
-async function releaseScopeLock(path, token) {
-  const state = await readScopeLock(path);
-  if (!state || state.lock.token !== token) throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
-  await unlink2(path);
+var sameScopeLockInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+var sameScopeLockOwner = (left, right) => left.token === right.token && left.pid === right.pid && left.createdAt === right.createdAt && left.owner === right.owner && left.format === right.format;
+async function privateScopeRetirement(path) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const dir = join16(dirname5(path), `.muster-retired-${process.pid}-${randomUUID3()}`);
+    try {
+      await mkdir7(dir, { mode: 448 });
+    } catch (error) {
+      if (error.code === "EEXIST" && attempt < 7) continue;
+      throw error;
+    }
+    const stat2 = await lstat4(dir);
+    if (stat2.isSymbolicLink() || !stat2.isDirectory()) throw new Error(`unsafe Codex managed-scope retirement directory: ${dir}`);
+    return { dir, path: join16(dir, "lock") };
+  }
+  throw new Error(`could not create Codex managed-scope retirement directory for ${path}`);
 }
-async function recoverStaleScopeLock(path) {
-  const recoveryPath = `${path}.recover`, token = randomUUID2();
+async function restoreRetiredScopeLock(path, retired, stat2) {
+  const current = await lstat4(retired);
+  if (!sameScopeLockInode(current, stat2)) return false;
   try {
-    await writeExclusiveSafe(recoveryPath, scopeLockText(token));
+    await link2(retired, path);
   } catch (error) {
-    if (error.code !== "EEXIST") throw error;
-    await readScopeLock(recoveryPath);
+    if (error.code === "EEXIST") return false;
+    throw error;
+  }
+  const restored = await lstat4(path);
+  if (!sameScopeLockInode(restored, stat2)) throw new Error(`Codex managed-scope lock restore changed identity: ${path}`);
+  await unlink2(retired);
+  await rmdir2(dirname5(retired));
+  return true;
+}
+async function restoreQuarantinedScopeLock(path, quarantine, stat2) {
+  const retirement = await privateScopeRetirement(quarantine);
+  try {
+    await rename3(quarantine, retirement.path);
+  } catch (error) {
+    try {
+      await rmdir2(retirement.dir);
+    } catch {
+    }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  return restoreRetiredScopeLock(path, retirement.path, stat2);
+}
+async function retireOwnedScopeLock(path, expectedStat, expectedLock, { restorePath = path, stale = null } = {}) {
+  const retirement = await privateScopeRetirement(path);
+  try {
+    await rename3(path, retirement.path);
+  } catch (error) {
+    try {
+      await rmdir2(retirement.dir);
+    } catch {
+    }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  let retired;
+  try {
+    retired = await readScopeLock(retirement.path);
+  } catch {
     return false;
   }
+  if (!retired || !sameScopeLockInode(retired.stat, expectedStat) || !sameScopeLockOwner(retired.lock, expectedLock) || stale && !stale(retired)) {
+    if (retired) await restoreRetiredScopeLock(restorePath, retirement.path, retired.stat);
+    return false;
+  }
+  await unlink2(retirement.path);
+  await rmdir2(retirement.dir);
+  return true;
+}
+async function releaseScopeLock(path, token, { beforeRelease = async () => {
+} } = {}) {
+  const state = await readScopeLock(path);
+  if (!state || state.lock.token !== token) throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
+  await beforeRelease({ path });
+  if (!await retireOwnedScopeLock(path, state.stat, state.lock)) {
+    throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
+  }
+}
+async function acquireRecoveryScopeLock(path, token) {
+  try {
+    await writeExclusiveSafe(path, scopeLockText(token));
+    return true;
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+  }
+  const state = await readScopeLock(path);
+  if (!state || !staleScopeLock(state)) return false;
+  if (!await retireOwnedScopeLock(path, state.stat, state.lock, { stale: staleScopeLock })) return false;
+  try {
+    await writeExclusiveSafe(path, scopeLockText(token));
+    return true;
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  }
+}
+async function recoverStaleScopeLock(path, { afterQuarantine = async () => {
+}, afterValidation = async () => {
+} } = {}) {
+  const recoveryPath = `${path}.recover`, token = randomUUID3();
+  if (!await acquireRecoveryScopeLock(recoveryPath, token)) return false;
   try {
     const state = await readScopeLock(path);
     if (!state || !staleScopeLock(state)) return false;
-    const rechecked = await readScopeLock(path);
-    if (!rechecked || rechecked.lock.token !== state.lock.token || rechecked.stat.dev !== state.stat.dev || rechecked.stat.ino !== state.stat.ino) return false;
-    await unlink2(path);
-    return true;
+    const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID3()}`;
+    try {
+      await rename3(path, quarantine);
+    } catch (error) {
+      if (error.code === "ENOENT") return true;
+      throw error;
+    }
+    await afterQuarantine({ path, quarantine });
+    const quarantined = await readScopeLock(quarantine);
+    if (!quarantined || !sameScopeLockInode(quarantined.stat, state.stat) || !sameScopeLockOwner(quarantined.lock, state.lock) || !staleScopeLock(quarantined)) {
+      if (quarantined) await restoreQuarantinedScopeLock(path, quarantine, quarantined.stat);
+      return false;
+    }
+    await afterValidation({ path, quarantine });
+    return retireOwnedScopeLock(quarantine, quarantined.stat, quarantined.lock, {
+      restorePath: path,
+      stale: staleScopeLock
+    });
   } finally {
     await releaseScopeLock(recoveryPath, token);
   }
 }
-async function acquireScopeLock(home) {
-  const path = scopeRegistryLockPath(home), token = randomUUID2();
-  for (let attempt = 0; attempt < 1e3; attempt++) {
+async function acquireScopeLock(home, { maxAttempts = 1e3, afterQuarantine = async () => {
+}, afterValidation = async () => {
+} } = {}) {
+  const path = scopeRegistryLockPath(home), token = randomUUID3();
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       await writeExclusiveSafe(path, scopeLockText(token));
       return { path, token };
@@ -10009,24 +10500,24 @@ async function acquireScopeLock(home) {
       if (error.code !== "EEXIST") throw error;
     }
     const state = await readScopeLock(path);
-    if (!state || staleScopeLock(state) && await recoverStaleScopeLock(path)) continue;
-    await pause2(10);
+    if (!state || staleScopeLock(state) && await recoverStaleScopeLock(path, { afterQuarantine, afterValidation })) continue;
+    await pause3(10);
   }
   throw new Error(`Codex managed-scope lock did not become available: ${path}`);
 }
-async function withScopeRegistryTransaction(home, action) {
-  const held = await acquireScopeLock(home);
+async function withScopeRegistryTransaction(home, action, lockOptions) {
+  const held = await acquireScopeLock(home, lockOptions);
   try {
     return await action(await readScopeRegistry(home));
   } finally {
-    await releaseScopeLock(held.path, held.token);
+    await releaseScopeLock(held.path, held.token, lockOptions);
   }
 }
 async function atomicWriteSafe(path, content) {
-  const parent = dirname4(path);
+  const parent = dirname5(path);
   await ordinaryDirectoryPath(parent, { create: true });
   await regularFileState(path);
-  const temporary = join15(parent, `.${basename(path)}.muster-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
+  const temporary = join16(parent, `.${basename(path)}.muster-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
   let handle;
   try {
     handle = await open3(temporary, "wx", 384);
@@ -10037,7 +10528,7 @@ async function atomicWriteSafe(path, content) {
     await regularFileState(temporary);
     await ordinaryDirectoryPath(parent);
     await regularFileState(path);
-    await rename2(temporary, path);
+    await rename3(temporary, path);
   } finally {
     if (handle) await handle.close().catch(() => {
     });
@@ -10064,7 +10555,7 @@ function validateManagedFiles(manifest, dir, manifestPath) {
   const base = resolve2(dir), seen = /* @__PURE__ */ new Set();
   for (const file of manifest.files) {
     const destination = typeof file === "string" ? resolve2(base, file) : "";
-    if (typeof file !== "string" || file !== basename(file) || dirname4(destination) !== base || !PROFILE_FILENAME.test(file) || seen.has(file)) {
+    if (typeof file !== "string" || file !== basename(file) || dirname5(destination) !== base || !PROFILE_FILENAME.test(file) || seen.has(file)) {
       throw new Error(`Invalid Muster-owned Codex profile in ${manifestPath}: ${JSON.stringify(file)}. Remove the invalid manifest before retrying.`);
     }
     seen.add(file);
@@ -10125,7 +10616,7 @@ function shellCommand(path) {
 }
 async function prepareHooks({ scope, cwd, home, hookSourceRoot, generation, bootstrapDigest }) {
   const dir = configDir(scope, cwd, home);
-  const runtimeDir = join15(dir, "muster"), manifestPath = join15(runtimeDir, MANIFEST), configPath = join15(dir, "hooks.json");
+  const runtimeDir = join16(dir, "muster"), manifestPath = join16(runtimeDir, MANIFEST), configPath = join16(dir, "hooks.json");
   await ordinaryDirectoryPath(dir);
   await ordinaryDirectoryPath(runtimeDir);
   const manifestExists = await safeExists(manifestPath), configExists = await safeExists(configPath);
@@ -10146,10 +10637,10 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, generation, boot
     throw new Error(`Codex hook conflict: ${configPath} contains an unmanaged Muster hook. Remove it or restore its Muster manifest, then rerun the command.`);
   }
   if (previous) config = removeOwnedHookGroups(config, previous.hookGroups, configPath);
-  const templatePath = join15(hookSourceRoot, "hooks.json");
+  const templatePath = join16(hookSourceRoot, "hooks.json");
   const template = await readJson2(templatePath);
   if (!template?.hooks || typeof template.hooks !== "object") throw new Error(`Codex hook template is missing or malformed: ${templatePath}`);
-  const runtimeScript = join15(runtimeDir, "hooks", "muster-hook.mjs");
+  const runtimeScript = join16(runtimeDir, "hooks", "muster-hook.mjs");
   const command = shellCommand(runtimeScript);
   const hookGroups = clone(template.hooks);
   for (const groups of Object.values(hookGroups)) for (const group of groups) for (const hook of group.hooks || []) {
@@ -10158,8 +10649,8 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, generation, boot
   }
   for (const [event, groups] of Object.entries(hookGroups)) config.hooks[event] = [...config.hooks[event] || [], ...groups];
   const sourceFiles = /* @__PURE__ */ new Map([
-    ["hooks/muster-hook.mjs", join15(hookSourceRoot, "muster-hook.mjs")],
-    ["hooks/action-guard.mjs", join15(hookSourceRoot, "action-guard.mjs")]
+    ["hooks/muster-hook.mjs", join16(hookSourceRoot, "muster-hook.mjs")],
+    ["hooks/action-guard.mjs", join16(hookSourceRoot, "action-guard.mjs")]
   ]);
   const hookHash = createHash2("sha256");
   for (const [file, sourcePath] of sourceFiles) hookHash.update(file).update("\0").update(await readSafe(sourcePath));
@@ -10250,41 +10741,41 @@ async function registerPlugin(execFile6, dryRun, repoRoot) {
     throw error;
   }
 }
-async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir7(), repoRoot, execFile: execFile6 = execFileDefault2 } = {}) {
+async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir7(), repoRoot, execFile: execFile6 = execFileDefault2, scopeLockOptions } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath4(new URL("../", import.meta.url));
-  const pluginRoot = await exists(join15(root, ".codex-plugin", "plugin.json"));
-  const selected = pluginRoot ? { metadata: JSON.parse(await readSafe(join15(dirname4(root), "release.json"))), releaseRoot: dirname4(root) } : await resolveCodexRelease(root);
+  const pluginRoot = await exists(join16(root, ".codex-plugin", "plugin.json"));
+  const selected = pluginRoot ? { metadata: JSON.parse(await readSafe(join16(dirname5(root), "release.json"))), releaseRoot: dirname5(root) } : await resolveCodexRelease(root);
   const distributionRoot = pluginRoot ? resolve2(selected.releaseRoot, "../../../..") : root;
-  const pointer = JSON.parse(await readSafe(join15(distributionRoot, ".agents", "plugins", "marketplace.json")));
+  const pointer = JSON.parse(await readSafe(join16(distributionRoot, ".agents", "plugins", "marketplace.json")));
   const bootstrapDigest = pointer?.musterBootstrap?.digest;
   if (!/^[a-f0-9]{64}$/.test(selected.metadata?.generation || "") || !/^[a-f0-9]{64}$/.test(bootstrapDigest || "")) {
     throw new Error("Codex installation source is missing a coherent release generation/bootstrap contract");
   }
-  const source = pluginRoot ? join15(root, "agents") : selected.profilesRoot;
+  const source = pluginRoot ? join16(root, "agents") : selected.profilesRoot;
   const files = await profileFiles(source);
   if (!files.length) throw new Error("Codex profiles are missing; run npm run build:codex first");
-  const dir = agentsDir(scope, cwd, home), manifestPath = join15(dir, MANIFEST);
+  const dir = agentsDir(scope, cwd, home), manifestPath = join16(dir, MANIFEST);
   await ordinaryDirectoryPath(configDir(scope, cwd, home));
   await ordinaryDirectoryPath(dir);
   const manifest = await readJson2(manifestPath);
   const manifestExists = await safeExists(manifestPath);
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
-  const hookSourceRoot = pluginRoot ? join15(root, "runtime", "install-hooks") : join15(root, "codex", "hooks");
+  const hookSourceRoot = pluginRoot ? join16(root, "runtime", "install-hooks") : join16(root, "codex", "hooks");
   const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, generation: selected.metadata.generation, bootstrapDigest });
   const managed = new Set(managedFiles.map((file) => resolve2(dir, file)));
   const staleFiles = managedFiles.filter((file) => !files.includes(file));
   for (const file of files) {
-    const destination = join15(dir, file);
+    const destination = join16(dir, file);
     if (await safeExists(destination) && !managed.has(resolve2(destination))) throw new Error(`Codex profile conflict: ${destination}. Move it or remove it, then rerun muster install codex.`);
   }
   const present = await codexAvailable({ execFile: execFile6 });
   if (present && !dryRun) await existingMusterMarketplace(execFile6, distributionRoot);
   const planned = [
-    ...files.map((file) => ({ op: "write", path: join15(dir, file) })),
-    ...staleFiles.map((file) => ({ op: "remove", path: join15(dir, file) })),
-    ...HOOK_FILES.map((file) => ({ op: "write", path: join15(hooks.runtimeDir, file) })),
-    ...hooks.staleFiles.map((file) => ({ op: "remove", path: join15(hooks.runtimeDir, file) })),
+    ...files.map((file) => ({ op: "write", path: join16(dir, file) })),
+    ...staleFiles.map((file) => ({ op: "remove", path: join16(dir, file) })),
+    ...HOOK_FILES.map((file) => ({ op: "write", path: join16(hooks.runtimeDir, file) })),
+    ...hooks.staleFiles.map((file) => ({ op: "remove", path: join16(hooks.runtimeDir, file) })),
     { op: "merge", path: hooks.configPath }
   ];
   let originals, changed;
@@ -10299,24 +10790,24 @@ async function runCodexInstall({ scope = "project", dryRun = false, cwd = proces
         await snapshot(originals, changed, registry.path);
         await atomicWriteSafe(registry.path, registryText([...registry.entries.filter((entry) => !sameScopeEntry(entry, currentScope)), currentScope]));
         for (const file of files) {
-          const destination = join15(dir, file);
+          const destination = join16(dir, file);
           await snapshot(originals, changed, destination);
-          await atomicWriteSafe(destination, await readFile11(join15(source, file), "utf8"));
+          await atomicWriteSafe(destination, await readFile11(join16(source, file), "utf8"));
         }
         for (const file of staleFiles) {
-          const destination = join15(dir, file);
+          const destination = join16(dir, file);
           await snapshot(originals, changed, destination);
           await removeSafe(destination);
         }
         await snapshot(originals, changed, manifestPath);
         await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, generation: selected.metadata.generation, bootstrapDigest }, null, 2) + "\n");
         for (const [file, sourcePath] of hooks.sourceFiles) {
-          const destination = join15(hooks.runtimeDir, file);
+          const destination = join16(hooks.runtimeDir, file);
           await snapshot(originals, changed, destination);
           await atomicWriteSafe(destination, await readFile11(sourcePath, "utf8"));
         }
         for (const file of hooks.staleFiles) {
-          const destination = join15(hooks.runtimeDir, file);
+          const destination = join16(hooks.runtimeDir, file);
           await snapshot(originals, changed, destination);
           await removeSafe(destination);
         }
@@ -10329,7 +10820,7 @@ async function runCodexInstall({ scope = "project", dryRun = false, cwd = proces
         await restoreFilesystem(originals, changed);
         throw error;
       }
-    });
+    }, scopeLockOptions);
   } else {
     actions = present ? await registerPlugin(execFile6, true, distributionRoot) : [];
   }
@@ -10350,7 +10841,7 @@ async function remainingManagedScopes(registry, currentScope) {
   for (const entry of registry.entries) {
     if (sameScopeEntry(entry, currentScope)) continue;
     if (!await ordinaryDirectoryPath(entry.configDir)) continue;
-    const entryAgents = join15(entry.configDir, "agents"), entryManifest = join15(entryAgents, MANIFEST);
+    const entryAgents = join16(entry.configDir, "agents"), entryManifest = join16(entryAgents, MANIFEST);
     if (!await ordinaryDirectoryPath(entryAgents)) continue;
     if (!await safeExists(entryManifest)) continue;
     validateManagedFiles(await readJson2(entryManifest), entryAgents, entryManifest);
@@ -10360,14 +10851,14 @@ async function remainingManagedScopes(registry, currentScope) {
 }
 async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir7(), execFile: execFile6 = execFileDefault2 } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
-  const dir = agentsDir(scope, cwd, home), manifestPath = join15(dir, MANIFEST);
+  const dir = agentsDir(scope, cwd, home), manifestPath = join16(dir, MANIFEST);
   await ordinaryDirectoryPath(configDir(scope, cwd, home));
   await ordinaryDirectoryPath(dir);
   const manifest = await readJson2(manifestPath);
   const manifestExists = await safeExists(manifestPath);
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
-  const files = managedFiles.map((file) => join15(dir, file));
-  const hookDir = configDir(scope, cwd, home), hookRuntimeDir = join15(hookDir, "muster"), hookManifestPath = join15(hookRuntimeDir, MANIFEST), hookConfigPath = join15(hookDir, "hooks.json");
+  const files = managedFiles.map((file) => join16(dir, file));
+  const hookDir = configDir(scope, cwd, home), hookRuntimeDir = join16(hookDir, "muster"), hookManifestPath = join16(hookRuntimeDir, MANIFEST), hookConfigPath = join16(hookDir, "hooks.json");
   await ordinaryDirectoryPath(hookRuntimeDir);
   const hookManifestExists = await safeExists(hookManifestPath), hookConfigExists = await safeExists(hookConfigPath);
   const hookManifest = hookManifestExists ? validateHookManifest(await readJson2(hookManifestPath), hookRuntimeDir, hookManifestPath) : null;
@@ -10379,7 +10870,7 @@ async function runCodexUninstall({ scope = "project", dryRun = false, cwd = proc
     const otherKeys = Object.keys(hookConfig).filter((key) => key !== "hooks");
     removeHookConfig = hookManifest.hookConfigCreated && otherKeys.length === 0 && Object.keys(hookConfig.hooks || {}).length === 0;
   }
-  const hookFiles = hookManifest ? hookManifest.files.map((file) => join15(hookRuntimeDir, file)) : [];
+  const hookFiles = hookManifest ? hookManifest.files.map((file) => join16(hookRuntimeDir, file)) : [];
   const present = await codexAvailable({ execFile: execFile6 });
   const ownsScope = manifestExists || hookManifestExists;
   const currentScope = await scopeEntry(scope, cwd, home);
@@ -10423,9 +10914,9 @@ async function runCodexUninstall({ scope = "project", dryRun = false, cwd = proc
       await restoreFilesystem(originals, changed);
       throw error;
     }
-    for (const empty of [join15(hookRuntimeDir, "hooks"), hookRuntimeDir]) try {
+    for (const empty of [join16(hookRuntimeDir, "hooks"), hookRuntimeDir]) try {
       await ordinaryDirectoryPath(empty);
-      await rmdir(empty);
+      await rmdir2(empty);
     } catch {
     }
     if (removePlugin) try {
@@ -10449,7 +10940,7 @@ async function runCodexUninstall({ scope = "project", dryRun = false, cwd = proc
 // src/codex-doctor.js
 import { readFile as readFile12, readdir as readdir10 } from "node:fs/promises";
 import { createHash as createHash3 } from "node:crypto";
-import { dirname as dirname5, join as join16, resolve as resolve3 } from "node:path";
+import { dirname as dirname6, join as join17, resolve as resolve3 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { homedir as homedir8 } from "node:os";
 
@@ -10504,13 +10995,13 @@ function ownsExactHookGroups(config, owner) {
 }
 async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2, execFile: execFile6 } = {}) {
   const base = root instanceof URL ? fileURLToPath5(root) : root || process.cwd();
-  const isPluginRoot = await exists(join16(base, ".codex-plugin", "plugin.json"));
+  const isPluginRoot = await exists(join17(base, ".codex-plugin", "plugin.json"));
   let selected = null;
   let distributionRoot = base;
   if (isPluginRoot) {
     try {
-      const releaseRoot = dirname5(base), metadata = JSON.parse(await readFile12(join16(releaseRoot, "release.json"), "utf8"));
-      selected = { generation: metadata.generation, metadata, releaseRoot, pluginRoot: base, profilesRoot: join16(base, "agents") };
+      const releaseRoot = dirname6(base), metadata = JSON.parse(await readFile12(join17(releaseRoot, "release.json"), "utf8"));
+      selected = { generation: metadata.generation, metadata, releaseRoot, pluginRoot: base, profilesRoot: join17(base, "agents") };
       distributionRoot = resolve3(releaseRoot, "../../../..");
     } catch {
     }
@@ -10520,21 +11011,21 @@ async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2
     } catch {
     }
   }
-  const plugin = isPluginRoot ? base : selected?.pluginRoot || join16(base, ".agents", "plugins", "releases", "missing", "plugin");
+  const plugin = isPluginRoot ? base : selected?.pluginRoot || join17(base, ".agents", "plugins", "releases", "missing", "plugin");
   const checks = [];
   const available = await codexAvailable({ execFile: execFile6 });
   checks.push({ name: "codex-cli", ok: available, detail: available ? "codex detected on PATH" : "codex not found \u2014 profiles can be installed, plugin registration is skipped" });
   try {
     const [manifest, pkg] = await Promise.all([
-      readFile12(join16(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),
-      readFile12(join16(plugin, "package.json"), "utf8").then(JSON.parse)
+      readFile12(join17(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),
+      readFile12(join17(plugin, "package.json"), "utf8").then(JSON.parse)
     ]);
     checks.push({ name: "codex-plugin", ok: manifest.name === "muster" && manifest.version === pkg.version, detail: `muster ${manifest.version || "unknown"}` });
   } catch (error) {
     checks.push({ name: "codex-plugin", ok: false, detail: error.message });
   }
   try {
-    const profileDir = isPluginRoot ? join16(plugin, "agents") : selected.profilesRoot;
+    const profileDir = isPluginRoot ? join17(plugin, "agents") : selected.profilesRoot;
     const files = (await readdir10(profileDir)).filter((name) => name.endsWith(".toml"));
     checks.push({ name: "codex-agents", ok: files.length === CODEX_COUNTS.agents, detail: `${files.length}/${CODEX_COUNTS.agents} generated profiles` });
   } catch (error) {
@@ -10542,20 +11033,20 @@ async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2
   }
   const required = ["runtime/muster.mjs", "runtime/muster-mcp.mjs", ".mcp.json"];
   const missing = [];
-  for (const item of required) if (!await exists(join16(plugin, item))) missing.push(item);
+  for (const item of required) if (!await exists(join17(plugin, item))) missing.push(item);
   checks.push({ name: "codex-runtime", ok: missing.length === 0, detail: missing.length ? `missing: ${missing.join(", ")}` : "bundled runtime and MCP entrypoint present" });
   const hookEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"];
-  const hookHomes = [.../* @__PURE__ */ new Set([join16(cwd, ".codex"), codexHome2 || process.env.CODEX_HOME || join16(homedir8(), ".codex")])];
+  const hookHomes = [.../* @__PURE__ */ new Set([join17(cwd, ".codex"), codexHome2 || process.env.CODEX_HOME || join17(homedir8(), ".codex")])];
   if (selected) {
     let bootstrapDigest = null;
     try {
-      bootstrapDigest = JSON.parse(await readFile12(join16(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest;
+      bootstrapDigest = JSON.parse(await readFile12(join17(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest;
     } catch {
     }
     const installations = [];
     for (const dir of hookHomes) {
       try {
-        const owner = JSON.parse(await readFile12(join16(dir, "agents", ".muster-managed.json"), "utf8"));
+        const owner = JSON.parse(await readFile12(join17(dir, "agents", ".muster-managed.json"), "utf8"));
         installations.push({ dir, ok: owner.owner === "muster" && owner.generation === selected.generation && owner.bootstrapDigest === bootstrapDigest });
       } catch {
       }
@@ -10567,19 +11058,19 @@ async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2
   const staleHookScopes = [];
   let selectedBootstrapDigest = null;
   try {
-    selectedBootstrapDigest = JSON.parse(await readFile12(join16(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest;
+    selectedBootstrapDigest = JSON.parse(await readFile12(join17(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest;
   } catch {
   }
   for (const dir of hookHomes) {
-    const manifestPath = join16(dir, "muster", ".muster-managed.json");
+    const manifestPath = join17(dir, "muster", ".muster-managed.json");
     if (!await exists(manifestPath)) continue;
     try {
       const [config, owner] = await Promise.all([
-        readFile12(join16(dir, "hooks.json"), "utf8").then(JSON.parse),
+        readFile12(join17(dir, "hooks.json"), "utf8").then(JSON.parse),
         readFile12(manifestPath, "utf8").then(JSON.parse)
       ]);
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
-      const runtime = await Promise.all(hookFiles.map((file) => readFile12(join16(dir, "muster", "hooks", file))));
+      const runtime = await Promise.all(hookFiles.map((file) => readFile12(join17(dir, "muster", "hooks", file))));
       const hash = createHash3("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
       const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.generation === selected?.generation && owner.bootstrapDigest === selectedBootstrapDigest && owner.hookHash === hash.digest("hex");
@@ -11527,7 +12018,7 @@ function selectWinner(candidates) {
 
 // src/prompt-scan.js
 import { readdir as readdir11, readFile as readFile13 } from "node:fs/promises";
-import { join as join17, relative as relative3, extname } from "node:path";
+import { join as join18, relative as relative3, extname } from "node:path";
 
 // src/prompt-discover.js
 var PROMPT_EXT = /\.(prompt|prompt\.md|tmpl)$/i;
@@ -11626,7 +12117,7 @@ async function collectScanFiles(root) {
     }
     for (const e of ents) {
       if (files.length >= SCAN_MAX_FILES) return;
-      const full = join17(dir, e.name);
+      const full = join18(dir, e.name);
       if (e.isDirectory()) {
         const rel = relative3(root, full).replaceAll("\\", "/");
         if (!SCAN_SKIP_DIRS.has(e.name) && rel !== ".agents/plugins/releases") await walk(full);
@@ -11799,7 +12290,7 @@ function validateAdviceRequest(req) {
 
 // src/scope.js
 import { readFile as readFile14 } from "node:fs/promises";
-import { isAbsolute as isAbsolute4, join as join18 } from "node:path";
+import { isAbsolute as isAbsolute4, join as join19 } from "node:path";
 
 // src/batch-plan.js
 import { isAbsolute as isAbsolute3 } from "node:path";
@@ -11859,7 +12350,7 @@ function isTraversalUnsafe(rawSegment) {
 async function readBacklogCandidate(safeCwd, rawSegment) {
   if (isTraversalUnsafe(rawSegment)) return { readable: false, count: 0 };
   try {
-    const content = await readFile14(join18(safeCwd, rawSegment), "utf8");
+    const content = await readFile14(join19(safeCwd, rawSegment), "utf8");
     return { readable: true, count: countUncheckedItems(content) };
   } catch {
     return { readable: false, count: 0 };
@@ -11887,7 +12378,7 @@ async function detectScope({ cwd = process.cwd(), text = "" } = {}) {
     }
   }
   if (trimmed === "") {
-    const { readable, count } = await readBacklogCandidate(safeCwd, join18(".muster", "backlog.md"));
+    const { readable, count } = await readBacklogCandidate(safeCwd, join19(".muster", "backlog.md"));
     if (readable && count > 0) {
       signals.push(`.muster/backlog.md has ${count} unchecked item${count === 1 ? "" : "s"} (bare invocation)`);
     }
@@ -12192,7 +12683,7 @@ async function main() {
       const profile = await detectProject(dir);
       const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir9()));
       const sig = buildSignals(profile, caps);
-      await mkdir7(".muster", { recursive: true });
+      await mkdir8(".muster", { recursive: true });
       await writeFile7(".muster/signals.json", JSON.stringify(sig, null, 2));
       out(sig);
     } else {

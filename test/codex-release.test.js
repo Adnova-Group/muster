@@ -150,6 +150,105 @@ async function assertCleanupPreservesReplacement(t, { label, resolve }) {
   assert.deepEqual(JSON.parse(await readFile(selected.lease.path, "utf8")), { token: "replacement-owner", preserved: true });
 }
 
+async function assertCrashedLifecycleLockIsReclaimed(t, { label, resolve }) {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lifecycle-crash`), packageVersion: "0.5.0" });
+  const selected = await resolve(root, { lease: { ...leaseRuntime().options, lifecycleLock: { staleMs: 20, maxStaleMs: 40, timeoutMs: 100 } } });
+  const lock = `${selected.lease.path}.lifecycle.lock`;
+  await writeFile(lock, JSON.stringify({ format: 1, pid: 99999999, createdAt: 0, token: "crashed" }) + "\n");
+  const stale = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(lock, stale, stale);
+  await selected.lease.renew();
+  await assert.rejects(readFile(lock, "utf8"), `${label} retained a crashed lifecycle lock`);
+  await selected.lease.close();
+}
+
+async function assertHardExpiredLifecycleLockIsReclaimed(t, { label, resolve }) {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lifecycle-expiry`), packageVersion: "0.5.0" });
+  const selected = await resolve(root, { lease: { ...leaseRuntime().options, lifecycleLock: { staleMs: 20, maxStaleMs: 40, timeoutMs: 100 } } });
+  const owner = JSON.parse(await readFile(selected.lease.path, "utf8"));
+  const lock = `${selected.lease.path}.lifecycle.lock`;
+  await writeFile(lock, JSON.stringify({ format: 1, pid: process.pid, processIdentity: owner.processIdentity, createdAt: 0, token: "wedged-live-owner" }) + "\n");
+  const stale = new Date(Date.now() - 100);
+  await utimes(lock, stale, stale);
+  await selected.lease.renew();
+  await assert.rejects(readFile(lock, "utf8"), `${label} retained a hard-expired lifecycle lock from a live PID`);
+  await selected.lease.close();
+}
+
+async function assertLeaseRegistrationCannotRacePrune(t, { label, resolve }) {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-registry-g1`), packageVersion: "0.5.0" });
+  const leased = await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-registry-g2`), packageVersion: "0.5.0" });
+  let scanned, continueScan;
+  const scanReached = new Promise(resolveScan => { scanned = resolveScan; });
+  const scanMayContinue = new Promise(resolveScan => { continueScan = resolveScan; });
+  let selected;
+  const publishing = publish({
+    repoRoot: root,
+    stagedRelease: await candidate(root, `${label}-registry-g3`),
+    packageVersion: "0.5.0",
+    afterLeaseScan: async ({ selectionName }) => {
+      await rm(join(root, ".agents", "plugins", "selections", selectionName));
+      scanned();
+      await scanMayContinue;
+    }
+  });
+  try {
+    assert.equal(await Promise.race([scanReached.then(() => true), wait(100).then(() => false)]), true, `${label} publisher did not expose the scan-to-prune interleaving`);
+    const registering = resolve(root, { lease: leaseRuntime().options }).then(result => { selected = result; return result; });
+    assert.equal(await Promise.race([registering.then(() => true), wait(30).then(() => false)]), false, `${label} registered a lease after publisher scan but before prune`);
+    continueScan();
+    await publishing;
+    assert.equal((await registering).generation, leased.generation, `${label} did not preserve the generation selected before the publisher barrier`);
+  } finally {
+    continueScan?.();
+    await publishing.catch(() => {});
+    await selected?.lease.close();
+  }
+}
+
+async function assertForeignAndLegacyLeasesAreConservative(t, { label, resolve }) {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g1`), packageVersion: "0.5.0" });
+  const foreign = await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g2`), packageVersion: "0.5.0" });
+  const selected = await resolve(root, { lease: { ...leaseRuntime().options, processNamespace: "foreign-process-namespace" } });
+  const foreignRecord = JSON.parse(await readFile(selected.lease.path, "utf8"));
+  foreignRecord.processIdentity = "foreign-process-identity";
+  await writeFile(selected.lease.path, JSON.stringify(foreignRecord) + "\n");
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g3`), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g4`), packageVersion: "0.5.0" });
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(foreign.generation), `${label} reclaimed a fresh foreign-namespace lease`);
+  const legacy = join(root, ".agents", "plugins", "leases", foreign.generation, "99999999.json");
+  await writeFile(legacy, "{transient in-place legacy write\n");
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g5`), packageVersion: "0.5.0" });
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(foreign.generation), `${label} reclaimed a fresh legacy lease during an in-place write`);
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(legacy, old, old);
+  await writeFile(selected.lease.path, JSON.stringify({ ...foreignRecord, touchedAt: 0 }) + "\n");
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g6`), packageVersion: "0.5.0" });
+  assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(foreign.generation), false, `${label} did not reclaim stale foreign/legacy lease state`);
+  await selected.lease.close();
+}
+
+async function assertFreshLegacyWriteIsRetainedThenReclaimed(t, label) {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g1`), packageVersion: "0.5.0" });
+  const leased = await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g2`), packageVersion: "0.5.0" });
+  const leases = join(root, ".agents", "plugins", "leases", leased.generation);
+  await mkdir(leases, { recursive: true });
+  const legacy = join(leases, "99999999.json");
+  await writeFile(legacy, "{transient in-place legacy write\n");
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g3`), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g4`), packageVersion: "0.5.0" });
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), `${label} reclaimed a fresh legacy lease during an in-place write`);
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(legacy, old, old);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g5`), packageVersion: "0.5.0" });
+  assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), false, `${label} did not reclaim the stale legacy lease`);
+}
+
 async function tempRepo(t) {
   const root = await mkdtemp(join(tmpdir(), "muster-codex-release-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -477,6 +576,59 @@ test("cached resolver renews a generation lease beyond five minutes and releases
   assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), "renewed cached lease did not retain its generation");
   await selected.lease.close();
   assert.deepEqual(await readdir(join(root, ".agents", "plugins", "leases", leased.generation)), []);
+});
+
+test("source lifecycle lease locks reclaim crashed owners", async t => {
+  await assertCrashedLifecycleLockIsReclaimed(t, {
+    label: "source",
+    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
+  });
+});
+
+test("cached lifecycle lease locks reclaim crashed owners", async t => {
+  await assertCrashedLifecycleLockIsReclaimed(t, {
+    label: "cached",
+    resolve: (root, options) => resolveCachedRelease(root, options)
+  });
+});
+
+test("cached lifecycle lease locks reclaim live-PID owners after hard expiry", async t => {
+  await assertHardExpiredLifecycleLockIsReclaimed(t, {
+    label: "cached",
+    resolve: (root, options) => resolveCachedRelease(root, options)
+  });
+});
+
+test("source registration serializes lease creation with publisher scan-to-prune", async t => {
+  await assertLeaseRegistrationCannotRacePrune(t, {
+    label: "source",
+    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
+  });
+});
+
+test("cached registration serializes lease creation with publisher scan-to-prune", async t => {
+  await assertLeaseRegistrationCannotRacePrune(t, {
+    label: "cached",
+    resolve: (root, options) => resolveCachedRelease(root, options)
+  });
+});
+
+test("source publisher conservatively handles foreign and legacy lease state", async t => {
+  await assertForeignAndLegacyLeasesAreConservative(t, {
+    label: "source",
+    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
+  });
+});
+
+test("cached lease records remain conservative for source publisher pruning", async t => {
+  await assertForeignAndLegacyLeasesAreConservative(t, {
+    label: "cached",
+    resolve: (root, options) => resolveCachedRelease(root, options)
+  });
+});
+
+test("publisher retains a fresh transient legacy write and reclaims it after bounded age", async t => {
+  await assertFreshLegacyWriteIsRetainedThenReclaimed(t, "source");
 });
 
 test("divergent publishers serialize selection and pruning as one transaction", async t => {

@@ -7,10 +7,10 @@ export { readCodexInventory } from "./codex-inventory.js";
 // Cowork's own registry extends through MCP: local MCP servers
 // (claude_desktop_config.json), MCPB/DXT desktop extensions (a Claude
 // Extensions/ dir, no index file), and remote connectors (cloud/account state,
-// NOT on disk — see memory cowork-connector-storage). Cowork itself never
-// loads Claude Code plugins, but this adapter reads their install records on
-// disk (~/.claude/plugins), so the plugin inventory (plugin-shipped MCP
-// servers, agents, skills) still counts as installed providers in every lane.
+// NOT on disk — see memory cowork-connector-storage). Claude Code plugin files
+// on disk are deliberately excluded: Cowork does not load their agents/skills,
+// and a plugin-shipped MCP server is not callable until it is registered with
+// Cowork itself.
 
 // Ordered candidate Claude config dirs for a platform. On Windows the MSIX-virtualized
 // path is the one the app actually reads, so it comes before the %APPDATA% fallback.
@@ -41,9 +41,8 @@ async function readExtensionNames(extDir) {
 
 // Cowork-flavored readInstalled: same {plugins, skills, mcpServers, agents} shape
 // resolveCapabilities consumes. Cowork registry discovery (local servers +
-// extensions) fills mcpServers; the Claude Code plugin inventory fills every
-// lane. Remote connectors cannot be discovered (connectorsDiscoverable:false)
-// and must be DECLARED.
+// extensions) fills mcpServers. Remote connectors cannot be discovered
+// (connectorsDiscoverable:false) and must be DECLARED.
 export async function readInstalledCowork(home, opts = {}) {
   const { platform = process.platform, declaredConnectors = [], dir } = opts;
   const dirs = dir ? [dir] : await coworkConfigDirs(home, platform);
@@ -59,13 +58,12 @@ export async function readInstalledCowork(home, opts = {}) {
     }
   }
 
-  const inv = await readPluginInventory(home);
-
   return {
-    plugins: inv.plugins,
-    skills: inv.skills,
-    agents: inv.agents,
-    mcpServers: [...new Set([...discovered, ...inv.mcpServers, ...declaredConnectors])],
+    runtime: "cowork",
+    plugins: [],
+    skills: [],
+    agents: [],
+    mcpServers: [...new Set([...discovered, ...declaredConnectors])],
     connectorsDiscoverable: false,
     connectorsDeclared: [...new Set(declaredConnectors)]
   };

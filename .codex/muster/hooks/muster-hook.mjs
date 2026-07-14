@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyAction } from "./action-guard.mjs";
@@ -134,21 +134,69 @@ function regularRecords(dir) {
   return records;
 }
 
-function reclaimStaleLock(path, now) {
-  let before;
-  try { before = lstatSync(path); }
+function readHookLock(path) {
+  let fd;
+  try {
+    const before = lstatSync(path);
+    if (before.isSymbolicLink() || !before.isFile()) throw new Error(`unsafe hook lock: ${path}`);
+    fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.dev !== before.dev || stat.ino !== before.ino) throw new Error(`unsafe hook lock: ${path}`);
+    let record = null;
+    try { record = JSON.parse(readFileSync(fd, "utf8")); } catch { /* invalid owners fail closed below */ }
+    return { stat, record };
+  } finally { if (fd !== undefined) closeSync(fd); }
+}
+
+const sameHookLockInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const sameHookLockOwner = (left, right) => typeof left?.token === "string" && left.token.length > 0
+  && left.token === right?.token && left.pid === right?.pid
+  && left.createdAt === right?.createdAt && left.format === right?.format;
+const staleHookLock = (state, now) => {
+  const createdAt = Number(state.record?.createdAt);
+  const leaseStartedAt = Number.isFinite(createdAt) ? Math.min(createdAt, state.stat.mtimeMs) : state.stat.mtimeMs;
+  return now - leaseStartedAt >= LOCK_LEASE_MS;
+};
+
+function restoreQuarantinedHookLock(path, quarantine, stat) {
+  try { linkSync(quarantine, path); }
+  catch (error) { if (error.code === "EEXIST") return false; throw error; }
+  const restored = lstatSync(path);
+  if (!sameHookLockInode(restored, stat)) throw new Error(`hook lock restore changed identity: ${path}`);
+  rmSync(quarantine);
+  return true;
+}
+
+export function reclaimStaleLock(path, now, { afterQuarantine = () => {} } = {}) {
+  let current;
+  try { current = readHookLock(path); }
   catch (error) { if (error.code === "ENOENT") return false; throw error; }
-  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`unsafe hook lock: ${path}`);
-  let createdAt;
-  try { createdAt = Number(JSON.parse(readFileSync(path, "utf8"))?.createdAt); } catch { createdAt = NaN; }
-  const leaseStartedAt = Number.isFinite(createdAt) ? Math.min(createdAt, before.mtimeMs) : before.mtimeMs;
-  if (now - leaseStartedAt < LOCK_LEASE_MS) return false;
-  let after;
-  try { after = lstatSync(path); }
+  if (!sameHookLockOwner(current.record, current.record) || !staleHookLock(current, now)) return false;
+  const quarantine = `${path}.muster-reclaim-${process.pid}-${digest(`${now}:${Math.random()}`)}`;
+  try { renameSync(path, quarantine); }
   catch (error) { if (error.code === "ENOENT") return false; throw error; }
-  if (after.isSymbolicLink() || !after.isFile() || after.mtimeMs !== before.mtimeMs || after.size !== before.size) return false;
-  try { rmSync(path); return true; }
-  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  try {
+    afterQuarantine({ path, quarantine });
+    const quarantined = readHookLock(quarantine);
+    if (!sameHookLockInode(quarantined.stat, current.stat) || !sameHookLockOwner(quarantined.record, current.record)
+      || !staleHookLock(quarantined, now)) {
+      restoreQuarantinedHookLock(path, quarantine, quarantined.stat);
+      return false;
+    }
+    const final = readHookLock(quarantine);
+    if (!sameHookLockInode(final.stat, quarantined.stat) || !sameHookLockOwner(final.record, quarantined.record)) {
+      restoreQuarantinedHookLock(path, quarantine, final.stat);
+      return false;
+    }
+    rmSync(quarantine);
+    return true;
+  } catch (error) {
+    try {
+      const stranded = readHookLock(quarantine);
+      restoreQuarantinedHookLock(path, quarantine, stranded.stat);
+    } catch { /* fail closed: never unlink an ambiguous quarantined owner */ }
+    throw error;
+  }
 }
 
 function withShardLock(dir, name, callback, now = Date.now()) {

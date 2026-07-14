@@ -1,12 +1,14 @@
 import { test } from "node:test";
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   assertRegularTree,
   publishCodexRelease,
   resolveCodexRelease,
+  resolveCodexReleaseWithOptions,
   validateCodexRelease
 } from "../src/codex-release.js";
 
@@ -24,10 +26,18 @@ async function candidate(root, marker) {
   return release;
 }
 
+const bootstrapPayload = { format: 1, files: [] };
+const TEST_BOOTSTRAP_DIGEST = createHash("sha256").update(JSON.stringify(bootstrapPayload)).digest("hex");
+const publish = options => publishCodexRelease({ allowBootstrapMigration: true, bootstrapDigest: TEST_BOOTSTRAP_DIGEST, ...options });
+
 async function tempRepo(t) {
   const root = await mkdtemp(join(tmpdir(), "muster-codex-release-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, ".agents", "plugins"), { recursive: true });
+  await write(join(root, ".agents", "plugins", "bootstrap", "muster", "bootstrap.json"), JSON.stringify({
+    ...bootstrapPayload,
+    digest: TEST_BOOTSTRAP_DIGEST
+  }, null, 2) + "\n");
   await write(join(root, ".agents", "plugins", "marketplace.json"), JSON.stringify({
     name: "muster",
     plugins: [{ name: "muster", source: { source: "local", path: "./.agents/plugins/plugins/muster" } }]
@@ -37,7 +47,7 @@ async function tempRepo(t) {
 
 test("published Codex release resolves one content-addressed plugin/profile generation", async t => {
   const root = await tempRepo(t);
-  const published = await publishCodexRelease({ repoRoot: root, stagedRelease: await candidate(root, "one"), packageVersion: "0.5.0" });
+  const published = await publish({ repoRoot: root, stagedRelease: await candidate(root, "one"), packageVersion: "0.5.0" });
   assert.match(published.generation, /^[a-f0-9]{64}$/);
   assert.equal(published.releaseRoot, join(root, ".agents", "plugins", "releases", published.generation));
   const selected = await resolveCodexRelease(root);
@@ -47,14 +57,16 @@ test("published Codex release resolves one content-addressed plugin/profile gene
   assert.equal((await validateCodexRelease(selected.releaseRoot, selected.generation)).generation, selected.generation);
 });
 
-test("release resolver rejects traversal and Windows-shaped absolute pointer paths", async t => {
+test("release resolver rejects traversal and Windows-shaped bootstrap paths", async t => {
   const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "safe"), packageVersion: "0.5.0" });
+  const pointerPath = join(root, ".agents", "plugins", "marketplace.json");
+  const original = JSON.parse(await readFile(pointerPath, "utf8"));
   for (const path of ["../../outside/plugin", "C:\\outside\\plugin", "\\\\server\\share\\plugin"]) {
-    const pointer = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"));
+    const pointer = structuredClone(original);
     pointer.plugins[0].source.path = path;
-    pointer.musterRelease = { format: 1, generation: "a".repeat(64), profiles: path.replace(/plugin$/, "profiles"), metadata: path.replace(/plugin$/, "release.json") };
-    await writeFile(join(root, ".agents", "plugins", "marketplace.json"), JSON.stringify(pointer));
-    await assert.rejects(resolveCodexRelease(root), /relative|contained|release pointer/i, path);
+    await writeFile(pointerPath, JSON.stringify(pointer));
+    await assert.rejects(resolveCodexRelease(root), /bootstrap contract/i, path);
   }
 });
 
@@ -65,26 +77,73 @@ test("release validation rejects an external-target symlink without reading it",
   await writeFile(outside, "secret");
   await symlink(outside, join(release, "plugin", "skills", "muster", "escape.md"));
   await assert.rejects(assertRegularTree(release), /symlink|regular file/i);
-  await assert.rejects(publishCodexRelease({ repoRoot: root, stagedRelease: release, packageVersion: "0.5.0" }), /symlink|regular file/i);
+  await assert.rejects(publish({ repoRoot: root, stagedRelease: release, packageVersion: "0.5.0" }), /symlink|regular file/i);
   assert.match(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"), /plugins\/muster/);
 });
 
 test("publication rejects a symlink already present in the live release tree", async t => {
   const root = await tempRepo(t);
-  await publishCodexRelease({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0" });
   const pointerPath = join(root, ".agents", "plugins", "marketplace.json");
   const before = await readFile(pointerPath, "utf8");
   const outside = join(root, "outside-live");
   await mkdir(outside);
   await symlink(outside, join(root, ".agents", "plugins", "releases", "escape"));
-  await assert.rejects(publishCodexRelease({ repoRoot: root, stagedRelease: await candidate(root, "new"), packageVersion: "0.5.0" }), /symlink|regular file/i);
+  await assert.rejects(publish({ repoRoot: root, stagedRelease: await candidate(root, "new"), packageVersion: "0.5.0" }), /symlink|regular file/i);
   assert.equal(await readFile(pointerPath, "utf8"), before);
+});
+
+test("release publication rejects symlinked repository ancestry without touching external victims", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-release-ancestry-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  for (const level of [".agents", "plugins", "releases", "marketplace.json"]) {
+    const root = join(tmp, level.replaceAll(".", "-")), outside = join(tmp, `${level.replaceAll(".", "-")}-outside`);
+    await mkdir(root, { recursive: true });
+    const pointer = JSON.stringify({ name: "muster", plugins: [{ name: "muster", source: { source: "local", path: "./legacy" } }] }, null, 2) + "\n";
+    if (level === ".agents") {
+      await mkdir(join(outside, "plugins"), { recursive: true });
+      await write(join(outside, "plugins", "marketplace.json"), pointer);
+      await symlink(outside, join(root, ".agents"));
+    } else if (level === "plugins") {
+      await mkdir(join(root, ".agents"), { recursive: true });
+      await mkdir(outside, { recursive: true });
+      await write(join(outside, "marketplace.json"), pointer);
+      await symlink(outside, join(root, ".agents", "plugins"));
+    } else if (level === "releases") {
+      await mkdir(join(root, ".agents", "plugins"), { recursive: true });
+      await write(join(root, ".agents", "plugins", "marketplace.json"), pointer);
+      await mkdir(outside, { recursive: true });
+      await write(join(outside, "sentinel.txt"), "keep\n");
+      await symlink(outside, join(root, ".agents", "plugins", "releases"));
+    } else {
+      await mkdir(join(root, ".agents", "plugins"), { recursive: true });
+      await write(outside, pointer);
+      await symlink(outside, join(root, ".agents", "plugins", "marketplace.json"));
+    }
+    const before = level === "releases" ? await readFile(join(outside, "sentinel.txt"), "utf8") : await readFile(level === "marketplace.json" ? outside : join(outside, level === ".agents" ? "plugins/marketplace.json" : "marketplace.json"), "utf8");
+    await assert.rejects(publish({ repoRoot: root, stagedRelease: await candidate(root, `attack-${level}`), packageVersion: "0.5.0" }), /symlink|ordinary|regular/i, level);
+    const after = level === "releases" ? await readFile(join(outside, "sentinel.txt"), "utf8") : await readFile(level === "marketplace.json" ? outside : join(outside, level === ".agents" ? "plugins/marketplace.json" : "marketplace.json"), "utf8");
+    assert.equal(after, before, level);
+  }
+});
+
+test("release publication rejects special-file-shaped pointer and release ancestors", async t => {
+  const root = await tempRepo(t);
+  await rm(join(root, ".agents", "plugins", "marketplace.json"));
+  await mkdir(join(root, ".agents", "plugins", "marketplace.json"));
+  await assert.rejects(publish({ repoRoot: root, stagedRelease: await candidate(root, "bad-pointer"), packageVersion: "0.5.0" }), /regular file/i);
+
+  await rm(join(root, ".agents", "plugins", "marketplace.json"), { recursive: true });
+  await write(join(root, ".agents", "plugins", "marketplace.json"), JSON.stringify({ name: "muster", plugins: [{ name: "muster", source: { source: "local", path: "./legacy" } }] }));
+  await rm(join(root, ".agents", "plugins", "releases"), { recursive: true, force: true });
+  await write(join(root, ".agents", "plugins", "releases"), "not a directory\n");
+  await assert.rejects(publish({ repoRoot: root, stagedRelease: await candidate(root, "bad-releases"), packageVersion: "0.5.0" }), /ordinary directory|regular directory/i);
 });
 
 test("pointer swap failure keeps the prior coherent generation selected", async t => {
   const root = await tempRepo(t);
-  const first = await publishCodexRelease({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0" });
-  await assert.rejects(publishCodexRelease({
+  const first = await publish({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0" });
+  await assert.rejects(publish({
     repoRoot: root,
     stagedRelease: await candidate(root, "new"),
     packageVersion: "0.5.0",
@@ -98,10 +157,11 @@ test("pointer swap failure keeps the prior coherent generation selected", async 
 
 test("concurrent pointer readers observe only exact old or new coherent snapshots", async t => {
   const root = await tempRepo(t);
-  const oldRelease = await publishCodexRelease({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0" });
+  const oldRelease = await publish({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0" });
+  const stableMarketplace = await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8");
   let releaseSwap;
   const gate = new Promise(resolve => { releaseSwap = resolve; });
-  const publishing = publishCodexRelease({
+  const publishing = publish({
     repoRoot: root,
     stagedRelease: await candidate(root, "new"),
     packageVersion: "0.5.0",
@@ -111,6 +171,7 @@ test("concurrent pointer readers observe only exact old or new coherent snapshot
   for (let i = 0; i < 100; i++) {
     if (i === 50) releaseSwap();
     const selected = await resolveCodexRelease(root);
+    assert.equal(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"), stableMarketplace);
     const [runtime, profile] = await Promise.all([
       readFile(join(selected.pluginRoot, "runtime", "muster.mjs"), "utf8"),
       readFile(join(selected.profilesRoot, "muster-builder.toml"), "utf8")
@@ -125,4 +186,39 @@ test("concurrent pointer readers observe only exact old or new coherent snapshot
     `${oldRelease.generation}:old:old`,
     `${next.generation}:new:new`
   ]));
+});
+
+test("selection retries transient failures and falls back to complete bootstrap or prior generations", async t => {
+  const root = await tempRepo(t);
+  const old = await publish({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0" });
+  const next = await publish({ repoRoot: root, stagedRelease: await candidate(root, "new"), packageVersion: "0.5.0" });
+  const selections = join(root, ".agents", "plugins", "selections");
+  let attempts = 0;
+  const retried = await resolveCodexReleaseWithOptions(root, { readSelections: async () => {
+    attempts++;
+    if (attempts < 3) { const error = new Error("injected v9fs denial"); error.code = attempts === 1 ? "ENOENT" : "EACCES"; throw error; }
+    return readdir(selections);
+  } });
+  assert.equal(retried.generation, next.generation);
+  const fallback = await resolveCodexReleaseWithOptions(root, { retries: 2, readSelections: async () => {
+    const error = new Error("persistent injected v9fs denial"); error.code = "EACCES"; throw error;
+  } });
+  assert.equal(fallback.generation, old.generation);
+
+  const newest = (await readdir(selections)).sort().at(-1);
+  await writeFile(join(selections, newest), "{corrupt\n");
+  assert.equal((await resolveCodexRelease(root)).generation, old.generation);
+});
+
+test("normal publication fails closed on bootstrap surface drift with maintenance guidance", async t => {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "old"), packageVersion: "0.5.0", bootstrapDigest: "a".repeat(64) });
+  const marketplace = await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8");
+  await assert.rejects(publishCodexRelease({
+    repoRoot: root,
+    stagedRelease: await candidate(root, "drift"),
+    packageVersion: "0.5.0",
+    bootstrapDigest: "c".repeat(64)
+  }), /surface drift.*offline bootstrap maintenance.*restart/i);
+  assert.equal(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"), marketplace);
 });

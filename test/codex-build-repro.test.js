@@ -22,9 +22,9 @@ async function buildCheckout(checkout, sharedNodeModules) {
 }
 
 async function selectedSnapshot(checkout) {
-  const pointer = JSON.parse(await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8"));
-  const generation = pointer.musterRelease.generation;
-  const release = join(checkout, ".agents", "plugins", "releases", generation);
+  const selected = await resolveCodexRelease(checkout);
+  const generation = selected.generation;
+  const release = selected.releaseRoot;
   const paths = [
     "plugin/runtime/muster.mjs",
     "plugin/commands/audit.md",
@@ -57,6 +57,8 @@ test("Codex rebuild exposes only exact old or new immutable generation snapshots
   await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
   const oldSnapshot = await selectedSnapshot(checkout);
+  const stableMarketplace = await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8");
+  const stableBootstrap = await readFile(join(checkout, ".agents", "plugins", "bootstrap", "muster", "bootstrap.json"), "utf8");
   const sourceAdvisor = join(checkout, "plugin", "skills", "advisor", "SKILL.md");
   await writeFile(sourceAdvisor, `${await readFile(sourceAdvisor, "utf8")}\nChanged while the published plugin remains live.\n`);
 
@@ -76,6 +78,8 @@ test("Codex rebuild exposes only exact old or new immutable generation snapshots
   const observed = [];
   while (!finished) {
     observed.push(await selectedSnapshot(checkout));
+    assert.equal(await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8"), stableMarketplace);
+    assert.equal(await readFile(join(checkout, ".agents", "plugins", "bootstrap", "muster", "bootstrap.json"), "utf8"), stableBootstrap);
     await new Promise(resolve => setImmediate(resolve));
   }
   await completion;

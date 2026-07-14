@@ -29,5 +29,7 @@
     "wsh-security-auditor.toml",
     "wsh-test-automator.toml",
     "wsh-tutorial-engineer.toml"
-  ]
+  ],
+  "generation": "31b01621d80360fecb828bd220ec80ded2d051f8ac0443d267c3b2343a395ffa",
+  "bootstrapDigest": "272d926d18a4c638a41052c922b9d7ea51ffcf3b7df854c7bb6f0a626d043856"
 }

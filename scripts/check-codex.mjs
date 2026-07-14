@@ -17,7 +17,10 @@ const json = async (path) => JSON.parse(await readFile(path, "utf8"));
 const [pkg, marketplace, manifest, mapping, upstreams, assetManifest] = await Promise.all([
   json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "codex/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
 ]);
-if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster" || marketplace.musterRelease?.generation !== selected.generation) fail("marketplace does not expose one coherent immutable Muster release");
+if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster"
+  || marketplace.plugins[0].source?.path !== "./.agents/plugins/bootstrap/muster"
+  || !/^[a-f0-9]{64}$/.test(marketplace.musterBootstrap?.digest || "")
+  || !/^[a-f0-9]{64}$/.test(marketplace.musterBootstrap?.initialGeneration || "")) fail("marketplace does not expose the immutable Muster bootstrap contract");
 if (manifest.name !== "muster" || manifest.version !== pkg.version) fail("plugin manifest version is not package version");
 if (!manifest.skills || !manifest.mcpServers || manifest.hooks !== undefined) fail("plugin manifest must expose skills and MCP without advertising inert plugin-bundled hooks");
 if (Object.keys(mapping.agents || {}).length !== CODEX_COUNTS.agents) fail("mapping does not contain all agent profiles");
@@ -41,6 +44,10 @@ for (const [id, config] of Object.entries(mapping.agents)) {
   if (!text.includes(`sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`)) fail(`${name} does not match its read/write policy`);
 }
 const skills = new Set(await dirs(join(plugin, "skills")));
+const bootstrap = join(root, ".agents", "plugins", "bootstrap", "muster");
+const bootstrapSkills = new Set(await dirs(join(bootstrap, "skills")));
+if (bootstrapSkills.size !== skills.size || [...skills].some(name => !bootstrapSkills.has(name))) fail("immutable bootstrap skill surface differs from the selected release");
+for (const file of ["runtime/resolve-release.mjs", "runtime/muster.mjs", "runtime/muster-mcp.mjs", "bootstrap.json"]) await stat(join(bootstrap, file)).catch(() => fail(`missing bootstrap ${file}`));
 const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture"];
 const aliases = ["run", "autopilot", "sprint"];
 for (const name of [...modes, ...aliases]) if (!skills.has(name)) fail(`missing mode skill ${name}`);
@@ -106,6 +113,10 @@ for (const event of ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostTool
 }
 const hookSource = await readFile(join(root, "codex/hooks/muster-hook.mjs"), "utf8");
 if (/permissionDecision|permissionDecisionReason/.test(hookSource)) fail("Codex hook must not claim unsupported PreToolUse denial");
+const trackedHook = await readFile(join(root, ".codex/muster/hooks/muster-hook.mjs"), "utf8");
+if (trackedHook !== hookSource) fail("tracked project Codex hook runtime is stale");
+const trackedHookConfig = await readFile(join(root, ".codex/hooks.json"), "utf8");
+if (/\/mnt\/[a-z]\//i.test(trackedHookConfig) || /[a-z]:[\\/]/i.test(trackedHookConfig)) fail("tracked project Codex hooks contain a checkout-specific absolute path");
 const mcp = await json(join(plugin, ".mcp.json"));
 if (mcp.mcpServers?.muster?.command !== "node" || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not Codex-native");
 const bundledMcp = await readFile(join(plugin, "runtime", "muster-mcp.mjs"), "utf8");

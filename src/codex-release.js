@@ -181,6 +181,8 @@ export async function resolveCodexRelease(repoRoot) {
 
 const STABLE_BOOTSTRAP_PATH = "./.agents/plugins/bootstrap/muster";
 const SELECTION = /^(\d{12})-([a-f0-9]{64})\.json$/;
+const LEASE = /^(\d+)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/;
+const LEGACY_LEASE = /^(\d+)\.json$/;
 
 async function releaseResult(repoRoot, generation, leaseOptions) {
   if (!GENERATION.test(generation || "")) throw new Error("selected Codex generation is invalid");
@@ -192,20 +194,56 @@ async function releaseResult(repoRoot, generation, leaseOptions) {
 
 const LEASE_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 const leaseControllers = new Map();
+const leaseExitPools = [];
+const defaultAddExitListener = (event, listener) => process.once(event, listener);
+const defaultRemoveExitListener = (event, listener) => process.removeListener(event, listener);
+const leaseLockPath = path => `${path}.lifecycle.lock`;
 
-async function renewLease(path, token, record) {
+function retainLeaseExitCleanup(addExitListener, removeExitListener, key, cleanup) {
+  let pool = leaseExitPools.find(candidate => candidate.addExitListener === addExitListener && candidate.removeExitListener === removeExitListener);
+  if (!pool) {
+    pool = { addExitListener, removeExitListener, cleanups: new Map() };
+    pool.listener = () => {
+      for (const callback of pool.cleanups.values()) {
+        try { callback(); } catch { /* bounded process-exit cleanup */ }
+      }
+      pool.cleanups.clear();
+    };
+    leaseExitPools.push(pool);
+    addExitListener("exit", pool.listener);
+  }
+  pool.cleanups.set(key, cleanup);
+  return () => {
+    if (!pool.cleanups.delete(key) || pool.cleanups.size) return;
+    removeExitListener("exit", pool.listener);
+    leaseExitPools.splice(leaseExitPools.indexOf(pool), 1);
+  };
+}
+
+async function leaseIdentity(path, token) {
   let handle;
   try {
-    handle = await open(path, fsConstants.O_RDWR | (fsConstants.O_NOFOLLOW || 0));
+    await ordinary(path, "file", "Codex generation lease");
+    handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size > 64 * 1024) throw new Error(`unsafe Codex generation lease: ${path}`);
-    const current = JSON.parse(await handle.readFile("utf8"));
-    if (current?.token !== token) throw new Error(`Codex generation lease ownership changed: ${path}`);
-    const content = Buffer.from(JSON.stringify(record, null, 2) + "\n");
-    await handle.truncate(0);
-    await handle.write(content, 0, content.length, 0);
-    await handle.sync();
+    const record = JSON.parse(await handle.readFile("utf8"));
+    if (record?.token !== token) throw new Error(`Codex generation lease ownership changed: ${path}`);
+    return stat;
   } finally { if (handle) await handle.close().catch(() => {}); }
+}
+
+const sameLeaseIdentity = (left, right) => left.dev === right.dev && left.ino === right.ino;
+
+async function renewLease(path, token, record, replaceLease = rename) {
+  return withCodexFileLock(leaseLockPath(path), async () => {
+    const initial = await leaseIdentity(path, token);
+    await atomicWritePointer(path, JSON.stringify(record, null, 2) + "\n", async (temporary, destination) => {
+      const current = await leaseIdentity(path, token);
+      if (!sameLeaseIdentity(initial, current)) throw new Error(`Codex generation lease changed during renewal: ${path}`);
+      await replaceLease(temporary, destination);
+    });
+  });
 }
 
 function removeLeaseSync(path, token) {
@@ -229,6 +267,24 @@ function removeLeaseSync(path, token) {
   finally { if (fd !== undefined) try { closeSync(fd); } catch { /* process exit */ } }
 }
 
+const leaseOwnershipChanged = error => error?.code === "ENOENT" || /lease ownership changed/.test(error?.message || "");
+
+async function removeLease(path, token, beforeLeaseCleanup) {
+  try { return await withCodexFileLock(leaseLockPath(path), async () => {
+    let initial;
+    try { initial = await leaseIdentity(path, token); }
+    catch (error) { if (leaseOwnershipChanged(error)) return false; throw error; }
+    await beforeLeaseCleanup?.({ path, token });
+    let current;
+    try { current = await leaseIdentity(path, token); }
+    catch (error) { if (leaseOwnershipChanged(error)) return false; throw error; }
+    if (!sameLeaseIdentity(initial, current)) return false;
+    removeLeaseSync(path, token);
+    return true;
+  }); }
+  catch (error) { if (["ENOENT", "ENOTDIR"].includes(error?.code)) return false; throw error; }
+}
+
 async function registerGenerationLease(repoRoot, generation, leaseOptions = {}) {
   const key = `${resolve(repoRoot)}\0${generation}`;
   if (leaseControllers.has(key)) return leaseControllers.get(key);
@@ -244,12 +300,14 @@ async function registerGenerationLease(repoRoot, generation, leaseOptions = {}) 
 
 async function createGenerationLease(repoRoot, generation, leaseOptions, key) {
   const root = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases", generation], { create: true });
-  const token = randomUUID(), path = join(root, `${process.pid}.json`);
+  const token = randomUUID(), path = join(root, `${process.pid}-${token}.json`);
   const now = leaseOptions.now || Date.now;
   const setIntervalFn = leaseOptions.setInterval || setInterval;
   const clearIntervalFn = leaseOptions.clearInterval || clearInterval;
-  const addExitListener = leaseOptions.addExitListener || ((event, listener) => process.once(event, listener));
-  const removeExitListener = leaseOptions.removeExitListener || ((event, listener) => process.removeListener(event, listener));
+  const addExitListener = leaseOptions.addExitListener || defaultAddExitListener;
+  const removeExitListener = leaseOptions.removeExitListener || defaultRemoveExitListener;
+  const replaceLease = leaseOptions.replaceLease || rename;
+  const beforeLeaseCleanup = leaseOptions.beforeLeaseCleanup;
   const identity = await processStartIdentity();
   const base = { format: RELEASE_FORMAT, pid: process.pid, processIdentity: identity, processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), generation, token };
   const record = () => ({ ...base, touchedAt: now() });
@@ -257,7 +315,7 @@ async function createGenerationLease(repoRoot, generation, leaseOptions, key) {
   let closed = false, renewal = Promise.resolve();
   const renew = () => {
     if (closed) return renewal;
-    renewal = renewal.catch(() => {}).then(() => renewLease(path, token, record())).catch(error => {
+    renewal = renewal.catch(() => {}).then(() => renewLease(path, token, record(), replaceLease)).catch(error => {
       if (["ENOENT", "ENOTDIR"].includes(error?.code)) stop();
       else throw error;
     });
@@ -265,13 +323,12 @@ async function createGenerationLease(repoRoot, generation, leaseOptions, key) {
   };
   const timer = setIntervalFn(() => renew().catch(() => { /* publisher expiry handles an unavailable lease */ }), LEASE_HEARTBEAT_INTERVAL_MS);
   timer?.unref?.();
-  const onExit = () => { try { removeLeaseSync(path, token); } catch { /* bounded process-exit cleanup */ } };
-  addExitListener("exit", onExit);
+  const releaseExitCleanup = retainLeaseExitCleanup(addExitListener, removeExitListener, `${path}\0${token}`, () => removeLeaseSync(path, token));
   function stop() {
     if (closed) return;
     closed = true;
     clearIntervalFn(timer);
-    removeExitListener("exit", onExit);
+    releaseExitCleanup();
     if (leaseControllers.get(key) === controller) leaseControllers.delete(key);
   }
   const controller = {
@@ -280,7 +337,7 @@ async function createGenerationLease(repoRoot, generation, leaseOptions, key) {
     async close() {
       stop();
       await renewal.catch(() => {});
-      removeLeaseSync(path, token);
+      await removeLease(path, token, beforeLeaseCleanup);
     }
   };
   return controller;
@@ -294,21 +351,25 @@ async function activeLeaseGenerations(repoRoot) {
   for (const generation of await readdir(leasesRoot)) {
     if (!GENERATION.test(generation)) throw new Error(`invalid Codex generation lease directory: ${generation}`);
     const dir = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases", generation]);
-    for (const name of await readdir(dir)) {
+    for (const name of (await readdir(dir)).filter(entry => LEASE.test(entry) || LEGACY_LEASE.test(entry))) {
       const path = join(dir, name);
-      let record;
-      try { record = await readRegularJson(path, "Codex generation lease"); }
-      catch { await rm(path, { force: true }); continue; }
-      const coherent = record?.format === RELEASE_FORMAT && record.generation === generation && /^\d+\.json$/.test(name)
-        && record.pid === Number(name.slice(0, -5)) && typeof record.token === "string" && record.token.length > 0
-        && Number.isFinite(record.processStartedAt) && Number.isFinite(record.touchedAt);
-      const heartbeatAge = Date.now() - record.touchedAt;
-      const fresh = coherent && heartbeatAge >= -30_000 && heartbeatAge <= LEASE_HEARTBEAT_MAX_AGE_MS;
-      const actualIdentity = fresh && processAlive(record.pid) ? await processStartIdentity(record.pid) : null;
-      const identityMatches = actualIdentity
-        ? record.processIdentity === actualIdentity
-        : fresh && processAlive(record.pid) && (record.processIdentity === null || record.processIdentity === undefined);
-      if (fresh && identityMatches) active.add(generation); else await rm(path, { force: true });
+      await withCodexFileLock(leaseLockPath(path), async () => {
+        let record;
+        try { record = await readRegularJson(path, "Codex generation lease"); }
+        catch { return; } // Fail closed: unknown or replaced leases are never pathname-deleted.
+        const match = name.match(LEASE) || name.match(LEGACY_LEASE);
+        const namedOwner = name.match(LEASE) ? record.token === match?.[2] : true;
+        const coherent = record?.format === RELEASE_FORMAT && record.generation === generation && match
+          && record.pid === Number(match[1]) && typeof record.token === "string" && record.token.length > 0 && namedOwner
+          && Number.isFinite(record.processStartedAt) && Number.isFinite(record.touchedAt);
+        const heartbeatAge = Date.now() - record.touchedAt;
+        const fresh = coherent && heartbeatAge >= -30_000 && heartbeatAge <= LEASE_HEARTBEAT_MAX_AGE_MS;
+        const actualIdentity = fresh && processAlive(record.pid) ? await processStartIdentity(record.pid) : null;
+        const identityMatches = actualIdentity
+          ? record.processIdentity === actualIdentity
+          : fresh && processAlive(record.pid) && (record.processIdentity === null || record.processIdentity === undefined);
+        if (fresh && identityMatches) active.add(generation); else if (coherent) removeLeaseSync(path, record.token);
+      });
     }
     if ((await readdir(dir)).length === 0) await rm(dir, { recursive: true });
   }

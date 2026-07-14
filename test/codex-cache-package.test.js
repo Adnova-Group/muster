@@ -71,7 +71,7 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
   assert.equal(typeof heartbeat, "function", "packed resolver did not schedule its lease heartbeat");
   leaseNow += 6 * 60 * 1000;
   await heartbeat();
-  const leaseRecord = JSON.parse(await readFile(join(cache, ".agents", "plugins", "leases", selectedObject.generation, `${process.pid}.json`), "utf8"));
+  const leaseRecord = JSON.parse(await readFile(selectedObject.lease.path, "utf8"));
   assert.equal(leaseRecord.touchedAt, leaseNow, "packed resolver did not renew its lease beyond five minutes");
   const selectedSkillOriginal = await readFile(selectedSkill);
   await writeFile(selectedSkill, "ATTACKER-CONTROLLED-SKILL-AFTER-VALIDATION\n");

@@ -10,6 +10,7 @@ import { codexAvailable } from "./codex-inventory.js";
 const execFileDefault = promisify(execFileCb);
 export const CODEX_MARKETPLACE = "Adnova-Group/muster";
 export const CODEX_PLUGIN = "muster@muster";
+const CODEX_MARKETPLACE_URL = "https://github.com/Adnova-Group/muster.git";
 const MANIFEST = ".muster-managed.json";
 const PROFILE_FILENAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/;
 const HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
@@ -144,22 +145,48 @@ async function restoreFilesystem(originals, changed) {
   }
 }
 
-async function registerPlugin(execFile, dryRun, expectedVersion) {
+function normalizedLocalRoot(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return resolve(value.trim()).replaceAll("\\", "/");
+}
+
+function sameLocalRoot(left, right) {
+  const actual = normalizedLocalRoot(left), expected = normalizedLocalRoot(right);
+  if (!actual || !expected) return false;
+  if (actual === expected) return true;
+  const wslDrive = /^\/mnt\/[a-z](?:\/|$)/i;
+  return wslDrive.test(actual) && wslDrive.test(expected) && actual.toLowerCase() === expected.toLowerCase();
+}
+
+function trustedMusterMarketplace(item, repoRoot) {
+  const source = item?.marketplaceSource;
+  if (source?.sourceType === "git") return source.source === CODEX_MARKETPLACE_URL;
+  return source?.sourceType === "local"
+    && sameLocalRoot(item.root, repoRoot)
+    && sameLocalRoot(source.source, repoRoot);
+}
+
+async function existingMusterMarketplace(execFile, repoRoot) {
+  const result = await runJson(execFile, ["plugin", "marketplace", "list", "--json"]);
+  const matches = Array.isArray(result?.marketplaces) ? result.marketplaces.filter(item => item.name === "muster") : [];
+  if (matches.some(item => !trustedMusterMarketplace(item, repoRoot))) {
+    throw new Error(`Codex marketplace conflict: "muster" is registered from an unexpected source. Run "codex plugin marketplace remove muster", then rerun muster install codex.`);
+  }
+  return matches[0];
+}
+
+async function registerPlugin(execFile, dryRun, repoRoot) {
   if (dryRun) return [`codex plugin marketplace add ${CODEX_MARKETPLACE}`, `codex plugin add ${CODEX_PLUGIN}`];
   let marketplaceAdded = false, pluginAdded = false;
   try {
-    const marketplaces = await runJson(execFile, ["plugin", "marketplace", "list", "--json"]);
-    if (!marketplaces?.marketplaces?.some(item => item.name === "muster")) {
+    const marketplace = await existingMusterMarketplace(execFile, repoRoot);
+    if (!marketplace) {
       await run(execFile, ["plugin", "marketplace", "add", CODEX_MARKETPLACE]);
       marketplaceAdded = true;
     }
-    const plugins = await runJson(execFile, ["plugin", "list", "--available", "--json"]);
-    const records = [...(plugins?.installed || []), ...(plugins?.available || [])];
-    const installed = records.find(item => (item.pluginId === CODEX_PLUGIN || (item.name === "muster" && item.marketplaceName === "muster")) && item.installed);
-    if (!installed || (installed.version && expectedVersion && installed.version !== expectedVersion)) {
-      await run(execFile, ["plugin", "add", CODEX_PLUGIN]);
-      pluginAdded = true;
-    }
+    await runJson(execFile, ["plugin", "list", "--available", "--json"]);
+    await run(execFile, ["plugin", "add", CODEX_PLUGIN]);
+    pluginAdded = true;
     return [];
   } catch (error) {
     if (pluginAdded) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN]); } catch { /* best-effort transaction rollback */ }
@@ -178,9 +205,6 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const source = (await profileFiles(packageProfiles)).length ? packageProfiles : pluginProfiles;
   const files = await profileFiles(source);
   if (!files.length) throw new Error("Codex profiles are missing; run npm run build:codex first");
-  const packagePlugin = await readJson(join(root, ".agents", "plugins", "plugins", "muster", ".codex-plugin", "plugin.json"))
-    || await readJson(join(root, ".codex-plugin", "plugin.json"));
-  const expectedPluginVersion = packagePlugin?.version;
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
   const manifest = await readJson(manifestPath);
   const manifestExists = await exists(manifestPath);
@@ -193,6 +217,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     if (await exists(destination) && !managed.has(resolve(destination))) throw new Error(`Codex profile conflict: ${destination}. Move it or remove it, then rerun muster install codex.`);
   }
   const present = await codexAvailable({ execFile });
+  if (present && !dryRun) await existingMusterMarketplace(execFile, root);
   const planned = [
     ...files.map(file => ({ op: "write", path: join(dir, file) })),
     ...staleFiles.map(file => ({ op: "remove", path: join(dir, file) })),
@@ -240,7 +265,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   }
   let actions = [];
   try {
-    actions = present ? await registerPlugin(execFile, dryRun, expectedPluginVersion) : [];
+    actions = present ? await registerPlugin(execFile, dryRun, root) : [];
   } catch (error) {
     if (!dryRun) await restoreFilesystem(originals, changed);
     throw error;

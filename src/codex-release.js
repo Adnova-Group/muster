@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
+import { closeSync, constants as fsConstants, linkSync, openSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { lstat, mkdir, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { processAlive, processStartIdentity, withCodexFileLock } from "./codex-lock.js";
@@ -182,18 +182,108 @@ export async function resolveCodexRelease(repoRoot) {
 const STABLE_BOOTSTRAP_PATH = "./.agents/plugins/bootstrap/muster";
 const SELECTION = /^(\d{12})-([a-f0-9]{64})\.json$/;
 
-async function releaseResult(repoRoot, generation) {
+async function releaseResult(repoRoot, generation, leaseOptions) {
   if (!GENERATION.test(generation || "")) throw new Error("selected Codex generation is invalid");
   const releaseRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "releases", generation]);
   const metadata = await validateCodexRelease(releaseRoot, generation);
-  await registerGenerationLease(repoRoot, generation);
-  return { generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata };
+  const lease = await registerGenerationLease(repoRoot, generation, leaseOptions);
+  return { generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata, lease };
 }
 
-async function registerGenerationLease(repoRoot, generation) {
+const LEASE_HEARTBEAT_INTERVAL_MS = 60 * 1000;
+const leaseControllers = new Map();
+
+async function renewLease(path, token, record) {
+  let handle;
+  try {
+    handle = await open(path, fsConstants.O_RDWR | (fsConstants.O_NOFOLLOW || 0));
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > 64 * 1024) throw new Error(`unsafe Codex generation lease: ${path}`);
+    const current = JSON.parse(await handle.readFile("utf8"));
+    if (current?.token !== token) throw new Error(`Codex generation lease ownership changed: ${path}`);
+    const content = Buffer.from(JSON.stringify(record, null, 2) + "\n");
+    await handle.truncate(0);
+    await handle.write(content, 0, content.length, 0);
+    await handle.sync();
+  } finally { if (handle) await handle.close().catch(() => {}); }
+}
+
+function removeLeaseSync(path, token) {
+  const quarantine = `${path}.reclaim-${process.pid}-${randomUUID()}`;
+  let fd;
+  try {
+    fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const current = JSON.parse(readFileSync(fd, "utf8"));
+    if (current?.token !== token) return;
+    closeSync(fd); fd = undefined;
+    renameSync(path, quarantine);
+    fd = openSync(quarantine, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const quarantined = JSON.parse(readFileSync(fd, "utf8"));
+    closeSync(fd); fd = undefined;
+    if (quarantined?.token === token) rmSync(quarantine);
+    else {
+      try { linkSync(quarantine, path); rmSync(quarantine); }
+      catch (error) { if (error.code !== "EEXIST") throw error; }
+    }
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  finally { if (fd !== undefined) try { closeSync(fd); } catch { /* process exit */ } }
+}
+
+async function registerGenerationLease(repoRoot, generation, leaseOptions = {}) {
+  const key = `${resolve(repoRoot)}\0${generation}`;
+  if (leaseControllers.has(key)) return leaseControllers.get(key);
+  const creating = createGenerationLease(repoRoot, generation, leaseOptions, key);
+  leaseControllers.set(key, creating);
+  try {
+    const controller = await creating;
+    if (leaseControllers.get(key) === creating) leaseControllers.set(key, controller);
+    return controller;
+  }
+  catch (error) { if (leaseControllers.get(key) === creating) leaseControllers.delete(key); throw error; }
+}
+
+async function createGenerationLease(repoRoot, generation, leaseOptions, key) {
   const root = await repositoryDirectory(repoRoot, [".agents", "plugins", "leases", generation], { create: true });
-  const record = { format: RELEASE_FORMAT, pid: process.pid, processIdentity: await processStartIdentity(), processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), touchedAt: Date.now(), generation };
-  await atomicWritePointer(join(root, `${process.pid}.json`), JSON.stringify(record, null, 2) + "\n", rename);
+  const token = randomUUID(), path = join(root, `${process.pid}.json`);
+  const now = leaseOptions.now || Date.now;
+  const setIntervalFn = leaseOptions.setInterval || setInterval;
+  const clearIntervalFn = leaseOptions.clearInterval || clearInterval;
+  const addExitListener = leaseOptions.addExitListener || ((event, listener) => process.once(event, listener));
+  const removeExitListener = leaseOptions.removeExitListener || ((event, listener) => process.removeListener(event, listener));
+  const identity = await processStartIdentity();
+  const base = { format: RELEASE_FORMAT, pid: process.pid, processIdentity: identity, processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), generation, token };
+  const record = () => ({ ...base, touchedAt: now() });
+  await atomicWritePointer(path, JSON.stringify(record(), null, 2) + "\n", rename);
+  let closed = false, renewal = Promise.resolve();
+  const renew = () => {
+    if (closed) return renewal;
+    renewal = renewal.catch(() => {}).then(() => renewLease(path, token, record())).catch(error => {
+      if (["ENOENT", "ENOTDIR"].includes(error?.code)) stop();
+      else throw error;
+    });
+    return renewal;
+  };
+  const timer = setIntervalFn(() => renew().catch(() => { /* publisher expiry handles an unavailable lease */ }), LEASE_HEARTBEAT_INTERVAL_MS);
+  timer?.unref?.();
+  const onExit = () => { try { removeLeaseSync(path, token); } catch { /* bounded process-exit cleanup */ } };
+  addExitListener("exit", onExit);
+  function stop() {
+    if (closed) return;
+    closed = true;
+    clearIntervalFn(timer);
+    removeExitListener("exit", onExit);
+    if (leaseControllers.get(key) === controller) leaseControllers.delete(key);
+  }
+  const controller = {
+    path,
+    renew,
+    async close() {
+      stop();
+      await renewal.catch(() => {});
+      removeLeaseSync(path, token);
+    }
+  };
+  return controller;
 }
 
 const LEASE_HEARTBEAT_MAX_AGE_MS = 5 * 60 * 1000;
@@ -210,7 +300,8 @@ async function activeLeaseGenerations(repoRoot) {
       try { record = await readRegularJson(path, "Codex generation lease"); }
       catch { await rm(path, { force: true }); continue; }
       const coherent = record?.format === RELEASE_FORMAT && record.generation === generation && /^\d+\.json$/.test(name)
-        && record.pid === Number(name.slice(0, -5)) && Number.isFinite(record.processStartedAt) && Number.isFinite(record.touchedAt);
+        && record.pid === Number(name.slice(0, -5)) && typeof record.token === "string" && record.token.length > 0
+        && Number.isFinite(record.processStartedAt) && Number.isFinite(record.touchedAt);
       const heartbeatAge = Date.now() - record.touchedAt;
       const fresh = coherent && heartbeatAge >= -30_000 && heartbeatAge <= LEASE_HEARTBEAT_MAX_AGE_MS;
       const actualIdentity = fresh && processAlive(record.pid) ? await processStartIdentity(record.pid) : null;
@@ -233,7 +324,7 @@ function validSelection(record, name, bootstrapDigest) {
 const transient = error => ["ENOENT", "EACCES", "EPERM", "EBUSY"].includes(error?.code);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-export async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelections } = {}) {
+export async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, readSelections, lease } = {}) {
   let pointerError;
   let pointer;
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -266,10 +357,10 @@ export async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, re
     try {
       const record = await readRegularJson(join(repoRoot, ".agents", "plugins", "selections", name), "Codex selection record");
       if (!validSelection(record, name, bootstrap.digest)) continue;
-      return await releaseResult(repoRoot, record.generation);
+      return await releaseResult(repoRoot, record.generation, lease);
     } catch { /* corrupt/incomplete newest selections fall back to an older complete generation */ }
   }
-  return releaseResult(repoRoot, bootstrap.initialGeneration);
+  return releaseResult(repoRoot, bootstrap.initialGeneration, lease);
 }
 
 async function atomicWritePointer(path, content, replacePointer) {

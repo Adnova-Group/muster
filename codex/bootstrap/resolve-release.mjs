@@ -4,7 +4,7 @@
 // marketplace plugin into its cache, where checkout-relative src/ imports and
 // package node_modules do not exist.
 import { createHash, randomUUID } from "node:crypto";
-import { constants as fsConstants } from "node:fs";
+import { closeSync, constants as fsConstants, linkSync, openSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -110,18 +110,75 @@ async function validateRelease(root, expectedGeneration) {
   return metadata;
 }
 
-async function releaseResult(repoRoot, generation) {
+async function releaseResult(repoRoot, generation, leaseOptions) {
   if (!GENERATION.test(generation || "")) throw new Error("selected Codex generation is invalid");
   const releaseRoot = await directory(repoRoot, [".agents", "plugins", "releases", generation]);
   const metadata = await validateRelease(releaseRoot, generation);
-  await registerLease(repoRoot, generation);
-  return { repoRoot, generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata };
+  const lease = await registerLease(repoRoot, generation, leaseOptions);
+  return { repoRoot, generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata, lease };
 }
 
-async function registerLease(repoRoot, generation) {
+const LEASE_HEARTBEAT_INTERVAL_MS = 60 * 1000;
+const leaseControllers = new Map();
+
+async function renewLease(path, token, record) {
+  let handle;
+  try {
+    handle = await open(path, fsConstants.O_RDWR | (fsConstants.O_NOFOLLOW || 0));
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > 64 * 1024) throw new Error(`unsafe Codex generation lease: ${path}`);
+    const current = JSON.parse(await handle.readFile("utf8"));
+    if (current?.token !== token) throw new Error(`Codex generation lease ownership changed: ${path}`);
+    const content = Buffer.from(JSON.stringify(record, null, 2) + "\n");
+    await handle.truncate(0);
+    await handle.write(content, 0, content.length, 0);
+    await handle.sync();
+  } finally { if (handle) await handle.close().catch(() => {}); }
+}
+
+function removeLeaseSync(path, token) {
+  const quarantine = `${path}.reclaim-${process.pid}-${randomUUID()}`;
+  let fd;
+  try {
+    fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const current = JSON.parse(readFileSync(fd, "utf8"));
+    if (current?.token !== token) return;
+    closeSync(fd); fd = undefined;
+    renameSync(path, quarantine);
+    fd = openSync(quarantine, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const quarantined = JSON.parse(readFileSync(fd, "utf8"));
+    closeSync(fd); fd = undefined;
+    if (quarantined?.token === token) rmSync(quarantine);
+    else {
+      try { linkSync(quarantine, path); rmSync(quarantine); }
+      catch (error) { if (error.code !== "EEXIST") throw error; }
+    }
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  finally { if (fd !== undefined) try { closeSync(fd); } catch { /* process exit */ } }
+}
+
+async function registerLease(repoRoot, generation, leaseOptions = {}) {
+  const key = `${resolve(repoRoot)}\0${generation}`;
+  if (leaseControllers.has(key)) return leaseControllers.get(key);
+  const creating = createLease(repoRoot, generation, leaseOptions, key);
+  leaseControllers.set(key, creating);
+  try {
+    const controller = await creating;
+    if (leaseControllers.get(key) === creating) leaseControllers.set(key, controller);
+    return controller;
+  } catch (error) { if (leaseControllers.get(key) === creating) leaseControllers.delete(key); throw error; }
+}
+
+async function createLease(repoRoot, generation, leaseOptions, key) {
   const root = await directory(repoRoot, [".agents", "plugins", "leases", generation], { create: true });
   const path = join(root, `${process.pid}.json`);
-  const record = { format: FORMAT, pid: process.pid, processIdentity: await processStartIdentity(), processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), touchedAt: Date.now(), generation };
+  const token = randomUUID(), now = leaseOptions.now || Date.now;
+  const setIntervalFn = leaseOptions.setInterval || setInterval;
+  const clearIntervalFn = leaseOptions.clearInterval || clearInterval;
+  const addExitListener = leaseOptions.addExitListener || ((event, listener) => process.once(event, listener));
+  const removeExitListener = leaseOptions.removeExitListener || ((event, listener) => process.removeListener(event, listener));
+  const base = { format: FORMAT, pid: process.pid, processIdentity: await processStartIdentity(), processStartedAt: Math.floor(Date.now() - process.uptime() * 1000), generation, token };
+  const record = () => ({ ...base, touchedAt: now() });
   let handle;
   let temporary;
   try {
@@ -130,16 +187,46 @@ async function registerLease(repoRoot, generation) {
       try { handle = await open(temporary, "wx", 0o600); break; }
       catch (error) { if (error.code !== "EEXIST" || attempt === 7) throw error; }
     }
-    await handle.writeFile(JSON.stringify(record, null, 2) + "\n", "utf8");
+    await handle.writeFile(JSON.stringify(record(), null, 2) + "\n", "utf8");
     await handle.sync(); await handle.close(); handle = null;
     await rename(temporary, path);
   } finally {
     if (handle) await handle.close().catch(() => {});
     if (temporary) await rm(temporary, { force: true });
   }
+  let closed = false, renewal = Promise.resolve();
+  const renew = () => {
+    if (closed) return renewal;
+    renewal = renewal.catch(() => {}).then(() => renewLease(path, token, record())).catch(error => {
+      if (["ENOENT", "ENOTDIR"].includes(error?.code)) stop();
+      else throw error;
+    });
+    return renewal;
+  };
+  const timer = setIntervalFn(() => renew().catch(() => { /* publisher expiry handles an unavailable lease */ }), LEASE_HEARTBEAT_INTERVAL_MS);
+  timer?.unref?.();
+  const onExit = () => { try { removeLeaseSync(path, token); } catch { /* bounded process-exit cleanup */ } };
+  addExitListener("exit", onExit);
+  function stop() {
+    if (closed) return;
+    closed = true;
+    clearIntervalFn(timer);
+    removeExitListener("exit", onExit);
+    if (leaseControllers.get(key) === controller) leaseControllers.delete(key);
+  }
+  const controller = {
+    path,
+    renew,
+    async close() {
+      stop();
+      await renewal.catch(() => {});
+      removeLeaseSync(path, token);
+    }
+  };
+  return controller;
 }
 
-export async function resolveCodexRelease(repoRoot, { retries = 4 } = {}) {
+export async function resolveCodexRelease(repoRoot, { retries = 4, lease } = {}) {
   await directory(repoRoot, [".agents", "plugins"]);
   let pointer;
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -177,10 +264,10 @@ export async function resolveCodexRelease(repoRoot, { retries = 4 } = {}) {
       const record = JSON.parse((await readRegular(recordPath, "selection record", 64 * 1024)).toString("utf8"));
       if (record?.format !== FORMAT || record.sequence !== Number(match[1]) || record.generation !== match[2]
         || record.bootstrapDigest !== contract.digest) continue;
-      return await releaseResult(repoRoot, record.generation);
+      return await releaseResult(repoRoot, record.generation, lease);
     } catch { /* use the next complete immutable selection */ }
   }
-  return releaseResult(repoRoot, contract.initialGeneration);
+  return releaseResult(repoRoot, contract.initialGeneration, lease);
 }
 
 export async function readSelectedAsset(selected, relativePath, maxBytes = 32 * 1024 * 1024) {

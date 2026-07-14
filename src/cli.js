@@ -26,6 +26,10 @@ import { scoreArtifact } from "./score.js";
 import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { buildAuditManifest } from "./audit.js";
 import { runInstall, runUninstall } from "./install.js";
+import { runCodexInstall, runCodexUninstall } from "./codex-install.js";
+import { runCodexDoctor } from "./codex-doctor.js";
+import { readCodexInventory } from "./codex-inventory.js";
+import { adaptCatalogForCodex } from "./codex-catalog.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
 import { dirFromImportMeta } from "./fs-util.js";
@@ -80,14 +84,16 @@ async function main() {
       // --cowork resolves providers from Cowork's MCP registry instead of ~/.claude;
       // declared remote connectors (not disk-discoverable) come from --connectors or env.
       let installed;
-      if (rest.includes("--cowork")) {
+      if (rest.includes("--codex")) {
+        installed = await readCodexInventory({ cwd: process.cwd() });
+      } else if (rest.includes("--cowork")) {
         const declared = (flagValue(rest, "--connectors") || process.env.MUSTER_COWORK_CONNECTORS || "")
           .split(",").map(s => s.trim()).filter(Boolean);
         installed = await readInstalledCowork(home, { declaredConnectors: declared });
       } else {
         installed = await readInstalled(home);
       }
-      out(resolveCapabilities(catalog, installed));
+      out(resolveCapabilities(rest.includes("--codex") ? adaptCatalogForCodex(catalog, installed) : catalog, installed));
     } else if (cmd === "match" && rest.includes("--skills")) {
       // Skills mode: rank the live skills inventory by keyword overlap against the task
       // text (matchSkills), and separately suggest stack→skill mappings (deterministic,
@@ -97,7 +103,12 @@ async function main() {
       const task = flagValue(rest, "--skills");
       if (!task) fail("match --skills <task>: missing task");
       const catalog = await loadCatalog(CATALOG_DIR);
-      const { skills } = resolveCapabilities(catalog, await readInstalled(homedir()));
+      const codex = rest.includes("--codex");
+      const installed = codex
+        ? await readCodexInventory({ cwd: process.cwd() })
+        : await readInstalled(homedir());
+      const effectiveCatalog = codex ? adaptCatalogForCodex(catalog, installed) : catalog;
+      const { skills } = resolveCapabilities(effectiveCatalog, installed);
       const ranked = matchSkills(task, skills);
       const stackArg = flagValue(rest, "--stack");
       const signals = stackArg
@@ -107,12 +118,18 @@ async function main() {
       const suggested = suggestSkillsForStack(signals, skills);
       out({ ranked, suggested });
     } else if (cmd === "match") {
-      if (!rest[0]) fail("match <task>: missing task");
+      const args = rest.filter(arg => arg !== "--codex");
+      if (!args[0]) fail("match <task>: missing task");
       const catalog = await loadCatalog(CATALOG_DIR);
-      out(matchProviders(rest[0], catalog, await readInstalled(homedir())));
+      const codex = rest.includes("--codex");
+      const installed = codex
+        ? await readCodexInventory({ cwd: process.cwd() })
+        : await readInstalled(homedir());
+      out(matchProviders(args[0], codex ? adaptCatalogForCodex(catalog, installed) : catalog, installed));
     // ── manifest + waves: validate, order, and drive a plan ──
     } else if (cmd === "manifest" && rest[0] === "validate") {
-      const file = requireArg(rest, 1, "manifest validate <file>: missing file path", fail);
+      const args = rest.filter(arg => arg !== "--codex");
+      const file = requireArg(args, 1, "manifest validate <file>: missing file path", fail);
       const obj = JSON.parse(await readFile(file, "utf8"));
       const r = validateManifest(obj);
       // Cross-check plan[].skills bindings against the same live skills inventory
@@ -120,10 +137,22 @@ async function main() {
       // hallucinated or uninstalled bound id is actually caught here, not just at the
       // manifestWarnings unit level.
       const catalog = await loadCatalog(CATALOG_DIR);
-      const { skills } = resolveCapabilities(catalog, await readInstalled(homedir()));
+      const codex = rest.includes("--codex");
+      const installed = codex
+        ? await readCodexInventory({ cwd: process.cwd() })
+        : await readInstalled(homedir());
+      const effectiveCatalog = codex ? adaptCatalogForCodex(catalog, installed) : catalog;
+      const { skills } = resolveCapabilities(effectiveCatalog, installed);
       const warnings = manifestWarnings(obj, skills);
-      out(warnings.length ? { ...r, warnings } : r);
-      if (!r.ok) process.exit(2);
+      const unresolved = codex
+        ? warnings.filter(warning => warning.includes("not found in resolveCapabilities().skills"))
+        : [];
+      const remainingWarnings = warnings.filter(warning => !unresolved.includes(warning));
+      const result = unresolved.length
+        ? { ok: false, errors: [...r.errors, ...unresolved], ...(remainingWarnings.length ? { warnings: remainingWarnings } : {}) }
+        : (warnings.length ? { ...r, warnings } : r);
+      out(result);
+      if (!result.ok) process.exit(2);
     // ── memory + ops: local memory read/write ──
     } else if (cmd === "memory" && rest[0] === "write") {
       const dir = requireArg(rest, 1, "memory write <dir> <entry.json>: missing args", fail);
@@ -296,8 +325,10 @@ async function main() {
       if (parseIssueRef(rest[0]).kind !== "issue") fail("not a GitHub issue reference: " + rest[0]);
       out(await resolveIssue(rest[0]));
     } else if (cmd === "assess") {
-      if (!rest[0]) fail("assess <outcome>: missing outcome");
-      out(assessOutcome(rest[0]));
+      const codex = rest.includes("--codex");
+      const args = rest.filter(arg => arg !== "--codex");
+      if (!args[0]) fail("assess <outcome>: missing outcome");
+      out(assessOutcome(args[0], { codex }));
     } else if (cmd === "steer") {
       if (!rest[0]) fail("steer <message>: missing message");
       out(classifySteer(rest.join(" ")));
@@ -308,7 +339,9 @@ async function main() {
       out(await detectScope({ cwd: process.cwd(), text: rest.join(" ") }));
     // ── memory + ops (cont.): doctor, scratchpad, profile, install/uninstall, signals ──
     } else if (cmd === "doctor") {
-      const r = await runDoctor({ root: new URL("../", import.meta.url) });
+      const r = rest.includes("--codex")
+        ? await runCodexDoctor({ root: new URL("../", import.meta.url) })
+        : await runDoctor({ root: new URL("../", import.meta.url) });
       out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "scratchpad") {
@@ -317,9 +350,13 @@ async function main() {
     } else if (cmd === "profile") {
       out(await readProfile());
     } else if (cmd === "install") {
-      out(await runInstall({ home: rest[0] || homedir() }));
+      if (rest[0] === "codex") {
+        out(await runCodexInstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));
+      } else out(await runInstall({ home: rest[0] || homedir() }));
     } else if (cmd === "uninstall") {
-      out(await runUninstall({ home: rest[0] || homedir() }));
+      if (rest[0] === "codex") {
+        out(await runCodexUninstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));
+      } else out(await runUninstall({ home: rest[0] || homedir() }));
     } else if (cmd === "signals") {
       const dir = rest[0] || process.cwd();
       const profile = await detectProject(dir);
@@ -329,7 +366,7 @@ async function main() {
       await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
       out(sig);
     } else {
-      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork] [--codex]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]>`);
     }
   } catch (e) {
     fail(formatError(e));

@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "description": "Authoritative Muster conceptual-tier mapping for generated Codex custom-agent profiles.",
+  "agents": {
+    "muster-builder": { "source": "plugin/agents/muster-builder.md", "tier": "sonnet" },
+    "muster-improver": { "source": "plugin/agents/muster-improver.md", "tier": "fable", "readOnly": true },
+    "muster-investigator": { "source": "plugin/agents/muster-investigator.md", "tier": "haiku", "readOnly": true },
+    "muster-reviewer": { "source": "plugin/agents/muster-reviewer.md", "tier": "sonnet", "readOnly": true },
+    "muster-runner": { "source": "plugin/agents/muster-runner.md", "tier": "sonnet" },
+    "muster-strategist": { "source": "plugin/agents/muster-strategist.md", "tier": "fable", "readOnly": true },
+    "muster-surgeon": { "source": "plugin/agents/muster-surgeon.md", "tier": "sonnet" },
+    "wsh-api-documenter": { "source": "plugin/agents/wsh-api-documenter.md", "tier": "sonnet" },
+    "wsh-backend-architect": { "source": "plugin/agents/wsh-backend-architect.md", "tier": "opus" },
+    "wsh-business-analyst": { "source": "plugin/agents/wsh-business-analyst.md", "tier": "sonnet" },
+    "wsh-cloud-architect": { "source": "plugin/agents/wsh-cloud-architect.md", "tier": "opus" },
+    "wsh-code-reviewer": { "source": "plugin/agents/wsh-code-reviewer.md", "tier": "sonnet" },
+    "wsh-content-marketer": { "source": "plugin/agents/wsh-content-marketer.md", "tier": "sonnet" },
+    "wsh-customer-support": { "source": "plugin/agents/wsh-customer-support.md", "tier": "sonnet" },
+    "wsh-data-engineer": { "source": "plugin/agents/wsh-data-engineer.md", "tier": "sonnet" },
+    "wsh-data-scientist": { "source": "plugin/agents/wsh-data-scientist.md", "tier": "sonnet" },
+    "wsh-database-optimizer": { "source": "plugin/agents/wsh-database-optimizer.md", "tier": "sonnet" },
+    "wsh-debugger": { "source": "plugin/agents/wsh-debugger.md", "tier": "sonnet" },
+    "wsh-devops-troubleshooter": { "source": "plugin/agents/wsh-devops-troubleshooter.md", "tier": "sonnet" },
+    "wsh-docs-architect": { "source": "plugin/agents/wsh-docs-architect.md", "tier": "opus" },
+    "wsh-frontend-developer": { "source": "plugin/agents/wsh-frontend-developer.md", "tier": "sonnet" },
+    "wsh-legacy-modernizer": { "source": "plugin/agents/wsh-legacy-modernizer.md", "tier": "sonnet" },
+    "wsh-ml-engineer": { "source": "plugin/agents/wsh-ml-engineer.md", "tier": "sonnet" },
+    "wsh-prompt-engineer": { "source": "plugin/agents/wsh-prompt-engineer.md", "tier": "sonnet" },
+    "wsh-security-auditor": { "source": "plugin/agents/wsh-security-auditor.md", "tier": "sonnet" },
+    "wsh-test-automator": { "source": "plugin/agents/wsh-test-automator.md", "tier": "sonnet" },
+    "wsh-tutorial-engineer": { "source": "plugin/agents/wsh-tutorial-engineer.md", "tier": "sonnet" }
+  }
+}

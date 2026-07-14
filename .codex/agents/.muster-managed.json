@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "owner": "muster",
+  "files": [
+    "muster-builder.toml",
+    "muster-improver.toml",
+    "muster-investigator.toml",
+    "muster-reviewer.toml",
+    "muster-runner.toml",
+    "muster-strategist.toml",
+    "muster-surgeon.toml",
+    "wsh-api-documenter.toml",
+    "wsh-backend-architect.toml",
+    "wsh-business-analyst.toml",
+    "wsh-cloud-architect.toml",
+    "wsh-code-reviewer.toml",
+    "wsh-content-marketer.toml",
+    "wsh-customer-support.toml",
+    "wsh-data-engineer.toml",
+    "wsh-data-scientist.toml",
+    "wsh-database-optimizer.toml",
+    "wsh-debugger.toml",
+    "wsh-devops-troubleshooter.toml",
+    "wsh-docs-architect.toml",
+    "wsh-frontend-developer.toml",
+    "wsh-legacy-modernizer.toml",
+    "wsh-ml-engineer.toml",
+    "wsh-prompt-engineer.toml",
+    "wsh-security-auditor.toml",
+    "wsh-test-automator.toml",
+    "wsh-tutorial-engineer.toml"
+  ]
+}

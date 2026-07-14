@@ -67,7 +67,7 @@ The orchestrator passes the chosen model as the dispatch override when it spawns
 
 A provider resolves to one of four kinds, which decides how it is dispatched:
 
-- **agent**: a subagent definition, dispatched by `subagent_type`.
+- **agent**: a subagent definition, dispatched through its installed Codex `agent_type` profile with a bounded context fork.
 - **skill**: a markdown skill injected into a generic subagent.
 - **mcp**: an installed MCP server, surfaced as a tool.
 - **inline**: no specialist; the model does the work directly.

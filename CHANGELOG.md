@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-13
+
+### Added
+- **Codex CLI and Desktop integration.** Muster now ships a Codex marketplace plugin with the complete deterministic runtime, 21 MCP tools, 27 generated custom-agent profiles, all native and builtin skills, pipelines, and model-tier translation. `muster install codex` owns the profiles and merges lifecycle hooks through Codex's supported project/user `hooks.json` layer; plugin-bundled hooks are not advertised because Codex 0.144 does not execute them. Non-managed hooks require a one-time trust review; todo and spawn enforcement remain explicitly advisory.
+- **Codex-native upstream routing.** Enabled official Superpowers, WSHObson, and GSD Codex skills outrank bundled compatibility fallbacks. The three colliding GSD fallbacks are namespaced as `muster-gsd-*`; the pinned GitHub compatibility survey also covers Atomic Codex, Book Genesis, humanizer sources, Promptfoo, and Muster's native pipelines.
+
 ## [0.4.1] - 2026-07-07
 
 ### Added
@@ -326,6 +332,7 @@ publish to carry it.
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
+[0.5.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Adnova-Group/muster/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.4.0
 [0.3.3]: https://github.com/Adnova-Group/muster/releases/tag/v0.3.3

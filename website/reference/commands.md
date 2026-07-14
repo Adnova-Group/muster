@@ -11,7 +11,7 @@ npx @adnova-group/muster <command> [args]
 | Command | What it does |
 | --- | --- |
 | `detect` | Sniff the current project: languages, shape, greenfield flag. |
-| `capabilities` | Walk the resolution ladder for every role; report the winner, full fallback chain, recommendations, and model. |
+| `capabilities` | Walk the resolution ladder for every role; report the winner, full fallback chain, recommendations, and model. Use `capabilities --codex` to report the live Codex plugin, MCP, skills, and agents inventory. |
 | `match <task>` | Rank every catalog provider against a free-text task by deterministic token overlap. |
 | `match --skills <task> [--stack <csv>]` | Skills mode: rank the live skills inventory against the task text, and separately suggest stack→skill mappings (`{ranked, suggested}`). Signals for the suggestions default to tokens parsed from the task text; `--stack <csv>` (e.g. `--stack nextjs,supabase`) overrides them. Each suggestion carries a `missing` flag (present in the live inventory or not) — deterministic, no LLM calls. |
 | `route <outcome>` | Resolve which pipeline an outcome routes to. |
@@ -99,6 +99,9 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 | `setup [dir]` | Scaffold Muster files into a target directory. |
 | `vendor` | Generate built-in agents and skills from `vendor/manifest.yaml`. |
 | `doctor` | Health-check the installation. |
+| `doctor --codex` | Health-check the Codex CLI, generated profiles, plugin runtime, lifecycle hooks, live inventory, and advisory policy limitations. |
+| `install codex [--scope project-or-user] [--dry-run]` | Install Muster-managed Codex profiles and lifecycle hooks in the project or user scope, preserving unrelated hook groups, and register the Muster marketplace when Codex is available. |
+| `uninstall codex [--scope project-or-user] [--dry-run]` | Remove only Codex profiles, hook groups, and hook runtime files recorded in Muster's managed-install manifests, then remove the plugin when Codex is available. |
 | `profile` | Report the resolved provider profile. |
 | `signals [dir]` | Surface project signals. |
 | `scratchpad <runId>` | Read a run's scratchpad. |

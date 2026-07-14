@@ -753,6 +753,92 @@ test("Codex doctor requires exact owned hook groups from source and cache instal
   assert.equal(missingUserConfig.checks.find(check => check.name === "codex-hooks-overlap")?.ok, false, "a missing managed scope must make dedupe reporting uncertain");
 });
 
+test("Codex doctor inspects stale registered project scopes outside the current project", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-managed-scopes-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current-project"), codexHome = join(home, ".codex");
+  const profilesScope = join(tmp, "legacy-profiles"), hooksScope = join(tmp, "legacy-hooks");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ cwd: profilesScope, home, repoRoot, execFile: absent });
+  await runCodexInstall({ cwd: hooksScope, home, repoRoot, execFile: absent });
+
+  const profileManifestPath = join(profilesScope, ".codex", "agents", ".muster-managed.json");
+  const profileManifest = JSON.parse(await readFile(profileManifestPath, "utf8"));
+  profileManifest.generation = "0".repeat(64);
+  await writeFile(profileManifestPath, JSON.stringify(profileManifest));
+  const hookManifestPath = join(hooksScope, ".codex", "muster", ".muster-managed.json");
+  const hookManifest = JSON.parse(await readFile(hookManifestPath, "utf8"));
+  hookManifest.generation = "0".repeat(64);
+  await writeFile(hookManifestPath, JSON.stringify(hookManifest));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const generation = report.checks.find(check => check.name === "codex-install-generation");
+  const hooks = report.checks.find(check => check.name === "codex-hooks");
+  assert.equal(generation?.ok, false);
+  assert.match(generation?.detail || "", new RegExp(profilesScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal(hooks?.ok, false);
+  assert.match(hooks?.detail || "", new RegExp(hooksScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("Codex doctor rejects symlinked content in a registered managed scope", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-symlinked-scope-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current-project"), legacyCwd = join(tmp, "legacy-project");
+  const absent = async () => { throw new Error("not found"); };
+  const configDir = join(legacyCwd, ".codex"), agents = join(configDir, "agents"), victim = join(tmp, "outside-agents");
+  await mkdir(victim, { recursive: true });
+  await mkdir(join(home, ".codex", "muster"), { recursive: true });
+  await mkdir(configDir, { recursive: true });
+  await symlink(victim, agents, "dir");
+  await writeFile(join(home, ".codex", "muster", "install-scopes.json"), JSON.stringify({
+    format: 1,
+    owner: "muster",
+    entries: [{ scope: "project", configDir }]
+  }));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absent });
+  const scopes = report.checks.find(check => check.name === "codex-managed-scopes");
+  assert.equal(scopes?.ok, false);
+  assert.match(scopes?.detail || "", /unsafe.*agents|agents.*unsafe/i);
+});
+
+test("Codex doctor verifies the bundled MCP initialize and tools/list handshake", async () => {
+  const calls = [];
+  const absent = async () => { throw new Error("not found"); };
+  const report = await runCodexDoctor({
+    root: repoRoot,
+    cwd: repoRoot,
+    codexHome: join(await mkdtemp(join(tmpdir(), "muster-codex-doctor-mcp-")), ".codex"),
+    execFile: absent,
+    mcpRunner: async options => {
+      calls.push(options);
+      return { initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools }, (_, index) => ({ name: `muster_test_${index}` })) };
+    }
+  });
+  const handshake = report.checks.find(check => check.name === "codex-mcp-handshake");
+  assert.equal(handshake?.ok, true);
+  assert.match(handshake?.detail || "", /21\/21.*Codex may defer MCP tool visibility until lookup or a new session/i);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].entrypoint, join(selectedPluginRoot, "runtime", "muster-mcp.mjs"));
+});
+
+test("Codex doctor reports MCP launch and tool-count handshake failures", async () => {
+  const absent = async () => { throw new Error("not found"); };
+  for (const [label, mcpRunner, expected] of [
+    ["launch", async () => { throw new Error("spawn ENOENT"); }, /spawn ENOENT/],
+    ["tool-count", async () => ({ initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools - 1 }, () => ({})) }), /20\/21/]
+  ]) {
+    const report = await runCodexDoctor({
+      root: repoRoot,
+      cwd: repoRoot,
+      codexHome: join(await mkdtemp(join(tmpdir(), `muster-codex-doctor-mcp-${label}-`)), ".codex"),
+      execFile: absent,
+      mcpRunner
+    });
+    const handshake = report.checks.find(check => check.name === "codex-mcp-handshake");
+    assert.equal(handshake?.ok, false, label);
+    assert.match(handshake?.detail || "", expected, label);
+  }
+});
+
 test("Codex uninstall retains the shared plugin until the final managed scope is removed", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-dual-scope-")), cwd = join(tmp, "project"), home = join(tmp, "home"), calls = [];
   const execFile = async (_bin, args) => {

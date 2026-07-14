@@ -7978,6 +7978,9 @@ function maxTier(models) {
 function isInstalled(entry, installed) {
   if (entry.kind !== "external" || !entry.detect?.match) return false;
   const m = entry.detect.match;
+  if (entry.detect.codexStrictKind) {
+    return (installed.plugins || []).includes(m);
+  }
   return (installed.plugins || []).includes(m) || (installed.skills || []).includes(m) || (installed.mcpServers || []).includes(m) || (installed.agents || []).includes(m);
 }
 
@@ -10017,7 +10020,7 @@ function adaptCatalogForCodex(catalog, installed) {
   const fallback = [];
   for (const entry of catalog) {
     if (entry.kind !== "builtin") {
-      fallback.push(entry);
+      fallback.push(entry.kind === "external" && entry.detect?.kind === "plugin" ? { ...entry, detect: { ...entry.detect, codexStrictKind: true } } : entry);
       continue;
     }
     const nativeId = nativeSkillId(entry.id);
@@ -11326,6 +11329,12 @@ function readStdin() {
   });
 }
 var readText = async (arg) => !arg || arg === "-" || arg.startsWith("--") ? await readStdin() : await readFile13(arg, "utf8");
+async function resolveModeCapabilities(args) {
+  const catalog = await loadCatalog(CATALOG_DIR);
+  const codex = args.includes("--codex");
+  const installed = codex ? await readCodexInventory({ cwd: process.cwd() }) : await readInstalled(homedir9());
+  return resolveCapabilities(codex ? adaptCatalogForCodex(catalog, installed) : catalog, installed);
+}
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   try {
@@ -11520,20 +11529,22 @@ async function main() {
       const p = routePipeline(ps, outcome, domain);
       out({ domain, pipeline: p ? p.id : null });
     } else if (cmd === "diagnose") {
-      const ci = rest.includes("--ci");
+      const args = rest.filter((arg) => arg !== "--codex");
+      const ci = args.includes("--ci");
       let input;
       if (ci) {
-        const ciFile = flagValue(rest, "--ci");
+        const ciFile = flagValue(args, "--ci");
         if (!ciFile) fail("diagnose --ci <file>: missing file");
         input = await readFile13(ciFile, "utf8");
-      } else input = rest.join(" ");
+      } else input = args.join(" ");
       if (!input || !input.trim()) fail("diagnose <symptom> | --ci <file>: missing input");
       const failure = classifyFailure(input, { ci });
-      const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir9()));
+      const caps = await resolveModeCapabilities(rest);
       out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
     } else if (cmd === "audit") {
-      const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir9()));
-      const prompting = await hasPromptingSignal(rest[0] || process.cwd());
+      const args = rest.filter((arg) => arg !== "--codex");
+      const caps = await resolveModeCapabilities(rest);
+      const prompting = await hasPromptingSignal(args[0] || process.cwd());
       out(buildAuditManifest(caps, { prompting }));
     } else if (cmd === "issue") {
       if (!rest[0]) fail("issue <ref>: missing #N | number | issue-url");

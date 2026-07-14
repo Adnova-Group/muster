@@ -24,7 +24,11 @@ export async function collectScanFiles(root) {
     for (const e of ents) {
       if (files.length >= SCAN_MAX_FILES) return;
       const full = join(dir, e.name);
-      if (e.isDirectory()) { if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full); continue; }
+      if (e.isDirectory()) {
+        const rel = relative(root, full).replaceAll("\\", "/");
+        if (!SCAN_SKIP_DIRS.has(e.name) && rel !== ".agents/plugins/releases") await walk(full);
+        continue;
+      }
       if (!e.isFile()) continue;
       const isPromptName = /\.(prompt|tmpl)$/i.test(e.name);
       if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;

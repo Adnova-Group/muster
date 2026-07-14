@@ -1,5 +1,7 @@
 node_modules/
 .muster/
+.agents/plugins/leases/
+.agents/plugins/.lease-registry.lock
 *.log
 tmp/
 cowork-dispatch-spec.json

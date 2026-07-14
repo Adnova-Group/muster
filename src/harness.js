@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { readJson, readdirSafe } from "./fs-util.js";
 import { readPluginInventory } from "./plugin-inventory.js";
+export { readCodexInventory } from "./codex-inventory.js";
 
 // --- Claude Cowork adapter ----------------------------------------------------
 // Cowork's own registry extends through MCP: local MCP servers

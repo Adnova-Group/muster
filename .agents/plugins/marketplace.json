@@ -1,0 +1,20 @@
+{
+  "name": "muster",
+  "interface": {
+    "displayName": "Muster"
+  },
+  "plugins": [
+    {
+      "name": "muster",
+      "source": {
+        "source": "local",
+        "path": "./.agents/plugins/plugins/muster"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

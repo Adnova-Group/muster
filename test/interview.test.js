@@ -69,6 +69,13 @@ test("consecutive-run outcome is clear", () => {
   assert.deepEqual(r.signals, [], "a clear outcome must carry no signals");
 });
 
+test("Codex assessment accepts spelled-out measurable counts without changing the default heuristic", () => {
+  const text = "add task priorities with at least five focused tests and zero failures";
+  assert.equal(assessOutcome(text).clear, false, "the default Claude-facing heuristic remains digit-based");
+  assert.deepEqual(assessOutcome(text, { codex: true }), { clear: true, signals: [] });
+  assert.deepEqual(assessOutcome("deliver zero regressions across supported workflows", { codex: true }), { clear: true, signals: [] });
+});
+
 // WHY: gate-proven false-pass — a bare measurable keyword ("improve") padded with vague
 // intensifiers ("significantly") and no actual number/percent/comparative must NOT clear the
 // no-success-criteria signal. A keyword alone is not a metric; it must co-occur with a real

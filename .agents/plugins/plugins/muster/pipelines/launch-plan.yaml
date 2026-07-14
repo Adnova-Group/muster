@@ -1,0 +1,18 @@
+id: launch-plan
+domain: pm
+title: Launch Plan
+match: [launch plan, go-to-market plan, go-to-market, product launch, launch checklist]
+phases:
+  - { id: intake,       role: brainstorm,  desc: "what's launching, audience, goals, date" }
+  - { id: pr-faq,       role: author,      desc: "Amazon Working Backwards: external press release + internal FAQ as positioning forcing function" }
+  - { id: timeline,     role: author,      desc: "pre-launch (wk -8..-2): ICP+beachhead, messaging lock, asset production, sales enablement, pilot" }
+  - { id: channels,     role: author,      desc: "channels, messaging, assets, enablement" }
+  - { id: risks,        role: author,      desc: "risks, dependencies, rollback, metrics" }
+  - { id: post-launch,  role: author,      desc: "30-60-90 day: feedback capture, activation, funnel fixes, metric review" }
+  - { id: review,       role: code-review, desc: "adversarial review gate" }
+  - { id: score,        role: score,       desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [completeness, timeline, RACI, risk-coverage, beachhead-defined, post-launch-plan, success-metrics]
+  floor: 2
+  pass_total: 16

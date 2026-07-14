@@ -54,7 +54,7 @@ A provider resolves to one of four kinds, which decides how the orchestrator dis
 - **mcp**: an installed MCP server, surfaced as a tool.
 - **inline**: no specialist; the model does the work directly.
 
-Dispatch honors `chosen.kind`: an agent routes by `subagent_type`, anything else gets a generic subagent with the relevant skill injected. If an agent type is not yet dispatchable in the running session, the orchestrator falls back to a generic subagent with the provider's brief injected. The model override from per-role selection always applies, regardless of kind.
+Dispatch honors `chosen.kind`: an agent routes through its installed Codex profile using `agent_type` and a bounded context fork, while anything else gets a generic subagent with the relevant skill injected. Because dispatch has no cwd field, worktree briefs carry absolute worktree, manifest, and STATE paths and require that worktree as every tool call's working directory. If a named agent profile is not dispatchable, the task fails closed with a reinstall/new-session diagnostic; it never silently falls back and loses the pinned role/model policy. Generic skill/MCP/inline dispatch inherits the parent model because Codex does not expose a per-call model override for that path.
 
 ## Pipelines
 

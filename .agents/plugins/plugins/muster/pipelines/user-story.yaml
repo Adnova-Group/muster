@@ -1,0 +1,15 @@
+id: user-story
+domain: pm
+title: User Story
+match: [user story, user stories, story, ticket, backlog item, job story]
+phases:
+  - { id: intake,     role: brainstorm,  desc: "persona, need, context" }
+  - { id: story,      role: author,      desc: "As-a/I-want/So-that (INVEST); 3 Cs (Card/Conversation/Confirmation)" }
+  - { id: acceptance, role: author,      desc: "Given/When/Then (Gherkin); happy path + 2+ edge/negative; INVEST testable" }
+  - { id: review,     role: code-review, desc: "adversarial review gate" }
+  - { id: score,      role: score,       desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [clarity, user-value, acceptance-criteria, testability, independence, estimable]
+  floor: 2
+  pass_total: 14

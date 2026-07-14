@@ -1,0 +1,94 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node '/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "timeout": 10,
+            "statusMessage": "Loading Muster orchestration context",
+            "commandWindows": "node \"/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node '/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "timeout": 10,
+            "commandWindows": "node \"/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write|NotebookEdit|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node '/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "timeout": 10,
+            "statusMessage": "Checking Muster worktree policy",
+            "commandWindows": "node \"/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node '/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "timeout": 10,
+            "commandWindows": "node \"/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node '/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "timeout": 10,
+            "statusMessage": "Loading Muster agent policy",
+            "commandWindows": "node \"/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node '/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "timeout": 10,
+            "commandWindows": "node \"/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node '/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs'",
+            "timeout": 10,
+            "commandWindows": "node \"/mnt/c/Users/rnben/Documents/Development/muster/.codex/muster/hooks/muster-hook.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}

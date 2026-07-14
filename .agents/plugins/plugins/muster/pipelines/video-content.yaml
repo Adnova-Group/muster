@@ -1,0 +1,16 @@
+id: video-content
+domain: video
+title: Video Content (script, radio-edit, shot list)
+match: [video script, video content, b-roll, shot list, video edit, youtube script, video plan]
+phases:
+  - { id: intake,      role: brainstorm, desc: "platform, audience, goal, runtime target, format (talking-head/voiceover/interview)" }
+  - { id: script,      role: video,      desc: "draft the spoken-word script anchored to outcome + audience + runtime target" }
+  - { id: radio-edit,  role: video,      desc: "tighten cadence: cut filler, mark cuts inline, keep source/tightened script diffable" }
+  - { id: shot-list,   role: video,      desc: "timestamped b-roll shot list + edit-decision outline anchored to script sections" }
+  - { id: review,      role: code-review, desc: "adversarial review: pacing, coverage, platform-fit check" }
+  - { id: score,       role: score,      desc: "score vs rubric, apply floor principle" }
+  - { id: humanize,    role: humanize,   desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [hook, cadence, clarity, shot-coverage, edit-clarity]
+  floor: 2
+  pass_total: 12

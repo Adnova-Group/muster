@@ -1,0 +1,15 @@
+id: executive-summary
+domain: business
+title: Executive Summary
+match: [executive summary, exec summary, one-pager, board summary, leadership brief, memo]
+phases:
+  - { id: scqa,      role: brainstorm,    desc: "Minto SCQA: Situation/Complication/Question/Answer; decompose the question into a MECE issue/hypothesis tree so the single ask is backed, not asserted" }
+  - { id: synthesis, role: docs-research, desc: "pull the few facts that matter; the bottom line; label each as Fact / Inference / Assumption so the reader sees what's evidenced vs inferred" }
+  - { id: draft,     role: author,        desc: "BLUF first sentence = ask + recommendation; <=1 page; pyramid principle" }
+  - { id: review,    role: code-review,   desc: "adversarial review gate" }
+  - { id: score,     role: score,         desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [clarity, one-page-discipline, decision-focus, evidence, single-ask, audience-calibrated]
+  floor: 2
+  pass_total: 14

@@ -8,7 +8,7 @@
       "name": "muster",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/plugins/muster"
+        "path": "./.agents/plugins/releases/a1786284cf717a53c45407200875b6577453f1a4833413b2de47de10eae1a07c/plugin"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -16,5 +16,11 @@
       },
       "category": "Productivity"
     }
-  ]
+  ],
+  "musterRelease": {
+    "format": 1,
+    "generation": "a1786284cf717a53c45407200875b6577453f1a4833413b2de47de10eae1a07c",
+    "profiles": "./.agents/plugins/releases/a1786284cf717a53c45407200875b6577453f1a4833413b2de47de10eae1a07c/profiles",
+    "metadata": "./.agents/plugins/releases/a1786284cf717a53c45407200875b6577453f1a4833413b2de47de10eae1a07c/release.json"
+  }
 }

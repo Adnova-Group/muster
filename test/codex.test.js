@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -9,10 +9,14 @@ import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY, codexModelForRole, codexModelForTier } from "../src/codex.js";
 import { readCodexInventory } from "../src/codex-inventory.js";
 import { runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
+import { runCodexDoctor } from "../src/codex-doctor.js";
 import { adaptCatalogForCodex, codexFallbackSkillId } from "../src/codex-catalog.js";
+import { resolveCodexRelease } from "../src/codex-release.js";
 
 const root = new URL("../", import.meta.url);
 const repoRoot = new URL("../", import.meta.url).pathname;
+const selectedRelease = await resolveCodexRelease(repoRoot);
+const selectedPluginRoot = selectedRelease.pluginRoot;
 const response = stdout => async () => ({ stdout });
 const execFile = promisify(execFileCb);
 const canonicalMusterMarketplace = {
@@ -28,7 +32,7 @@ const localMusterMarketplace = {
 
 function packagedMcpTools() {
   return new Promise((resolve, reject) => {
-    const server = spawn("node", [join(repoRoot, ".agents", "plugins", "plugins", "muster", "runtime", "muster-mcp.mjs")], {
+    const server = spawn("node", [join(selectedPluginRoot, "runtime", "muster-mcp.mjs")], {
       cwd: repoRoot,
       stdio: ["pipe", "pipe", "pipe"]
     });
@@ -68,9 +72,9 @@ function packagedMcpTools() {
   });
 }
 
-function runCodexHook(payload, cwd = repoRoot, hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs")) {
+function runCodexHook(payload, cwd = repoRoot, hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs"), env = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn("node", [hookPath], { cwd, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("node", [hookPath], { cwd, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -166,37 +170,49 @@ test("packaged Codex MCP runtime registers the shared 21 tools", async () => {
   const tools = await packagedMcpTools();
   assert.equal(tools.length, CODEX_COUNTS.mcpTools);
   assert.ok(tools.every(tool => tool.name.startsWith("muster_")));
-  const runtime = await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", "runtime", "muster-mcp.mjs"), "utf8");
+  const runtime = await readFile(join(selectedPluginRoot, "runtime", "muster-mcp.mjs"), "utf8");
   assert.match(runtime, /"capabilities", "--codex"/);
   assert.match(runtime, /"assess", "--codex"/);
   assert.doesNotMatch(runtime, /"capabilities", "--cowork"/);
 });
 
+test("npm package contents include the selected immutable Codex generation", async () => {
+  const { stdout } = await execFile("npm", ["pack", "--dry-run", "--json"], { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 });
+  const files = new Set(JSON.parse(stdout)[0].files.map(file => file.path));
+  const release = `.agents/plugins/releases/${selectedRelease.generation}`;
+  for (const path of [
+    ".agents/plugins/marketplace.json",
+    `${release}/release.json`,
+    `${release}/plugin/runtime/muster.mjs`,
+    `${release}/profiles/muster-builder.toml`
+  ]) assert.ok(files.has(path), `npm package is missing ${path}`);
+});
+
 test("packaged Codex CLI runs without a consumer npm install", async () => {
-  const runtime = join(repoRoot, ".agents", "plugins", "plugins", "muster", "runtime", "muster.mjs");
+  const runtime = join(selectedPluginRoot, "runtime", "muster.mjs");
   const { stdout } = await execFile("node", [runtime, "detect", repoRoot], { cwd: repoRoot });
   const result = JSON.parse(stdout);
   assert.equal(result.vcs.isRepo, true);
 });
 
 test("packaged Codex workflows use the bundled CLI and Codex-native mode names", async () => {
-  const commands = join(repoRoot, ".agents", "plugins", "plugins", "muster", "commands");
+  const commands = join(selectedPluginRoot, "commands");
   for (const entry of await readdir(commands, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
     const text = await readFile(join(commands, entry.name), "utf8");
     assert.doesNotMatch(text, /npx -y @adnova-group\/muster/, entry.name);
     assert.doesNotMatch(text, /\/muster:(?:plan|go|plan-backlog|go-backlog|run|autopilot|sprint|diagnose|audit|runner|capture)\b/, entry.name);
   }
-  const router = await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", "skills", "router", "SKILL.md"), "utf8");
+  const router = await readFile(join(selectedPluginRoot, "skills", "router", "SKILL.md"), "utf8");
   assert.match(router, /runtime\/muster\.mjs match --codex --skills/);
   const runner = await readFile(join(commands, "runner.md"), "utf8");
   assert.match(runner, /Usage: \$muster-runner/);
   assert.match(runner, /codex exec "\$muster-runner/);
   assert.doesNotMatch(runner, /\$muster-planner|Claude Code Routine|claude -p/);
-  const coordination = await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", "skills", "coordination", "SKILL.md"), "utf8");
+  const coordination = await readFile(join(selectedPluginRoot, "skills", "coordination", "SKILL.md"), "utf8");
   assert.match(coordination, /plugin cache is not a Git checkout/);
   assert.doesNotMatch(coordination, /git log -1 --format/);
-  const orchestrator = await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", "skills", "orchestrator", "SKILL.md"), "utf8");
+  const orchestrator = await readFile(join(selectedPluginRoot, "skills", "orchestrator", "SKILL.md"), "utf8");
   assert.match(orchestrator, /call `collaboration\.spawn_agent`/);
   assert.match(orchestrator, /agent_type: "<exact chosen\.id>"/);
   assert.match(orchestrator, /fork_turns/);
@@ -209,7 +225,7 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
 
   for (const command of ["plan", "go", "plan-backlog", "go-backlog", "diagnose", "audit", "runner", "capture"]) {
     const commandText = await readFile(join(commands, `${command}.md`), "utf8");
-    const skillText = await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", "skills", `muster-${command}`, "SKILL.md"), "utf8");
+    const skillText = await readFile(join(selectedPluginRoot, "skills", `muster-${command}`, "SKILL.md"), "utf8");
     assert.match(commandText, /runtime\/codex-skill-adapter\.md/, `${command} command must load the Codex adapter`);
     assert.match(skillText, /runtime\/codex-skill-adapter\.md/, `${command} skill must load the Codex adapter`);
   }
@@ -228,6 +244,21 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   }
 });
 
+test("generated Codex orchestration surfaces enforce the bounded agent watch invariant", async () => {
+  const surfaces = new Map([
+    ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
+    ["orchestrator", join(selectedPluginRoot, "skills", "orchestrator", "SKILL.md")],
+    ...["muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
+      .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
+  ]);
+  for (const [name, path] of surfaces) {
+    const text = await readFile(path, "utf8");
+    for (const marker of ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "completion and message receipts", "newly ready work", "live agents", "executable steps", "HUMAN-HOLD", "merge decision"]) {
+      assert.match(text, new RegExp(marker.replaceAll(".", "\\.")), `${name} must carry watch marker ${marker}`);
+    }
+  }
+});
+
 test("Codex manifest validation fails closed on a bound skill absent from live Codex inventory", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-manifest-"));
   const file = join(tmp, "manifest.json");
@@ -239,7 +270,7 @@ test("Codex manifest validation fails closed on a bound skill absent from live C
     degradations: [],
     plan: [{ id: "t1", task: "Verify", mode: "single", deps: [], skills: [{ id: "definitely-not-installed", rationale: "Dogfood guard" }] }]
   }));
-  const runtime = join(repoRoot, ".agents", "plugins", "plugins", "muster", "runtime", "muster.mjs");
+  const runtime = join(selectedPluginRoot, "runtime", "muster.mjs");
   await assert.rejects(
     () => execFile("node", [runtime, "manifest", "validate", "--codex", file], { cwd: tmp, env: { ...process.env, CODEX_HOME: join(tmp, "home") } }),
     error => error.code === 2 && /definitely-not-installed/.test(error.stdout)
@@ -247,29 +278,52 @@ test("Codex manifest validation fails closed on a bound skill absent from live C
 });
 
 test("Codex distribution installs supported lifecycle hooks without advertising inert plugin hooks", async () => {
-  const plugin = join(repoRoot, ".agents", "plugins", "plugins", "muster");
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-"));
+  const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
+  const plugin = selectedPluginRoot;
   const manifest = JSON.parse(await readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8"));
   assert.equal(manifest.hooks, undefined);
   await assert.rejects(() => readFile(join(plugin, "hooks", "hooks.json"), "utf8"));
   const config = JSON.parse(await readFile(join(repoRoot, "codex", "hooks", "hooks.json"), "utf8"));
   assert.deepEqual(Object.keys(config.hooks).sort(), ["PostToolUse", "PreToolUse", "SessionStart", "Stop", "SubagentStart", "SubagentStop", "UserPromptSubmit"].sort());
-  const session = await runCodexHook({ hook_event_name: "SessionStart", source: "startup", cwd: repoRoot });
+  const session = await runCodexHook({ hook_event_name: "SessionStart", session_id: "distribution", source: "startup", cwd: repoRoot }, repoRoot, join(repoRoot, "codex", "hooks", "muster-hook.mjs"), hookEnv);
   assert.match(session.hookSpecificOutput.additionalContext, /Write-capable waves must run in isolated git worktrees/);
-  const subagent = await runCodexHook({ hook_event_name: "SubagentStart", agent_type: "muster-investigator", cwd: repoRoot });
+  const subagent = await runCodexHook({ hook_event_name: "SubagentStart", session_id: "distribution", agent_id: "investigator", agent_type: "muster-investigator", cwd: repoRoot }, repoRoot, join(repoRoot, "codex", "hooks", "muster-hook.mjs"), hookEnv);
   assert.match(subagent.hookSpecificOutput.additionalContext, /Remain read-only/);
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-"));
   await mkdir(join(tmp, ".muster"), { recursive: true });
   await writeFile(join(tmp, ".muster", "run-active"), "test\n");
   await writeFile(join(tmp, ".muster", "forbidden-actions"), "publish\n");
-  const action = await runCodexHook({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git push origin feature" }, cwd: tmp }, tmp);
+  const action = await runCodexHook({ hook_event_name: "PreToolUse", session_id: "distribution", tool_use_id: "push", tool_name: "Bash", tool_input: { command: "git push origin feature" }, cwd: tmp }, tmp, join(repoRoot, "codex", "hooks", "muster-hook.mjs"), hookEnv);
   assert.match(action.systemMessage, /action class "publish" is forbidden/);
   assert.match(action.systemMessage, /advisory/);
   const source = await readFile(join(repoRoot, "codex", "hooks", "muster-hook.mjs"), "utf8");
   assert.doesNotMatch(source, /permissionDecision|permissionDecisionReason/);
 });
 
+test("Codex hook emits each logical event once across concurrent installed copies", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-dedupe-"));
+  const codexHome = join(tmp, "codex-home"), copies = [join(tmp, "project-copy"), join(tmp, "user-copy")];
+  for (const copy of copies) await cp(join(repoRoot, "codex", "hooks"), copy, { recursive: true });
+  const payload = { hook_event_name: "SessionStart", session_id: "session-dedupe", source: "startup", cwd: tmp };
+  const outputs = await Promise.all(copies.map(copy => runCodexHook(payload, tmp, join(copy, "muster-hook.mjs"), { CODEX_HOME: codexHome })));
+  assert.equal(outputs.filter(output => output.hookSpecificOutput).length, 1);
+
+  const firstTurn = await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-1", prompt: "muster audit", cwd: tmp }, tmp, join(copies[0], "muster-hook.mjs"), { CODEX_HOME: codexHome });
+  const repeatedTurn = await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-1", prompt: "muster audit", cwd: tmp }, tmp, join(copies[1], "muster-hook.mjs"), { CODEX_HOME: codexHome });
+  const secondTurn = await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-2", prompt: "muster audit", cwd: tmp }, tmp, join(copies[1], "muster-hook.mjs"), { CODEX_HOME: codexHome });
+  assert.ok(firstTurn.hookSpecificOutput);
+  assert.deepEqual(repeatedTurn, {});
+  assert.ok(secondTurn.hookSpecificOutput);
+
+  const victim = join(tmp, "stale-cleanup-victim.txt");
+  await writeFile(victim, "keep\n");
+  await symlink(victim, join(codexHome, "muster", "hook-events", `${"a".repeat(64)}.json`));
+  await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-3", prompt: "muster audit", cwd: tmp }, tmp, join(copies[0], "muster-hook.mjs"), { CODEX_HOME: codexHome });
+  assert.equal(await readFile(victim, "utf8"), "keep\n");
+});
+
 test("Codex fallbacks are self-contained and package referenced skill assets", async () => {
-  const skills = join(repoRoot, ".agents", "plugins", "plugins", "muster", "skills");
+  const skills = join(selectedPluginRoot, "skills");
   for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster-gsd-verify-work"]) {
     const text = await readFile(join(skills, name, "SKILL.md"), "utf8");
     assert.match(text, /self-contained|no dependency/i, name);
@@ -281,7 +335,7 @@ test("Codex fallbacks are self-contained and package referenced skill assets", a
   const signed = await readFile(join(skills, "wsh-signed-audit-trails-recipe", "SKILL.md"), "utf8");
   assert.match(signed, /Codex lifecycle hooks/);
   assert.doesNotMatch(signed, /\.claude\/settings\.json/);
-  const catalog = await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", "catalog", "builtins.muster.yaml"), "utf8");
+  const catalog = await readFile(join(selectedPluginRoot, "catalog", "builtins.muster.yaml"), "utf8");
   assert.match(catalog, /rudra496\/StealthHumanizer/);
 });
 
@@ -290,14 +344,14 @@ test("all ported skills declare and load the Codex harness binding", async () =>
   const builtins = (await readdir(join(repoRoot, "plugin", "builtins"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name);
   for (const name of new Set([...native, ...builtins])) {
     const id = codexFallbackSkillId(name);
-    const skill = await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", "skills", id, "SKILL.md"), "utf8");
+    const skill = await readFile(join(selectedPluginRoot, "skills", id, "SKILL.md"), "utf8");
     const frontmatter = skill.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
     assert.equal(parseYaml(frontmatter).name, id, id);
     assert.ok(parseYaml(frontmatter).description.startsWith("Codex-compatible Muster workflow."), id);
     assert.doesNotMatch(skill, /AskUserQuestion|\/muster:|Claude Code Agent tool|\bAgent tool|\bTask tool/, id);
     assert.match(skill, /runtime\/codex-skill-adapter\.md/, id);
   }
-  assert.match(await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", "runtime", "codex-skill-adapter.md"), "utf8"), /Treat `Agent` and `Task` calls as Codex subagent dispatch/);
+  assert.match(await readFile(join(selectedPluginRoot, "runtime", "codex-skill-adapter.md"), "utf8"), /Treat `Agent` and `Task` calls as Codex subagent dispatch/);
 });
 
 test("Codex installation owns only its profile manifest and is repeatable", async () => {
@@ -323,8 +377,12 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
   assert.ok(hooks.hooks.Stop.some(group => group.hooks?.[0]?.command === "printf user-hook"));
   const installedHook = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
   assert.ok(hooks.hooks.SessionStart.some(group => group.hooks?.some(hook => hook.command.includes(installedHook))));
-  assert.match((await runCodexHook({ hook_event_name: "SessionStart", source: "startup", cwd }, cwd, installedHook)).hookSpecificOutput.additionalContext, /Muster is installed for Codex/);
+  assert.match((await runCodexHook({ hook_event_name: "SessionStart", session_id: "install-repeatable", source: "startup", cwd }, cwd, installedHook, { CODEX_HOME: join(home, ".codex") })).hookSpecificOutput.additionalContext, /Muster is installed for Codex/);
   await assert.doesNotReject(() => runCodexInstall({ cwd, home, repoRoot, execFile }));
+  const repeatedHooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
+  for (const groups of Object.values(repeatedHooks.hooks)) {
+    assert.equal(groups.filter(group => group.hooks?.some(hook => hook.command?.includes("/muster/hooks/muster-hook.mjs"))).length, 1);
+  }
   await writeFile(join(agents, "user-agent.toml"), "name = 'user-agent'\n");
   const removed = await runCodexUninstall({ cwd, home, execFile });
   assert.equal(removed.files.length, CODEX_COUNTS.agents + 3);
@@ -428,6 +486,18 @@ test("Codex user-scope install and uninstall use CODEX_HOME without disturbing u
   await assert.rejects(() => readFile(join(target, "agents", "muster-builder.toml"), "utf8"));
 });
 
+test("Codex doctor reports project/user hook overlap as a deduped advisory", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-overlap-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent });
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
+  assert.equal(overlap?.ok, true);
+  assert.match(overlap?.detail || "", /project and user.*runtime dedupe/i);
+});
+
 test("Codex install refreshes an older installed plugin version", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-upgrade-")), calls = [];
   const execFile = async (_bin, args) => {
@@ -444,7 +514,7 @@ test("Codex install refreshes an older installed plugin version", async () => {
 
 test("Codex install refreshes an already-installed same-version local plugin", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-same-version-")), calls = [];
-  const plugin = JSON.parse(await readFile(join(repoRoot, ".agents", "plugins", "plugins", "muster", ".codex-plugin", "plugin.json"), "utf8"));
+  const plugin = JSON.parse(await readFile(join(selectedPluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
   const execFile = async (_bin, args) => {
     calls.push(args.join(" "));
     if (args[0] === "--version") return { stdout: "codex-cli test" };

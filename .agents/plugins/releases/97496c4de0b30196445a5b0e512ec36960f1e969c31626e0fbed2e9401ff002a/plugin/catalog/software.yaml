@@ -1,0 +1,79 @@
+# External providers — optional, detected at runtime. None assumed present.
+- id: serena
+  kind: external
+  roles: [code-navigation]
+  detect: { kind: mcp_server, match: serena }
+  rank: 90
+  recommended: true
+  invoke: "use serena symbol tools (find_symbol, find_referencing_symbols)"
+  notes: "LSP-grade navigation"
+- id: context7
+  kind: external
+  roles: [docs-research]
+  detect: { kind: mcp_server, match: context7 }
+  rank: 90
+  recommended: true
+  invoke: "resolve-library-id then query-docs"
+  notes: "live external library docs"
+- id: superpowers
+  kind: external
+  roles: [brainstorm, plan, test-author, code-review]
+  detect: { kind: plugin, match: superpowers }
+  rank: 80
+  invoke: "invoke the matching superpowers skill"
+- id: pr-review-toolkit
+  kind: external
+  roles: [code-review, security-review]
+  detect: { kind: plugin, match: pr-review-toolkit }
+  rank: 70
+  invoke: "dispatch the matching reviewer agent"
+- id: wshobson-agents
+  kind: external
+  roles: [security-review, tech-debt, debug, architecture-review]
+  detect: { kind: plugin, match: agents }
+  rank: 70
+  recommended: true
+  invoke: "dispatch the matching wshobson specialist agent"
+# Audit / quality providers (recognized when installed in the harness)
+- id: code-simplifier
+  kind: external
+  roles: [refactor]
+  detect: { kind: plugin, match: code-simplifier }
+  rank: 85
+  recommended: true
+  invoke: "dispatch the code-simplifier agent"
+- id: security-guidance
+  kind: external
+  roles: [security-review]
+  detect: { kind: plugin, match: security-guidance }
+  rank: 80
+  recommended: true
+  invoke: "use the security-guidance skills for the audit"
+- id: qodo-skills
+  kind: external
+  roles: [code-review, security-review, tech-debt]
+  detect: { kind: plugin, match: qodo-skills }
+  rank: 35
+  invoke: "use qodo skills / PR resolver"
+  notes: "low rank by preference — Muster's bundled wshobson/superpowers built-ins lead these roles; qodo is a fallback"
+# Browser / computer control (recognized when installed)
+- id: playwright
+  kind: external
+  roles: [browser-control]
+  detect: { kind: mcp_server, match: playwright }
+  rank: 85
+  recommended: true
+  invoke: "drive the browser via the playwright MCP tools"
+- id: chrome-devtools-mcp
+  kind: external
+  roles: [browser-control]
+  detect: { kind: plugin, match: chrome-devtools-mcp }
+  rank: 80
+  invoke: "drive Chrome via the chrome-devtools MCP tools"
+- id: desktop-commander
+  kind: external
+  roles: [computer-control]
+  detect: { kind: plugin, match: desktop-commander }
+  rank: 80
+  recommended: true
+  invoke: "drive the desktop via desktop-commander"

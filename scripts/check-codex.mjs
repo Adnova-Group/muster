@@ -3,9 +3,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
+import { resolveCodexRelease } from "../src/codex-release.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const plugin = join(root, ".agents/plugins/plugins/muster");
+const selected = await resolveCodexRelease(root);
+const plugin = selected.pluginRoot;
+const profilesRoot = selected.profilesRoot;
 const fail = (message) => { throw new Error(`Codex validation: ${message}`); };
 const dirs = async (path) => (await readdir(path, { withFileTypes: true })).filter(x => x.isDirectory()).map(x => x.name);
 const files = async (path) => (await readdir(path, { withFileTypes: true })).filter(x => x.isFile()).map(x => x.name);
@@ -14,7 +17,7 @@ const json = async (path) => JSON.parse(await readFile(path, "utf8"));
 const [pkg, marketplace, manifest, mapping, upstreams, assetManifest] = await Promise.all([
   json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "codex/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
 ]);
-if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster" || marketplace.plugins?.[0]?.source?.path !== "./.agents/plugins/plugins/muster") fail("marketplace does not expose the bundled Muster plugin");
+if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster" || marketplace.musterRelease?.generation !== selected.generation) fail("marketplace does not expose one coherent immutable Muster release");
 if (manifest.name !== "muster" || manifest.version !== pkg.version) fail("plugin manifest version is not package version");
 if (!manifest.skills || !manifest.mcpServers || manifest.hooks !== undefined) fail("plugin manifest must expose skills and MCP without advertising inert plugin-bundled hooks");
 if (Object.keys(mapping.agents || {}).length !== CODEX_COUNTS.agents) fail("mapping does not contain all agent profiles");
@@ -26,12 +29,12 @@ for (const family of ["superpowers", "wshobson-agents"]) {
   const assets = assetManifest.sources?.find(item => item.id === family);
   if (!assets || assets.repository !== researched.repository || assets.ref !== researched.ref) fail(`Codex skill assets are not pinned to researched ${family}`);
 }
-const profiles = await files(join(root, "codex/agents"));
+const profiles = await files(profilesRoot);
 if (profiles.filter(n => n.endsWith(".toml")).length !== CODEX_COUNTS.agents) fail("generated agent profile count is wrong");
 for (const [id, config] of Object.entries(mapping.agents)) {
   const name = `${id}.toml`;
   if (!profiles.includes(name)) fail(`missing generated profile ${name}`);
-  const text = await readFile(join(root, "codex/agents", name), "utf8");
+  const text = await readFile(join(profilesRoot, name), "utf8");
   if (!/^name\s*=/m.test(text) || !/^description\s*=/m.test(text) || !/^developer_instructions\s*=/m.test(text)) fail(`${name} is not a custom-agent profile`);
   const expected = CODEX_MODEL_POLICY[config.tier];
   if (!text.includes(`model = ${JSON.stringify(expected.model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(expected.reasoning)}`)) fail(`${name} does not match its model policy`);
@@ -84,6 +87,15 @@ const coordination = await readFile(join(plugin, "skills", "coordination", "SKIL
 if (!coordination.includes("plugin cache is not a Git checkout") || /git log -1 --format/.test(coordination)) fail("coordination preflight is not package-cache safe");
 const orchestrator = await readFile(join(plugin, "skills", "orchestrator", "SKILL.md"), "utf8");
 if (/generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK|permissionDecision/.test(orchestrator)) fail("orchestrator overclaims Codex dispatch or hook enforcement");
+const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "completion and message receipts", "newly ready work", "live agents", "executable steps", "HUMAN-HOLD", "merge decision"];
+for (const [name, path] of [
+  ["adapter", join(plugin, "runtime", "codex-skill-adapter.md")],
+  ["orchestrator", join(plugin, "skills", "orchestrator", "SKILL.md")],
+  ...[...modes, ...aliases].map(name => [name, join(plugin, "skills", name, "SKILL.md")])
+]) {
+  const text = await readFile(path, "utf8");
+  for (const marker of watchMarkers) if (!text.includes(marker)) fail(`${name} lacks agent watch invariant marker ${marker}`);
+}
 if (native.length !== CODEX_COUNTS.nativeSkills || builtins.length !== CODEX_COUNTS.builtinSkills) fail("source skill count drift");
 if ((await readdir(join(root, "pipelines"))).filter(n => n.endsWith(".yaml")).length !== CODEX_COUNTS.pipelines) fail("pipeline count drift");
 for (const file of ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/codex-skill-adapter.md", "src/cli.js", "src/package.json", "package.json", ".mcp.json"]) await stat(join(plugin, file)).catch(() => fail(`missing ${file}`));

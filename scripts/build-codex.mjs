@@ -1,23 +1,12 @@
 import { build } from "esbuild";
-import { execFile as execFileCb } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, truncate, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { assertRegularFile, assertRegularTree, publishCodexRelease } from "../src/codex-release.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const execFile = promisify(execFileCb);
-const livePlugin = join(root, ".agents", "plugins", "plugins", "muster");
-const pluginParent = dirname(livePlugin);
-await mkdir(pluginParent, { recursive: true });
-const stagingRoot = await mkdtemp(join(pluginParent, ".muster-build-"));
-const plugin = join(stagingRoot, "plugin");
-const runtime = join(plugin, "runtime");
-const liveProfiles = join(root, "codex", "agents");
-const profiles = join(stagingRoot, "profiles");
-const modeDir = join(plugin, "skills");
-const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-const mapping = JSON.parse(await readFile(join(root, "codex", "agents.manifest.json"), "utf8"));
+const pluginParent = join(root, ".agents", "plugins");
+let stagingRoot, plugin, runtime, profiles, modeDir, pkg, mapping;
 
 const policy = {
   haiku: { model: "gpt-5.6-luna", reasoning: "high" },
@@ -42,59 +31,14 @@ const modes = {
 
 async function ensure(dir) { await mkdir(dir, { recursive: true }); }
 async function write(path, content) { await ensure(dirname(path)); await writeFile(path, content, "utf8"); }
-async function treeEntries(rootDir) {
-  const dirs = [], files = [];
-  async function walk(dir, prefix = "") {
-    let entries;
-    try { entries = await readdir(dir, { withFileTypes: true }); }
-    catch (error) { if (error.code === "ENOENT") return; throw error; }
-    for (const entry of entries) {
-      const relativePath = prefix ? join(prefix, entry.name) : entry.name;
-      if (entry.isDirectory()) {
-        dirs.push(relativePath);
-        await walk(join(dir, entry.name), relativePath);
-      } else files.push(relativePath);
-    }
-  }
-  await walk(rootDir);
-  return { dirs, files };
-}
-async function publishTreeAtomically(staged, live) {
-  await ensure(live);
-  // GNU mv maps --exchange to renameat2(RENAME_EXCHANGE), switching the
-  // complete sibling trees in one syscall. This is the publication path on
-  // Linux/WSL; unsupported platforms fall back to safe file publication.
-  if (process.platform !== "win32") {
-    try { await execFile("mv", ["--exchange", "--no-target-directory", staged, live]); return; }
-    catch { /* exchange unsupported or cross-device: use portable fallback */ }
-  }
-  const [next, previous] = await Promise.all([treeEntries(staged), treeEntries(live)]);
-  const nextDirs = new Set(next.dirs), nextFiles = new Set(next.files);
-  for (const path of next.dirs.sort((a, b) => a.length - b.length)) await ensure(join(live, path));
-  // Same-version refreshes are the common live-marketplace path. Preserve
-  // byte-identical files in place so even filesystems with weak replace
-  // semantics (notably WSL-mounted NTFS) expose no unlink/relink window.
-  // Changed text stays at the registered path; new/binary files use rename.
-  for (const path of next.files) {
-    const stagedPath = join(staged, path), livePath = join(live, path);
-    const stagedContent = await readFile(stagedPath);
-    let liveContent = null;
-    try { liveContent = await readFile(livePath); }
-    catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (liveContent?.equals(stagedContent)) continue;
-    if (liveContent && !liveContent.includes(0) && !stagedContent.includes(0)) {
-      // Portable fallback for filesystems without directory exchange. Keep the
-      // registered path present, replace its complete text in one write, pad
-      // away any old tail, then trim only harmless trailing spaces.
-      const padded = Buffer.alloc(Math.max(liveContent.length, stagedContent.length), 0x20);
-      stagedContent.copy(padded);
-      await writeFile(livePath, padded, { flag: "r+" });
-      await truncate(livePath, stagedContent.length);
-    } else await rename(stagedPath, livePath);
-  }
-  for (const path of previous.files) if (!nextFiles.has(path)) await rm(join(live, path), { force: true });
-  for (const path of previous.dirs.sort((a, b) => b.length - a.length)) {
-    if (!nextDirs.has(path)) await rm(join(live, path), { recursive: true, force: true });
+async function cleanStaleStages() {
+  await ensure(pluginParent);
+  for (const entry of await readdir(pluginParent, { withFileTypes: true })) {
+    if (!entry.name.startsWith(".muster-build-")) continue;
+    const path = join(pluginParent, entry.name), stat = await lstat(path);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`stale Codex build stage must be an ordinary directory: ${path}`);
+    await assertRegularTree(path);
+    await rm(path, { recursive: true, force: true });
   }
 }
 function frontmatter(text, field) {
@@ -191,6 +135,7 @@ function adaptCoordinationForCodex(text) {
   const section = `## Standing-context preflight\n\nThe installed Codex plugin cache is not a Git checkout, so do not run \`git log\` against plugin paths. At the first read in a runner cycle, record the plugin version from \`${"${PLUGIN_ROOT}"}/package.json\` and a SHA-256 fingerprint over these installed behavior paths: \`skills/coordination/SKILL.md\`, \`commands/go-backlog.md\`, \`commands/go.md\`, and \`commands/runner.md\`. Compute the fingerprint with the host's available SHA-256 tool, sorting paths before hashing. Muster's Codex hooks are installed outside the plugin cache: also locate the selected managed runtime at the git root's \`.codex/muster/hooks/\` or \`$CODEX_HOME/muster/hooks/\` and fingerprint its files plus the sibling Muster ownership manifest. If neither managed hook runtime can be proven, say "I don't know whether the standing context is unchanged," leave a HUMAN-HOLD receipt, and stop.\n\nBefore a later claim or resume in the same cycle, recompute both fingerprints. Unchanged version and fingerprints proceed. Any change means the installed standing context changed or was tampered with during the cycle: leave a HUMAN-HOLD receipt naming the old/new version and hashes, preserve the claim state, and stop. A packaged plugin cannot safely classify such an in-place mutation as confined because there is no authoritative Git history in the cache. A newly started cycle reads the newly installed immutable version and managed hook runtime as its fresh baseline.\n\n`;
   return text.slice(0, start) + section + text.slice(end);
 }
+const agentWatchProtocol = `## Agent watch invariant\n\n<!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->\n\nAfter every dispatch, retain every canonical agent id returned by \`collaboration.spawn_agent\`. While any agent remains live, call \`collaboration.list_agents\`, process all completion and message receipts, dispatch any newly ready work whose dependencies are satisfied, then call \`collaboration.wait_agent\` with a timeout of at most 60 seconds. Repeat this watch cycle; a timeout or unchanged status is not completion.\n\nDo not send the final answer, clear active run/wave state, or stop watching while live agents or executable steps remain. Stop only when all work is terminal, an explicit approval or HUMAN-HOLD requires user input, a proven blocker leaves no ready work, or a merge decision requires the user. Hooks are advisory and never replace this watch cycle.\n`;
 function adaptOrchestratorForCodex(text) {
   let result = text.replace(/- \*\*Hard gate:\*\*[\s\S]*?false positive\.\n/, "- **Codex hook support:** Muster's trusted `PreToolUse` hook surfaces a policy warning when a write-capable wave appears outside a detected worktree. Codex cannot reliably deny every subagent or unified-shell action, so the orchestrator must still enforce dispatch, ownership, and worktree isolation explicitly.\n");
   result = result.replace("give each its own git worktree (`isolation: \"worktree\"` on the Codex subagent dispatcher)", "create a separate git worktree for each task, start the dispatched Codex subagent in that worktree, and record the path/base SHA in its brief");
@@ -206,7 +151,7 @@ function adaptOrchestratorForCodex(text) {
   result = result.replace("Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.", "Iron-rule reminder: Codex hooks diagnose likely violations, while the orchestrator, named profiles, ownership receipts, and isolated worktrees enforce dispatch-not-inline.");
   const enforcement = result.indexOf("## Enforcement model: gates vs conventions");
   if (enforcement < 0) throw new Error("orchestrator enforcement section not found");
-  return result.slice(0, enforcement) + `## Codex enforcement model\n\n- **Mechanically validated:** manifest schema, dependency waves, capability resolution, worktree/base-SHA receipts, file ownership checks, tests, reviews, commits, and terminal receipts.\n- **Hook diagnostics:** session/prompt context, supported action-class warnings, worktree warnings, stale-marker diagnostics, and subagent start/stop context after one-time hook trust.\n- **Advisory:** todo-before-spawn and universal dispatch-not-inline blocking. Current Codex hooks cannot reliably intercept every subagent or unified-shell action, so do not claim these are hard gates.\n- **Required invariant:** every write-capable wave runs in explicitly created isolated worktrees and is verified from repository state after the barrier.\n`;
+  return result.slice(0, enforcement) + `## Codex enforcement model\n\n- **Mechanically validated:** manifest schema, dependency waves, capability resolution, worktree/base-SHA receipts, file ownership checks, tests, reviews, commits, and terminal receipts.\n- **Hook diagnostics:** session/prompt context, supported action-class warnings, worktree warnings, stale-marker diagnostics, and subagent start/stop context after one-time hook trust.\n- **Advisory:** todo-before-spawn and universal dispatch-not-inline blocking. Current Codex hooks cannot reliably intercept every subagent or unified-shell action, so do not claim these are hard gates.\n- **Required invariant:** every write-capable wave runs in explicitly created isolated worktrees and is verified from repository state after the barrier.\n\n${agentWatchProtocol}`;
 }
 function bindBundledCodexCli(text) {
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
@@ -273,10 +218,22 @@ function profileToml(id, source, config) {
   ].join("\n");
 }
 function modeSkill(name, mode) {
-  return `---\nname: ${name}\ndescription: ${JSON.stringify(`Use for Muster orchestration when the user asks to ${mode.purpose}. Explicitly invoke with $${name}.`)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n`;
+  return `---\nname: ${name}\ndescription: ${JSON.stringify(`Use for Muster orchestration when the user asks to ${mode.purpose}. Explicitly invoke with $${name}.`)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n\n${agentWatchProtocol}`;
 }
 
 try {
+await cleanStaleStages();
+stagingRoot = await mkdtemp(join(pluginParent, ".muster-build-"));
+plugin = join(stagingRoot, "release", "plugin");
+runtime = join(plugin, "runtime");
+profiles = join(stagingRoot, "release", "profiles");
+modeDir = join(plugin, "skills");
+for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"]) {
+  await assertRegularTree(join(root, source));
+}
+await assertRegularFile(join(root, "package.json"));
+pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+mapping = JSON.parse(await readFile(join(root, "codex", "agents.manifest.json"), "utf8"));
 await Promise.all([ensure(plugin), ensure(runtime)]);
 
 await Promise.all([
@@ -320,7 +277,7 @@ for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster
 await adaptPortedSkills(portedSkillNames.filter(name => !name.startsWith("gsd-") && name !== "wsh-signed-audit-trails-recipe"));
 
 for (const [name, mode] of Object.entries(modes)) await write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode));
-await write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Use for any glass-box Muster orchestration request: plan, implement, backlog, diagnose, audit, runner, capture, pipeline, crew, or wave workflow.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n`);
+await write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Use for any glass-box Muster orchestration request: plan, implement, backlog, diagnose, audit, runner, capture, pipeline, crew, or wave workflow.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${agentWatchProtocol}`);
 
 for (const [id, config] of Object.entries(mapping.agents)) {
   const source = await readFile(join(root, config.source), "utf8");
@@ -363,10 +320,21 @@ await write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({
   interface: { displayName: "Muster", shortDescription: "Glass-box agentic orchestration for Codex.", longDescription: "Muster provides deterministic routing, custom-agent profiles, pipeline workflows, and the complete MCP toolset.", developerName: "Adnova Group", category: "Productivity", capabilities: ["Read", "Write"], websiteURL: "https://adnova-group.github.io/muster/", defaultPrompt: ["Plan this feature with Muster.", "Run a Muster audit of this repository.", "Use Muster to clear this backlog."] }
 }, null, 2) + "\n");
 
-await Promise.all([
-  publishTreeAtomically(plugin, livePlugin),
-  publishTreeAtomically(profiles, liveProfiles)
-]);
+await publishCodexRelease({
+  repoRoot: root,
+  stagedRelease: join(stagingRoot, "release"),
+  packageVersion: pkg.version,
+  marketplaceTemplate: {
+    name: "muster",
+    interface: { displayName: "Muster" },
+    plugins: [{
+      name: "muster",
+      source: { source: "local", path: "./.agents/plugins/releases/pending/plugin" },
+      policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+      category: "Productivity"
+    }]
+  }
+});
 } finally {
-  await rm(stagingRoot, { recursive: true, force: true });
+  if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true });
 }

@@ -5,6 +5,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { resolveCodexRelease } from "../src/codex-release.js";
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -16,8 +17,21 @@ async function buildCheckout(checkout, sharedNodeModules) {
   await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
   await symlink(sharedNodeModules, join(checkout, "node_modules"), "dir");
   await execFile("node", ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
-  const plugin = join(checkout, ".agents", "plugins", "plugins", "muster");
+  const { pluginRoot: plugin } = await resolveCodexRelease(checkout);
   return Object.fromEntries(await Promise.all(bundles.map(async path => [path, await readFile(join(plugin, path), "utf8")] )));
+}
+
+async function selectedSnapshot(checkout) {
+  const pointer = JSON.parse(await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8"));
+  const generation = pointer.musterRelease.generation;
+  const release = join(checkout, ".agents", "plugins", "releases", generation);
+  const paths = [
+    "plugin/runtime/muster.mjs",
+    "plugin/commands/audit.md",
+    "plugin/skills/advisor/SKILL.md",
+    "profiles/muster-builder.toml"
+  ];
+  return { generation, files: await Promise.all(paths.map(path => readFile(join(release, path), "utf8"))) };
 }
 
 test("Codex bundles are byte-identical across checkout roots with shared symlinked dependencies", async () => {
@@ -34,7 +48,7 @@ test("Codex bundles are byte-identical across checkout roots with shared symlink
   }
 });
 
-test("Codex rebuild keeps every published skill readable for concurrent inventory scans", async t => {
+test("Codex rebuild exposes only exact old or new immutable generation snapshots", async t => {
   const tmp = await mkdtemp(join(repoRoot, ".codex-race-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const checkout = join(tmp, "checkout");
@@ -42,14 +56,9 @@ test("Codex rebuild keeps every published skill readable for concurrent inventor
   await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
   await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+  const oldSnapshot = await selectedSnapshot(checkout);
   const sourceAdvisor = join(checkout, "plugin", "skills", "advisor", "SKILL.md");
   await writeFile(sourceAdvisor, `${await readFile(sourceAdvisor, "utf8")}\nChanged while the published plugin remains live.\n`);
-
-  const skillRoot = join(checkout, ".agents", "plugins", "plugins", "muster", "skills");
-  const skillFiles = (await readdir(skillRoot, { withFileTypes: true }))
-    .filter(entry => entry.isDirectory())
-    .map(entry => join(skillRoot, entry.name, "SKILL.md"));
-  assert.ok(skillFiles.length > 70, "fixture must exercise the full published skill inventory");
 
   const child = spawn(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, stdio: ["ignore", "pipe", "pipe"] });
   let finished = false;
@@ -64,15 +73,56 @@ test("Codex rebuild keeps every published skill readable for concurrent inventor
     });
   });
 
-  const missing = new Set();
+  const observed = [];
   while (!finished) {
-    const reads = await Promise.allSettled(skillFiles.map(path => readFile(path, "utf8")));
-    reads.forEach((result, index) => {
-      if (result.status === "rejected" || !result.value.startsWith("---\n")) missing.add(skillFiles[index]);
-    });
+    observed.push(await selectedSnapshot(checkout));
     await new Promise(resolve => setImmediate(resolve));
   }
   await completion;
-  assert.deepEqual([...missing], [], "a live Codex inventory scan observed missing SKILL.md files during rebuild");
-  assert.match(await readFile(join(skillRoot, "advisor", "SKILL.md"), "utf8"), /Changed while the published plugin remains live/);
+  const newSnapshot = await selectedSnapshot(checkout);
+  assert.notEqual(newSnapshot.generation, oldSnapshot.generation);
+  assert.match(newSnapshot.files[2], /Changed while the published plugin remains live/);
+  for (const snapshot of observed) {
+    assert.ok(
+      (snapshot.generation === oldSnapshot.generation && JSON.stringify(snapshot.files) === JSON.stringify(oldSnapshot.files)) ||
+      (snapshot.generation === newSnapshot.generation && JSON.stringify(snapshot.files) === JSON.stringify(newSnapshot.files)),
+      "reader observed a partial or mixed generation"
+    );
+  }
+  await resolveCodexRelease(checkout);
+  assert.deepEqual((await readdir(join(checkout, ".agents", "plugins"))).filter(name => name.startsWith(".muster-build-")), []);
+  assert.doesNotMatch(await readFile(join(checkout, "scripts", "build-codex.mjs"), "utf8"), /--exchange|publishTreeAtomically/);
+});
+
+test("Codex build rejects source symlinks and leaves the selected release unchanged", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-symlink-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const checkout = join(tmp, "checkout");
+  await mkdir(checkout, { recursive: true });
+  await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
+  await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 });
+  const before = await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8");
+  await symlink(join(tmp, "external"), join(checkout, "plugin", "skills", "advisor", "escape"));
+  await assert.rejects(execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 }), /symlink|regular file/i);
+  assert.equal(await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8"), before);
+  assert.deepEqual((await readdir(join(checkout, ".agents", "plugins"))).filter(name => name.startsWith(".muster-build-")), []);
+});
+
+test("repeated Codex build reuses the same immutable generation", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-repeat-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const checkout = join(tmp, "checkout");
+  await mkdir(checkout, { recursive: true });
+  await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
+  await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
+  const stale = join(checkout, ".agents", "plugins", ".muster-build-stale");
+  await mkdir(stale, { recursive: true });
+  await writeFile(join(stale, "abandoned.txt"), "stale\n");
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 });
+  await assert.rejects(readFile(join(stale, "abandoned.txt"), "utf8"));
+  const first = await selectedSnapshot(checkout);
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 });
+  const second = await selectedSnapshot(checkout);
+  assert.deepEqual(second, first);
 });

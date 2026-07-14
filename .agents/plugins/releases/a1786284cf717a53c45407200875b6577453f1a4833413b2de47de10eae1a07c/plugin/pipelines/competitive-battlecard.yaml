@@ -1,0 +1,17 @@
+id: competitive-battlecard
+domain: sales
+title: Competitive Battlecard
+match: [battlecard, competitive battlecard, competitor comparison, win-loss, objection handling, competitive intelligence, displacement]
+phases:
+  - { id: intake,    role: brainstorm,    desc: "competitor, segment, deal context" }
+  - { id: research,  role: docs-research, desc: "competitor facts, pricing, strengths/weaknesses (cited)" }
+  - { id: win-loss,  role: docs-research, desc: "pull 3-5 recent win/loss notes; extract verbatim objections + deal factors" }
+  - { id: positioning, role: author,      desc: "differentiation, landmines, trap-setting discovery questions (Know/Say/Show), why-we-win proof points" }
+  - { id: objections,  role: author,      desc: "objection handling + proof points" }
+  - { id: review,    role: code-review,   desc: "adversarial review + accuracy check" }
+  - { id: score,     role: score,         desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [accuracy, differentiation, objection-coverage, single-page-fit, evidence]
+  floor: 2
+  pass_total: 12

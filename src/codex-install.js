@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { codexAvailable } from "./codex-inventory.js";
+import { resolveCodexRelease } from "./codex-release.js";
 
 const execFileDefault = promisify(execFileCb);
 export const CODEX_MARKETPLACE = "Adnova-Group/muster";
@@ -198,11 +199,8 @@ async function registerPlugin(execFile, dryRun, repoRoot) {
 export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
-  // Package installs use codex/agents. The self-contained plugin runtime keeps
-  // the same generated profiles at its plugin-root agents/ path.
-  const packageProfiles = join(root, "codex", "agents");
-  const pluginProfiles = join(root, "agents");
-  const source = (await profileFiles(packageProfiles)).length ? packageProfiles : pluginProfiles;
+  const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
+  const source = pluginRoot ? join(root, "agents") : (await resolveCodexRelease(root)).profilesRoot;
   const files = await profileFiles(source);
   if (!files.length) throw new Error("Codex profiles are missing; run npm run build:codex first");
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);

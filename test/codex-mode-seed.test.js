@@ -5,9 +5,11 @@ import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { resolveCodexRelease } from "../src/codex-release.js";
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
+const selectedPluginRoot = (await resolveCodexRelease(repoRoot)).pluginRoot;
 const cli = join(repoRoot, "src", "cli.js");
 
 async function configureCodex(project, plugins = []) {
@@ -84,7 +86,7 @@ test("Codex audit and diagnose prefer a plugin only when live plugin JSON enable
 });
 
 test("generated Codex audit and diagnose commands seed manifests with live Codex inventory", async () => {
-  const commands = join(repoRoot, ".agents", "plugins", "plugins", "muster", "commands");
+  const commands = join(selectedPluginRoot, "commands");
   const [audit, diagnose] = await Promise.all([
     readFile(join(commands, "audit.md"), "utf8"),
     readFile(join(commands, "diagnose.md"), "utf8")
@@ -94,7 +96,7 @@ test("generated Codex audit and diagnose commands seed manifests with live Codex
 });
 
 test("generated Codex audit batches every read-only dimension within worker capacity", async () => {
-  const generatedPath = join(repoRoot, ".agents", "plugins", "plugins", "muster", "commands", "audit.md");
+  const generatedPath = join(selectedPluginRoot, "commands", "audit.md");
   const sourcePath = join(repoRoot, "plugin", "commands", "audit.md");
   const [generated, source] = await Promise.all([readFile(generatedPath, "utf8"), readFile(sourcePath, "utf8")]);
   assert.match(generated, /six core dimensions remain independent and READ-ONLY/);

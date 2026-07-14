@@ -22,15 +22,16 @@ import {
 } from "../src/prompt-scan.js";
 
 // ── C2: SCAN_SKIP_DIRS exclusion ─────────────────────────────────────────────
-// node_modules, .git, and dist are in SCAN_SKIP_DIRS — files inside them must
+// node_modules, .git, dist, and generated .agents releases are in SCAN_SKIP_DIRS — files inside them must
 // never appear in the results, even if they carry a text extension.
-test("C2: collectScanFiles excludes files inside SCAN_SKIP_DIRS (node_modules, .git, dist)", async () => {
+test("C2: collectScanFiles excludes dependency, VCS, build, and generated release directories", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "muster-ps-c2-"));
   try {
     // Verify our constants are the ones we expect (guards against constant rename).
     assert.ok(SCAN_SKIP_DIRS.has("node_modules"), "SCAN_SKIP_DIRS must contain node_modules");
     assert.ok(SCAN_SKIP_DIRS.has(".git"),          "SCAN_SKIP_DIRS must contain .git");
     assert.ok(SCAN_SKIP_DIRS.has("dist"),          "SCAN_SKIP_DIRS must contain dist");
+    assert.ok(SCAN_SKIP_DIRS.has(".agents"),       "SCAN_SKIP_DIRS must contain generated .agents releases");
 
     // Create files that SHOULD be excluded.
     mkdirSync(path.join(dir, "node_modules"), { recursive: true });
@@ -39,6 +40,8 @@ test("C2: collectScanFiles excludes files inside SCAN_SKIP_DIRS (node_modules, .
     writeFileSync(path.join(dir, ".git", "skip-me.md"), "# should be excluded");
     mkdirSync(path.join(dir, "dist"), { recursive: true });
     writeFileSync(path.join(dir, "dist", "skip-me.md"), "# should be excluded");
+    mkdirSync(path.join(dir, ".agents", "plugins", "releases"), { recursive: true });
+    writeFileSync(path.join(dir, ".agents", "plugins", "releases", "skip-me.md"), "# immutable generated output");
 
     // Create a file that SHOULD be included.
     writeFileSync(path.join(dir, "visible.md"), "# visible file");
@@ -59,6 +62,7 @@ test("C2: collectScanFiles excludes files inside SCAN_SKIP_DIRS (node_modules, .
       !paths.some((p) => p.startsWith("dist")),
       "dist must be excluded",
     );
+    assert.ok(!paths.some((p) => p.startsWith(".agents")), ".agents must be excluded");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

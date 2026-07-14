@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { classifyAction } from "./action-guard.mjs";
 
 const MODES = "$muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, and $muster-capture";
@@ -20,7 +22,12 @@ function payload() {
   catch { return {}; }
 }
 
+let emissionClaimed = false;
 function emit(value) {
+  if (!emissionClaimed) {
+    if (!claimEmission(input, event)) return;
+    emissionClaimed = true;
+  }
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
@@ -72,6 +79,84 @@ function forbiddenActions(cwd, root) {
     }
   }
   return new Set();
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+  return value;
+}
+
+const digest = value => createHash("sha256").update(value).digest("hex");
+const scalar = value => typeof value === "string" || typeof value === "number" ? String(value) : "";
+
+function eventKey(input, event) {
+  const parts = [event, scalar(input.session_id)];
+  if (event === "SessionStart") {
+    parts.push(scalar(input.source), scalar(input.session_start_id || input.start_id || input.session_id));
+  } else {
+    parts.push(scalar(input.turn_id));
+    const eventId = input.event_id || input.tool_use_id || input.call_id || input.agent_id || input.subagent_id;
+    parts.push(scalar(eventId));
+    if (!input.turn_id && !eventId) parts.push(digest(JSON.stringify(canonical(input))));
+  }
+  return digest(JSON.stringify(parts));
+}
+
+function contained(base, target) {
+  const rel = relative(resolve(base), resolve(target));
+  return rel && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+function ensureDirectory(path) {
+  if (!existsSync(path)) mkdirSync(path, { recursive: true, mode: 0o700 });
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`unsafe hook event directory: ${path}`);
+}
+
+function cleanupEventRecords(dir, now = Date.now()) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!/^[a-f0-9]{64}\.json$/.test(entry.name)) continue;
+    const path = join(dir, entry.name);
+    if (!contained(dir, path)) continue;
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink()) continue;
+    if (now - stat.mtimeMs > 24 * 60 * 60 * 1000) rmSync(path, { force: true });
+  }
+}
+
+function claimEmission(input, event) {
+  let fd = null, record = null;
+  try {
+    const home = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+    ensureDirectory(home);
+    const muster = join(home, "muster"), dir = join(muster, "hook-events");
+    if (!contained(home, muster) || !contained(home, dir)) throw new Error("hook event directory escaped CODEX_HOME");
+    ensureDirectory(muster);
+    ensureDirectory(dir);
+    cleanupEventRecords(dir);
+    record = join(dir, `${eventKey(input, event)}.json`);
+    if (!contained(dir, record)) throw new Error("hook event record escaped its directory");
+    try { fd = openSync(record, "wx", 0o600); }
+    catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      const stat = lstatSync(record);
+      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`unsafe hook event record: ${record}`);
+      return false;
+    }
+    writeFileSync(fd, JSON.stringify({ format: 1, event, createdAt: new Date().toISOString() }) + "\n", "utf8");
+    closeSync(fd);
+    fd = null;
+    return true;
+  } catch (error) {
+    if (fd !== null) try { closeSync(fd); } catch { /* fail open */ }
+    if (record) try {
+      const stat = lstatSync(record);
+      if (stat.isFile() && !stat.isSymbolicLink()) rmSync(record, { force: true });
+    } catch { /* fail open */ }
+    process.stderr.write(`Muster hook dedupe unavailable; continuing fail-open: ${error.message}\n`);
+    return true;
+  }
 }
 
 const input = payload();

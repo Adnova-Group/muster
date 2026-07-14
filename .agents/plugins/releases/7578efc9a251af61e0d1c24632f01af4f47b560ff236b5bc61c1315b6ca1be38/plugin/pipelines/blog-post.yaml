@@ -1,0 +1,18 @@
+id: blog-post
+domain: blog
+title: Blog Post
+phases:
+  - { id: intake,   role: brainstorm,    desc: "audience, search intent, angle, target keyword, success metric; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
+  - { id: research, role: docs-research, desc: "evidence, sources, competitor posts, E-E-A-T signals — incl. a named author with first-hand experience and 'how it was made' accountability (2025 helpful-content guidance)" }
+  - { id: outline,  role: author,        desc: "hook + section outline (problem -> insight -> proof -> action); answer-first (GEO): first ~200 words directly answer the target query, plus an FAQ + structured-data block so AI Overviews can extract and cite it" }
+  - { id: draft,    role: author,        desc: "draft sections one at a time; concrete examples; scannable structure; calibrate jargon, depth, and altitude to the resolved audience profile; resolve the voice profile in docs/profiles/VOICE.md and layer its register, rhythm, and anti-patterns on top (audience owns depth/jargon/altitude, voice owns register/rhythm/anti-patterns)" }
+  - { id: edit,     role: author,        desc: "tighten prose, voice consistency, readability, headings, internal links" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate" }
+  - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+optional_phases:
+  - { id: publish, role: author, desc: "OPTIONAL, skippable — terminal publish-prep phase after humanize: assemble the packet (final artifact + image prompts + metadata, merged bottom-up into one manifest), run a visual-verify pass (screenshot + console evidence), then STOP at the action fence — publish actions require the human's explicit go-ahead." }
+gate:
+  criteria: [hook, clarity-for-audience, value, originality, structure, evidence, cta]
+  floor: 2
+  pass_total: 16

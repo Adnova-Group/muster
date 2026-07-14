@@ -1,0 +1,102 @@
+# Book pipeline — handles fiction AND non-fiction/business/self-improvement.
+# Phase structure inspired by book-genesis (felipelobomotta-blip/book-genesis-v4),
+# NousResearch/autonovel, Chapter Blog nonfiction outline, ProWritingAid,
+# Minto Pyramid/SCQA, StoryBrand SB7, and Before-After-Bridge.
+# Adopted from the upstream sweep (docs/audits): book-genesis premise-forge (scored
+# variants behind a floor before any drafting) + per-chapter scored loop, and
+# autonovel's continuity-propagation ledger (edits tracked as debts against a story bible).
+id: book
+domain: book
+title: Book
+match:
+  - book
+  - novel
+  - manuscript
+  - memoir
+  - nonfiction book
+  - self-help
+  - business book
+  - how-to book
+  - thought leadership
+  - narrative nonfiction
+  - prescriptive nonfiction
+  - guide
+  - personal development book
+phases:
+  - id: intake
+    role: brainstorm
+    desc: >-
+      Clarify: type (fiction|nonfiction), audience, premise/thesis, market, success metric.
+      Output: type declaration (fiction|nonfiction) + one-sentence reader-transformation promise
+      (nonfiction) OR premise/dramatic question (fiction).
+
+  - id: foundation
+    role: author
+    desc: >-
+      fiction: characters (want/wound/ghost), theme, world rules, POV.
+      nonfiction: thesis (Minto SCQA — Situation/Complication/Question/Answer), reader avatar,
+      core framework (one big idea + 3-5 pillars), transformation promise, throughline/red thread;
+      StoryBrand arc optional for self-help (hero=reader, guide=author).
+      Open a CONTINUITY LEDGER (the story bible): canonical facts — characters, world rules,
+      timeline, defined terms, key claims. Every later phase reads it; any change writes back.
+
+  - id: architecture
+    role: author
+    desc: >-
+      fiction: 3/5-act beat sheet (Save the Cat / Story Grid), scene-sequel pairs.
+      nonfiction: concept->proof->how->bridge chapter unit (Chapter Blog) or pyramid
+      (thesis->key ideas->evidence); validate every chapter advances the transformation
+      promise (no orphan chapters).
+
+  - id: premise-forge
+    role: score
+    desc: >-
+      Before any drafting, forge the structure: generate 5 distinct premise/outline variants
+      (different angles, act structures, or chapter sequences), score each on the gate criteria,
+      and pick the strongest. GATE: the chosen variant must clear the rubric floor on every
+      criterion — if none clears, regenerate rather than draft on a weak spine. Drafting does not
+      start until a variant passes. (book-genesis premise-forge.)
+
+  - id: drafting
+    role: author
+    desc: >-
+      Draft chapter by chapter; consistent voice; concrete scenes/examples.
+      nonfiction: each chapter = concept (one idea) + proof (case/story/data) + how (steps) + bridge.
+      PER-CHAPTER LOOP: after drafting each chapter, score it against the gate criteria — advance only
+      when it clears the floor; below floor, revise in place (cap 3 cycles, then flag for audit). Read
+      the continuity ledger before drafting and write any new canonical fact back to it; when an edit
+      contradicts an earlier chapter, record a propagation debt and reconcile it (do not leave the
+      ledger and the prose disagreeing).
+
+  - id: audit
+    role: code-review
+    desc: >-
+      Independent adversarial audit (structure, pacing, gaps, orphan chapters, throughline breaks) —
+      blocks weak output. Run a continuity-reconciliation pass against the ledger: every open
+      propagation debt must be closed and no chapter may contradict a canonical fact (timeline,
+      character knowledge, defined terms).
+
+  - id: score
+    role: score
+    desc: "Score vs rubric (Genesis-style), floor principle; flag any criterion below floor."
+
+  - id: editorial
+    role: author
+    desc: "Editorial package: logline/blurb, positioning, comp titles, next steps."
+
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+
+gate:
+  criteria:
+    - structure
+    - voice
+    - clarity
+    - coherence
+    - throughline
+    - market
+    - originality
+    - hook
+    - evidence
+    - actionability
+  floor: 2
+  pass_total: 20

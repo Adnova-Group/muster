@@ -13,13 +13,13 @@
     },
     {
       "path": "agents/muster-builder.toml",
-      "sha256": "02e8877614bacb0928cc04c8f17f3bc3cadd12ca0bda5c59ff3532808b2cce88",
+      "sha256": "cc4cfdaa842148616647a25fc5eb11b98cc675db0b327d5294180c06f7e4a270",
       "size": 2026
     },
     {
       "path": "agents/muster-improver.toml",
-      "sha256": "54505d914a8e0214cba4e72baa5897f3e7e32ecc7ab033e73234fa3798a87bfe",
-      "size": 3691
+      "sha256": "a90123d90bb6a07f4ee9388b0c16c02f9c7cbf3688314f382a7031e19e7a07fb",
+      "size": 3692
     },
     {
       "path": "agents/muster-investigator.toml",
@@ -28,18 +28,18 @@
     },
     {
       "path": "agents/muster-reviewer.toml",
-      "sha256": "7b81c09534feb396b3dbeeb3e6af3b6d5865519a78edeb5a1b23f4efb4b7df25",
+      "sha256": "15661298668329b6c0eb9f7a0649486bc4b8c75ab066805ee4ebd4b9d8832cc2",
       "size": 1686
     },
     {
       "path": "agents/muster-runner.toml",
-      "sha256": "ac4fb08120a9dd010b1eeb576518651ace952bccb0a4f975cf58b8a4d00e39e8",
+      "sha256": "ddb857e0d13b5b76dbee63798b519bcf28ccbb5f01ecb93195687979915ad276",
       "size": 6114
     },
     {
       "path": "agents/muster-strategist.toml",
-      "sha256": "cec8545e5848d0a37ab66e3dee40a8e0ea8bc82e1a019844cafabb9d188f4ee7",
-      "size": 2213
+      "sha256": "f8c8af8a2b0952a43c480f8d8dcb63c0e3c6f6c0f8af1e57bd359085a1dd5e3c",
+      "size": 2214
     },
     {
       "path": "agents/muster-surgeon.toml",
@@ -48,8 +48,8 @@
     },
     {
       "path": "agents/wsh-api-documenter.toml",
-      "sha256": "c6eb84c20f9ab93936408802e97c03e9e14b8d7d37677eec6be2c1bc54260d6f",
-      "size": 7790
+      "sha256": "add46a2faba18e3eda662dba73d54867f58c3272f10138255efdc46d5cf6ed1d",
+      "size": 7788
     },
     {
       "path": "agents/wsh-backend-architect.toml",
@@ -58,8 +58,8 @@
     },
     {
       "path": "agents/wsh-business-analyst.toml",
-      "sha256": "f5bf3105c2f8e7a5a7166376c1c42afbe824681df49e29966799153c09cf74d5",
-      "size": 7629
+      "sha256": "2296905308f98b912d26402db4c0222ea2c7f98063d5a043c62a94c2d8b2f3d4",
+      "size": 7627
     },
     {
       "path": "agents/wsh-cloud-architect.toml",
@@ -68,42 +68,42 @@
     },
     {
       "path": "agents/wsh-code-reviewer.toml",
-      "sha256": "d260a18bb55408e75013bd77815ee6926a7e6ec5ad73f9c65fc63f438809f5e1",
+      "sha256": "2cc16a3b58b45eb1d31ef00c27d31aa69dcb2990e0cce67bb5f99d1d4941848e",
       "size": 8759
     },
     {
       "path": "agents/wsh-content-marketer.toml",
-      "sha256": "d42b9c427850b924489485685d46e7bdff7eeed79ea4efd98db2bad7fd93a947",
-      "size": 8544
+      "sha256": "4f1c478aae72197b8fa13a3c8e32d1cd6626571e55855838bd6e6f60a2212cef",
+      "size": 8542
     },
     {
       "path": "agents/wsh-customer-support.toml",
-      "sha256": "dd92c676be65b9a64302010974425428d8e3dd08d9373cca34b6580af52573be",
-      "size": 8677
+      "sha256": "b7c8b7502df93c26a2ce0b80069433891dc04d5f267ced78191c14c0e8eddec4",
+      "size": 8675
     },
     {
       "path": "agents/wsh-data-engineer.toml",
-      "sha256": "e51d445590fed40d03adb82c820f18b20d5964e4d2d5e94c79a7ecf21c00520e",
+      "sha256": "76895b0d2c8b6f808af0a541ac8225d4d768ad14dc75ad4b621489ce90a9307d",
       "size": 11677
     },
     {
       "path": "agents/wsh-data-scientist.toml",
-      "sha256": "f0d97aa890df64b5458955814c4b32d9b933186b1ebecdc6d3a7362d9c59a168",
+      "sha256": "a042972110aa2f181a3c5df238a98f314ff2248f71833c672cb979a4329b864e",
       "size": 10356
     },
     {
       "path": "agents/wsh-database-optimizer.toml",
-      "sha256": "8db3bddc76b5757a2cf32382559ce0a42f37218daf7e571c60312e702006bf0f",
+      "sha256": "fdb29c320c13e9b47797698d287afa326a5eaa0a6f2d492350ac4c88519e104b",
       "size": 10379
     },
     {
       "path": "agents/wsh-debugger.toml",
-      "sha256": "248d87435a05f72443f165fc9f431881f9b42f9d5e7c8931e23eeb38a3c403bf",
+      "sha256": "84784a3cfa454862c7ce1c2a258df7f8cfc94cf8c98c5398c6c6e686eb99cc7f",
       "size": 1174
     },
     {
       "path": "agents/wsh-devops-troubleshooter.toml",
-      "sha256": "777d795742d8b494948d7b42acacd5092fda0220fa0409d9b18d38b0691c6269",
+      "sha256": "cce10d234b1b356ed55449e942d04beac18b4a0f732a662187d26f3084d7ef35",
       "size": 9859
     },
     {
@@ -113,38 +113,38 @@
     },
     {
       "path": "agents/wsh-frontend-developer.toml",
-      "sha256": "dc69732d11fd5abd29ccf4e00868375f4442cbecb315ab4b9fde8ccb1f3e8fe9",
+      "sha256": "d198e166ca5ba3f49fea00f1d62eac68a0f375301c3bd9e53b8e10b82b0cf732",
       "size": 7132
     },
     {
       "path": "agents/wsh-legacy-modernizer.toml",
-      "sha256": "8fe4b8d295eaf6bddf8793f2395a04c686d3b1aef23c6e9cfbaaa4d197f77a8b",
+      "sha256": "442243cd9bb224744a19bb49751c730ca5f23c9c0a9753117ffb55cfae72f235",
       "size": 1670
     },
     {
       "path": "agents/wsh-ml-engineer.toml",
-      "sha256": "3d1b27871132937ac29cbcdae898a137537fd1c4d5a1a1404539b3f11a1cc2ec",
+      "sha256": "9ec219aa103af9d3ffff63cb672d3147913adc3ec09f95f02d17b4dbfe6b0ca8",
       "size": 9288
     },
     {
       "path": "agents/wsh-prompt-engineer.toml",
-      "sha256": "757543d7abeccf30ba999c6ccb576b676c579005f13645cde951e216fdc58603",
+      "sha256": "067362d6e6f9398cba511a0f9a4010aa52b9b84f3f022dab11f1674344c0d4be",
       "size": 11524
     },
     {
       "path": "agents/wsh-security-auditor.toml",
-      "sha256": "aba2a5ab23f84c477698f3d8f74b905a54fdb3d8d07ef71e9f14af33735714bd",
-      "size": 2474
+      "sha256": "e35483fa3787f4aad52991282a65baf2f66baf2edbf32dac1a792d094d6f67b5",
+      "size": 2471
     },
     {
       "path": "agents/wsh-test-automator.toml",
-      "sha256": "a85ceaa3ae6b6136ff58112b66ef3e746b9f3d3e79aff58fd0c37bf56f6a5784",
-      "size": 2527
+      "sha256": "191de5beab2b75b6f121266d820d7509172121f79f51938d3d4b843ef28a334c",
+      "size": 2525
     },
     {
       "path": "agents/wsh-tutorial-engineer.toml",
-      "sha256": "534d04fed203c1c7eea6d85fb76d581bdc410448a12d084665b1c8e34a387808",
-      "size": 4805
+      "sha256": "2d99740fe4119cb5b681baedadc9c4f776cb9a949b3d084ceca8ab3d6f22fb01",
+      "size": 4803
     },
     {
       "path": "commands/audit.md",
@@ -602,5 +602,5 @@
       "size": 926
     }
   ],
-  "digest": "a7ac06dfd2db1c194dd293337f6921ff8c0423cd983c3f3f6bea95b136ff2f15"
+  "digest": "cb4efff21c32180a6ef4c132169ee102d22616b6e6f12cc27202226513a19f1f"
 }

@@ -1,0 +1,105 @@
+import { readFile, readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
+import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
+
+const root = fileURLToPath(new URL("../", import.meta.url));
+const plugin = join(root, ".agents/plugins/plugins/muster");
+const fail = (message) => { throw new Error(`Codex validation: ${message}`); };
+const dirs = async (path) => (await readdir(path, { withFileTypes: true })).filter(x => x.isDirectory()).map(x => x.name);
+const files = async (path) => (await readdir(path, { withFileTypes: true })).filter(x => x.isFile()).map(x => x.name);
+const json = async (path) => JSON.parse(await readFile(path, "utf8"));
+
+const [pkg, marketplace, manifest, mapping, upstreams, assetManifest] = await Promise.all([
+  json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "codex/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
+]);
+if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster" || marketplace.plugins?.[0]?.source?.path !== "./.agents/plugins/plugins/muster") fail("marketplace does not expose the bundled Muster plugin");
+if (manifest.name !== "muster" || manifest.version !== pkg.version) fail("plugin manifest version is not package version");
+if (!manifest.skills || !manifest.mcpServers || manifest.hooks !== undefined) fail("plugin manifest must expose skills and MCP without advertising inert plugin-bundled hooks");
+if (Object.keys(mapping.agents || {}).length !== CODEX_COUNTS.agents) fail("mapping does not contain all agent profiles");
+for (const family of ["superpowers", "wshobson-agents", "gsd-core", "atomic-codex", "book-genesis-codex", "humanizer-sources", "stealthhumanizer", "promptfoo", "muster"]) {
+  if (!upstreams.families?.some(item => item.id === family && item.repository && item.codex && item.musterStrategy)) fail(`missing researched Codex upstream ${family}`);
+}
+for (const family of ["superpowers", "wshobson-agents"]) {
+  const researched = upstreams.families.find(item => item.id === family);
+  const assets = assetManifest.sources?.find(item => item.id === family);
+  if (!assets || assets.repository !== researched.repository || assets.ref !== researched.ref) fail(`Codex skill assets are not pinned to researched ${family}`);
+}
+const profiles = await files(join(root, "codex/agents"));
+if (profiles.filter(n => n.endsWith(".toml")).length !== CODEX_COUNTS.agents) fail("generated agent profile count is wrong");
+for (const [id, config] of Object.entries(mapping.agents)) {
+  const name = `${id}.toml`;
+  if (!profiles.includes(name)) fail(`missing generated profile ${name}`);
+  const text = await readFile(join(root, "codex/agents", name), "utf8");
+  if (!/^name\s*=/m.test(text) || !/^description\s*=/m.test(text) || !/^developer_instructions\s*=/m.test(text)) fail(`${name} is not a custom-agent profile`);
+  const expected = CODEX_MODEL_POLICY[config.tier];
+  if (!text.includes(`model = ${JSON.stringify(expected.model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(expected.reasoning)}`)) fail(`${name} does not match its model policy`);
+  if (!text.includes(`sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`)) fail(`${name} does not match its read/write policy`);
+}
+const skills = new Set(await dirs(join(plugin, "skills")));
+const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture"];
+const aliases = ["run", "autopilot", "sprint"];
+for (const name of [...modes, ...aliases]) if (!skills.has(name)) fail(`missing mode skill ${name}`);
+const native = await dirs(join(root, "plugin/skills"));
+const builtins = await dirs(join(root, "plugin/builtins"));
+const codexSkillId = name => name.startsWith("gsd-") ? `muster-${name}` : name;
+for (const name of [...native, ...builtins].map(codexSkillId)) if (!skills.has(name)) fail(`missing ported skill ${name}`);
+const ported = new Set([...native, ...builtins].map(codexSkillId));
+const allowedSkillKeys = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
+for (const name of skills) {
+  const text = await readFile(join(plugin, "skills", name, "SKILL.md"), "utf8");
+  const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
+  if (!frontmatter) fail(`${name} is missing skill frontmatter`);
+  let data;
+  try { data = parseYaml(frontmatter); } catch (error) { fail(`${name} has invalid skill frontmatter: ${error.message}`); }
+  if (typeof data?.name !== "string" || !data.name.trim() || typeof data.description !== "string" || !data.description.trim()) fail(`${name} has invalid skill identity metadata`);
+  if (data.name !== name) fail(`${name} frontmatter name must match its directory`);
+  for (const key of Object.keys(data)) if (!allowedSkillKeys.has(key)) fail(`${name} has unsupported frontmatter key ${key}`);
+  if (ported.has(name)) {
+    if (!data.description.startsWith("Codex-compatible Muster workflow.")) fail(`${name} lacks Codex routing metadata`);
+    if (!text.includes("runtime/codex-skill-adapter.md")) fail(`${name} lacks the Codex harness binding`);
+    if (/AskUserQuestion|\/muster:|Claude Code Agent tool|\bAgent tool|\bTask tool/.test(text)) fail(`${name} retains an untranslated Claude harness instruction`);
+  }
+  for (const ref of new Set(text.match(/(?:references)\/[A-Za-z0-9_.\/-]+\.md/g) || [])) {
+    await stat(join(plugin, "skills", name, ref)).catch(() => fail(`${name} references missing bundled asset ${ref}`));
+  }
+  if (/@~\/\.claude|\$HOME\/\.claude|npx\s+-y\s+@opengsd/.test(text)) fail(`${name} retains an external Claude/GSD runtime dependency`);
+  if (/plugin\/(?:hooks|commands|skills)\//.test(text)) fail(`${name} retains a source-tree-only plugin path`);
+}
+for (const name of await files(join(plugin, "commands"))) {
+  if (!name.endsWith(".md")) continue;
+  const text = await readFile(join(plugin, "commands", name), "utf8");
+  if (text.includes("npx -y @adnova-group/muster")) fail(`${name} contacts npm instead of using the bundled CLI`);
+  if (/\/muster:(?:plan|go|plan-backlog|go-backlog|run|autopilot|sprint|diagnose|audit|runner|capture)\b/.test(text)) fail(`${name} retains a Claude-only command invocation`);
+  if (/\$muster-planner|Claude Code Routine|claude -p|plugin\/(?:hooks|commands|skills)\//.test(text)) fail(`${name} retains an invalid Codex command or source-tree path`);
+}
+for (const name of ["plan.md", "go.md", "plan-backlog.md", "go-backlog.md", "runner.md"]) {
+  const text = await readFile(join(plugin, "commands", name), "utf8");
+  if (text.includes(" assess ") && !text.includes(" assess --codex ")) fail(`${name} does not use Codex-aware outcome assessment`);
+}
+const runnerCommand = await readFile(join(plugin, "commands", "runner.md"), "utf8");
+if (!runnerCommand.includes("Usage: $muster-runner") || !runnerCommand.includes('codex exec "$muster-runner')) fail("runner command is not bound to the Codex runner skill");
+const coordination = await readFile(join(plugin, "skills", "coordination", "SKILL.md"), "utf8");
+if (!coordination.includes("plugin cache is not a Git checkout") || /git log -1 --format/.test(coordination)) fail("coordination preflight is not package-cache safe");
+const orchestrator = await readFile(join(plugin, "skills", "orchestrator", "SKILL.md"), "utf8");
+if (/generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK|permissionDecision/.test(orchestrator)) fail("orchestrator overclaims Codex dispatch or hook enforcement");
+if (native.length !== CODEX_COUNTS.nativeSkills || builtins.length !== CODEX_COUNTS.builtinSkills) fail("source skill count drift");
+if ((await readdir(join(root, "pipelines"))).filter(n => n.endsWith(".yaml")).length !== CODEX_COUNTS.pipelines) fail("pipeline count drift");
+for (const file of ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/codex-skill-adapter.md", "src/cli.js", "src/package.json", "package.json", ".mcp.json"]) await stat(join(plugin, file)).catch(() => fail(`missing ${file}`));
+await stat(join(plugin, "hooks")).then(() => fail("generated plugin must not contain auto-discovered hooks"), () => {});
+const hooks = await json(join(root, "codex/hooks/hooks.json"));
+for (const event of ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"]) {
+  if (!Array.isArray(hooks.hooks?.[event]) || hooks.hooks[event].length === 0) fail(`missing Codex ${event} hook`);
+}
+const hookSource = await readFile(join(root, "codex/hooks/muster-hook.mjs"), "utf8");
+if (/permissionDecision|permissionDecisionReason/.test(hookSource)) fail("Codex hook must not claim unsupported PreToolUse denial");
+const mcp = await json(join(plugin, ".mcp.json"));
+if (mcp.mcpServers?.muster?.command !== "node" || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not Codex-native");
+const bundledMcp = await readFile(join(plugin, "runtime", "muster-mcp.mjs"), "utf8");
+if (!bundledMcp.includes('"capabilities", "--codex"') || bundledMcp.includes('"capabilities", "--cowork"')) fail("MCP capability tool is not bound to live Codex inventory");
+if (!bundledMcp.includes('"assess", "--codex"')) fail("MCP assess tool is not bound to Codex-aware criteria parsing");
+const mcpSource = await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8");
+if ((mcpSource.match(/^  muster_[a-z_]+:/gm) || []).length !== CODEX_COUNTS.mcpTools) fail("MCP tool count drift");
+if (modes.length - 1 !== CODEX_COUNTS.primaryModes || aliases.length !== CODEX_COUNTS.aliases) fail("mode count drift");
+process.stdout.write(JSON.stringify({ ok: true, counts: CODEX_COUNTS }, null, 2) + "\n");

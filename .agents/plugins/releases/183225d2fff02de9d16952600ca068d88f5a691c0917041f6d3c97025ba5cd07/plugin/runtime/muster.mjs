@@ -9001,7 +9001,7 @@ async function runDoctor({ root, home, exec } = {}) {
         } else {
           const execImpl = exec || promisify3(execFile2);
           let offline = false;
-          const stale = [];
+          const stale2 = [];
           for (const note of notes) {
             const result = await checkNoteAncestor(note, execImpl);
             if (result.offline) {
@@ -9009,13 +9009,13 @@ async function runDoctor({ root, home, exec } = {}) {
               break;
             }
             if (!result.ok) {
-              stale.push(`${note.sourceId}: ${note.sha} is not an ancestor of pinned ref ${note.ref} (status: ${result.status})`);
+              stale2.push(`${note.sourceId}: ${note.sha} is not an ancestor of pinned ref ${note.ref} (status: ${result.status})`);
             }
           }
           if (offline) {
             checks.push({ name: "vendor-note-staleness", ok: true, detail: `skipped (offline) \u2014 ${notes.length} vendor note-sha(s) unverified` });
-          } else if (stale.length > 0) {
-            checks.push({ name: "vendor-note-staleness", ok: false, detail: `stale vendor note(s): ${stale.join("; ")}` });
+          } else if (stale2.length > 0) {
+            checks.push({ name: "vendor-note-staleness", ok: false, detail: `stale vendor note(s): ${stale2.join("; ")}` });
           } else {
             checks.push({ name: "vendor-note-staleness", ok: true, detail: `${notes.length} vendor note-sha(s) verified ancestors of their pin` });
           }
@@ -9791,9 +9791,8 @@ async function runUninstall({ home = homedir6() } = {}) {
 }
 
 // src/codex-install.js
-import { constants as fsConstants3 } from "node:fs";
-import { link as link2, lstat as lstat6, mkdir as mkdir7, open as open5, readFile as readFile10, realpath as realpath2, rename as rename5, rmdir as rmdir2, unlink as unlink4 } from "node:fs/promises";
-import { createHash as createHash3, randomUUID as randomUUID3 } from "node:crypto";
+import { lstat as lstat6, mkdir as mkdir7, open as open5, readFile as readFile10, realpath as realpath2, rename as rename5, rmdir as rmdir2, unlink as unlink4 } from "node:fs/promises";
+import { createHash as createHash3 } from "node:crypto";
 import { basename as basename3, dirname as dirname6, isAbsolute as isAbsolute3, join as join17, parse as parse5, relative as relative3, resolve as resolve4, sep as sep2 } from "node:path";
 import { homedir as homedir7 } from "node:os";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
@@ -9812,6 +9811,7 @@ import { constants as fsConstants } from "node:fs";
 import { link, lstat as lstat4, mkdir as mkdir5, open as open3, readFile as readFile8, rename as rename3, rmdir, unlink as unlink3, utimes } from "node:fs/promises";
 import { dirname as dirname5, join as join14 } from "node:path";
 var pause = (ms) => new Promise((resolve7) => setTimeout(resolve7, ms));
+var sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
 function processAlive(pid) {
   if (!Number.isInteger(pid) || pid < 1) return false;
   try {
@@ -9833,269 +9833,410 @@ async function processStartIdentity(pid = process.pid) {
     return null;
   }
 }
-async function readLock(path, maxBytes = 16 * 1024) {
-  let handle;
-  try {
-    const before = await lstat4(path);
-    if (before.isSymbolicLink() || !before.isFile() || before.size > maxBytes) throw new Error(`unsafe Codex transaction lock: ${path}`);
-    handle = await open3(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
-    const stat2 = await handle.stat();
-    if (!stat2.isFile() || stat2.size > maxBytes) throw new Error(`unsafe Codex transaction lock: ${path}`);
-    let record = null;
+var defaultRecordPolicy = {
+  async create({ token, pid, processIdentity, createdAt }) {
+    return { format: 1, pid, processIdentity, createdAt, token };
+  },
+  parse(text) {
     try {
-      record = JSON.parse(await handle.readFile("utf8"));
+      return JSON.parse(text);
     } catch {
+      return null;
     }
-    return { record, stat: stat2 };
-  } finally {
-    if (handle) await handle.close().catch(() => {
-    });
+  },
+  sameOwner(left, right) {
+    return typeof left?.token === "string" && left.token.length > 0 && left.token === right?.token && left.pid === right?.pid && left.processIdentity === right?.processIdentity && left.createdAt === right?.createdAt;
   }
-}
-var sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
-var sameLockOwner = (left, right) => typeof left?.token === "string" && left.token.length > 0 && left.token === right?.token && left.pid === right?.pid && left.processIdentity === right?.processIdentity && left.createdAt === right?.createdAt;
-function defaultRetirementModeCapability({ stat: stat2 }) {
+};
+var defaultStalePolicy = {
+  age({ stat: stat2, now }) {
+    return now - stat2.mtimeMs;
+  },
+  softExpiryMs: 6e4,
+  hardExpiryMs: 15 * 6e4
+};
+var defaultRetryPolicy = {
+  timeoutMs: 3e4,
+  delay({ elapsedMs }) {
+    return Math.min(25, 5 + Math.floor(elapsedMs / 100));
+  }
+};
+var defaultReleasePolicy = { missing: "ignore", changed: "ignore" };
+function defaultModeCapability({ stat: stat2 }) {
   return (stat2.mode & 511) !== 511;
 }
-async function assertPrivateRetirementDirectory(dir, { expectedStat = null, requirePrivateMode = true } = {}) {
-  const stat2 = await lstat4(dir);
-  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+function normalizedOptions(options) {
+  const stalePolicy = options.stalePolicy || {
+    ...defaultStalePolicy,
+    softExpiryMs: options.staleMs ?? defaultStalePolicy.softExpiryMs,
+    hardExpiryMs: options.maxStaleMs ?? defaultStalePolicy.hardExpiryMs
+  };
+  const retryPolicy = options.retryPolicy || {
+    ...defaultRetryPolicy,
+    timeoutMs: options.timeoutMs ?? defaultRetryPolicy.timeoutMs
+  };
+  return {
+    recordPolicy: options.recordPolicy || defaultRecordPolicy,
+    pathPolicy: options.pathPolicy || null,
+    stalePolicy,
+    recoveryPolicy: options.recoveryPolicy || null,
+    retryPolicy,
+    releasePolicy: options.releasePolicy || defaultReleasePolicy,
+    heartbeat: Object.hasOwn(options, "heartbeat") ? options.heartbeat : {
+      intervalMs: Math.max(1e3, Math.floor(stalePolicy.softExpiryMs / 3))
+    },
+    maxBytes: options.maxBytes ?? 16 * 1024,
+    diagnostics: {
+      unsafe: (path) => `unsafe Codex transaction lock: ${path}`,
+      retirement: (path) => `unsafe Codex transaction retirement directory: ${path}`,
+      retirementCreate: (path) => `could not create Codex transaction retirement directory for ${path}`,
+      modeCapability: (dir) => `invalid Codex retirement mode capability for ${dir}`,
+      restore: (path) => `Codex transaction lock restore changed identity: ${path}`,
+      ownership: (path) => `Codex transaction lock ownership changed: ${path}`,
+      unavailable: (path) => `timed out waiting for Codex transaction lock: ${path}`,
+      ...options.diagnostics
+    },
+    raceHooks: {
+      afterRecordWrite: options.afterRecordWrite || (async () => {
+      }),
+      afterWrite: options.afterWrite || (async () => {
+      }),
+      afterQuarantine: options.afterQuarantine || (async () => {
+      }),
+      afterValidation: options.afterValidation || (async () => {
+      }),
+      afterRetirement: options.afterRetirement || (async () => {
+      }),
+      beforeRelease: options.beforeRelease || (async () => {
+      }),
+      ...options.raceHooks
+    },
+    modeCapability: options.modeCapability || defaultModeCapability
+  };
+}
+async function prepare(policy, path, context) {
+  if (policy?.prepare) await policy.prepare(path, context);
+}
+async function readLock(path, policy, kind = "lock") {
+  await prepare(policy.pathPolicy, path, { operation: "read", kind });
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let handle;
+    try {
+      const before = await lstat4(path);
+      if (before.isSymbolicLink() || !before.isFile() || before.size > policy.maxBytes) throw new Error(policy.diagnostics.unsafe(path));
+      handle = await open3(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+      const stat2 = await handle.stat();
+      if (!stat2.isFile() || stat2.size > policy.maxBytes) throw new Error(policy.diagnostics.unsafe(path));
+      if (!sameInode(before, stat2)) {
+        if (attempt < 7) continue;
+        const error = new Error(`Codex lock changed while reading: ${path}`);
+        error.code = "EAGAIN";
+        throw error;
+      }
+      return { record: policy.recordPolicy.parse(await handle.readFile("utf8"), { path }), stat: stat2 };
+    } finally {
+      if (handle) await handle.close().catch(() => {
+      });
+    }
+  }
+}
+async function writeExclusive(path, token, policy, kind = "lock") {
+  await prepare(policy.pathPolicy, path, { operation: "create", kind });
+  const record = await policy.recordPolicy.create({ token, pid: process.pid, processIdentity: await processStartIdentity(), createdAt: Date.now(), path });
+  const text = JSON.stringify(record) + "\n";
+  let handle, createdStat, writeComplete = false;
+  try {
+    handle = await open3(path, "wx", 384);
+    createdStat = await handle.stat();
+    await handle.writeFile(text, "utf8");
+    await policy.raceHooks.afterRecordWrite({ path, handle });
+    await handle.sync();
+    writeComplete = true;
+    await handle.close();
+    handle = null;
+    await policy.raceHooks.afterWrite({ path });
+    const published = await readLock(path, policy, "published-lock");
+    if (!sameInode(published.stat, createdStat) || !policy.recordPolicy.sameOwner(published.record, record)) {
+      const error = new Error(policy.diagnostics.ownership(path));
+      error.code = "EAGAIN";
+      throw error;
+    }
+    return record;
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {
+    });
+    if (createdStat) await retireCreated(path, createdStat, text, policy, { requireExpectedText: writeComplete });
+    throw error;
+  }
+}
+async function stale(state, policy) {
+  const age = policy.stalePolicy.age({ ...state, now: Date.now() });
+  if (age < policy.stalePolicy.softExpiryMs) return false;
+  const pid = Number(state.record?.pid), alive = processAlive(pid);
+  if (!alive) return true;
+  const recorded = typeof state.record?.processIdentity === "string" ? state.record.processIdentity : null;
+  const actual = await processStartIdentity(pid);
+  if (recorded && actual && recorded !== actual) return true;
+  return age >= policy.stalePolicy.hardExpiryMs;
+}
+async function assertPrivateRetirementDirectory(dir, retirement, policy) {
+  await prepare(policy.pathPolicy, dir, { operation: "verify", kind: "retirement-directory" });
+  const stat2 = await lstat4(dir), uid = typeof process.getuid === "function" ? process.getuid() : null;
   const ownerMismatch = process.platform !== "win32" && typeof uid === "number" && stat2.uid !== uid;
-  const ownerChanged = expectedStat && stat2.uid !== expectedStat.uid;
-  const directoryChanged = expectedStat && !sameInode(stat2, expectedStat);
-  const unsafeMode = requirePrivateMode && process.platform !== "win32" && ((stat2.mode & 448) !== 448 || (stat2.mode & 63) !== 0);
-  if (stat2.isSymbolicLink() || !stat2.isDirectory() || ownerMismatch || ownerChanged || directoryChanged || unsafeMode) {
-    throw new Error(`unsafe Codex transaction retirement directory: ${dir}`);
+  const unsafeMode = retirement.requirePrivateMode && process.platform !== "win32" && ((stat2.mode & 448) !== 448 || (stat2.mode & 63) !== 0);
+  if (stat2.isSymbolicLink() || !stat2.isDirectory() || ownerMismatch || stat2.uid !== retirement.expectedStat.uid || !sameInode(stat2, retirement.expectedStat) || unsafeMode) {
+    throw new Error(policy.diagnostics.retirement(dir));
   }
   return stat2;
 }
-async function privateRetirement(path, { modeCapability = defaultRetirementModeCapability } = {}) {
+async function privateRetirement(path, policy) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const dir = join14(dirname5(path), `.muster-retired-${process.pid}-${randomUUID()}`);
+    await prepare(policy.pathPolicy, dir, { operation: "create", kind: "retirement-directory" });
     try {
       await mkdir5(dir, { mode: 448 });
     } catch (error) {
       if (error.code === "EEXIST" && attempt < 7) continue;
       throw error;
     }
-    const stat2 = await lstat4(dir);
-    const requirePrivateMode = await modeCapability({ dir, stat: stat2 });
-    if (typeof requirePrivateMode !== "boolean") throw new Error(`invalid Codex retirement mode capability for ${dir}`);
-    await assertPrivateRetirementDirectory(dir, { expectedStat: stat2, requirePrivateMode });
-    return { dir, path: join14(dir, "lock"), stat: stat2, expectedStat: stat2, requirePrivateMode };
+    const stat2 = await lstat4(dir), requirePrivateMode = await policy.modeCapability({ dir, stat: stat2 });
+    if (typeof requirePrivateMode !== "boolean") throw new Error(policy.diagnostics.modeCapability(dir));
+    const retirement = { dir, path: join14(dir, "lock"), expectedStat: stat2, requirePrivateMode };
+    await assertPrivateRetirementDirectory(dir, retirement, policy);
+    return retirement;
   }
-  throw new Error(`could not create Codex transaction retirement directory for ${path}`);
+  throw new Error(policy.diagnostics.retirementCreate(path));
 }
-async function removeEmptyRetirementDirectory(retirement) {
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
+async function removeRetirement(retirement, policy) {
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
   await rmdir(retirement.dir);
 }
-async function restoreRetiredLock(path, retirement, stat2) {
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
+async function retireCreated(path, expectedStat, expectedText, policy, { requireExpectedText }) {
+  let current;
+  try {
+    current = await lstat4(path);
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  if (!sameInode(current, expectedStat)) return false;
+  const retirement = await privateRetirement(path, policy);
+  try {
+    await rename3(path, retirement.path);
+  } catch (error) {
+    try {
+      await removeRetirement(retirement, policy);
+    } catch {
+    }
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
+  const movedStat = await lstat4(retirement.path);
+  if (!sameInode(movedStat, expectedStat) || requireExpectedText && await readFile8(retirement.path, "utf8") !== expectedText) {
+    await restoreRetired(path, retirement, movedStat, policy);
+    return false;
+  }
+  await unlink3(retirement.path);
+  await removeRetirement(retirement, policy);
+  return true;
+}
+async function restoreRetired(path, retirement, stat2, policy) {
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
   const current = await lstat4(retirement.path);
   if (!sameInode(current, stat2)) return false;
+  await prepare(policy.pathPolicy, path, { operation: "restore", kind: "lock" });
   try {
     await link(retirement.path, path);
   } catch (error) {
     if (error.code === "EEXIST") return false;
     throw error;
   }
-  const restored = await lstat4(path);
-  if (!sameInode(restored, stat2)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
+  if (!sameInode(await lstat4(path), stat2)) throw new Error(policy.diagnostics.restore(path));
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
   await unlink3(retirement.path);
-  await removeEmptyRetirementDirectory(retirement);
+  await removeRetirement(retirement, policy);
   return true;
 }
-async function restoreQuarantinedLock(path, quarantine, stat2, { modeCapability } = {}) {
-  const retirement = await privateRetirement(quarantine, { modeCapability });
+async function restoreQuarantined(path, quarantine, stat2, policy) {
+  const retirement = await privateRetirement(quarantine, policy);
   try {
     await rename3(quarantine, retirement.path);
   } catch (error) {
     try {
-      await removeEmptyRetirementDirectory(retirement);
+      await removeRetirement(retirement, policy);
     } catch {
     }
     if (error.code === "ENOENT") return false;
     throw error;
   }
-  return restoreRetiredLock(path, retirement, stat2);
+  return restoreRetired(path, retirement, stat2, policy);
 }
-async function retireOwnedLock(path, expectedStat, expectedRecord, {
-  stale = null,
-  restorePath = path,
-  afterRetirement = async () => {
-  },
-  modeCapability
-} = {}) {
+async function retireOwned(path, expectedStat, expectedRecord, policy, { restorePath = path, requireStale = false } = {}) {
   let current;
   try {
-    current = await readLock(path);
-  } catch {
-    return false;
+    current = await readLock(path, policy, "retirement-source");
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
   }
-  if (!sameInode(current.stat, expectedStat) || !sameLockOwner(current.record, expectedRecord)) return false;
-  const retirement = await privateRetirement(path, { modeCapability });
+  if (!sameInode(current.stat, expectedStat) || !policy.recordPolicy.sameOwner(current.record, expectedRecord)) return false;
+  const retirement = await privateRetirement(path, policy);
   try {
     await rename3(path, retirement.path);
   } catch (error) {
     try {
-      await removeEmptyRetirementDirectory(retirement);
+      await removeRetirement(retirement, policy);
     } catch {
     }
     if (error.code === "ENOENT") return false;
     throw error;
   }
-  await afterRetirement({ dir: retirement.dir, path: retirement.path, sourcePath: path });
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
+  await policy.raceHooks.afterRetirement({ dir: retirement.dir, path: retirement.path, sourcePath: path });
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
   let retired;
   try {
-    retired = await readLock(retirement.path);
+    retired = await readLock(retirement.path, policy, "retired-lock");
   } catch {
     return false;
   }
-  if (!sameInode(retired.stat, expectedStat) || !sameLockOwner(retired.record, expectedRecord)) {
+  if (!sameInode(retired.stat, expectedStat) || !policy.recordPolicy.sameOwner(retired.record, expectedRecord)) return false;
+  if (requireStale && !await stale(retired, policy)) {
+    await restoreRetired(restorePath, retirement, expectedStat, policy);
     return false;
   }
-  if (stale && !await stale(retired)) {
-    await restoreRetiredLock(restorePath, retirement, expectedStat);
-    return false;
-  }
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
-  const final = await readLock(retirement.path);
-  if (!sameInode(final.stat, expectedStat) || !sameLockOwner(final.record, expectedRecord)) return false;
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
+  const final = await readLock(retirement.path, policy, "retired-lock");
+  if (!sameInode(final.stat, expectedStat) || !policy.recordPolicy.sameOwner(final.record, expectedRecord)) return false;
   await unlink3(retirement.path);
-  await removeEmptyRetirementDirectory(retirement);
+  await removeRetirement(retirement, policy);
   return true;
 }
-async function lockIsStale(current, { staleMs, maxStaleMs }) {
-  const age = Date.now() - current.stat.mtimeMs;
-  if (age < staleMs) return false;
-  const pid = Number(current.record?.pid);
-  const alive = processAlive(pid);
-  const actualIdentity = alive ? await processStartIdentity(pid) : null;
-  const recordedIdentity = typeof current.record?.processIdentity === "string" ? current.record.processIdentity : null;
-  const sameProcess = alive && recordedIdentity && actualIdentity && recordedIdentity === actualIdentity;
-  if (sameProcess && age < maxStaleMs) return false;
-  if (alive && (!recordedIdentity || !actualIdentity) && age < maxStaleMs) return false;
-  return true;
-}
-async function reclaimStaleCodexFileLock(path, {
-  staleMs,
-  maxStaleMs,
-  afterQuarantine = async () => {
-  },
-  afterValidation = async () => {
-  },
-  afterRetirement = async () => {
-  },
-  modeCapability
-}) {
+async function reclaimWithoutSentinel(path, policy) {
   let current;
   try {
-    current = await readLock(path);
+    current = await readLock(path, policy);
   } catch (error) {
     if (error.code === "ENOENT") return true;
     throw error;
   }
-  if (!sameLockOwner(current.record, current.record) || !await lockIsStale(current, { staleMs, maxStaleMs })) return false;
+  if (!policy.recordPolicy.sameOwner(current.record, current.record) || !await stale(current, policy)) return false;
   const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID()}`;
+  await prepare(policy.pathPolicy, quarantine, { operation: "quarantine", kind: "quarantine" });
   try {
     await rename3(path, quarantine);
   } catch (error) {
     if (error.code === "ENOENT") return true;
     throw error;
   }
+  await policy.raceHooks.afterQuarantine({ path, quarantine });
+  const quarantined = await readLock(quarantine, policy, "quarantine");
+  if (!sameInode(quarantined.stat, current.stat) || !policy.recordPolicy.sameOwner(quarantined.record, current.record) || !await stale(quarantined, policy)) {
+    await restoreQuarantined(path, quarantine, quarantined.stat, policy);
+    return false;
+  }
+  await policy.raceHooks.afterValidation({ path, quarantine });
+  let finalCandidate;
   try {
-    await afterQuarantine({ path, quarantine });
-    const quarantined = await readLock(quarantine);
-    if (!sameInode(quarantined.stat, current.stat) || !sameLockOwner(quarantined.record, current.record) || !await lockIsStale(quarantined, { staleMs, maxStaleMs })) {
-      await restoreQuarantinedLock(path, quarantine, quarantined.stat, { modeCapability });
-      return false;
+    finalCandidate = await readLock(quarantine, policy, "quarantine");
+  } catch {
+    return false;
+  }
+  if (!sameInode(finalCandidate.stat, quarantined.stat) || !policy.recordPolicy.sameOwner(finalCandidate.record, quarantined.record) || !await stale(finalCandidate, policy)) {
+    await restoreQuarantined(path, quarantine, finalCandidate.stat, policy);
+    return false;
+  }
+  return retireOwned(quarantine, finalCandidate.stat, finalCandidate.record, policy, { restorePath: path, requireStale: true });
+}
+async function reclaim(path, policy) {
+  if (!policy.recoveryPolicy) return reclaimWithoutSentinel(path, policy);
+  const recoveryPath = policy.recoveryPolicy.path(path);
+  const sentinelPolicy = {
+    ...policy,
+    recoveryPolicy: null,
+    retryPolicy: { maxAttempts: 2, delayMs: 0 },
+    raceHooks: {
+      afterRecordWrite: async () => {
+      },
+      afterWrite: async () => {
+      },
+      afterQuarantine: async () => {
+      },
+      afterValidation: async () => {
+      },
+      afterRetirement: policy.raceHooks.afterRetirement,
+      beforeRelease: async () => {
+      }
     }
-    await afterValidation({ path, quarantine });
-    let finalCandidate;
-    try {
-      finalCandidate = await readLock(quarantine);
-    } catch {
-      return false;
-    }
-    if (!sameInode(finalCandidate.stat, quarantined.stat) || !sameLockOwner(finalCandidate.record, quarantined.record) || !await lockIsStale(finalCandidate, { staleMs, maxStaleMs })) {
-      await restoreQuarantinedLock(path, quarantine, finalCandidate.stat, { modeCapability });
-      return false;
-    }
-    if (!await retireOwnedLock(quarantine, finalCandidate.stat, finalCandidate.record, {
-      stale: (state) => lockIsStale(state, { staleMs, maxStaleMs }),
-      restorePath: path,
-      afterRetirement,
-      modeCapability
-    })) return false;
+  };
+  try {
+    return await runLocked(recoveryPath, async () => reclaimWithoutSentinel(path, policy), sentinelPolicy);
   } catch (error) {
+    if (error.code === "CODEX_LOCK_UNAVAILABLE") return false;
     throw error;
   }
-  return true;
 }
-async function withCodexFileLock(path, callback, {
-  staleMs = 6e4,
-  maxStaleMs = 15 * 6e4,
-  timeoutMs = 3e4,
-  afterQuarantine = async () => {
-  },
-  afterValidation = async () => {
-  },
-  afterRetirement = async () => {
-  },
-  beforeRelease = async () => {
-  },
-  modeCapability = defaultRetirementModeCapability
-} = {}) {
-  const token = randomUUID();
-  const processIdentity = await processStartIdentity();
-  const started = Date.now();
-  let handle;
+function retryExhausted(retryPolicy, attempt, elapsedMs) {
+  if (Number.isInteger(retryPolicy.maxAttempts)) return attempt >= retryPolicy.maxAttempts;
+  return elapsedMs >= retryPolicy.timeoutMs;
+}
+async function runLocked(path, callback, policy) {
+  const token = randomUUID(), started = Date.now();
+  let ownedRecord, attempt = 0;
   for (; ; ) {
+    attempt++;
     try {
-      handle = await open3(path, "wx", 384);
-      await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
-      await handle.sync();
-      await handle.close();
-      handle = null;
+      ownedRecord = await writeExclusive(path, token, policy);
       break;
     } catch (error) {
-      if (handle) {
-        await handle.close().catch(() => {
-        });
-        handle = null;
+      if (error.code !== "EEXIST" && error.code !== "EAGAIN") throw error;
+      if (error.code === "EEXIST") {
+        try {
+          await reclaim(path, policy);
+        } catch (reclaimError) {
+          if (reclaimError.code !== "EAGAIN") throw reclaimError;
+        }
       }
-      if (error.code !== "EEXIST") throw error;
-      if (await reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine, afterValidation, afterRetirement, modeCapability })) continue;
-      if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
-      await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
+      const elapsedMs = Date.now() - started;
+      if (retryExhausted(policy.retryPolicy, attempt, elapsedMs)) {
+        const unavailable = new Error(policy.diagnostics.unavailable(path));
+        unavailable.code = "CODEX_LOCK_UNAVAILABLE";
+        throw unavailable;
+      }
+      const delay = typeof policy.retryPolicy.delay === "function" ? policy.retryPolicy.delay({ attempt, elapsedMs }) : policy.retryPolicy.delayMs;
+      await pause(delay ?? 0);
     }
   }
-  const heartbeat = setInterval(async () => {
+  const heartbeat = policy.heartbeat && setInterval(async () => {
     try {
-      const current = await readLock(path);
-      if (current.record?.token === token) await utimes(path, /* @__PURE__ */ new Date(), /* @__PURE__ */ new Date());
+      const current = await readLock(path, policy);
+      if (policy.recordPolicy.sameOwner(current.record, ownedRecord)) await utimes(path, /* @__PURE__ */ new Date(), /* @__PURE__ */ new Date());
     } catch {
     }
-  }, Math.max(1e3, Math.floor(staleMs / 3)));
-  heartbeat.unref();
+  }, policy.heartbeat?.intervalMs);
+  if (heartbeat) heartbeat.unref();
   try {
     return await callback();
   } finally {
-    clearInterval(heartbeat);
+    if (heartbeat) clearInterval(heartbeat);
+    let current;
     try {
-      const current = await readLock(path);
-      if (current.record?.token !== token) return;
-      await beforeRelease({ path });
-      if (!await retireOwnedLock(path, current.stat, current.record, { afterRetirement, modeCapability })) {
-        throw new Error(`Codex transaction lock ownership changed: ${path}`);
-      }
+      current = await readLock(path, policy);
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if (error.code !== "ENOENT" || policy.releasePolicy.missing !== "ignore") throw error;
+    }
+    if (current && !policy.recordPolicy.sameOwner(current.record, ownedRecord)) {
+      if (policy.releasePolicy.changed !== "ignore") throw new Error(policy.diagnostics.ownership(path));
+      current = null;
+    }
+    if (current) {
+      await policy.raceHooks.beforeRelease({ path });
+      if (!await retireOwned(path, current.stat, current.record, policy)) throw new Error(policy.diagnostics.ownership(path));
     }
   }
+}
+async function withCodexFileLock(path, callback, options = {}) {
+  return runLocked(path, callback, normalizedOptions(options));
 }
 
 // src/codex-release.js
@@ -10740,38 +10881,6 @@ async function scopeEntry(scope, cwd, home) {
 }
 var sameScopeEntry = (left, right) => left.scope === right.scope && left.configDir === right.configDir;
 var registryText = (entries) => JSON.stringify({ format: 1, owner: "muster", entries }, null, 2) + "\n";
-async function scopeLockText(token) {
-  return JSON.stringify({
-    format: 1,
-    owner: "muster",
-    pid: process.pid,
-    processIdentity: await processStartIdentity(),
-    token,
-    createdAt: Date.now()
-  }) + "\n";
-}
-var pause3 = (milliseconds) => new Promise((resolve7) => setTimeout(resolve7, milliseconds));
-async function writeExclusiveSafe(path, content) {
-  await ordinaryDirectoryPath(dirname6(path), { create: true });
-  await regularFileState(path);
-  let handle, created = false;
-  try {
-    handle = await open5(path, "wx", 384);
-    created = true;
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-  } catch (error) {
-    if (handle) await handle.close().catch(() => {
-    });
-    if (created) try {
-      await unlink4(path);
-    } catch (unlinkError) {
-      if (unlinkError.code !== "ENOENT") throw unlinkError;
-    }
-    throw error;
-  }
-  await handle.close();
-}
 function parseScopeLock(text, path) {
   let lock;
   try {
@@ -10784,255 +10893,51 @@ function parseScopeLock(text, path) {
   }
   return lock;
 }
-async function readScopeLock(path) {
-  const before = await regularFileState(path);
-  if (!before) return null;
-  let handle;
-  try {
-    handle = await open5(path, fsConstants3.O_RDONLY | (fsConstants3.O_NOFOLLOW || 0));
-    const stat2 = await handle.stat();
-    if (!stat2.isFile() || stat2.dev !== before.dev || stat2.ino !== before.ino) return null;
-    return { stat: stat2, lock: parseScopeLock(await handle.readFile("utf8"), path) };
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    throw error;
-  } finally {
-    if (handle) await handle.close().catch(() => {
-    });
-  }
-}
-async function staleScopeLock(state) {
-  const age = Date.now() - Math.max(state.lock.createdAt, state.stat.mtimeMs);
-  if (age < SCOPE_LOCK_STALE_MS) return false;
-  const alive = processAlive(state.lock.pid);
-  if (!alive) return true;
-  const recordedIdentity = typeof state.lock.processIdentity === "string" ? state.lock.processIdentity : null;
-  const actualIdentity = await processStartIdentity(state.lock.pid);
-  if (recordedIdentity && actualIdentity && recordedIdentity !== actualIdentity) return true;
-  return age >= SCOPE_LOCK_MAX_STALE_MS;
-}
-var sameScopeLockInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
 var sameScopeLockOwner = (left, right) => left.token === right.token && left.pid === right.pid && left.processIdentity === right.processIdentity && left.createdAt === right.createdAt && left.owner === right.owner && left.format === right.format;
-function defaultScopeRetirementModeCapability({ stat: stat2 }) {
-  return (stat2.mode & 511) !== 511;
-}
-async function assertPrivateScopeRetirementDirectory(dir, { expectedStat = null, requirePrivateMode = true } = {}) {
-  const stat2 = await lstat6(dir);
-  const uid = typeof process.getuid === "function" ? process.getuid() : null;
-  const ownerMismatch = process.platform !== "win32" && typeof uid === "number" && stat2.uid !== uid;
-  const ownerChanged = expectedStat && stat2.uid !== expectedStat.uid;
-  const directoryChanged = expectedStat && !sameScopeLockInode(stat2, expectedStat);
-  const unsafeMode = requirePrivateMode && process.platform !== "win32" && ((stat2.mode & 448) !== 448 || (stat2.mode & 63) !== 0);
-  if (stat2.isSymbolicLink() || !stat2.isDirectory() || ownerMismatch || ownerChanged || directoryChanged || unsafeMode) {
-    throw new Error(`unsafe Codex managed-scope retirement directory: ${dir}`);
-  }
-  return stat2;
-}
-async function privateScopeRetirement(path, { modeCapability = defaultScopeRetirementModeCapability } = {}) {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const dir = join17(dirname6(path), `.muster-retired-${process.pid}-${randomUUID3()}`);
-    try {
-      await mkdir7(dir, { mode: 448 });
-    } catch (error) {
-      if (error.code === "EEXIST" && attempt < 7) continue;
-      throw error;
-    }
-    const stat2 = await lstat6(dir);
-    const requirePrivateMode = await modeCapability({ dir, stat: stat2 });
-    if (typeof requirePrivateMode !== "boolean") throw new Error(`invalid Codex managed-scope retirement mode capability for ${dir}`);
-    await assertPrivateScopeRetirementDirectory(dir, { expectedStat: stat2, requirePrivateMode });
-    return { dir, path: join17(dir, "lock"), stat: stat2, expectedStat: stat2, requirePrivateMode };
-  }
-  throw new Error(`could not create Codex managed-scope retirement directory for ${path}`);
-}
-async function removeEmptyScopeRetirementDirectory(retirement) {
-  await assertPrivateScopeRetirementDirectory(retirement.dir, retirement);
-  await rmdir2(retirement.dir);
-}
-async function restoreRetiredScopeLock(path, retirement, stat2) {
-  await assertPrivateScopeRetirementDirectory(retirement.dir, retirement);
-  const current = await lstat6(retirement.path);
-  if (!sameScopeLockInode(current, stat2)) return false;
-  try {
-    await link2(retirement.path, path);
-  } catch (error) {
-    if (error.code === "EEXIST") return false;
-    throw error;
-  }
-  const restored = await lstat6(path);
-  if (!sameScopeLockInode(restored, stat2)) throw new Error(`Codex managed-scope lock restore changed identity: ${path}`);
-  await assertPrivateScopeRetirementDirectory(retirement.dir, retirement);
-  await unlink4(retirement.path);
-  await removeEmptyScopeRetirementDirectory(retirement);
-  return true;
-}
-async function restoreQuarantinedScopeLock(path, quarantine, stat2, { modeCapability } = {}) {
-  const retirement = await privateScopeRetirement(quarantine, { modeCapability });
-  try {
-    await rename5(quarantine, retirement.path);
-  } catch (error) {
-    try {
-      await removeEmptyScopeRetirementDirectory(retirement);
-    } catch {
-    }
-    if (error.code === "ENOENT") return false;
-    throw error;
-  }
-  return restoreRetiredScopeLock(path, retirement, stat2);
-}
-async function retireOwnedScopeLock(path, expectedStat, expectedLock, {
-  restorePath = path,
-  stale = null,
-  afterRetirement = async () => {
-  },
-  modeCapability
-} = {}) {
-  const current = await readScopeLock(path);
-  if (!current || !sameScopeLockInode(current.stat, expectedStat) || !sameScopeLockOwner(current.lock, expectedLock)) return false;
-  const retirement = await privateScopeRetirement(path, { modeCapability });
-  try {
-    await rename5(path, retirement.path);
-  } catch (error) {
-    try {
-      await removeEmptyScopeRetirementDirectory(retirement);
-    } catch {
-    }
-    if (error.code === "ENOENT") return false;
-    throw error;
-  }
-  await afterRetirement({ dir: retirement.dir, path: retirement.path, sourcePath: path });
-  await assertPrivateScopeRetirementDirectory(retirement.dir, retirement);
-  let retired;
-  try {
-    retired = await readScopeLock(retirement.path);
-  } catch {
-    return false;
-  }
-  if (!retired || !sameScopeLockInode(retired.stat, expectedStat) || !sameScopeLockOwner(retired.lock, expectedLock)) {
-    return false;
-  }
-  if (stale && !await stale(retired)) {
-    await restoreRetiredScopeLock(restorePath, retirement, expectedStat);
-    return false;
-  }
-  await assertPrivateScopeRetirementDirectory(retirement.dir, retirement);
-  const final = await readScopeLock(retirement.path);
-  if (!final || !sameScopeLockInode(final.stat, expectedStat) || !sameScopeLockOwner(final.lock, expectedLock)) return false;
-  await unlink4(retirement.path);
-  await removeEmptyScopeRetirementDirectory(retirement);
-  return true;
-}
-async function releaseScopeLock(path, token, {
-  beforeRelease = async () => {
-  },
-  afterRetirement = async () => {
-  },
-  modeCapability = defaultScopeRetirementModeCapability
-} = {}) {
-  const state = await readScopeLock(path);
-  if (!state || state.lock.token !== token) throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
-  await beforeRelease({ path });
-  if (!await retireOwnedScopeLock(path, state.stat, state.lock, { afterRetirement, modeCapability })) {
-    throw new Error(`Codex managed-scope lock ownership changed: ${path}`);
-  }
-}
-async function acquireRecoveryScopeLock(path, token, lockOptions) {
-  try {
-    await writeExclusiveSafe(path, await scopeLockText(token));
-    return true;
-  } catch (error) {
-    if (error.code !== "EEXIST") throw error;
-  }
-  const state = await readScopeLock(path);
-  if (!state || !await staleScopeLock(state)) return false;
-  if (!await retireOwnedScopeLock(path, state.stat, state.lock, {
-    stale: staleScopeLock,
-    afterRetirement: lockOptions?.afterRetirement,
-    modeCapability: lockOptions?.modeCapability
-  })) return false;
-  try {
-    await writeExclusiveSafe(path, await scopeLockText(token));
-    return true;
-  } catch (error) {
-    if (error.code === "EEXIST") return false;
-    throw error;
-  }
-}
-async function recoverStaleScopeLock(path, {
-  afterQuarantine = async () => {
-  },
-  afterValidation = async () => {
-  },
-  afterRetirement = async () => {
-  },
-  modeCapability = defaultScopeRetirementModeCapability
-} = {}) {
-  const recoveryPath = `${path}.recover`, token = randomUUID3();
-  if (!await acquireRecoveryScopeLock(recoveryPath, token, { afterRetirement, modeCapability })) return false;
-  try {
-    const state = await readScopeLock(path);
-    if (!state || !await staleScopeLock(state)) return false;
-    const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID3()}`;
-    try {
-      await rename5(path, quarantine);
-    } catch (error) {
-      if (error.code === "ENOENT") return true;
-      throw error;
-    }
-    await afterQuarantine({ path, quarantine });
-    const quarantined = await readScopeLock(quarantine);
-    if (!quarantined || !sameScopeLockInode(quarantined.stat, state.stat) || !sameScopeLockOwner(quarantined.lock, state.lock) || !await staleScopeLock(quarantined)) {
-      if (quarantined) await restoreQuarantinedScopeLock(path, quarantine, quarantined.stat, { modeCapability });
-      return false;
-    }
-    await afterValidation({ path, quarantine });
-    const finalCandidate = await readScopeLock(quarantine);
-    if (!finalCandidate) return false;
-    if (!sameScopeLockInode(finalCandidate.stat, quarantined.stat) || !sameScopeLockOwner(finalCandidate.lock, quarantined.lock) || !await staleScopeLock(finalCandidate)) {
-      await restoreQuarantinedScopeLock(path, quarantine, finalCandidate.stat, { modeCapability });
-      return false;
-    }
-    return retireOwnedScopeLock(quarantine, finalCandidate.stat, finalCandidate.lock, {
-      restorePath: path,
-      stale: staleScopeLock,
-      afterRetirement,
-      modeCapability
-    });
-  } finally {
-    await releaseScopeLock(recoveryPath, token, { afterRetirement, modeCapability });
-  }
-}
-async function acquireScopeLock(home, {
-  maxAttempts = 1e3,
-  afterQuarantine = async () => {
-  },
-  afterValidation = async () => {
-  },
-  afterRetirement = async () => {
-  },
-  modeCapability = defaultScopeRetirementModeCapability
-} = {}) {
-  const path = scopeRegistryLockPath(home), token = randomUUID3();
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      await writeExclusiveSafe(path, await scopeLockText(token));
-      return { path, token };
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-    }
-    const state = await readScopeLock(path);
-    if (!state || await staleScopeLock(state) && await recoverStaleScopeLock(path, { afterQuarantine, afterValidation, afterRetirement, modeCapability })) continue;
-    await pause3(10);
-  }
-  throw new Error(`Codex managed-scope lock did not become available: ${path}`);
+function scopeLockLifecycleOptions({ maxAttempts = 1e3, ...options } = {}) {
+  return {
+    recordPolicy: {
+      create: ({ token, pid, processIdentity, createdAt }) => ({
+        format: 1,
+        owner: "muster",
+        pid,
+        processIdentity,
+        token,
+        createdAt
+      }),
+      parse: (text, { path }) => parseScopeLock(text, path),
+      sameOwner: sameScopeLockOwner
+    },
+    pathPolicy: {
+      async prepare(path, { operation, kind }) {
+        await ordinaryDirectoryPath(dirname6(path), { create: operation === "create" });
+        if (kind !== "retirement-directory" && ["create", "read"].includes(operation)) await regularFileState(path);
+      }
+    },
+    stalePolicy: {
+      age: ({ record, stat: stat2, now }) => now - Math.max(record.createdAt, stat2.mtimeMs),
+      softExpiryMs: SCOPE_LOCK_STALE_MS,
+      hardExpiryMs: SCOPE_LOCK_MAX_STALE_MS
+    },
+    recoveryPolicy: { path: (path) => `${path}.recover` },
+    retryPolicy: { maxAttempts, delayMs: 10 },
+    releasePolicy: { missing: "error", changed: "error" },
+    heartbeat: false,
+    maxBytes: Number.POSITIVE_INFINITY,
+    diagnostics: {
+      unsafe: (path) => `Codex configuration target must be a regular file: ${path}`,
+      retirement: (dir) => `unsafe Codex managed-scope retirement directory: ${dir}`,
+      retirementCreate: (path) => `could not create Codex managed-scope retirement directory for ${path}`,
+      modeCapability: (dir) => `invalid Codex managed-scope retirement mode capability for ${dir}`,
+      restore: (path) => `Codex managed-scope lock restore changed identity: ${path}`,
+      ownership: (path) => `Codex managed-scope lock ownership changed: ${path}`,
+      unavailable: (path) => `Codex managed-scope lock did not become available: ${path}`
+    },
+    ...options
+  };
 }
 async function withScopeRegistryTransaction(home, action, lockOptions) {
-  const held = await acquireScopeLock(home, lockOptions);
-  try {
-    return await action(await readScopeRegistry(home));
-  } finally {
-    await releaseScopeLock(held.path, held.token, lockOptions);
-  }
+  return withCodexFileLock(scopeRegistryLockPath(home), async () => action(await readScopeRegistry(home)), scopeLockLifecycleOptions(lockOptions));
 }
 async function atomicWriteSafe(path, content) {
   const parent = dirname6(path);
@@ -11518,7 +11423,7 @@ async function runCodexUninstall({ scope = "project", dryRun = false, cwd = proc
 }
 
 // src/codex-doctor.js
-import { constants as fsConstants4 } from "node:fs";
+import { constants as fsConstants3 } from "node:fs";
 import { lstat as lstat7, open as open6, readFile as readFile11, readdir as readdir10, realpath as realpath3 } from "node:fs/promises";
 import { createHash as createHash4 } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -11589,7 +11494,7 @@ async function readRegularFile(path, encoding) {
   if (before.isSymbolicLink() || !before.isFile()) throw new Error(`Codex configuration target must be a regular file: ${path}`);
   let handle;
   try {
-    handle = await open6(path, fsConstants4.O_RDONLY | (fsConstants4.O_NOFOLLOW || 0));
+    handle = await open6(path, fsConstants3.O_RDONLY | (fsConstants3.O_NOFOLLOW || 0));
     const current = await handle.stat();
     if (!current.isFile() || current.dev !== before.dev || current.ino !== before.ino) throw new Error(`Codex configuration target changed while reading: ${path}`);
     return handle.readFile(encoding);
@@ -11844,8 +11749,8 @@ async function runCodexDoctor({ root, cwd = process.cwd(), codexHome: codexHome2
         if (isRegistered(dir)) installations.push({ dir, ok: false });
       }
     }
-    const stale = installations.filter((item) => !item.ok);
-    checks.push({ name: "codex-install-generation", ok: stale.length === 0, detail: stale.length ? `installed profiles do not match selected generation/bootstrap at: ${stale.map((item) => item.dir).join(", ")}; rerun muster install codex` : installations.length ? `${installations.length} managed scope(s) match generation ${selected.generation}` : "no managed profile scopes detected" });
+    const stale2 = installations.filter((item) => !item.ok);
+    checks.push({ name: "codex-install-generation", ok: stale2.length === 0, detail: stale2.length ? `installed profiles do not match selected generation/bootstrap at: ${stale2.map((item) => item.dir).join(", ")}; rerun muster install codex` : installations.length ? `${installations.length} managed scope(s) match generation ${selected.generation}` : "no managed profile scopes detected" });
   }
   const hookStatuses = [];
   const staleHookScopes = [];

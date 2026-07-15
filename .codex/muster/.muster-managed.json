@@ -5,7 +5,7 @@
     "hooks/muster-hook.mjs",
     "hooks/action-guard.mjs"
   ],
-  "generation": "41de7405beccb20b7d160ea23f7a309bbac4b7da5b7898f6469535e4e6d4dc9a",
+  "generation": "183225d2fff02de9d16952600ca068d88f5a691c0917041f6d3c97025ba5cd07",
   "bootstrapDigest": "bfc79c48292321f948818879ee055abe6ef900916c817c31d0ee3da4777319a7",
   "hookHash": "8daf7380e370b35345fd8bc523d2733fd46c71f1f465351932662d1390ca02d9",
   "hookConfigCreated": true,

@@ -157,7 +157,7 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
     assert.equal(config.reasoning ?? CODEX_MODEL_POLICY[config.tier].reasoning, policy.reasoning, `${id} reasoning policy`);
     assert.equal(config.model ?? CODEX_MODEL_POLICY[config.tier].model, policy.model, `${id} model policy`);
     assert.equal(Boolean(config.readOnly), policy.readOnly, `${id} read-only policy`);
-    const profile = await readFile(join(selectedRelease.releaseRoot, "profiles", `${id}.toml`), "utf8");
+    const profile = await readFile(join(selectedRelease.profilesRoot, `${id}.toml`), "utf8");
     assert.match(profile, new RegExp(`model = ${JSON.stringify(policy.model)}`), `${id} model`);
     assert.match(profile, new RegExp(`model_reasoning_effort = ${JSON.stringify(policy.reasoning)}`), `${id} reasoning`);
     assert.match(profile, new RegExp(`sandbox_mode = ${JSON.stringify(policy.readOnly ? "read-only" : "workspace-write")}`), `${id} sandbox`);
@@ -253,11 +253,12 @@ test("npm package contents include the selected immutable Codex generation", asy
   const { stdout } = await execFile("npm", ["pack", "--dry-run", "--json"], { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 });
   const files = new Set(JSON.parse(stdout)[0].files.map(file => file.path));
   const release = `.agents/plugins/releases/${selectedRelease.generation}`;
+  const profiles = `${release}/${selectedRelease.metadata.format === 2 ? "plugin/agents" : "profiles"}`;
   for (const path of [
     ".agents/plugins/marketplace.json",
     `${release}/release.json`,
     `${release}/plugin/runtime/muster.mjs`,
-    `${release}/profiles/muster-builder.toml`
+    `${profiles}/muster-builder.toml`
   ]) assert.ok(files.has(path), `npm package is missing ${path}`);
 });
 
@@ -1149,6 +1150,22 @@ test("Codex recovers a valid stale managed-scope lock and rejects unsafe locks",
   await assert.rejects(() => readFile(join(unsafeCwd, ".codex", "agents", ".muster-managed.json"), "utf8"));
 });
 
+test("Codex managed-scope staleness uses the newer of createdAt and mtime", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-lock-age-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+  const lockPath = join(registryDir, "install-scopes.json.lock"), absent = async () => { throw new Error("not found"); };
+  await mkdir(registryDir, { recursive: true });
+  const record = { format: 1, owner: "muster", pid: 2_147_483_647, token: "recent-created-at", createdAt: Date.now() };
+  await writeFile(lockPath, JSON.stringify(record) + "\n");
+  const old = new Date(Date.now() - 10 * 60 * 1000);
+  await utimes(lockPath, old, old);
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot, execFile: absent, scopeLockOptions: { maxAttempts: 1 }
+  }), /lock did not become available/);
+  assert.equal(JSON.parse(await readFile(lockPath, "utf8")).token, record.token);
+});
+
 test("Codex managed-scope stale-lock reclaim never deletes a replacement owner", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-lock-race-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
@@ -1396,6 +1413,24 @@ test("Codex scope and hook retirement preserve replacement components", async t 
     child.stdin.end();
   });
   assert.deepEqual(JSON.parse(stdout), { released: false, token: "hook-replacement", weakReleased: false, weakMode: 0o077 });
+});
+
+test("Codex managed-scope shared retirement rejects a same-inode owner rewrite", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-owner-rewrite-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const home = join(tmp, "home"), cwd = join(tmp, "project"), absent = async () => { throw new Error("not found"); };
+  const replacement = { format: 1, owner: "muster", pid: process.pid, processIdentity: "replacement", token: "same-inode-replacement", createdAt: Date.now() };
+  let retired;
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot, execFile: absent,
+    scopeLockOptions: {
+      afterRetirement: async state => {
+        retired = state.path;
+        await writeFile(retired, JSON.stringify(replacement) + "\n");
+      }
+    }
+  }), /lock ownership changed/i);
+  assert.equal(JSON.parse(await readFile(retired, "utf8")).token, replacement.token);
 });
 
 test("Codex hook stale-lock reclaim never deletes replacement capacity or cleanup owners", async t => {

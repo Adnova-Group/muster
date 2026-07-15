@@ -1029,8 +1029,8 @@
     },
     {
       "path": "plugin/runtime/muster.mjs",
-      "sha256": "51dfe380a84e56eb8507e4b9df931c3f4cb8c156738b5aba010d86968c9ef6b7",
-      "size": 530525
+      "sha256": "df89ad104f3dc9f47f3f3583198d184c1deaa91bec82516078c50b857a9b4602",
+      "size": 527378
     },
     {
       "path": "plugin/runtime/resolve-skill-provider.mjs",
@@ -1118,5 +1118,5 @@
       "size": 14226
     }
   ],
-  "generation": "41de7405beccb20b7d160ea23f7a309bbac4b7da5b7898f6469535e4e6d4dc9a"
+  "generation": "183225d2fff02de9d16952600ca068d88f5a691c0917041f6d3c97025ba5cd07"
 }

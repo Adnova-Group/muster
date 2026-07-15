@@ -4,6 +4,7 @@ import { link, lstat, mkdir, open, readFile, rename, rmdir, unlink, utimes } fro
 import { dirname, join } from "node:path";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
 
 export function processAlive(pid) {
   if (!Number.isInteger(pid) || pid < 1) return false;
@@ -25,244 +26,363 @@ export async function processStartIdentity(pid = process.pid) {
   } catch { return null; }
 }
 
-async function readLock(path, maxBytes = 16 * 1024) {
-  let handle;
-  try {
-    const before = await lstat(path);
-    if (before.isSymbolicLink() || !before.isFile() || before.size > maxBytes) throw new Error(`unsafe Codex transaction lock: ${path}`);
-    handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
-    const stat = await handle.stat();
-    if (!stat.isFile() || stat.size > maxBytes) throw new Error(`unsafe Codex transaction lock: ${path}`);
-    let record = null;
-    try { record = JSON.parse(await handle.readFile("utf8")); } catch { /* a partial crashed writer becomes reclaimable after expiry */ }
-    return { record, stat };
-  } finally { if (handle) await handle.close().catch(() => {}); }
-}
+const defaultRecordPolicy = {
+  async create({ token, pid, processIdentity, createdAt }) {
+    return { format: 1, pid, processIdentity, createdAt, token };
+  },
+  parse(text) {
+    // Malformed transaction records remain fail-closed: they are never eligible
+    // for stale reclaim because their owner cannot be bound safely.
+    try { return JSON.parse(text); } catch { return null; }
+  },
+  sameOwner(left, right) {
+    return typeof left?.token === "string" && left.token.length > 0
+      && left.token === right?.token && left.pid === right?.pid
+      && left.processIdentity === right?.processIdentity && left.createdAt === right?.createdAt;
+  }
+};
 
-const sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
-const sameLockOwner = (left, right) => typeof left?.token === "string" && left.token.length > 0
-  && left.token === right?.token && left.pid === right?.pid
-  && left.processIdentity === right?.processIdentity && left.createdAt === right?.createdAt;
+const defaultStalePolicy = {
+  age({ stat, now }) { return now - stat.mtimeMs; },
+  softExpiryMs: 60_000,
+  hardExpiryMs: 15 * 60_000
+};
 
-function defaultRetirementModeCapability({ stat }) {
+const defaultRetryPolicy = {
+  timeoutMs: 30_000,
+  delay({ elapsedMs }) { return Math.min(25, 5 + Math.floor(elapsedMs / 100)); }
+};
+
+const defaultReleasePolicy = { missing: "ignore", changed: "ignore" };
+
+function defaultModeCapability({ stat }) {
   // A newly created 0700 directory reported as 0777 means the containing
-  // filesystem normalized the requested POSIX mode bits (for example DrvFS).
-  // Any other mode stays on the strict path and must pass the 0700 check.
+  // filesystem normalized requested POSIX mode bits (for example DrvFS).
   return (stat.mode & 0o777) !== 0o777;
 }
 
-async function assertPrivateRetirementDirectory(dir, { expectedStat = null, requirePrivateMode = true } = {}) {
-  const stat = await lstat(dir);
-  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+function normalizedOptions(options) {
+  const stalePolicy = options.stalePolicy || {
+    ...defaultStalePolicy,
+    softExpiryMs: options.staleMs ?? defaultStalePolicy.softExpiryMs,
+    hardExpiryMs: options.maxStaleMs ?? defaultStalePolicy.hardExpiryMs
+  };
+  const retryPolicy = options.retryPolicy || {
+    ...defaultRetryPolicy,
+    timeoutMs: options.timeoutMs ?? defaultRetryPolicy.timeoutMs
+  };
+  return {
+    recordPolicy: options.recordPolicy || defaultRecordPolicy,
+    pathPolicy: options.pathPolicy || null,
+    stalePolicy,
+    recoveryPolicy: options.recoveryPolicy || null,
+    retryPolicy,
+    releasePolicy: options.releasePolicy || defaultReleasePolicy,
+    heartbeat: Object.hasOwn(options, "heartbeat") ? options.heartbeat : {
+      intervalMs: Math.max(1_000, Math.floor(stalePolicy.softExpiryMs / 3))
+    },
+    maxBytes: options.maxBytes ?? 16 * 1024,
+    diagnostics: {
+      unsafe: path => `unsafe Codex transaction lock: ${path}`,
+      retirement: path => `unsafe Codex transaction retirement directory: ${path}`,
+      retirementCreate: path => `could not create Codex transaction retirement directory for ${path}`,
+      modeCapability: dir => `invalid Codex retirement mode capability for ${dir}`,
+      restore: path => `Codex transaction lock restore changed identity: ${path}`,
+      ownership: path => `Codex transaction lock ownership changed: ${path}`,
+      unavailable: path => `timed out waiting for Codex transaction lock: ${path}`,
+      ...options.diagnostics
+    },
+    raceHooks: {
+      afterRecordWrite: options.afterRecordWrite || (async () => {}),
+      afterWrite: options.afterWrite || (async () => {}),
+      afterQuarantine: options.afterQuarantine || (async () => {}),
+      afterValidation: options.afterValidation || (async () => {}),
+      afterRetirement: options.afterRetirement || (async () => {}),
+      beforeRelease: options.beforeRelease || (async () => {}),
+      ...options.raceHooks
+    },
+    modeCapability: options.modeCapability || defaultModeCapability
+  };
+}
+
+async function prepare(policy, path, context) {
+  if (policy?.prepare) await policy.prepare(path, context);
+}
+
+async function readLock(path, policy, kind = "lock") {
+  await prepare(policy.pathPolicy, path, { operation: "read", kind });
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let handle;
+    try {
+      const before = await lstat(path);
+      if (before.isSymbolicLink() || !before.isFile() || before.size > policy.maxBytes) throw new Error(policy.diagnostics.unsafe(path));
+      handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.size > policy.maxBytes) throw new Error(policy.diagnostics.unsafe(path));
+      if (!sameInode(before, stat)) {
+        if (attempt < 7) continue;
+        const error = new Error(`Codex lock changed while reading: ${path}`);
+        error.code = "EAGAIN";
+        throw error;
+      }
+      return { record: policy.recordPolicy.parse(await handle.readFile("utf8"), { path }), stat };
+    } finally { if (handle) await handle.close().catch(() => {}); }
+  }
+}
+
+async function writeExclusive(path, token, policy, kind = "lock") {
+  await prepare(policy.pathPolicy, path, { operation: "create", kind });
+  const record = await policy.recordPolicy.create({ token, pid: process.pid, processIdentity: await processStartIdentity(), createdAt: Date.now(), path });
+  const text = JSON.stringify(record) + "\n";
+  let handle, createdStat, writeComplete = false;
+  try {
+    handle = await open(path, "wx", 0o600);
+    createdStat = await handle.stat();
+    await handle.writeFile(text, "utf8");
+    await policy.raceHooks.afterRecordWrite({ path, handle });
+    await handle.sync();
+    writeComplete = true;
+    await handle.close();
+    handle = null;
+    await policy.raceHooks.afterWrite({ path });
+    const published = await readLock(path, policy, "published-lock");
+    if (!sameInode(published.stat, createdStat) || !policy.recordPolicy.sameOwner(published.record, record)) {
+      const error = new Error(policy.diagnostics.ownership(path));
+      error.code = "EAGAIN";
+      throw error;
+    }
+    return record;
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    if (createdStat) await retireCreated(path, createdStat, text, policy, { requireExpectedText: writeComplete });
+    throw error;
+  }
+}
+
+async function stale(state, policy) {
+  const age = policy.stalePolicy.age({ ...state, now: Date.now() });
+  if (age < policy.stalePolicy.softExpiryMs) return false;
+  const pid = Number(state.record?.pid), alive = processAlive(pid);
+  if (!alive) return true;
+  const recorded = typeof state.record?.processIdentity === "string" ? state.record.processIdentity : null;
+  const actual = await processStartIdentity(pid);
+  if (recorded && actual && recorded !== actual) return true;
+  return age >= policy.stalePolicy.hardExpiryMs;
+}
+
+async function assertPrivateRetirementDirectory(dir, retirement, policy) {
+  await prepare(policy.pathPolicy, dir, { operation: "verify", kind: "retirement-directory" });
+  const stat = await lstat(dir), uid = typeof process.getuid === "function" ? process.getuid() : null;
   const ownerMismatch = process.platform !== "win32" && typeof uid === "number" && stat.uid !== uid;
-  const ownerChanged = expectedStat && stat.uid !== expectedStat.uid;
-  const directoryChanged = expectedStat && !sameInode(stat, expectedStat);
-  const unsafeMode = requirePrivateMode && process.platform !== "win32"
+  const unsafeMode = retirement.requirePrivateMode && process.platform !== "win32"
     && ((stat.mode & 0o700) !== 0o700 || (stat.mode & 0o077) !== 0);
-  if (stat.isSymbolicLink() || !stat.isDirectory() || ownerMismatch || ownerChanged || directoryChanged || unsafeMode) {
-    throw new Error(`unsafe Codex transaction retirement directory: ${dir}`);
+  if (stat.isSymbolicLink() || !stat.isDirectory() || ownerMismatch
+    || stat.uid !== retirement.expectedStat.uid || !sameInode(stat, retirement.expectedStat) || unsafeMode) {
+    throw new Error(policy.diagnostics.retirement(dir));
   }
   return stat;
 }
 
-async function privateRetirement(path, { modeCapability = defaultRetirementModeCapability } = {}) {
+async function privateRetirement(path, policy) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const dir = join(dirname(path), `.muster-retired-${process.pid}-${randomUUID()}`);
+    await prepare(policy.pathPolicy, dir, { operation: "create", kind: "retirement-directory" });
     try { await mkdir(dir, { mode: 0o700 }); }
     catch (error) { if (error.code === "EEXIST" && attempt < 7) continue; throw error; }
-    const stat = await lstat(dir);
-    const requirePrivateMode = await modeCapability({ dir, stat });
-    if (typeof requirePrivateMode !== "boolean") throw new Error(`invalid Codex retirement mode capability for ${dir}`);
-    await assertPrivateRetirementDirectory(dir, { expectedStat: stat, requirePrivateMode });
-    return { dir, path: join(dir, "lock"), stat, expectedStat: stat, requirePrivateMode };
+    const stat = await lstat(dir), requirePrivateMode = await policy.modeCapability({ dir, stat });
+    if (typeof requirePrivateMode !== "boolean") throw new Error(policy.diagnostics.modeCapability(dir));
+    const retirement = { dir, path: join(dir, "lock"), expectedStat: stat, requirePrivateMode };
+    await assertPrivateRetirementDirectory(dir, retirement, policy);
+    return retirement;
   }
-  throw new Error(`could not create Codex transaction retirement directory for ${path}`);
+  throw new Error(policy.diagnostics.retirementCreate(path));
 }
 
-async function removeEmptyRetirementDirectory(retirement) {
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
+async function removeRetirement(retirement, policy) {
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
   await rmdir(retirement.dir);
 }
 
-async function restoreRetiredLock(path, retirement, stat) {
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
-  const current = await lstat(retirement.path);
-  if (!sameInode(current, stat)) return false;
-  try { await link(retirement.path, path); }
-  catch (error) {
-    if (error.code === "EEXIST") return false;
-    throw error;
-  }
-  const restored = await lstat(path);
-  if (!sameInode(restored, stat)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
-  await unlink(retirement.path);
-  await removeEmptyRetirementDirectory(retirement);
-  return true;
-}
-
-async function restoreQuarantinedLock(path, quarantine, stat, { modeCapability } = {}) {
-  const retirement = await privateRetirement(quarantine, { modeCapability });
-  try { await rename(quarantine, retirement.path); }
-  catch (error) {
-    try { await removeEmptyRetirementDirectory(retirement); } catch { /* preserve an ambiguous retirement directory */ }
-    if (error.code === "ENOENT") return false;
-    throw error;
-  }
-  return restoreRetiredLock(path, retirement, stat);
-}
-
-async function retireOwnedLock(path, expectedStat, expectedRecord, {
-  stale = null,
-  restorePath = path,
-  afterRetirement = async () => {},
-  modeCapability
-} = {}) {
+async function retireCreated(path, expectedStat, expectedText, policy, { requireExpectedText }) {
   let current;
-  try { current = await readLock(path); }
-  catch { return false; }
-  if (!sameInode(current.stat, expectedStat) || !sameLockOwner(current.record, expectedRecord)) return false;
-  const retirement = await privateRetirement(path, { modeCapability });
+  try { current = await lstat(path); } catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  if (!sameInode(current, expectedStat)) return false;
+  const retirement = await privateRetirement(path, policy);
   try { await rename(path, retirement.path); }
   catch (error) {
-    try { await removeEmptyRetirementDirectory(retirement); } catch { /* leave an ambiguous retirement directory intact */ }
+    try { await removeRetirement(retirement, policy); } catch { /* preserve ambiguous state */ }
     if (error.code === "ENOENT") return false;
     throw error;
   }
-  await afterRetirement({ dir: retirement.dir, path: retirement.path, sourcePath: path });
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
-  let retired;
-  try { retired = await readLock(retirement.path); }
-  catch { return false; }
-  if (!sameInode(retired.stat, expectedStat) || !sameLockOwner(retired.record, expectedRecord)) {
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
+  const movedStat = await lstat(retirement.path);
+  if (!sameInode(movedStat, expectedStat)
+    || (requireExpectedText && await readFile(retirement.path, "utf8") !== expectedText)) {
+    await restoreRetired(path, retirement, movedStat, policy);
     return false;
   }
-  if (stale && !await stale(retired)) {
-    await restoreRetiredLock(restorePath, retirement, expectedStat);
-    return false;
-  }
-  // The final identity checks happen after the atomic move into a private (or
-  // mode-unavailable but inode-bound) retirement directory. Never validate a
-  // public pathname and then delete it.
-  await assertPrivateRetirementDirectory(retirement.dir, retirement);
-  const final = await readLock(retirement.path);
-  if (!sameInode(final.stat, expectedStat) || !sameLockOwner(final.record, expectedRecord)) return false;
   await unlink(retirement.path);
-  await removeEmptyRetirementDirectory(retirement);
+  await removeRetirement(retirement, policy);
   return true;
 }
 
-async function lockIsStale(current, { staleMs, maxStaleMs }) {
-  const age = Date.now() - current.stat.mtimeMs;
-  if (age < staleMs) return false;
-  const pid = Number(current.record?.pid);
-  const alive = processAlive(pid);
-  const actualIdentity = alive ? await processStartIdentity(pid) : null;
-  const recordedIdentity = typeof current.record?.processIdentity === "string" ? current.record.processIdentity : null;
-  const sameProcess = alive && recordedIdentity && actualIdentity && recordedIdentity === actualIdentity;
-  if (sameProcess && age < maxStaleMs) return false;
-  if (alive && (!recordedIdentity || !actualIdentity) && age < maxStaleMs) return false;
+async function restoreRetired(path, retirement, stat, policy) {
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
+  const current = await lstat(retirement.path);
+  if (!sameInode(current, stat)) return false;
+  await prepare(policy.pathPolicy, path, { operation: "restore", kind: "lock" });
+  try { await link(retirement.path, path); }
+  catch (error) { if (error.code === "EEXIST") return false; throw error; }
+  if (!sameInode(await lstat(path), stat)) throw new Error(policy.diagnostics.restore(path));
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
+  await unlink(retirement.path);
+  await removeRetirement(retirement, policy);
   return true;
 }
 
-export async function reclaimStaleCodexFileLock(path, {
-  staleMs,
-  maxStaleMs,
-  afterQuarantine = async () => {},
-  afterValidation = async () => {},
-  afterRetirement = async () => {},
-  modeCapability
-}) {
-  let current;
-  try { current = await readLock(path); }
+async function restoreQuarantined(path, quarantine, stat, policy) {
+  const retirement = await privateRetirement(quarantine, policy);
+  try { await rename(quarantine, retirement.path); }
   catch (error) {
-    if (error.code === "ENOENT") return true;
+    try { await removeRetirement(retirement, policy); } catch { /* preserve ambiguous state */ }
+    if (error.code === "ENOENT") return false;
     throw error;
   }
-  if (!sameLockOwner(current.record, current.record) || !await lockIsStale(current, { staleMs, maxStaleMs })) return false;
+  return restoreRetired(path, retirement, stat, policy);
+}
 
-  const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID()}`;
-  try { await rename(path, quarantine); }
-  catch (error) { if (error.code === "ENOENT") return true; throw error; }
-  try {
-    await afterQuarantine({ path, quarantine });
-    const quarantined = await readLock(quarantine);
-    if (!sameInode(quarantined.stat, current.stat) || !sameLockOwner(quarantined.record, current.record)
-      || !await lockIsStale(quarantined, { staleMs, maxStaleMs })) {
-      await restoreQuarantinedLock(path, quarantine, quarantined.stat, { modeCapability });
-      return false;
-    }
-    await afterValidation({ path, quarantine });
-    let finalCandidate;
-    try { finalCandidate = await readLock(quarantine); }
-    catch { return false; }
-    if (!sameInode(finalCandidate.stat, quarantined.stat) || !sameLockOwner(finalCandidate.record, quarantined.record)
-      || !await lockIsStale(finalCandidate, { staleMs, maxStaleMs })) {
-      await restoreQuarantinedLock(path, quarantine, finalCandidate.stat, { modeCapability });
-      return false;
-    }
-    if (!await retireOwnedLock(quarantine, finalCandidate.stat, finalCandidate.record, {
-      stale: state => lockIsStale(state, { staleMs, maxStaleMs }),
-      restorePath: path,
-      afterRetirement,
-      modeCapability
-    })) return false;
-  } catch (error) {
-    // The stale candidate has already left the public pathname. Preserve any
-    // ambiguous retirement entry rather than deleting an owner we cannot bind.
+async function retireOwned(path, expectedStat, expectedRecord, policy, { restorePath = path, requireStale = false } = {}) {
+  let current;
+  try { current = await readLock(path, policy, "retirement-source"); } catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  if (!sameInode(current.stat, expectedStat) || !policy.recordPolicy.sameOwner(current.record, expectedRecord)) return false;
+  const retirement = await privateRetirement(path, policy);
+  try { await rename(path, retirement.path); }
+  catch (error) {
+    try { await removeRetirement(retirement, policy); } catch { /* preserve ambiguous state */ }
+    if (error.code === "ENOENT") return false;
     throw error;
   }
+  await policy.raceHooks.afterRetirement({ dir: retirement.dir, path: retirement.path, sourcePath: path });
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
+  let retired;
+  try { retired = await readLock(retirement.path, policy, "retired-lock"); } catch { return false; }
+  if (!sameInode(retired.stat, expectedStat) || !policy.recordPolicy.sameOwner(retired.record, expectedRecord)) return false;
+  if (requireStale && !await stale(retired, policy)) {
+    await restoreRetired(restorePath, retirement, expectedStat, policy);
+    return false;
+  }
+  await assertPrivateRetirementDirectory(retirement.dir, retirement, policy);
+  const final = await readLock(retirement.path, policy, "retired-lock");
+  if (!sameInode(final.stat, expectedStat) || !policy.recordPolicy.sameOwner(final.record, expectedRecord)) return false;
+  await unlink(retirement.path);
+  await removeRetirement(retirement, policy);
   return true;
 }
 
-export async function withCodexFileLock(path, callback, {
-  staleMs = 60_000,
-  maxStaleMs = 15 * 60_000,
-  timeoutMs = 30_000,
-  afterQuarantine = async () => {},
-  afterValidation = async () => {},
-  afterRetirement = async () => {},
-  beforeRelease = async () => {},
-  modeCapability = defaultRetirementModeCapability
-} = {}) {
-  const token = randomUUID();
-  const processIdentity = await processStartIdentity();
-  const started = Date.now();
-  let handle;
+async function reclaimWithoutSentinel(path, policy) {
+  let current;
+  try { current = await readLock(path, policy); }
+  catch (error) { if (error.code === "ENOENT") return true; throw error; }
+  if (!policy.recordPolicy.sameOwner(current.record, current.record) || !await stale(current, policy)) return false;
+  const quarantine = `${path}.muster-reclaim-${process.pid}-${randomUUID()}`;
+  await prepare(policy.pathPolicy, quarantine, { operation: "quarantine", kind: "quarantine" });
+  try { await rename(path, quarantine); } catch (error) { if (error.code === "ENOENT") return true; throw error; }
+  await policy.raceHooks.afterQuarantine({ path, quarantine });
+  const quarantined = await readLock(quarantine, policy, "quarantine");
+  if (!sameInode(quarantined.stat, current.stat) || !policy.recordPolicy.sameOwner(quarantined.record, current.record) || !await stale(quarantined, policy)) {
+    await restoreQuarantined(path, quarantine, quarantined.stat, policy);
+    return false;
+  }
+  await policy.raceHooks.afterValidation({ path, quarantine });
+  let finalCandidate;
+  try { finalCandidate = await readLock(quarantine, policy, "quarantine"); } catch { return false; }
+  if (!sameInode(finalCandidate.stat, quarantined.stat)
+    || !policy.recordPolicy.sameOwner(finalCandidate.record, quarantined.record) || !await stale(finalCandidate, policy)) {
+    await restoreQuarantined(path, quarantine, finalCandidate.stat, policy);
+    return false;
+  }
+  return retireOwned(quarantine, finalCandidate.stat, finalCandidate.record, policy, { restorePath: path, requireStale: true });
+}
+
+async function reclaim(path, policy) {
+  if (!policy.recoveryPolicy) return reclaimWithoutSentinel(path, policy);
+  const recoveryPath = policy.recoveryPolicy.path(path);
+  const sentinelPolicy = {
+    ...policy,
+    recoveryPolicy: null,
+    retryPolicy: { maxAttempts: 2, delayMs: 0 },
+    raceHooks: {
+      afterRecordWrite: async () => {},
+      afterWrite: async () => {},
+      afterQuarantine: async () => {},
+      afterValidation: async () => {},
+      afterRetirement: policy.raceHooks.afterRetirement,
+      beforeRelease: async () => {}
+    }
+  };
+  try {
+    return await runLocked(recoveryPath, async () => reclaimWithoutSentinel(path, policy), sentinelPolicy);
+  } catch (error) {
+    if (error.code === "CODEX_LOCK_UNAVAILABLE") return false;
+    throw error;
+  }
+}
+
+function retryExhausted(retryPolicy, attempt, elapsedMs) {
+  if (Number.isInteger(retryPolicy.maxAttempts)) return attempt >= retryPolicy.maxAttempts;
+  return elapsedMs >= retryPolicy.timeoutMs;
+}
+
+async function runLocked(path, callback, policy) {
+  const token = randomUUID(), started = Date.now();
+  let ownedRecord, attempt = 0;
   for (;;) {
-    try {
-      handle = await open(path, "wx", 0o600);
-      await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
-      await handle.sync();
-      await handle.close();
-      handle = null;
-      break;
-    } catch (error) {
-      if (handle) { await handle.close().catch(() => {}); handle = null; }
-      if (error.code !== "EEXIST") throw error;
-      if (await reclaimStaleCodexFileLock(path, { staleMs, maxStaleMs, afterQuarantine, afterValidation, afterRetirement, modeCapability })) continue;
-      if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
-      await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
+    attempt++;
+    try { ownedRecord = await writeExclusive(path, token, policy); break; }
+    catch (error) {
+      if (error.code !== "EEXIST" && error.code !== "EAGAIN") throw error;
+      if (error.code === "EEXIST") {
+        try { await reclaim(path, policy); }
+        catch (reclaimError) { if (reclaimError.code !== "EAGAIN") throw reclaimError; }
+      }
+      const elapsedMs = Date.now() - started;
+      if (retryExhausted(policy.retryPolicy, attempt, elapsedMs)) {
+        const unavailable = new Error(policy.diagnostics.unavailable(path));
+        unavailable.code = "CODEX_LOCK_UNAVAILABLE";
+        throw unavailable;
+      }
+      const delay = typeof policy.retryPolicy.delay === "function"
+        ? policy.retryPolicy.delay({ attempt, elapsedMs }) : policy.retryPolicy.delayMs;
+      await pause(delay ?? 0);
     }
   }
 
-  const heartbeat = setInterval(async () => {
+  const heartbeat = policy.heartbeat && setInterval(async () => {
     try {
-      const current = await readLock(path);
-      if (current.record?.token === token) await utimes(path, new Date(), new Date());
-    } catch { /* lock release/recovery owns the diagnostic */ }
-  }, Math.max(1_000, Math.floor(staleMs / 3)));
-  heartbeat.unref();
+      const current = await readLock(path, policy);
+      if (policy.recordPolicy.sameOwner(current.record, ownedRecord)) await utimes(path, new Date(), new Date());
+    } catch { /* release/recovery owns diagnostics */ }
+  }, policy.heartbeat?.intervalMs);
+  if (heartbeat) heartbeat.unref();
   try { return await callback(); }
   finally {
-    clearInterval(heartbeat);
-    try {
-      const current = await readLock(path);
-      if (current.record?.token !== token) return;
-      await beforeRelease({ path });
-      if (!await retireOwnedLock(path, current.stat, current.record, { afterRetirement, modeCapability })) {
-        throw new Error(`Codex transaction lock ownership changed: ${path}`);
-      }
-    } catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (heartbeat) clearInterval(heartbeat);
+    let current;
+    try { current = await readLock(path, policy); }
+    catch (error) {
+      if (error.code !== "ENOENT" || policy.releasePolicy.missing !== "ignore") throw error;
+    }
+    if (current && !policy.recordPolicy.sameOwner(current.record, ownedRecord)) {
+      if (policy.releasePolicy.changed !== "ignore") throw new Error(policy.diagnostics.ownership(path));
+      current = null;
+    }
+    if (current) {
+      await policy.raceHooks.beforeRelease({ path });
+      if (!await retireOwned(path, current.stat, current.record, policy)) throw new Error(policy.diagnostics.ownership(path));
+    }
   }
+}
+
+export async function withCodexFileLock(path, callback, options = {}) {
+  return runLocked(path, callback, normalizedOptions(options));
 }

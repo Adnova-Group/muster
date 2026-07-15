@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +8,7 @@ import { assertRegularFile, assertRegularTree, prepareCodexBootstrap, publishCod
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const pluginParent = join(root, ".agents", "plugins");
-let stagingRoot, plugin, runtime, profiles, modeDir, internalSkillDir, pkg, mapping;
+let stagingRoot, plugin, runtime, profiles, modeDir, internalSkillDir, pkg, mapping, published, pointerScheduled = false;
 
 const policy = CODEX_MODEL_POLICY;
 
@@ -27,6 +28,7 @@ const modes = {
 
 async function ensure(dir) { await mkdir(dir, { recursive: true }); }
 async function write(path, content) { await ensure(dirname(path)); await writeFile(path, content, "utf8"); }
+const sha256 = value => createHash("sha256").update(value).digest("hex");
 const leaseStaleMs = Math.max(1_000, Number(process.env.MUSTER_CODEX_BUILD_LEASE_STALE_MS) || 5 * 60 * 1000);
 function processAlive(pid) {
   if (!Number.isInteger(pid) || pid < 1) return false;
@@ -156,7 +158,7 @@ function adaptOrchestratorForCodex(text) {
   const providerStart = result.indexOf("      - **Provider kind:**");
   const failureStart = result.indexOf("      - **Subagent failure", providerStart);
   if (providerStart < 0 || failureStart < 0) throw new Error("orchestrator provider/model section not found");
-  const provider = `      - **Provider and model policy:** look up the role's chosen provider from \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs capabilities --codex\`. When \`chosen.kind === "agent"\`, call \`collaboration.spawn_agent\` with the ordinary task fields, a bounded \`fork_turns\` value (\`"none"\` or a positive turn count, never \`"all"\`), plus \`agent_type: "<exact chosen.id>"\`. Codex rejects a named profile combined with a full-history fork because that fork inherits the parent's type/model/effort. Codex dispatch also has no cwd field, so every worktree-scoped brief must include the absolute \`WORKTREE CWD\`, absolute manifest and STATE paths inside it, and require that cwd as the first verification command's and all later tool calls' \`workdir\`; never read the parent checkout's \`.muster\` artifacts. This runtime extension may be absent from a simplified displayed tool signature; include it anyway. The profile TOML is the authoritative Codex adapter boundary for the pinned model, reasoning effort, sandbox, and developer instructions. Only an actual rejected tool call proves the named profile unavailable; schema inspection or an omitted displayed field is not a dispatch attempt. If the call rejects the type, stop that task with an explicit profile-registration diagnostic and remediation to reinstall/start a new session. Do not silently use a generic agent: that would lose the strict model and role policy. For a skill provider, read \`${"${PLUGIN_ROOT}"}/internal-skills/\${chosen.id}/SKILL.md\` and inject that workflow into a general subagent's brief. For an MCP/inline provider, inject the resolved provider brief directly. Record that these paths inherit the parent model because Codex has no per-call model override for generic subagents.\n`;
+  const provider = `      - **Provider and model policy:** look up the role's chosen provider from \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs capabilities --codex\`. When \`chosen.kind === "agent"\`, call \`collaboration.spawn_agent\` with the ordinary task fields, a bounded \`fork_turns\` value (\`"none"\` or a positive turn count, never \`"all"\`), plus \`agent_type: "<exact chosen.id>"\`. Codex rejects a named profile combined with a full-history fork because that fork inherits the parent's type/model/effort. Codex dispatch also has no cwd field, so every worktree-scoped brief must include the absolute \`WORKTREE CWD\`, absolute manifest and STATE paths inside it, and require that cwd as the first verification command's and all later tool calls' \`workdir\`; never read the parent checkout's \`.muster\` artifacts. This runtime extension may be absent from a simplified displayed tool signature; include it anyway. The profile TOML is the authoritative Codex adapter boundary for the pinned model, reasoning effort, sandbox, and developer instructions. Only an actual rejected tool call proves the named profile unavailable; schema inspection or an omitted displayed field is not a dispatch attempt. If the call rejects the type, stop that task with an explicit profile-registration diagnostic and remediation to reinstall/start a new session. Do not silently use a generic agent: that would lose the strict model and role policy. For a skill provider, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs <chosen.source> <chosen.id>\`; this centrally validates provenance and the safe kebab-case id before constructing a path or invocation. If \`source === "builtin"\`, inject the verified workflow stdout into a general subagent brief and load relative assets through the command's optional third argument. If \`source === "installed"\`, follow stdout's explicit \`$skill-id\` invocation contract and never load the bundled fallback. For an MCP/inline provider, inject the resolved provider brief directly. Record that generic paths inherit the parent model because Codex has no per-call model override for generic subagents.\n`;
   result = result.slice(0, providerStart) + provider + result.slice(failureStart);
   result = result.replace("Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.", "Iron-rule reminder: Codex hooks diagnose likely violations, while the orchestrator, named profiles, ownership receipts, and isolated worktrees enforce dispatch-not-inline.");
   const enforcement = result.indexOf("## Enforcement model: gates vs conventions");
@@ -192,12 +194,32 @@ function codexSkill(source, id) {
     .replaceAll("the Agent tool", "the Codex subagent dispatcher")
     .replaceAll("Agent tool", "Codex subagent dispatcher")
     .replaceAll("Task tool", "Codex subagent dispatcher");
+  if (id === "sp-brainstorm") {
+    body = body.replaceAll(
+      "skills/brainstorming/visual-companion.md",
+      `node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md`
+    );
+  }
   if (id === "coordination") body = adaptCoordinationForCodex(body);
   if (id === "orchestrator") body = adaptOrchestratorForCodex(body);
   if (id === "interview") body = body.replace("Present both for approval via the **interactive user input** selection UI", "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");
   if (id === "wsh-sast-configuration") body = body.replace("# See references/semgrep-rules.md for detailed examples", "# Example custom rule; adapt it to the repository's threat model");
-  const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative.\n`;
+  const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative. Load any relative bundled asset named by this workflow through \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin ${id} <relative-asset>\`; never read the internal tree directly.\n`;
   return header + binding + body.replace(/^\r?\n*/, "\n");
+}
+
+async function writeInternalRuntime(destination) {
+  const tree = await assertRegularTree(join(destination, "internal-skills"));
+  const metadata = JSON.stringify({ format: 1, files: tree.files }, null, 2) + "\n";
+  const digest = sha256(metadata);
+  const loader = (await readFile(join(root, "codex", "internal-asset-loader.mjs"), "utf8"))
+    .replace("__MUSTER_INTERNAL_METADATA_DIGEST__", digest);
+  if (loader.includes("__MUSTER_INTERNAL_METADATA_DIGEST__")) throw new Error("internal asset loader digest was not bound");
+  await Promise.all([
+    write(join(destination, "runtime", "internal-assets.json"), metadata),
+    write(join(destination, "runtime", "internal-asset-loader.mjs"), loader),
+    cp(join(root, "codex", "resolve-skill-provider.mjs"), join(destination, "runtime", "resolve-skill-provider.mjs"))
+  ]);
 }
 async function adaptPortedSkills(names) {
   for (const name of names) {
@@ -273,6 +295,7 @@ async function buildBootstrapCandidate(destination) {
   ]);
   await write(join(destination, "runtime", "codex-skill-adapter.md"), "# Immutable Muster bootstrap adapter\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs adapter`; it writes the no-follow, point-of-use revalidated adapter contents to stdout. Read and apply those contents.\n");
   await write(join(destination, "runtime", "sprint-protocol.md"), "# Immutable Muster bootstrap protocol\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs sprint`; it writes the no-follow, point-of-use revalidated protocol contents to stdout. Read and apply those contents.\n");
+  await write(join(destination, "runtime", "resolve-skill-provider.mjs"), `#!/usr/bin/env node\nimport { spawnSync } from "node:child_process";\nimport { dirname, join } from "node:path";\nimport { fileURLToPath } from "node:url";\nconst ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;\nconst PART = /^[A-Za-z0-9_.-]+$/;\nconst [source, id, asset] = process.argv.slice(2);\nif (!["builtin", "installed"].includes(source)) throw new Error(\`invalid skill provider source: \${JSON.stringify(source)}\`);\nif (!ID.test(id || "")) throw new Error(\`invalid skill provider id: \${JSON.stringify(id)}\`);\nif (source === "installed") {\n  if (asset !== undefined) throw new Error("installed skill providers do not expose bundled assets");\n  process.stdout.write(\`Invoke the already-enabled Codex skill explicitly as $\${id}.\\n\`);\n} else {\n  const args = [join(dirname(fileURLToPath(import.meta.url)), "resolve-release.mjs"), asset === undefined ? "internal-skill" : "internal-asset", id];\n  if (asset !== undefined) {\n    const parts = asset.split("/");\n    if (!parts.length || parts.some(part => !PART.test(part) || part === "." || part === "..")) throw new Error(\`invalid internal asset path: \${JSON.stringify(asset)}\`);\n    args.push(asset);\n  }\n  const result = spawnSync(process.execPath, args, { encoding: null });\n  if (result.status !== 0) { process.stderr.write(result.stderr || Buffer.alloc(0)); process.exitCode = result.status || 1; }\n  else process.stdout.write(result.stdout);\n}\n`);
 }
 
 try {
@@ -332,6 +355,7 @@ for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster
   await cp(join(root, "codex", "fallback-skills", name), join(internalSkillDir, name), { recursive: true });
 }
 await adaptPortedSkills(portedSkillNames.filter(name => !name.startsWith("gsd-") && name !== "wsh-signed-audit-trails-recipe"));
+await writeInternalRuntime(plugin);
 
 for (const [name, mode] of Object.entries(modes)) await write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode));
 await write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Use for any glass-box Muster orchestration request: plan, implement, backlog, diagnose, audit, runner, capture, pipeline, crew, or wave workflow.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${agentWatchProtocol}`);
@@ -385,12 +409,13 @@ const bootstrap = await prepareCodexBootstrap({
   allowMaintenance: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1"
 });
 
-const published = await publishCodexRelease({
+published = await publishCodexRelease({
   repoRoot: root,
   stagedRelease: join(stagingRoot, "release"),
   packageVersion: pkg.version,
   bootstrapDigest: bootstrap.digest,
   allowBootstrapMigration: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1",
+  deferFinalPointer: true,
   marketplaceTemplate: {
     name: "muster",
     interface: { displayName: "Muster" },
@@ -423,6 +448,14 @@ packageFiles.push(".agents/plugins/marketplace.json", ".agents/plugins/bootstrap
 packageFiles.push(...retainedSelections.map(name => `.agents/plugins/selections/${name}`));
 packageFiles.push(...retainedGenerations.map(generation => `.agents/plugins/releases/${generation}`));
 await write(join(root, "package.json"), JSON.stringify({ ...pkg, files: packageFiles }, null, 2) + "\n");
+await rm(stagingRoot, { recursive: true, force: true });
+stagingRoot = undefined;
+// This is deliberately the final synchronous publication action. Everything
+// readers need (release, selection, package inventory, and staging cleanup) is
+// complete before the marketplace pointer becomes visible.
+published.commitPointer();
+pointerScheduled = true;
 } finally {
   if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true });
+  if (published?.discardPointer && !pointerScheduled) await published.discardPointer();
 }

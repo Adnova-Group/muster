@@ -276,6 +276,22 @@ test("published Codex release resolves one content-addressed plugin/profile gene
   assert.equal((await validateCodexRelease(selected.releaseRoot, selected.generation)).generation, selected.generation);
 });
 
+test("deferred publication keeps the observable pointer stable until process-exit commit", async t => {
+  const root = await tempRepo(t);
+  const first = await publish({ repoRoot: root, stagedRelease: await candidate(root, "deferred-old"), packageVersion: "0.5.0" });
+  const before = await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8");
+  const next = await publish({
+    repoRoot: root,
+    stagedRelease: await candidate(root, "deferred-new"),
+    packageVersion: "0.5.0",
+    deferFinalPointer: true
+  });
+  assert.equal(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"), before);
+  assert.equal((await resolveCodexRelease(root)).generation, first.generation);
+  next.commitPointer();
+  assert.equal((await resolveCodexRelease(root)).generation, next.generation);
+});
+
 test("release resolver rejects traversal and Windows-shaped bootstrap paths", async t => {
   const root = await tempRepo(t);
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "safe"), packageVersion: "0.5.0" });

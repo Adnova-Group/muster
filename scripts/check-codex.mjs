@@ -99,6 +99,7 @@ for (const name of internalSkills) {
   }
   if (/@~\/\.claude|\$HOME\/\.claude|npx\s+-y\s+@opengsd/.test(text)) fail(`${name} retains an external Claude/GSD runtime dependency`);
   if (/plugin\/(?:hooks|commands|skills)\//.test(text)) fail(`${name} retains a source-tree-only plugin path`);
+  if (/skills\/brainstorming\/visual-companion\.md/.test(text)) fail(`${name} retains an old public-surface asset path`);
 }
 for (const name of await files(join(plugin, "commands"))) {
   if (!name.endsWith(".md")) continue;
@@ -130,7 +131,13 @@ for (const [name, path] of [
 if (native.length !== CODEX_COUNTS.nativeSkills || builtins.length !== CODEX_COUNTS.builtinSkills) fail("source skill count drift");
 if (skills.size !== CODEX_COUNTS.publicSkills || internalSkills.size !== CODEX_COUNTS.internalSkills) fail("Codex public/internal skill surface count drift");
 if ((await readdir(join(root, "pipelines"))).filter(n => n.endsWith(".yaml")).length !== CODEX_COUNTS.pipelines) fail("pipeline count drift");
-for (const file of ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/codex-skill-adapter.md", "src/cli.js", "src/package.json", "package.json", ".mcp.json", "internal-skills"]) await stat(join(plugin, file)).catch(() => fail(`missing ${file}`));
+for (const file of ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/codex-skill-adapter.md", "runtime/resolve-skill-provider.mjs", "runtime/internal-asset-loader.mjs", "runtime/internal-assets.json", "src/cli.js", "src/package.json", "package.json", ".mcp.json", "internal-skills"]) await stat(join(plugin, file)).catch(() => fail(`missing ${file}`));
+const adapter = await readFile(join(plugin, "runtime", "codex-skill-adapter.md"), "utf8");
+if (!adapter.includes("resolve-skill-provider.mjs <chosen.source> <chosen.id>") || adapter.includes("read `${PLUGIN_ROOT}/internal-skills/${chosen.id}")) fail("adapter bypasses the verified provider resolver");
+const providerResolver = await readFile(join(plugin, "runtime", "resolve-skill-provider.mjs"), "utf8");
+if (!providerResolver.includes('new Set(["builtin", "installed"])') || !providerResolver.includes("already-enabled Codex skill explicitly")) fail("provider resolver does not validate provenance and preserve installed skill invocation");
+const internalLoader = await readFile(join(plugin, "runtime", "internal-asset-loader.mjs"), "utf8");
+if (internalLoader.includes("__MUSTER_INTERNAL_METADATA_DIGEST__") || !internalLoader.includes("O_NOFOLLOW") || !internalLoader.includes("internal asset changed after packaging")) fail("internal asset loader is not bound to point-of-use integrity checks");
 await stat(join(plugin, "hooks")).then(() => fail("generated plugin must not contain auto-discovered hooks"), () => {});
 const hooks = await json(join(root, "codex/hooks/hooks.json"));
 for (const event of ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"]) {

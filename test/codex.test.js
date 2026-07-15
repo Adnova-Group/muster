@@ -460,7 +460,10 @@ test("Codex exposes a bounded public skill surface while packaging internal work
   }
 
   const adapter = await readFile(join(selectedPluginRoot, "runtime", "codex-skill-adapter.md"), "utf8");
-  assert.match(adapter, /internal-skills\/\$\{chosen\.id\}\/SKILL\.md/);
+  assert.match(adapter, /resolve-skill-provider\.mjs <chosen\.source> <chosen\.id>/);
+  assert.match(adapter, /source === "builtin"/);
+  assert.match(adapter, /source === "installed"/);
+  assert.doesNotMatch(adapter, /read `\$\{PLUGIN_ROOT\}\/internal-skills\/\$\{chosen\.id\}/);
 });
 
 test("all ported skills declare and load the Codex harness binding", async () => {

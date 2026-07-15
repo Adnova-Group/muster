@@ -533,8 +533,13 @@
     },
     {
       "path": "runtime/resolve-release.mjs",
-      "sha256": "c2d0deb17ed69064376f679a66382a465317ca8e5a8d4bfee9dd146a037bd8aa",
-      "size": 27970
+      "sha256": "1d50445eca2380ea60307b8c7b26fa2c50a14be8d1f45c4fe2e7ea3715b97e18",
+      "size": 28571
+    },
+    {
+      "path": "runtime/resolve-skill-provider.mjs",
+      "sha256": "379d611aba53e605d0bdef751f0f9c05edacb0e0733bab9aae501a32ec0b6e01",
+      "size": 1383
     },
     {
       "path": "runtime/sprint-protocol.md",
@@ -602,5 +607,5 @@
       "size": 740
     }
   ],
-  "digest": "2f999447dbe1ae1d471590010c7cd848f849c22e7b65fb77371e1a110fead3c9"
+  "digest": "7b6f765b5b1daa7fdfeaf48cfce85af194e494a0558a25d999be28047db98c50"
 }

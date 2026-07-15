@@ -1,0 +1,15 @@
+id: ai-test-plan
+domain: pm
+title: Test Plan
+match: [test plan, ai test plan, qa plan, QA plan, test strategy, acceptance test plan]
+phases:
+  - { id: intake,       role: brainstorm,  desc: "feature under test, risks, scope, exit criteria" }
+  - { id: scope,        role: author,      desc: "what's in/out; risk-based prioritization; test deliverables, environment/infra, schedule/milestones, staffing (ISO/IEC/IEEE 29119-3 sections)" }
+  - { id: risk-matrix,  role: author,      desc: "H/M/L risk per feature; test depth from risk (ISO/IEC/IEEE 29119-3 — supersedes the withdrawn IEEE 829)" }
+  - { id: cases,        role: author,      desc: "per risk tier: happy/boundary/negative/security; data+env+owner; suspension+resumption criteria" }
+  - { id: review,       role: code-review, desc: "adversarial review + coverage gaps" }
+  - { id: score,        role: score,       desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [coverage, clarity, prioritization, test-data-strategy, suspension-criteria, done-definition]
+  floor: 2
+  pass_total: 14

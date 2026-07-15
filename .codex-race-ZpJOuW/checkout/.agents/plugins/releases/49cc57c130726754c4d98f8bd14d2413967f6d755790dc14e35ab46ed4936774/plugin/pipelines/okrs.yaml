@@ -1,0 +1,16 @@
+id: okrs
+domain: business
+title: OKRs
+match: [okr, okrs, objectives and key results, objectives, key results, quarterly goals]
+phases:
+  - { id: intake,          role: brainstorm,  desc: "strategy context, time horizon, scope" }
+  - { id: context-cascade, role: brainstorm,  desc: "map company/division objectives; which higher objective each team OKR supports" }
+  - { id: objectives,      role: author,      desc: "1-3 qualitative, ambitious, outcome objectives" }
+  - { id: key-results,     role: author,      desc: "Verb + Metric from X to Y by Date; outcome KRs not output; baseline each" }
+  - { id: review,          role: code-review, desc: "adversarial review + alignment check" }
+  - { id: score,           role: score,       desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [outcome-not-output, measurability, stretch-graded, alignment, focus, baseline-present]
+  floor: 2
+  pass_total: 14

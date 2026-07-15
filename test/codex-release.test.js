@@ -292,6 +292,34 @@ test("deferred publication keeps the observable pointer stable until process-exi
   assert.equal((await resolveCodexRelease(root)).generation, next.generation);
 });
 
+test("deferred publication also stages legacy and bootstrap-maintenance pointer changes", async t => {
+  const legacyRoot = await tempRepo(t);
+  const legacyBefore = await readFile(join(legacyRoot, ".agents", "plugins", "marketplace.json"), "utf8");
+  const legacy = await publish({
+    repoRoot: legacyRoot,
+    stagedRelease: await candidate(legacyRoot, "deferred-legacy"),
+    packageVersion: "0.5.0",
+    deferFinalPointer: true
+  });
+  assert.equal(await readFile(join(legacyRoot, ".agents", "plugins", "marketplace.json"), "utf8"), legacyBefore);
+  legacy.commitPointer();
+  assert.equal((await resolveCodexRelease(legacyRoot)).generation, legacy.generation);
+
+  const driftRoot = await tempRepo(t);
+  await publish({ repoRoot: driftRoot, stagedRelease: await candidate(driftRoot, "drift-old"), packageVersion: "0.5.0" });
+  const driftBefore = await readFile(join(driftRoot, ".agents", "plugins", "marketplace.json"), "utf8");
+  const drift = await publish({
+    repoRoot: driftRoot,
+    stagedRelease: await candidate(driftRoot, "drift-new"),
+    packageVersion: "0.5.0",
+    bootstrapDigest: "c".repeat(64),
+    deferFinalPointer: true
+  });
+  assert.equal(await readFile(join(driftRoot, ".agents", "plugins", "marketplace.json"), "utf8"), driftBefore);
+  drift.commitPointer();
+  assert.equal(JSON.parse(await readFile(join(driftRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap.digest, "c".repeat(64));
+});
+
 test("release resolver rejects traversal and Windows-shaped bootstrap paths", async t => {
   const root = await tempRepo(t);
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "safe"), packageVersion: "0.5.0" });

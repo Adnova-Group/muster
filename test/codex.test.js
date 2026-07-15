@@ -260,6 +260,7 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   }
   const router = await readFile(join(selectedPluginRoot, "internal-skills", "router", "SKILL.md"), "utf8");
   assert.match(router, /runtime\/muster\.mjs match --codex --skills/);
+  assert.match(router, /compact Codex capability snapshot intentionally omits the global skill inventory/);
   const runner = await readFile(join(commands, "runner.md"), "utf8");
   assert.match(runner, /Usage: \$muster-runner/);
   assert.match(runner, /codex exec "\$muster-runner/);
@@ -270,12 +271,20 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
   assert.match(orchestrator, /call `collaboration\.spawn_agent`/);
   assert.match(orchestrator, /agent_type: "<exact chosen\.id>"/);
-  assert.match(orchestrator, /fork_turns/);
-  assert.match(orchestrator, /never `"all"`/);
+  assert.match(orchestrator, /fork_turns: "none"/);
+  assert.match(orchestrator, /never use `"all"`/);
+  assert.match(orchestrator, /25-step ceiling/);
+  assert.match(orchestrator, /Respect the configured Codex thread concurrency/);
+  assert.match(orchestrator, /capabilities --codex --role <role>/);
+  assert.match(orchestrator, /do not reprint the full skills inventory/);
+  assert.match(orchestrator, /implementer leaf agent/);
+  assert.match(orchestrator, /minimal dispatch packet/);
+  assert.match(orchestrator, /Never attach unrelated plan items/);
+  assert.match(orchestrator, /Workers are leaves and must not spawn descendants/);
   assert.match(orchestrator, /absolute `WORKTREE CWD`/);
   assert.match(orchestrator, /never read the parent checkout's `.muster` artifacts/);
-  assert.match(orchestrator, /Only an actual rejected tool call proves the named profile unavailable/);
-  assert.match(orchestrator, /Do not silently use a generic agent/);
+  assert.match(orchestrator, /If the named type is rejected, stop with a registration diagnostic/);
+  assert.match(orchestrator, /do not silently inherit the parent model/);
   assert.doesNotMatch(orchestrator, /generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK/);
 
   for (const command of ["plan", "go", "plan-backlog", "go-backlog", "diagnose", "audit", "runner", "capture"]) {
@@ -297,6 +306,10 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
     const text = await readFile(join(commands, `${command}.md`), "utf8");
     assert.doesNotMatch(text, /manifest validate --codex(?:`|\s+until)/, `${command} must name the manifest file`);
   }
+  for (const command of ["plan", "go", "plan-backlog"]) {
+    const text = await readFile(join(commands, `${command}.md`), "utf8");
+    assert.match(text, /capabilities --codex --roles-only/, `${command} should route from compact role capabilities`);
+  }
 });
 
 test("generated Codex orchestration surfaces enforce the bounded agent watch invariant", async () => {
@@ -308,12 +321,30 @@ test("generated Codex orchestration surfaces enforce the bounded agent watch inv
   ]);
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
-    for (const marker of ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "timeout is only a heartbeat", "Never tight-poll", "never prompt the user", "live agents", "executable steps", "HUMAN-HOLD", "merge decision"]) {
+    for (const marker of ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion"]) {
       assert.match(text, new RegExp(marker.replaceAll(".", "\\.")), `${name} must carry watch marker ${marker}`);
     }
     assert.ok(text.indexOf("collaboration.wait_agent") < text.indexOf("collaboration.list_agents"), `${name} must wait before its first reconciliation poll`);
     assert.ok(text.indexOf("mailbox receipts first") < text.indexOf("collaboration.list_agents"), `${name} must process the wake receipt before reconciling`);
   }
+});
+
+test("generated Codex review gates use compact, risk-based review dispatch", async () => {
+  const text = await readFile(join(selectedPluginRoot, "internal-skills", "review-gate", "SKILL.md"), "utf8");
+  assert.match(text, /capabilities --codex --role <role>/);
+  assert.match(text, /never attach the full skills inventory/);
+  assert.match(text, /Select one code reviewer for ordinary waves/);
+  assert.match(text, /Add the security reviewer only/);
+  assert.match(text, /one fix-and-re-review iteration/);
+});
+
+test("generated Codex audits cover six dimensions with three nonredundant scans", async () => {
+  const text = await readFile(join(selectedPluginRoot, "commands", "audit.md"), "utf8");
+  assert.match(text, /Quota-bounded dimension sweep/);
+  assert.match(text, /three nonredundant read-only briefs/);
+  assert.match(text, /Respect `agents\.max_threads`/);
+  assert.match(text, /fork_turns: "none"/);
+  assert.doesNotMatch(text, /requested=6|six core dimensions remain independent/);
 });
 
 test("Codex manifest validation fails closed on a bound skill absent from live Codex inventory", async () => {

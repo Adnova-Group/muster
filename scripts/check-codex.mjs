@@ -51,7 +51,7 @@ if (legacyProfiles.some(name => name.endsWith(".toml"))) fail("deprecated static
 for (const [id, config] of Object.entries(mapping.agents)) {
   const expected = CODEX_MODEL_POLICY[config.tier];
   if (!expected) fail(`${id} has an unknown model tier`);
-  if (config.reasoning !== undefined && !["medium", "high", "xhigh", "max"].includes(config.reasoning)) fail(`${id} has an invalid reasoning override`);
+  if (config.reasoning !== undefined && !["medium", "high", "xhigh"].includes(config.reasoning)) fail(`${id} has an invalid reasoning override`);
   if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) fail(`${id} has an invalid model override`);
   if (config.readOnly !== undefined && typeof config.readOnly !== "boolean") fail(`${id} has an invalid read/write policy`);
   const name = `${id}.toml`;
@@ -112,13 +112,31 @@ for (const name of ["plan.md", "go.md", "plan-backlog.md", "go-backlog.md", "run
   const text = await readFile(join(plugin, "commands", name), "utf8");
   if (text.includes(" assess ") && !text.includes(" assess --codex ")) fail(`${name} does not use Codex-aware outcome assessment`);
 }
+for (const name of ["plan.md", "go.md", "plan-backlog.md"]) {
+  const text = await readFile(join(plugin, "commands", name), "utf8");
+  if (!text.includes("capabilities --codex --roles-only")) fail(`${name} emits the full Codex skill inventory during routing`);
+}
 const runnerCommand = await readFile(join(plugin, "commands", "runner.md"), "utf8");
 if (!runnerCommand.includes("Usage: $muster-runner") || !runnerCommand.includes('codex exec "$muster-runner')) fail("runner command is not bound to the Codex runner skill");
 const coordination = await readFile(join(plugin, "internal-skills", "coordination", "SKILL.md"), "utf8");
 if (!coordination.includes("plugin cache is not a Git checkout") || /git log -1 --format/.test(coordination)) fail("coordination preflight is not package-cache safe");
 const orchestrator = await readFile(join(plugin, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
 if (/generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK|permissionDecision/.test(orchestrator)) fail("orchestrator overclaims Codex dispatch or hook enforcement");
-const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "timeout is only a heartbeat", "Never tight-poll", "never prompt the user", "live agents", "executable steps", "HUMAN-HOLD", "merge decision"];
+for (const marker of ["implementer leaf agent", "minimal dispatch packet", "Never attach unrelated plan items", "Workers are leaves and must not spawn descendants"]) {
+  if (!orchestrator.includes(marker)) fail(`orchestrator lacks compact leaf-worker marker ${marker}`);
+}
+const implementerPrompt = await readFile(join(plugin, "internal-skills", "sp-subagents", "implementer-prompt.md"), "utf8");
+if (!implementerPrompt.includes("the parent runs the broad suite once at final verification") || implementerPrompt.includes("full suite once before committing")) fail("Codex implementer prompt repeats broad suites inside workers");
+const reviewGate = await readFile(join(plugin, "internal-skills", "review-gate", "SKILL.md"), "utf8");
+for (const marker of ["capabilities --codex --role <role>", "never attach the full skills inventory", "Select one code reviewer for ordinary waves", "Add the security reviewer only", "one fix-and-re-review iteration"]) {
+  if (!reviewGate.includes(marker)) fail(`Codex review gate lacks quota policy marker ${marker}`);
+}
+const auditCommand = await readFile(join(plugin, "commands", "audit.md"), "utf8");
+for (const marker of ["Quota-bounded dimension sweep", "three nonredundant read-only briefs", "system quality", "Respect `agents.max_threads`", "fork_turns: \"none\""]) {
+  if (!auditCommand.includes(marker)) fail(`Codex audit lacks quota policy marker ${marker}`);
+}
+if (auditCommand.includes("requested=6") || auditCommand.includes("six core dimensions remain independent")) fail("Codex audit retains redundant six-worker fan-out");
+const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion"];
 for (const [name, path] of [
   ["adapter", join(plugin, "runtime", "codex-skill-adapter.md")],
   ["orchestrator", join(plugin, "internal-skills", "orchestrator", "SKILL.md")],

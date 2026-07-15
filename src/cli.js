@@ -89,7 +89,10 @@ async function main() {
       out(await detectProject(rest[0] || process.cwd()));
     } else if (cmd === "capabilities") {
       const catalog = await loadCatalog(CATALOG_DIR);
-      const home = rest.find(a => !a.startsWith("-")) || homedir();
+      const role = flagValue(rest, "--role");
+      const connectors = flagValue(rest, "--connectors");
+      const consumedValues = new Set([role, connectors].filter(Boolean));
+      const home = rest.find(a => !a.startsWith("-") && !consumedValues.has(a)) || homedir();
       // --cowork resolves providers from Cowork's MCP registry instead of ~/.claude;
       // declared remote connectors (not disk-discoverable) come from --connectors or env.
       let installed;
@@ -102,7 +105,15 @@ async function main() {
       } else {
         installed = await readInstalled(home);
       }
-      out(resolveCapabilities(rest.includes("--codex") ? adaptCatalogForCodex(catalog, installed) : catalog, installed));
+      const capabilities = resolveCapabilities(rest.includes("--codex") ? adaptCatalogForCodex(catalog, installed) : catalog, installed);
+      if (role) {
+        if (!capabilities.roles[role]) fail(`capabilities --role ${role}: unknown role`);
+        out({ role, ...capabilities.roles[role] });
+      } else if (rest.includes("--roles-only")) {
+        out({ roles: capabilities.roles });
+      } else {
+        out(capabilities);
+      }
     } else if (cmd === "match" && rest.includes("--skills")) {
       // Skills mode: rank the live skills inventory by keyword overlap against the task
       // text (matchSkills), and separately suggest stack→skill mappings (deterministic,
@@ -377,7 +388,7 @@ async function main() {
       await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
       out(sig);
     } else {
-      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork] [--codex]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]>`);
+      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]>`);
     }
   } catch (e) {
     fail(formatError(e));

@@ -1,7 +1,7 @@
 name = "muster-improver"
 description = "Read-only retrospective — mines a completed run's STATE, escalations, and review-gate fix-loops for recurring friction, then proposes user-gated edits to muster's own skills/agents/rules. Proposes, never applies; never edits during a run."
 model = "gpt-5.6-sol"
-model_reasoning_effort = "max"
+model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
 <!-- Role concept inspired by atomic-claude's Improve-Agent (self-sharpening loop); authored fresh for muster, not copied. -->

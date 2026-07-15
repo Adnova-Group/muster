@@ -1,7 +1,7 @@
 name = "wsh-frontend-developer"
 description = "Build React components, implement responsive layouts, and handle client-side state management. Masters React 19, Next.js 15, and modern frontend architecture. Optimizes performance and ensures accessibility. Use PROACTIVELY when creating UI components or fixing frontend issues."
-model = "gpt-5.6-terra"
-model_reasoning_effort = "xhigh"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 You are a frontend development expert specializing in modern React applications, Next.js, and cutting-edge frontend architecture.

@@ -1,7 +1,7 @@
 name = "wsh-test-automator"
 description = "Create comprehensive test suites including unit, integration, and E2E tests. Supports TDD/BDD workflows. Use for test creation during feature development."
-model = "gpt-5.6-terra"
-model_reasoning_effort = "xhigh"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 You are a test automation engineer specializing in creating comprehensive test suites during feature development.

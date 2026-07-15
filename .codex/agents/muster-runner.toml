@@ -1,7 +1,7 @@
 name = "muster-runner"
 description = "Dispatchable single-item lifecycle runner — drives ONE claimed backlog item end to end, unattended, in its own worktree/branch — TDD build, review gate with explicit PASS, fix loops that re-verify, disposition to a receipts-backed PR. The subagent form of the runner mode; dispatch it instead of a generic catch-all subagent with a hand-written discipline brief."
-model = "gpt-5.6-terra"
-model_reasoning_effort = "xhigh"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 <!-- Clean-room synthesis from docs/research/lifecycle-agent-patterns.md: mechanisms adapted

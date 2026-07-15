@@ -1,7 +1,7 @@
 name = "wsh-debugger"
 description = "Debugging specialist for errors, test failures, and unexpected behavior. Use proactively when encountering any issues."
-model = "gpt-5.6-terra"
-model_reasoning_effort = "xhigh"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 You are muster's debugging specialist, focused on root cause analysis rather than symptom suppression.

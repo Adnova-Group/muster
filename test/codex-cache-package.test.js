@@ -55,6 +55,8 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
     assert.match(skill, new RegExp(`name: ${name}`));
     await execFile(process.execPath, [resolver, "command", name.replace(/^muster-/, "")], { cwd: cache, env });
   }
+  const internal = (await execFile(process.execPath, [resolver, "internal-skill", "orchestrator"], { cwd: cache, env })).stdout;
+  assert.match(internal, /name: orchestrator/);
   await assert.rejects(execFile(process.execPath, [resolver, "skill", "../../escape"], { cwd: cache, env }), /invalid bootstrap skill id/);
   const resolverModule = await import(`${pathToFileURL(resolver).href}?parallel=${Date.now()}`);
   let leaseNow = Date.now() - 6 * 60 * 1000, heartbeat;
@@ -122,6 +124,7 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
     assert.match(skill, new RegExp(`name: ${name}`));
     assert.doesNotMatch(skill, /# Immutable Muster bootstrap/);
   }
+  assert.match(await readFile(join(realCache, "internal-skills", "orchestrator", "SKILL.md"), "utf8"), /name: orchestrator/);
   const cachedDetected = JSON.parse((await execFile(process.execPath, [join(realCache, "runtime", "muster.mjs"), "detect", cache], {
     cwd: tmp,
     env: { ...process.env, CODEX_HOME: join(tmp, "real-codex-home") }

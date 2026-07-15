@@ -7,7 +7,7 @@ import { assertRegularFile, assertRegularTree, prepareCodexBootstrap, publishCod
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const pluginParent = join(root, ".agents", "plugins");
-let stagingRoot, plugin, runtime, profiles, modeDir, pkg, mapping;
+let stagingRoot, plugin, runtime, profiles, modeDir, internalSkillDir, pkg, mapping;
 
 const policy = CODEX_MODEL_POLICY;
 
@@ -80,7 +80,7 @@ function translateCodexProse(text) {
 function translatePluginPaths(text) {
   return text
     .replaceAll("plugin/commands/", `${"${PLUGIN_ROOT}"}/commands/`)
-    .replaceAll("plugin/skills/", `${"${PLUGIN_ROOT}"}/skills/`)
+    .replaceAll("plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
     .replaceAll("plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`);
 }
 function adaptCommandForCodex(text, name) {
@@ -142,7 +142,7 @@ function adaptCoordinationForCodex(text) {
   const start = text.indexOf("## Standing-context preflight");
   const end = text.indexOf("## Binding A", start);
   if (start < 0 || end < 0) throw new Error("coordination standing-context section not found");
-  const section = `## Standing-context preflight\n\nThe installed Codex plugin cache is not a Git checkout, so do not run \`git log\` against plugin paths. At the first read in a runner cycle, record the plugin version from \`${"${PLUGIN_ROOT}"}/package.json\` and a SHA-256 fingerprint over these installed behavior paths: \`skills/coordination/SKILL.md\`, \`commands/go-backlog.md\`, \`commands/go.md\`, and \`commands/runner.md\`. Compute the fingerprint with the host's available SHA-256 tool, sorting paths before hashing. Muster's Codex hooks are installed outside the plugin cache: also locate the selected managed runtime at the git root's \`.codex/muster/hooks/\` or \`$CODEX_HOME/muster/hooks/\` and fingerprint its files plus the sibling Muster ownership manifest. If neither managed hook runtime can be proven, say "I don't know whether the standing context is unchanged," leave a HUMAN-HOLD receipt, and stop.\n\nBefore a later claim or resume in the same cycle, recompute both fingerprints. Unchanged version and fingerprints proceed. Any change means the installed standing context changed or was tampered with during the cycle: leave a HUMAN-HOLD receipt naming the old/new version and hashes, preserve the claim state, and stop. A packaged plugin cannot safely classify such an in-place mutation as confined because there is no authoritative Git history in the cache. A newly started cycle reads the newly installed immutable version and managed hook runtime as its fresh baseline.\n\n`;
+  const section = `## Standing-context preflight\n\nThe installed Codex plugin cache is not a Git checkout, so do not run \`git log\` against plugin paths. At the first read in a runner cycle, record the plugin version from \`${"${PLUGIN_ROOT}"}/package.json\` and a SHA-256 fingerprint over these installed behavior paths: \`internal-skills/coordination/SKILL.md\`, \`commands/go-backlog.md\`, \`commands/go.md\`, and \`commands/runner.md\`. Compute the fingerprint with the host's available SHA-256 tool, sorting paths before hashing. Muster's Codex hooks are installed outside the plugin cache: also locate the selected managed runtime at the git root's \`.codex/muster/hooks/\` or \`$CODEX_HOME/muster/hooks/\` and fingerprint its files plus the sibling Muster ownership manifest. If neither managed hook runtime can be proven, say "I don't know whether the standing context is unchanged," leave a HUMAN-HOLD receipt, and stop.\n\nBefore a later claim or resume in the same cycle, recompute both fingerprints. Unchanged version and fingerprints proceed. Any change means the installed standing context changed or was tampered with during the cycle: leave a HUMAN-HOLD receipt naming the old/new version and hashes, preserve the claim state, and stop. A packaged plugin cannot safely classify such an in-place mutation as confined because there is no authoritative Git history in the cache. A newly started cycle reads the newly installed immutable version and managed hook runtime as its fresh baseline.\n\n`;
   return text.slice(0, start) + section + text.slice(end);
 }
 const agentWatchProtocol = `## Agent watch invariant\n\n<!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->\n\nAfter every dispatch, retain every canonical agent id returned by \`collaboration.spawn_agent\` and immediately call \`collaboration.wait_agent\` with a timeout of at most 60 seconds. A message or completion receipt wakes the watch immediately. After each wake, process the mailbox receipts first, call \`collaboration.list_agents\` exactly once to reconcile live state, dispatch any newly ready work whose dependencies are satisfied, and, while any agent remains live, immediately call \`collaboration.wait_agent\` again. A timeout is only a heartbeat: reconcile once and return to waiting; it is not completion. Never tight-poll \`collaboration.list_agents\` and never prompt the user merely because workers are still running.\n\nDo not send the final answer, clear active run/wave state, or stop watching while live agents or executable steps remain. Stop only when all work is terminal, an explicit approval or HUMAN-HOLD requires user input, a proven blocker leaves no ready work, or a merge decision requires the user. Hooks are advisory and never replace this watch cycle.\n`;
@@ -156,7 +156,7 @@ function adaptOrchestratorForCodex(text) {
   const providerStart = result.indexOf("      - **Provider kind:**");
   const failureStart = result.indexOf("      - **Subagent failure", providerStart);
   if (providerStart < 0 || failureStart < 0) throw new Error("orchestrator provider/model section not found");
-  const provider = `      - **Provider and model policy:** look up the role's chosen provider from \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs capabilities --codex\`. When \`chosen.kind === "agent"\`, call \`collaboration.spawn_agent\` with the ordinary task fields, a bounded \`fork_turns\` value (\`"none"\` or a positive turn count, never \`"all"\`), plus \`agent_type: "<exact chosen.id>"\`. Codex rejects a named profile combined with a full-history fork because that fork inherits the parent's type/model/effort. Codex dispatch also has no cwd field, so every worktree-scoped brief must include the absolute \`WORKTREE CWD\`, absolute manifest and STATE paths inside it, and require that cwd as the first verification command's and all later tool calls' \`workdir\`; never read the parent checkout's \`.muster\` artifacts. This runtime extension may be absent from a simplified displayed tool signature; include it anyway. The profile TOML is the authoritative Codex adapter boundary for the pinned model, reasoning effort, sandbox, and developer instructions. Only an actual rejected tool call proves the named profile unavailable; schema inspection or an omitted displayed field is not a dispatch attempt. If the call rejects the type, stop that task with an explicit profile-registration diagnostic and remediation to reinstall/start a new session. Do not silently use a generic agent: that would lose the strict model and role policy. For a skill/MCP/inline provider, dispatch a general subagent and inject the resolved provider brief; record that this path inherits the parent model because Codex has no per-call model override for generic subagents.\n`;
+  const provider = `      - **Provider and model policy:** look up the role's chosen provider from \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs capabilities --codex\`. When \`chosen.kind === "agent"\`, call \`collaboration.spawn_agent\` with the ordinary task fields, a bounded \`fork_turns\` value (\`"none"\` or a positive turn count, never \`"all"\`), plus \`agent_type: "<exact chosen.id>"\`. Codex rejects a named profile combined with a full-history fork because that fork inherits the parent's type/model/effort. Codex dispatch also has no cwd field, so every worktree-scoped brief must include the absolute \`WORKTREE CWD\`, absolute manifest and STATE paths inside it, and require that cwd as the first verification command's and all later tool calls' \`workdir\`; never read the parent checkout's \`.muster\` artifacts. This runtime extension may be absent from a simplified displayed tool signature; include it anyway. The profile TOML is the authoritative Codex adapter boundary for the pinned model, reasoning effort, sandbox, and developer instructions. Only an actual rejected tool call proves the named profile unavailable; schema inspection or an omitted displayed field is not a dispatch attempt. If the call rejects the type, stop that task with an explicit profile-registration diagnostic and remediation to reinstall/start a new session. Do not silently use a generic agent: that would lose the strict model and role policy. For a skill provider, read \`${"${PLUGIN_ROOT}"}/internal-skills/\${chosen.id}/SKILL.md\` and inject that workflow into a general subagent's brief. For an MCP/inline provider, inject the resolved provider brief directly. Record that these paths inherit the parent model because Codex has no per-call model override for generic subagents.\n`;
   result = result.slice(0, providerStart) + provider + result.slice(failureStart);
   result = result.replace("Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.", "Iron-rule reminder: Codex hooks diagnose likely violations, while the orchestrator, named profiles, ownership receipts, and isolated worktrees enforce dispatch-not-inline.");
   const enforcement = result.indexOf("## Enforcement model: gates vs conventions");
@@ -202,7 +202,7 @@ function codexSkill(source, id) {
 async function adaptPortedSkills(names) {
   for (const name of names) {
     const id = codexSkillId(name);
-    const path = join(modeDir, id, "SKILL.md");
+    const path = join(internalSkillDir, id, "SKILL.md");
     await write(path, codexSkill(await readFile(path, "utf8"), id));
   }
 }
@@ -254,6 +254,12 @@ async function buildBootstrapCandidate(destination) {
     if (!header) throw new Error(`bootstrap skill lacks frontmatter: ${name}`);
     await write(join(destination, "skills", name, "SKILL.md"), wrapper(header, "skill", name));
   }
+  for (const name of await readdir(join(plugin, "internal-skills"))) {
+    const source = await readFile(join(plugin, "internal-skills", name, "SKILL.md"), "utf8");
+    const header = source.match(/^---\r?\n[\s\S]*?\r?\n---/)?.[0];
+    if (!header) throw new Error(`bootstrap internal skill lacks frontmatter: ${name}`);
+    await write(join(destination, "internal-skills", name, "SKILL.md"), wrapper(header, "internal-skill", name));
+  }
   for (const file of await readdir(join(plugin, "commands"))) {
     if (!file.endsWith(".md")) continue;
     const source = await readFile(join(plugin, "commands", file), "utf8");
@@ -277,6 +283,7 @@ plugin = join(stagingRoot, "release", "plugin");
 runtime = join(plugin, "runtime");
 profiles = join(stagingRoot, "release", "profiles");
 modeDir = join(plugin, "skills");
+internalSkillDir = join(plugin, "internal-skills");
 for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"]) {
   await assertRegularTree(join(root, source));
 }
@@ -307,22 +314,22 @@ for (const entry of await readdir(join(plugin, "commands"), { withFileTypes: tru
   const path = join(plugin, "commands", entry.name);
   await write(path, adaptCommandForCodex(bindBundledCodexCli(translateModeNames(await readFile(path, "utf8"))), entry.name));
 }
-await cp(join(root, "plugin", "skills"), join(plugin, "skills"), { recursive: true });
-await cp(join(root, "plugin", "builtins"), join(plugin, "skills"), { recursive: true });
+await cp(join(root, "plugin", "skills"), internalSkillDir, { recursive: true });
+await cp(join(root, "plugin", "builtins"), internalSkillDir, { recursive: true });
 for (const entry of await readdir(join(root, "codex", "skill-assets"), { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
-  await cp(join(root, "codex", "skill-assets", entry.name), join(modeDir, entry.name), { recursive: true });
+  await cp(join(root, "codex", "skill-assets", entry.name), join(internalSkillDir, entry.name), { recursive: true });
 }
 const portedSkillNames = [...new Set([
   ...(await readdir(join(root, "plugin", "skills"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name),
   ...(await readdir(join(root, "plugin", "builtins"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name)
 ])];
 for (const name of portedSkillNames.filter(name => name.startsWith("gsd-"))) {
-  await rename(join(modeDir, name), join(modeDir, codexSkillId(name)));
+  await rename(join(internalSkillDir, name), join(internalSkillDir, codexSkillId(name)));
 }
 for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster-gsd-verify-work", "wsh-signed-audit-trails-recipe"]) {
-  await rm(join(modeDir, name), { recursive: true, force: true });
-  await cp(join(root, "codex", "fallback-skills", name), join(modeDir, name), { recursive: true });
+  await rm(join(internalSkillDir, name), { recursive: true, force: true });
+  await cp(join(root, "codex", "fallback-skills", name), join(internalSkillDir, name), { recursive: true });
 }
 await adaptPortedSkills(portedSkillNames.filter(name => !name.startsWith("gsd-") && name !== "wsh-signed-audit-trails-recipe"));
 

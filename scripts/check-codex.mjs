@@ -64,9 +64,12 @@ for (const [id, config] of Object.entries(mapping.agents)) {
   if (!text.includes(`sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`)) fail(`${name} does not match its read/write policy`);
 }
 const skills = new Set(await dirs(join(plugin, "skills")));
+const internalSkills = new Set(await dirs(join(plugin, "internal-skills")));
 const bootstrap = join(root, ".agents", "plugins", "bootstrap", "muster");
 const bootstrapSkills = new Set(await dirs(join(bootstrap, "skills")));
 if (bootstrapSkills.size !== skills.size || [...skills].some(name => !bootstrapSkills.has(name))) fail("immutable bootstrap skill surface differs from the selected release");
+const bootstrapInternalSkills = new Set(await dirs(join(bootstrap, "internal-skills")));
+if (bootstrapInternalSkills.size !== internalSkills.size || [...internalSkills].some(name => !bootstrapInternalSkills.has(name))) fail("immutable bootstrap internal skill surface differs from the selected release");
 for (const file of ["runtime/resolve-release.mjs", "runtime/muster.mjs", "runtime/muster-mcp.mjs", "bootstrap.json"]) await stat(join(bootstrap, file)).catch(() => fail(`missing bootstrap ${file}`));
 const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture"];
 const aliases = ["run", "autopilot", "sprint"];
@@ -74,11 +77,11 @@ for (const name of [...modes, ...aliases]) if (!skills.has(name)) fail(`missing 
 const native = await dirs(join(root, "plugin/skills"));
 const builtins = await dirs(join(root, "plugin/builtins"));
 const codexSkillId = name => name.startsWith("gsd-") ? `muster-${name}` : name;
-for (const name of [...native, ...builtins].map(codexSkillId)) if (!skills.has(name)) fail(`missing ported skill ${name}`);
+for (const name of [...native, ...builtins].map(codexSkillId)) if (!internalSkills.has(name)) fail(`missing internal workflow ${name}`);
 const ported = new Set([...native, ...builtins].map(codexSkillId));
 const allowedSkillKeys = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
-for (const name of skills) {
-  const text = await readFile(join(plugin, "skills", name, "SKILL.md"), "utf8");
+for (const name of internalSkills) {
+  const text = await readFile(join(plugin, "internal-skills", name, "SKILL.md"), "utf8");
   const frontmatter = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
   if (!frontmatter) fail(`${name} is missing skill frontmatter`);
   let data;
@@ -92,7 +95,7 @@ for (const name of skills) {
     if (/AskUserQuestion|\/muster:|Claude Code Agent tool|\bAgent tool|\bTask tool/.test(text)) fail(`${name} retains an untranslated Claude harness instruction`);
   }
   for (const ref of new Set(text.match(/(?:references)\/[A-Za-z0-9_.\/-]+\.md/g) || [])) {
-    await stat(join(plugin, "skills", name, ref)).catch(() => fail(`${name} references missing bundled asset ${ref}`));
+    await stat(join(plugin, "internal-skills", name, ref)).catch(() => fail(`${name} references missing bundled asset ${ref}`));
   }
   if (/@~\/\.claude|\$HOME\/\.claude|npx\s+-y\s+@opengsd/.test(text)) fail(`${name} retains an external Claude/GSD runtime dependency`);
   if (/plugin\/(?:hooks|commands|skills)\//.test(text)) fail(`${name} retains a source-tree-only plugin path`);
@@ -110,14 +113,14 @@ for (const name of ["plan.md", "go.md", "plan-backlog.md", "go-backlog.md", "run
 }
 const runnerCommand = await readFile(join(plugin, "commands", "runner.md"), "utf8");
 if (!runnerCommand.includes("Usage: $muster-runner") || !runnerCommand.includes('codex exec "$muster-runner')) fail("runner command is not bound to the Codex runner skill");
-const coordination = await readFile(join(plugin, "skills", "coordination", "SKILL.md"), "utf8");
+const coordination = await readFile(join(plugin, "internal-skills", "coordination", "SKILL.md"), "utf8");
 if (!coordination.includes("plugin cache is not a Git checkout") || /git log -1 --format/.test(coordination)) fail("coordination preflight is not package-cache safe");
-const orchestrator = await readFile(join(plugin, "skills", "orchestrator", "SKILL.md"), "utf8");
+const orchestrator = await readFile(join(plugin, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
 if (/generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK|permissionDecision/.test(orchestrator)) fail("orchestrator overclaims Codex dispatch or hook enforcement");
 const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "timeout is only a heartbeat", "Never tight-poll", "never prompt the user", "live agents", "executable steps", "HUMAN-HOLD", "merge decision"];
 for (const [name, path] of [
   ["adapter", join(plugin, "runtime", "codex-skill-adapter.md")],
-  ["orchestrator", join(plugin, "skills", "orchestrator", "SKILL.md")],
+  ["orchestrator", join(plugin, "internal-skills", "orchestrator", "SKILL.md")],
   ...[...modes, ...aliases].map(name => [name, join(plugin, "skills", name, "SKILL.md")])
 ]) {
   const text = await readFile(path, "utf8");
@@ -125,8 +128,9 @@ for (const [name, path] of [
   if (text.indexOf("collaboration.wait_agent") > text.indexOf("collaboration.list_agents")) fail(`${name} polls agent state before its first event-driven wait`);
 }
 if (native.length !== CODEX_COUNTS.nativeSkills || builtins.length !== CODEX_COUNTS.builtinSkills) fail("source skill count drift");
+if (skills.size !== CODEX_COUNTS.publicSkills || internalSkills.size !== CODEX_COUNTS.internalSkills) fail("Codex public/internal skill surface count drift");
 if ((await readdir(join(root, "pipelines"))).filter(n => n.endsWith(".yaml")).length !== CODEX_COUNTS.pipelines) fail("pipeline count drift");
-for (const file of ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/codex-skill-adapter.md", "src/cli.js", "src/package.json", "package.json", ".mcp.json"]) await stat(join(plugin, file)).catch(() => fail(`missing ${file}`));
+for (const file of ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/codex-skill-adapter.md", "src/cli.js", "src/package.json", "package.json", ".mcp.json", "internal-skills"]) await stat(join(plugin, file)).catch(() => fail(`missing ${file}`));
 await stat(join(plugin, "hooks")).then(() => fail("generated plugin must not contain auto-discovered hooks"), () => {});
 const hooks = await json(join(root, "codex/hooks/hooks.json"));
 for (const event of ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop"]) {

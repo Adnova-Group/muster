@@ -1,0 +1,21 @@
+id: runbook
+domain: ops
+title: Operations Runbook
+match: [runbook, playbook, on-call, incident response, operations manual, operational procedure]
+phases:
+  - { id: intake,         role: brainstorm,  desc: "scope, trigger, owners, prerequisites" }
+  - { id: preconditions,  role: author,      desc: "required access, environment, blast-radius scope, idempotency declaration, tool dependencies" }
+  - { id: triage,         role: author,      desc: "diagnosis decision tree keyed off failure signature (oom / 5xx / latency / saturation) — events-first: check recent deploys/config changes BEFORE deep diagnosis (Google SRE)" }
+  - { id: steps,          role: author,      desc: "numbered, copy-pasteable steps; expected output for each" }
+  - { id: observability,  role: author,      desc: "alert links, dashboard URLs, SLO thresholds, key signals; numeric success criteria (latency, error rate, saturation)" }
+  - { id: validation,     role: author,      desc: "verification checks + success criteria per step" }
+  - { id: rollback,       role: author,      desc: "rollback / abort procedure + safety notes" }
+  - { id: escalation,     role: author,      desc: "escalation levels + owners, trigger conditions (severity x elapsed time), required context fields, on-call rotation link; incident-comms — who updates stakeholders, on what cadence, and where (status channel)" }
+  - { id: cleanup,        role: author,      desc: "revert temp hotfixes, restore flags, postmortem trigger (SEV-1: 48h, SEV-2: 5d), update last-tested date" }
+  - { id: review,         role: code-review, desc: "adversarial review + dry-run check" }
+  - { id: score,          role: score,       desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [completeness, clarity, safety, validation, rollback, preconditions, observability, idempotency, escalation-path]
+  floor: 2
+  pass_total: 18

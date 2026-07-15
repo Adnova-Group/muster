@@ -537,11 +537,12 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(ownPath)) {
   const pluginRoot = resolve(fileURLToPath(new URL("../", import.meta.url)));
   const selected = await resolveCodexRelease(resolve(pluginRoot, "../../../.."));
   const [kind = "plugin", name = ""] = process.argv.slice(2);
-  if (["skill", "command"].includes(kind) && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+  if (["skill", "internal-skill", "command"].includes(kind) && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
     throw new Error(`invalid bootstrap ${kind} id: ${JSON.stringify(name)}`);
   }
   const assets = {
     skill: `plugin/skills/${name}/SKILL.md`,
+    "internal-skill": `plugin/internal-skills/${name}/SKILL.md`,
     command: `plugin/commands/${name}.md`,
     adapter: "plugin/runtime/codex-skill-adapter.md",
     sprint: "plugin/runtime/sprint-protocol.md"

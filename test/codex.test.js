@@ -2,15 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile as execFileCb, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { chmod, cp, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { PassThrough } from "node:stream";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY, codexModelForRole, codexModelForTier } from "../src/codex.js";
 import { readCodexInventory } from "../src/codex-inventory.js";
 import { formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
-import { runCodexDoctor } from "../src/codex-doctor.js";
+import { runCodexDoctor, runMcpHandshake } from "../src/codex-doctor.js";
 import { adaptCatalogForCodex, codexFallbackSkillId } from "../src/codex-catalog.js";
 import { resolveCodexRelease } from "../src/codex-release.js";
 import { withCodexFileLock } from "../src/codex-lock.js";
@@ -31,6 +33,22 @@ const localMusterMarketplace = {
   root: repoRoot,
   marketplaceSource: { sourceType: "local", source: repoRoot }
 };
+
+function fakeMcpChild() {
+  const child = new EventEmitter();
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.killed = false;
+  child.killCalls = 0;
+  child.stdinEndCalls = 0;
+  child.stdinWriteCalls = 0;
+  const end = child.stdin.end.bind(child.stdin), write = child.stdin.write.bind(child.stdin);
+  child.stdin.end = (...args) => { child.stdinEndCalls += 1; return end(...args); };
+  child.stdin.write = (...args) => { child.stdinWriteCalls += 1; return write(...args); };
+  child.kill = () => { child.killed = true; child.killCalls += 1; };
+  return child;
+}
 
 function packagedMcpTools() {
   return new Promise((resolve, reject) => {
@@ -467,6 +485,7 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
     if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [canonicalMusterMarketplace] }) };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [{ pluginId: "muster@muster", installed: true }] }) };
     if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "refreshed" };
+    if (args.slice(0, 2).join(" ") === "plugin remove") return { stdout: "removed" };
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
   const result = await runCodexInstall({ cwd, home, repoRoot, execFile });
@@ -511,6 +530,30 @@ test("Codex installation refuses unrelated profiles and dry-run writes nothing",
   await assert.rejects(() => readFile(join(tmp, "dry", ".codex", "agents", ".muster-managed.json"), "utf8"));
   await assert.rejects(() => readFile(join(tmp, "dry", ".codex", "hooks.json"), "utf8"));
   assert.deepEqual(dry.nextSteps, ["npm install -g @openai/codex", "muster install codex --scope project"]);
+});
+
+test("Codex install and uninstall reject registries without exact Muster ownership before mutation", async () => {
+  for (const owner of [undefined, "another-tool"]) {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-owner-"));
+    const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+    const registryPath = join(registryDir, "install-scopes.json"), absent = async () => { throw new Error("not found"); };
+    await mkdir(join(cwd, ".codex"), { recursive: true });
+    await mkdir(registryDir, { recursive: true });
+    const foreign = JSON.stringify({ format: 1, ...(owner === undefined ? {} : { owner }), entries: [] }, null, 2) + "\n";
+    await writeFile(registryPath, foreign);
+    await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot, execFile: absent }), /registry.*(ownership|owner|invalid)/i);
+    assert.equal(await readFile(registryPath, "utf8"), foreign);
+    await assert.rejects(() => readFile(join(cwd, ".codex", "agents", ".muster-managed.json"), "utf8"));
+
+    await writeFile(registryPath, JSON.stringify({ format: 1, owner: "muster", entries: [] }, null, 2) + "\n");
+    await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+    const profilePath = join(cwd, ".codex", "agents", "muster-builder.toml");
+    const profile = await readFile(profilePath, "utf8");
+    await writeFile(registryPath, foreign);
+    await assert.rejects(() => runCodexUninstall({ cwd, home, execFile: absent }), /registry.*(ownership|owner|invalid)/i);
+    assert.equal(await readFile(registryPath, "utf8"), foreign);
+    assert.equal(await readFile(profilePath, "utf8"), profile);
+  }
 });
 
 test("Codex uninstall rejects traversal in a managed manifest", async () => {
@@ -839,6 +882,71 @@ test("Codex doctor reports MCP launch and tool-count handshake failures", async 
   }
 });
 
+test("Codex MCP handshake directly cleans up every terminal protocol path", async () => {
+  const cases = [
+    ["missing stdio", child => { child.stderr = null; }, child => {}, /did not expose stdio/],
+    ["invalid JSON", child => {}, child => child.stdout.write("not-json\n"), /invalid JSON-RPC/],
+    ["initialize RPC error", child => {}, child => child.stdout.write('{"id":1,"error":{"message":"no init"}}\n'), /initialize failed: no init/],
+    ["initialize missing result", child => {}, child => child.stdout.write('{"id":1}\n'), /initialize failed: missing result/],
+    ["tools RPC error", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"error":{"message":"no tools"}}\n'), /tools\/list failed: no tools/],
+    ["tools missing array", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{}}\n'), /returned no tools array/],
+    ["child error", child => {}, child => child.emit("error", new Error("child broke")), /child broke/],
+    ["stdout error", child => {}, child => child.stdout.emit("error", new Error("stdout broke")), /stdout broke/],
+    ["stderr error", child => {}, child => child.stderr.emit("error", new Error("stderr broke")), /stderr broke/],
+    ["stdin error", child => {}, child => child.stdin.emit("error", new Error("stdin broke")), /stdin broke/],
+    ["early exit", child => {}, child => { child.stderr.write("server exploded"); child.emit("exit", 7, null); }, /exited before tools\/list \(7\): server exploded/]
+  ];
+  for (const [label, configure, terminate, expected] of cases) {
+    const child = fakeMcpChild();
+    configure(child);
+    const result = runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, timeoutMs: 1_000, spawnProcess: () => {
+      queueMicrotask(() => terminate(child));
+      return child;
+    }});
+    await assert.rejects(result, expected, label);
+    assert.equal(child.killCalls, 1, `${label} must kill exactly once`);
+    if (child.stdin) {
+      assert.equal(child.stdin.writableEnded, true, `${label} must close stdin`);
+      assert.equal(child.stdinEndCalls, 1, `${label} must close stdin exactly once`);
+    }
+  }
+
+  const timedOut = fakeMcpChild();
+  await assert.rejects(runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, timeoutMs: 1, spawnProcess: () => timedOut }), /timed out after 1ms/);
+  assert.equal(timedOut.killCalls, 1);
+  assert.equal(timedOut.stdin.writableEnded, true);
+  assert.equal(timedOut.stdinEndCalls, 1);
+
+  const noChild = new Error("spawn failed");
+  await assert.rejects(runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, spawnProcess: () => { throw noChild; } }), error => error === noChild);
+});
+
+test("Codex MCP handshake handles synchronous stdin failure with cleanup and settles only once", async () => {
+  const writeFailure = fakeMcpChild();
+  writeFailure.stdin.write = () => { throw new Error("write failed"); };
+  await assert.rejects(runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, spawnProcess: () => writeFailure }), /write failed/);
+  assert.equal(writeFailure.killCalls, 1);
+  assert.equal(writeFailure.stdin.writableEnded, true);
+  assert.equal(writeFailure.stdinEndCalls, 1);
+
+  const child = fakeMcpChild();
+  const result = runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, spawnProcess: () => {
+    queueMicrotask(() => {
+      child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{"tools":[{"name":"one"}]}}\n{"id":1,"result":{}}\n');
+      child.stderr.write("late stderr");
+      child.emit("exit", 9, null);
+      child.emit("error", new Error("late child error"));
+      child.stdin.emit("error", new Error("late stdin error"));
+    });
+    return child;
+  }});
+  assert.deepEqual(await result, { initialized: true, tools: [{ name: "one" }] });
+  assert.equal(child.killCalls, 1);
+  assert.equal(child.stdin.writableEnded, true);
+  assert.equal(child.stdinEndCalls, 1);
+  assert.equal(child.stdinWriteCalls, 3);
+});
+
 test("Codex uninstall retains the shared plugin until the final managed scope is removed", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-dual-scope-")), cwd = join(tmp, "project"), home = join(tmp, "home"), calls = [];
   const execFile = async (_bin, args) => {
@@ -857,6 +965,34 @@ test("Codex uninstall retains the shared plugin until the final managed scope is
   const last = await runCodexUninstall({ scope: "user", cwd, home, execFile });
   assert.equal(last.plugin.removed, true);
   assert.equal(calls.filter(call => call === "plugin remove muster@muster").length, 1);
+});
+
+test("Codex uninstall preserves receipts when plugin removal fails and succeeds on retry", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-remove-retry-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), calls = [];
+  let removalAttempts = 0;
+  const execFile = async (_bin, args) => {
+    const command = args.join(" ");
+    calls.push(command);
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [localMusterMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    if (command === "plugin remove muster@muster" && ++removalAttempts === 1) throw new Error("plugin removal failed");
+    return { stdout: "" };
+  };
+  await runCodexInstall({ cwd, home, repoRoot, execFile });
+  const registryPath = join(home, ".codex", "muster", "install-scopes.json");
+  const profilePath = join(cwd, ".codex", "agents", "muster-builder.toml");
+  const hookPath = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
+  const before = await Promise.all([registryPath, profilePath, hookPath].map(path => readFile(path, "utf8")));
+
+  await assert.rejects(() => runCodexUninstall({ cwd, home, execFile }), /plugin removal failed/);
+  assert.deepEqual(await Promise.all([registryPath, profilePath, hookPath].map(path => readFile(path, "utf8"))), before);
+  const removed = await runCodexUninstall({ cwd, home, execFile });
+  assert.equal(removed.plugin.removed, true);
+  assert.equal(removalAttempts, 2);
+  assert.equal(calls.filter(call => call === "plugin remove muster@muster").length, 2);
+  await assert.rejects(() => readFile(profilePath, "utf8"));
 });
 
 test("Codex managed-scope registry retains the plugin across multiple projects in either uninstall order", async () => {
@@ -1268,7 +1404,7 @@ test("Codex ownership dry-runs never create registry locks or entries", async ()
   await assert.rejects(() => readFile(join(home, ".codex", "muster", "install-scopes.json.lock"), "utf8"));
 });
 
-test("Codex commandWindows maps WSL drive paths to their Windows equivalent", async t => {
+test("Codex commandWindows maps WSL drive paths to their Windows equivalent", { skip: !/^\/mnt\/[a-z]\//i.test(repoRoot) }, async t => {
   const tmp = await mkdtemp(join(repoRoot, ".muster-codex-wsl-command-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), absent = async () => { throw new Error("not found"); };
@@ -1281,10 +1417,12 @@ test("Codex commandWindows maps WSL drive paths to their Windows equivalent", as
 });
 
 test("Codex commandWindows treats native Windows and WSL drives alike without normalizing POSIX case", () => {
-  assert.equal(formatCodexWindowsPath("C:\\Work\\Muster\\hook.mjs"), "C:/Work/Muster/hook.mjs");
-  assert.equal(formatCodexWindowsPath("c:\\Work\\Muster\\hook.mjs"), "C:/Work/Muster/hook.mjs");
-  assert.equal(formatCodexWindowsPath("/mnt/c/Work/Muster/hook.mjs"), "C:/Work/Muster/hook.mjs");
-  assert.equal(formatCodexWindowsPath("/tmp/CaseSensitive/Muster/hook.mjs"), "/tmp/CaseSensitive/Muster/hook.mjs");
+  for (const [host, input, expected] of [
+    ["native Windows uppercase drive", "C:\\Work\\Muster\\hook.mjs", "C:/Work/Muster/hook.mjs"],
+    ["native Windows lowercase drive", "c:\\Work\\Muster\\hook.mjs", "C:/Work/Muster/hook.mjs"],
+    ["WSL drive mount", "/mnt/c/Work/Muster/hook.mjs", "C:/Work/Muster/hook.mjs"],
+    ["native POSIX", "/tmp/CaseSensitive/Muster/hook.mjs", "/tmp/CaseSensitive/Muster/hook.mjs"]
+  ]) assert.equal(formatCodexWindowsPath(input), expected, host);
 });
 
 test("Codex install refreshes an older installed plugin version", async () => {

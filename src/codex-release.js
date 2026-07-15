@@ -565,11 +565,11 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
     plugin.source = { ...plugin.source, source: "local", path: STABLE_BOOTSTRAP_PATH };
     delete stable.musterRelease;
     stable.musterBootstrap = { format: RELEASE_FORMAT, digest: bootstrapDigest, initialGeneration: metadata.generation };
-    await atomicWritePointer(pointerPath, JSON.stringify(stable, null, 2) + "\n", rename);
+    if (!deferFinalPointer) await atomicWritePointer(pointerPath, JSON.stringify(stable, null, 2) + "\n", rename);
   } else if (stable.musterBootstrap.digest !== bootstrapDigest) {
     if (!allowBootstrapMigration) throw new Error("Codex bootstrap surface drift detected; explicit offline bootstrap maintenance and restart are required");
     stable.musterBootstrap = { format: RELEASE_FORMAT, digest: bootstrapDigest, initialGeneration: metadata.generation };
-    await atomicWritePointer(pointerPath, JSON.stringify(stable, null, 2) + "\n", rename);
+    if (!deferFinalPointer) await atomicWritePointer(pointerPath, JSON.stringify(stable, null, 2) + "\n", rename);
   }
 
   const selectionsRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "selections"], { create: true });

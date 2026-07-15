@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.js\"" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.js\"" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Edit|Write|NotebookEdit|Bash|mcp__.*", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.js\"" } ] },
+      { "matcher": "Task|Agent", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/todo-gate.js\"" } ] }
+    ]
+  }
+}

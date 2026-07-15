@@ -453,11 +453,15 @@ export async function resolveCodexReleaseWithOptions(repoRoot, { retries = 4, re
     return leftAdvertised === rightAdvertised ? right.localeCompare(left) : leftAdvertised ? -1 : 1;
   });
   for (const name of candidates) {
+    let generation;
     try {
       const record = await readRegularJson(join(repoRoot, ".agents", "plugins", "selections", name), "Codex selection record");
       if (!validSelection(record, name, bootstrap.digest)) continue;
-      return await releaseResult(repoRoot, record.generation, lease);
+      const releaseRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "releases", record.generation]);
+      await validateCodexRelease(releaseRoot, record.generation);
+      generation = record.generation;
     } catch { /* corrupt/incomplete newest selections fall back to an older complete generation */ }
+    if (generation) return releaseResult(repoRoot, generation, lease);
   }
   return releaseResult(repoRoot, bootstrap.initialGeneration, lease);
 }
@@ -484,7 +488,42 @@ async function atomicWritePointer(path, content, replacePointer) {
   }
 }
 
-export async function publishCodexRelease({ repoRoot, stagedRelease, packageVersion, marketplaceTemplate, bootstrapDigest = "b".repeat(64), replacePointer = rename, allowBootstrapMigration = false, afterLeaseScan = async () => {} }) {
+async function stageExitPointer(path, content) {
+  let temporary, handle;
+  try {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      temporary = `${path}.muster-${process.pid}-${randomUUID()}.exit-tmp`;
+      try { handle = await open(temporary, "wx", 0o600); break; }
+      catch (error) { if (error.code !== "EEXIST" || attempt === 7) throw error; }
+    }
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await ordinary(temporary, "file", "staged exit marketplace pointer");
+    JSON.parse(await readFile(temporary, "utf8"));
+    let pending = temporary;
+    return {
+      commit() {
+        if (!pending) return;
+        renameSync(pending, path);
+        pending = null;
+      },
+      async discard() {
+        if (!pending) return;
+        const stale = pending;
+        pending = null;
+        await rm(stale, { force: true });
+      },
+    };
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    if (temporary) await rm(temporary, { force: true });
+    throw error;
+  }
+}
+
+export async function publishCodexRelease({ repoRoot, stagedRelease, packageVersion, marketplaceTemplate, bootstrapDigest = "b".repeat(64), replacePointer = rename, allowBootstrapMigration = false, afterLeaseScan = async () => {}, deferFinalPointer = false }) {
   const metadata = await createCodexReleaseMetadata(stagedRelease, packageVersion);
   await writeFile(join(stagedRelease, "release.json"), JSON.stringify(metadata, null, 2) + "\n", { flag: "wx" });
   const pluginsRoot = await repositoryDirectory(repoRoot, [".agents", "plugins"], { create: true });
@@ -581,8 +620,18 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
     await pruneCodexHistory({ repoRoot, releasesRoot, selectionsRoot, keep, bootstrapDigest });
   });
   plugin.source = { ...plugin.source, source: "local", path: `./.agents/plugins/releases/${metadata.generation}/plugin` };
-  await atomicWritePointer(pointerPath, JSON.stringify(stable, null, 2) + "\n", replacePointer);
-  return { generation: metadata.generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), selectionName };
+  const pointerContent = JSON.stringify(stable, null, 2) + "\n";
+  const pendingPointer = deferFinalPointer ? await stageExitPointer(pointerPath, pointerContent) : null;
+  if (!pendingPointer) await atomicWritePointer(pointerPath, pointerContent, replacePointer);
+  return {
+    generation: metadata.generation,
+    releaseRoot,
+    pluginRoot: join(releaseRoot, "plugin"),
+    profilesRoot: join(releaseRoot, "profiles"),
+    selectionName,
+    commitPointer: pendingPointer?.commit,
+    discardPointer: pendingPointer?.discard
+  };
   });
 }
 

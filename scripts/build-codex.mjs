@@ -133,6 +133,9 @@ function adaptCommandForCodex(text, name) {
     ].join("\n");
     result = result.slice(0, sweepStart) + capacitySweep + "\n" + result.slice(boardStart);
   }
+  if (["go.md", "go-backlog.md"].includes(name)) {
+    result += `\n\n## Codex native Goal lifecycle\n\nBefore starting execution, call \`get_goal\`; call \`create_goal\` only when the user explicitly requested goal tracking and no unfinished goal exists. Do not set \`token_budget\` unless the user explicitly supplied one. Keep the goal active through implementation and verification, and check it after every completed dependency wave. Call \`update_goal\` only with \`status: "complete"\` after every success criterion and required disposition is satisfied. Use \`status: "blocked"\` only when the same blocking condition has repeated for three consecutive goal turns and safe in-scope progress is exhausted; record the exact blocker in STATE before updating it.\n`;
+  }
   const directives = {
     "run.md": "ANTH-XML-001, GUARD-SEP-003",
     "autopilot.md": "ANTH-XML-001, GUARD-SEP-003",
@@ -236,6 +239,10 @@ function codexSkill(source, id) {
       );
   }
   if (id === "interview") body = body.replace("Present both for approval via the **interactive user input** selection UI", "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");
+  if (["sp-plan", "sp-subagents"].includes(id)) {
+    body = body.replaceAll("TodoWrite", "update_plan");
+    body += `\n\n## Codex native Plan integration\n\nRepresent the executable checklist with \`update_plan\`. Keep exactly one step \`in_progress\`, mark completed work promptly, and update the plan only when execution state materially changes. Use \`request_user_input\` only when the session is in Plan mode and an undiscoverable choice blocks an approval or architecture decision.\n`;
+  }
   if (id === "wsh-sast-configuration") body = body.replace("# See references/semgrep-rules.md for detailed examples", "# Example custom rule; adapt it to the repository's threat model");
   const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative. Load any relative bundled asset named by this workflow through \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin ${id} <relative-asset>\`; never read the internal tree directly.\n`;
   return header + binding + body.replace(/^\r?\n*/, "\n");

@@ -356,6 +356,37 @@ test("generated Codex review gates use compact, risk-based review dispatch", asy
   assert.match(text, /one fix-and-re-review iteration/);
 });
 
+test("generated Codex Superpowers workflows use the native Plan interface", async () => {
+  const adapter = await readFile(join(selectedPluginRoot, "runtime", "codex-skill-adapter.md"), "utf8");
+  assert.match(adapter, /call `update_plan`/);
+  assert.match(adapter, /exactly one step `in_progress`/);
+  assert.match(adapter, /`request_user_input` is available only in Plan mode/);
+
+  const writingPlans = await readFile(join(selectedPluginRoot, "internal-skills", "sp-plan", "SKILL.md"), "utf8");
+  const subagents = await readFile(join(selectedPluginRoot, "internal-skills", "sp-subagents", "SKILL.md"), "utf8");
+  for (const [name, text] of [["sp-plan", writingPlans], ["sp-subagents", subagents]]) {
+    assert.match(text, /Codex native Plan integration/, `${name} must carry the Plan integration`);
+    assert.match(text, /`update_plan`/, `${name} must use the native plan tool`);
+    assert.doesNotMatch(text, /TodoWrite/, `${name} must not retain the legacy task tool name`);
+  }
+});
+
+test("generated Codex go workflows use a bounded native Goal lifecycle", async () => {
+  const commands = join(selectedPluginRoot, "commands");
+  for (const command of ["go", "go-backlog"]) {
+    const text = await readFile(join(commands, `${command}.md`), "utf8");
+    assert.match(text, /Codex native Goal lifecycle/, `${command} must carry the Goal lifecycle`);
+    assert.match(text, /call `get_goal`/);
+    assert.match(text, /call `create_goal` only when the user explicitly requested goal tracking/);
+    assert.match(text, /Do not set `token_budget` unless the user explicitly supplied one/);
+    assert.match(text, /after every completed dependency wave/);
+    assert.match(text, /three consecutive goal turns/);
+    assert.match(text, /Call `update_goal` only with `status: "complete"`/);
+  }
+  const plan = await readFile(join(commands, "plan.md"), "utf8");
+  assert.doesNotMatch(plan, /Codex native Goal lifecycle/, "approve-first planning must not create an execution goal");
+});
+
 test("generated Codex audits cover six dimensions with three nonredundant scans", async () => {
   const text = await readFile(join(selectedPluginRoot, "commands", "audit.md"), "utf8");
   assert.match(text, /Quota-bounded dimension sweep/);
@@ -568,7 +599,7 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
   }
   await writeFile(join(agents, "user-agent.toml"), "name = 'user-agent'\n");
   const removed = await runCodexUninstall({ cwd, home, execFile });
-  assert.equal(removed.files.length, CODEX_COUNTS.agents + 3);
+  assert.equal(removed.files.length, CODEX_COUNTS.agents + 5);
   assert.equal(await readFile(join(agents, "user-agent.toml"), "utf8"), "name = 'user-agent'\n");
   assert.deepEqual(JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8")), userHook);
   await assert.rejects(() => readFile(installedHook, "utf8"));
@@ -876,6 +907,9 @@ test("Codex doctor inspects stale registered project scopes outside the current 
   assert.match(generation?.detail || "", new RegExp(profilesScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.equal(hooks?.ok, false);
   assert.match(hooks?.detail || "", new RegExp(hooksScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(hooks?.detail || "", /Recovery:/);
+  assert.match(hooks?.detail || "", new RegExp(`cd ${JSON.stringify(hooksScope)}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(hooks?.detail || "", /muster install codex --scope project/);
 });
 
 test("Codex doctor rejects symlinked content in a registered managed scope", async () => {

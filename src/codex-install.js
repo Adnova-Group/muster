@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { codexAvailable } from "./codex-inventory.js";
 import { resolveCodexRelease } from "./codex-release.js";
 import { processAlive, processStartIdentity } from "./codex-lock.js";
+import { discoverCodexGlobalHomes, ensureCodexThreadLimits, restoreCodexThreadLimits, threadLimitManifestPath } from "./codex-thread-limits.js";
 
 const execFileDefault = promisify(execFileCb);
 export const CODEX_MARKETPLACE = "Adnova-Group/muster";
@@ -387,6 +388,50 @@ async function removeSafe(path) {
   const stat = await regularFileState(path);
   if (stat) await unlink(path);
 }
+
+async function prepareThreadLimitInstalls({ cwd, home, globalHomes }) {
+  const targets = [];
+  for (const globalHome of discoverCodexGlobalHomes({ cwd, home, codexHome: codexHome(home), globalHomes })) {
+    const configPath = join(globalHome, "config.toml"), manifestPath = threadLimitManifestPath(globalHome);
+    try {
+      const configExists = await safeExists(configPath), manifestExists = await safeExists(manifestPath);
+      const prior = manifestExists ? await readJson(manifestPath) : null;
+      if (prior && (prior.format !== 1 || prior.owner !== "muster" || prior.configPath !== configPath
+        || typeof prior.before !== "object" || typeof prior.installed !== "object")) {
+        throw new Error(`thread-limit ownership manifest is invalid: ${manifestPath}`);
+      }
+      const ensured = ensureCodexThreadLimits(configExists ? await readSafe(configPath) : "");
+      const record = {
+        format: 1, owner: "muster", configPath,
+        configCreated: prior?.configCreated ?? !configExists,
+        sectionCreated: prior?.sectionCreated ?? ensured.sectionCreated,
+        before: prior?.before ?? ensured.before,
+        installed: ensured.installed
+      };
+      targets.push({ globalHome, configPath, manifestPath, text: ensured.text, record });
+    } catch (error) {
+      throw new Error(`Muster could not update required Codex thread limits at ${configPath}: ${error.message}. Set [agents] max_threads >= 12 and max_depth >= 2, then rerun muster install codex.`);
+    }
+  }
+  return targets;
+}
+
+async function prepareThreadLimitRestores({ cwd, home, globalHomes }) {
+  const targets = [];
+  for (const globalHome of discoverCodexGlobalHomes({ cwd, home, codexHome: codexHome(home), globalHomes })) {
+    const manifestPath = threadLimitManifestPath(globalHome);
+    if (!(await safeExists(manifestPath))) continue;
+    const record = await readJson(manifestPath), configPath = join(globalHome, "config.toml");
+    if (record?.format !== 1 || record.owner !== "muster" || record.configPath !== configPath
+      || typeof record.before !== "object" || typeof record.installed !== "object") {
+      throw new Error(`Codex thread-limit ownership manifest is invalid: ${manifestPath}`);
+    }
+    if (!(await safeExists(configPath))) throw new Error(`Muster-owned Codex thread-limit config is missing: ${configPath}`);
+    const text = restoreCodexThreadLimits(await readSafe(configPath), record);
+    targets.push({ configPath, manifestPath, text, removeConfig: record.configCreated && !text.trim() });
+  }
+  return targets;
+}
 const profileFiles = async root => (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort();
 const run = (execFile, args) => execFile("codex", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
 async function runJson(execFile, args) { return JSON.parse((await run(execFile, args)).stdout); }
@@ -585,7 +630,7 @@ async function registerPlugin(execFile, dryRun, repoRoot) {
   }
 }
 
-export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions } = {}) {
+export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions, globalHomes } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
@@ -609,6 +654,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
   const hookSourceRoot = pluginRoot ? join(root, "runtime", "install-hooks") : join(root, "codex", "hooks");
   const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, generation: selected.metadata.generation, bootstrapDigest });
+  const threadLimits = await prepareThreadLimitInstalls({ cwd, home, globalHomes });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
   const staleFiles = managedFiles.filter(file => !files.includes(file));
   for (const file of files) {
@@ -622,7 +668,8 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     ...staleFiles.map(file => ({ op: "remove", path: join(dir, file) })),
     ...HOOK_FILES.map(file => ({ op: "write", path: join(hooks.runtimeDir, file) })),
     ...hooks.staleFiles.map(file => ({ op: "remove", path: join(hooks.runtimeDir, file) })),
-    { op: "merge", path: hooks.configPath }
+    { op: "merge", path: hooks.configPath },
+    ...threadLimits.flatMap(target => [{ op: "merge", path: target.configPath }, { op: "write", path: target.manifestPath }])
   ];
   let originals, changed;
   let actions = [];
@@ -634,6 +681,12 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         const currentScope = await scopeEntry(scope, cwd, home);
         await snapshot(originals, changed, registry.path);
         await atomicWriteSafe(registry.path, registryText([...registry.entries.filter(entry => !sameScopeEntry(entry, currentScope)), currentScope]));
+        for (const target of threadLimits) {
+          await snapshot(originals, changed, target.configPath);
+          await atomicWriteSafe(target.configPath, target.text);
+          await snapshot(originals, changed, target.manifestPath);
+          await atomicWriteSafe(target.manifestPath, JSON.stringify(target.record, null, 2) + "\n");
+        }
         for (const file of files) {
           const destination = join(dir, file);
           await snapshot(originals, changed, destination);
@@ -688,7 +741,7 @@ async function remainingManagedScopes(registry, currentScope) {
   return liveScopes;
 }
 
-export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile = execFileDefault } = {}) {
+export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile = execFileDefault, globalHomes } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
   await ordinaryDirectoryPath(configDir(scope, cwd, home));
@@ -713,8 +766,8 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   const present = await codexAvailable({ execFile });
   const ownsScope = manifestExists || hookManifestExists;
   const currentScope = await scopeEntry(scope, cwd, home);
-  let liveScopes = [], ownershipCertain = false, removePlugin = false;
-  const planned = [
+  let liveScopes = [], ownershipCertain = false, removePlugin = false, threadLimits = [];
+  let planned = [
     ...files.map(path => ({ op: "remove", path })),
     ...hookFiles.map(path => ({ op: "remove", path })),
     ...(hookManifest ? [{ op: removeHookConfig ? "remove" : "merge", path: hookConfigPath }] : [])
@@ -723,11 +776,23 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
     liveScopes = await remainingManagedScopes(registry, currentScope);
     ownershipCertain = registry.present;
     removePlugin = present && ownsScope && ownershipCertain && liveScopes.length === 0;
+    threadLimits = liveScopes.length === 0 ? await prepareThreadLimitRestores({ cwd, home, globalHomes }) : [];
+    planned = [
+      ...planned,
+      ...threadLimits.flatMap(target => [{ op: target.removeConfig ? "remove" : "merge", path: target.configPath }, { op: "remove", path: target.manifestPath }])
+    ];
     if (dryRun) return;
     const originals = new Map(), changed = [];
     try {
       await snapshot(originals, changed, registry.path);
       await atomicWriteSafe(registry.path, registryText(liveScopes));
+      for (const target of threadLimits) {
+        await snapshot(originals, changed, target.configPath);
+        if (target.removeConfig) await removeSafe(target.configPath);
+        else await atomicWriteSafe(target.configPath, target.text);
+        await snapshot(originals, changed, target.manifestPath);
+        await removeSafe(target.manifestPath);
+      }
       for (const file of files) { await snapshot(originals, changed, file); await removeSafe(file); }
       if (manifestExists) { await snapshot(originals, changed, manifestPath); await removeSafe(manifestPath); }
       for (const file of hookFiles) { await snapshot(originals, changed, file); await removeSafe(file); }

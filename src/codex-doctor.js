@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { lstat, open, readFile, readdir } from "node:fs/promises";
+import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
@@ -230,9 +230,16 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   checks.push({ name: "codex-managed-scopes", ok: registeredScopes.issues.length === 0, detail: registeredScopes.issues.length
     ? `${registeredScopes.issues.join("; ")}; rerun muster install codex for the affected scope`
     : registeredScopes.dirs.length ? `${registeredScopes.dirs.length} safe registered managed scope(s) inspected` : "no managed-scope registry found; inspecting current project and user scopes" });
-  const scopeHomes = new Map([[join(cwd, ".codex"), false], [userCodexHome, false]]);
-  for (const dir of registeredScopes.dirs) scopeHomes.set(dir, true);
-  const hookHomes = [...scopeHomes.keys()];
+  const scopeHomes = new Map();
+  for (const [candidate, registered] of [[join(cwd, ".codex"), false], [userCodexHome, false], ...registeredScopes.dirs.map(dir => [dir, true])]) {
+    let dir;
+    try { dir = await realpath(candidate); } catch { dir = resolve(candidate); }
+    const key = /^\/mnt\/[a-z]\//i.test(dir) ? dir.toLowerCase() : dir;
+    const previous = scopeHomes.get(key);
+    scopeHomes.set(key, { dir: previous?.dir || dir, registered: Boolean(previous?.registered || registered) });
+  }
+  const hookHomes = [...scopeHomes.values()].map(entry => entry.dir);
+  const isRegistered = dir => [...scopeHomes.values()].find(entry => entry.dir === dir)?.registered === true;
   try {
     const handshake = await mcpRunner({ entrypoint: join(plugin, "runtime", "muster-mcp.mjs"), cwd, timeoutMs: MCP_TIMEOUT_MS });
     const count = Array.isArray(handshake?.tools) ? handshake.tools.length : 0;
@@ -250,13 +257,13 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     for (const dir of hookHomes) {
       try {
         const manifestPath = join(dir, "agents", ".muster-managed.json");
-        const owner = scopeHomes.get(dir)
+        const owner = isRegistered(dir)
           ? await readRegularJson(manifestPath)
           : JSON.parse(await readFile(manifestPath, "utf8"));
         if (!owner) throw new Error(`managed profile manifest is missing: ${manifestPath}`);
         installations.push({ dir, ok: owner.owner === "muster" && owner.generation === selected.generation && owner.bootstrapDigest === bootstrapDigest });
       } catch {
-        if (scopeHomes.get(dir)) installations.push({ dir, ok: false });
+        if (isRegistered(dir)) installations.push({ dir, ok: false });
       }
     }
     const stale = installations.filter(item => !item.ok);
@@ -270,7 +277,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   try { selectedBootstrapDigest = JSON.parse(await readFile(join(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest; } catch { /* reported as stale below */ }
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
-    const registered = scopeHomes.get(dir);
+    const registered = isRegistered(dir);
     if (!registered && !(await exists(manifestPath))) continue;
     try {
       const owner = registered
@@ -295,9 +302,12 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     } catch { staleHookScopes.push(dir); }
   }
   const hookStatus = staleHookScopes.length === 0 ? hookStatuses[0] || null : null;
+  const recovery = staleHookScopes.map(dir => dir === userCodexHome
+    ? `CODEX_HOME=${JSON.stringify(dir)} muster install codex --scope user`
+    : `(cd ${JSON.stringify(dirname(dir))} && muster install codex --scope project)`).join("; ");
   checks.push({ name: "codex-hooks", ok: Boolean(hookStatus), detail: hookStatus
     ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks`
-    : staleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${staleHookScopes.join(", ")}; rerun muster install codex for each scope` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
+    : staleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${staleHookScopes.join(", ")}. Recovery: ${recovery}` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
   checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0, detail: staleHookScopes.length
     ? "Project/user hook copies are not generation/hash/exact-group coherent, so exactly-once dedupe cannot be asserted; refresh every stale scope"
     : hookStatuses.length > 1

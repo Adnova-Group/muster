@@ -13,6 +13,7 @@ const fail = (message) => { throw new Error(`Codex validation: ${message}`); };
 const dirs = async (path) => (await readdir(path, { withFileTypes: true })).filter(x => x.isDirectory()).map(x => x.name);
 const files = async (path) => (await readdir(path, { withFileTypes: true })).filter(x => x.isFile()).map(x => x.name);
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
+const sameBytes = async (left, right) => (await readFile(left)).equals(await readFile(right));
 
 const [pkg, marketplace, manifest, mapping, upstreams, assetManifest] = await Promise.all([
   json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "codex/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
@@ -30,6 +31,10 @@ for (const name of selectionNames) {
   if (record.bootstrapDigest !== marketplace.musterBootstrap.digest) fail(`selection ${name} does not match the immutable bootstrap digest`);
 }
 if (!selectedContract) fail("selected release lacks a direct selector coherent with the marketplace/bootstrap digest");
+await stat(join(root, ".agents", "plugins", "plugins", "muster")).then(
+  () => fail("inactive legacy plugin tree .agents/plugins/plugins/muster must not exist"),
+  error => { if (error.code !== "ENOENT") throw error; }
+);
 if (manifest.name !== "muster" || manifest.version !== pkg.version) fail("plugin manifest version is not package version");
 if (!manifest.skills || !manifest.mcpServers || manifest.hooks !== undefined) fail("plugin manifest must expose skills and MCP without advertising inert plugin-bundled hooks");
 if (Object.keys(mapping.agents || {}).length !== CODEX_COUNTS.agents) fail("mapping does not contain all agent profiles");
@@ -63,6 +68,7 @@ for (const [id, config] of Object.entries(mapping.agents)) {
   if (!text.includes(`model = ${JSON.stringify(model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(reasoning)}`)) fail(`${name} does not match its model policy`);
   if (!text.includes(`sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`)) fail(`${name} does not match its read/write policy`);
 }
+const expectedReadOnlyAgents = Object.entries(mapping.agents).filter(([, config]) => config.readOnly === true).map(([id]) => id).sort();
 const skills = new Set(await dirs(join(plugin, "skills")));
 const bootstrap = join(root, ".agents", "plugins", "bootstrap", "muster");
 const bootstrapSkills = new Set(await dirs(join(bootstrap, "skills")));
@@ -134,10 +140,30 @@ for (const event of ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostTool
 }
 const hookSource = await readFile(join(root, "codex/hooks/muster-hook.mjs"), "utf8");
 if (/permissionDecision|permissionDecisionReason/.test(hookSource)) fail("Codex hook must not claim unsupported PreToolUse denial");
-const trackedHook = await readFile(join(root, ".codex/muster/hooks/muster-hook.mjs"), "utf8");
-if (trackedHook !== hookSource) fail("tracked project Codex hook runtime is stale");
+let hookPolicy;
+try { hookPolicy = JSON.parse(hookSource.match(/\/\* read-only-agent-policy: (\[[^\n]*\]) \*\//)?.[1]); }
+catch { fail("Codex hook read-only policy marker is invalid"); }
+if (JSON.stringify(hookPolicy) !== JSON.stringify(expectedReadOnlyAgents)) fail("Codex hook read-only policy differs from authoritative profile sandboxes");
+const profileManifest = await json(join(root, ".codex", "agents", ".muster-managed.json"));
+const hookManifest = await json(join(root, ".codex", "muster", ".muster-managed.json"));
+for (const [label, projectManifest] of [["profile", profileManifest], ["hook", hookManifest]]) {
+  if (projectManifest?.owner !== "muster" || projectManifest?.format !== 1
+    || projectManifest.generation !== selected.generation
+    || projectManifest.bootstrapDigest !== marketplace.musterBootstrap.digest) {
+    fail(`project ${label} manifest does not match selected generation/bootstrap`);
+  }
+}
+if (JSON.stringify([...profileManifest.files].sort()) !== JSON.stringify(profiles.filter(name => name.endsWith(".toml")).sort())) fail("project profile manifest file list is stale");
+for (const name of profileManifest.files) {
+  if (!await sameBytes(join(root, ".codex", "agents", name), join(profilesRoot, name))) fail(`project profile ${name} is stale`);
+}
+for (const name of hookManifest.files) {
+  if (!await sameBytes(join(root, ".codex", "muster", name), join(plugin, "runtime", "install-hooks", name.replace(/^hooks\//, "")))) fail(`project hook ${name} is stale`);
+}
+if (!await sameBytes(join(root, "codex", "hooks", "muster-hook.mjs"), join(plugin, "runtime", "install-hooks", "muster-hook.mjs"))) fail("selected release hook runtime is stale");
 const trackedHookConfig = await readFile(join(root, ".codex/hooks.json"), "utf8");
 if (/\/mnt\/[a-z]\//i.test(trackedHookConfig) || /[a-z]:[\\/]/i.test(trackedHookConfig)) fail("tracked project Codex hooks contain a checkout-specific absolute path");
+if (JSON.stringify(JSON.parse(trackedHookConfig).hooks) !== JSON.stringify(hookManifest.hookGroups)) fail("tracked project Codex hook config differs from its ownership manifest");
 const mcp = await json(join(plugin, ".mcp.json"));
 if (mcp.mcpServers?.muster?.command !== "node" || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not Codex-native");
 const bundledMcp = await readFile(join(plugin, "runtime", "muster-mcp.mjs"), "utf8");

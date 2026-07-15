@@ -8,7 +8,7 @@
       "name": "muster",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/releases/a60ffc177547ae6d802ccb00655f52e4dcd7b14da5acc050f57164b542797142/plugin"
+        "path": "./.agents/plugins/releases/b4ce06c424f61c8ec6750115c9b77d0846376f78761482c19dd5d9af5bb3ff5c/plugin"
       },
       "policy": {
         "installation": "AVAILABLE",

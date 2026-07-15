@@ -99,6 +99,16 @@ test("generated Codex audit batches every read-only dimension within worker capa
   const generatedPath = join(selectedPluginRoot, "commands", "audit.md");
   const sourcePath = join(repoRoot, "plugin", "commands", "audit.md");
   const [generated, source] = await Promise.all([readFile(generatedPath, "utf8"), readFile(sourcePath, "utf8")]);
+  const encoded = generated.match(/<!-- muster-codex-audit-contract (\{.*\}) -->/)?.[1];
+  assert.ok(encoded, "generated audit command must expose its machine-checkable execution contract");
+  const contract = JSON.parse(encoded);
+  const dimensions = ["architecture", "tech-debt", "coverage", "simplification", "readability", "security"];
+  assert.deepEqual(contract.dimensions, dimensions, "audit contract must cover each core dimension exactly once in canonical order");
+  assert.ok(Number.isInteger(contract.maximumBatchWidth) && contract.maximumBatchWidth > 0 && contract.maximumBatchWidth <= 3);
+  assert.deepEqual(contract.sequence, ["capacity-receipt", "dispatch-batches", "dimension-receipts", "consolidate"]);
+  assert.deepEqual(contract.consolidationRequires, dimensions);
+  assert.ok(contract.sequence.indexOf("capacity-receipt") < contract.sequence.indexOf("dispatch-batches"), "capacity receipt must precede dispatch");
+  assert.ok(contract.sequence.indexOf("dimension-receipts") < contract.sequence.indexOf("consolidate"), "all dimension receipts must precede consolidation");
   assert.match(generated, /six core dimensions remain independent and READ-ONLY/);
   assert.match(generated, /maximum available subset concurrently/);
   assert.match(generated, /barrier until every worker in that batch finishes/);

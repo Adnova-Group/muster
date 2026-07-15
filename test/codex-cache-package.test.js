@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -55,7 +55,15 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
     assert.match(skill, new RegExp(`name: ${name}`));
     await execFile(process.execPath, [resolver, "command", name.replace(/^muster-/, "")], { cwd: cache, env });
   }
+  const internal = (await execFile(process.execPath, [resolver, "internal-skill", "orchestrator"], { cwd: cache, env })).stdout;
+  assert.match(internal, /name: orchestrator/);
   await assert.rejects(execFile(process.execPath, [resolver, "skill", "../../escape"], { cwd: cache, env }), /invalid bootstrap skill id/);
+  for (const id of ["../../escape", "Not_Valid"]) {
+    await assert.rejects(
+      execFile(process.execPath, [resolver, "internal-skill", id], { cwd: cache, env }),
+      /invalid bootstrap internal-skill id/
+    );
+  }
   const resolverModule = await import(`${pathToFileURL(resolver).href}?parallel=${Date.now()}`);
   let leaseNow = Date.now() - 6 * 60 * 1000, heartbeat;
   const lease = {
@@ -122,6 +130,36 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
     assert.match(skill, new RegExp(`name: ${name}`));
     assert.doesNotMatch(skill, /# Immutable Muster bootstrap/);
   }
+  assert.match(await readFile(join(realCache, "internal-skills", "orchestrator", "SKILL.md"), "utf8"), /name: orchestrator/);
+  const providerResolver = join(realCache, "runtime", "resolve-skill-provider.mjs");
+  await assert.rejects(readFile(join(realCache, "runtime", "resolve-release.mjs"), "utf8"));
+  const bundledBrainstorm = (await execFile(process.execPath, [providerResolver, "builtin", "sp-brainstorm"], { cwd: tmp })).stdout;
+  assert.match(bundledBrainstorm, /name: sp-brainstorm/);
+  assert.match(bundledBrainstorm, /resolve-skill-provider\.mjs builtin sp-brainstorm visual-companion\.md/);
+  assert.doesNotMatch(bundledBrainstorm, /skills\/brainstorming\/visual-companion\.md/);
+  const companion = (await execFile(process.execPath, [providerResolver, "builtin", "sp-brainstorm", "visual-companion.md"], { cwd: tmp })).stdout;
+  assert.match(companion, /Visual Companion Guide/);
+  for (const id of ["brainstorming", "debugging-strategies"]) {
+    const invocation = (await execFile(process.execPath, [providerResolver, "installed", id], { cwd: tmp })).stdout;
+    assert.equal(invocation, `Invoke the already-enabled Codex skill explicitly as $${id}.\n`);
+  }
+  for (const [source, id] of [["builtin", "../../escape"], ["installed", "Not_Valid"], ["external", "brainstorming"]]) {
+    await assert.rejects(execFile(process.execPath, [providerResolver, source, id], { cwd: tmp }), /invalid (?:skill provider source|skill provider id)/);
+  }
+
+  const internalSkill = join(realCache, "internal-skills", "sp-brainstorm", "SKILL.md");
+  const originalInternalSkill = await readFile(internalSkill);
+  await writeFile(internalSkill, "ATTACKER-CONTROLLED-INTERNAL-SKILL\n");
+  await assert.rejects(execFile(process.execPath, [providerResolver, "builtin", "sp-brainstorm"], { cwd: tmp }), /hash|size|changed/i);
+  await writeFile(internalSkill, originalInternalSkill);
+  const symlinkVictim = join(tmp, "internal-skill-victim.md");
+  await writeFile(symlinkVictim, originalInternalSkill);
+  await unlink(internalSkill);
+  await symlink(symlinkVictim, internalSkill);
+  await assert.rejects(execFile(process.execPath, [providerResolver, "builtin", "sp-brainstorm"], { cwd: tmp }), /symlink|ordinary|regular/i);
+  await unlink(internalSkill);
+  await writeFile(internalSkill, originalInternalSkill);
+  assert.deepEqual(await readFile(internalSkill), originalInternalSkill);
   const cachedDetected = JSON.parse((await execFile(process.execPath, [join(realCache, "runtime", "muster.mjs"), "detect", cache], {
     cwd: tmp,
     env: { ...process.env, CODEX_HOME: join(tmp, "real-codex-home") }

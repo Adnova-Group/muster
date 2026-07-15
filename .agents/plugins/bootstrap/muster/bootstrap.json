@@ -202,6 +202,316 @@
       "size": 759
     },
     {
+      "path": "internal-skills/advisor/SKILL.md",
+      "sha256": "f3c7f8cf0302e3c202404aff3c89a9f7c74dec126f8c46b12f2245f58335ffb8",
+      "size": 1025
+    },
+    {
+      "path": "internal-skills/coordination/SKILL.md",
+      "sha256": "9b5a228cba7fcff6dd5937a3e08e31a23e30edaaacf523e36dc09ff05dac888c",
+      "size": 1137
+    },
+    {
+      "path": "internal-skills/domain-router/SKILL.md",
+      "sha256": "e26160ee786538ce488ca6a4240606a7b98702ecdf8be613982ab0396dccb3bb",
+      "size": 933
+    },
+    {
+      "path": "internal-skills/greenfield/SKILL.md",
+      "sha256": "0f6a026ac66f1535117c1b56d8d64251199712e8f759d12e208531a1b6b74da7",
+      "size": 801
+    },
+    {
+      "path": "internal-skills/interview/SKILL.md",
+      "sha256": "56eccbf801fae0db529a5ef253d07e83327851a8eb07be11dc3983fc1a809cf1",
+      "size": 869
+    },
+    {
+      "path": "internal-skills/muster-author/SKILL.md",
+      "sha256": "82565f77e12946c2bf7a6bcbf393ffa2f7e99600960e0f9dbf84bc1d01337845",
+      "size": 845
+    },
+    {
+      "path": "internal-skills/muster-gsd-execute-phase/SKILL.md",
+      "sha256": "72ef480fcbc4efe02daf4f825318e2df693ef0874976fb4e8de2b6eb815ab660",
+      "size": 945
+    },
+    {
+      "path": "internal-skills/muster-gsd-plan-phase/SKILL.md",
+      "sha256": "869ef33f45f52829a47459093fed1dbfff957a9abbd7678dabf83352a9a7cf8a",
+      "size": 948
+    },
+    {
+      "path": "internal-skills/muster-gsd-verify-work/SKILL.md",
+      "sha256": "4c58ff246dc835f0cc1d8b569b15a3a8cae774dab9a20817590c4c8ba4d7527e",
+      "size": 952
+    },
+    {
+      "path": "internal-skills/muster-humanizer/SKILL.md",
+      "sha256": "36616d241256b678d7e3ad61cfd355105d8806266b0298d6703c491e632a9268",
+      "size": 846
+    },
+    {
+      "path": "internal-skills/muster-image/SKILL.md",
+      "sha256": "a4102ee3ec1f6c6c507508b9c9f6f66a072b6fad94bc92349b828c74f7660cab",
+      "size": 887
+    },
+    {
+      "path": "internal-skills/muster-prompt-smith/SKILL.md",
+      "sha256": "2fba36982ae39ba6920a000c9ba52511af340006279851474635e256eb38ae18",
+      "size": 1092
+    },
+    {
+      "path": "internal-skills/muster-research/SKILL.md",
+      "sha256": "6744d49ba5ce18aece6095497602d4333c3a6f59ffc7122392fa3d0881f5dfc3",
+      "size": 827
+    },
+    {
+      "path": "internal-skills/muster-scorer/SKILL.md",
+      "sha256": "7f84373b0d6e5c6f0ac0a3dcc42be084c58ea672d516c876331ea776b49b274f",
+      "size": 830
+    },
+    {
+      "path": "internal-skills/muster-video/SKILL.md",
+      "sha256": "1a28e1b4d5d8a1d6d931448a569d421a8333dd9e4794d410f3330652aa0c2f2e",
+      "size": 917
+    },
+    {
+      "path": "internal-skills/orchestrator/SKILL.md",
+      "sha256": "4f0f109b40bb9827030fd88397a5579dfec33c3ad53546ad0c6a42e847f178c8",
+      "size": 854
+    },
+    {
+      "path": "internal-skills/prd-pipeline/SKILL.md",
+      "sha256": "4a100afc86002ee1e0e6d7ce5f1a1dcf98645d2e25f3549292015af86e48fb46",
+      "size": 828
+    },
+    {
+      "path": "internal-skills/review-gate/SKILL.md",
+      "sha256": "632f678710105cbd0585df300ff5b1c2a1e7ba234a6bb6bf9230e86654236303",
+      "size": 826
+    },
+    {
+      "path": "internal-skills/roadmap-prioritization/SKILL.md",
+      "sha256": "474953a0aae964f1d792d2befa4b4c2f35a25dc8d77175f649f98b5297671bdc",
+      "size": 942
+    },
+    {
+      "path": "internal-skills/router/SKILL.md",
+      "sha256": "108eec621d800469f626ffbe78881f5c72b9d57464bb41f9d1f2c2b0a7380073",
+      "size": 814
+    },
+    {
+      "path": "internal-skills/sp-brainstorm/SKILL.md",
+      "sha256": "63df391fdd5496114aa4eb61a5759ab63796845641d2523d059d49e2e1f55e53",
+      "size": 891
+    },
+    {
+      "path": "internal-skills/sp-debug/SKILL.md",
+      "sha256": "f241f4f93b5daf5c8e63cea15f2d4211ff5d97f97a4d0c7fc5fe3d365f3df331",
+      "size": 774
+    },
+    {
+      "path": "internal-skills/sp-parallel/SKILL.md",
+      "sha256": "69c04f7ca2dda477aaeff62b4c49f3c6dd422036d259ed21a5fd777c484f14d2",
+      "size": 795
+    },
+    {
+      "path": "internal-skills/sp-plan/SKILL.md",
+      "sha256": "335b8a9295117413045b1378f7668b9b22e460619d03c0197a389a7776860e7e",
+      "size": 765
+    },
+    {
+      "path": "internal-skills/sp-review/SKILL.md",
+      "sha256": "35809219433f02091d800253d1735b761d78e7a2c96c2ffdc6aad4bde6c8d5cb",
+      "size": 792
+    },
+    {
+      "path": "internal-skills/sp-review-recv/SKILL.md",
+      "sha256": "7aff84b7864495e615eeb30379f7c578ea1d76acb0c9d90fc235eb716d180c16",
+      "size": 929
+    },
+    {
+      "path": "internal-skills/sp-subagents/SKILL.md",
+      "sha256": "930c62568ed51cbe4b94a182cb6367c7fd8f93d1cec380155f113082f179b90e",
+      "size": 776
+    },
+    {
+      "path": "internal-skills/sp-tdd/SKILL.md",
+      "sha256": "5090f340b4ce75d4845ec847da7ace5bd53b3e07ff7aec52a28e065f8d3e410d",
+      "size": 758
+    },
+    {
+      "path": "internal-skills/sp-verify/SKILL.md",
+      "sha256": "b783722aaf5f1310688b4c80fdc1becafc65389028165b0973a172d7495335b6",
+      "size": 910
+    },
+    {
+      "path": "internal-skills/tournament/SKILL.md",
+      "sha256": "2aa6cd5aac9a6a3a82574212d1e070c4fdb69d807b0894600a68c86718109cf9",
+      "size": 962
+    },
+    {
+      "path": "internal-skills/wsh-api-design-principles/SKILL.md",
+      "sha256": "acc76ccb51b4c0f58c3f5ae7769ed9fc614ebd1e2c646830f5392be150d66031",
+      "size": 936
+    },
+    {
+      "path": "internal-skills/wsh-architecture-decision-records/SKILL.md",
+      "sha256": "cb41812a6fda87aa14f508d1b87f5275a2c6f192ad5ac2f84c865f26cd65fbec",
+      "size": 979
+    },
+    {
+      "path": "internal-skills/wsh-architecture-patterns/SKILL.md",
+      "sha256": "74f0a706cad10f3b057f74249ae46cbdc5055132ecf103c1d9a50c58c20137f9",
+      "size": 1093
+    },
+    {
+      "path": "internal-skills/wsh-async-python-patterns/SKILL.md",
+      "sha256": "9c7c455f5e243e2522d357b1cf692af580bb6520f542d656db2a377abceef5a2",
+      "size": 934
+    },
+    {
+      "path": "internal-skills/wsh-attack-tree-construction/SKILL.md",
+      "sha256": "c10dd1b5e020d97151f99ebb6ff3bc148dc0bd6896319f3500ec576babb0f965",
+      "size": 892
+    },
+    {
+      "path": "internal-skills/wsh-code-review-excellence/SKILL.md",
+      "sha256": "695598a6cade771a170710b08d9e36034dd41f031c6963c7620912d22c33feff",
+      "size": 959
+    },
+    {
+      "path": "internal-skills/wsh-debugging-strategies/SKILL.md",
+      "sha256": "c5cc0b2a0cd240783de031aca687c998ce0c1e6998f5acf0a098e0e4e4b0e159",
+      "size": 940
+    },
+    {
+      "path": "internal-skills/wsh-dependency-upgrade/SKILL.md",
+      "sha256": "1006859f3c2a2afca45f2d62a8664bebf79c9a7fcae48acbbced13f1af106ee4",
+      "size": 934
+    },
+    {
+      "path": "internal-skills/wsh-design-system-patterns/SKILL.md",
+      "sha256": "a8c5e8d52286c672fbffbca8727d8fbe758fc38b46461d6b495f449abd0facc1",
+      "size": 965
+    },
+    {
+      "path": "internal-skills/wsh-e2e-testing-patterns/SKILL.md",
+      "sha256": "b8cdb051eada5906b7cf879e50e2e49cc9c76614a430628e917e5ab786f64ef0",
+      "size": 954
+    },
+    {
+      "path": "internal-skills/wsh-go-concurrency-patterns/SKILL.md",
+      "sha256": "5734d8ae4ae6797a0e7a5e40d8f923721140f4a741fd0aeedb6e9d4d8a46ce8e",
+      "size": 902
+    },
+    {
+      "path": "internal-skills/wsh-javascript-testing-patterns/SKILL.md",
+      "sha256": "71f330083ec2da9e1825e6cd022f481d6e6ae54a814bbc1aa7acee949b947c51",
+      "size": 1035
+    },
+    {
+      "path": "internal-skills/wsh-microservices-patterns/SKILL.md",
+      "sha256": "50be32bb6e74d1a36b974f6fa4b73eb75dafee79f24a2808c8c08160f7d56960",
+      "size": 924
+    },
+    {
+      "path": "internal-skills/wsh-multi-reviewer-patterns/SKILL.md",
+      "sha256": "f33fe86ae6813cfa6f3f125252442477b187f42f52ecf4e77cac332826864840",
+      "size": 989
+    },
+    {
+      "path": "internal-skills/wsh-nextjs-app-router-patterns/SKILL.md",
+      "sha256": "f75d52af11d98343e7f82dbe3ecfe12da55e6a6913b5334579a548412fffbc16",
+      "size": 937
+    },
+    {
+      "path": "internal-skills/wsh-nodejs-backend-patterns/SKILL.md",
+      "sha256": "748a4942d853f9f852793e7b5ca9a714604d1b62eb97fe669dbb5d24c6361445",
+      "size": 1005
+    },
+    {
+      "path": "internal-skills/wsh-openapi-spec-generation/SKILL.md",
+      "sha256": "c1393c94ad71aeb9dcba624149288c226afcf57f43c94ed9d8d473ec6481dfaa",
+      "size": 916
+    },
+    {
+      "path": "internal-skills/wsh-performance-engineer/SKILL.md",
+      "sha256": "5865bb7113b955626b7a1f6736749023636d876d18f0f5e7c24d2c8b153eb266",
+      "size": 1131
+    },
+    {
+      "path": "internal-skills/wsh-python-anti-patterns/SKILL.md",
+      "sha256": "c839b02fb1d5cbd230163c41dad4cde9a778a4b12e8dce4b2f3c08b10272b502",
+      "size": 933
+    },
+    {
+      "path": "internal-skills/wsh-python-design-patterns/SKILL.md",
+      "sha256": "36ab9a15f05c595088d77966b0bedc91436f2ba56c5e34602058016dca74b76b",
+      "size": 1369
+    },
+    {
+      "path": "internal-skills/wsh-python-testing-patterns/SKILL.md",
+      "sha256": "966d9de33ab814437166d91b2cd3de0b14622732d1b4c1d332ce0d94cb7589c5",
+      "size": 919
+    },
+    {
+      "path": "internal-skills/wsh-react-modernization/SKILL.md",
+      "sha256": "b69d15ac07b6b1a68a7c3288fdc47bf59e07e4207fcdcf5db4c8ac74fd32e163",
+      "size": 933
+    },
+    {
+      "path": "internal-skills/wsh-react-state-management/SKILL.md",
+      "sha256": "dc458eb5384d3107b8ae370db6d62650f821a47ed72163b12b566fd0495368e2",
+      "size": 913
+    },
+    {
+      "path": "internal-skills/wsh-responsive-design/SKILL.md",
+      "sha256": "ce45bd4146270f2a20cbe3f0a7849aef33618d452c9c2b1610f30098271b6e76",
+      "size": 953
+    },
+    {
+      "path": "internal-skills/wsh-sast-configuration/SKILL.md",
+      "sha256": "2d818dd3a3a8b8208dc7e0d526c04f613a9d6ba977356a09ffb965beec47b4c8",
+      "size": 945
+    },
+    {
+      "path": "internal-skills/wsh-seo-structure-architect/SKILL.md",
+      "sha256": "050d2190292d70a329d7181728a1df286682497701cfefc62ee0dd3466445426",
+      "size": 936
+    },
+    {
+      "path": "internal-skills/wsh-signed-audit-trails-recipe/SKILL.md",
+      "sha256": "e020a9d1e1b0a2383cbfb7fee9b90c3f1df63a53788c277400dd8883ae7e4e1e",
+      "size": 986
+    },
+    {
+      "path": "internal-skills/wsh-stride-analysis-patterns/SKILL.md",
+      "sha256": "9bae8cba11dce22cbcd555d3d7e5cf584839b49efcba2f5835a4ba5fcb1c3541",
+      "size": 892
+    },
+    {
+      "path": "internal-skills/wsh-tailwind-design-system/SKILL.md",
+      "sha256": "56ff7ebe19de4272e4aeddc0c1304f99aea8afc8407f39aa1aca7d583bc7f541",
+      "size": 929
+    },
+    {
+      "path": "internal-skills/wsh-threat-mitigation-mapping/SKILL.md",
+      "sha256": "aa33b41e2da6c3bc0e974c998de1c8fecf1aacd35c1e32ad259a0c5bdd60d0f4",
+      "size": 906
+    },
+    {
+      "path": "internal-skills/wsh-typescript-advanced-types/SKILL.md",
+      "sha256": "28a148348909e6d1ad0bdd0eea275a3a7001f4db09630899aa96e4484ae03036",
+      "size": 1029
+    },
+    {
+      "path": "internal-skills/wsh-wcag-audit-patterns/SKILL.md",
+      "sha256": "dfa0c9bff94d6434a32794c54b2bfb0dfc750d0776509ec183961e5254a18e8f",
+      "size": 935
+    },
+    {
       "path": "package.json",
       "sha256": "50ab16ae2dc9e8fa60f30b22bb24cb4252b975f8a68dfefecd58a319db1b2698",
       "size": 54
@@ -223,8 +533,13 @@
     },
     {
       "path": "runtime/resolve-release.mjs",
-      "sha256": "97148277e2ee55cd79809f7cc7c378c9c1e1e757a47c5181d4fd5e84caf64b79",
-      "size": 27887
+      "sha256": "1d50445eca2380ea60307b8c7b26fa2c50a14be8d1f45c4fe2e7ea3715b97e18",
+      "size": 28571
+    },
+    {
+      "path": "runtime/resolve-skill-provider.mjs",
+      "sha256": "379d611aba53e605d0bdef751f0f9c05edacb0e0733bab9aae501a32ec0b6e01",
+      "size": 1383
     },
     {
       "path": "runtime/sprint-protocol.md",
@@ -232,34 +547,9 @@
       "size": 211
     },
     {
-      "path": "skills/advisor/SKILL.md",
-      "sha256": "beadc3ee29a5c2e1758492f1f54c61ecab7e256811261caa474bb5e5e6b59146",
-      "size": 1016
-    },
-    {
       "path": "skills/autopilot/SKILL.md",
       "sha256": "535b98ebd07c5e7b944b33f77a5bdb827b8b3fb3f9f23abbad435935ffcddee5",
       "size": 741
-    },
-    {
-      "path": "skills/coordination/SKILL.md",
-      "sha256": "c50e993b79bc0057faffbb21ee6442675635ea6ad5143ce7a386d74ed46e7f61",
-      "size": 1128
-    },
-    {
-      "path": "skills/domain-router/SKILL.md",
-      "sha256": "6ae3365a54bce24e10751042b8af4b7b03d076629522c14ccff9b77293c43175",
-      "size": 924
-    },
-    {
-      "path": "skills/greenfield/SKILL.md",
-      "sha256": "6482f5692c83183083aee7f79148f84d0b3b44848a5cfb9a39200cb697a4cfa5",
-      "size": 792
-    },
-    {
-      "path": "skills/interview/SKILL.md",
-      "sha256": "8b5915182b3b0953b0841dc942ddcffaebfaf30c47f85758ac4fc17525bac202",
-      "size": 860
     },
     {
       "path": "skills/muster/SKILL.md",
@@ -270,11 +560,6 @@
       "path": "skills/muster-audit/SKILL.md",
       "sha256": "cb7a3eaeda3052c124fc518b6e7717222feb1222372f4cc8f8b0b293432bc667",
       "size": 798
-    },
-    {
-      "path": "skills/muster-author/SKILL.md",
-      "sha256": "9c574c9ddf73e614def2979c7409c64e9781986ed5d42234ba05c8c07eb40d2b",
-      "size": 836
     },
     {
       "path": "skills/muster-capture/SKILL.md",
@@ -297,31 +582,6 @@
       "size": 801
     },
     {
-      "path": "skills/muster-gsd-execute-phase/SKILL.md",
-      "sha256": "77363e0868e8763a0c58e6f79c9c00d4bba502696c6e753589c6884b2601f65c",
-      "size": 936
-    },
-    {
-      "path": "skills/muster-gsd-plan-phase/SKILL.md",
-      "sha256": "4c290e057ced33b200fa7cb85b905ff2082b1620a88c0679782b105fffc10bc7",
-      "size": 939
-    },
-    {
-      "path": "skills/muster-gsd-verify-work/SKILL.md",
-      "sha256": "98b76d63b086acbcd33a0e3d2f23816ec4afb832fac372b0b82d89116afab5f9",
-      "size": 943
-    },
-    {
-      "path": "skills/muster-humanizer/SKILL.md",
-      "sha256": "ea17df8657e6ce3972d1ce6728aed1f09d946fbfd9efa66836b2f320d3502f24",
-      "size": 837
-    },
-    {
-      "path": "skills/muster-image/SKILL.md",
-      "sha256": "2c73a0ffd6027db8511d8b3e45efc025094f5b2ad1a303c1961a019924447f67",
-      "size": 878
-    },
-    {
       "path": "skills/muster-plan/SKILL.md",
       "sha256": "774430dc9af46ea52c565eb911f7438f30175cf5b231e33c5a4b1640dd814a72",
       "size": 801
@@ -332,54 +592,9 @@
       "size": 790
     },
     {
-      "path": "skills/muster-prompt-smith/SKILL.md",
-      "sha256": "2022aa41f89c70741e6316d39518578de5a26f51ee3c80441a095391c86adc10",
-      "size": 1083
-    },
-    {
-      "path": "skills/muster-research/SKILL.md",
-      "sha256": "117cf0cf230c8ad71a710901b318f1121de22c85db237a9c1cf09c00ff69f93a",
-      "size": 818
-    },
-    {
       "path": "skills/muster-runner/SKILL.md",
       "sha256": "74f1a66e055de599b975f5001b9d7c49e9e38e47d249b85f0df557ce04cfa47d",
       "size": 789
-    },
-    {
-      "path": "skills/muster-scorer/SKILL.md",
-      "sha256": "6ddead439bc3b3824e1295a606b4ddaba06c160ea7bc7135e8df9a670d15055f",
-      "size": 821
-    },
-    {
-      "path": "skills/muster-video/SKILL.md",
-      "sha256": "09194b79ea58d10a1bee6d4d4d2a0db7c5f6f16bf140bb06de243a21de8eecc5",
-      "size": 908
-    },
-    {
-      "path": "skills/orchestrator/SKILL.md",
-      "sha256": "4cac76b39d73fd3195cd01eb282cd70b7bd42f9b1696b6f040d56e4e234c1110",
-      "size": 845
-    },
-    {
-      "path": "skills/prd-pipeline/SKILL.md",
-      "sha256": "7d71a194843adc2ac90a2ddf067b940959d08a34c6fe17a8e83736d9e509e220",
-      "size": 819
-    },
-    {
-      "path": "skills/review-gate/SKILL.md",
-      "sha256": "c836ce96ddcf0bc749f6c3232e50389d91d75c8f9eddb8fd19d3f5f950274d73",
-      "size": 817
-    },
-    {
-      "path": "skills/roadmap-prioritization/SKILL.md",
-      "sha256": "80e4f80e2924a62c693efd00cbdf591d99380061f0d301877485326ba4ba7d06",
-      "size": 933
-    },
-    {
-      "path": "skills/router/SKILL.md",
-      "sha256": "b3ae08d594b8a0b19a0efb2ec905f316f91c506052437cb3dff97cf0ad4bfde1",
-      "size": 805
     },
     {
       "path": "skills/run/SKILL.md",
@@ -387,220 +602,10 @@
       "size": 725
     },
     {
-      "path": "skills/sp-brainstorm/SKILL.md",
-      "sha256": "3d01c4c6ada89527ec623561d2d9f11201593a8d013f0f896a16d4dd41ee4d94",
-      "size": 882
-    },
-    {
-      "path": "skills/sp-debug/SKILL.md",
-      "sha256": "29e75b7f9d302637099f88add5d4d0d9d55a65f48ea1c6f249667e39333849cf",
-      "size": 765
-    },
-    {
-      "path": "skills/sp-parallel/SKILL.md",
-      "sha256": "ae17b244f1488d2cb0f008479ff97871abcb5d5d5840b710301d537f7e850fce",
-      "size": 786
-    },
-    {
-      "path": "skills/sp-plan/SKILL.md",
-      "sha256": "5c45d61a73d82357d1e56e9e6169c4b9f51b746c295adec23242837e287fc574",
-      "size": 756
-    },
-    {
-      "path": "skills/sp-review/SKILL.md",
-      "sha256": "93f243c8c7768c062460871168e9ae0b9a4d84ad08d128c4bab8cc0bdf90eff1",
-      "size": 783
-    },
-    {
-      "path": "skills/sp-review-recv/SKILL.md",
-      "sha256": "79e43e423603d20e87ef5ea2534a94af7e8eae178e590dc3a98d9a20079244a1",
-      "size": 920
-    },
-    {
-      "path": "skills/sp-subagents/SKILL.md",
-      "sha256": "3506eb9048bf1e1c980a08ce8cf5403ef891ed36d5491af5b77c5ab2fa375337",
-      "size": 767
-    },
-    {
-      "path": "skills/sp-tdd/SKILL.md",
-      "sha256": "8fadd03cd9bec99d7dd23f6e4419b5bda2a87a876a9671f1a691c8d7de4c7fd4",
-      "size": 749
-    },
-    {
-      "path": "skills/sp-verify/SKILL.md",
-      "sha256": "673468fe97eb9cb545edcd180c20732c7c733a412c379ff6a984fc75d655c0d5",
-      "size": 901
-    },
-    {
       "path": "skills/sprint/SKILL.md",
       "sha256": "4f0b68aa507a7ac08e854aef3dd77882488891897979219e0098aa55eeb306d8",
       "size": 740
-    },
-    {
-      "path": "skills/tournament/SKILL.md",
-      "sha256": "2c6f6efa5a93344acc11e6a7c85944c4bb38f97bd5d9714a51381d668947d323",
-      "size": 953
-    },
-    {
-      "path": "skills/wsh-api-design-principles/SKILL.md",
-      "sha256": "ef6db77a75de3c280b94d4da4cbb057b7462e817fefadce7fdeaeaec6818f5b6",
-      "size": 927
-    },
-    {
-      "path": "skills/wsh-architecture-decision-records/SKILL.md",
-      "sha256": "52bbb5eedad3f7afcf64a7712899ebd902d8c1dc6899be17dbcd0f8994fbc17d",
-      "size": 970
-    },
-    {
-      "path": "skills/wsh-architecture-patterns/SKILL.md",
-      "sha256": "64df812d878d6bd7a8aaa1cfa437f093826849515215594135e76e47f2b86063",
-      "size": 1084
-    },
-    {
-      "path": "skills/wsh-async-python-patterns/SKILL.md",
-      "sha256": "e405e34255db66c34f574a92fda94035880f91ede08126ed56d6b16bb328fb41",
-      "size": 925
-    },
-    {
-      "path": "skills/wsh-attack-tree-construction/SKILL.md",
-      "sha256": "7698cb07a3f725704b83c76582b87a3809999a7e341d6bd8b2e2eb341049a581",
-      "size": 883
-    },
-    {
-      "path": "skills/wsh-code-review-excellence/SKILL.md",
-      "sha256": "b4f617abd86f3c3e67b4ab4c0a407cfed9032ce3d3ad6d0a46ad315c70d4a18b",
-      "size": 950
-    },
-    {
-      "path": "skills/wsh-debugging-strategies/SKILL.md",
-      "sha256": "a218b8969dd1062f4cff257b479a342e8d3b3a322245cc827f593b4706767d20",
-      "size": 931
-    },
-    {
-      "path": "skills/wsh-dependency-upgrade/SKILL.md",
-      "sha256": "858682ec9c1fd336a82ca64b1a2bcfea7f7de873e56cc381b1d6af4fc8876716",
-      "size": 925
-    },
-    {
-      "path": "skills/wsh-design-system-patterns/SKILL.md",
-      "sha256": "f9b4c6e8e1c9b68ad5b7e599ccda9cac710636da9d67e5e12ceec2159c63cda3",
-      "size": 956
-    },
-    {
-      "path": "skills/wsh-e2e-testing-patterns/SKILL.md",
-      "sha256": "e9bb15a3f6c9d4c205a3188dcac47317468cb1b1315193ea78e1007fbf8ec9ad",
-      "size": 945
-    },
-    {
-      "path": "skills/wsh-go-concurrency-patterns/SKILL.md",
-      "sha256": "72e616dffcdfd51a502bda797ea2ffd8879d2a0980d3dd920fb37f2ff3ef0b6a",
-      "size": 893
-    },
-    {
-      "path": "skills/wsh-javascript-testing-patterns/SKILL.md",
-      "sha256": "c22a530d1b90bd23bd1ba9800bb772037a68361b7a0cc429374f06afdace100b",
-      "size": 1026
-    },
-    {
-      "path": "skills/wsh-microservices-patterns/SKILL.md",
-      "sha256": "df27555b3f9273fcb35f19c70271f34c68c816af577faef266483c6203e1cb1d",
-      "size": 915
-    },
-    {
-      "path": "skills/wsh-multi-reviewer-patterns/SKILL.md",
-      "sha256": "0535bf77f099b4e31e37c27d76de3db0048f7ba112d3cbebb3b765772d4650db",
-      "size": 980
-    },
-    {
-      "path": "skills/wsh-nextjs-app-router-patterns/SKILL.md",
-      "sha256": "4e8ceec83d4e86ef2a34d6a50af71f0b234aaa0b338a92d34575515885636a18",
-      "size": 928
-    },
-    {
-      "path": "skills/wsh-nodejs-backend-patterns/SKILL.md",
-      "sha256": "6d93c94c7e0473e976f1cc5c8e26c3d0589f8b437f2bf679831ae41ae4cda6d9",
-      "size": 996
-    },
-    {
-      "path": "skills/wsh-openapi-spec-generation/SKILL.md",
-      "sha256": "178f3591c39fac529f04f9fd23025be526db3480d7911faf5a009d6beb0f15ba",
-      "size": 907
-    },
-    {
-      "path": "skills/wsh-performance-engineer/SKILL.md",
-      "sha256": "e32a55e78cedeff8335afa000c3c2c03be878ef694200ae19a0c2c4bab81d0d7",
-      "size": 1122
-    },
-    {
-      "path": "skills/wsh-python-anti-patterns/SKILL.md",
-      "sha256": "0efbc9adc3e7e3d4f2afa2ec2b515914d8516465028ce5045d80d6fdca51166e",
-      "size": 924
-    },
-    {
-      "path": "skills/wsh-python-design-patterns/SKILL.md",
-      "sha256": "e2c0f2ee1afb6a0ed44289bd3ed952590ae612c43889a6ca9fd7a27f74d25267",
-      "size": 1360
-    },
-    {
-      "path": "skills/wsh-python-testing-patterns/SKILL.md",
-      "sha256": "590425edc6ff350b5610d73944f96a9d1cf23d03544101e095540f8d1cbeeb7d",
-      "size": 910
-    },
-    {
-      "path": "skills/wsh-react-modernization/SKILL.md",
-      "sha256": "5233e136fb6c1f82bad07fa644514d64dd81f8b527a9e090ccc8735b29cbfe8e",
-      "size": 924
-    },
-    {
-      "path": "skills/wsh-react-state-management/SKILL.md",
-      "sha256": "dd56bd8447e57915bfb0f48d3dfb920727e16eeacd6b03e117f020ecc66f03b5",
-      "size": 904
-    },
-    {
-      "path": "skills/wsh-responsive-design/SKILL.md",
-      "sha256": "ee4ccaf31c1b03c0230e31007d3da0905d4563bce4d44918df7aef0533d3946a",
-      "size": 944
-    },
-    {
-      "path": "skills/wsh-sast-configuration/SKILL.md",
-      "sha256": "48f80797db55c16c3ec6894c62c2a3e29041a3ed9bd51eeda595201e8b673883",
-      "size": 936
-    },
-    {
-      "path": "skills/wsh-seo-structure-architect/SKILL.md",
-      "sha256": "2e731ddd6f87944ad8cbdc2d39e3299aa93462938dc30c6da72e6def4562b85d",
-      "size": 927
-    },
-    {
-      "path": "skills/wsh-signed-audit-trails-recipe/SKILL.md",
-      "sha256": "91f21f64821796fc7f4e13158e01beaa73cc3c162b255a3b8f9e13cfc3ee424c",
-      "size": 977
-    },
-    {
-      "path": "skills/wsh-stride-analysis-patterns/SKILL.md",
-      "sha256": "73f3ba9a23dc01d547361d66c91206024660f03d3c8b962c5b00fa032bfb4f24",
-      "size": 883
-    },
-    {
-      "path": "skills/wsh-tailwind-design-system/SKILL.md",
-      "sha256": "2ee31da170fe6966357742ea57f0ef6f9d3fbd2115e9c59c693012efc743af0f",
-      "size": 920
-    },
-    {
-      "path": "skills/wsh-threat-mitigation-mapping/SKILL.md",
-      "sha256": "46415d52536d618d2ed662e58b9ba3ae2090a31036d323a16ab6d176ca0ef378",
-      "size": 897
-    },
-    {
-      "path": "skills/wsh-typescript-advanced-types/SKILL.md",
-      "sha256": "d328ddda3179ea0d063832098466e54c909e7c5d6a57c4a423732af8ce627100",
-      "size": 1020
-    },
-    {
-      "path": "skills/wsh-wcag-audit-patterns/SKILL.md",
-      "sha256": "fa6cd8a7483b58a12e81a5bbbb34603b487ec64aaad4a63e0f16a93f91ddd988",
-      "size": 926
     }
   ],
-  "digest": "ad810da95de1f1bc73bceab7b230e554d4ac629acf2eea84234621771ab4e24b"
+  "digest": "7b6f765b5b1daa7fdfeaf48cfce85af194e494a0558a25d999be28047db98c50"
 }

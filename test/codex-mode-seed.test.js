@@ -95,17 +95,18 @@ test("generated Codex audit and diagnose commands seed manifests with live Codex
   assert.match(diagnose, /runtime\/muster\.mjs diagnose --codex/);
 });
 
-test("generated Codex audit batches every read-only dimension within worker capacity", async () => {
+test("generated Codex audit consolidates six dimensions into three quota-bounded scans", async () => {
   const generatedPath = join(selectedPluginRoot, "commands", "audit.md");
   const sourcePath = join(repoRoot, "plugin", "commands", "audit.md");
   const [generated, source] = await Promise.all([readFile(generatedPath, "utf8"), readFile(sourcePath, "utf8")]);
-  assert.match(generated, /six core dimensions remain independent and READ-ONLY/);
-  assert.match(generated, /maximum available subset concurrently/);
-  assert.match(generated, /barrier until every worker in that batch finishes/);
-  assert.match(generated, /Repeat until all six core dimensions complete/);
-  assert.match(generated, /CAPACITY-DEGRADED requested=6 available-worker-slots=<n> batches=<batch composition>/);
-  assert.match(generated, /Do not claim full six-way concurrency/);
-  assert.match(generated, /Consolidation is forbidden until all six core dimension receipts/);
+  assert.match(generated, /Cover all six dimensions with three nonredundant read-only briefs/);
+  assert.match(generated, /system quality/);
+  assert.match(generated, /coverage/);
+  assert.match(generated, /security/);
+  assert.match(generated, /Respect `agents\.max_threads`; neither lower nor raise it/);
+  assert.match(generated, /fork_turns: "none"/);
+  assert.match(generated, /Consolidation is forbidden until each required dimension has a receipt/);
+  assert.doesNotMatch(generated, /CAPACITY-DEGRADED requested=6/);
   assert.doesNotMatch(generated, /dispatch the chosen provider per dimension CONCURRENTLY/);
   assert.match(source, /dispatch the chosen provider per dimension CONCURRENTLY/);
   assert.doesNotMatch(source, /CAPACITY-DEGRADED/);

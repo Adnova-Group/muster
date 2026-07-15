@@ -139,6 +139,24 @@ test("cli wire: every role entry carries 'chosen' and 'model' keys", async () =>
   }
 });
 
+test("cli wire: capabilities --role returns one compact role without the skill inventory", async () => {
+  const full = JSON.parse((await run(["capabilities"])).stdout);
+  const { stdout } = await run(["capabilities", "--role", "implement"]);
+  const compact = JSON.parse(stdout);
+  assert.equal(compact.role, "implement");
+  assert.deepEqual(compact.chosen, full.roles.implement.chosen);
+  assert.equal(compact.model, full.roles.implement.model);
+  assert.ok(!("skills" in compact));
+  assert.ok(Buffer.byteLength(stdout) < Buffer.byteLength(JSON.stringify(full)) / 10, "one-role output should be at least 90% smaller than the full inventory");
+});
+
+test("cli wire: capabilities --roles-only omits skills and installed inventory", async () => {
+  const { stdout } = await run(["capabilities", "--roles-only"]);
+  const compact = JSON.parse(stdout);
+  assert.ok(compact.roles.implement);
+  assert.deepEqual(Object.keys(compact), ["roles"]);
+});
+
 // ---------------------------------------------------------------------------
 // manifest validate <fixture>
 // ---------------------------------------------------------------------------

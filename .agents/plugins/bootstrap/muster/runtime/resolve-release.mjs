@@ -483,6 +483,7 @@ export async function resolveCodexRelease(repoRoot, { retries = 4, lease } = {})
     return leftAdvertised === rightAdvertised ? right.localeCompare(left) : leftAdvertised ? -1 : 1;
   });
   for (const name of candidates) {
+    let generation;
     try {
       const match = name.match(SELECTION);
       const recordPath = join(repoRoot, ".agents", "plugins", "selections", name);
@@ -490,8 +491,11 @@ export async function resolveCodexRelease(repoRoot, { retries = 4, lease } = {})
       const record = JSON.parse((await readRegular(recordPath, "selection record", 64 * 1024)).toString("utf8"));
       if (record?.format !== FORMAT || record.sequence !== Number(match[1]) || record.generation !== match[2]
         || record.bootstrapDigest !== contract.digest) continue;
-      return await releaseResult(repoRoot, record.generation, lease);
+      const releaseRoot = await directory(repoRoot, [".agents", "plugins", "releases", record.generation]);
+      await validateRelease(releaseRoot, record.generation);
+      generation = record.generation;
     } catch { /* use the next complete immutable selection */ }
+    if (generation) return releaseResult(repoRoot, generation, lease);
   }
   return releaseResult(repoRoot, contract.initialGeneration, lease);
 }
@@ -536,12 +540,17 @@ const ownPath = fileURLToPath(import.meta.url);
 if (process.argv[1] && resolve(process.argv[1]) === resolve(ownPath)) {
   const pluginRoot = resolve(fileURLToPath(new URL("../", import.meta.url)));
   const selected = await resolveCodexRelease(resolve(pluginRoot, "../../../.."));
-  const [kind = "plugin", name = ""] = process.argv.slice(2);
-  if (["skill", "command"].includes(kind) && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+  const [kind = "plugin", name = "", relativeAsset = ""] = process.argv.slice(2);
+  if (["skill", "internal-skill", "internal-asset", "command"].includes(kind) && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
     throw new Error(`invalid bootstrap ${kind} id: ${JSON.stringify(name)}`);
+  }
+  if (kind === "internal-asset" && (!relativeAsset || relativeAsset.split("/").some(part => !/^[A-Za-z0-9_.-]+$/.test(part) || part === "." || part === ".."))) {
+    throw new Error(`invalid bootstrap internal asset path: ${JSON.stringify(relativeAsset)}`);
   }
   const assets = {
     skill: `plugin/skills/${name}/SKILL.md`,
+    "internal-skill": `plugin/internal-skills/${name}/SKILL.md`,
+    "internal-asset": `plugin/internal-skills/${name}/${relativeAsset}`,
     command: `plugin/commands/${name}.md`,
     adapter: "plugin/runtime/codex-skill-adapter.md",
     sprint: "plugin/runtime/sprint-protocol.md"

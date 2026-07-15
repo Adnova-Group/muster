@@ -42,6 +42,12 @@ Start a new Claude Code session and run:
 
 Muster detects your project, assembles a crew, and shows the glass-box manifest plus a plan, then stops for your approval. If you see the crew manifest, you are set.
 
+## Codex CLI and Desktop
+
+From a project visible to both WSL and Windows, run `muster install codex --scope project`. The supported flow installs 27 profiles, 12 public skills plus 62 resolver-loaded internal skills, and 21 MCP tools. It also raises `[agents] max_threads` to at least 12 and `max_depth` to at least 2 in every detected CLI/Desktop global `config.toml`, without lowering higher values or rewriting unrelated settings.
+
+Verify with `muster doctor --codex`. A split-state result includes an exact recovery command for each stale project or user scope. Refresh a WSL user scope with `CODEX_HOME="$HOME/.codex" muster install codex --scope user`; refresh the Windows Desktop user scope by running `muster install codex --scope user` in PowerShell. Refresh a project/worktree scope from that project directory, or run the matching uninstall there if the scope is intentionally retired. Restart Codex CLI and Desktop after recovery.
+
 You can also exercise the CLI directly in a terminal. Every verb is plain Node and prints JSON:
 
 ```sh

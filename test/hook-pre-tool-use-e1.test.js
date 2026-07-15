@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import os from "node:os";
 import { cleanDir, makeMarker, makeRunActive, editPayload, spawnHook } from "./test-support/hook-helpers.js";
+import { budgetFile } from "../plugin/hooks/inline-budget.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -32,8 +33,8 @@ function makeFreshWaveDir(waveId = "wave-e1") {
 
 // Clear the per-session budget file (mirrors scale test helper).
 function clearBudget(sessionId) {
-  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-  try { rmSync(path.join(os.tmpdir(), `muster-inline-${safe}`), { force: true }); } catch { /* ignore */ }
+  const file = budgetFile(sessionId);
+  if (file) try { rmSync(file, { force: true }); } catch { /* ignore */ }
 }
 
 function decision(stdout) {

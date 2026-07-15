@@ -27,6 +27,8 @@ export const CODEX_COUNTS = Object.freeze({
   agents: 27,
   nativeSkills: 11,
   builtinSkills: 51,
+  publicSkills: 12,
+  internalSkills: 62,
   pipelines: 20,
   mcpTools: 21,
   primaryModes: 8,

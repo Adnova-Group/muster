@@ -8,7 +8,7 @@
       "name": "muster",
       "source": {
         "source": "local",
-        "path": "./.agents/plugins/releases/a60ffc177547ae6d802ccb00655f52e4dcd7b14da5acc050f57164b542797142/plugin"
+        "path": "./.agents/plugins/releases/abcd6ca1f0c261116a0f842576ef4134164d65e2f4efa8373c2a1ec8d93689d2/plugin"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -19,7 +19,7 @@
   ],
   "musterBootstrap": {
     "format": 1,
-    "digest": "ad810da95de1f1bc73bceab7b230e554d4ac629acf2eea84234621771ab4e24b",
-    "initialGeneration": "a60ffc177547ae6d802ccb00655f52e4dcd7b14da5acc050f57164b542797142"
+    "digest": "7b6f765b5b1daa7fdfeaf48cfce85af194e494a0558a25d999be28047db98c50",
+    "initialGeneration": "49cc57c130726754c4d98f8bd14d2413967f6d755790dc14e35ab46ed4936774"
   }
 }

@@ -44,10 +44,10 @@
     "NOTICE",
     ".agents/plugins/marketplace.json",
     ".agents/plugins/bootstrap/muster",
-    ".agents/plugins/selections/000000000027-a60ffc177547ae6d802ccb00655f52e4dcd7b14da5acc050f57164b542797142.json",
-    ".agents/plugins/selections/000000000026-afb0935e5be55ac20da18b175dfa94063a7748ab000d1a1170862d15d4feb752.json",
-    ".agents/plugins/releases/a60ffc177547ae6d802ccb00655f52e4dcd7b14da5acc050f57164b542797142",
-    ".agents/plugins/releases/afb0935e5be55ac20da18b175dfa94063a7748ab000d1a1170862d15d4feb752"
+    ".agents/plugins/selections/000000000040-abcd6ca1f0c261116a0f842576ef4134164d65e2f4efa8373c2a1ec8d93689d2.json",
+    ".agents/plugins/selections/000000000037-49cc57c130726754c4d98f8bd14d2413967f6d755790dc14e35ab46ed4936774.json",
+    ".agents/plugins/releases/abcd6ca1f0c261116a0f842576ef4134164d65e2f4efa8373c2a1ec8d93689d2",
+    ".agents/plugins/releases/49cc57c130726754c4d98f8bd14d2413967f6d755790dc14e35ab46ed4936774"
   ],
   "engines": {
     "node": ">=20"

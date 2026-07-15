@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +8,7 @@ import { assertRegularFile, assertRegularTree, prepareCodexBootstrap, publishCod
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const pluginParent = join(root, ".agents", "plugins");
-let stagingRoot, plugin, runtime, profiles, modeDir, pkg, mapping;
+let stagingRoot, plugin, runtime, profiles, modeDir, internalSkillDir, pkg, mapping, published, pointerScheduled = false;
 
 const policy = CODEX_MODEL_POLICY;
 
@@ -27,6 +28,7 @@ const modes = {
 
 async function ensure(dir) { await mkdir(dir, { recursive: true }); }
 async function write(path, content) { await ensure(dirname(path)); await writeFile(path, content, "utf8"); }
+const sha256 = value => createHash("sha256").update(value).digest("hex");
 const leaseStaleMs = Math.max(1_000, Number(process.env.MUSTER_CODEX_BUILD_LEASE_STALE_MS) || 5 * 60 * 1000);
 function processAlive(pid) {
   if (!Number.isInteger(pid) || pid < 1) return false;
@@ -80,7 +82,7 @@ function translateCodexProse(text) {
 function translatePluginPaths(text) {
   return text
     .replaceAll("plugin/commands/", `${"${PLUGIN_ROOT}"}/commands/`)
-    .replaceAll("plugin/skills/", `${"${PLUGIN_ROOT}"}/skills/`)
+    .replaceAll("plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
     .replaceAll("plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`);
 }
 function adaptCommandForCodex(text, name) {
@@ -89,9 +91,12 @@ function adaptCommandForCodex(text, name) {
     .replaceAll("the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping", "the whole batch counts as ONE run for Muster's Codex lifecycle diagnostics")
     .replaceAll("the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping", "the whole plan-backlog invocation counts as ONE run for Muster's Codex lifecycle diagnostics")
     .replaceAll("`SessionStart` on a fresh session clears a stale marker automatically.", "Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.")
-    .replace(/when the running session's registry doesn't carry that type[\s\S]*?note the degradation in STATE/, "call `collaboration.spawn_agent` with `agent_type: \"muster-runner\"`, `fork_turns: \"none\"` (or a positive bounded turn count, never `\"all\"`), and its other ordinary fields. Codex rejects a named profile combined with a full-history fork. `agent_type` is a Codex runtime extension and may be absent from the simplified displayed signature; include it anyway. Only an actual rejected tool call proves the profile unavailable. If that call rejects the type, fail the item closed with a profile-registration diagnostic and remediation to reinstall/start a new session; do not silently use a generic agent because that loses the pinned role/model policy")
+    .replace(/when the running session's registry doesn't carry that type[\s\S]*?note the degradation in STATE/, "call `collaboration.spawn_agent` with `agent_type: \"muster-runner\"`, `fork_turns: \"none\"`, and its other ordinary fields. Permit a positive context fork only when the user explicitly requests it; never use `\"all\"`. Codex rejects a named profile combined with a full-history fork. `agent_type` is a Codex runtime extension and may be absent from the simplified displayed signature; include it anyway. Only an actual rejected tool call proves the profile unavailable. If that call rejects the type, fail the item closed with a profile-registration diagnostic and remediation to reinstall/start a new session; do not silently use a generic agent because that loses the pinned role/model policy")
     .replace(/Runner cwd is its worktree; tool calls rely on[\s\S]*?instead of blocking\./, "Runner cwd is its recorded worktree. Codex hooks provide diagnostics but do not replace the worktree path/base-SHA proof or the post-wave ownership check.")
     .replace(/capture only ever writes[\s\S]*?deliberately omitted\./i, "Capture only writes the explicitly approved `.muster/backlog.md` bookkeeping artifact and dispatches no write-capable wave, so it deliberately has no run-active lifecycle.");
+  if (["plan.md", "go.md", "plan-backlog.md"].includes(name)) {
+    result = result.replaceAll("capabilities --codex", "capabilities --codex --roles-only");
+  }
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
   if (["go.md", "diagnose.md", "audit.md"].includes(name)) {
     result = result.replaceAll(
@@ -116,12 +121,11 @@ function adaptCommandForCodex(text, name) {
     const boardStart = result.indexOf("Maintain a board task per dimension", sweepStart);
     if (sweepStart < 0 || boardStart < 0) throw new Error("audit dimension-sweep section not found");
     const capacitySweep = [
-      "3. **Capacity-batched dimension sweep (Codex)** — The six core dimensions remain independent and READ-ONLY: architecture, tech-debt, coverage, simplification, readability, and security. Each uses the chosen provider on its role's model and returns severity (P0/P1/P2), location (file:line), problem, and suggested fix. Identical in both modes.",
-      "   - **Capacity:** Codex permits four total agents in this run (this orchestrator plus at most three workers). Determine the currently available worker slots, cap the batch width at three, and never dispatch more workers than the live capacity permits.",
-      "   - **Batching:** Dispatch the maximum available subset concurrently, wait at a barrier until every worker in that batch finishes, then dispatch the next subset. Repeat until all six core dimensions complete. Do not claim full six-way concurrency.",
-      "   - **Receipt:** Before the first dispatch, append `CAPACITY-DEGRADED requested=6 available-worker-slots=<n> batches=<batch composition>` to STATE. Record the exact ordered dimension ids in each batch; the composition must cover every core dimension exactly once.",
-      "   - **Optional prompt audit:** If the crew manifest includes `prompt-quality`, keep it READ-ONLY and place it in the same capacity-bounded batching sequence without displacing any core dimension.",
-      "   - **Barrier gate:** Consolidation is forbidden until all six core dimension receipts, plus the optional prompt-quality receipt when selected, are present."
+      "3. **Quota-bounded dimension sweep (Codex)** — Cover all six dimensions with three nonredundant read-only briefs instead of six overlapping repository scans:",
+      "   - **system quality:** architecture, tech debt, simplification, and readability, returned as four separately labeled finding lists;",
+      "   - **coverage:** test gaps and untested failure paths;",
+      "   - **security:** injection, secrets, unsafe IO, trust boundaries, installers, and lifecycle hooks.",
+      "   Dispatch these three briefs concurrently when the configured Codex capacity permits, otherwise in dependency-free batches. Respect `agents.max_threads`; neither lower nor raise it. Every worker uses `fork_turns: \"none\"`, a 25-step ceiling, focused commands only, and one concise receipt. Add prompt-quality as a fourth read-only brief only when the scoped diff changes prompts or agent instructions. Consolidation is forbidden until each required dimension has a receipt."
     ].join("\n");
     result = result.slice(0, sweepStart) + capacitySweep + "\n" + result.slice(boardStart);
   }
@@ -142,12 +146,16 @@ function adaptCoordinationForCodex(text) {
   const start = text.indexOf("## Standing-context preflight");
   const end = text.indexOf("## Binding A", start);
   if (start < 0 || end < 0) throw new Error("coordination standing-context section not found");
-  const section = `## Standing-context preflight\n\nThe installed Codex plugin cache is not a Git checkout, so do not run \`git log\` against plugin paths. At the first read in a runner cycle, record the plugin version from \`${"${PLUGIN_ROOT}"}/package.json\` and a SHA-256 fingerprint over these installed behavior paths: \`skills/coordination/SKILL.md\`, \`commands/go-backlog.md\`, \`commands/go.md\`, and \`commands/runner.md\`. Compute the fingerprint with the host's available SHA-256 tool, sorting paths before hashing. Muster's Codex hooks are installed outside the plugin cache: also locate the selected managed runtime at the git root's \`.codex/muster/hooks/\` or \`$CODEX_HOME/muster/hooks/\` and fingerprint its files plus the sibling Muster ownership manifest. If neither managed hook runtime can be proven, say "I don't know whether the standing context is unchanged," leave a HUMAN-HOLD receipt, and stop.\n\nBefore a later claim or resume in the same cycle, recompute both fingerprints. Unchanged version and fingerprints proceed. Any change means the installed standing context changed or was tampered with during the cycle: leave a HUMAN-HOLD receipt naming the old/new version and hashes, preserve the claim state, and stop. A packaged plugin cannot safely classify such an in-place mutation as confined because there is no authoritative Git history in the cache. A newly started cycle reads the newly installed immutable version and managed hook runtime as its fresh baseline.\n\n`;
+  const section = `## Standing-context preflight\n\nThe installed Codex plugin cache is not a Git checkout, so do not run \`git log\` against plugin paths. At the first read in a runner cycle, record the plugin version from \`${"${PLUGIN_ROOT}"}/package.json\` and a SHA-256 fingerprint over these installed behavior paths: \`internal-skills/coordination/SKILL.md\`, \`commands/go-backlog.md\`, \`commands/go.md\`, and \`commands/runner.md\`. Compute the fingerprint with the host's available SHA-256 tool, sorting paths before hashing. Muster's Codex hooks are installed outside the plugin cache: also locate the selected managed runtime at the git root's \`.codex/muster/hooks/\` or \`$CODEX_HOME/muster/hooks/\` and fingerprint its files plus the sibling Muster ownership manifest. If neither managed hook runtime can be proven, say "I don't know whether the standing context is unchanged," leave a HUMAN-HOLD receipt, and stop.\n\nBefore a later claim or resume in the same cycle, recompute both fingerprints. Unchanged version and fingerprints proceed. Any change means the installed standing context changed or was tampered with during the cycle: leave a HUMAN-HOLD receipt naming the old/new version and hashes, preserve the claim state, and stop. A packaged plugin cannot safely classify such an in-place mutation as confined because there is no authoritative Git history in the cache. A newly started cycle reads the newly installed immutable version and managed hook runtime as its fresh baseline.\n\n`;
   return text.slice(0, start) + section + text.slice(end);
 }
-const agentWatchProtocol = `## Agent watch invariant\n\n<!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->\n\nAfter every dispatch, retain every canonical agent id returned by \`collaboration.spawn_agent\` and immediately call \`collaboration.wait_agent\` with a timeout of at most 60 seconds. A message or completion receipt wakes the watch immediately. After each wake, process the mailbox receipts first, call \`collaboration.list_agents\` exactly once to reconcile live state, dispatch any newly ready work whose dependencies are satisfied, and, while any agent remains live, immediately call \`collaboration.wait_agent\` again. A timeout is only a heartbeat: reconcile once and return to waiting; it is not completion. Never tight-poll \`collaboration.list_agents\` and never prompt the user merely because workers are still running.\n\nDo not send the final answer, clear active run/wave state, or stop watching while live agents or executable steps remain. Stop only when all work is terminal, an explicit approval or HUMAN-HOLD requires user input, a proven blocker leaves no ready work, or a merge decision requires the user. Hooks are advisory and never replace this watch cycle.\n`;
+const agentWatchProtocol = `## Agent watch invariant\n\n<!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->\n\nAfter every dispatch, retain every canonical agent id returned by \`collaboration.spawn_agent\` and immediately call \`collaboration.wait_agent\` with a timeout of at most 60 seconds. A message or completion receipt wakes the watch immediately. After each wake, process mailbox receipts first, call \`collaboration.list_agents\` exactly once to reconcile live state, and dispatch any newly ready work. Never tight-poll. Three consecutive heartbeats without a receipt exhaust the Codex worker budget: interrupt the worker, record the incomplete task in STATE, and escalate or continue locally only when safe.\n\nRespect the configured \`agents.max_threads\`; Muster must neither lower nor raise it. Spawn with \`fork_turns: "none"\` unless the user explicitly requests a context fork. Every brief sets a 25-step ceiling, permits at most one follow-up, and defers broad suites to final verification. Do not send the final answer or clear state while executable work remains, but worker budget exhaustion is a terminal escalation condition rather than permission to wait forever. Hooks are advisory and never replace this watch cycle.\n`;
 function adaptOrchestratorForCodex(text) {
   let result = text.replace(/- \*\*Hard gate:\*\*[\s\S]*?false positive\.\n/, "- **Codex hook support:** Muster's trusted `PreToolUse` hook surfaces a policy warning when a write-capable wave appears outside a detected worktree. Codex cannot reliably deny every subagent or unified-shell action, so the orchestrator must still enforce dispatch, ownership, and worktree isolation explicitly.\n");
+  result = result.replace(
+    "one implementer agent, given the task + the Crew Manifest as BRIEF.",
+    "one implementer leaf agent, given a minimal dispatch packet: task id/text, relevant success criteria, absolute worktree/manifest/STATE paths, owned and frozen paths, dependency receipts, required provider or skill brief, and the return contract. Never attach unrelated plan items, capability inventories, or prior transcripts."
+  );
   result = result.replace("give each its own git worktree (`isolation: \"worktree\"` on the Codex subagent dispatcher)", "create a separate git worktree for each task, start the dispatched Codex subagent in that worktree, and record the path/base SHA in its brief");
   result = result.replaceAll("after a Claude Code restart", "after starting a new Codex session");
   result = result.replace("the `PreToolUse` hook reads this marker to enforce the iron rule", "the trusted Codex `PreToolUse` hook uses this marker to diagnose likely policy violations; the orchestrator still enforces the iron rule through dispatch and repository evidence");
@@ -156,8 +164,12 @@ function adaptOrchestratorForCodex(text) {
   const providerStart = result.indexOf("      - **Provider kind:**");
   const failureStart = result.indexOf("      - **Subagent failure", providerStart);
   if (providerStart < 0 || failureStart < 0) throw new Error("orchestrator provider/model section not found");
-  const provider = `      - **Provider and model policy:** look up the role's chosen provider from \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs capabilities --codex\`. When \`chosen.kind === "agent"\`, call \`collaboration.spawn_agent\` with the ordinary task fields, a bounded \`fork_turns\` value (\`"none"\` or a positive turn count, never \`"all"\`), plus \`agent_type: "<exact chosen.id>"\`. Codex rejects a named profile combined with a full-history fork because that fork inherits the parent's type/model/effort. Codex dispatch also has no cwd field, so every worktree-scoped brief must include the absolute \`WORKTREE CWD\`, absolute manifest and STATE paths inside it, and require that cwd as the first verification command's and all later tool calls' \`workdir\`; never read the parent checkout's \`.muster\` artifacts. This runtime extension may be absent from a simplified displayed tool signature; include it anyway. The profile TOML is the authoritative Codex adapter boundary for the pinned model, reasoning effort, sandbox, and developer instructions. Only an actual rejected tool call proves the named profile unavailable; schema inspection or an omitted displayed field is not a dispatch attempt. If the call rejects the type, stop that task with an explicit profile-registration diagnostic and remediation to reinstall/start a new session. Do not silently use a generic agent: that would lose the strict model and role policy. For a skill/MCP/inline provider, dispatch a general subagent and inject the resolved provider brief; record that this path inherits the parent model because Codex has no per-call model override for generic subagents.\n`;
-  result = result.slice(0, providerStart) + provider + result.slice(failureStart);
+  const provider = `      - **Provider and model policy:** look up the role's chosen provider from \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs capabilities --codex\`. When \`chosen.kind === "agent"\`, call \`collaboration.spawn_agent\` with the ordinary task fields, \`fork_turns: "none"\`, plus \`agent_type: "<exact chosen.id>"\`. Permit a positive context fork only when the user explicitly requests it; never use \`"all"\`. Workers are leaves and must not spawn descendants unless an approved manifest explicitly delegates nested orchestration. Include a 25-step ceiling, one-follow-up maximum, and focused-test-first rule in every brief. Respect the configured Codex thread concurrency and dispatch only manifest-ready, nonredundant workers. Codex dispatch has no cwd field, so every worktree-scoped brief must include the absolute \`WORKTREE CWD\`, absolute manifest and STATE paths inside it, and require that cwd for every tool call; never read the parent checkout's \`.muster\` artifacts. The profile TOML is the authoritative model, reasoning, and sandbox boundary. If the named type is rejected, stop with a registration diagnostic; do not silently inherit the parent model through a generic agent. For a skill provider, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs <chosen.source> <chosen.id>\`; this centrally validates provenance and the safe kebab-case id before constructing a path or invocation. If \`source === "builtin"\`, inject the verified workflow stdout into a general subagent brief and load relative assets through the command's optional third asset argument. If \`source === "installed"\`, follow stdout's explicit \`$skill-id\` invocation contract and never load the bundled fallback. For an MCP/inline provider, inject the resolved provider brief directly. Generic paths inherit the parent model and must follow the same conservation limits.\n`;
+  const compactProvider = provider.replace(
+    "look up the role's chosen provider from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex`.",
+    "look up only the needed role with `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex --role <role>`; do not reprint the full skills inventory during task dispatch."
+  );
+  result = result.slice(0, providerStart) + compactProvider + result.slice(failureStart);
   result = result.replace("Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.", "Iron-rule reminder: Codex hooks diagnose likely violations, while the orchestrator, named profiles, ownership receipts, and isolated worktrees enforce dispatch-not-inline.");
   const enforcement = result.indexOf("## Enforcement model: gates vs conventions");
   if (enforcement < 0) throw new Error("orchestrator enforcement section not found");
@@ -192,17 +204,56 @@ function codexSkill(source, id) {
     .replaceAll("the Agent tool", "the Codex subagent dispatcher")
     .replaceAll("Agent tool", "Codex subagent dispatcher")
     .replaceAll("Task tool", "Codex subagent dispatcher");
+  if (id === "sp-brainstorm") {
+    body = body.replaceAll(
+      "skills/brainstorming/visual-companion.md",
+      `node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md`
+    );
+  }
   if (id === "coordination") body = adaptCoordinationForCodex(body);
   if (id === "orchestrator") body = adaptOrchestratorForCodex(body);
+  if (id === "router") body = body.replace(
+    "For EVERY plan task, consult `AvailableCapabilities.skills` and run",
+    "The compact Codex capability snapshot intentionally omits the global skill inventory. For EVERY plan task, run"
+  );
+  if (id === "review-gate") {
+    body = body
+      .replace(
+        "Inputs: the wave's changes, and `AvailableCapabilities` (from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex`).",
+        "Inputs: the wave's changes and compact role lookups from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex --role <role>`; never attach the full skills inventory to a reviewer brief."
+      )
+      .replace(
+        /1\. Select reviewers:[\s\S]*?Always at least one\./,
+        "1. Select one code reviewer for ordinary waves. Add the security reviewer only when the task is security-scoped or the diff touches authentication, authorization, secrets, cryptography, shell execution, network boundaries, installers, or lifecycle hooks. Add a surface reviewer only when its definition-of-done gate fires. Never dispatch two reviewers for the same quality dimension; always use at least one reviewer."
+      )
+      .replace(
+        "Cap at\n   **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3). If still blocked after the cap, ESCALATE",
+        "Allow **one fix-and-re-review iteration**. If the same blocker remains, ESCALATE"
+      );
+  }
   if (id === "interview") body = body.replace("Present both for approval via the **interactive user input** selection UI", "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");
   if (id === "wsh-sast-configuration") body = body.replace("# See references/semgrep-rules.md for detailed examples", "# Example custom rule; adapt it to the repository's threat model");
-  const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative.\n`;
+  const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative. Load any relative bundled asset named by this workflow through \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin ${id} <relative-asset>\`; never read the internal tree directly.\n`;
   return header + binding + body.replace(/^\r?\n*/, "\n");
+}
+
+async function writeInternalRuntime(destination) {
+  const tree = await assertRegularTree(join(destination, "internal-skills"));
+  const metadata = JSON.stringify({ format: 1, files: tree.files }, null, 2) + "\n";
+  const digest = sha256(metadata);
+  const loader = (await readFile(join(root, "codex", "internal-asset-loader.mjs"), "utf8"))
+    .replace("__MUSTER_INTERNAL_METADATA_DIGEST__", digest);
+  if (loader.includes("__MUSTER_INTERNAL_METADATA_DIGEST__")) throw new Error("internal asset loader digest was not bound");
+  await Promise.all([
+    write(join(destination, "runtime", "internal-assets.json"), metadata),
+    write(join(destination, "runtime", "internal-asset-loader.mjs"), loader),
+    cp(join(root, "codex", "resolve-skill-provider.mjs"), join(destination, "runtime", "resolve-skill-provider.mjs"))
+  ]);
 }
 async function adaptPortedSkills(names) {
   for (const name of names) {
     const id = codexSkillId(name);
-    const path = join(modeDir, id, "SKILL.md");
+    const path = join(internalSkillDir, id, "SKILL.md");
     await write(path, codexSkill(await readFile(path, "utf8"), id));
   }
 }
@@ -211,7 +262,7 @@ function profileToml(id, source, config) {
   const description = frontmatter(source, "description") || `${id} Muster specialist.`;
   const defaultModel = policy[config.tier];
   if (!defaultModel) throw new Error(`unknown Codex profile tier for ${id}: ${config.tier}`);
-  if (config.reasoning !== undefined && !["medium", "high", "xhigh", "max"].includes(config.reasoning)) {
+  if (config.reasoning !== undefined && !["medium", "high", "xhigh"].includes(config.reasoning)) {
     throw new Error(`invalid Codex profile reasoning override for ${id}: ${config.reasoning}`);
   }
   if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) {
@@ -254,6 +305,12 @@ async function buildBootstrapCandidate(destination) {
     if (!header) throw new Error(`bootstrap skill lacks frontmatter: ${name}`);
     await write(join(destination, "skills", name, "SKILL.md"), wrapper(header, "skill", name));
   }
+  for (const name of await readdir(join(plugin, "internal-skills"))) {
+    const source = await readFile(join(plugin, "internal-skills", name, "SKILL.md"), "utf8");
+    const header = source.match(/^---\r?\n[\s\S]*?\r?\n---/)?.[0];
+    if (!header) throw new Error(`bootstrap internal skill lacks frontmatter: ${name}`);
+    await write(join(destination, "internal-skills", name, "SKILL.md"), wrapper(header, "internal-skill", name));
+  }
   for (const file of await readdir(join(plugin, "commands"))) {
     if (!file.endsWith(".md")) continue;
     const source = await readFile(join(plugin, "commands", file), "utf8");
@@ -267,6 +324,7 @@ async function buildBootstrapCandidate(destination) {
   ]);
   await write(join(destination, "runtime", "codex-skill-adapter.md"), "# Immutable Muster bootstrap adapter\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs adapter`; it writes the no-follow, point-of-use revalidated adapter contents to stdout. Read and apply those contents.\n");
   await write(join(destination, "runtime", "sprint-protocol.md"), "# Immutable Muster bootstrap protocol\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs sprint`; it writes the no-follow, point-of-use revalidated protocol contents to stdout. Read and apply those contents.\n");
+  await write(join(destination, "runtime", "resolve-skill-provider.mjs"), `#!/usr/bin/env node\nimport { spawnSync } from "node:child_process";\nimport { dirname, join } from "node:path";\nimport { fileURLToPath } from "node:url";\nconst ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;\nconst PART = /^[A-Za-z0-9_.-]+$/;\nconst [source, id, asset] = process.argv.slice(2);\nif (!["builtin", "installed"].includes(source)) throw new Error(\`invalid skill provider source: \${JSON.stringify(source)}\`);\nif (!ID.test(id || "")) throw new Error(\`invalid skill provider id: \${JSON.stringify(id)}\`);\nif (source === "installed") {\n  if (asset !== undefined) throw new Error("installed skill providers do not expose bundled assets");\n  process.stdout.write(\`Invoke the already-enabled Codex skill explicitly as $\${id}.\\n\`);\n} else {\n  const args = [join(dirname(fileURLToPath(import.meta.url)), "resolve-release.mjs"), asset === undefined ? "internal-skill" : "internal-asset", id];\n  if (asset !== undefined) {\n    const parts = asset.split("/");\n    if (!parts.length || parts.some(part => !PART.test(part) || part === "." || part === "..")) throw new Error(\`invalid internal asset path: \${JSON.stringify(asset)}\`);\n    args.push(asset);\n  }\n  const result = spawnSync(process.execPath, args, { encoding: null });\n  if (result.status !== 0) { process.stderr.write(result.stderr || Buffer.alloc(0)); process.exitCode = result.status || 1; }\n  else process.stdout.write(result.stdout);\n}\n`);
 }
 
 try {
@@ -277,6 +335,7 @@ plugin = join(stagingRoot, "release", "plugin");
 runtime = join(plugin, "runtime");
 profiles = join(stagingRoot, "release", "profiles");
 modeDir = join(plugin, "skills");
+internalSkillDir = join(plugin, "internal-skills");
 for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"]) {
   await assertRegularTree(join(root, source));
 }
@@ -307,24 +366,33 @@ for (const entry of await readdir(join(plugin, "commands"), { withFileTypes: tru
   const path = join(plugin, "commands", entry.name);
   await write(path, adaptCommandForCodex(bindBundledCodexCli(translateModeNames(await readFile(path, "utf8"))), entry.name));
 }
-await cp(join(root, "plugin", "skills"), join(plugin, "skills"), { recursive: true });
-await cp(join(root, "plugin", "builtins"), join(plugin, "skills"), { recursive: true });
+await cp(join(root, "plugin", "skills"), internalSkillDir, { recursive: true });
+await cp(join(root, "plugin", "builtins"), internalSkillDir, { recursive: true });
 for (const entry of await readdir(join(root, "codex", "skill-assets"), { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
-  await cp(join(root, "codex", "skill-assets", entry.name), join(modeDir, entry.name), { recursive: true });
+  await cp(join(root, "codex", "skill-assets", entry.name), join(internalSkillDir, entry.name), { recursive: true });
 }
+const implementerPromptPath = join(internalSkillDir, "sp-subagents", "implementer-prompt.md");
+await write(
+  implementerPromptPath,
+  (await readFile(implementerPromptPath, "utf8")).replace(
+    "full suite once before committing, not after every edit.",
+    "focused tests before committing; the parent runs the broad suite once at final verification."
+  )
+);
 const portedSkillNames = [...new Set([
   ...(await readdir(join(root, "plugin", "skills"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name),
   ...(await readdir(join(root, "plugin", "builtins"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name)
 ])];
 for (const name of portedSkillNames.filter(name => name.startsWith("gsd-"))) {
-  await rename(join(modeDir, name), join(modeDir, codexSkillId(name)));
+  await rename(join(internalSkillDir, name), join(internalSkillDir, codexSkillId(name)));
 }
 for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster-gsd-verify-work", "wsh-signed-audit-trails-recipe"]) {
-  await rm(join(modeDir, name), { recursive: true, force: true });
-  await cp(join(root, "codex", "fallback-skills", name), join(modeDir, name), { recursive: true });
+  await rm(join(internalSkillDir, name), { recursive: true, force: true });
+  await cp(join(root, "codex", "fallback-skills", name), join(internalSkillDir, name), { recursive: true });
 }
 await adaptPortedSkills(portedSkillNames.filter(name => !name.startsWith("gsd-") && name !== "wsh-signed-audit-trails-recipe"));
+await writeInternalRuntime(plugin);
 
 for (const [name, mode] of Object.entries(modes)) await write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode));
 await write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Use for any glass-box Muster orchestration request: plan, implement, backlog, diagnose, audit, runner, capture, pipeline, crew, or wave workflow.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${agentWatchProtocol}`);
@@ -378,12 +446,13 @@ const bootstrap = await prepareCodexBootstrap({
   allowMaintenance: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1"
 });
 
-const published = await publishCodexRelease({
+published = await publishCodexRelease({
   repoRoot: root,
   stagedRelease: join(stagingRoot, "release"),
   packageVersion: pkg.version,
   bootstrapDigest: bootstrap.digest,
   allowBootstrapMigration: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1",
+  deferFinalPointer: true,
   marketplaceTemplate: {
     name: "muster",
     interface: { displayName: "Muster" },
@@ -398,7 +467,7 @@ const published = await publishCodexRelease({
 const packageFiles = (pkg.files || []).filter(item => item !== ".agents" && !item.startsWith(".agents/"));
 const allSelections = (await readdir(join(root, ".agents", "plugins", "selections")))
   .filter(name => /^\d{12}-[a-f0-9]{64}\.json$/.test(name)).sort().reverse();
-const initialGeneration = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap.initialGeneration;
+const initialGeneration = published.initialGeneration;
 const retainedGenerations = [];
 for (const generation of [published.generation, initialGeneration, ...allSelections.map(name => name.match(/-([a-f0-9]{64})\.json$/)[1])]) {
   if (!retainedGenerations.includes(generation) && retainedGenerations.length < 3) retainedGenerations.push(generation);
@@ -416,6 +485,14 @@ packageFiles.push(".agents/plugins/marketplace.json", ".agents/plugins/bootstrap
 packageFiles.push(...retainedSelections.map(name => `.agents/plugins/selections/${name}`));
 packageFiles.push(...retainedGenerations.map(generation => `.agents/plugins/releases/${generation}`));
 await write(join(root, "package.json"), JSON.stringify({ ...pkg, files: packageFiles }, null, 2) + "\n");
+await rm(stagingRoot, { recursive: true, force: true });
+stagingRoot = undefined;
+// This is deliberately the final synchronous publication action. Everything
+// readers need (release, selection, package inventory, and staging cleanup) is
+// complete before the marketplace pointer becomes visible.
+published.commitPointer();
+pointerScheduled = true;
 } finally {
   if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true });
+  if (published?.discardPointer && !pointerScheduled) await published.discardPointer();
 }

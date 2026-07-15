@@ -58,6 +58,12 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
   const internal = (await execFile(process.execPath, [resolver, "internal-skill", "orchestrator"], { cwd: cache, env })).stdout;
   assert.match(internal, /name: orchestrator/);
   await assert.rejects(execFile(process.execPath, [resolver, "skill", "../../escape"], { cwd: cache, env }), /invalid bootstrap skill id/);
+  for (const id of ["../../escape", "Not_Valid"]) {
+    await assert.rejects(
+      execFile(process.execPath, [resolver, "internal-skill", id], { cwd: cache, env }),
+      /invalid bootstrap internal-skill id/
+    );
+  }
   const resolverModule = await import(`${pathToFileURL(resolver).href}?parallel=${Date.now()}`);
   let leaseNow = Date.now() - 6 * 60 * 1000, heartbeat;
   const lease = {

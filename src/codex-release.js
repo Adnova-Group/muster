@@ -629,6 +629,7 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
     pluginRoot: join(releaseRoot, "plugin"),
     profilesRoot: join(releaseRoot, "profiles"),
     selectionName,
+    initialGeneration: stable.musterBootstrap.initialGeneration,
     commitPointer: pendingPointer?.commit,
     discardPointer: pendingPointer?.discard
   };

@@ -430,7 +430,7 @@ published = await publishCodexRelease({
 const packageFiles = (pkg.files || []).filter(item => item !== ".agents" && !item.startsWith(".agents/"));
 const allSelections = (await readdir(join(root, ".agents", "plugins", "selections")))
   .filter(name => /^\d{12}-[a-f0-9]{64}\.json$/.test(name)).sort().reverse();
-const initialGeneration = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap.initialGeneration;
+const initialGeneration = published.initialGeneration;
 const retainedGenerations = [];
 for (const generation of [published.generation, initialGeneration, ...allSelections.map(name => name.match(/-([a-f0-9]{64})\.json$/)[1])]) {
   if (!retainedGenerations.includes(generation) && retainedGenerations.length < 3) retainedGenerations.push(generation);

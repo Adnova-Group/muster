@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { execFile as execFileCb, spawn } from "node:child_process";
 import { chmod, cp, lstat, mkdtemp, mkdir, readFile, readdir, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,7 +12,6 @@ import { formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../s
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { adaptCatalogForCodex, codexFallbackSkillId } from "../src/codex-catalog.js";
 import { resolveCodexRelease } from "../src/codex-release.js";
-import { withCodexFileLock } from "../src/codex-lock.js";
 
 const root = new URL("../", import.meta.url);
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -388,71 +386,21 @@ test("Codex distribution installs supported lifecycle hooks without advertising 
   assert.doesNotMatch(source, /permissionDecision|permissionDecisionReason/);
 });
 
-test("Codex hook emits each logical event once across concurrent installed copies", async () => {
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-dedupe-"));
+test("Codex hook emits idempotent context for every event without cross-copy dedupe or CODEX_HOME bookkeeping", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-idempotent-"));
   const codexHome = join(tmp, "codex-home"), copies = [join(tmp, "project-copy"), join(tmp, "user-copy")];
   for (const copy of copies) await cp(join(repoRoot, "codex", "hooks"), copy, { recursive: true });
-  const payload = { hook_event_name: "SessionStart", session_id: "session-dedupe", source: "startup", cwd: tmp };
+  const payload = { hook_event_name: "SessionStart", session_id: "session-idempotent", source: "startup", cwd: tmp };
   const outputs = await Promise.all(copies.map(copy => runCodexHook(payload, tmp, join(copy, "muster-hook.mjs"), { CODEX_HOME: codexHome })));
-  assert.equal(outputs.filter(output => output.hookSpecificOutput).length, 1);
+  assert.equal(outputs.filter(output => output.hookSpecificOutput).length, 2, "both installed copies must independently emit; there is no cross-copy dedupe");
+  assert.deepEqual(outputs[0], outputs[1], "repeated emission of the same event must be byte-identical (idempotent)");
 
-  const firstTurn = await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-1", prompt: "muster audit", cwd: tmp }, tmp, join(copies[0], "muster-hook.mjs"), { CODEX_HOME: codexHome });
-  const repeatedTurn = await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-1", prompt: "muster audit", cwd: tmp }, tmp, join(copies[1], "muster-hook.mjs"), { CODEX_HOME: codexHome });
-  const secondTurn = await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-2", prompt: "muster audit", cwd: tmp }, tmp, join(copies[1], "muster-hook.mjs"), { CODEX_HOME: codexHome });
+  const repeatedTurn = { hook_event_name: "UserPromptSubmit", session_id: "session-idempotent", turn_id: "turn-1", prompt: "muster audit", cwd: tmp };
+  const firstTurn = await runCodexHook(repeatedTurn, tmp, join(copies[0], "muster-hook.mjs"), { CODEX_HOME: codexHome });
+  const sameTurnAgain = await runCodexHook(repeatedTurn, tmp, join(copies[1], "muster-hook.mjs"), { CODEX_HOME: codexHome });
   assert.ok(firstTurn.hookSpecificOutput);
-  assert.deepEqual(repeatedTurn, {});
-  assert.ok(secondTurn.hookSpecificOutput);
-
-  const victim = join(tmp, "stale-cleanup-victim.txt");
-  await writeFile(victim, "keep\n");
-  await mkdir(join(codexHome, "muster", "hook-events", "aa"));
-  await symlink(victim, join(codexHome, "muster", "hook-events", "aa", `${"a".repeat(64)}.json`));
-  await runCodexHook({ hook_event_name: "UserPromptSubmit", session_id: "session-dedupe", turn_id: "turn-3", prompt: "muster audit", cwd: tmp }, tmp, join(copies[0], "muster-hook.mjs"), { CODEX_HOME: codexHome });
-  assert.equal(await readFile(victim, "utf8"), "keep\n");
-});
-
-test("Codex hook dedupe bounds cleanup work and records per shard", async () => {
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-load-")), codexHome = join(tmp, "codex-home");
-  const payload = { hook_event_name: "UserPromptSubmit", session_id: "load", turn_id: "turn-1", prompt: "muster audit", cwd: tmp };
-  const key = createHash("sha256").update(JSON.stringify(["UserPromptSubmit", "load", "turn-1", ""])).digest("hex");
-  const shard = join(codexHome, "muster", "hook-events", key.slice(0, 2));
-  await mkdir(shard, { recursive: true });
-  await Promise.all(Array.from({ length: 512 }, (_, index) => {
-    const name = createHash("sha256").update(`seed-${index}`).digest("hex");
-    return writeFile(join(shard, `${name}.json`), "{}\n");
-  }));
-  const old = new Date(Date.now() - 10 * 60 * 1000);
-  for (const name of [".cleanup-lock", ".capacity-lock"]) {
-    const path = join(shard, name);
-    await writeFile(path, JSON.stringify({ format: 1, pid: 99999999, createdAt: old.getTime(), token: "crashed" }) + "\n");
-    await utimes(path, old, old);
-  }
-  const started = Date.now();
-  const output = await runCodexHook(payload, tmp, join(repoRoot, "codex", "hooks", "muster-hook.mjs"), { CODEX_HOME: codexHome });
-  assert.ok(output.hookSpecificOutput);
-  assert.ok(Date.now() - started < 5_000, "bounded shard cleanup must not scan an unbounded global event history");
-  const records = (await readdir(shard)).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
-  assert.ok(records.length <= 64, `expected at most 64 records in one shard, got ${records.length}`);
-  await Promise.all([".cleanup-lock", ".capacity-lock"].map(name => assert.rejects(readFile(join(shard, name), "utf8"))));
-});
-
-test("Codex hook expires a forged live-PID capacity lock and enforces the shard cap", async () => {
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-expired-live-lock-")), codexHome = join(tmp, "codex-home");
-  const payload = { hook_event_name: "UserPromptSubmit", session_id: "expired-live-lock", turn_id: "turn-1", prompt: "muster audit", cwd: tmp };
-  const key = createHash("sha256").update(JSON.stringify(["UserPromptSubmit", "expired-live-lock", "turn-1", ""])).digest("hex");
-  const shard = join(codexHome, "muster", "hook-events", key.slice(0, 2));
-  await mkdir(shard, { recursive: true });
-  await Promise.all(Array.from({ length: 64 }, (_, index) => {
-    const name = createHash("sha256").update(`expired-live-lock-${index}`).digest("hex");
-    return writeFile(join(shard, `${name}.json`), "{}\n");
-  }));
-  const lock = join(shard, ".capacity-lock"), old = new Date(Date.now() - 10 * 60 * 1000);
-  await writeFile(lock, JSON.stringify({ format: 1, pid: process.pid, createdAt: old.getTime(), token: "forged-live" }) + "\n");
-  await utimes(lock, old, old);
-  assert.ok((await runCodexHook(payload, tmp, join(repoRoot, "codex", "hooks", "muster-hook.mjs"), { CODEX_HOME: codexHome })).hookSpecificOutput);
-  const records = (await readdir(shard)).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
-  assert.ok(records.length <= 64, `expired live-PID lock must not bypass the shard cap, got ${records.length}`);
-  await assert.rejects(readFile(lock, "utf8"));
+  assert.deepEqual(sameTurnAgain, firstTurn, "a repeated turn_id must still emit; there is no per-event dedupe state to consult");
+  await assert.rejects(readdir(codexHome), "the simplified hook must never create a CODEX_HOME bookkeeping directory");
 });
 
 test("Codex fallbacks are self-contained and package referenced skill assets", async () => {
@@ -1004,36 +952,15 @@ test("Codex managed-scope stale-lock reclaim never deletes a replacement owner",
   assert.equal(JSON.parse(await readFile(lockPath, "utf8")).token, replacement.token);
 });
 
-test("Codex final stale-lock validation binds general and managed-scope deletion before release", async t => {
+// withCodexFileLock's own stale-reclaim/live-timeout/ownership-before-delete
+// invariants (the dropped quarantine/retirement dance's replacement) are
+// covered directly in test/codex-lock.test.js; codex-install.js's
+// managed-scope lock below is a separate, still-owned implementation.
+test("Codex final stale-lock validation binds managed-scope deletion before release", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-final-lock-validation-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const absent = async () => { throw new Error("not found"); };
   const old = new Date(Date.now() - 10 * 60 * 1000);
-
-  const generalLock = join(tmp, "publication.lock");
-  await writeFile(generalLock, JSON.stringify({ format: 1, pid: 2_147_483_647, processIdentity: "dead", createdAt: old.getTime(), token: "stale-general" }) + "\n");
-  await utimes(generalLock, old, old);
-  const staleGeneralReplacement = { format: 1, pid: process.pid, processIdentity: "fresh", createdAt: Date.now(), token: "fresh-general-stale" };
-  await assert.rejects(withCodexFileLock(generalLock, async () => {
-    throw new Error("replacement owner was bypassed");
-  }, {
-    timeoutMs: 0,
-    afterValidation: async ({ quarantine }) => {
-      await unlink(quarantine);
-      await writeFile(quarantine, JSON.stringify(staleGeneralReplacement) + "\n", { flag: "wx" });
-    }
-  }), /timed out waiting for Codex transaction lock/);
-  assert.equal(JSON.parse(await readFile(generalLock, "utf8")).token, staleGeneralReplacement.token);
-
-  await unlink(generalLock);
-  const normalGeneralReplacement = { format: 1, pid: process.pid, processIdentity: "fresh", createdAt: Date.now(), token: "fresh-general-release" };
-  await assert.rejects(withCodexFileLock(generalLock, async () => {}, {
-    beforeRelease: async ({ path }) => {
-      await unlink(path);
-      await writeFile(path, JSON.stringify(normalGeneralReplacement) + "\n", { flag: "wx" });
-    }
-  }), /lock ownership changed/i);
-  assert.equal(JSON.parse(await readFile(generalLock, "utf8")).token, normalGeneralReplacement.token);
 
   const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
   const scopeLock = join(registryDir, "install-scopes.json.lock");
@@ -1107,34 +1034,7 @@ test("Codex reclaims forged and long-lived live-PID recovery sentinels", async t
   await recover("hard-expiry", 20 * 60 * 1000, null);
 });
 
-test("Codex retirement preserves replaced components and fails closed on weak private permissions", async t => {
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-retirement-component-"));
-  const replacement = { format: 1, pid: process.pid, processIdentity: "replacement", createdAt: Date.now(), token: "replacement-owner" };
-  t.after(() => rm(tmp, { recursive: true, force: true }));
-
-  let retired;
-  const lockPath = join(tmp, "general.lock");
-  await assert.rejects(withCodexFileLock(lockPath, async () => {}, {
-    afterRetirement: async state => {
-      retired = state.path;
-      await unlink(retired);
-      await writeFile(retired, JSON.stringify(replacement) + "\n", { flag: "wx" });
-    }
-  }), /lock ownership changed/i);
-  assert.equal(JSON.parse(await readFile(retired, "utf8")).token, replacement.token);
-
-  let weakRetirement;
-  const weakLock = join(tmp, "weak-permission.lock");
-  await assert.rejects(withCodexFileLock(weakLock, async () => {}, {
-    afterRetirement: async state => {
-      weakRetirement = state.dir;
-      await chmod(weakRetirement, 0o777);
-    }
-  }), /retirement directory/i);
-  assert.equal((await lstat(weakRetirement)).mode & 0o077, 0o077);
-});
-
-test("Codex scope and hook retirement preserve replacement components", async t => {
+test("Codex scope-lock retirement preserves replacement components", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-retirement-surface-"));
   const absent = async () => { throw new Error("not found"); };
   const old = new Date(Date.now() - 10 * 60 * 1000);
@@ -1187,133 +1087,31 @@ test("Codex scope and hook retirement preserve replacement components", async t 
     }
   }), /lock ownership changed/i);
   assert.equal(JSON.parse(await readFile(componentScopeRetired, "utf8")).token, componentReplacement.token);
-
-  const hookUrl = new URL("../codex/hooks/muster-hook.mjs", import.meta.url).href;
-  const script = `
-    import { chmodSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-    import { join } from "node:path";
-    const hook = await import(${JSON.stringify(hookUrl)});
-    const dir = process.argv[1], replacement = { format: 1, pid: process.pid, createdAt: Date.now(), token: "hook-replacement" };
-    let retired = null;
-    const released = hook.withShardLock(dir, ".hook-lock", () => {}, Date.now(), {
-      afterRetirement: state => {
-        retired = state.path;
-        rmSync(retired);
-        writeFileSync(retired, JSON.stringify(replacement) + "\\n", { flag: "wx" });
-      }
-    });
-    let weakDirectory = null;
-    const weakReleased = hook.withShardLock(dir, ".hook-weak-lock", () => {}, Date.now(), {
-      afterRetirement: state => {
-        weakDirectory = state.dir;
-        chmodSync(weakDirectory, 0o777);
-      }
-    });
-    process.stdout.write(JSON.stringify({
-      released,
-      token: JSON.parse(readFileSync(retired, "utf8")).token,
-      weakReleased,
-      weakMode: lstatSync(weakDirectory).mode & 0o077
-    }));
-  `;
-  const stdout = await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["--input-type=module", "--eval", script, tmp], { stdio: ["pipe", "pipe", "pipe"] });
-    let output = "", error = "";
-    child.stdout.setEncoding("utf8"); child.stdout.on("data", chunk => { output += chunk; });
-    child.stderr.setEncoding("utf8"); child.stderr.on("data", chunk => { error += chunk; });
-    child.on("error", reject);
-    child.on("exit", code => code === 0 ? resolve(output) : reject(new Error(error || `hook retirement child exited ${code}`)));
-    child.stdin.end();
-  });
-  assert.deepEqual(JSON.parse(stdout), { released: false, token: "hook-replacement", weakReleased: false, weakMode: 0o077 });
 });
 
-test("Codex hook stale-lock reclaim never deletes replacement capacity or cleanup owners", async t => {
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-lock-race-"));
+test("Codex hook exports no lock/quarantine/retirement machinery and creates no CODEX_HOME artifacts", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-no-lock-artifacts-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
+  const codexHome = join(tmp, "codex-home");
+  await Promise.all(Array.from({ length: 8 }, (_, index) =>
+    runCodexHook(
+      { hook_event_name: "SessionStart", session_id: `no-artifacts-${index}`, source: "startup", cwd: tmp },
+      tmp, join(repoRoot, "codex", "hooks", "muster-hook.mjs"), { CODEX_HOME: codexHome }
+    )
+  ));
+  await assert.rejects(readdir(codexHome), "the simplified hook must never create a CODEX_HOME directory");
   const hookUrl = new URL("../codex/hooks/muster-hook.mjs", import.meta.url).href;
-  const script = `
-    import { writeFileSync, readFileSync, utimesSync } from "node:fs";
-    import { join } from "node:path";
-    const hook = await import(${JSON.stringify(hookUrl)});
-    if (typeof hook.reclaimStaleLock !== "function") throw new Error("hook lock reclaimer is not exported");
-    const dir = process.argv[1], old = Date.now() - 10 * 60 * 1000, results = [];
-    for (const name of [".capacity-lock", ".cleanup-lock"]) {
-      const lockPath = join(dir, name);
-      writeFileSync(lockPath, JSON.stringify({ format: 1, pid: 99999999, createdAt: old, token: "stale" }) + "\\n");
-      utimesSync(lockPath, new Date(old), new Date(old));
-      const replacement = { format: 1, pid: process.pid, createdAt: Date.now(), token: \`fresh-\${name}\` };
-      const reclaimed = hook.reclaimStaleLock(lockPath, Date.now(), {
-        afterQuarantine: () => writeFileSync(lockPath, JSON.stringify(replacement) + "\\n", { flag: "wx" })
-      });
-      results.push({ reclaimed, token: JSON.parse(readFileSync(lockPath, "utf8")).token, expected: replacement.token });
-    }
-    process.stdout.write(JSON.stringify(results));
-  `;
+  const script = `const hook = await import(${JSON.stringify(hookUrl)}); process.stdout.write(JSON.stringify(Object.keys(hook)));`;
   const stdout = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["--input-type=module", "--eval", script, tmp], { stdio: ["pipe", "pipe", "pipe"] });
     let output = "", error = "";
     child.stdout.setEncoding("utf8"); child.stdout.on("data", chunk => { output += chunk; });
     child.stderr.setEncoding("utf8"); child.stderr.on("data", chunk => { error += chunk; });
     child.on("error", reject);
-    child.on("exit", code => code === 0 ? resolve(output) : reject(new Error(error || `hook race child exited ${code}`)));
+    child.on("exit", code => code === 0 ? resolve(output) : reject(new Error(error || `hook export probe exited ${code}`)));
     child.stdin.end();
   });
-  assert.deepEqual(JSON.parse(stdout), [
-    { reclaimed: true, token: "fresh-.capacity-lock", expected: "fresh-.capacity-lock" },
-    { reclaimed: true, token: "fresh-.cleanup-lock", expected: "fresh-.cleanup-lock" }
-  ]);
-});
-
-test("Codex hook binds final stale and normal release deletion to its retirement path", async t => {
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-final-lock-validation-"));
-  t.after(() => rm(tmp, { recursive: true, force: true }));
-  const hookUrl = new URL("../codex/hooks/muster-hook.mjs", import.meta.url).href;
-  const script = `
-    import { readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-    import { join } from "node:path";
-    const hook = await import(${JSON.stringify(hookUrl)});
-    const dir = process.argv[1], now = Date.now(), old = now - 10 * 60 * 1000;
-    const stalePath = join(dir, ".stale-lock");
-    writeFileSync(stalePath, JSON.stringify({ format: 1, pid: 99999999, createdAt: old, token: "stale" }) + "\\n");
-    utimesSync(stalePath, new Date(old), new Date(old));
-    const staleReplacement = { format: 1, pid: process.pid, createdAt: now, token: "fresh-stale" };
-    const staleReclaimed = hook.reclaimStaleLock(stalePath, now, {
-      afterValidation: ({ quarantine }) => {
-        rmSync(quarantine);
-        writeFileSync(quarantine, JSON.stringify(staleReplacement) + "\\n", { flag: "wx" });
-      }
-    });
-    const normalPath = join(dir, ".normal-lock");
-    const normalReplacement = { format: 1, pid: process.pid, createdAt: now, token: "fresh-normal" };
-    const normalReleased = hook.withShardLock(dir, ".normal-lock", () => {}, now, {
-      beforeRelease: ({ path }) => {
-        rmSync(path);
-        writeFileSync(path, JSON.stringify(normalReplacement) + "\\n", { flag: "wx" });
-      }
-    });
-    process.stdout.write(JSON.stringify({
-      staleReclaimed,
-      staleToken: JSON.parse(readFileSync(stalePath, "utf8")).token,
-      normalReleased,
-      normalToken: JSON.parse(readFileSync(normalPath, "utf8")).token
-    }));
-  `;
-  const stdout = await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["--input-type=module", "--eval", script, tmp], { stdio: ["pipe", "pipe", "pipe"] });
-    let output = "", error = "";
-    child.stdout.setEncoding("utf8"); child.stdout.on("data", chunk => { output += chunk; });
-    child.stderr.setEncoding("utf8"); child.stderr.on("data", chunk => { error += chunk; });
-    child.on("error", reject);
-    child.on("exit", code => code === 0 ? resolve(output) : reject(new Error(error || `hook final validation child exited ${code}`)));
-    child.stdin.end();
-  });
-  assert.deepEqual(JSON.parse(stdout), {
-    staleReclaimed: false,
-    staleToken: "fresh-stale",
-    normalReleased: false,
-    normalToken: "fresh-normal"
-  });
+  assert.deepEqual(JSON.parse(stdout), [], "the simplified hook must export no lock/quarantine/retirement machinery");
 });
 
 test("Codex ownership dry-runs never create registry locks or entries", async () => {

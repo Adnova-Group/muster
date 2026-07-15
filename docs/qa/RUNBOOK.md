@@ -175,37 +175,63 @@ env-override matrix per hook.
 
 ---
 
-## Flow 4: Codex hook health and bounded dedupe
+## Flow 4: Codex hook health, single-lockfile semantics, and lease-respecting retention
 
 Codex hooks are installed in project (`<cwd>/.codex`) and/or user
-(`$CODEX_HOME`) layers. Run the focused regression coverage while changing
-their runtime or installer contract:
+(`$CODEX_HOME`) layers. As of the 2026-07-15 lock/lease/quarantine/retirement
+teardown, `.codex/muster/hooks/muster-hook.mjs` and `codex/hooks/muster-hook.mjs`
+have no emission-dedupe subsystem (no per-event lock files, no 64-per-shard
+capacity cap, no cleanup/capacity locks) — every context/advisory they emit is
+idempotent, so two installed copies (or two runs of the same event) both emit
+independently rather than deduping. Run the focused regression coverage while
+changing the hook runtime or installer contract:
 
 ```
-node --test --test-name-pattern='expires a forged|requires exact owned' test/codex.test.js
+node --test --test-name-pattern='idempotent context|exports no lock|requires exact owned' test/codex.test.js
 ```
 
-**Expected signals:** both tests pass. The doctor test installs the project
-layer from source and the user layer from the selected cache release, then
-requires `codex-hooks` and `codex-hooks-overlap` to be healthy. Doctor compares
-the installed Muster groups against their ownership manifest exactly by event,
-matcher, command/`commandWindows`, timeout, and every other group option,
-alongside generation, bootstrap digest, and runtime hash. A changed matcher,
-timeout, command, or duplicate owned group makes hook health fail; refresh that
-scope with `muster install codex`.
+**Expected signals:** all three tests pass. "emits idempotent context" proves
+two installed copies both emit for the same event (no cross-copy dedupe) and
+that a repeated `turn_id` still emits (no per-event dedupe state). "exports no
+lock" proves the hook module has zero exports (no lock/quarantine/retirement
+machinery survives) and that CODEX_HOME never gets a bookkeeping directory
+created under it. The doctor test installs the project layer from source and
+the user layer from the selected cache release, then requires `codex-hooks`
+and `codex-hooks-overlap` to be healthy — doctor still compares installed
+Muster groups against their ownership manifest exactly by event, matcher,
+command/`commandWindows`, timeout, and every other group option, alongside
+generation, bootstrap digest, and runtime hash. A changed matcher, timeout,
+command, or duplicate owned group makes hook health fail; refresh that scope
+with `muster install codex`.
 
-**Exact-once reporting:** project and user configuration layers can both invoke
-Muster. Only when every managed layer is exact-manifest coherent may doctor say
-that atomic runtime dedupe suppresses an identical logical event across copies.
-If either layer is stale or modified, doctor reports dedupe as uncertain rather
-than claiming exactly-once behavior.
+**Single-lockfile semantics (`src/codex-lock.js`):** `withCodexFileLock` is a
+plain create-or-fail lockfile: on contention it checks staleness (age past
+`staleMs`, plus the recorded PID/process-start-identity check) and either
+unlinks-then-retries a stale lock or waits/times out on a live one — no
+quarantine/retirement directory dance. Release is a direct unlink after an
+ownership (token) check. Regression coverage:
 
-**Capacity behavior:** event records are capped at 64 per shard. Cleanup and
-capacity locks use a short, bounded lease because their operations are
-idempotent; an expired or forged lock is reclaimed even if its recorded PID is
-currently live. A fresh lock still wins, and a racing cleanup safely retries or
-leaves the next event to retry without following links or deleting unowned
-files.
+```
+node --test --test-name-pattern='serializes concurrent holders|protects its generation|bounded current-plus-previous' test/codex-lock.test.js test/codex-release.test.js
+```
+
+**Expected signals:** all three tests pass. "serializes concurrent holders"
+covers the lockfile primitive directly (mutual exclusion, clean release).
+"bounded current-plus-previous" covers `publishCodexRelease`'s default
+retention: it prunes to the current + immediately-prior generation (plus the
+stable bootstrap and whatever the marketplace pointer advertises) — no
+per-process lease tracking lives in `src/codex-release.js` or the hook
+anymore. "protects its generation" covers the one read-only exception:
+`codex/bootstrap/resolve-release.mjs` (a separate, still-owned artifact,
+exercised by `test/codex-cache-package.test.js` and the "cached resolver"
+tests in `test/codex-release.test.js`) still registers/renews a lease file under
+`.agents/plugins/leases/<generation>/` while it holds a generation open for
+point-of-use asset revalidation. `publishCodexRelease` never creates, renews,
+or retires a lease itself, but before pruning a non-kept generation it checks
+that generation's lease directory for any file touched within the last 5
+minutes (`LEASE_FRESH_MS`) and skips pruning if one exists; a lease older than
+that is treated as abandoned/crashed debris and is swept (release + lease
+directory both removed) on the next publish.
 
 **Codex limitation:** these hooks provide lifecycle context, diagnostics, and
 supported policy warnings. They do not prove subagent liveness and cannot

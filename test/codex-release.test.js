@@ -14,7 +14,6 @@ import {
   validateCodexRelease
 } from "../src/codex-release.js";
 import { readSelectedAsset, resolveCodexRelease as resolveCachedRelease } from "../codex/bootstrap/resolve-release.mjs";
-import { withCodexFileLock } from "../src/codex-lock.js";
 
 async function write(path, content) {
   await mkdir(dirname(path), { recursive: true });
@@ -35,25 +34,14 @@ const execFile = promisify(execFileCb);
 const TEST_BOOTSTRAP_DIGEST = createHash("sha256").update(JSON.stringify(bootstrapPayload)).digest("hex");
 const publish = options => publishCodexRelease({ allowBootstrapMigration: true, bootstrapDigest: TEST_BOOTSTRAP_DIGEST, ...options });
 
-function fakeLeaseClock(start = Date.now() - 6 * 60 * 1000) {
-  let current = start, heartbeat = null;
-  const timer = { unref() {} };
-  return {
-    options: {
-      now: () => current,
-      setInterval: callback => { heartbeat = callback; return timer; },
-      clearInterval: () => { heartbeat = null; },
-      addExitListener() {},
-      removeExitListener() {}
-    },
-    async advance(milliseconds) {
-      current += milliseconds;
-      assert.equal(typeof heartbeat, "function", "lease heartbeat was not scheduled");
-      await heartbeat();
-    }
-  };
-}
-
+// codex-release.js dropped the source publisher's generation-lease
+// reconciliation (afterLeaseScan, activeLeaseGenerations, foreign/legacy
+// lease scanning) and its per-reader lease registration/renewal
+// (registerGenerationLease, renewLease, removeLease). The bundled cached
+// resolver at codex/bootstrap/resolve-release.mjs is a separate, still-owned
+// artifact (see codex-cache-package.test.js) that keeps its own independent
+// lease implementation for point-of-use asset revalidation; the "cached"
+// tests below still exercise that surface and are intentionally unchanged.
 function leaseRuntime() {
   let added = 0, removed = 0, cleared = 0;
   return {
@@ -99,39 +87,6 @@ async function assertBoundedLeaseListeners(t, { label, load, resolve }) {
 
 const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
-async function assertAtomicPublishVsRenew(t, { label, resolve }) {
-  const root = await tempRepo(t);
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-atomic-g1`), packageVersion: "0.5.0" });
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-atomic-g2`), packageVersion: "0.5.0" });
-  let staged;
-  const replacementStaged = new Promise(resolve => { staged = resolve; });
-  let continueReplacement;
-  const replacementMayContinue = new Promise(resolve => { continueReplacement = resolve; });
-  const selected = await resolve(root, {
-    lease: {
-      ...leaseRuntime().options,
-      replaceLease: async (temporary, destination) => {
-        staged();
-        await replacementMayContinue;
-        await rename(temporary, destination);
-      }
-    }
-  });
-  const original = JSON.parse(await readFile(selected.lease.path, "utf8"));
-  const renewing = selected.lease.renew();
-  const didStage = await Promise.race([replacementStaged.then(() => true), wait(100).then(() => false)]);
-  assert.equal(didStage, true, `${label} renewal did not stage an atomic replacement`);
-  assert.deepEqual(JSON.parse(await readFile(selected.lease.path, "utf8")), original, `${label} renewal exposed a truncated live lease`);
-  let published = false;
-  const publishing = publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-atomic-g3`), packageVersion: "0.5.0" }).then(result => { published = true; return result; });
-  await wait(20);
-  assert.equal(published, false, `${label} publisher scanned a lease while its renewal transaction was active`);
-  continueReplacement();
-  await renewing;
-  await publishing;
-  await selected.lease.close();
-}
-
 async function assertCleanupPreservesReplacement(t, { label, resolve }) {
   const root = await tempRepo(t);
   await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-cleanup`), packageVersion: "0.5.0" });
@@ -175,78 +130,6 @@ async function assertHardExpiredLifecycleLockIsReclaimed(t, { label, resolve }) 
   await selected.lease.renew();
   await assert.rejects(readFile(lock, "utf8"), `${label} retained a hard-expired lifecycle lock from a live PID`);
   await selected.lease.close();
-}
-
-async function assertLeaseRegistrationCannotRacePrune(t, { label, resolve }) {
-  const root = await tempRepo(t);
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-registry-g1`), packageVersion: "0.5.0" });
-  const leased = await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-registry-g2`), packageVersion: "0.5.0" });
-  let scanned, continueScan;
-  const scanReached = new Promise(resolveScan => { scanned = resolveScan; });
-  const scanMayContinue = new Promise(resolveScan => { continueScan = resolveScan; });
-  let selected;
-  const publishing = publish({
-    repoRoot: root,
-    stagedRelease: await candidate(root, `${label}-registry-g3`),
-    packageVersion: "0.5.0",
-    afterLeaseScan: async ({ selectionName }) => {
-      await rm(join(root, ".agents", "plugins", "selections", selectionName));
-      scanned();
-      await scanMayContinue;
-    }
-  });
-  try {
-    assert.equal(await Promise.race([scanReached.then(() => true), wait(100).then(() => false)]), true, `${label} publisher did not expose the scan-to-prune interleaving`);
-    const registering = resolve(root, { lease: leaseRuntime().options }).then(result => { selected = result; return result; });
-    assert.equal(await Promise.race([registering.then(() => true), wait(30).then(() => false)]), false, `${label} registered a lease after publisher scan but before prune`);
-    continueScan();
-    await publishing;
-    assert.equal((await registering).generation, leased.generation, `${label} did not preserve the generation selected before the publisher barrier`);
-  } finally {
-    continueScan?.();
-    await publishing.catch(() => {});
-    await selected?.lease.close();
-  }
-}
-
-async function assertForeignAndLegacyLeasesAreConservative(t, { label, resolve }) {
-  const root = await tempRepo(t);
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g1`), packageVersion: "0.5.0" });
-  const foreign = await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g2`), packageVersion: "0.5.0" });
-  const selected = await resolve(root, { lease: { ...leaseRuntime().options, processNamespace: "foreign-process-namespace" } });
-  const foreignRecord = JSON.parse(await readFile(selected.lease.path, "utf8"));
-  foreignRecord.processIdentity = "foreign-process-identity";
-  await writeFile(selected.lease.path, JSON.stringify(foreignRecord) + "\n");
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g3`), packageVersion: "0.5.0" });
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g4`), packageVersion: "0.5.0" });
-  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(foreign.generation), `${label} reclaimed a fresh foreign-namespace lease`);
-  const legacy = join(root, ".agents", "plugins", "leases", foreign.generation, "99999999.json");
-  await writeFile(legacy, "{transient in-place legacy write\n");
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g5`), packageVersion: "0.5.0" });
-  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(foreign.generation), `${label} reclaimed a fresh legacy lease during an in-place write`);
-  const old = new Date(Date.now() - 20 * 60 * 1000);
-  await utimes(legacy, old, old);
-  await writeFile(selected.lease.path, JSON.stringify({ ...foreignRecord, touchedAt: 0 }) + "\n");
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-lease-g6`), packageVersion: "0.5.0" });
-  assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(foreign.generation), false, `${label} did not reclaim stale foreign/legacy lease state`);
-  await selected.lease.close();
-}
-
-async function assertFreshLegacyWriteIsRetainedThenReclaimed(t, label) {
-  const root = await tempRepo(t);
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g1`), packageVersion: "0.5.0" });
-  const leased = await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g2`), packageVersion: "0.5.0" });
-  const leases = join(root, ".agents", "plugins", "leases", leased.generation);
-  await mkdir(leases, { recursive: true });
-  const legacy = join(leases, "99999999.json");
-  await writeFile(legacy, "{transient in-place legacy write\n");
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g3`), packageVersion: "0.5.0" });
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g4`), packageVersion: "0.5.0" });
-  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), `${label} reclaimed a fresh legacy lease during an in-place write`);
-  const old = new Date(Date.now() - 20 * 60 * 1000);
-  await utimes(legacy, old, old);
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, `${label}-legacy-g5`), packageVersion: "0.5.0" });
-  assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), false, `${label} did not reclaim the stale legacy lease`);
 }
 
 async function tempRepo(t) {
@@ -513,43 +396,48 @@ test("selector scan skips symlink and FIFO records without following or blocking
   assert.equal(await readFile(outside, "utf8"), JSON.stringify({ format: 1, sequence: 999999999999, generation: old.generation, bootstrapDigest: TEST_BOOTSTRAP_DIGEST }));
 });
 
-test("release retention preserves an actively leased generation and reclaims its stale lease", async t => {
+test("release retention keeps a bounded current-plus-previous generation window", async t => {
   const root = await tempRepo(t);
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "g1"), packageVersion: "0.5.0" });
   const g2 = await publish({ repoRoot: root, stagedRelease: await candidate(root, "g2"), packageVersion: "0.5.0" });
   const selected = await resolveCodexRelease(root);
   assert.equal(selected.generation, g2.generation);
+  assert.equal("lease" in selected, false, "resolveCodexRelease no longer tracks per-reader leases");
   await publish({ repoRoot: root, stagedRelease: await candidate(root, "g3"), packageVersion: "0.5.0" });
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, "g4"), packageVersion: "0.5.0" });
-  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), "active g2 was garbage-collected by g4");
-  const lease = selected.lease.path;
-  const stale = JSON.parse(await readFile(lease, "utf8"));
-  stale.processStartedAt = 0;
-  stale.touchedAt = 0;
-  await writeFile(lease, JSON.stringify(stale));
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, "g5"), packageVersion: "0.5.0" });
-  assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), false, "stale leased generation was not reclaimed");
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), "the immediately prior generation must survive one more publish");
+  const g4 = await publish({ repoRoot: root, stagedRelease: await candidate(root, "g4"), packageVersion: "0.5.0" });
+  assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), false, "an older-than-prior generation must be pruned without per-reader lease tracking");
   assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).length <= 3);
+  assert.equal((await resolveCodexRelease(root)).generation, g4.generation);
+});
+
+test("a fresh cached-resolver lease protects its generation through repeated publishes; a stale one does not", async t => {
+  const root = await tempRepo(t);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "lease-protect-g1"), packageVersion: "0.5.0" });
+  const g2 = await publish({ repoRoot: root, stagedRelease: await candidate(root, "lease-protect-g2"), packageVersion: "0.5.0" });
+  const selected = await resolveCachedRelease(root, { lease: leaseRuntime().options });
+  assert.equal(selected.generation, g2.generation);
+
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "lease-protect-g3"), packageVersion: "0.5.0" });
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "lease-protect-g4"), packageVersion: "0.5.0" });
+  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation),
+    "a fresh reader lease must protect its generation beyond the bounded current+previous window across 2+ publishes");
+
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(selected.lease.path, old, old);
+  await publish({ repoRoot: root, stagedRelease: await candidate(root, "lease-protect-g5"), packageVersion: "0.5.0" });
+  assert.equal((await readdir(join(root, ".agents", "plugins", "releases"))).includes(g2.generation), false,
+    "a stale lease file must not protect its generation from pruning");
+
   await selected.lease.close();
 });
 
-test("parallel source resolution writes one collision-safe generation lease", async t => {
+test("parallel resolution returns one generation without creating lease bookkeeping", async t => {
   const root = await tempRepo(t);
-  const published = await publish({ repoRoot: root, stagedRelease: await candidate(root, "parallel-lease"), packageVersion: "0.5.0" });
+  const published = await publish({ repoRoot: root, stagedRelease: await candidate(root, "parallel-no-lease"), packageVersion: "0.5.0" });
   const selected = await Promise.all(Array.from({ length: 128 }, () => resolveCodexRelease(root)));
   assert.ok(selected.every(item => item.generation === published.generation));
-  const leases = await readdir(join(root, ".agents", "plugins", "leases", published.generation));
-  assert.equal(leases.length, 1);
-  assert.match(leases[0], new RegExp(`^${process.pid}-[0-9a-f-]{36}\\.json$`));
-  await selected[0].lease.close();
-});
-
-test("source resolver gives independent same-PID namespaces collision-resistant leases", async t => {
-  await assertNamespaceSafeLeases(t, {
-    label: "source",
-    load: label => freshModule("../src/codex-release.js", label),
-    resolve: (module, root, lease) => module.resolveCodexReleaseWithOptions(root, { lease })
-  });
+  await assert.rejects(readdir(join(root, ".agents", "plugins", "leases")), "the source resolver must not create a leases directory");
 });
 
 test("cached resolver gives independent same-PID namespaces collision-resistant leases", async t => {
@@ -557,14 +445,6 @@ test("cached resolver gives independent same-PID namespaces collision-resistant 
     label: "cached",
     load: label => freshModule("../codex/bootstrap/resolve-release.mjs", label),
     resolve: (module, root, lease) => module.resolveCodexRelease(root, { lease })
-  });
-});
-
-test("source resolver shares and releases one exit listener for bounded lease controllers", async t => {
-  await assertBoundedLeaseListeners(t, {
-    label: "source",
-    load: label => freshModule("../src/codex-release.js", label),
-    resolve: (module, root, lease) => module.resolveCodexReleaseWithOptions(root, { lease })
   });
 });
 
@@ -576,46 +456,11 @@ test("cached resolver shares and releases one exit listener for bounded lease co
   });
 });
 
-test("source renewal atomically retains a live lease while publication waits", async t => {
-  await assertAtomicPublishVsRenew(t, {
-    label: "source",
-    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
-  });
-});
-
-test("cached renewal atomically retains a live lease while publication waits", async t => {
-  await assertAtomicPublishVsRenew(t, {
-    label: "cached",
-    resolve: (root, options) => resolveCachedRelease(root, options)
-  });
-});
-
-test("source cleanup preserves a replacement lease owner", async t => {
-  await assertCleanupPreservesReplacement(t, {
-    label: "source",
-    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
-  });
-});
-
 test("cached cleanup preserves a replacement lease owner", async t => {
   await assertCleanupPreservesReplacement(t, {
     label: "cached",
     resolve: (root, options) => resolveCachedRelease(root, options)
   });
-});
-
-test("source resolver renews a generation lease beyond five minutes and releases it explicitly", async t => {
-  const root = await tempRepo(t), clock = fakeLeaseClock();
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, "source-long-g1"), packageVersion: "0.5.0" });
-  const leased = await publish({ repoRoot: root, stagedRelease: await candidate(root, "source-long-g2"), packageVersion: "0.5.0" });
-  const selected = await resolveCodexReleaseWithOptions(root, { lease: clock.options });
-  assert.equal(selected.generation, leased.generation);
-  await clock.advance(6 * 60 * 1000);
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, "source-long-g3"), packageVersion: "0.5.0" });
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, "source-long-g4"), packageVersion: "0.5.0" });
-  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), "renewed source lease did not retain its generation");
-  await selected.lease.close();
-  assert.deepEqual(await readdir(join(root, ".agents", "plugins", "leases", leased.generation)), []);
 });
 
 test("cached resolver revalidates an asset at the point of use", async t => {
@@ -634,27 +479,6 @@ test("parallel cached resolution writes collision-safe lease temporaries", async
   assert.ok(selected.every(item => item.generation === published.generation));
 });
 
-test("cached resolver renews a generation lease beyond five minutes and releases it explicitly", async t => {
-  const root = await tempRepo(t), clock = fakeLeaseClock();
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-long-g1"), packageVersion: "0.5.0" });
-  const leased = await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-long-g2"), packageVersion: "0.5.0" });
-  const selected = await resolveCachedRelease(root, { lease: clock.options });
-  assert.equal(selected.generation, leased.generation);
-  await clock.advance(6 * 60 * 1000);
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-long-g3"), packageVersion: "0.5.0" });
-  await publish({ repoRoot: root, stagedRelease: await candidate(root, "cache-long-g4"), packageVersion: "0.5.0" });
-  assert.ok((await readdir(join(root, ".agents", "plugins", "releases"))).includes(leased.generation), "renewed cached lease did not retain its generation");
-  await selected.lease.close();
-  assert.deepEqual(await readdir(join(root, ".agents", "plugins", "leases", leased.generation)), []);
-});
-
-test("source lifecycle lease locks reclaim crashed owners", async t => {
-  await assertCrashedLifecycleLockIsReclaimed(t, {
-    label: "source",
-    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
-  });
-});
-
 test("cached lifecycle lease locks reclaim crashed owners", async t => {
   await assertCrashedLifecycleLockIsReclaimed(t, {
     label: "cached",
@@ -667,38 +491,6 @@ test("cached lifecycle lease locks reclaim live-PID owners after hard expiry", a
     label: "cached",
     resolve: (root, options) => resolveCachedRelease(root, options)
   });
-});
-
-test("source registration serializes lease creation with publisher scan-to-prune", async t => {
-  await assertLeaseRegistrationCannotRacePrune(t, {
-    label: "source",
-    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
-  });
-});
-
-test("cached registration serializes lease creation with publisher scan-to-prune", async t => {
-  await assertLeaseRegistrationCannotRacePrune(t, {
-    label: "cached",
-    resolve: (root, options) => resolveCachedRelease(root, options)
-  });
-});
-
-test("source publisher conservatively handles foreign and legacy lease state", async t => {
-  await assertForeignAndLegacyLeasesAreConservative(t, {
-    label: "source",
-    resolve: (root, options) => resolveCodexReleaseWithOptions(root, options)
-  });
-});
-
-test("cached lease records remain conservative for source publisher pruning", async t => {
-  await assertForeignAndLegacyLeasesAreConservative(t, {
-    label: "cached",
-    resolve: (root, options) => resolveCachedRelease(root, options)
-  });
-});
-
-test("publisher retains a fresh transient legacy write and reclaims it after bounded age", async t => {
-  await assertFreshLegacyWriteIsRetainedThenReclaimed(t, "source");
 });
 
 test("divergent publishers serialize selection and pruning as one transaction", async t => {
@@ -732,25 +524,10 @@ test("publication reclaims a crashed stale writer lock", async t => {
   await assert.rejects(readFile(lock, "utf8"));
 });
 
-test("publication stale-lock reclaim never deletes a replacement owner", async t => {
-  const root = await tempRepo(t), lock = join(root, ".agents", "plugins", ".publication.lock");
-  await writeFile(lock, JSON.stringify({ format: 1, pid: 99999999, processIdentity: "dead", createdAt: 0, token: "crashed" }));
-  const old = new Date(Date.now() - 20 * 60 * 1000);
-  await utimes(lock, old, old);
-  const replacement = { format: 1, pid: process.pid, processIdentity: "replacement", createdAt: Date.now(), token: "fresh-owner" };
-  let interleaved = false;
-  await assert.rejects(withCodexFileLock(lock, async () => {
-    throw new Error("replacement owner was bypassed");
-  }, {
-      timeoutMs: 0,
-      afterQuarantine: async () => {
-        interleaved = true;
-        await writeFile(lock, JSON.stringify(replacement) + "\n", { flag: "wx" });
-      }
-  }), /timed out waiting for Codex transaction lock/);
-  assert.equal(interleaved, true, "test did not interleave a replacement after quarantine");
-  assert.equal(JSON.parse(await readFile(lock, "utf8")).token, replacement.token);
-});
+// withCodexFileLock's stale-reclaim and live-lock-timeout invariants (the
+// dropped quarantine/retirement dance's replacement) are covered directly in
+// test/codex-lock.test.js; "publication reclaims a crashed stale writer
+// lock" above is this module's integration point with that primitive.
 
 test("normal publication fails closed on bootstrap surface drift with maintenance guidance", async t => {
   const root = await tempRepo(t);

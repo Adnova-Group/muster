@@ -7,7 +7,7 @@
   ],
   "generation": "abcd6ca1f0c261116a0f842576ef4134164d65e2f4efa8373c2a1ec8d93689d2",
   "bootstrapDigest": "7b6f765b5b1daa7fdfeaf48cfce85af194e494a0558a25d999be28047db98c50",
-  "hookHash": "0ebdcaf7e9b68185bc4f7b1974807388495462119d756b59b97fadb051074968",
+  "hookHash": "b6a536c49aee58930e9b27186cb336d54febc2d5e1eff2be7500af9376942db8",
   "hookConfigCreated": true,
   "hookGroups": {
     "SessionStart": [

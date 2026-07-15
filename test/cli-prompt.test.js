@@ -25,6 +25,17 @@ test("humanize-score CLI: file arg + --threshold flow through", async () => {
   assert.equal(r2.passing, true, "threshold flows through");
 });
 
+for (const threshold of ["-1", "101", "NaN", "Infinity", "wat"]) {
+  test(`humanize-score CLI rejects invalid threshold ${threshold}`, async () => {
+    const f = join(dir, "plain.txt");
+    await writeFile(f, "Plain text.");
+    await assert.rejects(
+      () => pexec("node", [CLI, "humanize-score", f, "--threshold", threshold]),
+      /humanize-score --threshold must be a finite number between 0 and 100/
+    );
+  });
+}
+
 test("prompt lint --chat CLI parses a messages file", async () => {
   const f = join(dir, "chat.json");
   await writeFile(f, JSON.stringify([{ role: "user", content: "hi" }, { role: "system", content: "be terse" }]));

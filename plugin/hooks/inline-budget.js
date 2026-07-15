@@ -15,9 +15,13 @@
 //
 // SELF-CONTAINED: only node: builtins. Ships under plugin/hooks/ with the hooks.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import {
+  readFileSync, writeFileSync, openSync, closeSync, fstatSync, lstatSync,
+  mkdirSync, chmodSync, renameSync, unlinkSync, fsyncSync, constants,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { createHash, randomBytes } from "node:crypto";
 import { envInt } from "./env-util.js";
 
 // Distinct-file count at which an inline turn is treated as orchestration-scale.
@@ -31,18 +35,95 @@ export function scaleThreshold(env = process.env) {
   return envInt("MUSTER_INLINE_SCALE", { min: 2, def: DEFAULT_SCALE }, env);
 }
 
-// Sanitize a session id for use in a filename; null if nothing usable remains.
-// Exported so the sibling turn-counter (user-prompt-submit.js) shares one rule.
+const NOFOLLOW = constants.O_NOFOLLOW || 0;
+
+// Hash the exact session id for use in a filename. This neither discloses the id
+// in the shared temp namespace nor aliases distinct ids through sanitization.
 export function safeSession(sessionId) {
-  if (typeof sessionId !== "string") return null;
-  const s = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-  return s.length > 0 ? s : null;
+  if (typeof sessionId !== "string" || sessionId.length === 0) return null;
+  return createHash("sha256").update(sessionId, "utf8").digest("hex");
+}
+
+function stateDirectory(tmp) {
+  const identity = typeof process.getuid === "function"
+    ? String(process.getuid())
+    : createHash("sha256").update(os.userInfo().username).digest("hex").slice(0, 16);
+  const dir = path.join(tmp, `muster-hook-state-${identity}`);
+  try { mkdirSync(dir, { mode: 0o700 }); } catch (error) { if (error?.code !== "EEXIST") throw error; }
+  const info = lstatSync(dir);
+  if (info.isSymbolicLink() || !info.isDirectory()) throw new Error("unsafe muster hook state directory");
+  if (typeof process.getuid === "function" && info.uid !== process.getuid())
+    throw new Error("muster hook state directory has the wrong owner");
+  if (process.platform !== "win32") {
+    chmodSync(dir, 0o700);
+    if ((lstatSync(dir).mode & 0o077) !== 0) throw new Error("muster hook state directory is not private");
+  }
+  return dir;
+}
+
+function sessionFile(kind, sessionId, tmp = os.tmpdir()) {
+  const hash = safeSession(sessionId);
+  if (!hash) return null;
+  try { return path.join(stateDirectory(tmp), `muster-${kind}-${hash}`); }
+  catch { return null; }
+}
+
+function regularInfo(file) {
+  try {
+    const info = lstatSync(file);
+    return !info.isSymbolicLink() && info.isFile() ? info : null;
+  } catch { return null; }
+}
+
+export function readStateText(file) {
+  let fd;
+  try {
+    const before = regularInfo(file);
+    if (!before) return null;
+    fd = openSync(file, constants.O_RDONLY | NOFOLLOW);
+    const opened = fstatSync(fd);
+    if (!opened.isFile() || (before.ino && opened.ino && (before.ino !== opened.ino || before.dev !== opened.dev))) return null;
+    return readFileSync(fd, "utf8");
+  } catch { return null; }
+  finally { if (fd !== undefined) try { closeSync(fd); } catch { /* best-effort */ } }
+}
+
+export function stateFileExists(file) {
+  return readStateText(file) !== null;
+}
+
+export function replaceState(file, content) {
+  const parent = path.dirname(file);
+  const parentInfo = (() => { try { return lstatSync(parent); } catch { return null; } })();
+  if (!parentInfo?.isDirectory() || parentInfo.isSymbolicLink()) return false;
+  const existing = (() => { try { return lstatSync(file); } catch (error) { return error?.code === "ENOENT" ? undefined : null; } })();
+  if (existing === null || (existing && (existing.isSymbolicLink() || !existing.isFile()))) return false;
+  const bytes = Buffer.from(content);
+  const temp = path.join(parent, `.${path.basename(file)}.${process.pid}.${randomBytes(12).toString("hex")}.muster-tmp-`);
+  let fd;
+  try {
+    fd = openSync(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | NOFOLLOW, 0o600);
+    writeFileSync(fd, bytes);
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+    const staged = readStateText(temp);
+    if (staged === null || !Buffer.from(staged).equals(bytes)) return false;
+    const current = (() => { try { return lstatSync(file); } catch (error) { return error?.code === "ENOENT" ? undefined : null; } })();
+    if (current === null || (current && (current.isSymbolicLink() || !current.isFile()))) return false;
+    renameSync(temp, file);
+    const published = readStateText(file);
+    return published !== null && Buffer.from(published).equals(bytes);
+  } catch { return false; }
+  finally {
+    if (fd !== undefined) try { closeSync(fd); } catch { /* best-effort */ }
+    try { unlinkSync(temp); } catch { /* renamed or never created */ }
+  }
 }
 
 // Absolute path to the per-session budget file, or null if the session id is unusable.
 export function budgetFile(sessionId, tmp = os.tmpdir()) {
-  const s = safeSession(sessionId);
-  return s ? path.join(tmp, `muster-inline-${s}`) : null;
+  return sessionFile("inline", sessionId, tmp);
 }
 
 // ── cumulative cross-turn drift counter ─────────────────────────────────────
@@ -63,8 +144,7 @@ export function budgetFile(sessionId, tmp = os.tmpdir()) {
 // Absolute path to the per-session cumulative file, or null if the session id
 // is unusable. Distinct filename from budgetFile so the two never collide.
 export function cumFile(sessionId, tmp = os.tmpdir()) {
-  const s = safeSession(sessionId);
-  return s ? path.join(tmp, `muster-cum-${s}`) : null;
+  return sessionFile("cum", sessionId, tmp);
 }
 
 // ── once-per-session directive-nudge marker ─────────────────────────────────
@@ -74,15 +154,20 @@ export function cumFile(sessionId, tmp = os.tmpdir()) {
 // unusable. Same safeSession/null pattern as cumFile, distinct filename so it
 // never collides with the budget/cumulative files.
 export function directiveFile(sessionId, tmp = os.tmpdir()) {
-  const s = safeSession(sessionId);
-  return s ? path.join(tmp, `muster-directive-${s}`) : null;
+  return sessionFile("directive", sessionId, tmp);
+}
+
+export function turnFile(sessionId, tmp = os.tmpdir()) {
+  return sessionFile("turns", sessionId, tmp);
 }
 
 // Read the cumulative state: { files: string[], nudged: boolean }.
 // Missing/corrupt/malformed -> the empty shape (never throws).
 export function readCum(file) {
   try {
-    const raw = JSON.parse(readFileSync(file, "utf8"));
+    const text = readStateText(file);
+    if (text === null) return { files: [], nudged: false };
+    const raw = JSON.parse(text);
     const v = raw && typeof raw === "object" ? raw : {};
     const files = Array.isArray(v.files) ? v.files.filter((x) => typeof x === "string") : [];
     const nudged = Boolean(v.nudged);
@@ -94,7 +179,7 @@ export function readCum(file) {
 
 // Reset the cumulative state to empty (new session, or a muster run started).
 export function resetCum(file) {
-  try { writeFileSync(file, JSON.stringify({ files: [], nudged: false })); } catch { /* best-effort */ }
+  replaceState(file, JSON.stringify({ files: [], nudged: false }));
 }
 
 // Add `key` to the cumulative distinct-file set if absent, persist, and return
@@ -103,7 +188,7 @@ export function resetCum(file) {
 export function recordCum(file, key) {
   const state = readCum(file);
   if (!state.files.includes(key)) state.files.push(key);
-  try { writeFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
+  replaceState(file, JSON.stringify(state));
   return { count: state.files.length, nudged: state.nudged };
 }
 
@@ -111,13 +196,15 @@ export function recordCum(file, key) {
 export function markNudged(file) {
   const state = readCum(file);
   state.nudged = true;
-  try { writeFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
+  replaceState(file, JSON.stringify(state));
 }
 
 // Read the turn's distinct-file set (array of strings). Missing/corrupt → [].
 export function readBudget(file) {
   try {
-    const v = JSON.parse(readFileSync(file, "utf8"));
+    const text = readStateText(file);
+    if (text === null) return [];
+    const v = JSON.parse(text);
     return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
   } catch {
     return [];
@@ -126,7 +213,7 @@ export function readBudget(file) {
 
 // Clear the turn's budget (start of a new user turn).
 export function resetBudget(file) {
-  try { writeFileSync(file, "[]"); } catch { /* best-effort */ }
+  replaceState(file, "[]");
 }
 
 // Add `target` to the distinct-file set, persist, and return the new distinct count.
@@ -143,6 +230,6 @@ export function resetBudget(file) {
 export function recordFile(file, target) {
   const files = readBudget(file);
   if (!files.includes(target)) files.push(target);
-  try { writeFileSync(file, JSON.stringify(files)); } catch { /* best-effort */ }
+  replaceState(file, JSON.stringify(files));
   return files.length;
 }

@@ -4,7 +4,7 @@ import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } f
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CODEX_MODEL_POLICY } from "../src/codex.js";
-import { assertRegularFile, assertRegularTree, prepareCodexBootstrap, publishCodexRelease } from "../src/codex-release.js";
+import { assertRegularFile, assertRegularTree, createCodexReleaseMetadata, prepareCodexBootstrap, publishCodexRelease } from "../src/codex-release.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const pluginParent = join(root, ".agents", "plugins");
@@ -29,6 +29,10 @@ const modes = {
 async function ensure(dir) { await mkdir(dir, { recursive: true }); }
 async function write(path, content) { await ensure(dirname(path)); await writeFile(path, content, "utf8"); }
 const sha256 = value => createHash("sha256").update(value).digest("hex");
+async function optionalJson(path) {
+  try { return JSON.parse(await readFile(path, "utf8")); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+}
 const leaseStaleMs = Math.max(1_000, Number(process.env.MUSTER_CODEX_BUILD_LEASE_STALE_MS) || 5 * 60 * 1000);
 function processAlive(pid) {
   if (!Number.isInteger(pid) || pid < 1) return false;
@@ -286,6 +290,56 @@ function profileToml(id, source, config) {
     ""
   ].join("\n");
 }
+function hookWithProfilePolicy(source, agentMapping) {
+  const ids = Object.entries(agentMapping.agents)
+    .filter(([, config]) => config.readOnly === true)
+    .map(([id]) => id)
+    .sort();
+  const marker = `/* read-only-agent-policy: ${JSON.stringify(ids)} */`;
+  const block = `${marker}\nconst READ_ONLY_AGENTS = new Set(${JSON.stringify(ids, null, 2)});`;
+  const result = source.replace(/\/\* read-only-agent-policy: \[[^\n]*\] \*\/\nconst READ_ONLY_AGENTS = new Set\(\[[\s\S]*?\]\);/, block);
+  if (result === source && !source.includes(marker)) throw new Error("Codex hook read-only policy marker is missing or malformed");
+  return result;
+}
+async function syncProjectCodexArtifacts(stagedRelease, metadata, bootstrapDigest) {
+  const sourceProfiles = join(stagedRelease, "profiles");
+  const destinationProfiles = join(root, ".codex", "agents");
+  const profileFiles = (await readdir(sourceProfiles)).filter(name => name.endsWith(".toml")).sort();
+  const priorProfiles = await optionalJson(join(destinationProfiles, ".muster-managed.json"));
+  if (priorProfiles && (priorProfiles.owner !== "muster" || !Array.isArray(priorProfiles.files))) throw new Error("tracked project profile ownership manifest is invalid");
+  for (const name of priorProfiles?.files || []) if (!profileFiles.includes(name)) await rm(join(destinationProfiles, name), { force: true });
+  for (const name of profileFiles) await write(join(destinationProfiles, name), await readFile(join(sourceProfiles, name), "utf8"));
+  await write(join(destinationProfiles, ".muster-managed.json"), JSON.stringify({
+    format: 1, owner: "muster", files: profileFiles, generation: metadata.generation, bootstrapDigest
+  }, null, 2) + "\n");
+
+  const sourceHooks = join(stagedRelease, "plugin", "runtime", "install-hooks");
+  const hookRoot = join(root, ".codex", "muster");
+  const hookFiles = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
+  for (const name of hookFiles) await write(join(hookRoot, name), await readFile(join(sourceHooks, name.replace(/^hooks\//, "")), "utf8"));
+  const hookTemplate = JSON.parse(await readFile(join(sourceHooks, "hooks.json"), "utf8"));
+  const relocatableHook = { command: "node '.codex/muster/hooks/muster-hook.mjs'", commandWindows: 'node ".codex/muster/hooks/muster-hook.mjs"' };
+  const hookGroups = structuredClone(hookTemplate.hooks);
+  for (const groups of Object.values(hookGroups)) for (const group of groups) for (const hook of group.hooks || []) Object.assign(hook, relocatableHook);
+  const configPath = join(root, ".codex", "hooks.json");
+  const priorHookManifest = await optionalJson(join(hookRoot, ".muster-managed.json"));
+  const configExists = Boolean(await optionalJson(configPath));
+  const config = await optionalJson(configPath) || { hooks: {} };
+  config.hooks ||= {};
+  for (const [event, groups] of Object.entries(priorHookManifest?.hookGroups || {})) {
+    const owned = new Set(groups.map(group => JSON.stringify(group)));
+    config.hooks[event] = (config.hooks[event] || []).filter(group => !owned.has(JSON.stringify(group)));
+    if (!config.hooks[event].length) delete config.hooks[event];
+  }
+  for (const [event, groups] of Object.entries(hookGroups)) config.hooks[event] = [...(config.hooks[event] || []), ...groups];
+  await write(configPath, JSON.stringify(config, null, 2) + "\n");
+  const hookHash = createHash("sha256");
+  for (const name of hookFiles) hookHash.update(name).update("\0").update(await readFile(join(hookRoot, name)));
+  await write(join(hookRoot, ".muster-managed.json"), JSON.stringify({
+    format: 1, owner: "muster", files: hookFiles, generation: metadata.generation, bootstrapDigest,
+    hookHash: hookHash.digest("hex"), hookConfigCreated: priorHookManifest?.hookConfigCreated ?? !configExists, hookGroups
+  }, null, 2) + "\n");
+}
 function modeSkill(name, mode) {
   return `---\nname: ${name}\ndescription: ${JSON.stringify(`Use for Muster orchestration when the user asks to ${mode.purpose}. Explicitly invoke with $${name}.`)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n\n${agentWatchProtocol}`;
 }
@@ -342,6 +396,8 @@ for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scri
 await assertRegularFile(join(root, "package.json"));
 pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 mapping = JSON.parse(await readFile(join(root, "codex", "agents.manifest.json"), "utf8"));
+const hookSourcePath = join(root, "codex", "hooks", "muster-hook.mjs");
+await write(hookSourcePath, hookWithProfilePolicy(await readFile(hookSourcePath, "utf8"), mapping));
 await Promise.all([ensure(plugin), ensure(runtime)]);
 
 await Promise.all([
@@ -445,10 +501,13 @@ const bootstrap = await prepareCodexBootstrap({
   stagedBootstrap,
   allowMaintenance: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1"
 });
+const stagedRelease = join(stagingRoot, "release");
+const stagedMetadata = await createCodexReleaseMetadata(stagedRelease, pkg.version);
+await syncProjectCodexArtifacts(stagedRelease, stagedMetadata, bootstrap.digest);
 
 published = await publishCodexRelease({
   repoRoot: root,
-  stagedRelease: join(stagingRoot, "release"),
+  stagedRelease,
   packageVersion: pkg.version,
   bootstrapDigest: bootstrap.digest,
   allowBootstrapMigration: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1",
@@ -465,7 +524,10 @@ published = await publishCodexRelease({
   }
 });
 const packageFiles = (pkg.files || []).filter(item => item !== ".agents" && !item.startsWith(".agents/"));
-const allSelections = (await readdir(join(root, ".agents", "plugins", "selections")))
+const allSelections = (await readdir(join(root, ".agents", "plugins", "selections")).catch(error => {
+  if (error.code === "ENOENT") return [];
+  throw error;
+}))
   .filter(name => /^\d{12}-[a-f0-9]{64}\.json$/.test(name)).sort().reverse();
 const initialGeneration = published.initialGeneration;
 const retainedGenerations = [];

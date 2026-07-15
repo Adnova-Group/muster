@@ -73,6 +73,10 @@ export function validateManifest(m) {
     errors.push("successCriteria: required non-empty array");
   if (!Array.isArray(m.crew) || m.crew.length === 0) errors.push("crew: required non-empty array");
   else m.crew.forEach((c, i) => {
+    if (!c || typeof c !== "object" || Array.isArray(c)) {
+      errors.push(`crew[${i}]: must be an object`);
+      return;
+    }
     for (const f of ["stage", "provider", "rationale", "evidence", "fallback"])
       if (!c[f]) errors.push(`crew[${i}].${f}: required`);
     if (!SOURCES.has(c.source)) errors.push(`crew[${i}].source: must be one of ${[...SOURCES].join("|")}`);
@@ -92,6 +96,10 @@ export function validateManifest(m) {
     const ids = new Set();
     const multi = m.plan.length > 1;
     m.plan.forEach((p, i) => {
+      if (!p || typeof p !== "object" || Array.isArray(p)) {
+        errors.push(`plan[${i}]: must be an object`);
+        return;
+      }
       if (!p.task) errors.push(`plan[${i}].task: required`);
       if (!MODES.has(p.mode)) errors.push(`plan[${i}].mode: must be single|tournament`);
       if (multi && !p.id) errors.push(`plan[${i}].id: required when plan has multiple tasks`);
@@ -108,7 +116,8 @@ export function validateManifest(m) {
         errors.push(`plan task "${taskLabel}".surface: must be one of ${[...SURFACES].join("|")}`);
     });
     m.plan.forEach((p, i) => {
-      for (const d of (p.deps || [])) if (!ids.has(d)) errors.push(`plan[${i}].deps: unknown dep "${d}"`);
+      if (!p || typeof p !== "object" || !Array.isArray(p.deps)) return;
+      for (const d of p.deps) if (!ids.has(d)) errors.push(`plan[${i}].deps: unknown dep "${d}"`);
     });
   }
   return { ok: errors.length === 0, errors };

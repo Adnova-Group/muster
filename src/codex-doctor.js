@@ -105,9 +105,10 @@ export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (child?.stdin && !child.stdin.destroyed) child.stdin.end();
-      if (child && !child.killed) child.kill();
-      if (error) reject(error); else resolve(result);
+      let cleanupError = null;
+      try { if (child?.stdin && !child.stdin.destroyed) child.stdin.end(); } catch (failure) { cleanupError = failure; }
+      try { if (child && !child.killed) child.kill(); } catch (failure) { cleanupError ||= failure; }
+      if (error) reject(error); else if (cleanupError) reject(cleanupError); else resolve(result);
     };
     const fail = message => finish(message instanceof Error ? message : new Error(message));
     try {
@@ -118,6 +119,7 @@ export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", chunk => {
+      if (settled) return;
       buffer += chunk;
       for (;;) {
         const newline = buffer.indexOf("\n");
@@ -131,27 +133,34 @@ export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT
         if (message.id === 1) {
           if (message.error || !message.result) { fail(`MCP initialize failed: ${message.error?.message || "missing result"}`); return; }
           initialized = true;
-          child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-          child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
+          try {
+            child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+            child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
+          } catch (error) { fail(error); return; }
         } else if (message.id === 2) {
           if (message.error) { fail(`MCP tools/list failed: ${message.error.message || "unknown error"}`); return; }
           if (!Array.isArray(message.result?.tools)) { fail("MCP tools/list returned no tools array"); return; }
           finish(null, { initialized, tools: message.result.tools });
+          return;
         }
       }
     });
+    child.stdout.on("error", error => fail(error));
     child.stderr.on("data", chunk => { stderr += chunk; });
+    child.stderr.on("error", error => fail(error));
     child.on("error", error => fail(error));
     child.on("exit", (code, signal) => {
       if (!settled) fail(`MCP process exited before tools/list (${signal || code || "unknown"})${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
     });
     child.stdin.on("error", error => fail(error));
-    child.stdin.write(`${JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "muster-doctor", version: "1" } }
-    })}\n`);
+    try {
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "muster-doctor", version: "1" } }
+      })}\n`);
+    } catch (error) { fail(error); }
   });
 }
 

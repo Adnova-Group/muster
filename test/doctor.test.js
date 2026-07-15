@@ -490,13 +490,42 @@ describe("runDoctor install-integrity check", () => {
 // ---------- vendor-note-staleness ----------
 
 describe("runDoctor vendor-note-staleness check", () => {
-  it("ok:true (skip) when vendor/manifest.yaml is absent", async () => {
+  it("fails when vendor/manifest.yaml is absent", async () => {
     const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-nomanifest-"));
     const result = await runDoctor({ root: tmp });
     const check = result.checks.find(c => c.name === "vendor-note-staleness");
     assert.ok(check, "vendor-note-staleness check must exist");
-    assert.equal(check.ok, true, `expected ok:true — detail: ${check.detail}`);
-    assert.match(check.detail, /no vendor\/manifest\.yaml/);
+    assert.equal(check.ok, false, `expected ok:false — detail: ${check.detail}`);
+    assert.match(check.detail, /missing|unreadable/i);
+  });
+
+  it("fails when vendor/manifest.yaml is unreadable", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-unreadable-"));
+    await mkdir(join(tmp, "vendor/manifest.yaml"), { recursive: true });
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.equal(check.ok, false, `expected ok:false — detail: ${check.detail}`);
+    assert.match(check.detail, /unreadable/i);
+  });
+
+  it("fails when vendor/manifest.yaml is unparsable", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-unparsable-"));
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    await writeFile(join(tmp, "vendor/manifest.yaml"), "sources: [unterminated\n");
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.equal(check.ok, false, `expected ok:false — detail: ${check.detail}`);
+    assert.match(check.detail, /unparsable/i);
+  });
+
+  it("fails when vendor/manifest.yaml has an invalid shape", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-vns-invalid-"));
+    await mkdir(join(tmp, "vendor"), { recursive: true });
+    await writeFile(join(tmp, "vendor/manifest.yaml"), "sources: nope\n");
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "vendor-note-staleness");
+    assert.equal(check.ok, false, `expected ok:false — detail: ${check.detail}`);
+    assert.match(check.detail, /invalid/i);
   });
 
   it("does not hit the network when the only referenced sha is a prefix of the pinned ref itself", async () => {

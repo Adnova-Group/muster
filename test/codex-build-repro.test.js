@@ -28,7 +28,7 @@ async function selectedSnapshot(checkout) {
   const paths = [
     "plugin/runtime/muster.mjs",
     "plugin/commands/audit.md",
-    "plugin/skills/advisor/SKILL.md",
+    "plugin/internal-skills/advisor/SKILL.md",
     "profiles/muster-builder.toml"
   ];
   return { generation, files: await Promise.all(paths.map(path => readFile(join(release, path), "utf8"))) };

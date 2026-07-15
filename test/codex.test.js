@@ -258,16 +258,16 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
     assert.doesNotMatch(text, /npx -y @adnova-group\/muster/, entry.name);
     assert.doesNotMatch(text, /\/muster:(?:plan|go|plan-backlog|go-backlog|run|autopilot|sprint|diagnose|audit|runner|capture)\b/, entry.name);
   }
-  const router = await readFile(join(selectedPluginRoot, "skills", "router", "SKILL.md"), "utf8");
+  const router = await readFile(join(selectedPluginRoot, "internal-skills", "router", "SKILL.md"), "utf8");
   assert.match(router, /runtime\/muster\.mjs match --codex --skills/);
   const runner = await readFile(join(commands, "runner.md"), "utf8");
   assert.match(runner, /Usage: \$muster-runner/);
   assert.match(runner, /codex exec "\$muster-runner/);
   assert.doesNotMatch(runner, /\$muster-planner|Claude Code Routine|claude -p/);
-  const coordination = await readFile(join(selectedPluginRoot, "skills", "coordination", "SKILL.md"), "utf8");
+  const coordination = await readFile(join(selectedPluginRoot, "internal-skills", "coordination", "SKILL.md"), "utf8");
   assert.match(coordination, /plugin cache is not a Git checkout/);
   assert.doesNotMatch(coordination, /git log -1 --format/);
-  const orchestrator = await readFile(join(selectedPluginRoot, "skills", "orchestrator", "SKILL.md"), "utf8");
+  const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
   assert.match(orchestrator, /call `collaboration\.spawn_agent`/);
   assert.match(orchestrator, /agent_type: "<exact chosen\.id>"/);
   assert.match(orchestrator, /fork_turns/);
@@ -302,7 +302,7 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
 test("generated Codex orchestration surfaces enforce the bounded agent watch invariant", async () => {
   const surfaces = new Map([
     ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
-    ["orchestrator", join(selectedPluginRoot, "skills", "orchestrator", "SKILL.md")],
+    ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
     ...["muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
       .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
   ]);
@@ -425,7 +425,7 @@ test("Codex hook expires a forged live-PID capacity lock and enforces the shard 
 });
 
 test("Codex fallbacks are self-contained and package referenced skill assets", async () => {
-  const skills = join(selectedPluginRoot, "skills");
+  const skills = join(selectedPluginRoot, "internal-skills");
   for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster-gsd-verify-work"]) {
     const text = await readFile(join(skills, name, "SKILL.md"), "utf8");
     assert.match(text, /self-contained|no dependency/i, name);
@@ -441,12 +441,34 @@ test("Codex fallbacks are self-contained and package referenced skill assets", a
   assert.match(catalog, /rudra496\/StealthHumanizer/);
 });
 
+test("Codex exposes a bounded public skill surface while packaging internal workflows", async () => {
+  const publicSkills = (await readdir(join(selectedPluginRoot, "skills"), { withFileTypes: true }))
+    .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+  assert.equal(publicSkills.length, CODEX_COUNTS.publicSkills);
+  assert.deepEqual(publicSkills, [
+    "autopilot", "muster", "muster-audit", "muster-capture", "muster-diagnose", "muster-go",
+    "muster-go-backlog", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
+  ]);
+
+  const internalRoot = join(selectedPluginRoot, "internal-skills");
+  const internalSkills = (await readdir(internalRoot, { withFileTypes: true }))
+    .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+  assert.equal(internalSkills.length, CODEX_COUNTS.internalSkills);
+  for (const name of ["orchestrator", "router", "muster-research", "sp-tdd", "wsh-debugging-strategies"]) {
+    const text = await readFile(join(internalRoot, name, "SKILL.md"), "utf8");
+    assert.equal(parseYaml(text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "").name, name);
+  }
+
+  const adapter = await readFile(join(selectedPluginRoot, "runtime", "codex-skill-adapter.md"), "utf8");
+  assert.match(adapter, /internal-skills\/\$\{chosen\.id\}\/SKILL\.md/);
+});
+
 test("all ported skills declare and load the Codex harness binding", async () => {
   const native = (await readdir(join(repoRoot, "plugin", "skills"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name);
   const builtins = (await readdir(join(repoRoot, "plugin", "builtins"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name);
   for (const name of new Set([...native, ...builtins])) {
     const id = codexFallbackSkillId(name);
-    const skill = await readFile(join(selectedPluginRoot, "skills", id, "SKILL.md"), "utf8");
+    const skill = await readFile(join(selectedPluginRoot, "internal-skills", id, "SKILL.md"), "utf8");
     const frontmatter = skill.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "";
     assert.equal(parseYaml(frontmatter).name, id, id);
     assert.ok(parseYaml(frontmatter).description.startsWith("Codex-compatible Muster workflow."), id);

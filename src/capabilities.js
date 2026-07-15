@@ -20,6 +20,13 @@ function providerType(entry) {
 // while tests can pin it to a fixture dir for deterministic installed-skill
 // description lookups. See plugin-inventory.js's installedSkillDescription.
 export function resolveCapabilities(catalog, installed, home = homedir()) {
+  // Cowork has no agent or skill loader. Its host can invoke registered MCP
+  // servers and can always execute a task inline, but a Claude Code plugin
+  // merely being present on disk does not make that plugin's agents/skills
+  // callable from Cowork. The MCP wrapper also exports MUSTER_RUNTIME=cowork
+  // for nested CLI commands (notably `audit`) whose installed inventory is
+  // resolved inside the child process.
+  const cowork = installed.runtime === "cowork" || process.env.MUSTER_RUNTIME === "cowork";
   const roles = {};
   for (const role of ROLES) {
     const forRole = catalog.filter(e => e.roles.includes(role)).sort((a, b) => b.rank - a.rank);
@@ -33,6 +40,7 @@ export function resolveCapabilities(catalog, installed, home = homedir()) {
       } else if (e.kind === "builtin" || e.kind === "agent") {
         entry = { id: e.id, source: "builtin", kind: providerType(e) };
       }
+      if (cowork && entry?.kind !== "mcp") entry = null;
       if (!entry) continue;
       chain.push(entry);
       if (!chosen) {
@@ -48,7 +56,8 @@ export function resolveCapabilities(catalog, installed, home = homedir()) {
 
     const recommendations = [];
     for (const e of forRole) {
-      if (e.kind === "external" && e.recommended && !isInstalled(e, installed) && e.rank > chosenRank) {
+      if (e.kind === "external" && e.recommended && !isInstalled(e, installed) && e.rank > chosenRank
+          && (!cowork || providerType(e) === "mcp")) {
         recommendations.push(`install ${e.id} for ${role} — better than the ${chosen.id} fallback`);
       }
     }
@@ -61,6 +70,7 @@ export function resolveCapabilities(catalog, installed, home = homedir()) {
   // same id — installed wins on a name collision, matching the roles ladder's
   // installed-beats-builtin precedence.
   const skills = [];
+  if (cowork) return { roles, installedRaw: installed, skills };
   const seen = new Set();
   // One shared cache for this call's whole installed-skills loop (see
   // installedSkillDescription / findSkillMdSync in plugin-inventory.js) —

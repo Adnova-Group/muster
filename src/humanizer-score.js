@@ -29,6 +29,9 @@ const DETECTORS = [
 // Score `text` for AI tells. Returns { score (0–100), passing, threshold, penalty, findings }.
 // findings is ordered by penalty (worst first); each carries up to 2 example matches for context.
 export function scoreHumanness(text, { threshold = 85 } = {}) {
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
+    throw new TypeError("threshold must be a finite number between 0 and 100");
+  }
   const s = String(text || "");
   const findings = [];
   let penalty = 0;

@@ -34,6 +34,19 @@ test("rejects bad source and bad plan mode", () => {
   assert.ok(r.errors.some(e => /mode/.test(e)));
 });
 
+test("returns structured errors for null crew and plan entries", () => {
+  const r = validateManifest({ ...valid, crew: [null], plan: [null] });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /crew\[0\].*object/.test(e)), JSON.stringify(r.errors));
+  assert.ok(r.errors.some(e => /plan\[0\].*object/.test(e)), JSON.stringify(r.errors));
+});
+
+test("returns one structured error for non-array deps without traversing it", () => {
+  const r = validateManifest({ ...valid, plan: [{ id: "build", task: "build", mode: "single", deps: "prep" }] });
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.errors.filter(e => /plan\[0\]\.deps/.test(e)), ["plan[0].deps: must be an array"]);
+});
+
 // A non-inline crew member dispatches to a specific provider on a specific model.
 // If the resolved model isn't bound to the member, dispatch silently inherits the
 // orchestrator's model (Opus). The manifest must carry it, or validation fails loud.

@@ -8,11 +8,12 @@ import { classifyAction } from "./action-guard.mjs";
 
 const MODES = "$muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, and $muster-capture";
 const WRITE_TOOLS = new Set(["Bash", "apply_patch", "Edit", "Write", "NotebookEdit"]);
+/* read-only-agent-policy: ["muster-improver","muster-investigator","muster-reviewer","muster-strategist","wsh-code-reviewer","wsh-security-auditor"] */
 const READ_ONLY_AGENTS = new Set([
+  "muster-improver",
   "muster-investigator",
   "muster-reviewer",
   "muster-strategist",
-  "wsh-business-analyst",
   "wsh-code-reviewer",
   "wsh-security-auditor"
 ]);

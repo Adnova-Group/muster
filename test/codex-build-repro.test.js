@@ -12,6 +12,8 @@ const repoRoot = new URL("../", import.meta.url).pathname;
 const fixtureEntries = ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor", "package.json"];
 const bundles = ["runtime/muster.mjs", "src/cli.js", "runtime/muster-mcp.mjs"];
 
+const readJson = async path => JSON.parse(await readFile(path, "utf8"));
+
 async function buildCheckout(checkout, sharedNodeModules) {
   await mkdir(checkout, { recursive: true });
   await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
@@ -57,7 +59,6 @@ test("Codex rebuild exposes only exact old or new immutable generation snapshots
   await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000, maxBuffer: 4 * 1024 * 1024 });
   const oldSnapshot = await selectedSnapshot(checkout);
-  const stableMarketplace = await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8");
   const stableBootstrap = await readFile(join(checkout, ".agents", "plugins", "bootstrap", "muster", "bootstrap.json"), "utf8");
   const sourceAdvisor = join(checkout, "plugin", "skills", "advisor", "SKILL.md");
   await writeFile(sourceAdvisor, `${await readFile(sourceAdvisor, "utf8")}\nChanged while the published plugin remains live.\n`);
@@ -136,6 +137,69 @@ test("repeated Codex build reuses the same immutable generation", async t => {
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
   const second = await selectedSnapshot(checkout);
   assert.deepEqual(second, first);
+});
+
+test("Codex build synchronizes project profiles and hooks to the selected release contract", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-project-parity-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const checkout = join(tmp, "checkout");
+  await mkdir(checkout, { recursive: true });
+  await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
+  await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 });
+
+  const selected = await resolveCodexRelease(checkout);
+  const marketplace = await readJson(join(checkout, ".agents", "plugins", "marketplace.json"));
+  const profileManifest = await readJson(join(checkout, ".codex", "agents", ".muster-managed.json"));
+  const hookManifest = await readJson(join(checkout, ".codex", "muster", ".muster-managed.json"));
+  assert.equal(profileManifest.generation, selected.generation);
+  assert.equal(hookManifest.generation, selected.generation);
+  assert.equal(profileManifest.bootstrapDigest, marketplace.musterBootstrap.digest);
+  assert.equal(hookManifest.bootstrapDigest, marketplace.musterBootstrap.digest);
+  for (const name of profileManifest.files) {
+    assert.equal(await readFile(join(checkout, ".codex", "agents", name), "utf8"), await readFile(join(selected.profilesRoot, name), "utf8"), name);
+  }
+  for (const name of hookManifest.files) {
+    assert.equal(await readFile(join(checkout, ".codex", "muster", name), "utf8"), await readFile(join(selected.pluginRoot, "runtime", "install-hooks", name.replace(/^hooks\//, "")), "utf8"), name);
+  }
+
+  const hook = await readFile(join(checkout, ".codex", "muster", "hooks", "muster-hook.mjs"), "utf8");
+  const policy = JSON.parse(hook.match(/\/\* read-only-agent-policy: (\[.*\]) \*\//)?.[1] || "null");
+  const readOnlyProfiles = [];
+  for (const name of profileManifest.files) {
+    if ((await readFile(join(selected.profilesRoot, name), "utf8")).includes('sandbox_mode = "read-only"')) readOnlyProfiles.push(name.slice(0, -5));
+  }
+  assert.deepEqual(policy, readOnlyProfiles.sort(), "hook policy must be generated from the selected profile sandboxes");
+});
+
+test("Codex checker rejects project parity drift and the inactive legacy plugin tree", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-check-parity-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const checkout = join(tmp, "checkout");
+  await mkdir(checkout, { recursive: true });
+  await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
+  await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 });
+  await execFile(process.execPath, ["scripts/check-codex.mjs"], { cwd: checkout, timeout: 30_000 });
+
+  const selected = await resolveCodexRelease(checkout);
+  const profile = join(checkout, ".codex", "agents", "muster-builder.toml");
+  const profileBytes = await readFile(profile, "utf8");
+  await writeFile(profile, `${profileBytes}# stale\n`);
+  await assert.rejects(execFile(process.execPath, ["scripts/check-codex.mjs"], { cwd: checkout, timeout: 30_000 }), /project profile .* stale/i);
+  await writeFile(profile, profileBytes);
+
+  const manifestPath = join(checkout, ".codex", "agents", ".muster-managed.json");
+  const manifest = await readJson(manifestPath);
+  await writeFile(manifestPath, JSON.stringify({ ...manifest, generation: "0".repeat(64) }, null, 2) + "\n");
+  await assert.rejects(execFile(process.execPath, ["scripts/check-codex.mjs"], { cwd: checkout, timeout: 30_000 }), /project profile manifest .* generation\/bootstrap/i);
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+
+  await mkdir(join(checkout, ".agents", "plugins", "plugins", "muster"), { recursive: true });
+  await writeFile(join(checkout, ".agents", "plugins", "plugins", "muster", "package.json"), "{}\n");
+  await assert.rejects(execFile(process.execPath, ["scripts/check-codex.mjs"], { cwd: checkout, timeout: 30_000 }), /inactive legacy plugin tree/i);
+
+  assert.equal(selected.generation, manifest.generation);
 });
 
 test("overlapping Codex builders preserve active stages and reclaim only stale crashed stages", { skip: process.platform === "win32" }, async t => {

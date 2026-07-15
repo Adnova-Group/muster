@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, constants as fsConstants, linkSync, openSync, readFileSync, readlinkSync, renameSync, rmSync } from "node:fs";
-import { lstat, mkdir, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { processAlive, processStartIdentity, withCodexFileLock } from "./codex-lock.js";
 
 const RELEASE_FORMAT = 1;
+const CURRENT_RELEASE_FORMAT = 2;
+const SUPPORTED_RELEASE_FORMATS = new Set([1, CURRENT_RELEASE_FORMAT]);
 const GENERATION = /^[a-f0-9]{64}$/;
 const slash = value => value.replaceAll("\\", "/");
 const sha256 = value => createHash("sha256").update(value).digest("hex");
@@ -132,20 +134,97 @@ export async function prepareCodexBootstrap({ repoRoot, stagedBootstrap, allowMa
   }
 }
 
-function metadataFor(packageVersion, files) {
+function metadataFor(packageVersion, files, format = CURRENT_RELEASE_FORMAT) {
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("release package version is required");
-  const payload = { format: RELEASE_FORMAT, packageVersion, files };
+  const payload = { format, packageVersion, files };
   return { ...payload, generation: sha256(JSON.stringify(payload)) };
 }
 
-export async function createCodexReleaseMetadata(releaseRoot, packageVersion) {
+async function createCodexReleaseMetadataForFormat(releaseRoot, packageVersion, format) {
   const tree = await assertRegularTree(releaseRoot);
-  if (!tree.dirs.includes("plugin") || !tree.dirs.includes("profiles")) throw new Error("release must contain plugin and profiles directories");
   const files = tree.files.filter(file => file.path !== "release.json");
-  if (!files.some(file => file.path.startsWith("plugin/")) || !files.some(file => file.path.startsWith("profiles/"))) {
-    throw new Error("release plugin and profiles must both contain regular files");
+  if (format === 1) {
+    if (!tree.dirs.includes("plugin") || !tree.dirs.includes("profiles")
+      || !files.some(file => file.path.startsWith("plugin/")) || !files.some(file => file.path.startsWith("profiles/"))) {
+      throw new Error("format-1 release plugin and profiles must both contain regular files");
+    }
+  } else if (format === CURRENT_RELEASE_FORMAT) {
+    if (!tree.dirs.includes("plugin") || !tree.dirs.includes("plugin/agents")
+      || !files.some(file => file.path.startsWith("plugin/agents/") && file.path.endsWith(".toml"))
+      || !files.some(file => file.path === "plugin/runtime/muster.mjs")) {
+      throw new Error("format-2 release must contain canonical plugin agents and runtime");
+    }
+    if (tree.dirs.includes("profiles") || files.some(file => file.path.startsWith("profiles/"))) {
+      throw new Error("format-2 release must not duplicate canonical agent profiles");
+    }
+  } else throw new Error(`unsupported Codex release format: ${format}`);
+  return metadataFor(packageVersion, files, format);
+}
+
+export async function createCodexReleaseMetadata(releaseRoot, packageVersion) {
+  return createCodexReleaseMetadataForFormat(releaseRoot, packageVersion, CURRENT_RELEASE_FORMAT);
+}
+
+async function migrateLegacyRelease(releasesRoot, generation) {
+  const source = join(releasesRoot, generation);
+  const legacy = await validateCodexRelease(source, generation);
+  if (legacy.format !== 1) return { generation, metadata: legacy };
+  const legacyProfiles = (await readdir(join(source, "profiles"))).filter(name => name.endsWith(".toml")).sort();
+  const canonicalProfiles = await readdir(join(source, "plugin", "agents")).then(
+    names => names.filter(name => name.endsWith(".toml")).sort(),
+    error => { if (error.code === "ENOENT") return null; throw error; }
+  );
+  if (canonicalProfiles && JSON.stringify(legacyProfiles) !== JSON.stringify(canonicalProfiles)) throw new Error("legacy Codex release profile copies diverged; refusing compatibility migration");
+  if (canonicalProfiles) for (const name of legacyProfiles) {
+    const [legacyBytes, canonicalBytes] = await Promise.all([
+      readRegular(join(source, "profiles", name), `legacy profile ${name}`),
+      readRegular(join(source, "plugin", "agents", name), `canonical profile ${name}`)
+    ]);
+    if (!legacyBytes.equals(canonicalBytes)) throw new Error(`legacy Codex release profile copies diverged: ${name}`);
   }
-  return metadataFor(packageVersion, files);
+  const [legacyCli, canonicalCli] = await Promise.all([
+    readRegular(join(source, "plugin", "src", "cli.js"), "legacy CLI copy"),
+    readRegular(join(source, "plugin", "runtime", "muster.mjs"), "canonical CLI bundle")
+  ]);
+  if (!legacyCli.equals(canonicalCli)) throw new Error("legacy Codex release CLI copies diverged; refusing compatibility migration");
+  const staging = await mkdtemp(join(releasesRoot, ".muster-format-2-"));
+  try {
+    await cp(source, staging, { recursive: true });
+    await rm(join(staging, "release.json"));
+    if (!canonicalProfiles) await cp(join(staging, "profiles"), join(staging, "plugin", "agents"), { recursive: true });
+    await rm(join(staging, "profiles"), { recursive: true });
+    await mkdir(join(staging, "plugin", "src"), { recursive: true });
+    await writeFile(join(staging, "plugin", "src", "cli.js"), '#!/usr/bin/env node\nimport "../runtime/muster.mjs";\n');
+    const metadata = await createCodexReleaseMetadata(staging, legacy.packageVersion);
+    await writeFile(join(staging, "release.json"), JSON.stringify(metadata, null, 2) + "\n", { flag: "wx" });
+    const destination = join(releasesRoot, metadata.generation);
+    try {
+      await ordinary(destination, "directory", "existing migrated Codex release");
+      await validateCodexRelease(destination, metadata.generation);
+      await rm(staging, { recursive: true, force: true });
+    } catch (error) {
+      if (!String(error.message).startsWith("existing migrated Codex release is missing:")) throw error;
+      await rename(staging, destination);
+    }
+    return { generation: metadata.generation, metadata };
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function releaseProfilesRoot(releaseRoot, metadata) {
+  return metadata.format === CURRENT_RELEASE_FORMAT ? join(releaseRoot, "plugin", "agents") : join(releaseRoot, "profiles");
+}
+
+function releasePluginRoot(releaseRoot) {
+  return join(releaseRoot, "plugin");
+}
+
+function validateReleaseFormat(metadata, releaseRoot) {
+  if (!SUPPORTED_RELEASE_FORMATS.has(metadata?.format) || !GENERATION.test(metadata?.generation || "") || !Array.isArray(metadata?.files)) {
+    throw new Error(`release metadata has an invalid contract: ${releaseRoot}`);
+  }
 }
 
 export async function validateCodexRelease(releaseRoot, expectedGeneration) {
@@ -153,12 +232,10 @@ export async function validateCodexRelease(releaseRoot, expectedGeneration) {
   let metadata;
   try { metadata = await readRegularJson(join(releaseRoot, "release.json"), "release metadata", 4 * 1024 * 1024); }
   catch (error) { throw new Error(`release metadata is invalid: ${releaseRoot}`, { cause: error }); }
-  if (metadata?.format !== RELEASE_FORMAT || !GENERATION.test(metadata.generation || "") || !Array.isArray(metadata.files)) {
-    throw new Error(`release metadata has an invalid contract: ${releaseRoot}`);
-  }
+  validateReleaseFormat(metadata, releaseRoot);
   if (expectedGeneration && metadata.generation !== expectedGeneration) throw new Error("release generation does not match the selected pointer");
   if (releaseRoot.split(/[\\/]/).at(-1) !== metadata.generation) throw new Error("release directory is not content-addressed by its generation");
-  const actual = await createCodexReleaseMetadata(releaseRoot, metadata.packageVersion);
+  const actual = await createCodexReleaseMetadataForFormat(releaseRoot, metadata.packageVersion, metadata.format);
   if (actual.generation !== metadata.generation || JSON.stringify(actual.files) !== JSON.stringify(metadata.files)) {
     throw new Error(`release content hash mismatch: ${releaseRoot}`);
   }
@@ -191,7 +268,7 @@ async function releaseResult(repoRoot, generation, leaseOptions) {
     const releaseRoot = await repositoryDirectory(repoRoot, [".agents", "plugins", "releases", generation]);
     const metadata = await validateCodexRelease(releaseRoot, generation);
     const lease = await registerGenerationLease(repoRoot, generation, leaseOptions);
-    return { generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata, lease };
+    return { generation, releaseRoot, pluginRoot: releasePluginRoot(releaseRoot), profilesRoot: releaseProfilesRoot(releaseRoot, metadata), metadata, lease };
   });
 }
 
@@ -599,11 +676,19 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
     selectionName = await appendSelection(metadata.generation);
   }
   const ordered = [...new Set(names.filter(name => SELECTION.test(name)).sort().reverse().map(name => name.match(SELECTION)[2]))];
-  const prior = ordered.find(generation => generation !== metadata.generation && generation !== stable.musterBootstrap.initialGeneration);
+  const priorMetadata = [];
+  for (const generation of ordered.filter(generation => generation !== metadata.generation)) {
+    try { priorMetadata.push({ generation, metadata: await validateCodexRelease(join(releasesRoot, generation), generation) }); }
+    catch { /* pruning below removes incoherent history */ }
+  }
+  let canonicalLkg = priorMetadata.find(item => item.metadata.format === CURRENT_RELEASE_FORMAT);
+  const legacyLkg = priorMetadata.find(item => item.metadata.format === 1);
+  if (!canonicalLkg && legacyLkg) canonicalLkg = await migrateLegacyRelease(releasesRoot, legacyLkg.generation);
+  if (canonicalLkg && !names.some(name => name.endsWith(`-${canonicalLkg.generation}.json`))) await appendSelection(canonicalLkg.generation);
   await withLeaseRegistryTransaction(repoRoot, async () => {
     const activeLeases = await activeLeaseGenerations(repoRoot);
     await afterLeaseScan({ generation: metadata.generation, selectionName, activeLeases: new Set(activeLeases) });
-    const keep = new Set([metadata.generation, stable.musterBootstrap.initialGeneration, advertisedGeneration, prior, ...activeLeases].filter(Boolean));
+    const keep = new Set([metadata.generation, stable.musterBootstrap.initialGeneration, advertisedGeneration, canonicalLkg?.generation, legacyLkg?.generation, ...activeLeases].filter(Boolean));
     for (const generation of keep) {
       let coherent = false;
       for (const name of names.filter(name => name.endsWith(`-${generation}.json`))) if (await validRecord(name, generation)) coherent = true;
@@ -626,8 +711,8 @@ export async function publishCodexRelease({ repoRoot, stagedRelease, packageVers
   return {
     generation: metadata.generation,
     releaseRoot,
-    pluginRoot: join(releaseRoot, "plugin"),
-    profilesRoot: join(releaseRoot, "profiles"),
+    pluginRoot: releasePluginRoot(releaseRoot),
+    profilesRoot: releaseProfilesRoot(releaseRoot, metadata),
     selectionName,
     initialGeneration: stable.musterBootstrap.initialGeneration,
     commitPointer: pendingPointer?.commit,

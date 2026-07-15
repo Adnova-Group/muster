@@ -41,6 +41,7 @@ test("packed Codex cache is self-contained and retains a bounded executable LKG"
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const packDir = join(tmp, "pack"); await mkdir(packDir);
   const packed = JSON.parse((await execFile("npm", ["pack", "--json", "--pack-destination", packDir], { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 })).stdout)[0];
+  assert.ok(packed.unpackedSize <= 9_707_029, `Codex package ${packed.unpackedSize} exceeds the 10% reduction guard`);
   await execFile("tar", ["-xzf", join(packDir, packed.filename), "-C", tmp]);
   const extracted = join(tmp, "package"), cache = join(tmp, "cache");
   await cp(join(extracted, ".agents"), join(cache, ".agents"), { recursive: true });

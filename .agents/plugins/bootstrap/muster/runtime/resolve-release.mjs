@@ -11,6 +11,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const FORMAT = 1;
+const CURRENT_RELEASE_FORMAT = 2;
+const SUPPORTED_RELEASE_FORMATS = new Set([FORMAT, CURRENT_RELEASE_FORMAT]);
 const GENERATION = /^[a-f0-9]{64}$/;
 const SELECTION = /^(\d{12})-([a-f0-9]{64})\.json$/;
 const STABLE_BOOTSTRAP_PATH = "./.agents/plugins/bootstrap/muster";
@@ -109,12 +111,17 @@ async function validateBootstrap(root, expectedDigest) {
 async function validateRelease(root, expectedGeneration) {
   await ordinary(join(root, "release.json"), "file", "release metadata");
   const metadata = JSON.parse((await readRegular(join(root, "release.json"), "release metadata", 4 * 1024 * 1024)).toString("utf8"));
-  if (metadata?.format !== FORMAT || metadata.generation !== expectedGeneration || !Array.isArray(metadata.files)) {
+  if (!SUPPORTED_RELEASE_FORMATS.has(metadata?.format) || metadata.generation !== expectedGeneration || !Array.isArray(metadata.files)) {
     throw new Error("Codex release metadata contract mismatch");
   }
   const files = await regularTree(root, new Set(["release.json"]));
-  const generation = sha256(JSON.stringify({ format: FORMAT, packageVersion: metadata.packageVersion, files }));
+  const generation = sha256(JSON.stringify({ format: metadata.format, packageVersion: metadata.packageVersion, files }));
   if (generation !== expectedGeneration || JSON.stringify(metadata.files) !== JSON.stringify(files)) throw new Error("Codex release content hash mismatch");
+  if (metadata.format === CURRENT_RELEASE_FORMAT) {
+    if (!files.some(file => file.path === "plugin/runtime/muster.mjs")
+      || !files.some(file => file.path.startsWith("plugin/agents/") && file.path.endsWith(".toml"))
+      || files.some(file => file.path.startsWith("profiles/"))) throw new Error("Codex format-2 canonical payload contract mismatch");
+  }
   return metadata;
 }
 
@@ -124,7 +131,7 @@ async function releaseResult(repoRoot, generation, leaseOptions) {
     const releaseRoot = await directory(repoRoot, [".agents", "plugins", "releases", generation]);
     const metadata = await validateRelease(releaseRoot, generation);
     const lease = await registerLease(repoRoot, generation, leaseOptions);
-    return { repoRoot, generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: join(releaseRoot, "profiles"), metadata, lease };
+    return { repoRoot, generation, releaseRoot, pluginRoot: join(releaseRoot, "plugin"), profilesRoot: metadata.format === CURRENT_RELEASE_FORMAT ? join(releaseRoot, "plugin", "agents") : join(releaseRoot, "profiles"), metadata, lease };
   });
 }
 

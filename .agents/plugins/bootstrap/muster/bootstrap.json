@@ -533,8 +533,8 @@
     },
     {
       "path": "runtime/resolve-release.mjs",
-      "sha256": "1d50445eca2380ea60307b8c7b26fa2c50a14be8d1f45c4fe2e7ea3715b97e18",
-      "size": 28571
+      "sha256": "7c7a6c79fb4b5b536feb217bc598ddb34a80132e89b6d46f9f1faa1b989e2e43",
+      "size": 29159
     },
     {
       "path": "runtime/resolve-skill-provider.mjs",
@@ -607,5 +607,5 @@
       "size": 740
     }
   ],
-  "digest": "7b6f765b5b1daa7fdfeaf48cfce85af194e494a0558a25d999be28047db98c50"
+  "digest": "bfc79c48292321f948818879ee055abe6ef900916c817c31d0ee3da4777319a7"
 }

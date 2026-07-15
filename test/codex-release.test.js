@@ -15,6 +15,7 @@ import {
 } from "../src/codex-release.js";
 import { readSelectedAsset, resolveCodexRelease as resolveCachedRelease } from "../codex/bootstrap/resolve-release.mjs";
 import { withCodexFileLock } from "../src/codex-lock.js";
+import { resolveFrozenV1Generation } from "./fixtures/frozen-codex-v1-selector.mjs";
 
 async function write(path, content) {
   await mkdir(dirname(path), { recursive: true });
@@ -26,8 +27,41 @@ async function candidate(root, marker) {
   await write(join(release, "plugin", ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: "0.5.0" }));
   await write(join(release, "plugin", "skills", "muster", "SKILL.md"), `---\nname: muster\ndescription: ${marker}\n---\n\n${marker}\n`);
   await write(join(release, "plugin", "runtime", "muster.mjs"), `export const generation = ${JSON.stringify(marker)};\n`);
-  await write(join(release, "profiles", "muster-builder.toml"), `name = "muster-builder"\ngeneration = ${JSON.stringify(marker)}\n`);
+  await write(join(release, "plugin", "agents", "muster-builder.toml"), `name = "muster-builder"\ngeneration = ${JSON.stringify(marker)}\n`);
   return release;
+}
+
+async function legacyCandidate(root, marker, { canonicalProfiles = true, divergentProfile = false, divergentCli = false } = {}) {
+  const release = join(root, `${marker}-legacy-candidate`);
+  const cli = `export const generation = ${JSON.stringify(marker)};\n`;
+  const profile = `name = "muster-builder"\ngeneration = ${JSON.stringify(marker)}\n`;
+  await write(join(release, "plugin", ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: "0.5.0" }));
+  await write(join(release, "plugin", "runtime", "muster.mjs"), cli);
+  await write(join(release, "plugin", "src", "cli.js"), divergentCli ? `${cli}// divergent legacy entrypoint\n` : cli);
+  if (canonicalProfiles) await write(join(release, "plugin", "agents", "muster-builder.toml"), divergentProfile ? `${profile}# divergent canonical profile\n` : profile);
+  await write(join(release, "profiles", "muster-builder.toml"), profile);
+  return release;
+}
+
+async function installLegacyRelease(root, marker, options) {
+  const staged = await legacyCandidate(root, marker, options);
+  const { files } = await assertRegularTree(staged);
+  const payload = { format: 1, packageVersion: "0.5.0", files };
+  const generation = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  await write(join(staged, "release.json"), JSON.stringify({ ...payload, generation }, null, 2) + "\n");
+  const releaseRoot = join(root, ".agents", "plugins", "releases", generation);
+  await mkdir(dirname(releaseRoot), { recursive: true });
+  await rename(staged, releaseRoot);
+  await mkdir(join(root, ".agents", "plugins", "selections"), { recursive: true });
+  await write(join(root, ".agents", "plugins", "selections", `000000000001-${generation}.json`), JSON.stringify({
+    format: 1, sequence: 1, generation, bootstrapDigest: TEST_BOOTSTRAP_DIGEST
+  }, null, 2) + "\n");
+  const marketplacePath = join(root, ".agents", "plugins", "marketplace.json");
+  const marketplace = JSON.parse(await readFile(marketplacePath, "utf8"));
+  marketplace.plugins[0].source.path = "./.agents/plugins/bootstrap/muster";
+  marketplace.musterBootstrap = { format: 1, digest: TEST_BOOTSTRAP_DIGEST, initialGeneration: generation };
+  await writeFile(marketplacePath, JSON.stringify(marketplace, null, 2) + "\n");
+  return { generation, releaseRoot };
 }
 
 const bootstrapPayload = { format: 1, files: [] };
@@ -274,6 +308,60 @@ test("published Codex release resolves one content-addressed plugin/profile gene
   assert.equal(await readFile(join(selected.pluginRoot, "runtime", "muster.mjs"), "utf8"), 'export const generation = "one";\n');
   assert.equal(await readFile(join(selected.profilesRoot, "muster-builder.toml"), "utf8"), 'name = "muster-builder"\ngeneration = "one"\n');
   assert.equal((await validateCodexRelease(selected.releaseRoot, selected.generation)).generation, selected.generation);
+});
+
+test("new resolvers read legacy v1 and canonical v2 releases while frozen v1 resolvers fall back", async t => {
+  const root = await tempRepo(t);
+  const legacy = await installLegacyRelease(root, "legacy");
+  const sourceLegacy = await resolveCodexRelease(root);
+  const cachedLegacy = await resolveCachedRelease(root);
+  assert.equal(sourceLegacy.generation, legacy.generation);
+  assert.equal(cachedLegacy.generation, legacy.generation);
+  assert.equal(sourceLegacy.metadata.format, 1);
+  assert.equal(sourceLegacy.profilesRoot, join(legacy.releaseRoot, "profiles"));
+  await sourceLegacy.lease.close();
+  await cachedLegacy.lease.close();
+
+  const current = await publish({ repoRoot: root, stagedRelease: await candidate(root, "current"), packageVersion: "0.5.0" });
+  const sourceCurrent = await resolveCodexRelease(root);
+  const cachedCurrent = await resolveCachedRelease(root);
+  assert.equal(sourceCurrent.generation, current.generation);
+  assert.equal(cachedCurrent.generation, current.generation);
+  assert.equal(sourceCurrent.metadata.format, 2);
+  assert.equal(sourceCurrent.profilesRoot, join(current.releaseRoot, "plugin", "agents"));
+  assert.equal(await resolveFrozenV1Generation(root), legacy.generation);
+  const retainedFormats = await Promise.all((await readdir(join(root, ".agents", "plugins", "releases"))).map(async generation =>
+    JSON.parse(await readFile(join(root, ".agents", "plugins", "releases", generation, "release.json"), "utf8")).format
+  ));
+  assert.deepEqual(retainedFormats.sort(), [1, 2, 2], "format transition must retain current v2, canonical v2 LKG, and frozen v1 fallback");
+  await sourceCurrent.lease.close();
+  await cachedCurrent.lease.close();
+});
+
+test("format migration relocates profiles when legacy releases lack plugin agents", async t => {
+  const root = await tempRepo(t);
+  const legacy = await installLegacyRelease(root, "missing-agents", { canonicalProfiles: false });
+  const current = await publish({ repoRoot: root, stagedRelease: await candidate(root, "current"), packageVersion: "0.5.0" });
+  const generations = await readdir(join(root, ".agents", "plugins", "releases"));
+  const formats = await Promise.all(generations.map(async generation => ({
+    generation,
+    format: JSON.parse(await readFile(join(root, ".agents", "plugins", "releases", generation, "release.json"), "utf8")).format
+  })));
+  const migrated = formats.find(item => ![legacy.generation, current.generation].includes(item.generation) && item.format === 2)?.generation;
+  assert.ok(migrated);
+  assert.equal(await readFile(join(root, ".agents", "plugins", "releases", migrated, "plugin", "agents", "muster-builder.toml"), "utf8"), 'name = "muster-builder"\ngeneration = "missing-agents"\n');
+});
+
+for (const [label, options, pattern] of [
+  ["profile", { divergentProfile: true }, /profile copies diverged/i],
+  ["CLI", { divergentCli: true }, /CLI copies diverged/i]
+]) test(`format migration rejects divergent legacy ${label} copies`, async t => {
+  const root = await tempRepo(t);
+  await installLegacyRelease(root, `divergent-${label}`, options);
+  await assert.rejects(
+    publish({ repoRoot: root, stagedRelease: await candidate(root, `current-${label}`), packageVersion: "0.5.0" }),
+    pattern
+  );
 });
 
 test("deferred publication keeps the observable pointer stable until process-exit commit", async t => {

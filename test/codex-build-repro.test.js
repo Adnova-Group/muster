@@ -28,12 +28,12 @@ async function selectedSnapshot(checkout) {
   const generation = selected.generation;
   const release = selected.releaseRoot;
   const paths = [
-    "plugin/runtime/muster.mjs",
-    "plugin/commands/audit.md",
-    "plugin/internal-skills/advisor/SKILL.md",
-    "profiles/muster-builder.toml"
+    join(selected.pluginRoot, "runtime", "muster.mjs"),
+    join(selected.pluginRoot, "commands", "audit.md"),
+    join(selected.pluginRoot, "internal-skills", "advisor", "SKILL.md"),
+    join(selected.profilesRoot, "muster-builder.toml")
   ];
-  return { generation, files: await Promise.all(paths.map(path => readFile(join(release, path), "utf8"))) };
+  return { generation, files: await Promise.all(paths.map(path => readFile(path, "utf8"))) };
 }
 
 test("Codex bundles are byte-identical across checkout roots with shared symlinked dependencies", async () => {
@@ -149,6 +149,14 @@ test("Codex build synchronizes project profiles and hooks to the selected releas
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 30_000 });
 
   const selected = await resolveCodexRelease(checkout);
+  const releaseMetadata = await readJson(join(selected.releaseRoot, "release.json"));
+  assert.equal(releaseMetadata.format, 2);
+  assert.equal((await readdir(selected.releaseRoot)).includes("profiles"), false, "format 2 must not retain a duplicate profile tree");
+  assert.equal(await readFile(join(selected.pluginRoot, "src", "cli.js"), "utf8"), '#!/usr/bin/env node\nimport "../runtime/muster.mjs";\n');
+  const duplicateBearingBytes = releaseMetadata.files
+    .filter(file => file.path.startsWith("profiles/") || ["plugin/src/cli.js", "plugin/runtime/muster.mjs"].includes(file.path))
+    .reduce((total, file) => total + file.size, 0);
+  assert.ok(duplicateBearingBytes <= 844_756, `duplicate-bearing payload ${duplicateBearingBytes} exceeds the 40% reduction guard`);
   const marketplace = await readJson(join(checkout, ".agents", "plugins", "marketplace.json"));
   const profileManifest = await readJson(join(checkout, ".codex", "agents", ".muster-managed.json"));
   const hookManifest = await readJson(join(checkout, ".codex", "muster", ".muster-managed.json"));

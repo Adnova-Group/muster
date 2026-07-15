@@ -309,7 +309,7 @@ function hookWithProfilePolicy(source, agentMapping) {
   return result;
 }
 async function syncProjectCodexArtifacts(stagedRelease, metadata, bootstrapDigest) {
-  const sourceProfiles = join(stagedRelease, "profiles");
+  const sourceProfiles = join(stagedRelease, "plugin", "agents");
   const destinationProfiles = join(root, ".codex", "agents");
   const profileFiles = (await readdir(sourceProfiles)).filter(name => name.endsWith(".toml")).sort();
   const priorProfiles = await optionalJson(join(destinationProfiles, ".muster-managed.json"));
@@ -394,7 +394,7 @@ stagingRoot = await mkdtemp(join(pluginParent, ".muster-build-"));
 await write(join(stagingRoot, ".lease.json"), JSON.stringify({ format: 1, pid: process.pid, startedAt: Date.now() }) + "\n");
 plugin = join(stagingRoot, "release", "plugin");
 runtime = join(plugin, "runtime");
-profiles = join(stagingRoot, "release", "profiles");
+profiles = join(plugin, "agents");
 modeDir = join(plugin, "skills");
 internalSkillDir = join(plugin, "internal-skills");
 for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"]) {
@@ -463,10 +463,7 @@ await write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription
 for (const [id, config] of Object.entries(mapping.agents)) {
   const source = await readFile(join(root, config.source), "utf8");
   const content = profileToml(id, source, config);
-  await Promise.all([
-    write(join(profiles, `${id}.toml`), content),
-    write(join(plugin, "agents", `${id}.toml`), content)
-  ]);
+  await write(join(profiles, `${id}.toml`), content);
 }
 
 await ensure(runtime);
@@ -476,7 +473,7 @@ await ensure(runtime);
 const requireBanner = 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);';
 const bundleOptions = { bundle: true, platform: "node", format: "esm", target: "node20", preserveSymlinks: true };
 await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), banner: { js: requireBanner } });
-await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(plugin, "src", "cli.js"), banner: { js: requireBanner } });
+await write(join(plugin, "src", "cli.js"), '#!/usr/bin/env node\nimport "../runtime/muster.mjs";\n');
 const sharedMcpSource = await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8");
 const codexMcpSource = sharedMcpSource
   .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")

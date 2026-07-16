@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
@@ -182,4 +182,121 @@ test("Codex PreToolUse never counts Bash calls toward the border invitation (no 
     );
     assert.equal(result.systemMessage, undefined, `Bash call ${n} must never trigger the border invitation`);
   }
+});
+
+test("Codex PreToolUse's border invitation counts every EDIT_TOOLS member (apply_patch, Write, NotebookEdit), keyed by whichever of file_path/path/notebook_path is present", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-tools-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const sessionId = "border-tools-session";
+  t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
+  const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
+  const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
+  const calls = [
+    { hook_event_name: "PreToolUse", session_id: sessionId, tool_use_id: "apply-patch-1", tool_name: "apply_patch", tool_input: { path: join(tmp, "patched.txt") }, cwd: tmp },
+    { hook_event_name: "PreToolUse", session_id: sessionId, tool_use_id: "write-1", tool_name: "Write", tool_input: { file_path: join(tmp, "written.txt") }, cwd: tmp },
+    { hook_event_name: "PreToolUse", session_id: sessionId, tool_use_id: "notebook-1", tool_name: "NotebookEdit", tool_input: { notebook_path: join(tmp, "nb.ipynb") }, cwd: tmp }
+  ];
+  const first = await runCodexHook(calls[0], tmp, hookPath, hookEnv);
+  assert.equal(first.systemMessage, undefined, "1 distinct touch (apply_patch, keyed by .path) is below the border");
+  const second = await runCodexHook(calls[1], tmp, hookPath, hookEnv);
+  assert.equal(second.systemMessage, undefined, "2 distinct touches (Write, keyed by .file_path) is below the border");
+  const third = await runCodexHook(calls[2], tmp, hookPath, hookEnv);
+  assert.match(third.systemMessage, /border invitation/i, "3rd distinct touch (NotebookEdit, keyed by .notebook_path) crosses the border");
+});
+
+test("Codex PreToolUse's border invitation falls back to tool_name as the distinct key when tool_input carries no path field", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-nopath-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const sessionId = "border-nopath-session";
+  t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
+  const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
+  const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
+  const noPathCall = n => runCodexHook(
+    { hook_event_name: "PreToolUse", session_id: sessionId, tool_use_id: `edit-nopath-${n}`, tool_name: "Edit", tool_input: {}, cwd: tmp },
+    tmp, hookPath, hookEnv
+  );
+  const first = await noPathCall(1);
+  assert.equal(first.systemMessage, undefined);
+  const second = await noPathCall(2);
+  assert.equal(second.systemMessage, undefined, "repeated no-path Edit calls collapse onto the same tool_name-fallback key -- still only 1 distinct touch");
+  const third = await noPathCall(3);
+  assert.equal(third.systemMessage, undefined, "3rd call is still the SAME distinct key (tool_name fallback), so it must not cross the border");
+});
+
+test("Codex PreToolUse's border-invitation threshold rejects a non-integer MUSTER_INLINE_SCALE rather than parseInt-truncating it", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-badenv-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const sessionId = "border-badenv-session";
+  t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
+  const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
+  // "2foo" must NOT be accepted as 2 (Number.parseInt would truncate-parse this
+  // to 2) -- a malformed override must fall back to the documented default (3).
+  const hookEnv = { CODEX_HOME: join(tmp, "codex-home"), MUSTER_INLINE_SCALE: "2foo" };
+  const editCall = n => runCodexHook(
+    { hook_event_name: "PreToolUse", session_id: sessionId, tool_use_id: `edit-${n}`, tool_name: "Edit", tool_input: { file_path: join(tmp, `file-${n}.txt`) }, cwd: tmp },
+    tmp, hookPath, hookEnv
+  );
+  const first = await editCall(1);
+  assert.equal(first.systemMessage, undefined, "1 distinct file is below either threshold");
+  const second = await editCall(2);
+  assert.equal(second.systemMessage, undefined, "a malformed override must fall back to the default threshold (3), not truncate-parse to 2 -- 2 distinct files must NOT cross");
+  const third = await editCall(3);
+  assert.match(third.systemMessage, /border invitation/i, "the default threshold (3) still applies once the override is rejected as malformed");
+});
+
+test("Codex SessionStart re-arms a previously-nudged border invitation on a fresh session start", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-sessionstart-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const sessionId = "border-sessionstart-session";
+  t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
+  const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
+  const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
+  const editCall = n => runCodexHook(
+    { hook_event_name: "PreToolUse", session_id: sessionId, tool_use_id: `edit-${n}`, tool_name: "Edit", tool_input: { file_path: join(tmp, `file-${n}.txt`) }, cwd: tmp },
+    tmp, hookPath, hookEnv
+  );
+  await editCall(1);
+  await editCall(2);
+  const third = await editCall(3);
+  assert.match(third.systemMessage, /border invitation/i, "crossing fires once");
+  const fourth = await editCall(4);
+  assert.equal(fourth.systemMessage, undefined, "still nudged -- silent before any reset");
+
+  await runCodexHook({ hook_event_name: "SessionStart", session_id: sessionId, source: "startup", cwd: tmp }, tmp, hookPath, hookEnv);
+
+  const postSessionStart = await editCall(5);
+  assert.equal(postSessionStart.systemMessage, undefined, "1 distinct file post-reset is below the border");
+  await editCall(6);
+  const reCrossed = await editCall(7);
+  assert.match(reCrossed.systemMessage, /border invitation/i, "a fresh SessionStart re-arms the crossing -- it can nudge again");
+});
+
+test("Codex PreToolUse's border invitation re-arms once its state file goes stale past the 60-minute crossing age", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-stale-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const sessionId = "border-stale-session";
+  const stateFile = borderStateFile(sessionId);
+  t.after(() => unlink(stateFile).catch(() => {}));
+  const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
+  const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
+  const editCall = n => runCodexHook(
+    { hook_event_name: "PreToolUse", session_id: sessionId, tool_use_id: `edit-${n}`, tool_name: "Edit", tool_input: { file_path: join(tmp, `file-${n}.txt`) }, cwd: tmp },
+    tmp, hookPath, hookEnv
+  );
+  await editCall(1);
+  await editCall(2);
+  const third = await editCall(3);
+  assert.match(third.systemMessage, /border invitation/i, "crossing fires once");
+
+  // Back-date the state file's mtime past BORDER_MAX_AGE_MS (60 minutes) --
+  // the next record must treat the crossing as stale and start fresh instead
+  // of staying silent.
+  const past = new Date(Date.now() - 61 * 60 * 1000);
+  await utimes(stateFile, past, past);
+
+  const first = await editCall(4);
+  assert.equal(first.systemMessage, undefined, "1 distinct file post-staleness-reset is below the border");
+  await editCall(5);
+  const reCrossed = await editCall(6);
+  assert.match(reCrossed.systemMessage, /border invitation/i, "staleness re-arms the crossing -- it can nudge again");
 });

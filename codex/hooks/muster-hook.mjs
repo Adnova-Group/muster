@@ -85,8 +85,13 @@ function forbiddenActions(cwd, root) {
 
 // ── border invitation: per-session cumulative distinct-edit counter ────────
 function borderScale() {
-  const raw = Number.parseInt(process.env.MUSTER_INLINE_SCALE || "", 10);
-  return Number.isFinite(raw) && raw >= 2 ? raw : BORDER_SCALE_DEFAULT;
+  const rawEnv = process.env.MUSTER_INLINE_SCALE;
+  // Full-match a plain (optionally signed) integer before parsing -- Number.
+  // parseInt("2foo", 10) === 2 would otherwise silently truncate-accept a
+  // malformed override instead of falling back to the documented default.
+  if (typeof rawEnv !== "string" || !/^-?\d+$/.test(rawEnv)) return BORDER_SCALE_DEFAULT;
+  const raw = Number.parseInt(rawEnv, 10);
+  return raw >= 2 ? raw : BORDER_SCALE_DEFAULT;
 }
 function safeSession(sessionId) {
   if (typeof sessionId !== "string") return null;

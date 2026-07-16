@@ -107,6 +107,7 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 | `help [command]` | Print CLI usage without dispatching the named command. `muster <command> --help` is equivalent and is safe for mutating verbs. |
 | `scratchpad <runId>` | Read a run's scratchpad. |
 | `memory read` / `memory write ...` | Read and write Muster's memory store. |
+| `hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]` | Burn-hygiene guards so a dead run can't strand machine state: detects zombie provider CLI (codex/claude) processes (an orphaned process -- parent dead/1 -- is reap-eligible; a merely stale-started one with a live parent is report-only, never killed), offers a stale-worktree sweep once live worktrees exceed the threshold (report-only, never deletes), and auto-releases a backlog `{claimed: runner@ts}` annotation once its heartbeat exceeds the stale-claim threshold (default 60 min). Report-only by default; `--reap` opts into killing reap-eligible zombies and rewriting the backlog to release stale claims. |
 
 ::: tip
 Run `muster help`, `muster help <command>`, or `muster <command> --help` to see usage without executing the command. The CLI fails loud with a clear message on bad input.

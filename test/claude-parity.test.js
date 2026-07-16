@@ -40,5 +40,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update("\0");
   }
   assert.equal(paths.length, 136);
-  assert.equal(hash.digest("hex"), "30fe004fdbaf6911b53188c0a9c56300d2b3f1abef5241e8b962f795c3b2d886");
+  assert.equal(hash.digest("hex"), "6ed598acff708439473ad4051707333ab5baa67f276c9e7c5f3b4483eed4e38c");
 });

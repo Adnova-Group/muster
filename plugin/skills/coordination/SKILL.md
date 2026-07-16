@@ -52,6 +52,14 @@ attribution note belongs in `website/about/credits.md` (out of scope here; flagg
    resume scan), a runner checks whether the protocol text it is actually running on has drifted from the
    repo's current tip, against a fingerprint recorded at first read. See "Standing-context preflight"
    below for the fingerprint set, the exact commands, and the deterministic confined-vs-expands rule.
+7. **HYGIENE PREFLIGHT** — once per cycle, alongside the standing-context preflight above and before
+   CLAIM, run `node src/cli.js hygiene --reap`: it reaps a zombie provider CLI process (codex/claude)
+   whose parent is already dead/1, leaving a live run's own process purely reported (its conservative
+   reap gate keeps `--reap` scoped to confirmed-orphaned pids only — see `src/hygiene.js`), auto-releases
+   a coordination claim whose heartbeat exceeds 60 minutes (a dead runner's stranded `{claimed:}`, exactly
+   the incident this guards against), and offers a stale-worktree sweep once live worktrees exceed 10,
+   surfaced purely as a report for a human to action. `src/hygiene.js` is the executable source of truth
+   for these guards; this bullet is only its operational rendering.
 
 An **escalation** (sprint.md's own terminal disposition — spec-gate cap, fix-loop cap) is not a new
 receipt type: it is a `FAILED` receipt (attempt-counted, per each binding's existing format) plus the

@@ -47,9 +47,10 @@ import { fuse } from "./fusion.js";
 import { validateAdviceRequest } from "./advisor.js";
 import { modelForRole } from "./model.js";
 import { detectScope } from "./scope.js";
+import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./hygiene.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|help [command]>";
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -399,6 +400,35 @@ async function main() {
       await mkdir(signalsDir, { recursive: true });
       await writeFile(join(signalsDir, "signals.json"), JSON.stringify(sig, null, 2));
       out(sig);
+    // ── memory + ops (cont.): burn-hygiene guards -- zombie provider processes, stale
+    // worktrees, stale coordination claims. Report-only by default; --reap opts into
+    // killing orphaned processes and auto-releasing stale claims (never worktree removal --
+    // that stays a human decision, see src/hygiene.js's file-level note).
+    } else if (cmd === "hygiene") {
+      const reap = rest.includes("--reap");
+      const json = rest.includes("--json");
+      const backlogPath = flagValue(rest, "--backlog") || join(".muster", "backlog.md");
+      // `Number.isFinite` (not `|| DEFAULT`) so an explicitly-passed `0` is honored as a
+      // real override instead of silently falling back to the default -- `0 || DEFAULT`
+      // would otherwise treat "explicitly zero" the same as "flag not passed at all".
+      const worktreeThresholdArg = Number(flagValue(rest, "--worktree-threshold"));
+      const worktreeThreshold = Number.isFinite(worktreeThresholdArg) ? worktreeThresholdArg : DEFAULT_WORKTREE_THRESHOLD;
+      const zombieStaleMinArg = Number(flagValue(rest, "--zombie-stale-min"));
+      const zombieStaleMin = Number.isFinite(zombieStaleMinArg) ? zombieStaleMinArg : null;
+      const claimStaleMinArg = Number(flagValue(rest, "--claim-stale-min"));
+      const claimStaleMin = Number.isFinite(claimStaleMinArg) ? claimStaleMinArg : null;
+      const result = await runHygiene({
+        backlogContent: () => readFile(backlogPath, "utf8").catch(() => null),
+        reap,
+        zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
+        worktreeOptions: { threshold: worktreeThreshold },
+        claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
+      });
+      if (reap && result.claims.content != null && result.claims.releases.length > 0) {
+        await writeFile(backlogPath, result.claims.content, "utf8");
+      }
+      if (json) out(result);
+      else process.stdout.write(renderHygieneReport(result) + "\n");
     } else {
       fail(`unknown command: ${[cmd, ...rest].join(" ")}\n${USAGE}`);
     }

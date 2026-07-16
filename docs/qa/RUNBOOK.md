@@ -187,7 +187,8 @@ independently rather than deduping. Run the focused regression coverage while
 changing the hook runtime or installer contract:
 
 ```
-node --test --test-name-pattern='idempotent context|exports no lock|requires exact owned' test/codex.test.js
+node --test --test-name-pattern='idempotent context|exports no lock' test/codex-hooks.test.js
+node --test --test-name-pattern='requires exact owned' test/codex-doctor.test.js
 ```
 
 **Expected signals:** all three tests pass. "emits idempotent context" proves
@@ -263,7 +264,7 @@ auto-migration. `runCodexDoctor` detects that exact legacy shape and reports
 version-mismatch message. Regression coverage:
 
 ```
-node --test --test-name-pattern='legacy pre-0.5.x' test/codex.test.js
+node --test --test-name-pattern='legacy pre-0.5.x' test/codex-doctor.test.js
 ```
 
 **Expected signal:** one test passes, asserting all three checks name the

@@ -9,6 +9,12 @@ import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
 import { resolveCodexPlugin } from "./codex-release.js";
+import {
+  CODEX_THREAD_LIMIT_REMEDIATION,
+  codexThreadLimitConfigPath,
+  codexThreadLimitsMeetFloor,
+  readCodexThreadLimits
+} from "./codex-thread-limits.js";
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -241,6 +247,27 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   checks.push({ name: "codex-managed-scopes", ok: registeredScopes.issues.length === 0, detail: registeredScopes.issues.length
     ? `${registeredScopes.issues.join("; ")}; rerun muster install codex for the affected scope`
     : registeredScopes.dirs.length ? `${registeredScopes.dirs.length} safe registered managed scope(s) inspected` : "no managed-scope registry found; inspecting current project and user scopes" });
+  // Independent of install: the shared CODEX_HOME config.toml can drift
+  // below the enforced floor at any time (hand-edited, or a Codex upgrade
+  // resetting it) with no `muster install codex` in between -- this check
+  // re-reads it live every `doctor` run rather than trusting the install-
+  // time manifest, and reuses the exact same remediation text a failed
+  // install throws (backlog item `codex-thread-limits-enforcement`).
+  const threadLimitConfigPath = codexThreadLimitConfigPath(userCodexHome);
+  try {
+    const text = await readRegularFile(threadLimitConfigPath, "utf8");
+    if (text === null) {
+      checks.push({ name: "codex-thread-limits", ok: false, detail: `Codex config.toml not found at ${threadLimitConfigPath}. ${CODEX_THREAD_LIMIT_REMEDIATION}` });
+    } else {
+      const limits = readCodexThreadLimits(text);
+      const ok = codexThreadLimitsMeetFloor(limits);
+      checks.push({ name: "codex-thread-limits", ok, detail: ok
+        ? `max_threads=${limits.max_threads}, max_depth=${limits.max_depth} at ${threadLimitConfigPath} meet the Muster floor (>=12/>=2)`
+        : `max_threads=${limits.max_threads ?? "unset"}, max_depth=${limits.max_depth ?? "unset"} at ${threadLimitConfigPath} below the Muster floor. ${CODEX_THREAD_LIMIT_REMEDIATION}` });
+    }
+  } catch (error) {
+    checks.push({ name: "codex-thread-limits", ok: false, detail: `${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}` });
+  }
   const scopeHomes = new Map([[join(cwd, ".codex"), false], [userCodexHome, false]]);
   for (const dir of registeredScopes.dirs) scopeHomes.set(dir, true);
   const hookHomes = [...scopeHomes.keys()];

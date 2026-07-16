@@ -153,6 +153,42 @@ test("C7: chmod 000 subdir — collectScanFiles does not throw; readable sibling
   }
 });
 
+// ── C2b: SCAN_SKIP_DIRS excludes .claude (harness-created agent worktrees) ──
+// Claude Code auto-creates agent worktrees under <root>/.claude/worktrees/agent-*/,
+// each a full checkout of the repo (SKILL.md copies included). Without .claude in
+// SCAN_SKIP_DIRS, a repo-wide prompt scan descends into every agent worktree and
+// re-lints hundreds of duplicate prompt files, producing false failures whenever
+// worktrees are present locally (see D1 test below).
+test("C2b: collectScanFiles excludes files inside .claude (harness agent-worktree state)", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-ps-c2b-"));
+  try {
+    assert.ok(SCAN_SKIP_DIRS.has(".claude"), "SCAN_SKIP_DIRS must contain .claude");
+
+    // Simulate a harness-created agent worktree with a prompt-lint violation
+    // (no persona, no output format -- guaranteed to fail lintPrompt).
+    const worktreeDir = path.join(dir, ".claude", "worktrees", "agent-x");
+    mkdirSync(worktreeDir, { recursive: true });
+    writeFileSync(
+      path.join(worktreeDir, "SKILL.md"),
+      "---\nname: fixture-skill\n---\n\nDo the thing.\n",
+    );
+
+    // Create a file that SHOULD be included.
+    writeFileSync(path.join(dir, "visible.md"), "# visible file");
+
+    const files = await collectScanFiles(dir);
+    const paths = files.map((f) => f.path);
+
+    assert.ok(paths.includes("visible.md"), "visible.md must be included");
+    assert.ok(
+      !paths.some((p) => p.startsWith(".claude")),
+      ".claude must be excluded, but found: " + paths.filter((p) => p.startsWith(".claude")),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── D1: repo-wide prompt-lint backlog is clean (backlog item prompt-lint-backlog) ──────
 // Pins the deliverable itself: `node src/cli.js prompt scan .` must report zero failing
 // files across the real repo. Before this item's fix, plugin/commands/run.md, autopilot.md,

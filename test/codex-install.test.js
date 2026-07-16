@@ -48,7 +48,11 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
   }
   await writeFile(join(agents, "user-agent.toml"), "name = 'user-agent'\n");
   const removed = await runCodexUninstall({ cwd, home, execFile });
-  assert.equal(removed.files.length, CODEX_COUNTS.agents + 3);
+  // +3 hook runtime/config files, +1 the shared CODEX_HOME config.toml
+  // thread-limit restore (this is the only/last Muster-managed scope for
+  // this home, so uninstall also reports and restores it -- see
+  // test/codex-thread-limits.test.js for dedicated coverage).
+  assert.equal(removed.files.length, CODEX_COUNTS.agents + 4);
   assert.equal(await readFile(join(agents, "user-agent.toml"), "utf8"), "name = 'user-agent'\n");
   assert.deepEqual(JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8")), userHook);
   await assert.rejects(() => readFile(installedHook, "utf8"));

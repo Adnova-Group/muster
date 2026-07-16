@@ -26,6 +26,19 @@ function missingPath(error) {
   return error?.code === "ENOENT" || error?.code === "ENOTDIR";
 }
 
+// Pre-0.5.x Muster installs keyed coherence on a committed-release
+// generation hash (`generation`/`bootstrapDigest`) instead of the installed
+// package's version. Wave 2's teardown (2026-07-15) switched the managed
+// manifest's coherence key to `packageVersion` — see CHANGELOG.md — so an
+// untouched pre-0.5.x install now fails every version-comparison check below
+// with an opaque "does not match"/"is stale" message that gives no hint the
+// real cause is simply "this predates the key rename." Detecting that exact
+// legacy shape lets each check name it and point at the one-line fix instead.
+function isLegacyManagedManifest(owner) {
+  return Boolean(owner) && owner.owner === "muster" && typeof owner.packageVersion !== "string"
+    && (typeof owner.generation === "string" || typeof owner.bootstrapDigest === "string");
+}
+
 async function ordinaryDirectoryPath(path) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
@@ -232,6 +245,10 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   } catch (error) {
     checks.push({ name: "codex-mcp-handshake", ok: false, detail: `bundled MCP initialize/tools/list handshake failed: ${error.message}; ${mcpVisibilityNote}` });
   }
+  const scopeKeyword = dir => dir === userCodexHome ? "user" : "project";
+  const legacyRemediation = dirs => `legacy pre-0.5.x install detected at ${dirs
+    .map(dir => `${dir} (rerun \`muster install codex --scope ${scopeKeyword(dir)}\` to migrate)`)
+    .join(", ")}`;
   if (selected) {
     const installations = [];
     for (const dir of hookHomes) {
@@ -241,18 +258,24 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
           ? await readRegularJson(manifestPath)
           : JSON.parse(await readFile(manifestPath, "utf8"));
         if (!owner) throw new Error(`managed profile manifest is missing: ${manifestPath}`);
-        installations.push({ dir, ok: owner.owner === "muster" && owner.packageVersion === selected.packageVersion });
+        installations.push({ dir, ok: owner.owner === "muster" && owner.packageVersion === selected.packageVersion, legacy: isLegacyManagedManifest(owner) });
       } catch {
-        if (scopeHomes.get(dir)) installations.push({ dir, ok: false });
+        if (scopeHomes.get(dir)) installations.push({ dir, ok: false, legacy: false });
       }
     }
     const stale = installations.filter(item => !item.ok);
+    const legacyStale = stale.filter(item => item.legacy).map(item => item.dir);
+    const versionStale = stale.filter(item => !item.legacy).map(item => item.dir);
     checks.push({ name: "codex-install-generation", ok: stale.length === 0, detail: stale.length
-      ? `installed profiles do not match the selected package version at: ${stale.map(item => item.dir).join(", ")}; rerun muster install codex`
+      ? [
+          legacyStale.length ? legacyRemediation(legacyStale) : null,
+          versionStale.length ? `installed profiles do not match the selected package version at: ${versionStale.join(", ")}; rerun muster install codex` : null
+        ].filter(Boolean).join("; ")
       : installations.length ? `${installations.length} managed scope(s) match package version ${selected.packageVersion}` : "no managed profile scopes detected" });
   }
   const hookStatuses = [];
   const staleHookScopes = [];
+  const legacyHookScopes = [];
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
@@ -262,6 +285,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         ? await readRegularJson(manifestPath)
         : JSON.parse(await readFile(manifestPath, "utf8"));
       if (!owner) throw new Error(`managed hook manifest is missing: ${manifestPath}`);
+      if (isLegacyManagedManifest(owner)) { legacyHookScopes.push(dir); staleHookScopes.push(dir); continue; }
       const configPath = join(dir, "hooks.json");
       const config = registered
         ? await readRegularJson(configPath)
@@ -280,9 +304,14 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     } catch { staleHookScopes.push(dir); }
   }
   const hookStatus = staleHookScopes.length === 0 ? hookStatuses[0] || null : null;
+  const otherStaleHookScopes = staleHookScopes.filter(dir => !legacyHookScopes.includes(dir));
+  const legacyHookDetail = legacyHookScopes.length ? legacyRemediation(legacyHookScopes) : null;
   checks.push({ name: "codex-hooks", ok: Boolean(hookStatus), detail: hookStatus
     ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks`
-    : staleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${staleHookScopes.join(", ")}; rerun muster install codex for each scope` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
+    : [
+        legacyHookDetail,
+        otherStaleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${otherStaleHookScopes.join(", ")}; rerun muster install codex for each scope` : null
+      ].filter(Boolean).join("; ") || "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
   // The hook runtime itself has no cross-copy dedupe (each installed copy
   // independently emits its own event context; wave 1 removed the CODEX_HOME
   // bookkeeping that used to attempt it — see codex.test.js's "no cross-copy
@@ -290,7 +319,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // coherent with their exact ownership manifest, not whether output is
   // deduplicated.
   checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0, detail: staleHookScopes.length
-    ? "Project/user hook copies are not hash/exact-group coherent with their ownership manifest; refresh every stale scope"
+    ? [legacyHookDetail, otherStaleHookScopes.length ? "Project/user hook copies are not hash/exact-group coherent with their ownership manifest; refresh every stale scope" : null].filter(Boolean).join("; ")
     : hookStatuses.length > 1
     ? "Muster hooks are installed at both project and user scopes; each copy independently emits its own event context (there is no cross-copy dedupe, and each event's output is idempotent)"
     : "No project and user Muster hook overlap detected" });

@@ -261,15 +261,20 @@ async function adaptPortedSkills(internalSkillDir, names) {
 // path had its own separate, possibly-diverging copy of this check before.
 // Known limitation: this compares only the package version, not file
 // content, so editing a source file without bumping the version will not by
-// itself trigger regeneration; delete `outDir` (or bump the version) to force
-// a fresh build.
+// itself trigger regeneration and this call is a silent no-op — delete
+// `outDir`, bump the version, or set `MUSTER_BUILD_FORCE=1` (honored here,
+// and therefore by `npm run build:codex` / the `pretest` hook that invokes
+// this same script's CLI entry below) to force a fresh build regardless of
+// the published version.
 export async function buildCodexPlugin(options, retries = 1) {
   const { root, outDir } = options;
   const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-  try {
-    const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
-    if (current.packageVersion === packageVersion) return current;
-  } catch { /* nothing published yet, or what's there is stale/invalid: generate below */ }
+  if (process.env.MUSTER_BUILD_FORCE !== "1") {
+    try {
+      const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
+      if (current.packageVersion === packageVersion) return current;
+    } catch { /* nothing published yet, or what's there is stale/invalid: generate below */ }
+  }
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try { return await buildCodexPluginOnce(options); }
@@ -391,7 +396,13 @@ async function buildCodexPluginOnce({ root, outDir }) {
       interface: { displayName: "Muster", shortDescription: "Glass-box agentic orchestration for Codex.", longDescription: "Muster provides deterministic routing, custom-agent profiles, pipeline workflows, and the complete MCP toolset.", developerName: "Adnova Group", category: "Productivity", capabilities: ["Read", "Write"], websiteURL: "https://adnova-group.github.io/muster/", defaultPrompt: ["Plan this feature with Muster.", "Run a Muster audit of this repository.", "Use Muster to clear this backlog."] }
     }, null, 2) + "\n");
 
-    return publishCodexPlugin({
+    // Awaited (not just returned) so the `finally` below — which deletes
+    // this whole staging tree — cannot run until the copy-publish below
+    // (which reads from this staging tree) has actually finished. A bare
+    // `return publishCodexPlugin(...)` would let `finally` fire as soon as
+    // this synchronous call yields at its first internal `await`, deleting
+    // the source out from under the still-pending copy.
+    return await publishCodexPlugin({
       pluginsRoot: outDir,
       stagedPlugin: plugin,
       packageVersion: pkg.version,

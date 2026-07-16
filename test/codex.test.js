@@ -778,6 +778,45 @@ test("Codex doctor inspects stale registered project scopes outside the current 
   assert.match(hooks?.detail || "", new RegExp(hooksScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("Codex doctor gives an actionable legacy pre-0.5.x diagnostic instead of an opaque generation/hooks mismatch", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-legacy-format-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current-project"), codexHome = join(home, ".codex");
+  const profilesScope = join(tmp, "old-format-profiles"), hooksScope = join(tmp, "old-format-hooks");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ cwd: profilesScope, home, repoRoot, execFile: absent });
+  await runCodexInstall({ cwd: hooksScope, home, repoRoot, execFile: absent });
+
+  // Pre-0.5.x installs keyed coherence on generation/bootstrapDigest instead
+  // of packageVersion (see the real committed .codex/agents/.muster-managed.json
+  // and .codex/muster/.muster-managed.json in this repo, frozen this wave).
+  const profileManifestPath = join(profilesScope, ".codex", "agents", ".muster-managed.json");
+  const profileManifest = JSON.parse(await readFile(profileManifestPath, "utf8"));
+  delete profileManifest.packageVersion;
+  profileManifest.generation = "a".repeat(64);
+  profileManifest.bootstrapDigest = "b".repeat(64);
+  await writeFile(profileManifestPath, JSON.stringify(profileManifest));
+
+  const hookManifestPath = join(hooksScope, ".codex", "muster", ".muster-managed.json");
+  const hookManifest = JSON.parse(await readFile(hookManifestPath, "utf8"));
+  delete hookManifest.packageVersion;
+  hookManifest.generation = "a".repeat(64);
+  hookManifest.bootstrapDigest = "b".repeat(64);
+  await writeFile(hookManifestPath, JSON.stringify(hookManifest));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const generation = report.checks.find(check => check.name === "codex-install-generation");
+  const hooks = report.checks.find(check => check.name === "codex-hooks");
+  const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
+  assert.equal(generation?.ok, false);
+  assert.match(generation?.detail || "", /legacy pre-0\.5\.x install/i);
+  assert.match(generation?.detail || "", /muster install codex --scope/);
+  assert.equal(hooks?.ok, false);
+  assert.match(hooks?.detail || "", /legacy pre-0\.5\.x install/i);
+  assert.match(hooks?.detail || "", /muster install codex --scope/);
+  assert.equal(overlap?.ok, false);
+  assert.match(overlap?.detail || "", /legacy pre-0\.5\.x install/i);
+});
+
 test("Codex doctor rejects symlinked content in a registered managed scope", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-symlinked-scope-"));
   const home = join(tmp, "home"), cwd = join(tmp, "current-project"), legacyCwd = join(tmp, "legacy-project");
@@ -1117,7 +1156,17 @@ test("Codex ownership dry-runs never create registry locks or entries", async ()
   await assert.rejects(() => readFile(join(home, ".codex", "muster", "install-scopes.json.lock"), "utf8"));
 });
 
-test("Codex commandWindows maps WSL drive paths to their Windows equivalent", async t => {
+// This fixture can only exercise a genuine WSL2 drvfs C: path by mkdtemp-ing
+// under the checkout itself and relying on the checkout living under
+// /mnt/c — there is no portable way to fabricate a "/mnt/c/..." path that
+// isn't. Skip (rather than fail) when the checkout is not there, e.g. a
+// native-filesystem (ext4) checkout of this repo or the published package;
+// commandWindows's WSL-path-mapping logic itself is unchanged and still
+// covered whenever this suite runs from an actual /mnt/c checkout.
+const isWslDriveCheckout = /^\/mnt\/[a-z]\//i.test(repoRoot);
+test("Codex commandWindows maps WSL drive paths to their Windows equivalent", {
+  skip: isWslDriveCheckout ? false : "requires a checkout under /mnt/c (WSL2 drvfs); not applicable from a native-filesystem checkout"
+}, async t => {
   const tmp = await mkdtemp(join(repoRoot, ".muster-codex-wsl-command-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), absent = async () => { throw new Error("not found"); };

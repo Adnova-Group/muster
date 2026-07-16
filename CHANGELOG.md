@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Breaking: Codex managed-manifest coherence key renamed `generation`/`bootstrapDigest` -> `packageVersion` (no auto-migration).** Wave 2's committed-payload teardown moved Codex plugin generation to build/install time, so the old content-addressed `generation`/`bootstrapDigest` pair on `.muster-managed.json` (profiles and hooks) no longer means anything — coherence is now just "does the installed manifest's `packageVersion` match the selected plugin's." **Every install made before this release is legacy-keyed and will show as red on `muster doctor --codex`** (`codex-install-generation`, `codex-hooks`, `codex-hooks-overlap`) until it is reinstalled; nothing migrates it automatically, and `.codex/` in this repository is deliberately left in that pre-0.5.x state this wave (a later project-scope install heals it). The doctor now detects the legacy shape specifically and reports "legacy pre-0.5.x install detected at `<dir>` (rerun `muster install codex --scope project`/`--scope user` to migrate)" instead of an opaque version-mismatch message — self-heal is one `muster install codex --scope <scope>` per affected scope, and re-running `muster doctor --codex` afterward confirms it.
+
 ## [0.5.0] - 2026-07-13
 
 ### Added

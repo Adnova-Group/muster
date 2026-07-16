@@ -44,15 +44,18 @@ function ensureOrdinaryDirectory(path, label) {
   ordinary(path, "directory", label);
 }
 
-// Kept only for same-device renames of small single files (atomicWritePointer
-// below) where cross-device copy doesn't apply and no hot-written-tree burst
-// precedes the rename. The plugin tree itself is no longer renamed into place
-// at all — see publishCodexPlugin's docblock — so this is not used for that
-// anymore. A/B testing (sandboxed and unsandboxed) confirmed the drvfs
-// pathology is real and independent of any external process; strace-level
-// syscall slowdown passes, but even a 50-second bounded backoff on the same
-// rename does not reliably clear it for a large directory, so this retry is
-// deliberately not relied on for that case anymore either.
+// Kept for same-device renames where cross-device copy doesn't apply and no
+// hot-written-tree burst precedes the rename: atomicWritePointer below (a
+// small single file) and publishCodexPlugin's retire-the-existing-plugin-dir
+// step plus its restore-on-failure counterpart (an existing, cold directory
+// — not the tree that was just hot-written). The freshly staged plugin tree
+// itself is no longer renamed into place at all — see publishCodexPlugin's
+// docblock — so this helper is never used for that. A/B testing (sandboxed
+// and unsandboxed) confirmed the drvfs pathology is real and independent of
+// any external process; strace-level syscall slowdown passes, but even a
+// 50-second bounded backoff on the same rename does not reliably clear it
+// for a large directory, so this retry is deliberately not relied on for
+// that hot-written case anymore either.
 function sleepSync(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 function renameWithRetry(source, destination, { retries = 4, delayMs = 250 } = {}) {
   for (let attempt = 0; ; attempt++) {
@@ -94,8 +97,10 @@ const sha256 = value => createHash("sha256").update(value).digest("hex");
 // The confirmed root cause (see renameWithRetry above) is a drvfs
 // rename-after-write-burst race at the rename call site itself, not a
 // durability gap here, so the extra fsync pass — real cost on every build,
-// on every filesystem — was removed. The rename call site is where this is
-// actually handled now.
+// on every filesystem — was removed. The freshly written tree is instead
+// never renamed at all: it is staged on native tmpfs (scripts/build-codex.mjs's
+// top comment) and published by copy (publishCodexPlugin's docblock), which
+// sidesteps the drvfs rename hazard entirely rather than retrying around it.
 export async function assertRegularTree(root) {
   let rootStat;
   try { rootStat = lstatSync(root); }
@@ -198,21 +203,97 @@ function atomicWritePointer(path, content) {
   }
 }
 
+// Copies a staged tree into place, rejecting (not silently dropping) any
+// symlink or special file `assertRegularTree` would also reject, without
+// requiring a second full tree walk before the copy starts: cpSync's filter
+// callback inspects (and skips) each entry as it is visited during the copy
+// itself. A skipped entry is a hard error — see publishCodexPlugin's
+// docblock for why a silently incomplete copy would be worse than failing
+// closed — so callers must not treat a normal return as "everything staged
+// was copied" without also checking this can throw.
+export function copyStagedPluginTree(source, destination) {
+  const skipped = [];
+  cpSync(source, destination, {
+    recursive: true,
+    filter: entry => {
+      let stat;
+      try { stat = lstatSync(entry); }
+      catch { return true; } // let cpSync raise its own natural error for a source that vanished mid-copy
+      if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile())) { skipped.push(entry); return false; }
+      return true;
+    }
+  });
+  if (skipped.length) {
+    throw new Error(`Codex plugin publish refused to copy ${skipped.length} unsafe (symlink or special) staged entr${skipped.length === 1 ? "y" : "ies"}: ${skipped.join(", ")}`);
+  }
+}
+
 // Publishes a freshly staged Codex plugin tree into `pluginsRoot/plugin`,
-// replacing whatever was there before with a single crash-safe swap, and
-// (re)writes `pluginsRoot/marketplace.json` to point at it. `pluginsRoot` is
-// entirely caller-chosen (both `npm run build:codex` and codex-install.js use
-// a gitignored repo-relative staging directory today; a directory under the
+// replacing whatever was there before, and (re)writes
+// `pluginsRoot/marketplace.json` to point at it. `pluginsRoot` is entirely
+// caller-chosen (both `npm run build:codex` and codex-install.js use a
+// gitignored repo-relative staging directory today; a directory under the
 // user's CODEX_HOME is an equally valid target this function does not care
-// about). Concurrent builds targeting the same `pluginsRoot` are serialized
-// with the shared, already-simplified codex-lock.js primitive instead of a
-// bespoke lease system.
-export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate }) {
+// about).
+//
+// This is NOT a single atomic swap. `stagedPlugin` is always staged on the
+// native filesystem (scripts/build-codex.mjs's top comment), so it is
+// frequently on a different device than `pluginsRoot` — an EXDEV rename is
+// not an option — and even where they happen to share a device, renaming
+// that tree immediately after the write burst that produced it is exactly
+// the confirmed WSL2 drvfs (/mnt/c) rename-after-write-burst pathology
+// documented above renameWithRetry. So publish is three steps: rename the
+// existing `plugin` dir aside to a retirement path (same-device, a cold,
+// already-settled directory, not the one just hot-written — unaffected by
+// that pathology), copy the staged tree into place, then delete the retired
+// dir. On any failure between retirement and a successful copy, the retired
+// dir is best-effort restored so a failed publish leaves the previous
+// plugin intact rather than nothing.
+//
+// `assertRegularTree(stagedPlugin)` above validates the staged tree once,
+// before the publish lock is even acquired. That leaves a real window: a
+// same-user writer (or a crashed/racing build) could mutate the staged
+// tmpdir between that validation and the copy below. Two independent
+// defenses close it: `copyStagedPlugin` (default `copyStagedPluginTree`)
+// rejects/skips any symlink or special file it finds while copying, hard
+// failing rather than silently dropping it, and `pluginPath` — the actual
+// copy destination — is re-validated with `assertRegularTree` again before
+// anything durable (the marketplace pointer) is written. Either one on its
+// own would close the race; both run so a defect in one is not a single
+// point of failure. A failure at either point restores the retired
+// directory the same way a copy failure always has.
+//
+// Concurrent publishes to the same `pluginsRoot` are serialized by the
+// shared codex-lock.js primitive, so two publishers never interleave. But
+// nothing here synchronizes with a concurrent *reader*: resolveCodexPlugin
+// below, scripts/check-codex.mjs, src/codex-doctor.js, and this module's own
+// build-time skip-check all read `pluginsRoot` without taking any lock. A
+// reader that runs during the retire-then-copy window can observe a
+// transient ENOENT (while the previous `plugin` dir is retired but the new
+// one is not yet in place) or, if it races the copy itself, a partial tree.
+// That is an accepted trade, not an oversight: every one of those readers is
+// dev/CI tooling invoked by a human or a build step, and simply rerunning
+// resolves it — resolveCodexPlugin absorbs the narrow ENOENT case with a
+// small bounded retry (see its docblock) so most callers never even notice.
+// A publish that crashes mid-copy can still leave a partial `plugin` dir
+// (and, if the crash lands between retirement and copy, an orphaned
+// `.muster-retired-*` sibling — swept at the top of the next publish, below)
+// for the next build/install to detect (via resolveCodexPlugin's tree and
+// version checks) and overwrite.
+export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate, copyStagedPlugin = copyStagedPluginTree }) {
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex plugin package version is required");
   ordinary(stagedPlugin, "directory", "staged Codex plugin");
   await assertRegularTree(stagedPlugin);
   ensureOrdinaryDirectory(pluginsRoot, "Codex plugin staging root");
   return withCodexFileLock(join(pluginsRoot, ".build.lock"), async () => {
+    // A publish that crashed between retiring the previous plugin and either
+    // completing or restoring leaves an orphaned `.muster-retired-*`
+    // sibling behind. No other process can be mid-retire right now (this
+    // publish just took the lock), so any such leftover is stale crash
+    // debris from a prior run: sweep it before doing anything else.
+    for (const name of readdirSync(pluginsRoot)) {
+      if (name.startsWith(".muster-retired-")) rmSync(join(pluginsRoot, name), { recursive: true, force: true });
+    }
     const pluginPath = join(pluginsRoot, "plugin");
     const retired = join(pluginsRoot, `.muster-retired-${process.pid}-${randomUUID()}`);
     let hadPrevious = false;
@@ -225,10 +306,19 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
     }
     try {
       // stagedPlugin was just populated by a large (several-hundred-file)
-      // write burst — the rename immediately afterward is exactly the drvfs
-      // race documented above renameWithRetry.
-      renameWithRetry(stagedPlugin, pluginPath);
+      // write burst and is frequently on a different device than
+      // pluginPath (see this function's docblock), so it is published by
+      // copy rather than renamed into place. copyStagedPlugin and the
+      // assertRegularTree re-validation below are this function's two
+      // independent copy-time-race defenses (see the docblock above).
+      await copyStagedPlugin(stagedPlugin, pluginPath);
+      await assertRegularTree(pluginPath);
     } catch (error) {
+      // pluginPath may now hold a partial or tainted copy (unlike the old
+      // copy-only failure mode, where cpSync itself never created it): wipe
+      // it before restoring so a failed publish never leaves compromised
+      // content in place, whether or not there was a previous plugin.
+      rmSync(pluginPath, { recursive: true, force: true });
       if (hadPrevious) try { renameWithRetry(retired, pluginPath); } catch { /* best-effort restore */ }
       throw error;
     }
@@ -252,11 +342,7 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
   });
 }
 
-// Resolves an already-published Codex plugin under `pluginsRoot` (defaulting
-// to the repo-relative gitignored staging directory). Fails closed with a
-// clear "run the build/install step first" error if nothing has been
-// generated yet — there is no fallback bootstrap to fall back to anymore.
-export async function resolveCodexPlugin(root, { pluginsRoot = join(root, ".agents", "plugins") } = {}) {
+async function resolveCodexPluginOnce(pluginsRoot) {
   ordinary(pluginsRoot, "directory", "Codex plugin staging directory");
   const pointerPath = join(pluginsRoot, "marketplace.json");
   const pointer = readRegularJson(pointerPath, "Codex marketplace pointer", 1024 * 1024);
@@ -267,4 +353,26 @@ export async function resolveCodexPlugin(root, { pluginsRoot = join(root, ".agen
   const pkg = readRegularJson(join(pluginRoot, "package.json"), "Codex plugin package descriptor", 64 * 1024);
   if (typeof pkg?.version !== "string" || !pkg.version.trim()) throw new Error(`Codex plugin is missing a coherent package version: ${pluginRoot}`);
   return { pluginRoot, profilesRoot: join(pluginRoot, "agents"), packageVersion: pkg.version };
+}
+
+// Resolves an already-published Codex plugin under `pluginsRoot` (defaulting
+// to the repo-relative gitignored staging directory). Fails closed with a
+// clear "run the build/install step first" error if nothing has been
+// generated yet — there is no fallback bootstrap to fall back to anymore.
+//
+// This is a reader, and readers are never synchronized with a concurrent
+// publish (see publishCodexPlugin's docblock): a call landing in the
+// retire-then-copy window can see an ENOENT for `pluginPath` that clears a
+// moment later on its own. A small bounded retry absorbs exactly that narrow
+// window without adding any reader-side locking; it does not and cannot
+// paper over a genuinely missing or invalid plugin, which still fails closed
+// once the retries are exhausted.
+export async function resolveCodexPlugin(root, { pluginsRoot = join(root, ".agents", "plugins") } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await resolveCodexPluginOnce(pluginsRoot); }
+    catch (error) {
+      if (error?.cause?.code !== "ENOENT" || attempt >= 3) throw error;
+      await new Promise(r => setTimeout(r, 10 * (attempt + 1)));
+    }
+  }
 }

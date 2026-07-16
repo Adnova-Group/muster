@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cpSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   assertRegularFile,
   assertRegularTree,
+  copyStagedPluginTree,
   generateCodexProfiles,
   profileToml,
   publishCodexPlugin,
@@ -100,6 +102,41 @@ test("publishCodexPlugin fully replaces the previous plugin tree, not merges", a
   assert.equal(await readFile(join(root, "plugins", "plugin", "runtime", "muster.mjs"), "utf8"), 'export const marker = "new";\n');
 });
 
+test("publishCodexPlugin copies the staged tree rather than moving it, leaving the caller's staging directory intact", async t => {
+  const root = await tempRoot(t);
+  const staged = await stagedPlugin(root, "copy-check");
+  await publish(root, "copy-check", { stagedPlugin: staged });
+  assert.equal(
+    await readFile(join(staged, "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "copy-check";\n',
+    "publish must copy the staged tree (cpSync) rather than rename/move it out from under the caller, since stagedPlugin may be on a different device than pluginsRoot"
+  );
+});
+
+test("publishCodexPlugin restores the previous plugin if the copy-publish step fails after retirement", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "before", { stagedPlugin: await stagedPlugin(root, "before") });
+  const pluginPath = join(root, "plugins", "plugin");
+  // Staging the "new" tree at the exact path of the plugin being replaced
+  // forces a deterministic, device-independent copy failure: once the
+  // existing plugin is renamed aside (retirement), the directory used as
+  // `stagedPlugin` no longer exists at its original location, so the
+  // cpSync publish step fails with ENOENT. This exercises the same
+  // retire-then-copy-then-restore-on-failure sequence a genuine copy
+  // failure would hit, without needing to fake a cross-device rename.
+  await assert.rejects(publish(root, "broken", { stagedPlugin: pluginPath }));
+  assert.equal(
+    await readFile(join(pluginPath, "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "before";\n',
+    "a failed publish must restore the previous plugin rather than leave the directory empty or missing"
+  );
+  assert.deepEqual(
+    (await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")),
+    [],
+    "retired staging directory must not linger after a restore"
+  );
+});
+
 test("publishCodexPlugin reuses a preexisting marketplace pointer instead of requiring a template", async t => {
   const root = await tempRoot(t);
   await mkdir(join(root, "plugins"), { recursive: true });
@@ -134,6 +171,92 @@ test("publishCodexPlugin rejects a symlink in the staged tree without publishing
   await symlink(outside, join(staged, "skills", "muster", "escape.md"));
   await assert.rejects(publish(root, "symlink", { stagedPlugin: staged }), /symlink|regular file/i);
   await assert.rejects(readFile(join(root, "plugins", "marketplace.json"), "utf8"));
+});
+
+test("publishCodexPlugin's copy-time filter rejects a symlink introduced into the staged tree after pre-lock validation (TOCTOU) and restores the previous plugin", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "toctou-before", { stagedPlugin: await stagedPlugin(root, "toctou-before") });
+  const staged = await stagedPlugin(root, "toctou-after");
+  const outside = join(root, "toctou-outside.txt");
+  await writeFile(outside, "secret");
+  // publishCodexPlugin's own pre-lock `assertRegularTree(stagedPlugin)` call
+  // (above, before this injected copy step ever runs) sees a clean tree here
+  // — the symlink below is planted only once the copy step itself begins,
+  // simulating a same-user writer mutating the staged tmpdir in the window
+  // between that validation and the copy. Delegating to the real
+  // `copyStagedPluginTree` (the production default) means this exercises
+  // that exact copy-time filter, not a test double standing in for it.
+  const copyStagedPlugin = async (source, destination) => {
+    await symlink(outside, join(source, "skills", "muster", "escape-after-validate.md"));
+    copyStagedPluginTree(source, destination);
+  };
+  await assert.rejects(publish(root, "toctou-after", { stagedPlugin: staged, copyStagedPlugin }), /symlink|unsafe/i);
+  assert.equal(
+    await readFile(join(root, "plugins", "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "toctou-before";\n',
+    "a symlink introduced after the pre-lock validation must not overwrite the previously published plugin"
+  );
+  assert.deepEqual(
+    (await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")),
+    [],
+    "retired staging directory must not linger after a restore"
+  );
+});
+
+test("publishCodexPlugin's destination re-validation independently rejects a symlink that reaches pluginPath even when the copy step does not filter it", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "dest-check-before", { stagedPlugin: await stagedPlugin(root, "dest-check-before") });
+  const staged = await stagedPlugin(root, "dest-check-after");
+  const outside = join(root, "dest-check-outside.txt");
+  await writeFile(outside, "secret");
+  // Bypasses the default copy-time filter entirely (raw cpSync, no symlink
+  // rejection) and instead plants the symlink directly at the destination
+  // after the copy completes, so only the post-copy `assertRegularTree`
+  // re-validation (not the copy-time filter) can catch it — proving that
+  // defense is independently effective, not just redundant with the filter.
+  const copyStagedPlugin = async (source, destination) => {
+    cpSync(source, destination, { recursive: true });
+    await symlink(outside, join(destination, "skills", "muster", "escape-in-destination.md"));
+  };
+  await assert.rejects(publish(root, "dest-check-after", { stagedPlugin: staged, copyStagedPlugin }), /symlink/i);
+  assert.equal(
+    await readFile(join(root, "plugins", "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "dest-check-before";\n',
+    "a symlink present only at the destination must not survive the publish"
+  );
+  assert.deepEqual((await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
+});
+
+test("copyStagedPluginTree hard-fails (not a silent skip) when the source tree contains a symlink, without publishing the tainted entry", async t => {
+  const root = await tempRoot(t);
+  const source = join(root, "copy-source"), destination = join(root, "copy-destination");
+  await write(join(source, "keep.txt"), "kept\n");
+  const outside = join(root, "copy-outside.txt");
+  await writeFile(outside, "secret");
+  await symlink(outside, join(source, "escape.txt"));
+  assert.throws(() => copyStagedPluginTree(source, destination), /unsafe.*symlink|symlink.*unsafe/i);
+  await assert.rejects(readFile(join(destination, "escape.txt"), "utf8"), "the rejected symlink must not have been copied");
+});
+
+test("publishCodexPlugin sweeps an orphaned .muster-retired-* directory left by a prior crashed publish", async t => {
+  const root = await tempRoot(t);
+  await mkdir(join(root, "plugins"), { recursive: true });
+  const orphan = join(root, "plugins", ".muster-retired-99999-orphan");
+  await mkdir(orphan, { recursive: true });
+  await writeFile(join(orphan, "leftover.txt"), "crash debris\n");
+  await publish(root, "sweep", { stagedPlugin: await stagedPlugin(root, "sweep") });
+  assert.deepEqual((await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
+});
+
+test("resolveCodexPlugin absorbs a brief concurrent-publish ENOENT window with a bounded retry", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "retry-window", { stagedPlugin: await stagedPlugin(root, "retry-window") });
+  const pluginPath = join(root, "plugins", "plugin");
+  const parked = `${pluginPath}.parked`;
+  await rename(pluginPath, parked);
+  setTimeout(() => { rename(parked, pluginPath).catch(() => {}); }, 20);
+  const selected = await resolveCodexPlugin(root, { pluginsRoot: join(root, "plugins") });
+  assert.equal(selected.packageVersion, "0.5.0");
 });
 
 test("resolveCodexPlugin round-trips a published plugin and fails closed when nothing was built", async t => {

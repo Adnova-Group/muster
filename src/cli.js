@@ -396,15 +396,21 @@ async function main() {
       const reap = rest.includes("--reap");
       const json = rest.includes("--json");
       const backlogPath = flagValue(rest, "--backlog") || join(".muster", "backlog.md");
-      const worktreeThreshold = Number(flagValue(rest, "--worktree-threshold")) || DEFAULT_WORKTREE_THRESHOLD;
-      const zombieStaleMin = Number(flagValue(rest, "--zombie-stale-min"));
-      const claimStaleMin = Number(flagValue(rest, "--claim-stale-min"));
+      // `Number.isFinite` (not `|| DEFAULT`) so an explicitly-passed `0` is honored as a
+      // real override instead of silently falling back to the default -- `0 || DEFAULT`
+      // would otherwise treat "explicitly zero" the same as "flag not passed at all".
+      const worktreeThresholdArg = Number(flagValue(rest, "--worktree-threshold"));
+      const worktreeThreshold = Number.isFinite(worktreeThresholdArg) ? worktreeThresholdArg : DEFAULT_WORKTREE_THRESHOLD;
+      const zombieStaleMinArg = Number(flagValue(rest, "--zombie-stale-min"));
+      const zombieStaleMin = Number.isFinite(zombieStaleMinArg) ? zombieStaleMinArg : null;
+      const claimStaleMinArg = Number(flagValue(rest, "--claim-stale-min"));
+      const claimStaleMin = Number.isFinite(claimStaleMinArg) ? claimStaleMinArg : null;
       const result = await runHygiene({
         backlogContent: () => readFile(backlogPath, "utf8").catch(() => null),
         reap,
-        zombieOptions: zombieStaleMin ? { staleMs: zombieStaleMin * 60_000 } : {},
+        zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
         worktreeOptions: { threshold: worktreeThreshold },
-        claimOptions: claimStaleMin ? { staleMs: claimStaleMin * 60_000 } : {},
+        claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
       });
       if (reap && result.claims.content != null && result.claims.releases.length > 0) {
         await writeFile(backlogPath, result.claims.content, "utf8");

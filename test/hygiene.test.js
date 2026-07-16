@@ -183,6 +183,26 @@ test("releaseStaleClaims: auto-releases a claim whose heartbeat is older than 60
   assert.match(freshLine, /\{claimed: alice@2026-07-16T01:50:00Z\}/, "a fresh (<60min) claim is left completely untouched");
 });
 
+test("releaseStaleClaims (regression, review finding): a `{claimed: ...}`-shaped substring in the item's own PROSE (before the real trailing annotation) is never mistaken for the annotation to strip -- only the real trailing {claimed:} is ever touched", () => {
+  const now = Date.parse("2026-07-16T02:00:00Z");
+  // The item's own text is literally about renaming a `{claimed: ...}`-shaped flag --
+  // that occurrence sits BEFORE the real trailing annotation block and must be left
+  // completely alone; only the genuine trailing {claimed:} annotation is stale here.
+  const content = "- [ ] Rename the {claimed: legacy-flag} field {id: task-1} {claimed: codex-efficiency@2020-01-01T00:00:00Z}";
+
+  const { releases, content: updated } = releaseStaleClaims(content, { now });
+  assert.equal(releases.length, 1);
+  assert.equal(releases[0].id, "task-1");
+  assert.equal(releases[0].runner, "codex-efficiency");
+
+  assert.match(updated, /\{claimed: legacy-flag\}/, "the prose-embedded look-alike is untouched");
+  assert.match(updated, /\{id: task-1\}/, "the real id annotation survives");
+  // The real trailing claim (the actually-stale one) must be gone -- if the strip
+  // mistakenly targeted the prose occurrence instead, this second {claimed:} would
+  // still be present on disk despite the receipt claiming it was released.
+  assert.doesNotMatch(updated, /codex-efficiency@2020-01-01/, "the real stale claim annotation is actually gone, not just reported as gone");
+});
+
 test("releaseStaleClaims (adversarial, race guard): a boundary claim exactly at 60 minutes is kept; one second past is released -- a live runner's own heartbeat refresh is what keeps it safe, never a race", () => {
   const now = Date.parse("2026-07-16T01:00:00Z");
 

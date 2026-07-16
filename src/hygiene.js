@@ -210,14 +210,53 @@ function parseClaimedValue(raw) {
   return { runner, ts, tsRaw };
 }
 
+// A single `{key: value}` group, as a regex source fragment (no flags/anchors
+// of its own) -- mirrors sprint-waves.js's own ANNOTATION_GROUP_SRC byte for
+// byte, so the trailing-block grammar these two files share stays identical
+// rather than silently drifting apart into two hand-synced copies.
+const ANNOTATION_GROUP_SRC = "\\{\\s*[A-Za-z][\\w-]*\\s*:\\s*[^}]*\\}";
+
+// The trailing annotation block: one-or-more annotation groups, each
+// preceded by optional whitespace, anchored to run all the way to the end of
+// the line. Fresh RegExp per call, same lastIndex-safety reason sprint-waves.js
+// documents for its own copy of this construction.
+function trailingAnnotationBlockRegex() {
+  return new RegExp(`(?:\\s*${ANNOTATION_GROUP_SRC})+\\s*$`);
+}
+
+// A single `{key: value}` group WITH its key/value captured, for iterating
+// the trailing block's groups one at a time (not for scanning the whole line
+// -- see the file-level note on why "whole line" is exactly the bug this
+// exists to avoid).
+function annotationGroupRegex() {
+  return /\{\s*([A-Za-z][\w-]*)\s*:\s*[^}]*\}/g;
+}
+
 // Strips ONLY the `{claimed: ...}` annotation group from a raw backlog line,
 // leaving every other annotation (`{id}`/`{deps}`/`{disposition}`/etc.) and
-// the item text untouched, then collapses the whitespace the removal leaves.
+// the item text untouched -- including any `{claimed: ...}`-shaped substring
+// that happens to appear in the item's own PROSE rather than in the real
+// trailing annotation block (e.g. an item literally about renaming a
+// `{claimed: ...}` flag). A naive whole-line regex would match whichever
+// occurrence comes first, which can be that prose rather than the real
+// annotation -- exactly the forgery risk sprint-waves.js's own trailing-block
+// anchoring exists to close off (see this file's header comment on
+// computeSprintWaves reuse). Anchoring the strip to the SAME trailing block
+// sprint-waves.js already recognizes as live annotations means only a real
+// `{claimed:}` annotation is ever touched, never a look-alike substring
+// earlier in the line.
 function stripClaimedAnnotation(line) {
-  return line
-    .replace(/\{\s*claimed\s*:\s*[^}]*\}/i, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/[ \t]+$/, "");
+  const blockMatch = line.match(trailingAnnotationBlockRegex());
+  if (!blockMatch) return line; // no trailing annotation block at all -- nothing recognized to strip
+  const bodyText = line.slice(0, blockMatch.index);
+  const remainingGroups = [];
+  const re = annotationGroupRegex();
+  let m;
+  while ((m = re.exec(blockMatch[0]))) {
+    if (m[1].toLowerCase() !== "claimed") remainingGroups.push(m[0]);
+  }
+  const rebuilt = remainingGroups.length ? `${bodyText} ${remainingGroups.join(" ")}` : bodyText;
+  return rebuilt.replace(/[ \t]+$/, "");
 }
 
 // content: a backlog.md string (sprint-waves.js's `{id}`/`{deps}`/`{claimed:

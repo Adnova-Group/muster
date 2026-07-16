@@ -270,7 +270,7 @@ stale:
 AskUserQuestion    files=13  mentions=30
 dispatch (Agent/Task tool)  files=4  mentions=19
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=23
-worktree   files=5  mentions=13
+worktree   files=5  mentions=14
 ```
 
 Every one of those 85 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool

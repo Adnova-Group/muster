@@ -8,7 +8,10 @@
 //     recordCum/markNudged/resetCum below) — the Nth distinct file touched
 //     inline across turns, with no muster run active, crosses the border.
 //   - UserPromptSubmit: the isDirective prompt detector (guidance.js),
-//     tracked by a per-session marker file (directiveFile below).
+//     tracked by a per-session marker file (directiveFile below), now gated
+//     by isScaleCorroborated so a cold, isolated directive ("fix typo") with
+//     no established inline drift this crossing does not invite on verb
+//     shape alone (see user-prompt-submit.js).
 //
 // Both signals warn ONCE PER CROSSING (never denying — the action fence in
 // pre-tool-use.js is the only hard deny in the stack), then stay silent until
@@ -21,6 +24,20 @@
 // both signals re-arm identically; (a) and (b) are explicit resets performed
 // by each call site (resetCum here; unlinking directiveFile in
 // session-start.js/user-prompt-submit.js).
+//
+// HYSTERESIS / COOLDOWN: a crossing re-arming (any of a/b/c above) makes the
+// NEXT touch eligible to invite again, but eligibility alone is not enough —
+// a shared cooldown (cooldownFile/isInCooldown/recordInvite below), keyed by
+// session id only (not per-crossing), suppresses a repeat fire from EITHER
+// signal for MUSTER_INVITE_COOLDOWN_MS after the last actual invite. This is
+// what keeps a noisy border (a drift counter oscillating around the
+// threshold via rapid muster-run start/stop, each restart re-arming a "new"
+// crossing) from flapping: the crossing re-arms immediately, but the
+// cooldown still gates whether that re-armed crossing's warn is actually
+// spoken. A genuinely long-lived session (crossings spaced hours/days apart)
+// clears the cooldown between them the same way it clears CROSSING_MAX_AGE_MS
+// — so it still gets its one invite per genuine crossing, never one dead
+// invite for the whole session and never a flapping repeat.
 //
 // State is per-session in os.tmpdir() (never litters project trees, never
 // collides across sessions).
@@ -152,4 +169,99 @@ export function markNudged(file) {
   const state = readCum(file);
   state.nudged = true;
   try { safeWriteFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
+}
+
+// ── cooldown: hysteresis shared by both border-invitation signals ──────────
+//
+// Suppresses a repeat invite for MUSTER_INVITE_COOLDOWN_MS after the last one
+// actually fired, independent of (and layered on top of) per-crossing
+// re-arming. A crossing re-arming makes the NEXT touch *eligible*; the
+// cooldown decides whether that eligible touch is actually spoken. Keyed by
+// session id only — one cooldown shared across both the PreToolUse and
+// UserPromptSubmit signals, since they are one conceptual "border invitation"
+// (guidance.js: CREW_INVITATION) with two feeds.
+
+// Default cooldown window (ms): 15 minutes — shorter than CROSSING_MAX_AGE_MS
+// (60 min) so a session with real hours/days between genuine crossings (the
+// long-lived-session case) is never blocked by a stale cooldown, but long
+// enough to absorb a rapid run-restart or a threshold-oscillating counter
+// (the flapping case) without repeating the invite seconds apart.
+export const DEFAULT_INVITE_COOLDOWN_MS = 15 * 60 * 1000;
+
+export function inviteCooldownMs(env = process.env) {
+  // min: 0 — 0 disables the cooldown outright (every eligible crossing warns
+  // immediately), useful for tests and for anyone who wants the pre-cooldown
+  // behavior back.
+  return envInt("MUSTER_INVITE_COOLDOWN_MS", { min: 0, def: DEFAULT_INVITE_COOLDOWN_MS }, env);
+}
+
+// Absolute path to the per-session invite-cooldown marker, or null if the
+// session id is unusable. Distinct filename from cumFile/directiveFile so all
+// three never collide.
+export function cooldownFile(sessionId, tmp = os.tmpdir()) {
+  const s = safeSession(sessionId);
+  return s ? path.join(tmp, `muster-cooldown-${s}`) : null;
+}
+
+// True when the last recorded invite (this marker's mtime) is still within
+// the cooldown window. No marker yet (nothing invited so far) is never in
+// cooldown. A null file (unusable session id) is never in cooldown either —
+// callers with no session id already fail open on the surrounding signal.
+export function isInCooldown(file, now = Date.now(), env = process.env) {
+  if (!file) return false;
+  const ms = inviteCooldownMs(env);
+  if (ms <= 0) return false;
+  let mtimeMs;
+  try {
+    mtimeMs = statSync(file).mtimeMs;
+  } catch {
+    return false;
+  }
+  return (now - mtimeMs) < ms;
+}
+
+// Record that an invite just fired — (re)starts the cooldown window. Symlink-
+// safe (safeWriteFileSync) and best-effort like the other marker writers.
+export function recordInvite(file) {
+  if (!file) return;
+  try { safeWriteFileSync(file, "1"); } catch { /* best-effort */ }
+}
+
+// ── isDirective scale correlation ───────────────────────────────────────────
+//
+// A directive-shaped prompt (guidance.js: isDirective) alone is verb-opener
+// detection, not a scale signal — "fix typo" matches it exactly as well as
+// "implement the auth migration across the API." Requiring at least one
+// distinct file *already* recorded THIS crossing (the PreToolUse cumulative
+// counter's own count, read but not advanced here) before the prompt-time
+// signal may fire ties the invite to the same file-count-crossing concept the
+// border is named for, instead of the verb alone: a cold, isolated directive
+// with no established inline drift yet (priorCount 0) is exactly the trivial
+// one-file-turn case this excludes; a directive landing mid-drift (priorCount
+// >= 1) is corroborated by real, already-observed scale.
+export function isScaleCorroborated(priorCount) {
+  return typeof priorCount === "number" && isFinite(priorCount) && priorCount >= 1;
+}
+
+// The crossing-scoped count isScaleCorroborated above must be checked
+// against: 0 when `file` is missing/unusable, OR when its crossing has gone
+// stale (the same isCrossingStale rule recordCum itself applies before
+// counting). A long-lived/idle session's dead prior crossing — its file left
+// on disk with a stale mtime, past CROSSING_MAX_AGE_MS — must NEVER
+// corroborate a brand-new directive; reading readCum(file).files.length
+// directly (ignoring the file's own mtime) would let that leftover count
+// wrongly corroborate an isolated, genuinely trivial directive landing long
+// after the crossing that produced it went cold. This is the one place the
+// prompt-time signal consults the PreToolUse counter's state, so it re-checks
+// staleness itself rather than trusting the caller.
+export function corroboratingCount(file, now = Date.now()) {
+  if (!file) return 0;
+  let mtimeMs;
+  try {
+    mtimeMs = statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
+  if (isCrossingStale(mtimeMs, now)) return 0;
+  return readCum(file).files.length;
 }

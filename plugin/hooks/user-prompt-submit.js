@@ -9,11 +9,19 @@
 // Fires ONLY when a directive-shaped prompt (guidance.js: isDirective — an
 // imperative verb like fix/build/implement, optionally after a polite
 // lead-in; declaratives like "Update:"/"Fix for" and questions are excluded)
-// lands with no muster run active. Sells the value of a crew run
+// lands with no muster run active AND that verb shape is corroborated by
+// scale: at least one distinct file already recorded this crossing by the
+// PreToolUse cumulative counter (inline-budget.js: isScaleCorroborated). A
+// directive verb alone is opener detection, not scale — "fix typo" matches
+// isDirective exactly as well as a genuine multi-file build, so a cold,
+// isolated directive with no established inline drift yet never invites; a
+// directive landing mid-drift does. Sells the value of a crew run
 // (guidance.js: CREW_INVITATION) rather than commanding, once per crossing,
 // then stays silent until re-armed by the same cadence as the PreToolUse
 // border signal (inline-budget.js: isCrossingStale) — a muster run starting,
-// SessionStart, or 60 minutes of inactivity.
+// SessionStart, or 60 minutes of inactivity — and even then, only once the
+// shared invite cooldown (inline-budget.js: isInCooldown) has cleared, so a
+// rapid re-arm cannot flap a repeat invite from this signal either.
 //
 // Self-contained apart from sibling guidance.js/inline-budget.js. FAIL-SAFE:
 // whole body in try/catch; on ANY error or missing state, emit minimal valid
@@ -22,7 +30,10 @@
 import { readFileSync, writeFileSync, existsSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { emit, CREW_INVITATION, isDirective } from "./guidance.js";
-import { directiveFile, isCrossingStale } from "./inline-budget.js";
+import {
+  directiveFile, isCrossingStale, cumFile, corroboratingCount, isScaleCorroborated,
+  cooldownFile, isInCooldown, recordInvite,
+} from "./inline-budget.js";
 
 const EVENT = "UserPromptSubmit";
 
@@ -88,11 +99,32 @@ try {
             alreadyNudged = false; // no marker yet — not nudged
           }
           if (!alreadyNudged) {
-            additionalContext = directiveNudgeCopy();
-            try {
-              writeFileSync(markerFile, "1");
-            } catch {
-              /* best-effort */
+            // Scale correlation: a directive verb alone is opener detection,
+            // not scale — require at least one distinct file already
+            // recorded this crossing by the PreToolUse cumulative counter
+            // before this signal may fire. A cold, isolated directive with
+            // zero prior drift (e.g. "fix typo" as the very first ask) stays
+            // silent here; the PreToolUse channel still catches real
+            // multi-file drift on its own terms once it happens.
+            const cFile = cumFile(sessionId);
+            // corroboratingCount (not a raw readCum) so a dead prior
+            // crossing's leftover file count -- the marker's own mtime past
+            // CROSSING_MAX_AGE_MS -- never corroborates a brand-new,
+            // genuinely trivial directive (review-gate finding).
+            const priorCount = corroboratingCount(cFile);
+            if (isScaleCorroborated(priorCount)) {
+              const cdFile = cooldownFile(sessionId);
+              if (!isInCooldown(cdFile)) {
+                additionalContext = directiveNudgeCopy();
+                recordInvite(cdFile);
+                try {
+                  writeFileSync(markerFile, "1");
+                } catch {
+                  /* best-effort */
+                }
+              }
+              // cooldown active: stay silent and leave markerFile unwritten
+              // so a still-corroborated directive can fire once it clears.
             }
           }
         }

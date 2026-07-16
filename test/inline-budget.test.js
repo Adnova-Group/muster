@@ -1,11 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, utimesSync, rmSync, symlinkSync, readFileSync as readFileSyncRaw } from "node:fs";
+import {
+  mkdtempSync, writeFileSync, utimesSync, rmSync, symlinkSync, statSync,
+  readFileSync as readFileSyncRaw,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import {
   DEFAULT_SCALE,
   CROSSING_MAX_AGE_MS,
+  DEFAULT_INVITE_COOLDOWN_MS,
   scaleThreshold,
   safeSession,
   isCrossingStale,
@@ -15,6 +19,12 @@ import {
   resetCum,
   recordCum,
   markNudged,
+  cooldownFile,
+  inviteCooldownMs,
+  isInCooldown,
+  recordInvite,
+  isScaleCorroborated,
+  corroboratingCount,
 } from "../plugin/hooks/inline-budget.js";
 
 // Direct unit coverage for inline-budget.js — the spawnHook integration tests
@@ -176,11 +186,12 @@ test("recordCum: fresh (non-stale) mtime accumulates normally, does not reset", 
 // recordCum, markNudged) must refuse to follow it: the planted symlink's
 // target must come out untouched. One test, looped over all three writers,
 // per review-gate direction to add exactly one new regression test here.
-test("marker writers (recordCum/resetCum/markNudged): a symlink planted at the marker path is never followed (CWE-59)", () => {
+test("marker writers (recordCum/resetCum/markNudged/recordInvite): a symlink planted at the marker path is never followed (CWE-59)", () => {
   const writers = {
     recordCum: (file) => recordCum(file, "a.js"),
     resetCum: (file) => resetCum(file),
     markNudged: (file) => markNudged(file),
+    recordInvite: (file) => recordInvite(file),
   };
   for (const [name, write] of Object.entries(writers)) {
     const { dir, file } = tmpFile();
@@ -200,4 +211,127 @@ test("marker writers (recordCum/resetCum/markNudged): a symlink planted at the m
       rmSync(outsideDir, { recursive: true, force: true });
     }
   }
+});
+
+// ── inviteCooldownMs / cooldownFile ─────────────────────────────────────────
+test("inviteCooldownMs: unset falls back to DEFAULT_INVITE_COOLDOWN_MS", () => {
+  assert.equal(inviteCooldownMs({}), DEFAULT_INVITE_COOLDOWN_MS);
+});
+
+test("inviteCooldownMs: a valid override is honored, including 0 (disables cooldown)", () => {
+  assert.equal(inviteCooldownMs({ MUSTER_INVITE_COOLDOWN_MS: "0" }), 0);
+  assert.equal(inviteCooldownMs({ MUSTER_INVITE_COOLDOWN_MS: "60000" }), 60000);
+});
+
+test("inviteCooldownMs: junk/negative falls back to default", () => {
+  for (const v of ["-1", "abc", "2.9", ""]) {
+    assert.equal(inviteCooldownMs({ MUSTER_INVITE_COOLDOWN_MS: v }), DEFAULT_INVITE_COOLDOWN_MS, `"${v}" -> default`);
+  }
+});
+
+test("cooldownFile: null for an all-punctuation session id, distinct path from cumFile/directiveFile", () => {
+  assert.equal(cooldownFile("!!!"), null);
+  assert.equal(cooldownFile("sess-1", "/tmp"), path.join("/tmp", "muster-cooldown-sess-1"));
+  assert.notEqual(cooldownFile("sess-1", "/tmp"), cumFile("sess-1", "/tmp"));
+  assert.notEqual(cooldownFile("sess-1", "/tmp"), directiveFile("sess-1", "/tmp"));
+});
+
+// ── isInCooldown / recordInvite: the hysteresis shared by both signals ─────
+test("isInCooldown: no marker yet (nothing invited) is never in cooldown", () => {
+  const { dir, file } = tmpFile();
+  try {
+    assert.equal(isInCooldown(file), false);
+    assert.equal(isInCooldown(null), false, "null file (unusable session id) is never in cooldown");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("isInCooldown: a just-recorded invite is in cooldown; past the window it is not", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordInvite(file);
+    const now = Date.now();
+    const { mtimeMs } = statSync(file);
+    assert.equal(isInCooldown(file, mtimeMs + 1000, {}), true, "1s after the invite: still in cooldown");
+    assert.equal(
+      isInCooldown(file, mtimeMs + DEFAULT_INVITE_COOLDOWN_MS + 1, {}),
+      false,
+      "just past the cooldown window: no longer in cooldown",
+    );
+    assert.ok(now >= mtimeMs, "sanity: recordInvite's mtime is not in the future");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("isInCooldown: MUSTER_INVITE_COOLDOWN_MS=0 disables the cooldown outright", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordInvite(file);
+    assert.equal(isInCooldown(file, Date.now(), { MUSTER_INVITE_COOLDOWN_MS: "0" }), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("recordInvite: a null file is a safe no-op", () => {
+  assert.doesNotThrow(() => recordInvite(null));
+});
+
+// ── isScaleCorroborated: directive verb shape needs corroborating drift ────
+test("isScaleCorroborated: zero prior files is never corroborated (the trivial one-file-turn case)", () => {
+  assert.equal(isScaleCorroborated(0), false);
+});
+
+test("isScaleCorroborated: one or more prior files corroborates", () => {
+  assert.equal(isScaleCorroborated(1), true);
+  assert.equal(isScaleCorroborated(5), true);
+});
+
+test("isScaleCorroborated: non-number/NaN inputs are never corroborated (fail-safe)", () => {
+  for (const v of [undefined, null, NaN, "1", {}]) {
+    assert.equal(isScaleCorroborated(v), false, `${String(v)} -> not corroborated`);
+  }
+});
+
+// ── corroboratingCount: the crossing-scoped count isScaleCorroborated checks ─
+// Review-gate fix: a raw readCum(file).files.length ignores the file's own
+// mtime, so a dead prior crossing's leftover count could wrongly corroborate
+// a brand-new directive. corroboratingCount applies the same isCrossingStale
+// rule recordCum itself uses before counting.
+test("corroboratingCount: missing/null file -> 0", () => {
+  const { dir, file } = tmpFile();
+  try {
+    assert.equal(corroboratingCount(file), 0, "no file yet -> 0");
+    assert.equal(corroboratingCount(null), 0, "null file -> 0");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("corroboratingCount: a fresh (non-stale) crossing returns its real count", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordCum(file, "a.js");
+    recordCum(file, "b.js");
+    assert.equal(corroboratingCount(file), 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("corroboratingCount: a STALE crossing (mtime past CROSSING_MAX_AGE_MS) returns 0, not its leftover count", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordCum(file, "a.js");
+    const stale = new Date(Date.now() - (CROSSING_MAX_AGE_MS + 60_000));
+    utimesSync(file, stale, stale);
+    assert.equal(
+      corroboratingCount(file),
+      0,
+      "a dead prior crossing's leftover file count must never corroborate a new directive",
+    );
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("corroboratingCount: exactly at the staleness boundary is not yet stale", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordCum(file, "a.js");
+    const now = Date.now();
+    const atBoundary = new Date(now - CROSSING_MAX_AGE_MS);
+    utimesSync(file, atBoundary, atBoundary);
+    assert.equal(corroboratingCount(file, now), 1, "exactly at the boundary: still counts");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

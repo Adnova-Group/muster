@@ -189,6 +189,44 @@ test("C2b: collectScanFiles excludes files inside .claude (harness agent-worktre
   }
 });
 
+// ── C2c: SCAN_SKIP_DIRS excludes .agents (codex build-staging marketplace) ──
+// `.agents/plugins` is codex's generated repo marketplace catalog
+// ($REPO_ROOT/.agents/plugins/marketplace.json, see docs/research/codex-cli.md)
+// -- install-time generated, never committed, regenerated fresh on every
+// build/install. Without .agents in SCAN_SKIP_DIRS, a repo-wide prompt scan
+// descends into this transient staging output and re-lints its SKILL.md
+// copies, producing false failures whenever the catalog has been generated
+// locally (same class of problem as .claude/worktrees above).
+test("C2c: collectScanFiles excludes files inside .agents (codex build-staging marketplace)", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-ps-c2c-"));
+  try {
+    assert.ok(SCAN_SKIP_DIRS.has(".agents"), "SCAN_SKIP_DIRS must contain .agents");
+
+    // Simulate codex's generated marketplace staging with a prompt-lint violation
+    // (no persona, no output format -- guaranteed to fail lintPrompt).
+    const stagingDir = path.join(dir, ".agents", "plugins", "x");
+    mkdirSync(stagingDir, { recursive: true });
+    writeFileSync(
+      path.join(stagingDir, "SKILL.md"),
+      "---\nname: fixture-skill\n---\n\nDo the thing.\n",
+    );
+
+    // Create a file that SHOULD be included.
+    writeFileSync(path.join(dir, "visible.md"), "# visible file");
+
+    const files = await collectScanFiles(dir);
+    const paths = files.map((f) => f.path);
+
+    assert.ok(paths.includes("visible.md"), "visible.md must be included");
+    assert.ok(
+      !paths.some((p) => p.startsWith(".agents")),
+      ".agents must be excluded, but found: " + paths.filter((p) => p.startsWith(".agents")),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── D1: repo-wide prompt-lint backlog is clean (backlog item prompt-lint-backlog) ──────
 // Pins the deliverable itself: `node src/cli.js prompt scan .` must report zero failing
 // files across the real repo. Before this item's fix, plugin/commands/run.md, autopilot.md,

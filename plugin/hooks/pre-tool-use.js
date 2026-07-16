@@ -20,8 +20,16 @@
 // crossing when inline drift with no muster run active crosses
 // MUSTER_INLINE_SCALE distinct files, then stays silent until a run starts,
 // SessionStart, or 60 minutes of inactivity re-arms it (inline-budget.js:
-// isCrossingStale). The prompt-time half of the same invitation lives in
-// user-prompt-submit.js (the isDirective nudge).
+// isCrossingStale). A re-armed crossing is only ELIGIBLE to warn again — a
+// shared cooldown (inline-budget.js: isInCooldown/recordInvite,
+// MUSTER_INVITE_COOLDOWN_MS, default 15 min) still suppresses the actual warn
+// for a window after the last invite, so a noisy border (a rapid muster-run
+// restart, or a drift counter oscillating around the threshold) cannot flap a
+// repeat invite seconds apart; a genuinely long-lived session still gets one
+// invite per crossing once real time separates them. The prompt-time half of
+// the same invitation lives in user-prompt-submit.js (the isDirective nudge,
+// itself gated on scale correlation — see inline-budget.js:
+// isScaleCorroborated).
 //
 // Decision order:
 //   1. ALLOW if payload has agent_id (crew subagent — always allowed).
@@ -39,9 +47,11 @@
 //      bash-write-target.js classifies as a high-confidence write) and no
 //      muster run is active, record it in the cumulative cross-turn counter
 //      (inline-budget.js: cumFile/recordCum). Crossing MUSTER_INLINE_SCALE
-//      (default 3) for the first time this crossing window -> WARN (additional
-//      Context, never a deny). If a muster run IS active, the counter resets
-//      instead (that work is tracked/dispatched, not drift).
+//      (default 3) for the first time this crossing window, AND the shared
+//      cooldown is not active (inline-budget.js: isInCooldown) -> WARN
+//      (additionalContext, never a deny) and start the cooldown. If a muster
+//      run IS active, the counter resets instead (that work is tracked/
+//      dispatched, not drift).
 //   6. ALLOW.
 //
 // META_EXEMPT_ROOTS — the shared exemption set (always allowed):
@@ -60,7 +70,10 @@ import path from "node:path";
 import { emit, CREW_INVITATION } from "./guidance.js";
 import { bashWriteTarget } from "./bash-write-target.js";
 import { classifyAction } from "./action-guard.js";
-import { cumFile, recordCum, markNudged, resetCum, scaleThreshold } from "./inline-budget.js";
+import {
+  cumFile, recordCum, markNudged, resetCum, scaleThreshold,
+  cooldownFile, isInCooldown, recordInvite,
+} from "./inline-budget.js";
 
 const EVENT = "PreToolUse";
 const EDIT_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
@@ -210,8 +223,18 @@ try {
       } else {
         const { count, nudged } = recordCum(cFile, key);
         if (!nudged && count >= scaleThreshold()) {
+          // This crossing is nudged either way (never re-check its later
+          // files) — but the cooldown decides whether the warn is actually
+          // spoken. A rapid run-restart or a threshold-oscillating counter
+          // re-arms a "new" crossing right away; the cooldown is what keeps
+          // that re-armed crossing from flapping a repeat invite seconds
+          // after the last one (see inline-budget.js: isInCooldown).
           markNudged(cFile);
-          warnBorder(count);
+          const cdFile = cooldownFile(payload.session_id);
+          if (!isInCooldown(cdFile)) {
+            recordInvite(cdFile);
+            warnBorder(count);
+          }
         }
       }
     }

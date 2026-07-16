@@ -8,7 +8,7 @@ import {
   cleanDir, makeRunActive,
   editPayload as editPayloadBase, spawnHook,
 } from "./test-support/hook-helpers.js";
-import { cumFile, readCum, CROSSING_MAX_AGE_MS } from "../plugin/hooks/inline-budget.js";
+import { cumFile, readCum, CROSSING_MAX_AGE_MS, cooldownFile, DEFAULT_INVITE_COOLDOWN_MS } from "../plugin/hooks/inline-budget.js";
 
 // The border invitation, PreToolUse half (see pre-tool-use.js docblock and
 // guidance.js: CREW_INVITATION): a cumulative distinct-inline-file counter
@@ -53,6 +53,19 @@ function bashPayload(command, cwd, sessionId) {
 function clearCum(sessionId) {
   const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
   try { rmSync(path.join(os.tmpdir(), `muster-cum-${safe}`), { force: true }); } catch { /* ignore */ }
+  // Also clear the shared invite-cooldown marker (inline-budget.js:
+  // cooldownFile) -- otherwise a prior run of this suite using the same
+  // fixed session id string could leave a fresh cooldown marker behind and
+  // suppress an invite this run legitimately expects.
+  try { rmSync(path.join(os.tmpdir(), `muster-cooldown-${safe}`), { force: true }); } catch { /* ignore */ }
+}
+
+// Age a session's invite-cooldown marker past the window so the next
+// eligible crossing is no longer suppressed by cooldown (no real sleeping).
+function ageCooldown(sid, extraMs = 60_000) {
+  const cdFile = cooldownFile(sid, os.tmpdir());
+  const stale = new Date(Date.now() - (DEFAULT_INVITE_COOLDOWN_MS + extraMs));
+  utimesSync(cdFile, stale, stale);
 }
 
 function out(stdout) {
@@ -320,6 +333,56 @@ test("a live muster run resets the cumulative counter and doesn't record", async
       readCum(cFile),
       { files: [], nudged: false },
       "cumulative file reset while a muster run is active",
+    );
+  } finally {
+    clearCum(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── flapping: hysteresis/cooldown absorbs a noisy, rapidly-re-arming border ─
+test("flapping: a run restart re-arms the crossing immediately, but the shared cooldown absorbs the repeat fire", async () => {
+  const dir = noRunDir();
+  const sid = "border-flap-1";
+  clearCum(sid);
+  try {
+    // First crossing: three distinct files, no run active -> warns once and
+    // starts the shared invite cooldown.
+    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
+    const first = await runPre(editPayload(path.join(dir, "c.js"), dir, sid));
+    assert.ok(out(first.stdout).additionalContext, "sanity: first crossing warns");
+
+    // A muster run starts (resets the counter -- a fresh crossing) and stops
+    // moments later in real time: a noisy border oscillating around the
+    // threshold via rapid restarts.
+    makeRunActive(dir);
+    await runPre(editPayload(path.join(dir, "reset-trigger.js"), dir, sid));
+    rmSync(path.join(dir, ".muster", "run-active"), { force: true });
+
+    // The re-armed crossing crosses the border again -- without the
+    // cooldown this would warn a second time seconds after the first.
+    await runPre(editPayload(path.join(dir, "d.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "e.js"), dir, sid));
+    const second = await runPre(editPayload(path.join(dir, "f.js"), dir, sid));
+    assert.ok(
+      !("additionalContext" in out(second.stdout)),
+      "a crossing re-armed moments after the first invite stays silent -- cooldown absorbs the flap",
+    );
+    assert.notEqual(decision(second.stdout), "deny", "still never a deny, even suppressed by cooldown");
+
+    // Once the cooldown genuinely elapses, the next genuine crossing invites
+    // again -- the border is not permanently dead after one flap-suppressed cycle.
+    ageCooldown(sid);
+    makeRunActive(dir);
+    await runPre(editPayload(path.join(dir, "reset-trigger-2.js"), dir, sid));
+    rmSync(path.join(dir, ".muster", "run-active"), { force: true });
+    await runPre(editPayload(path.join(dir, "g.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "h.js"), dir, sid));
+    const third = await runPre(editPayload(path.join(dir, "i.js"), dir, sid));
+    assert.ok(
+      out(third.stdout).additionalContext,
+      "once the cooldown clears, the next genuine crossing invites again",
     );
   } finally {
     clearCum(sid);

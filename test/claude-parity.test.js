@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const root = new URL("../", import.meta.url).pathname;
-// This is the 0.4.1 Claude surface, intentionally excluding release-version
-// manifests. Codex work must not mutate Claude commands, skills (including
-// builtins), agents, hooks, catalogs, pipelines, or the shared Cowork MCP
-// definition.
+// This is the audited 0.5.0 Claude surface, intentionally excluding
+// release-version manifests. Codex-only work must not mutate Claude commands,
+// skills (including builtins), agents, hooks, catalogs, pipelines, or the
+// shared Cowork MCP definition. Update this pin only with separately reviewed
+// shared-surface remediation.
 const claudeSurface = [
   "plugin/agents",
   "plugin/builtins",
@@ -39,5 +40,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update("\0");
   }
   assert.equal(paths.length, 136);
-  assert.equal(hash.digest("hex"), "232d1f2c6beeacdfa9f5f24e40697cee8e71a67804a86c5b76042d6cf8132896");
+  assert.equal(hash.digest("hex"), "30fe004fdbaf6911b53188c0a9c56300d2b3f1abef5241e8b962f795c3b2d886");
 });

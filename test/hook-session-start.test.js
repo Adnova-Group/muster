@@ -18,8 +18,6 @@ const HOOK = path.join(
 
 async function runHook(cwd) {
   // Never rejects on non-zero exit; capture both for assertions.
-  // Pass empty input so the hook's readFileSync(0) returns empty string (parses
-  // as {}) rather than blocking on an open pipe.
   return new Promise((resolve) => {
     const child = execFile("node", [HOOK], { cwd }, (err, stdout) => {
       resolve({ stdout: stdout ?? err?.stdout ?? "", code: err?.code ?? 0 });
@@ -28,7 +26,6 @@ async function runHook(cwd) {
   });
 }
 
-// Run the hook with a stdin payload (e.g. a compact-source SessionStart event).
 function runHookStdin(cwd, stdinText) {
   return new Promise((resolve) => {
     const child = execFile("node", [HOOK], { cwd }, (err, stdout) => {
@@ -38,11 +35,11 @@ function runHookStdin(cwd, stdinText) {
   });
 }
 
-test("session-start hook: Node project in git repo emits full guidance", async () => {
+// ── T-session-start: trimmed one-line pointer ───────────────────────────────
+
+test("session-start hook: emits the one-line pointer, not the old full-payload guidance", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-node-"));
   await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: "x" }));
-  await mkdtemp(path.join(dir, ".git-")); // ensure dir exists; real .git below
-  await writeFile(path.join(dir, ".git"), "gitdir: /nowhere"); // file form is fine for existsSync
 
   const { stdout, code } = await runHook(dir);
   assert.equal(code, 0, "exit 0");
@@ -54,35 +51,17 @@ test("session-start hook: Node project in git repo emits full guidance", async (
 
   const ctx = out.additionalContext;
   assert.equal(typeof ctx, "string");
+  assert.match(ctx, /muster available/i, "one-line pointer names muster");
+  assert.match(ctx, /\/muster:plan\b/, "one-line pointer names the orchestration-scale verb");
 
-  // All four verbs present.
-  for (const verb of ["run", "autopilot", "diagnose", "audit"]) {
-    assert.match(ctx, new RegExp(verb), `mentions ${verb}`);
-  }
-  // At least one principle keyword.
-  assert.match(ctx, /TDD|verify|glass-box/i, "has a principle keyword");
-  // Node/JS detection mention.
-  assert.match(ctx, /Node|JS|JavaScript/i, "detects Node project");
+  // The old full-payload content (principles, all seven verbs, project sniff)
+  // is gone — the context is now exactly the one-line pointer.
+  assert.doesNotMatch(ctx, /muster principles:/i, "no full principles payload");
+  assert.doesNotMatch(ctx, /TDD|glass-box/i, "no principle keywords");
+  assert.doesNotMatch(ctx, /Node project|Python project|Go project|Rust project/i, "no project-sniff text");
 });
 
-test("session-start hook: empty dir still emits valid JSON, no recognized project", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-empty-"));
-
-  const { stdout, code } = await runHook(dir);
-  assert.equal(code, 0, "exit 0");
-
-  const parsed = JSON.parse(stdout);
-  const out = parsed.hookSpecificOutput;
-  assert.equal(out.hookEventName, "SessionStart");
-
-  assert.match(
-    out.additionalContext,
-    /No recognized project/i,
-    "indicates no recognized project",
-  );
-});
-
-test("session-start hook: output is parseable JSON and exit 0 in both cases (fail-safe)", async () => {
+test("session-start hook: output is parseable JSON and exit 0 (fail-safe)", async () => {
   const nodeDir = await mkdtemp(path.join(tmpdir(), "muster-hook-n2-"));
   await writeFile(path.join(nodeDir, "package.json"), "{}");
   const emptyDir = await mkdtemp(path.join(tmpdir(), "muster-hook-e2-"));
@@ -91,10 +70,12 @@ test("session-start hook: output is parseable JSON and exit 0 in both cases (fai
     const { stdout, code } = await runHook(dir);
     assert.equal(code, 0);
     assert.doesNotThrow(() => JSON.parse(stdout), "stdout is valid JSON");
+    const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+    assert.match(ctx, /muster available/i, "one-line pointer present regardless of project type");
   }
 });
 
-test("session-start hook: emits full payload on a compact-source event (backstop)", async () => {
+test("session-start hook: emits the same one-line pointer on a compact-source event", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-compact-"));
   await writeFile(path.join(dir, "package.json"), "{}");
 
@@ -105,10 +86,7 @@ test("session-start hook: emits full payload on a compact-source event (backstop
   assert.equal(code, 0, "exit 0");
 
   const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
-  assert.match(ctx, /muster principles:/, "full principles present after compact");
-  for (const verb of ["run", "autopilot", "diagnose", "audit"]) {
-    assert.match(ctx, new RegExp(verb), `mentions ${verb}`);
-  }
+  assert.match(ctx, /muster available/i, "one-line pointer present after compact too");
 });
 
 // ── cumulative cross-turn drift counter is reset on SessionStart ───────────
@@ -148,7 +126,7 @@ test("session-start hook: the cumulative drift counter SURVIVES a compact-source
     assert.deepEqual(
       readCum(cFile),
       seeded,
-      "cumulative drift counter survives compact (mid-wave; long drifting sessions are the ones that auto-compact)",
+      "cumulative drift counter survives compact (mid-run; long drifting sessions are the ones that auto-compact)",
     );
   } finally {
     await rm(cFile, { force: true });
@@ -176,13 +154,9 @@ test("session-start hook: resets the cumulative drift counter on a clear-source 
   }
 });
 
-// ── once-per-session directive marker lifecycle (F3) ────────────────────────
-// The directive marker (muster-directive-<session>, see user-prompt-submit.js)
-// is never cleared on /clear today, so a reused session_id never re-arms the
-// nudge. Fix: clear it under the same fresh-start gate as the wave/run markers
-// and the cumulative counter above; leave it intact mid-wave (compact/resume).
+// ── once-per-crossing directive marker lifecycle ────────────────────────────
 
-test("session-start hook: clears the once-per-session directive marker on a clear-source event", async () => {
+test("session-start hook: clears the once-per-crossing directive marker on a clear-source event", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-dir1-"));
   const sid = "ss-dir-1";
   const dFile = directiveFile(sid, tmpdir());
@@ -199,7 +173,7 @@ test("session-start hook: clears the once-per-session directive marker on a clea
   }
 });
 
-test("session-start hook: the once-per-session directive marker SURVIVES a compact-source event", async () => {
+test("session-start hook: the once-per-crossing directive marker SURVIVES a compact-source event", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-dir2-"));
   const sid = "ss-dir-2";
   const dFile = directiveFile(sid, tmpdir());
@@ -210,7 +184,7 @@ test("session-start hook: the once-per-session directive marker SURVIVES a compa
       JSON.stringify({ source: "compact", session_id: sid, cwd: dir }),
     );
     assert.equal(code, 0, "exit 0");
-    assert.ok(existsSync(dFile), "directive marker survives compact (mid-session, already nudged this session)");
+    assert.ok(existsSync(dFile), "directive marker survives compact (mid-session, already nudged this crossing)");
   } finally {
     await rm(dFile, { force: true });
   }

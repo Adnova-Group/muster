@@ -1,21 +1,31 @@
 #!/usr/bin/env node
-// muster SessionStart hook — injects always-on guidance into every session.
+// muster SessionStart hook — injects a one-line pointer into every session and
+// cleans up stale per-session/per-repo state on a genuinely fresh session
+// start.
 //
-// Self-contained apart from the sibling guidance.js (also under plugin/hooks/).
-// The plugin ships only plugin/, so both files travel together.
+// Self-contained apart from the sibling guidance.js/inline-budget.js (also
+// under plugin/hooks/). The plugin ships only plugin/, so all three files
+// travel together.
 //
 // FAIL-SAFE: this runs at every session start (including source "compact" and
 // "resume"). On ANY error we print minimal valid JSON and exit 0. Never throw.
 
 import { readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, detect } from "./guidance.js";
+import { emit } from "./guidance.js";
 import { cumFile, resetCum, directiveFile } from "./inline-budget.js";
 
 const EVENT = "SessionStart";
 
-// Sources that begin a genuinely fresh session: clear the stale wave marker.
-// "compact" and "resume" fire mid-wave — do NOT disarm the wave guard.
+// The one-line pointer this hook injects into every session — muster's
+// always-on guidance is now this single line, not a full principles/verbs
+// payload (that content still lives in guidance.js for the border-invitation
+// nudges, which fire on their own trigger rather than unconditionally here).
+const POINTER = "muster available; /muster:plan for orchestration-scale work.";
+
+// Sources that begin a genuinely fresh session: clear stale per-session/
+// per-repo state. "compact" and "resume" fire mid-run — do NOT disarm
+// anything live.
 const RESET_SOURCES = new Set(["startup", "clear"]);
 
 // Read the stdin payload (matches user-prompt-submit.js pattern).
@@ -31,11 +41,12 @@ const cwd = (typeof payload.cwd === "string" && payload.cwd.length > 0)
   ? payload.cwd
   : process.cwd();
 
-// Clear any stale wave marker, the cumulative cross-turn inline-drift counter
-// (inline-budget.js), and the once-per-session directive-nudge marker ONLY
-// when this is a fresh session start. "compact" and "resume" fire mid-session
-// (mid-wave, or mid-drift for a session long enough to have auto-compacted) —
-// resetting any of this state there would be self-defeating, so they survive.
+// Clear any stale wave/run markers, the cumulative cross-turn inline-drift
+// counter (inline-budget.js), and the once-per-crossing directive-nudge
+// marker ONLY when this is a fresh session start. "compact" and "resume" fire
+// mid-session (mid-run, or mid-drift for a session long enough to have
+// auto-compacted) — resetting any of this state there would be
+// self-defeating, so they survive.
 // source === null  → old-style payload with no source field → treat as startup.
 // source "compact" or "resume" → mid-session; leave all of the above intact.
 if (source === null || RESET_SOURCES.has(source)) {
@@ -59,7 +70,7 @@ try {
   emit({
     hookSpecificOutput: {
       hookEventName: EVENT,
-      additionalContext: [PRINCIPLES, VERBS, ROUTING_POLICY, detect(cwd)].join("\n"),
+      additionalContext: POINTER,
     },
   });
 } catch {

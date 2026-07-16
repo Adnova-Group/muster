@@ -8,7 +8,7 @@ import os from "node:os";
 import { cleanDir } from "./test-support/hook-helpers.js";
 
 // Import guidance.js detect directly.
-const { detect, isDirective, VOICE_NUDGE, SHORT_NUDGE, ROUTING_POLICY, VERBS } = await import(
+const { detect, isDirective, VOICE_NUDGE, ROUTING_POLICY, VERBS } = await import(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "plugin", "hooks", "guidance.js")
 );
 
@@ -163,10 +163,6 @@ test("VOICE_NUDGE: exported and non-empty", () => {
   assert.ok(VOICE_NUDGE.trim().length > 0, "VOICE_NUDGE must be a non-empty string");
 });
 
-test("SHORT_NUDGE carries the VOICE_NUDGE line", () => {
-  assert.ok(SHORT_NUDGE.includes(VOICE_NUDGE), "short nudge tier must include VOICE_NUDGE verbatim");
-});
-
 test("ROUTING_POLICY carries the VOICE_NUDGE line (folded into the full-principles tier)", () => {
   assert.ok(
     ROUTING_POLICY.includes(VOICE_NUDGE),
@@ -175,13 +171,13 @@ test("ROUTING_POLICY carries the VOICE_NUDGE line (folded into the full-principl
 });
 
 // ── all seven routed verbs enumerated under their NEW names (P1-14) ────────
-// VERBS, SHORT_NUDGE, and ROUTING_POLICY's enumeration must all name every
-// routed mode under its post-rename name (plan/go/plan-backlog/diagnose/
-// audit/go-backlog/runner) — checking only the legacy alias substrings
-// (run/autopilot/sprint) is a false-green for the rename, since the alias
-// line keeps those substrings present even when the primary enumeration is
-// stale. Each legacy alias must still be mentioned too, but exactly once —
-// in the "-> new-name" alias line, not as a primary name.
+// VERBS and ROUTING_POLICY's enumeration must all name every routed mode
+// under its post-rename name (plan/go/plan-backlog/diagnose/audit/go-backlog/
+// runner) — checking only the legacy alias substrings (run/autopilot/sprint)
+// is a false-green for the rename, since the alias line keeps those
+// substrings present even when the primary enumeration is stale. Each legacy
+// alias must still be mentioned too, but exactly once — in the "-> new-name"
+// alias line, not as a primary name.
 function countMatches(text, re) {
   const m = text.match(re);
   return m ? m.length : 0;
@@ -198,19 +194,6 @@ test("VERBS names all seven routed verbs under their new names, with each legacy
   assert.equal(countMatches(VERBS, /\/muster:run\b/g), 1, "/muster:run legacy alias mentioned exactly once");
   assert.equal(countMatches(VERBS, /\/muster:autopilot\b/g), 1, "/muster:autopilot legacy alias mentioned exactly once");
   assert.equal(countMatches(VERBS, /\/muster:sprint\b/g), 1, "/muster:sprint legacy alias mentioned exactly once");
-});
-
-test("SHORT_NUDGE names all seven routed verbs under their new names, with each legacy alias mentioned exactly once", () => {
-  assert.match(SHORT_NUDGE, /\/muster:plan\b(?!-backlog)/, "must name /muster:plan");
-  assert.match(SHORT_NUDGE, /\/muster:go\b(?!-backlog)/, "must name /muster:go");
-  assert.match(SHORT_NUDGE, /\/muster:plan-backlog\b/, "must name /muster:plan-backlog");
-  assert.match(SHORT_NUDGE, /\/muster:diagnose\b/);
-  assert.match(SHORT_NUDGE, /\/muster:audit\b/);
-  assert.match(SHORT_NUDGE, /\/muster:go-backlog\b/, "must name /muster:go-backlog");
-  assert.match(SHORT_NUDGE, /\/muster:runner\b/);
-  assert.equal(countMatches(SHORT_NUDGE, /\/muster:run\b/g), 1, "/muster:run legacy alias mentioned exactly once");
-  assert.equal(countMatches(SHORT_NUDGE, /\/muster:autopilot\b/g), 1, "/muster:autopilot legacy alias mentioned exactly once");
-  assert.equal(countMatches(SHORT_NUDGE, /\/muster:sprint\b/g), 1, "/muster:sprint legacy alias mentioned exactly once");
 });
 
 test("ROUTING_POLICY's verb enumeration includes the new plan-backlog/go-backlog names, with each legacy alias mentioned exactly once", () => {

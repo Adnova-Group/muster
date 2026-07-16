@@ -37,13 +37,17 @@ export const ROUTING_POLICY =
   " " +
   VOICE_NUDGE;
 
-export const SHORT_NUDGE =
-  "muster mode -- drive directives through the muster verbs (don't default to plain inline " +
-  "work), route copy/content through the humanizer, keep reasoning glass-box. Conversational " +
-  "turns fall through. Verbs: /muster:plan · /muster:go · /muster:plan-backlog · /muster:diagnose · " +
-  "/muster:audit · /muster:go-backlog · /muster:runner. Legacy aliases still work: /muster:run -> plan, " +
-  "/muster:autopilot -> go, /muster:sprint -> go-backlog. " +
-  VOICE_NUDGE;
+// ── the border invitation ────────────────────────────────────────────────────
+// Shared value-toned copy for muster's single warn-only "border invitation":
+// two signals (PreToolUse's cumulative inline-file drift counter, and
+// UserPromptSubmit's isDirective prompt detector) each sell the same value
+// proposition before naming the verb, rather than commanding — see
+// pre-tool-use.js and user-prompt-submit.js for the two call sites, and
+// inline-budget.js's isCrossingStale for the shared per-crossing/age-reset
+// cadence both signals re-arm on.
+export const CREW_INVITATION =
+  "A muster run buys parallel dispatch across the crew, adversarial review before merge, " +
+  "and a receipts trail for every decision.";
 
 // Shared emit helper — writes a JSON object to stdout.
 export function emit(obj) {

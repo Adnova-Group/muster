@@ -1,45 +1,36 @@
 #!/usr/bin/env node
-// muster UserPromptSubmit hook — periodically re-asserts muster mode to counter
-// in-session drift back to default Claude behavior.
+// muster UserPromptSubmit hook — the prompt-time half of muster's one border
+// invitation (see pre-tool-use.js for the tool-call half: the cumulative
+// inline-file drift counter). This is the ONLY prompt-time nudge muster
+// injects — the old periodic every-N-turns tier (a short nudge, then the
+// full principles payload) is gone; it habituated and injected on turns that
+// had nothing to do with routing.
 //
-// Two tiers, keyed off a per-session turn counter:
-//   - every N turns        -> short nudge        (MUSTER_NUDGE_EVERY, default 3)
-//   - every N*K turns       -> full principles    (K = MUSTER_PRINCIPLES_EVERY, default 3)
+// Fires ONLY when a directive-shaped prompt (guidance.js: isDirective — an
+// imperative verb like fix/build/implement, optionally after a polite
+// lead-in; declaratives like "Update:"/"Fix for" and questions are excluded)
+// lands with no muster run active. Sells the value of a crew run
+// (guidance.js: CREW_INVITATION) rather than commanding, once per crossing,
+// then stays silent until re-armed by the same cadence as the PreToolUse
+// border signal (inline-budget.js: isCrossingStale) — a muster run starting,
+// SessionStart, or 60 minutes of inactivity.
 //
-// Self-contained apart from sibling guidance.js. FAIL-SAFE: whole body in
-// try/catch; on ANY error or missing state, emit minimal valid JSON and exit 0.
+// Self-contained apart from sibling guidance.js/inline-budget.js. FAIL-SAFE:
+// whole body in try/catch; on ANY error or missing state, emit minimal valid
+// JSON and exit 0.
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import os from "node:os";
-import { emit, PRINCIPLES, VERBS, ROUTING_POLICY, SHORT_NUDGE, isDirective } from "./guidance.js";
-import { budgetFile, resetBudget, safeSession, directiveFile } from "./inline-budget.js";
-import { envInt } from "./env-util.js";
+import { emit, CREW_INVITATION, isDirective } from "./guidance.js";
+import { directiveFile, isCrossingStale } from "./inline-budget.js";
 
 const EVENT = "UserPromptSubmit";
 
-function posInt(value, fallback) {
-  const n = Number.parseInt(value, 10);
-  return Number.isInteger(n) && n > 0 ? n : fallback;
-}
-
-// Increment and persist a per-session turn counter; return the new count.
-function bumpTurn(sessionId) {
-  // Shared sanitization rule (inline-budget.js). Null when nothing usable remains:
-  // skip turn-counting rather than write a bare shared file (muster-turns-) that
-  // causes cross-session collisions.
-  const safe = safeSession(sessionId);
-  if (safe === null) return null;
-  const file = path.join(os.tmpdir(), `muster-turns-${safe}`);
-  let count = 0;
-  try {
-    count = posInt(readFileSync(file, "utf8").trim(), 0); // missing/junk -> 0
-  } catch {
-    count = 0;
-  }
-  count += 1;
-  writeFileSync(file, String(count));
-  return count;
+function directiveNudgeCopy() {
+  return (
+    `${CREW_INVITATION} This looks like directive work with no muster run active — ` +
+    `try /muster:go (or /muster:plan to plan first).`
+  );
 }
 
 try {
@@ -52,67 +43,52 @@ try {
   const sessionId = typeof payload.session_id === "string" ? payload.session_id : undefined;
   const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
 
-  // A new user turn resets the per-turn inline-edit scale budget that the
-  // PreToolUse scale gate reads (fresh allowance each turn). Runs for every
-  // turn, including slash commands.
-  if (typeof sessionId === "string" && sessionId.length > 0) {
-    const file = budgetFile(sessionId);
-    if (file) resetBudget(file);
-  }
-
-  // Slash-command turns are explicit intent — never inject on them, and never count
-  // them. Injecting context on a "/..." prompt is noise, and in a relayed/remote
-  // session it can land ahead of the command and break slash-command parsing.
+  // Slash-command turns are explicit intent — never inject on them, and never
+  // treat them as directive-shaped. Injecting context on a "/..." prompt is
+  // noise, and in a relayed/remote session it can land ahead of the command
+  // and break slash-command parsing.
   if (prompt.trimStart().startsWith("/")) {
     emit({ hookSpecificOutput: { hookEventName: EVENT } });
     process.exit(0);
   }
 
-  if (typeof sessionId !== "string" || sessionId.length === 0) {
-    emit({ hookSpecificOutput: { hookEventName: EVENT } });
-    process.exit(0);
-  }
-
-  const N = envInt("MUSTER_NUDGE_EVERY", { min: 1, def: 3 }, process.env);
-  const K = envInt("MUSTER_PRINCIPLES_EVERY", { min: 1, def: 3 }, process.env);
-  const count = bumpTurn(sessionId);
-
-  // count === null means the session_id sanitized to empty — skip nudging.
-  if (count === null) {
-    emit({ hookSpecificOutput: { hookEventName: EVENT } });
-    process.exit(0);
-  }
-
   let additionalContext;
-  if (count % (N * K) === 0) additionalContext = `${PRINCIPLES}\n${VERBS}\n${ROUTING_POLICY}`;
-  else if (count % N === 0) additionalContext = SHORT_NUDGE;
 
-  // Directive-triggered nudge: fires immediately (independent of the periodic
-  // cadence above) the first time a directive-shaped prompt lands with no active
-  // muster run — once per session, then never again. Supersedes whatever the
-  // periodic tier chose this turn (no double-inject). Best-effort: any failure
-  // here degrades to the periodic behavior computed above.
+  // The ONLY prompt-time nudge: isDirective-triggered, once per crossing.
+  // Best-effort: any failure here degrades to silence (no nudge), never a crash.
   try {
-    if (isDirective(prompt)) {
-      const cwd =
-        typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : process.cwd();
-      let runActive = false;
-      try {
-        runActive = existsSync(path.join(cwd, ".muster", "run-active"));
-      } catch {
-        runActive = false;
-      }
-      if (!runActive) {
-        const markerFile = directiveFile(sessionId);
-        if (markerFile !== null) {
+    if (typeof sessionId === "string" && sessionId.length > 0) {
+      const markerFile = directiveFile(sessionId);
+      if (markerFile !== null) {
+        const cwd =
+          typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : process.cwd();
+        let runActive = false;
+        try {
+          runActive = existsSync(path.join(cwd, ".muster", "run-active"));
+        } catch {
+          runActive = false;
+        }
+
+        if (runActive) {
+          // A muster run resolves the invitation — re-arm for the next
+          // post-run crossing (mirrors the PreToolUse cumulative counter's
+          // reset-on-run-start). This happens on ANY turn where a run is
+          // observed active, independent of this turn's prompt shape.
+          try {
+            unlinkSync(markerFile);
+          } catch {
+            /* not present — fine */
+          }
+        } else if (isDirective(prompt)) {
           let alreadyNudged = false;
           try {
-            alreadyNudged = existsSync(markerFile);
+            const { mtimeMs } = statSync(markerFile);
+            alreadyNudged = !isCrossingStale(mtimeMs);
           } catch {
-            alreadyNudged = false;
+            alreadyNudged = false; // no marker yet — not nudged
           }
           if (!alreadyNudged) {
-            additionalContext = ROUTING_POLICY;
+            additionalContext = directiveNudgeCopy();
             try {
               writeFileSync(markerFile, "1");
             } catch {
@@ -123,7 +99,7 @@ try {
       }
     }
   } catch {
-    /* directive nudge is best-effort; fall back to the periodic tier above */
+    /* directive nudge is best-effort; fall back to silence */
   }
 
   const out = { hookEventName: EVENT };

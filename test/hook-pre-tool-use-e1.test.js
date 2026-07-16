@@ -1,7 +1,10 @@
 // test/hook-pre-tool-use-e1.test.js
 // E1 enforcement-layer tests for pre-tool-use.js:
 //   Part A — meta-exempt roots (.muster/ + .claude/)
-//   Part B — run-active scoping signal for stale-wave detection
+//   Part B — the wave-guard is gone: a live .muster/wave-active marker (with
+//            or without .muster/run-active) has ZERO effect on this hook —
+//            it never reads that file at all anymore. These are the field
+//            repros named in the acceptance criteria.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -23,17 +26,9 @@ function runRaw(stdinText, env = {}) {
   return spawnHook(HOOK, stdinText, env);
 }
 
-// Create a fresh wave-active dir (no stale mtime).
-function makeFreshWaveDir(waveId = "wave-e1") {
-  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
-  makeMarker(tmpDir, waveId);
-  return tmpDir;
-}
-
-// Clear the per-session budget file (mirrors scale test helper).
-function clearBudget(sessionId) {
+function clearCum(sessionId) {
   const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-  try { rmSync(path.join(os.tmpdir(), `muster-inline-${safe}`), { force: true }); } catch { /* ignore */ }
+  try { rmSync(path.join(os.tmpdir(), `muster-cum-${safe}`), { force: true }); } catch { /* ignore */ }
 }
 
 function decision(stdout) {
@@ -42,14 +37,10 @@ function decision(stdout) {
 
 // ── Part A: meta-exempt roots ────────────────────────────────────────────────
 
-// A-1: .claude/settings.local.json inside cwd is ALLOWED during active wave.
-test("A: Edit to .claude/settings.local.json in cwd is allowed during active wave", async () => {
-  const tmpDir = makeFreshWaveDir("wave-a1");
-  makeRunActive(tmpDir); // wave is legitimately active
+test("A: Edit to .claude/settings.local.json in cwd is allowed", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
   try {
-    const { stdout, code } = await runRaw(
-      editPayload(".claude/settings.local.json", tmpDir),
-    );
+    const { stdout, code } = await runRaw(editPayload(".claude/settings.local.json", tmpDir));
     assert.equal(code, 0, "exit 0");
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.hookEventName, "PreToolUse");
@@ -59,15 +50,11 @@ test("A: Edit to .claude/settings.local.json in cwd is allowed during active wav
   }
 });
 
-// A-2: absolute .claude/ path inside cwd is ALLOWED during active wave.
-test("A: Edit to absolute .claude/ path inside cwd is allowed during active wave", async () => {
-  const tmpDir = makeFreshWaveDir("wave-a2");
-  makeRunActive(tmpDir);
+test("A: Edit to absolute .claude/ path inside cwd is allowed", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
   try {
     const claudeFile = path.join(tmpDir, ".claude", "AGENTS.md");
-    const { stdout, code } = await runRaw(
-      editPayload(claudeFile, tmpDir),
-    );
+    const { stdout, code } = await runRaw(editPayload(claudeFile, tmpDir));
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.hookEventName, "PreToolUse");
@@ -77,162 +64,91 @@ test("A: Edit to absolute .claude/ path inside cwd is allowed during active wave
   }
 });
 
-// A-3: .muster/ path still exempt (wave-2 regression guard).
-test("A: Edit to .muster/ path still allowed during active wave (regression)", async () => {
-  const tmpDir = makeFreshWaveDir("wave-a3");
-  makeRunActive(tmpDir);
-  try {
-    const { stdout, code } = await runRaw(
-      editPayload(".muster/STATE.md", tmpDir),
-    );
-    assert.equal(code, 0);
-    const out = JSON.parse(stdout).hookSpecificOutput;
-    assert.equal(out.hookEventName, "PreToolUse");
-    assert.equal(out.permissionDecision, undefined, ".muster/ must still be exempt");
-  } finally {
-    cleanDir(tmpDir);
-  }
-});
-
-// A-4: a normal in-cwd source file is still DENIED during active wave (regression).
-test("A: Edit to in-cwd source file is denied during active wave (regression)", async () => {
-  const tmpDir = makeFreshWaveDir("wave-a4");
-  makeRunActive(tmpDir);
-  try {
-    const { stdout, code } = await runRaw(
-      editPayload(path.join(tmpDir, "src", "app.js"), tmpDir),
-    );
-    assert.equal(code, 0);
-    const out = JSON.parse(stdout).hookSpecificOutput;
-    assert.equal(out.hookEventName, "PreToolUse");
-    assert.equal(out.permissionDecision, "deny", "in-cwd source file must still be denied");
-    assert.match(out.permissionDecisionReason, /wave-a4/, "reason includes wave id");
-  } finally {
-    cleanDir(tmpDir);
-  }
-});
-
-// ── Part B: run-active scoping signal ────────────────────────────────────────
-
-// B-1: run-active PRESENT + fresh wave-active → wave-guard fires (deny on 1st in-cwd edit).
-test("B: run-active present + fresh wave-active → wave-guard denies in-cwd edit", async () => {
-  const tmpDir = makeFreshWaveDir("wave-b1");
-  makeRunActive(tmpDir);
-  const sid = "e1-b1";
-  clearBudget(sid);
-  try {
-    const { stdout, code } = await runRaw(
-      editPayload(path.join(tmpDir, "src", "x.js"), tmpDir, { session_id: sid }),
-    );
-    assert.equal(code, 0);
-    const out = JSON.parse(stdout).hookSpecificOutput;
-    assert.equal(out.permissionDecision, "deny", "wave-guard must deny first in-cwd edit");
-    // Reason should be wave-guard message (mentions wave id), NOT scale-gate message.
-    assert.match(out.permissionDecisionReason, /wave-b1/, "reason mentions wave id (wave-guard)");
-    assert.doesNotMatch(out.permissionDecisionReason, /autopilot.*distinct|distinct.*autopilot/i,
-      "reason must be wave-guard, not scale-gate");
-  } finally {
-    clearBudget(sid);
-    cleanDir(tmpDir);
-  }
-});
-
-// B-2: wave-active PRESENT + run-active ABSENT → treated as stale → scale-gate
-//      (1st in-cwd edit is ALLOWED, not denied by wave-guard).
-test("B: fresh wave-active + run-active ABSENT → scale-gate path (1st edit allowed)", async () => {
-  const tmpDir = makeFreshWaveDir("wave-b2");
-  // Deliberately do NOT create run-active.
-  const sid = "e1-b2";
-  clearBudget(sid);
-  try {
-    const { stdout, code } = await runRaw(
-      editPayload(path.join(tmpDir, "src", "x.js"), tmpDir, { session_id: sid }),
-    );
-    assert.equal(code, 0);
-    const out = JSON.parse(stdout).hookSpecificOutput;
-    // Scale-gate: 1st distinct file is allowed (threshold is 3).
-    assert.notEqual(out.permissionDecision, "deny",
-      "without run-active, wave treated as stale; 1st edit must be allowed by scale-gate");
-  } finally {
-    clearBudget(sid);
-    cleanDir(tmpDir);
-  }
-});
-
-// B-3: wave-active PRESENT + run-active ABSENT → 3rd distinct file denied via
-//      scale-gate (not wave-guard: reason leads with /muster:go, not wave id).
-test("B: fresh wave-active + run-active ABSENT → 3rd edit denied via scale-gate reasoning", async () => {
-  const tmpDir = makeFreshWaveDir("wave-b3");
-  // Deliberately do NOT create run-active.
-  const sid = "e1-b3";
-  clearBudget(sid);
-  try {
-    await runRaw(editPayload(path.join(tmpDir, "src", "a.js"), tmpDir, { session_id: sid }));
-    await runRaw(editPayload(path.join(tmpDir, "src", "b.js"), tmpDir, { session_id: sid }));
-    const { stdout } = await runRaw(editPayload(path.join(tmpDir, "src", "c.js"), tmpDir, { session_id: sid }));
-    const out = JSON.parse(stdout).hookSpecificOutput;
-    assert.equal(out.permissionDecision, "deny", "3rd distinct file must be denied");
-    // Must be scale-gate deny (leads with /muster:go), NOT wave-guard deny (would mention wave-b3).
-    assert.match(out.permissionDecisionReason, /\/muster:go\b/, "deny via scale-gate message leads with /muster:go");
-    assert.doesNotMatch(out.permissionDecisionReason, /wave-b3/,
-      "scale-gate deny must not mention the wave-id (not a wave-guard deny)");
-  } finally {
-    clearBudget(sid);
-    cleanDir(tmpDir);
-  }
-});
-
-// B-4: no wave-active + no run-active → scale-gate as today
-//      (1st/2nd allowed, 3rd denied — unchanged behavior).
-test("B: no wave-active + no run-active → scale-gate exactly as today", async () => {
+test("A: Edit to .muster/ path is allowed", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
-  mkdirSync(path.join(tmpDir, ".muster"), { recursive: true });
-  const sid = "e1-b4";
-  clearBudget(sid);
+  try {
+    const { stdout, code } = await runRaw(editPayload(".muster/STATE.md", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(out.permissionDecision, undefined, ".muster/ must be exempt");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// ── Part B: wave-guard is gone — field repros ───────────────────────────────
+
+// Field repro (a): 3 Writes in a fresh session, no .muster/ dir at all -> no deny.
+test("field repro (a): 3 Writes, fresh session, no .muster/ dir -> never denied", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
+  const sid = "e1-repro-a";
+  clearCum(sid);
   try {
     const a = await runRaw(editPayload(path.join(tmpDir, "a.js"), tmpDir, { session_id: sid }));
     const b = await runRaw(editPayload(path.join(tmpDir, "b.js"), tmpDir, { session_id: sid }));
     const c = await runRaw(editPayload(path.join(tmpDir, "c.js"), tmpDir, { session_id: sid }));
-    assert.notEqual(decision(a.stdout), "deny", "1st file allowed");
-    assert.notEqual(decision(b.stdout), "deny", "2nd file allowed");
-    assert.equal(decision(c.stdout), "deny", "3rd file denied by scale-gate (same as today)");
-    assert.match(
-      JSON.parse(c.stdout).hookSpecificOutput.permissionDecisionReason,
-      /\/muster:go\b/,
-      "scale-gate deny reason leads with /muster:go",
+    assert.notEqual(decision(a.stdout), "deny", "1st Write allowed");
+    assert.notEqual(decision(b.stdout), "deny", "2nd Write allowed");
+    assert.notEqual(decision(c.stdout), "deny", "3rd Write allowed (may warn, but never denied)");
+  } finally {
+    clearCum(sid);
+    cleanDir(tmpDir);
+  }
+});
+
+// Field repro (b): 3 Writes with LIVE .muster/wave-active AND .muster/run-active
+// markers present -> the (deleted) wave-guard would have denied the 1st Write;
+// this hook no longer reads wave-active at all, so all three are allowed.
+test("field repro (b): 3 Writes with live wave-active+run-active markers present -> never denied (wave guard gone)", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
+  makeMarker(tmpDir, "wave-repro-b");
+  makeRunActive(tmpDir);
+  const sid = "e1-repro-b";
+  clearCum(sid);
+  try {
+    const a = await runRaw(editPayload(path.join(tmpDir, "a.js"), tmpDir, { session_id: sid }));
+    const b = await runRaw(editPayload(path.join(tmpDir, "b.js"), tmpDir, { session_id: sid }));
+    const c = await runRaw(editPayload(path.join(tmpDir, "c.js"), tmpDir, { session_id: sid }));
+    assert.notEqual(decision(a.stdout), "deny", "1st Write allowed despite live wave-active marker");
+    assert.notEqual(decision(b.stdout), "deny", "2nd Write allowed");
+    assert.notEqual(decision(c.stdout), "deny", "3rd Write allowed");
+    // A live run-active present also means the border-invitation counter
+    // resets rather than warns (see pre-tool-use-scale tests) — no
+    // additionalContext expected here either.
+    assert.ok(
+      !("additionalContext" in JSON.parse(c.stdout).hookSpecificOutput),
+      "a live muster run resets the border counter instead of warning",
     );
   } finally {
-    clearBudget(sid);
+    clearCum(sid);
     cleanDir(tmpDir);
   }
 });
 
-// B-5: stale wave (>60min) + run-active ABSENT → scale-gate (existing behavior preserved).
-test("B: stale wave-active (>60min) + no run-active → scale-gate (unchanged)", async () => {
+// A stale wave-active marker (the old STALE_MS orphan concept) is likewise inert.
+test("stale wave-active marker (>60min) has no effect — still never denied", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
   const stale = new Date(Date.now() - 61 * 60 * 1000);
-  makeMarker(tmpDir, "wave-b5-stale", { mtime: stale });
-  const sid = "e1-b5";
-  clearBudget(sid);
+  makeMarker(tmpDir, "wave-stale", { mtime: stale });
+  const sid = "e1-repro-stale";
+  clearCum(sid);
   try {
-    await runRaw(editPayload(path.join(tmpDir, "a.js"), tmpDir, { session_id: sid }));
-    await runRaw(editPayload(path.join(tmpDir, "b.js"), tmpDir, { session_id: sid }));
-    const c = await runRaw(editPayload(path.join(tmpDir, "c.js"), tmpDir, { session_id: sid }));
-    const out = JSON.parse(c.stdout).hookSpecificOutput;
-    assert.equal(out.permissionDecision, "deny", "3rd file denied under stale marker");
-    assert.doesNotMatch(out.permissionDecisionReason, /wave-b5-stale/,
-      "deny reason is scale-gate, not wave-guard");
-    assert.match(out.permissionDecisionReason, /\/muster:go\b/, "deny reason leads with /muster:go");
+    const { stdout, code } = await runRaw(
+      editPayload(path.join(tmpDir, "src", "app.js"), tmpDir, { session_id: sid }),
+    );
+    assert.equal(code, 0);
+    assert.notEqual(decision(stdout), "deny");
   } finally {
-    clearBudget(sid);
+    clearCum(sid);
     cleanDir(tmpDir);
   }
 });
 
-// B-6: agent_id always allowed regardless of run-active state.
+// B-6 (kept): agent_id always allowed regardless of any marker state.
 test("B: agent_id allows even when wave-active present and run-active absent", async () => {
-  const tmpDir = makeFreshWaveDir("wave-b6");
-  // No run-active — but subagent calls must always be allowed.
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
+  makeMarker(tmpDir, "wave-b6");
   try {
     const { stdout, code } = await runRaw(
       editPayload(path.join(tmpDir, "src", "x.js"), tmpDir, { agent_id: "sub-b6" }),
@@ -240,6 +156,20 @@ test("B: agent_id allows even when wave-active present and run-active absent", a
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, undefined, "subagent always allowed");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+// GUARD-SCOPE still holds: a target outside the cwd tree is out of scope.
+test("GUARD-SCOPE: Edit to path OUTSIDE cwd is allowed, even with wave-active present", async () => {
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
+  makeMarker(tmpDir, "wave-scope-out");
+  try {
+    const { stdout, code } = await runRaw(editPayload("/home/other/x.md", tmpDir));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, undefined, "outside-cwd Edit is out of scope");
   } finally {
     cleanDir(tmpDir);
   }

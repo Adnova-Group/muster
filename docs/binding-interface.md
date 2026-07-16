@@ -62,8 +62,11 @@ else -- a skill/mcp/inline provider, or an agent type not yet registered in the 
 session -- falls back to a generic subagent with the provider's brief or skill injected (the
 same file's "Generic-subagent fallback (degraded path)" block). Every dispatch also carries a
 `model` override, and same-wave concurrent file writers each get `isolation: "worktree"` on the
-call (see Isolate, below). `plugin/hooks/todo-gate.js` gates the dispatch call itself, matching
-both the `Task` and `Agent` tool names.
+call (see Isolate, below). A todo-driving gate on the dispatch call itself, matching both the
+`Task` and `Agent` tool names, existed at plugin/hooks/todo-gate.js through 0.4.x; the
+enforcement-model redesign removed it (unscopable in the field -- see CHANGELOG) along with the
+wave-guard and per-turn scale-gate. `plugin/hooks/pre-tool-use.js`'s action-class fence is the
+one deny surface left on any dispatch-adjacent tool call.
 
 **Degradation ladder (no-subagent harness).** There is no isolated-context spawn at all --
 one thread of conversation, period. Muster's own dispatchable agent already states this
@@ -79,7 +82,8 @@ which weakens the point of running a tournament at all; the model-tier-per-role 
 narrows to whatever model-swap capability the harness exposes at the top-level call, if any; and
 the "generic subagent + skill injection" fallback Claude Code already uses as a bonus path
 becomes the *only* dispatch path -- every provider becomes "read the skill file, then proceed
-inline." The todo-gate hook has nothing left to key off (see Enforce).
+inline." (The todo-gate hook mentioned above no longer exists on any harness, subagent-capable or
+not -- its removal is unrelated to this degradation; see Enforce.)
 
 ### 2. Ask
 
@@ -118,37 +122,45 @@ never named as harness degradation before now.
 **What it is.** A guardrail on a tool call that fires deterministically, independent of whether
 the model chooses to comply.
 
-**Claude Code binding.** `plugin/hooks/hooks.json` registers four scripts against Claude
-Code's hook lifecycle: `SessionStart`, `UserPromptSubmit`, and `PreToolUse` twice over (once
-matched against `Edit|Write|NotebookEdit|Bash|mcp__.*` -- the `mcp__.*` arm widened onto the
-matcher so the action-class fence also sees MCP tool calls -- for the wave-guard/scale-gate/
-action-fence trio in `plugin/hooks/pre-tool-use.js`, once matched against `Task|Agent` for the
-todo-gate in
-`plugin/hooks/todo-gate.js`). `docs/architecture.md`'s "Enforcement model: gates vs
-conventions" section, mirrored in `plugin/skills/orchestrator/SKILL.md`, already draws the
-line this document needs: four gates are hook-enforced (wave-guard, post-run scale-gate,
-todo-driving gate, action-class fence), and four more are named-but-unenforceable conventions
-(crew-owner/state-in-subject, verb selection, humanizer routing, glass-box narration)
-specifically because a `PreToolUse` hook can observe a tool call, never a judgment call.
+**Claude Code binding.** `plugin/hooks/hooks.json` registers three scripts against Claude
+Code's hook lifecycle: `SessionStart`, `UserPromptSubmit`, and a single `PreToolUse` matched
+against `Edit|Write|NotebookEdit|Bash|mcp__.*` (the `mcp__.*` arm widened onto the matcher so
+the action-class fence also sees MCP tool calls) in `plugin/hooks/pre-tool-use.js`. The
+enforcement-model redesign removed the wave-guard, the per-turn scale-gate, and the separate
+`Task|Agent`-matched todo-gate entirely (unscopable in the field -- false-positive-trained kill
+switches and denies on sessions/repos where muster never ran; see CHANGELOG); the action-class
+fence is now the ONE hard deny this hook can emit, and a warn-only "border invitation" (the
+cumulative inline-file counter, plus the `UserPromptSubmit` isDirective nudge) is the only other
+thing it does. `plugin/skills/orchestrator/SKILL.md`'s own "Enforcement model: gates vs
+conventions" section draws the identical line for a plugin-user reading skill prose rather than
+hook source: one hook-enforced hard deny (the action-class fence), a warn-only hook-enforced
+border invitation that never denies, and a CONVENTIONS tier -- dispatch-not-inline, todo-driving
+visibility, crew-owner/state-in-subject, verb selection, humanizer routing, glass-box narration --
+enforced only by SKILL discipline and the review gate after the fact, specifically because a
+`PreToolUse` hook can observe a tool call, never a judgment call, and even the one hard deny only
+ever sees the run's EXTERNAL effects (a forbidden action class), never the orchestrator's own
+in-repo edits.
 
 **Degradation ladder (no-hook harness).** No `PreToolUse`/`SessionStart`/`UserPromptSubmit`
-event exists at all. Every one of the four GATES demotes to the CONVENTIONS tier this same
-document already maintains for the other four categories -- the identical downgrade, not a new
-one: wave-guard becomes an instruction ("dispatch, never edit inline during a wave") checked
-only after the fact, by the review gate diffing what changed against what was dispatched; the
-post-run scale-gate becomes an unenforced norm (the orchestrator's own "iron rule" reminder
-already carries the prose, `plugin/skills/orchestrator/SKILL.md`, but nothing blocks a
-violation without the hook); the todo-driving gate becomes exactly what that same file's
-"Task board" section already documents as its fail-soft path: "a harness with no task tools
-relies on STATE alone (note this once)"; the action-class fence becomes a `FORBIDDEN ACTIONS:`
-line carried in the dispatch brief -- the brief-copy step is harness-agnostic prose already, not
-hook-dependent -- with no mechanical block, relying entirely on the review gate catching a
-violation after the fact. `SessionStart`/`UserPromptSubmit`'s context-injection role (drift
-reinforcement across a long session) has no direct substitute on a harness with no
-session-lifecycle hook at all; the nearest available fallback is restating the working
-principles at the top of every dispatch brief the orchestrator loop itself controls, which only
-reaches subagent context, never the top-level loop between its own turns. Closing that
-specific gap is what the parked AGENTS.md adapter, below, would be for.
+event exists at all. The two hook-enforced items disappear outright rather than demoting to a
+convention, since neither has a convention-tier substitute already documented for it: the
+action-class fence becomes a `FORBIDDEN ACTIONS:` line carried in the dispatch brief -- the
+brief-copy step is harness-agnostic prose already, not hook-dependent -- with no mechanical
+block, relying entirely on the review gate catching a violation after the fact; the border
+invitation (a warn-only nudge fired at the moment inline drift crosses a threshold, or a
+directive-shaped prompt lands) has no equivalent at all on a no-hook harness, since firing at
+that moment is specifically a hook-time observation -- this is a value-selling nudge, not an
+enforcement guarantee, so losing it costs muster a sales pitch, not a control. Every item already
+in the CONVENTIONS tier -- dispatch-not-inline, todo-driving visibility (that same file's "Task
+board" section already documents its fail-soft path: "a harness with no task tools relies on
+STATE alone (note this once)"), crew-owner/state-in-subject, verb selection, humanizer routing,
+glass-box narration -- needs no further downgrade: none of them were hook-enforced to begin with,
+so a no-hook harness changes nothing for that tier. `SessionStart`/`UserPromptSubmit`'s
+context-injection role (drift reinforcement across a long session) has no direct substitute on a
+harness with no session-lifecycle hook at all; the nearest available fallback is restating the
+working principles at the top of every dispatch brief the orchestrator loop itself controls,
+which only reaches subagent context, never the top-level loop between its own turns. Closing
+that specific gap is what the parked AGENTS.md adapter, below, would be for.
 
 ### 4. Isolate
 
@@ -196,9 +208,12 @@ reviewers return a verdict first with findings capped at 1500 characters --
 `plugin/skills/orchestrator/SKILL.md`'s "Return contract" section) is brief-level prose
 discipline, not a Claude Code feature, though it only has something to bound *because* Dispatch
 exists. The one genuinely Claude-Code-specific piece is the native todo list: Claude Code's own
-`TodoWrite`/`TaskCreate`/`TaskUpdate` tool calls, surfaced in its own todo UI and read back by
-`plugin/hooks/todo-gate.js`. `plugin/skills/orchestrator/SKILL.md`'s "Task board" section
-requires "one harness-visible task per work item... via the harness's task tools when present."
+`TodoWrite`/`TaskCreate`/`TaskUpdate` tool calls, surfaced in its own todo UI. A hook
+(plugin/hooks/todo-gate.js) once read that list back to gate dispatch on it; the
+enforcement-model redesign removed the gate (visibility is now convention, not hook-enforced --
+see `docs/architecture.md`'s "Enforcement model" section), so `plugin/skills/orchestrator/
+SKILL.md`'s "Task board" section carries the discipline on its own: "one harness-visible task
+per work item... via the harness's task tools when present."
 
 **Degradation ladder (no native todo tool).** The STATE.md ledger and git notes need no
 ladder -- they survive unchanged on any harness with a filesystem and git, since neither one
@@ -269,11 +284,11 @@ stale:
 ```
 AskUserQuestion    files=13  mentions=30
 dispatch (Agent/Task tool)  files=4  mentions=19
-hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=23
+hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
 worktree   files=5  mentions=12
 ```
 
-Every one of those 84 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Every one of those 89 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

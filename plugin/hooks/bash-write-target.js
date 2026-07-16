@@ -1,9 +1,12 @@
-// bash-write-target.js — pure Bash command classification for the wave-guard.
+// bash-write-target.js — pure Bash command classification, used by
+// pre-tool-use.js to key its warn-only border-invitation counter for
+// high-confidence Bash file writes (see pre-tool-use.js's docblock). No
+// caller treats a match as a deny; the classification itself is unchanged.
 //
 // bashWriteTarget(command): returns the offending fragment string when the
 // command is a high-confidence file write, null otherwise.
 //
-// DENY patterns (conservative — false positives deferred these):
+// MATCH patterns (conservative — false positives deferred these):
 //   sed with -i flag      \bsed\b[^|;&\n]*?\s-i(\s|$|')
 //   tee to non-exempt     \btee\b\s+(-a\s+)?<non-exempt-token>
 //   cp/mv to non-exempt   \bcp\b or \bmv\b — destination is the LAST token
@@ -16,7 +19,9 @@
 // KNOWN LIMITATION — quoted-string stripping handles balanced single- and
 // double-quoted strings. Remaining edge cases: unbalanced quotes and heredoc
 // bodies (redirect-looking text between <<MARKER and closing MARKER may still
-// false-positive). Use MUSTER_WAVE_GUARD=warn as the escape hatch for both.
+// false-positive). A false positive here is no longer a deny anywhere in the
+// hook stack -- it only affects the border-invitation counter's keying (see
+// pre-tool-use.js), which is warn-only.
 //
 //
 // tee multi-target: ALL non-flag tokens after `tee` are checked (A-SEC4).
@@ -132,8 +137,7 @@ export function bashWriteTarget(command) {
   // $'...' (ANSI-C quoting, inner quotes stripped to $QUOTED above), and
   // $(...) (subshell) are all unresolvable and could bypass the exempt-prefix
   // check (e.g. `> /tmp/$VAR` where VAR expands to `../etc/passwd`).
-  // Any `$` in a redirect target is therefore denied fail-closed.
-  // Escape hatch: MUSTER_WAVE_GUARD=warn.
+  // Any `$` in a redirect target is therefore classified fail-closed (matched).
   const redirRe = />{1,2}\s*(\S+)/g;
   let m;
   while ((m = redirRe.exec(stripped)) !== null) {

@@ -125,48 +125,54 @@ stdout — no CLI args. Test them by piping a payload directly, with any
 required `.muster/` marker files staged in a tmpdir first.
 
 **How to exercise (manual, matches `test/test-support/hook-helpers.js`'s
-`spawnHook` pattern used by every `test/hook-*.test.js` file):**
+`spawnHook` pattern used by every `test/hook-*.test.js` file):** the example
+below hits `pre-tool-use.js`'s action-class fence, the one hard deny left in
+the enforcement stack (the wave-guard, the per-turn scale-gate, and the
+todo-driving gate that used to live at `plugin/hooks/todo-gate.js` were all
+removed by the enforcement-model redesign; see CHANGELOG -- `node
+plugin/hooks/todo-gate.js` is a dead command now, the file is gone).
 ```
 mkdir -p /tmp/muster-hook-check/.muster
 echo "run-001" > /tmp/muster-hook-check/.muster/run-active
-: > /tmp/muster-hook-check/transcript.jsonl   # empty = no TodoWrite yet
+printf "send\n" > /tmp/muster-hook-check/.muster/forbidden-actions
 
-echo '{"tool_name":"Task","tool_input":{"description":"do work"},"transcript_path":"/tmp/muster-hook-check/transcript.jsonl","cwd":"/tmp/muster-hook-check","session_id":"sess-test"}' \
-  | node plugin/hooks/todo-gate.js
+echo '{"tool_name":"mcp__gmail__send_email","tool_input":{},"cwd":"/tmp/muster-hook-check","session_id":"sess-test"}' \
+  | node plugin/hooks/pre-tool-use.js
 ```
 
-Verified output (run 2026-07-06):
+Verified output (run 2026-07-16):
 ```
-{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"muster runs are todo-driven so plan progress stays visible. Create the run's todo list first — one TodoWrite item per plan step (encode the crew owner + state in each item's text), then dispatch the wave."}}
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Action class \"send\" is forbidden for this run — this tool call would perform a send action. If this class should not be forbidden: remove its line from .muster/forbidden-actions. To soften or disable this check: set MUSTER_ACTION_GUARD=warn or off."}}
 ```
 exit code `0` — hooks always exit 0; the verdict lives in the JSON body
 (`hookSpecificOutput.permissionDecision`: absent/undefined = ALLOW, `"deny"` =
 DENY), not in the process exit code.
 
 Env overrides are passed the same way any child process reads them, e.g.
-`MUSTER_TODO_GATE=off` piped the same payload flips the verdict to ALLOW
-(the todo-gate escape hatch) — see `test/hook-todo-gate.test.js` for the full
-env-override matrix per hook.
+`MUSTER_ACTION_GUARD=off` piped the same payload flips the verdict to ALLOW
+(silences the fence for this run) -- see
+`test/hook-pre-tool-use-action-fence.test.js` for the full
+warn/off/fail-open matrix.
 
 **Expected signals:** valid JSON on stdout, always exit 0, `hookSpecificOutput
 .hookEventName` matches the hook (e.g. `"PreToolUse"`). Absence of
 `permissionDecision` means ALLOW.
 
-**Known divergences:** none currently open (2026-07-06).
+**Known divergences:** none currently open (2026-07-16).
 
 **Gotchas:**
-- A missing or unreadable `transcript_path` fails OPEN (ALLOW), not closed —
-  don't mistake a typo'd path in a manual check for a passing gate; verified
-  above (`/nonexistent.jsonl` still returned ALLOW with no `permissionDecision`
-  field).
-- The DENY reason text on `todo-gate.js` is prose, not an error code — if you
-  assert on it in a new test, match with a regex (`/todo-driven|TodoWrite/i`)
-  the way `test/hook-todo-gate.test.js` does, not an exact string, so wording
-  tweaks don't need a test edit.
-- `.muster/run-active`'s mtime matters for `todo-gate.js`: a `TodoWrite` in
-  the transcript only counts if its timestamp is AFTER the marker's mtime.
-  Clean up your tmpdir between runs — a stale marker with an old mtime will
-  make a fresh TodoWrite look like it predates the run.
+- The fence is a no-op (fails open, ALLOW) unless BOTH `.muster/run-active`
+  AND `.muster/forbidden-actions` exist -- either missing/unreadable falls
+  through silently rather than denying; verified above by dropping either
+  file and re-running the same payload.
+- The DENY reason text is prose, not an error code -- if you assert on it in
+  a new test, match with a regex (e.g. `/send/i`) the way
+  `test/hook-pre-tool-use-action-fence.test.js` does, not an exact string, so
+  wording tweaks don't need a test edit.
+- `agent_id` on the payload (a subagent call) and a target path under
+  `.muster/`/`.claude/` both bypass the fence entirely, forbidden class or
+  not -- see `pre-tool-use.js`'s decision-order docblock for the full
+  precedence.
 
 ---
 

@@ -381,15 +381,15 @@ test("cowork/ prose: mcp-server.mjs, sprint-protocol.md, and README.md cite pre-
   }
 });
 
-// ── residue 2: plugin/hooks/ scale-gate messages — lead with current verbs ─
-// pre-tool-use.js's three scale-gate message builders (denyScale, warnScaleAllow,
-// warnCumulativeDrift) execute hook-side effects at module load (they read stdin
-// synchronously), so this file can never be `import`ed by a test -- it is read as
-// TEXT and each function body sliced out by name, the same live-extraction approach
-// this file already uses for src/manifest.js's SURFACES and muster-reviewer.md's
-// severity tags. Each message must instruct via the CURRENT verb (`/muster:go`)
-// before it mentions the legacy aliases (`/muster:autopilot`, `/muster:run`) as a
-// still-works aside -- action first, compatibility footnote second.
+// ── residue 2: plugin/hooks/ border-invitation message — value before verb ─
+// pre-tool-use.js's border-invitation message builder (warnBorder) executes
+// hook-side effects at module load (it reads stdin synchronously), so this
+// file can never be `import`ed by a test -- it is read as TEXT and the
+// function body sliced out by name, the same live-extraction approach this
+// file already uses for src/manifest.js's SURFACES and muster-reviewer.md's
+// severity tags. Per the enforcement-model redesign, the message must SELL
+// VALUE before naming the verb (guidance.js: CREW_INVITATION), not command
+// first -- the inverse ordering of the old scale-gate messages this replaced.
 function extractFunctionBody(hookSrc, functionName) {
   const re = new RegExp(`function ${escapeRe(functionName)}\\([^)]*\\)\\s*\\{\\n([\\s\\S]*?)\\n\\}`, "m");
   const m = hookSrc.match(re);
@@ -397,26 +397,27 @@ function extractFunctionBody(hookSrc, functionName) {
   return m[1];
 }
 
-test("scale-gate messages: denyScale/warnScaleAllow/warnCumulativeDrift lead with /muster:go before mentioning the legacy aliases", async () => {
+test("border-invitation message: warnBorder sells the shared value sentence before naming the verb", async () => {
   const hookSrc = await read("plugin/hooks/pre-tool-use.js");
-  const fns = ["denyScale", "warnScaleAllow", "warnCumulativeDrift"];
-  for (const fn of fns) {
-    const body = extractFunctionBody(hookSrc, fn);
-    const newVerbIdx = body.indexOf("/muster:go");
-    assert.ok(newVerbIdx >= 0, `${fn}'s message must instruct via /muster:go`);
-    const aliasIdx = Math.min(
-      ...["/muster:autopilot", "/muster:run"].map((a) => {
-        const i = body.indexOf(a);
-        return i === -1 ? Infinity : i;
-      })
-    );
-    assert.ok(Number.isFinite(aliasIdx), `${fn}'s message must mention the legacy aliases (/muster:autopilot, /muster:run)`);
+  const body = extractFunctionBody(hookSrc, "warnBorder");
+  const invitationIdx = body.indexOf("CREW_INVITATION");
+  const verbIdx = body.indexOf("/muster:go");
+  assert.ok(invitationIdx >= 0, "warnBorder must reference the shared value sentence (guidance.js: CREW_INVITATION)");
+  assert.ok(verbIdx >= 0, "warnBorder must instruct via /muster:go");
+  assert.ok(
+    invitationIdx < verbIdx,
+    "warnBorder must sell the value (CREW_INVITATION) BEFORE naming the verb -- invitation, not command",
+  );
+});
+
+test("pre-tool-use.js: no residue of the deleted wave-guard/scale-gate machinery", async () => {
+  const hookSrc = await read("plugin/hooks/pre-tool-use.js");
+  for (const dead of ["denyScale", "warnScaleAllow", "warnCumulativeDrift", "MUSTER_WAVE_GUARD", "MUSTER_SCALE_GATE"]) {
     assert.ok(
-      newVerbIdx < aliasIdx,
-      `${fn}'s message must lead with /muster:go (index ${newVerbIdx}) before its legacy-alias mention (index ${aliasIdx})`
+      !hookSrc.includes(dead),
+      `pre-tool-use.js must not reference deleted "${dead}" (removed by the enforcement-model redesign)`,
     );
   }
-  assert.equal(fns.length, 3, "sanity: expected exactly 3 scale-gate message builders checked");
 });
 
 // ── residue 3: src/ header comments — no live citation of a dead mode-file step ──

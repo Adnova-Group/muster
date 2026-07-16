@@ -1,10 +1,20 @@
+// test/hook-user-prompt-submit.test.js
+//
+// The periodic every-N-turns nudge tier (short nudge, then full principles)
+// is gone. The ONLY prompt-time nudge left is the isDirective-triggered
+// border invitation (see pre-tool-use.js for its PreToolUse-side twin): fires
+// once per crossing when a directive-shaped prompt lands with no muster run
+// active, re-arming on a run starting, SessionStart, or 60 minutes of
+// inactivity (inline-budget.js: isCrossingStale).
+
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawnHook, cleanDir } from "./test-support/hook-helpers.js";
+import { directiveFile, CROSSING_MAX_AGE_MS } from "../plugin/hooks/inline-budget.js";
 
 // Directive-nudge tests need a run cwd guaranteed to have no `.muster/run-active`.
 // This repo's own cwd is not reliable for that (a live orchestrator run may be in
@@ -28,22 +38,10 @@ function uniqSession() {
   return `test-${process.pid}-${seq}-${Math.random().toString(36).slice(2)}`;
 }
 
-// Spawn the hook, pipe `stdinText` to it, return { stdout, code }. Never rejects.
 function runRaw(stdinText, env = {}) {
   return spawnHook(HOOK, stdinText, env);
 }
 
-// Convenience: one turn for a given session id.
-function runTurn(sessionId, env = {}) {
-  return runRaw(JSON.stringify({ session_id: sessionId }), env);
-}
-
-// One turn carrying a prompt (the UserPromptSubmit payload includes `prompt`).
-function runPrompt(sessionId, prompt, env = {}) {
-  return runRaw(JSON.stringify({ session_id: sessionId, prompt }), env);
-}
-
-// One turn carrying a prompt and an explicit run cwd.
 function runPromptCwd(sessionId, prompt, cwd, env = {}) {
   return runRaw(JSON.stringify({ session_id: sessionId, prompt, cwd }), env);
 }
@@ -54,101 +52,14 @@ function ctxOf(stdout) {
   return out; // { hookEventName, additionalContext? }
 }
 
-test("no nudge before turn N, short nudge at turn N (default N=3)", async () => {
+// ── no periodic tier left: many plain turns never inject anything ──────────
+test("no periodic tier: 10 non-directive, non-slash turns never inject additionalContext", async () => {
   const sid = uniqSession();
-  for (const turn of [1, 2]) {
-    const { stdout, code } = await runTurn(sid);
-    assert.equal(code, 0, `turn ${turn} exit 0`);
-    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${turn} silent`);
+  for (let t = 1; t <= 10; t++) {
+    const { stdout, code } = await runPromptCwd(sid, "just a regular question about the codebase?", NO_RUN_DIR);
+    assert.equal(code, 0, `turn ${t} exit 0`);
+    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${t}: no periodic tier exists anymore`);
   }
-  const { stdout } = await runTurn(sid);
-  const ctx = ctxOf(stdout).additionalContext;
-  assert.match(ctx, /muster mode/i, "turn 3 short nudge");
-  assert.match(ctx, /humanizer/i, "short nudge carries the routing clause");
-  for (const v of ["run", "autopilot", "diagnose", "audit"]) {
-    assert.match(ctx, new RegExp(v), `nudge mentions ${v}`);
-  }
-  assert.doesNotMatch(ctx, /muster principles:/, "short nudge is not the full payload");
-});
-
-test("turn N*2 is a short-only turn; turn N*K (=9) is the full payload", async () => {
-  const sid = uniqSession();
-  let last;
-  for (let t = 1; t <= 6; t++) last = await runTurn(sid);
-  const six = ctxOf(last.stdout).additionalContext;
-  assert.match(six, /muster mode/i, "turn 6 short nudge");
-  assert.doesNotMatch(six, /muster principles:/, "turn 6 not full");
-
-  for (let t = 7; t <= 9; t++) last = await runTurn(sid);
-  const nine = ctxOf(last.stdout).additionalContext;
-  assert.match(nine, /muster principles:/, "turn 9 full principles");
-  assert.match(nine, /TDD|verify|glass-box/i, "turn 9 has a principle keyword");
-  assert.match(nine, /Default routing|humanizer/i, "turn 9 carries the routing policy");
-  for (const v of ["run", "autopilot", "diagnose", "audit"]) {
-    assert.match(nine, new RegExp(v), `full payload mentions ${v}`);
-  }
-});
-
-test("MUSTER_NUDGE_EVERY overrides the short cadence", async () => {
-  const sid = uniqSession();
-  const env = { MUSTER_NUDGE_EVERY: "5" };
-  for (let t = 1; t <= 4; t++) {
-    const { stdout } = await runTurn(sid, env);
-    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${t} silent with N=5`);
-  }
-  const { stdout } = await runTurn(sid, env);
-  assert.match(ctxOf(stdout).additionalContext, /muster mode/i, "turn 5 nudge with N=5");
-});
-
-test("MUSTER_PRINCIPLES_EVERY overrides the full cadence (K=2 -> full at turn 6)", async () => {
-  const sid = uniqSession();
-  const env = { MUSTER_PRINCIPLES_EVERY: "2" };
-  let last;
-  for (let t = 1; t <= 6; t++) last = await runTurn(sid, env);
-  assert.match(ctxOf(last.stdout).additionalContext, /muster principles:/, "full at turn 6 with K=2");
-});
-
-test("junk env values fall back to defaults", async () => {
-  const sid = uniqSession();
-  const env = { MUSTER_NUDGE_EVERY: "abc", MUSTER_PRINCIPLES_EVERY: "-1" };
-  for (let t = 1; t <= 2; t++) {
-    const { stdout } = await runTurn(sid, env);
-    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${t} silent (default N=3)`);
-  }
-  const { stdout } = await runTurn(sid, env);
-  assert.match(ctxOf(stdout).additionalContext, /muster mode/i, "turn 3 nudge under junk env");
-});
-
-// Slash-command turns must be transparent: no injected context (which in a relayed
-// remote session can land ahead of the command and break slash parsing), and they
-// must not consume the turn counter.
-test("slash-command prompt gets no nudge and does not consume the turn count", async () => {
-  const sid = uniqSession();
-  for (let t = 1; t <= 2; t++) {
-    const { stdout } = await runPrompt(sid, "do some work");
-    assert.ok(!("additionalContext" in ctxOf(stdout)), `turn ${t} silent`);
-  }
-  // A slash turn where a normal turn 3 would nudge: must stay silent...
-  const slash = await runPrompt(sid, "/muster:run ship it");
-  assert.equal(slash.code, 0);
-  assert.ok(!("additionalContext" in ctxOf(slash.stdout)), "slash-command turn injects nothing");
-  // ...and must not have consumed the count: the next normal turn is the real turn 3.
-  const { stdout } = await runPrompt(sid, "another task");
-  assert.match(ctxOf(stdout).additionalContext, /muster mode/i, "slash turn was transparent to the counter");
-});
-
-test("leading-whitespace slash command is still treated as a slash command", async () => {
-  const sid = uniqSession();
-  for (let t = 1; t <= 2; t++) await runPrompt(sid, "work");
-  const { stdout } = await runPrompt(sid, "   /muster:autopilot do it");
-  assert.ok(!("additionalContext" in ctxOf(stdout)), "leading whitespace before / still skips injection");
-});
-
-test("a normal prompt at a nudge turn still nudges (guard does not over-fire)", async () => {
-  const sid = uniqSession();
-  let last;
-  for (let t = 1; t <= 3; t++) last = await runPrompt(sid, "regular request");
-  assert.match(ctxOf(last.stdout).additionalContext, /muster mode/i, "non-slash prompt nudges as before");
 });
 
 test("missing session_id: valid JSON, exit 0, no nudge", async () => {
@@ -164,51 +75,43 @@ test("malformed stdin: valid JSON, exit 0, no nudge (fail-safe)", async () => {
   assert.ok(!("additionalContext" in ctxOf(stdout)), "garbage stdin -> no nudge");
 });
 
-// ── session_id that sanitizes to empty string must not write the bare tmp file ─
-test("session_id of only non-word chars sanitizes to empty: no file write, exits 0, valid JSON", async () => {
-  // "!!!" sanitizes to "" via replace(/[^a-zA-Z0-9_-]/g, "")
-  const badId = "!!!";
-
-  // Remove the bare file if it pre-exists (from old hook versions) so we can
-  // verify the fixed hook does not (re-)create it.
-  const os = await import("node:os");
-  const path = await import("node:path");
-  const { existsSync, rmSync } = await import("node:fs");
-  const bareFile = path.default.join(os.default.tmpdir(), "muster-turns-");
-  try { rmSync(bareFile); } catch { /* not present — fine */ }
-
-  const { stdout, code } = await runRaw(JSON.stringify({ session_id: badId }));
-  assert.equal(code, 0, "exit 0");
-  assert.doesNotThrow(() => JSON.parse(stdout), "stdout is valid JSON");
-  const out = ctxOf(stdout);
-  // Must not nudge (turn-counting is skipped)
-  assert.ok(!("additionalContext" in out), "empty sanitized session_id -> no nudge (turn-counting skipped)");
-
-  // Verify the bare file was NOT written.
-  assert.ok(!existsSync(bareFile), "bare tmp file must not be written when session_id sanitizes to empty");
+// Slash-command turns must be transparent: no injected context (which in a relayed
+// remote session can land ahead of the command and break slash parsing).
+test("slash-command prompt gets no nudge, even if directive-shaped", async () => {
+  const sid = uniqSession();
+  const slash = await runPromptCwd(sid, "/muster:run fix the bug", NO_RUN_DIR);
+  assert.equal(slash.code, 0);
+  assert.ok(!("additionalContext" in ctxOf(slash.stdout)), "slash-command turn injects nothing");
 });
 
-// ── directive-triggered nudge ──────────────────────────────────────────────────
-// Unlike the periodic tiers above, this nudge fires immediately (turn 1) when the
-// prompt is directive-shaped and no muster run is active — no waiting for a cadence.
+test("leading-whitespace slash command is still treated as a slash command", async () => {
+  const sid = uniqSession();
+  const { stdout } = await runPromptCwd(sid, "   /muster:autopilot do it", NO_RUN_DIR);
+  assert.ok(!("additionalContext" in ctxOf(stdout)), "leading whitespace before / still skips injection");
+});
 
-test("directive prompt, no run-active, fresh session: immediate routing nudge on turn 1", async () => {
+// ── T-directive: the isDirective-triggered border invitation ───────────────
+
+test("T-directive: directive prompt, no run-active, fresh crossing: immediate nudge with value-toned copy", async () => {
   const sid = uniqSession();
   const { stdout, code } = await runPromptCwd(sid, "fix the flaky test", NO_RUN_DIR);
   assert.equal(code, 0);
   const ctx = ctxOf(stdout).additionalContext;
-  assert.match(ctx, /Default routing/i, "turn 1 directive nudge carries the routing policy");
-  assert.doesNotMatch(ctx, /muster principles:/, "directive nudge is not the full periodic payload");
+  assert.ok(ctx, "directive-shaped prompt with no run active nudges");
+  assert.match(ctx, /parallel dispatch/i, "value copy: parallel dispatch");
+  assert.match(ctx, /adversarial review/i, "value copy: adversarial review");
+  assert.match(ctx, /receipts/i, "value copy: receipts trail");
+  assert.match(ctx, /\/muster:go\b/, "nudge names the verb");
 });
 
-test("second directive prompt, same session: no directive nudge (once-per-session)", async () => {
+test("T-directive: second directive prompt, same crossing: suppressed (no repeat)", async () => {
   const sid = uniqSession();
-  await runPromptCwd(sid, "fix the flaky test", NO_RUN_DIR); // turn 1 — fires and writes the marker
-  const { stdout } = await runPromptCwd(sid, "fix another flaky test", NO_RUN_DIR); // turn 2
-  assert.ok(!("additionalContext" in ctxOf(stdout)), "turn 2 directive nudge suppressed (already fired this session)");
+  await runPromptCwd(sid, "fix the flaky test", NO_RUN_DIR); // fires, marks the crossing
+  const { stdout } = await runPromptCwd(sid, "fix another flaky test", NO_RUN_DIR);
+  assert.ok(!("additionalContext" in ctxOf(stdout)), "same crossing: nudge suppressed");
 });
 
-test("non-directive prompts do not trigger the immediate nudge", async () => {
+test("T-directive: non-directive prompts (questions, conversational) never nudge", async () => {
   const question = await runPromptCwd(uniqSession(), "how does the router work?", NO_RUN_DIR);
   assert.ok(!("additionalContext" in ctxOf(question.stdout)), "question is not directive-shaped");
 
@@ -216,7 +119,7 @@ test("non-directive prompts do not trigger the immediate nudge", async () => {
   assert.ok(!("additionalContext" in ctxOf(chatter.stdout)), "conversational turn is not directive-shaped");
 });
 
-test("directive prompt with .muster/run-active present under the payload cwd: no directive nudge", async () => {
+test("T-directive: directive prompt with .muster/run-active present: no nudge", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "muster-ups-test-"));
   try {
     mkdirSync(path.join(dir, ".muster"), { recursive: true });
@@ -233,22 +136,62 @@ test("directive prompt with .muster/run-active present under the payload cwd: no
   }
 });
 
-test("polite prefix 'please fix the hook' nudges; 'can you explain the hook?' does not", async () => {
+test("T-directive: polite prefix nudges; question form does not", async () => {
   const polite = await runPromptCwd(uniqSession(), "please fix the hook", NO_RUN_DIR);
-  assert.match(ctxOf(polite.stdout).additionalContext, /Default routing/i, "polite prefix still directive-shaped");
+  assert.match(ctxOf(polite.stdout).additionalContext, /parallel dispatch/i, "polite prefix still directive-shaped");
 
   const question = await runPromptCwd(uniqSession(), "can you explain the hook?", NO_RUN_DIR);
   assert.ok(!("additionalContext" in ctxOf(question.stdout)), "question form is never directive-shaped");
 });
 
-test("directive nudge supersedes the periodic tier on the same turn (no double-inject)", async () => {
+// ── re-arm triggers: run-start and age ──────────────────────────────────────
+
+test("T-directive: a muster run starting re-arms the crossing — next directive prompt (no run) nudges again", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-ups-rearm-run-"));
   const sid = uniqSession();
-  await runPromptCwd(sid, "regular question about the codebase", NO_RUN_DIR); // turn 1 — silent
-  await runPromptCwd(sid, "another regular turn", NO_RUN_DIR); // turn 2 — silent
-  // turn 3 would normally be the periodic short-nudge turn; a directive prompt here
-  // must supersede that with the immediate routing nudge instead (not both/either).
-  const { stdout } = await runPromptCwd(sid, "fix the broken build", NO_RUN_DIR);
-  const ctx = ctxOf(stdout).additionalContext;
-  assert.match(ctx, /Default routing/i, "directive nudge wins on the periodic turn");
-  assert.doesNotMatch(ctx, /muster mode/i, "periodic short nudge is not also injected (no double-inject)");
+  try {
+    // Turn 1: directive prompt, no run active — fires, marks the crossing.
+    await runPromptCwd(sid, "fix the flaky test", dir);
+    const dFile = directiveFile(sid, os.tmpdir());
+    assert.ok(dFile, "sanity: directive marker path resolves");
+
+    // A muster run starts and is observed by a turn (any prompt suffices).
+    mkdirSync(path.join(dir, ".muster"), { recursive: true });
+    writeFileSync(path.join(dir, ".muster", "run-active"), "1");
+    await runPromptCwd(sid, "status check", dir);
+
+    // The run ends.
+    const { rmSync } = await import("node:fs");
+    rmSync(path.join(dir, ".muster", "run-active"), { force: true });
+
+    // Next directive prompt, no run active: re-armed crossing nudges again.
+    const { stdout } = await runPromptCwd(sid, "fix another flaky test", dir);
+    assert.ok(
+      ctxOf(stdout).additionalContext,
+      "a completed muster run re-arms the border invitation for the next crossing",
+    );
+  } finally {
+    cleanDir(dir);
+  }
+});
+
+test("T-directive: age-reset — a crossing untouched past 60 minutes re-arms", async () => {
+  const sid = uniqSession();
+  await runPromptCwd(sid, "fix the flaky test", NO_RUN_DIR); // fires, marks the crossing
+  const dFile = directiveFile(sid, os.tmpdir());
+  const stale = new Date(Date.now() - (CROSSING_MAX_AGE_MS + 60_000));
+  utimesSync(dFile, stale, stale);
+
+  const { stdout } = await runPromptCwd(sid, "fix another flaky test", NO_RUN_DIR);
+  assert.ok(
+    ctxOf(stdout).additionalContext,
+    "a crossing older than 60 minutes re-arms — the same-session directive prompt nudges again",
+  );
+});
+
+test("session_id of only non-word chars sanitizes to empty: no nudge, exits 0, valid JSON", async () => {
+  const { stdout, code } = await runRaw(JSON.stringify({ session_id: "!!!", prompt: "fix the bug" }));
+  assert.equal(code, 0, "exit 0");
+  assert.doesNotThrow(() => JSON.parse(stdout), "stdout is valid JSON");
+  assert.ok(!("additionalContext" in ctxOf(stdout)), "unusable session_id -> no nudge (fail-open)");
 });

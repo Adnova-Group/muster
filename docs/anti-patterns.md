@@ -61,11 +61,16 @@ control was steering, not a gate.
 compliance, with no mechanism checking that the narration matched reality or blocking the
 disallowed action when it did not.
 
-**Guard:** `plugin/hooks/pre-tool-use.js`'s wave-guard denies main-loop `Edit`/`Write`/
-`NotebookEdit` calls (and file-writing Bash patterns) while `.muster/wave-active` exists,
-turning the announce-only rule into an enforced deny at the hook level. Covered by
-`test/hook-pre-tool-use.test.js`'s test "deny when wave-active marker exists and editing
-outside .muster/" (commits 6a1587f, de9e3dd).
+**Guard:** previously guarded by `plugin/hooks/pre-tool-use.js`'s wave-guard, which denied
+main-loop `Edit`/`Write`/`NotebookEdit` calls (and file-writing Bash patterns) while
+`.muster/wave-active` existed, turning the announce-only rule into an enforced deny at the
+hook level (commits 6a1587f, de9e3dd). The enforcement-model redesign removed that deny path
+entirely: it proved unscopable in the field, denying legitimate concurrent work on sessions
+and repos muster never touched. The iron rule is now SKILL discipline, checked only after
+the fact by the review gate, in favor of the border-invitation model. Pinned by
+`test/hook-pre-tool-use-e1.test.js`'s "wave guard gone" sweep, which runs the identical
+payload matrix that used to deny and asserts allow instead, proving the removal rather than
+just describing it.
 
 ## 4. Argument-carried scope
 

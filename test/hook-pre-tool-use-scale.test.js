@@ -2,19 +2,21 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync } from "node:fs";
 import os from "node:os";
 import {
-  cleanDir, makeMarker, makeRunActive,
+  cleanDir, makeRunActive,
   editPayload as editPayloadBase, spawnHook,
 } from "./test-support/hook-helpers.js";
-import { cumFile, readCum } from "../plugin/hooks/inline-budget.js";
+import { cumFile, readCum, CROSSING_MAX_AGE_MS } from "../plugin/hooks/inline-budget.js";
 
-// Scale-gate: the post-run enforcement. With NO active wave, the orchestrator
-// main loop may edit 1-2 distinct files per turn (trivial/surgical falls
-// through), but the 3rd distinct file in one turn is orchestration-scale and is
-// gated back to a verb. This is the enforcement the advisory nudge could not
-// provide, covering the window AFTER a wave marker is removed.
+// The border invitation, PreToolUse half (see pre-tool-use.js docblock and
+// guidance.js: CREW_INVITATION): a cumulative distinct-inline-file counter
+// warns ONCE PER CROSSING once the running total (with no muster run active)
+// reaches MUSTER_INLINE_SCALE, then stays silent until re-armed by a muster
+// run starting, SessionStart, or 60 minutes of inactivity. NEVER a deny — the
+// action-class fence (hook-pre-tool-use-action-fence.test.js) is the only
+// deny surface left in this hook.
 
 const HOOKDIR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -23,23 +25,18 @@ const HOOKDIR = path.join(
   "hooks",
 );
 const PRE = path.join(HOOKDIR, "pre-tool-use.js");
-const UPS = path.join(HOOKDIR, "user-prompt-submit.js");
 
 function runPre(stdinText, env = {}) {
   return spawnHook(PRE, stdinText, env);
 }
 
-// A no-wave working dir: .muster/ exists but no wave-active marker.
-function noWaveDir() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-scale-test-"));
+// A working dir with .muster/ present but no run-active.
+function noRunDir() {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-border-test-"));
   mkdirSync(path.join(dir, ".muster"), { recursive: true });
   return dir;
 }
 
-// This file's callers pass session_id as its own positional arg (distinct from
-// the canonical hook-helpers.js signature) — thin wrapper over the canonical
-// editPayload so the payload-construction logic itself stays in ONE place
-// (P2-19) without touching every one of this file's call sites.
 function editPayload(filePath, cwd, sessionId, extra = {}) {
   return editPayloadBase(filePath, cwd, { session_id: sessionId, ...extra });
 }
@@ -53,505 +50,319 @@ function bashPayload(command, cwd, sessionId) {
   });
 }
 
-// Remove the per-session tmp budget file so tests don't contaminate each other.
-function clearBudget(sessionId) {
-  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-  try { rmSync(path.join(os.tmpdir(), `muster-inline-${safe}`), { force: true }); } catch { /* ignore */ }
-}
-
-// Remove the per-session cumulative cross-turn file.
 function clearCum(sessionId) {
   const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
   try { rmSync(path.join(os.tmpdir(), `muster-cum-${safe}`), { force: true }); } catch { /* ignore */ }
 }
 
-function decision(stdout) {
-  return JSON.parse(stdout).hookSpecificOutput.permissionDecision;
+function out(stdout) {
+  return JSON.parse(stdout).hookSpecificOutput;
 }
 
-// ── core repro→fix: 1st & 2nd distinct file allowed, 3rd denied ─────────────
-// NOTE: all Edit file_path values are INSIDE the `dir` cwd so GUARD-SCOPE does
-// not early-allow them before the scale gate is reached.
-test("no wave: 3rd distinct inline file edit in a turn is denied", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-core-1";
-  clearBudget(sid);
+function decision(stdout) {
+  return out(stdout).permissionDecision;
+}
+
+// ── core: 1st & 2nd allowed silently, 3rd crosses the border and warns once ──
+test("no run active: 1st & 2nd distinct files silent, 3rd crosses the border and warns with value-toned copy", async () => {
+  const dir = noRunDir();
+  const sid = "border-core-1";
+  clearCum(sid);
   try {
     const a = await runPre(editPayload(path.join(dir, "src", "a.js"), dir, sid));
     const b = await runPre(editPayload(path.join(dir, "src", "b.js"), dir, sid));
     const c = await runPre(editPayload(path.join(dir, "src", "c.js"), dir, sid));
-    assert.notEqual(decision(a.stdout), "deny", "1st file allowed");
-    assert.notEqual(decision(b.stdout), "deny", "2nd file allowed");
-    assert.equal(decision(c.stdout), "deny", "3rd distinct file denied");
-    assert.match(
-      JSON.parse(c.stdout).hookSpecificOutput.permissionDecisionReason,
-      /\/muster:go\b/,
-      "deny reason leads with /muster:go",
-    );
+
+    assert.notEqual(decision(a.stdout), "deny", "1st file never denied");
+    assert.notEqual(decision(b.stdout), "deny", "2nd file never denied");
+    assert.notEqual(decision(c.stdout), "deny", "3rd file never denied (warn-only surface)");
+
+    assert.ok(!("additionalContext" in out(a.stdout)), "1st file silent");
+    assert.ok(!("additionalContext" in out(b.stdout)), "2nd file silent");
+
+    const ctx = out(c.stdout).additionalContext;
+    assert.ok(ctx, "3rd distinct file crosses the border and warns");
+    assert.match(ctx, /parallel dispatch/i, "value copy: parallel dispatch");
+    assert.match(ctx, /adversarial review/i, "value copy: adversarial review");
+    assert.match(ctx, /receipts/i, "value copy: receipts trail");
+    assert.match(ctx, /\/muster:go\b/, "warn names the verb");
+    assert.match(ctx, /3/, "warn names the count");
   } finally {
-    clearBudget(sid);
+    clearCum(sid);
     cleanDir(dir);
   }
 });
 
-// ── re-editing the SAME file does not accumulate ────────────────────────────
-test("no wave: repeated edits to the same file never trip the gate", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-same-1";
-  clearBudget(sid);
+test("no run active: 4th distinct file in the same crossing stays silent (warned once)", async () => {
+  const dir = noRunDir();
+  const sid = "border-core-2";
+  clearCum(sid);
+  try {
+    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
+    const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid));
+    const d = await runPre(editPayload(path.join(dir, "d.js"), dir, sid));
+
+    assert.ok(out(c.stdout).additionalContext, "3rd file warns");
+    assert.notEqual(decision(d.stdout), "deny", "4th file never denied");
+    assert.ok(!("additionalContext" in out(d.stdout)), "4th file in the same crossing is silent");
+  } finally {
+    clearCum(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── re-editing the same file never advances the count ───────────────────────
+test("re-editing the same file never advances the cumulative count or warns", async () => {
+  const dir = noRunDir();
+  const sid = "border-same-1";
+  clearCum(sid);
   try {
     for (let i = 0; i < 5; i++) {
-      const r = await runPre(editPayload(path.join(dir, "src", "only.js"), dir, sid));
-      assert.notEqual(decision(r.stdout), "deny", `edit #${i + 1} to same file allowed`);
+      const r = await runPre(editPayload(path.join(dir, "only.js"), dir, sid));
+      assert.notEqual(decision(r.stdout), "deny", `edit #${i + 1} never denied`);
+      assert.ok(!("additionalContext" in out(r.stdout)), `edit #${i + 1} to the same file never crosses the border`);
     }
   } finally {
-    clearBudget(sid);
+    clearCum(sid);
     cleanDir(dir);
   }
 });
 
-// ── subagent edits are exempt and do not count toward the budget ────────────
-test("no wave: subagent (agent_id) edits never denied, don't consume budget", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-sub-1";
-  clearBudget(sid);
+// ── subagent edits are exempt and never counted ─────────────────────────────
+test("subagent (agent_id) edits are never denied and never counted toward the border", async () => {
+  const dir = noRunDir();
+  const sid = "border-sub-1";
+  clearCum(sid);
   try {
     for (let i = 0; i < 4; i++) {
-      const r = await runPre(
-        editPayload(path.join(dir, "src", `s${i}.js`), dir, sid, { agent_id: "sub-x" }),
-      );
-      assert.notEqual(decision(r.stdout), "deny", "subagent edit allowed");
+      const r = await runPre(editPayload(path.join(dir, `s${i}.js`), dir, sid, { agent_id: "sub-x" }));
+      assert.notEqual(decision(r.stdout), "deny");
+      assert.ok(!("additionalContext" in out(r.stdout)), "subagent edit never crosses the border");
     }
-    // main-loop edits afterward still get a fresh 1-2 file budget
-    const m1 = await runPre(editPayload(path.join(dir, "src", "m1.js"), dir, sid));
-    const m2 = await runPre(editPayload(path.join(dir, "src", "m2.js"), dir, sid));
-    assert.notEqual(decision(m1.stdout), "deny");
-    assert.notEqual(decision(m2.stdout), "deny", "subagent edits didn't eat the budget");
+    const m1 = await runPre(editPayload(path.join(dir, "m1.js"), dir, sid));
+    const m2 = await runPre(editPayload(path.join(dir, "m2.js"), dir, sid));
+    assert.ok(!("additionalContext" in out(m1.stdout)));
+    assert.ok(!("additionalContext" in out(m2.stdout)), "subagent edits didn't consume the border count");
   } finally {
-    clearBudget(sid);
+    clearCum(sid);
     cleanDir(dir);
   }
 });
 
 // ── .muster/ writes are exempt (STATE bookkeeping) ──────────────────────────
-test("no wave: edits under .muster/ don't consume the scale budget", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-muster-1";
-  clearBudget(sid);
+test(".muster/ edits never count toward the border", async () => {
+  const dir = noRunDir();
+  const sid = "border-muster-1";
+  clearCum(sid);
   try {
     for (let i = 0; i < 4; i++) {
       const r = await runPre(editPayload(`.muster/note-${i}.md`, dir, sid));
-      assert.notEqual(decision(r.stdout), "deny", ".muster/ edit allowed");
+      assert.notEqual(decision(r.stdout), "deny");
+      assert.ok(!("additionalContext" in out(r.stdout)));
     }
-    const m1 = await runPre(editPayload(path.join(dir, "src", "x.js"), dir, sid));
-    const m2 = await runPre(editPayload(path.join(dir, "src", "y.js"), dir, sid));
-    assert.notEqual(decision(m1.stdout), "deny");
-    assert.notEqual(decision(m2.stdout), "deny", ".muster edits didn't eat the budget");
+    const m1 = await runPre(editPayload(path.join(dir, "x.js"), dir, sid));
+    const m2 = await runPre(editPayload(path.join(dir, "y.js"), dir, sid));
+    assert.ok(!("additionalContext" in out(m1.stdout)));
+    assert.ok(!("additionalContext" in out(m2.stdout)), ".muster/ edits didn't consume the border count");
   } finally {
-    clearBudget(sid);
+    clearCum(sid);
     cleanDir(dir);
   }
 });
 
-// ── MUSTER_WAVE_GUARD=off disables the scale gate ───────────────────────────
-test("no wave: MUSTER_WAVE_GUARD=off lets the 3rd file through", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-off-1";
-  clearBudget(sid);
+// ── missing/unusable session_id fails open (no tracking, no warn) ──────────
+test("absent session_id: no tracking, no warn (fail-open)", async () => {
+  const dir = noRunDir();
   try {
-    await runPre(editPayload(path.join(dir, "a.js"), dir, sid), { MUSTER_WAVE_GUARD: "off" });
-    await runPre(editPayload(path.join(dir, "b.js"), dir, sid), { MUSTER_WAVE_GUARD: "off" });
-    const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid), { MUSTER_WAVE_GUARD: "off" });
-    assert.notEqual(decision(c.stdout), "deny", "off => no scale gate");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── MUSTER_WAVE_GUARD=warn allows but attaches a reminder ───────────────────
-test("no wave: MUSTER_WAVE_GUARD=warn allows 3rd file with a reminder", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-warn-1";
-  clearBudget(sid);
-  try {
-    await runPre(editPayload(path.join(dir, "a.js"), dir, sid), { MUSTER_WAVE_GUARD: "warn" });
-    await runPre(editPayload(path.join(dir, "b.js"), dir, sid), { MUSTER_WAVE_GUARD: "warn" });
-    const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid), { MUSTER_WAVE_GUARD: "warn" });
-    const out = JSON.parse(c.stdout).hookSpecificOutput;
-    assert.notEqual(out.permissionDecision, "deny", "warn => allowed");
-    assert.match(out.additionalContext || "", /\/muster:go\b/, "warn attaches a routing reminder leading with /muster:go");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── missing session_id => fail-open (preserves legacy behavior) ─────────────
-test("no wave: absent session_id disables the gate (fail-open)", async () => {
-  const dir = noWaveDir();
-  try {
-    // No session_id in payload; 3 distinct in-cwd edits, none should deny.
     const p = (f) => JSON.stringify({ tool_name: "Edit", tool_input: { file_path: f }, cwd: dir });
     await runPre(p(path.join(dir, "a.js")));
     await runPre(p(path.join(dir, "b.js")));
     const c = await runPre(p(path.join(dir, "c.js")));
-    assert.notEqual(decision(c.stdout), "deny", "no session => no gate");
+    assert.notEqual(decision(c.stdout), "deny");
+    assert.ok(!("additionalContext" in out(c.stdout)), "no session id => never crosses the border");
   } finally {
     cleanDir(dir);
   }
 });
 
-// ── Bash escape hatch is closed: shell writes count toward the budget ───────
-test("no wave: a high-confidence Bash file write counts toward the scale budget", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-bash-1";
-  clearBudget(sid);
-  try {
-    const a = await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
-    const b = await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
-    // 3rd distinct mutation is a shell write — must be gated, not a bypass.
-    // Bash commands use the full command as the budget key (not the file path),
-    // so GUARD-SCOPE does not apply (target="" for Bash).
-    const c = await runPre(bashPayload("echo hi > /proj/c.js", dir, sid));
-    assert.notEqual(decision(a.stdout), "deny");
-    assert.notEqual(decision(b.stdout), "deny");
-    assert.equal(decision(c.stdout), "deny", "shell write is not an escape hatch");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── sed -i writes to distinct files each consume a budget slot (no key-collapse)
-test("no wave: distinct sed -i targets each consume budget (not one shared slot)", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-sedi-1";
-  clearBudget(sid);
-  try {
-    // Bash commands: target="" so GUARD-SCOPE does not apply; budget key is full command.
-    const a = await runPre(bashPayload("sed -i 's/x/y/' /proj/a.js", dir, sid));
-    const b = await runPre(bashPayload("sed -i 's/x/y/' /proj/b.js", dir, sid));
-    const c = await runPre(bashPayload("sed -i 's/x/y/' /proj/c.js", dir, sid));
-    assert.notEqual(decision(a.stdout), "deny", "1st sed -i allowed");
-    assert.notEqual(decision(b.stdout), "deny", "2nd sed -i allowed");
-    assert.equal(decision(c.stdout), "deny", "3rd distinct sed -i target denied — no key-collapse");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── mixed Edit + sed -i reaches the threshold together ──────────────────────
-test("no wave: Edit + sed -i to distinct files reach the scale threshold", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-sedi-2";
-  clearBudget(sid);
-  try {
-    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
-    // Bash sed -i: target="", budget key is full command.
-    await runPre(bashPayload("sed -i 's/a/b/' /proj/b.js", dir, sid));
-    const c = await runPre(bashPayload("sed -i 's/a/b/' /proj/c.js", dir, sid));
-    assert.equal(decision(c.stdout), "deny", "editor + shell writes share one budget");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── non-write Bash never counts and never denies ────────────────────────────
-test("no wave: read-only Bash commands don't consume the budget or deny", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-bash-2";
-  clearBudget(sid);
-  try {
-    for (let i = 0; i < 5; i++) {
-      const r = await runPre(bashPayload(`ls -la /proj/dir${i}`, dir, sid));
-      assert.notEqual(decision(r.stdout), "deny", "read-only bash allowed");
-    }
-    // budget untouched: two in-cwd edits still fall through
-    const m1 = await runPre(editPayload(path.join(dir, "x.js"), dir, sid));
-    const m2 = await runPre(editPayload(path.join(dir, "y.js"), dir, sid));
-    assert.notEqual(decision(m1.stdout), "deny");
-    assert.notEqual(decision(m2.stdout), "deny", "read-only bash didn't eat the budget");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── an active wave still routes through the wave-guard, not the scale gate ───
-test("active wave: first inline edit already denied by wave-guard (unchanged)", async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-scale-test-"));
-  makeMarker(dir, "wave-099");
-  // Write run-active so the B-scoping logic sees a legitimately active wave
-  // (wave-guard fires, not scale-gate).
-  makeRunActive(dir);
-  const sid = "scale-wave-1";
-  clearBudget(sid);
-  try {
-    // In-cwd path: GUARD-SCOPE allows outside-cwd paths before wave-guard fires.
-    const r = await runPre(editPayload(path.join(dir, "src", "a.js"), dir, sid));
-    assert.equal(decision(r.stdout), "deny", "wave-guard denies from the 1st file");
-    assert.match(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, /wave-099/);
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── MUSTER_INLINE_SCALE override lowers the threshold ───────────────────────
-test("no wave: MUSTER_INLINE_SCALE=2 denies the 2nd distinct file", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-env-1";
-  clearBudget(sid);
-  try {
-    const a = await runPre(editPayload(path.join(dir, "a.js"), dir, sid), { MUSTER_INLINE_SCALE: "2" });
-    const b = await runPre(editPayload(path.join(dir, "b.js"), dir, sid), { MUSTER_INLINE_SCALE: "2" });
-    assert.notEqual(decision(a.stdout), "deny", "1st allowed");
-    assert.equal(decision(b.stdout), "deny", "2nd denied at threshold 2");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── stale marker (>60min) applies the scale gate, not the wave-guard ────────
-test("stale marker: scale gate denies the 3rd distinct file (not wave-guard)", async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-scale-test-"));
-  const stale = new Date(Date.now() - 61 * 60 * 1000);
-  makeMarker(dir, "wave-stale", { mtime: stale });
-  const sid = "scale-stale-1";
-  clearBudget(sid);
-  try {
-    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
-    await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
-    const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid));
-    const out = JSON.parse(c.stdout).hookSpecificOutput;
-    assert.equal(out.permissionDecision, "deny", "3rd file denied under stale marker");
-    assert.doesNotMatch(out.permissionDecisionReason, /wave-stale/, "scale-gate reason, not wave-guard");
-    assert.match(out.permissionDecisionReason, /\/muster:go\b/, "deny reason leads with /muster:go");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── a denied file stays counted: the 4th distinct file is also denied ───────
-test("no wave: once tripped, subsequent distinct files stay denied", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-post-1";
-  clearBudget(sid);
-  try {
-    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
-    await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
-    const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid));
-    const d = await runPre(editPayload(path.join(dir, "d.js"), dir, sid));
-    assert.equal(decision(c.stdout), "deny", "3rd denied");
-    assert.equal(decision(d.stdout), "deny", "4th also denied (denied file stayed counted)");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── all-punctuation session_id fails open in the PreToolUse gate ────────────
-test("no wave: all-punctuation session_id disables the gate (fail-open)", async () => {
-  const dir = noWaveDir();
+test("all-punctuation session_id: no tracking, no warn (fail-open)", async () => {
+  const dir = noRunDir();
   try {
     await runPre(editPayload(path.join(dir, "a.js"), dir, "!!!"));
     await runPre(editPayload(path.join(dir, "b.js"), dir, "!!!"));
     const c = await runPre(editPayload(path.join(dir, "c.js"), dir, "!!!"));
-    assert.notEqual(decision(c.stdout), "deny", "unusable session id => no budget, no deny");
+    assert.notEqual(decision(c.stdout), "deny");
+    assert.ok(!("additionalContext" in out(c.stdout)), "unusable session id => never crosses the border");
   } finally {
     cleanDir(dir);
   }
 });
 
-// ── Bash write to an EXEMPT target doesn't consume budget in the no-wave gate ─
-test("no wave: Bash write to /tmp (exempt) consumes no scale budget", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-exempt-1";
-  clearBudget(sid);
-  try {
-    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
-    await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
-    // exempt-target shell write as the 3rd operation: must NOT trip the gate
-    const t = await runPre(bashPayload("echo hi > /tmp/out.txt", dir, sid));
-    assert.notEqual(decision(t.stdout), "deny", "/tmp write is exempt, no budget consumed");
-    // ...and a genuine 3rd distinct in-cwd file still trips it
-    const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid));
-    assert.equal(decision(c.stdout), "deny", "real 3rd file still denied");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── UserPromptSubmit resets the per-turn budget ─────────────────────────────
-test("a new user turn resets the scale budget", async () => {
-  const dir = noWaveDir();
-  const sid = "scale-reset-1";
-  clearBudget(sid);
-  try {
-    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
-    await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
-    const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid));
-    assert.equal(decision(c.stdout), "deny", "3rd file denied before reset");
-
-    // New user turn fires UserPromptSubmit for the same session.
-    await spawnHook(UPS, JSON.stringify({ session_id: sid, prompt: "keep going" }));
-
-    const d = await runPre(editPayload(path.join(dir, "d.js"), dir, sid));
-    assert.notEqual(decision(d.stdout), "deny", "budget reset => new turn gets fresh allowance");
-  } finally {
-    clearBudget(sid);
-    cleanDir(dir);
-  }
-});
-
-// ── cumulative cross-turn drift counter ─────────────────────────────────────
-// Careful 1-2-file-per-turn inline work never trips the per-turn gate no
-// matter how many turns it spans. The cumulative counter (persists across
-// UserPromptSubmit resets) closes that gap: once the total distinct files
-// edited inline (with no muster run active) reaches the scale threshold, the
-// caller gets a one-time WARN (never a deny) naming the count.
-
-test("cumulative drift: 3rd distinct file across two turns warns (names the count), never denies", async () => {
-  const dir = noWaveDir();
-  const sid = "cum-drift-1";
-  clearBudget(sid);
+// ── Bash escape hatch is closed: shell writes count toward the border ──────
+test("a high-confidence Bash file write counts toward the border (not an escape hatch)", async () => {
+  const dir = noRunDir();
+  const sid = "border-bash-1";
   clearCum(sid);
   try {
-    const a = await runPre(editPayload(path.join(dir, "src", "fileA.js"), dir, sid));
-    const b = await runPre(editPayload(path.join(dir, "src", "fileB.js"), dir, sid));
-    assert.notEqual(decision(a.stdout), "deny", "turn 1, file A allowed");
-    assert.notEqual(decision(b.stdout), "deny", "turn 1, file B allowed");
-    assert.doesNotMatch(
-      JSON.parse(a.stdout).hookSpecificOutput.additionalContext || "",
-      /drift/i,
-      "turn 1, file A: no cumulative-drift warning yet",
-    );
-    assert.doesNotMatch(
-      JSON.parse(b.stdout).hookSpecificOutput.additionalContext || "",
-      /drift/i,
-      "turn 1, file B: no cumulative-drift warning yet",
-    );
-
-    // Simulate a new turn: reset the per-turn budget (what UserPromptSubmit
-    // does), WITHOUT touching the cumulative file.
-    await spawnHook(UPS, JSON.stringify({ session_id: sid, prompt: "keep going" }));
-
-    const c = await runPre(editPayload(path.join(dir, "src", "fileC.js"), dir, sid));
-    assert.notEqual(decision(c.stdout), "deny", "3rd distinct file overall, but fresh per-turn budget: allowed");
-    const out = JSON.parse(c.stdout).hookSpecificOutput;
-    assert.match(out.additionalContext || "", /drift/i, "cumulative-drift warning present");
-    assert.match(out.additionalContext || "", /3/, "cumulative-drift warning names the count (3)");
+    const a = await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
+    const b = await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
+    const c = await runPre(bashPayload("echo hi > /proj/c.js", dir, sid));
+    assert.ok(!("additionalContext" in out(a.stdout)));
+    assert.ok(!("additionalContext" in out(b.stdout)));
+    assert.ok(out(c.stdout).additionalContext, "3rd distinct mutation via shell write still crosses the border");
+    assert.notEqual(decision(c.stdout), "deny");
   } finally {
-    clearBudget(sid);
     clearCum(sid);
     cleanDir(dir);
   }
 });
 
-test("cumulative drift: warning fires once per session — the 4th file across turns is allowed with no repeated warn", async () => {
-  const dir = noWaveDir();
-  const sid = "cum-drift-2";
-  clearBudget(sid);
+test("distinct sed -i targets each consume a border slot (no key-collapse)", async () => {
+  const dir = noRunDir();
+  const sid = "border-sedi-1";
   clearCum(sid);
   try {
-    await runPre(editPayload(path.join(dir, "src", "fileA.js"), dir, sid));
-    await runPre(editPayload(path.join(dir, "src", "fileB.js"), dir, sid));
-    await spawnHook(UPS, JSON.stringify({ session_id: sid, prompt: "keep going" }));
-    const c = await runPre(editPayload(path.join(dir, "src", "fileC.js"), dir, sid));
-    assert.match(
-      JSON.parse(c.stdout).hookSpecificOutput.additionalContext || "",
-      /drift/i,
-      "3rd distinct file: cumulative warning fires",
-    );
-
-    await spawnHook(UPS, JSON.stringify({ session_id: sid, prompt: "keep going" }));
-    const d = await runPre(editPayload(path.join(dir, "src", "fileD.js"), dir, sid));
-    assert.notEqual(decision(d.stdout), "deny", "4th distinct file across turns is allowed");
-    assert.doesNotMatch(
-      JSON.parse(d.stdout).hookSpecificOutput.additionalContext || "",
-      /drift/i,
-      "4th distinct file: no repeated cumulative warning (nudged flag)",
-    );
+    await runPre(bashPayload("sed -i 's/x/y/' /proj/a.js", dir, sid));
+    await runPre(bashPayload("sed -i 's/x/y/' /proj/b.js", dir, sid));
+    const c = await runPre(bashPayload("sed -i 's/x/y/' /proj/c.js", dir, sid));
+    assert.ok(out(c.stdout).additionalContext, "3rd distinct sed -i target crosses the border");
+    assert.notEqual(decision(c.stdout), "deny");
   } finally {
-    clearBudget(sid);
     clearCum(sid);
     cleanDir(dir);
   }
 });
 
-test("cumulative drift: re-editing the same file across turns never increments the cumulative count", async () => {
-  const dir = noWaveDir();
-  const sid = "cum-drift-same-1";
-  clearBudget(sid);
+test("mixed Edit + Bash write reach the border together", async () => {
+  const dir = noRunDir();
+  const sid = "border-mixed-1";
   clearCum(sid);
   try {
-    await runPre(editPayload(path.join(dir, "src", "only.js"), dir, sid));
-    for (let i = 0; i < 4; i++) {
-      await spawnHook(UPS, JSON.stringify({ session_id: sid, prompt: "keep going" }));
-      const r = await runPre(editPayload(path.join(dir, "src", "only.js"), dir, sid));
-      assert.notEqual(decision(r.stdout), "deny", `turn ${i + 2}: same-file re-edit allowed`);
-      assert.doesNotMatch(
-        JSON.parse(r.stdout).hookSpecificOutput.additionalContext || "",
-        /drift/i,
-        `turn ${i + 2}: re-editing the same file must never trip the cumulative warn`,
-      );
+    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
+    await runPre(bashPayload("sed -i 's/a/b/' /proj/b.js", dir, sid));
+    const c = await runPre(bashPayload("sed -i 's/a/b/' /proj/c.js", dir, sid));
+    assert.ok(out(c.stdout).additionalContext, "editor + shell writes share one border count");
+    assert.notEqual(decision(c.stdout), "deny");
+  } finally {
+    clearCum(sid);
+    cleanDir(dir);
+  }
+});
+
+test("read-only Bash never counts toward the border and never denies", async () => {
+  const dir = noRunDir();
+  const sid = "border-bash-2";
+  clearCum(sid);
+  try {
+    for (let i = 0; i < 5; i++) {
+      const r = await runPre(bashPayload(`ls -la /proj/dir${i}`, dir, sid));
+      assert.notEqual(decision(r.stdout), "deny");
+      assert.ok(!("additionalContext" in out(r.stdout)));
     }
-    const state = readCum(cumFile(sid, os.tmpdir()));
-    assert.equal(state.files.length, 1, "cumulative distinct count stays at 1 across repeated same-file edits");
+    const m1 = await runPre(editPayload(path.join(dir, "x.js"), dir, sid));
+    const m2 = await runPre(editPayload(path.join(dir, "y.js"), dir, sid));
+    assert.ok(!("additionalContext" in out(m1.stdout)));
+    assert.ok(!("additionalContext" in out(m2.stdout)), "read-only bash never consumed the border count");
   } finally {
-    clearBudget(sid);
     clearCum(sid);
     cleanDir(dir);
   }
 });
 
-test("cumulative drift: an active muster run resets the cumulative counter and doesn't record", async () => {
-  const dir = noWaveDir();
-  const sid = "cum-drift-run-1";
-  clearBudget(sid);
+test("a Bash write to an EXEMPT target (/tmp) never counts toward the border", async () => {
+  const dir = noRunDir();
+  const sid = "border-exempt-1";
+  clearCum(sid);
+  try {
+    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
+    const t = await runPre(bashPayload("echo hi > /tmp/out.txt", dir, sid));
+    assert.ok(!("additionalContext" in out(t.stdout)), "/tmp write is exempt, doesn't cross the border");
+    const c = await runPre(editPayload(path.join(dir, "c.js"), dir, sid));
+    assert.ok(out(c.stdout).additionalContext, "the real 3rd distinct file still crosses the border");
+  } finally {
+    clearCum(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── MUSTER_INLINE_SCALE overrides the border threshold ──────────────────────
+test("MUSTER_INLINE_SCALE=2 crosses the border at the 2nd distinct file", async () => {
+  const dir = noRunDir();
+  const sid = "border-env-1";
+  clearCum(sid);
+  try {
+    const a = await runPre(editPayload(path.join(dir, "a.js"), dir, sid), { MUSTER_INLINE_SCALE: "2" });
+    const b = await runPre(editPayload(path.join(dir, "b.js"), dir, sid), { MUSTER_INLINE_SCALE: "2" });
+    assert.ok(!("additionalContext" in out(a.stdout)), "1st file silent");
+    assert.ok(out(b.stdout).additionalContext, "2nd file crosses the border at threshold 2");
+    assert.notEqual(decision(b.stdout), "deny");
+  } finally {
+    clearCum(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── a live muster run resets the cumulative counter and doesn't record ─────
+test("a live muster run resets the cumulative counter and doesn't record", async () => {
+  const dir = noRunDir();
+  const sid = "border-run-1";
   clearCum(sid);
   const cFile = cumFile(sid, os.tmpdir());
   writeFileSync(cFile, JSON.stringify({ files: ["x.js", "y.js"], nudged: false }));
   makeRunActive(dir);
   try {
-    const r = await runPre(editPayload(path.join(dir, "src", "z.js"), dir, sid));
-    assert.notEqual(decision(r.stdout), "deny", "per-turn behavior unchanged while a run is active");
-    assert.doesNotMatch(
-      JSON.parse(r.stdout).hookSpecificOutput.additionalContext || "",
-      /drift/i,
-      "no cumulative-drift warning while a muster run is active",
-    );
+    const r = await runPre(editPayload(path.join(dir, "z.js"), dir, sid));
+    assert.notEqual(decision(r.stdout), "deny");
+    assert.ok(!("additionalContext" in out(r.stdout)), "no border warning while a muster run is active");
     assert.deepEqual(
       readCum(cFile),
       { files: [], nudged: false },
-      "cumulative file reset while a muster run is active — no cross-turn accumulation during a run",
+      "cumulative file reset while a muster run is active",
     );
   } finally {
-    clearBudget(sid);
     clearCum(sid);
     cleanDir(dir);
   }
 });
 
-test("cumulative drift: a corrupt cum file is treated as empty, never crashes the gate", async () => {
-  const dir = noWaveDir();
-  const sid = "cum-drift-corrupt-1";
-  clearBudget(sid);
+// ── age-reset: a stale crossing re-arms ─────────────────────────────────────
+test("age-reset: a crossing untouched past 60 minutes re-arms — the border warns again", async () => {
+  const dir = noRunDir();
+  const sid = "border-age-1";
+  clearCum(sid);
+  const cFile = cumFile(sid, os.tmpdir());
+  try {
+    // Simulate an already-crossed-and-warned prior window, now stale.
+    writeFileSync(cFile, JSON.stringify({ files: ["old-a.js", "old-b.js", "old-c.js"], nudged: true }));
+    const stale = new Date(Date.now() - (CROSSING_MAX_AGE_MS + 60_000));
+    utimesSync(cFile, stale, stale);
+
+    const a = await runPre(editPayload(path.join(dir, "new-a.js"), dir, sid));
+    const b = await runPre(editPayload(path.join(dir, "new-b.js"), dir, sid));
+    assert.ok(!("additionalContext" in out(a.stdout)), "1st file of the re-armed crossing is silent");
+    const c = await runPre(editPayload(path.join(dir, "new-c.js"), dir, sid));
+    assert.ok(out(c.stdout).additionalContext, "3rd file of the re-armed crossing warns again");
+    assert.notEqual(decision(c.stdout), "deny");
+  } finally {
+    clearCum(sid);
+    cleanDir(dir);
+  }
+});
+
+// ── corrupt cum file fails open ──────────────────────────────────────────────
+test("a corrupt cum file is treated as empty, never crashes and never denies", async () => {
+  const dir = noRunDir();
+  const sid = "border-corrupt-1";
   clearCum(sid);
   const cFile = cumFile(sid, os.tmpdir());
   writeFileSync(cFile, "{{{ not json at all");
   try {
-    const r = await runPre(editPayload(path.join(dir, "src", "a.js"), dir, sid));
+    const r = await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
     assert.equal(r.code, 0, "exit 0 despite a corrupt cumulative file");
     assert.notEqual(decision(r.stdout), "deny", "corrupt cum file fails open (treated empty)");
   } finally {
-    clearBudget(sid);
     clearCum(sid);
     cleanDir(dir);
   }

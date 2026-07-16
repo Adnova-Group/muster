@@ -24,11 +24,15 @@ the manifest — the crew on paper is not the crew doing the work.
 - **Announce before acting:** for each task, write a glass-box line to STATE
   `dispatching <task id> -> <subagent_type> (<role>)` **before** the work starts. A wave whose STATE
   shows edited files but no dispatch line is, by definition, inline drift.
-- **Hard gate:** the `PreToolUse` hook (`plugin/hooks/pre-tool-use.js`) enforces this rule at the
-  harness level — it will deny any main-loop Edit/Write/NotebookEdit while `.muster/wave-active`
-  exists, so inline drift is blocked, not just discouraged. The hook also inspects Bash commands
-  for file-write patterns (`sed -i`, `tee`, `>` / `>>` redirects); set `MUSTER_WAVE_GUARD=warn`
-  to allow with a reminder if the guard triggers a false positive.
+- **SKILL discipline, not a hook block:** the enforcement-model redesign removed the `PreToolUse`
+  hook's wave-guard deny entirely (it proved unscopable in the field — false-positive-trained kill
+  switches, denies on sessions/repos where muster never ran; see CHANGELOG). Nothing at the harness
+  level stops a main-loop Edit/Write/NotebookEdit during a wave anymore. This rule now lives
+  entirely here, plus the review gate diffing what changed against what was dispatched after the
+  fact — dispatch-not-inline is discipline the orchestrator must actually follow, and a caught
+  violation is a review-gate finding, not a blocked tool call. (The `PreToolUse` hook still emits
+  exactly one hard deny, unrelated to this rule: the action-class fence — see "Enforcement model:
+  gates vs conventions", below.)
 
 1. Compute waves: `npx -y @adnova-group/muster wave .muster/manifest.json` -> ordered list of waves.
 2. **Pre-flight plan review (once, before wave 1).** Scan the whole plan for conflicts before dispatching anything:
@@ -41,7 +45,7 @@ the manifest — the crew on paper is not the crew doing the work.
    This is a one-shot gate; the per-wave review loop (step 3c) remains the net for conflicts that only emerge from
    implementation.
 3. For each wave, in order:
-   a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task -- the `PreToolUse` hook reads this marker to enforce the iron rule. Note: `.muster/run-active` is a separate, verb-level marker (not per-wave); it is written by the invoking verb (run/autopilot/diagnose/audit) at invocation start and removed when the verb exits. A `.muster/wave-active` present without a `.muster/run-active` means the wave is orphaned or crashed; the `PreToolUse` hook treats it as stale and applies the scale-gate rather than the full wave-guard. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
+   a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task -- glass-box bookkeeping for STATE and the review gate's after-the-fact diff, not a marker the `PreToolUse` hook reads or enforces anything against (see "SKILL discipline, not a hook block", above). Note: `.muster/run-active` is a separate, verb-level marker (not per-wave); it is written by the invoking verb (run/autopilot/diagnose/audit) at invocation start and removed when the verb exits. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task (runs N competing agents, a judge scores each and produces a debate fusion map, then `muster fuse` decides: synthesize the top-K via a hardened synthesizer agent, or fall back to the best passing candidate when candidates already agree).
       - **Parallel isolation (concurrent file writers):** when a wave dispatches more than one task
@@ -81,7 +85,7 @@ the manifest — the crew on paper is not the crew doing the work.
         above instead). If the retry also fails: record the failure in STATE and treat it exactly like
         a review-gate escalation (step 3e) — the wave's OTHER tasks still complete and the barrier
         collects what succeeded; only the failed task escalates.
-   b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (the hook will allow edits again from this point; review-gate fix agents are dispatched via the Agent tool after the barrier).
+   b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (glass-box bookkeeping only — no hook reads this marker; review-gate fix agents are dispatched via the Agent tool after the barrier, same as any other task).
    c. Invoke the **review-gate** skill over the wave's changes. The review->fix cycle loops: re-dispatch
       fix attempts until the gate passes (`done`) or the iteration cap is hit (`max-iterations`), then
       escalate per step 3e below. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
@@ -206,22 +210,27 @@ free-interpret it. Map the returned action:
 - **unknown** — say so rather than guessing at intent: reply through the channel asking the human to
   rephrase (approve / stop / status / retarget); take no action until they clarify.
 
-Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.
+Iron-rule reminder: dispatch-not-inline is SKILL discipline, checked only by the review gate after the fact -- no hook enforces it; see the opening section.
 
 ## Enforcement model: gates vs conventions
 
-**Principle:** enforce where mechanically sound; a gameable gate that fails open is worse than an honest, named convention.
+**Principle:** enforce where mechanically sound; a gameable gate that fails open is worse than an honest, named convention. The enforcement-model redesign (see CHANGELOG) narrowed this to one rule: enforcement now follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits. A hard main-loop deny keyed on file-system markers (wave-active, a per-turn file count) could not distinguish orchestration-scale drift from legitimate concurrent work in a repo/session muster never touched, and repeated kill-switch escape hatches trained agents to disable the enforcement rather than trust it -- so the wave-guard, the post-run scale-gate, and the todo-driving gate were removed entirely rather than patched a fourth time.
 
-### GATES (deterministic, hook-enforced -- these BLOCK)
+### THE ONE HARD DENY (hook-enforced, deterministic)
 
-- **Wave-guard:** while `.muster/wave-active` exists, any main-loop Edit/Write/NotebookEdit or high-confidence Bash file write is denied. Scoped by `.muster/run-active` (absent run-active = orphaned wave = scale-gate instead).
-- **Post-run scale-gate:** once the wave marker is gone, the main loop may touch at most `MUSTER_INLINE_SCALE - 1` (default: 2) distinct files per turn; the Nth file is denied and routed to a verb. Prevents post-run inline drift that the advisory nudge alone cannot hold. A cumulative cross-turn counter warns once per session (never denies) when the running total of distinct inline-edited files across turns reaches the same threshold, catching drift spread thinly across many turns; it resets at `SessionStart` and while a run is active.
-- **Todo-driving gate:** during a live run (`.muster/run-active` present), a `Task`/`Agent` subagent dispatch is denied unless a native todo list (`TodoWrite`/`TaskCreate`/`TaskUpdate`) was written since the run started -- so create the todo list BEFORE dispatching wave 1. Fail-open on every uncertainty; `MUSTER_TODO_GATE=warn`/`off` to soften or disable.
-- **Meta-exempt roots:** `.muster/` and `.claude/` (in-cwd) are always allowed -- orchestrator bookkeeping and repo-local settings must never be blocked. Paths outside the project cwd are exempt by scope (cwd-relative gate).
+- **Action-class fence:** while a run is active (`.muster/run-active` present) and the orchestrator has written `.muster/forbidden-actions` (one class per line, from the manifest's top-level `forbiddenActions` -- see "Scope fences", above), a tool call classified into one of those forbidden classes is denied (`plugin/hooks/pre-tool-use.js`, `plugin/hooks/action-guard.js`). Fail-open on either file's absence. Honors `MUSTER_ACTION_GUARD=warn|off` to soften or disable. This is the ONLY tool call the `PreToolUse` hook can deny.
+- **Meta-exempt roots:** `.muster/` and `.claude/` (in-cwd) are always allowed, ahead of the fence check -- orchestrator bookkeeping and repo-local settings must never be blocked. Paths outside the project cwd are likewise exempt by scope (cwd-relative gate).
+
+### WARN-ONLY (hook-enforced, never denies -- "the border invitation")
+
+- **Cumulative inline-file counter (`PreToolUse`):** with no muster run active, crossing `MUSTER_INLINE_SCALE` (default 3) distinct inline-edited files across turns fires one warn-only reminder to reach for a muster run, then stays silent until re-armed by a run starting, `SessionStart`, or 60 minutes of inactivity. Resets (not denies) while a run is active -- that work is tracked/dispatched, not drift.
+- **Directive-prompt nudge (`UserPromptSubmit`):** a directive-shaped prompt (`isDirective` in `guidance.js`) with no muster run active fires the same value-toned reminder immediately, on the same re-arm cadence. Neither signal ever denies a tool call or blocks a prompt -- worth reaching for, never commanded.
 
 ### CONVENTIONS (not gate-able; enforced by SKILL discipline)
 
-- **Crew-owner/state-in-subject:** the `PreToolUse` hook cannot judge who owns a task or whether it is multi-step -- that is runtime judgment, not a file-system observable. (Todo-driving graduated to a gate in 0.3.2 -- see above.)
+- **Dispatch-not-inline (the iron rule):** previously a hard `wave-active` deny (0.3.x-0.4.x); the enforcement-model redesign removed that deny path (see the "Iron rule" section, above). Enforced only by this skill's discipline and the review gate diffing what changed against what was dispatched after the fact.
+- **Todo-driving visibility:** previously a hook-enforced gate (0.3.2-0.4.x, `todo-gate.js`, denied a `Task`/`Agent` dispatch without a native todo write since run start); removed by the same redesign -- gameable with a throwaway todo (it enforced visibility, not compliance), and it added dispatch-time transcript-scan latency for that guarantee. Now this skill's "Task board" section carries the discipline alone: one harness-visible task per work item, created before its dispatch.
+- **Crew-owner/state-in-subject:** the `PreToolUse` hook cannot judge who owns a task or whether it is multi-step -- that is runtime judgment, not a file-system observable.
 - **Verb selection:** intent classification (is this a bug fix? a new feature? a sweep?) is a model judgment call, not a deterministic signal the hook can test.
 - **Content-through-humanizer routing:** the routing decision is judgment; the OUTPUT rules (no em-dash, no banned openers) are enforced post-hoc by contract tests on committed artifacts.
 - **Glass-box narration:** narration is output content (the model's reply text), not a tool surface -- there is no hook point to enforce it.
@@ -229,4 +238,5 @@ Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inlin
 ### REJECTED (with reasons)
 
 - **Verb-routing run-active BLOCK:** rejected. Between-wave writes are already `.muster/`-exempt or `agent_id`-exempt; adding a block on absent run-active would add no enforcement power and would false-block trivial multi-file edits outside a run.
-- **Transcript-scan todo gate:** rejected in 0.3.1, then revisited and built in 0.3.2 (`todo-gate.js`) once narrowed to dispatch time only -- a todo write since the `run-active` mtime is a bounded, mechanically checkable question, and the hard bias-to-allow decision order removes the fail-open objection. Still gameable with a throwaway todo (it enforces visibility, not compliance); accepted trade.
+- **Transcript-scan todo gate:** rejected in 0.3.1, then revisited and built in 0.3.2 (`todo-gate.js`) once narrowed to dispatch time only -- a todo write since the `run-active` mtime is a bounded, mechanically checkable question, and the hard bias-to-allow decision order removed the fail-open objection at the time. Removed entirely by the enforcement-model redesign (see CHANGELOG): still gameable with a throwaway todo, and the false-positive/latency cost stopped being worth that trade. Todo-driving is convention again (see CONVENTIONS, above).
+- **Wave-guard / post-run scale-gate deny paths:** built and repeatedly patched through 0.4.x for field-reported false positives (most recently a session-engagement marker bolted onto the scale-gate); removed entirely by the enforcement-model redesign rather than patched a fourth time -- the root problem was the model itself, not a fixable edge case (see the section intro, above, and CHANGELOG).

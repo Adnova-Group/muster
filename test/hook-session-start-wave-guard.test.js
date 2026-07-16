@@ -125,15 +125,16 @@ test("session-start: uses payload.cwd to locate the marker (not process.cwd)", a
   }
 });
 
-// ── routing-policy text appears in additionalContext ────────────────────────
-test("session-start: additionalContext includes routing-policy text", async () => {
+// ── additionalContext is the trimmed one-line pointer ───────────────────────
+test("session-start: additionalContext is the trimmed one-line pointer", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-rp-"));
   try {
     const payload = JSON.stringify({ source: "startup", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
     assert.equal(code, 0);
     const ctx = JSON.parse(stdout).hookSpecificOutput.additionalContext;
-    assert.match(ctx, /Default routing|humanizer/i, "routing policy text present in additionalContext");
+    assert.match(ctx, /muster available/i, "one-line pointer present in additionalContext");
+    assert.match(ctx, /\/muster:plan\b/, "one-line pointer names the orchestration-scale verb");
   } finally {
     cleanDir(tmpDir);
   }

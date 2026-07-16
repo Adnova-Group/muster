@@ -22,13 +22,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { PRINCIPLES, VERBS, ROUTING_POLICY } from "../plugin/hooks/guidance.js";
 
-const execFileP = promisify(execFile);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const CLI = path.join(HERE, "..", "src", "cli.js");
+const CLI = process.env.NODE_ENV === "test" && process.env.MUSTER_COWORK_TEST_CLI
+  ? path.resolve(process.env.MUSTER_COWORK_TEST_CLI)
+  : path.join(HERE, "..", "src", "cli.js");
 const PROTOCOL_VERSION = "2025-06-18"; // MCP spec version date-string (matches the MCP specification header)
 // Single-source the version from package.json so serverInfo never drifts from the release.
 const VERSION = JSON.parse(readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;
@@ -57,7 +57,7 @@ const COWORK_PROTOCOL = [
   "Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.",
   "",
   "Core loop (every mode):",
-  "1. muster_detect + muster_capabilities: learn the project and which provider+model resolves each role. Dispatch each role on the model muster_capabilities assigns it.",
+  "1. muster_detect + muster_capabilities: learn the project and which provider+model resolves each role. Cowork capabilities advertise only registered MCP providers or inline execution; dispatch each role on the model muster_capabilities assigns it.",
   "2. muster_assess a thin outcome; muster_route / muster_domain to pick the pipeline.",
   "3. Assemble a crew manifest, muster_manifest_validate it, fix until ok.",
   "4. muster_wave gives dependency-ordered waves. Dispatch each wave's members as PARALLEL subagents (fall back to muster_next, one task at a time, only if fan-out is unavailable). Cross-wave order is fixed; intra-wave order is free.",
@@ -69,7 +69,7 @@ const COWORK_PROTOCOL = [
   "- plan (approve-first): do the core loop through the manifest and plan, then STOP for approval. Plan and show; do not execute.",
   "- go (hands-off): create a branch FIRST, run the core loop wave by wave, commit after each green wave, then STOP and present the merge decision. Only halt early for an escalation.",
   "- plan-backlog / go-backlog (batch): the backlog form of plan/go -- route every item up front (plan-backlog) or clear the whole backlog sequentially, one attended stop at the end (go-backlog); call muster_sprint_protocol for this session's Cowork-adapted batch playbook.",
-  "- audit: fan out the six read-only review dimensions (architecture, tech-debt, coverage, simplification, readability, security) as parallel subagents, consolidate one ranked ledger, then fix with TDD and verify through the gate before presenting the merge.",
+  "- audit: pass the connected project directory explicitly to muster_audit, fan out the six read-only review dimensions (architecture, tech-debt, coverage, simplification, readability, security) as parallel subagents, consolidate one ranked ledger, then fix with TDD and verify through the gate before presenting the merge.",
   "- diagnose (one bug): reproduce first, find the root cause, fix, add a regression test, verify. No symptom-patching.",
   "",
   "Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog.",
@@ -78,7 +78,7 @@ const COWORK_PROTOCOL = [
 const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("\n\n");
 
 // ── Tool catalog ──────────────────────────────────────────────────────────────
-// Three factory shapes — every TOOLS entry is built from one of these:
+// Factory shapes used by most TOOLS entries:
 //
 //   S(desc, prop, required?)  — "str": receives a single string arg, passed directly as a CLI arg.
 //   J2(desc, props, required) — "json2": one OR more payloads; each is written to its own temp file
@@ -114,7 +114,11 @@ const TOOLS = {
   muster_assess: { argv: ["assess"], ...S("Deterministic gap-check on an outcome (too short, no success criteria, vague).", "outcome") },
   muster_steer: { argv: ["steer"], ...S("Classify a mid-run steer message (scope change, abort, refine, ...).", "message") },
   muster_diagnose: { argv: ["diagnose"], ...S("Classify a failure symptom and build a diagnose manifest.", "symptom") },
-  muster_audit: { argv: ["audit"], kind: "none", description: "Build the whole-codebase audit manifest (six parallel review dimensions).", inputSchema: { type: "object", properties: {} } },
+  muster_audit: {
+    argv: ["audit"], kind: "target",
+    description: "Build the whole-codebase audit manifest for an explicit connected project directory (six parallel review dimensions).",
+    inputSchema: { type: "object", properties: { dir: { type: "string" } }, required: ["dir"] },
+  },
 
   // gate/math verbs — JSON in, written to a temp file
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
@@ -135,26 +139,47 @@ const TOOLS = {
 };
 
 // ── CLI invocation ──────────────────────────────────────────────────────────
-async function runCli(argv) {
+async function runCli(argv, { cwd = process.cwd(), signal } = {}) {
   try {
     // timeout: 60 s — generous for slow fuse/wave on large manifests; maxBuffer: 16 MB — large audit JSON
-    const { stdout } = await execFileP("node", [CLI, ...argv], { cwd: process.cwd(), timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
+    const { stdout } = await new Promise((resolve, reject) => {
+      execFile("node", [CLI, ...argv], {
+        cwd,
+        signal,
+        timeout: 60_000,
+        maxBuffer: 16 * 1024 * 1024,
+        env: { ...process.env, MUSTER_RUNTIME: "cowork" },
+      }, (error, childStdout, stderr) => {
+        if (error) {
+          error.stdout = childStdout;
+          error.stderr = stderr;
+          reject(error);
+        } else resolve({ stdout: childStdout });
+      });
+    });
     return { ok: true, text: stdout.trim() };
   } catch (e) {
+    if (signal?.aborted) return { ok: false, text: "muster MCP request cancelled" };
     const text = (e.stderr || e.stdout || e.message || "").toString().trim();
     return { ok: false, text: text || "muster CLI failed with no output" };
   }
 }
 
-async function callTool(name, args = {}) {
+async function callTool(name, args = {}, signal) {
   const tool = TOOLS[name];
   if (!tool) return { ok: false, text: `unknown tool: ${name}` };
 
   if (tool.kind === "str") {
     const v = args[tool.prop];
-    return runCli(v != null && v !== "" ? [...tool.argv, String(v)] : tool.argv);
+    return runCli(v != null && v !== "" ? [...tool.argv, String(v)] : tool.argv, { signal });
   }
-  if (tool.kind === "none") return runCli(tool.argv);
+  if (tool.kind === "none") return runCli(tool.argv, { signal });
+  if (tool.kind === "target") {
+    if (typeof args.dir !== "string" || !args.dir.trim()) {
+      return { ok: false, text: "muster_audit: explicit target directory is required" };
+    }
+    return runCli(tool.argv, { cwd: path.resolve(args.dir), signal });
+  }
   // static: no CLI call at all — return pre-loaded file content verbatim (muster_sprint_protocol).
   // A load-time read failure (tool.error set) surfaces as isError instead of serving `null` text.
   if (tool.kind === "static") return tool.error ? { ok: false, text: tool.error } : { ok: true, text: tool.text };
@@ -167,7 +192,7 @@ async function callTool(name, args = {}) {
     try {
       const f = path.join(dir, "input.txt");
       await writeFile(f, args[tool.prop] ?? "");
-      return await runCli([...tool.argv, f]);
+      return await runCli([...tool.argv, f], { signal });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -186,12 +211,85 @@ async function callTool(name, args = {}) {
           return f;
         })
       );
-      return await runCli([...tool.argv, ...files, ...(tool.flags ? tool.flags(args) : [])]);
+      return await runCli([...tool.argv, ...files, ...(tool.flags ? tool.flags(args) : [])], { signal });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   }
 }
+
+const boundedEnvInt = (name, fallback, ceiling) => {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value > 0 && value <= ceiling ? value : fallback;
+};
+const MAX_INFLIGHT = boundedEnvInt("MUSTER_COWORK_MAX_INFLIGHT", 4, 64);
+const MAX_QUEUE = boundedEnvInt("MUSTER_COWORK_MAX_QUEUE", 16, 1024);
+const cancelled = () => ({ ok: false, text: "muster MCP request cancelled" });
+
+class WorkLimiter {
+  constructor(maxInflight, maxQueue) {
+    this.maxInflight = maxInflight;
+    this.maxQueue = maxQueue;
+    this.active = new Map();
+    this.queue = [];
+    this.idleWaiters = [];
+  }
+
+  run(id, task) {
+    if (this.active.has(id) || this.queue.some((item) => item.id === id)) {
+      return Promise.resolve({ ok: false, text: `duplicate in-flight request id: ${id}` });
+    }
+    return new Promise((resolve) => {
+      const item = { id, task, resolve, controller: new AbortController() };
+      if (this.active.size < this.maxInflight) this.start(item);
+      else if (this.queue.length < this.maxQueue) this.queue.push(item);
+      else resolve({ ok: false, text: `muster MCP overloaded: queue limit ${this.maxQueue} reached` });
+    });
+  }
+
+  start(item) {
+    this.active.set(item.id, item);
+    Promise.resolve()
+      .then(() => item.task(item.controller.signal))
+      .then(item.resolve, (error) => item.resolve({ ok: false, text: `internal error: ${error.message}` }))
+      .finally(() => {
+        this.active.delete(item.id);
+        this.pump();
+      });
+  }
+
+  pump() {
+    while (this.active.size < this.maxInflight && this.queue.length) this.start(this.queue.shift());
+    if (this.active.size === 0 && this.queue.length === 0) this.idleWaiters.splice(0).forEach((resolve) => resolve());
+  }
+
+  cancel(id) {
+    const queuedIndex = this.queue.findIndex((item) => item.id === id);
+    if (queuedIndex >= 0) {
+      const [item] = this.queue.splice(queuedIndex, 1);
+      item.resolve(cancelled());
+      this.pump();
+      return true;
+    }
+    const active = this.active.get(id);
+    if (!active) return false;
+    active.controller.abort();
+    return true;
+  }
+
+  cancelAll() {
+    for (const item of this.queue.splice(0)) item.resolve(cancelled());
+    for (const item of this.active.values()) item.controller.abort();
+    this.pump();
+  }
+
+  whenIdle() {
+    if (this.active.size === 0 && this.queue.length === 0) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+}
+
+const limiter = new WorkLimiter(MAX_INFLIGHT, MAX_QUEUE);
 
 // ── JSON-RPC 2.0 over stdio (newline-delimited) ───────────────────────────────
 function send(msg) {
@@ -213,7 +311,9 @@ async function handle(msg) {
         instructions: INSTRUCTIONS,
       });
     case "notifications/initialized":
+      return; // no response to notifications
     case "notifications/cancelled":
+      limiter.cancel(params?.requestId);
       return; // no response to notifications
     case "ping":
       return ok(id, {});
@@ -222,7 +322,7 @@ async function handle(msg) {
         tools: Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, inputSchema: t.inputSchema })),
       });
     case "tools/call": {
-      const r = await callTool(params?.name, params?.arguments || {});
+      const r = await limiter.run(id, (signal) => callTool(params?.name, params?.arguments || {}, signal));
       return ok(id, { content: [{ type: "text", text: r.text }], isError: !r.ok });
     }
     default:
@@ -256,4 +356,15 @@ process.stdin.on("data", (chunk) => {
     });
   }
 });
-process.stdin.on("end", () => process.exit(0));
+process.stdin.on("end", async () => {
+  limiter.cancelAll();
+  await limiter.whenIdle();
+  process.exit(0);
+});
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, async () => {
+    limiter.cancelAll();
+    await limiter.whenIdle();
+    process.exit(0);
+  });
+}

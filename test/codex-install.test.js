@@ -23,6 +23,7 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
     if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [canonicalMusterMarketplace] }) };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [{ pluginId: "muster@muster", installed: true }] }) };
     if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "refreshed" };
+    if (args.slice(0, 2).join(" ") === "plugin remove") return { stdout: "removed" };
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
   const result = await runCodexInstall({ cwd, home, repoRoot, execFile });
@@ -65,6 +66,30 @@ test("Codex installation refuses unrelated profiles and dry-run writes nothing",
   await assert.rejects(() => readFile(join(tmp, "dry", ".codex", "agents", ".muster-managed.json"), "utf8"));
   await assert.rejects(() => readFile(join(tmp, "dry", ".codex", "hooks.json"), "utf8"));
   assert.deepEqual(dry.nextSteps, ["npm install -g @openai/codex", "muster install codex --scope project"]);
+});
+
+test("Codex install and uninstall reject registries without exact Muster ownership before mutation", async () => {
+  for (const owner of [undefined, "another-tool"]) {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-owner-"));
+    const home = join(tmp, "home"), cwd = join(tmp, "project"), registryDir = join(home, ".codex", "muster");
+    const registryPath = join(registryDir, "install-scopes.json"), absent = async () => { throw new Error("not found"); };
+    await mkdir(join(cwd, ".codex"), { recursive: true });
+    await mkdir(registryDir, { recursive: true });
+    const foreign = JSON.stringify({ format: 1, ...(owner === undefined ? {} : { owner }), entries: [] }, null, 2) + "\n";
+    await writeFile(registryPath, foreign);
+    await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot, execFile: absent }), /registry.*(ownership|owner|invalid)/i);
+    assert.equal(await readFile(registryPath, "utf8"), foreign);
+    await assert.rejects(() => readFile(join(cwd, ".codex", "agents", ".muster-managed.json"), "utf8"));
+
+    await writeFile(registryPath, JSON.stringify({ format: 1, owner: "muster", entries: [] }, null, 2) + "\n");
+    await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+    const profilePath = join(cwd, ".codex", "agents", "muster-builder.toml");
+    const profile = await readFile(profilePath, "utf8");
+    await writeFile(registryPath, foreign);
+    await assert.rejects(() => runCodexUninstall({ cwd, home, execFile: absent }), /registry.*(ownership|owner|invalid)/i);
+    assert.equal(await readFile(registryPath, "utf8"), foreign);
+    assert.equal(await readFile(profilePath, "utf8"), profile);
+  }
 });
 
 test("Codex uninstall rejects traversal in a managed manifest", async () => {
@@ -266,10 +291,12 @@ test("Codex commandWindows maps WSL drive paths to their Windows equivalent", {
 });
 
 test("Codex commandWindows treats native Windows and WSL drives alike without normalizing POSIX case", () => {
-  assert.equal(formatCodexWindowsPath("C:\\Work\\Muster\\hook.mjs"), "C:/Work/Muster/hook.mjs");
-  assert.equal(formatCodexWindowsPath("c:\\Work\\Muster\\hook.mjs"), "C:/Work/Muster/hook.mjs");
-  assert.equal(formatCodexWindowsPath("/mnt/c/Work/Muster/hook.mjs"), "C:/Work/Muster/hook.mjs");
-  assert.equal(formatCodexWindowsPath("/tmp/CaseSensitive/Muster/hook.mjs"), "/tmp/CaseSensitive/Muster/hook.mjs");
+  for (const [host, input, expected] of [
+    ["native Windows uppercase drive", "C:\\Work\\Muster\\hook.mjs", "C:/Work/Muster/hook.mjs"],
+    ["native Windows lowercase drive", "c:\\Work\\Muster\\hook.mjs", "C:/Work/Muster/hook.mjs"],
+    ["WSL drive mount", "/mnt/c/Work/Muster/hook.mjs", "C:/Work/Muster/hook.mjs"],
+    ["native POSIX", "/tmp/CaseSensitive/Muster/hook.mjs", "/tmp/CaseSensitive/Muster/hook.mjs"]
+  ]) assert.equal(formatCodexWindowsPath(input), expected, host);
 });
 
 test("Codex install refreshes an older installed plugin version", async () => {

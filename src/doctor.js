@@ -407,16 +407,24 @@ export async function runDoctor({ root, home, exec } = {}) {
   // state (e.g. missing installed_plugins.json) as a skip rather than a failure.
   {
     const manifestPath = join(base, "vendor/manifest.yaml");
-    const raw = await readFile(manifestPath, "utf8").catch(() => null);
-    if (raw === null) {
-      checks.push({ name: "vendor-note-staleness", ok: true, detail: "no vendor/manifest.yaml — skip" });
+    let raw;
+    let readError;
+    try { raw = await readFile(manifestPath, "utf8"); } catch (error) { readError = error; }
+    if (readError) {
+      const reason = readError.code === "ENOENT" ? "missing" : "unreadable";
+      checks.push({ name: "vendor-note-staleness", ok: false, detail: `vendor/manifest.yaml ${reason}: ${readError.message}` });
     } else {
       let manifest;
-      try { manifest = parseYaml(raw); } catch { manifest = null; }
-      const sources = manifest?.sources;
-      if (!Array.isArray(sources)) {
-        checks.push({ name: "vendor-note-staleness", ok: true, detail: "manifest unparsable — skip" });
+      let parseError;
+      try { manifest = parseYaml(raw); } catch (error) { parseError = error; }
+      if (parseError) {
+        checks.push({ name: "vendor-note-staleness", ok: false, detail: `vendor/manifest.yaml unparsable: ${parseError.message}` });
       } else {
+        if (!manifest || !Array.isArray(manifest.sources)) {
+          checks.push({ name: "vendor-note-staleness", ok: false, detail: "vendor/manifest.yaml invalid: manifest.sources must be an array" });
+          return { ok: checks.every(c => c.ok), checks };
+        }
+        const sources = manifest.sources;
         const notes = extractVendorNotes(raw, sources);
         if (notes.length === 0) {
           checks.push({ name: "vendor-note-staleness", ok: true, detail: "no commit-sha notes found" });

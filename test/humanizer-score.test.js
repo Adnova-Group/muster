@@ -40,6 +40,18 @@ test("threshold is configurable", () => {
   assert.equal(scoreHumanness(text, { threshold: 90 }).passing, true);
 });
 
+for (const threshold of [-1, 101, NaN, Infinity, -Infinity]) {
+  test(`threshold rejects ${String(threshold)}`, () => {
+    assert.throws(() => scoreHumanness("Plain text.", { threshold }), /finite number between 0 and 100/);
+  });
+}
+
+for (const threshold of [0, 100]) {
+  test(`threshold accepts boundary ${threshold}`, () => {
+    assert.equal(scoreHumanness("Plain text.", { threshold }).threshold, threshold);
+  });
+}
+
 test("empty input scores a perfect 100", () => {
   assert.equal(scoreHumanness("").score, 100);
   assert.equal(scoreHumanness(null).score, 100);

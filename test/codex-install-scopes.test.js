@@ -31,6 +31,34 @@ test("Codex uninstall retains the shared plugin until the final managed scope is
   assert.equal(calls.filter(call => call === "plugin remove muster@muster").length, 1);
 });
 
+test("Codex uninstall preserves receipts when plugin removal fails and succeeds on retry", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-plugin-remove-retry-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), calls = [];
+  let removalAttempts = 0;
+  const execFile = async (_bin, args) => {
+    const command = args.join(" ");
+    calls.push(command);
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [localMusterMarketplace] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    if (command === "plugin remove muster@muster" && ++removalAttempts === 1) throw new Error("plugin removal failed");
+    return { stdout: "" };
+  };
+  await runCodexInstall({ cwd, home, repoRoot, execFile });
+  const registryPath = join(home, ".codex", "muster", "install-scopes.json");
+  const profilePath = join(cwd, ".codex", "agents", "muster-builder.toml");
+  const hookPath = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
+  const before = await Promise.all([registryPath, profilePath, hookPath].map(path => readFile(path, "utf8")));
+
+  await assert.rejects(() => runCodexUninstall({ cwd, home, execFile }), /plugin removal failed/);
+  assert.deepEqual(await Promise.all([registryPath, profilePath, hookPath].map(path => readFile(path, "utf8"))), before);
+  const removed = await runCodexUninstall({ cwd, home, execFile });
+  assert.equal(removed.plugin.removed, true);
+  assert.equal(removalAttempts, 2);
+  assert.equal(calls.filter(call => call === "plugin remove muster@muster").length, 2);
+  await assert.rejects(() => readFile(profilePath, "utf8"));
+});
+
 test("Codex managed-scope registry retains the plugin across multiple projects in either uninstall order", async () => {
   for (const order of [["a", "b"], ["b", "a"]]) {
     const tmp = await mkdtemp(join(tmpdir(), "muster-codex-project-registry-")), home = join(tmp, "home"), calls = [];

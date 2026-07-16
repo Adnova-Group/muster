@@ -67,7 +67,9 @@ async function readScopeRegistry(home) {
   const path = scopeRegistryPath(home), present = await safeExists(path);
   if (!present) return { path, present: false, entries: [] };
   const registry = await readJson(path);
-  if (registry?.format !== 1 || !Array.isArray(registry.entries)) throw new Error(`Codex managed-scope registry is invalid: ${path}`);
+  if (registry?.format !== 1 || registry.owner !== "muster" || !Array.isArray(registry.entries)) {
+    throw new Error(`Codex managed-scope registry ownership is invalid: ${path}`);
+  }
   const entries = [], seen = new Set();
   for (const entry of registry.entries) {
     if (!entry || !["project", "user"].includes(entry.scope) || typeof entry.configDir !== "string" || !isAbsolute(entry.configDir)) {
@@ -834,6 +836,7 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
         if (removeHookConfig) await removeSafe(hookConfigPath);
         else await atomicWriteSafe(hookConfigPath, JSON.stringify(hookConfig, null, 2) + "\n");
       }
+      if (removePlugin) await run(execFile, ["plugin", "remove", CODEX_PLUGIN]);
     } catch (error) {
       await restoreFilesystem(originals, changed);
       throw error;
@@ -842,7 +845,6 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
       await ordinaryDirectoryPath(empty);
       await rmdir(empty);
     } catch { /* preserve non-empty user content */ }
-    if (removePlugin) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN]); } catch { /* already absent is idempotent */ }
   };
   if (dryRun) await uninstallScope(await readScopeRegistry(home));
   else await withScopeRegistryTransaction(home, uninstallScope);

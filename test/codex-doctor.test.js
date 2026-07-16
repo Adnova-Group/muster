@@ -3,13 +3,31 @@
 // diagnostics, symlinked-scope rejection, and the MCP handshake check.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
-import { runCodexDoctor } from "../src/codex-doctor.js";
+import { runCodexDoctor, runMcpHandshake } from "../src/codex-doctor.js";
 import { repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+
+function fakeMcpChild() {
+  const child = new EventEmitter();
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.killed = false;
+  child.killCalls = 0;
+  child.stdinEndCalls = 0;
+  child.stdinWriteCalls = 0;
+  const end = child.stdin.end.bind(child.stdin), write = child.stdin.write.bind(child.stdin);
+  child.stdin.end = (...args) => { child.stdinEndCalls += 1; return end(...args); };
+  child.stdin.write = (...args) => { child.stdinWriteCalls += 1; return write(...args); };
+  child.kill = () => { child.killed = true; child.killCalls += 1; };
+  return child;
+}
 
 test("Codex doctor reports project/user hook overlap without claiming cross-copy dedupe", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-overlap-"));
@@ -177,4 +195,69 @@ test("Codex doctor reports MCP launch and tool-count handshake failures", async 
     assert.equal(handshake?.ok, false, label);
     assert.match(handshake?.detail || "", expected, label);
   }
+});
+
+test("Codex MCP handshake directly cleans up every terminal protocol path", async () => {
+  const cases = [
+    ["missing stdio", child => { child.stderr = null; }, child => {}, /did not expose stdio/],
+    ["invalid JSON", child => {}, child => child.stdout.write("not-json\n"), /invalid JSON-RPC/],
+    ["initialize RPC error", child => {}, child => child.stdout.write('{"id":1,"error":{"message":"no init"}}\n'), /initialize failed: no init/],
+    ["initialize missing result", child => {}, child => child.stdout.write('{"id":1}\n'), /initialize failed: missing result/],
+    ["tools RPC error", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"error":{"message":"no tools"}}\n'), /tools\/list failed: no tools/],
+    ["tools missing array", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{}}\n'), /returned no tools array/],
+    ["child error", child => {}, child => child.emit("error", new Error("child broke")), /child broke/],
+    ["stdout error", child => {}, child => child.stdout.emit("error", new Error("stdout broke")), /stdout broke/],
+    ["stderr error", child => {}, child => child.stderr.emit("error", new Error("stderr broke")), /stderr broke/],
+    ["stdin error", child => {}, child => child.stdin.emit("error", new Error("stdin broke")), /stdin broke/],
+    ["early exit", child => {}, child => { child.stderr.write("server exploded"); child.emit("exit", 7, null); }, /exited before tools\/list \(7\): server exploded/]
+  ];
+  for (const [label, configure, terminate, expected] of cases) {
+    const child = fakeMcpChild();
+    configure(child);
+    const result = runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, timeoutMs: 1_000, spawnProcess: () => {
+      queueMicrotask(() => terminate(child));
+      return child;
+    }});
+    await assert.rejects(result, expected, label);
+    assert.equal(child.killCalls, 1, `${label} must kill exactly once`);
+    if (child.stdin) {
+      assert.equal(child.stdin.writableEnded, true, `${label} must close stdin`);
+      assert.equal(child.stdinEndCalls, 1, `${label} must close stdin exactly once`);
+    }
+  }
+
+  const timedOut = fakeMcpChild();
+  await assert.rejects(runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, timeoutMs: 1, spawnProcess: () => timedOut }), /timed out after 1ms/);
+  assert.equal(timedOut.killCalls, 1);
+  assert.equal(timedOut.stdin.writableEnded, true);
+  assert.equal(timedOut.stdinEndCalls, 1);
+
+  const noChild = new Error("spawn failed");
+  await assert.rejects(runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, spawnProcess: () => { throw noChild; } }), error => error === noChild);
+});
+
+test("Codex MCP handshake handles synchronous stdin failure with cleanup and settles only once", async () => {
+  const writeFailure = fakeMcpChild();
+  writeFailure.stdin.write = () => { throw new Error("write failed"); };
+  await assert.rejects(runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, spawnProcess: () => writeFailure }), /write failed/);
+  assert.equal(writeFailure.killCalls, 1);
+  assert.equal(writeFailure.stdin.writableEnded, true);
+  assert.equal(writeFailure.stdinEndCalls, 1);
+
+  const child = fakeMcpChild();
+  const result = runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, spawnProcess: () => {
+    queueMicrotask(() => {
+      child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{"tools":[{"name":"one"}]}}\n{"id":1,"result":{}}\n');
+      child.stderr.write("late stderr");
+      child.emit("exit", 9, null);
+      child.emit("error", new Error("late child error"));
+      child.stdin.emit("error", new Error("late stdin error"));
+    });
+    return child;
+  }});
+  assert.deepEqual(await result, { initialized: true, tools: [{ name: "one" }] });
+  assert.equal(child.killCalls, 1);
+  assert.equal(child.stdin.writableEnded, true);
+  assert.equal(child.stdinEndCalls, 1);
+  assert.equal(child.stdinWriteCalls, 3);
 });

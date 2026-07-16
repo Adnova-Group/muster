@@ -229,6 +229,24 @@ test("Codex validation guard rejects any tracked .codex file that embeds a machi
   }
 });
 
+test("Codex validation guard's quote-anchored machine-path pattern does not trip on an unquoted drive-letter-looking substring in code", async () => {
+  // Contrast with the test above: a QUOTED "/home/..." value is a leaked
+  // machine path and must fail closed. This same "gitdir:" + drive-letter
+  // shape appearing unquoted -- as it would in a regex literal or comment,
+  // not a quoted config value -- is ordinary product code and must pass
+  // without forcing a cosmetic rewrite (see codex/hooks/muster-hook.mjs's
+  // gitDirLooksLikeWorktree, which relies on exactly this).
+  const targetPath = join(repoRoot, ".codex", "agents", "muster-surgeon.toml");
+  const backup = await readFile(targetPath, "utf8");
+  await writeFile(targetPath, `${backup}\n# example: gitdir: C:\\Users\\example\\worktrees\\example is unquoted code-like text, not a quoted config value\n`);
+  try {
+    const { stdout } = await execFile("node", ["scripts/check-codex.mjs"], { cwd: repoRoot });
+    assert.match(stdout, /"ok": true/);
+  } finally {
+    await writeFile(targetPath, backup);
+  }
+});
+
 test("Codex reasoning accept-list stays in single-source-of-truth parity with the frozen profileToml generator", async () => {
   // src/codex-release.js is FROZEN this wave, so its profileToml override
   // accept-list can't be refactored into a shared export; this parses both

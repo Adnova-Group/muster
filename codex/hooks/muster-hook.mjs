@@ -32,12 +32,12 @@ function gitRoot(cwd) {
 }
 function gitDirLooksLikeWorktree(root) {
   if (!root) return false;
-  // Written as `[ \t]*` (not `\s`) so the literal source text never contains
-  // a `<letter>:<backslash>` substring -- avoids a false-positive hit from
-  // scripts/check-codex.mjs's tracked-file absolute-path guard (and the
-  // review-gate's `grep -E '.../[A-Za-z]:[\\/]'` acceptance check), which
-  // would otherwise misread this regex literal as a baked Windows path.
-  try { return /^gitdir:[ \t]*.+[/\\]worktrees[/\\]/m.test(readFileSync(join(root, ".git"), "utf8")); }
+  // Not a machine-specific path: scripts/check-codex.mjs's tracked-file
+  // absolute-path guard is quote-anchored (a quote char must immediately
+  // precede the drive-letter/home/mnt/Users prefix), so this unquoted regex
+  // literal does not trip it -- see test/codex.test.js's dedicated fixture
+  // test proving exactly that.
+  try { return /^gitdir:\s*.+[/\\]worktrees[/\\]/m.test(readFileSync(join(root, ".git"), "utf8")); }
   catch { return false; }
 }
 function state(cwd) {

@@ -26,7 +26,7 @@ export async function collectScanFiles(root) {
       const full = join(dir, e.name);
       if (e.isDirectory()) {
         const rel = relative(root, full).replaceAll("\\", "/");
-        if (!SCAN_SKIP_DIRS.has(e.name) && rel !== ".agents/plugins/releases") await walk(full);
+        if (!SCAN_SKIP_DIRS.has(e.name) && rel !== ".agents/plugins/plugin") await walk(full);
         continue;
       }
       if (!e.isFile()) continue;

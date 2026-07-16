@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { codexAvailable } from "./codex-inventory.js";
-import { resolveCodexRelease } from "./codex-release.js";
+import { generateCodexProfiles } from "./codex-release.js";
 import { processAlive, processStartIdentity } from "./codex-lock.js";
 
 const execFileDefault = promisify(execFileCb);
@@ -459,7 +459,7 @@ function shellCommand(path) {
   return { command: `node ${posix}`, commandWindows: `node "${windows}"` };
 }
 
-async function prepareHooks({ scope, cwd, home, hookSourceRoot, generation, bootstrapDigest }) {
+async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion }) {
   const dir = configDir(scope, cwd, home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
   await ordinaryDirectoryPath(dir);
@@ -503,7 +503,7 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, generation, boot
   return {
     dir, runtimeDir, manifestPath, manifestExists, configPath, configExists, config,
     staleFiles: (previous?.files || []).filter(file => !HOOK_FILES.includes(file)),
-    manifest: { format: 1, owner: "muster", files: HOOK_FILES, generation, bootstrapDigest, hookHash: hookHash.digest("hex"), hookConfigCreated: previous?.hookConfigCreated ?? !configExists, hookGroups },
+    manifest: { format: 1, owner: "muster", files: HOOK_FILES, packageVersion, hookHash: hookHash.digest("hex"), hookConfigCreated: previous?.hookConfigCreated ?? !configExists, hookGroups },
     sourceFiles
   };
 }
@@ -583,22 +583,38 @@ async function registerPlugin(execFile, dryRun, repoRoot) {
   }
 }
 
+// Wave 2 teardown: profile materialization no longer reads a committed,
+// pre-built generation. `generateCodexProfiles` (src/codex-release.js) is a
+// pure, dependency-free reader of the frozen codex/agents.manifest.json plus
+// its markdown sources, so `.codex/agents/` (the CONSTRAINT-protected
+// project-scope surface the model-tiering wave depends on) always works with
+// no build step, independent of the heavier plugin build below.
+async function profileSource(root, isPluginRoot) {
+  if (isPluginRoot) {
+    const dir = join(root, "agents");
+    const files = await profileFiles(dir);
+    return { files, read: file => readFile(join(dir, file), "utf8") };
+  }
+  const generated = await generateCodexProfiles(root);
+  return { files: [...generated.keys()].sort(), read: async file => generated.get(file) };
+}
+
 export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
-  const selected = pluginRoot
-    ? { metadata: JSON.parse(await readSafe(join(dirname(root), "release.json"))), releaseRoot: dirname(root) }
-    : await resolveCodexRelease(root);
-  const distributionRoot = pluginRoot ? resolve(selected.releaseRoot, "../../../..") : root;
-  const pointer = JSON.parse(await readSafe(join(distributionRoot, ".agents", "plugins", "marketplace.json")));
-  const bootstrapDigest = pointer?.musterBootstrap?.digest;
-  if (!/^[a-f0-9]{64}$/.test(selected.metadata?.generation || "") || !/^[a-f0-9]{64}$/.test(bootstrapDigest || "")) {
-    throw new Error("Codex installation source is missing a coherent release generation/bootstrap contract");
-  }
-  const source = pluginRoot ? join(root, "agents") : selected.profilesRoot;
-  const files = await profileFiles(source);
+  const packageVersion = JSON.parse(await readSafe(join(root, "package.json"))).version;
+  if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex installation source is missing a coherent package version");
+  const { files, read: readProfile } = await profileSource(root, pluginRoot);
   if (!files.length) throw new Error("Codex profiles are missing; run npm run build:codex first");
+  // The richer Codex "plugin" (skills/commands/MCP) is generated fresh at
+  // install time into `<distributionRoot>/.agents/plugins/`, a gitignored
+  // staging directory alongside muster's own source — never into a
+  // git-tracked path. The other install-time-generation target this wave
+  // names (the user's CODEX_HOME) is already where scope="user" profile
+  // TOMLs land via `agentsDir`/`configDir` above; the plugin tree does not
+  // need a second CODEX_HOME copy of itself per scope.
+  const distributionRoot = pluginRoot ? resolve(root, "..") : root;
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
   await ordinaryDirectoryPath(configDir(scope, cwd, home));
   await ordinaryDirectoryPath(dir);
@@ -606,7 +622,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const manifestExists = await safeExists(manifestPath);
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
   const hookSourceRoot = pluginRoot ? join(root, "runtime", "install-hooks") : join(root, "codex", "hooks");
-  const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, generation: selected.metadata.generation, bootstrapDigest });
+  const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
   const staleFiles = managedFiles.filter(file => !files.includes(file));
   for (const file of files) {
@@ -614,7 +630,18 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     if (await safeExists(destination) && !managed.has(resolve(destination))) throw new Error(`Codex profile conflict: ${destination}. Move it or remove it, then rerun muster install codex.`);
   }
   const present = await codexAvailable({ execFile });
-  if (present && !dryRun) await existingMusterMarketplace(execFile, distributionRoot);
+  if (present && !dryRun) {
+    await existingMusterMarketplace(execFile, distributionRoot);
+    if (!pluginRoot) {
+      // buildCodexPlugin is itself idempotent (skips regeneration when
+      // outDir already holds a current-version plugin), so this fires an
+      // esbuild rebuild only when actually needed — including for the many
+      // tests whose actual subject is unrelated registry/hook transaction
+      // behavior, not plugin generation.
+      const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
+      await buildCodexPlugin({ root, outDir: join(distributionRoot, ".agents", "plugins") });
+    }
+  }
   const planned = [
     ...files.map(file => ({ op: "write", path: join(dir, file) })),
     ...staleFiles.map(file => ({ op: "remove", path: join(dir, file) })),
@@ -635,7 +662,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         for (const file of files) {
           const destination = join(dir, file);
           await snapshot(originals, changed, destination);
-          await atomicWriteSafe(destination, await readFile(join(source, file), "utf8"));
+          await atomicWriteSafe(destination, await readProfile(file));
         }
         for (const file of staleFiles) {
           const destination = join(dir, file);
@@ -643,7 +670,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           await removeSafe(destination);
         }
         await snapshot(originals, changed, manifestPath);
-        await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, generation: selected.metadata.generation, bootstrapDigest }, null, 2) + "\n");
+        await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, packageVersion }, null, 2) + "\n");
         for (const [file, sourcePath] of hooks.sourceFiles) {
           const destination = join(hooks.runtimeDir, file);
           await snapshot(originals, changed, destination);

@@ -1,16 +1,29 @@
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import {
+  cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CODEX_MODEL_POLICY } from "../src/codex.js";
-import { assertRegularFile, assertRegularTree, prepareCodexBootstrap, publishCodexRelease } from "../src/codex-release.js";
+import { assertRegularTree, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
-const pluginParent = join(root, ".agents", "plugins");
-let stagingRoot, plugin, runtime, profiles, modeDir, internalSkillDir, pkg, mapping, published, pointerScheduled = false;
-
-const policy = CODEX_MODEL_POLICY;
+// Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
+//
+// Generation stages into a fresh directory on the *native* filesystem
+// (os.tmpdir(), i.e. Linux tmpfs in this project's usual WSL2 environment)
+// rather than under `outDir`. Confirmed root cause: on a WSL2 drvfs (/mnt/c)
+// mount, renaming a directory immediately after a large (several-hundred
+// file) write burst inside it can return a persistent spurious ENOENT — an
+// A/B test reproduced this both sandboxed and unsandboxed, ruling out
+// external interference; slowing every syscall down (as `strace` does) makes
+// it pass, but a 50-second bounded backoff on the same rename does not, which
+// rules out a simple short-lived handle/cache race too. This is drvfs-mount
+// state, not a Node or generation-logic defect. Staging on native tmpfs
+// avoids ever renaming a hot-written tree on that mount at all — the publish
+// step below copies the finished tree into place instead (see
+// publishCodexPlugin's docblock for why that no longer needs to be an atomic
+// rename).
 
 const modes = {
   "muster-plan": { command: "plan", purpose: "plan one outcome, assemble and validate a crew manifest, then stop for approval" },
@@ -26,39 +39,8 @@ const modes = {
   sprint: { command: "sprint", purpose: "legacy alias of muster-go-backlog" }
 };
 
-async function ensure(dir) { await mkdir(dir, { recursive: true }); }
-async function write(path, content) { await ensure(dirname(path)); await writeFile(path, content, "utf8"); }
-const sha256 = value => createHash("sha256").update(value).digest("hex");
-const leaseStaleMs = Math.max(1_000, Number(process.env.MUSTER_CODEX_BUILD_LEASE_STALE_MS) || 5 * 60 * 1000);
-function processAlive(pid) {
-  if (!Number.isInteger(pid) || pid < 1) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error.code === "EPERM"; }
-}
-async function cleanStaleStages() {
-  await ensure(pluginParent);
-  for (const entry of await readdir(pluginParent, { withFileTypes: true })) {
-    if (!entry.name.startsWith(".muster-build-")) continue;
-    const path = join(pluginParent, entry.name), stat = await lstat(path);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`stale Codex build stage must be an ordinary directory: ${path}`);
-    let lease = null;
-    try {
-      const leasePath = join(path, ".lease.json"), leaseStat = await lstat(leasePath);
-      if (leaseStat.isSymbolicLink() || !leaseStat.isFile()) throw new Error(`Codex build lease must be a regular file: ${leasePath}`);
-      lease = JSON.parse(await readFile(leasePath, "utf8"));
-    } catch (error) { if (error.code !== "ENOENT") throw error; }
-    const startedAt = Number(lease?.startedAt || stat.mtimeMs);
-    if (Date.now() - startedAt < leaseStaleMs || processAlive(Number(lease?.pid))) continue;
-    await assertRegularTree(path);
-    await rm(path, { recursive: true, force: true });
-  }
-}
-function frontmatter(text, field) {
-  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  const line = m?.[1].match(new RegExp(`^${field}:\\s*(.+)$`, "m"));
-  return line ? line[1].trim().replace(/^['"]|['"]$/g, "") : "";
-}
-function tomlMultiline(text) { return text.replace(/"""/g, '\\\"\\\"\\\"'); }
+function ensure(dir) { mkdirSync(dir, { recursive: true }); }
+function write(path, content) { ensure(dirname(path)); writeFileSync(path, content, "utf8"); }
 const codexModeNames = new Map([
   ["plan-backlog", "muster-plan-backlog"], ["go-backlog", "muster-go-backlog"],
   ["autopilot", "muster-go"], ["sprint", "muster-go-backlog"], ["run", "muster-plan"],
@@ -237,262 +219,210 @@ function codexSkill(source, id) {
   return header + binding + body.replace(/^\r?\n*/, "\n");
 }
 
-async function writeInternalRuntime(destination) {
+async function writeInternalRuntime(root, destination) {
   const tree = await assertRegularTree(join(destination, "internal-skills"));
   const metadata = JSON.stringify({ format: 1, files: tree.files }, null, 2) + "\n";
-  const digest = sha256(metadata);
-  const loader = (await readFile(join(root, "codex", "internal-asset-loader.mjs"), "utf8"))
+  const digest = createHash("sha256").update(metadata).digest("hex");
+  const loader = readFileSync(join(root, "codex", "internal-asset-loader.mjs"), "utf8")
     .replace("__MUSTER_INTERNAL_METADATA_DIGEST__", digest);
   if (loader.includes("__MUSTER_INTERNAL_METADATA_DIGEST__")) throw new Error("internal asset loader digest was not bound");
-  await Promise.all([
-    write(join(destination, "runtime", "internal-assets.json"), metadata),
-    write(join(destination, "runtime", "internal-asset-loader.mjs"), loader),
-    cp(join(root, "codex", "resolve-skill-provider.mjs"), join(destination, "runtime", "resolve-skill-provider.mjs"))
-  ]);
+  write(join(destination, "runtime", "internal-assets.json"), metadata);
+  write(join(destination, "runtime", "internal-asset-loader.mjs"), loader);
+  cpSync(join(root, "codex", "resolve-skill-provider.mjs"), join(destination, "runtime", "resolve-skill-provider.mjs"));
 }
-async function adaptPortedSkills(names) {
+async function adaptPortedSkills(internalSkillDir, names) {
   for (const name of names) {
     const id = codexSkillId(name);
     const path = join(internalSkillDir, id, "SKILL.md");
-    await write(path, codexSkill(await readFile(path, "utf8"), id));
+    write(path, codexSkill(readFileSync(path, "utf8"), id));
   }
 }
-function profileToml(id, source, config) {
-  const body = source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
-  const description = frontmatter(source, "description") || `${id} Muster specialist.`;
-  const defaultModel = policy[config.tier];
-  if (!defaultModel) throw new Error(`unknown Codex profile tier for ${id}: ${config.tier}`);
-  if (config.reasoning !== undefined && !["medium", "high", "xhigh"].includes(config.reasoning)) {
-    throw new Error(`invalid Codex profile reasoning override for ${id}: ${config.reasoning}`);
+
+// Generates the complete Codex plugin (skills, commands, MCP/runtime bundle,
+// agent profiles) into a fresh staging directory under `outDir`, then
+// publishes it as `outDir/plugin` with `outDir/marketplace.json` pointing at
+// it. `outDir` is caller-chosen and is never inside the git-tracked repo tree
+// content: the CLI entry below uses a gitignored repo-relative staging
+// directory; codex-install.js uses a directory under the user's CODEX_HOME.
+// Nothing this function does regenerates a payload git would ever see.
+//
+// The real fix for the drvfs (WSL2 9p) rename-after-write-burst race lives at
+// the actual rename call site (src/codex-release.js's renameWithRetry): a
+// short settle-and-retry of that one rename against its still-present source.
+// This outer retry is only a last-resort fallback for a full attempt that
+// fails for some other transient ENOENT (e.g. mid-generation, before the
+// publish rename); it should rarely if ever fire.
+//
+// Idempotent: skips regeneration entirely when `outDir` already holds a
+// published plugin whose packageVersion matches the current package.json.
+// This is the one shared implementation both the CLI entry below and
+// codex-install.js's install-time trigger use, so `npm run build:codex` /
+// `pretest` skip exactly like a `muster install codex` call does — neither
+// path had its own separate, possibly-diverging copy of this check before.
+// Known limitation: this compares only the package version, not file
+// content, so editing a source file without bumping the version will not by
+// itself trigger regeneration; delete `outDir` (or bump the version) to force
+// a fresh build.
+export async function buildCodexPlugin(options, retries = 1) {
+  const { root, outDir } = options;
+  const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+  try {
+    const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
+    if (current.packageVersion === packageVersion) return current;
+  } catch { /* nothing published yet, or what's there is stale/invalid: generate below */ }
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try { return await buildCodexPluginOnce(options); }
+    catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      lastError = error;
+    }
   }
-  if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) {
-    throw new Error(`invalid Codex profile model override for ${id}: ${config.model}`);
-  }
-  const model = { model: config.model ?? defaultModel.model, reasoning: config.reasoning ?? defaultModel.reasoning };
-  const isolation = config.readOnly
-    ? "Remain read-only. Do not edit files or run commands that mutate the workspace."
-    : "Before writing, verify the task is running in an isolated git worktree; do not write directly on a base branch.";
-  return [
-    `name = ${JSON.stringify(id)}`,
-    `description = ${JSON.stringify(description)}`,
-    `model = ${JSON.stringify(model.model)}`,
-    `model_reasoning_effort = ${JSON.stringify(model.reasoning)}`,
-    `sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`,
-    "developer_instructions = \"\"\"",
-    body,
-    "",
-    isolation,
-    "\"\"\"",
-    ""
-  ].join("\n");
+  throw new Error(`Codex plugin generation did not succeed after ${retries + 1} attempts: ${lastError.message}`, { cause: lastError });
 }
+
+async function buildCodexPluginOnce({ root, outDir }) {
+  ensure(outDir);
+  // Stage on the native filesystem, not under outDir — see the top-of-file
+  // comment. outDir itself may still be on drvfs (it usually is: the
+  // gitignored repo-relative staging dir, or a directory under CODEX_HOME);
+  // only the hot-written intermediate tree needs to avoid that mount.
+  const stagingRoot = mkdtempSync(join(tmpdir(), "muster-build-"));
+  try {
+    const plugin = join(stagingRoot, "plugin");
+    const runtime = join(plugin, "runtime");
+    const modeDir = join(plugin, "skills");
+    const internalSkillDir = join(plugin, "internal-skills");
+    for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"]) {
+      await assertRegularTree(join(root, source));
+    }
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    ensure(plugin); ensure(runtime);
+
+    rmAndCopy(join(root, "plugin", "commands"), join(plugin, "commands"));
+    rmAndCopy(join(root, "catalog"), join(plugin, "catalog"));
+    rmAndCopy(join(root, "pipelines"), join(plugin, "pipelines"));
+    rmAndCopy(join(root, "vendor"), join(plugin, "vendor"));
+    write(join(runtime, "codex-skill-adapter.md"), readFileSync(join(root, "codex", "skill-adapter.md"), "utf8"));
+    rmAndCopy(join(root, "codex", "hooks"), join(runtime, "install-hooks"));
+    write(join(runtime, "sprint-protocol.md"), readFileSync(join(root, "cowork", "sprint-protocol.md"), "utf8"));
+    const codexCatalogPath = join(plugin, "catalog", "builtins.muster.yaml");
+    write(
+      codexCatalogPath,
+      readFileSync(codexCatalogPath, "utf8").replace(
+        "blader/humanizer + StealthHumanizer (AI-tell removal)",
+        "blader/humanizer + rudra496/StealthHumanizer (AI-tell removal)"
+      )
+    );
+    for (const entry of readdirSync(join(plugin, "commands"), { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      const path = join(plugin, "commands", entry.name);
+      write(path, adaptCommandForCodex(bindBundledCodexCli(translateModeNames(readFileSync(path, "utf8"))), entry.name));
+    }
+    rmAndCopy(join(root, "plugin", "skills"), internalSkillDir);
+    rmAndCopy(join(root, "plugin", "builtins"), internalSkillDir, { merge: true });
+    for (const entry of readdirSync(join(root, "codex", "skill-assets"), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      rmAndCopy(join(root, "codex", "skill-assets", entry.name), join(internalSkillDir, entry.name), { merge: true });
+    }
+    const implementerPromptPath = join(internalSkillDir, "sp-subagents", "implementer-prompt.md");
+    write(
+      implementerPromptPath,
+      readFileSync(implementerPromptPath, "utf8").replace(
+        "full suite once before committing, not after every edit.",
+        "focused tests before committing; the parent runs the broad suite once at final verification."
+      )
+    );
+    const portedSkillNames = [...new Set([
+      ...readdirSync(join(root, "plugin", "skills"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name),
+      ...readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name)
+    ])];
+    for (const name of portedSkillNames.filter(name => name.startsWith("gsd-"))) {
+      renameSync(join(internalSkillDir, name), join(internalSkillDir, codexSkillId(name)));
+    }
+    for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster-gsd-verify-work", "wsh-signed-audit-trails-recipe"]) {
+      rmSync(join(internalSkillDir, name), { recursive: true, force: true });
+      rmAndCopy(join(root, "codex", "fallback-skills", name), join(internalSkillDir, name));
+    }
+    await adaptPortedSkills(internalSkillDir, portedSkillNames.filter(name => !name.startsWith("gsd-") && name !== "wsh-signed-audit-trails-recipe"));
+    await writeInternalRuntime(root, plugin);
+
+    for (const [name, mode] of Object.entries(modes)) write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode));
+    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Use for any glass-box Muster orchestration request: plan, implement, backlog, diagnose, audit, runner, capture, pipeline, crew, or wave workflow.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${agentWatchProtocol}`);
+
+    const profiles = await generateCodexProfiles(root);
+    for (const [name, content] of profiles) write(join(plugin, "agents", name), content);
+
+    ensure(runtime);
+    // The source entry point already carries an executable shebang. esbuild
+    // preserves it, so only inject createRequire for bundled CommonJS
+    // dependencies such as yaml; do not add another shebang. Bundled once and
+    // written to its single consumer location — no second identical build.
+    const requireBanner = 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);';
+    // codex-install.js dynamically imports this very module (build-codex.mjs,
+    // which pulls in the esbuild package) to trigger install-time plugin
+    // generation from an unbundled source/npm-package checkout. That branch
+    // never runs from inside a bundled plugin cache (it is gated on
+    // `!pluginRoot`), so keep esbuild and this script external instead of
+    // letting esbuild bundle a build tool — and a transitive copy of
+    // itself — into the runtime it produces.
+    const bundleOptions = { bundle: true, platform: "node", format: "esm", target: "node20", preserveSymlinks: true, external: ["esbuild", "../scripts/build-codex.mjs"] };
+    await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), banner: { js: requireBanner } });
+    const sharedMcpSource = readFileSync(join(root, "cowork", "mcp-server.mjs"), "utf8");
+    const codexMcpSource = sharedMcpSource
+      .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")
+      .replace("Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.", "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation.")
+      .replace('{ argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork\'s MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS).", "home", false) }', '{ argv: ["capabilities", "--codex"], ...S("Resolve every Muster role against enabled Codex plugins, skills, MCP servers, and custom-agent profiles.", "home", false) }')
+      .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]');
+    if (!codexMcpSource.includes('["capabilities", "--codex"]') || codexMcpSource.includes('["capabilities", "--cowork"]')) throw new Error("Codex MCP capability adapter was not applied");
+    if (!codexMcpSource.includes('muster_assess: { argv: ["assess", "--codex"]')) throw new Error("Codex MCP assess adapter was not applied");
+    await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
+    write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
+
+    write(join(plugin, ".mcp.json"), JSON.stringify({
+      mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
+    }, null, 2) + "\n");
+    write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({
+      name: "muster", version: pkg.version,
+      description: "Glass-box agentic orchestration for Codex: deterministic routing, skills, agents, pipelines, hooks, and MCP tools.",
+      author: { name: "Adnova Group", email: "rnbennett@gmail.com", url: "https://github.com/Adnova-Group" },
+      homepage: "https://adnova-group.github.io/muster/", repository: "https://github.com/Adnova-Group/muster", license: "Apache-2.0",
+      keywords: ["orchestration", "agents", "pipelines", "mcp", "codex"], skills: "./skills/", mcpServers: "./.mcp.json",
+      interface: { displayName: "Muster", shortDescription: "Glass-box agentic orchestration for Codex.", longDescription: "Muster provides deterministic routing, custom-agent profiles, pipeline workflows, and the complete MCP toolset.", developerName: "Adnova Group", category: "Productivity", capabilities: ["Read", "Write"], websiteURL: "https://adnova-group.github.io/muster/", defaultPrompt: ["Plan this feature with Muster.", "Run a Muster audit of this repository.", "Use Muster to clear this backlog."] }
+    }, null, 2) + "\n");
+
+    return publishCodexPlugin({
+      pluginsRoot: outDir,
+      stagedPlugin: plugin,
+      packageVersion: pkg.version,
+      marketplaceTemplate: {
+        name: "muster",
+        interface: { displayName: "Muster" },
+        plugins: [{
+          name: "muster",
+          source: { source: "local", path: "./plugin" },
+          policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+          category: "Productivity"
+        }]
+      }
+    });
+  } finally {
+    try { rmSync(stagingRoot, { recursive: true, force: true }); } catch { /* best-effort cleanup */ }
+  }
+}
+
+function rmAndCopy(source, destination, { merge = false } = {}) {
+  if (!merge) rmSync(destination, { recursive: true, force: true });
+  cpSync(source, destination, { recursive: true });
+}
+
 function modeSkill(name, mode) {
   return `---\nname: ${name}\ndescription: ${JSON.stringify(`Use for Muster orchestration when the user asks to ${mode.purpose}. Explicitly invoke with $${name}.`)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n\n${agentWatchProtocol}`;
 }
 
-async function buildBootstrapCandidate(destination) {
-  const wrapper = (header, kind, name) => `${header}\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Bootstrap delegates to the role and output contract in the validated selected release. -->\n\n# Immutable Muster bootstrap\n\nRun \`node \${PLUGIN_ROOT}/runtime/resolve-release.mjs ${kind} ${name}\`. The command revalidates the selected asset through a no-follow file descriptor and writes its verified contents to stdout. Follow those contents as the authoritative workflow; never follow a release pathname printed or inferred before validation. If resolution fails, stop with the diagnostic; never use a partial or unvalidated generation.\n`;
-  await cp(join(plugin, "agents"), join(destination, "agents"), { recursive: true });
-  const manifest = JSON.parse(await readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8"));
-  manifest.version = "0.0.0-bootstrap";
-  await write(join(destination, ".codex-plugin", "plugin.json"), JSON.stringify(manifest, null, 2) + "\n");
-  await write(join(destination, ".mcp.json"), JSON.stringify({ mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } } }, null, 2) + "\n");
-  await write(join(destination, "package.json"), JSON.stringify({ version: "0.0.0-bootstrap", private: true }, null, 2) + "\n");
-  await ensure(join(destination, "runtime"));
-  for (const name of await readdir(join(plugin, "skills"))) {
-    const source = await readFile(join(plugin, "skills", name, "SKILL.md"), "utf8");
-    const header = source.match(/^---\r?\n[\s\S]*?\r?\n---/)?.[0];
-    if (!header) throw new Error(`bootstrap skill lacks frontmatter: ${name}`);
-    await write(join(destination, "skills", name, "SKILL.md"), wrapper(header, "skill", name));
-  }
-  for (const name of await readdir(join(plugin, "internal-skills"))) {
-    const source = await readFile(join(plugin, "internal-skills", name, "SKILL.md"), "utf8");
-    const header = source.match(/^---\r?\n[\s\S]*?\r?\n---/)?.[0];
-    if (!header) throw new Error(`bootstrap internal skill lacks frontmatter: ${name}`);
-    await write(join(destination, "internal-skills", name, "SKILL.md"), wrapper(header, "internal-skill", name));
-  }
-  for (const file of await readdir(join(plugin, "commands"))) {
-    if (!file.endsWith(".md")) continue;
-    const source = await readFile(join(plugin, "commands", file), "utf8");
-    const header = source.match(/^---\r?\n[\s\S]*?\r?\n---/)?.[0] || "";
-    await write(join(destination, "commands", file), wrapper(header, "command", file.slice(0, -3)));
-  }
-  await Promise.all([
-    cp(join(root, "codex", "bootstrap", "resolve-release.mjs"), join(destination, "runtime", "resolve-release.mjs")),
-    cp(join(root, "codex", "bootstrap", "muster.mjs"), join(destination, "runtime", "muster.mjs")),
-    cp(join(root, "codex", "bootstrap", "muster-mcp.mjs"), join(destination, "runtime", "muster-mcp.mjs"))
-  ]);
-  await write(join(destination, "runtime", "codex-skill-adapter.md"), "# Immutable Muster bootstrap adapter\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs adapter`; it writes the no-follow, point-of-use revalidated adapter contents to stdout. Read and apply those contents.\n");
-  await write(join(destination, "runtime", "sprint-protocol.md"), "# Immutable Muster bootstrap protocol\n\nRun `node ${PLUGIN_ROOT}/runtime/resolve-release.mjs sprint`; it writes the no-follow, point-of-use revalidated protocol contents to stdout. Read and apply those contents.\n");
-  await write(join(destination, "runtime", "resolve-skill-provider.mjs"), `#!/usr/bin/env node\nimport { spawnSync } from "node:child_process";\nimport { dirname, join } from "node:path";\nimport { fileURLToPath } from "node:url";\nconst ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;\nconst PART = /^[A-Za-z0-9_.-]+$/;\nconst [source, id, asset] = process.argv.slice(2);\nif (!["builtin", "installed"].includes(source)) throw new Error(\`invalid skill provider source: \${JSON.stringify(source)}\`);\nif (!ID.test(id || "")) throw new Error(\`invalid skill provider id: \${JSON.stringify(id)}\`);\nif (source === "installed") {\n  if (asset !== undefined) throw new Error("installed skill providers do not expose bundled assets");\n  process.stdout.write(\`Invoke the already-enabled Codex skill explicitly as $\${id}.\\n\`);\n} else {\n  const args = [join(dirname(fileURLToPath(import.meta.url)), "resolve-release.mjs"), asset === undefined ? "internal-skill" : "internal-asset", id];\n  if (asset !== undefined) {\n    const parts = asset.split("/");\n    if (!parts.length || parts.some(part => !PART.test(part) || part === "." || part === "..")) throw new Error(\`invalid internal asset path: \${JSON.stringify(asset)}\`);\n    args.push(asset);\n  }\n  const result = spawnSync(process.execPath, args, { encoding: null });\n  if (result.status !== 0) { process.stderr.write(result.stderr || Buffer.alloc(0)); process.exitCode = result.status || 1; }\n  else process.stdout.write(result.stdout);\n}\n`);
-}
-
-try {
-await cleanStaleStages();
-stagingRoot = await mkdtemp(join(pluginParent, ".muster-build-"));
-await write(join(stagingRoot, ".lease.json"), JSON.stringify({ format: 1, pid: process.pid, startedAt: Date.now() }) + "\n");
-plugin = join(stagingRoot, "release", "plugin");
-runtime = join(plugin, "runtime");
-profiles = join(stagingRoot, "release", "profiles");
-modeDir = join(plugin, "skills");
-internalSkillDir = join(plugin, "internal-skills");
-for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"]) {
-  await assertRegularTree(join(root, source));
-}
-await assertRegularFile(join(root, "package.json"));
-pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-mapping = JSON.parse(await readFile(join(root, "codex", "agents.manifest.json"), "utf8"));
-await Promise.all([ensure(plugin), ensure(runtime)]);
-
-await Promise.all([
-  cp(join(root, "plugin", "commands"), join(plugin, "commands"), { recursive: true }),
-  cp(join(root, "catalog"), join(plugin, "catalog"), { recursive: true }),
-  cp(join(root, "pipelines"), join(plugin, "pipelines"), { recursive: true }),
-  cp(join(root, "vendor"), join(plugin, "vendor"), { recursive: true }),
-  cp(join(root, "codex", "skill-adapter.md"), join(runtime, "codex-skill-adapter.md")),
-  cp(join(root, "codex", "hooks"), join(runtime, "install-hooks"), { recursive: true }),
-  cp(join(root, "cowork", "sprint-protocol.md"), join(runtime, "sprint-protocol.md"))
-]);
-const codexCatalogPath = join(plugin, "catalog", "builtins.muster.yaml");
-await write(
-  codexCatalogPath,
-  (await readFile(codexCatalogPath, "utf8")).replace(
-    "blader/humanizer + StealthHumanizer (AI-tell removal)",
-    "blader/humanizer + rudra496/StealthHumanizer (AI-tell removal)"
-  )
-);
-for (const entry of await readdir(join(plugin, "commands"), { withFileTypes: true })) {
-  if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-  const path = join(plugin, "commands", entry.name);
-  await write(path, adaptCommandForCodex(bindBundledCodexCli(translateModeNames(await readFile(path, "utf8"))), entry.name));
-}
-await cp(join(root, "plugin", "skills"), internalSkillDir, { recursive: true });
-await cp(join(root, "plugin", "builtins"), internalSkillDir, { recursive: true });
-for (const entry of await readdir(join(root, "codex", "skill-assets"), { withFileTypes: true })) {
-  if (!entry.isDirectory()) continue;
-  await cp(join(root, "codex", "skill-assets", entry.name), join(internalSkillDir, entry.name), { recursive: true });
-}
-const implementerPromptPath = join(internalSkillDir, "sp-subagents", "implementer-prompt.md");
-await write(
-  implementerPromptPath,
-  (await readFile(implementerPromptPath, "utf8")).replace(
-    "full suite once before committing, not after every edit.",
-    "focused tests before committing; the parent runs the broad suite once at final verification."
-  )
-);
-const portedSkillNames = [...new Set([
-  ...(await readdir(join(root, "plugin", "skills"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name),
-  ...(await readdir(join(root, "plugin", "builtins"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name)
-])];
-for (const name of portedSkillNames.filter(name => name.startsWith("gsd-"))) {
-  await rename(join(internalSkillDir, name), join(internalSkillDir, codexSkillId(name)));
-}
-for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster-gsd-verify-work", "wsh-signed-audit-trails-recipe"]) {
-  await rm(join(internalSkillDir, name), { recursive: true, force: true });
-  await cp(join(root, "codex", "fallback-skills", name), join(internalSkillDir, name), { recursive: true });
-}
-await adaptPortedSkills(portedSkillNames.filter(name => !name.startsWith("gsd-") && name !== "wsh-signed-audit-trails-recipe"));
-await writeInternalRuntime(plugin);
-
-for (const [name, mode] of Object.entries(modes)) await write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode));
-await write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Use for any glass-box Muster orchestration request: plan, implement, backlog, diagnose, audit, runner, capture, pipeline, crew, or wave workflow.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${agentWatchProtocol}`);
-
-for (const [id, config] of Object.entries(mapping.agents)) {
-  const source = await readFile(join(root, config.source), "utf8");
-  const content = profileToml(id, source, config);
-  await Promise.all([
-    write(join(profiles, `${id}.toml`), content),
-    write(join(plugin, "agents", `${id}.toml`), content)
-  ]);
-}
-
-await ensure(runtime);
-// The source entry points already carry executable shebangs. esbuild preserves
-// them, so only inject createRequire for bundled CommonJS dependencies such as
-// yaml; do not add another shebang.
-const requireBanner = 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);';
-const bundleOptions = { bundle: true, platform: "node", format: "esm", target: "node20", preserveSymlinks: true };
-await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), banner: { js: requireBanner } });
-await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(plugin, "src", "cli.js"), banner: { js: requireBanner } });
-const sharedMcpSource = await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8");
-const codexMcpSource = sharedMcpSource
-  .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")
-  .replace("Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.", "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation.")
-  .replace('{ argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork\'s MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS).", "home", false) }', '{ argv: ["capabilities", "--codex"], ...S("Resolve every Muster role against enabled Codex plugins, skills, MCP servers, and custom-agent profiles.", "home", false) }')
-  .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]');
-if (!codexMcpSource.includes('["capabilities", "--codex"]') || codexMcpSource.includes('["capabilities", "--cowork"]')) throw new Error("Codex MCP capability adapter was not applied");
-if (!codexMcpSource.includes('muster_assess: { argv: ["assess", "--codex"]')) throw new Error("Codex MCP assess adapter was not applied");
-await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
-await write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
-await write(join(plugin, "src", "package.json"), JSON.stringify({ type: "module" }) + "\n");
-
-await write(join(plugin, ".mcp.json"), JSON.stringify({
-  mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
-}, null, 2) + "\n");
-await write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({
-  name: "muster", version: pkg.version,
-  description: "Glass-box agentic orchestration for Codex: deterministic routing, skills, agents, pipelines, hooks, and MCP tools.",
-  author: { name: "Adnova Group", email: "rnbennett@gmail.com", url: "https://github.com/Adnova-Group" },
-  homepage: "https://adnova-group.github.io/muster/", repository: "https://github.com/Adnova-Group/muster", license: "Apache-2.0",
-  keywords: ["orchestration", "agents", "pipelines", "mcp", "codex"], skills: "./skills/", mcpServers: "./.mcp.json",
-  interface: { displayName: "Muster", shortDescription: "Glass-box agentic orchestration for Codex.", longDescription: "Muster provides deterministic routing, custom-agent profiles, pipeline workflows, and the complete MCP toolset.", developerName: "Adnova Group", category: "Productivity", capabilities: ["Read", "Write"], websiteURL: "https://adnova-group.github.io/muster/", defaultPrompt: ["Plan this feature with Muster.", "Run a Muster audit of this repository.", "Use Muster to clear this backlog."] }
-}, null, 2) + "\n");
-
-const stagedBootstrap = join(stagingRoot, "bootstrap", "muster");
-await buildBootstrapCandidate(stagedBootstrap);
-const bootstrap = await prepareCodexBootstrap({
-  repoRoot: root,
-  stagedBootstrap,
-  allowMaintenance: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1"
-});
-
-published = await publishCodexRelease({
-  repoRoot: root,
-  stagedRelease: join(stagingRoot, "release"),
-  packageVersion: pkg.version,
-  bootstrapDigest: bootstrap.digest,
-  allowBootstrapMigration: process.env.MUSTER_CODEX_BOOTSTRAP_MAINTENANCE === "1",
-  deferFinalPointer: true,
-  marketplaceTemplate: {
-    name: "muster",
-    interface: { displayName: "Muster" },
-    plugins: [{
-      name: "muster",
-      source: { source: "local", path: "./.agents/plugins/bootstrap/muster" },
-      policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
-      category: "Productivity"
-    }]
-  }
-});
-const packageFiles = (pkg.files || []).filter(item => item !== ".agents" && !item.startsWith(".agents/"));
-const allSelections = (await readdir(join(root, ".agents", "plugins", "selections")))
-  .filter(name => /^\d{12}-[a-f0-9]{64}\.json$/.test(name)).sort().reverse();
-const initialGeneration = published.initialGeneration;
-const retainedGenerations = [];
-for (const generation of [published.generation, initialGeneration, ...allSelections.map(name => name.match(/-([a-f0-9]{64})\.json$/)[1])]) {
-  if (!retainedGenerations.includes(generation) && retainedGenerations.length < 3) retainedGenerations.push(generation);
-}
-const retainedSelections = [];
-for (const generation of retainedGenerations) {
-  const name = allSelections.find(candidate => candidate.endsWith(`-${generation}.json`));
-  if (!name) throw new Error(`Codex package LKG generation lacks a coherent selection: ${generation}`);
-  retainedSelections.push(name);
-}
-if (retainedGenerations.length < 1 || retainedGenerations.length > 3 || !retainedGenerations.includes(published.generation)) {
-  throw new Error("Codex package retention must contain only the selected generation and at most two LKG generations");
-}
-packageFiles.push(".agents/plugins/marketplace.json", ".agents/plugins/bootstrap/muster");
-packageFiles.push(...retainedSelections.map(name => `.agents/plugins/selections/${name}`));
-packageFiles.push(...retainedGenerations.map(generation => `.agents/plugins/releases/${generation}`));
-await write(join(root, "package.json"), JSON.stringify({ ...pkg, files: packageFiles }, null, 2) + "\n");
-await rm(stagingRoot, { recursive: true, force: true });
-stagingRoot = undefined;
-// This is deliberately the final synchronous publication action. Everything
-// readers need (release, selection, package inventory, and staging cleanup) is
-// complete before the marketplace pointer becomes visible.
-published.commitPointer();
-pointerScheduled = true;
-} finally {
-  if (stagingRoot) await rm(stagingRoot, { recursive: true, force: true });
-  if (published?.discardPointer && !pointerScheduled) await published.discardPointer();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const outDir = join(root, ".agents", "plugins");
+  const result = await buildCodexPlugin({ root, outDir });
+  process.stdout.write(`Codex plugin v${result.packageVersion} generated at ${result.pluginRoot}\n`);
 }

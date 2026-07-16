@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
-import { resolveCodexRelease } from "../src/codex-release.js";
+import { resolveCodexPlugin } from "../src/codex-release.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const selected = await resolveCodexRelease(root);
+const selected = await resolveCodexPlugin(root);
 const plugin = selected.pluginRoot;
 const profilesRoot = selected.profilesRoot;
 const fail = (message) => { throw new Error(`Codex validation: ${message}`); };
@@ -17,20 +17,10 @@ const json = async (path) => JSON.parse(await readFile(path, "utf8"));
 const [pkg, marketplace, manifest, mapping, upstreams, assetManifest] = await Promise.all([
   json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "codex/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
 ]);
-const advertisedGeneration = marketplace.plugins?.[0]?.source?.path?.match(/^\.\/\.agents\/plugins\/releases\/([a-f0-9]{64})\/plugin$/)?.[1];
 if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster"
-  || advertisedGeneration !== selected.generation
-  || !/^[a-f0-9]{64}$/.test(marketplace.musterBootstrap?.digest || "")
-  || !/^[a-f0-9]{64}$/.test(marketplace.musterBootstrap?.initialGeneration || "")) fail("marketplace does not expose the immutable Muster bootstrap contract");
-const selectionNames = (await readdir(join(root, ".agents", "plugins", "selections"))).filter(name => /^\d{12}-[a-f0-9]{64}\.json$/.test(name));
-let selectedContract = false;
-for (const name of selectionNames) {
-  const record = await json(join(root, ".agents", "plugins", "selections", name));
-  if (record.generation === selected.generation && record.bootstrapDigest === marketplace.musterBootstrap.digest) selectedContract = true;
-  if (record.bootstrapDigest !== marketplace.musterBootstrap.digest) fail(`selection ${name} does not match the immutable bootstrap digest`);
-}
-if (!selectedContract) fail("selected release lacks a direct selector coherent with the marketplace/bootstrap digest");
+  || marketplace.plugins?.[0]?.source?.path !== "./plugin") fail("marketplace does not point at the generated Muster plugin");
 if (manifest.name !== "muster" || manifest.version !== pkg.version) fail("plugin manifest version is not package version");
+if (manifest.version !== selected.packageVersion) fail("resolved Codex plugin package version does not match package.json");
 if (!manifest.skills || !manifest.mcpServers || manifest.hooks !== undefined) fail("plugin manifest must expose skills and MCP without advertising inert plugin-bundled hooks");
 if (Object.keys(mapping.agents || {}).length !== CODEX_COUNTS.agents) fail("mapping does not contain all agent profiles");
 for (const family of ["superpowers", "wshobson-agents", "gsd-core", "atomic-codex", "book-genesis-codex", "humanizer-sources", "stealthhumanizer", "promptfoo", "muster"]) {
@@ -65,12 +55,6 @@ for (const [id, config] of Object.entries(mapping.agents)) {
 }
 const skills = new Set(await dirs(join(plugin, "skills")));
 const internalSkills = new Set(await dirs(join(plugin, "internal-skills")));
-const bootstrap = join(root, ".agents", "plugins", "bootstrap", "muster");
-const bootstrapSkills = new Set(await dirs(join(bootstrap, "skills")));
-if (bootstrapSkills.size !== skills.size || [...skills].some(name => !bootstrapSkills.has(name))) fail("immutable bootstrap skill surface differs from the selected release");
-const bootstrapInternalSkills = new Set(await dirs(join(bootstrap, "internal-skills")));
-if (bootstrapInternalSkills.size !== internalSkills.size || [...internalSkills].some(name => !bootstrapInternalSkills.has(name))) fail("immutable bootstrap internal skill surface differs from the selected release");
-for (const file of ["runtime/resolve-release.mjs", "runtime/muster.mjs", "runtime/muster-mcp.mjs", "bootstrap.json"]) await stat(join(bootstrap, file)).catch(() => fail(`missing bootstrap ${file}`));
 const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture"];
 const aliases = ["run", "autopilot", "sprint"];
 for (const name of [...modes, ...aliases]) if (!skills.has(name)) fail(`missing mode skill ${name}`);
@@ -149,7 +133,7 @@ for (const [name, path] of [
 if (native.length !== CODEX_COUNTS.nativeSkills || builtins.length !== CODEX_COUNTS.builtinSkills) fail("source skill count drift");
 if (skills.size !== CODEX_COUNTS.publicSkills || internalSkills.size !== CODEX_COUNTS.internalSkills) fail("Codex public/internal skill surface count drift");
 if ((await readdir(join(root, "pipelines"))).filter(n => n.endsWith(".yaml")).length !== CODEX_COUNTS.pipelines) fail("pipeline count drift");
-for (const file of ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/codex-skill-adapter.md", "runtime/resolve-skill-provider.mjs", "runtime/internal-asset-loader.mjs", "runtime/internal-assets.json", "src/cli.js", "src/package.json", "package.json", ".mcp.json", "internal-skills"]) await stat(join(plugin, file)).catch(() => fail(`missing ${file}`));
+for (const file of ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/codex-skill-adapter.md", "runtime/resolve-skill-provider.mjs", "runtime/internal-asset-loader.mjs", "runtime/internal-assets.json", "package.json", ".mcp.json", "internal-skills"]) await stat(join(plugin, file)).catch(() => fail(`missing ${file}`));
 const adapter = await readFile(join(plugin, "runtime", "codex-skill-adapter.md"), "utf8");
 if (!adapter.includes("resolve-skill-provider.mjs <chosen.source> <chosen.id>") || adapter.includes("read `${PLUGIN_ROOT}/internal-skills/${chosen.id}")) fail("adapter bypasses the verified provider resolver");
 const providerResolver = await readFile(join(plugin, "runtime", "resolve-skill-provider.mjs"), "utf8");

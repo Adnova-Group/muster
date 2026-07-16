@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
-import { resolveCodexRelease } from "./codex-release.js";
+import { resolveCodexPlugin } from "./codex-release.js";
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -185,18 +185,16 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // plugin root itself. Support both layouts without requiring npm at runtime.
   const isPluginRoot = await exists(join(base, ".codex-plugin", "plugin.json"));
   let selected = null;
-  let distributionRoot = base;
   if (isPluginRoot) {
     try {
-      const releaseRoot = dirname(base), metadata = JSON.parse(await readFile(join(releaseRoot, "release.json"), "utf8"));
-      selected = { generation: metadata.generation, metadata, releaseRoot, pluginRoot: base, profilesRoot: join(base, "agents") };
-      distributionRoot = resolve(releaseRoot, "../../../..");
+      const pkg = JSON.parse(await readFile(join(base, "package.json"), "utf8"));
+      selected = { packageVersion: pkg.version, pluginRoot: base, profilesRoot: join(base, "agents") };
     } catch { /* plugin checks below report malformed cache layout */ }
   } else {
-    try { selected = await resolveCodexRelease(base); }
-    catch { /* report the selected-release failure through the plugin/profile checks */ }
+    try { selected = await resolveCodexPlugin(base); }
+    catch { /* report the selected-plugin failure through the plugin/profile checks */ }
   }
-  const plugin = isPluginRoot ? base : (selected?.pluginRoot || join(base, ".agents", "plugins", "releases", "missing", "plugin"));
+  const plugin = isPluginRoot ? base : (selected?.pluginRoot || join(base, ".agents", "plugins", "plugin"));
   const checks = [];
   const available = await codexAvailable({ execFile });
   checks.push({ name: "codex-cli", ok: available, detail: available ? "codex detected on PATH" : "codex not found — profiles can be installed, plugin registration is skipped" });
@@ -235,8 +233,6 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     checks.push({ name: "codex-mcp-handshake", ok: false, detail: `bundled MCP initialize/tools/list handshake failed: ${error.message}; ${mcpVisibilityNote}` });
   }
   if (selected) {
-    let bootstrapDigest = null;
-    try { bootstrapDigest = JSON.parse(await readFile(join(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest; } catch { /* selected release check reports the root failure */ }
     const installations = [];
     for (const dir of hookHomes) {
       try {
@@ -245,20 +241,18 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
           ? await readRegularJson(manifestPath)
           : JSON.parse(await readFile(manifestPath, "utf8"));
         if (!owner) throw new Error(`managed profile manifest is missing: ${manifestPath}`);
-        installations.push({ dir, ok: owner.owner === "muster" && owner.generation === selected.generation && owner.bootstrapDigest === bootstrapDigest });
+        installations.push({ dir, ok: owner.owner === "muster" && owner.packageVersion === selected.packageVersion });
       } catch {
         if (scopeHomes.get(dir)) installations.push({ dir, ok: false });
       }
     }
     const stale = installations.filter(item => !item.ok);
     checks.push({ name: "codex-install-generation", ok: stale.length === 0, detail: stale.length
-      ? `installed profiles do not match selected generation/bootstrap at: ${stale.map(item => item.dir).join(", ")}; rerun muster install codex`
-      : installations.length ? `${installations.length} managed scope(s) match generation ${selected.generation}` : "no managed profile scopes detected" });
+      ? `installed profiles do not match the selected package version at: ${stale.map(item => item.dir).join(", ")}; rerun muster install codex`
+      : installations.length ? `${installations.length} managed scope(s) match package version ${selected.packageVersion}` : "no managed profile scopes detected" });
   }
   const hookStatuses = [];
   const staleHookScopes = [];
-  let selectedBootstrapDigest = null;
-  try { selectedBootstrapDigest = JSON.parse(await readFile(join(distributionRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap?.digest; } catch { /* reported as stale below */ }
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
@@ -280,8 +274,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       if (runtime.some(file => file === null)) throw new Error(`managed hook runtime is missing: ${dir}`);
       const hash = createHash("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
-      const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.generation === selected?.generation
-        && owner.bootstrapDigest === selectedBootstrapDigest && owner.hookHash === hash.digest("hex");
+      const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.packageVersion === selected?.packageVersion
+        && owner.hookHash === hash.digest("hex");
       if (coherent) hookStatuses.push(dir); else staleHookScopes.push(dir);
     } catch { staleHookScopes.push(dir); }
   }
@@ -289,11 +283,17 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   checks.push({ name: "codex-hooks", ok: Boolean(hookStatus), detail: hookStatus
     ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks`
     : staleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${staleHookScopes.join(", ")}; rerun muster install codex for each scope` : "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
+  // The hook runtime itself has no cross-copy dedupe (each installed copy
+  // independently emits its own event context; wave 1 removed the CODEX_HOME
+  // bookkeeping that used to attempt it — see codex.test.js's "no cross-copy
+  // dedupe" coverage). This check only reports whether both copies are
+  // coherent with their exact ownership manifest, not whether output is
+  // deduplicated.
   checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0, detail: staleHookScopes.length
-    ? "Project/user hook copies are not generation/hash/exact-group coherent, so exactly-once dedupe cannot be asserted; refresh every stale scope"
+    ? "Project/user hook copies are not hash/exact-group coherent with their ownership manifest; refresh every stale scope"
     : hookStatuses.length > 1
-    ? "Muster hooks are installed at both project and user scopes; atomic runtime dedupe suppresses identical logical event emissions across copies"
-    : "No project and user Muster hook overlap detected; runtime dedupe remains active for repeated logical events" });
+    ? "Muster hooks are installed at both project and user scopes; each copy independently emits its own event context (there is no cross-copy dedupe, and each event's output is idempotent)"
+    : "No project and user Muster hook overlap detected" });
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
     const inventory = await readCodexInventory({ cwd, codexHome, execFile });

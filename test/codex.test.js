@@ -11,12 +11,12 @@ import { readCodexInventory } from "../src/codex-inventory.js";
 import { formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { adaptCatalogForCodex, codexFallbackSkillId } from "../src/codex-catalog.js";
-import { resolveCodexRelease } from "../src/codex-release.js";
+import { resolveCodexPlugin } from "../src/codex-release.js";
 
 const root = new URL("../", import.meta.url);
 const repoRoot = new URL("../", import.meta.url).pathname;
-const selectedRelease = await resolveCodexRelease(repoRoot);
-const selectedPluginRoot = selectedRelease.pluginRoot;
+const selectedPlugin = await resolveCodexPlugin(repoRoot);
+const selectedPluginRoot = selectedPlugin.pluginRoot;
 const response = stdout => async () => ({ stdout });
 const execFile = promisify(execFileCb);
 const canonicalMusterMarketplace = {
@@ -137,7 +137,7 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
     assert.equal(config.reasoning ?? CODEX_MODEL_POLICY[config.tier].reasoning, policy.reasoning, `${id} reasoning policy`);
     assert.equal(config.model ?? CODEX_MODEL_POLICY[config.tier].model, policy.model, `${id} model policy`);
     assert.equal(Boolean(config.readOnly), policy.readOnly, `${id} read-only policy`);
-    const profile = await readFile(join(selectedRelease.releaseRoot, "profiles", `${id}.toml`), "utf8");
+    const profile = await readFile(join(selectedPlugin.profilesRoot, `${id}.toml`), "utf8");
     assert.match(profile, new RegExp(`model = ${JSON.stringify(policy.model)}`), `${id} model`);
     assert.match(profile, new RegExp(`model_reasoning_effort = ${JSON.stringify(policy.reasoning)}`), `${id} reasoning`);
     assert.match(profile, new RegExp(`sandbox_mode = ${JSON.stringify(policy.readOnly ? "read-only" : "workspace-write")}`), `${id} sandbox`);
@@ -229,16 +229,13 @@ test("packaged Codex MCP runtime registers the shared 21 tools", async () => {
   assert.doesNotMatch(runtime, /"capabilities", "--cowork"/);
 });
 
-test("npm package contents include the selected immutable Codex generation", async () => {
+test("npm package ships install-time generation sources, not a committed Codex payload", async () => {
   const { stdout } = await execFile("npm", ["pack", "--dry-run", "--json"], { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 });
-  const files = new Set(JSON.parse(stdout)[0].files.map(file => file.path));
-  const release = `.agents/plugins/releases/${selectedRelease.generation}`;
-  for (const path of [
-    ".agents/plugins/marketplace.json",
-    `${release}/release.json`,
-    `${release}/plugin/runtime/muster.mjs`,
-    `${release}/profiles/muster-builder.toml`
-  ]) assert.ok(files.has(path), `npm package is missing ${path}`);
+  const files = JSON.parse(stdout)[0].files.map(file => file.path);
+  const paths = new Set(files);
+  assert.ok(paths.has("scripts/build-codex.mjs"), "npm package must ship the install-time Codex generation script");
+  assert.ok(paths.has("codex/agents.manifest.json"), "npm package must ship the frozen Codex agent mapping");
+  assert.ok(!files.some(path => path.startsWith(".agents/")), "npm package must not ship a pre-generated .agents/ payload");
 });
 
 test("packaged Codex CLI runs without a consumer npm install", async () => {
@@ -478,12 +475,10 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
   const agents = join(cwd, ".codex", "agents");
   const manifest = JSON.parse(await readFile(join(agents, ".muster-managed.json"), "utf8"));
   assert.equal(manifest.files.length, CODEX_COUNTS.agents);
-  assert.equal(manifest.generation, selectedRelease.generation);
-  assert.equal(manifest.bootstrapDigest, JSON.parse(await readFile(join(repoRoot, ".agents", "plugins", "marketplace.json"), "utf8")).musterBootstrap.digest);
+  assert.equal(manifest.packageVersion, selectedPlugin.packageVersion);
   assert.equal(result.hooks, 7);
   const hookManifest = JSON.parse(await readFile(join(cwd, ".codex", "muster", ".muster-managed.json"), "utf8"));
-  assert.equal(hookManifest.generation, selectedRelease.generation);
-  assert.equal(hookManifest.bootstrapDigest, manifest.bootstrapDigest);
+  assert.equal(hookManifest.packageVersion, selectedPlugin.packageVersion);
   assert.match(hookManifest.hookHash, /^[a-f0-9]{64}$/);
   const hooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
   assert.ok(hooks.hooks.Stop.some(group => group.hooks?.[0]?.command === "printf user-hook"));
@@ -714,7 +709,7 @@ test("Codex user-scope install and uninstall use CODEX_HOME without disturbing u
   await assert.rejects(() => readFile(join(target, "agents", "muster-builder.toml"), "utf8"));
 });
 
-test("Codex doctor reports project/user hook overlap as a deduped advisory", async () => {
+test("Codex doctor reports project/user hook overlap without claiming cross-copy dedupe", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-overlap-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
   const absent = async () => { throw new Error("not found"); };
@@ -723,7 +718,7 @@ test("Codex doctor reports project/user hook overlap as a deduped advisory", asy
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
   const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
   assert.equal(overlap?.ok, true);
-  assert.match(overlap?.detail || "", /project and user.*runtime dedupe/i);
+  assert.match(overlap?.detail || "", /project and user.*no cross-copy dedupe/i);
 });
 
 test("Codex doctor requires exact owned hook groups from source and cache installs", async () => {
@@ -767,11 +762,11 @@ test("Codex doctor inspects stale registered project scopes outside the current 
 
   const profileManifestPath = join(profilesScope, ".codex", "agents", ".muster-managed.json");
   const profileManifest = JSON.parse(await readFile(profileManifestPath, "utf8"));
-  profileManifest.generation = "0".repeat(64);
+  profileManifest.packageVersion = "0.0.0-stale";
   await writeFile(profileManifestPath, JSON.stringify(profileManifest));
   const hookManifestPath = join(hooksScope, ".codex", "muster", ".muster-managed.json");
   const hookManifest = JSON.parse(await readFile(hookManifestPath, "utf8"));
-  hookManifest.generation = "0".repeat(64);
+  hookManifest.packageVersion = "0.0.0-stale";
   await writeFile(hookManifestPath, JSON.stringify(hookManifest));
 
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
@@ -1205,8 +1200,12 @@ test("Codex install accepts the exact local marketplace across WSL drive-path ca
 test("Codex install rejects a case-distinct POSIX marketplace root", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-case-root-")), trusted = join(tmp, "development"), attacker = join(tmp, "DEVELOPMENT");
   await mkdir(trusted); await mkdir(attacker);
-  await cp(join(repoRoot, ".agents"), join(trusted, ".agents"), { recursive: true });
+  // generateCodexProfiles (install-time-generation) needs enough of the
+  // source tree to succeed so the marketplace-trust check below is the first
+  // thing that legitimately fails, not a missing-source error.
   await cp(join(repoRoot, "codex"), join(trusted, "codex"), { recursive: true });
+  await cp(join(repoRoot, "plugin", "agents"), join(trusted, "plugin", "agents"), { recursive: true });
+  await cp(join(repoRoot, "package.json"), join(trusted, "package.json"));
   const marketplace = { name: "muster", root: attacker, marketplaceSource: { sourceType: "local", source: attacker } };
   const execFile = async (_bin, args) => {
     if (args[0] === "--version") return { stdout: "codex-cli test" };

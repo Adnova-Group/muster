@@ -31,6 +31,7 @@
   },
   "files": [
     "src",
+    "scripts",
     "plugin",
     ".claude-plugin",
     "codex",
@@ -41,19 +42,14 @@
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    "NOTICE",
-    ".agents/plugins/marketplace.json",
-    ".agents/plugins/bootstrap/muster",
-    ".agents/plugins/selections/000000000040-abcd6ca1f0c261116a0f842576ef4134164d65e2f4efa8373c2a1ec8d93689d2.json",
-    ".agents/plugins/selections/000000000037-49cc57c130726754c4d98f8bd14d2413967f6d755790dc14e35ab46ed4936774.json",
-    ".agents/plugins/releases/abcd6ca1f0c261116a0f842576ef4134164d65e2f4efa8373c2a1ec8d93689d2",
-    ".agents/plugins/releases/49cc57c130726754c4d98f8bd14d2413967f6d755790dc14e35ab46ed4936774"
+    "NOTICE"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "test": "node --test",
+    "pretest": "node scripts/build-codex.mjs",
     "eval:router": "node eval/router/grade.mjs",
     "eval:modes": "node eval/modes/grade.mjs",
     "build:codex": "node scripts/build-codex.mjs",
@@ -62,9 +58,7 @@
     "prepublishOnly": "npm run build:codex && npm run check:codex && node --test"
   },
   "dependencies": {
+    "esbuild": "^0.25.12",
     "yaml": "^2.5.0"
-  },
-  "devDependencies": {
-    "esbuild": "^0.25.12"
   }
 }

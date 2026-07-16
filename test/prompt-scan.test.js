@@ -22,7 +22,8 @@ import {
 } from "../src/prompt-scan.js";
 
 // ── C2: SCAN_SKIP_DIRS exclusion ─────────────────────────────────────────────
-// node_modules, .git, dist, and generated .agents releases are in SCAN_SKIP_DIRS — files inside them must
+// node_modules, .git, dist are in SCAN_SKIP_DIRS, and the generated .agents/plugins/plugin tree is
+// excluded by name — files inside them must
 // never appear in the results, even if they carry a text extension.
 test("C2: collectScanFiles excludes dependency, VCS, build, and generated release directories", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "muster-ps-c2-"));
@@ -40,8 +41,8 @@ test("C2: collectScanFiles excludes dependency, VCS, build, and generated releas
     writeFileSync(path.join(dir, ".git", "skip-me.md"), "# should be excluded");
     mkdirSync(path.join(dir, "dist"), { recursive: true });
     writeFileSync(path.join(dir, "dist", "skip-me.md"), "# should be excluded");
-    mkdirSync(path.join(dir, ".agents", "plugins", "releases"), { recursive: true });
-    writeFileSync(path.join(dir, ".agents", "plugins", "releases", "skip-me.md"), "# immutable generated output");
+    mkdirSync(path.join(dir, ".agents", "plugins", "plugin"), { recursive: true });
+    writeFileSync(path.join(dir, ".agents", "plugins", "plugin", "skip-me.md"), "# generated Codex plugin output");
     writeFileSync(path.join(dir, ".agents", "user-authored.md"), "# visible agent guidance");
 
     // Create a file that SHOULD be included.
@@ -63,7 +64,7 @@ test("C2: collectScanFiles excludes dependency, VCS, build, and generated releas
       !paths.some((p) => p.startsWith("dist")),
       "dist must be excluded",
     );
-    assert.ok(!paths.some((p) => p.startsWith(".agents/plugins/releases")), "only generated releases must be excluded");
+    assert.ok(!paths.some((p) => p.startsWith(".agents/plugins/plugin")), "only the generated Codex plugin must be excluded");
     assert.ok(paths.includes(path.join(".agents", "user-authored.md")), "other .agents prompts must remain visible");
   } finally {
     rmSync(dir, { recursive: true, force: true });

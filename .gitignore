@@ -1,7 +1,9 @@
 node_modules/
 .muster/
-.agents/plugins/leases/
-.agents/plugins/.lease-registry.lock
+# The Codex plugin (skills/MCP/commands + generated agent profiles) is
+# generated at build/install time (scripts/build-codex.mjs, src/codex-install.js)
+# into this staging directory. Nothing here is ever committed.
+.agents/
 *.log
 tmp/
 cowork-dispatch-spec.json

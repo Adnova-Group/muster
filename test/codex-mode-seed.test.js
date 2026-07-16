@@ -5,11 +5,11 @@ import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { resolveCodexRelease } from "../src/codex-release.js";
+import { resolveCodexPlugin } from "../src/codex-release.js";
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
-const selectedPluginRoot = (await resolveCodexRelease(repoRoot)).pluginRoot;
+const selectedPluginRoot = (await resolveCodexPlugin(repoRoot)).pluginRoot;
 const cli = join(repoRoot, "src", "cli.js");
 
 async function configureCodex(project, plugins = []) {

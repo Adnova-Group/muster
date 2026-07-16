@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { link, lstat, mkdir, open, readFile, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
@@ -88,6 +88,58 @@ async function scopeEntry(scope, cwd, home) {
 
 const sameScopeEntry = (left, right) => left.scope === right.scope && left.configDir === right.configDir;
 const registryText = entries => JSON.stringify({ format: 1, owner: "muster", entries }, null, 2) + "\n";
+
+// Walks `path` from its root, matching each segment against its parent's
+// real directory listing (preferring an exact match, falling back to a
+// case-insensitive one) to recover the actual on-disk casing. On a
+// case-insensitive mount (e.g. WSL's /mnt/c DrvFS), `realpath` does not
+// correct casing -- see codex-install.js's WSL-path tests -- so this is the
+// only reliable way to learn which casing is canonical.
+async function canonicalDiskCasing(path, { readdirFn = readdir } = {}) {
+  const absolute = resolve(path), root = parse(absolute).root;
+  let current = root;
+  for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+    let names;
+    try { names = await readdirFn(current); }
+    catch (error) { if (error.code === "ENOENT" || error.code === "ENOTDIR") return null; throw error; }
+    const match = names.includes(part) ? part : names.find(name => name.toLowerCase() === part.toLowerCase());
+    if (match === undefined) return null;
+    current = join(current, match);
+  }
+  return current;
+}
+
+// Reconciles a managed-scope registry's entries: prunes any entry whose
+// configDir no longer exists on disk (an orphaned deleted-worktree scope),
+// and collapses entries that are the SAME physical directory (matched by
+// dev/ino -- filesystem-agnostic, unlike a string/case comparison, and safe
+// on both case-sensitive and case-insensitive mounts) into one survivor
+// cased however the filesystem actually has it. Order-preserving: the
+// surviving entry appears at its first physical occurrence.
+export async function reconcileScopeRegistryEntries(entries, { lstatFn = lstat, readdirFn = readdir, onPrune = () => {} } = {}) {
+  const survivors = new Map();
+  for (const entry of entries) {
+    let stat;
+    try { stat = await lstatFn(entry.configDir); }
+    catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+      // Accepted ambiguity: an unmounted-but-still-valid path (e.g. a WSL
+      // /mnt/* drive not yet attached) looks identical to a truly deleted
+      // one, so an ENOENT prune here is only ever a best guess -- the
+      // caller-visible listing (see runCodexInstall's prunedScopes) is the
+      // mitigation, not a fix, for that ambiguity.
+      onPrune({ scope: entry.scope, configDir: entry.configDir, reason: "configDir missing" });
+      continue;
+    }
+    if (typeof stat.isDirectory === "function" ? !stat.isDirectory() : !stat.isDirectory) continue;
+    if (typeof stat.isSymbolicLink === "function" ? stat.isSymbolicLink() : stat.isSymbolicLink) continue;
+    const key = `${entry.scope}:${stat.dev}:${stat.ino}`;
+    if (survivors.has(key)) continue;
+    const canonicalConfigDir = await canonicalDiskCasing(entry.configDir, { readdirFn }) ?? entry.configDir;
+    survivors.set(key, { scope: entry.scope, configDir: canonicalConfigDir });
+  }
+  return [...survivors.values()];
+}
 
 async function scopeLockText(token) {
   return JSON.stringify({
@@ -651,6 +703,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   ];
   let originals, changed;
   let actions = [];
+  const prunedScopes = [];
   if (!dryRun) {
     originals = new Map(); changed = [];
     await withScopeRegistryTransaction(home, async registry => {
@@ -658,7 +711,19 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       try {
         const currentScope = await scopeEntry(scope, cwd, home);
         await snapshot(originals, changed, registry.path);
-        await atomicWriteSafe(registry.path, registryText([...registry.entries.filter(entry => !sameScopeEntry(entry, currentScope)), currentScope]));
+        // Reconcile on every install: prune scopes whose configDir no
+        // longer exists (deleted worktrees) and collapse any case-duplicate
+        // scope (e.g. a WSL /mnt/c path registered under two castings) into
+        // one canonical-case survivor, alongside filtering + re-adding the
+        // current scope so a plain reinstall does not itself create one.
+        // Every pruned entry is reported below (path + reason) instead of
+        // removed silently, since a prune is a best-effort guess (see
+        // reconcileScopeRegistryEntries).
+        const reconciled = await reconcileScopeRegistryEntries(
+          [...registry.entries.filter(entry => !sameScopeEntry(entry, currentScope)), currentScope],
+          { onPrune: pruned => prunedScopes.push(pruned) }
+        );
+        await atomicWriteSafe(registry.path, registryText(reconciled));
         for (const file of files) {
           const destination = join(dir, file);
           await snapshot(originals, changed, destination);
@@ -695,6 +760,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     actions = present ? await registerPlugin(execFile, true, distributionRoot) : [];
   }
   return { ok: true, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
+    prunedScopes,
     plugin: present ? { registered: !dryRun, actions } : { registered: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${scope}`] };
 }

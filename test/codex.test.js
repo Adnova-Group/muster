@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY, codexModelForRole, codexModelForTier } from "../src/codex.js";
 import { readCodexInventory } from "../src/codex-inventory.js";
-import { formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
+import { formatCodexWindowsPath, reconcileScopeRegistryEntries, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { adaptCatalogForCodex, codexFallbackSkillId } from "../src/codex-catalog.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
@@ -91,7 +91,8 @@ test("Codex policy preserves the conceptual Fable fallback without routine max e
     haiku: { model: "gpt-5.6-luna", reasoning: "high" },
     sonnet: { model: "gpt-5.6-luna", reasoning: "xhigh" },
     opus: { model: "gpt-5.6-sol", reasoning: "high" },
-    fable: { model: "gpt-5.6-sol", reasoning: "high" }
+    fable: { model: "gpt-5.6-sol", reasoning: "high" },
+    "luna-xhigh": { model: "gpt-5.6-luna", reasoning: "xhigh" }
   });
   assert.deepEqual(codexModelForTier("haiku"), CODEX_MODEL_POLICY.haiku);
   assert.deepEqual(codexModelForTier("fable"), codexModelForTier("opus"), "Fable adapts to the user's Sol/high preference");
@@ -103,15 +104,15 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
   const mapping = JSON.parse(await readFile(join(repoRoot, "codex", "agents.manifest.json"), "utf8"));
   const expected = {
     "muster-investigator": { tier: "haiku", model: "gpt-5.6-luna", reasoning: "high", readOnly: true },
-    "muster-surgeon": { tier: "sonnet", model: "gpt-5.6-terra", reasoning: "high", readOnly: false },
-    "wsh-api-documenter": { tier: "sonnet", model: "gpt-5.6-terra", reasoning: "high", readOnly: false },
-    "wsh-tutorial-engineer": { tier: "sonnet", model: "gpt-5.6-terra", reasoning: "high", readOnly: false },
-    "muster-reviewer": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: true },
-    "wsh-code-reviewer": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: true },
-    "wsh-business-analyst": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
-    "wsh-content-marketer": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
-    "wsh-customer-support": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
-    "wsh-data-scientist": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "muster-surgeon": { tier: "luna-xhigh", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-api-documenter": { tier: "luna-xhigh", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-tutorial-engineer": { tier: "luna-xhigh", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "muster-reviewer": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "high", readOnly: true },
+    "wsh-code-reviewer": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "high", readOnly: true },
+    "wsh-business-analyst": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-content-marketer": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-customer-support": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-data-scientist": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
     "muster-builder": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
     "muster-runner": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
     "wsh-debugger": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
@@ -145,9 +146,108 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
   assert.ok(Object.values(mapping.agents).every(config => (config.reasoning ?? CODEX_MODEL_POLICY[config.tier].reasoning) !== "max"), "no role uses routine max effort");
 });
 
+test("Codex xhigh reservation is cost-based: allowed only on the Luna model, never on Terra, strategist unchanged", async () => {
+  const lunaXhighAgents = ["muster-surgeon", "wsh-api-documenter", "wsh-tutorial-engineer"];
+  const profileNames = await readdir(selectedPlugin.profilesRoot);
+  const tomlNames = profileNames.filter(name => name.endsWith(".toml"));
+  assert.equal(tomlNames.length, CODEX_COUNTS.agents);
+  const xhighProfiles = [];
+  for (const name of tomlNames) {
+    const text = await readFile(join(selectedPlugin.profilesRoot, name), "utf8");
+    assert.doesNotMatch(text, /gpt-5\.6-terra/, `${name} must never carry the reserved Terra model`);
+    if (/model_reasoning_effort = "xhigh"/.test(text)) {
+      assert.match(text, /model = "gpt-5\.6-luna"/, `${name} carries xhigh only if its model is Luna`);
+      xhighProfiles.push(name.replace(/\.toml$/, ""));
+    }
+  }
+  assert.deepEqual(xhighProfiles.sort(), [...lunaXhighAgents].sort(), "xhigh appears only on the three retiered Luna profiles");
+  const strategistProfile = await readFile(join(selectedPlugin.profilesRoot, "muster-strategist.toml"), "utf8");
+  assert.match(strategistProfile, /model = "gpt-5\.6-sol"/, "muster-strategist stays on Sol");
+  assert.match(strategistProfile, /model_reasoning_effort = "high"/, "muster-strategist stays at high effort, not xhigh");
+});
+
 test("Codex validation accepts removal of the obsolete static profile files", async () => {
   const { stdout } = await execFile("node", ["scripts/check-codex.mjs"], { cwd: repoRoot });
   assert.match(stdout, /"ok": true/);
+});
+
+// Both hooks.json tests below must tolerate hooks.json being ABSENT before
+// they run -- a fresh clone or CI checkout never has it (it is
+// install-generated and gitignored) -- and restore whatever the prior state
+// actually was (present-with-content, or absent), not assume presence.
+const readHooksConfigBackup = async hooksConfigPath => readFile(hooksConfigPath, "utf8").catch(error => {
+  if (error.code === "ENOENT") return null;
+  throw error;
+});
+const restoreHooksConfig = async (hooksConfigPath, backup) => {
+  if (backup === null) await rm(hooksConfigPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+  else await writeFile(hooksConfigPath, backup);
+};
+
+test("Codex validation skips the hooks.json coherence check when it is absent (fresh clone pre-install)", async () => {
+  const hooksConfigPath = join(repoRoot, ".codex", "hooks.json");
+  const backup = await readHooksConfigBackup(hooksConfigPath);
+  await rm(hooksConfigPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+  try {
+    const { stdout } = await execFile("node", ["scripts/check-codex.mjs"], { cwd: repoRoot });
+    assert.match(stdout, /"ok": true/);
+    assert.match(stdout, /hooks\.json is absent/);
+  } finally {
+    await restoreHooksConfig(hooksConfigPath, backup);
+  }
+});
+
+test("Codex validation rejects a tracked project hooks.json baked for a different checkout", async () => {
+  const hooksConfigPath = join(repoRoot, ".codex", "hooks.json");
+  const backup = await readHooksConfigBackup(hooksConfigPath);
+  const base = backup ? JSON.parse(backup) : { hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node 'placeholder'" }] }] } };
+  for (const groups of Object.values(base.hooks)) for (const group of groups) for (const hook of group.hooks || []) {
+    hook.command = "node '/some/other/checkout/.codex/muster/hooks/muster-hook.mjs'";
+  }
+  await writeFile(hooksConfigPath, JSON.stringify(base, null, 2));
+  try {
+    await assert.rejects(
+      () => execFile("node", ["scripts/check-codex.mjs"], { cwd: repoRoot }),
+      error => /points outside this checkout/.test(error.stderr || error.message)
+    );
+  } finally {
+    await restoreHooksConfig(hooksConfigPath, backup);
+  }
+});
+
+test("Codex validation guard rejects any tracked .codex file that embeds a machine-specific absolute path", async () => {
+  const targetPath = join(repoRoot, ".codex", "agents", "muster-surgeon.toml");
+  const backup = await readFile(targetPath, "utf8");
+  await writeFile(targetPath, `${backup}\n# leaked path: "/home/example/leak"\n`);
+  try {
+    await assert.rejects(
+      () => execFile("node", ["scripts/check-codex.mjs"], { cwd: repoRoot }),
+      error => /machine-specific absolute path/.test(error.stderr || error.message)
+    );
+  } finally {
+    await writeFile(targetPath, backup);
+  }
+});
+
+test("Codex reasoning accept-list stays in single-source-of-truth parity with the frozen profileToml generator", async () => {
+  // src/codex-release.js is FROZEN this wave, so its profileToml override
+  // accept-list can't be refactored into a shared export; this parses both
+  // literals directly and asserts check-codex.mjs never accepts a reasoning
+  // override profileToml would reject (which would otherwise pass
+  // validation and then crash profile generation).
+  const extractAcceptList = (source, label) => {
+    const match = source.match(/\[((?:\s*"[a-z]+"\s*,?)+)\]\.includes\(config\.reasoning\)/);
+    if (!match) throw new Error(`could not locate the ${label} reasoning accept-list literal`);
+    return match[1].match(/"[a-z]+"/g).map(entry => entry.slice(1, -1));
+  };
+  const checkCodexSource = await readFile(join(repoRoot, "scripts", "check-codex.mjs"), "utf8");
+  const releaseSource = await readFile(join(repoRoot, "src", "codex-release.js"), "utf8");
+  const checkCodexList = extractAcceptList(checkCodexSource, "check-codex.mjs");
+  const releaseList = extractAcceptList(releaseSource, "codex-release.js profileToml");
+  for (const value of checkCodexList) {
+    assert.ok(releaseList.includes(value), `check-codex.mjs accepts reasoning override ${JSON.stringify(value)} that profileToml would reject`);
+  }
+  assert.deepEqual(new Set(checkCodexList), new Set(releaseList), "check-codex.mjs and profileToml reasoning accept-lists have diverged");
 });
 
 test("Codex adapter preserves shared cap and Fable fallback resolution", () => {
@@ -925,6 +1025,54 @@ test("Codex concurrent installs preserve every managed project owner", async () 
   await Promise.all(projects.map(cwd => runCodexInstall({ cwd, home, repoRoot: selectedPluginRoot, execFile: absent })));
   const registry = JSON.parse(await readFile(join(home, ".codex", "muster", "install-scopes.json"), "utf8"));
   assert.deepEqual(new Set(registry.entries.map(entry => entry.configDir)), new Set(projects.map(cwd => join(cwd, ".codex"))));
+});
+
+test("Codex install prunes install-scopes.json entries whose configDir no longer exists on disk", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-registry-prune-"));
+  const home = join(tmp, "home"), keep = join(tmp, "project-keep"), gone = join(tmp, "project-gone");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ cwd: keep, home, repoRoot, execFile: absent });
+  await runCodexInstall({ cwd: gone, home, repoRoot, execFile: absent });
+  const before = JSON.parse(await readFile(join(home, ".codex", "muster", "install-scopes.json"), "utf8"));
+  assert.equal(before.entries.length, 2, "both scopes are registered before the orphaned worktree is removed");
+
+  // Simulates a deleted git worktree: the .codex directory it registered is
+  // gone, but the registry entry survives until the next install reconciles it.
+  await rm(gone, { recursive: true, force: true });
+  const result = await runCodexInstall({ cwd: keep, home, repoRoot, execFile: absent });
+  const after = JSON.parse(await readFile(join(home, ".codex", "muster", "install-scopes.json"), "utf8"));
+  assert.deepEqual(after.entries.map(entry => entry.configDir), [join(keep, ".codex")], "the orphaned scope is pruned on the next install");
+  assert.deepEqual(result.prunedScopes, [{ scope: "project", configDir: join(gone, ".codex"), reason: "configDir missing" }],
+    "the pruned entry is reported in the install summary instead of removed silently");
+});
+
+test("Codex install-scope reconciliation case-normalizes duplicate scopes, keeping the canonical on-disk casing", async () => {
+  // Models a case-insensitive filesystem (e.g. WSL's /mnt/c DrvFS mount)
+  // where two differently-cased configDir strings are the SAME physical
+  // directory: lstat succeeds for either casing and reports identical
+  // dev/ino, and readdir reveals the one true on-disk casing.
+  const fakeStats = new Map([
+    ["/case/project", { dev: 1, ino: 100 }],
+    ["/other/dir", { dev: 1, ino: 200 }]
+  ]);
+  const lstatFn = async path => {
+    const stat = fakeStats.get(path.toLowerCase());
+    if (!stat) { const error = new Error("no such file"); error.code = "ENOENT"; throw error; }
+    return { dev: stat.dev, ino: stat.ino, isDirectory: () => true, isSymbolicLink: () => false };
+  };
+  const diskTree = new Map([["/", ["case", "other"]], ["/case", ["Project"]], ["/other", ["dir"]]]);
+  const readdirFn = async dir => diskTree.get(dir) || [];
+  const entries = [
+    { scope: "project", configDir: "/case/project" },
+    { scope: "project", configDir: "/case/Project" },
+    { scope: "project", configDir: "/case/deleted-worktree" },
+    { scope: "project", configDir: "/other/dir" }
+  ];
+  const reconciled = await reconcileScopeRegistryEntries(entries, { lstatFn, readdirFn });
+  assert.deepEqual(reconciled, [
+    { scope: "project", configDir: "/case/Project" },
+    { scope: "project", configDir: "/other/dir" }
+  ]);
 });
 
 test("Codex concurrent uninstalls retain the plugin until one final removal", async () => {

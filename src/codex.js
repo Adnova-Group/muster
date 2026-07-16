@@ -8,7 +8,19 @@ export const CODEX_MODEL_POLICY = Object.freeze({
   opus: Object.freeze({ model: "gpt-5.6-sol", reasoning: "high" }),
   // Preserve the conceptual peak tier and its fallback resolution while using
   // the user's preferred Sol/high adapter policy instead of routine max effort.
-  fable: Object.freeze({ model: "gpt-5.6-sol", reasoning: "high" })
+  fable: Object.freeze({ model: "gpt-5.6-sol", reasoning: "high" }),
+  // Fix-2 retier (user-approved amendment, evidence: DeepSWE v1.1 luna/low
+  // 1.5% pass@1 vs luna/xhigh 56.9% pass@1 at $1.54/task): an ADDED lane, not
+  // a change to `sonnet` above. The same narrowly scoped, mechanical
+  // Sonnet-sourced Codex agents (muster-surgeon, wsh-api-documenter,
+  // wsh-tutorial-engineer) that keyed off the wave-3 luna-low lane now key
+  // their codex/agents.manifest.json entry off this cost-based Luna/xhigh
+  // lane instead, so every other Sonnet-tier role's runtime model resolution
+  // (via codexModelForRole/CODEX_MODEL_POLICY.sonnet) is untouched. The
+  // reservation clause is now cost-based: xhigh is allowed on the luna model;
+  // terra (any effort) and xhigh on any non-luna model remain reserved for
+  // muster-strategist (fable tier, gpt-5.6-sol/high, unchanged).
+  "luna-xhigh": Object.freeze({ model: "gpt-5.6-luna", reasoning: "xhigh" })
 });
 
 export function codexModelForTier(tier) {

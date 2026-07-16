@@ -1,10 +1,23 @@
 import { readFile, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFile as execFileCb } from "node:child_process";
+import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
 
+const execFileP = promisify(execFileCb);
+// Any QUOTED absolute filesystem path (POSIX home/mnt/Users root, or a
+// Windows drive letter) is machine-specific and must never appear in a file
+// this repository tracks under .codex/ -- see the wave-3 review-gate fix for
+// why (Codex requires absolute hook command paths in materialized
+// hooks.json, so the install-generated files that bake one are gitignored
+// instead of tracked; this pattern is the same one the acceptance grep
+// runs). Matching only inside quotes (not any bare "letter:slash") avoids
+// false positives on unrelated source, e.g. a `[/\\]` regex literal.
+// Accepted scope decision: the quote-adjacency requirement guards quoted config values like hooks.json command fields, not a path mentioned in prose bodies.
+const MACHINE_PATH_PATTERN = /(["'`])(?:\/home\/|\/mnt\/[a-z]\/|\/Users\/|[a-zA-Z]:[\\/])[^"'`]*\1/i;
 const root = fileURLToPath(new URL("../", import.meta.url));
 const selected = await resolveCodexPlugin(root);
 const plugin = selected.pluginRoot;
@@ -41,6 +54,11 @@ if (legacyProfiles.some(name => name.endsWith(".toml"))) fail("deprecated static
 for (const [id, config] of Object.entries(mapping.agents)) {
   const expected = CODEX_MODEL_POLICY[config.tier];
   if (!expected) fail(`${id} has an unknown model tier`);
+  // Kept in exact parity with src/codex-release.js's profileToml override
+  // accept-list (FROZEN this wave) -- see test/codex.test.js's parity test,
+  // which parses both source literals and fails if they ever diverge. This
+  // list only governs per-agent reasoning OVERRIDES, not tier defaults, so it
+  // need not list every effort a tier default may resolve to.
   if (config.reasoning !== undefined && !["medium", "high", "xhigh"].includes(config.reasoning)) fail(`${id} has an invalid reasoning override`);
   if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) fail(`${id} has an invalid model override`);
   if (config.readOnly !== undefined && typeof config.readOnly !== "boolean") fail(`${id} has an invalid read/write policy`);
@@ -149,8 +167,47 @@ const hookSource = await readFile(join(root, "codex/hooks/muster-hook.mjs"), "ut
 if (/permissionDecision|permissionDecisionReason/.test(hookSource)) fail("Codex hook must not claim unsupported PreToolUse denial");
 const trackedHook = await readFile(join(root, ".codex/muster/hooks/muster-hook.mjs"), "utf8");
 if (trackedHook !== hookSource) fail("tracked project Codex hook runtime is stale");
-const trackedHookConfig = await readFile(join(root, ".codex/hooks.json"), "utf8");
-if (/\/mnt\/[a-z]\//i.test(trackedHookConfig) || /[a-z]:[\\/]/i.test(trackedHookConfig)) fail("tracked project Codex hooks contain a checkout-specific absolute path");
+
+// `.codex/hooks.json` and `.codex/muster/.muster-managed.json` are
+// install-generated and gitignored (see CHANGELOG), not tracked -- Codex
+// requires absolute hook command paths in materialized hooks.json, so a
+// tracked copy would bake one clone's absolute path into every other
+// clone. When present (post `muster install codex --scope project`),
+// coherence-check it against THIS checkout instead of trusting it; when
+// absent (fresh clone, pre-install) skip cleanly with a note.
+const notes = [];
+const hooksConfigPath = join(root, ".codex", "hooks.json");
+const hooksConfigPresent = await stat(hooksConfigPath).then(() => true, () => false);
+if (hooksConfigPresent) {
+  const trackedHookConfig = JSON.parse(await readFile(hooksConfigPath, "utf8"));
+  const commands = Object.values(trackedHookConfig.hooks || {}).flat()
+    .flatMap(group => group?.hooks || [])
+    .map(hook => hook?.command)
+    .filter(Boolean);
+  if (!commands.length) fail(".codex/hooks.json is present but declares no hook commands");
+  const repoRootResolved = resolve(root);
+  for (const command of commands) {
+    const match = /^node '(.*)'$/.exec(command);
+    if (!match) fail(`.codex/hooks.json hook command has an unexpected shape: ${command}`);
+    const hookPath = match[1];
+    if (!hookPath.startsWith(`${repoRootResolved}${sep}`)) fail(`.codex/hooks.json points outside this checkout (stale install from another machine?): ${hookPath}`);
+    await stat(hookPath).catch(() => fail(`.codex/hooks.json references a hook runtime missing from this checkout: ${hookPath}`));
+  }
+} else {
+  notes.push(".codex/hooks.json is absent (fresh clone before `muster install codex --scope project`); hook coherence check skipped");
+}
+
+// Widened tracked-file guard: after untracking hooks.json/.muster-managed.json,
+// every file still tracked under .codex/ (the generated agent profile TOMLs
+// and their file-list/version manifest) must carry zero machine-specific
+// absolute paths -- catches any future accidental re-introduction.
+const trackedCodexFiles = (await execFileP("git", ["ls-files", ".codex"], { cwd: root })).stdout
+  .split("\n").map(line => line.trim()).filter(Boolean);
+for (const relativePath of trackedCodexFiles) {
+  const text = await readFile(join(root, relativePath), "utf8");
+  if (MACHINE_PATH_PATTERN.test(text)) fail(`tracked ${relativePath} contains a machine-specific absolute path`);
+}
+
 const mcp = await json(join(plugin, ".mcp.json"));
 if (mcp.mcpServers?.muster?.command !== "node" || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not Codex-native");
 const bundledMcp = await readFile(join(plugin, "runtime", "muster-mcp.mjs"), "utf8");
@@ -159,4 +216,4 @@ if (!bundledMcp.includes('"assess", "--codex"')) fail("MCP assess tool is not bo
 const mcpSource = await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8");
 if ((mcpSource.match(/^  muster_[a-z_]+:/gm) || []).length !== CODEX_COUNTS.mcpTools) fail("MCP tool count drift");
 if (modes.length - 1 !== CODEX_COUNTS.primaryModes || aliases.length !== CODEX_COUNTS.aliases) fail("mode count drift");
-process.stdout.write(JSON.stringify({ ok: true, counts: CODEX_COUNTS }, null, 2) + "\n");
+process.stdout.write(JSON.stringify({ ok: true, counts: CODEX_COUNTS, notes }, null, 2) + "\n");

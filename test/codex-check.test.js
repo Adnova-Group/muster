@@ -76,8 +76,8 @@ test("Codex validation guard's quote-anchored machine-path pattern does not trip
   // machine path and must fail closed. This same "gitdir:" + drive-letter
   // shape appearing unquoted -- as it would in a regex literal or comment,
   // not a quoted config value -- is ordinary product code and must pass
-  // without forcing a cosmetic rewrite (see codex/hooks/muster-hook.mjs's
-  // gitDirLooksLikeWorktree, which relies on exactly this).
+  // without forcing a cosmetic rewrite (the shape a real worktree-detecting
+  // `gitdir:` regex would need to match against a `.git` file's contents).
   const targetPath = join(repoRoot, ".codex", "agents", "muster-surgeon.toml");
   const backup = await readFile(targetPath, "utf8");
   await writeFile(targetPath, `${backup}\n# example: gitdir: C:\\Users\\example\\worktrees\\example is unquoted code-like text, not a quoted config value\n`);

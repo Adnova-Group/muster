@@ -160,6 +160,14 @@ function adaptOrchestratorForCodex(text) {
 function bindBundledCodexCli(text) {
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
   return text
+    // The Claude-side performance pass resolves `$MUSTER_CLI` once per run
+    // (plugin/commands/go.md step -2) because a raw `npx` call pays a cold
+    // start on every invocation. The Codex package has no such ambiguity:
+    // the bundled runtime IS the resolved CLI, so bind the indirection (and
+    // the unbraced plugin-root form its resolution snippet uses) directly to
+    // the bundled entrypoint before the per-verb --codex rewrites below.
+    .replaceAll("$MUSTER_CLI", cli)
+    .replaceAll("$CLAUDE_PLUGIN_ROOT/", "${PLUGIN_ROOT}/")
     .replaceAll("npx -y @adnova-group/muster", cli)
     .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} capabilities(?! --codex)`, "g"), `${cli} capabilities --codex`)
     .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} match(?! --codex)`, "g"), `${cli} match --codex`)
@@ -201,8 +209,14 @@ function codexSkill(source, id) {
   if (id === "review-gate") {
     body = body
       .replace(
-        "Inputs: the wave's changes, and `AvailableCapabilities` (from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex`).",
-        "Inputs: the wave's changes and compact role lookups from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex --role <role>`; never attach the full skills inventory to a reviewer brief."
+        // The Claude-side performance pass reuses the run's cached
+        // .muster/capabilities.json for the whole run; the Codex package
+        // instead requires compact per-role lookups so reviewer briefs never
+        // carry the full skills inventory. Keep the fast-path cumulative-diff
+        // clause (it is harness-neutral) and swap only the capability-source
+        // phrasing.
+        /`AvailableCapabilities` read from the run's already-captured `\.muster\/capabilities\.json` \(written once at[\s\S]*?serves every wave\)\./,
+        "compact role lookups from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex --role <role>`; never attach the full skills inventory to a reviewer brief."
       )
       .replace(
         /1\. Select reviewers:[\s\S]*?Always at least one\./,

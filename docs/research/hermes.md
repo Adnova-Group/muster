@@ -33,8 +33,9 @@ GitHub repo README, and the GitHub API. [CODE-VERIFIED]
 
 - Repo: `NousResearch/hermes-agent`, MIT license, primary language Python (~58 MB Python,
   ~10 MB TypeScript), default branch `main` [src: gh-api]. [CODE-VERIFIED]
-- Scale/velocity: 215,942 stars, 40,332 forks, created 2025-07-22, pushed 2026-07-16;
-  latest release v0.18.2 (tag `v2026.7.7.2`, 2026-07-08) [src: gh-api]. [CODE-VERIFIED]
+- Scale/velocity: 215,942 stars (implausibly high for a v0.18.2 project; not yet verified
+  against the live repo), 40,332 forks, created 2025-07-22, pushed 2026-07-16; latest
+  release v0.18.2 (tag `v2026.7.7.2`, 2026-07-08) [src: gh-api]. [UNVERIFIED-SUSPECT]
 - Positioning: "The self-improving AI agent built by Nous Research… the only agent with a
   built-in learning loop — it creates skills from experience, improves them during use,
   nudges itself to persist knowledge, searches its own past conversations, and builds a
@@ -509,7 +510,9 @@ How each surface muster rides on Claude Code maps onto Hermes
 
 **Yes — first-class.** [INFERRED from everything above] Hermes is a real harness (not a
 model): a tool-calling agent loop with skills, hooks, MCP, subagents, worktrees, cron,
-and a durable multi-agent queue, at 215k stars and weekly-release velocity [src: gh-api].
+and a durable multi-agent queue, at 215k stars [UNVERIFIED-SUSPECT — implausibly high for
+a v0.18.2 project, needs verification against the live repo] and weekly-release velocity
+[src: gh-api].
 It is unusually well-shaped for muster because three of muster's load-bearing surfaces
 exist natively and two of them are Claude-Code-compatible on purpose:
 

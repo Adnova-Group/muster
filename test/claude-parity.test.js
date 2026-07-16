@@ -39,5 +39,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update("\0");
   }
   assert.equal(paths.length, 136);
-  assert.equal(hash.digest("hex"), "232d1f2c6beeacdfa9f5f24e40697cee8e71a67804a86c5b76042d6cf8132896");
+  // Pin re-derived for the muster-performance-pass item: an INTENTIONAL edit to this same
+  // Claude surface (go.md/go-backlog.md/orchestrator/review-gate/router SKILL.md -- CLI
+  // resolution + gate-cadence fast path, see docs/performance-pass.md), not the accidental
+  // Codex-side drift this guard exists to catch. File count is unchanged (136); only content.
+  assert.equal(hash.digest("hex"), "60730d176fde36eee5998a7c639bfafeff21cd05905317c46070b4fba6200c17");
 });

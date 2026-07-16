@@ -40,8 +40,18 @@ B4. **Render ONE batch plan** (the Glass Box), one row per item plus two batch-l
      are ADVISORY, never a gate — fences stay opaque labels and disjointness stays orchestrator judgment — so surface
      each flag with a suggested remedy (serialize the pair via `{deps}`, or tighten the fences); an item with no
      `owns` data is listed as unfenced rather than guessed at.
-B5. **The approval gate** — collect approval via the **AskUserQuestion** selection UI with options **Approve & clear**
-   / **Adjust the plan** / **Cancel**. NOTHING executes before this approval — no branch, no dispatch, no commit.
+B5. **The approval gate — ride native plan mode, not a parallel wall.** NOTHING executes before this
+   approval — no branch, no dispatch, no commit. Choose the gate by what the session already is (same
+   doctrine as `/muster:plan`'s single-outcome gate — augment the harness's own approval flow rather than
+   stacking a second one on top; see docs/research/reference-harness-design.md's Part C, `cc-plan`/`cc-augment`):
+   - **Session is already in native plan mode** (Claude Code CLI/Desktop only): call **ExitPlanMode** with
+     the rendered batch plan (B4) as its `plan` argument. The harness's own approve-into-mode menu IS the
+     approval gate — an approve option maps to **Approve & clear** below; **keep planning** maps to
+     **Adjust the plan** below; backing out without approving maps to **Cancel** below.
+   - **Every other case** (not in plan mode, an unattended path, or a harness with no plan-mode primitive —
+     Codex, Hermes, Cowork, and the Agents SDK per docs/research/reference-harness-design.md's per-harness
+     table) — fall back to the **AskUserQuestion** selection UI, unchanged, with options **Approve & clear**
+     / **Adjust the plan** / **Cancel**.
    - **Approve & clear**: invoke the **muster:go-backlog** skill in-session over the resolved backlog ref (wave mode
      applies when `annotated:true`); go-backlog owns the batch from here — per-item hands-off lifecycle,
      escalation handling, backlog ticking, and the single attended batch report at the end. Per-item routing is

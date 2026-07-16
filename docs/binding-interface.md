@@ -152,7 +152,7 @@ directive-shaped prompt lands) has no equivalent at all on a no-hook harness, si
 that moment is specifically a hook-time observation -- this is a value-selling nudge, not an
 enforcement guarantee, so losing it costs muster a sales pitch, not a control. Every item already
 in the CONVENTIONS tier -- dispatch-not-inline, todo-driving visibility (that same file's "Task
-board" section already documents its fail-soft path: "a harness with no task tools relies on
+board" section already documents its fail-soft path: a no-native-board harness "relies on
 STATE alone (note this once)"), crew-owner/state-in-subject, verb selection, humanizer routing,
 glass-box narration -- needs no further downgrade: none of them were hook-enforced to begin with,
 so a no-hook harness changes nothing for that tier. `SessionStart`/`UserPromptSubmit`'s
@@ -212,14 +212,15 @@ exists. The one genuinely Claude-Code-specific piece is the native todo list: Cl
 (plugin/hooks/todo-gate.js) once read that list back to gate dispatch on it; the
 enforcement-model redesign removed the gate (visibility is now convention, not hook-enforced --
 see `docs/architecture.md`'s "Enforcement model" section), so `plugin/skills/orchestrator/
-SKILL.md`'s "Task board" section carries the discipline on its own: "one harness-visible task
-per work item... via the harness's task tools when present."
+SKILL.md`'s "Task board" section carries the discipline on its own: one harness-visible task
+per work item, via the harness's native task-tracking primitive (`TaskCreate`/`TaskUpdate`/
+`TaskList` on Claude Code) when present.
 
 **Degradation ladder (no native todo tool).** The STATE.md ledger and git notes need no
 ladder -- they survive unchanged on any harness with a filesystem and git, since neither one
 was Claude-Code-specific to begin with. The native-todo-list receipt has no direct equivalent
 absent that tool: `plugin/skills/orchestrator/SKILL.md`'s own "Task board" section already
-states the fail-soft path verbatim -- "a harness with no task tools relies on STATE alone (note
+states the fail-soft path verbatim -- a no-native-board harness "relies on STATE alone (note
 this once)" -- so the todo-list receipt folds back into the STATE.md checklist, with visibility
 enforced only by the same convention-not-gate downgrade named under Enforce, never
 mechanically.

@@ -44,7 +44,7 @@ B5. **The approval gate — ride native plan mode, not a parallel wall.** NOTHIN
    approval — no branch, no dispatch, no commit. Choose the gate by what the session already is (same
    doctrine as `/muster:plan`'s single-outcome gate — augment the harness's own approval flow rather than
    stacking a second one on top; see docs/research/reference-harness-design.md's Part C, `cc-plan`/`cc-augment`):
-   - **Session is already in native plan mode** (Claude Code CLI/Desktop only): call **ExitPlanMode** with
+   - **Session is already in native plan mode** (Claude Code CLI only, per the capstone's Part C ride table): call **ExitPlanMode** with
      the rendered batch plan (B4) as its `plan` argument. The harness's own approve-into-mode menu IS the
      approval gate — an approve option maps to **Approve & clear** below; **keep planning** maps to
      **Adjust the plan** below; backing out without approving maps to **Cancel** below.

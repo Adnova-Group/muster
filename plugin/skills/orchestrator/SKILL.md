@@ -126,8 +126,9 @@ Every crew brief MUST end with a return contract, so the orchestrator's per-task
 Alongside STATE, maintain one harness-visible task per work item (plan task, sprint item, or fix-wave
 slice) via the harness's native task-tracking primitive when present -- on Claude Code CLI/Desktop that is
 `TaskCreate`/`TaskUpdate`/`TaskList` (the board that superseded the older `TodoWrite` tool; either name
-still counts as proof of an active board -- see docs/research/reference-harness-design.md's Part A §6 and
-its `cc-plan` source): create it at dispatch, flip to in_progress when the item's builder launches,
+still counts as proof of an active board -- see docs/research/reference-harness-design.md's `cc-plan`
+source, which cites claude-code-cli.md §6 "Native planning and the task board"): create it at dispatch,
+flip to in_progress when the item's builder launches,
 completed when its merge lands. The native board is authoritative for what the user sees as live progress;
 STATE stays the glass-box ledger of WHY each state changed (dispatch rationale, review findings,
 escalations) -- both maintained, neither substituting for the other. Umbrella tasks may group but never

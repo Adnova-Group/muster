@@ -45,7 +45,7 @@ The invocation text: `$ARGUMENTS`
    session already is (augment the harness's own approval flow, never supersede it — see
    docs/research/reference-harness-design.md's Part C augmentation-vs-enforcement doctrine, `cc-plan`/`cc-augment`):
    - **Session is already in native plan mode** (Shift+Tab, a `/plan`-prefixed prompt, or
-     `--permission-mode plan` — Claude Code CLI/Desktop only): call **ExitPlanMode** with the rendered
+     `--permission-mode plan` — Claude Code CLI only, per the capstone's Part C ride table): call **ExitPlanMode** with the rendered
      Crew Manifest as its `plan` argument instead of raising a second, parallel AskUserQuestion wall on top
      of the one the harness already owns. The harness's own approve-into-mode menu IS the approval gate —
      an approve option (into `auto`/`acceptEdits`/manual-review) maps to **Approve & run** below; **keep

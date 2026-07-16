@@ -714,13 +714,19 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         // Reconcile on every install: prune scopes whose configDir no
         // longer exists (deleted worktrees) and collapse any case-duplicate
         // scope (e.g. a WSL /mnt/c path registered under two castings) into
-        // one canonical-case survivor, alongside filtering + re-adding the
-        // current scope so a plain reinstall does not itself create one.
+        // one canonical-case survivor. currentScope is appended, not
+        // pre-filtered against the existing entries: reconcileScopeRegistryEntries'
+        // dev/ino keying (order-preserving, first physical occurrence wins)
+        // already collapses a plain reinstall's already-registered scope
+        // with the freshly appended currentScope for the same physical
+        // directory, so a separate sameScopeEntry pre-filter here would be
+        // redundant -- proven by the reinstall/dedup assertions in
+        // test/codex.test.js, which stay green without it.
         // Every pruned entry is reported below (path + reason) instead of
         // removed silently, since a prune is a best-effort guess (see
         // reconcileScopeRegistryEntries).
         const reconciled = await reconcileScopeRegistryEntries(
-          [...registry.entries.filter(entry => !sameScopeEntry(entry, currentScope)), currentScope],
+          [...registry.entries, currentScope],
           { onPrune: pruned => prunedScopes.push(pruned) }
         );
         await atomicWriteSafe(registry.path, registryText(reconciled));

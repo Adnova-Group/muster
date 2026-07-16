@@ -3,7 +3,7 @@ import {
   closeSync, constants as fsConstants, cpSync, fsyncSync, lstatSync, mkdirSync, openSync,
   readFileSync, readdirSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
 import { CODEX_MODEL_POLICY } from "./codex.js";
 
@@ -67,10 +67,18 @@ function renameWithRetry(source, destination, { retries = 4, delayMs = 250 } = {
   }
 }
 
+// On win32, relative() returns `target` itself (still absolute, unchanged)
+// when `base` and `target` are on different drives -- there is no relative
+// path across drives -- which would otherwise slip past the ".." checks
+// above undetected. Unreachable via this module's sole call path today
+// (assertRegularTree below only ever passes a target built by joining
+// directory segments read from within `base`, never a foreign-drive path),
+// but restored anyway for defense-in-depth so a future caller of `contained`
+// can't have this guard silently miss a cross-drive escape on Windows.
 function contained(base, target, label) {
   const rel = relative(resolve(base), resolve(target));
   if (!rel || rel === ".") return;
-  if (rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+  if (rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(rel)) {
     throw new Error(`${label} is not contained by ${base}: ${target}`);
   }
 }
@@ -262,6 +270,11 @@ export function copyStagedPluginTree(source, destination) {
 // own would close the race; both run so a defect in one is not a single
 // point of failure. A failure at either point restores the retired
 // directory the same way a copy failure always has.
+//
+// A narrower window still remains after that second validation: nothing
+// re-checks `pluginPath` between it and the `atomicWritePointer` call below,
+// so a same-user writer racing in just that gap could still mutate the
+// just-validated tree before the marketplace pointer commits to it.
 //
 // Concurrent publishes to the same `pluginsRoot` are serialized by the
 // shared codex-lock.js primitive, so two publishers never interleave. But

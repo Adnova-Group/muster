@@ -47,6 +47,8 @@ import { fuse } from "./fusion.js";
 import { validateAdviceRequest } from "./advisor.js";
 import { modelForRole } from "./model.js";
 import { detectScope } from "./scope.js";
+import { resolveMusterCli } from "./cli-resolve.js";
+import { planGateCadence } from "./gate-cadence.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 
@@ -194,6 +196,15 @@ async function main() {
       if (!Array.isArray(m.plan)) fail("next: manifest has no 'plan' array");
       const doneArg = flagValue(rest, "--done");
       out(nextTasks(m.plan, doneArg ? doneArg.split(",") : []));
+    // ── performance pass: resolve the CLI invocation once, and gate-cadence's fast path ──
+    } else if (cmd === "resolve-cli") {
+      out(await resolveMusterCli({ cwd: process.cwd() }));
+    } else if (cmd === "gate-cadence") {
+      const file = requireArg(rest, 0, "gate-cadence <manifest.json>: missing file path", fail);
+      const m = JSON.parse(await readFile(file, "utf8"));
+      if (!Array.isArray(m.plan)) fail("gate-cadence: manifest has no 'plan' array");
+      const waves = computeWaves(m.plan).map((w) => w.map((t) => t.id));
+      out(planGateCadence(waves));
     } else if (cmd === "sprint-waves") {
       const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
       const content = await readFile(file, "utf8");
@@ -388,7 +399,7 @@ async function main() {
       await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
       out(sig);
     } else {
-      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]>`);
+      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json>|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]>`);
     }
   } catch (e) {
     fail(formatError(e));

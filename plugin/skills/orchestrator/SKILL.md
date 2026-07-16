@@ -124,11 +124,19 @@ Every crew brief MUST end with a return contract, so the orchestrator's per-task
 ## Task board
 
 Alongside STATE, maintain one harness-visible task per work item (plan task, sprint item, or fix-wave
-slice) via the harness's task tools when present: create it at dispatch, flip to in_progress when the
-item's builder launches, completed when its merge lands. Umbrella tasks may group but never replace
-per-item entries -- STATE is the glass-box ledger, the board is the user's live progress surface, both
-maintained, neither substituting for the other. Fail-soft: a harness with no task tools relies on STATE
-alone (note this once).
+slice) via the harness's native task-tracking primitive when present -- on Claude Code CLI/Desktop that is
+`TaskCreate`/`TaskUpdate`/`TaskList` (the board that superseded the older `TodoWrite` tool; either name
+still counts as proof of an active board -- see docs/research/reference-harness-design.md's `cc-plan`
+source, which cites claude-code-cli.md §6 "Native planning and the task board"): create it at dispatch,
+flip to in_progress when the item's builder launches,
+completed when its merge lands. The native board is authoritative for what the user sees as live progress;
+STATE stays the glass-box ledger of WHY each state changed (dispatch rationale, review findings,
+escalations) -- both maintained, neither substituting for the other. Umbrella tasks may group but never
+replace per-item entries. Fail-soft, per harness (docs/research/reference-harness-design.md Part C's
+port-surface table): a harness with no task-tracking primitive at all (Codex CLI/Desktop, Cowork, and the
+Agents SDK today) relies on STATE alone (note this once); Hermes's own kanban (an SQLite-backed
+`task_events` ledger with atomic claims and heartbeats, richer than a flat todo list) is a further native
+fit the capstone names as a future coordination-skill binding, not yet wired into this section.
 
 ## Scope fences
 

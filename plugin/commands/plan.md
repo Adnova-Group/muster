@@ -40,8 +40,22 @@ The invocation text: `$ARGUMENTS`
 5. Invoke the **router** skill with the outcome, the two JSON blobs, and any memory hits.
 6. The router emits a Crew Manifest. Write it to `.muster/manifest.json`, then validate:
    `npx -y @adnova-group/muster manifest validate .muster/manifest.json` — repair and re-validate until `ok: true`.
-7. Show the manifest to the user (the Glass Box) and collect approval via the **AskUserQuestion** selection UI
-   with options **Approve & run** / **Adjust the plan** / **Cancel**.
+7. **Present for approval — ride native plan mode, never a parallel wall.** Render the Crew Manifest as the
+   Glass Box (stage -> provider, model, rationale, evidence, fallback), then choose the gate by what the
+   session already is (augment the harness's own approval flow, never supersede it — see
+   docs/research/reference-harness-design.md's Part C augmentation-vs-enforcement doctrine, `cc-plan`/`cc-augment`):
+   - **Session is already in native plan mode** (Shift+Tab, a `/plan`-prefixed prompt, or
+     `--permission-mode plan` — Claude Code CLI only, per the capstone's Part C ride table): call **ExitPlanMode** with the rendered
+     Crew Manifest as its `plan` argument instead of raising a second, parallel AskUserQuestion wall on top
+     of the one the harness already owns. The harness's own approve-into-mode menu IS the approval gate —
+     an approve option (into `auto`/`acceptEdits`/manual-review) maps to **Approve & run** below; **keep
+     planning** maps to **Adjust the plan** below; backing out of the plan without approving maps to
+     **Cancel** below.
+   - **Every other case** — not in plan mode, an unattended Routine, or a harness with no plan-mode
+     primitive at all (Codex, Hermes, Cowork, and the Agents SDK all lack it per
+     docs/research/reference-harness-design.md's per-harness port-surface table) — fall back to the
+     **AskUserQuestion** selection UI, unchanged, with options **Approve & run** / **Adjust the plan** /
+     **Cancel**.
    - **Approve & run**: invoke the **muster:go** skill in-session, passing the enriched outcome from
      step 2 as the outcome; go picks up the already-validated `.muster/manifest.json` and does not
      re-derive the plan from scratch.

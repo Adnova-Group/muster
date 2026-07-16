@@ -69,9 +69,12 @@ pass across every wave instead of one dispatch per wave (`reviewGateBatches: 1`)
 trivial task keeps the existing spec-gate skip; plans above the threshold keep depth
 proportional to wave count (`reviewGateBatches` scales with `waveCount` — a growing plan is
 never silently under-reviewed by forcing it into the fast path). `muster gate-cadence
-<manifest.json>` exposes the decision; `plugin/skills/orchestrator/SKILL.md` step 2 runs it once
-before wave 1 and step 4c/5 branch on `fastPath` to decide whether the review-gate dispatch
-happens per-wave or once, deferred to after the last wave, over the full cumulative diff.
+<manifest.json>` exposes the decision; `plugin/commands/go.md` step 4 runs it once and captures
+the result into `.muster/gate-cadence.json`, and `plugin/skills/orchestrator/SKILL.md` step 2
+reads that once-captured file (not a fresh invocation — same dedup treatment as `capabilities`,
+see criterion 1) before wave 1; step 4c/5 branch on `fastPath` to decide whether the review-gate
+dispatch happens per-wave or once, deferred to after the last wave, over the full cumulative
+diff.
 
 Test evidence (`test/gate-cadence.test.js`): a 3-task plan across 3 sequential waves ->
 `specGateRounds: 1, reviewGateBatches: 1`; a 10-task plan across 5 waves ->

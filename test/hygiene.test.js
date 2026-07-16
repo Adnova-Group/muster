@@ -86,6 +86,27 @@ test("findZombieProcesses: a non-provider process is never flagged, however long
   assert.deepEqual(zombies, []);
 });
 
+test("findZombieProcesses (regression): a process whose PATH merely contains 'codex'/'claude' as a substring is never flagged -- only the actual invoked executable's basename counts", () => {
+  const processes = [
+    // muster's own worktree layout puts hook scripts under a `.claude/worktrees/...`
+    // path -- a naive substring/word-boundary match against the whole command
+    // line would misidentify this as a "claude" provider process. It must not.
+    { pid: 500, ppid: 1, command: "node /home/ryan/dev/muster/.claude/worktrees/agent-x/plugin/hooks/pre-tool-use.js", startedAt: "2020-01-01T00:00:00Z" },
+    { pid: 501, ppid: 1, command: "/usr/bin/some-codex-wrapper-tool --run", startedAt: "2020-01-01T00:00:00Z" },
+  ];
+  const { zombies } = findZombieProcesses(processes, { newestRunMarkerAt: "2026-07-16T00:00:00Z" });
+  assert.deepEqual(zombies, [], "neither process is the actual codex/claude executable, so neither is flagged");
+});
+
+test("findZombieProcesses: the real executable IS matched however it's invoked (bare name or a full path, incl. one containing '.claude')", () => {
+  const processes = [
+    { pid: 502, ppid: 1, command: "claude --print", startedAt: "2020-01-01T00:00:00Z" },
+    { pid: 503, ppid: 1, command: "/home/ryan/.claude/local/claude exec", startedAt: "2020-01-01T00:00:00Z" },
+  ];
+  const { zombies } = findZombieProcesses(processes, { newestRunMarkerAt: "2026-07-16T00:00:00Z" });
+  assert.deepEqual(zombies.map((z) => z.pid).sort(), [502, 503]);
+});
+
 // ---------------------------------------------------------------------------
 // Guard 2 -- stale-worktree sweep offer
 // ---------------------------------------------------------------------------

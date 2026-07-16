@@ -33,8 +33,21 @@ import { computeSprintWaves } from "./sprint-waves.js";
 // Guard 1 -- zombie provider CLI process: detect + (conservatively) reap
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_PROVIDER_PROCESS_PATTERN = /\b(codex|claude)\b/i;
+export const DEFAULT_PROVIDER_PROCESS_PATTERN = /^(codex|claude)$/i;
 export const DEFAULT_ZOMBIE_STALE_MS = 60 * 60 * 1000; // 60 minutes
+
+// A command LINE (full argv joined with spaces) is not the same thing as the
+// invoked EXECUTABLE -- matching the pattern against the whole line would
+// false-positive on any process whose path merely CONTAINS "codex"/"claude"
+// as a substring (e.g. a hook script run from a `.claude/worktrees/...`
+// checkout path, which is exactly this repo's own layout). Isolate the first
+// whitespace-separated token, strip its directory and a Windows-style
+// executable extension, and match the pattern against THAT basename only.
+function commandExecutableName(command) {
+  const firstToken = (command || "").trim().split(/\s+/)[0] || "";
+  const base = firstToken.split(/[\\/]/).pop() || "";
+  return base.replace(/\.(exe|cmd|bat)$/i, "");
+}
 
 // processes: [{ pid, ppid, command, startedAt }], startedAt is epoch ms or an
 // ISO string. newestRunMarkerAt anchors the stale-start heuristic -- the most
@@ -53,7 +66,7 @@ export function findZombieProcesses(processes, {
 
   const zombies = [];
   for (const proc of list) {
-    if (!proc || typeof proc.command !== "string" || !pattern.test(proc.command)) continue;
+    if (!proc || typeof proc.command !== "string" || !pattern.test(commandExecutableName(proc.command))) continue;
 
     const ppid = Number(proc.ppid);
     // "parent is dead/1": reparented to init (ppid === 1), or its ppid simply

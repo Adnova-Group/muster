@@ -31,7 +31,7 @@ import { readFileSync, writeFileSync, existsSync, statSync, unlinkSync } from "n
 import path from "node:path";
 import { emit, CREW_INVITATION, isDirective } from "./guidance.js";
 import {
-  directiveFile, isCrossingStale, cumFile, readCum, isScaleCorroborated,
+  directiveFile, isCrossingStale, cumFile, corroboratingCount, isScaleCorroborated,
   cooldownFile, isInCooldown, recordInvite,
 } from "./inline-budget.js";
 
@@ -107,7 +107,11 @@ try {
             // silent here; the PreToolUse channel still catches real
             // multi-file drift on its own terms once it happens.
             const cFile = cumFile(sessionId);
-            const priorCount = cFile ? readCum(cFile).files.length : 0;
+            // corroboratingCount (not a raw readCum) so a dead prior
+            // crossing's leftover file count -- the marker's own mtime past
+            // CROSSING_MAX_AGE_MS -- never corroborates a brand-new,
+            // genuinely trivial directive (review-gate finding).
+            const priorCount = corroboratingCount(cFile);
             if (isScaleCorroborated(priorCount)) {
               const cdFile = cooldownFile(sessionId);
               if (!isInCooldown(cdFile)) {

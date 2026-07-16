@@ -131,6 +131,21 @@ test("T-directive: trivial one-file directive turn (\"fix typo\") with no establ
   );
 });
 
+test("T-directive: a STALE prior crossing's leftover file count must not corroborate a new, trivial directive (review-gate fix)", async () => {
+  const sid = uniqSession();
+  seedCorroboration(sid); // 1 file recorded -- but for a crossing that is about to go cold.
+  const cFile = cumFile(sid, os.tmpdir());
+  const stale = new Date(Date.now() - (CROSSING_MAX_AGE_MS + 60_000));
+  utimesSync(cFile, stale, stale); // that prior crossing is now >60 minutes dead.
+
+  const { stdout, code } = await runPromptCwd(sid, "fix typo", NO_RUN_DIR);
+  assert.equal(code, 0);
+  assert.ok(
+    !("additionalContext" in ctxOf(stdout)),
+    "a dead prior crossing's leftover count must not corroborate a brand-new, genuinely trivial directive",
+  );
+});
+
 test("T-directive: directive prompt corroborated by prior inline drift (>=1 file this crossing) nudges with value-toned copy", async () => {
   const sid = uniqSession();
   seedCorroboration(sid);

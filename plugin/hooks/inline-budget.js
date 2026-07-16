@@ -232,7 +232,7 @@ export function recordInvite(file) {
 // A directive-shaped prompt (guidance.js: isDirective) alone is verb-opener
 // detection, not a scale signal — "fix typo" matches it exactly as well as
 // "implement the auth migration across the API." Requiring at least one
-// distinct file *already* recorded this crossing (the PreToolUse cumulative
+// distinct file *already* recorded THIS crossing (the PreToolUse cumulative
 // counter's own count, read but not advanced here) before the prompt-time
 // signal may fire ties the invite to the same file-count-crossing concept the
 // border is named for, instead of the verb alone: a cold, isolated directive
@@ -241,4 +241,27 @@ export function recordInvite(file) {
 // >= 1) is corroborated by real, already-observed scale.
 export function isScaleCorroborated(priorCount) {
   return typeof priorCount === "number" && isFinite(priorCount) && priorCount >= 1;
+}
+
+// The crossing-scoped count isScaleCorroborated above must be checked
+// against: 0 when `file` is missing/unusable, OR when its crossing has gone
+// stale (the same isCrossingStale rule recordCum itself applies before
+// counting). A long-lived/idle session's dead prior crossing — its file left
+// on disk with a stale mtime, past CROSSING_MAX_AGE_MS — must NEVER
+// corroborate a brand-new directive; reading readCum(file).files.length
+// directly (ignoring the file's own mtime) would let that leftover count
+// wrongly corroborate an isolated, genuinely trivial directive landing long
+// after the crossing that produced it went cold. This is the one place the
+// prompt-time signal consults the PreToolUse counter's state, so it re-checks
+// staleness itself rather than trusting the caller.
+export function corroboratingCount(file, now = Date.now()) {
+  if (!file) return 0;
+  let mtimeMs;
+  try {
+    mtimeMs = statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
+  if (isCrossingStale(mtimeMs, now)) return 0;
+  return readCum(file).files.length;
 }

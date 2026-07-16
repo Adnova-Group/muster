@@ -24,6 +24,7 @@ import {
   isInCooldown,
   recordInvite,
   isScaleCorroborated,
+  corroboratingCount,
 } from "../plugin/hooks/inline-budget.js";
 
 // Direct unit coverage for inline-budget.js — the spawnHook integration tests
@@ -286,4 +287,51 @@ test("isScaleCorroborated: non-number/NaN inputs are never corroborated (fail-sa
   for (const v of [undefined, null, NaN, "1", {}]) {
     assert.equal(isScaleCorroborated(v), false, `${String(v)} -> not corroborated`);
   }
+});
+
+// ── corroboratingCount: the crossing-scoped count isScaleCorroborated checks ─
+// Review-gate fix: a raw readCum(file).files.length ignores the file's own
+// mtime, so a dead prior crossing's leftover count could wrongly corroborate
+// a brand-new directive. corroboratingCount applies the same isCrossingStale
+// rule recordCum itself uses before counting.
+test("corroboratingCount: missing/null file -> 0", () => {
+  const { dir, file } = tmpFile();
+  try {
+    assert.equal(corroboratingCount(file), 0, "no file yet -> 0");
+    assert.equal(corroboratingCount(null), 0, "null file -> 0");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("corroboratingCount: a fresh (non-stale) crossing returns its real count", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordCum(file, "a.js");
+    recordCum(file, "b.js");
+    assert.equal(corroboratingCount(file), 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("corroboratingCount: a STALE crossing (mtime past CROSSING_MAX_AGE_MS) returns 0, not its leftover count", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordCum(file, "a.js");
+    const stale = new Date(Date.now() - (CROSSING_MAX_AGE_MS + 60_000));
+    utimesSync(file, stale, stale);
+    assert.equal(
+      corroboratingCount(file),
+      0,
+      "a dead prior crossing's leftover file count must never corroborate a new directive",
+    );
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("corroboratingCount: exactly at the staleness boundary is not yet stale", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordCum(file, "a.js");
+    const now = Date.now();
+    const atBoundary = new Date(now - CROSSING_MAX_AGE_MS);
+    utimesSync(file, atBoundary, atBoundary);
+    assert.equal(corroboratingCount(file, now), 1, "exactly at the boundary: still counts");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

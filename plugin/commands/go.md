@@ -55,10 +55,14 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    with no specialists. The orchestrator and review-gate skills below reuse this same
    `.muster/capabilities.json` capture for the rest of the run — the inventory does not change mid-run, so
    they must NOT re-invoke `capabilities` per wave (dedup lever; see docs/performance-pass.md).
-4. **Spec gate** — after the manifest validates, run `$MUSTER_CLI gate-cadence .muster/manifest.json` once to
-   learn this run's small-task fast path (`{specGateRounds, reviewGateBatches, fastPath, reason}` — plans at
-   or below 3 tasks batch the per-wave review gate into a single pass; see step 6/orchestrator step 0 and
-   docs/performance-pass.md). When `specGateRounds` is 0, this gate is skipped (the existing single-trivial-task
+4. **Spec gate** — after the manifest validates, run `$MUSTER_CLI gate-cadence .muster/manifest.json` once and
+   write its JSON to `.muster/gate-cadence.json` (this run's single capture — mirrors the `capabilities`
+   dedup above) to learn this run's small-task fast path (`{specGateRounds, reviewGateBatches, fastPath,
+   reason}` — plans at or below 3 tasks batch the per-wave review gate into a single pass; see orchestrator
+   step 2 and docs/performance-pass.md). The **orchestrator** skill (step 6 below) reads this same
+   `.muster/gate-cadence.json` capture instead of re-invoking `gate-cadence` — the manifest's waves do not
+   change mid-run, so recomputing it per invoker added cost with no correctness benefit. When
+   `specGateRounds` is 0, this gate is skipped (the existing single-trivial-task
    rule); otherwise dispatch a FRESH-context agent on the **architecture-review**
    provider (from `capabilities`; strategist tier) to probe the validated manifest + plan as a lazy implementer
    (what is underspecified enough to skip?) and as a malicious one (what satisfies the letter while missing

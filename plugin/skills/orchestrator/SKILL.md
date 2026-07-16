@@ -31,9 +31,12 @@ the manifest — the crew on paper is not the crew doing the work.
   to allow with a reminder if the guard triggers a false positive.
 
 1. Compute waves: `$MUSTER_CLI wave .muster/manifest.json` -> ordered list of waves.
-2. **Gate cadence (small-task fast path, once, before wave 1).** Run `$MUSTER_CLI gate-cadence
-   .muster/manifest.json` once over the computed waves -> `{taskCount, waveCount, specGateRounds,
-   reviewGateBatches, fastPath, reason}`. Note the result in STATE. When `fastPath: true` (small plans, at or
+2. **Gate cadence (small-task fast path).** Read `.muster/gate-cadence.json` -> `{taskCount, waveCount,
+   specGateRounds, reviewGateBatches, fastPath, reason}` — captured once by the invoking verb at spec-gate
+   time (see `plugin/commands/go.md` step 4). Do **not** re-invoke `gate-cadence` here: the manifest's waves
+   are already fixed by this point, so recomputing the identical result per invoker is pure duplication
+   (dedup lever, same treatment as the `capabilities` capture above — see docs/performance-pass.md). Note
+   the result in STATE. When `fastPath: true` (small plans, at or
    below the small-task threshold), step 4c below batches the review gate into a single pass over the
    cumulative diff instead of one dispatch per wave — same reviewer tier, same pass bar, same 3-iteration fix
    cap, only the CADENCE collapses (batching lever, not a weaker gate — see docs/performance-pass.md,

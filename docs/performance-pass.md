@@ -20,8 +20,8 @@ dozen-plus avoidable round-trips.
 so this is the steady-state per-call cost, not a one-time download):
 
 ```
-npx -y @adnova-group/muster scope <n>: 10 calls in 2796.8ms (279.7ms/call)
-node src/cli.js scope <n> (resolved local): 10 calls in 956.6ms (95.7ms/call)
+npx -y @adnova-group/muster scope <n>: 10 calls in 2709.8ms (271.0ms/call)
+node src/cli.js scope <n> (resolved local): 10 calls in 905.5ms (90.5ms/call)
 ```
 
 ~66% less wall-clock per call, resolved-local vs raw `npx -y`, on this sandbox. Actual savings
@@ -42,6 +42,14 @@ asserts the two docs and `src/cli-resolve.js` cannot drift apart). Every muster 
 rest of that run — including the orchestrator, review-gate, and router skills a `go` run
 invokes — reuses the resolved `$MUSTER_CLI`, never re-invoking `npx` directly.
 `muster resolve-cli` exposes the same decision as JSON for a programmatic caller.
+
+Two more call sites are captured-once/reused rather than re-invoked, mirroring the same
+pattern: `capabilities` (captured once by `go.md` step 3 into `.muster/capabilities.json`,
+reused by every wave's provider-kind lookup and by review-gate's own `AvailableCapabilities`
+input, instead of being re-invoked once per wave) and `gate-cadence` itself (captured once by
+`go.md` step 4 into `.muster/gate-cadence.json`, reused by `orchestrator/SKILL.md` step 2
+instead of being recomputed there against the same static manifest). See criterion 4's call-count
+table below for exactly how much this removes.
 
 ## Criterion 2 — pipeline depth proportional to task count, with a documented small-task fast path
 
@@ -96,23 +104,38 @@ Per this item's stated pragmatics, this is a deterministic harness-level replay 
 × cold-start cost + gate-round count, before/after), not a live production run — recorded
 honestly, no fabricated token numbers.
 
-**Grounded call-count facts** (before this item; read off the actual `plugin/commands/go.md` +
-`plugin/skills/orchestrator/SKILL.md` + `plugin/skills/review-gate/SKILL.md` prose for a 3-task
-sequential plan, i.e. 3 waves of 1 task each — the seed evidence's exact shape):
+**Grounded call-count facts**, BEFORE this item (read off the pre-edit
+`plugin/commands/go.md` + `plugin/skills/orchestrator/SKILL.md` +
+`plugin/skills/review-gate/SKILL.md` prose for a 3-task sequential plan, i.e. 3 waves of 1 task
+each — the seed evidence's exact shape):
 
 | Source | Calls | What |
 | --- | --- | --- |
 | `go.md` preamble/finish | 6 | `scope`, `detect`, `assess`, `capabilities`, `manifest validate`, `plan-checklist` |
 | `orchestrator/SKILL.md`, once | 1 | `wave` (compute waves) |
-| `orchestrator/SKILL.md`, per wave × 3 | 3 | `capabilities` (provider-kind lookup) |
+| `orchestrator/SKILL.md`, per wave × 3 | 3 | `capabilities` (provider-kind lookup, re-invoked every wave) |
 | `orchestrator/SKILL.md`, per wave × 3 | 3 | `plan-checklist --done` (STATE rerender) |
-| `review-gate/SKILL.md`, per wave × 3 | 3 | `tally` (verdicts) |
-| **Total** | **16** | muster CLI calls for this run |
+| `review-gate/SKILL.md`, per wave × 3 | 3 | `tally` (verdicts, one review-gate pass per wave) |
+| **Total BEFORE** | **16** | muster CLI calls for this run |
 
-That per-run CLI call COUNT is unchanged by this item (still 16 — this item does not remove any
-of those calls, it removes their `npx` COLD-START COST and, separately, collapses the
-per-wave review-gate DISPATCH count). Gate rounds: 3 (per-wave review-gate dispatches) before,
-1 (batched) after, per `planGateCadence`.
+**AFTER this item** (same run, current prose) — the call COUNT itself drops too, not just its
+per-call cold-start cost: the capabilities and gate-cadence dedup levers remove per-wave CLI
+calls that existed before, and review-gate's batching collapses 3 `tally` calls into 1:
+
+| Source | Calls | What |
+| --- | --- | --- |
+| `go.md` preamble/finish | 6 | `scope`, `detect`, `assess`, `capabilities` (captured once), `manifest validate`, `plan-checklist` |
+| `go.md` step 4, once (NEW) | 1 | `gate-cadence` (captured once into `.muster/gate-cadence.json`) |
+| `orchestrator/SKILL.md`, once | 1 | `wave` (compute waves) |
+| `orchestrator/SKILL.md`, per wave × 3 | 0 | capabilities lookup now reads `.muster/capabilities.json` (deduped, no CLI call) |
+| `orchestrator/SKILL.md`, per wave × 3 | 3 | `plan-checklist --done` (STATE rerender — unchanged; glass-box progress, not a gate) |
+| `orchestrator/SKILL.md` step 2 | 0 | gate-cadence now reads `.muster/gate-cadence.json` (deduped, no CLI call) |
+| `review-gate/SKILL.md`, batched once | 1 | `tally` (verdicts, ONE batched pass instead of 3) |
+| **Total AFTER** | **12** | muster CLI calls for this run |
+
+16 -> 12 calls (25% fewer calls), each remaining call also paying the criterion-1 cold-start
+reduction. Gate rounds: 3 (per-wave review-gate dispatches) before, 1 (batched) after, per
+`planGateCadence`.
 
 **Replay output** (`node eval/perf/replay-3task.mjs`, run on this sandbox):
 
@@ -120,27 +143,30 @@ per-wave review-gate DISPATCH count). Gate rounds: 3 (per-wave review-gate dispa
 Performance-pass replay: 3-task /muster:go run, before vs after
 
 Step 1 — REAL wall-clock cold-start measurement (this machine, right now):
-  npx -y @adnova-group/muster scope <n>: 10 calls in 2796.8ms (279.7ms/call)
-  node src/cli.js scope <n> (resolved local): 10 calls in 956.6ms (95.7ms/call)
+  npx -y @adnova-group/muster scope <n>: 10 calls in 2709.8ms (271.0ms/call)
+  node src/cli.js scope <n> (resolved local): 10 calls in 905.5ms (90.5ms/call)
 
 Step 2 — grounded call-count/gate-round facts (read off the actual command/skill markdown):
   3-task sequential plan: gate-cadence = {"taskCount":3,"waveCount":3,"specGateRounds":1,"reviewGateBatches":1,"fastPath":true,"reason":"small plan (<=3 tasks): one spec-gate round, one batched review-gate pass across all 3 wave(s)"}
-  muster CLI calls hit by this run (unchanged by this item): 16
+  muster CLI calls hit by this run: 16 before -> 12 after (capabilities + gate-cadence dedup also drop the call COUNT, not just its cost)
   review-gate rounds BEFORE (one per wave, seed evidence): 3
   review-gate rounds AFTER (gate-cadence fastPath batching): 1
 
 Step 3 — before/after projection (src/perf-projection.js):
-  before: 10475ms modeled
-  after:  4531ms modeled
-  reduction: 5944ms (56.7%)
+  before: 10336ms modeled
+  after:  4087ms modeled
+  reduction: 6249ms (60.5%)
 
   PASS — criterion 4 requires >=30% reduction
 ```
 
-**56.7% reduction** — clears the 30% bar. `src/perf-projection.js`'s `projectRunReduction()`
-(the arithmetic combining the two measured/grounded halves above) is pinned by a deterministic
-unit test (`test/perf-projection.test.js`) using these same inputs, so the >=30% claim is
-asserted by the always-green suite, not just narrated here.
+**60.5% reduction** — clears the 30% bar with a wide margin, from two independent, stacking
+levers: the per-call cold-start reduction (criterion 1) AND the call-count reduction itself
+(the dedup/batching levers in criterion 2/3). `src/perf-projection.js`'s `projectRunReduction()`
+(the arithmetic combining the measured/grounded halves above, with `cliCallCountBefore`/
+`cliCallCountAfter` modeled separately since the two are genuinely different counts) is pinned
+by a deterministic unit test (`test/perf-projection.test.js`) using these same inputs, so the
+>=30% claim is asserted by the always-green suite, not just narrated here.
 
 **Model-call (token) reduction — a documented projection, not a measured count.** This item does
 not run a live LLM-backed `/muster:go`, so no production token count is asserted. What IS

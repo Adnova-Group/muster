@@ -14,7 +14,13 @@
 
 ## Context
 
-Both items were captured and merged (PR 34) before the codex-teardown run.
+Both items were captured and closed as done, citing PR 34 (`.muster/backlog.md`
+carries no `{merged: yes}` tag on either line, and `gh pr view 34` independently
+confirms: `state: CLOSED`, `mergedAt: null`, `mergeCommit: null`, `headRefOid`
+unreachable from any current branch — this repo evidently squashed/re-landed
+the work outside GitHub's own merge tracking, so "PR 34" is a citation, not a
+literal merge record). The actual code is verified present in current mainline
+directly, by inspection (see below), independent of the PR's GitHub state.
 Since then: wave 1 (`1326f45`) stripped lock/lease/quarantine machinery from
 Codex hooks and the release path; wave 2 (`58e4624`) replaced the committed
 `.agents/plugins` payload with install-time generation (profiles/skills are
@@ -46,8 +52,13 @@ teardown invalidated it?
    wc -l` → 62; `find .agents/plugins/plugin/agents -maxdepth 1 -type f | wc
    -l` → 27.
 2. `node scripts/check-codex.mjs` — the authoritative count source
-   (`src/codex.js`'s `CODEX_COUNTS`), wired into `pretest`/`prepublishOnly`,
-   so this is a live-enforced invariant, not a static doc claim.
+   (`src/codex.js`'s `CODEX_COUNTS`), wired into `prepublishOnly` and run here
+   directly as an extra verification layer. The counts are separately
+   live-enforced under plain `node --test` too: `test/codex.test.js` asserts
+   the same `CODEX_COUNTS` fields directly against generated output (`pretest`
+   only runs `build-codex.mjs`, the generator itself — it does not invoke
+   `check-codex.mjs`). Either path is a live-enforced invariant, not a static
+   doc claim.
 3. `node src/cli.js doctor --codex` — run against this machine's actual
    installed Codex CLI (not a fixture), including a live MCP
    `initialize`+`tools/list` handshake.
@@ -81,12 +92,18 @@ from a committed payload to install-time generation.
 | `MUSTER_BUILD_FORCE=1` rebuild escape hatch | `docs/qa/RUNBOOK.md:249-254` | `node --test --test-name-pattern='MUSTER_BUILD_FORCE' test/codex-build-repro.test.js` | `✔ buildCodexPlugin's version-only skip-if-current check can be bypassed with MUSTER_BUILD_FORCE=1` — 1 pass |
 | `muster doctor --codex` (live install/hook/count coherence) | README:47, CHANGELOG `[Unreleased]` | `node src/cli.js doctor --codex` against this machine's real Codex install | `"codex-cli": "codex detected on PATH"`, `"codex-plugin": "muster 0.5.0"`, `"codex-agents": "27/27 generated profiles"`, `"codex-mcp-handshake": "...21/21 tools..."`, `"codex-hooks-overlap": "Muster hooks are installed at both project and user scopes..."` — all `ok: true` |
 
-Every documented recovery command still works exactly as described against
-the current layout; no doc text needed correction (no stale count was found
-in README, CHANGELOG, `docs/qa/RUNBOOK.md`, or `website/reference/*.md` —
-searched all four for `74`/`21 MCP`/`27 custom-agent`/`27 agent` and found
-only the two directly-matching, still-accurate mentions in README:49 and
-CHANGELOG:18).
+Every documented recovery command re-run above still works exactly as
+described against the current layout; no doc text needed correction (no stale
+count was found in README, CHANGELOG, `docs/qa/RUNBOOK.md`, or
+`website/reference/*.md` — searched all four for `74`/`21 MCP`/`27
+custom-agent`/`27 agent` and found only the two directly-matching,
+still-accurate mentions in README:49 and CHANGELOG:18). This is a sampled
+check of the 4 recovery flows with an explicit documented command string, not
+an exhaustive re-validation of every individual `doctor --codex` check name
+(e.g. `codex-managed-scopes`, `codex-runtime`, `codex-policy-limitations` were
+observed `ok:true` in the live doctor run but were not independently
+regression-tested here beyond that single live read) — proportionate for a
+retriage, but stated plainly rather than implied as total coverage.
 
 ## Per-item verdict table
 
@@ -104,13 +121,21 @@ item (proposed line below, not written to the backlog by this runner — the
 backlog stays driver-owned):
 
 ```
-- [ ] Enforce Codex subagent thread limits at install time by reviving the dropped ensureCodexThreadLimits/restoreCodexThreadLimits pair against the current install-time-generation architecture: muster install codex writes or raises max_threads to at least 12 and max_depth to at least 2 in the target Codex CLI/Desktop config.toml without lowering a higher existing value or touching unrelated config. Success criteria: fresh, existing-lower, existing-higher, dry-run (zero config.toml mutations), and uninstall-restore (Muster-owned change only) cases each covered by a deterministic test; doctor reports an exact remediation message when a value falls below the floor; suite green. {id: codex-thread-limits-enforcement} {deps: none}
+- [ ] Enforce Codex subagent thread limits at install time by reviving the dropped ensureCodexThreadLimits/restoreCodexThreadLimits pair against the current install-time-generation architecture: muster install codex writes or raises max_threads to at least 12 and max_depth to at least 2 in the target Codex CLI/Desktop config.toml without lowering a higher existing value or touching unrelated config. Success criteria: (1) fresh, existing-lower, existing-higher, dry-run (zero config.toml mutations), and uninstall-restore (Muster-owned change only) cases each covered by a deterministic test; (2) install fails outright with an exact remediation message if the config.toml write cannot complete or the written config fails strict validation; (3) doctor separately reports the same remediation message if a live config later drifts below the floor outside of a muster install; suite green. {id: codex-thread-limits-enforcement} {deps: none}
 ```
 
 `node src/cli.js assess "<outcome above>" --codex` → `{"clear": true,
 "signals": []}`.
 
-Narrower than the original: drops the original's "split WSL/Windows" and
+Narrower than the original in one disclosed way, and preserves one clause the
+first review pass flagged as silently softened in an earlier draft of this
+line: the original's clause (2) — "installation **fails** with an exact
+remediation message if either required config cannot be updated or
+strict-config validation fails" — is a hard install-time failure mode, not
+just a passive post-hoc report, and is kept as clause (2) above rather than
+collapsed into a doctor-only diagnostic; clause (3) adds the doctor-side
+drift check as a distinct, complementary guarantee rather than a replacement.
+The only real narrowing is dropping the original's "split WSL/Windows" and
 "repeated-install" enumerated automated-test cases as separately named
 requirements (fresh/existing-lower/existing-higher/dry-run/uninstall already
 cover the behavioral space; WSL-vs-Windows path handling is a pre-existing,
@@ -132,3 +157,12 @@ new.
   entangled with unrelated dropped payload/Plan-Goal content).
 - No doc corrections were needed in this PR — every count and recovery
   command checked out against current code.
+- Noted but explicitly out of scope for this retriage (pre-existing, not
+  introduced by this diff): `CHANGELOG.md`'s `[Unreleased]` entry states
+  "`.codex/` in this repository is deliberately left in that pre-0.5.x state
+  this wave," but the tracked `.codex/agents/.muster-managed.json` already
+  carries `packageVersion: "0.5.0"` (not the legacy `generation`/
+  `bootstrapDigest` shape) and `doctor --codex` reports it healthy, not
+  legacy — that adjacent narrative line looks stale. Flagging for the driver
+  to route to whoever owns CHANGELOG currency next; not fixed here since it
+  is unrelated to either retriaged item's fixed-count/cache-boundary claims.

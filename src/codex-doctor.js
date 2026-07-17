@@ -9,6 +9,7 @@ import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
 import { resolveCodexPlugin } from "./codex-release.js";
+import { reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
   codexThreadLimitConfigPath,
@@ -115,6 +116,22 @@ async function registeredManagedScopes(home) {
     }
   }
   return { dirs, issues };
+}
+
+// Raw (best-effort, non-throwing) scope entries for the hook-state drift
+// check: unlike registeredManagedScopes above, this never filters an entry
+// out for failing a health check -- reconcileScopeRegistryEntries/
+// reconcileConfigTomlHookState need the FULL universe (including entries
+// whose configDir is missing or content is stale) to compute what would be
+// pruned; a malformed or absent registry simply yields no known scopes.
+async function rawScopeRegistryEntries(home) {
+  const registryPath = join(home, "muster", "install-scopes.json");
+  let registry;
+  try { registry = await readRegularJson(registryPath); }
+  catch { return []; }
+  if (!registry || registry.format !== 1 || registry.owner !== "muster" || !Array.isArray(registry.entries)) return [];
+  return registry.entries.filter(entry => entry && ["project", "user"].includes(entry.scope)
+    && typeof entry.configDir === "string" && isAbsolute(entry.configDir));
 }
 
 export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT_MS, spawnProcess = spawn } = {}) {
@@ -267,6 +284,35 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     }
   } catch (error) {
     checks.push({ name: "codex-thread-limits", ok: false, detail: `${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}` });
+  }
+  // codex-hook-bombardment: config.toml's [hooks.state] trust cache never
+  // gets pruned as scopes are deleted or case-duplicated (see
+  // reconcileConfigTomlHookState's rationale in src/codex-install.js), so a
+  // dead or duplicate scope keeps a live, firing hook registration forever.
+  // This re-derives the SAME stale/duplicate verdict `muster install codex`
+  // would reconcile away, purely to detect and report drift -- doctor never
+  // mutates config.toml (and never touches [projects] either way).
+  try {
+    const text = await readRegularFile(threadLimitConfigPath, "utf8");
+    if (text === null) {
+      checks.push({ name: "codex-hook-state", ok: true, detail: "Codex config.toml not found; nothing to reconcile" });
+    } else {
+      const registeredEntries = await rawScopeRegistryEntries(userCodexHome);
+      const keptEntries = await reconcileScopeRegistryEntries(registeredEntries);
+      // [projects] is never inspected or reported here: fix iteration 1
+      // removed [projects] pruning from reconcileConfigTomlHookState
+      // entirely (a leftover Codex trusted-directory record is harmless;
+      // muster cannot reliably attribute it as its own), so
+      // reconcileConfigTomlHookState's prunedProjects is always empty.
+      const { prunedHookState } = reconcileConfigTomlHookState(text, registeredEntries, keptEntries);
+      const overRegistered = prunedHookState.length > 0;
+      const staleConfigDirs = [...new Set(prunedHookState.map(item => item.configDir))];
+      checks.push({ name: "codex-hook-state", ok: !overRegistered, detail: overRegistered
+        ? `config.toml [hooks.state] retains ${prunedHookState.length} stale or case-duplicate Muster hook trust entr${prunedHookState.length === 1 ? "y" : "ies"} (${staleConfigDirs.join(", ")}); rerun muster install codex to reconcile`
+        : "config.toml [hooks.state] has no stale or duplicate Muster hook registrations" });
+    }
+  } catch (error) {
+    checks.push({ name: "codex-hook-state", ok: false, detail: `could not inspect config.toml [hooks.state]: ${error.message}` });
   }
   const scopeHomes = new Map([[join(cwd, ".codex"), false], [userCodexHome, false]]);
   for (const dir of registeredScopes.dirs) scopeHomes.set(dir, true);

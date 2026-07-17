@@ -151,6 +151,169 @@ export async function reconcileScopeRegistryEntries(entries, { lstatFn = lstat, 
   return [...survivors.values()];
 }
 
+// -- config.toml [hooks.state] trust-cache reconciliation --------------------
+//
+// Codex records a permanent trust decision per hook definition in the
+// shared config.toml under `[hooks.state."<hooksJsonPath>:<event>:<matcher
+// index>:<hook index>"]` (see docs/research/codex-cli.md section 4.1 and the
+// real fixture inspected while diagnosing codex-hook-bombardment). Nothing
+// prunes it as scopes are deleted or case-duplicated -- mirroring
+// reconcileScopeRegistryEntries' own justification above, a dead or
+// duplicate scope keeps a LIVE trust-cache entry (and, per that research
+// doc, a live hook-firing source) forever. This is a scoped, hand-rolled
+// editor in codex-thread-limits.js's spirit: it recognizes exactly the one
+// table shape above and passes every other line through byte-for-byte; it
+// never needs a general TOML parser because it only ever PRUNES whole
+// sections Codex itself already wrote, never creates new ones. A `[[...]]`
+// array-of-tables header (e.g. an `[[mcp_servers.*.env_http_headers]]`
+// block) ends a section's span exactly like a `[...]` table header does --
+// codex-hook-bombardment review iteration 1 PoC-proved that omitting this
+// let a pruned section's span swallow (and delete) an adjacent array-of-
+// tables block it never owned.
+//
+// `[projects."<projectRoot>"]` is Codex's own trusted-directory record (see
+// docs/research/codex-cli.md section 4.1) gating the whole .codex layer for
+// that project -- muster never created it and cannot reliably attribute it
+// as muster-owned, so this editor never touches it at all (fix iteration 1:
+// a prior revision pruned the paired project-trust entry alongside a pruned
+// project scope and was PoC-proven to revoke a user's deliberate trust,
+// plus any of that entry's non-muster keys, on an ordinary uninstall of a
+// still-existing project). A leftover trust record is harmless; revoking a
+// user's trust decision muster never made is not.
+function decodeTomlQuotedKey(raw) {
+  if (typeof raw !== "string" || raw.length < 2) return null;
+  const quote = raw[0];
+  if (quote === "'") return raw.at(-1) === "'" && !raw.slice(1, -1).includes("'") ? raw.slice(1, -1) : null;
+  if (quote !== '"' || raw.at(-1) !== '"') return null;
+  const body = raw.slice(1, -1);
+  if (!/^(?:[^"\\]|\\[\\"tnrbf]|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*$/.test(body)) return null;
+  return body.replace(/\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, escape) => {
+    if (escape[0] === "u" || escape[0] === "U") return String.fromCodePoint(parseInt(escape.slice(1), 16));
+    return { "\\": "\\", '"': '"', t: "\t", n: "\n", r: "\r", b: "\b", f: "\f" }[escape] ?? escape;
+  });
+}
+
+const HOOK_STATE_HEADER = /^\s*\[hooks\.state\.((?:"(?:[^"\\]|\\.)*")|(?:'[^']*'))\]\s*(?:#.*)?$/;
+// Matches EITHER a `[table.header]` OR a `[[array.of.tables]]` header line --
+// both end whatever section preceded them. Checked strictly as alternatives
+// (not a lenient `\[{1,2}...\]{1,2}`) so a line can never half-match with
+// mismatched bracket counts.
+const ANY_TOML_HEADER = /^\s*(?:\[\[[^\]]*\]\]|\[[^\]]*\])\s*(?:#.*)?$/;
+const HOOK_STATE_KEY = /^(.*):([a-z][a-z0-9_]*):(\d+):(\d+)$/;
+
+function parseConfigTomlTrustSections(text) {
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
+  const finalNewline = text === "" || text.endsWith("\n");
+  const lines = text ? text.split(/\r?\n/) : [];
+  if (finalNewline && lines.length) lines.pop();
+  const sections = [];
+  let current = null;
+  const closeCurrent = end => { if (current) { current.end = end; sections.push(current); current = null; } };
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const hookMatch = line.match(HOOK_STATE_HEADER);
+    if (hookMatch || ANY_TOML_HEADER.test(line)) closeCurrent(index);
+    if (hookMatch) current = { table: "hooks.state", key: decodeTomlQuotedKey(hookMatch[1]), headerLine: index };
+  }
+  closeCurrent(lines.length);
+  return { lines, newline, finalNewline, sections };
+}
+
+const renderConfigTomlTrustSections = state => state.lines.join(state.newline) + (state.finalNewline ? state.newline : "");
+
+// Converts a hooks.json event key (PascalCase, e.g. "SessionStart") to the
+// snake_case form Codex records in a [hooks.state] key's <event> segment
+// (e.g. "session_start") -- see docs/research/codex-cli.md section 4.1 and
+// codex/hooks/hooks.json's event keys vs. the real fixture's trust keys.
+const hookStateEventName = pascal => pascal.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+
+// Computes the EXACT `<event>:<groupIndex>:<hookIndex>` compound keys a
+// specific scope's OWN muster-authored hook groups currently occupy inside
+// its live hooks.json -- fix iteration 1's answer to over-revocation blocker
+// (b): locating a muster group by content (mirroring removeOwnedHookGroups'
+// own `findIndex(candidate => same(candidate, group))` matching, including
+// its splice-as-consumed order so two owned groups for the same event never
+// collide on one position) rather than by hooksJsonPath alone means a
+// co-located NON-muster hook definition -- sharing the same hooks.json but a
+// different group/hook index -- is never included here, and so never gets
+// swept up by a path-level prune.
+function ownedHookStateKeys(config, hookGroups) {
+  const keys = [];
+  for (const [event, groups] of Object.entries(hookGroups || {})) {
+    if (!Array.isArray(groups)) continue;
+    const current = [...(Array.isArray(config?.hooks?.[event]) ? config.hooks[event] : [])];
+    const snakeEvent = hookStateEventName(event);
+    for (const group of groups) {
+      const index = current.findIndex(candidate => same(candidate, group));
+      if (index < 0) continue;
+      const hookCount = Array.isArray(group.hooks) ? group.hooks.length : 0;
+      for (let hookIndex = 0; hookIndex < hookCount; hookIndex++) keys.push(`${snakeEvent}:${index}:${hookIndex}`);
+      current.splice(index, 1);
+    }
+  }
+  return keys;
+}
+
+// Reconciles config.toml's [hooks.state] trust cache against the
+// Muster-known scope universe: `registeredEntries` is every scope Muster has
+// ever recorded (the scope registry's raw entries, BEFORE its own
+// reconcileScopeRegistryEntries pass -- the only place that still remembers
+// a since-deleted scope's configDir at all), `keptEntries` is the subset
+// that should still have a live trust-cache entry (typically that same
+// reconcileScopeRegistryEntries' output for install/doctor, or the
+// remaining scopes after removing the one being uninstalled). A hooks.state
+// entry is pruned when its exact `<configDir>/hooks.json` prefix matches a
+// REGISTERED entry that is NOT in `keptEntries` -- i.e. never touching an
+// entry this pass cannot positively attribute to Muster (a plugin-bundled
+// key such as "muster@muster:hooks/hooks.json:...", another tool's
+// unrelated hooks.json, or any path this scope registry never recorded).
+//
+// A registered entry MAY additionally carry `ownedHookStateKeys` (an array
+// of the exact compound keys `ownedHookStateKeys()` above computed for it):
+// when present, pruning for THAT entry narrows to exactly those keys
+// instead of every entry under its hooksJsonPath -- fix iteration 1's answer
+// to over-revocation blocker (b), used by `muster uninstall codex` for the
+// one scope actually departing (whose directory and hooks.json still fully
+// exist). Every OTHER not-kept entry (a genuinely dead or case-duplicate
+// scope reconciled away as a byproduct) has no such per-key attribution
+// available or needed -- either its configDir no longer exists at all (no
+// file left for any other tool to still depend on), or it is the exact same
+// physical hooks.json as its kept survivor under a different on-disk casing
+// -- so it keeps the original whole-path prune, unchanged from before this
+// fix. `[projects."<root>"]` is never inspected or touched at all (see this
+// section's header comment).
+export function reconcileConfigTomlHookState(text, registeredEntries, keptEntries, { onPrune = () => {} } = {}) {
+  const state = parseConfigTomlTrustSections(text);
+  const registered = (registeredEntries || []).map(entry => ({
+    scope: entry.scope,
+    configDir: entry.configDir,
+    hooksJsonPath: join(entry.configDir, "hooks.json"),
+    ownedHookStateKeys: Array.isArray(entry.ownedHookStateKeys) ? new Set(entry.ownedHookStateKeys) : null
+  }));
+  const keptHooksJsonPaths = new Set((keptEntries || []).map(entry => join(entry.configDir, "hooks.json")));
+  const remove = new Array(state.lines.length).fill(false);
+  const markRemoved = section => { for (let index = section.headerLine; index < section.end; index++) remove[index] = true; };
+  const prunedHookState = [];
+  for (const section of state.sections) {
+    if (section.table !== "hooks.state" || section.key == null) continue;
+    const match = section.key.match(HOOK_STATE_KEY);
+    if (!match) continue;
+    const [, prefix, event, groupIndex, hookIndex] = match;
+    if (!isAbsolute(prefix)) continue;
+    const known = registered.find(entry => entry.hooksJsonPath === prefix);
+    if (!known || keptHooksJsonPaths.has(known.hooksJsonPath)) continue;
+    if (known.ownedHookStateKeys && !known.ownedHookStateKeys.has(`${event}:${groupIndex}:${hookIndex}`)) continue;
+    markRemoved(section);
+    const pruned = { type: "hooks.state", scope: known.scope, configDir: known.configDir, hooksJsonPath: known.hooksJsonPath, event, groupIndex: Number(groupIndex), hookIndex: Number(hookIndex) };
+    prunedHookState.push(pruned);
+    onPrune(pruned);
+  }
+  state.lines = state.lines.filter((_, index) => !remove[index]);
+  // prunedProjects is always empty: [projects] is never touched (see above).
+  // Kept in the return shape for API stability with existing callers.
+  return { text: renderConfigTomlTrustSections(state), prunedHookState, prunedProjects: [] };
+}
+
 async function scopeLockText(token) {
   return JSON.stringify({
     format: 1,
@@ -732,7 +895,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   ];
   let originals, changed;
   let actions = [];
-  const prunedScopes = [];
+  const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
     originals = new Map(); changed = [];
     await withScopeRegistryTransaction(home, async registry => {
@@ -754,8 +917,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         // Every pruned entry is reported below (path + reason) instead of
         // removed silently, since a prune is a best-effort guess (see
         // reconcileScopeRegistryEntries).
+        const candidateScopeEntries = [...registry.entries, currentScope];
         const reconciled = await reconcileScopeRegistryEntries(
-          [...registry.entries, currentScope],
+          candidateScopeEntries,
           { onPrune: pruned => prunedScopes.push(pruned) }
         );
         await atomicWriteSafe(registry.path, registryText(reconciled));
@@ -788,7 +952,19 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         try {
           const configExistedBefore = await safeExists(threadLimitConfigPath);
           const existingConfigText = configExistedBefore ? await readSafe(threadLimitConfigPath) : "";
-          const threadLimits = ensureCodexThreadLimits(existingConfigText);
+          // Reconcile config.toml's [hooks.state] trust cache against the
+          // SAME candidate/survivor scope sets the registry reconciliation
+          // above just computed, before raising the thread limits on the
+          // result -- see reconcileConfigTomlHookState's own rationale: this
+          // is the fix for codex-hook-bombardment (a dead or case-duplicated
+          // scope's hook definitions stay trusted, and thus still fire,
+          // forever without this). No ownedHookStateKeys is threaded through
+          // here: the current scope is always in `reconciled` (kept) during
+          // install, so it is never a pruning candidate in the first place.
+          const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, candidateScopeEntries, reconciled, {
+            onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
+          });
+          const threadLimits = ensureCodexThreadLimits(hookStateReconcile.text);
           // A repeat install must not re-derive before/sectionCreated/
           // configCreated from the ALREADY-raised file -- that would
           // permanently lose the true pre-Muster baseline the very first
@@ -822,7 +998,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     actions = present ? await registerPlugin(execFile, true, distributionRoot) : [];
   }
   return { ok: true, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
-    prunedScopes,
+    prunedScopes, prunedHookState, prunedProjectTrust,
     plugin: present ? { registered: !dryRun, actions } : { registered: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${scope}`] };
 }
@@ -854,11 +1030,17 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   await ordinaryDirectoryPath(hookRuntimeDir);
   const hookManifestExists = await safeExists(hookManifestPath), hookConfigExists = await safeExists(hookConfigPath);
   const hookManifest = hookManifestExists ? validateHookManifest(await readJson(hookManifestPath), hookRuntimeDir, hookManifestPath) : null;
-  let hookConfig = null, removeHookConfig = false;
+  let hookConfig = null, removeHookConfig = false, departingScopeOwnedHookStateKeys = null;
   if (hookManifest) {
-    hookConfig = hookConfigExists ? await readJson(hookConfigPath) : { hooks: {} };
-    if (!hookConfig || typeof hookConfig !== "object" || Array.isArray(hookConfig)) throw new Error(`Codex hook configuration conflict: ${hookConfigPath} is not valid JSON.`);
-    hookConfig = removeOwnedHookGroups(hookConfig, hookManifest.hookGroups, hookConfigPath);
+    const rawHookConfig = hookConfigExists ? await readJson(hookConfigPath) : { hooks: {} };
+    if (!rawHookConfig || typeof rawHookConfig !== "object" || Array.isArray(rawHookConfig)) throw new Error(`Codex hook configuration conflict: ${hookConfigPath} is not valid JSON.`);
+    // Fix iteration 1 (over-revocation blocker b): compute the departing
+    // scope's EXACT owned [hooks.state] keys from its hooks.json BEFORE
+    // muster's own groups are stripped out below, so a co-located non-muster
+    // hook definition sharing this same hooksJsonPath (a different group or
+    // hook index) is never conflated with muster's own and survives.
+    departingScopeOwnedHookStateKeys = ownedHookStateKeys(rawHookConfig, hookManifest.hookGroups);
+    hookConfig = removeOwnedHookGroups(rawHookConfig, hookManifest.hookGroups, hookConfigPath);
     const otherKeys = Object.keys(hookConfig).filter(key => key !== "hooks");
     removeHookConfig = hookManifest.hookConfigCreated && otherKeys.length === 0 && Object.keys(hookConfig.hooks || {}).length === 0;
   }
@@ -879,6 +1061,7 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
     ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath)
     : null;
   let liveScopes = [], ownershipCertain = false, removePlugin = false, restoreThreadLimits = false, removeThreadLimitConfig = false;
+  const prunedHookState = [], prunedProjectTrust = [];
   const uninstallScope = async registry => {
     liveScopes = await remainingManagedScopes(registry, currentScope);
     ownershipCertain = registry.present;
@@ -898,18 +1081,45 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
         if (removeHookConfig) await removeSafe(hookConfigPath);
         else await atomicWriteSafe(hookConfigPath, JSON.stringify(hookConfig, null, 2) + "\n");
       }
-      if (restoreThreadLimits) {
+      // Fix for codex-hook-bombardment: the scope being uninstalled just had
+      // its OWN hooks.json rewritten/removed above, so its config.toml
+      // [hooks.state] entries are now orphaned -- registeredEntries (the
+      // full pre-removal registry) minus liveScopes (registry.entries with
+      // currentScope already excluded) makes reconcileConfigTomlHookState
+      // prune exactly that scope's entries regardless of whether its
+      // configDir directory still physically exists, plus any other
+      // already-stale/duplicate entries as a reconciliation bonus. This
+      // scope's own registry entry additionally carries
+      // departingScopeOwnedHookStateKeys (fix iteration 1, blocker b) so
+      // that -- unlike the OTHER stale/duplicate entries reconciled away as
+      // a byproduct, whose whole hooksJsonPath prefix is pruned exactly as
+      // before -- only the EXACT keys muster itself registered here are
+      // removed; any co-located non-muster hooks.state entry sharing this
+      // hooksJsonPath survives. This runs on every uninstall, not only the
+      // last-scope thread-limit-restoring one. [projects] is never touched
+      // (see reconcileConfigTomlHookState's header comment).
+      const configTomlExistedBefore = await safeExists(threadLimitConfigPath);
+      if (configTomlExistedBefore || restoreThreadLimits) {
         try {
           await snapshot(originals, changed, threadLimitConfigPath);
-          const currentConfigText = await safeExists(threadLimitConfigPath) ? await readSafe(threadLimitConfigPath) : "";
-          const restoredText = restoreCodexThreadLimits(currentConfigText, threadLimitManifest);
-          removeThreadLimitConfig = threadLimitManifest.configCreated && restoredText.trim() === "";
+          let currentConfigText = configTomlExistedBefore ? await readSafe(threadLimitConfigPath) : "";
+          const registeredEntries = registry.entries.map(entry => sameScopeEntry(entry, currentScope) && departingScopeOwnedHookStateKeys
+            ? { ...entry, ownedHookStateKeys: departingScopeOwnedHookStateKeys }
+            : entry);
+          const hookStateReconcile = reconcileConfigTomlHookState(currentConfigText, registeredEntries, liveScopes, {
+            onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
+          });
+          currentConfigText = hookStateReconcile.text;
+          if (restoreThreadLimits) currentConfigText = restoreCodexThreadLimits(currentConfigText, threadLimitManifest);
+          removeThreadLimitConfig = restoreThreadLimits && threadLimitManifest.configCreated && currentConfigText.trim() === "";
           if (removeThreadLimitConfig) await removeSafe(threadLimitConfigPath);
-          else await atomicWriteSafe(threadLimitConfigPath, restoredText);
-          await snapshot(originals, changed, threadLimitManifestPath);
-          await removeSafe(threadLimitManifestPath);
+          else await atomicWriteSafe(threadLimitConfigPath, currentConfigText);
+          if (restoreThreadLimits) {
+            await snapshot(originals, changed, threadLimitManifestPath);
+            await removeSafe(threadLimitManifestPath);
+          }
         } catch (error) {
-          throw new Error(`Codex config.toml thread limits could not be restored at ${threadLimitConfigPath}: ${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}`);
+          throw new Error(`Codex config.toml hook-state/thread-limit reconciliation could not complete at ${threadLimitConfigPath}: ${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}`);
         }
       }
       if (removePlugin) await run(execFile, ["plugin", "remove", CODEX_PLUGIN]);
@@ -931,6 +1141,7 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
     ...(restoreThreadLimits ? [{ op: removeThreadLimitConfig ? "remove" : "merge", path: threadLimitConfigPath }] : [])
   ];
   return { ok: true, target: "codex", scope, dryRun, files: planned,
+    prunedHookState, prunedProjectTrust,
     plugin: present ? { removed: !dryRun && removePlugin, retained: liveScopes.length > 0, ownershipCertain } : { removed: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster uninstall codex --scope ${scope}`] };
 }

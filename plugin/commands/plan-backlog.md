@@ -9,25 +9,40 @@ Respond with a structured markdown Glass Box: when bootstrapping from a raw inte
 
 <backlog-or-intent>$ARGUMENTS</backlog-or-intent>
 
+0. **Resolve the CLI (once per invocation).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself carries zero cold-start cost), preferring a vendored/local install over `npx` — see docs/performance-pass.md:
+   ```bash
+   if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "$CLAUDE_PLUGIN_ROOT/runtime/muster.mjs" ]; then
+     MUSTER_CLI="node $CLAUDE_PLUGIN_ROOT/runtime/muster.mjs"
+   elif [ -f "./src/cli.js" ] && [ -f "./src/cli-resolve.js" ]; then
+     MUSTER_CLI="node ./src/cli.js"
+   elif [ -f "./node_modules/.bin/muster" ]; then
+     MUSTER_CLI="./node_modules/.bin/muster"
+   elif command -v muster >/dev/null 2>&1; then
+     MUSTER_CLI="muster"
+   else
+     MUSTER_CLI="npx -y @adnova-group/muster"
+   fi
+   ```
+   Every `muster` CLI call for the rest of THIS invocation (B1 onward, and every routed item's **router** skill call) reuses this resolved `$MUSTER_CLI` instead of a fresh `npx` invocation.
 0.5. **Announce the artifact** — before any other work, state in one line: "Planning a BACKLOG -> per-item manifests + batch plan for approval." (When B1 below resolves `$ARGUMENTS` as a raw intent rather than an existing backlog ref, the Bootstrap section runs first — that generation phase is additional work in service of the same announced artifact, not a different one.)
 
 **Run-active lifecycle:** Write `.muster/run-active` at invocation start (before B1) — the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping, covering the bootstrap phase (if any) and the batch-plan render. Remove it on Cancel (B5/BS4 below), or when handing off to `/muster:go-backlog` (go-backlog writes its own marker, exactly like go's own hand-off from `/muster:plan`). `SessionStart` on a fresh session clears a stale marker automatically.
 
 B1. **Resolve the source** — `$ARGUMENTS` is one of:
-   - a parseable backlog ref (`src/batch-plan.js`'s `parseBacklogRef`: `file` — a lone whitespace-free token with a dot-extension, e.g. `.muster/backlog.md` or `roadmap.txt` (any extension, not only `.md` — the WIDEN decision); `issues:<label>`; or `linear:<team key or project>`) — resolve it via the same three source forms go-backlog.md step 1 uses: a file ref reads the unchecked `- [ ]` items and runs `npx -y @adnova-group/muster sprint-waves <file>`, whose JSON is authoritative (`ok:false` reports the named errors and stops, nothing is planned; `annotated:true` means the approved batch runs wave mode); `issues:<label>` resolves via `gh issue list --label <label> --state open`; `linear:<team key or project>` via Linear MCP `list_issues`. A missing file, a `gh` failure, a Linear MCP failure, or `kind: invalid` (e.g. `issues:` with nothing after the colon, a `..`-bearing file-shaped token, or an absolute path — `parseBacklogRef`'s file-ref shape check rejects all three outright, never read) is reported and the run stops — always an explicit failure rather than a silent fallback to raw-intent handling.
+   - a parseable backlog ref (`src/batch-plan.js`'s `parseBacklogRef`: `file` — a lone whitespace-free token with a dot-extension, e.g. `.muster/backlog.md` or `roadmap.txt` (any extension, not only `.md` — the WIDEN decision); `issues:<label>`; or `linear:<team key or project>`) — resolve it via the same three source forms go-backlog.md step 1 uses: a file ref reads the unchecked `- [ ]` items and runs `$MUSTER_CLI sprint-waves <file>`, whose JSON is authoritative (`ok:false` reports the named errors and stops, nothing is planned; `annotated:true` means the approved batch runs wave mode); `issues:<label>` resolves via `gh issue list --label <label> --state open`; `linear:<team key or project>` via Linear MCP `list_issues`. A missing file, a `gh` failure, a Linear MCP failure, or `kind: invalid` (e.g. `issues:` with nothing after the colon, a `..`-bearing file-shaped token, or an absolute path — `parseBacklogRef`'s file-ref shape check rejects all three outright, never read) is reported and the run stops — always an explicit failure rather than a silent fallback to raw-intent handling.
    - a non-ref-shaped, non-empty argument that still names an existing, readable file whose content looks like a checklist (a `- [ ] ` line) — `src/scope.js`'s broader rule 2: no extension or whitespace-free-token shape required, just "is this really a backlog". Resolve it the same way as the file-ref bullet above (read the unchecked items, run `sprint-waves`). Never read a `..`-bearing or absolute path this way — same traversal boundary `src/scope.js` itself applies.
    - empty, with `.muster/backlog.md` present and carrying at least one unchecked item — defaults to that file, resolved the same way.
    - empty, with no live default backlog, and no intent given — ask the user for a backlog ref or a raw intent to decompose, and stop. Plan-backlog always requires a backlog ref or an intent to decompose before it runs.
    - anything else non-empty (no ref shape per `parseBacklogRef`, and not an existing readable checklist file per the bullet above) — a **raw intent**. Run **Bootstrap** below to generate `.muster/backlog.md` first, then resolve it via the file form above.
 
    Routing here is planning, not execution: nothing is dispatched, no branch is created.
-B2. **Shared context, once** — run `npx -y @adnova-group/muster detect .` and `npx -y @adnova-group/muster capabilities` (capture both JSON blobs), plus `npx -y @adnova-group/muster memory read .muster/memory "<key terms from the backlog>"` and skim any hits — a single time; every item shares the same ProjectProfile and AvailableCapabilities.
-B3. **Route every item up front** — per item, in backlog order: run `npx -y @adnova-group/muster assess "<item text>"`
+B2. **Shared context, once** — run `$MUSTER_CLI detect .` and `$MUSTER_CLI capabilities` (capture both JSON blobs), plus `$MUSTER_CLI memory read .muster/memory "<key terms from the backlog>"` and skim any hits — a single time; every item shares the same ProjectProfile and AvailableCapabilities.
+B3. **Route every item up front** — per item, in backlog order: run `$MUSTER_CLI assess "<item text>"`
    (a `clear:false` item is NEVER interviewed here — record its gap `signals` as a flag on the item's plan row
    instead; the fix belongs in the backlog text, per go-backlog.md step 3's interviews-belong-at-authoring-time rule), then
    invoke the **router** skill with the item text as the outcome (the same call plan.md's single-outcome path
    makes) — write the emitted Crew Manifest to `.muster/batch/<item-id>.manifest.json`, and validate it:
-   `npx -y @adnova-group/muster manifest validate .muster/batch/<item-id>.manifest.json` — repair and re-validate
+   `$MUSTER_CLI manifest validate .muster/batch/<item-id>.manifest.json` — repair and re-validate
    until `ok: true`.
 B4. **Render ONE batch plan** (the Glass Box), one row per item plus two batch-level sections:
    - **Per-item crew summary** — the item's crew as `stage → provider` pairs, its `mergeDisposition`, and any assess
@@ -74,7 +89,7 @@ BS1. **Decompose** — split the raw intent into candidate items: each a one-lin
    scope rather than re-litigating it.
 BS2. **Validate** — for every candidate: item format, wave grammar, and dedupe follow `plugin/skills/interview/SKILL.md`'s
    Decomposition check; the assess-cap and UNMEASURABLE handling below follow `plugin/commands/capture.md`'s Validate step:
-   - **assess-passable** — `npx -y @adnova-group/muster assess "<item text>"` (every `{key: value}` annotation
+   - **assess-passable** — `$MUSTER_CLI assess "<item text>"` (every `{key: value}` annotation
      stripped generically first) returns `clear: true`; fold in criteria until it does, capped at 2 reword attempts.
      Past 2 attempts, offer it in BS4 marked **UNMEASURABLE** with its assess signals attached, for the human to fix
      or drop, always carrying forward the item's real assess signals rather than fabricating a metric to force

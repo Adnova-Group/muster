@@ -11,7 +11,22 @@ Drive the audit loop:
 
 **Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after the merge decision (step 7), after the backlog is written (backlog mode), or on escalation exit. `SessionStart` on a fresh session clears a stale marker automatically.
 
-1. **Seed** — `npx -y @adnova-group/muster audit` -> Crew Manifest at `.muster/manifest.json`; validate (`npx -y @adnova-group/muster manifest validate`).
+0. **Resolve the CLI (once per run).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself never pays a cold start), preferring a vendored/local install over `npx` — see docs/performance-pass.md:
+   ```bash
+   if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "$CLAUDE_PLUGIN_ROOT/runtime/muster.mjs" ]; then
+     MUSTER_CLI="node $CLAUDE_PLUGIN_ROOT/runtime/muster.mjs"
+   elif [ -f "./src/cli.js" ] && [ -f "./src/cli-resolve.js" ]; then
+     MUSTER_CLI="node ./src/cli.js"
+   elif [ -f "./node_modules/.bin/muster" ]; then
+     MUSTER_CLI="./node_modules/.bin/muster"
+   elif command -v muster >/dev/null 2>&1; then
+     MUSTER_CLI="muster"
+   else
+     MUSTER_CLI="npx -y @adnova-group/muster"
+   fi
+   ```
+   Every `muster` CLI call for the rest of this run (steps 1-7, and the orchestrator/review-gate skills this mode invokes) uses `$MUSTER_CLI` — never re-invoke `npx` directly.
+1. **Seed** — `$MUSTER_CLI audit` -> Crew Manifest at `.muster/manifest.json`; validate (`$MUSTER_CLI manifest validate`).
 2. **Branch** — create a work branch off the base (never run on the base branch). Skip in backlog mode: the sweep is read-only and nothing gets committed, so there's nothing to branch for.
 3. **Parallel dimension sweep** — dispatch the chosen provider per dimension CONCURRENTLY, each READ-ONLY, on its role's model (architecture-review on fable, etc.): architecture, tech-debt, coverage, simplification, readability, security. If the crew manifest includes a `prompt-quality` member (i.e. `muster audit` detected a prompting signal -- an LLM/agent SDK dependency -- via `muster detect`), also dispatch the prompt-quality dimension concurrently in this wave. Each returns findings: severity (P0/P1/P2), location (file:line), problem, suggested fix. Identical in both modes.
 Maintain a board task per dimension here and per fix slice in step 5 (the orchestrator skill's task-board discipline).
@@ -21,7 +36,7 @@ Maintain a board task per dimension here and per fix slice in step 5 (the orches
    - Create-or-append: if `backlog.md` already exists, read it and append below the existing content; never clobber it.
    - Exactly one line per item: `- [ ] <fix description with acceptance criteria folded inline>`, followed by `{id: ...}` and (when applicable) `{deps: ...}` annotations — no `{disposition}` annotation (sprint defaults unannotated items to `pr`). Fold the finding's suggested fix and its "done" condition into one sentence; a multi-line item is a format violation.
    - Wave grammar (id/deps): every item gets `{id: <cluster-slug>}` (a label only, never affecting ordering). Independent finding-clusters get `{deps: none}` **explicitly** — this is what makes audit backlogs wave-parallel; an item written without a `{deps}` annotation implicitly depends on everything already above it, so omitting it would serialize the whole backlog. Clusters that touch the SAME file(s) get explicit `{deps}` on each other instead, serializing just that pair/group — note the shared-file reason in the final report.
-   - Every item embeds at least one digit or measurable-criteria keyword (`metric`, `target`, `reduce`, `latency`, etc. — see `src/interview.js`) alongside enough concrete detail that `npx -y @adnova-group/muster assess "<item text>"` — run with every `{key: value}` annotation stripped generically — returns `clear: true` — vague one-liners aren't acceptable items.
+   - Every item embeds at least one digit or measurable-criteria keyword (`metric`, `target`, `reduce`, `latency`, etc. — see `src/interview.js`) alongside enough concrete detail that `$MUSTER_CLI assess "<item text>"` — run with every `{key: value}` annotation stripped generically — returns `clear: true` — vague one-liners aren't acceptable items.
    - Skip exact-duplicate items: compare candidate text against every existing line's text with every `{key: value}` annotation stripped generically; an exact match is skipped, not appended. Track skips for the final report.
 6. **Verify** — run the **review-gate** + the full suite; must be green. Confirm no regressions. Skip in backlog mode: nothing was changed.
 7. **Escalate** if the fix-loop cap is hit on an item (record it in the ledger, continue the others). Then present the merge decision via the **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**. Backlog mode skips this too — instead, **finish** by reporting the written backlog (items added + items skipped as duplicates) and suggesting `/muster:sprint` to run it.

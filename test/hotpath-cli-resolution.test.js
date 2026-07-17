@@ -1,13 +1,21 @@
-// Guards the performance-pass fix for criterion 1 (zero npx cold-starts in a run): the
-// two run-entry command files must resolve $MUSTER_CLI ONCE, using the exact snippet
-// src/cli-resolve.js exports (so the doc and the code cannot silently drift apart — same
-// pattern as test/docs-currency.test.js for other anchored facts), and every hot-path
-// skill file invoked during a single `/muster:go` run must reuse that variable instead of
-// re-invoking `npx -y @adnova-group/muster` per call.
+// Guards the performance-pass fix for criterion 1 (zero npx cold-starts in a run): every
+// standalone run-entry command file must resolve $MUSTER_CLI ONCE, using the exact
+// snippet src/cli-resolve.js exports (so the doc and the code cannot silently drift apart
+// — same pattern as test/docs-currency.test.js for other anchored facts), and every
+// hot-path skill file invoked during a single `/muster:go` run must reuse that variable
+// instead of re-invoking `npx -y @adnova-group/muster` per call.
 //
 // The ONE allowed literal `npx -y @adnova-group/muster` per entry-point file is the
 // fallback branch INSIDE the resolution snippet itself — that line is data (the last-resort
 // invocation string), not a call site.
+//
+// weight-reduction item, criterion 4: audit.md/diagnose.md/capture.md/plan.md/
+// plan-backlog.md were the remaining standalone entry points still on raw `npx -y` (named
+// as follow-up candidates in docs/performance-pass.md's "Scope of this wave" section) —
+// they now get the identical binding go.md/go-backlog.md already carry. runner.md,
+// autopilot.md, sprint.md, and run.md were checked too: none shell a raw npx call
+// themselves (they delegate to go.md/go-backlog.md's own instructions), so they need no
+// snippet of their own and are deliberately not in this list.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,7 +27,15 @@ const read = (p) => readFile(new URL(p, root), "utf8");
 
 const NPX_MUSTER = /npx -y @adnova-group\/muster/g;
 
-const ENTRY_POINT_FILES = ["plugin/commands/go.md", "plugin/commands/go-backlog.md"];
+const ENTRY_POINT_FILES = [
+  "plugin/commands/go.md",
+  "plugin/commands/go-backlog.md",
+  "plugin/commands/audit.md",
+  "plugin/commands/diagnose.md",
+  "plugin/commands/capture.md",
+  "plugin/commands/plan.md",
+  "plugin/commands/plan-backlog.md",
+];
 
 // Markdown nests the ```bash fence under a numbered list item, so every line in the doc
 // carries extra leading whitespace beyond the snippet's own internal indentation
@@ -46,7 +62,7 @@ const HOTPATH_SKILL_FILES = [
   "plugin/skills/router/SKILL.md",
 ];
 
-test("go.md and go-backlog.md each embed the canonical CLI-resolution snippet (same shell logic as src/cli-resolve.js, modulo markdown list-nesting indent)", async () => {
+test("every standalone entry-point command file embeds the canonical CLI-resolution snippet (same shell logic as src/cli-resolve.js, modulo markdown list-nesting indent)", async () => {
   for (const file of ENTRY_POINT_FILES) {
     const text = await read(file);
     const fenced = extractBashFence(text);
@@ -58,7 +74,7 @@ test("go.md and go-backlog.md each embed the canonical CLI-resolution snippet (s
   }
 });
 
-test("go.md and go-backlog.md carry exactly one literal npx-muster string — the fallback line inside the resolution snippet", async () => {
+test("every standalone entry-point command file carries exactly one literal npx-muster string — the fallback line inside the resolution snippet", async () => {
   for (const file of ENTRY_POINT_FILES) {
     const text = await read(file);
     const matches = text.match(NPX_MUSTER) || [];

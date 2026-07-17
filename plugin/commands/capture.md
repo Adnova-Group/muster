@@ -13,6 +13,22 @@ Run this whenever a discussion has produced actionable outcomes that belong on t
 
 **Run-active lifecycle:** none. Capture only ever writes `.muster/backlog.md`, and the `PreToolUse` hook's decision order already treats writes under `.muster/` as always-allowed bookkeeping regardless of any `run-active`/`wave-active` marker; capture handles everything inline, with no subagent wave of its own to dispatch. A `run-active` marker here would gate nothing — it was boilerplate copied from the other commands and is deliberately omitted.
 
+0. **Resolve the CLI (once per invocation).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself never pays a cold start), preferring a vendored/local install over `npx` — see docs/performance-pass.md:
+   ```bash
+   if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "$CLAUDE_PLUGIN_ROOT/runtime/muster.mjs" ]; then
+     MUSTER_CLI="node $CLAUDE_PLUGIN_ROOT/runtime/muster.mjs"
+   elif [ -f "./src/cli.js" ] && [ -f "./src/cli-resolve.js" ]; then
+     MUSTER_CLI="node ./src/cli.js"
+   elif [ -f "./node_modules/.bin/muster" ]; then
+     MUSTER_CLI="./node_modules/.bin/muster"
+   elif command -v muster >/dev/null 2>&1; then
+     MUSTER_CLI="muster"
+   else
+     MUSTER_CLI="npx -y @adnova-group/muster"
+   fi
+   ```
+   Every `muster` CLI call for the rest of this invocation (steps 1-6 below) uses `$MUSTER_CLI` — never re-invoke `npx` directly.
+
 This reuses the interview skill's Decomposition check machinery **by reference** — same item format, wave grammar, measurability, and dedupe rules `plugin/skills/interview/SKILL.md` defines for backlog writes. Read it first if unfamiliar, and reuse it exactly rather than re-deriving a divergent format here. Drive:
 
 1. **Extract** — scan the conversation (scoped by `$ARGUMENTS` if given) for candidate items: each a one-line outcome with its measurable folded in (a finding, a decision, a residual, a directive). Trace each to what was actually discussed — a quoted fragment or a named decision — recorded alongside the item (glass box); an item that can't be traced to something said in the conversation is not a candidate.
@@ -25,7 +41,7 @@ This reuses the interview skill's Decomposition check machinery **by reference**
 
    **Cap** — if more than 10 candidates survive the exclusions above, present only the 10 most recent/decision-weighted candidates and state how many were held back (e.g. "4 additional candidates held back past the cap of 10").
 2. **Validate** — for every candidate, apply the interview skill's shared rules exactly:
-   - **assess-passable** — `npx -y @adnova-group/muster assess "<item text>"` (every `{key: value}` annotation stripped generically first) returns `clear: true`; fold in criteria until it does, capped at 2 reword attempts. If the item still isn't `clear: true` after 2 attempts, present it in step 4's offer list marked **UNMEASURABLE** with its assess signals attached, for the human to fix or drop — never fabricate a metric to force `clear: true`.
+   - **assess-passable** — `muster assess "<item text>"` (via `$MUSTER_CLI assess "<item text>"`) (every `{key: value}` annotation stripped generically first) returns `clear: true`; fold in criteria until it does, capped at 2 reword attempts. If the item still isn't `clear: true` after 2 attempts, present it in step 4's offer list marked **UNMEASURABLE** with its assess signals attached, for the human to fix or drop — never fabricate a metric to force `clear: true`.
    - **`{id: <short-kebab-slug>}`** on every item — a label only, with no effect on ordering.
    - **explicit `{deps: none}`** for a genuinely independent item, or **`{deps: <predecessor ids>}`** for one that builds on another item extracted in this same batch — an item written without a `{deps}` annotation implicitly depends on everything already above it in the file, so always state it explicitly.
    - **no `{disposition}`** annotation unless the user explicitly declared one for that item during the conversation (`sprint` defaults unannotated items to `pr`).

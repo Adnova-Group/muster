@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   extractMarkedSections,
   lintBriefReturnCaps,
+  findUnmarkedDispatchSignals,
+  DISPATCH_SIGNAL_PATTERNS,
   BRIEF_TEMPLATE_MAX_TOKENS,
   RETURN_CONTRACT_MAX_TOKENS,
 } from "../src/brief-lint.js";
@@ -88,4 +90,70 @@ test("lintBriefReturnCaps: scans multiple files and aggregates counts across all
   assert.deepEqual(findings, []);
   assert.equal(briefCount, 2);
   assert.equal(returnCount, 1);
+});
+
+// brief-lint-coverage item: the coverage half. A marked-span budget check only ever looks at
+// spans an author already wrapped; findUnmarkedDispatchSignals is the mutant-kill-proof half --
+// it finds real dispatch-brief/return-contract SIGNALS (a fixed, named regex list; see
+// src/brief-lint.js's own comment for the "why fixed, not fuzzy" rationale) that sit OUTSIDE any
+// marked span, i.e. exactly what a forgotten marker (new template, or one stripped from an old
+// one) looks like. test/brief-lint-coverage.test.js runs this SAME function over the real repo.
+
+test("findUnmarkedDispatchSignals: a signal with no marker anywhere in the file is reported", () => {
+  const files = { "agent.md": "## Report back\n- files touched\n- test result" };
+  assert.deepEqual(findUnmarkedDispatchSignals(files), [{ path: "agent.md", signal: "report-back-heading" }]);
+});
+
+test("findUnmarkedDispatchSignals: the SAME signal wrapped in a return-template marker is not reported", () => {
+  const files = {
+    "agent.md": "## Report back\n<!-- muster-return-template:start -->\n- files touched\n<!-- muster-return-template:end -->",
+  };
+  assert.deepEqual(findUnmarkedDispatchSignals(files), []);
+});
+
+test("findUnmarkedDispatchSignals: a signal wrapped in the WRONG marker kind still counts as covered (kind mismatch is not this lint's concern)", () => {
+  const files = {
+    "agent.md": "## Verdict\n<!-- muster-brief-template:start -->\nEnd with VERDICT: PASS or CHANGES_REQUESTED.\n<!-- muster-brief-template:end -->",
+  };
+  assert.deepEqual(findUnmarkedDispatchSignals(files), []);
+});
+
+test("findUnmarkedDispatchSignals: a file with no matching signal at all reports nothing", () => {
+  assert.deepEqual(findUnmarkedDispatchSignals({ "plain.md": "nothing to see here" }), []);
+});
+
+test("findUnmarkedDispatchSignals: reports one entry per unmarked signal, scanning multiple files", () => {
+  const files = {
+    "a.md": "## Report back\nunmarked",
+    "b.md": "## Verdict\nunmarked",
+    "c.md": "## Report back\n<!-- muster-return-template:start -->marked<!-- muster-return-template:end -->",
+  };
+  const unmarked = findUnmarkedDispatchSignals(files);
+  assert.deepEqual(unmarked.map((u) => u.path).sort(), ["a.md", "b.md"]);
+});
+
+test("findUnmarkedDispatchSignals: accepts a caller-supplied patterns override (e.g. a synthetic single-pattern test)", () => {
+  const files = { "x.md": "SPECIAL SIGNAL here, unmarked" };
+  const patterns = [{ name: "custom", re: /SPECIAL SIGNAL/ }];
+  assert.deepEqual(findUnmarkedDispatchSignals(files, { patterns }), [{ path: "x.md", signal: "custom" }]);
+  assert.deepEqual(findUnmarkedDispatchSignals(files, { patterns: [] }), []);
+});
+
+test("DISPATCH_SIGNAL_PATTERNS: exposes at least the headings/phrases this item catalogued as real dispatch sites", () => {
+  const names = DISPATCH_SIGNAL_PATTERNS.map((p) => p.name);
+  for (const expected of [
+    "dispatch-contract-heading",
+    "report-back-heading",
+    "verdict-heading",
+    "return-contract-heading",
+    "request-response-shapes-heading",
+    "go-spec-gate-return-contract",
+    "audit-sweep-return-contract",
+    "review-gate-full-brief-identity",
+    "review-gate-fast-path-brief-identity",
+    "tournament-synthesizer-prompt",
+    "tournament-judge-scoring-shape",
+  ]) {
+    assert.ok(names.includes(expected), `expected DISPATCH_SIGNAL_PATTERNS to include "${expected}"`);
+  }
 });

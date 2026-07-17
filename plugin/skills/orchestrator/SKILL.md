@@ -146,99 +146,82 @@ for `.muster/task-board.json`'s semantics, not built out by this item.
 **Capability check (once, before wave 1):** run `$MUSTER_CLI wave-dispatch [--agent-teams|--no-agent-teams]`
 -> `{mode: "native"|"prose", agentTeams, reason}` (`src/wave-dispatch.js`). Pass `--agent-teams` when
 this session's own tool list carries this harness's agent-teams / background-agent surface (`Workflow`,
-`ListAgents`, `SendMessage` -- a deterministic fan-out + barrier tool, reached only through agent-teams
-mode, never the single-session loop: docs/research/claude-code-cli.md sec 1's binary-tools evidence,
-plus sec 11's `claude agents` subcommand); omit the flag to fall back to the declared
-`MUSTER_AGENT_TEAMS` env var. Nothing outside a running session can auto-probe agent-teams mode, so
-this is a DECLARED capability, never an auto-probe (the same shape as Cowork's `nativePluginRide` --
-`src/harness.js`/`src/capabilities.js`), and `mode` defaults to `"prose"` whenever nothing is declared.
+`ListAgents`, `SendMessage` -- reached only through agent-teams mode, never the single-session loop:
+docs/research/claude-code-cli.md sec 1's binary-tools evidence, plus sec 11's `claude agents`
+subcommand); omit the flag to fall back to the declared `MUSTER_AGENT_TEAMS` env var. This is a
+DECLARED capability, never an auto-probe (same shape as Cowork's `nativePluginRide` --
+`src/harness.js`/`src/capabilities.js`); `mode` defaults to `"prose"` whenever nothing is declared.
 Record the result to STATE once; it does not change mid-run.
 
-- **`mode: "native"`** -- step 4a's per-wave dispatch rides this harness's native `Workflow` tool
-  instead of individual `Agent` tool calls: submit the wave's tasks as one deterministic fan-out (each
-  task becomes one `Workflow` step naming its resolved `subagent_type`/`model`/brief, same resolution
-  rules as step 4a below), let the native tool's own barrier join them, then read each step's result
-  exactly once. Step 4b's barrier and step 4c's review gate are UNCHANGED by this -- only the fan-out
-  mechanism moves off prose dispatch calls and onto harness-scheduled code. **Parallel isolation is not
-  relaxed:** step 4a's per-task git worktree rule for a multi-file-writing wave is a hard requirement
-  independent of dispatch mechanism, not something this item's own research verified the `Workflow`
-  tool's own parameter schema supports per step (a documented gap, unlike the Agent tool's `isolation`
-  parameter -- see docs/research/claude-code-cli.md's `observed-agent-tool` citation). Until a per-step
-  isolation control is confirmed, a wave that would need it (more than one file-writing task) stays on
-  the prose path even when `mode: "native"` is declared for the run -- never silently drop the
-  collision guarantee to ride the native tool.
-- **`mode: "prose"`** (the unconditional floor) -- step 4a's dispatch loop runs exactly as written: one
-  `Agent` tool call per task, dispatched concurrently by the model, barrier by waiting on every result.
-  This is the fallback for every harness/session without a declared agent-teams surface (Codex, Cowork,
-  a plain single-session Claude Code invocation, CLI or Desktop). AUGMENT, NOT SUPERSEDE: none of the
-  prose loop's rules (provider resolution, model override, subagent-failure retry, scope fences) change
-  when native is unavailable -- the native path is preferred when declared, prose is always the floor.
+- **`mode: "native"`** -- step 4a's per-wave fan-out rides this harness's native `Workflow` tool
+  instead of individual `Agent` tool calls (same `subagent_type`/`model`/brief resolution as step 4a).
+  Step 4b's barrier and step 4c's review gate are UNCHANGED -- only the fan-out mechanism moves off
+  prose dispatch calls. **Parallel isolation is not relaxed:** a documented gap (unlike the Agent
+  tool's own `isolation` parameter -- docs/research/claude-code-cli.md's `observed-agent-tool`
+  citation) means a wave needing more than one file-writing task's worktree isolation stays on the
+  prose path even when `mode: "native"` is declared -- never silently drop the collision guarantee.
+- **`mode: "prose"`** (the unconditional floor) -- step 4a's dispatch loop runs exactly as written.
+  This is the fallback for every harness/session without a declared agent-teams surface (Codex,
+  Cowork, a plain single-session Claude Code invocation). AUGMENT, NOT SUPERSEDE: none of the prose
+  loop's rules change when native is unavailable -- native is preferred when declared, prose is
+  always the floor.
 
 One worked example of each path (the same 2-task wave, routed both ways): docs/native-workflow-dispatch.md.
 
 ### Codex-native dispatch: spawn_agent
 
-Codex has no `Workflow`-tool counterpart -- there is no deterministic native fan-out primitive on
-that harness, so the "prose" floor bullet above understates it: on Codex, wave dispatch rides
-Codex's OWN native primitive, subagent collaboration itself, never a prose-loop substitute for the
-Claude-only `Workflow` tool. Each wave task calls `collaboration.spawn_agent` (`task_name`,
-`message`, `fork_turns: "none"`, `agent_type: "<exact chosen.id>"`), the barrier is
-`collaboration.wait_agent` (<=60s timeout per outstanding agent id, mailbox receipts processed
-first), and `collaboration.list_agents` reconciles live state once per wake -- never tight-poll
-(docs/research/codex-cli.md sec 6's `[CODE-VERIFIED]` dispatch-mechanics citation). `fork_turns` is
-always `"none"`: Codex rejects a named `agent_type` combined with a full-history fork (`"all"`),
-since full-history agents inherit the parent's type/model/effort.
+Codex has no `Workflow`-tool counterpart, so wave dispatch rides Codex's OWN native primitive,
+subagent collaboration itself, never a prose-loop substitute for the Claude-only `Workflow` tool.
+Each wave task calls `collaboration.spawn_agent` (`task_name`, `message`, `fork_turns: "none"`,
+`agent_type: "<exact chosen.id>"`); the barrier is `collaboration.wait_agent` (<=60s per outstanding
+agent id, mailbox receipts first), `collaboration.list_agents` reconciles once per wake, never
+tight-poll (docs/research/codex-cli.md sec 6's `[CODE-VERIFIED]` dispatch-mechanics citation).
+`fork_turns` is always `"none"`: Codex rejects a named `agent_type` combined with a full-history
+fork (`"all"`), since full-history agents inherit the parent's type/model/effort.
 
-`src/wave-dispatch.js`'s `resolveCodexWaveDispatch({ multiAgent, env })` selects between this and a
-sequential-inline floor purely on the session's own `features.multi_agent` signal -- the same
-DECLARED-not-auto-probed shape as `resolveWaveDispatch` above, just inverted: Codex ships
-`multi_agent` default-on, so nothing declared means spawn_agent, not prose; only an explicit
-`multiAgent: false` (or `MUSTER_CODEX_MULTI_AGENT=0`) drops to `mode: "sequential-inline"` --
-dispatch the wave's tasks one crew member at a time, never a partial/mixed fan-out.
+`resolveCodexWaveDispatch({ multiAgent, env })` (`src/wave-dispatch.js`) selects between this and a
+sequential-inline floor purely on the session's own `features.multi_agent` signal -- same
+DECLARED-not-auto-probed shape as above, inverted: Codex ships `multi_agent` default-on, so only an
+explicit `multiAgent: false` (or `MUSTER_CODEX_MULTI_AGENT=0`) drops to `mode: "sequential-inline"`
+(one crew member at a time, never a partial/mixed fan-out).
 
 **Fail-closed on a rejected profile -- the whole point of this design.** `agent_type` names a
 custom-agent TOML profile (`.codex/agents/<id>.toml`) that pins that role's model, reasoning
 effort, and sandbox; losing that pin by silently falling back to a generic agent is the exact
 anti-pattern the codex burn taught muster to guard against. Only an ACTUALLY-rejected
 `spawn_agent` call proves a profile unavailable -- never infer unavailability from a simplified
-displayed tool signature (`agent_type` may be absent from it but must be sent anyway). When a call
-is rejected, `assertCodexSpawnAgentAccepted` in `src/wave-dispatch.js` throws a registration
-diagnostic naming the `agent_type` and task, and the run STOPS on that task -- it never catches the
-rejection and silently re-dispatches on a generic/default agent. Fix the registration (reinstall
-the profile, verify `.codex/agents/`), then re-dispatch that one task.
+displayed tool signature. `assertCodexSpawnAgentAccepted` in `src/wave-dispatch.js` throws a
+registration diagnostic naming the `agent_type` and task on a rejection, and the run STOPS on that
+task rather than silently re-dispatching on a generic/default agent. Fix the registration
+(reinstall the profile, verify `.codex/agents/`), then re-dispatch that one task.
 
 ### Worktree isolation per harness + base-SHA receipts
 
-Step 4a's "Parallel isolation" bullet already names Claude Code CLI's mechanism (the Agent
-tool's own `isolation: "worktree"` parameter). The other harnesses muster targets each have a
-DIFFERENT native mechanism, or none at all -- select the one that matches the harness actually
-running this dispatch (`$MUSTER_CLI worktree-isolation --harness <name>`, `resolveWorktreeIsolation`
-in `src/wave-dispatch.js`; a declared, not auto-probed, selection -- same shape as the wave-dispatch
+Step 4a's "Parallel isolation" bullet already names Claude Code CLI's mechanism (the Agent tool's
+own `isolation: "worktree"` parameter). The other harnesses each have a DIFFERENT native mechanism,
+or none -- select the one matching the harness actually running this dispatch
+(`$MUSTER_CLI worktree-isolation --harness <name>`, `resolveWorktreeIsolation` in
+`src/wave-dispatch.js`; a declared, not auto-probed, selection, same shape as the wave-dispatch
 capability checks above):
 
 - **Claude Code CLI** -- `isolation: "worktree"` on the Agent tool (step 4a, above).
-- **Claude Code Desktop** -- automatic per-session worktree under `<root>/.claude/worktrees/`;
-  muster scripts nothing, the harness creates it before the session's first tool call
-  (docs/research/claude-code-desktop.md sec 2.2).
-- **Hermes** -- `hermes -w` (a disposable per-session worktree) or a kanban `worktree` workspace
-  for a queued task; Hermes creates and tears it down, muster only selects which invocation shape
-  to dispatch into (docs/research/hermes.md sec 6).
-- **Codex** -- no native mechanism exists: `collaboration.spawn_agent` has no cwd field
-  (docs/research/codex-cli.md sec 6), so there is nothing to select. The brief's absolute
-  `WORKTREE CWD` (Codex-native dispatch, above) plus the base-SHA receipt below stand in for
-  isolation muster cannot get from the harness.
+- **Claude Code Desktop** -- automatic per-session worktree under `<root>/.claude/worktrees/`; the
+  harness creates it, muster scripts nothing (docs/research/claude-code-desktop.md sec 2.2).
+- **Hermes** -- `hermes -w` or a kanban `worktree` workspace; Hermes creates and tears it down,
+  muster only selects which invocation shape to dispatch into (docs/research/hermes.md sec 6).
+- **Codex** -- no native mechanism: `collaboration.spawn_agent` has no cwd field
+  (docs/research/codex-cli.md sec 6). The brief's absolute `WORKTREE CWD` (Codex-native dispatch,
+  above) plus the base-SHA receipt below stand in for isolation muster cannot get from the harness.
 
 **Every harness records the same base-SHA receipt, regardless of which mechanism (or none)
-isolated the work.** None of the four self-report a fork point back to the orchestrator, so
-capture one per dispatched crew member at dispatch time, before the task starts:
-`buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath })` (`src/wave-dispatch.js`)
-builds it, refusing to build one over a missing or non-hex `baseSha` -- a receipt that isn't
-provably a real fork point is worse than no receipt. Append the built receipt to STATE alongside
-the existing per-task dispatch line (step 4a's "Announce before acting"); one receipt per
-dispatched crew member, not per wave. This makes the Codex no-cwd-on-dispatch gap
-receipts-VERIFIED rather than aspirational: `test/worktree-isolation.test.js` proves the builder
-enforces a real SHA shape (including against this checkout's own live `git rev-parse HEAD`) and
-that every harness above resolves to its own distinct mechanism string, never a silent default.
+isolated the work.** None of the four self-report a fork point, so capture one per dispatched crew
+member at dispatch time: `buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath })`
+(`src/wave-dispatch.js`) refuses to build one over a missing or non-hex `baseSha` -- a receipt that
+isn't provably a real fork point is worse than no receipt. Append it to STATE alongside the
+per-task dispatch line (step 4a's "Announce before acting"); one receipt per dispatched crew
+member, not per wave. `test/worktree-isolation.test.js` proves the builder enforces a real SHA
+shape (against this checkout's own live `git rev-parse HEAD`) and that every harness above resolves
+to its own distinct mechanism string, never a silent default.
 
 ## Scope fences
 

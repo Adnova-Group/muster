@@ -330,5 +330,37 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // hermes.md SS4's full set). File COUNT unchanged (136); grep-audit counts unchanged (still
   // 35/15/21/14, 85 total) since these are wording-only fixes with no new/removed
   // AskUserQuestion/hook/dispatch/worktree mentions.
-  assert.equal(hash.digest("hex"), "7e47a42a1d0bfffc39e87b335dc6335d8654ab04496a703ad59e96b194b9fa56");
+  //
+  // Pin re-derived again for the skill-content-only-thinning item (backlog item
+  // `skill-content-only-thinning`, docs/strategy/native-delegation.md backlog item 11): file
+  // COUNT unchanged (137) -- only plugin/skills/orchestrator/SKILL.md's content changed. Its
+  // "## Wave dispatch: native Workflow vs prose fallback" section (through the "### Codex-native
+  // dispatch: spawn_agent" and "### Worktree isolation per harness + base-SHA receipts"
+  // subsections, up to "## Scope fences") was de-narrated: sentences that merely restated HOW a
+  // native primitive already works mechanically (e.g. "each task becomes one `Workflow` step ...
+  // let the native tool's own barrier join them, then read each step's result exactly once", the
+  // repeated "muster scripts nothing" / "muster only selects" framing per harness row) were cut,
+  // while every judgment clause, capability check, and fallback survives verbatim in meaning: the
+  // "Parallel isolation is not relaxed" gap-not-relaxed rule, the DECLARED-not-auto-probed
+  // capability-check shape (both the agent-teams and Codex `multi_agent` checks), the
+  // fail-closed-on-a-rejected-profile rule and its `assertCodexSpawnAgentAccepted` citation, the
+  // per-harness worktree-mechanism table, and the base-SHA receipt requirement all stay, just
+  // without the mechanic play-by-play. This is the one skill the strategy doc names as carrying
+  // load-bearing native-delegation mechanic prose (`m-surface`); coordination/SKILL.md and
+  // review-gate/SKILL.md were left untouched per the item's own brief (already cut in the
+  // speed-tuning/coordination-footprint passes, past their safe re-cut point), and the other 8
+  // skills were audited and found to carry no redundant native-mechanic narration to strip (their
+  // content is domain judgment/protocol, not mechanic narration -- see docs/skill-thinning.md).
+  // This section's own two boundary headings ("## Wave dispatch: native Workflow vs prose
+  // fallback", "## Scope fences") are untouched, so scripts/build-codex.mjs's wholesale-replace
+  // span (which discards this section's body for the Codex build regardless of content) still
+  // locates both anchors and rebuilds clean (re-verified with `MUSTER_BUILD_FORCE=1`). Every
+  // corpus-contradiction.test.js / harness-delegation.test.js pin against this file (the surface
+  // taxonomy tokens, the gate-name mapping, "3 fix iterations", the Task board section's
+  // TaskCreate/TaskUpdate/STATE-alone citations) is outside the edited span and untouched.
+  // docs/binding-interface.md's grep-audit counts are unchanged (still 35/17/28/22, same file
+  // counts) -- the cut reworded sentences without changing which LINES mention
+  // AskUserQuestion/Agent-Task-tool/hook/worktree. See docs/skill-thinning.md for the full
+  // per-skill before/after footprint table this item measured.
+  assert.equal(hash.digest("hex"), "19260fb5dbf770b5f8a7daad759dde58d2c324e19eec60a3840af1d41c610e70");
 });

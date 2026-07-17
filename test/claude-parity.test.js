@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 135);
+  assert.equal(paths.length, 136);
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -106,9 +106,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // docs/weight-reduction.md's own honest-miss precedent (criterion 3, 39.8% vs a 25% target) for
   // this project's established practice of reporting a real percentage over a fabricated one.
   //
-  // Pin re-derived for the legacy-alias-retirement item: file COUNT unchanged (135) but
-  // run.md/autopilot.md/sprint.md's guidance paragraph (still exactly the alias-shape's pinned 2
-  // paragraphs, see test/mode-evals.test.js's alias-shape-equivalence test) now also carries a
+  // Pin re-derived for the legacy-alias-retirement item: file COUNT unchanged (135 at that item)
+  // but run.md/autopilot.md/sprint.md's guidance paragraph (still exactly the alias-shape's pinned
+  // 2 paragraphs, see test/mode-evals.test.js's alias-shape-equivalence test) now also carries a
   // dated deprecation notice ("Deprecation notice (2026-07-17): ... retires in muster 0.7.0"),
   // and each file's frontmatter description names the same retirement target -- this OPENS the
   // deprecation window, it does not change the alias's behavior: the Read-and-execute directive
@@ -116,13 +116,27 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // test/alias-deprecation.test.js's "no behavior change" test).
   //
   // Pin re-derived again for the cowork-plugin-loader-probe item (docs/research/claude-cowork.md
-  // section 9): file COUNT unchanged (135) -- only cowork/mcp-server.mjs's content changed
-  // (header comment + muster_capabilities tool description), correcting its stale "no plugin/
-  // skill/slash/hook primitives" claim (Cowork's plugin system shipped ~May 2026) and documenting
-  // the new MUSTER_COWORK_NATIVE_PLUGIN declared capability check. scripts/build-codex.mjs's
-  // string-rewrite of this same description (the Codex MCP adapter) was updated to match,
-  // verified by test/codex-cache-package.test.js's rebuild-from-packed-tarball check.
-  // Both content changes are reviewed, not accidental Codex-side drift; the pinned sha below is
-  // re-derived once after all four merges land.
-  assert.equal(hash.digest("hex"), "182f59dcb1eaa5a752d055c7bdae36e1ed535e094d166de44a65e45df6f2a013");
+  // section 9): file COUNT unchanged (135 at that item) -- only cowork/mcp-server.mjs's content
+  // changed (header comment + muster_capabilities tool description), correcting its stale "no
+  // plugin/skill/slash/hook primitives" claim (Cowork's plugin system shipped ~May 2026) and
+  // documenting the new MUSTER_COWORK_NATIVE_PLUGIN declared capability check. scripts/build-
+  // codex.mjs's string-rewrite of this same description (the Codex MCP adapter) was updated to
+  // match, verified by test/codex-cache-package.test.js's rebuild-from-packed-tarball check.
+  //
+  // Pin re-derived again for the fast-path-token-gap item (see docs/fast-path-token-gap.md): file
+  // COUNT changed 135 -> 136 -- a genuinely new file, plugin/skills/review-gate/fast-path-brief.md
+  // (lever 1's lighter reviewer brief for a fast-path/small-diff, single-reviewer dispatch; real,
+  // measured ~73% smaller than the full review-gate/SKILL.md). review-gate/SKILL.md itself gained
+  // one new "Fast-path reviewer brief" section, placed after the surface-type gates and before the
+  // Mutant-kill gate section so it disturbs neither the mutant-kill-rule drift-guard fixture
+  // (test/mode-evals.test.js) nor scripts/build-codex.mjs's review-gate step-1/fix-iteration-cap/
+  // AvailableCapabilities-sentence Codex-adaptation anchors (all re-verified green); this section
+  // now invokes the new `muster review-brief` CLI command (a fix-loop addition, code-backed rather
+  // than prose-only) and documents where its optional `--diff-text-file` input comes from. No other
+  // file under this surface changed.
+  //
+  // All three content changes above are reviewed, not accidental Codex-side drift. The four PRs
+  // (#56 alias-retirement, #57 test-only, #58 cowork-probe, #59 fast-path) were merged together;
+  // the pinned sha below is re-derived once, after all four land, over the combined surface.
+  assert.equal(hash.digest("hex"), "9f6cb31d6abb50cbc7a579ff649644a806c2859e3202c65476bee3a8790ea321");
 });

@@ -93,3 +93,56 @@ test("projectFastPathTokenReduction: zero before-tokens is a defined no-op (no d
   assert.equal(r.reductionPct, 0);
   assert.equal(r.consumptionPct, 0);
 });
+
+// ── fast-path-token-gap item: lever 1 (lighter reviewer brief) + lever 2 (cheaper reasoning
+// tier) each act ONLY on the "after" (fast-path, reviewerCount:1) side -- the "before" (full
+// pipeline, reviewerCount:2) dispatch is unchanged, still the full review-gate/SKILL.md brief
+// at the unchanged output-token constant. `reviewSkillCharsAfter`/`outputTokensPerReviewerAfter`
+// are OPTIONAL and default to the base `reviewSkillChars`/`outputTokensPerReviewer` -- so every
+// existing call site (and test above) that doesn't pass them behaves byte-identically to
+// before this item, and only eval/perf/replay-fast-path.mjs's updated call opts into the
+// asymmetric before/after modeling.
+
+test("projectFastPathTokenReduction: reviewSkillCharsAfter/outputTokensPerReviewerAfter default to the base before-side values (backward compatible)", () => {
+  const withDefaults = projectFastPathTokenReduction({
+    routerSkillChars: 4000, reviewSkillChars: 4000, diffThresholdLines: 200, assumedCharsPerLine: 40,
+    reviewerCountBefore: 2, reviewerCountAfter: 1, outputTokensPerReviewer: 300, outputTokensPerRouter: 400,
+  });
+  const withExplicitSameValues = projectFastPathTokenReduction({
+    routerSkillChars: 4000, reviewSkillChars: 4000, diffThresholdLines: 200, assumedCharsPerLine: 40,
+    reviewerCountBefore: 2, reviewerCountAfter: 1, outputTokensPerReviewer: 300, outputTokensPerRouter: 400,
+    reviewSkillCharsAfter: 4000, outputTokensPerReviewerAfter: 300,
+  });
+  assert.deepEqual(withDefaults, withExplicitSameValues);
+});
+
+test("projectFastPathTokenReduction: a smaller reviewSkillCharsAfter (lighter brief) only shrinks the AFTER side, before is untouched", () => {
+  const r = projectFastPathTokenReduction({
+    routerSkillChars: 4000, reviewSkillChars: 4000, diffThresholdLines: 200, assumedCharsPerLine: 40,
+    reviewerCountBefore: 2, reviewerCountAfter: 1, outputTokensPerReviewer: 300, outputTokensPerRouter: 400,
+    reviewSkillCharsAfter: 2000, // half the full brief's size
+  });
+  // before side unaffected: reviewSkillTokens/perReviewerDispatchTokens/beforeTokens read the
+  // BASE (full-brief) reviewSkillChars, exactly as the no-lever test above.
+  assert.equal(r.reviewSkillTokens, 1000);
+  assert.equal(r.perReviewerDispatchTokens, 3300);
+  assert.equal(r.beforeTokens, 8000);
+  // after side uses the lighter brief: reviewSkillTokensAfter = 2000/4 = 500;
+  // perReviewerDispatchTokensAfter = 500 + 2000(diff) + 300(output) = 2800; afterTokens = 1*2800.
+  assert.equal(r.reviewSkillTokensAfter, 500);
+  assert.equal(r.perReviewerDispatchTokensAfter, 2800);
+  assert.equal(r.afterTokens, 2800);
+  assert.ok(r.consumptionPct < 41.25, "a lighter after-side brief must lower consumptionPct vs the no-lever baseline");
+});
+
+test("projectFastPathTokenReduction: a smaller outputTokensPerReviewerAfter (cheaper reasoning tier) further shrinks ONLY the after side", () => {
+  const r = projectFastPathTokenReduction({
+    routerSkillChars: 4000, reviewSkillChars: 4000, diffThresholdLines: 200, assumedCharsPerLine: 40,
+    reviewerCountBefore: 2, reviewerCountAfter: 1, outputTokensPerReviewer: 300, outputTokensPerRouter: 400,
+    reviewSkillCharsAfter: 2000, outputTokensPerReviewerAfter: 180, // both levers combined
+  });
+  assert.equal(r.beforeTokens, 8000, "before side (full pipeline, unchanged) is untouched by either lever");
+  // perReviewerDispatchTokensAfter = 500(skill) + 2000(diff) + 180(output) = 2680
+  assert.equal(r.perReviewerDispatchTokensAfter, 2680);
+  assert.equal(r.afterTokens, 2680);
+});

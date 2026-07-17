@@ -115,20 +115,23 @@ test("cli wire: gate-cadence without --changed-lines omits reviewerCount (backwa
   const { stdout } = await run(["gate-cadence", fixture]);
   const parsed = JSON.parse(stdout);
   assert.equal("reviewerCount" in parsed, false);
+  assert.equal("reviewerReasoning" in parsed, false);
 });
 
-test("cli wire: gate-cadence --changed-lines under the default 200-line threshold folds reviewerCount:1 in", async () => {
+test("cli wire: gate-cadence --changed-lines under the default 200-line threshold folds reviewerCount:1 and reviewerReasoning:medium in (fast-path-token-gap lever 2)", async () => {
   const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
   const { stdout } = await run(["gate-cadence", fixture, "--changed-lines", "50"]);
   const parsed = JSON.parse(stdout);
   assert.equal(parsed.reviewerCount, 1);
+  assert.equal(parsed.reviewerReasoning, "medium");
 });
 
-test("cli wire: gate-cadence --changed-lines at/over the default threshold folds reviewerCount:2 in (unchanged default)", async () => {
+test("cli wire: gate-cadence --changed-lines at/over the default threshold folds reviewerCount:2 and reviewerReasoning:high in (unchanged default)", async () => {
   const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
   const { stdout } = await run(["gate-cadence", fixture, "--changed-lines", "200"]);
   const parsed = JSON.parse(stdout);
   assert.equal(parsed.reviewerCount, 2);
+  assert.equal(parsed.reviewerReasoning, "high");
 });
 
 test("cli wire: gate-cadence honors MUSTER_REVIEW_DIFF_THRESHOLD to override the default", async () => {
@@ -162,6 +165,75 @@ test("cli wire: gate-cadence on a manifest with no 'plan' array exits 1", async 
     assert.equal(err.code, 1);
     assert.match(err.stderr, /no 'plan' array/);
   }
+});
+
+// ---------------------------------------------------------------------------
+// review-brief (fast-path-token-gap item, lever 1): a code-backed CLI wrapper over
+// src/review-brief.js's lightBriefEligible/detectReviewTriggers, the SAME "code over model"
+// decision pattern gate-cadence/citation-check/fast-path already established for a
+// diff-content decision -- review-gate/SKILL.md's step invokes this instead of leaving the
+// eligibility check to unenforced prose discipline.
+// ---------------------------------------------------------------------------
+
+test("cli wire: review-brief --reviewer-count is required", async (t) => {
+  try {
+    await run(["review-brief"]);
+    assert.fail("should have exited non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr, /--reviewer-count/);
+  }
+});
+
+test("cli wire: review-brief --reviewer-count rejects a negative/non-numeric value", async (t) => {
+  try {
+    await run(["review-brief", "--reviewer-count", "nope"]);
+    assert.fail("should have exited non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr, /--reviewer-count must be a non-negative finite number/);
+  }
+});
+
+test("cli wire: review-brief with no --diff-files and reviewerCount:1 is eligible (no triggers possible on an empty diff)", async () => {
+  const { stdout } = await run(["review-brief", "--reviewer-count", "1"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.eligible, true);
+  assert.deepEqual(parsed.triggers, { mutantKill: false, citation: false, surface: false, any: false });
+});
+
+test("cli wire: review-brief --reviewer-count 2 is never eligible, regardless of diff content", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-review-brief-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const diffFiles = join(tmp, "diff-files.txt");
+  await writeFile(diffFiles, "src/keyword.js\nsrc/scope.js\n");
+  const { stdout } = await run(["review-brief", "--reviewer-count", "2", "--diff-files", diffFiles]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.eligible, false);
+});
+
+test("cli wire: review-brief --diff-files reads one path per line and reports the mutant-kill trigger for a touched test file", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-review-brief-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const diffFiles = join(tmp, "diff-files.txt");
+  await writeFile(diffFiles, "src/keyword.js\ntest/keyword.test.js\n");
+  const { stdout } = await run(["review-brief", "--reviewer-count", "1", "--diff-files", diffFiles]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.eligible, false);
+  assert.equal(parsed.triggers.mutantKill, true);
+});
+
+test("cli wire: review-brief --diff-text-file carries the citation-in-text signal even with no .md path", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-review-brief-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const diffFiles = join(tmp, "diff-files.txt");
+  const diffTextFile = join(tmp, "diff-text.txt");
+  await writeFile(diffFiles, "src/keyword.js\n");
+  await writeFile(diffTextFile, "+some text [src: anchor-1] more text\n");
+  const { stdout } = await run(["review-brief", "--reviewer-count", "1", "--diff-files", diffFiles, "--diff-text-file", diffTextFile]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.eligible, false);
+  assert.equal(parsed.triggers.citation, true);
 });
 
 // ---------------------------------------------------------------------------

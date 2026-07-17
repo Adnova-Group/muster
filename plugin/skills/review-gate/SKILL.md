@@ -63,6 +63,31 @@ fired and the resolving evidence. No evidence recorded is an automatic FAIL.
    (or any integration-testing-tagged skill); OR the wave claims an integration works. PASS requires
    live evidence — the command/request and its result, not inference from unit tests.
 
+## Fast-path reviewer brief (small diff, single reviewer)
+
+Additive lever, never a scope cut: when step 1 resolves `reviewerCount: 1`, ALSO run
+`$MUSTER_CLI review-brief --reviewer-count 1 --diff-files <file> [--diff-text-file <file>]` →
+`{ eligible, triggers }` (`src/review-brief.js`'s `lightBriefEligible`/`detectReviewTriggers` —
+the same code-backed decision pattern `gate-cadence`/`citation-check` already use, not left to
+unenforced prose judgment). `--diff-files <file>` is the SAME `git diff --numstat` path list
+already gathered for step 1, written one path per line; `--diff-text-file <file>` is OPTIONAL —
+the wave's own diff text (already in hand from step 1's `git diff`), when convenient to write to
+a file — omitting it only disables the citation-in-text (`[src: ...]`) signal, the path-based
+citation/mutant-kill/surface signals still apply.
+
+- **`eligible: true`** (`reviewerCount: 1` AND no citation/mutant-kill/surface trigger present) —
+  dispatch the reviewer with `plugin/skills/review-gate/fast-path-brief.md` (the essential
+  correctness + security checks) INSTEAD OF this full file. Also request reasoning effort
+  `gate-cadence`'s folded-in `reviewerReasoning` reports (`"medium"`, per `src/gate-cadence.js`'s
+  `reviewerReasoningForCount`) on any dispatch interface that accepts a per-call reasoning-effort
+  override; where none exists (this is RECORDED/REQUESTED, not a claim that every harness honors
+  it today — see docs/fast-path-token-gap.md), the brief substitution above is still the operative
+  lever.
+- **`eligible: false`** (any trigger present, OR `reviewerCount: 2`) — dispatch with THIS file,
+  unchanged, at `reviewerReasoning: "high"`. A trigger firing at `reviewerCount: 1` still falls
+  back to the full brief; the light brief never substitutes for a diff that could need what it
+  omits.
+
 ## Mutant-kill gate
 
 Additive, never a softening. Fires when a wave adds a new test/eval guard (a test file, an assertion,

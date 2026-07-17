@@ -5,6 +5,8 @@ import {
   SMALL_TASK_THRESHOLD,
   reviewerCountForDiff,
   DEFAULT_REVIEW_DIFF_THRESHOLD,
+  reviewerReasoningForCount,
+  REVIEWER_REASONING,
 } from "../src/gate-cadence.js";
 
 test("non-array input throws", () => {
@@ -152,4 +154,36 @@ test("unchanged-multiwave proof (criterion 5): a real multi-task/multi-wave outc
   assert.equal(r.specGateRounds, 1, "spec gate still runs (unchanged)");
   assert.equal(r.reviewGateBatches, 5, "review-gate cadence stays proportional to wave count (unchanged)");
   assert.equal(r.reviewerCount, 2, "a diff over the threshold still gets both reviewers (unchanged) — no gate weakens for real multi-task work");
+});
+
+// ── fast-path-token-gap item, lever 2: a sub-threshold diff's single reviewer also requests a
+// cheaper reasoning-effort tier, not just fewer reviewers (see codex/agents.manifest.json's
+// own DeepSWE-evidence rationale: "Sol/medium for routine implementation, and Sol/high for
+// hard judgment" -- a single reviewer under the diff-size threshold is exactly the "routine,
+// well-scoped" class medium effort is evidenced to suffice for). This changes ONLY how much
+// reasoning budget the reviewer is asked to spend, never which checks it runs.
+
+test("reviewerReasoningForCount: rejects anything other than 1 or 2", () => {
+  assert.throws(() => reviewerReasoningForCount(0), /reviewerCount must be 1 or 2/i);
+  assert.throws(() => reviewerReasoningForCount(3), /reviewerCount must be 1 or 2/i);
+  assert.throws(() => reviewerReasoningForCount("1"), /reviewerCount must be 1 or 2/i);
+});
+
+test("reviewerReasoningForCount: 1 reviewer (sub-threshold diff) -> medium; 2 reviewers (unchanged) -> high", () => {
+  assert.equal(reviewerReasoningForCount(1), "medium");
+  assert.equal(reviewerReasoningForCount(2), "high");
+  assert.deepEqual(REVIEWER_REASONING, { full: "high", fastPath: "medium" }, "sanity: known canonical reasoning tiers");
+});
+
+test("planGateCadence: reviewerReasoning is folded in alongside reviewerCount, omitted when changedLines is absent", () => {
+  const withoutChangedLines = planGateCadence([["t1"]]);
+  assert.equal("reviewerReasoning" in withoutChangedLines, false);
+
+  const underThreshold = planGateCadence([["t1"]], { changedLines: 50 });
+  assert.equal(underThreshold.reviewerCount, 1);
+  assert.equal(underThreshold.reviewerReasoning, "medium");
+
+  const atThreshold = planGateCadence([["t1"], ["t2"], ["t3"]], { changedLines: 500 });
+  assert.equal(atThreshold.reviewerCount, 2);
+  assert.equal(atThreshold.reviewerReasoning, "high", "at/over the threshold keeps the unchanged high-effort reviewer");
 });

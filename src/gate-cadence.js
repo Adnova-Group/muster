@@ -14,10 +14,13 @@
 // review-gate batches the run defaults to.
 //
 // Levers only — batching (fewer review-gate dispatches) and the existing dedup (spec
-// gate is one whole-plan dispatch, not one per task). The reviewer tier, the pass bar,
-// and the fix-loop cap (3, `REVIEW_GATE_MAX_ITERATIONS` in src/loop.js) are untouched:
-// a batched pass reviews the FULL cumulative diff across every batched wave, at the same
-// rigor as any single-wave pass — see docs/performance-pass.md.
+// gate is one whole-plan dispatch, not one per task). The reviewer's PASS BAR and the
+// fix-loop cap (3, `REVIEW_GATE_MAX_ITERATIONS` in src/loop.js) are untouched: a batched
+// pass reviews the FULL cumulative diff across every batched wave, at the same rigor as
+// any single-wave pass — see docs/performance-pass.md. fast-path-token-gap (see
+// reviewerReasoningForCount below) ADDS a reasoning-effort axis for a sub-threshold diff's
+// single reviewer — still never a change to which provider/model is dispatched, nor to
+// what it checks (docs/fast-path-token-gap.md).
 export const SMALL_TASK_THRESHOLD = 3;
 
 // weight-reduction item, criterion 2: review gates also scale with DIFF SIZE, an axis
@@ -58,13 +61,36 @@ export function reviewerCountForDiff(changedLines, { threshold = DEFAULT_REVIEW_
   return changedLines < threshold ? 1 : 2;
 }
 
+// fast-path-token-gap item, lever 2: the SAME diff-size axis that already picks reviewerCount
+// (above) also picks a reasoning-effort TIER for that reviewer. Motivation (see codex/
+// agents.manifest.json's own DeepSWE-evidence rationale: "Sol/medium for routine
+// implementation, and Sol/high for hard judgment"): a single reviewer under the diff-size
+// threshold is reviewing a well-defined, small, mechanical-scope surface -- exactly the class
+// medium effort is evidenced to suffice for -- while the 2-reviewer, at/over-threshold case
+// keeps high effort unchanged (a bigger/ambiguous diff is the "hard judgment" class this
+// evidence reserves high effort for). This changes ONLY how much reasoning budget the SAME
+// reviewer persona is asked to spend, never which checks it runs -- criterion 2 of this item
+// (no scope reduction) is a hard constraint that this lever never touches: it is additive
+// alongside reviewerCount, not a substitute for it, and it never changes WHICH provider is
+// dispatched (see src/model.js/src/codex.js -- Codex remains an adapter target, not a second
+// tier resolver; this is a per-dispatch reasoning-effort hint, not a model-tier change).
+export const REVIEWER_REASONING = Object.freeze({ full: "high", fastPath: "medium" });
+
+export function reviewerReasoningForCount(reviewerCount) {
+  if (reviewerCount !== 1 && reviewerCount !== 2) {
+    throw new Error(`reviewerReasoningForCount: reviewerCount must be 1 or 2, got ${reviewerCount}`);
+  }
+  return reviewerCount === 1 ? REVIEWER_REASONING.fastPath : REVIEWER_REASONING.full;
+}
+
 // `changedLines` (and its paired `reviewDiffThreshold` override) is OPTIONAL: a caller
 // planning ahead of any wave running (e.g. go.md step 4's one-shot capture, before a
 // single line of diff exists) gets the existing taskCount-only decision, unchanged and
-// with no `reviewerCount` key at all — never a fabricated guess at a diff size nobody has
-// yet. A caller that already knows the diff (review-gate/SKILL.md step 1, dispatched
-// after a wave's changes exist) passes `changedLines` and gets `reviewerCount` folded into
-// the SAME result object, so one call answers both cadence questions together.
+// with no `reviewerCount`/`reviewerReasoning` keys at all — never a fabricated guess at a
+// diff size nobody has yet. A caller that already knows the diff (review-gate/SKILL.md
+// step 1, dispatched after a wave's changes exist) passes `changedLines` and gets both
+// `reviewerCount` and `reviewerReasoning` folded into the SAME result object, so one call
+// answers all three cadence questions together.
 export function planGateCadence(waves, { changedLines, reviewDiffThreshold } = {}) {
   if (!Array.isArray(waves)) throw new Error("planGateCadence: waves must be an array of waves (each an array of task ids)");
 
@@ -72,10 +98,13 @@ export function planGateCadence(waves, { changedLines, reviewDiffThreshold } = {
   const waveCount = waves.length;
   const hasParallelWave = waves.some((w) => Array.isArray(w) && w.length > 1);
 
-  const reviewerCountFields =
-    changedLines === undefined
-      ? {}
-      : { reviewerCount: reviewerCountForDiff(changedLines, { threshold: reviewDiffThreshold }) };
+  const reviewerCountFields = (() => {
+    if (changedLines === undefined) return {};
+    const reviewerCount = reviewerCountForDiff(changedLines, { threshold: reviewDiffThreshold });
+    // lever 2: fold the reasoning-effort tier in alongside reviewerCount, same "one call
+    // answers both cadence questions together" discipline as reviewerCount's own comment above.
+    return { reviewerCount, reviewerReasoning: reviewerReasoningForCount(reviewerCount) };
+  })();
 
   if (taskCount === 0) {
     return {

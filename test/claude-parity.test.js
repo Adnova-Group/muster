@@ -170,5 +170,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // regardless of declared mode until that gap closes). docs/binding-interface.md's grep-audit
   // table was also re-derived (dispatch 15->16, worktree 14->15, total 79->81) since the new
   // section's prose added one more `Agent` tool mention and one more `worktree` mention.
-  assert.equal(hash.digest("hex"), "1ccec82c682639542d36ae8d7243384475fa97e88d412833d9c84f5cb0b9b4f3");
+  //
+  // Pin re-derived again for the codex-spawn-agent-dispatch item (stacked on
+  // workflow-tool-delegation, docs/strategy/native-delegation.md backlog item 4): file COUNT
+  // unchanged (136) -- only plugin/skills/orchestrator/SKILL.md's content changed again. It
+  // gained one new "### Codex-native dispatch: spawn_agent" subsection, placed directly after
+  // the "Wave dispatch: native Workflow vs prose fallback" section's worked-example pointer and
+  // before "## Scope fences" -- disturbing neither the numbered step list, the native-vs-prose
+  // bullets above it, nor any other named section. The new subsection documents that Codex rides
+  // its OWN native primitive (`collaboration.spawn_agent`/`wait_agent`/`list_agents`,
+  // `fork_turns: "none"`, `agent_type`) rather than a prose-loop substitute for the Claude-only
+  // `Workflow` tool, names `src/wave-dispatch.js`'s new `resolveCodexWaveDispatch` (spawn_agent
+  // vs sequential-inline, gated on Codex's own `features.multi_agent`, default-on -- inverse of
+  // agent-teams' default-off) and `assertCodexSpawnAgentAccepted` (the fail-closed guard: a
+  // rejected profile throws a registration diagnostic naming the `agent_type`/task rather than
+  // ever silently falling back to a generic agent), fixture-driven TDD in
+  // test/codex-wave-dispatch.test.js. This whole subsection falls inside build-codex.mjs's
+  // existing wholesale-replace span for the Wave-dispatch section (`waveDispatchStart` ..
+  // `"## Scope fences"`), so it is discarded verbatim by the Codex adaptation in favor of that
+  // function's already-existing fixed Codex-specific text -- re-verified by rebuilding with
+  // MUSTER_BUILD_FORCE=1 and re-running the full suite green.
+  assert.equal(hash.digest("hex"), "c77aa3443fef7b1000fd584f1a14fe93cefc0e0ee9acad48ee021e7737fab1f1");
 });

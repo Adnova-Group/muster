@@ -151,6 +151,37 @@ Record the result to STATE once; it does not change mid-run.
 
 One worked example of each path (the same 2-task wave, routed both ways): docs/native-workflow-dispatch.md.
 
+### Codex-native dispatch: spawn_agent
+
+Codex has no `Workflow`-tool counterpart -- there is no deterministic native fan-out primitive on
+that harness, so the "prose" floor bullet above understates it: on Codex, wave dispatch rides
+Codex's OWN native primitive, subagent collaboration itself, never a prose-loop substitute for the
+Claude-only `Workflow` tool. Each wave task calls `collaboration.spawn_agent` (`task_name`,
+`message`, `fork_turns: "none"`, `agent_type: "<exact chosen.id>"`), the barrier is
+`collaboration.wait_agent` (<=60s timeout per outstanding agent id, mailbox receipts processed
+first), and `collaboration.list_agents` reconciles live state once per wake -- never tight-poll
+(docs/research/codex-cli.md sec 6's `[CODE-VERIFIED]` dispatch-mechanics citation). `fork_turns` is
+always `"none"`: Codex rejects a named `agent_type` combined with a full-history fork (`"all"`),
+since full-history agents inherit the parent's type/model/effort.
+
+`src/wave-dispatch.js`'s `resolveCodexWaveDispatch({ multiAgent, env })` selects between this and a
+sequential-inline floor purely on the session's own `features.multi_agent` signal -- the same
+DECLARED-not-auto-probed shape as `resolveWaveDispatch` above, just inverted: Codex ships
+`multi_agent` default-on, so nothing declared means spawn_agent, not prose; only an explicit
+`multiAgent: false` (or `MUSTER_CODEX_MULTI_AGENT=0`) drops to `mode: "sequential-inline"` --
+dispatch the wave's tasks one crew member at a time, never a partial/mixed fan-out.
+
+**Fail-closed on a rejected profile -- the whole point of this design.** `agent_type` names a
+custom-agent TOML profile (`.codex/agents/<id>.toml`) that pins that role's model, reasoning
+effort, and sandbox; losing that pin by silently falling back to a generic agent is the exact
+anti-pattern the codex burn taught muster to guard against. Only an ACTUALLY-rejected
+`spawn_agent` call proves a profile unavailable -- never infer unavailability from a simplified
+displayed tool signature (`agent_type` may be absent from it but must be sent anyway). When a call
+is rejected, `assertCodexSpawnAgentAccepted` in `src/wave-dispatch.js` throws a registration
+diagnostic naming the `agent_type` and task, and the run STOPS on that task -- it never catches the
+rejection and silently re-dispatches on a generic/default agent. Fix the registration (reinstall
+the profile, verify `.codex/agents/`), then re-dispatch that one task.
+
 ## Scope fences
 
 When plan tasks carry `owns`/`frozen` fields, copy them into the brief verbatim as `OWNS:`/`FROZEN:`

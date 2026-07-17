@@ -202,8 +202,9 @@ function sectionIsFullyMarked(text, sectionStart, sectionEnd, allSpans) {
   if (inSection.length === 0) return false;
   let cursor = sectionStart;
   for (const span of inSection) {
+    if (span.tagStart < cursor) continue; // already consumed by a prior span (a brief/return pair nested inside one another -- not a real authoring shape, but never let it regress the cursor)
     if (text.slice(cursor, span.tagStart).trim() !== "") return false;
-    cursor = span.closingTagEnd;
+    cursor = Math.max(cursor, span.closingTagEnd);
   }
   return text.slice(cursor, sectionEnd).trim() === "";
 }

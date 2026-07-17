@@ -221,6 +221,30 @@ test("findUnmarkedDispatchSignals: a sectionOwned heading covering MULTIPLE mark
   assert.deepEqual(findUnmarkedDispatchSignals(files), []);
 });
 
+// Defensive hardening (not itself a review finding, but a cheap guard against a bizarre,
+// deliberately-malformed authoring shape a real author would never write): a brief-template
+// marker nested INSIDE a return-template marker's own content (each kind is parsed
+// independently, so nothing stops overlap on paper). `sectionIsFullyMarked` must not let its
+// cursor regress when it encounters an inner span whose tagStart falls before where the outer
+// span already advanced it -- confirmed here both when nothing real follows (clean) and when a
+// real unmarked tail does follow (still caught).
+test("findUnmarkedDispatchSignals: a marker nested inside another marker's content does not confuse the section-fully-marked cursor", () => {
+  const nested = [
+    "## Report back",
+    "<!-- muster-return-template:start -->",
+    "<!-- muster-brief-template:start -->",
+    "nested content",
+    "<!-- muster-brief-template:end -->",
+    "<!-- muster-return-template:end -->",
+  ].join("\n");
+  assert.deepEqual(findUnmarkedDispatchSignals({ "nested-clean.md": nested }), []);
+
+  const nestedWithTail = `${nested}\n${"z".repeat(5000)}`;
+  assert.deepEqual(findUnmarkedDispatchSignals({ "nested-tail.md": nestedWithTail }), [
+    { path: "nested-tail.md", signal: "report-back-heading" },
+  ]);
+});
+
 // Review finding (fix loop 1): `re.exec(text)` on a non-global regex only ever returns the FIRST
 // match -- a repeated signal (e.g. two "## Report back" sections, one marked, one added later
 // unmarked) would have the second occurrence silently invisible. Closed by scanning every match.

@@ -106,14 +106,23 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // docs/weight-reduction.md's own honest-miss precedent (criterion 3, 39.8% vs a 25% target) for
   // this project's established practice of reporting a real percentage over a fabricated one.
   //
-  // Pin re-derived again for the legacy-alias-retirement item: file COUNT unchanged (135) but
+  // Pin re-derived for the legacy-alias-retirement item: file COUNT unchanged (135) but
   // run.md/autopilot.md/sprint.md's guidance paragraph (still exactly the alias-shape's pinned 2
   // paragraphs, see test/mode-evals.test.js's alias-shape-equivalence test) now also carries a
   // dated deprecation notice ("Deprecation notice (2026-07-17): ... retires in muster 0.7.0"),
   // and each file's frontmatter description names the same retirement target -- this OPENS the
   // deprecation window, it does not change the alias's behavior: the Read-and-execute directive
   // that delegates to plan.md/go.md/go-backlog.md is byte-identical (see
-  // test/alias-deprecation.test.js's "no behavior change" test). Reviewed content change, not
-  // accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "1fd3a0f821a5d1cc2a4caefc65341afc70741a3b17f0ca5b671924b522c62041");
+  // test/alias-deprecation.test.js's "no behavior change" test).
+  //
+  // Pin re-derived again for the cowork-plugin-loader-probe item (docs/research/claude-cowork.md
+  // section 9): file COUNT unchanged (135) -- only cowork/mcp-server.mjs's content changed
+  // (header comment + muster_capabilities tool description), correcting its stale "no plugin/
+  // skill/slash/hook primitives" claim (Cowork's plugin system shipped ~May 2026) and documenting
+  // the new MUSTER_COWORK_NATIVE_PLUGIN declared capability check. scripts/build-codex.mjs's
+  // string-rewrite of this same description (the Codex MCP adapter) was updated to match,
+  // verified by test/codex-cache-package.test.js's rebuild-from-packed-tarball check.
+  // Both content changes are reviewed, not accidental Codex-side drift; the pinned sha below is
+  // re-derived once after all four merges land.
+  assert.equal(hash.digest("hex"), "182f59dcb1eaa5a752d055c7bdae36e1ed535e094d166de44a65e45df6f2a013");
 });

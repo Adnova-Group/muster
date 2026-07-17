@@ -179,6 +179,48 @@ test("cli wire: capabilities --roles-only omits skills and installed inventory",
   assert.deepEqual(Object.keys(compact), ["roles"]);
 });
 
+// ── Cowork native-plugin-ride capability check ──────────────────────────────
+// Whether Cowork's own plugin loader (docs/research/claude-cowork.md section
+// 3d) actually accepts muster's plugin/ tree is unverified without a live
+// Cowork session; there is no on-disk/protocol signal to auto-detect it, so
+// it is a DECLARED capability check (--native-plugin flag or
+// MUSTER_COWORK_NATIVE_PLUGIN env var), mirroring the existing --connectors /
+// MUSTER_COWORK_CONNECTORS declared-connector pattern. These pin the branch
+// logic end-to-end through the real CLI: default stays MCP-only (today's
+// behavior, regression-pinned); either declaration flips a builtin,
+// non-MCP role (debug's wsh-debugger) off the forced-inline fallback.
+test("cli wire: capabilities --cowork with no native-plugin declaration keeps the MCP-only default (regression pin)", async () => {
+  const { stdout } = await run(["capabilities", "--cowork", "--role", "debug"]);
+  const { chosen } = JSON.parse(stdout);
+  assert.equal(chosen.id, "inline", "undeclared Cowork resolution must stay MCP-only until a native load is declared");
+});
+
+test("cli wire: capabilities --cowork --native-plugin lets a builtin non-MCP role resolve (native plugin ride declared via flag)", async () => {
+  const { stdout } = await run(["capabilities", "--cowork", "--native-plugin", "--role", "debug"]);
+  const { chosen } = JSON.parse(stdout);
+  assert.equal(chosen.id, "wsh-debugger", "native-ride declared: debug resolves its builtin agent, same as non-cowork");
+});
+
+test("cli wire: capabilities --cowork with MUSTER_COWORK_NATIVE_PLUGIN=1 declares the same native ride as --native-plugin", async () => {
+  const { stdout } = await pexecFile(process.execPath, [CLI, "capabilities", "--cowork", "--role", "debug"], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, MUSTER_COWORK_NATIVE_PLUGIN: "1" },
+  });
+  const { chosen } = JSON.parse(stdout);
+  assert.equal(chosen.id, "wsh-debugger", "env-var declaration must resolve identically to the --native-plugin flag");
+});
+
+test("cli wire: MUSTER_COWORK_NATIVE_PLUGIN=0/false do not declare native ride (MCPB-boolean-safe, mirrors MUSTER_ENABLE_FABLE parsing)", async () => {
+  for (const value of ["0", "false", ""]) {
+    const { stdout } = await pexecFile(process.execPath, [CLI, "capabilities", "--cowork", "--role", "debug"], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, MUSTER_COWORK_NATIVE_PLUGIN: value },
+    });
+    const { chosen } = JSON.parse(stdout);
+    assert.equal(chosen.id, "inline", `MUSTER_COWORK_NATIVE_PLUGIN=${JSON.stringify(value)} must not declare native ride`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // manifest validate <fixture>
 // ---------------------------------------------------------------------------

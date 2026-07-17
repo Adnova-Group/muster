@@ -1,11 +1,23 @@
 #!/usr/bin/env node
 // muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.
 //
-// Cowork extends only through MCP (local MCP servers + MCPB desktop extensions); it has no
-// plugin/skill/slash/hook primitives. So the port is: wrap the portable CLI (src/cli.js, plain
+// Cowork extends through MCP (local MCP servers + MCPB desktop extensions) — the port this
+// file targets — and, as of ~May 2026, its own plugin system bundling skills/connectors/hooks/
+// sub-agents in the Claude Code plugin format (docs/research/claude-cowork.md section 3d). An
+// earlier version of this comment said Cowork "has no plugin/skill/slash/hook primitives" —
+// true in January 2026, stale now. So the port is: wrap the portable CLI (src/cli.js, plain
 // Node, no model calls) as a local MCP server. The CLI runs in Cowork's Linux VM; its verbs
 // become tools here. muster's principles + routing policy ride in via the server `instructions`
 // field — that replaces the SessionStart/UserPromptSubmit hooks.
+//
+// Whether muster's own Claude Code plugin (plugin/) actually loads under Cowork's plugin
+// loader is UNVERIFIED — no live Cowork session was reachable to test it hands-on, and Cowork
+// exposes no on-disk/protocol signal an outside process can inspect to auto-detect a native
+// load. muster_capabilities (below) carries a DECLARED capability check for this instead of a
+// probe: MUSTER_COWORK_NATIVE_PLUGIN (env, passed through by this server's runCli spawn) or
+// `capabilities --cowork --native-plugin` on the CLI directly. Declared true, builtin skills/
+// agents resolve like they do on Claude Code; the default (false) keeps this MCP-only ride,
+// which is the one actually verified working.
 //
 // This wrapper is the deterministic HALF of muster: routing, scoring, detection, gate math. The
 // orchestration half (parallel waves + tournaments) is gated on Cowork supporting subagent
@@ -106,7 +118,7 @@ const T = (description, prop, required = true) => ({
 const TOOLS = {
   // analysis verbs — string or no arg
   muster_detect: { argv: ["detect"], ...S("Detect the project profile (languages, frameworks, VCS, test runner) for a directory. Always pass `dir` explicitly — omitting it analyzes the server's working directory, not the caller's project.", "dir", false) },
-  muster_capabilities: { argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork's MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS).", "home", false) },
+  muster_capabilities: { argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork's MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS). Resolution is MCP-only unless MUSTER_COWORK_NATIVE_PLUGIN declares that Cowork's own plugin loader accepted muster's plugin/ tree (unverified without a live session -- a declared capability check, not a probe).", "home", false) },
   muster_match: { argv: ["match"], ...S("Rank catalog providers against a free-text task by token overlap (no model call).", "task") },
   muster_domain: { argv: ["domain"], ...S("Classify an outcome into a work domain (software, product, content, ...).", "outcome") },
   muster_route: { argv: ["route"], ...S("Route an outcome to its domain + pipeline id.", "outcome") },

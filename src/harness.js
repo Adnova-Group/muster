@@ -43,8 +43,27 @@ async function readExtensionNames(extDir) {
 // resolveCapabilities consumes. Cowork registry discovery (local servers +
 // extensions) fills mcpServers. Remote connectors cannot be discovered
 // (connectorsDiscoverable:false) and must be DECLARED.
+//
+// Native plugin ride (opts.nativePluginRide): ~May 2026 Cowork shipped a plugin
+// system bundling skills, connectors, hooks, and sub-agents in the Claude Code
+// plugin format (docs/research/claude-cowork.md section 3d) -- a different, later
+// surface than the on-disk `~/.claude/plugins` registry `readInstalled` reads for
+// the Claude Code adapter above, and NOT the same thing as the three legs this
+// function already discovers (local MCP servers, MCPB extensions, declared
+// connectors). Whether Cowork's loader actually accepted muster's plugin/ tree is
+// UNVERIFIED: no live Cowork session is reachable from this repo's tooling, and
+// Cowork exposes no on-disk or protocol signal an outside process (this CLI, or
+// the MCP server that spawns it) can inspect to auto-detect a native load. That
+// is the same "cannot be discovered, must be DECLARED" shape as remote
+// connectors just above, so nativePluginRide is a declared boolean (threaded by
+// the caller from MUSTER_COWORK_NATIVE_PLUGIN / a CLI flag -- see src/cli.js),
+// never an auto-probe. resolveCapabilities (src/capabilities.js) reads it off
+// the returned `nativePluginRide` field: false (the default) keeps today's
+// MCP-only filtering; true lets muster's builtin skills/agents resolve exactly
+// as they do on Claude Code, since a native load -- if it happened -- loaded
+// this same checkout's plugin/ tree.
 export async function readInstalledCowork(home, opts = {}) {
-  const { platform = process.platform, declaredConnectors = [], dir } = opts;
+  const { platform = process.platform, declaredConnectors = [], dir, nativePluginRide = false } = opts;
   const dirs = dir ? [dir] : await coworkConfigDirs(home, platform);
 
   const discovered = [];
@@ -65,7 +84,8 @@ export async function readInstalledCowork(home, opts = {}) {
     agents: [],
     mcpServers: [...new Set([...discovered, ...declaredConnectors])],
     connectorsDiscoverable: false,
-    connectorsDeclared: [...new Set(declaredConnectors)]
+    connectorsDeclared: [...new Set(declaredConnectors)],
+    nativePluginRide: !!nativePluginRide
   };
 }
 

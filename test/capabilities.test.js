@@ -88,6 +88,45 @@ test("Cowork advertises only MCP or inline providers it can actually invoke", ()
   assert.deepEqual(a.skills, [], "Cowork has no invocable skill namespace");
 });
 
+test("Cowork native plugin ride: declared nativePluginRide lets builtin skills/agents resolve exactly as on Claude Code", () => {
+  const a = resolveCapabilities(
+    [...catalog, ...agentCatalog],
+    {
+      runtime: "cowork",
+      nativePluginRide: true,
+      plugins: [],
+      skills: [],
+      agents: [],
+      mcpServers: ["serena"],
+    },
+  );
+
+  // Installed external MCP still wins (unaffected by the native-ride flag).
+  assert.deepEqual(a.roles["code-navigation"].chosen, { id: "serena", source: "installed", kind: "mcp" });
+  // A builtin agent/skill role, previously forced to inline under MCP-only Cowork,
+  // now resolves to muster's own builtin/agent provider, same as non-cowork.
+  assert.deepEqual(a.roles.implement.chosen, { id: "low-agent", source: "builtin", kind: "agent" });
+  assert.deepEqual(a.roles.plan.chosen, { id: "muster-planner", source: "builtin", kind: "skill" });
+  // Skills inventory is populated (not force-emptied) once native ride is declared.
+  assert.ok(a.skills.some((s) => s.id === "muster-skill-planner"), "builtin skill catalog entries populate the skills inventory under native ride");
+});
+
+test("Cowork native plugin ride: false (the default) keeps the MCP-only filtering behavior", () => {
+  const a = resolveCapabilities(
+    [...catalog, ...agentCatalog],
+    {
+      runtime: "cowork",
+      nativePluginRide: false,
+      plugins: [],
+      skills: [],
+      agents: [],
+      mcpServers: ["serena"],
+    },
+  );
+  assert.deepEqual(a.roles.implement.chosen, { id: "inline", source: "inline", kind: "inline" });
+  assert.deepEqual(a.skills, []);
+});
+
 import { loadCatalog } from "../src/catalog.js";
 test("debug role resolves to a built-in on a bare machine (not inline)", async () => {
   const cat = await loadCatalog(new URL("../catalog/", import.meta.url));

@@ -5,7 +5,8 @@
 // Claude Code CLI's agent-teams surface exposes a native, deterministic Workflow tool
 // (fan-out + barrier as code) -- reached ONLY through agent-teams/background-agent mode,
 // never the single-session loop a plain `claude` invocation runs (docs/research/
-// claude-code-cli.md sec 5 + sec 10; docs/strategy/native-delegation.md Part B item 1).
+// claude-code-cli.md sec 1's binary-tools evidence + sec 11's `claude agents` subcommand;
+// docs/strategy/native-delegation.md Part B item 1).
 // There is no on-disk/protocol signal an outside process can probe to detect agent-teams
 // mode from inside a running session, so this is a DECLARED capability (same shape as
 // Cowork's nativePluginRide, src/harness.js/src/capabilities.js) -- never an auto-probe.

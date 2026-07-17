@@ -96,22 +96,25 @@ The invocation text: `$ARGUMENTS`
      `permission_mode: "plan"` — docs/research/codex-cli.md §4.2): invoke the bundled system **`plan`** skill
      (§5.2's system skill list) with the rendered Crew Manifest as its content instead of dumping it as plain
      chat text — e.g. for a two-stage manifest the plan skill's content is literally `## Crew Manifest\n1.
-     builder -> <provider>\n2. code-review -> <provider>`, which surfaces as one native `item.completed`
-     entry of kind "plan update" in the turn's event stream (§1's item taxonomy names plan updates as a
-     first-class item kind alongside messages/commands/file changes). Codex has no documented
-     ExitPlanMode-equivalent call that programmatically submits approval, so the actual **Approve & run** /
-     **Adjust the plan** / **Cancel** decision still rides the **AskUserQuestion** fallback below — the win is
-     that the manifest is now Codex's own native plan artifact instead of a second prose copy, not a
-     programmatic approval call Codex doesn't expose.
+     builder -> <provider>\n2. code-review -> <provider>`. Independently, Codex's own turn/item model already
+     tracks "plan updates" as a first-class item kind in the `item.started`/`item.completed` event stream
+     (§1's item taxonomy, alongside messages/commands/file changes) — the research doc documents both facts
+     separately and does not establish that invoking the bundled skill is what emits that item kind, so this
+     ride is two independently-cited native primitives (a real named plan skill to author the manifest
+     through, plus real item-stream visibility Codex already gives plan-shaped work), not one asserted
+     mechanism. Codex has no documented ExitPlanMode-equivalent call that programmatically submits approval,
+     so the actual **Approve & run** / **Adjust the plan** / **Cancel** decision still rides the
+     **AskUserQuestion** fallback below — the win is that the manifest is now authored through Codex's own
+     native plan skill instead of a second prose copy, not a programmatic approval call Codex doesn't expose.
    - **Hermes session** (docs/research/hermes.md §4): author the rendered Crew Manifest through Hermes's
      protected, hardcoded, permanent built-in **`plan`** skill via its `/plan` slash-command flow, then
      encode the manifest's `successCriteria` as a **`/goal`** completion contract (`outcome`/`verification`/
-     `constraints`/`stop_when`) so the `goal_judge` auxiliary model cannot declare the run done without
-     concrete verification evidence — e.g. `outcome: "<enriched outcome text>"`, `verification: "review-gate
-     PASS + suite green"`. Hermes's own docs name no blocking plan-approval mode (only the `plan`
-     skill/`/goal` contract, not a stop-the-world gate), so the actual **Approve & run** / **Adjust the plan** /
-     **Cancel** decision rides Hermes's `clarify` tool — the same AskUserQuestion-shaped fallback below,
-     named here as `clarify` because that is Hermes's structured user-input mechanism.
+     `constraints`/`boundaries`/`stop_when`) so the `goal_judge` auxiliary model cannot declare the run done
+     without concrete verification evidence — e.g. `outcome: "<enriched outcome text>"`, `verification:
+     "review-gate PASS + suite green"`. Hermes's own docs name no blocking plan-approval mode (only the
+     `plan` skill/`/goal` contract, not a stop-the-world gate), so the actual **Approve & run** / **Adjust the
+     plan** / **Cancel** decision rides Hermes's `clarify` tool — the same AskUserQuestion-shaped fallback
+     below, named here as `clarify` because that is Hermes's structured user-input mechanism.
    - **Every other case** — not in plan mode, an unattended Routine, or a harness with no native plan
      surface at all: **Cowork** degrades here explicitly (its documented 5-step task loop exposes no
      task-graph or plan object — "the plan is prose in the agent's head," docs/research/claude-cowork.md §2

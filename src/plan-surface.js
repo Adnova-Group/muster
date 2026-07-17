@@ -19,16 +19,21 @@
 //   - claude-code: ExitPlanMode / native plan mode (Shift+Tab, a /plan-prefixed prompt, or
 //     --permission-mode plan) [docs/research/claude-code-cli.md §6].
 //   - codex: hook payloads report `permission_mode` including the value "plan"
-//     [docs/research/codex-cli.md §4.2], the bundled system skill set includes a "plan" skill
-//     [docs/research/codex-cli.md §5.2], and a turn's `item.started`/`item.completed` stream
-//     names "plan updates" as a first-class item kind alongside messages/reasoning/commands
-//     [docs/research/codex-cli.md §1]. Codex has no documented ExitPlanMode-equivalent call that
-//     programmatically submits approval, so the actual approve/adjust/cancel decision still rides
-//     Codex's AskUserQuestion binding on top of the native plan artifact (see plan.md).
-//   - hermes: a protected, hardcoded, never-archivable built-in `plan` skill powers a `/plan`
+//     [docs/research/codex-cli.md §4.2], and the bundled system skill set independently includes a
+//     "plan" skill [docs/research/codex-cli.md §5.2]. Separately, a turn's `item.started`/
+//     `item.completed` stream names "plan updates" as a first-class item kind alongside messages/
+//     reasoning/commands [docs/research/codex-cli.md §1] -- the research doc documents these as
+//     three independent facts and nowhere claims invoking the bundled skill is what emits that
+//     item kind, so this entry cites them as separately-verified native primitives (a real named
+//     plan skill to author content through, plus real item-stream visibility for plan-shaped
+//     work), not one asserted mechanism -- do not describe or imply a causal link between them.
+//     Codex has no documented ExitPlanMode-equivalent call that programmatically submits approval,
+//     so the actual approve/adjust/cancel decision still rides Codex's AskUserQuestion binding on
+//     top of the native plan artifact (see plan.md).
+//   - hermes: a protected, hardcoded, permanent built-in `plan` skill powers a `/plan`
 //     slash-command flow [docs/research/hermes.md §4], and `/goal` completion contracts
-//     (`outcome`/`verification`/`constraints`/`stop_when`) let the goal_judge model require
-//     concrete verification evidence before declaring an outcome done
+//     (`outcome`/`verification`/`constraints`/`boundaries`/`stop_when`) let the goal_judge model
+//     require concrete verification evidence before declaring an outcome done
 //     [docs/research/hermes.md §4]. Hermes's own docs name no blocking plan-approval mode
 //     (hermes.md's augmentation table: "Partial -- approve-first must be enforced by muster's
 //     own skill flow + clarify"), so the front-door block still rides Hermes's `clarify` tool.
@@ -37,6 +42,13 @@
 //     [docs/research/claude-cowork.md §2]. No native surface exists; the whole approve-first
 //     flow degrades to muster's own prose (AskUserQuestion has no Cowork equivalent either, so
 //     this is the sprint-protocol's existing in-chat human-ask degradation, not a new gap).
+//
+// A note on the `primitive` field: it names the native AUTHORING mechanism for the plan artifact
+// (if any) -- never the approval UI. Every harness's actual approve/adjust/cancel decision still
+// funnels through an AskUserQuestion-shaped surface (AskUserQuestion itself, or Hermes's `clarify`
+// tool) except Claude Code's own ExitPlanMode, which is uniquely both the artifact call AND the
+// approval gate in one native primitive. `primitive: null` (cowork, and the generic fallback's
+// `"AskUserQuestion"`) means no native AUTHORING mechanism exists, not that no approval flow does.
 //
 // This module makes NO harness calls, reads no environment, and touches no filesystem -- pure
 // selection logic over a caller-supplied string, exactly so it stays unit-testable without a
@@ -57,13 +69,13 @@ const PLAN_SURFACES = {
   codex: {
     surface: "native",
     primitive: "plan-skill+permission-mode",
-    detail: 'while the session\'s permission_mode is "plan", invoke the bundled system `plan` skill with the rendered plan as its content, which surfaces as a native "plan update" item in the turn\'s event stream',
+    detail: 'while the session\'s permission_mode is "plan", invoke the bundled system `plan` skill with the rendered plan as its content; independently, Codex\'s own item model already tracks "plan updates" as a first-class item kind in the turn\'s event stream (two separately-documented native primitives, not one asserted mechanism)',
     cite: CODEX_CITE
   },
   hermes: {
     surface: "native",
     primitive: "plan-skill+goal-contract",
-    detail: "author the rendered plan through the protected built-in `plan` skill's /plan flow, then encode the manifest's success criteria as a /goal completion contract (outcome/verification/stop_when)",
+    detail: "author the rendered plan through the protected built-in `plan` skill's /plan flow, then encode the manifest's success criteria as a /goal completion contract (outcome/verification/constraints/boundaries/stop_when)",
     cite: HERMES_CITE
   },
   cowork: {

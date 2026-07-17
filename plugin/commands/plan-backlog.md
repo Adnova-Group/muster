@@ -67,13 +67,16 @@ B5. **The approval gate — ride each harness's native plan surface, not a paral
      **Adjust the plan** below; backing out without approving maps to **Cancel** below.
    - **Codex session in native plan mode** (hook payload `permission_mode: "plan"` — docs/research/codex-cli.md
      §4.2): invoke the bundled system **`plan`** skill (§5.2) with the rendered batch plan (B4) as its
-     content — one row per item as `<item-id> -> <crew summary>` — so the batch plan becomes a native
-     `item.completed` "plan update" entry (§1) instead of a second prose copy; Codex has no
-     ExitPlanMode-equivalent approval call, so **Approve & clear** / **Adjust the plan** / **Cancel** still
+     content — one row per item as `<item-id> -> <crew summary>` — instead of a second prose copy.
+     Independently, Codex's own item model already tracks "plan updates" as a first-class `item.completed`
+     kind (§1); the research doc documents both facts separately without linking the skill call to that item
+     kind, so treat them as two independently-cited native primitives, not one asserted mechanism. Codex has
+     no ExitPlanMode-equivalent approval call, so **Approve & clear** / **Adjust the plan** / **Cancel** still
      rides the **AskUserQuestion** fallback below.
    - **Hermes session** (docs/research/hermes.md §4): author the rendered batch plan through Hermes's
      built-in `plan` skill's `/plan` flow, and encode each item's success criteria as a `/goal` completion
-     contract per item; Hermes names no blocking plan-approval mode, so the actual decision rides Hermes's
+     contract (`outcome`/`verification`/`constraints`/`boundaries`/`stop_when`) per item; Hermes names no
+     blocking plan-approval mode, so the actual decision rides Hermes's
      `clarify` tool — the same AskUserQuestion-shaped fallback below.
    - **Every other case** (not in plan mode, an unattended path, or a harness with no native plan surface at
      all) — **Cowork** degrades here explicitly (no exposed task-graph or plan object,

@@ -151,5 +151,16 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 31->35, hook 19->21, 79->85 total) since the new branches add AskUserQuestion/hook-signal
   // mentions. This is the reviewed native-plan-mode-parity remediation, not accidental
   // Codex-side drift.
-  assert.equal(hash.digest("hex"), "3d13e4eda33bf02a567fd408b6b2a125feda58dccf47be469848a57659130a2d");
+  //
+  // Pin re-derived once more within the same item, post review-gate fix loop 1: the Codex branch
+  // in both files no longer asserts that invoking the bundled `plan` skill is what emits the
+  // turn's "plan update" `item.completed` entry -- docs/research/codex-cli.md documents the
+  // bundled skill (SS5.2) and the item-stream taxonomy (SS1) as separate facts with no stated
+  // causal link between them, so the prose now cites both as independently-verified native
+  // primitives instead of a fabricated single mechanism (review-gate blocker, fixed). The Hermes
+  // /goal completion-contract field list also gained `boundaries` (previously omitted from
+  // hermes.md SS4's full set). File COUNT unchanged (136); grep-audit counts unchanged (still
+  // 35/15/21/14, 85 total) since these are wording-only fixes with no new/removed
+  // AskUserQuestion/hook/dispatch/worktree mentions.
+  assert.equal(hash.digest("hex"), "201a4c6606fd7bed037d2cbfc89ff48958c9fd6454b711677f391f336dc13108");
 });

@@ -157,5 +157,30 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // hook, worktree) are all unchanged -- Binding D's prose was deliberately worded to avoid every
   // tracked term (kanban's own "dispatcher" vocabulary was rephrased to "the board" throughout, and
   // its `worktree` workspace kind was not cited, since isolation is out of this item's scope).
-  assert.equal(hash.digest("hex"), "757e274c574774de57d1e03140aa50e48b08bc7c0b7fe3a5e92914f439f55720");
+  //
+  // Pin re-derived again for the coordination-footprint item (backlog item `coordination-footprint`,
+  // stacked on hermes-kanban-binding): file COUNT unchanged (136) -- coordination/SKILL.md's prose was
+  // cut a further 40.18% off the pre-speed-tuning baseline (40754 -> 24378 chars; speed-tuning alone
+  // had only reached 30.6%, an honest miss of the same 40% bar). The lever this time is genuine
+  // de-duplication, not another rationale trim: the "## Core mechanism" section was rewritten as
+  // "## Protocol states (canonical -- binds all four bindings)", now the SOLE place every state's
+  // meaning, transition rule, and resume rule is stated (CLAIM's race-arbitration/window-floor
+  // algorithm, RECEIPTS' fixed-first-line template, the BLOCKED-any-reply/HUMAN-HOLD-named-authorizer
+  // split plus the authenticated-vs-unauthenticated-channel ATTENDED/UNATTENDED resume rule, YIELD,
+  // the 2-failure retry cap, LEDGER's edit-in-place invariant, and the escalation-marker roundup).
+  // Each binding section was cut down to its OWN mapping + concrete syntax, with the restated
+  // rationale/semantics removed in favor of a cross-reference to the canonical section above (e.g.
+  // Binding A/C's identity-validation-before-writing step, Binding B's ATTENDED-only HUMAN-HOLD case,
+  // and Binding D's native-claim/unauthenticated-channel notes all now point back to canonical instead
+  // of re-deriving the rule). No protocol state or resume rule was dropped -- every one of
+  // CLAIM/RECEIPTS/BLOCKED/HUMAN-HOLD/DONE/FAILED/YIELD/LEDGER plus every resume rule (GitHub-login-
+  // authenticated resume, Linear-author-authenticated resume, the STATE-line/kanban_comment
+  // unauthenticated-channel ATTENDED-only parking rule, the unattended-permanently-parks rule) survives
+  // verbatim in meaning, just once instead of up to four times. Every existing contract re-verified
+  // green: corpus-contradiction.test.js's "subagent type `muster-runner`" quote site (now in Binding
+  // B's own paragraph), both coordination-preflight.test.js fingerprint-set copies (both now live in
+  // the Standing-context preflight section itself, still two independently-extractable copies so the
+  // drift guard still holds), and docs-binding-interface.test.js's four live grep-audit counts
+  // (AskUserQuestion, dispatch, hook, worktree) are all unchanged from the hermes-kanban-binding pin.
+  assert.equal(hash.digest("hex"), "15b02558f60c5e4f93f7f3650930d7516b93094607035bc45e98a59178a2f664");
 });

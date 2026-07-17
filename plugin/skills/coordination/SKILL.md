@@ -1,97 +1,124 @@
 ---
 name: coordination
-description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS per state change, BLOCKED/HUMAN-HOLD->RESUME, one heartbeat LEDGER per runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:sprint.
+description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS, BLOCKED/HUMAN-HOLD->RESUME, one heartbeat LEDGER per runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:sprint.
 ---
 
 # Coordination
 
 You are muster's cross-runner coordination protocol — keep independent runners (separate
 `/muster:sprint` invocations, humans and agents alike) from doing the same item twice and from
-silently going quiet when one gets stuck.
+silently going quiet when one gets stuck. Return per-item the state it left the shared backlog/label
+in (claimed / done / blocked / failed) plus the receipt(s) written -- a work-cycle always ends with a
+receipt, even on failure.
 
-Return per-item the state it left the shared backlog/label in (claimed / done / blocked / failed) plus
-the receipt(s) written — a work-cycle always ends with a receipt, even on failure.
+Load this when a backlog (file, `issues:<label>`, `linear:<team or project>`, or a Hermes kanban board)
+may be worked by more than one runner concurrently; a single-runner sprint may skip claim/scan but still
+leaves receipts and a heartbeat. CLAIM/RECEIPTS/BLOCKED→RESUME/LEDGER is adapted, mechanism-only, from a
+well-known open multi-agent coordination pattern (attribution: `website/about/credits.md`, out of scope
+here).
 
-Load this when a backlog (file, `issues:<label>`, `linear:<team or project>`, or a Hermes kanban
-board) may be worked by more than one runner concurrently. A single-runner sprint may skip the claim/scan steps but should still
-leave receipts and a ledger heartbeat for auditability. CLAIM/RECEIPTS/BLOCKED→RESUME/LEDGER is
-adapted, mechanism-only, from a well-known open multi-agent coordination pattern (attribution:
-`website/about/credits.md`, out of scope here).
+## Protocol states (canonical -- binds all four bindings)
 
-## Core mechanism (source-agnostic)
+State meaning, transition, and resume semantics live HERE once; each binding below states only its own
+primitive + capability gap, never the semantics again.
 
-1. **CLAIM** — before any work, atomically mark an item claimed with runner identity + timestamp; a
-   claimed item is skipped by other runners. Identity reuses the invocation's existing `runId` (the
-   slug already keying run STATE/scratchpad) -- no new identity infrastructure needed.
-2. **RECEIPTS** — every state change leaves a structured receipt: `CLAIMED`/`DONE`/`BLOCKED(reason,
-   question)`/`HUMAN-HOLD(reason, question, authorizer)`/`FAILED(reason)`/`YIELD(losing runner
-   conceding a race)`/`IDLE` (nothing claimable -- folds into the LEDGER heartbeat, not a fresh line).
-3. **BLOCKED/HUMAN-HOLD→RESUME** — split by WHO can clear a stalled item. **BLOCKED** (default) is
-   answerable by anyone; **HUMAN-HOLD** is narrower -- only the authorizing human (external-effect
-   approvals, scope changes) can answer. Both record a question; BLOCKED resumes on ANY reply,
-   HUMAN-HOLD ONLY on a reply from its named authorizer -- any other is inert. Runners scan for both in
-   one unordered pass; the gate is only as strong as what authenticates it -- Binding A's authorizer is
-   a real GitHub login GitHub itself authenticates; Binding B has no such backing (a STATE line is just
-   text) and narrows further (see its section): a HUMAN-HOLD item there cannot resume from STATE alone.
-4. **LEDGER** — each runner maintains exactly ONE heartbeat entry (last seen, last item, result), edited
-   in place, not a growing pile.
-5. **One item per claim cycle** — claim, work, leave a receipt, THEN look for the next item.
-6. **STANDING-CONTEXT PREFLIGHT** — once per cycle, before anything else, a runner checks whether the
-   protocol text it is running on has drifted from the repo's current tip, against a fingerprint recorded
-   at first read. See "Standing-context preflight" below for the fingerprint set, commands, and the
-   deterministic confined-vs-expands rule.
-7. **HYGIENE PREFLIGHT** — once per cycle, alongside the preflight above and before CLAIM, run `node
-   src/cli.js hygiene --reap`: reaps a zombie provider CLI process (parent dead/1), auto-releases a
-   claim whose heartbeat exceeds 60 minutes (a dead runner's stranded `{claimed:}`), and offers a
-   stale-worktree sweep past 10 live worktrees, as a report for a human. `src/hygiene.js` is the source
-   of truth; this bullet only renders it.
-
-An **escalation** (spec-gate/fix-loop cap) is not a new receipt type: a `FAILED` receipt plus the
-item-level escalated-marker -- Binding B's `{escalated: <runId or date>}`, Binding A's move to
-`agent:needs-input` with a question comment, Binding C's move to its blocked status, Binding D's
-`kanban.failure_limit` auto-block (or a repeated same-kind `kanban_block` escalating to `triage`) -- so
-a later scan relies on that marker alone.
+1. **CLAIM** — atomically mark an item claimed with runner identity (the existing `runId`) + timestamp
+   before any work; a claimed item is skipped by others.
+   - *A, C (comment/status-race)*: the assignee/status flip is not the lock (two can both land there
+     first) -- the CLAIM RECEIPT is the lock, scoped to the **current claim window**: every receipt since
+     the last terminal one (`DONE`/`BLOCKED`/`HUMAN-HOLD`/`FAILED`, deliberately NOT `YIELD`, else a
+     loser's yield before the winner re-reads floors the winner's own claim). Re-read the FULL history
+     (paginated to exhaustion), rank the `CLAIMED` receipts inside the floor by server timestamp,
+     identified by the `<runner>` BODY token, not the API-level author (shared account/token is otherwise
+     indistinguishable); earliest wins. `src/coordination.js` is the source of truth here and for the
+     HUMAN-HOLD resume gate.
+   - *B (annotation)*: no true compare-and-swap in a plain file -- claim-then-verify (write, re-read;
+     another runner's annotation means you lost) assumes cooperative runners, not adversarial
+     concurrency (documented limit).
+   - *D (native)*: a real compare-and-swap at the database layer -- no claim race to arbitrate.
+2. **RECEIPTS** — every state change leaves one: `CLAIMED`/`DONE`/`BLOCKED(reason, question)`/
+   `HUMAN-HOLD(reason, question, authorizer)`/`FAILED(reason)`/`YIELD(losing runner conceding a race)`/
+   `IDLE` (nothing claimable -- folds into the LEDGER heartbeat, not a fresh line). A and C share one
+   fixed-first-line syntax (B's STATE-line grammar and D's `kanban_comment` are each binding's own
+   equivalent, same fields):
+   ```
+   MUSTER CLAIMED <runner> <ts>
+   MUSTER DONE <runner> <ts>                (+ disposition and PR/commit link)
+   MUSTER BLOCKED <runner> <ts>             (+ the question)
+   MUSTER HUMAN-HOLD <runner> <ts> authorizer=<authorizer-field>  (+ the question)
+   MUSTER FAILED <runner> <ts> attempt <n>  (+ the reason)
+   MUSTER YIELD <runner> <ts>               (+ which claim comment won the race)
+   ```
+   `<authorizer-field>`: A's GitHub `<login>`, C's Linear `<displayName>` -- the only per-binding delta.
+3. **BLOCKED vs HUMAN-HOLD → RESUME** — split by WHO can clear a stall. **BLOCKED** (default) is
+   answerable by anyone; **HUMAN-HOLD** only by the authorizing human. Both record a question; BLOCKED
+   resumes on ANY reply, HUMAN-HOLD ONLY on its named authorizer -- any other is inert; scan both in one
+   unordered pass. **The gate is only as strong as what authenticates it**: a binding whose reply channel
+   is independently authenticated (A: GitHub login; C: Linear author identity) resumes a HUMAN-HOLD
+   unattended by matching identity to the recorded `authorizer=`. A binding whose channel is just text
+   (B: a STATE line; D: a `kanban_comment`) cannot trust a bare match -- resume needs an **ATTENDED**
+   session (present the question via **AskUserQuestion**; only after the human answers does the
+   orchestrator itself, exclusively, write the resume state -- never the runner, never pre-written). An
+   **UNATTENDED** runner (`/muster:runner`, Routine mode) has no session to ask, so such a HUMAN-HOLD is
+   **permanently parked** for the cycle. A binding capable of identity validation (A, C) MUST confirm the
+   named authorizer exists before WRITING a HUMAN-HOLD -- adversarial text must not name an arbitrary
+   identity and have it accepted; fall back to a configured default (repo owner / admin) when unconfirmed.
+4. **YIELD** — the losing claimant concedes: revert whatever it claimed, leave a `YIELD` receipt naming
+   the winner, move on without touching a further-along state the winner already reached (its own
+   cleanup, not another state change). No race in B/D means no YIELD case there.
+5. **FAILED / retry cap** — revert to claimable, always a record. Count prior `FAILED` receipts across
+   the WHOLE history (cumulative, not windowed); at 2, redirect straight to BLOCKED/needs-input instead
+   of another attempt. `attempt <n>` = 1 + that count.
+6. **LEDGER** — exactly ONE heartbeat entry per runner, edited in place, not appended; an idle cycle
+   reuses it with `result: idle`.
+7. **Escalation** is not a new receipt type: a `FAILED` receipt plus the item-level escalated-marker --
+   B's `{escalated: <runId or date>}`, A's move to `agent:needs-input`, C's move to its blocked status,
+   D's `kanban.failure_limit` auto-block (or a repeated `kanban_block` escalating to `triage`) -- a later
+   scan relies on that marker alone.
+8. **One item per claim cycle** — claim, work, leave a receipt, then look for the next.
+9. **STANDING-CONTEXT PREFLIGHT** — once per cycle, before anything else, check this protocol text for
+   drift from the repo's tip against a fingerprint recorded at first read (below).
+10. **HYGIENE PREFLIGHT** — once per cycle, before CLAIM, run `node src/cli.js hygiene --reap`: reaps a
+    zombie provider CLI, auto-releases a claim past a 60-minute heartbeat, and offers a
+    stale-worktree sweep past 10 live worktrees. `src/hygiene.js` is the source of truth; this bullet
+    only renders it.
 
 ## Standing-context preflight
 
-Compare the commit each in-scope file/path was at when this session first read it (recorded once, at
-first read) against its CURRENT commit. The fingerprint set is every file a runner's behavior is
-actually bound by, not just this skill and its callers -- drift in the hook layer or go.md's own
-forbidden-action list is exactly the silent scope-widening this preflight exists to catch. The set
-names LIVE behavior files, not legacy-alias redirects: `plugin/commands/sprint.md`/`autopilot.md` are
-now minimal stubs that only read-and-execute `go-backlog.md`/`go.md` and no longer carry the behavior
-they're named for, so this preflight watches their live targets instead:
+Compare each in-scope file/path's commit at first read against its CURRENT commit. The set is every
+file a runner's behavior is bound by, not just this skill -- drift in the hook layer or go.md's own
+forbidden-action list is the silent scope-widening this preflight exists to catch. Names LIVE behavior
+files, not legacy-alias redirects (`plugin/commands/sprint.md`/`autopilot.md` are now stubs that only
+read-and-execute `go-backlog.md`/`go.md`):
 `plugin/skills/coordination/SKILL.md`, `plugin/commands/go-backlog.md`, `plugin/commands/go.md`,
-`plugin/commands/runner.md`, `plugin/hooks/`. One `git log` call over the whole set (a single
-fingerprint hash -- the latest commit touching ANY of these paths):
+`plugin/commands/runner.md`, `plugin/hooks/`. One `git log` call over the whole set:
 ```
 git log -1 --format=%h -- plugin/skills/coordination/SKILL.md plugin/commands/go-backlog.md \
   plugin/commands/go.md plugin/commands/runner.md plugin/hooks/
 ```
-No change in hash: proceed. A changed hash: `git diff <recorded-hash> <current-hash> -- <same paths>`,
-then classify deterministically -- a named file+pattern list, not judgment:
+Every binding below cross-references this same
+fingerprint set (SKILL.md/go-backlog.md/go.md/runner.md/hooks/) instead of re-listing it.
 
-- **EXPANDS** (not silently adopted -- HUMAN-HOLD it, citing the file(s) and old/new hash; the
-  authorizer is whoever owns this repo's muster configuration) iff the diff touches ANY of: a
-  `forbiddenActions` entry, a `fences` block, `action-guard` matching logic, anything under
-  `plugin/hooks/`, a new RECEIPTS-enum token (`CLAIMED`/`DONE`/`BLOCKED`/`HUMAN-HOLD`/`FAILED`/`YIELD`/
-  `IDLE`/`LEDGER`), or a new resume rule (who/what can clear a held/blocked item beyond the existing
-  BLOCKED-any-reply / HUMAN-HOLD-named-authorizer split).
-- **CONFINED** (reload the changed file(s), proceed under them for the rest of this cycle, no approval
-  needed) -- everything else: a clarification, a new example, a tightened description of a rule the
-  runner was already bound by.
+No change: proceed. Changed: `git diff <recorded-hash> <current-hash> -- <same paths>`, then classify
+deterministically:
+
+- **EXPANDS** (HUMAN-HOLD it, citing the file(s) and old/new hash; authorizer is whoever owns this
+  repo's muster configuration) iff the diff touches ANY of: a `forbiddenActions` entry, a `fences`
+  block, `action-guard` matching logic, anything under `plugin/hooks/`, a new RECEIPTS-enum token
+  (`CLAIMED`/`DONE`/`BLOCKED`/`HUMAN-HOLD`/`FAILED`/`YIELD`/`IDLE`/`LEDGER`), or a new resume rule.
+- **CONFINED** (reload the changed file(s), proceed for the rest of this cycle) -- everything else: a
+  clarification, a new example, a tightened description of a rule already binding.
 
 Ambiguous? Say so in the HUMAN-HOLD question rather than guess -- a runner cannot authorize its own
-scope expansion. Composes with an item's resume/claim-window mechanics unchanged -- a version mismatch
-is a property of the RUNNER's session, not the item's claim state.
+scope expansion. A version mismatch is a property of the RUNNER's session, not the item's claim state.
 
 ## Binding A — GitHub issues (`issues:<label>`)
 
-States are labels on the issue: `agent:todo` → `agent:working` → `agent:review` (PR open, awaiting
-merge) or `agent:done` (merged). `agent:needs-input` is the BLOCKED/HUMAN-HOLD side-state (resumes back
-to `agent:working`); `agent:todo` is also the FAILED landing state -- retry-eligible, unassigned.
+Labels: `agent:todo` → `agent:working` → `agent:review` (PR open) or `agent:done` (merged).
+`agent:needs-input` is the BLOCKED/HUMAN-HOLD side-state (resumes to `agent:working`); `agent:todo` is
+also the FAILED landing state.
 
-**Bootstrap** (one-time per repo, idempotent, safe to re-run every sprint start):
+**Bootstrap** (`--force` updates instead of erroring, so this runs unconditionally every sprint start):
 ```
 gh label create agent:todo --color ededed --force
 gh label create agent:working --color fbca04 --force
@@ -100,25 +127,14 @@ gh label create agent:done --color 5319e7 --force
 gh label create agent:needs-input --color d93f0b --force
 gh label create muster:ledger --color 1d76db --force
 ```
-`--force` updates color/description instead of erroring on an existing label, so this runs
-unconditionally.
 
-**Claim** (assign + label flip, both before work starts -- assignment alone is not the lock):
+**Claim** (assign + label flip, then the CLAIM RECEIPT -- GitHub allows multiple assignees, so
+assignee-based detection fails open):
 ```
 gh issue edit <N> --add-assignee "@me" --remove-label agent:todo --add-label agent:working
 gh issue comment <N> --body "MUSTER CLAIMED <runner> <ts>"
 ```
-GitHub allows multiple assignees, so two runners racing the same issue can BOTH land as assignee --
-assignee-based detection fails open. The CLAIM COMMENT is the actual lock, scoped to the **current claim
-window**: comments since the last terminal receipt (`MUSTER DONE`/`BLOCKED`/`HUMAN-HOLD`/`FAILED` --
-deliberately NOT `YIELD`, else a loser's yield before the winner's re-read would floor the winner's own
-claim out of its window). Without that floor, a fresh claim after a retry/resume compares against a
-stale prior-cycle claim, always earlier -- every legitimate reclaimer "loses" and the item strands
-unowned. `src/coordination.js` is the source of truth for this race rule and the HUMAN-HOLD resume
-gate. Re-read every comment (paginated -- truncating at 30 is a false read), find the window floor,
-rank only the `CLAIMED` comments inside it by server `created_at`, identifying each by the `<runner>`
-token in the comment BODY, not the author's `login` (runners sharing one GitHub token are otherwise
-indistinguishable):
+Window-floor query (paginated, never truncated):
 ```
 gh api repos/{owner}/{repo}/issues/<N>/comments --paginate --slurp --jq '
   flatten
@@ -127,40 +143,23 @@ gh api repos/{owner}/{repo}/issues/<N>/comments --paginate --slurp --jq '
      | {runner: (.body | capture("^MUSTER CLAIMED (?<r>[^ ]+)").r), created_at}]
   | sort_by(.created_at)'
 ```
-Earliest `created_at` wins (server-ordered, a real tiebreak for near-simultaneous claims). Not yours?
-You lost the race:
+Not the earliest -- lost the race:
 ```
 gh issue edit <N> --remove-assignee "@me"
 gh issue comment <N> --body "MUSTER YIELD <runner> <ts> — lost claim race to <winning runner>"
 ```
-then move to the next `agent:todo` issue -- leave the label alone. Exception: a later-state label
-already present (`agent:review`/`agent:done`/`agent:needs-input` -- your claim-time label add landed
-after the winner moved past that state) also needs `gh issue edit <N> --remove-label agent:working` so
-the issue isn't mislabeled with both states.
+then move on (a later-state label already present -- `agent:review`/`agent:done`/`agent:needs-input`
+-- also needs `--remove-label agent:working` so it isn't mislabeled twice).
 
-Winner: before starting work, count prior `MUSTER FAILED` receipts across the WHOLE history
-(cumulative, not windowed), paginated:
-```
-gh api repos/{owner}/{repo}/issues/<N>/comments --paginate --slurp --jq \
-  'flatten | [.[] | select(.body | test("^MUSTER FAILED"))] | length'
-```
-At 2 prior failures, redirect to needs-input instead of another attempt:
+Count prior `MUSTER FAILED` comments (same paginated shape, filtered to `^MUSTER FAILED`, `| length`);
+at the retry cap:
 ```
 gh issue comment <N> --body "MUSTER BLOCKED <runner> <ts>
 retry cap reached (2 prior failures) — needs human input before another attempt"
 gh issue edit <N> --remove-label agent:working --add-label agent:needs-input
 ```
-Fewer than 2: proceed with work as normal.
 
-**Receipts** are issue comments whose FIRST LINE is fixed, followed by free-text detail:
-```
-MUSTER CLAIMED <runner> <ts>
-MUSTER DONE <runner> <ts>                (+ disposition and PR/commit link)
-MUSTER BLOCKED <runner> <ts>             (+ the question)
-MUSTER HUMAN-HOLD <runner> <ts> authorizer=<login>  (+ the question)
-MUSTER FAILED <runner> <ts> attempt <n>  (+ the reason)
-MUSTER YIELD <runner> <ts>               (+ which claim comment won the race)
-```
+**Receipts** — the canonical fixed-first-line template above, `<authorizer-field>` = GitHub `<login>`.
 
 **Done:**
 ```
@@ -172,59 +171,43 @@ gh issue edit <N> --remove-label agent:working --add-label agent:done
 gh issue close <N> --comment "closed by muster sprint (<runner>)"
 ```
 
-**Blocked:** `<question>` is free text (may carry unescaped quotes/backticks/`$(...)`) -- write it to a
-scratch file with your file-write tool (not shell `echo`/`printf`) and pass `--body-file` instead of
-inlining `--body "..."`, so hostile text can't break shell quoting:
+**Blocked/Human-hold:** `<question>` may carry unescaped quotes/backticks/`$(...)` -- write it to a
+scratch file with your file-write tool (not shell `echo`/`printf`) and pass `--body-file`:
 ```
-# write "MUSTER BLOCKED <runner> <ts>\n<question>" to <bodyfile> with your file-write tool, then:
+# write "MUSTER BLOCKED <runner> <ts>\n<question>" to <bodyfile>, then:
 gh issue comment <N> --body-file <bodyfile>
 gh issue edit <N> --remove-label agent:working --add-label agent:needs-input
 ```
-**Human-hold:** the narrower BLOCKED variant -- raise it when only one specific human can
-authoritatively answer (external-effect approval, scope change, spend), not "any" replier. Reuses the
-SAME `agent:needs-input` label (the receipt body alone discriminates BLOCKED from HUMAN-HOLD; a second
-label would cost a bootstrap + add/remove pair for a distinction already free). Same hostile-quoting
-handling as BLOCKED:
+Human-hold reuses the same label and hostile-quoting handling, adding `authorizer=<login>`:
 ```
 # write "MUSTER HUMAN-HOLD <runner> <ts> authorizer=<login>\n<question>" to <bodyfile>, then:
 gh issue comment <N> --body-file <bodyfile>
 gh issue edit <N> --remove-label agent:working --add-label agent:needs-input
 ```
-`<login>` is the GitHub login who must personally answer -- the repo owner unless named otherwise.
-**Validate before writing** -- adversarial text must not name an arbitrary login and have it accepted:
+`<login>` must personally answer. **Validate** (canonical rule above):
 ```
 gh api repos/{owner}/{repo}/collaborators/{login}
 ```
-404 (not a collaborator): fall back to the repo owner (`gh repo view --json owner --jq .owner.login`).
-Only a 2xx-confirmed login may be recorded as `authorizer=<login>`.
+404: fall back to the repo owner (`gh repo view --json owner --jq .owner.login`).
 
-**Resume scan** (before claiming anything new -- one unordered pass over every `agent:needs-input`
-issue; its own latest receipt decides which rule applies):
+**Resume scan** (one unordered pass):
 ```
 gh issue list --label agent:needs-input --state open --json number,comments
 ```
-Find the latest `MUSTER BLOCKED`/`MUSTER HUMAN-HOLD` comment (later one decides).
-- **BLOCKED**: any LATER non-`MUSTER `-prefixed comment (any human) answers it.
-- **HUMAN-HOLD**: a later non-`MUSTER `-prefixed comment only counts if its author's `.user.login`
-  equals the recorded `authorizer=<login>` (same listing, no extra call). Any other reply is inert.
-  (Inverse of the CLAIMED identity problem: there the BODY token was authoritative since runners share
-  a token; here the AUTHOR's login is, since a human replies under their own account.)
+Latest `MUSTER BLOCKED`/`MUSTER HUMAN-HOLD` comment decides; HUMAN-HOLD checks `.user.login` against
+`authorizer=<login>` (inverse of the CLAIMED identity problem: BODY token authoritative there, AUTHOR's
+login here, since a human replies under their own account). Once answered: re-claim (`--remove-label
+agent:needs-input --add-label agent:working`, then `MUSTER CLAIMED ... — resumed`) -- that comment is
+the new window floor.
 
-Either way, once answered/authorized: re-claim ahead of any fresh `agent:todo` item (`--remove-label
-agent:needs-input --add-label agent:working`, then `MUSTER CLAIMED` noting the resume) -- subject to
-the same windowed race check as any claim, since that `MUSTER BLOCKED`/`HUMAN-HOLD` comment is itself
-the window floor.
-
-**Failed** (revert to claimable, always leaving a record, unless the retry cap already redirected to
-`agent:needs-input`): `<reason>` is free text -- same hostile-quoting risk as `<question>`:
+**Failed:** revert to claimable, unless the retry cap already redirected:
 ```
-# write "MUSTER FAILED <runner> <ts> attempt <n>\n<reason>" to <bodyfile> with your file-write tool, then:
+# write "MUSTER FAILED <runner> <ts> attempt <n>\n<reason>" to <bodyfile>, then:
 gh issue comment <N> --body-file <bodyfile>
 gh issue edit <N> --remove-assignee "@me" --remove-label agent:working --add-label agent:todo
 ```
-`<n>` is this attempt's number: 1 + the prior-`MUSTER FAILED` count already read during claim.
 
-**Ledger** — one pinned issue; bootstrap once:
+**Ledger** — one pinned issue, bootstrap once:
 ```
 gh issue list --label muster:ledger --state open --json number --jq '.[0].number'
 # if empty:
@@ -232,44 +215,30 @@ gh issue create --title "MUSTER Coordination Ledger" --label muster:ledger \
   --body "One comment per runner, edited in place: last-seen, last item, result."
 gh issue pin <ledgerNum>
 ```
-Each cycle, find-then-edit (or first-create) your own comment (same hostile-quoting risk as above --
-write to a scratch file, reference via `@<bodyfile>` or `--body-file`):
+Each cycle, find-then-edit (or create), same quoting handling as above:
 ```
 gh issue view <ledgerNum> --json comments \
   --jq '.comments[] | select(.body | startswith("MUSTER LEDGER <runner> ")) | .id'
 # write "MUSTER LEDGER <runner> <ts>\nlast item: <N or item text>\nresult: <claimed|done|blocked|human-hold|failed|idle>" to <bodyfile>, then:
-# found -> edit in place:
-gh api -X PATCH repos/{owner}/{repo}/issues/comments/<commentId> -F body=@<bodyfile>
-# not found -> first heartbeat:
-gh issue comment <ledgerNum> --body-file <bodyfile>
+gh api -X PATCH repos/{owner}/{repo}/issues/comments/<commentId> -F body=@<bodyfile>   # found
+gh issue comment <ledgerNum> --body-file <bodyfile>                                    # not found
 ```
-Idle cycle: `last item: none — nothing claimable` / `result: idle` in this SAME comment -- same `IDLE
-<runner> <ts> — nothing claimable` heartbeat Binding B writes, wrapped in this binding's template.
 
 ## Binding B — backlog.md
 
-Extends the existing `{key: value}` grammar (`src/sprint-waves.js`) — its generic annotation strip
-passes unknown keys through harmlessly: `{claimed:}`/`{blocked:}`/`{human-hold:}` parse and strip
-cleanly, leaving wave computation and the audit dedupe/assess rule unaffected. `{human-hold:}` is a
-distinct key (unlike Binding A's reused label) since annotations cost nothing extra here. Verified
-live: `node src/cli.js sprint-waves` on a line with `{id}`/`{deps}` plus `{claimed: x@y}` returns
-`ok:true` with the correct wave and the annotation stripped from `items[...].text`.
+Extends `{key: value}` (`src/sprint-waves.js`) -- unknown keys pass through harmlessly:
+`{claimed:}`/`{blocked:}`/`{human-hold:}` parse and strip cleanly, wave computation unaffected.
 
 **Coordination is orchestrator-level** — only the top-level `/muster:sprint` driver reads/writes the
-`{claimed:}`/`{blocked:}`/`{human-hold:}`/`{attempts:}` annotations and the STATE `## Coordination`
-section; per-item worktree runners touch neither. The driver writes each item's `{claimed:}`
-receipt itself before dispatching that item's worktree runner (subagent type `muster-runner` when the
-session registry carries it, else the generic-subagent fallback), then transcribes the runner's
-returned outcome, via the existing return contract, into its DONE/BLOCKED/HUMAN-HOLD/FAILED receipt and
-the ledger once the wave completes.
+`{claimed:}`/`{blocked:}`/`{human-hold:}`/`{attempts:}` annotations and STATE's `## Coordination`
+section; per-item worktree runners touch neither. The driver writes `{claimed:}` before dispatching
+that item's worktree runner (subagent type `muster-runner`, else the generic-subagent fallback), then
+transcribes the runner's outcome into the DONE/BLOCKED/HUMAN-HOLD/FAILED receipt and ledger once the
+wave completes.
 
-- **Claim** — append `{claimed: <runner>@<ts>}` before starting work. Scan unchecked items top to
-  bottom; skip any already `{claimed:}` by a DIFFERENT runner (your own prior annotation is a no-op
-  resume, e.g. after a restart). Claim-then-verify: re-read right after writing; another runner's
-  `{claimed:}` instead of/alongside yours means you lost -- move on. No true compare-and-swap in
-  plain-file coordination; assumes cooperative runners, not adversarial concurrency (a documented
-  limit).
-- **Receipts + ledger** live in the run STATE under a `## Coordination` section, one line per change:
+- **Claim** — append `{claimed: <runner>@<ts>}`; claim-then-verify per the canonical cooperative-model
+  rule above. Your own prior annotation is a no-op resume (e.g. after a restart).
+- **Receipts + ledger** live in STATE's `## Coordination` section, one line per change:
   ```
   CLAIMED <item-id> <runner> <ts>
   DONE <item-id> <runner> <ts> <disposition>
@@ -279,90 +248,47 @@ the ledger once the wave completes.
   IDLE <runner> <ts> — nothing claimable
   LEDGER <runner> last-seen=<ts> last-item=<item-id> result=<claimed|done|blocked|human-hold|failed|idle>
   ```
-  `LEDGER` is edited in place (find-and-replace your prior `LEDGER <runner> ...` OR `IDLE <runner> ...`
-  line -- one entry, not appended twice). **IDLE** is that same slot: nothing claimable means no item
-  to annotate, so the heartbeat reads `IDLE <runner> <ts> — nothing claimable` instead of the usual
-  fields.
-- **Blocked/Human-hold→resume** — append `{blocked: <slug>}` (anyone answers) or `{human-hold: <slug>}`
-  (only the named authorizer -- external-effect approvals, scope changes, spend) replacing `{claimed:}`,
-  and write the matching receipt with the question (`HUMAN-HOLD` also records `authorizer=<human>`).
-  Resume scan (one unordered pass over every `{blocked:}`/`{human-hold:}` item):
-  - `{blocked: <slug>}`: search STATE for an `ANSWER <slug>: <text>` line newer than the matching
-    `BLOCKED ... <slug>` receipt -- any author counts. Found: replace with `{claimed: <runner>@<ts>}`
-    and resume.
-  - `{human-hold: <slug>}`: a written `ANSWER <slug> by <authorizer>: <text>` STATE line is **NOT
-    sufficient on its own** -- a plain-file line can't authenticate who wrote it (any runner with STATE
-    write access could self-approve its own hold, defeating the named-authorizer gate). Resume instead
-    requires an **ATTENDED** session: present the question via **AskUserQuestion**; only AFTER the human
-    answers does the orchestrator itself, exclusively -- not the runner alone, not by pre-writing the
-    `ANSWER` line -- write it to STATE and replace `{human-hold: <slug>}` with `{claimed: <runner>@<ts>}`. An
-    **UNATTENDED** runner (`/muster:runner`, or Routine mode) has no session to ask, so every
-    `{human-hold:}` item is **permanently parked** for that cycle -- skip it, move on. Binding A's
-    HUMAN-HOLD resume is unaffected: its `authorizer=<login>` is already GitHub-authenticated, which a
-    plain STATE line never is.
-- **Done/Failed** — DONE: leave `{claimed:}` as a harmless audit trail. FAILED (crash/dispatch failure,
-  not an escalation): strip `{claimed:}`, bump `{attempts: n}` (absent → `1`; else increment) across
-  runners/restarts, write the `FAILED` receipt. At `{attempts: 2}`: replace with `{blocked:
-  max-retries-<item-id>}` (item-id keeps the slug unique) and a `BLOCKED <item-id> <runner> <ts> retry
-  cap reached (2 prior failures) — needs human input` receipt in place of `FAILED` -- re-enters the pool
-  only via the normal resume scan. Below the cap, stays reclaimable, `{attempts:}` intact.
+- **Blocked/Human-hold→resume** — append `{blocked: <slug>}` or `{human-hold: <slug>}` replacing
+  `{claimed:}`, with the matching receipt. Resume scan (one unordered pass):
+  - `{blocked: <slug>}`: an `ANSWER <slug>: <text>` STATE line newer than the matching receipt, any
+    author -- replace with `{claimed: <runner>@<ts>}` and resume.
+  - `{human-hold: <slug>}`: the canonical unauthenticated-channel case (a plain STATE line can't
+    authenticate its author) -- ATTENDED-only; an UNATTENDED runner permanently parks it.
+- **Done/Failed** — DONE: leave `{claimed:}` as a harmless audit trail. FAILED (crash/dispatch failure):
+  strip `{claimed:}`, bump `{attempts: n}` (absent → `1`; else increment), write the receipt. At
+  `{attempts: 2}` (the canonical retry cap): replace with `{blocked: max-retries-<item-id>}` and a
+  matching `BLOCKED` receipt in place of `FAILED`. Below the cap, stays reclaimable.
 
 ## Binding C — Linear (`linear:<team key or project>`)
 
-Inspected live against a trial workspace (Linear MCP: `list_teams`/`list_issue_statuses`/`list_users`):
-one team, statuses `Backlog`(backlog) → `Todo`(unstarted) → `In Progress`/`In Review`(started) →
-`Done`(completed) → `Canceled`(canceled), plus `Duplicate` -- no `Blocked`/agent-queue status exists
-yet. The mapping below is by STATUS NAME, parameterized per team/project -- derive names from the
-target workspace at bind time.
+Live-inspected (Linear MCP), by STATUS NAME parameterized per team/project: claimable queue = an
+unstarted status (default `Todo`); claim = a started status (default `In Progress`) + assignee; review
+(pr/ask) = a started status (default `In Review`); done (merge-local/merge-push/keep) = the completed
+status (default `Done`); BLOCKED/HUMAN-HOLD = ONE designated blocked status (default `Blocked` --
+bootstrap must create it, no built-in "blocked" category exists), discriminated by the receipt's first
+line, same single-status reuse as Binding A's `agent:needs-input`.
 
-States map onto Linear's status-type categories: claimable queue = a designated unstarted status
-(default `Todo`); claim = a started status (default `In Progress`) + assignee; review (disposition
-pr/ask) = a started status (default `In Review`, mirrors Binding A's `agent:review`); done
-(merge-local/merge-push/keep) = the completed status (default `Done`); BLOCKED/HUMAN-HOLD = ONE
-designated blocked status (default `Blocked` -- Linear has no built-in "blocked" category, so bootstrap
-must create it), carrying both plus the escalated-marker, discriminated by the comment receipt's first
-line -- same single-status reuse reasoning as Binding A's `agent:needs-input` label.
-
-**Claim** (status flip + assignee, then the actual lock):
+**Claim** (status flip + assignee, then the CLAIM RECEIPT -- same windowed race rule as A, via MCP):
 ```
 save_issue({ id, state: "<working-status>", assignee: "<runner-identity>" })
 save_comment({ issueId: id, body: "MUSTER CLAIMED <runner> <ts>" })
 ```
-Linear's single `state` field can't hold two values like GitHub's label SET, but assignee+state is
-still not a lock (two runners can both read pre-claim state and both write before either is visible to
-the other). THE CLAIM COMMENT IS STILL THE LOCK -- same **current claim window** rule as Binding A
-(window floor = last terminal receipt, NOT `YIELD`; earliest `CLAIMED` after the floor wins,
-`src/coordination.js` is the source of truth), via MCP instead of `gh`/jq: `list_comments({ issueId:
-id, orderBy: "createdAt" })`, paginate on `cursor`/`hasNextPage` to exhaustion, take the MAX `createdAt`
-among `^MUSTER (DONE|BLOCKED|HUMAN-HOLD|FAILED)` comments as the floor, keep only `^MUSTER CLAIMED`
-after it, sort ascending, identify by the `<runner>` BODY token (not the actual Linear author -- one
-MCP session/account is shared across runners). Not yours:
+Window-floor query (canonical rule): `list_comments({ issueId: id, orderBy: "createdAt" })`, paginate
+`cursor`/`hasNextPage` to exhaustion, MAX `createdAt` among `^MUSTER (DONE|BLOCKED|HUMAN-HOLD|FAILED)`
+is the floor, keep only `^MUSTER CLAIMED` after it, identify by `<runner>` BODY token. Not yours:
 ```
 save_issue({ id, assignee: null })
 save_comment({ issueId: id, body: "MUSTER YIELD <runner> <ts> — lost claim race to <winning runner>" })
 ```
-then move to the next queue item -- leave `state` alone. Linear's `state` is single-valued (last write
-wins), so unlike Binding A there's no "left mislabeled with both states" cleanup step.
-
-Same retry-cap check as Binding A (count prior `MUSTER FAILED` comments across the WHOLE history,
-cumulative not windowed, via the same paginated call filtered to `^MUSTER FAILED`). At 2 prior
-failures, redirect to the blocked status:
+then move on -- `state` is single-valued (last write wins), so no "mislabeled with both states" cleanup
+like Binding A. Same retry-cap check as Binding A (paginated `^MUSTER FAILED` count); at the cap:
 ```
 save_comment({ issueId: id, body: "MUSTER BLOCKED <runner> <ts>\nretry cap reached (2 prior failures) — needs human input before another attempt" })
 save_issue({ id, state: "<blocked-status>" })
 ```
-Fewer than 2: proceed with work as normal.
 
-**Receipts** — same fixed-first-line enum as Binding A/B, unchanged (the standing-context preflight's
-EXPANDS rule already treats any new token here as scope-widening):
-```
-MUSTER CLAIMED <runner> <ts>
-MUSTER DONE <runner> <ts>                (+ disposition and PR/commit link)
-MUSTER BLOCKED <runner> <ts>             (+ the question)
-MUSTER HUMAN-HOLD <runner> <ts> authorizer=<displayName>  (+ the question)
-MUSTER FAILED <runner> <ts> attempt <n>  (+ the reason)
-MUSTER YIELD <runner> <ts>               (+ which claim comment won the race)
-```
+**Receipts** — the canonical fixed-first-line template above, `<authorizer-field>` = Linear
+`<displayName>` (the preflight's EXPANDS rule treats any new token here as scope-widening).
 
 **Done:**
 ```
@@ -372,139 +298,98 @@ save_issue({ id, state: "In Review" })   # disposition pr/ask
 save_issue({ id, state: "Done" })
 ```
 
-**Blocked:** `<question>` may carry markdown/backticks/etc, but `save_comment`'s `body` takes literal
-content directly (real newlines, no escape sequences) -- no shell-quoting hazard the way Binding A's
-`gh --body` needs a scratch file, so write straight to `body`:
+**Blocked/Human-hold:** `save_comment`'s `body` takes literal content directly (real newlines, no
+escapes) -- no shell-quoting hazard Binding A has, write straight to `body`:
 ```
 save_comment({ issueId: id, body: "MUSTER BLOCKED <runner> <ts>\n<question>" })
 save_issue({ id, state: "<blocked-status>" })
-```
-**Human-hold:** same status-reuse reasoning -- one blocked status carries BLOCKED/HUMAN-HOLD/escalated,
-discriminated by receipt body:
-```
+# Human-hold adds authorizer, same status reuse:
 save_comment({ issueId: id, body: "MUSTER HUMAN-HOLD <runner> <ts> authorizer=<displayName>\n<question>" })
 save_issue({ id, state: "<blocked-status>" })
 ```
-`<displayName>` is the Linear user who must personally answer -- the workspace's default authorizer
-unless named otherwise. **Validate before writing** (Binding A's `collaborators/{login}` analogue;
-Linear has no single "repo owner" so the fallback is a configured admin):
+`<displayName>` must personally answer. **Validate** (canonical rule above; Linear has no "repo owner"
+so fallback is a configured admin):
 ```
 list_users({ query: "<name>" })
 ```
-No match/inactive → invalid: fall back to the configured default (`isAdmin: true` member). Only a
-`list_users`-confirmed active identity may be recorded as `authorizer=<displayName>`.
+No match/inactive: fall back to the configured default (`isAdmin: true` member).
 
-**Resume scan** (one unordered pass, same rule as Binding A):
+**Resume scan** (same rule as Binding A -- HUMAN-HOLD checks the actual MCP author against
+`authorizer=<displayName>`):
 ```
 list_issues({ team, state: "<blocked-status>" })
 ```
-For each: `list_comments({ issueId: id, orderBy: "createdAt" })`, find the LATEST `MUSTER BLOCKED`/
-`MUSTER HUMAN-HOLD` comment. **BLOCKED**: any LATER non-`MUSTER `-prefixed comment (any author) answers
-it. **HUMAN-HOLD**: only if its actual author (Linear-authenticated) matches the recorded
-`authorizer=<displayName>` -- any other author's reply is inert.
+For each: `list_comments({ issueId: id, orderBy: "createdAt" })`, find the latest `MUSTER
+BLOCKED`/`MUSTER HUMAN-HOLD` comment. Once answered: re-claim (`save_issue({ id, state:
+"<working-status>" })` + a `MUSTER CLAIMED ... — resumed` comment) -- that comment is the new window
+floor.
 
-Once answered/authorized: re-claim ahead of any fresh queue item (`save_issue({ id, state:
-"<working-status>" })` + a `MUSTER CLAIMED ... — resumed` comment), subject to the same windowed race
-check -- the `MUSTER BLOCKED`/`HUMAN-HOLD` comment is itself the new window floor.
-
-**Ledger** — one designated issue, per-runner comment edited in place. No pin capability via MCP
-(unlike `gh issue pin`), so find-or-create by an exact, fixed title:
+**Ledger** — one designated issue, per-runner comment edited in place; no MCP pin, so find-or-create
+by a fixed title:
 ```
 list_issues({ team, query: "MUSTER Coordination Ledger" })   # bootstrap: save_issue to create if absent
 ```
 Each cycle: `list_comments({ issueId: ledgerIssue })`, filter body `startswith("MUSTER LEDGER <runner> ")`
-→ found: `save_comment({ id: <foundCommentId>, body: "MUSTER LEDGER <runner> <ts>\nlast item: <id or item text>\nresult: <claimed|done|blocked|human-hold|failed|idle>" })` (`id` updates rather than creating,
-Binding A's `gh api -X PATCH` equivalent). Not found: the same call omitting `id`. Idle cycle: `last
-item: none — nothing claimable` / `result: idle`, exactly Binding A's convention.
+→ found: `save_comment({ id: <foundCommentId>, body: "MUSTER LEDGER <runner> <ts>\nlast item: <id or item text>\nresult: <claimed|done|blocked|human-hold|failed|idle>" })`. Not found: the same call
+omitting `id`.
 
-**Bootstrap** (one-time per team/workspace -- Linear workflow states are admin-configured, no MCP tool
-creates one, needs a human with admin): (1) confirm queue/working/review/done statuses exist
-(`list_issue_statuses({ team })` -- every team ships these by default, no action unless names differ);
-(2) create ONE blocked-state status (default `Blocked`) if missing, via Linear's UI (any category
-works, keyed off NAME) -- agents can't self-serve this, ask the admin once; (3) no label bootstrap --
-Binding C adds zero labels; (4) ledger issue -- find-or-create by title (above).
+**Bootstrap** (one-time, admin-only): confirm queue/working/review/done statuses exist
+(`list_issue_statuses({ team })`); create ONE blocked-state status (default `Blocked`) if missing, via
+Linear's UI (agents can't self-serve this); no label bootstrap; find-or-create the ledger issue by
+title (above).
 
-**Costs** (honest, not hidden): **two-queue drift** -- a THIRD, independent backlog (Linear's queue vs
-Binding B's `.muster/backlog.md`); running both against the same work risks a double-worked item, pick
-one source of truth. **MCP auth in headless runners** -- the Linear connector's auth in an unattended
-runtime isn't guaranteed the way Binding A's `gh` token is; confirm first, fail closed if unavailable.
-**Rate limits** -- Linear is rate/complexity-limited; a full-thread resume scan every cycle is the same
-read-heavy pattern as Binding A -- same cadence guidance as runner.md (15-30 min, widen if idle).
+**Costs**: **two-queue drift** -- a THIRD backlog vs Binding B's `.muster/backlog.md`, pick one source
+of truth. **MCP auth** -- confirm the connector's auth first, fail closed if unavailable (unlike
+Binding A's `gh` token). **Rate limits** -- a full-thread scan every cycle is read-heavy like A; same
+cadence as runner.md (15-30 min, widen if idle).
 
-**Standing-context preflight / retry cap / escalation** — inherits the core mechanism unchanged; the
-fingerprint set (SKILL.md/go-backlog.md/go.md/runner.md/hooks/) already covers this binding's own text,
-no new file to watch. Only delta: the escalation marker is a move to the blocked status with a question
-comment, discriminated from BLOCKED/HUMAN-HOLD purely by receipt body -- identical reuse reasoning.
+Standing-context preflight/retry cap/escalation inherit the canonical rule unchanged; same fingerprint
+set as the preflight above, no new file to watch.
 
 ## Binding D — Hermes kanban (native `kanban.db`)
 
-Applies when the harness itself is Hermes Agent, not Claude Code: Hermes ships its own durable
-multi-agent work queue in `~/.hermes/kanban.db` (SQLite, WAL), where every worker is a full OS
-process with its own profile identity, and the protocol above is already implemented as harness
-machinery rather than something muster's prose has to simulate on top of a label/annotation/status
-surface (docs/research/hermes.md §4, the Kanban subsection -- every citation below names that same
-source).
+Applies when the harness is Hermes Agent, not Claude Code: Hermes ships its own durable work queue in
+`~/.hermes/kanban.db` (SQLite, WAL), one OS process per worker profile -- the canonical protocol is
+already harness machinery, not simulated prose (docs/research/hermes.md §4, Kanban section).
 
-**State map** (protocol state -> kanban primitive):
+**State map** (canonical state -> kanban primitive):
 
-- **CLAIM** -> the board's own atomic claim: `BEGIN IMMEDIATE` inside the board's 60-second tick,
-  promoting a `todo`/`ready` card to `running` and starting the claiming profile's own OS process.
-  Unlike Bindings A-C, this is a real compare-and-swap at the database layer, not a comment-race
-  arbitrated after the fact -- there is no CLAIM COMMENT to re-read because the claim itself cannot
-  race.
-- **RECEIPTS** -> a `task_runs` row per attempt (`summary` for humans, `metadata` JSON carrying
+- **CLAIM** -> `BEGIN IMMEDIATE` inside the board's 60-second tick, promoting a `todo`/`ready` card to
+  `running`, starting the profile's OS process -- the canonical native-claim compare-and-swap (no CLAIM
+  COMMENT needed).
+- **RECEIPTS** -> a `task_runs` row per attempt (`summary`, plus `metadata` JSON carrying
   `changed_files`/`verification`/`dependencies`/`blocked_reason`/`retry_notes`/`residual_risk`), plus
   the append-only `task_events` log (`claimed`, `heartbeat`, `reclaimed`, `crashed`,
-  `protocol_violation`, `gave_up`); free-text detail rides `kanban_comment`, the direct analogue of
-  Binding A/C's issue/comment receipts.
-- **BLOCKED** -> `kanban_block(reason, kind)` moves the card to the `blocked` column. `kind:
-  needs_input` is the any-reply-resumes case (a `kanban_comment` reply, then `kanban_unblock`);
-  `kind: dependency` auto-resumes once every parent card reaches `done` -- the native equivalent of
-  Binding B's `{deps:}` grammar; `kind: capability`/`transient` cover a missing tool or a transient
-  failure with no analogue in Bindings A-C.
-- **HUMAN-HOLD** -> the same `blocked` column and `kind: needs_input`, discriminated by a
-  `kanban_comment` naming the authorizer -- but the board documents no per-comment human
-  authentication the way Binding A's GitHub login or Binding C's Linear author does; a comment is
-  just text any caller could write. This is Binding B's caveat, not A/C's: an unattended resume
-  cannot trust a bare comment match, so a Binding D HUMAN-HOLD stays parked pending the same
-  attended, out-of-band confirmation Binding B requires, until the board documents an authenticated
-  human-reply channel.
+  `protocol_violation`, `gave_up`); free-text detail rides `kanban_comment`.
+- **BLOCKED** -> `kanban_block(reason, kind)` moves the card to `blocked`. `kind: needs_input` is the
+  any-reply-resumes case (`kanban_comment` reply, then `kanban_unblock`); `kind: dependency`
+  auto-resumes once every parent card reaches `done` (native equivalent of Binding B's `{deps:}`);
+  `kind: capability`/`transient` have no analogue in A-C.
+- **HUMAN-HOLD** -> same `blocked` column and `kind: needs_input`, discriminated by a `kanban_comment`
+  naming the authorizer -- no per-comment authentication exists, so this is the canonical
+  unauthenticated-channel case (same as B): ATTENDED-only until the board adds one.
 - **DONE** -> `kanban_complete(summary, metadata, result, artifacts)`; the card lands on `done`.
-- **FAILED** -> a `task_events` `gave_up` (self-reported) or `crashed` (the board's own dead-PID
-  detection on its 60-second tick) entry reverts the card to `todo`. Bindings A/C's manual
-  2-prior-failure retry cap has a native equivalent: `kanban.failure_limit` consecutive spawn
-  failures auto-blocks the card -- no counting query needed, the board counts for you.
-- **YIELD** -> not applicable. YIELD exists in Bindings A-C solely to resolve a race the comment-lock
-  loses after the fact; the board's atomic claim prevents that race from occurring, so there is no
-  losing claimant left to yield.
-- **LEDGER** -> `kanban_heartbeat`, called once per cycle by each claiming profile. `task_events` is
-  append-only (not edited in place the way Binding A's ledger-issue comment or Binding B's STATE line
-  is), so "one heartbeat, not a growing pile" is read off the most recent `heartbeat` event per
-  profile rather than a single physically-edited row -- same semantic, different storage shape. The
-  staleness monitor that reclaims a wedged profile is the board's native version of muster's own
-  60-minute stale-claim release (HYGIENE PREFLIGHT, above).
+- **FAILED** -> a `task_events` `gave_up` (self-reported) or `crashed` (dead-PID detection) entry
+  reverts the card to `todo`; `kanban.failure_limit` is the native retry cap (consecutive spawn
+  failures auto-block, no counting query needed).
+- **YIELD** -> not applicable, per the canonical native-claim note (no losing claimant).
+- **LEDGER** -> `kanban_heartbeat`, once per cycle per profile. `task_events` is append-only, so "one
+  heartbeat" reads the most recent `heartbeat` event, not an edited row -- same semantic, different
+  storage; its staleness monitor natively covers HYGIENE PREFLIGHT's 60-minute release.
 
-**Fallback** -- Binding D only applies on a run where the board's worker tool surface is enabled
-(gated on the `HERMES_KANBAN_TASK` environment variable); anywhere else -- Claude Code, Codex, or a
-Hermes run with no board -- Bindings A/B/C apply exactly as written above. No local Hermes install
-existed on the machine this binding was authored on (docs/research/hermes.md's own sourcing-gaps
-section), so nothing below is behavior-verified against a live board.
+**Fallback** -- applies only when `HERMES_KANBAN_TASK` is enabled; elsewhere Bindings A/B/C apply as
+written above. No local Hermes install existed on the authoring machine (hermes.md's sourcing-gaps
+section), so nothing below is behavior-verified live.
 
-**Validate this binding** (described, not executed, per the same no-live-Hermes caveat) -- the same
-3-item smoke trail go-backlog.md's "Validate a binding" section runs for Bindings A-C, expressed in
-kanban primitives:
-- **hello-world** -- `kanban_create` a card; confirm the atomic claim promotes it to `running` with a
-  spawned profile process, the profile calls `kanban_complete`, and the result is one `task_runs` row
-  plus a `claimed`-to-completion `task_events` trail landing on `done`.
-- **blocked→resume** -- the profile calls `kanban_block(reason, kind: "needs_input")`; confirm the
-  `blocked` column plus a matching `task_events` entry, then post a `kanban_comment` answer and
-  `kanban_unblock`; confirm the card re-enters `ready`/`running` ahead of a fresh `todo` card (the
-  board's own promotion order).
-- **failed** -- kill the profile's OS process directly; confirm the 60-second tick's dead-PID
-  detection logs a `crashed` `task_events` entry and reverts the card to `todo` with a legible reason;
-  repeat past `kanban.failure_limit` and confirm auto-block replaces another attempt.
+**Validate this binding** (described, not executed, same caveat) -- the same 3-item smoke trail as
+go-backlog.md's "Validate a binding" section, in kanban primitives:
+- **hello-world** -- `kanban_create` a card; confirm atomic claim to `running`, a `kanban_complete`
+  call, and a `claimed`-to-`done` `task_runs`/`task_events` trail.
+- **blocked→resume** -- `kanban_block(reason, kind: "needs_input")`; confirm `blocked` plus a matching
+  event, then `kanban_comment` + `kanban_unblock`; confirm re-entry to `ready`/`running` ahead of a
+  fresh `todo` card.
+- **failed** -- kill the profile's OS process; confirm the dead-PID tick logs `crashed`, reverts to
+  `todo`; repeat past `kanban.failure_limit` for auto-block.
 
-**Standing-context preflight / retry cap / escalation** -- inherits the core mechanism unchanged
-(same fingerprint set as Binding C, above); the escalation marker is `kanban.failure_limit`'s
-auto-block (or a repeated same-kind `kanban_block` escalating to `triage`), discriminated from a
-plain retry purely by the `task_events` trail -- identical reuse reasoning to Bindings A-C.
+Standing-context preflight/retry cap/escalation inherit the canonical rule unchanged (same fingerprint
+set as the preflight above; escalation marker per canonical bullet 7).

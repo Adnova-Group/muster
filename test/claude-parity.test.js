@@ -217,5 +217,29 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // (node --test --test-concurrency=4, baseline 1908/1skip preserved plus 9 new
   // test/hook-task-completed-gate.test.js cases and a new VALID_EVENTS entry in
   // test/hook-registration.test.js for "TaskCompleted").
-  assert.equal(hash.digest("hex"), "94c72661579a2e684ba3d6ca2affe6fe9e131116ff437a2d58f5f9d0fcfc615d");
+  //
+  // Pin re-derived again for the worktree-isolation-native item (docs/strategy/native-delegation.md
+  // backlog item 10, stacked on task-board-authoritative -- the final orchestrator-SKILL editor in
+  // this chain): file COUNT unchanged (137) -- only plugin/skills/orchestrator/SKILL.md's content
+  // changed again. It gained one new "### Worktree isolation per harness + base-SHA receipts"
+  // subsection, placed directly after "Codex-native dispatch: spawn_agent" and before
+  // "## Scope fences" -- disturbing neither the numbered step list, the wave-dispatch bullets
+  // above it, nor any other named section. The new subsection names each harness's native
+  // worktree mechanism concretely (Claude Code CLI's already-landed `isolation: "worktree"` Agent
+  // tool parameter; Claude Code Desktop's automatic per-session worktree under
+  // `<root>/.claude/worktrees/`, docs/research/claude-code-desktop.md sec 2.2; Hermes's
+  // `hermes -w`/kanban worktree workspaces, docs/research/hermes.md sec 6; Codex's receipts-only
+  // floor -- no cwd field on subagent dispatch at all, docs/research/codex-cli.md sec 6) and the
+  // one base-SHA provenance receipt every harness records alike, regardless of which mechanism (or
+  // none) isolated the work. Names `src/wave-dispatch.js`'s new `resolveWorktreeIsolation`
+  // (per-harness mechanism selection, fails loud on an unrecognized/missing harness) and
+  // `buildBaseShaReceipt` (the receipt builder, fails loud on a missing/non-hex baseSha), both
+  // wired to a new `muster worktree-isolation --harness <name>` CLI subcommand (`src/cli.js`) --
+  // fixture-driven TDD in test/worktree-isolation.test.js (13 cases, including one built against a
+  // REAL `git rev-parse HEAD` from this checkout, not a fixture string) plus 7 new CLI-wire cases
+  // in test/cli-wire-perf.test.js. `docs/binding-interface.md`'s grep-audit table is re-derived
+  // (dispatch 16/17, worktree 15/22, total 88 -> 96 -- AskUserQuestion/hook untouched);
+  // `website/reference/commands.md` gained one new `worktree-isolation` row so
+  // test/website-docs.test.js's usage-string drift check stays green.
+  assert.equal(hash.digest("hex"), "07f5dda08bd69287dc7fc18dabdf4dd21e45bab9a6aea9fcec80c209fbbb6681");
 });

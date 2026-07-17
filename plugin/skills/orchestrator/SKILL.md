@@ -207,6 +207,39 @@ diagnostic naming the `agent_type` and task, and the run STOPS on that task -- i
 rejection and silently re-dispatches on a generic/default agent. Fix the registration (reinstall
 the profile, verify `.codex/agents/`), then re-dispatch that one task.
 
+### Worktree isolation per harness + base-SHA receipts
+
+Step 4a's "Parallel isolation" bullet already names Claude Code CLI's mechanism (the Agent
+tool's own `isolation: "worktree"` parameter). The other harnesses muster targets each have a
+DIFFERENT native mechanism, or none at all -- select the one that matches the harness actually
+running this dispatch (`$MUSTER_CLI worktree-isolation --harness <name>`, `resolveWorktreeIsolation`
+in `src/wave-dispatch.js`; a declared, not auto-probed, selection -- same shape as the wave-dispatch
+capability checks above):
+
+- **Claude Code CLI** -- `isolation: "worktree"` on the Agent tool (step 4a, above).
+- **Claude Code Desktop** -- automatic per-session worktree under `<root>/.claude/worktrees/`;
+  muster scripts nothing, the harness creates it before the session's first tool call
+  (docs/research/claude-code-desktop.md sec 2.2).
+- **Hermes** -- `hermes -w` (a disposable per-session worktree) or a kanban `worktree` workspace
+  for a queued task; Hermes creates and tears it down, muster only selects which invocation shape
+  to dispatch into (docs/research/hermes.md sec 6).
+- **Codex** -- no native mechanism exists: `collaboration.spawn_agent` has no cwd field
+  (docs/research/codex-cli.md sec 6), so there is nothing to select. The brief's absolute
+  `WORKTREE CWD` (Codex-native dispatch, above) plus the base-SHA receipt below stand in for
+  isolation muster cannot get from the harness.
+
+**Every harness records the same base-SHA receipt, regardless of which mechanism (or none)
+isolated the work.** None of the four self-report a fork point back to the orchestrator, so
+capture one per dispatched crew member at dispatch time, before the task starts:
+`buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath })` (`src/wave-dispatch.js`)
+builds it, refusing to build one over a missing or non-hex `baseSha` -- a receipt that isn't
+provably a real fork point is worse than no receipt. Append the built receipt to STATE alongside
+the existing per-task dispatch line (step 4a's "Announce before acting"); one receipt per
+dispatched crew member, not per wave. This makes the Codex no-cwd-on-dispatch gap
+receipts-VERIFIED rather than aspirational: `test/worktree-isolation.test.js` proves the builder
+enforces a real SHA shape (including against this checkout's own live `git rev-parse HEAD`) and
+that every harness above resolves to its own distinct mechanism string, never a silent default.
+
 ## Scope fences
 
 When plan tasks carry `owns`/`frozen` fields, copy them into the brief verbatim as `OWNS:`/`FROZEN:`

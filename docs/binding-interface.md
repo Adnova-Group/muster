@@ -290,9 +290,9 @@ stale:
 
 ```
 AskUserQuestion    files=13  mentions=31
-dispatch (Agent/Task tool)  files=5  mentions=16
+dispatch (Agent/Task tool)  files=5  mentions=17
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=26
-worktree   files=5  mentions=15
+worktree   files=5  mentions=22
 ```
 
 Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave
@@ -309,7 +309,17 @@ de-duplicated) added none of its own -- file counts unchanged (still the same 11
 mentions grew 19 -> 26 (+7: 6 in orchestrator/SKILL.md, 1 in go-backlog.md's cross-reference to
 the gating hook). AskUserQuestion, dispatch, and worktree counts are untouched by this item.
 
-Every one of those 88 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the worktree-isolation-native item: `plugin/skills/orchestrator/
+SKILL.md`'s new "Worktree isolation per harness + base-SHA receipts" subsection (stacked after
+"Codex-native dispatch: spawn_agent") names each of the four harnesses' native worktree
+mechanisms concretely (Claude Code CLI's `isolation: "worktree"` Agent-tool parameter, Claude
+Code Desktop's automatic per-session worktree, Hermes's `hermes -w`/kanban worktree workspaces,
+Codex's receipts-only floor) and the base-SHA receipt every harness records alike -- one more
+`Agent tool` mention (dispatch 16 -> 17) and seven more `worktree` mentions (15 -> 22, the
+per-harness mechanism list plus the receipt-builder prose). File counts unchanged (still the
+same 5 files each); AskUserQuestion and hook counts are untouched by this item.
+
+Every one of those 96 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

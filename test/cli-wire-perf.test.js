@@ -214,6 +214,58 @@ test("cli wire: wave-dispatch with MUSTER_AGENT_TEAMS=0/false and no flag stays 
 });
 
 // ---------------------------------------------------------------------------
+// worktree-isolation (worktree-isolation-native item): per-harness native worktree
+// isolation mechanism selection -- a declared `--harness` selection, never auto-probed.
+// See src/wave-dispatch.js's resolveWorktreeIsolation.
+// ---------------------------------------------------------------------------
+
+test("cli wire: worktree-isolation --harness claude-code selects the Agent tool's isolation param", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "claude-code"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mechanism, "agent-tool-isolation");
+  assert.equal(parsed.receiptRequired, true);
+});
+
+test("cli wire: worktree-isolation --harness claude-desktop selects the automatic worktree", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "claude-desktop"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mechanism, "desktop-auto-worktree");
+});
+
+test("cli wire: worktree-isolation --harness hermes selects hermes -w / kanban worktree workspaces", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "hermes"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mechanism, "hermes-w");
+});
+
+test("cli wire: worktree-isolation --harness codex selects the receipts-only floor (no native mechanism)", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "codex"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mechanism, "receipts-only");
+  assert.equal(parsed.receiptRequired, true);
+});
+
+test("cli wire: worktree-isolation with no --harness fails loud (exit 1), never guesses a mechanism", async () => {
+  try {
+    await run(["worktree-isolation"]);
+    assert.fail("expected worktree-isolation with no --harness to exit non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr, /harness is required/);
+  }
+});
+
+test("cli wire: worktree-isolation with an unrecognized --harness fails loud (exit 1)", async () => {
+  try {
+    await run(["worktree-isolation", "--harness", "cowork"]);
+    assert.fail("expected worktree-isolation --harness cowork to exit non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr, /unrecognized harness "cowork"/);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // review-brief (fast-path-token-gap item, lever 1): a code-backed CLI wrapper over
 // src/review-brief.js's lightBriefEligible/detectReviewTriggers, the SAME "code over model"
 // decision pattern gate-cadence/citation-check/fast-path already established for a

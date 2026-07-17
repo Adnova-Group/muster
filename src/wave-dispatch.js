@@ -153,3 +153,84 @@ export function assertCodexSpawnAgentAccepted({ taskId, agentType, rejected, rej
     `effort, and sandbox policy the profile enforces. Fix the registration, then re-dispatch this task.`
   );
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Native worktree isolation per harness + base-SHA receipts
+// (worktree-isolation-native item, docs/strategy/native-delegation.md #10)
+//
+// Claude Code CLI already rides the Agent tool's own `isolation: "worktree"` parameter
+// (orchestrator/SKILL.md's "Parallel isolation" bullet -- landed under
+// harness-native-delegation #47, docs/research/claude-code-cli.md sec 5's
+// observed-agent-tool citation). The other three harnesses muster targets each have a
+// DIFFERENT native mechanism, or none at all:
+//   - Claude Code Desktop auto-creates a per-session worktree under
+//     `<root>/.claude/worktrees/` before the session's first tool call -- muster scripts
+//     nothing (docs/research/claude-code-desktop.md sec 2.2).
+//   - Hermes exposes `hermes -w` (a disposable per-session worktree under `.worktrees/`)
+//     and kanban `worktree` workspaces for a queued task (docs/research/hermes.md sec 6's
+//     hermes-worktrees citation).
+//   - Codex has NO cwd field on `collaboration.spawn_agent` -- there is no native
+//     mechanism to select at all (docs/research/codex-cli.md sec 6's skill-adapter
+//     citation); isolation there is muster's own dispatch discipline, verified by a
+//     receipt, not a harness guarantee (docs/strategy/native-delegation.md Part B item 4).
+//
+// What's common across all four: none of them self-report a fork point back to the
+// orchestrator, so the orchestrator captures one base SHA per dispatched crew member,
+// at dispatch time, and carries it as the provenance receipt regardless of which
+// mechanism (or lack of one, on Codex) actually isolated the work. Selection (which
+// mechanism) and the receipt (proof of the fork point) are two different questions --
+// the receipt is recorded on every harness, even where the mechanism is genuinely native.
+// ───────────────────────────────────────────────────────────────────────────
+
+export const WORKTREE_ISOLATION_MECHANISMS = Object.freeze({
+  AGENT_TOOL: "agent-tool-isolation", // Claude Code CLI: isolation:"worktree" on the Agent tool
+  DESKTOP_AUTO: "desktop-auto-worktree", // Claude Code Desktop: automatic <root>/.claude/worktrees/
+  HERMES_W: "hermes-w", // Hermes: `hermes -w` / kanban worktree workspaces
+  RECEIPTS_ONLY: "receipts-only", // Codex: no cwd-on-dispatch -- receipt discipline stands in for isolation
+});
+
+const HARNESS_WORKTREE_MECHANISM = Object.freeze({
+  "claude-code": WORKTREE_ISOLATION_MECHANISMS.AGENT_TOOL,
+  "claude-desktop": WORKTREE_ISOLATION_MECHANISMS.DESKTOP_AUTO,
+  hermes: WORKTREE_ISOLATION_MECHANISMS.HERMES_W,
+  codex: WORKTREE_ISOLATION_MECHANISMS.RECEIPTS_ONLY,
+});
+
+// Pure per-harness selection: the orchestrator names its own running harness (declared
+// at invocation, same as every other selection function in this file -- nothing here is
+// auto-probed), and this maps that name onto the one native worktree mechanism (or the
+// receipts-only floor) that harness actually has. An unrecognized/missing harness fails
+// loud rather than silently defaulting to a mechanism nothing verified for it.
+export function resolveWorktreeIsolation({ harness } = {}) {
+  const known = Object.keys(HARNESS_WORKTREE_MECHANISM);
+  if (typeof harness !== "string" || !harness) {
+    throw new Error(`resolveWorktreeIsolation: harness is required (one of: ${known.join(", ")})`);
+  }
+  const mechanism = HARNESS_WORKTREE_MECHANISM[harness];
+  if (!mechanism) {
+    throw new Error(`resolveWorktreeIsolation: unrecognized harness "${harness}" (one of: ${known.join(", ")})`);
+  }
+  // receiptRequired is always true -- even (especially) for Codex's receipts-only floor,
+  // where the receipt is the entire isolation proof, not a supplement to a native one.
+  return { harness, mechanism, receiptRequired: true };
+}
+
+const BASE_SHA_RE = /^[0-9a-f]{7,40}$/i;
+
+// Builds the base-SHA provenance receipt the orchestrator records per dispatched crew
+// member, regardless of which native mechanism (or none, on Codex) isolated the work --
+// the one piece of proof every harness carries alike. Fails loud on a malformed or
+// missing SHA: a receipt that isn't provably a real fork point is worse than no receipt,
+// since it would let a run claim isolation-equivalent provenance it never actually
+// captured.
+export function buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath } = {}) {
+  if (!taskId) throw new Error("buildBaseShaReceipt: taskId is required");
+  if (!mechanism) throw new Error(`buildBaseShaReceipt: mechanism is required for task "${taskId}"`);
+  if (typeof baseSha !== "string" || !BASE_SHA_RE.test(baseSha.trim())) {
+    throw new Error(
+      `buildBaseShaReceipt: baseSha must be a hex git SHA (got ${JSON.stringify(baseSha)}) for task "${taskId}" -- ` +
+      `never record a receipt without a real fork-point SHA`
+    );
+  }
+  return { taskId, mechanism, baseSha, worktreePath: worktreePath ?? null };
+}

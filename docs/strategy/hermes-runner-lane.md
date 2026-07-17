@@ -122,13 +122,22 @@ classification `plugin/hooks/action-guard.js` already computes into Hermes's can
 - reuses `classifyAction` from `plugin/hooks/action-guard.js` (same sibling-import
   convention `pre-tool-use.js` already uses — no re-implementation, no drift risk between
   the Claude Code and Hermes classifications);
-- returns `{action: "block", message: "..."}` — Hermes's documented canonical
-  `pre_tool_call` veto shape [src: hermes-hooks] — when a call classifies into a forbidden
-  class and `mode` is `"deny"`;
-- returns `null` (no block) for `"off"`, for a non-matching class, and — **documented port
-  gap** — for `"warn"`, because `pre_tool_call` has no allow-with-context response; the
-  warn text would need to ride `pre_llm_call`'s `{"context": ...}` injection instead
-  [src: hermes-hooks], which this bounded spike does not build.
+- returns `{action: "block", message: "..."}` — the one `pre_tool_call` response shape
+  every section of `hermes.md` agrees on: section 7 (Hooks) documents it as pre_tool_call's
+  own canonical veto [src: hermes-hooks]. (Section 7's prose separately notes
+  Claude-Code-Stop-shape acceptance for "shell-hook block responses" generally, and
+  sections 10/11 state more specifically that pre_tool_call block hooks accept it too — the
+  two passages aren't fully reconciled within `hermes.md` itself. This module sidesteps that
+  ambiguity by emitting only the shape confirmed under every reading.) — for a call that
+  classifies into a forbidden class and `mode` is anything other than `"off"`/`"warn"`
+  (including an unrecognized value — fail-CLOSED, mirroring
+  `plugin/hooks/pre-tool-use.js`'s own `MUSTER_ACTION_GUARD` handling: only `"warn"` and
+  `"off"` are special-cased, everything else denies);
+- returns `null` (no block) for `"off"`, for a non-matching class, for a non-array/missing
+  `forbiddenClasses`, and — **documented port gap** — for `"warn"`, because `pre_tool_call`
+  has no allow-with-context response; the warn text would need to ride `pre_llm_call`'s
+  `{"context": ...}` injection instead [src: hermes-hooks], which this bounded spike does
+  not build.
 
 This module deliberately lives under `docs/strategy/`, not `plugin/hooks/`: `plugin/` is
 muster's *published* Claude Code plugin surface (npm `files`, pinned byte-identical by
@@ -142,10 +151,11 @@ script built on this shape — today it is inert, reachable only from its own te
 inertness is deliberate: it is how this spike avoids being a creeping replacement while
 still shipping something a reviewer can run.
 
-Tests: `test/hermes-lane.test.js`, 8 cases, all against fixture payloads (deny-match,
+Tests: `test/hermes-lane.test.js`, 10 cases, all against fixture payloads (deny-match,
 bash-command-match, no-match fail-open, class-not-in-forbidden-set, off mode, warn mode's
-documented gap, empty forbidden set, harness-internal tool names never classify). All
-green — see the runner's receipts for the pasted `node --test` output.
+documented gap, empty forbidden set, harness-internal tool names never classify, non-array/
+missing `forbiddenClasses`, unrecognized mode string falling through to deny). All green —
+see the runner's receipts for the pasted `node --test` output.
 
 ## 5. Worked example — a 2-wave outcome through the lane (designed, not executed)
 

@@ -20,17 +20,20 @@
 // -- designed + unit-tested against fixtures only, never exercised against a
 // running Hermes process.
 //
-// Why a separate response shape instead of reusing pre-tool-use.js's
-// hookSpecificOutput/permissionDecision JSON verbatim: Hermes's `pre_tool_call`
-// hook is documented as a binary veto returning
-// `{"action": "block", "message": ...}` (docs/research/hermes.md section 7,
-// [src: hermes-hooks]) -- that is the Hermes-CANONICAL shape, distinct from the
-// Claude-Code-compatible acceptance Hermes documents for shell-hook block
-// responses generally (`{"decision": "block", "reason": ...}`, the Claude Code
-// Stop shape). This module emits the canonical shape because it is the one
-// hermes.md confirms `pre_tool_call` itself understands; treating the two
-// Claude-Code-shaped payloads as interchangeable would overclaim "byte-verbatim"
-// compatibility the source doesn't state for this specific hook event.
+// Why this module emits {"action":"block","message":...} rather than
+// pre-tool-use.js's hookSpecificOutput/permissionDecision JSON verbatim:
+// docs/research/hermes.md section 7 (the dedicated Hooks section) documents
+// pre_tool_call's OWN canonical veto response as
+// `{"action": "block", "message": ...}` [src: hermes-hooks] -- unambiguous
+// under every reading of the source, so this module targets it. Separately,
+// hermes.md's augmentation table (section 10) and closing verdict (section 11)
+// state more broadly that "`pre_tool_call` block hooks ... accept the
+// Claude-Code `{"decision":"block","reason"}` shape verbatim," which section 7's
+// own prose frames as "shell-hook block responses" generally rather than
+// re-stating against pre_tool_call by name -- the two passages aren't fully
+// reconciled within hermes.md itself. This module does not depend on resolving
+// that internal ambiguity: it only emits the one shape every section of
+// hermes.md agrees pre_tool_call understands.
 //
 // Scope: only the forbidden-ACTION-CLASS fence (the one hard deny muster's
 // Claude Code hook can emit) is mapped here -- not the border invitation
@@ -58,8 +61,15 @@ import { classifyAction } from "../../../plugin/hooks/action-guard.js";
 //
 // Returns Hermes's canonical pre_tool_call block response
 // ({action: "block", message: <string>}) when the call classifies into a
-// forbidden class AND mode is "deny"; otherwise null (no block -- Hermes's
-// documented default when a hook has nothing to veto).
+// forbidden class AND mode is not "off"/"warn"; otherwise null (no block --
+// Hermes's documented default when a hook has nothing to veto). Any mode value
+// other than the recognized "off"/"warn" -- including an unrecognized/typo'd
+// string -- falls through to the deny branch, matching
+// plugin/hooks/pre-tool-use.js's own MUSTER_ACTION_GUARD handling
+// (`if (actionGuard === "warn") {...} else if (actionGuard !== "off") { deny }`):
+// fail-CLOSED on an unrecognized value, so a typo cannot silently disable the
+// fence. forbiddenClasses is validated defensively (non-array/missing ->
+// null, never throws) since a caller-supplied value.
 export function mapActionFenceToHermes(payload, forbiddenClasses, mode = "deny") {
   const cls = classifyAction(payload);
   if (!cls) return null;

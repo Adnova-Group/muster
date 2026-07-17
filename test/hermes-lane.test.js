@@ -64,3 +64,14 @@ test("harness-internal tool names are never classified, matching action-guard's 
   const result = mapActionFenceToHermes(mcpPayload("TaskCreate"), ["send", "submit", "publish", "sign", "purchase"], "deny");
   assert.equal(result, null);
 });
+
+test("non-array forbiddenClasses (undefined/null) -> null, never throws", () => {
+  assert.equal(mapActionFenceToHermes(mcpPayload("mcp__gmail__send_email"), undefined, "deny"), null);
+  assert.equal(mapActionFenceToHermes(mcpPayload("mcp__gmail__send_email"), null, "deny"), null);
+});
+
+test("unrecognized mode string falls through to deny (fail-closed, mirrors pre-tool-use.js's MUSTER_ACTION_GUARD handling)", () => {
+  const result = mapActionFenceToHermes(mcpPayload("mcp__gmail__send_email"), ["send"], "not-a-real-mode");
+  assert.equal(result.action, "block");
+  assert.match(result.message, /"send"/);
+});

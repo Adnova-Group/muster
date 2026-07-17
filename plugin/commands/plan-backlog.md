@@ -55,18 +55,35 @@ B4. **Render ONE batch plan** (the Glass Box), one row per item plus two batch-l
      are ADVISORY, never a gate — fences stay opaque labels and disjointness stays orchestrator judgment — so surface
      each flag with a suggested remedy (serialize the pair via `{deps}`, or tighten the fences); an item with no
      `owns` data is listed as unfenced rather than guessed at.
-B5. **The approval gate — ride native plan mode, not a parallel wall.** NOTHING executes before this
-   approval — no branch, no dispatch, no commit. Choose the gate by what the session already is (same
-   doctrine as `/muster:plan`'s single-outcome gate — augment the harness's own approval flow rather than
-   stacking a second one on top; see docs/research/reference-harness-design.md's Part C, `cc-plan`/`cc-augment`):
+B5. **The approval gate — ride each harness's native plan surface, not a parallel wall.** NOTHING executes
+   before this approval — no branch, no dispatch, no commit. Choose the gate by what the session already is
+   (same doctrine as `/muster:plan`'s single-outcome gate — augment the harness's own approval flow rather
+   than stacking a second one on top; see docs/research/reference-harness-design.md's Part C,
+   `cc-plan`/`cc-augment`, and `src/plan-surface.js`'s `resolvePlanSurface`, the same fixture-tested
+   per-harness table `/muster:plan` step 7 rides):
    - **Session is already in native plan mode** (Claude Code CLI only, per the capstone's Part C ride table): call **ExitPlanMode** with
      the rendered batch plan (B4) as its `plan` argument. The harness's own approve-into-mode menu IS the
      approval gate — an approve option maps to **Approve & clear** below; **keep planning** maps to
      **Adjust the plan** below; backing out without approving maps to **Cancel** below.
-   - **Every other case** (not in plan mode, an unattended path, or a harness with no plan-mode primitive —
-     Codex, Hermes, Cowork, and the Agents SDK per docs/research/reference-harness-design.md's per-harness
-     table) — fall back to the **AskUserQuestion** selection UI, unchanged, with options **Approve & clear**
-     / **Adjust the plan** / **Cancel**.
+   - **Codex session in native plan mode** (hook payload `permission_mode: "plan"` — docs/research/codex-cli.md
+     §4.2): invoke the bundled system **`plan`** skill (§5.2) with the rendered batch plan (B4) as its
+     content — one row per item as `<item-id> -> <crew summary>` — instead of a second prose copy.
+     Independently, Codex's own item model already tracks "plan updates" as a first-class `item.completed`
+     kind (§1); the research doc documents both facts separately without linking the skill call to that item
+     kind, so treat them as two independently-cited native primitives, not one asserted mechanism. Codex has
+     no ExitPlanMode-equivalent approval call, so **Approve & clear** / **Adjust the plan** / **Cancel** still
+     rides the **AskUserQuestion** fallback below.
+   - **Hermes session** (docs/research/hermes.md §4): author the rendered batch plan through Hermes's
+     built-in `plan` skill's `/plan` flow, and encode each item's success criteria as a `/goal` completion
+     contract (`outcome`/`verification`/`constraints`/`boundaries`/`stop_when`) per item; Hermes names no
+     blocking plan-approval mode, so the actual decision rides Hermes's
+     `clarify` tool — the same AskUserQuestion-shaped fallback below.
+   - **Every other case** (not in plan mode, an unattended path, or a harness with no native plan surface at
+     all) — **Cowork** degrades here explicitly (no exposed task-graph or plan object,
+     docs/research/claude-cowork.md §2 — the batch plan stays prose, matching its sprint-protocol's existing
+     in-chat human-ask degradation), as does a bare Agents SDK runner lane or any harness
+     `resolvePlanSurface` doesn't recognize — fall back to the **AskUserQuestion** selection UI, unchanged,
+     with options **Approve & clear** / **Adjust the plan** / **Cancel**.
    - **Approve & clear**: invoke the **muster:go-backlog** skill in-session over the resolved backlog ref (wave mode
      applies when `annotated:true`); go-backlog owns the batch from here — per-item hands-off lifecycle,
      escalation handling, backlog ticking, and the single attended batch report at the end. Per-item routing is

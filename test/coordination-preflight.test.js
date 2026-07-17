@@ -10,9 +10,11 @@ import { readFile } from "node:fs/promises";
 // plugin/commands/go.md respectively (per the mode/plan/go verb-lexicon rename) and
 // never again carry the behavior they were named for -- the mechanism was blind to
 // edits in exactly the files it exists to watch. This test pins both copies of the
-// fingerprint set in plugin/skills/coordination/SKILL.md (the git-log command near
-// "Standing-context preflight", and Binding C's parenthetical restating the same set)
-// to (a) name zero known alias-stub filenames, (b) agree with each other, and (c)
+// fingerprint set in plugin/skills/coordination/SKILL.md (the git-log command and the
+// short-form parenthetical restating the same set, both now co-located in the
+// "Standing-context preflight" section itself post the coordination-footprint
+// de-duplication -- previously the second copy lived in Binding C's own prose) to
+// (a) name zero known alias-stub filenames, (b) agree with each other, and (c)
 // actually include the live behavior files.
 
 const root = new URL("../", import.meta.url);

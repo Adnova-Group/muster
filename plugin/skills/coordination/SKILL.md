@@ -8,14 +8,13 @@ description: Source-agnostic multi-runner protocol -- CLAIM before work, structu
 You are muster's cross-runner coordination protocol — keep independent runners (separate
 `/muster:sprint` invocations, humans and agents alike) from doing the same item twice and from
 silently going quiet when one gets stuck. Return per-item the state it left the shared backlog/label
-in (claimed / done / blocked / failed) plus the receipt(s) written -- a work-cycle always ends with a
+in (claimed / done / blocked / failed) plus the receipt(s) written -- a cycle always ends with a
 receipt, even on failure.
 
 Load this when a backlog (file, `issues:<label>`, `linear:<team or project>`, or a Hermes kanban board)
-may be worked by more than one runner concurrently; a single-runner sprint may skip claim/scan but still
-leaves receipts and a heartbeat. CLAIM/RECEIPTS/BLOCKED→RESUME/LEDGER is adapted, mechanism-only, from a
-well-known open multi-agent coordination pattern (attribution: `website/about/credits.md`, out of scope
-here).
+may see more than one runner; a single-runner sprint may skip claim/scan but still leaves a receipt +
+heartbeat. CLAIM/RECEIPTS/BLOCKED→RESUME/LEDGER is adapted, mechanism-only, from a well-known open
+multi-agent coordination pattern (attribution: `website/about/credits.md`, out of scope here).
 
 ## Protocol states (canonical -- binds all four bindings)
 
@@ -24,14 +23,15 @@ primitive + capability gap, never the semantics again.
 
 1. **CLAIM** — atomically mark an item claimed with runner identity (the existing `runId`) + timestamp
    before any work; a claimed item is skipped by others.
-   - *A, C (comment/status-race)*: the assignee/status flip is not the lock (two can both land there
-     first) -- the CLAIM RECEIPT is the lock, scoped to the **current claim window**: every receipt since
-     the last terminal one (`DONE`/`BLOCKED`/`HUMAN-HOLD`/`FAILED`, deliberately NOT `YIELD`, else a
-     loser's yield before the winner re-reads floors the winner's own claim). Re-read the FULL history
-     (paginated to exhaustion), rank the `CLAIMED` receipts inside the floor by server timestamp,
-     identified by the `<runner>` BODY token, not the API-level author (shared account/token is otherwise
-     indistinguishable); earliest wins. `src/coordination.js` is the source of truth here and for the
-     HUMAN-HOLD resume gate.
+   - *A, C (comment/status-race)*: the assignee/status flip is not the lock -- GitHub/Linear let two
+     runners both land as assignee before either sees the other. The CLAIM RECEIPT is the lock, scoped
+     to the **current claim window**: every receipt since the last terminal one
+     (`DONE`/`BLOCKED`/`HUMAN-HOLD`/`FAILED`, deliberately NOT `YIELD`, else a loser's yield before the
+     winner re-reads would floor the winner's own claim -- a fresh reclaim would compare against a stale
+     claim and always "lose"). Re-read the FULL history (paginated to exhaustion),
+     rank the `CLAIMED` receipts inside the floor by server timestamp, identified by the `<runner>` BODY
+     token, not the API-level author (shared account/token is otherwise indistinguishable); earliest
+     wins. `src/coordination.js` is the source of truth here and for the HUMAN-HOLD resume gate.
    - *B (annotation)*: no true compare-and-swap in a plain file -- claim-then-verify (write, re-read;
      another runner's annotation means you lost) assumes cooperative runners, not adversarial
      concurrency (documented limit).
@@ -39,8 +39,7 @@ primitive + capability gap, never the semantics again.
 2. **RECEIPTS** — every state change leaves one: `CLAIMED`/`DONE`/`BLOCKED(reason, question)`/
    `HUMAN-HOLD(reason, question, authorizer)`/`FAILED(reason)`/`YIELD(losing runner conceding a race)`/
    `IDLE` (nothing claimable -- folds into the LEDGER heartbeat, not a fresh line). A and C share one
-   fixed-first-line syntax (B's STATE-line grammar and D's `kanban_comment` are each binding's own
-   equivalent, same fields):
+   fixed-first-line syntax (B/D's own grammars are each the equivalent, same fields):
    ```
    MUSTER CLAIMED <runner> <ts>
    MUSTER DONE <runner> <ts>                (+ disposition and PR/commit link)
@@ -71,9 +70,10 @@ primitive + capability gap, never the semantics again.
    of another attempt. `attempt <n>` = 1 + that count.
 6. **LEDGER** — exactly ONE heartbeat entry per runner, edited in place, not appended; an idle cycle
    reuses it with `result: idle`.
-7. **Escalation** is not a new receipt type: a `FAILED` receipt plus the item-level escalated-marker --
-   B's `{escalated: <runId or date>}`, A's move to `agent:needs-input`, C's move to its blocked status,
-   D's `kanban.failure_limit` auto-block (or a repeated `kanban_block` escalating to `triage`) -- a later
+7. **Escalation** (spec-gate/fix-loop cap -- a review-gate trigger, NOT bullet 5's coordination retry
+   cap) is not a new receipt type: a `FAILED` receipt plus the item-level escalated-marker -- B's
+   `{escalated: <runId or date>}`, A's move to `agent:needs-input`, C's move to its blocked status, D's
+   `kanban.failure_limit` auto-block (or a repeated `kanban_block` escalating to `triage`) -- a later
    scan relies on that marker alone.
 8. **One item per claim cycle** — claim, work, leave a receipt, then look for the next.
 9. **STANDING-CONTEXT PREFLIGHT** — once per cycle, before anything else, check this protocol text for
@@ -102,8 +102,8 @@ fingerprint set (SKILL.md/go-backlog.md/go.md/runner.md/hooks/) instead of re-li
 No change: proceed. Changed: `git diff <recorded-hash> <current-hash> -- <same paths>`, then classify
 deterministically:
 
-- **EXPANDS** (HUMAN-HOLD it, citing the file(s) and old/new hash; authorizer is whoever owns this
-  repo's muster configuration) iff the diff touches ANY of: a `forbiddenActions` entry, a `fences`
+- **EXPANDS** (HUMAN-HOLD it, citing the file(s) and old/new hash; authorizer is this repo's
+  muster-config owner) iff the diff touches ANY of: a `forbiddenActions` entry, a `fences`
   block, `action-guard` matching logic, anything under `plugin/hooks/`, a new RECEIPTS-enum token
   (`CLAIMED`/`DONE`/`BLOCKED`/`HUMAN-HOLD`/`FAILED`/`YIELD`/`IDLE`/`LEDGER`), or a new resume rule.
 - **CONFINED** (reload the changed file(s), proceed for the rest of this cycle) -- everything else: a
@@ -118,7 +118,7 @@ Labels: `agent:todo` → `agent:working` → `agent:review` (PR open) or `agent:
 `agent:needs-input` is the BLOCKED/HUMAN-HOLD side-state (resumes to `agent:working`); `agent:todo` is
 also the FAILED landing state.
 
-**Bootstrap** (`--force` updates instead of erroring, so this runs unconditionally every sprint start):
+**Bootstrap** (`--force` updates instead of erroring; runs unconditionally every sprint start):
 ```
 gh label create agent:todo --color ededed --force
 gh label create agent:working --color fbca04 --force
@@ -128,8 +128,7 @@ gh label create agent:needs-input --color d93f0b --force
 gh label create muster:ledger --color 1d76db --force
 ```
 
-**Claim** (assign + label flip, then the CLAIM RECEIPT -- GitHub allows multiple assignees, so
-assignee-based detection fails open):
+**Claim** (assign + label flip, then the CLAIM RECEIPT that is the actual lock, per canonical above):
 ```
 gh issue edit <N> --add-assignee "@me" --remove-label agent:todo --add-label agent:working
 gh issue comment <N> --body "MUSTER CLAIMED <runner> <ts>"
@@ -344,7 +343,7 @@ Binding A's `gh` token). **Rate limits** -- a full-thread scan every cycle is re
 cadence as runner.md (15-30 min, widen if idle).
 
 Standing-context preflight/retry cap/escalation inherit the canonical rule unchanged; same fingerprint
-set as the preflight above, no new file to watch.
+set as the preflight above.
 
 ## Binding D — Hermes kanban (native `kanban.db`)
 
@@ -377,9 +376,9 @@ already harness machinery, not simulated prose (docs/research/hermes.md §4, Kan
   heartbeat" reads the most recent `heartbeat` event, not an edited row -- same semantic, different
   storage; its staleness monitor natively covers HYGIENE PREFLIGHT's 60-minute release.
 
-**Fallback** -- applies only when `HERMES_KANBAN_TASK` is enabled; elsewhere Bindings A/B/C apply as
-written above. No local Hermes install existed on the authoring machine (hermes.md's sourcing-gaps
-section), so nothing below is behavior-verified live.
+**Fallback** -- applies only when `HERMES_KANBAN_TASK` is enabled; elsewhere A/B/C apply as written
+above. No local Hermes install existed on the authoring machine (hermes.md's sourcing-gaps section),
+so nothing below is behavior-verified live.
 
 **Validate this binding** (described, not executed, same caveat) -- the same 3-item smoke trail as
 go-backlog.md's "Validate a binding" section, in kanban primitives:
@@ -392,4 +391,4 @@ go-backlog.md's "Validate a binding" section, in kanban primitives:
   `todo`; repeat past `kanban.failure_limit` for auto-block.
 
 Standing-context preflight/retry cap/escalation inherit the canonical rule unchanged (same fingerprint
-set as the preflight above; escalation marker per canonical bullet 7).
+set as above; escalation marker per bullet 7).

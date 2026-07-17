@@ -51,7 +51,7 @@ npx @adnova-group/muster capabilities
 
 ## What the plugin adds
 
-- **Eight slash commands**: `/muster:plan`, `/muster:go`, `/muster:plan-backlog`, `/muster:go-backlog`, `/muster:diagnose`, `/muster:audit`, `/muster:runner`, `/muster:capture`. `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work as aliases of `plan`, `go`, and `go-backlog`.
+- **Eight slash commands**: `/muster:plan`, `/muster:go`, `/muster:plan-backlog`, `/muster:go-backlog`, `/muster:diagnose`, `/muster:audit`, `/muster:runner`, `/muster:capture`. `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work as aliases of `plan`, `go`, and `go-backlog`. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged until then.
 - **Three session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled. Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits: the action-class fence below is the only hard deny left in the stack; everything else is a single warn-only "border invitation" that sells the value of a crew run rather than commanding.
   - **`SessionStart`** injects a one-line pointer ("muster available; `/muster:plan` for orchestration-scale work") into every session, and clears stale run/session state on a genuinely fresh start. Never writes to your `~/.claude` files.
   - **`UserPromptSubmit`** fires the ONLY prompt-time nudge: a directive-shaped prompt (fix/build/implement, etc.) with no active run sells the value of a crew run (parallel dispatch, adversarial review, a receipts trail) once per crossing, then stays silent until a run starts, a fresh session, or 60 minutes of inactivity re-arms it.

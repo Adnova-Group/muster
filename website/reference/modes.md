@@ -1,6 +1,6 @@
 # The eight modes
 
-Muster exposes eight entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), and four standalone verbs (`diagnose`, `audit`, `runner`, `capture`). `run`, `autopilot`, and `sprint` still work -- each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`) unchanged.
+Muster exposes eight entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), and four standalone verbs (`diagnose`, `audit`, `runner`, `capture`). `run`, `autopilot`, and `sprint` still work -- each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged for the rest of the window.
 
 | Mode | Command | Shape |
 | --- | --- | --- |

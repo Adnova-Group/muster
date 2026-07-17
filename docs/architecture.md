@@ -66,7 +66,7 @@ Dispatch honors `chosen.kind`: an agent routes by `subagent_type`, anything else
 
 ## The eight modes
 
-Muster exposes eight entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), and four standalone verbs (`diagnose`, `audit`, `runner`, `capture`). `run`, `autopilot`, and `sprint` still work -- each is a one-line heads-up followed by identical behavior under its new name (`plan`, `go`, and `go-backlog`).
+Muster exposes eight entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), and four standalone verbs (`diagnose`, `audit`, `runner`, `capture`). `run`, `autopilot`, and `sprint` still work -- each is a one-line heads-up followed by identical behavior under its new name (`plan`, `go`, and `go-backlog`); deprecated as of 2026-07-17 and retiring in muster 0.7.0, with behavior unchanged until then.
 
 | Mode | Command | Shape |
 | --- | --- | --- |

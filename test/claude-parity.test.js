@@ -105,5 +105,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 4 cases), and the ATTENDED-session HUMAN-HOLD resume gate's exact safety semantics. See
   // docs/weight-reduction.md's own honest-miss precedent (criterion 3, 39.8% vs a 25% target) for
   // this project's established practice of reporting a real percentage over a fabricated one.
-  assert.equal(hash.digest("hex"), "71a52df5f163e61141211d1615bae1de224adb9946fd830ca704ff56ba82217a");
+  //
+  // Pin re-derived again for the legacy-alias-retirement item: file COUNT unchanged (135) but
+  // run.md/autopilot.md/sprint.md's guidance paragraph (still exactly the alias-shape's pinned 2
+  // paragraphs, see test/mode-evals.test.js's alias-shape-equivalence test) now also carries a
+  // dated deprecation notice ("Deprecation notice (2026-07-17): ... retires in muster 0.7.0"),
+  // and each file's frontmatter description names the same retirement target -- this OPENS the
+  // deprecation window, it does not change the alias's behavior: the Read-and-execute directive
+  // that delegates to plan.md/go.md/go-backlog.md is byte-identical (see
+  // test/alias-deprecation.test.js's "no behavior change" test). Reviewed content change, not
+  // accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "1fd3a0f821a5d1cc2a4caefc65341afc70741a3b17f0ca5b671924b522c62041");
 });

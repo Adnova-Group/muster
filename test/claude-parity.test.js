@@ -160,11 +160,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
   //
   // Pin re-derived again for the coordination-footprint item (backlog item `coordination-footprint`,
   // stacked on hermes-kanban-binding): file COUNT unchanged (136) -- coordination/SKILL.md's prose was
-  // cut a further 40.07% off the pre-speed-tuning baseline (40754 -> 24423 chars; speed-tuning alone
-  // had only reached 30.6%, an honest miss of the same 40% bar). A post-review fix pass restored a
-  // handful of load-bearing rationale/disambiguation clauses the first cut had over-trimmed (the
-  // window-floor rationale, the escalation-vs-retry-cap distinction, a GitHub/Linear-specific claim
-  // race clarification) without giving back the 40% bar. The lever this time is genuine
+  // cut a further 40.04% off the pre-speed-tuning baseline (40754 -> 24438 chars; speed-tuning alone
+  // had only reached 30.6%, an honest miss of the same 40% bar). Two review rounds each restored a
+  // handful of load-bearing rationale/disambiguation clauses the cut had over-trimmed (the
+  // window-floor rationale incl. the "item strands unowned" outcome, the escalation-vs-retry-cap
+  // distinction, a GitHub/Linear-specific claim race clarification) without giving back the 40% bar.
+  // The lever this time is genuine
   // de-duplication, not another rationale trim: the "## Core mechanism" section was rewritten as
   // "## Protocol states (canonical -- binds all four bindings)", now the SOLE place every state's
   // meaning, transition rule, and resume rule is stated (CLAIM's race-arbitration/window-floor
@@ -185,5 +186,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the Standing-context preflight section itself, still two independently-extractable copies so the
   // drift guard still holds), and docs-binding-interface.test.js's four live grep-audit counts
   // (AskUserQuestion, dispatch, hook, worktree) are all unchanged from the hermes-kanban-binding pin.
-  assert.equal(hash.digest("hex"), "06a74e16beb2fbb9c8806ad46e331711b20ea1202dc08e80f272fcba14d61f3a");
+  assert.equal(hash.digest("hex"), "352dad9999e638032ba43a0055e18aa6e7eb9c0d7594fbbc3d30c7bf4eef63c0");
 });

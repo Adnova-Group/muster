@@ -1,6 +1,6 @@
 ---
 name: coordination
-description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS, BLOCKED/HUMAN-HOLD->RESUME, one heartbeat LEDGER per runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:sprint.
+description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS, BLOCKED/HUMAN-HOLD->RESUME, one LEDGER heartbeat/runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:sprint.
 ---
 
 # Coordination
@@ -13,8 +13,8 @@ receipt, even on failure.
 
 Load this when a backlog (file, `issues:<label>`, `linear:<team or project>`, or a Hermes kanban board)
 may see more than one runner; a single-runner sprint may skip claim/scan but still leaves a receipt +
-heartbeat. CLAIM/RECEIPTS/BLOCKED→RESUME/LEDGER is adapted, mechanism-only, from a well-known open
-multi-agent coordination pattern (attribution: `website/about/credits.md`, out of scope here).
+heartbeat. CLAIM/RECEIPTS/BLOCKED→RESUME/LEDGER is adapted, mechanism-only, from an open multi-agent
+coordination pattern (attribution: `website/about/credits.md`, out of scope here).
 
 ## Protocol states (canonical -- binds all four bindings)
 
@@ -25,13 +25,14 @@ primitive + capability gap, never the semantics again.
    before any work; a claimed item is skipped by others.
    - *A, C (comment/status-race)*: the assignee/status flip is not the lock -- GitHub/Linear let two
      runners both land as assignee before either sees the other. The CLAIM RECEIPT is the lock, scoped
-     to the **current claim window**: every receipt since the last terminal one
-     (`DONE`/`BLOCKED`/`HUMAN-HOLD`/`FAILED`, deliberately NOT `YIELD`, else a loser's yield before the
-     winner re-reads would floor the winner's own claim -- a fresh reclaim would compare against a stale
-     claim and always "lose"). Re-read the FULL history (paginated to exhaustion),
-     rank the `CLAIMED` receipts inside the floor by server timestamp, identified by the `<runner>` BODY
-     token, not the API-level author (shared account/token is otherwise indistinguishable); earliest
-     wins. `src/coordination.js` is the source of truth here and for the HUMAN-HOLD resume gate.
+     to the **current claim window**: every receipt since the last terminal one (`DONE`/`BLOCKED`/
+     `HUMAN-HOLD`/`FAILED` -- deliberately NOT `YIELD`, else a loser's yield read before the winner's own
+     re-read would floor the winner's claim out of its own window). Without this floor, a fresh claim
+     after a retry/resume would compare against a stale prior-cycle claim and always "lose" -- the item
+     would strand unowned. Re-read the FULL history (paginated to exhaustion), rank the `CLAIMED`
+     receipts inside the floor by server timestamp, identified by the `<runner>` BODY token, not the
+     API-level author (shared account/token is otherwise indistinguishable); earliest wins.
+     `src/coordination.js` is the source of truth here and for the HUMAN-HOLD resume gate.
    - *B (annotation)*: no true compare-and-swap in a plain file -- claim-then-verify (write, re-read;
      another runner's annotation means you lost) assumes cooperative runners, not adversarial
      concurrency (documented limit).
@@ -264,8 +265,8 @@ Live-inspected (Linear MCP), by STATUS NAME parameterized per team/project: clai
 unstarted status (default `Todo`); claim = a started status (default `In Progress`) + assignee; review
 (pr/ask) = a started status (default `In Review`); done (merge-local/merge-push/keep) = the completed
 status (default `Done`); BLOCKED/HUMAN-HOLD = ONE designated blocked status (default `Blocked` --
-bootstrap must create it, no built-in "blocked" category exists), discriminated by the receipt's first
-line, same single-status reuse as Binding A's `agent:needs-input`.
+bootstrap must create it, no built-in one exists), discriminated by the receipt's first line, same
+single-status reuse as Binding A's `agent:needs-input`.
 
 **Claim** (status flip + assignee, then the CLAIM RECEIPT -- same windowed race rule as A, via MCP):
 ```
@@ -298,7 +299,7 @@ save_issue({ id, state: "Done" })
 ```
 
 **Blocked/Human-hold:** `save_comment`'s `body` takes literal content directly (real newlines, no
-escapes) -- no shell-quoting hazard Binding A has, write straight to `body`:
+escapes) -- no shell-quoting hazard A has, write straight to `body`:
 ```
 save_comment({ issueId: id, body: "MUSTER BLOCKED <runner> <ts>\n<question>" })
 save_issue({ id, state: "<blocked-status>" })
@@ -338,9 +339,9 @@ Linear's UI (agents can't self-serve this); no label bootstrap; find-or-create t
 title (above).
 
 **Costs**: **two-queue drift** -- a THIRD backlog vs Binding B's `.muster/backlog.md`, pick one source
-of truth. **MCP auth** -- confirm the connector's auth first, fail closed if unavailable (unlike
-Binding A's `gh` token). **Rate limits** -- a full-thread scan every cycle is read-heavy like A; same
-cadence as runner.md (15-30 min, widen if idle).
+of truth. **MCP auth** -- confirm the connector's auth first, fail closed if unavailable (unlike A's
+`gh` token). **Rate limits** -- a full-thread scan every cycle is read-heavy like A; same cadence as
+runner.md (15-30 min, widen if idle).
 
 Standing-context preflight/retry cap/escalation inherit the canonical rule unchanged; same fingerprint
 set as the preflight above.
@@ -349,7 +350,7 @@ set as the preflight above.
 
 Applies when the harness is Hermes Agent, not Claude Code: Hermes ships its own durable work queue in
 `~/.hermes/kanban.db` (SQLite, WAL), one OS process per worker profile -- the canonical protocol is
-already harness machinery, not simulated prose (docs/research/hermes.md §4, Kanban section).
+already harness machinery, not simulated prose (hermes.md §4, Kanban section).
 
 **State map** (canonical state -> kanban primitive):
 
@@ -362,8 +363,8 @@ already harness machinery, not simulated prose (docs/research/hermes.md §4, Kan
   `protocol_violation`, `gave_up`); free-text detail rides `kanban_comment`.
 - **BLOCKED** -> `kanban_block(reason, kind)` moves the card to `blocked`. `kind: needs_input` is the
   any-reply-resumes case (`kanban_comment` reply, then `kanban_unblock`); `kind: dependency`
-  auto-resumes once every parent card reaches `done` (native equivalent of Binding B's `{deps:}`);
-  `kind: capability`/`transient` have no analogue in A-C.
+  auto-resumes once every parent reaches `done` (native equivalent of Binding B's `{deps:}`); `kind:
+  capability`/`transient` have no analogue in A-C.
 - **HUMAN-HOLD** -> same `blocked` column and `kind: needs_input`, discriminated by a `kanban_comment`
   naming the authorizer -- no per-comment authentication exists, so this is the canonical
   unauthenticated-channel case (same as B): ATTENDED-only until the board adds one.
@@ -377,11 +378,11 @@ already harness machinery, not simulated prose (docs/research/hermes.md §4, Kan
   storage; its staleness monitor natively covers HYGIENE PREFLIGHT's 60-minute release.
 
 **Fallback** -- applies only when `HERMES_KANBAN_TASK` is enabled; elsewhere A/B/C apply as written
-above. No local Hermes install existed on the authoring machine (hermes.md's sourcing-gaps section),
-so nothing below is behavior-verified live.
+above. No local Hermes install existed when authored (hermes.md's sourcing-gaps), so nothing below
+is behavior-verified live.
 
-**Validate this binding** (described, not executed, same caveat) -- the same 3-item smoke trail as
-go-backlog.md's "Validate a binding" section, in kanban primitives:
+**Validate this binding** (described, not executed, same caveat) -- go-backlog.md's "Validate a
+binding" 3-item smoke trail, in kanban primitives:
 - **hello-world** -- `kanban_create` a card; confirm atomic claim to `running`, a `kanban_complete`
   call, and a `claimed`-to-`done` `task_runs`/`task_events` trail.
 - **blocked→resume** -- `kanban_block(reason, kind: "needs_input")`; confirm `blocked` plus a matching

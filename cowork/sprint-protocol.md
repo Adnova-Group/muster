@@ -6,25 +6,35 @@ item in a backlog, one attended stop at the end, served through `muster_sprint_p
 session can follow it without the plugin loaded. Same intent, same guarantees where they port; the gaps
 below are named, not papered over.
 
-`/muster:sprint` still works as the legacy alias of `/muster:go-backlog`, kept for backward
-compatibility, not deprecated on any schedule.
+`/muster:sprint` still works as the legacy alias of `/muster:go-backlog`, deprecated as of
+2026-07-17 and retiring in muster 0.7.0 (same schedule as the plugin-side aliases), behavior
+unchanged until then.
 
 ## What this session lacks — be honest about it
 
 - **No hooks.** No `SessionStart`, `UserPromptSubmit`, or `PreToolUse`. Concretely: no automatic
-  `.muster/run-active` marker, no **wave-guard** (the hook that blocks the orchestrator's own inline
-  file edits while a wave is active, forcing dispatch through the crew instead), no scale-gate, no
-  action-class fence (the hook-level block on send/sign/submit/publish/purchase/delete-remote calls).
-  None of that exists here — this session's own discipline is the only enforcement there is.
+  `.muster/run-active` marker, no **action-class fence** (the one hook-level hard deny Claude Code's
+  `PreToolUse` still enforces, on a matched send/sign/submit/publish/purchase/delete-remote call), no
+  warn-only **border invitation** (the value-toned nudge that sells a crew run instead of commanding
+  one), and no `TaskCompleted` gate tying a native task-board completion tick to a recorded
+  review-gate PASS. Wave-guard, the post-run scale-gate, and the transcript-scanned todo-gate are not
+  things this session merely lacks — they are DELETED outright, on every harness including Claude
+  Code, not just absent here (field evidence made each unscopable; see `docs/architecture.md`'s
+  "Enforcement model: gates vs conventions"). None of that exists here — this session's own
+  discipline is the only enforcement there is.
 - **No slash verbs.** There is no `/muster:go-backlog` grammar; drive this protocol in prose against
   the `muster_*` MCP tools plus your own subagent dispatch.
 - **No auto-loaded coordination skill.** `plugin/skills/coordination/SKILL.md` isn't loaded for you.
   If more than one runner might touch this backlog at once, apply its mechanism yourself (Claim/receipt
   discipline, below) — orchestrator-level only, exactly as the skill specifies.
-- **No isolated parallel item-runners.** Wave mode's per-item isolation on Claude Code is a subagent per
-  item in its own `.worktrees/<branch>`, exempted from the wave-guard hook via `agent_id`. That has no
-  Cowork equivalent — there is no hook to exempt from in the first place. Cowork's own subagent fan-out
-  is confirmed to work in general (see this server's core-loop instructions above), and it still applies
+- **No isolated parallel item-runners.** Wave mode's per-item isolation on Claude Code is a
+  `muster-runner` subagent per item, dispatched with `isolation: "worktree"` into its own
+  `.worktrees/<branch>`; its tool calls there rely on the `PreToolUse` hook's `agent_id` subagent
+  exemption (decision order step 1, ahead of the action-class fence), not a wave-guard exemption —
+  that hook has no wave-guard left to exempt from. That has no Cowork equivalent — there is no hook
+  to exempt from in the first place, and no per-dispatch worktree parameter on this MCP surface
+  either. Cowork's own subagent fan-out is confirmed to work in general (see this server's core-loop
+  instructions above), and it still applies
   **inside** a single item's own crew/waves. But running MULTIPLE backlog items concurrently, each in its
   own worktree, has no validated isolation model here. So: **the "Degradation" path in `go-backlog.md`
   — every wave executed sequentially, one item at a time, in the main tree — IS the path for Cowork
@@ -50,13 +60,22 @@ Call **`muster_sprint_waves`** with the raw backlog text. Its JSON is authoritat
 Missing backlog file, or a malformed annotation the tool reports as an error, stops the run — nothing to
 run, report it plainly.
 
-## 2. Sprint state (STATE-style logging, done by hand)
+## 2. Sprint state (native board when present; STATE as ledger, done by hand)
 
-Nothing scaffolds `.muster/STATE.md` for you — no hook writes it. Write it yourself, same shape as the
-plugin: append a `## Sprint` section listing every item `pending`, flip each to `running` then
-`done`/`escalated` as it resolves. Mirror the disposition onto `backlog.md` once it executes: check the
-box (`- [x]`) only for `done` items; an `escalated` item stays unchecked with a `{escalated: <ts>}`
-annotation appended instead, so a later sprint can resurface it.
+The current model makes the native task board (`TaskCreate`/`TaskUpdate`/`TaskList` on Claude Code)
+the AUTHORITATIVE live-status surface for a batch, and demotes `.muster/STATE.md` to a durable
+LEDGER: one line per item recording its disposition/branch/escalation once it RESOLVES, never a live
+pending/running/done tick duplicating what the board already tracks (`plugin/skills/orchestrator/
+SKILL.md`'s "Task board" section). This MCP surface exposes no task-tracking primitive analogous to
+`TaskCreate`/`TaskUpdate`/`TaskList` — nothing scaffolds a board here, and no hook scaffolds
+`.muster/STATE.md` for you either — so this session falls to the documented no-board fallback
+instead: keep the pending/running/done tick in STATE.md itself, note the fallback once, and never
+claim a board this session doesn't have. Concretely, write it yourself: append a `## Sprint` section
+listing every item `pending`, flip each to `running` then `done`/`escalated` as it resolves — that
+per-item tick lives ONLY in STATE here, because there is no board for it to duplicate. Mirror the
+disposition onto `backlog.md` once it executes: check the box (`- [x]`) only for `done` items; an
+`escalated` item stays unchecked with a `{escalated: <ts>}` annotation appended instead, so a later
+sprint can resurface it.
 
 ## 3. Per item, sequentially
 
@@ -132,8 +151,10 @@ to keep out of it:
 
 Unannotated items default to `pr`, same as the plugin. When a backlog item explicitly declares
 `merge-local`/`merge-push`, honor it — that is the human's stated intent — but log it loudly: on Claude
-Code, the wave-guard and action-class-fence hooks bound some of the blast radius of a direct-to-base
-merge running unattended; **this session has neither.** A `merge-local`/`merge-push` disposition here
+Code, the `PreToolUse` hook's action-class fence bounds some of the blast radius of a direct-to-base
+merge running unattended (it denies a matching forbidden action class, e.g. a `git push`/`gh pr merge`
+call, while `.muster/run-active` and `.muster/forbidden-actions` are both set); **this session has no
+hooks at all, so it has none of that.** A `merge-local`/`merge-push` disposition here
 executes with zero structural safety net beyond this session's own diligence. Say that explicitly in the
 STATE receipt for that item, not just in this document. When authoring a backlog for a Cowork sprint,
 prefer `pr`/`keep` for exactly this reason.

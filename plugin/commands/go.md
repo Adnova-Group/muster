@@ -41,20 +41,41 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
 3. **Route** — first close any info-gap: run `muster assess "$ARGUMENTS"` (via `$MUSTER_CLI assess "$ARGUMENTS"`) → `{ clear, signals }`. In attended
    mode, if `clear: false`, trigger the **interview** skill ONCE to enrich the outcome and gather
    `successCriteria` before routing, then continue hands-off with the approved enriched outcome (unattended
-   handling is in the Routine subsection below). Then `$MUSTER_CLI capabilities` → write its JSON to
-   `.muster/capabilities.json` **once** (this run's single capture) → invoke the **router** skill →
-   validated Crew Manifest at `.muster/manifest.json` (`$MUSTER_CLI manifest validate` until ok). Dispatch
-   honors each role's resolved provider kind (`roles[<role>].chosen.kind`) — installed external agents first,
-   then muster's built-in agents, then skills — and always applies the role's `model`.
-   **Build the crew FROM `$MUSTER_CLI capabilities` — never hand-author crew providers.** If `manifest
-   validate` fails or emits a `warnings` entry (e.g. an all-inline crew), fix the *inputs* — run the
-   interview for `successCriteria`, re-resolve capabilities (re-run `$MUSTER_CLI capabilities` and overwrite
-   `.muster/capabilities.json` — this is the one legitimate re-capture, an inputs change, not a mid-run
-   re-poll) — do **not** patch the crew to `inline` to force `ok:true`. An all-inline crew means routing was
-   bypassed (builtins resolve `implement -> muster-builder`), so the run silently degrades to in-context work
-   with no specialists. The orchestrator and review-gate skills below reuse this same
-   `.muster/capabilities.json` capture for the rest of the run — the inventory does not change mid-run, so
-   they must NOT re-invoke `capabilities` per wave (dedup lever; see docs/performance-pass.md).
+   handling is in the Routine subsection below).
+
+   **Single-agent fast-path check (weight-reduction item, criterion 1).** Run `muster fast-path "$ARGUMENTS"`
+   (via `$MUSTER_CLI fast-path "$ARGUMENTS"`) → `{ eligible, wordCount, reason }` — a deterministic, PRE-router
+   heuristic over the outcome TEXT itself (`src/fast-path.js`'s `scoreOutcomeForFastPath`; no plan exists yet
+   at this point, so this scores the text, not a decomposed task list). `eligible: true` only for a
+   single-task/small outcome carrying no cross-cutting-scope signal (`across`, `migrate`, `overhaul`, …), no
+   multi-deliverable separator (list markers, `also`/`and then`/`as well as`, a semicolon), no two imperative
+   verbs chained by `and`, and under a 25-meaningful-word bound — conservative by design, so a genuine
+   multi-task outcome never mis-scores eligible (criterion 5).
+   - **`eligible: true`** — run `$MUSTER_CLI capabilities` → write `.muster/capabilities.json` (the SAME
+     one-run capture as always: cheap and deterministic, no LLM, still needed either way) → run
+     `$MUSTER_CLI fast-path "$ARGUMENTS" --capabilities .muster/capabilities.json` → its `manifest` field IS
+     the Crew Manifest (`src/fast-path.js`'s `buildFastPathManifest`: one task, a builder, and ONE reviewer —
+     no specialist search, no skill binding, no surface-assignment reasoning, no gap protocol). Write it to
+     `.muster/manifest.json` and still run `$MUSTER_CLI manifest validate` for glass-box parity with the
+     router path (it always validates by construction, but the run's STATE trail should look identical either
+     way). **SKIP invoking the router skill entirely** — crew assembly has nothing to add for a
+     scored-trivial single task. Record the fast-path `reason` in STATE and proceed straight to step 5 (the
+     spec gate at step 4 is skipped by the existing single-trivial-task `gate-cadence` rule below — a
+     fast-path manifest is always exactly one task, so that composition is automatic, not a second lever).
+   - **`eligible: false`** — proceed with the full flow: `$MUSTER_CLI capabilities` → write its JSON to
+     `.muster/capabilities.json` **once** (this run's single capture) → invoke the **router** skill →
+     validated Crew Manifest at `.muster/manifest.json` (`$MUSTER_CLI manifest validate` until ok). Dispatch
+     honors each role's resolved provider kind (`roles[<role>].chosen.kind`) — installed external agents first,
+     then muster's built-in agents, then skills — and always applies the role's `model`.
+     **Build the crew FROM `$MUSTER_CLI capabilities` — never hand-author crew providers.** If `manifest
+     validate` fails or emits a `warnings` entry (e.g. an all-inline crew), fix the *inputs* — run the
+     interview for `successCriteria`, re-resolve capabilities (re-run `$MUSTER_CLI capabilities` and overwrite
+     `.muster/capabilities.json` — this is the one legitimate re-capture, an inputs change, not a mid-run
+     re-poll) — do **not** patch the crew to `inline` to force `ok:true`. An all-inline crew means routing was
+     bypassed (builtins resolve `implement -> muster-builder`), so the run silently degrades to in-context work
+     with no specialists. The orchestrator and review-gate skills below reuse this same
+     `.muster/capabilities.json` capture for the rest of the run — the inventory does not change mid-run, so
+     they must NOT re-invoke `capabilities` per wave (dedup lever; see docs/performance-pass.md).
 4. **Spec gate** — after the manifest validates, run `$MUSTER_CLI gate-cadence .muster/manifest.json` once and
    write its JSON to `.muster/gate-cadence.json` (this run's single capture — mirrors the `capabilities`
    dedup above) to learn this run's small-task fast path (`{specGateRounds, reviewGateBatches, fastPath,
@@ -63,7 +84,7 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    `.muster/gate-cadence.json` capture instead of re-invoking `gate-cadence` — the manifest's waves do not
    change mid-run, so recomputing it per invoker added cost with no correctness benefit. When
    `specGateRounds` is 0, this gate is skipped (the existing single-trivial-task
-   rule); otherwise dispatch a FRESH-context agent on the **architecture-review**
+   rule — a step-3 fast-path manifest always lands here, one task and no parallel wave); otherwise dispatch a FRESH-context agent on the **architecture-review**
    provider (from `capabilities`; strategist tier) to probe the validated manifest + plan as a lazy implementer
    (what is underspecified enough to skip?) and as a malicious one (what satisfies the letter while missing
    intent?), and to verify plan-cited files/symbols exist. Return contract: verdict first (`PASS`/`FAIL`),

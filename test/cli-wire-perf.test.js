@@ -163,3 +163,64 @@ test("cli wire: gate-cadence on a manifest with no 'plan' array exits 1", async 
     assert.match(err.stderr, /no 'plan' array/);
   }
 });
+
+// ---------------------------------------------------------------------------
+// fast-path (weight-reduction item, criterion 1: single-agent fast path)
+// ---------------------------------------------------------------------------
+
+test("cli wire: fast-path exits 1 with a usage message when the outcome arg is missing", async () => {
+  try {
+    await run(["fast-path"]);
+    assert.fail("should have exited non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr, /fast-path <outcome>/);
+  }
+});
+
+test("cli wire: fast-path on a trivial outcome (no --capabilities) returns just the score", async () => {
+  const { stdout } = await run(["fast-path", "Fix the flaky login test"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.eligible, true);
+  assert.equal("manifest" in parsed, false, "no --capabilities given, so no manifest is emitted");
+});
+
+test("cli wire: fast-path on a cross-cutting/multi-task outcome scores NOT eligible", async () => {
+  const { stdout } = await run(["fast-path", "Migrate every service across the monorepo to the new logger"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.eligible, false);
+});
+
+test("cli wire: fast-path --capabilities <file> on an eligible outcome emits the minimal manifest, which validates", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-fast-path-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const capsFile = join(tmp, "capabilities.json");
+  await writeFile(capsFile, JSON.stringify({
+    roles: {
+      implement: { chosen: { id: "muster-builder", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
+      "code-review": { chosen: { id: "muster-reviewer", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
+    },
+  }));
+  const { stdout } = await run(["fast-path", "Fix the flaky login test", "--capabilities", capsFile]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.eligible, true);
+  assert.ok(parsed.manifest, "manifest must be emitted when --capabilities is given and eligible");
+  assert.equal(parsed.manifest.crew.length, 2);
+  assert.equal(parsed.manifest.plan.length, 1);
+});
+
+test("cli wire: fast-path --capabilities <file> on a NOT-eligible outcome does not emit a manifest", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-fast-path-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const capsFile = join(tmp, "capabilities.json");
+  await writeFile(capsFile, JSON.stringify({
+    roles: {
+      implement: { chosen: { id: "muster-builder", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
+      "code-review": { chosen: { id: "muster-reviewer", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
+    },
+  }));
+  const { stdout } = await run(["fast-path", "Migrate every service across the monorepo to the new logger", "--capabilities", capsFile]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.eligible, false);
+  assert.equal("manifest" in parsed, false);
+});

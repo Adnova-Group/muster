@@ -51,9 +51,10 @@ import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./h
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { envInt } from "./env-util.js";
+import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|fast-path <outcome> [--capabilities <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -224,6 +225,20 @@ async function main() {
       }
       const reviewDiffThreshold = envInt("MUSTER_REVIEW_DIFF_THRESHOLD", { min: 0, def: DEFAULT_REVIEW_DIFF_THRESHOLD });
       out(planGateCadence(waves, changedLines === undefined ? {} : { changedLines, reviewDiffThreshold }));
+    } else if (cmd === "fast-path") {
+      // weight-reduction item, criterion 1 (flagship): pre-router single-agent fast path.
+      // Score-only when --capabilities is absent (the caller hasn't resolved capabilities
+      // yet, or just wants the routing decision); when present AND eligible, also emit the
+      // minimal builder+one-reviewer manifest -- deterministic, no router LLM dispatch.
+      const outcome = requireArg(rest, 0, "fast-path <outcome> [--capabilities <file>]: missing outcome", fail);
+      const score = scoreOutcomeForFastPath(outcome);
+      const capsFile = flagValue(rest, "--capabilities");
+      if (score.eligible && capsFile) {
+        const capabilities = JSON.parse(await readFile(capsFile, "utf8"));
+        out({ ...score, manifest: buildFastPathManifest({ outcome, capabilities }) });
+      } else {
+        out(score);
+      }
     } else if (cmd === "sprint-waves") {
       const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
       const content = await readFile(file, "utf8");

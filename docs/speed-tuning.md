@@ -170,9 +170,13 @@ cheaper model tier for the fast path's single reviewer — both still out of sco
 item's cycle, same as weight-reduction's own honest deferral.
 
 **Update (backlog item `fast-path-token-gap`):** both levers named above landed —
-`docs/fast-path-token-gap.md` has the full writeup. Re-measured consumption: 28.3% (down from
-this doc's own 41.2%), a real improvement that still misses the 25% target, with the remaining
-gap mechanism (the fixed diff-token allotment, unchanged by either lever) explained there.
+`docs/fast-path-token-gap.md` has the full writeup. Re-measured consumption: 28.4% (down from
+this doc's own 41.2%), driven by lever 1 (a real, measured ~73%-smaller reviewer brief); lever
+2 (a cheaper reasoning tier) is real and wired-through-CLI but honestly credited with zero
+measured tokens, since neither harness has a verified per-call consumption mechanism for it
+today (see that doc's lever-2 section). A real improvement that still misses the 25% target,
+with the remaining gap mechanism (the fixed diff-token allotment, unchanged by this item)
+explained there.
 
 ## Criterion 5 — no gate/review strength reduction (proportionality only)
 

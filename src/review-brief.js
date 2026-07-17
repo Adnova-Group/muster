@@ -26,7 +26,7 @@
 // toward over-inclusion: touching a test file, an eval dataset.json, or a lint/doctor rule
 // SOURCE file at all is enough to fall back to the full brief.
 export const MUTANT_KILL_TRIGGER_RE =
-  /(^|\/)test\/.*\.test\.[cm]?js$|(^|\/)eval\/.*\/dataset\.json$|(^|\/)src\/[^/]*lint[^/]*\.js$|(^|\/)src\/doctor\.js$/i;
+  /(^|\/)test\/.*\.test\.[cm]?js$|(^|\/)eval\/(?:.*\/)?dataset\.json$|(^|\/)src\/[^/]*lint[^/]*\.js$|(^|\/)src\/[^/]*doctor[^/]*\.js$/i;
 
 // Citation guard trigger: review-gate/SKILL.md step 3 runs `citation-check` "on each artifact"
 // -- src/citation-guard.js's own scope is "research/content artifacts that cite claims inline

@@ -52,9 +52,10 @@ import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
+import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|fast-path <outcome> [--capabilities <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -239,6 +240,28 @@ async function main() {
       } else {
         out(score);
       }
+    } else if (cmd === "review-brief") {
+      // fast-path-token-gap item, lever 1: a code-backed CLI wrapper over
+      // src/review-brief.js's lightBriefEligible/detectReviewTriggers -- the SAME
+      // "code over model" pattern gate-cadence/citation-check/fast-path already
+      // established for a diff-content decision. review-gate/SKILL.md's step invokes
+      // this instead of leaving eligibility to unenforced prose discipline.
+      const reviewerCountArg = flagValue(rest, "--reviewer-count");
+      if (reviewerCountArg === undefined) fail("review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]: missing --reviewer-count");
+      const reviewerCount = Number(reviewerCountArg);
+      if (!Number.isFinite(reviewerCount) || reviewerCount < 0) {
+        fail("review-brief --reviewer-count must be a non-negative finite number");
+      }
+      const diffFilesArg = flagValue(rest, "--diff-files");
+      const diffFiles = diffFilesArg
+        ? (await readFile(diffFilesArg, "utf8")).split("\n").map((l) => l.trim()).filter(Boolean)
+        : [];
+      const diffTextFileArg = flagValue(rest, "--diff-text-file");
+      const diffText = diffTextFileArg ? await readFile(diffTextFileArg, "utf8") : "";
+      out({
+        eligible: lightBriefEligible({ reviewerCount, diffFiles, diffText }),
+        triggers: detectReviewTriggers(diffFiles, { diffText }),
+      });
     } else if (cmd === "sprint-waves") {
       const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
       const content = await readFile(file, "utf8");

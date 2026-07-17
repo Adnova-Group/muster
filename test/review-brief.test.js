@@ -31,15 +31,20 @@ test("detectReviewTriggers: mutant-kill fires on a test file", () => {
   assert.equal(t.any, true);
 });
 
-test("detectReviewTriggers: mutant-kill fires on an eval dataset.json", () => {
-  const t = detectReviewTriggers(["eval/modes/dataset.json"]);
-  assert.equal(t.mutantKill, true);
-  assert.equal(t.any, true);
+test("detectReviewTriggers: mutant-kill fires on an eval dataset.json, at any depth under eval/ (including directly under it)", () => {
+  assert.equal(detectReviewTriggers(["eval/modes/dataset.json"]).mutantKill, true, "nested under eval/modes/");
+  assert.equal(detectReviewTriggers(["eval/dataset.json"]).mutantKill, true, "directly under eval/, no intermediate directory");
+  assert.equal(detectReviewTriggers(["eval/a/b/dataset.json"]).mutantKill, true, "multiple intermediate directories");
 });
 
 test("detectReviewTriggers: mutant-kill fires on a lint/doctor rule file", () => {
   assert.equal(detectReviewTriggers(["src/prompt-lint.js"]).mutantKill, true);
   assert.equal(detectReviewTriggers(["src/doctor.js"]).mutantKill, true);
+  // review-gate/SKILL.md's own trigger wording is "a lint/doctor rule" -- src/codex-doctor.js
+  // is a real, live doctor-rule implementation (runCodexDoctor, wired to `muster doctor
+  // --codex`), not just the exact literal src/doctor.js -- the doctor branch must match the
+  // SAME "any file with 'doctor' in its src/ name" construction the lint branch already uses.
+  assert.equal(detectReviewTriggers(["src/codex-doctor.js"]).mutantKill, true);
 });
 
 test("detectReviewTriggers: citation fires on any changed markdown file (conservative -- docs may cite claims)", () => {
@@ -93,20 +98,30 @@ test("regex sanity: each exported trigger regex actually matches its documented 
 
 // ── criterion 2 proof (no scope reduction for a SMALL diff) ─────────────────────────────
 // The item's own brief requires proving the trimmed fast-path reviewer still catches a
-// small-diff defect class, not just asserting it in prose. Two independent proofs:
+// small-diff defect class. This environment has no live LLM session to actually run a
+// reviewer against a mutated fixture and observe its verdict -- so, honestly, what follows
+// is TWO deterministic, code-level proofs, neither of which is a live-LLM mutant-kill
+// demonstration (that would require a real reviewer dispatch this environment cannot run):
 //
-//  1. Fixture/mutant proof: a representative small-diff defect (e.g. a path-traversal bug --
-//     unsanitized input reaching a file-read call, small enough to land in a single-reviewer,
-//     sub-threshold diff with no test/docs/UI file touched, so lightBriefEligible is true and
-//     the LIGHT brief is what a reviewer actually gets) is exactly the class
-//     fast-path-brief.md's own "Security" check line names explicitly -- read the REAL file
-//     off disk (never a copy-pasted string that could drift from what ships).
+//  1. Static content-presence proof (below): a representative small-diff defect class (e.g.
+//     a path-traversal bug -- unsanitized input reaching a file-read call, small enough to
+//     land in a single-reviewer, sub-threshold diff with no test/docs/UI file touched, so
+//     lightBriefEligible is true and the LIGHT brief is what a reviewer actually gets) is
+//     named EXPLICITLY in fast-path-brief.md's own "Security" check line -- read the REAL
+//     file off disk (never a copy-pasted string that could drift from what ships). This
+//     proves the INSTRUCTION a reviewer would receive still names the defect class; it does
+//     NOT prove an LLM reviewer would actually catch a live instance of it (unverifiable
+//     here).
 //  2. Construction proof: the moment ANY of the three content triggers fires, eligibility is
 //     false and the FULL brief (with its own additive surface/citation/mutant-kill gates) is
 //     used instead -- already covered by the "false for reviewerCount:1 the moment ANY
 //     trigger fires" case above; nothing this module offers ever substitutes the light brief
-//     for a diff that could need what it omits.
-test("criterion 2 proof: the light brief's real on-disk content still requires checking for a representative small-diff security-defect class (path traversal / unsanitized input to a file/shell/network call)", async () => {
+//     for a diff that could need what it omits. This IS a real, runnable, code-level
+//     guarantee (not aspirational): src/review-brief.js's own trigger-detection was itself
+//     mutant-killed during this item's development (MUTANT_KILL_TRIGGER_RE's detection
+//     branch disabled, this suite observed failing loud, then the file restored
+//     byte-identical -- see this item's PR body for the pasted evidence).
+test("criterion 2 static proof: the light brief's real on-disk content still names a representative small-diff security-defect class (path traversal / unsanitized input to a file/shell/network call) -- a content-presence check, not a live-LLM mutant demonstration", async () => {
   const brief = await read("plugin/skills/review-gate/fast-path-brief.md");
   assert.match(
     brief,

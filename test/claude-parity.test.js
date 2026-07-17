@@ -109,12 +109,14 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // Pin re-derived again for the fast-path-token-gap item (see docs/fast-path-token-gap.md): file
   // COUNT changed 135 -> 136 -- a genuinely new file, plugin/skills/review-gate/fast-path-brief.md
   // (lever 1's lighter reviewer brief for a fast-path/small-diff, single-reviewer dispatch; real,
-  // measured ~70% smaller than the full review-gate/SKILL.md). review-gate/SKILL.md itself gained
+  // measured ~73% smaller than the full review-gate/SKILL.md). review-gate/SKILL.md itself gained
   // one new "Fast-path reviewer brief" section, placed after the surface-type gates and before the
   // Mutant-kill gate section so it disturbs neither the mutant-kill-rule drift-guard fixture
   // (test/mode-evals.test.js) nor scripts/build-codex.mjs's review-gate step-1/fix-iteration-cap/
-  // AvailableCapabilities-sentence Codex-adaptation anchors (all re-verified green). No other file
-  // under this surface changed. This is the reviewed fast-path-token-gap remediation, not accidental
-  // Codex-side drift.
-  assert.equal(hash.digest("hex"), "cec1e53f0335fcf1768016d4a9311091ccf2c31a9d3ac5863f946b9697b2bc85");
+  // AvailableCapabilities-sentence Codex-adaptation anchors (all re-verified green); this section
+  // now invokes the new `muster review-brief` CLI command (a fix-loop addition, code-backed rather
+  // than prose-only) and documents where its optional `--diff-text-file` input comes from. No other
+  // file under this surface changed. This is the reviewed fast-path-token-gap remediation, not
+  // accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "9f6cb31d6abb50cbc7a579ff649644a806c2859e3202c65476bee3a8790ea321");
 });

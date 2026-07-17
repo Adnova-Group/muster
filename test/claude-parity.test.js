@@ -138,5 +138,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // All three content changes above are reviewed, not accidental Codex-side drift. The four PRs
   // (#56 alias-retirement, #57 test-only, #58 cowork-probe, #59 fast-path) were merged together;
   // the pinned sha below is re-derived once, after all four land, over the combined surface.
-  assert.equal(hash.digest("hex"), "9f6cb31d6abb50cbc7a579ff649644a806c2859e3202c65476bee3a8790ea321");
+  assert.equal(hash.digest("hex"), "62867f9bd6f0f3b4b51cc429262964f52fcf83d85b9d0ae0b275c689eef1e5bd");
 });

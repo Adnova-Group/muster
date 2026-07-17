@@ -70,6 +70,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // every load-bearing rule preserved verbatim (gate names/triggers, severity vocab, the
   // fix-iteration cap sentence, the AvailableCapabilities capture sentence); contract tests
   // (corpus-contradiction, docs-binding-interface, prompt-scan, mode-evals) all still green.
+  // router/SKILL.md's prose was cut 40.95% (7881 -> 4654 chars) -- the surface taxonomy enum,
+  // the crew-shape model field, and the "For EVERY plan task, consult AvailableCapabilities.
+  // skills" anchor build-codex.mjs's Codex-side rewrite depends on are all preserved verbatim.
   // This pin is re-derived again after this item's remaining skill-size cuts, below.
-  assert.equal(hash.digest("hex"), "d948ac5e2844ae5fe2d42d2fb717eac5b52d1b274d4385ffb4f4ce6b37a36191");
+  assert.equal(hash.digest("hex"), "f8c84bd2575e5ed4ac4316055fcbbd6d76b0d59d9dd42a01c869ab1a2b53fcfa");
 });

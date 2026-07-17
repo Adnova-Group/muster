@@ -117,7 +117,7 @@ trimming. All four bindings (a fourth, Hermes kanban, landed via `hermes-kanban-
 this doc was written) restated the SAME CLAIM/RECEIPTS/BLOCKED/HUMAN-HOLD/DONE/FAILED/YIELD/
 LEDGER protocol in each binding's own vocabulary; extracting that shared machinery into one
 canonical "Protocol states" section, then reducing each binding to only its own state-to-
-primitive mapping, cut the file to 24,423 chars — 40.07% off this table's 40,754 baseline. Every
+primitive mapping, cut the file to 24,438 chars — 40.04% off this table's 40,754 baseline. Every
 protocol state and resume rule (including the authenticated- vs unauthenticated-resume-channel
 split this doc's own honest-miss reasoning was built on) survives, just stated once instead of
 up to four times; contract tests (`corpus-contradiction`, `docs-binding-interface`,

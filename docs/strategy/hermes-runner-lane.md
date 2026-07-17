@@ -124,11 +124,14 @@ classification `plugin/hooks/action-guard.js` already computes into Hermes's can
   the Claude Code and Hermes classifications);
 - returns `{action: "block", message: "..."}` — the one `pre_tool_call` response shape
   every section of `hermes.md` agrees on: section 7 (Hooks) documents it as pre_tool_call's
-  own canonical veto [src: hermes-hooks]. (Section 7's prose separately notes
-  Claude-Code-Stop-shape acceptance for "shell-hook block responses" generally, and
-  sections 10/11 state more specifically that pre_tool_call block hooks accept it too — the
-  two passages aren't fully reconciled within `hermes.md` itself. This module sidesteps that
-  ambiguity by emitting only the shape confirmed under every reading.) — for a call that
+  own canonical veto [src: hermes-hooks]. (Section 10's augmentation table names
+  `pre_tool_call` specifically when it says pre_tool_call block hooks also accept the
+  Claude-Code Stop shape; sections 7's own prose and section 11's closing verdict both stay
+  at the generic "shell hooks accept the Claude-Code block-decision shape" level, neither
+  re-stating the claim against pre_tool_call by name — so it's section 10 alone that is
+  pre_tool_call-specific, and the three passages aren't fully reconciled within `hermes.md`
+  itself. This module sidesteps that ambiguity by emitting only the shape confirmed under
+  every reading.) — for a call that
   classifies into a forbidden class and `mode` is anything other than `"off"`/`"warn"`
   (including an unrecognized value — fail-CLOSED, mirroring
   `plugin/hooks/pre-tool-use.js`'s own `MUSTER_ACTION_GUARD` handling: only `"warn"` and

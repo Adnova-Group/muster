@@ -26,11 +26,15 @@
 // pre_tool_call's OWN canonical veto response as
 // `{"action": "block", "message": ...}` [src: hermes-hooks] -- unambiguous
 // under every reading of the source, so this module targets it. Separately,
-// hermes.md's augmentation table (section 10) and closing verdict (section 11)
-// state more broadly that "`pre_tool_call` block hooks ... accept the
-// Claude-Code `{"decision":"block","reason"}` shape verbatim," which section 7's
-// own prose frames as "shell-hook block responses" generally rather than
-// re-stating against pre_tool_call by name -- the two passages aren't fully
+// hermes.md's augmentation table (section 10) states more specifically that
+// "`pre_tool_call` block hooks ... accept the Claude-Code
+// `{"decision":"block","reason"}` shape verbatim," naming pre_tool_call by name
+// -- but section 7's own prose ("shell-hook block responses accept the
+// Claude-Code Stop shape") and section 11's closing verdict ("Shell hooks take
+// JSON on stdin and accept Claude Code's block-decision shape") both stay at
+// the generic "shell hooks" level, neither one re-stating the claim against
+// pre_tool_call specifically. So it's section 10 alone that is pre_tool_call-
+// specific; sections 7 and 11 are the generic pair, and the three aren't fully
 // reconciled within hermes.md itself. This module does not depend on resolving
 // that internal ambiguity: it only emits the one shape every section of
 // hermes.md agrees pre_tool_call understands.

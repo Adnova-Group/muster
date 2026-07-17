@@ -989,6 +989,27 @@ test("alias-guidance: each alias's heads-up line names the correct replacement c
   }
 });
 
+// [legacy-alias-retirement] Opens the deprecation window: each alias's frontmatter
+// description now names the same retirement target its guidance-line notice does
+// (see test/alias-deprecation.test.js for the full notice/docs drift-guard suite) --
+// this test just pins that the frontmatter (surfaced in command palettes/help text,
+// independent of the body the model reads) doesn't drift from the body's promise.
+test("alias-deprecation: each alias's frontmatter description names the same retirement target as its body notice", async () => {
+  for (const alias of Object.keys(ALIASES)) {
+    const text = await read(`plugin/commands/${alias}.md`);
+    const fmMatch = text.match(/^---\n([\s\S]*?)\n---\n/);
+    assert.ok(fmMatch, `${alias}.md must open with a --- frontmatter block`);
+    const descMatch = fmMatch[1].match(/description:\s*"([^"]*)"/);
+    assert.ok(descMatch, `${alias}.md's frontmatter must carry a description`);
+    const bodyNoticeMatch = text.match(/retires in ([^\s—-]+(?:\s+[\d.]+)?)/);
+    assert.ok(bodyNoticeMatch, `${alias}.md's body must carry a "retires in <target>" notice`);
+    assert.ok(
+      descMatch[1].includes(bodyNoticeMatch[1]),
+      `${alias}.md's frontmatter description must name the same retirement target ("${bodyNoticeMatch[1]}") as its body notice`,
+    );
+  }
+});
+
 // --- scope-confirm coverage (plan.md / go.md) -------------------------------------------
 // plan.md and go.md are the two bare-verb entry points that resolve scope (item vs.
 // backlog) before doing anything else — both must invoke the real `muster scope` CLI,

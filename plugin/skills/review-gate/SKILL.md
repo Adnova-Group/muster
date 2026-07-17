@@ -63,6 +63,21 @@ fired and the resolving evidence. No evidence recorded is an automatic FAIL.
    (or any integration-testing-tagged skill); OR the wave claims an integration works. PASS requires
    live evidence — the command/request and its result, not inference from unit tests.
 
+## Fast-path reviewer brief (small diff, single reviewer)
+
+Additive lever, never a scope cut: when step 1 resolves `reviewerCount: 1`, ALSO check
+`src/review-brief.js`'s `lightBriefEligible({ reviewerCount, diffFiles, diffText })` against the
+same diff. `diffFiles` is the `git diff --numstat` path list already gathered for step 1.
+
+- **Eligible** (`reviewerCount: 1` AND no citation/mutant-kill/surface trigger present in the diff) —
+  dispatch the reviewer with `plugin/skills/review-gate/fast-path-brief.md` (the essential
+  correctness + security checks) INSTEAD OF this full file, at reasoning effort
+  `gate-cadence`'s folded-in `reviewerReasoning` reports (`medium` for `reviewerCount: 1`, per
+  `src/gate-cadence.js`'s `reviewerReasoningForCount`).
+- **Not eligible** (any trigger present, OR `reviewerCount: 2`) — dispatch with THIS file, unchanged,
+  at `reviewerReasoning: "high"`. A trigger firing at `reviewerCount: 1` still falls back to the full
+  brief; the light brief never substitutes for a diff that could need what it omits.
+
 ## Mutant-kill gate
 
 Additive, never a softening. Fires when a wave adds a new test/eval guard (a test file, an assertion,

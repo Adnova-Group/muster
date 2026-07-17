@@ -33,6 +33,15 @@
 // The router is fully skipped in the "after" case by construction (criterion 1's whole
 // point) — this module does not take a reviewerCount-style toggle for the router, since
 // the fast path is binary: crew assembly either runs once (before) or not at all (after).
+//
+// fast-path-token-gap item (closing criterion 3's own named gap): `reviewSkillCharsAfter`/
+// `outputTokensPerReviewerAfter` let the AFTER side model a DIFFERENT brief size / output-
+// token cost than the before side, for the two levers that item adds -- a lighter reviewer
+// brief (`plugin/skills/review-gate/fast-path-brief.md`, real/measured) and a cheaper
+// reasoning-effort tier (`src/gate-cadence.js`'s `reviewerReasoningForCount`, MODELED to
+// produce a shorter output here — documented, not measured, same posture as
+// `outputTokensPerReviewer` itself). Both default to the base before-side values, so every
+// pre-fast-path-token-gap call site is untouched.
 export const DEFAULT_CHARS_PER_TOKEN = 4; // commonly-cited rough English-text approximation
 
 export function estimateTokens(charCount, charsPerToken = DEFAULT_CHARS_PER_TOKEN) {
@@ -55,21 +64,32 @@ export function projectFastPathTokenReduction({
   outputTokensPerReviewer = 0,
   outputTokensPerRouter = 0,
   charsPerToken = DEFAULT_CHARS_PER_TOKEN,
+  // fast-path-token-gap item: the two levers (a lighter reviewer brief, a cheaper reasoning
+  // tier) act ONLY on the "after" (fast-path, reviewerCount:1) dispatch -- the "before" (full
+  // pipeline, reviewerCount:2) dispatch is unchanged, still the full brief at the unchanged
+  // output-token constant. Both default to the base `reviewSkillChars`/`outputTokensPerReviewer`
+  // so every pre-existing call site (a caller that models a single, shared brief/output cost
+  // for both sides, same as before this item) is untouched.
+  reviewSkillCharsAfter = reviewSkillChars,
+  outputTokensPerReviewerAfter = outputTokensPerReviewer,
 } = {}) {
   const routerSkillTokens = estimateTokens(routerSkillChars, charsPerToken);
   const reviewSkillTokens = estimateTokens(reviewSkillChars, charsPerToken);
+  const reviewSkillTokensAfter = estimateTokens(reviewSkillCharsAfter, charsPerToken);
   const diffTokens = diffThresholdLines === 0 ? 0 : estimateTokens(diffThresholdLines * assumedCharsPerLine, charsPerToken);
   const perReviewerDispatchTokens = reviewSkillTokens + diffTokens + outputTokensPerReviewer;
+  const perReviewerDispatchTokensAfter = reviewSkillTokensAfter + diffTokens + outputTokensPerReviewerAfter;
   const routerTokens = routerSkillTokens + outputTokensPerRouter;
 
   const beforeTokens = routerTokens + reviewerCountBefore * perReviewerDispatchTokens;
-  const afterTokens = reviewerCountAfter * perReviewerDispatchTokens; // router fully skipped
+  const afterTokens = reviewerCountAfter * perReviewerDispatchTokensAfter; // router fully skipped
   const reductionTokens = beforeTokens - afterTokens;
   const reductionPct = beforeTokens === 0 ? 0 : (reductionTokens / beforeTokens) * 100;
   const consumptionPct = beforeTokens === 0 ? 0 : (afterTokens / beforeTokens) * 100;
 
   return {
-    routerSkillTokens, reviewSkillTokens, diffTokens, perReviewerDispatchTokens, routerTokens,
+    routerSkillTokens, reviewSkillTokens, reviewSkillTokensAfter, diffTokens,
+    perReviewerDispatchTokens, perReviewerDispatchTokensAfter, routerTokens,
     beforeTokens, afterTokens, reductionTokens, reductionPct, consumptionPct,
   };
 }

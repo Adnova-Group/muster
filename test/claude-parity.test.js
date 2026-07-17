@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 135);
+  assert.equal(paths.length, 136);
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -105,5 +105,16 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 4 cases), and the ATTENDED-session HUMAN-HOLD resume gate's exact safety semantics. See
   // docs/weight-reduction.md's own honest-miss precedent (criterion 3, 39.8% vs a 25% target) for
   // this project's established practice of reporting a real percentage over a fabricated one.
-  assert.equal(hash.digest("hex"), "71a52df5f163e61141211d1615bae1de224adb9946fd830ca704ff56ba82217a");
+  //
+  // Pin re-derived again for the fast-path-token-gap item (see docs/fast-path-token-gap.md): file
+  // COUNT changed 135 -> 136 -- a genuinely new file, plugin/skills/review-gate/fast-path-brief.md
+  // (lever 1's lighter reviewer brief for a fast-path/small-diff, single-reviewer dispatch; real,
+  // measured ~70% smaller than the full review-gate/SKILL.md). review-gate/SKILL.md itself gained
+  // one new "Fast-path reviewer brief" section, placed after the surface-type gates and before the
+  // Mutant-kill gate section so it disturbs neither the mutant-kill-rule drift-guard fixture
+  // (test/mode-evals.test.js) nor scripts/build-codex.mjs's review-gate step-1/fix-iteration-cap/
+  // AvailableCapabilities-sentence Codex-adaptation anchors (all re-verified green). No other file
+  // under this surface changed. This is the reviewed fast-path-token-gap remediation, not accidental
+  // Codex-side drift.
+  assert.equal(hash.digest("hex"), "cec1e53f0335fcf1768016d4a9311091ccf2c31a9d3ac5863f946b9697b2bc85");
 });

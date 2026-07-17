@@ -59,3 +59,18 @@ test("eval/perf/replay-fast-path.mjs prints the honest gap note when it misses t
     assert.match(stdout, /PASS --/);
   }
 });
+
+// fast-path-token-gap item: both levers (lighter reviewer brief, cheaper reasoning tier) are
+// documented and reflected in the printed report -- and, whatever the exact consumption %
+// this checkout's real file sizes produce, it must be a REAL improvement over
+// docs/speed-tuning.md's own prior 41.2% measurement (not pinned exactly, since it legitimately
+// drifts with either SKILL.md's prose; test/token-projection.test.js pins the arithmetic).
+test("eval/perf/replay-fast-path.mjs documents both fast-path-token-gap levers and measures a real improvement over the prior 41.2%", async () => {
+  const { stdout } = await runScript();
+  assert.match(stdout, /fast-path-brief\.md/, "must measure the lever-1 lighter-brief file's real size");
+  assert.match(stdout, /reviewerReasoningForCount/, "must ground the lever-2 reasoning tier in src/gate-cadence.js");
+  assert.match(stdout, /"medium" after/, "the after side must request the cheaper reasoning tier");
+  const m = stdout.match(/fast path consumes ([\d.]+)% of full-pipeline tokens/);
+  assert.ok(m, "must print the measured consumption percentage");
+  assert.ok(Number(m[1]) < 41.2, `expected a real improvement over the prior 41.2% measurement, got ${m[1]}%`);
+});

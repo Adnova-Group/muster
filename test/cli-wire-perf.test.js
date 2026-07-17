@@ -115,20 +115,23 @@ test("cli wire: gate-cadence without --changed-lines omits reviewerCount (backwa
   const { stdout } = await run(["gate-cadence", fixture]);
   const parsed = JSON.parse(stdout);
   assert.equal("reviewerCount" in parsed, false);
+  assert.equal("reviewerReasoning" in parsed, false);
 });
 
-test("cli wire: gate-cadence --changed-lines under the default 200-line threshold folds reviewerCount:1 in", async () => {
+test("cli wire: gate-cadence --changed-lines under the default 200-line threshold folds reviewerCount:1 and reviewerReasoning:medium in (fast-path-token-gap lever 2)", async () => {
   const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
   const { stdout } = await run(["gate-cadence", fixture, "--changed-lines", "50"]);
   const parsed = JSON.parse(stdout);
   assert.equal(parsed.reviewerCount, 1);
+  assert.equal(parsed.reviewerReasoning, "medium");
 });
 
-test("cli wire: gate-cadence --changed-lines at/over the default threshold folds reviewerCount:2 in (unchanged default)", async () => {
+test("cli wire: gate-cadence --changed-lines at/over the default threshold folds reviewerCount:2 and reviewerReasoning:high in (unchanged default)", async () => {
   const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
   const { stdout } = await run(["gate-cadence", fixture, "--changed-lines", "200"]);
   const parsed = JSON.parse(stdout);
   assert.equal(parsed.reviewerCount, 2);
+  assert.equal(parsed.reviewerReasoning, "high");
 });
 
 test("cli wire: gate-cadence honors MUSTER_REVIEW_DIFF_THRESHOLD to override the default", async () => {

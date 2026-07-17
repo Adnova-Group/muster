@@ -169,6 +169,11 @@ rather than loading the full `review-gate/SKILL.md` regardless of diff content),
 cheaper model tier for the fast path's single reviewer — both still out of scope for this
 item's cycle, same as weight-reduction's own honest deferral.
 
+**Update (backlog item `fast-path-token-gap`):** both levers named above landed —
+`docs/fast-path-token-gap.md` has the full writeup. Re-measured consumption: 28.3% (down from
+this doc's own 41.2%), a real improvement that still misses the 25% target, with the remaining
+gap mechanism (the fixed diff-token allotment, unchanged by either lever) explained there.
+
 ## Criterion 5 — no gate/review strength reduction (proportionality only)
 
 Every lever above is additive/scoped, never a softening of an existing gate for real multi-task

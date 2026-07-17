@@ -397,6 +397,76 @@ What actually ships [CODE-VERIFIED]:
   restructured around remote sessions — a marker of how fast the January-era ground
   truth is moving [src: cw-arch].
 
+## 9. Native-plugin-loader probe result (`cowork-plugin-loader-probe` item)
+
+Section 3d flagged whether muster's Claude Code plugin (`plugin/`) loads under Cowork's
+plugin loader as "the single highest-value open question." This section records the actual
+probe run against that question and what it changed.
+
+**Method.** Two things were tried, in order: (1) confirm whether a live Cowork session is
+reachable from this repo's tooling/CI environment to test a hands-on install, and (2)
+re-check the cw-plugins primary source (already cited in section 3d) for any additional
+detail — an install-time manifest, an on-disk registry, a protocol handshake — that an
+outside process (this repo's CLI, or the MCP server it ships) could inspect to tell whether
+a native plugin load happened. Neither turned up new evidence: (1) no Cowork desktop/web/
+mobile session is reachable from this environment (headless Linux devbox, no Claude Desktop
+app) [INFERRED — an environment fact, not a doc claim]; (2) cw-plugins documents the *user*
+install flow (upload a file, sync from a GitHub marketplace, an org admin can require it) and
+the *runtime* behavior (skills via the `/` menu, "hooks and sub-agents run only in Cowork")
+but nothing about how an already-running MCP server sitting beside a plugin could query
+whether that plugin loaded [src: cw-plugins] [DOCUMENTED-WEB absence noted, not asserted].
+
+**Verdict: loads — unverified without a live Cowork session.** Not fabricated as a pass or a
+fail. What IS verifiable from docs alone: the plugin *format* is shared with Claude Code
+("For details on plugin structure and formatting, see the Plugins reference in our Claude
+Code docs" [src: cw-plugins]), so `plugin/`'s shape (skills/, agents/, hooks/,
+`.claude-plugin/plugin.json`) is at minimum structurally compatible. What is NOT verifiable
+without hands-on access: whether Cowork's loader actually accepts *this* plugin, whether its
+skills appear in the `/` menu, whether `plugin/hooks/hooks.json`'s SessionStart/PreToolUse
+registrations fire under Cowork's "hooks run only in Cowork" runtime, and whether
+`plugin/agents/*.md` dispatch as Cowork sub-agents. A live-session probe would need: Cowork
+desktop with plugin support (post-~May-2026 build), this repo uploaded or synced as a plugin
+via Settings → Plugins, then a direct check of the `/` menu for muster's skill names and one
+worked invocation.
+
+**What shipped instead of a fabricated load.** A capability check that PREFERS a native
+plugin ride when one is confirmed, keeping the verified-working MCP server as the fallback,
+exactly as this item's success criteria call for — implemented as a DECLARED signal (the same
+shape muster already uses for undiscoverable remote connectors, `connectorsDiscoverable:
+false` — section 3c), not an auto-probe, because there is no signal to auto-probe:
+
+- `readInstalledCowork` (`src/harness.js`) takes `opts.nativePluginRide` (default `false`)
+  and threads it into the returned inventory as `nativePluginRide`.
+- `resolveCapabilities` (`src/capabilities.js`) computes `coworkMcpOnly = cowork &&
+  !installed.nativePluginRide` and uses it everywhere the old blanket `cowork` filter did —
+  declared `true` lets muster's builtin skills/agents resolve exactly as they do on Claude
+  Code (the non-Cowork path); the default (`false`) keeps today's already-verified MCP-only
+  ride unchanged.
+- `src/cli.js`'s `capabilities --cowork` reads `--native-plugin` or `MUSTER_COWORK_NATIVE_PLUGIN`
+  (parsed MCPB-boolean-safe, mirroring `MUSTER_ENABLE_FABLE` in `src/model.js`) and passes it
+  through.
+- `cowork/mcp-server.mjs` needs no new wiring for the env var to reach the CLI child — it
+  already spawns with `env: {...process.env, MUSTER_RUNTIME: "cowork"}`, so
+  `MUSTER_COWORK_NATIVE_PLUGIN` set in the Cowork host's MCP server config (the Route A
+  `env` block) passes straight through; only the tool description and the header comment
+  were updated to document it.
+- Branch logic is fixture-driven, TDD'd, and green: `test/harness-cowork.test.js` (the flag
+  default and echo), `test/capabilities.test.js` (`resolveCapabilities` resolving a builtin
+  agent/skill role under `nativePluginRide: true` vs staying MCP-only under `false`),
+  `test/cli-wire.test.js` (end-to-end through the real CLI process, both the flag and the env
+  var, plus the `"0"`/`"false"`/`""` non-enabling cases), and `test/cowork.test.js` (end to
+  end through the actual MCP `tools/call` for `muster_capabilities`).
+
+**Docs corrected** (criterion 3): `cowork/README.md`'s opening paragraph and Configuration
+section, and `cowork/mcp-server.mjs`'s header comment, no longer assert Cowork "has no
+plugin, skill, slash-command, or hook primitives" as a flat present-tense fact — both now
+name the ~May 2026 plugin system, mark the load as unverified, and point at
+`MUSTER_COWORK_NATIVE_PLUGIN` / `--native-plugin` as the declared capability check.
+
+**Fallback preserved** (criterion 3): the new flag is strictly additive-opt-in — every
+existing Cowork call site that never sets it keeps exactly today's MCP-only resolution,
+pinned by regression tests in the four files above.
+
 ## Sources
 
 - cw-arch: https://support.claude.com/en/articles/14479288-claude-cowork-desktop-architecture-overview

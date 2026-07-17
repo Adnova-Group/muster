@@ -105,5 +105,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 4 cases), and the ATTENDED-session HUMAN-HOLD resume gate's exact safety semantics. See
   // docs/weight-reduction.md's own honest-miss precedent (criterion 3, 39.8% vs a 25% target) for
   // this project's established practice of reporting a real percentage over a fabricated one.
-  assert.equal(hash.digest("hex"), "71a52df5f163e61141211d1615bae1de224adb9946fd830ca704ff56ba82217a");
+  //
+  // Pin re-derived for the cowork-plugin-loader-probe item (docs/research/claude-cowork.md
+  // section 9): file COUNT unchanged (135) -- only cowork/mcp-server.mjs's content changed
+  // (header comment + muster_capabilities tool description), correcting its stale "no plugin/
+  // skill/slash/hook primitives" claim (Cowork's plugin system shipped ~May 2026) and documenting
+  // the new MUSTER_COWORK_NATIVE_PLUGIN declared capability check. scripts/build-codex.mjs's
+  // string-rewrite of this same description (the Codex MCP adapter) was updated to match,
+  // verified by test/codex-cache-package.test.js's rebuild-from-packed-tarball check.
+  assert.equal(hash.digest("hex"), "182f59dcb1eaa5a752d055c7bdae36e1ed535e094d166de44a65e45df6f2a013");
 });

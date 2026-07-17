@@ -229,6 +229,27 @@ test("string verb: muster_route returns valid JSON with a domain", async () => {
   assert.ok("domain" in JSON.parse(res.content[0].text), "route output parses to an object with a domain");
 });
 
+// ── native-plugin-ride capability check ─────────────────────────────────────
+// Whether Cowork's own plugin loader (docs/research/claude-cowork.md section 3d)
+// actually accepts muster's plugin/ tree is unverified without a live Cowork
+// session; there is no on-disk/protocol signal this server can inspect to
+// auto-detect it, so it is a DECLARED capability check
+// (MUSTER_COWORK_NATIVE_PLUGIN, passed through this server's env-forwarding
+// runCli spawn -- same declare-not-discover shape as MUSTER_COWORK_CONNECTORS).
+// End-to-end through the actual MCP tool call, not just the direct CLI.
+test("tools/call: muster_capabilities respects MUSTER_COWORK_NATIVE_PLUGIN end to end (declared capability check, not a probe)", async () => {
+  const bareRun = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities", arguments: {} } }]);
+  const bare = JSON.parse(bareRun[2].result.content[0].text);
+  assert.equal(bare.roles.debug.chosen.id, "inline", "default (undeclared) Cowork resolution over MCP stays MCP-only");
+
+  const nativeRun = await rpc(
+    [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities", arguments: {} } }],
+    { env: { MUSTER_COWORK_NATIVE_PLUGIN: "1" } },
+  );
+  const native = JSON.parse(nativeRun[2].result.content[0].text);
+  assert.equal(native.roles.debug.chosen.id, "wsh-debugger", "declared native plugin ride resolves the builtin agent through the MCP server, same as the direct CLI");
+});
+
 test("json verb: muster_wave computes dependency-ordered waves (diamond)", async () => {
   const manifest = { plan: [{ id: "a", deps: [] }, { id: "b", deps: ["a"] }, { id: "c", deps: ["a"] }] };
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_wave", arguments: { manifest } } }]);

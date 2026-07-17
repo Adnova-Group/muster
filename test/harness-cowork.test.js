@@ -63,6 +63,16 @@ test("readInstalledCowork: missing config dir yields empty providers, no throw",
   assert.equal(r.connectorsDiscoverable, false);
 });
 
+test("readInstalledCowork: nativePluginRide defaults to false (declared, not auto-detected)", async () => {
+  const r = await readInstalledCowork("/no/such/home", { dir: "/no/such/dir" });
+  assert.equal(r.nativePluginRide, false, "no live-Cowork signal exists to auto-detect a native plugin load; default must be false");
+});
+
+test("readInstalledCowork: nativePluginRide echoes the caller's declared opt (coerced to boolean)", async () => {
+  const r = await readInstalledCowork("/no/such/home", { dir: "/no/such/dir", nativePluginRide: true });
+  assert.equal(r.nativePluginRide, true);
+});
+
 test("readInstalledCowork: ignores Claude Code-only agents, skills, and unregistered plugin MCP servers", async () => {
   const home = fixture((d) => {
     const install = path.join(d, ".claude/plugins/cache/official/serena/1.0.0");

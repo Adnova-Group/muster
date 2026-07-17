@@ -91,7 +91,19 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // integration-test dependency (chosen.kind, loopState, classifySteer, <channel>, TaskCreate/
   // TaskUpdate, docs/anti-patterns.md within Required skills). docs/binding-interface.md's
   // audit table re-derived again (dispatch 19->15, hook 28->19, 92->79 total) since most of the
-  // dropped prose was hook-related enforcement history. This pin is re-derived again after this
-  // item's remaining skill-size cut (coordination/SKILL.md), below.
-  assert.equal(hash.digest("hex"), "3e6816e8b972c572f1fd0fc6b3b81188da314c68c603aa6fededfa51d9341826");
+  // dropped prose was hook-related enforcement history.
+  //
+  // coordination/SKILL.md's prose was cut 30.6% (40754 -> 28279 chars) -- an HONEST MISS of this
+  // item's >=40% target, reported as such rather than fabricated. This file is qualitatively
+  // different from the other 4 cuts: three parallel, correctness-critical multi-runner protocol
+  // bindings (GitHub/backlog.md/Linear) full of claim-race logic, security validation (authorizer
+  // login/identity checks), and hostile-input handling -- most of its bulk IS the protocol, not
+  // narrative to trim. Every load-bearing literal preserved: "subagent type `muster-runner`"
+  // (corpus-contradiction.test.js), both Standing-context-preflight/Binding-A heading anchors
+  // (build-codex.mjs's wholesale section replacement), the git-log fingerprint fenced command +
+  // Binding C's matching "fingerprint set (...)" parenthetical (coordination-preflight.test.js,
+  // 4 cases), and the ATTENDED-session HUMAN-HOLD resume gate's exact safety semantics. See
+  // docs/weight-reduction.md's own honest-miss precedent (criterion 3, 39.8% vs a 25% target) for
+  // this project's established practice of reporting a real percentage over a fabricated one.
+  assert.equal(hash.digest("hex"), "71a52df5f163e61141211d1615bae1de224adb9946fd830ca704ff56ba82217a");
 });

@@ -219,7 +219,13 @@ function codexSkill(source, id) {
         "compact role lookups from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex --role <role>`; never attach the full skills inventory to a reviewer brief."
       )
       .replace(
-        /1\. Select reviewers:[\s\S]*?Always at least one\./,
+        // Anchored on the step-1 opening + the step-2 opening ("2. Dispatch") rather than
+        // a specific closing sentence, so a Claude-side reword of step 1's OWN prose (e.g.
+        // the speed-tuning item's skill-size cuts, or weight-reduction's diff-scaled
+        // reviewer-count rewrite before it) cannot silently desync this replacement from
+        // its anchor the way the pre-speed-tuning literal "Select reviewers: ... Always at
+        // least one." match did (broke silently when weight-reduction reworded step 1).
+        /1\.\s+\*\*?Select reviewers[\s\S]*?(?=\n2\.\s+Dispatch)/,
         "1. Select one code reviewer for ordinary waves. Add the security reviewer only when the task is security-scoped or the diff touches authentication, authorization, secrets, cryptography, shell execution, network boundaries, installers, or lifecycle hooks. Add a surface reviewer only when its definition-of-done gate fires. Never dispatch two reviewers for the same quality dimension; always use at least one reviewer."
       )
       .replace(

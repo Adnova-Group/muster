@@ -138,5 +138,20 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // All three content changes above are reviewed, not accidental Codex-side drift. The four PRs
   // (#56 alias-retirement, #57 test-only, #58 cowork-probe, #59 fast-path) were merged together;
   // the pinned sha below is re-derived once, after all four land, over the combined surface.
-  assert.equal(hash.digest("hex"), "62867f9bd6f0f3b4b51cc429262964f52fcf83d85b9d0ae0b275c689eef1e5bd");
+  //
+  // Pin re-derived again for the workflow-tool-delegation item (docs/native-workflow-dispatch.md):
+  // file COUNT unchanged (136) -- only plugin/skills/orchestrator/SKILL.md's content changed. It
+  // gained one new "## Wave dispatch: native Workflow vs prose fallback" section (placed after
+  // "## Task board", before "## Scope fences" -- disturbing neither the numbered step list nor any
+  // other named section) plus a one-clause pointer added to step 4a's dispatch line. The new
+  // section documents the capability check (`$MUSTER_CLI wave-dispatch`, src/wave-dispatch.js,
+  // fixture-driven TDD in test/wave-dispatch.test.js + test/cli-wire-perf.test.js) that lets the
+  // orchestrator RIDE Claude Code's native agent-teams `Workflow` tool for wave fan-out when
+  // declared available, with today's prose Agent-tool dispatch loop kept byte-identical as the
+  // unconditional floor -- AUGMENT, NOT SUPERSEDE. build-codex.mjs's two indexOf-based Codex-
+  // adaptation anchors in this file ("Provider kind"/"Subagent failure", "## Enforcement model:
+  // gates vs conventions") are untouched and re-verified (scripts/build-codex.mjs still runs
+  // clean); every corpus-contradiction.test.js term-registry pin against this file (surface
+  // taxonomy, gate names, the fix-iteration cap) still matches byte-for-byte.
+  assert.equal(hash.digest("hex"), "9dfeff48b215eb57da87242e111b411e377e53847b18e907f6ed56e31913d671");
 });

@@ -44,7 +44,10 @@ doing the work.
 4. For each wave, in order:
    a. Write the wave id to `.muster/wave-active` before dispatching any task (glass-box bookkeeping
       only, not hook-enforced -- see "SKILL discipline", above; `.muster/run-active` is a separate
-      verb-level marker). Dispatch every task in the wave **concurrently** (the harness Agent tool):
+      verb-level marker). Dispatch every task in the wave **concurrently** -- see "Wave dispatch:
+      native Workflow vs prose fallback" below for whether this rides the native `Workflow` tool or
+      the harness `Agent` tool prose loop (the mechanics below describe the prose loop; both paths
+      keep every rule below unchanged):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill (N competing agents, a judge scores each
         and produces a debate fusion map, then `muster fuse` decides).
@@ -112,6 +115,34 @@ in_progress when the builder launches, completed when its merge lands. The nativ
 authoritative for live progress; STATE stays the glass-box ledger of WHY (dispatch rationale,
 review findings, escalations) -- both maintained, neither substitutes for the other. A harness with
 no task-tracking primitive relies on STATE alone (note it once).
+
+## Wave dispatch: native Workflow vs prose fallback
+
+**Capability check (once, before wave 1):** run `$MUSTER_CLI wave-dispatch [--agent-teams|--no-agent-teams]`
+-> `{mode: "native"|"prose", agentTeams, reason}` (`src/wave-dispatch.js`). Pass `--agent-teams` when
+this session's own tool list carries the harness's agent-teams / background-agent surface (`Workflow`,
+`ListAgents`, `SendMessage` -- Claude Code CLI's deterministic fan-out + barrier tool, reached only
+through agent-teams mode, never the single-session loop: docs/research/claude-code-cli.md secs 5 and 10);
+omit the flag to fall back to the declared `MUSTER_AGENT_TEAMS` env var. Nothing outside a running
+session can auto-probe agent-teams mode, so this is a DECLARED capability, never an auto-probe (the
+same shape as Cowork's `nativePluginRide` -- `src/harness.js`/`src/capabilities.js`), and `mode`
+defaults to `"prose"` whenever nothing is declared. Record the result to STATE once; it does not
+change mid-run.
+
+- **`mode: "native"`** -- step 4a's per-wave dispatch rides the harness's native `Workflow` tool
+  instead of individual `Agent` tool calls: submit the wave's tasks as one deterministic fan-out (each
+  task becomes one `Workflow` step naming its resolved `subagent_type`/`model`/brief, same resolution
+  rules as step 4a below), let the native tool's own barrier join them, then read each step's result
+  exactly once. Step 4b's barrier and step 4c's review gate are UNCHANGED by this -- only the fan-out
+  mechanism moves off prose dispatch calls and onto harness-scheduled code.
+- **`mode: "prose"`** (the unconditional floor) -- step 4a's dispatch loop runs exactly as written: one
+  `Agent` tool call per task, dispatched concurrently by the model, barrier by waiting on every result.
+  This is the fallback for every harness/session without a declared agent-teams surface (Codex, Cowork,
+  plain Claude Code CLI/Desktop single-session). AUGMENT, NOT SUPERSEDE: none of the prose loop's rules
+  (provider resolution, model override, subagent-failure retry, scope fences) change when native is
+  unavailable -- the native path is preferred when declared, prose is always the floor.
+
+One worked example of each path (the same 2-task wave, routed both ways): docs/native-workflow-dispatch.md.
 
 ## Scope fences
 

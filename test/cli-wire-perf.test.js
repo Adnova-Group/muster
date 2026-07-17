@@ -168,6 +168,52 @@ test("cli wire: gate-cadence on a manifest with no 'plan' array exits 1", async 
 });
 
 // ---------------------------------------------------------------------------
+// wave-dispatch (workflow-tool-delegation item): capability check + fallback-selection
+// for the orchestrator's wave dispatch mechanism (native Workflow tool vs prose loop).
+// `--agent-teams`/`--no-agent-teams` is the orchestrator's own self-observed signal;
+// MUSTER_AGENT_TEAMS is the declared env-var fallback -- see src/wave-dispatch.js.
+// ---------------------------------------------------------------------------
+
+test("cli wire: wave-dispatch with no declaration at all defaults to the prose floor", async () => {
+  const env = { ...process.env };
+  delete env.MUSTER_AGENT_TEAMS;
+  const { stdout } = await run(["wave-dispatch"], { env });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mode, "prose");
+  assert.equal(parsed.agentTeams, false);
+});
+
+test("cli wire: wave-dispatch --agent-teams selects the native Workflow path", async () => {
+  const { stdout } = await run(["wave-dispatch", "--agent-teams"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mode, "native");
+  assert.equal(parsed.agentTeams, true);
+});
+
+test("cli wire: wave-dispatch --no-agent-teams stays on the prose floor even with MUSTER_AGENT_TEAMS=1 set (self-observation wins)", async () => {
+  const env = { ...process.env, MUSTER_AGENT_TEAMS: "1" };
+  const { stdout } = await run(["wave-dispatch", "--no-agent-teams"], { env });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mode, "prose");
+});
+
+test("cli wire: wave-dispatch with MUSTER_AGENT_TEAMS=1 and no flag declares native via the env var", async () => {
+  const env = { ...process.env, MUSTER_AGENT_TEAMS: "1" };
+  const { stdout } = await run(["wave-dispatch"], { env });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mode, "native");
+});
+
+test("cli wire: wave-dispatch with MUSTER_AGENT_TEAMS=0/false and no flag stays on the prose floor (MCPB-boolean-safe)", async () => {
+  for (const value of ["0", "false", ""]) {
+    const env = { ...process.env, MUSTER_AGENT_TEAMS: value };
+    const { stdout } = await run(["wave-dispatch"], { env });
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.mode, "prose", `MUSTER_AGENT_TEAMS="${value}" must not declare native`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // review-brief (fast-path-token-gap item, lever 1): a code-backed CLI wrapper over
 // src/review-brief.js's lightBriefEligible/detectReviewTriggers, the SAME "code over model"
 // decision pattern gate-cadence/citation-check/fast-path already established for a

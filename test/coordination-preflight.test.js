@@ -10,9 +10,11 @@ import { readFile } from "node:fs/promises";
 // plugin/commands/go.md respectively (per the mode/plan/go verb-lexicon rename) and
 // never again carry the behavior they were named for -- the mechanism was blind to
 // edits in exactly the files it exists to watch. This test pins both copies of the
-// fingerprint set in plugin/skills/coordination/SKILL.md (the git-log command near
-// "Standing-context preflight", and Binding C's parenthetical restating the same set)
-// to (a) name zero known alias-stub filenames, (b) agree with each other, and (c)
+// fingerprint set in plugin/skills/coordination/SKILL.md (the git-log command and the
+// short-form parenthetical restating the same set, both now co-located in the
+// "Standing-context preflight" section itself post the coordination-footprint
+// de-duplication -- previously the second copy lived in Binding C's own prose) to
+// (a) name zero known alias-stub filenames, (b) agree with each other, and (c)
 // actually include the live behavior files.
 
 const root = new URL("../", import.meta.url);
@@ -46,9 +48,9 @@ function extractGitLogFingerprint(text) {
     .filter(Boolean);
 }
 
-function extractBindingCFingerprint(text) {
+function extractShortFormFingerprint(text) {
   const m = text.match(/fingerprint set \(([^)]+)\)/);
-  assert.ok(m, `could not find Binding C's parenthetical fingerprint-set mention in ${SKILL}`);
+  assert.ok(m, `could not find the short-form parenthetical fingerprint-set mention in ${SKILL}`);
   return m[1].split("/").filter(Boolean);
 }
 
@@ -65,14 +67,14 @@ test("standing-context preflight: the git-log fingerprint command names zero ali
   }
 });
 
-test("standing-context preflight: Binding C's fingerprint-set mention names zero alias-stub files", async () => {
+test("standing-context preflight: the short-form fingerprint-set mention names zero alias-stub files", async () => {
   const text = await read(SKILL);
-  const basenames = extractBindingCFingerprint(text);
-  assert.ok(basenames.length > 0, "Binding C's fingerprint-set parenthetical parsed empty");
+  const basenames = extractShortFormFingerprint(text);
+  assert.ok(basenames.length > 0, "short-form fingerprint-set parenthetical parsed empty");
   for (const stub of ALIAS_STUB_BASENAMES) {
     assert.ok(
       !basenames.includes(stub),
-      `Binding C's fingerprint-set mention still names alias-stub file "${stub}": (${basenames.join("/")})`
+      `short-form fingerprint-set mention still names alias-stub file "${stub}": (${basenames.join("/")})`
     );
   }
 });
@@ -80,12 +82,12 @@ test("standing-context preflight: Binding C's fingerprint-set mention names zero
 test("standing-context preflight: both fingerprint-set copies name the exact same files", async () => {
   const text = await read(SKILL);
   const cmdBasenames = extractGitLogFingerprint(text).map(basename).sort();
-  const bindingCBasenames = extractBindingCFingerprint(text).sort();
+  const shortFormBasenames = extractShortFormFingerprint(text).sort();
 
   assert.deepEqual(
-    bindingCBasenames,
+    shortFormBasenames,
     cmdBasenames,
-    `the two fingerprint-set copies have drifted apart: git-log command names [${cmdBasenames.join(", ")}], Binding C mention names [${bindingCBasenames.join(", ")}]`
+    `the two fingerprint-set copies have drifted apart: git-log command names [${cmdBasenames.join(", ")}], short-form mention names [${shortFormBasenames.join(", ")}]`
   );
 });
 

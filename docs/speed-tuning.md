@@ -111,6 +111,18 @@ literal is preserved verbatim (see the commit message), and the file is 30.6% sm
 loss of protocol coverage — a real, substantial, honestly-reported reduction, just short of the
 40% bar the other 4 files cleared.
 
+**Update (backlog item `coordination-footprint`):** the remaining gap closed without cutting a
+single rule — the lever this item found was genuine de-duplication, not further narrative
+trimming. All four bindings (a fourth, Hermes kanban, landed via `hermes-kanban-binding` after
+this doc was written) restated the SAME CLAIM/RECEIPTS/BLOCKED/HUMAN-HOLD/DONE/FAILED/YIELD/
+LEDGER protocol in each binding's own vocabulary; extracting that shared machinery into one
+canonical "Protocol states" section, then reducing each binding to only its own state-to-
+primitive mapping, cut the file to 24,438 chars — 40.04% off this table's 40,754 baseline. Every
+protocol state and resume rule (including the authenticated- vs unauthenticated-resume-channel
+split this doc's own honest-miss reasoning was built on) survives, just stated once instead of
+up to four times; contract tests (`corpus-contradiction`, `docs-binding-interface`,
+`coordination-preflight`, `mode-evals`) re-verified green.
+
 ## Criterion 3 — subagent brief/return discipline lint (≤2k/≤1k tokens)
 
 `src/brief-lint.js` is a deterministic lint over skill/agent/command prose: it scans for an

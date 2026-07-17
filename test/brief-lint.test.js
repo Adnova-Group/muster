@@ -157,6 +157,49 @@ test("findUnmarkedDispatchSignals: a tiny marked span does not cover a huge UNMA
   assert.equal(returnCount, 1);
 });
 
+// Review finding (fix loop 2): the section-boundary search itself could be fooled by a literal
+// "## "-shaped line living INSIDE a still-open marker's own content (e.g. an example snippet
+// demonstrating heading syntax -- plugin/skills/review-gate/SKILL.md carries exactly this shape
+// today, wrapped inside its own whole-body brief-template span). A naive raw-text scan for the
+// next heading would land on that embedded example line, truncate the section boundary to a
+// point BEFORE the marker's real close, and make the trailing "is everything after the marker
+// whitespace" check vacuously pass -- silently hiding real unmarked content sitting after the
+// marker's TRUE end. Closed by having the boundary search skip past any candidate that falls
+// inside a KNOWN marked span and resume from that span's real close.
+test("findUnmarkedDispatchSignals: a literal '## '-shaped line INSIDE a marker's own content does not fool the section-boundary search into ignoring a real unmarked tail (review finding)", () => {
+  const bloat = "z".repeat(20000);
+  const files = {
+    "embedded.md": [
+      "## Report back",
+      "<!-- muster-return-template:start -->",
+      "Example format:",
+      "## Example inner heading that is just example text inside the marker",
+      "more content inside the marker",
+      "<!-- muster-return-template:end -->",
+      `REAL_UNMARKED_TAIL ${bloat}`,
+    ].join("\n"),
+  };
+  assert.deepEqual(findUnmarkedDispatchSignals(files), [{ path: "embedded.md", signal: "report-back-heading" }]);
+});
+
+// The SAME embedded-heading shape, but with nothing real left unmarked after the marker's true
+// close (EOF immediately follows) -- must still read as fully covered. Locks in that the fix
+// above only rejects a genuine unmarked tail, not every marker that happens to contain an
+// example "## " line.
+test("findUnmarkedDispatchSignals: a literal '## '-shaped line inside a marker's content is harmless when nothing real follows the marker's true close", () => {
+  const files = {
+    "embedded-clean.md": [
+      "## Report back",
+      "<!-- muster-return-template:start -->",
+      "Example format:",
+      "## Example inner heading that is just example text inside the marker",
+      "more content inside the marker",
+      "<!-- muster-return-template:end -->",
+    ].join("\n"),
+  };
+  assert.deepEqual(findUnmarkedDispatchSignals(files), []);
+});
+
 // A section legitimately holding MORE THAN ONE marker (muster-runner.md's "## Dispatch contract"
 // heading owns both a brief-template span and a return-template span, separated by a blank
 // line) must still read as fully covered -- the fix for the finding above must not regress this

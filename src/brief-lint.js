@@ -147,13 +147,27 @@ export const DISPATCH_SIGNAL_PATTERNS = [
 ];
 
 // The start of the next `## `-level heading at or after `fromIndex`, or `text.length` (EOF) when
-// none remains -- the section boundary a `sectionOwned` signal's marker must reach.
-function nextSectionBoundary(text, fromIndex) {
+// none remains -- the section boundary a `sectionOwned` signal's marker must reach. Review
+// finding (fix loop 2): a naive raw-text scan for `^## ` can land INSIDE a still-open marker's own
+// content -- an example snippet demonstrating heading syntax (`review-gate/SKILL.md` has exactly
+// this shape today) reads as a false section boundary, truncating `sectionEnd` to a point before
+// the marker's real close and making `sectionIsFullyMarked`'s trailing check vacuously pass over
+// real unmarked content sitting after the marker's true end. Fixed by skipping past any candidate
+// match that falls within a KNOWN marked span (`allSpans`, either kind) and resuming the search
+// from that span's real close -- only a `## ` line living OUTSIDE every marker counts as a
+// genuine section boundary.
+function nextSectionBoundary(text, fromIndex, allSpans) {
   const re = /^## /m;
-  re.lastIndex = 0;
-  const rest = text.slice(fromIndex);
-  const match = re.exec(rest);
-  return match ? fromIndex + match.index : text.length;
+  let searchFrom = fromIndex;
+  for (;;) {
+    const rest = text.slice(searchFrom);
+    const match = re.exec(rest);
+    if (!match) return text.length;
+    const candidate = searchFrom + match.index;
+    const enclosing = allSpans.find((s) => candidate >= s.tagStart && candidate < s.closingTagEnd);
+    if (!enclosing) return candidate;
+    searchFrom = enclosing.closingTagEnd; // strictly greater than candidate -- guarantees forward progress
+  }
 }
 
 // Scans a { path: text } map for every DISPATCH_SIGNAL_PATTERNS match (or a caller-supplied
@@ -199,7 +213,7 @@ function signalIsCovered(text, matchStart, matchEnd, sectionOwned, allSpans) {
     if (matchStart >= contentStart && matchStart < contentEnd) return true; // inside a marked span's content
   }
   if (!sectionOwned) return false; // an inline signal has no "rest of section" to check
-  const sectionEnd = nextSectionBoundary(text, matchEnd);
+  const sectionEnd = nextSectionBoundary(text, matchEnd, allSpans);
   return sectionIsFullyMarked(text, matchEnd, sectionEnd, allSpans);
 }
 

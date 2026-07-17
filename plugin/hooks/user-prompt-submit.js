@@ -27,12 +27,12 @@
 // whole body in try/catch; on ANY error or missing state, emit minimal valid
 // JSON and exit 0.
 
-import { readFileSync, writeFileSync, existsSync, statSync, unlinkSync } from "node:fs";
+import { readFileSync, existsSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { emit, CREW_INVITATION, isDirective } from "./guidance.js";
 import {
   directiveFile, isCrossingStale, cumFile, corroboratingCount, isScaleCorroborated,
-  cooldownFile, isInCooldown, recordInvite,
+  cooldownFile, isInCooldown, recordInvite, markDirective, resolveNow,
 } from "./inline-budget.js";
 
 const EVENT = "UserPromptSubmit";
@@ -45,6 +45,14 @@ function directiveNudgeCopy() {
 }
 
 try {
+  // Resolved once per invocation: real Date.now() in production, or the
+  // injected MUSTER_TEST_NOW_MS clock under test (see inline-budget.js:
+  // resolveNow) -- threaded through every isCrossingStale/corroboratingCount/
+  // isInCooldown/recordInvite/markDirective call below so a test controls
+  // every mtime this hook reads or writes, with no real wall-clock race
+  // across the child-process boundary.
+  const now = resolveNow();
+
   let payload;
   try {
     payload = JSON.parse(readFileSync(0, "utf8"));
@@ -94,7 +102,7 @@ try {
           let alreadyNudged = false;
           try {
             const { mtimeMs } = statSync(markerFile);
-            alreadyNudged = !isCrossingStale(mtimeMs);
+            alreadyNudged = !isCrossingStale(mtimeMs, now);
           } catch {
             alreadyNudged = false; // no marker yet — not nudged
           }
@@ -111,17 +119,13 @@ try {
             // crossing's leftover file count -- the marker's own mtime past
             // CROSSING_MAX_AGE_MS -- never corroborates a brand-new,
             // genuinely trivial directive (review-gate finding).
-            const priorCount = corroboratingCount(cFile);
+            const priorCount = corroboratingCount(cFile, now);
             if (isScaleCorroborated(priorCount)) {
               const cdFile = cooldownFile(sessionId);
-              if (!isInCooldown(cdFile)) {
+              if (!isInCooldown(cdFile, now)) {
                 additionalContext = directiveNudgeCopy();
-                recordInvite(cdFile);
-                try {
-                  writeFileSync(markerFile, "1");
-                } catch {
-                  /* best-effort */
-                }
+                recordInvite(cdFile, now);
+                markDirective(markerFile, now);
               }
               // cooldown active: stay silent and leave markerFile unwritten
               // so a still-corroborated directive can fire once it clears.

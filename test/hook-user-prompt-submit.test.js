@@ -11,12 +11,12 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawnHook, cleanDir } from "./test-support/hook-helpers.js";
 import {
   directiveFile, CROSSING_MAX_AGE_MS, cumFile, recordCum,
-  cooldownFile, DEFAULT_INVITE_COOLDOWN_MS,
+  DEFAULT_INVITE_COOLDOWN_MS,
 } from "../plugin/hooks/inline-budget.js";
 
 // Scale correlation (see user-prompt-submit.js/inline-budget.js:
@@ -24,19 +24,20 @@ import {
 // distinct file has already been recorded this crossing by the PreToolUse
 // cumulative counter. Tests that want the OLD "directive alone fires"
 // behavior must first seed that corroborating file-touch; tests proving the
-// trivial-directive fix do NOT seed it.
-function seedCorroboration(sessionId) {
-  recordCum(cumFile(sessionId, os.tmpdir()), "seed.js");
+// trivial-directive fix do NOT seed it. `now` (default Date.now(), threaded
+// straight into recordCum) lets the timing-sensitive tests below stamp the
+// seed at an explicit, test-controlled instant instead of the real clock.
+function seedCorroboration(sessionId, now = Date.now()) {
+  recordCum(cumFile(sessionId, os.tmpdir()), "seed.js", now);
 }
 
-// Age a session's invite-cooldown marker past the window so the next
-// eligible invite is no longer suppressed by cooldown (mirrors the
-// CROSSING_MAX_AGE_MS aging technique used throughout this file/inline-budget
-// tests — no real sleeping).
-function ageCooldown(sessionId, extraMs = 60_000) {
-  const cdFile = cooldownFile(sessionId, os.tmpdir());
-  const stale = new Date(Date.now() - (DEFAULT_INVITE_COOLDOWN_MS + extraMs));
-  utimesSync(cdFile, stale, stale);
+// Build the MUSTER_TEST_NOW_MS env override (see inline-budget.js:
+// resolveNow) for a given instant `t` -- drives a spawned hook's staleness/
+// cooldown comparisons off an explicit, test-controlled clock instead of the
+// real wall clock, so no assertion below can race a spawned hook process's
+// own Date.now() read under --test-concurrency.
+function nowEnv(t) {
+  return { MUSTER_TEST_NOW_MS: String(t) };
 }
 
 // Directive-nudge tests need a run cwd guaranteed to have no `.muster/run-active`.
@@ -133,12 +134,12 @@ test("T-directive: trivial one-file directive turn (\"fix typo\") with no establ
 
 test("T-directive: a STALE prior crossing's leftover file count must not corroborate a new, trivial directive (review-gate fix)", async () => {
   const sid = uniqSession();
-  seedCorroboration(sid); // 1 file recorded -- but for a crossing that is about to go cold.
-  const cFile = cumFile(sid, os.tmpdir());
-  const stale = new Date(Date.now() - (CROSSING_MAX_AGE_MS + 60_000));
-  utimesSync(cFile, stale, stale); // that prior crossing is now >60 minutes dead.
+  const T0 = 1_700_000_000_000; // arbitrary fixed instant; entirely test-controlled
+  // 1 file recorded, but stamped >60 minutes before T0 -- that prior crossing
+  // is dead by the time the hook below is pinned to T0 (see nowEnv()).
+  seedCorroboration(sid, T0 - (CROSSING_MAX_AGE_MS + 60_000));
 
-  const { stdout, code } = await runPromptCwd(sid, "fix typo", NO_RUN_DIR);
+  const { stdout, code } = await runPromptCwd(sid, "fix typo", NO_RUN_DIR, nowEnv(T0));
   assert.equal(code, 0);
   assert.ok(
     !("additionalContext" in ctxOf(stdout)),
@@ -204,14 +205,20 @@ test("T-directive: polite prefix nudges (once corroborated); question form does 
 
 // ── re-arm triggers: run-start and age ──────────────────────────────────────
 
+// Driven by an explicit, test-controlled clock (`clock`, advanced with
+// nowEnv()) instead of real elapsed wall time: "real time has barely moved"
+// / "once the cooldown window has genuinely elapsed" are exact by
+// construction here, not an assumption about how fast a spawned hook process
+// happens to run under --test-concurrency.
 test("T-directive: a muster run starting re-arms the crossing, but the shared cooldown still stands down an immediate repeat (run-boundary stand-down, not flap)", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "muster-ups-rearm-run-"));
   const sid = uniqSession();
+  let clock = 1_700_000_000_000; // arbitrary fixed instant; entirely test-controlled
   try {
-    seedCorroboration(sid);
+    seedCorroboration(sid, clock);
     // Turn 1: directive prompt, no run active — fires, marks the crossing and
     // starts the shared invite cooldown.
-    const t1 = await runPromptCwd(sid, "fix the flaky test", dir);
+    const t1 = await runPromptCwd(sid, "fix the flaky test", dir, nowEnv(clock));
     assert.ok(ctxOf(t1.stdout).additionalContext, "sanity: turn 1 fires");
     const dFile = directiveFile(sid, os.tmpdir());
     assert.ok(dFile, "sanity: directive marker path resolves");
@@ -219,7 +226,7 @@ test("T-directive: a muster run starting re-arms the crossing, but the shared co
     // A muster run starts and is observed by a turn (any prompt suffices).
     mkdirSync(path.join(dir, ".muster"), { recursive: true });
     writeFileSync(path.join(dir, ".muster", "run-active"), "1");
-    await runPromptCwd(sid, "status check", dir);
+    await runPromptCwd(sid, "status check", dir, nowEnv(clock));
 
     // The run ends.
     const { rmSync } = await import("node:fs");
@@ -227,19 +234,20 @@ test("T-directive: a muster run starting re-arms the crossing, but the shared co
 
     // Next directive prompt, no run active: the crossing re-armed (marker
     // unlinked while the run was observed), but the invite cooldown started
-    // by turn 1 is still within its window (real time has barely moved) --
-    // this is the flap case a rapid run-restart must NOT re-invite through.
-    const rapid = await runPromptCwd(sid, "fix another flaky test", dir);
+    // by turn 1 is still within its window (the injected clock hasn't moved)
+    // -- this is the flap case a rapid run-restart must NOT re-invite through.
+    const rapid = await runPromptCwd(sid, "fix another flaky test", dir, nowEnv(clock));
     assert.ok(
       !("additionalContext" in ctxOf(rapid.stdout)),
       "run-boundary re-arm alone does not re-invite while the shared cooldown is still active",
     );
 
-    // Real stand-down: once the cooldown window has genuinely elapsed, the
-    // next directive prompt in the (still-corroborated, re-armed) crossing
-    // invites again -- proves the session is not dead for good.
-    ageCooldown(sid);
-    const standDown = await runPromptCwd(sid, "fix yet another flaky test", dir);
+    // Real stand-down: once the cooldown window has genuinely elapsed (the
+    // injected clock advances past it), the next directive prompt in the
+    // (still-corroborated, re-armed) crossing invites again -- proves the
+    // session is not dead for good.
+    clock += DEFAULT_INVITE_COOLDOWN_MS + 60_000;
+    const standDown = await runPromptCwd(sid, "fix yet another flaky test", dir, nowEnv(clock));
     assert.ok(
       ctxOf(standDown.stdout).additionalContext,
       "once the cooldown clears, a completed muster run's re-armed crossing invites again",
@@ -251,15 +259,21 @@ test("T-directive: a muster run starting re-arms the crossing, but the shared co
 
 test("T-directive: age-reset — a crossing untouched past 60 minutes re-arms (cooldown also long since cleared)", async () => {
   const sid = uniqSession();
-  seedCorroboration(sid);
-  await runPromptCwd(sid, "fix the flaky test", NO_RUN_DIR); // fires, marks the crossing, starts cooldown
-  const dFile = directiveFile(sid, os.tmpdir());
-  const stale = new Date(Date.now() - (CROSSING_MAX_AGE_MS + 60_000));
-  utimesSync(dFile, stale, stale);
-  // 60+ real minutes passing also clears the (shorter) invite cooldown.
-  ageCooldown(sid, CROSSING_MAX_AGE_MS);
+  let clock = 1_700_000_000_000; // arbitrary fixed instant; entirely test-controlled
+  seedCorroboration(sid, clock);
+  await runPromptCwd(sid, "fix the flaky test", NO_RUN_DIR, nowEnv(clock)); // fires, marks the crossing, starts cooldown
 
-  const { stdout } = await runPromptCwd(sid, "fix another flaky test", NO_RUN_DIR);
+  // 60+ minutes pass for the directive crossing (and the shorter cooldown
+  // clears with it) -- the corroborating file-touch crossing is re-touched
+  // "just now" at the new instant, exactly like a session where the
+  // PreToolUse counter saw fresher inline activity than the last directive
+  // nudge (isolates this test to the DIRECTIVE marker's own age-reset, not
+  // corroboratingCount's independent staleness rule -- see the "STALE prior
+  // crossing" test above for that one).
+  clock += CROSSING_MAX_AGE_MS + 60_000;
+  seedCorroboration(sid, clock);
+
+  const { stdout } = await runPromptCwd(sid, "fix another flaky test", NO_RUN_DIR, nowEnv(clock));
   assert.ok(
     ctxOf(stdout).additionalContext,
     "a crossing older than 60 minutes re-arms — the same-session directive prompt nudges again",

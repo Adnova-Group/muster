@@ -25,6 +25,8 @@ import {
   recordInvite,
   isScaleCorroborated,
   corroboratingCount,
+  resolveNow,
+  markDirective,
 } from "../plugin/hooks/inline-budget.js";
 
 // Direct unit coverage for inline-budget.js — the spawnHook integration tests
@@ -334,4 +336,124 @@ test("corroboratingCount: exactly at the staleness boundary is not yet stale", (
     utimesSync(file, atBoundary, atBoundary);
     assert.equal(corroboratingCount(file, now), 1, "exactly at the boundary: still counts");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ── resolveNow: the injectable clock (MUSTER_TEST_NOW_MS test hook) ────────
+//
+// isCrossingStale/isInCooldown/corroboratingCount/recordCum already take an
+// explicit `now`, defaulting to Date.now() -- the remaining wall-time
+// dependence was the HOOK PROCESSES (pre-tool-use.js/user-prompt-submit.js)
+// each independently calling Date.now() at whatever real instant they
+// happened to run, with no fixed relationship to a test's own real-clock-
+// relative fixture (e.g. a marker mtime backdated via utimesSync against
+// Date.now() at fixture-build time) once spawned as a separate child
+// process. resolveNow() gives every call site ONE injectable clock:
+// MUSTER_TEST_NOW_MS (an integer epoch-ms string) wins over Date.now() when
+// present and finite; absent -- the only path production ever takes -- it's
+// plain Date.now(), unchanged behavior.
+test("resolveNow: no override falls back to the real clock", () => {
+  const before = Date.now();
+  const now = resolveNow({});
+  const after = Date.now();
+  assert.ok(now >= before && now <= after, "falls back to Date.now() when unset");
+});
+
+test("resolveNow: MUSTER_TEST_NOW_MS overrides the clock exactly", () => {
+  assert.equal(resolveNow({ MUSTER_TEST_NOW_MS: "1700000000000" }), 1_700_000_000_000);
+});
+
+test("resolveNow: junk/negative/empty MUSTER_TEST_NOW_MS falls back to the real clock, never NaN", () => {
+  const before = Date.now();
+  for (const v of ["abc", "-5", "2.9", ""]) {
+    const now = resolveNow({ MUSTER_TEST_NOW_MS: v });
+    assert.ok(Number.isFinite(now) && now >= before, `"${v}" -> falls back to the real clock, not NaN/garbage`);
+  }
+});
+
+// ── writer functions stamp the marker's mtime to an explicit `now` ─────────
+//
+// Every marker writer below now takes the same injectable `now` (default
+// Date.now()) and stamps the marker's mtime to EXACTLY that value after
+// writing -- not whatever real OS write-time the filesystem would otherwise
+// assign. This is what lets pre-tool-use.js/user-prompt-submit.js thread one
+// resolveNow() reading through both the READ side (isCrossingStale/
+// isInCooldown/corroboratingCount, already parameterized) and the WRITE
+// side, so a test driving MUSTER_TEST_NOW_MS controls every mtime a hook
+// invocation touches -- no real wall-clock race across the process boundary,
+// regardless of how long the child actually takes to spawn.
+test("recordCum: an explicit `now` stamps the marker's mtime exactly", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordCum(file, "a.js", 1_700_000_000_000);
+    assert.equal(statSync(file).mtimeMs, 1_700_000_000_000);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("markNudged: an explicit `now` stamps the marker's mtime exactly", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordCum(file, "a.js", 1_700_000_000_000);
+    markNudged(file, 1_700_000_060_000);
+    assert.equal(statSync(file).mtimeMs, 1_700_000_060_000);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("recordInvite: an explicit `now` stamps the marker's mtime exactly", () => {
+  const { dir, file } = tmpFile();
+  try {
+    recordInvite(file, 1_700_000_000_000);
+    assert.equal(statSync(file).mtimeMs, 1_700_000_000_000);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("resetCum: an explicit `now` stamps the marker's mtime exactly", () => {
+  const { dir, file } = tmpFile();
+  try {
+    resetCum(file, 1_700_000_000_000);
+    assert.equal(statSync(file).mtimeMs, 1_700_000_000_000);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("markDirective: writes the marker and stamps its mtime exactly (UserPromptSubmit's writer, symlink-safe like the others)", () => {
+  const { dir, file } = tmpFile();
+  try {
+    markDirective(file, 1_700_000_000_000);
+    assert.equal(readFileSyncRaw(file, "utf8"), "1");
+    assert.equal(statSync(file).mtimeMs, 1_700_000_000_000);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("recordInvite: a null file is a safe no-op even with an explicit `now`", () => {
+  assert.doesNotThrow(() => recordInvite(null, 1_700_000_000_000));
+});
+
+// ── clock-injection TDD: exact boundary, entirely test-controlled ─────────
+// The point of resolveNow()/the writer stamps: a test can now drive
+// isCrossingStale's exact boundary through the real recordCum call path
+// using nothing but integers -- no utimesSync, no Date.now(), no real-clock
+// race, regardless of --test-concurrency.
+test("clock-injection TDD: recordCum's staleness check is driven entirely by an injected clock -- exact boundary, no wall-clock race", () => {
+  const T0 = 1_700_000_000_000;
+  {
+    const { dir, file } = tmpFile();
+    try {
+      recordCum(file, "a.js", T0);
+      assert.deepEqual(
+        recordCum(file, "b.js", T0 + CROSSING_MAX_AGE_MS),
+        { count: 2, nudged: false },
+        "exactly at the boundary: still the same crossing",
+      );
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+  {
+    const { dir, file } = tmpFile();
+    try {
+      recordCum(file, "a.js", T0);
+      assert.deepEqual(
+        recordCum(file, "b.js", T0 + CROSSING_MAX_AGE_MS + 1),
+        { count: 1, nudged: false },
+        "1ms past the boundary: a fresh crossing discards the prior state",
+      );
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 });

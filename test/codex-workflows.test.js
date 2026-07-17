@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { codexFallbackSkillId } from "../src/codex-catalog.js";
-import { repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { execFile, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 test("packaged Codex workflows use the bundled CLI and Codex-native mode names", async () => {
   const commands = join(selectedPluginRoot, "commands");
@@ -70,6 +70,28 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
     const text = await readFile(join(commands, `${command}.md`), "utf8");
     assert.match(text, /capabilities --codex --roles-only/, `${command} should route from compact role capabilities`);
   }
+});
+
+test("generated Codex package exposes the native-dispatch resolvers the orchestrator needs at runtime", async () => {
+  // Runtime reachability: the codex-spawn-agent-dispatch item's follow-up asked for proof these
+  // reach a CODEX-HOSTED muster running the BUNDLED plugin, not just the source repo -- exercise
+  // the actual generated runtime/muster.mjs, never src/wave-dispatch.js directly.
+  const runtimeCli = join(selectedPluginRoot, "runtime", "muster.mjs");
+  const waveDispatch = JSON.parse((await execFile(process.execPath, [runtimeCli, "wave-dispatch", "--no-agent-teams"])).stdout);
+  assert.equal(waveDispatch.mode, "prose");
+  const worktreeIsolation = JSON.parse((await execFile(process.execPath, [runtimeCli, "worktree-isolation", "--harness", "codex"])).stdout);
+  assert.deepEqual(worktreeIsolation, { harness: "codex", mechanism: "receipts-only", receiptRequired: true });
+
+  // Doc reachability: the ported orchestrator/SKILL.md's wave-dispatch section is wholesale-replaced
+  // for Codex (scripts/build-codex.mjs's adaptOrchestratorForCodex) -- that replacement must still
+  // carry the Codex-specific resolvers (resolveCodexWaveDispatch's sequential-inline fallback,
+  // resolveWorktreeIsolation's receipts-only mechanism) it stands in for, not silently drop them
+  // along with the Claude-only prose it exists to replace.
+  const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
+  assert.match(orchestrator, /sequential-inline/);
+  assert.match(orchestrator, /multiAgent: false|MUSTER_CODEX_MULTI_AGENT/);
+  assert.match(orchestrator, /receipts-only/);
+  assert.match(orchestrator, /worktree-isolation --harness codex/);
 });
 
 test("generated Codex orchestration surfaces enforce the bounded agent watch invariant", async () => {

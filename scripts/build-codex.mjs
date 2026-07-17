@@ -163,12 +163,25 @@ function adaptOrchestratorForCodex(text) {
   // instead of relying on word-level substitution. The HEADING itself is left byte-identical
   // so step 4a's "see \"Wave dispatch: native Workflow vs prose fallback\" below" pointer
   // (untouched, upstream of this function) still names a real heading in the Codex output.
+  // codex-build-wire-resolvers item: the wholesale replacement below originally covered only
+  // the "## Wave dispatch" heading's own body (native Workflow vs prose). Two later PRs
+  // (worktree-isolation-native, codex-spawn-agent-dispatch) nested "### Codex-native dispatch:
+  // spawn_agent" and "### Worktree isolation per harness + base-SHA receipts" INSIDE this same
+  // span on the Claude-side source (both between this heading and the unmoved "## Scope fences"
+  // end anchor) without ever extending this replacement text to cover them, so the Codex build
+  // silently dropped both subsections' Codex-relevant guidance (the `resolveCodexWaveDispatch`
+  // sequential-inline fallback + fail-closed spawn_agent guard, and `resolveWorktreeIsolation`'s
+  // receipts-only mechanism + `buildBaseShaReceipt` provenance) — never reaching a CODEX-HOSTED
+  // muster running the bundled plugin (test/codex-wave-dispatch.test.js and
+  // test/worktree-isolation.test.js only prove the resolvers themselves, not that a generated
+  // package exposes them). Restore both, phrased for Codex (no `src/wave-dispatch.js` citation:
+  // that path does not exist in the shipped package).
   const waveDispatchHeading = "## Wave dispatch: native Workflow vs prose fallback";
   const waveDispatchStart = result.indexOf(waveDispatchHeading);
   const waveDispatchEnd = result.indexOf("## Scope fences", waveDispatchStart);
   if (waveDispatchStart < 0 || waveDispatchEnd < 0) throw new Error("orchestrator wave-dispatch section not found");
   result = result.slice(0, waveDispatchStart)
-    + `${waveDispatchHeading}\n\nCodex has no counterpart to Claude Code CLI's agent-teams \`Workflow\` tool: wave dispatch always rides the \`collaboration.spawn_agent\`/\`wait_agent\`/\`list_agents\` protocol bound in the Provider and model policy above, never a deterministic native fan-out tool. \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs wave-dispatch\` always resolves \`mode: "prose"\` on this harness (there is no Codex-side \`--agent-teams\`/\`MUSTER_AGENT_TEAMS\` declaration path); dispatch every wave task through \`collaboration.spawn_agent\` exactly as described above.\n\n`
+    + `${waveDispatchHeading}\n\nCodex has no counterpart to Claude Code CLI's agent-teams \`Workflow\` tool: wave dispatch always rides the \`collaboration.spawn_agent\`/\`wait_agent\`/\`list_agents\` protocol bound in the Provider and model policy above, never a deterministic native fan-out tool. \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs wave-dispatch\` always resolves \`mode: "prose"\` on this harness (there is no Codex-side \`--agent-teams\`/\`MUSTER_AGENT_TEAMS\` declaration path); dispatch every wave task through \`collaboration.spawn_agent\` exactly as described above -- gated by this session's OWN \`multi_agent\` capability, declared not auto-probed same as every other check here: Codex ships \`multi_agent\` default-on, so only an explicit \`multiAgent: false\` (or \`MUSTER_CODEX_MULTI_AGENT=0\`) drops dispatch to \`mode: "sequential-inline"\` -- one crew member at a time, never a partial/mixed fan-out.\n\n### Worktree isolation: receipts-only\n\n\`collaboration.spawn_agent\` has no cwd field, so Codex has no native worktree mechanism to select at all: run \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs worktree-isolation --harness codex\` to confirm this harness always resolves \`mechanism: "receipts-only"\`. The brief's absolute \`WORKTREE CWD\` (Provider and model policy, above) plus a base-SHA receipt per dispatched crew member -- \`{taskId, mechanism, baseSha, worktreePath}\`, refused over a missing or non-hex \`baseSha\` -- stand in for the isolation guarantee muster cannot get from this harness; append the receipt to STATE alongside the dispatch line.\n\n`
     + result.slice(waveDispatchEnd);
   const enforcement = result.indexOf("## Enforcement model: gates vs conventions");
   if (enforcement < 0) throw new Error("orchestrator enforcement section not found");

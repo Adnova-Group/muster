@@ -138,5 +138,18 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // All three content changes above are reviewed, not accidental Codex-side drift. The four PRs
   // (#56 alias-retirement, #57 test-only, #58 cowork-probe, #59 fast-path) were merged together;
   // the pinned sha below is re-derived once, after all four land, over the combined surface.
-  assert.equal(hash.digest("hex"), "62867f9bd6f0f3b4b51cc429262964f52fcf83d85b9d0ae0b275c689eef1e5bd");
+  //
+  // Pin re-derived again for the native-plan-mode-parity item: file COUNT unchanged (136) --
+  // plan.md's step 7 and plan-backlog.md's B5 approval gate each gained two new native-surface
+  // branches (Codex's `permission_mode: "plan"` + bundled system `plan` skill, docs/research/
+  // codex-cli.md SS1/4.2/5.2; Hermes's built-in `plan` skill + `/goal` completion contract,
+  // docs/research/hermes.md SS4) between the existing Claude Code ExitPlanMode branch and the
+  // fallback, which now names Cowork's prose degradation explicitly instead of lumping
+  // Codex/Hermes in with it (docs/research/claude-cowork.md SS2). Both files also now cite the
+  // new capability-check module, src/plan-surface.js (outside this pinned surface), and
+  // docs/binding-interface.md's grep-audit table was re-derived to match (AskUserQuestion
+  // 31->35, hook 19->21, 79->85 total) since the new branches add AskUserQuestion/hook-signal
+  // mentions. This is the reviewed native-plan-mode-parity remediation, not accidental
+  // Codex-side drift.
+  assert.equal(hash.digest("hex"), "3d13e4eda33bf02a567fd408b6b2a125feda58dccf47be469848a57659130a2d");
 });

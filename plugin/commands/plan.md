@@ -79,10 +79,12 @@ The invocation text: `$ARGUMENTS`
      and any memory hits from step 4, exactly as before this item.
 6. Write the Crew Manifest (from whichever branch step 5 took) to `.muster/manifest.json`, then validate:
    `$MUSTER_CLI manifest validate .muster/manifest.json` — repair and re-validate until `ok: true`.
-7. **Present for approval — ride native plan mode, never a parallel wall.** Render the Crew Manifest as the
-   Glass Box (stage -> provider, model, rationale, evidence, fallback), then choose the gate by what the
-   session already is (augment the harness's own approval flow, never supersede it — see
-   docs/research/reference-harness-design.md's Part C augmentation-vs-enforcement doctrine, `cc-plan`/`cc-augment`):
+7. **Present for approval — ride each harness's native plan surface, never a parallel wall.** Render the
+   Crew Manifest as the Glass Box (stage -> provider, model, rationale, evidence, fallback), then choose the
+   gate by what the session already is (augment the harness's own approval flow, never supersede it — see
+   docs/research/reference-harness-design.md's Part C augmentation-vs-enforcement doctrine, `cc-plan`/`cc-augment`,
+   and `src/plan-surface.js`'s `resolvePlanSurface`, which holds the same per-harness table as executable,
+   fixture-tested code — see `test/plan-surface.test.js`):
    - **Session is already in native plan mode** (Shift+Tab, a `/plan`-prefixed prompt, or
      `--permission-mode plan` — Claude Code CLI only, per the capstone's Part C ride table): call **ExitPlanMode** with the rendered
      Crew Manifest as its `plan` argument instead of raising a second, parallel AskUserQuestion wall on top
@@ -90,11 +92,33 @@ The invocation text: `$ARGUMENTS`
      an approve option (into `auto`/`acceptEdits`/manual-review) maps to **Approve & run** below; **keep
      planning** maps to **Adjust the plan** below; backing out of the plan without approving maps to
      **Cancel** below.
-   - **Every other case** — not in plan mode, an unattended Routine, or a harness with no plan-mode
-     primitive at all (Codex, Hermes, Cowork, and the Agents SDK all lack it per
-     docs/research/reference-harness-design.md's per-harness port-surface table) — fall back to the
-     **AskUserQuestion** selection UI, unchanged, with options **Approve & run** / **Adjust the plan** /
-     **Cancel**.
+   - **Codex session in native plan mode** (the SessionStart/PreToolUse hook payload reports
+     `permission_mode: "plan"` — docs/research/codex-cli.md §4.2): invoke the bundled system **`plan`** skill
+     (§5.2's system skill list) with the rendered Crew Manifest as its content instead of dumping it as plain
+     chat text — e.g. for a two-stage manifest the plan skill's content is literally `## Crew Manifest\n1.
+     builder -> <provider>\n2. code-review -> <provider>`, which surfaces as one native `item.completed`
+     entry of kind "plan update" in the turn's event stream (§1's item taxonomy names plan updates as a
+     first-class item kind alongside messages/commands/file changes). Codex has no documented
+     ExitPlanMode-equivalent call that programmatically submits approval, so the actual **Approve & run** /
+     **Adjust the plan** / **Cancel** decision still rides the **AskUserQuestion** fallback below — the win is
+     that the manifest is now Codex's own native plan artifact instead of a second prose copy, not a
+     programmatic approval call Codex doesn't expose.
+   - **Hermes session** (docs/research/hermes.md §4): author the rendered Crew Manifest through Hermes's
+     protected, hardcoded, permanent built-in **`plan`** skill via its `/plan` slash-command flow, then
+     encode the manifest's `successCriteria` as a **`/goal`** completion contract (`outcome`/`verification`/
+     `constraints`/`stop_when`) so the `goal_judge` auxiliary model cannot declare the run done without
+     concrete verification evidence — e.g. `outcome: "<enriched outcome text>"`, `verification: "review-gate
+     PASS + suite green"`. Hermes's own docs name no blocking plan-approval mode (only the `plan`
+     skill/`/goal` contract, not a stop-the-world gate), so the actual **Approve & run** / **Adjust the plan** /
+     **Cancel** decision rides Hermes's `clarify` tool — the same AskUserQuestion-shaped fallback below,
+     named here as `clarify` because that is Hermes's structured user-input mechanism.
+   - **Every other case** — not in plan mode, an unattended Routine, or a harness with no native plan
+     surface at all: **Cowork** degrades here explicitly (its documented 5-step task loop exposes no
+     task-graph or plan object — "the plan is prose in the agent's head," docs/research/claude-cowork.md §2
+     — so the whole approve-first flow stays prose, same as its sprint-protocol's existing in-chat human-ask
+     degradation), as does a bare Agents SDK runner lane or any harness `resolvePlanSurface` doesn't
+     recognize — fall back to the **AskUserQuestion** selection UI, unchanged, with options **Approve & run**
+     / **Adjust the plan** / **Cancel**.
    - **Approve & run**: invoke the **muster:go** skill in-session, passing the enriched outcome from
      step 2 as the outcome; go picks up the already-validated `.muster/manifest.json` and does not
      re-derive the plan from scratch.

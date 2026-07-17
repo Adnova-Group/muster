@@ -283,13 +283,13 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=13  mentions=31
+AskUserQuestion    files=13  mentions=35
 dispatch (Agent/Task tool)  files=5  mentions=15
-hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=19
+hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=21
 worktree   files=5  mentions=14
 ```
 
-Every one of those 79 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Every one of those 85 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

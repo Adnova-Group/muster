@@ -153,5 +153,22 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // gates vs conventions") are untouched and re-verified (scripts/build-codex.mjs still runs
   // clean); every corpus-contradiction.test.js term-registry pin against this file (surface
   // taxonomy, gate names, the fix-iteration cap) still matches byte-for-byte.
-  assert.equal(hash.digest("hex"), "9dfeff48b215eb57da87242e111b411e377e53847b18e907f6ed56e31913d671");
+  //
+  // Pin re-derived once more, same item, after a review-gate fix loop: the new section's citation
+  // of docs/research/claude-code-cli.md was corrected (the Workflow/ListAgents/SendMessage tool
+  // names are documented in sec 1's binary-tools evidence + sec 11's `claude agents` subcommand,
+  // not secs 5/10 as first drafted), the literal phrase "Claude Code CLI" was reworded out of the
+  // section's body (avoiding build-codex.mjs's blanket "Claude Code CLI"->"Codex CLI"
+  // translateCodexProse swap, which would otherwise fabricate a false "Codex CLI's deterministic
+  // fan-out tool" claim in the generated Codex skill -- build-codex.mjs itself gained a new
+  // wholesale Codex-specific body replacement for this section, mirroring its existing provider/
+  // model and enforcement-model wholesale replaces, verified by rebuilding with
+  // MUSTER_BUILD_FORCE=1 and reading the generated .agents/plugins output directly), and a new
+  // "Parallel isolation is not relaxed" clause was added addressing whether the native Workflow
+  // tool's per-step isolation is confirmed equivalent to the Agent tool's `isolation: "worktree"`
+  // (it is not, by this item's own research -- a multi-file-writing wave stays on the prose path
+  // regardless of declared mode until that gap closes). docs/binding-interface.md's grep-audit
+  // table was also re-derived (dispatch 15->16, worktree 14->15, total 79->81) since the new
+  // section's prose added one more `Agent` tool mention and one more `worktree` mention.
+  assert.equal(hash.digest("hex"), "1ccec82c682639542d36ae8d7243384475fa97e88d412833d9c84f5cb0b9b4f3");
 });

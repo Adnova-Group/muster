@@ -4,7 +4,8 @@ Seed context: `docs/strategy/native-delegation.md` Part B item 1 named the orche
 prose wave loop (`plugin/skills/orchestrator/SKILL.md` step 4) as the strongest available
 native-replacement target on Claude Code CLI -- the harness's agent-teams surface exposes a
 **deterministic** `Workflow` tool (fan-out + barrier as code) alongside `ListAgents`/
-`SendMessage`/`Monitor` (`docs/research/claude-code-cli.md` §5, §10), reached only through
+`SendMessage`/`Monitor` (`docs/research/claude-code-cli.md` §1's binary-tools evidence +
+§11's `claude agents` subcommand), reached only through
 agent-teams / background-agent mode, never the single-session loop a plain `claude`
 invocation runs. This item wires the orchestrator to RIDE that tool when it's available,
 with the existing prose loop kept as the unconditional floor everywhere it isn't --
@@ -69,6 +70,17 @@ brackets the call (write before dispatch, remove after the join) and STATE still
 4b's barrier and step 4c's review gate run unchanged once the `Workflow` call returns both
 results.
 
+**Isolation caveat on THIS specific example.** Both tasks here write disjoint files (`src/
+routes/health.js` and `docs/api-reference.md`) -- exactly the shape step 4a's "Parallel
+isolation" rule requires a per-task git worktree for. Whether the `Workflow` tool exposes a
+per-step isolation control equivalent to the Agent tool's `isolation: "worktree"` parameter
+is NOT confirmed by this item's research (a documented gap, per the orchestrator/SKILL.md
+section above) -- so, honestly, this exact 2-task wave would stay on the prose path (Path
+B) even with `mode: "native"` declared for the run, until that control is confirmed. The
+fan-out shape above illustrates the mechanism the native path WOULD use once isolation
+parity is confirmed; it is not, today, how this specific wave shape actually gets
+dispatched.
+
 ### Path B -- prose fallback (no agent-teams declaration)
 
 `$MUSTER_CLI wave-dispatch` (no flag, no `MUSTER_AGENT_TEAMS`) ->
@@ -93,7 +105,7 @@ The native `Workflow` tool cannot actually be invoked from this repo's test or e
 environment (no agent-teams / background-agent session is reachable here, the same
 environment limitation the `cowork-plugin-loader-probe` item hit for a live Cowork
 session) -- so Path A above is a worked walkthrough of the documented mechanism
-(docs/research/claude-code-cli.md §5/§10), not a live-invocation demonstration. What IS
+(docs/research/claude-code-cli.md §1/§11), not a live-invocation demonstration. What IS
 verified, fixture-driven, and green: the **selection logic** deciding which path a run
 takes (`test/wave-dispatch.test.js`'s unit coverage of `resolveWaveDispatch`/
 `declaredAgentTeams`, `test/cli-wire-perf.test.js`'s end-to-end CLI wire coverage of
@@ -126,4 +138,9 @@ tool proving Path A end-to-end, and wiring the same self-observation signal into
 one-shot capture convention (today the orchestrator calls `wave-dispatch` itself, once,
 rather than reusing `go.md`'s `capabilities.json`/`gate-cadence.json` pre-capture pattern --
 deliberately, to keep this item's edit to `plugin/skills/orchestrator/SKILL.md` surgical
-given the stacked sibling items also touching that file).
+given the stacked sibling items also touching that file); and confirming whether the
+`Workflow` tool exposes a per-step isolation control equivalent to the Agent tool's
+`isolation: "worktree"` parameter (the gap the "Isolation caveat" above names) -- until
+confirmed, any multi-file-writing wave stays on the prose path regardless of `mode`, by
+this item's own explicit rule, so no collision-prevention guarantee is weakened in the
+meantime.

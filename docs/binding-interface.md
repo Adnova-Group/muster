@@ -284,12 +284,17 @@ stale:
 
 ```
 AskUserQuestion    files=13  mentions=31
-dispatch (Agent/Task tool)  files=5  mentions=15
+dispatch (Agent/Task tool)  files=5  mentions=16
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=19
-worktree   files=5  mentions=14
+worktree   files=5  mentions=15
 ```
 
-Every one of those 79 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave
+dispatch: native Workflow vs prose fallback" section added one dispatch mention (`Agent`
+tool calls, one per task) and one worktree mention (the per-task git worktree parallel-
+isolation rule) -- file counts unchanged (still the same 5 files each), only mentions grew.
+
+Every one of those 81 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

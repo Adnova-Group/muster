@@ -4,7 +4,8 @@
 // Claude Code CLI's agent-teams surface exposes a native, deterministic Workflow tool
 // (fan-out + barrier as code) alongside ListAgents/SendMessage/Monitor -- reached ONLY
 // through agent-teams / background-agent mode, never the single-session loop a plain
-// `claude` invocation runs (docs/research/claude-code-cli.md sec 5 + sec 10;
+// `claude` invocation runs (docs/research/claude-code-cli.md sec 1's binary-tools
+// evidence + sec 11's `claude agents` subcommand;
 // docs/strategy/native-delegation.md Part B item 1: "Workflow reached only via
 // agent-teams mode, not the single-session loop -- capability-gated").
 //

@@ -120,27 +120,34 @@ no task-tracking primitive relies on STATE alone (note it once).
 
 **Capability check (once, before wave 1):** run `$MUSTER_CLI wave-dispatch [--agent-teams|--no-agent-teams]`
 -> `{mode: "native"|"prose", agentTeams, reason}` (`src/wave-dispatch.js`). Pass `--agent-teams` when
-this session's own tool list carries the harness's agent-teams / background-agent surface (`Workflow`,
-`ListAgents`, `SendMessage` -- Claude Code CLI's deterministic fan-out + barrier tool, reached only
-through agent-teams mode, never the single-session loop: docs/research/claude-code-cli.md secs 5 and 10);
-omit the flag to fall back to the declared `MUSTER_AGENT_TEAMS` env var. Nothing outside a running
-session can auto-probe agent-teams mode, so this is a DECLARED capability, never an auto-probe (the
-same shape as Cowork's `nativePluginRide` -- `src/harness.js`/`src/capabilities.js`), and `mode`
-defaults to `"prose"` whenever nothing is declared. Record the result to STATE once; it does not
-change mid-run.
+this session's own tool list carries this harness's agent-teams / background-agent surface (`Workflow`,
+`ListAgents`, `SendMessage` -- a deterministic fan-out + barrier tool, reached only through agent-teams
+mode, never the single-session loop: docs/research/claude-code-cli.md sec 1's binary-tools evidence,
+plus sec 11's `claude agents` subcommand); omit the flag to fall back to the declared
+`MUSTER_AGENT_TEAMS` env var. Nothing outside a running session can auto-probe agent-teams mode, so
+this is a DECLARED capability, never an auto-probe (the same shape as Cowork's `nativePluginRide` --
+`src/harness.js`/`src/capabilities.js`), and `mode` defaults to `"prose"` whenever nothing is declared.
+Record the result to STATE once; it does not change mid-run.
 
-- **`mode: "native"`** -- step 4a's per-wave dispatch rides the harness's native `Workflow` tool
+- **`mode: "native"`** -- step 4a's per-wave dispatch rides this harness's native `Workflow` tool
   instead of individual `Agent` tool calls: submit the wave's tasks as one deterministic fan-out (each
   task becomes one `Workflow` step naming its resolved `subagent_type`/`model`/brief, same resolution
   rules as step 4a below), let the native tool's own barrier join them, then read each step's result
   exactly once. Step 4b's barrier and step 4c's review gate are UNCHANGED by this -- only the fan-out
-  mechanism moves off prose dispatch calls and onto harness-scheduled code.
+  mechanism moves off prose dispatch calls and onto harness-scheduled code. **Parallel isolation is not
+  relaxed:** step 4a's per-task git worktree rule for a multi-file-writing wave is a hard requirement
+  independent of dispatch mechanism, not something this item's own research verified the `Workflow`
+  tool's own parameter schema supports per step (a documented gap, unlike the Agent tool's `isolation`
+  parameter -- see docs/research/claude-code-cli.md's `observed-agent-tool` citation). Until a per-step
+  isolation control is confirmed, a wave that would need it (more than one file-writing task) stays on
+  the prose path even when `mode: "native"` is declared for the run -- never silently drop the
+  collision guarantee to ride the native tool.
 - **`mode: "prose"`** (the unconditional floor) -- step 4a's dispatch loop runs exactly as written: one
   `Agent` tool call per task, dispatched concurrently by the model, barrier by waiting on every result.
   This is the fallback for every harness/session without a declared agent-teams surface (Codex, Cowork,
-  plain Claude Code CLI/Desktop single-session). AUGMENT, NOT SUPERSEDE: none of the prose loop's rules
-  (provider resolution, model override, subagent-failure retry, scope fences) change when native is
-  unavailable -- the native path is preferred when declared, prose is always the floor.
+  a plain single-session Claude Code invocation, CLI or Desktop). AUGMENT, NOT SUPERSEDE: none of the
+  prose loop's rules (provider resolution, model override, subagent-failure retry, scope fences) change
+  when native is unavailable -- the native path is preferred when declared, prose is always the floor.
 
 One worked example of each path (the same 2-task wave, routed both ways): docs/native-workflow-dispatch.md.
 

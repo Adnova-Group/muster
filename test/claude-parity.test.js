@@ -77,7 +77,21 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // advise" alternative line was folded into the resolved $MUSTER_CLI form and the
   // budget-exhausted re-dispatch line merged into step 6, dropping 2 "dispatch (Agent/Task
   // tool)" grep-audit mention lines -- docs/binding-interface.md's audit table and 94->92
-  // total re-derived to match. This pin is re-derived again after this item's remaining
-  // skill-size cuts, below.
-  assert.equal(hash.digest("hex"), "741d30811d435729d27a302badb08d86fc378124f665c7fac3c99c9998657430");
+  // total re-derived to match.
+  //
+  // orchestrator/SKILL.md's prose was cut 48.33% (26764 -> 13828 chars) -- the largest single
+  // cut this item makes, since its own "## Enforcement model: gates vs conventions" section
+  // is wholesale-discarded by build-codex.mjs's Codex adaptation anyway (replaced with fixed
+  // Codex-specific text) and duplicates docs/architecture.md's own fuller "Enforcement model"
+  // section almost verbatim -- compressed to a cross-reference + the one operative rule
+  // (the action-class fence) the orchestrator itself must still act on. Every load-bearing
+  // literal preserved: the return-contract markers (untouched), the surface-taxonomy gate-name
+  // mapping, "3 fix iterations", the two Provider-kind/Subagent-failure Codex-adaptation
+  // anchors, the "brief-level discipline" / "top-level set" fence-lifecycle phrasing, and every
+  // integration-test dependency (chosen.kind, loopState, classifySteer, <channel>, TaskCreate/
+  // TaskUpdate, docs/anti-patterns.md within Required skills). docs/binding-interface.md's
+  // audit table re-derived again (dispatch 19->15, hook 28->19, 92->79 total) since most of the
+  // dropped prose was hook-related enforcement history. This pin is re-derived again after this
+  // item's remaining skill-size cut (coordination/SKILL.md), below.
+  assert.equal(hash.digest("hex"), "3e6816e8b972c572f1fd0fc6b3b81188da314c68c603aa6fededfa51d9341826");
 });

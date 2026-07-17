@@ -138,5 +138,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // All three content changes above are reviewed, not accidental Codex-side drift. The four PRs
   // (#56 alias-retirement, #57 test-only, #58 cowork-probe, #59 fast-path) were merged together;
   // the pinned sha below is re-derived once, after all four land, over the combined surface.
-  assert.equal(hash.digest("hex"), "62867f9bd6f0f3b4b51cc429262964f52fcf83d85b9d0ae0b275c689eef1e5bd");
+  //
+  // Pin re-derived again for the brief-lint-coverage item: file COUNT unchanged (136 -- no file
+  // added/removed) but content changed across 12 files, all `<!-- muster-brief-template -->`/
+  // `<!-- muster-return-template -->` inline-marker ADDITIONS (comments only, no behavior change)
+  // completing criterion 3's lint (src/brief-lint.js) so it scans every real dispatch-brief/
+  // return-contract template, not just the 2 speed-tuning left marked: plugin/agents/
+  // muster-{builder,strategist,investigator,improver,surgeon}.md each gained a marker around
+  // their existing "## Report back" section; muster-reviewer.md around "## Verdict";
+  // plugin/skills/advisor/SKILL.md around "## Request and response shapes"; plugin/commands/
+  // go.md and audit.md around one existing inline return-contract sentence each (the spec-gate's
+  // "Return contract: verdict first ..." and the dimension-sweep's "Each returns findings: ...");
+  // plugin/skills/tournament/SKILL.md around the judge's candidate-scoring shape (return) and the
+  // synthesizer's verbatim dispatched prompt (brief); and plugin/skills/review-gate/SKILL.md +
+  // its sibling fast-path-brief.md each wrapped WHOLE-BODY as one brief-template (the full text
+  // dispatched to the reviewer in each mode -- see review-gate/SKILL.md's own "dispatch with...
+  // this full file" / "...fast-path-brief.md" language). test/brief-lint-coverage.test.js is the
+  // new companion guard: every one of these signals must sit inside a marker, and a synthetic
+  // mutant fixture proves an unmarked one would fail it. orchestrator/SKILL.md and
+  // coordination/SKILL.md were deliberately left untouched (concurrent sibling items editing
+  // those exact files) -- their existing markers already covered what they needed to.
+  assert.equal(hash.digest("hex"), "23a4b272eeca4b7e44d50bfb33bedc6e8d6dd8af9cd36914fb5abe51c2dcd7b2");
 });

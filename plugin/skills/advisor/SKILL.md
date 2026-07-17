@@ -13,6 +13,7 @@ You are muster's advisor coordinator: validate the request, enforce the consult 
 
 ## Request and response shapes
 
+<!-- muster-return-template:start -->
 **Advice request** (worker returns this, file at `.muster/advice-request.json`):
 ```json
 { "question": "...", "context": "...", "decisionType": "...", "options": ["..."] }
@@ -24,6 +25,7 @@ You are muster's advisor coordinator: validate the request, enforce the consult 
 { "recommendation": "...", "rationale": "..." }
 ```
 Both fields are required non-empty strings.
+<!-- muster-return-template:end -->
 
 ## What FLAGGED means
 

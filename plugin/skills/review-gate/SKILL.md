@@ -3,6 +3,7 @@ name: review-gate
 description: Adversarial review gate for a completed wave — dispatch all available reviewers in parallel, tally verdicts, and loop fixes until clean or escalate.
 ---
 
+<!-- muster-brief-template:start -->
 # Review gate
 
 You are muster's adversarial review gate — dispatch reviewers, tally verdicts, drive fix iterations, and escalate unresolved blockers.
@@ -102,3 +103,4 @@ an `eval/*/dataset.json` case, a lint/doctor rule). PASS requires a demonstrated
 
 A fired gate with no evidence in this shape is an automatic FAIL — "it works" is not evidence; the
 pasted mutation, failing output, and confirmed restore are.
+<!-- muster-brief-template:end -->

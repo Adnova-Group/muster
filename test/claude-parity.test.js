@@ -48,5 +48,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // performance-pass edits (go.md/go-backlog.md/orchestrator/review-gate/router SKILL.md -- CLI
   // resolution + gate-cadence fast path, see docs/performance-pass.md). This is the reviewed
   // reconciliation, not the accidental Codex-side drift this guard exists to catch.
-  assert.equal(hash.digest("hex"), "0a5351ad6847ce8dd84260c0126e76f1d6d909fb35cde5dcfa208698a7a97c1d");
+  //
+  // Pin re-derived again for the weight-reduction item (backlog item `muster-weight-reduction`,
+  // see docs/weight-reduction.md): file COUNT unchanged (135 -- no file added/removed under this
+  // surface) but content changed across go.md (step 3's fast-path branch), review-gate/SKILL.md
+  // (step 1's diff-size reviewer-count scaling), and audit.md/diagnose.md/capture.md/plan.md/
+  // plan-backlog.md (the remaining raw-npx entry points now embed the $MUSTER_CLI resolution
+  // snippet, criterion 4). This is the reviewed weight-reduction remediation, not accidental
+  // Codex-side drift.
+  assert.equal(hash.digest("hex"), "6ce002ec53b07c0d5b4d6ad8209ad19e488989f10e0e5ecd272db6621b707aec");
 });

@@ -55,9 +55,19 @@ The invocation text: `$ARGUMENTS`
    `$MUSTER_CLI fast-path "$ARGUMENTS"` → `{ eligible, wordCount, reason }` — a deterministic, PRE-router
    heuristic over the outcome TEXT itself (`src/fast-path.js`'s `scoreOutcomeForFastPath`; no plan exists
    yet, so this scores text, not a decomposed task list). Record `eligible`/`reason` for step 5 below.
-3. Run `$MUSTER_CLI detect .` (pass the explicit path so a drifted cwd doesn't misdetect) and
-   `$MUSTER_CLI capabilities`. Capture both JSON blobs (both branches of step 5 need the capabilities
-   blob either way).
+3. Run `$MUSTER_CLI detect .` (pass the explicit path so a drifted cwd doesn't misdetect). Then capture
+   capabilities, sized to what step 5 will actually use (speed-tuning item, criterion 1 — a fast-path
+   manifest only ever assigns the builder and reviewer roles, so the full inventory is real, measured
+   excess weight there):
+   - **`eligible: true`** — run the compact `$MUSTER_CLI capabilities --roles-only` instead of the full
+     dump — `buildFastPathManifest` only ever reads `roles.implement` and `roles["code-review"]`, so the
+     compact form already covers everything it uses, at a measured ~73% smaller size (see
+     eval/perf/replay-plan-budget.mjs). `/muster:go`'s own step 3 re-captures the FULL inventory on
+     hand-off regardless (its step 3 always runs its own one-shot `capabilities` call before
+     orchestrating), keeping execution fully supplied with whatever role it needs later.
+   - **`eligible: false`** — run the full `$MUSTER_CLI capabilities` as before this item (the router needs
+     the complete skills/provider inventory to search for specialists).
+   Either way, write the result to `.muster/capabilities.json`.
 4. Run `$MUSTER_CLI memory read .muster/memory "<key terms from the outcome>"` and skim any prior entries.
 5. **Assemble the crew**, branching on step 2's fast-path check:
    - **`eligible: true`** — run `$MUSTER_CLI fast-path "$ARGUMENTS" --capabilities .muster/capabilities.json`

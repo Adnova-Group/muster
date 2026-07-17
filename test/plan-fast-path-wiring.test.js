@@ -32,6 +32,15 @@ test("plan.md skips the router skill entirely when the fast-path check scores el
   );
 });
 
+test("plan.md narrows the capabilities capture to --roles-only on the eligible branch (the fast-path manifest only ever reads implement/code-review)", async () => {
+  const plan = await read("plugin/commands/plan.md");
+  assert.match(
+    plan,
+    /\$MUSTER_CLI capabilities --roles-only/,
+    "plan.md's eligible branch must request the compact --roles-only capabilities dump, not the full inventory"
+  );
+});
+
 test("plan.md still invokes the router skill on the not-eligible branch, unchanged (criterion 5: no gate weakens for real multi-task work)", async () => {
   const plan = await read("plugin/commands/plan.md");
   assert.match(plan, /eligible:\s*false/, "plan.md must branch on eligible: false");

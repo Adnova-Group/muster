@@ -60,7 +60,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // Pin re-derived again for the speed-tuning item (backlog item `muster-speed-tuning`): file
   // COUNT unchanged (135) but plan.md now wires in the SAME pre-router fast-path check go.md's
   // step 3 already carried (weight-reduction wired go.md only; speed-tuning extends it to the
-  // approve-first entry point, criterion 1) -- see test/plan-fast-path-wiring.test.js. This pin
-  // is re-derived again after this item's skill-size cuts (criterion 2), below.
-  assert.equal(hash.digest("hex"), "a10d18c418c9d84d62f9a1717fd73a0baeb0f43ebfabcbfec635ef2666f37ba8");
+  // approve-first entry point, criterion 1) -- see test/plan-fast-path-wiring.test.js -- and its
+  // fast-path branch also narrows the capabilities capture to `--roles-only` (a fast-path
+  // manifest only ever reads the implement/code-review roles; measured ~73% smaller than the
+  // full dump, see eval/perf/replay-plan-budget.mjs). This pin is re-derived again after this
+  // item's skill-size cuts (criterion 2), below.
+  assert.equal(hash.digest("hex"), "f2fcb78bf53054795a9b0bc409e07e37bebb8c1ae7272e5e56718a0bf55efca2");
 });

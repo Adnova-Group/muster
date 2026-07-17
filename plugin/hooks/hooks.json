@@ -8,6 +8,9 @@
     ],
     "PreToolUse": [
       { "matcher": "Edit|Write|NotebookEdit|Bash|mcp__.*", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.js\"" } ] }
+    ],
+    "TaskCompleted": [
+      { "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-completed-gate.js\"" } ] }
     ]
   }
 }

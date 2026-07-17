@@ -21,6 +21,7 @@ const KNOWN_HOOK_EVENTS = new Set([
   "SubagentStop",
   "SessionEnd",
   "PreCompact",
+  "TaskCompleted",
 ]);
 
 // Extract the bare filename (e.g. "session-start.js") referenced by a hook

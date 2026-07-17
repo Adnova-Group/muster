@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 136);
+  assert.equal(paths.length, 137);
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -190,5 +190,32 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // `"## Scope fences"`), so it is discarded verbatim by the Codex adaptation in favor of that
   // function's already-existing fixed Codex-specific text -- re-verified by rebuilding with
   // MUSTER_BUILD_FORCE=1 and re-running the full suite green.
-  assert.equal(hash.digest("hex"), "c77aa3443fef7b1000fd584f1a14fe93cefc0e0ee9acad48ee021e7737fab1f1");
+  //
+  // Pin re-derived again for the task-board-authoritative item (docs/strategy/native-delegation.md
+  // backlog item 5, stacked on codex-spawn-agent-dispatch): file COUNT changed 136 -> 137 -- a
+  // genuinely new file, plugin/hooks/task-completed-gate.js (the TaskCompleted gating hook that
+  // ties a native task's completion tick to a recorded review-gate PASS in
+  // .muster/task-board.json), plus its plugin/hooks/hooks.json wiring (a new TaskCompleted entry,
+  // no matcher -- the event fires unconditionally per docs/research/claude-code-cli.md sec 6).
+  // plugin/skills/orchestrator/SKILL.md's content changed twice: its "Task board" section (between
+  // "## Task board" and "## Wave dispatch...") is rewritten to state the native board is now
+  // AUTHORITATIVE (not a duplicate of a STATE-mirrored status list) and documents the new gating
+  // hook's .muster/task-board.json contract; its "Enforcement model: gates vs conventions" section
+  // gains one new paragraph naming this as a second, narrower hook-enforced block on a different
+  // event (TaskCompleted, not PreToolUse) -- the existing "THE ONE HARD DENY" sentence is scoped
+  // explicitly to what the PreToolUse hook itself can deny, still true, not contradicted. Every
+  // load-bearing literal test/harness-delegation.test.js pins is preserved: TaskCreate, TaskUpdate,
+  // the docs/research/reference-harness-design.md citation, and the "STATE alone" no-board
+  // fallback phrase. plugin/commands/go-backlog.md's step 2/3 rewrite removes the STATE-mirrored
+  // pending/running/done per-item listing (replaced with a native-board-authoritative note plus a
+  // durable-ledger-only "## Sprint" section -- heading unchanged, per test/cowork.test.js's
+  // cross-repo convention pin) and ties step 3's "completed" tick to the same review-gate-PASS
+  // ordering the new hook enforces. docs/binding-interface.md's grep-audit table is re-derived to
+  // match (hook 11/19 -> 11/26, total 81 -> 88 -- AskUserQuestion/dispatch/worktree untouched);
+  // docs/architecture.md, website/reference/architecture.md (outside this hashed surface, but kept
+  // in lockstep) now describe four plugin-native hooks instead of three. Suite re-verified green
+  // (node --test --test-concurrency=4, baseline 1908/1skip preserved plus 9 new
+  // test/hook-task-completed-gate.test.js cases and a new VALID_EVENTS entry in
+  // test/hook-registration.test.js for "TaskCompleted").
+  assert.equal(hash.digest("hex"), "94c72661579a2e684ba3d6ca2affe6fe9e131116ff437a2d58f5f9d0fcfc615d");
 });

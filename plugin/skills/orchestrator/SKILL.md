@@ -108,13 +108,38 @@ Every crew brief MUST end with a return contract, so the orchestrator's per-task
 
 ## Task board
 
-Alongside STATE, maintain one harness-visible task per work item via the harness's native
-task-tracking primitive when present -- on Claude Code CLI/Desktop, `TaskCreate`/`TaskUpdate`/
-`TaskList` (see docs/research/reference-harness-design.md's `cc-plan` source): create at dispatch,
-in_progress when the builder launches, completed when its merge lands. The native board is
-authoritative for live progress; STATE stays the glass-box ledger of WHY (dispatch rationale,
-review findings, escalations) -- both maintained, neither substitutes for the other. A harness with
-no task-tracking primitive relies on STATE alone (note it once).
+The native task board is the AUTHORITATIVE live-progress surface for the whole run -- a
+REPLACEMENT for the pending/in_progress/completed tracking that used to be re-listed in STATE
+too, not a second place that same status also lives. Create one harness-visible task per work
+item via the harness's native task-tracking primitive when present -- on Claude Code CLI/Desktop,
+`TaskCreate`/`TaskUpdate`/`TaskList` (see docs/research/reference-harness-design.md's `cc-plan`
+source): create at dispatch (subject: the task/item id plus a short description), `in_progress`
+when the builder launches, `completed` only after its disposition executes AND the review gate
+has recorded PASS for it (below) -- `TaskList` is the live query, and STATE never re-lists that
+same pending/in_progress/completed status per item again.
+
+**TaskCompleted gating hook (`plugin/hooks/task-completed-gate.js`).** The moment a task is
+created, write its native id -> manifest task id mapping to `.muster/task-board.json` with
+`reviewGate: "pending"`; flip that entry's `reviewGate` to `"pass"` the instant review-gate (step
+4c) returns PASS for that task, BEFORE calling `TaskUpdate` to mark it completed. The
+`TaskCompleted` hook reads that same file and DENIES (exit 2) a completion tick for any tracked
+task whose `reviewGate` isn't `"pass"` -- the board's own tick is tied to a real review-gate
+result, not trusted at face value. An escalated task's entry never reaches `"pass"`: leave its
+native task `in_progress` (never attempt to complete it) and record the escalation in STATE
+instead. `MUSTER_TASK_GATE=off` disables the hook; a task this run never wrote to
+`.muster/task-board.json` always completes normally (fail-open -- this hook only ever gates its
+own board entries, never a harness-native task muster didn't create).
+
+STATE is the durable LEDGER, not a second board: dispatch rationale, review findings, decisions,
+and escalations -- never a pending/in_progress/completed list the native board (and
+`.muster/task-board.json`) already carry live. A harness with no task-tracking primitive has no
+board to be authoritative, so it relies on STATE alone (note it once) -- the one case where a
+per-item status line in STATE is not duplication, since nothing else exists to carry it.
+
+Codex has no `TaskCreate`/`TaskUpdate` counterpart on the CLI today (Projects/tasks are
+desktop-only -- docs/research/codex-desktop.md's `cxd-arch` citation); Codex's own
+`collaboration` thread/goal state is the nearest analog, noted here as a future mapping target
+for `.muster/task-board.json`'s semantics, not built out by this item.
 
 ## Wave dispatch: native Workflow vs prose fallback
 
@@ -255,3 +280,9 @@ class -- fail-open on either file's absence, `MUSTER_ACTION_GUARD=warn|off` soft
 `.muster/` and `.claude/` (in-cwd) are always exempt, ahead of the fence check. This is the ONLY tool
 call the `PreToolUse` hook can deny; everything else (dispatch-not-inline, todo-driving, the
 inline-edit border invitation) is SKILL discipline or a warn-only reminder, never a block.
+
+**A second, narrower hook-enforced block, on a different event:** `TaskCompleted`, not
+`PreToolUse`. `plugin/hooks/task-completed-gate.js` denies a native task board completion tick
+for any task this run wrote to `.muster/task-board.json` whose `reviewGate` isn't `"pass"` -- see
+"Task board", above -- fail-open for any task the file doesn't track, `MUSTER_TASK_GATE=off` to
+disable. It never touches tool-call permission, only whether a task-completion event registers.

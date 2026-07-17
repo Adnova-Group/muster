@@ -214,7 +214,13 @@ enforcement-model redesign removed the gate (visibility is now convention, not h
 see `docs/architecture.md`'s "Enforcement model" section), so `plugin/skills/orchestrator/
 SKILL.md`'s "Task board" section carries the discipline on its own: one harness-visible task
 per work item, via the harness's native task-tracking primitive (`TaskCreate`/`TaskUpdate`/
-`TaskList` on Claude Code) when present.
+`TaskList` on Claude Code) when present -- now the AUTHORITATIVE live-progress surface, not a
+duplicate of a status list STATE also keeps (backlog item `task-board-authoritative`). A NEW,
+narrower hook-enforced gate exists for the completion tick specifically: `TaskCompleted`
+(`plugin/hooks/task-completed-gate.js`) denies marking a muster-tracked native task completed
+unless `.muster/task-board.json` records that task's review-gate PASS -- unlike the removed
+todo-gate, this one gates a real review-gate RESULT, not mere board visibility, and only on the
+completion tick, never on dispatch.
 
 **Degradation ladder (no native todo tool).** The STATE.md ledger and git notes need no
 ladder -- they survive unchanged on any harness with a filesystem and git, since neither one
@@ -285,7 +291,7 @@ stale:
 ```
 AskUserQuestion    files=13  mentions=31
 dispatch (Agent/Task tool)  files=5  mentions=16
-hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=19
+hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=26
 worktree   files=5  mentions=15
 ```
 
@@ -294,7 +300,16 @@ dispatch: native Workflow vs prose fallback" section added one dispatch mention 
 tool calls, one per task) and one worktree mention (the per-task git worktree parallel-
 isolation rule) -- file counts unchanged (still the same 5 files each), only mentions grew.
 
-Every one of those 81 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the task-board-authoritative item: `plugin/skills/orchestrator/
+SKILL.md`'s "Task board" section (naming the new `TaskCompleted` gating hook,
+`plugin/hooks/task-completed-gate.js`) and its "Enforcement model" section (naming that same
+hook as a second, narrower hook-enforced block) both gained new `hook`-word mentions;
+`plugin/commands/go-backlog.md`'s step 2/3 rewrite (native board authoritative, STATE
+de-duplicated) added none of its own -- file counts unchanged (still the same 11 files), hook
+mentions grew 19 -> 26 (+7: 6 in orchestrator/SKILL.md, 1 in go-backlog.md's cross-reference to
+the gating hook). AskUserQuestion, dispatch, and worktree counts are untouched by this item.
+
+Every one of those 88 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

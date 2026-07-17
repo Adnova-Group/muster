@@ -73,6 +73,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // router/SKILL.md's prose was cut 40.95% (7881 -> 4654 chars) -- the surface taxonomy enum,
   // the crew-shape model field, and the "For EVERY plan task, consult AvailableCapabilities.
   // skills" anchor build-codex.mjs's Codex-side rewrite depends on are all preserved verbatim.
-  // This pin is re-derived again after this item's remaining skill-size cuts, below.
-  assert.equal(hash.digest("hex"), "f8c84bd2575e5ed4ac4316055fcbbd6d76b0d59d9dd42a01c869ab1a2b53fcfa");
+  // advisor/SKILL.md's prose was cut 40.5% (6427 -> 3823 chars); the dev-tree "node src/cli.js
+  // advise" alternative line was folded into the resolved $MUSTER_CLI form and the
+  // budget-exhausted re-dispatch line merged into step 6, dropping 2 "dispatch (Agent/Task
+  // tool)" grep-audit mention lines -- docs/binding-interface.md's audit table and 94->92
+  // total re-derived to match. This pin is re-derived again after this item's remaining
+  // skill-size cuts, below.
+  assert.equal(hash.digest("hex"), "741d30811d435729d27a302badb08d86fc378124f665c7fac3c99c9998657430");
 });

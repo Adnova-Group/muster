@@ -5,11 +5,11 @@ description: Worker-signaled advice escalation -- a dispatched worker that hits 
 
 # Advisor
 
-You are muster's advisor coordinator. You service worker-signaled advice escalations: validate the request, enforce the consult budget, dispatch a native advisor agent, record the consult in STATE, and return the advice to the worker. The advisor informs; the worker decides.
+You are muster's advisor coordinator: validate the request, enforce the consult budget, dispatch a native advisor agent, record the consult in STATE, and return the advice to the worker. The advisor informs; the worker decides.
 
-**NATIVE only:** every advisor dispatch uses the Claude Code Agent tool. No OpenRouter, no external server tools. No human-in-loop step; the flow is fully autonomous through every branch (including budget-exhausted -- see step 5).
+**NATIVE only:** every dispatch uses the Claude Code Agent tool — no external server tools, no human-in-loop step; fully autonomous through every branch, including budget-exhausted (step 5).
 
-**Worker-signaled (dynamic):** this flow is triggered by a worker returning a structured advice-request instead of a final result. The same request/response shape also supports orchestrator-inserted checkpoints (e.g. pre-wave sanity checks) where the orchestrator itself constructs and services the request without waiting for a worker signal.
+**Worker-signaled (dynamic):** triggered by a worker returning a structured advice-request instead of a final result. The same shape also supports an orchestrator-inserted checkpoint that services the request directly, without a worker signal.
 
 ## Request and response shapes
 
@@ -17,7 +17,7 @@ You are muster's advisor coordinator. You service worker-signaled advice escalat
 ```json
 { "question": "...", "context": "...", "decisionType": "...", "options": ["..."] }
 ```
-`question` and `context` and `decisionType` are required. `options` is optional.
+`question`/`context`/`decisionType` are required; `options` is optional.
 
 **Advice response** (advisor agent returns this) — respond with JSON matching this shape:
 ```json
@@ -27,53 +27,32 @@ Both fields are required non-empty strings.
 
 ## What FLAGGED means
 
-A FLAGGED decision is one where the worker cannot proceed without a judgment call that is outside its task scope -- for example, a security tradeoff that affects other teams, an architectural constraint that the task brief does not resolve, or a build-vs-buy call where the options are genuinely open. Mechanical choices (which variable name, which library version within a pinned range) are NOT flagged -- the worker handles those inline.
+A FLAGGED decision needs a judgment call outside the worker's scope — a cross-team security tradeoff,
+an unresolved architectural constraint, an open build-vs-buy call. Mechanical choices (a variable
+name, a pinned-range library version) are NOT flagged. The brief must frame FLAGGED decisions, or a
+worker guesses instead of escalating.
 
-Workers must be briefed to recognize FLAGGED decisions. A worker that is not told to look for them will not produce advice-requests; it will guess. The orchestrator is responsible for including the FLAGGED framing in the worker's brief.
-
-1. **Receive the escalation.** The worker returns a structured advice-request instead of a final result. The orchestrator detects this (the response contains `question`, `context`, `decisionType` and is not a final deliverable) and routes to this skill. Write to STATE: `advisor-escalation: <decisionType> at iteration <n>`.
-
-2. **Validate the request.** Run:
-   ```
-   npx -y @adnova-group/muster advise .muster/advice-request.json
-   ```
-   (or `node src/cli.js advise ...` in the development tree). This validates the request shape and returns `{ advisorModel, request }` -- the model to dispatch and the validated request. If validation fails (non-zero exit), append `advisor-validate-failed` to STATE and treat the worker as though it returned a normal (best-effort) result; proceed without advice.
-
-3. **Check the consult budget.** Track consult count for the current task in STATE (`advisor-consults[<taskId>]: <n>`). Call `consultBudget({ consults: n, maxConsults })` (from `src/advisor.js`). The CLI `advise` command does NOT check the budget -- the orchestrator MUST call `consultBudget` independently before dispatching; `advisorModel` in the CLI output only indicates which model to use, not that budget is available.
-   - Default cap: **3** (`MUSTER_ADVISOR_MAX_CONSULTS` env, same guard as `maxConsultsLimit()` in `src/advisor.js`).
-   - If `consult: false` (budget exhausted): append `advisor-budget-exhausted: proceeding best-effort` to STATE and skip to step 5.
-   - If `consult: true`: continue to step 4.
-
-4. **Dispatch the advisor agent (NATIVE).** Dispatch a subagent via the Agent tool on `advisorModel` (from the `muster advise` output; `fable` -> `opus` by default, `fable` when `MUSTER_ENABLE_FABLE=1`). Pass the full request (`question`, `context`, `decisionType`, `options`) as the prompt. The advisor agent must return a response that fits the advice-response shape (`recommendation` + `rationale`). Validate the response shape; if invalid, treat as budget-exhausted (log to STATE, proceed best-effort).
-
-5. **Append to STATE (glass-box ledger).** Always append one ledger line per consult attempt:
-   ```
-   advisor-consult #<n>: decisionType=<type> model=<advisorModel>
-     question: <first 80 chars of question>
-     recommendation: <first 120 chars of recommendation>
-     rationale: <first 80 chars of rationale>
-   ```
-   On budget-exhausted: append `advisor-budget-exhausted: worker proceeds best-effort` instead. No human escalation; autonomous-first.
-
-6. **Feed advice back to the worker.** Re-dispatch the worker via the Agent tool with its original brief PLUS an appended `ADVISOR GUIDANCE` block:
-   ```
-   ## ADVISOR GUIDANCE (consult #<n>)
-   Question: <question>
-   Recommendation: <recommendation>
-   Rationale: <rationale>
-
-   You received this advice from an advisor agent. It is guidance, not an instruction.
-   You own the final decision. Apply the recommendation where it fits your task; override
-   it where your task brief or the success criteria give you stronger grounds to do so.
-   Record your decision and reasoning in your output. If the guidance still leaves you
-   unsure, say so in your output rather than guessing.
-   ```
-   The worker continues from where it left off and produces a final result. The orchestrator receives that result and proceeds normally (back to the review gate).
-
-   On budget-exhausted: re-dispatch the worker with `ADVISOR GUIDANCE: budget exhausted -- proceed best-effort with the information you have.` No further consult attempts for this task.
+1. **Receive the escalation.** The response carries `question`/`context`/`decisionType`, not a
+   deliverable. Write `advisor-escalation: <decisionType> at iteration <n>` to STATE.
+2. **Validate the request.** Run `$MUSTER_CLI advise .muster/advice-request.json` → `{ advisorModel,
+   request }`. On failure (non-zero exit), append `advisor-validate-failed` to STATE, proceed
+   best-effort, no advice.
+3. **Check the consult budget.** Track consults per task in STATE (`advisor-consults[<taskId>]: <n>`);
+   call `consultBudget({ consults: n, maxConsults })` (`src/advisor.js`) — the CLI does NOT check
+   budget, the orchestrator MUST. Default cap **3** (`MUSTER_ADVISOR_MAX_CONSULTS` env). Exhausted
+   (`consult: false`) → append `advisor-budget-exhausted: proceeding best-effort`, skip to step 5.
+4. **Dispatch the advisor agent (NATIVE).** Via the Agent tool on `advisorModel` (`fable` -> `opus`
+   default), the full request as the prompt; an invalid response counts as budget-exhausted.
+5. **Append to STATE.** One glass-box line per attempt: `advisor-consult #<n>: decisionType=<type>
+   model=<advisorModel>` plus truncated question/recommendation/rationale; exhausted appends
+   `advisor-budget-exhausted: worker proceeds best-effort` instead.
+6. **Feed advice back to the worker.** Re-dispatch via the Agent tool with the original brief plus an
+   `ADVISOR GUIDANCE` block (question/recommendation/rationale) — guidance the worker may override on
+   stronger grounds, or say so if still unsure rather than guess. It continues and produces a final
+   result; the orchestrator proceeds to the review gate. Exhausted: guidance reads "budget exhausted --
+   proceed best-effort," no further consult attempts.
 
 ## Consult-per-task tracking
 
-Track consults in STATE under the task id, not globally. A task that hits multiple FLAGGED decisions in sequence uses the budget independently of other tasks in the same run. The cap is per-task: `advisor-consults[<taskId>]`.
-
-STATE key pattern: `advisor-consults[<taskId>]: <n>` (append each time a consult resolves, increment before dispatching the next one so the cap is enforced before the dispatch, not after).
+Consults track per task id, not globally: `advisor-consults[<taskId>]: <n>`, incremented before the
+next dispatch so the cap is enforced before dispatch, not after.

@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 136);
+  assert.equal(paths.length, 137);
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -138,5 +138,108 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // All three content changes above are reviewed, not accidental Codex-side drift. The four PRs
   // (#56 alias-retirement, #57 test-only, #58 cowork-probe, #59 fast-path) were merged together;
   // the pinned sha below is re-derived once, after all four land, over the combined surface.
-  assert.equal(hash.digest("hex"), "62867f9bd6f0f3b4b51cc429262964f52fcf83d85b9d0ae0b275c689eef1e5bd");
+  //
+  // Pin re-derived again for the workflow-tool-delegation item (docs/native-workflow-dispatch.md):
+  // file COUNT unchanged (136) -- only plugin/skills/orchestrator/SKILL.md's content changed. It
+  // gained one new "## Wave dispatch: native Workflow vs prose fallback" section (placed after
+  // "## Task board", before "## Scope fences" -- disturbing neither the numbered step list nor any
+  // other named section) plus a one-clause pointer added to step 4a's dispatch line. The new
+  // section documents the capability check (`$MUSTER_CLI wave-dispatch`, src/wave-dispatch.js,
+  // fixture-driven TDD in test/wave-dispatch.test.js + test/cli-wire-perf.test.js) that lets the
+  // orchestrator RIDE Claude Code's native agent-teams `Workflow` tool for wave fan-out when
+  // declared available, with today's prose Agent-tool dispatch loop kept byte-identical as the
+  // unconditional floor -- AUGMENT, NOT SUPERSEDE. build-codex.mjs's two indexOf-based Codex-
+  // adaptation anchors in this file ("Provider kind"/"Subagent failure", "## Enforcement model:
+  // gates vs conventions") are untouched and re-verified (scripts/build-codex.mjs still runs
+  // clean); every corpus-contradiction.test.js term-registry pin against this file (surface
+  // taxonomy, gate names, the fix-iteration cap) still matches byte-for-byte.
+  //
+  // Pin re-derived once more, same item, after a review-gate fix loop: the new section's citation
+  // of docs/research/claude-code-cli.md was corrected (the Workflow/ListAgents/SendMessage tool
+  // names are documented in sec 1's binary-tools evidence + sec 11's `claude agents` subcommand,
+  // not secs 5/10 as first drafted), the literal phrase "Claude Code CLI" was reworded out of the
+  // section's body (avoiding build-codex.mjs's blanket "Claude Code CLI"->"Codex CLI"
+  // translateCodexProse swap, which would otherwise fabricate a false "Codex CLI's deterministic
+  // fan-out tool" claim in the generated Codex skill -- build-codex.mjs itself gained a new
+  // wholesale Codex-specific body replacement for this section, mirroring its existing provider/
+  // model and enforcement-model wholesale replaces, verified by rebuilding with
+  // MUSTER_BUILD_FORCE=1 and reading the generated .agents/plugins output directly), and a new
+  // "Parallel isolation is not relaxed" clause was added addressing whether the native Workflow
+  // tool's per-step isolation is confirmed equivalent to the Agent tool's `isolation: "worktree"`
+  // (it is not, by this item's own research -- a multi-file-writing wave stays on the prose path
+  // regardless of declared mode until that gap closes). docs/binding-interface.md's grep-audit
+  // table was also re-derived (dispatch 15->16, worktree 14->15, total 79->81) since the new
+  // section's prose added one more `Agent` tool mention and one more `worktree` mention.
+  //
+  // Pin re-derived again for the codex-spawn-agent-dispatch item (stacked on
+  // workflow-tool-delegation, docs/strategy/native-delegation.md backlog item 4): file COUNT
+  // unchanged (136) -- only plugin/skills/orchestrator/SKILL.md's content changed again. It
+  // gained one new "### Codex-native dispatch: spawn_agent" subsection, placed directly after
+  // the "Wave dispatch: native Workflow vs prose fallback" section's worked-example pointer and
+  // before "## Scope fences" -- disturbing neither the numbered step list, the native-vs-prose
+  // bullets above it, nor any other named section. The new subsection documents that Codex rides
+  // its OWN native primitive (`collaboration.spawn_agent`/`wait_agent`/`list_agents`,
+  // `fork_turns: "none"`, `agent_type`) rather than a prose-loop substitute for the Claude-only
+  // `Workflow` tool, names `src/wave-dispatch.js`'s new `resolveCodexWaveDispatch` (spawn_agent
+  // vs sequential-inline, gated on Codex's own `features.multi_agent`, default-on -- inverse of
+  // agent-teams' default-off) and `assertCodexSpawnAgentAccepted` (the fail-closed guard: a
+  // rejected profile throws a registration diagnostic naming the `agent_type`/task rather than
+  // ever silently falling back to a generic agent), fixture-driven TDD in
+  // test/codex-wave-dispatch.test.js. This whole subsection falls inside build-codex.mjs's
+  // existing wholesale-replace span for the Wave-dispatch section (`waveDispatchStart` ..
+  // `"## Scope fences"`), so it is discarded verbatim by the Codex adaptation in favor of that
+  // function's already-existing fixed Codex-specific text -- re-verified by rebuilding with
+  // MUSTER_BUILD_FORCE=1 and re-running the full suite green.
+  //
+  // Pin re-derived again for the task-board-authoritative item (docs/strategy/native-delegation.md
+  // backlog item 5, stacked on codex-spawn-agent-dispatch): file COUNT changed 136 -> 137 -- a
+  // genuinely new file, plugin/hooks/task-completed-gate.js (the TaskCompleted gating hook that
+  // ties a native task's completion tick to a recorded review-gate PASS in
+  // .muster/task-board.json), plus its plugin/hooks/hooks.json wiring (a new TaskCompleted entry,
+  // no matcher -- the event fires unconditionally per docs/research/claude-code-cli.md sec 6).
+  // plugin/skills/orchestrator/SKILL.md's content changed twice: its "Task board" section (between
+  // "## Task board" and "## Wave dispatch...") is rewritten to state the native board is now
+  // AUTHORITATIVE (not a duplicate of a STATE-mirrored status list) and documents the new gating
+  // hook's .muster/task-board.json contract; its "Enforcement model: gates vs conventions" section
+  // gains one new paragraph naming this as a second, narrower hook-enforced block on a different
+  // event (TaskCompleted, not PreToolUse) -- the existing "THE ONE HARD DENY" sentence is scoped
+  // explicitly to what the PreToolUse hook itself can deny, still true, not contradicted. Every
+  // load-bearing literal test/harness-delegation.test.js pins is preserved: TaskCreate, TaskUpdate,
+  // the docs/research/reference-harness-design.md citation, and the "STATE alone" no-board
+  // fallback phrase. plugin/commands/go-backlog.md's step 2/3 rewrite removes the STATE-mirrored
+  // pending/running/done per-item listing (replaced with a native-board-authoritative note plus a
+  // durable-ledger-only "## Sprint" section -- heading unchanged, per test/cowork.test.js's
+  // cross-repo convention pin) and ties step 3's "completed" tick to the same review-gate-PASS
+  // ordering the new hook enforces. docs/binding-interface.md's grep-audit table is re-derived to
+  // match (hook 11/19 -> 11/26, total 81 -> 88 -- AskUserQuestion/dispatch/worktree untouched);
+  // docs/architecture.md, website/reference/architecture.md (outside this hashed surface, but kept
+  // in lockstep) now describe four plugin-native hooks instead of three. Suite re-verified green
+  // (node --test --test-concurrency=4, baseline 1908/1skip preserved plus 9 new
+  // test/hook-task-completed-gate.test.js cases and a new VALID_EVENTS entry in
+  // test/hook-registration.test.js for "TaskCompleted").
+  //
+  // Pin re-derived again for the worktree-isolation-native item (docs/strategy/native-delegation.md
+  // backlog item 10, stacked on task-board-authoritative -- the final orchestrator-SKILL editor in
+  // this chain): file COUNT unchanged (137) -- only plugin/skills/orchestrator/SKILL.md's content
+  // changed again. It gained one new "### Worktree isolation per harness + base-SHA receipts"
+  // subsection, placed directly after "Codex-native dispatch: spawn_agent" and before
+  // "## Scope fences" -- disturbing neither the numbered step list, the wave-dispatch bullets
+  // above it, nor any other named section. The new subsection names each harness's native
+  // worktree mechanism concretely (Claude Code CLI's already-landed `isolation: "worktree"` Agent
+  // tool parameter; Claude Code Desktop's automatic per-session worktree under
+  // `<root>/.claude/worktrees/`, docs/research/claude-code-desktop.md sec 2.2; Hermes's
+  // `hermes -w`/kanban worktree workspaces, docs/research/hermes.md sec 6; Codex's receipts-only
+  // floor -- no cwd field on subagent dispatch at all, docs/research/codex-cli.md sec 6) and the
+  // one base-SHA provenance receipt every harness records alike, regardless of which mechanism (or
+  // none) isolated the work. Names `src/wave-dispatch.js`'s new `resolveWorktreeIsolation`
+  // (per-harness mechanism selection, fails loud on an unrecognized/missing harness) and
+  // `buildBaseShaReceipt` (the receipt builder, fails loud on a missing/non-hex baseSha), both
+  // wired to a new `muster worktree-isolation --harness <name>` CLI subcommand (`src/cli.js`) --
+  // fixture-driven TDD in test/worktree-isolation.test.js (13 cases, including one built against a
+  // REAL `git rev-parse HEAD` from this checkout, not a fixture string) plus 7 new CLI-wire cases
+  // in test/cli-wire-perf.test.js. `docs/binding-interface.md`'s grep-audit table is re-derived
+  // (dispatch 16/17, worktree 15/22, total 88 -> 96 -- AskUserQuestion/hook untouched);
+  // `website/reference/commands.md` gained one new `worktree-isolation` row so
+  // test/website-docs.test.js's usage-string drift check stays green.
+  assert.equal(hash.digest("hex"), "07f5dda08bd69287dc7fc18dabdf4dd21e45bab9a6aea9fcec80c209fbbb6681");
 });

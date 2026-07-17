@@ -18,6 +18,7 @@ const VALID_EVENTS = new Set([
   "SessionEnd",
   "PreCompact",
   "Notification",
+  "TaskCompleted",
 ]);
 
 // Parse ${CLAUDE_PLUGIN_ROOT} as the plugin/ directory.

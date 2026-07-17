@@ -168,6 +168,104 @@ test("cli wire: gate-cadence on a manifest with no 'plan' array exits 1", async 
 });
 
 // ---------------------------------------------------------------------------
+// wave-dispatch (workflow-tool-delegation item): capability check + fallback-selection
+// for the orchestrator's wave dispatch mechanism (native Workflow tool vs prose loop).
+// `--agent-teams`/`--no-agent-teams` is the orchestrator's own self-observed signal;
+// MUSTER_AGENT_TEAMS is the declared env-var fallback -- see src/wave-dispatch.js.
+// ---------------------------------------------------------------------------
+
+test("cli wire: wave-dispatch with no declaration at all defaults to the prose floor", async () => {
+  const env = { ...process.env };
+  delete env.MUSTER_AGENT_TEAMS;
+  const { stdout } = await run(["wave-dispatch"], { env });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mode, "prose");
+  assert.equal(parsed.agentTeams, false);
+});
+
+test("cli wire: wave-dispatch --agent-teams selects the native Workflow path", async () => {
+  const { stdout } = await run(["wave-dispatch", "--agent-teams"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mode, "native");
+  assert.equal(parsed.agentTeams, true);
+});
+
+test("cli wire: wave-dispatch --no-agent-teams stays on the prose floor even with MUSTER_AGENT_TEAMS=1 set (self-observation wins)", async () => {
+  const env = { ...process.env, MUSTER_AGENT_TEAMS: "1" };
+  const { stdout } = await run(["wave-dispatch", "--no-agent-teams"], { env });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mode, "prose");
+});
+
+test("cli wire: wave-dispatch with MUSTER_AGENT_TEAMS=1 and no flag declares native via the env var", async () => {
+  const env = { ...process.env, MUSTER_AGENT_TEAMS: "1" };
+  const { stdout } = await run(["wave-dispatch"], { env });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mode, "native");
+});
+
+test("cli wire: wave-dispatch with MUSTER_AGENT_TEAMS=0/false and no flag stays on the prose floor (MCPB-boolean-safe)", async () => {
+  for (const value of ["0", "false", ""]) {
+    const env = { ...process.env, MUSTER_AGENT_TEAMS: value };
+    const { stdout } = await run(["wave-dispatch"], { env });
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.mode, "prose", `MUSTER_AGENT_TEAMS="${value}" must not declare native`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// worktree-isolation (worktree-isolation-native item): per-harness native worktree
+// isolation mechanism selection -- a declared `--harness` selection, never auto-probed.
+// See src/wave-dispatch.js's resolveWorktreeIsolation.
+// ---------------------------------------------------------------------------
+
+test("cli wire: worktree-isolation --harness claude-code selects the Agent tool's isolation param", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "claude-code"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mechanism, "agent-tool-isolation");
+  assert.equal(parsed.receiptRequired, true);
+});
+
+test("cli wire: worktree-isolation --harness claude-desktop selects the automatic worktree", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "claude-desktop"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mechanism, "desktop-auto-worktree");
+});
+
+test("cli wire: worktree-isolation --harness hermes selects hermes -w / kanban worktree workspaces", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "hermes"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mechanism, "hermes-w");
+});
+
+test("cli wire: worktree-isolation --harness codex selects the receipts-only floor (no native mechanism)", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "codex"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.mechanism, "receipts-only");
+  assert.equal(parsed.receiptRequired, true);
+});
+
+test("cli wire: worktree-isolation with no --harness fails loud (exit 1), never guesses a mechanism", async () => {
+  try {
+    await run(["worktree-isolation"]);
+    assert.fail("expected worktree-isolation with no --harness to exit non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr, /harness is required/);
+  }
+});
+
+test("cli wire: worktree-isolation with an unrecognized --harness fails loud (exit 1)", async () => {
+  try {
+    await run(["worktree-isolation", "--harness", "cowork"]);
+    assert.fail("expected worktree-isolation --harness cowork to exit non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr, /unrecognized harness "cowork"/);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // review-brief (fast-path-token-gap item, lever 1): a code-backed CLI wrapper over
 // src/review-brief.js's lightBriefEligible/detectReviewTriggers, the SAME "code over model"
 // decision pattern gate-cadence/citation-check/fast-path already established for a

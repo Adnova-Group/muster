@@ -1,9 +1,9 @@
 ## Sprint
 
-- retry: pending -> running -> done (branch sprint/retry, PR #101)
-- logging: pending -> running -> done (branch sprint/logging, PR #102)
-- metrics: pending -> running -> escalated (spec-gate FAIL x2; branch sprint/metrics kept for inspection)
-- docs: pending -> running -> done (branch sprint/docs, PR #103)
+- retry: task completed (review-gate pass; branch sprint/retry, PR #101)
+- logging: task completed (review-gate pass; branch sprint/logging, PR #102)
+- metrics: task in_progress -> escalated (spec-gate FAIL x2; branch sprint/metrics kept for inspection)
+- docs: task completed (review-gate pass; branch sprint/docs, PR #103)
 
 ## Batch report
 

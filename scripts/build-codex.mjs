@@ -153,6 +153,23 @@ function adaptOrchestratorForCodex(text) {
   );
   result = result.slice(0, providerStart) + compactProvider + result.slice(failureStart);
   result = result.replace("Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.", "Iron-rule reminder: Codex hooks diagnose likely violations, while the orchestrator, named profiles, ownership receipts, and isolated worktrees enforce dispatch-not-inline.");
+  // workflow-tool-delegation item: the "Wave dispatch: native Workflow vs prose fallback"
+  // section describes a Claude Code CLI-only capability (the agent-teams `Workflow` tool)
+  // that Codex has no equivalent of. The generic translateCodexProse/"Agent tool"->"Codex
+  // subagent dispatcher" word-swaps upstream of this function cannot safely translate that
+  // section's meaning (a blind swap would fabricate a "Codex CLI's deterministic fan-out
+  // tool" that does not exist) -- so, same as the provider/model and enforcement-model
+  // sections above, replace the section's BODY wholesale with fixed, accurate Codex text
+  // instead of relying on word-level substitution. The HEADING itself is left byte-identical
+  // so step 4a's "see \"Wave dispatch: native Workflow vs prose fallback\" below" pointer
+  // (untouched, upstream of this function) still names a real heading in the Codex output.
+  const waveDispatchHeading = "## Wave dispatch: native Workflow vs prose fallback";
+  const waveDispatchStart = result.indexOf(waveDispatchHeading);
+  const waveDispatchEnd = result.indexOf("## Scope fences", waveDispatchStart);
+  if (waveDispatchStart < 0 || waveDispatchEnd < 0) throw new Error("orchestrator wave-dispatch section not found");
+  result = result.slice(0, waveDispatchStart)
+    + `${waveDispatchHeading}\n\nCodex has no counterpart to Claude Code CLI's agent-teams \`Workflow\` tool: wave dispatch always rides the \`collaboration.spawn_agent\`/\`wait_agent\`/\`list_agents\` protocol bound in the Provider and model policy above, never a deterministic native fan-out tool. \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs wave-dispatch\` always resolves \`mode: "prose"\` on this harness (there is no Codex-side \`--agent-teams\`/\`MUSTER_AGENT_TEAMS\` declaration path); dispatch every wave task through \`collaboration.spawn_agent\` exactly as described above.\n\n`
+    + result.slice(waveDispatchEnd);
   const enforcement = result.indexOf("## Enforcement model: gates vs conventions");
   if (enforcement < 0) throw new Error("orchestrator enforcement section not found");
   return result.slice(0, enforcement) + `## Codex enforcement model\n\n- **Mechanically validated:** manifest schema, dependency waves, capability resolution, worktree/base-SHA receipts, file ownership checks, tests, reviews, commits, and terminal receipts.\n- **Hook diagnostics:** session/prompt context, supported action-class warnings, a warn-only border-invitation drift reminder, stale-marker diagnostics, and subagent start/stop context after one-time hook trust.\n- **Advisory:** todo-before-spawn and universal dispatch-not-inline blocking. Current Codex hooks cannot reliably intercept every subagent or unified-shell action, so do not claim these are hard gates.\n- **Required invariant:** every write-capable wave runs in explicitly created isolated worktrees and is verified from repository state after the barrier.\n\n${agentWatchProtocol}`;

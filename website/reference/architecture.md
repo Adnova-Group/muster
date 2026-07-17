@@ -88,9 +88,9 @@ Driving Muster remotely uses Claude Code's own features, not a transport Muster 
 
 ## Session hooks
 
-Muster ships three plugin-native hooks in `plugin/hooks/`. All are declared in `plugin/hooks/hooks.json`, activate when Muster is enabled, and are removed when Muster is disabled. None write to your `~/.claude` files. Every hook is fail-safe: any error returns a minimal valid result and exits cleanly.
+Muster ships four plugin-native hooks in `plugin/hooks/`. All are declared in `plugin/hooks/hooks.json`, activate when Muster is enabled, and are removed when Muster is disabled. None write to your `~/.claude` files. Every hook is fail-safe: any error returns a minimal valid result and exits cleanly.
 
-Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits: the action-class fence below is the only hard deny left anywhere in this stack. Everything else is a single warn-only "border invitation" (guidance.js: `CREW_INVITATION`) that sells the value of a crew run -- parallel dispatch, adversarial review, a receipts trail -- rather than commanding, once per crossing. Review gates remain Muster's actual quality enforcement.
+Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits: the action-class fence below is the only DENY the `PreToolUse` hook can emit. A second, narrower hook-enforced block lives on `TaskCompleted` (below), gating the native task board's own completed tick instead of a tool call. Everything else is a single warn-only "border invitation" (guidance.js: `CREW_INVITATION`) that sells the value of a crew run -- parallel dispatch, adversarial review, a receipts trail -- rather than commanding, once per crossing. Review gates remain Muster's actual quality enforcement.
 
 **`SessionStart`** (`session-start.js`) injects a one-line pointer ("muster available; `/muster:plan` for orchestration-scale work") at the start of every session -- a Claude Code plugin cannot auto-load a `CLAUDE.md`, but a `SessionStart` hook can return `additionalContext`, which Claude Code prepends to the session. On a genuinely fresh session start it also clears any stale `.muster/wave-active`/`run-active` marker, the cumulative cross-turn drift counter, and the once-per-crossing directive-nudge marker, so a new session never inherits a crashed run's state; `/compact`/resume (mid-session) leave all of that intact.
 
@@ -103,6 +103,8 @@ Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-re
 **Border invitation:** independent of the fence, an Edit/Write/NotebookEdit with a resolved target, or a high-confidence Bash file write, feeds a cumulative cross-turn distinct-file counter whenever no Muster run is active. Crossing `MUSTER_INLINE_SCALE` (default 3) for the first time this crossing window, with the shared cooldown below not active, warns once (never a deny) with the value-toned copy; further files in the same crossing stay silent. A live Muster run resets the counter instead of recording (that work is tracked/dispatched, not drift).
 
 **Invite cooldown (hysteresis):** a crossing re-arming only makes the next touch eligible to invite -- a shared, session-keyed cooldown (`MUSTER_INVITE_COOLDOWN_MS`, default 15 minutes) started by the last actual invite from either signal still gates whether that eligible touch is spoken. This absorbs a noisy border -- a rapid Muster-run restart, or a drift counter oscillating around the threshold -- so it cannot flap a repeat invite seconds apart, while a genuinely long-lived session (crossings spaced hours or days apart) still gets one invite per crossing.
+
+**`TaskCompleted`** (`task-completed-gate.js`) gates the native task board's own completion tick: the orchestrator writes `.muster/task-board.json` (one entry per native task Muster created) at `TaskCreate` time and flips it to `reviewGate: "pass"` only once review-gate actually passes that task, before ever marking it completed via `TaskUpdate`. This hook denies (exit 2) a completion attempt on a tracked task with no recorded PASS, and fails open for anything the map doesn't track. `MUSTER_TASK_GATE=off` disables it.
 
 ## Vendoring
 

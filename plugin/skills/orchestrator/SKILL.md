@@ -44,7 +44,10 @@ doing the work.
 4. For each wave, in order:
    a. Write the wave id to `.muster/wave-active` before dispatching any task (glass-box bookkeeping
       only, not hook-enforced -- see "SKILL discipline", above; `.muster/run-active` is a separate
-      verb-level marker). Dispatch every task in the wave **concurrently** (the harness Agent tool):
+      verb-level marker). Dispatch every task in the wave **concurrently** -- see "Wave dispatch:
+      native Workflow vs prose fallback" below for whether this rides the native `Workflow` tool or
+      the harness `Agent` tool prose loop (the mechanics below describe the prose loop; both paths
+      keep every rule below unchanged):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill (N competing agents, a judge scores each
         and produces a debate fusion map, then `muster fuse` decides).
@@ -105,13 +108,137 @@ Every crew brief MUST end with a return contract, so the orchestrator's per-task
 
 ## Task board
 
-Alongside STATE, maintain one harness-visible task per work item via the harness's native
-task-tracking primitive when present -- on Claude Code CLI/Desktop, `TaskCreate`/`TaskUpdate`/
-`TaskList` (see docs/research/reference-harness-design.md's `cc-plan` source): create at dispatch,
-in_progress when the builder launches, completed when its merge lands. The native board is
-authoritative for live progress; STATE stays the glass-box ledger of WHY (dispatch rationale,
-review findings, escalations) -- both maintained, neither substitutes for the other. A harness with
-no task-tracking primitive relies on STATE alone (note it once).
+The native task board is the AUTHORITATIVE live-progress surface for the whole run -- a
+REPLACEMENT for the pending/in_progress/completed tracking that used to be re-listed in STATE
+too, not a second place that same status also lives. Create one harness-visible task per work
+item via the harness's native task-tracking primitive when present -- on Claude Code CLI/Desktop,
+`TaskCreate`/`TaskUpdate`/`TaskList` (see docs/research/reference-harness-design.md's `cc-plan`
+source): create at dispatch (subject: the task/item id plus a short description), `in_progress`
+when the builder launches, `completed` only after its disposition executes AND the review gate
+has recorded PASS for it (below) -- `TaskList` is the live query, and STATE never re-lists that
+same pending/in_progress/completed status per item again.
+
+**TaskCompleted gating hook (`plugin/hooks/task-completed-gate.js`).** The moment a task is
+created, write its native id -> manifest task id mapping to `.muster/task-board.json` with
+`reviewGate: "pending"`; flip that entry's `reviewGate` to `"pass"` the instant review-gate (step
+4c) returns PASS for that task, BEFORE calling `TaskUpdate` to mark it completed. The
+`TaskCompleted` hook reads that same file and DENIES (exit 2) a completion tick for any tracked
+task whose `reviewGate` isn't `"pass"` -- the board's own tick is tied to a real review-gate
+result, not trusted at face value. An escalated task's entry never reaches `"pass"`: leave its
+native task `in_progress` (never attempt to complete it) and record the escalation in STATE
+instead. `MUSTER_TASK_GATE=off` disables the hook; a task this run never wrote to
+`.muster/task-board.json` always completes normally (fail-open -- this hook only ever gates its
+own board entries, never a harness-native task muster didn't create).
+
+STATE is the durable LEDGER, not a second board: dispatch rationale, review findings, decisions,
+and escalations -- never a pending/in_progress/completed list the native board (and
+`.muster/task-board.json`) already carry live. A harness with no task-tracking primitive has no
+board to be authoritative, so it relies on STATE alone (note it once) -- the one case where a
+per-item status line in STATE is not duplication, since nothing else exists to carry it.
+
+Codex has no `TaskCreate`/`TaskUpdate` counterpart on the CLI today (Projects/tasks are
+desktop-only -- docs/research/codex-desktop.md's `cxd-arch` citation); Codex's own
+`collaboration` thread/goal state is the nearest analog, noted here as a future mapping target
+for `.muster/task-board.json`'s semantics, not built out by this item.
+
+## Wave dispatch: native Workflow vs prose fallback
+
+**Capability check (once, before wave 1):** run `$MUSTER_CLI wave-dispatch [--agent-teams|--no-agent-teams]`
+-> `{mode: "native"|"prose", agentTeams, reason}` (`src/wave-dispatch.js`). Pass `--agent-teams` when
+this session's own tool list carries this harness's agent-teams / background-agent surface (`Workflow`,
+`ListAgents`, `SendMessage` -- a deterministic fan-out + barrier tool, reached only through agent-teams
+mode, never the single-session loop: docs/research/claude-code-cli.md sec 1's binary-tools evidence,
+plus sec 11's `claude agents` subcommand); omit the flag to fall back to the declared
+`MUSTER_AGENT_TEAMS` env var. Nothing outside a running session can auto-probe agent-teams mode, so
+this is a DECLARED capability, never an auto-probe (the same shape as Cowork's `nativePluginRide` --
+`src/harness.js`/`src/capabilities.js`), and `mode` defaults to `"prose"` whenever nothing is declared.
+Record the result to STATE once; it does not change mid-run.
+
+- **`mode: "native"`** -- step 4a's per-wave dispatch rides this harness's native `Workflow` tool
+  instead of individual `Agent` tool calls: submit the wave's tasks as one deterministic fan-out (each
+  task becomes one `Workflow` step naming its resolved `subagent_type`/`model`/brief, same resolution
+  rules as step 4a below), let the native tool's own barrier join them, then read each step's result
+  exactly once. Step 4b's barrier and step 4c's review gate are UNCHANGED by this -- only the fan-out
+  mechanism moves off prose dispatch calls and onto harness-scheduled code. **Parallel isolation is not
+  relaxed:** step 4a's per-task git worktree rule for a multi-file-writing wave is a hard requirement
+  independent of dispatch mechanism, not something this item's own research verified the `Workflow`
+  tool's own parameter schema supports per step (a documented gap, unlike the Agent tool's `isolation`
+  parameter -- see docs/research/claude-code-cli.md's `observed-agent-tool` citation). Until a per-step
+  isolation control is confirmed, a wave that would need it (more than one file-writing task) stays on
+  the prose path even when `mode: "native"` is declared for the run -- never silently drop the
+  collision guarantee to ride the native tool.
+- **`mode: "prose"`** (the unconditional floor) -- step 4a's dispatch loop runs exactly as written: one
+  `Agent` tool call per task, dispatched concurrently by the model, barrier by waiting on every result.
+  This is the fallback for every harness/session without a declared agent-teams surface (Codex, Cowork,
+  a plain single-session Claude Code invocation, CLI or Desktop). AUGMENT, NOT SUPERSEDE: none of the
+  prose loop's rules (provider resolution, model override, subagent-failure retry, scope fences) change
+  when native is unavailable -- the native path is preferred when declared, prose is always the floor.
+
+One worked example of each path (the same 2-task wave, routed both ways): docs/native-workflow-dispatch.md.
+
+### Codex-native dispatch: spawn_agent
+
+Codex has no `Workflow`-tool counterpart -- there is no deterministic native fan-out primitive on
+that harness, so the "prose" floor bullet above understates it: on Codex, wave dispatch rides
+Codex's OWN native primitive, subagent collaboration itself, never a prose-loop substitute for the
+Claude-only `Workflow` tool. Each wave task calls `collaboration.spawn_agent` (`task_name`,
+`message`, `fork_turns: "none"`, `agent_type: "<exact chosen.id>"`), the barrier is
+`collaboration.wait_agent` (<=60s timeout per outstanding agent id, mailbox receipts processed
+first), and `collaboration.list_agents` reconciles live state once per wake -- never tight-poll
+(docs/research/codex-cli.md sec 6's `[CODE-VERIFIED]` dispatch-mechanics citation). `fork_turns` is
+always `"none"`: Codex rejects a named `agent_type` combined with a full-history fork (`"all"`),
+since full-history agents inherit the parent's type/model/effort.
+
+`src/wave-dispatch.js`'s `resolveCodexWaveDispatch({ multiAgent, env })` selects between this and a
+sequential-inline floor purely on the session's own `features.multi_agent` signal -- the same
+DECLARED-not-auto-probed shape as `resolveWaveDispatch` above, just inverted: Codex ships
+`multi_agent` default-on, so nothing declared means spawn_agent, not prose; only an explicit
+`multiAgent: false` (or `MUSTER_CODEX_MULTI_AGENT=0`) drops to `mode: "sequential-inline"` --
+dispatch the wave's tasks one crew member at a time, never a partial/mixed fan-out.
+
+**Fail-closed on a rejected profile -- the whole point of this design.** `agent_type` names a
+custom-agent TOML profile (`.codex/agents/<id>.toml`) that pins that role's model, reasoning
+effort, and sandbox; losing that pin by silently falling back to a generic agent is the exact
+anti-pattern the codex burn taught muster to guard against. Only an ACTUALLY-rejected
+`spawn_agent` call proves a profile unavailable -- never infer unavailability from a simplified
+displayed tool signature (`agent_type` may be absent from it but must be sent anyway). When a call
+is rejected, `assertCodexSpawnAgentAccepted` in `src/wave-dispatch.js` throws a registration
+diagnostic naming the `agent_type` and task, and the run STOPS on that task -- it never catches the
+rejection and silently re-dispatches on a generic/default agent. Fix the registration (reinstall
+the profile, verify `.codex/agents/`), then re-dispatch that one task.
+
+### Worktree isolation per harness + base-SHA receipts
+
+Step 4a's "Parallel isolation" bullet already names Claude Code CLI's mechanism (the Agent
+tool's own `isolation: "worktree"` parameter). The other harnesses muster targets each have a
+DIFFERENT native mechanism, or none at all -- select the one that matches the harness actually
+running this dispatch (`$MUSTER_CLI worktree-isolation --harness <name>`, `resolveWorktreeIsolation`
+in `src/wave-dispatch.js`; a declared, not auto-probed, selection -- same shape as the wave-dispatch
+capability checks above):
+
+- **Claude Code CLI** -- `isolation: "worktree"` on the Agent tool (step 4a, above).
+- **Claude Code Desktop** -- automatic per-session worktree under `<root>/.claude/worktrees/`;
+  muster scripts nothing, the harness creates it before the session's first tool call
+  (docs/research/claude-code-desktop.md sec 2.2).
+- **Hermes** -- `hermes -w` (a disposable per-session worktree) or a kanban `worktree` workspace
+  for a queued task; Hermes creates and tears it down, muster only selects which invocation shape
+  to dispatch into (docs/research/hermes.md sec 6).
+- **Codex** -- no native mechanism exists: `collaboration.spawn_agent` has no cwd field
+  (docs/research/codex-cli.md sec 6), so there is nothing to select. The brief's absolute
+  `WORKTREE CWD` (Codex-native dispatch, above) plus the base-SHA receipt below stand in for
+  isolation muster cannot get from the harness.
+
+**Every harness records the same base-SHA receipt, regardless of which mechanism (or none)
+isolated the work.** None of the four self-report a fork point back to the orchestrator, so
+capture one per dispatched crew member at dispatch time, before the task starts:
+`buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath })` (`src/wave-dispatch.js`)
+builds it, refusing to build one over a missing or non-hex `baseSha` -- a receipt that isn't
+provably a real fork point is worse than no receipt. Append the built receipt to STATE alongside
+the existing per-task dispatch line (step 4a's "Announce before acting"); one receipt per
+dispatched crew member, not per wave. This makes the Codex no-cwd-on-dispatch gap
+receipts-VERIFIED rather than aspirational: `test/worktree-isolation.test.js` proves the builder
+enforces a real SHA shape (including against this checkout's own live `git rev-parse HEAD`) and
+that every harness above resolves to its own distinct mechanism string, never a silent default.
 
 ## Scope fences
 
@@ -186,3 +313,9 @@ class -- fail-open on either file's absence, `MUSTER_ACTION_GUARD=warn|off` soft
 `.muster/` and `.claude/` (in-cwd) are always exempt, ahead of the fence check. This is the ONLY tool
 call the `PreToolUse` hook can deny; everything else (dispatch-not-inline, todo-driving, the
 inline-edit border invitation) is SKILL discipline or a warn-only reminder, never a block.
+
+**A second, narrower hook-enforced block, on a different event:** `TaskCompleted`, not
+`PreToolUse`. `plugin/hooks/task-completed-gate.js` denies a native task board completion tick
+for any task this run wrote to `.muster/task-board.json` whose `reviewGate` isn't `"pass"` -- see
+"Task board", above -- fail-open for any task the file doesn't track, `MUSTER_TASK_GATE=off` to
+disable. It never touches tool-call permission, only whether a task-completion event registers.

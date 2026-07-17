@@ -107,6 +107,49 @@ test("cli wire: gate-cadence on a 3-task manifest qualifies for the fast path (b
   assert.equal(parsed.fastPath, true);
 });
 
+// weight-reduction item, criterion 2: --changed-lines folds reviewerCount into the same
+// gate-cadence result, scaled by diff size independently of taskCount.
+
+test("cli wire: gate-cadence without --changed-lines omits reviewerCount (backward compatible)", async () => {
+  const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
+  const { stdout } = await run(["gate-cadence", fixture]);
+  const parsed = JSON.parse(stdout);
+  assert.equal("reviewerCount" in parsed, false);
+});
+
+test("cli wire: gate-cadence --changed-lines under the default 200-line threshold folds reviewerCount:1 in", async () => {
+  const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
+  const { stdout } = await run(["gate-cadence", fixture, "--changed-lines", "50"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.reviewerCount, 1);
+});
+
+test("cli wire: gate-cadence --changed-lines at/over the default threshold folds reviewerCount:2 in (unchanged default)", async () => {
+  const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
+  const { stdout } = await run(["gate-cadence", fixture, "--changed-lines", "200"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.reviewerCount, 2);
+});
+
+test("cli wire: gate-cadence honors MUSTER_REVIEW_DIFF_THRESHOLD to override the default", async () => {
+  const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
+  const env = { ...process.env, MUSTER_REVIEW_DIFF_THRESHOLD: "40" };
+  const { stdout } = await run(["gate-cadence", fixture, "--changed-lines", "50"], { env });
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.reviewerCount, 2, "50 lines clears the overridden 40-line threshold");
+});
+
+test("cli wire: gate-cadence --changed-lines rejects a negative/non-numeric value", async (t) => {
+  const fixture = join(REPO_ROOT, "test/fixtures/plan.diamond.json");
+  try {
+    await run(["gate-cadence", fixture, "--changed-lines", "-5"]);
+    assert.fail("should have exited non-zero");
+  } catch (err) {
+    assert.equal(err.code, 1);
+    assert.match(err.stderr, /--changed-lines must be a non-negative finite number/);
+  }
+});
+
 test("cli wire: gate-cadence on a manifest with no 'plan' array exits 1", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-gate-cadence-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

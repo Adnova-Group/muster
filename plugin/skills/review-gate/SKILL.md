@@ -23,10 +23,24 @@ divergence from the runbook or a new gotcha, the fix pass UPDATES the runbook
 (update-after-divergence) — say so explicitly in the reviewer's finding so the
 update isn't silently dropped.
 
-1. Select reviewers: the chosen providers for roles `code-review` and `security-review`. If none are
-   installed, use the built-in reviewer. Always at least one.
-2. Dispatch reviewers **concurrently**, each adversarially prompted to REFUTE the work / find the worst
-   real problem. Each returns findings: `[{ severity: "blocker"|"risk"|"nit", note }]`.
+1. **Select reviewers, scaled by diff size.** Measure the changed-line count of the diff under review
+   (the wave's own changes, or — when `gate-cadence` reported `fastPath: true` — the full cumulative diff
+   of every batched wave, matching the Inputs note above): `git diff --stat` (or `--numstat`, summed) against
+   the pre-wave commit. Fold that count into the SAME `gate-cadence` decision the invoking verb already
+   captured, rather than re-deriving cadence from scratch: `$MUSTER_CLI gate-cadence .muster/manifest.json
+   --changed-lines <n>` → `reviewerCount` (default threshold 200 changed lines, `MUSTER_REVIEW_DIFF_THRESHOLD`
+   env override — see `src/gate-cadence.js`'s `reviewerCountForDiff`/`DEFAULT_REVIEW_DIFF_THRESHOLD`).
+   - `reviewerCount: 1` (diff under the threshold) — dispatch ONLY the chosen `code-review` provider (built-in
+     if none installed). A diff this small is fully held in one reviewer's working memory; a second adversarial
+     pass over the same small diff is redundant weight, not rigor.
+   - `reviewerCount: 2` (diff at/over the threshold — the unchanged default for any non-trivial diff) —
+     dispatch the chosen providers for roles `code-review` and `security-review`, exactly as before this item.
+   This is a diff-SIZE decision, not a task-count one: a genuinely large multi-task wave's diff always lands
+   at or over the threshold and keeps both reviewers (no gate weakens for real multi-task work — see
+   docs/weight-reduction.md's unchanged-multiwave evidence); a small wave gets exactly one reviewer regardless
+   of how many tasks it happens to batch.
+2. Dispatch the selected reviewer(s) **concurrently** (when more than one), each adversarially prompted to
+   REFUTE the work / find the worst real problem. Each returns findings: `[{ severity: "blocker"|"risk"|"nit", note }]`.
 3. **Citation guard (research/content artifacts):** run `$MUSTER_CLI citation-check <file>`
    on each produced artifact. A dangling anchor (checker reports `ok:false`, exits 2) is an automatic
    FAIL finding — no reviewer judgment needed. `uncited` paragraphs are NOT auto-failed: hand each flagged

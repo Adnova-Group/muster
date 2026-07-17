@@ -44,7 +44,7 @@
 //
 // SELF-CONTAINED: only node: builtins. Ships under plugin/hooks/ with the hooks.
 
-import { readFileSync, writeFileSync, statSync, lstatSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, statSync, lstatSync, unlinkSync, lutimesSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { envInt } from "./env-util.js";
@@ -71,6 +71,41 @@ function safeWriteFileSync(file, content) {
     // writeFileSync below throws its own error in that case.
   }
   writeFileSync(file, content);
+}
+
+// ── injectable clock (test-only) ────────────────────────────────────────────
+//
+// Every wall-time comparison below already takes an explicit `now` parameter,
+// defaulting to Date.now() -- the one remaining wall-time dependence was the
+// CALL SITES (pre-tool-use.js/user-prompt-submit.js) letting that default
+// apply, so each read Date.now() independently, at whatever real instant it
+// happened to run as a spawned child process. Under --test-concurrency, that
+// let a test's own real-clock-relative fixture (a marker mtime backdated via
+// utimesSync against Date.now() at fixture-build time) race the hook
+// process's own later real-clock read of "now" -- no fixed relationship
+// between the two across a process boundary, occasionally landing on the
+// wrong side of a staleness/cooldown boundary under load.
+//
+// resolveNow() gives both production call sites and tests ONE deterministic,
+// injectable clock: MUSTER_TEST_NOW_MS (an integer epoch-ms string), read
+// once per hook invocation, wins over Date.now() when present and finite.
+// Absent -- the only path production ever takes -- plain Date.now(),
+// unchanged behavior. Paired with the writer stamps below (recordCum/
+// markNudged/recordInvite/resetCum/markDirective all stamp the marker's
+// mtime to the SAME injected `now` after writing), a test can drive an
+// entire staleness/cooldown boundary through integers alone -- no real
+// wall-clock read anywhere in the chain.
+export function resolveNow(env = process.env) {
+  return envInt("MUSTER_TEST_NOW_MS", { min: 0, def: Date.now() }, env);
+}
+
+// Stamp `file`'s mtime to exactly `now` (best-effort, symlink-safe: uses
+// lutimesSync so a symlink at `file` is never followed -- the same CWE-59
+// posture as safeWriteFileSync above; by the time this runs the writers below
+// have already replaced any symlink with a fresh regular file, but this stays
+// defensive regardless).
+function stampMtime(file, now) {
+  try { lutimesSync(file, new Date(now), new Date(now)); } catch { /* best-effort */ }
 }
 
 // Distinct-file count at which the cumulative counter crosses the border and
@@ -130,6 +165,15 @@ export function directiveFile(sessionId, tmp = os.tmpdir()) {
   return s ? path.join(tmp, `muster-directive-${s}`) : null;
 }
 
+// Mark the once-per-crossing directive-nudge marker as fired (UserPromptSubmit
+// signal's counterpart to markNudged above). Symlink-safe (safeWriteFileSync)
+// like the other marker writers; stamps the marker's mtime to `now` (see
+// resolveNow() above).
+export function markDirective(file, now = Date.now()) {
+  try { safeWriteFileSync(file, "1"); } catch { /* best-effort */ }
+  stampMtime(file, now);
+}
+
 // Read the cumulative state: { files: string[], nudged: boolean }.
 // Missing/corrupt/malformed -> the empty shape (never throws).
 export function readCum(file) {
@@ -145,8 +189,10 @@ export function readCum(file) {
 }
 
 // Reset the cumulative state to empty (new session, or a muster run started).
-export function resetCum(file) {
+// Stamps the marker's mtime to `now` (see resolveNow() above).
+export function resetCum(file, now = Date.now()) {
   try { safeWriteFileSync(file, JSON.stringify({ files: [], nudged: false })); } catch { /* best-effort */ }
+  stampMtime(file, now);
 }
 
 // Add `key` to the cumulative distinct-file set if absent, persist, and return
@@ -154,6 +200,8 @@ export function resetCum(file) {
 // increase the count. If the file's own mtime shows this crossing has gone
 // stale (untouched past CROSSING_MAX_AGE_MS), the prior state is discarded
 // first — this call starts a fresh crossing rather than resuming a stale one.
+// Stamps the marker's mtime to `now` (see resolveNow() above) so a later
+// staleness check against the SAME injected clock is exact.
 export function recordCum(file, key, now = Date.now()) {
   let mtimeMs = null;
   try { mtimeMs = statSync(file).mtimeMs; } catch { mtimeMs = null; }
@@ -161,14 +209,17 @@ export function recordCum(file, key, now = Date.now()) {
   const state = isCrossingStale(mtimeMs, now) ? { files: [], nudged: false } : readCum(file);
   if (!state.files.includes(key)) state.files.push(key);
   try { safeWriteFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
+  stampMtime(file, now);
   return { count: state.files.length, nudged: state.nudged };
 }
 
 // Mark the once-per-crossing cumulative-drift warning as already fired.
-export function markNudged(file) {
+// Stamps the marker's mtime to `now` (see resolveNow() above).
+export function markNudged(file, now = Date.now()) {
   const state = readCum(file);
   state.nudged = true;
   try { safeWriteFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
+  stampMtime(file, now);
 }
 
 // ── cooldown: hysteresis shared by both border-invitation signals ──────────
@@ -222,9 +273,11 @@ export function isInCooldown(file, now = Date.now(), env = process.env) {
 
 // Record that an invite just fired — (re)starts the cooldown window. Symlink-
 // safe (safeWriteFileSync) and best-effort like the other marker writers.
-export function recordInvite(file) {
+// Stamps the marker's mtime to `now` (see resolveNow() above).
+export function recordInvite(file, now = Date.now()) {
   if (!file) return;
   try { safeWriteFileSync(file, "1"); } catch { /* best-effort */ }
+  stampMtime(file, now);
 }
 
 // ── isDirective scale correlation ───────────────────────────────────────────

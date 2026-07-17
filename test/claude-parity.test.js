@@ -362,5 +362,18 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // counts) -- the cut reworded sentences without changing which LINES mention
   // AskUserQuestion/Agent-Task-tool/hook/worktree. See docs/skill-thinning.md for the full
   // per-skill before/after footprint table this item measured.
-  assert.equal(hash.digest("hex"), "19260fb5dbf770b5f8a7daad759dde58d2c324e19eec60a3840af1d41c610e70");
+  //
+  // Pin re-derived again for the flaky-time-test-harden item: file COUNT unchanged (137 -- no
+  // file added/removed under this surface) but plugin/hooks/inline-budget.js/pre-tool-use.js/
+  // user-prompt-submit.js content changed to inject a deterministic, test-only clock
+  // (MUSTER_TEST_NOW_MS, see inline-budget.js: resolveNow) so the border-invitation cooldown/
+  // age-reset tests (test/hook-pre-tool-use-scale.test.js, test/inline-budget.test.js,
+  // test/hook-user-prompt-submit.test.js, test/hook-border-long-session-sim.test.js) no longer
+  // race the real wall clock under --test-concurrency. No decision-order/condition logic changed
+  // in either hook -- resolveNow() is threaded through as an added `now` argument to existing
+  // calls (recordCum/markNudged/isInCooldown/recordInvite/resetCum/corroboratingCount/
+  // isCrossingStale), and the writer functions (recordCum/markNudged/recordInvite/resetCum, plus
+  // the new markDirective) now stamp each marker's mtime to that same `now` after writing. This
+  // is the reviewed clock-injection remediation, not accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "c3442d48044ed97c1fce651dd910be9152423af98ff4f1ccea042634d2f32611");
 });

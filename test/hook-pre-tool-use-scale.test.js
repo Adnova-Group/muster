@@ -60,12 +60,13 @@ function clearCum(sessionId) {
   try { rmSync(path.join(os.tmpdir(), `muster-cooldown-${safe}`), { force: true }); } catch { /* ignore */ }
 }
 
-// Age a session's invite-cooldown marker past the window so the next
-// eligible crossing is no longer suppressed by cooldown (no real sleeping).
-function ageCooldown(sid, extraMs = 60_000) {
-  const cdFile = cooldownFile(sid, os.tmpdir());
-  const stale = new Date(Date.now() - (DEFAULT_INVITE_COOLDOWN_MS + extraMs));
-  utimesSync(cdFile, stale, stale);
+// Build the MUSTER_TEST_NOW_MS env override (see inline-budget.js:
+// resolveNow) for a given instant `t`. Used by the two timing-sensitive
+// tests below (flapping/age-reset) to drive staleness/cooldown boundaries
+// with an explicit, test-controlled clock instead of racing the real wall
+// clock across the spawned-hook-process boundary under --test-concurrency.
+function nowEnv(t) {
+  return { MUSTER_TEST_NOW_MS: String(t) };
 }
 
 function out(stdout) {
@@ -341,30 +342,38 @@ test("a live muster run resets the cumulative counter and doesn't record", async
 });
 
 // ── flapping: hysteresis/cooldown absorbs a noisy, rapidly-re-arming border ─
+//
+// Driven by an explicit, test-controlled clock (see nowEnv() above /
+// inline-budget.js: resolveNow) rather than real elapsed wall time: every
+// spawned hook call below is pinned to `clock`, and "once the cooldown
+// genuinely elapses" is simply advancing that integer, not waiting or
+// backdating a marker against Date.now() and hoping a later child process's
+// own real-clock read lands far enough past it.
 test("flapping: a run restart re-arms the crossing immediately, but the shared cooldown absorbs the repeat fire", async () => {
   const dir = noRunDir();
   const sid = "border-flap-1";
   clearCum(sid);
+  let clock = 1_700_000_000_000; // arbitrary fixed instant; entirely test-controlled
   try {
     // First crossing: three distinct files, no run active -> warns once and
     // starts the shared invite cooldown.
-    await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
-    await runPre(editPayload(path.join(dir, "b.js"), dir, sid));
-    const first = await runPre(editPayload(path.join(dir, "c.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "a.js"), dir, sid), nowEnv(clock));
+    await runPre(editPayload(path.join(dir, "b.js"), dir, sid), nowEnv(clock));
+    const first = await runPre(editPayload(path.join(dir, "c.js"), dir, sid), nowEnv(clock));
     assert.ok(out(first.stdout).additionalContext, "sanity: first crossing warns");
 
     // A muster run starts (resets the counter -- a fresh crossing) and stops
-    // moments later in real time: a noisy border oscillating around the
-    // threshold via rapid restarts.
+    // moments later (same instant on the injected clock): a noisy border
+    // oscillating around the threshold via rapid restarts.
     makeRunActive(dir);
-    await runPre(editPayload(path.join(dir, "reset-trigger.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "reset-trigger.js"), dir, sid), nowEnv(clock));
     rmSync(path.join(dir, ".muster", "run-active"), { force: true });
 
     // The re-armed crossing crosses the border again -- without the
-    // cooldown this would warn a second time seconds after the first.
-    await runPre(editPayload(path.join(dir, "d.js"), dir, sid));
-    await runPre(editPayload(path.join(dir, "e.js"), dir, sid));
-    const second = await runPre(editPayload(path.join(dir, "f.js"), dir, sid));
+    // cooldown this would warn a second time at the same instant as the first.
+    await runPre(editPayload(path.join(dir, "d.js"), dir, sid), nowEnv(clock));
+    await runPre(editPayload(path.join(dir, "e.js"), dir, sid), nowEnv(clock));
+    const second = await runPre(editPayload(path.join(dir, "f.js"), dir, sid), nowEnv(clock));
     assert.ok(
       !("additionalContext" in out(second.stdout)),
       "a crossing re-armed moments after the first invite stays silent -- cooldown absorbs the flap",
@@ -373,13 +382,13 @@ test("flapping: a run restart re-arms the crossing immediately, but the shared c
 
     // Once the cooldown genuinely elapses, the next genuine crossing invites
     // again -- the border is not permanently dead after one flap-suppressed cycle.
-    ageCooldown(sid);
+    clock += DEFAULT_INVITE_COOLDOWN_MS + 60_000;
     makeRunActive(dir);
-    await runPre(editPayload(path.join(dir, "reset-trigger-2.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "reset-trigger-2.js"), dir, sid), nowEnv(clock));
     rmSync(path.join(dir, ".muster", "run-active"), { force: true });
-    await runPre(editPayload(path.join(dir, "g.js"), dir, sid));
-    await runPre(editPayload(path.join(dir, "h.js"), dir, sid));
-    const third = await runPre(editPayload(path.join(dir, "i.js"), dir, sid));
+    await runPre(editPayload(path.join(dir, "g.js"), dir, sid), nowEnv(clock));
+    await runPre(editPayload(path.join(dir, "h.js"), dir, sid), nowEnv(clock));
+    const third = await runPre(editPayload(path.join(dir, "i.js"), dir, sid), nowEnv(clock));
     assert.ok(
       out(third.stdout).additionalContext,
       "once the cooldown clears, the next genuine crossing invites again",
@@ -391,21 +400,27 @@ test("flapping: a run restart re-arms the crossing immediately, but the shared c
 });
 
 // ── age-reset: a stale crossing re-arms ─────────────────────────────────────
+// Driven by an explicit, test-controlled clock (nowEnv()) rather than
+// Date.now(): the marker is stamped >60 minutes before a fixed T0, and every
+// spawned hook call is pinned to that SAME T0 -- an exact, non-racing
+// boundary regardless of real spawn/schedule latency under --test-concurrency.
 test("age-reset: a crossing untouched past 60 minutes re-arms — the border warns again", async () => {
   const dir = noRunDir();
   const sid = "border-age-1";
   clearCum(sid);
   const cFile = cumFile(sid, os.tmpdir());
+  const T0 = 1_700_000_000_000; // arbitrary fixed instant; entirely test-controlled
   try {
-    // Simulate an already-crossed-and-warned prior window, now stale.
+    // Simulate an already-crossed-and-warned prior window, now stale relative to T0.
     writeFileSync(cFile, JSON.stringify({ files: ["old-a.js", "old-b.js", "old-c.js"], nudged: true }));
-    const stale = new Date(Date.now() - (CROSSING_MAX_AGE_MS + 60_000));
+    const stale = new Date(T0 - (CROSSING_MAX_AGE_MS + 60_000));
     utimesSync(cFile, stale, stale);
 
-    const a = await runPre(editPayload(path.join(dir, "new-a.js"), dir, sid));
-    const b = await runPre(editPayload(path.join(dir, "new-b.js"), dir, sid));
+    const env = nowEnv(T0);
+    const a = await runPre(editPayload(path.join(dir, "new-a.js"), dir, sid), env);
+    const b = await runPre(editPayload(path.join(dir, "new-b.js"), dir, sid), env);
     assert.ok(!("additionalContext" in out(a.stdout)), "1st file of the re-armed crossing is silent");
-    const c = await runPre(editPayload(path.join(dir, "new-c.js"), dir, sid));
+    const c = await runPre(editPayload(path.join(dir, "new-c.js"), dir, sid), env);
     assert.ok(out(c.stdout).additionalContext, "3rd file of the re-armed crossing warns again");
     assert.notEqual(decision(c.stdout), "deny");
   } finally {

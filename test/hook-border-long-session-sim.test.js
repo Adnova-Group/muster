@@ -9,24 +9,28 @@
 // (repeat-firing within a crossing or a rapid re-arm).
 //
 // Real time cannot be made to pass in a unit test, so "a day passes" is
-// simulated exactly like the existing age-reset tests (hook-pre-tool-use-scale
-// .test.js, hook-user-prompt-submit.test.js): back-date the cumulative-counter
-// marker AND the shared invite-cooldown marker via utimesSync past both of
-// their windows (CROSSING_MAX_AGE_MS, DEFAULT_INVITE_COOLDOWN_MS) before the
-// day's activity runs. This is the same re-arm mechanism production code
-// uses when a session is genuinely idle overnight -- just driven directly
-// instead of waiting real hours.
+// simulated with the SAME injectable clock pre-tool-use.js resolves via
+// inline-budget.js: resolveNow() (MUSTER_TEST_NOW_MS) -- advance a
+// test-local `clock` variable past both re-arm windows (CROSSING_MAX_AGE_MS,
+// DEFAULT_INVITE_COOLDOWN_MS) and pass it as env to every spawned hook call.
+// This is the same re-arm mechanism production code uses when a session is
+// genuinely idle overnight, driven by an explicit integer instead of
+// utimesSync-backdating a marker against Date.now() and hoping a later
+// spawned child process's OWN real-clock read lands far enough past it --
+// that real-clock-race is exactly what made this test flake under
+// --test-concurrency (two independent Date.now() reads, on either side of a
+// process boundary, with no fixed relationship between them under load).
+// With the clock injected, every comparison this test drives is exact
+// regardless of how long a hook process actually takes to spawn.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, rmSync, utimesSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import os from "node:os";
 import { cleanDir, makeRunActive, spawnHook } from "./test-support/hook-helpers.js";
-import {
-  cumFile, cooldownFile, CROSSING_MAX_AGE_MS, DEFAULT_INVITE_COOLDOWN_MS,
-} from "../plugin/hooks/inline-budget.js";
+import { cumFile, cooldownFile, CROSSING_MAX_AGE_MS, DEFAULT_INVITE_COOLDOWN_MS } from "../plugin/hooks/inline-budget.js";
 
 const HOOKDIR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -36,8 +40,18 @@ const HOOKDIR = path.join(
 );
 const PRE = path.join(HOOKDIR, "pre-tool-use.js");
 
-function runPre(stdinText, env = {}) {
-  return spawnHook(PRE, stdinText, env);
+// Arbitrary fixed instant; entirely test-controlled (see MUSTER_TEST_NOW_MS /
+// inline-budget.js: resolveNow). Never read from Date.now() -- there is
+// nothing for this test to race once every spawned hook call is pinned to an
+// explicit clock value.
+let clock = 1_700_000_000_000;
+
+function nowEnv() {
+  return { MUSTER_TEST_NOW_MS: String(clock) };
+}
+
+function runPre(stdinText) {
+  return spawnHook(PRE, stdinText, nowEnv());
 }
 
 function editPayload(filePath, cwd, sessionId) {
@@ -63,16 +77,17 @@ function clearSessionState(sid) {
   }
 }
 
-// Simulates an overnight (or longer) gap between tmux-session days: back-date
-// whichever of the cumulative-counter / cooldown markers currently exist past
-// BOTH their re-arm windows, so the next touch starts a genuinely fresh,
-// cooldown-clear crossing -- exactly what a real multi-day gap would produce.
-function simulateOvernightGap(sid) {
-  const gap = CROSSING_MAX_AGE_MS + 60_000; // > both CROSSING_MAX_AGE_MS and the (shorter) cooldown
-  const stale = new Date(Date.now() - gap);
-  for (const f of [cumFile(sid, os.tmpdir()), cooldownFile(sid, os.tmpdir())]) {
-    if (f && existsSync(f)) utimesSync(f, stale, stale);
-  }
+// Simulates an overnight (or longer) gap between tmux-session days: advance
+// the injected clock past BOTH re-arm windows so the next touch starts a
+// genuinely fresh, cooldown-clear crossing -- exactly what a real multi-day
+// gap would produce. No filesystem mtime manipulation needed: every marker
+// this session touches was itself stamped with the (previous) injected clock
+// value by the hook's own writer functions (inline-budget.js: recordCum/
+// markNudged/recordInvite all stamp `now` after writing), so simply moving
+// `clock` forward makes the NEXT hook invocation see them as however old the
+// new clock says they are.
+function simulateOvernightGap() {
+  clock += CROSSING_MAX_AGE_MS + 60_000; // > both CROSSING_MAX_AGE_MS and the (shorter) cooldown
 }
 
 test("long-lived session (simulated week, homebase tmux profile): at most one invite per genuine crossing, zero on trivial single-file days, never dead for the week", async () => {
@@ -100,7 +115,7 @@ test("long-lived session (simulated week, homebase tmux profile): at most one in
 
   try {
     for (const { day, active } of plan) {
-      if (day > 1) simulateOvernightGap(sid);
+      if (day > 1) simulateOvernightGap();
 
       if (!active) {
         // Trivial day: a single distinct file touched all day long -- well

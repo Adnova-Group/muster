@@ -72,7 +72,7 @@ import { bashWriteTarget } from "./bash-write-target.js";
 import { classifyAction } from "./action-guard.js";
 import {
   cumFile, recordCum, markNudged, resetCum, scaleThreshold,
-  cooldownFile, isInCooldown, recordInvite,
+  cooldownFile, isInCooldown, recordInvite, resolveNow,
 } from "./inline-budget.js";
 
 const EVENT = "PreToolUse";
@@ -128,6 +128,14 @@ function warnBorder(count) {
 }
 
 try {
+  // Resolved once per invocation: real Date.now() in production, or the
+  // injected MUSTER_TEST_NOW_MS clock under test (see inline-budget.js:
+  // resolveNow) -- threaded through every recordCum/markNudged/isInCooldown/
+  // recordInvite call below so a test controls every mtime this hook reads
+  // or writes, with no real wall-clock race across the child-process
+  // boundary. Pure computation, no effect on the decision order below.
+  const now = resolveNow();
+
   let payload;
   try {
     payload = JSON.parse(readFileSync(0, "utf8"));
@@ -219,9 +227,9 @@ try {
       if (runActive) {
         // A muster run resolves the invitation — this work is tracked/
         // dispatched, not drift. Reset rather than record.
-        resetCum(cFile);
+        resetCum(cFile, now);
       } else {
-        const { count, nudged } = recordCum(cFile, key);
+        const { count, nudged } = recordCum(cFile, key, now);
         if (!nudged && count >= scaleThreshold()) {
           // This crossing is nudged either way (never re-check its later
           // files) — but the cooldown decides whether the warn is actually
@@ -229,10 +237,10 @@ try {
           // re-arms a "new" crossing right away; the cooldown is what keeps
           // that re-armed crossing from flapping a repeat invite seconds
           // after the last one (see inline-budget.js: isInCooldown).
-          markNudged(cFile);
+          markNudged(cFile, now);
           const cdFile = cooldownFile(payload.session_id);
-          if (!isInCooldown(cdFile)) {
-            recordInvite(cdFile);
+          if (!isInCooldown(cdFile, now)) {
+            recordInvite(cdFile, now);
             warnBorder(count);
           }
         }

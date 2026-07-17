@@ -56,5 +56,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // plan-backlog.md (the remaining raw-npx entry points now embed the $MUSTER_CLI resolution
   // snippet, criterion 4). This is the reviewed weight-reduction remediation, not accidental
   // Codex-side drift.
-  assert.equal(hash.digest("hex"), "6ce002ec53b07c0d5b4d6ad8209ad19e488989f10e0e5ecd272db6621b707aec");
+  //
+  // Pin re-derived again for the speed-tuning item (backlog item `muster-speed-tuning`): file
+  // COUNT unchanged (135) but plan.md now wires in the SAME pre-router fast-path check go.md's
+  // step 3 already carried (weight-reduction wired go.md only; speed-tuning extends it to the
+  // approve-first entry point, criterion 1) -- see test/plan-fast-path-wiring.test.js. This pin
+  // is re-derived again after this item's skill-size cuts (criterion 2), below.
+  assert.equal(hash.digest("hex"), "a10d18c418c9d84d62f9a1717fd73a0baeb0f43ebfabcbfec635ef2666f37ba8");
 });

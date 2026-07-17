@@ -49,11 +49,25 @@ The invocation text: `$ARGUMENTS`
    The interview's approved enriched outcome replaces `$ARGUMENTS` for the rest of this flow — it feeds the
    detect/capabilities/router steps below and is written (with `successCriteria`) into `.muster/manifest.json`.
    If `clear: true`, skip the interview and proceed.
+
+   **Single-agent fast-path check (weight-reduction item, criterion 1; wired into `/muster:plan` by the
+   speed-tuning item — the same pre-router heuristic `/muster:go` step 3 already runs).** Run
+   `$MUSTER_CLI fast-path "$ARGUMENTS"` → `{ eligible, wordCount, reason }` — a deterministic, PRE-router
+   heuristic over the outcome TEXT itself (`src/fast-path.js`'s `scoreOutcomeForFastPath`; no plan exists
+   yet, so this scores text, not a decomposed task list). Record `eligible`/`reason` for step 5 below.
 3. Run `$MUSTER_CLI detect .` (pass the explicit path so a drifted cwd doesn't misdetect) and
-   `$MUSTER_CLI capabilities`. Capture both JSON blobs.
+   `$MUSTER_CLI capabilities`. Capture both JSON blobs (both branches of step 5 need the capabilities
+   blob either way).
 4. Run `$MUSTER_CLI memory read .muster/memory "<key terms from the outcome>"` and skim any prior entries.
-5. Invoke the **router** skill with the outcome, the two JSON blobs, and any memory hits.
-6. The router emits a Crew Manifest. Write it to `.muster/manifest.json`, then validate:
+5. **Assemble the crew**, branching on step 2's fast-path check:
+   - **`eligible: true`** — run `$MUSTER_CLI fast-path "$ARGUMENTS" --capabilities .muster/capabilities.json`
+     → its `manifest` field IS the Crew Manifest (`src/fast-path.js`'s `buildFastPathManifest`: one task, a
+     builder, and ONE reviewer — no specialist search, no skill binding, no gap protocol). **SKIP invoking
+     the router skill entirely** — crew assembly has nothing to add for a scored-trivial single task.
+     Record the fast-path `reason` alongside the Glass Box.
+   - **`eligible: false`** — invoke the **router** skill with the outcome, the two JSON blobs from step 3,
+     and any memory hits from step 4, exactly as before this item.
+6. Write the Crew Manifest (from whichever branch step 5 took) to `.muster/manifest.json`, then validate:
    `$MUSTER_CLI manifest validate .muster/manifest.json` — repair and re-validate until `ok: true`.
 7. **Present for approval — ride native plan mode, never a parallel wall.** Render the Crew Manifest as the
    Glass Box (stage -> provider, model, rationale, evidence, fallback), then choose the gate by what the
@@ -74,7 +88,8 @@ The invocation text: `$ARGUMENTS`
    - **Approve & run**: invoke the **muster:go** skill in-session, passing the enriched outcome from
      step 2 as the outcome; go picks up the already-validated `.muster/manifest.json` and does not
      re-derive the plan from scratch.
-   - **Adjust the plan**: loop back to the router (step 5) with the user's feedback.
+   - **Adjust the plan**: loop back to step 5 (the router, or a fast-path manifest rebuild on the eligible
+     branch) with the user's feedback.
    - **Cancel**: stop immediately; remove `.muster/run-active`.
 8. Optionally append a memory entry: `$MUSTER_CLI memory write .muster/memory <entry.json>`.
 

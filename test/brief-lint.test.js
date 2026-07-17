@@ -139,6 +139,66 @@ test("findUnmarkedDispatchSignals: accepts a caller-supplied patterns override (
   assert.deepEqual(findUnmarkedDispatchSignals(files, { patterns: [] }), []);
 });
 
+// Review finding (fix loop 1): a `sectionOwned` heading immediately followed by a trivially
+// small marked span, with the section's REAL content left unmarked afterward, used to read as
+// "covered" -- the heading-adjacency check alone never verified the marker actually reached the
+// end of the section it names. Closed by requiring the section's non-whitespace content (heading
+// to next `## ` heading or EOF) to be fully accounted for by marker span(s), not just grazed.
+test("findUnmarkedDispatchSignals: a tiny marked span does not cover a huge UNMARKED tail left in the same sectionOwned section (review finding)", () => {
+  const bloat = "x".repeat(20000); // ~5000 tokens -- 5x the return-contract budget, and it must never silently pass
+  const files = {
+    "gamed.md": `## Report back\n<!-- muster-return-template:start -->ok<!-- muster-return-template:end -->\n${bloat}\n`,
+  };
+  assert.deepEqual(findUnmarkedDispatchSignals(files), [{ path: "gamed.md", signal: "report-back-heading" }]);
+  // The budget check alone (over just the marked span) would have missed this entirely --
+  // confirms the two guards are catching different things, not duplicating one check.
+  const { findings, returnCount } = lintBriefReturnCaps(files);
+  assert.deepEqual(findings, []);
+  assert.equal(returnCount, 1);
+});
+
+// A section legitimately holding MORE THAN ONE marker (muster-runner.md's "## Dispatch contract"
+// heading owns both a brief-template span and a return-template span, separated by a blank
+// line) must still read as fully covered -- the fix for the finding above must not regress this
+// real, intentional shape into a false "unmarked" report.
+test("findUnmarkedDispatchSignals: a sectionOwned heading covering MULTIPLE markers (brief then return) in sequence is fully covered", () => {
+  const files = {
+    "multi.md": [
+      "## Dispatch contract",
+      "",
+      "<!-- muster-brief-template:start -->",
+      "brief content",
+      "<!-- muster-brief-template:end -->",
+      "",
+      "<!-- muster-return-template:start -->",
+      "return content",
+      "<!-- muster-return-template:end -->",
+    ].join("\n"),
+  };
+  assert.deepEqual(findUnmarkedDispatchSignals(files), []);
+});
+
+// Review finding (fix loop 1): `re.exec(text)` on a non-global regex only ever returns the FIRST
+// match -- a repeated signal (e.g. two "## Report back" sections, one marked, one added later
+// unmarked) would have the second occurrence silently invisible. Closed by scanning every match.
+test("findUnmarkedDispatchSignals: a REPEATED signal is checked independently per occurrence -- a marked first one does not hide an unmarked second one (review finding)", () => {
+  const files = {
+    "twice.md": [
+      "## Report back",
+      "<!-- muster-return-template:start -->",
+      "- marked one",
+      "<!-- muster-return-template:end -->",
+      "",
+      "## Iron rules",
+      "some other section",
+      "",
+      "## Report back",
+      "- a second, unmarked Report back section added later",
+    ].join("\n"),
+  };
+  assert.deepEqual(findUnmarkedDispatchSignals(files), [{ path: "twice.md", signal: "report-back-heading" }]);
+});
+
 test("DISPATCH_SIGNAL_PATTERNS: exposes at least the headings/phrases this item catalogued as real dispatch sites", () => {
   const names = DISPATCH_SIGNAL_PATTERNS.map((p) => p.name);
   for (const expected of [

@@ -114,12 +114,30 @@ export function lintBriefReturnCaps(filesByPath, { charsPerToken = DEFAULT_CHARS
 // module) -- it catches drift that reuses one of these known shapes, not literally any possible
 // future prose; test/brief-lint-coverage.test.js documents that scope honestly and proves the
 // detector against a synthetic unmarked fixture (not just the already-clean real repo).
+// `sectionOwned: true` marks a signal that is itself a markdown heading owning the WHOLE
+// section beneath it (from the heading to the next `## ` heading, or EOF) -- for these, coverage
+// requires the marker to span that entire section, not just sit near the heading (see
+// `signalIsCovered`'s review-fix note below: a heading + a trivially small marked span + a huge
+// UNMARKED tail before the next heading must NOT read as covered, since the tail is exactly the
+// real, unbudgeted template content). Every other signal is a hand-picked inline phrase already
+// wrapped tightly around its own real content (a whole file, a single sentence, a lettered
+// sub-bullet) with no comparable "rest of the section" to silently leave unmarked, so the
+// simpler strictly-inside-the-span check is enough for those.
+//
+// Disclosed scope gap (review finding, fix loop 1): each muster-{builder,strategist,investigator,
+// improver,surgeon}.md agent ALSO opens with a one-line "Respond with a structured ..." sentence
+// that paraphrases the very same return contract its marked "## Report back" section states in
+// full below -- that opening sentence carries no signal of its own here, so a future edit that
+// ONLY bloats the one-liner (leaving "## Report back" untouched) would not trip this guard.
+// Accepted as-is: these sentences are short by construction and duplicate content this list
+// already marks and budget-checks in full further down the same file; a signal exists for the
+// canonical, fuller statement of each contract, not for every paraphrase of it.
 export const DISPATCH_SIGNAL_PATTERNS = [
-  { name: "dispatch-contract-heading", re: /^## Dispatch contract$/m },
-  { name: "report-back-heading", re: /^## Report back$/m },
-  { name: "verdict-heading", re: /^## Verdict$/m },
-  { name: "return-contract-heading", re: /^## Return contract\b.*$/m },
-  { name: "request-response-shapes-heading", re: /^## Request and response shapes$/m },
+  { name: "dispatch-contract-heading", re: /^## Dispatch contract$/m, sectionOwned: true },
+  { name: "report-back-heading", re: /^## Report back$/m, sectionOwned: true },
+  { name: "verdict-heading", re: /^## Verdict$/m, sectionOwned: true },
+  { name: "return-contract-heading", re: /^## Return contract\b.*$/m, sectionOwned: true },
+  { name: "request-response-shapes-heading", re: /^## Request and response shapes$/m, sectionOwned: true },
   { name: "go-spec-gate-return-contract", re: /Return contract: verdict first/ },
   { name: "audit-sweep-return-contract", re: /Each returns findings: severity \(P0\/P1\/P2\)/ },
   { name: "review-gate-full-brief-identity", re: /You are muster's adversarial review gate/ },
@@ -128,43 +146,89 @@ export const DISPATCH_SIGNAL_PATTERNS = [
   { name: "tournament-judge-scoring-shape", re: /scores: \{ criterion: n \}, total, passing/ },
 ];
 
+// The start of the next `## `-level heading at or after `fromIndex`, or `text.length` (EOF) when
+// none remains -- the section boundary a `sectionOwned` signal's marker must reach.
+function nextSectionBoundary(text, fromIndex) {
+  const re = /^## /m;
+  re.lastIndex = 0;
+  const rest = text.slice(fromIndex);
+  const match = re.exec(rest);
+  return match ? fromIndex + match.index : text.length;
+}
+
 // Scans a { path: text } map for every DISPATCH_SIGNAL_PATTERNS match (or a caller-supplied
-// `patterns` override, e.g. for a synthetic mutant-test fixture) and returns the ones whose match
+// `patterns` override, e.g. for a synthetic mutant-test fixture) and returns every match whose
 // offset falls outside every marked span (brief AND return) in that file -- `[]` means every
 // recognized dispatch signal in the corpus is marked (and therefore already budget-checked by
 // `lintBriefReturnCaps`).
 //
-// "Covered" allows two shapes, both real conventions this corpus uses: the signal text sits
-// STRICTLY INSIDE a marked span's content (e.g. go.md's inline "Return contract: ..." phrase, or
-// a whole dispatched-brief file marked start-to-end), OR the signal is a heading that IMMEDIATELY
-// PRECEDES a marker's OPENING TAG with nothing but whitespace between them (e.g. "## Report back"
-// on its own line, directly above the `<!-- muster-return-template:start -->` that wraps the
-// section's actual content) -- the heading names the template; the marker wraps its body;
-// together they are one covered unit. A heading followed by anything other than whitespace before
-// the next marker tag (unrelated prose, or no marker at all) is NOT covered -- exactly the
-// forgotten-marker case this lint exists to catch.
-function signalIsCovered(text, matchStart, matchEnd, ranges) {
-  for (const { tagStart, contentStart, contentEnd } of ranges) {
-    if (matchStart >= contentStart && matchStart < contentEnd) return true; // inside the marked content
-    if (matchEnd <= tagStart && text.slice(matchEnd, tagStart).trim() === "") return true; // heading -> marker tag, only whitespace between
+// "Covered" allows two shapes, both real conventions this corpus uses:
+//
+//   1. An inline signal's text sits STRICTLY INSIDE a marked span's content (e.g. go.md's inline
+//      "Return contract: ..." phrase, or a whole dispatched-brief file marked start-to-end).
+//   2. A `sectionOwned` heading's (e.g. "## Report back") WHOLE SECTION -- from right after the
+//      heading line to the next `## `-level heading, or EOF -- is FULLY partitioned by one or
+//      more marked spans (brief and/or return) with nothing but whitespace in the gaps: before
+//      the first span, between consecutive spans, and after the last span through the section
+//      boundary. Muster-runner.md's "## Dispatch contract" section is exactly this shape: one
+//      brief-template span (the BRIEF contents) followed by one return-template span (the return
+//      receipts), nothing but a blank line between and after them -- two markers, one fully-owned
+//      section. A heading followed by unrelated prose before any marker (or no marker at all) is
+//      not covered -- the forgotten-marker case. Review finding this closes: a heading
+//      immediately followed by a trivially small marked span that leaves the section's REAL,
+//      unbounded content UNMARKED afterward must NOT read as covered -- that shape would
+//      otherwise pass while leaving the actual per-dispatch content entirely outside
+//      `lintBriefReturnCaps`'s budget check, defeating the point of this guard. Requiring the
+//      section's non-whitespace content to be fully accounted for by marker spans closes that
+//      gap without breaking the legitimate multi-marker-per-section case.
+function sectionIsFullyMarked(text, sectionStart, sectionEnd, allSpans) {
+  const inSection = allSpans
+    .filter((s) => s.tagStart >= sectionStart && s.tagStart < sectionEnd)
+    .sort((a, b) => a.tagStart - b.tagStart);
+  if (inSection.length === 0) return false;
+  let cursor = sectionStart;
+  for (const span of inSection) {
+    if (text.slice(cursor, span.tagStart).trim() !== "") return false;
+    cursor = span.closingTagEnd;
   }
-  return false;
+  return text.slice(cursor, sectionEnd).trim() === "";
+}
+
+function signalIsCovered(text, matchStart, matchEnd, sectionOwned, allSpans) {
+  for (const { contentStart, contentEnd } of allSpans) {
+    if (matchStart >= contentStart && matchStart < contentEnd) return true; // inside a marked span's content
+  }
+  if (!sectionOwned) return false; // an inline signal has no "rest of section" to check
+  const sectionEnd = nextSectionBoundary(text, matchEnd);
+  return sectionIsFullyMarked(text, matchEnd, sectionEnd, allSpans);
+}
+
+// Every match of `re` in `text`, as `[start, end)` offsets -- always scans with a fresh global
+// copy of the pattern regardless of the flags the caller wrote it with, so a repeated signal (two
+// "## Report back" sections, one marked and one added later without a marker) is never silently
+// reduced to just its first occurrence.
+function allMatches(re, text) {
+  const global = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+  const matches = [];
+  for (const match of text.matchAll(global)) {
+    matches.push([match.index, match.index + match[0].length]);
+  }
+  return matches;
 }
 
 export function findUnmarkedDispatchSignals(filesByPath, { patterns = DISPATCH_SIGNAL_PATTERNS } = {}) {
   const unmarked = [];
   for (const [path, text] of Object.entries(filesByPath)) {
-    const briefRanges = markedSpanRanges(text, "brief");
-    const returnRanges = markedSpanRanges(text, "return");
-    for (const { name, re } of patterns) {
-      const match = re.exec(text);
-      if (!match) continue;
-      const matchStart = match.index;
-      const matchEnd = matchStart + match[0].length;
-      const covered =
-        signalIsCovered(text, matchStart, matchEnd, briefRanges) ||
-        signalIsCovered(text, matchStart, matchEnd, returnRanges);
-      if (!covered) unmarked.push({ path, signal: name });
+    const allSpans = [
+      ...markedSpanRanges(text, "brief").map((s) => ({ ...s, closingTagEnd: s.contentEnd + MARKERS.brief.end.length })),
+      ...markedSpanRanges(text, "return").map((s) => ({ ...s, closingTagEnd: s.contentEnd + MARKERS.return.end.length })),
+    ];
+    for (const { name, re, sectionOwned } of patterns) {
+      for (const [matchStart, matchEnd] of allMatches(re, text)) {
+        if (!signalIsCovered(text, matchStart, matchEnd, sectionOwned, allSpans)) {
+          unmarked.push({ path, signal: name });
+        }
+      }
     }
   }
   return unmarked;

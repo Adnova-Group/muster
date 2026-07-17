@@ -54,6 +54,11 @@ Cut (redundant native-mechanic narration -- restates what the tool already does)
   without re-explaining that it's automatic.
 - Restated clauses in the Codex spawn_agent subsection ("nothing outside a running session can
   auto-probe... the same shape as... just inverted" scaffolding trimmed to the operative rule).
+- The parenthetical `(agent_type may be absent from it but must be sent anyway)` in the
+  fail-closed-on-a-rejected-profile paragraph -- redundant with the call signature two lines above
+  (`agent_type: "<exact chosen.id>"`, already always sent) and with the identical clarifying rule
+  in `docs/research/codex-cli.md` sec 6, cited in the same paragraph, and `src/wave-dispatch.js`'s
+  own code comment.
 
 Kept verbatim in meaning (judgment / capability check / fallback -- the brief's explicit floor):
 - The capability-check mechanism itself: `$MUSTER_CLI wave-dispatch [--agent-teams|--no-agent-teams]`,

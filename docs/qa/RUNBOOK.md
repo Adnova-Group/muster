@@ -48,6 +48,11 @@ If either fails, the fix is almost always a docs edit, not a code edit.
   check is the invariant above, read fresh from the run's own summary line.
 - Full run takes ~15s. If you only touched one area, run the narrower pattern
   in Flow 2/3 first and save the full run for the pre-merge gate.
+- Do not overlap whole-suite invocations. Codex package/cache tests rebuild and
+  inspect immutable release fixtures; serialize `npm test` and use the final
+  non-overlapping run as the gate receipt. A 2026-07-14 integration run saw a
+  transient failure only while output-recovery invocations overlapped; the
+  subsequent serialized 1,626-test barrier passed with zero failures.
 
 ---
 
@@ -173,6 +178,109 @@ warn/off/fail-open matrix.
   `.muster/`/`.claude/` both bypass the fence entirely, forbidden class or
   not -- see `pre-tool-use.js`'s decision-order docblock for the full
   precedence.
+
+---
+
+## Flow 4: Codex hook health, install-time-generation copy-publish, and legacy-manifest migration
+
+Codex hooks are installed in project (`<cwd>/.codex`) and/or user
+(`$CODEX_HOME`) layers. As of the 2026-07-15 lock/lease/quarantine/retirement
+teardown, `.codex/muster/hooks/muster-hook.mjs` and `codex/hooks/muster-hook.mjs`
+have no emission-dedupe subsystem (no per-event lock files, no 64-per-shard
+capacity cap, no cleanup/capacity locks) — every context/advisory they emit is
+idempotent, so two installed copies (or two runs of the same event) both emit
+independently rather than deduping. Run the focused regression coverage while
+changing the hook runtime or installer contract:
+
+```
+node --test --test-name-pattern='idempotent context|exports no lock' test/codex-hooks.test.js
+node --test --test-name-pattern='requires exact owned' test/codex-doctor.test.js
+```
+
+**Expected signals:** all three tests pass. "emits idempotent context" proves
+two installed copies both emit for the same event (no cross-copy dedupe) and
+that a repeated `turn_id` still emits (no per-event dedupe state). "exports no
+lock" proves the hook module has zero exports (no lock/quarantine/retirement
+machinery survives) and that CODEX_HOME never gets a bookkeeping directory
+created under it. The doctor test installs the project layer from source and
+the user layer from the selected cache release, then requires `codex-hooks`
+and `codex-hooks-overlap` to be healthy — doctor still compares installed
+Muster groups against their ownership manifest exactly by event, matcher,
+command/`commandWindows`, timeout, and every other group option, alongside
+`packageVersion` and runtime hash. A changed matcher, timeout, command, or
+duplicate owned group makes hook health fail; refresh that scope with
+`muster install codex`.
+
+**Install-time-generation copy-publish (`src/codex-release.js`, `scripts/build-codex.mjs`):**
+the Codex plugin is no longer a committed, content-addressed release — it is
+generated fresh into a native-tmpfs staging directory (never under a possibly
+drvfs-mounted `outDir`, to sidestep a confirmed WSL2 rename-after-write-burst
+pathology) and *published by copy* (`cpSync`, not a rename) into
+`outDir/plugin`, guarded by `withCodexFileLock`'s single lockfile so two
+concurrent publishers to the same `outDir` always serialize. `publishCodexPlugin`
+validates the staged tree once before taking that lock; because a same-user
+writer could in principle mutate the staged tmpdir in the gap between that
+validation and the copy, two independent defenses close it: the copy step
+rejects (hard errors on, never silently drops) any symlink or special file it
+encounters, and the copy destination is re-validated with `assertRegularTree`
+again before the marketplace pointer is written. A publish that fails after
+retiring the previous `plugin` dir restores it; a crash that leaves an orphaned
+`.muster-retired-*` sibling behind is swept at the start of the next publish.
+Regression coverage:
+
+```
+node --test --test-name-pattern='serializes concurrent holders|copy-time filter rejects a symlink|destination re-validation independently|sweeps an orphaned|concurrent publishes to the same pluginsRoot' test/codex-lock.test.js test/codex-release.test.js
+```
+
+**Expected signals:** all five tests pass. "serializes concurrent holders"
+covers the lockfile primitive directly (mutual exclusion, clean release).
+"copy-time filter rejects a symlink" and "destination re-validation
+independently" each cover one of the two copy-time-race defenses in
+isolation (one bypassing the other) so neither is a single point of failure.
+"sweeps an orphaned" covers crash-debris cleanup. "concurrent publishes to
+the same pluginsRoot" covers two real overlapping publishers leaving one
+coherent winner with no leftover retirement directory.
+
+**Readers are not synchronized with a publish.** `resolveCodexPlugin`,
+`scripts/check-codex.mjs`, `src/codex-doctor.js`, and `buildCodexPlugin`'s own
+skip-check all read `outDir` without taking the publish lock, so one running
+during the retire-then-copy window can observe a transient ENOENT or a
+partial tree. `resolveCodexPlugin` absorbs the narrow ENOENT case with a small
+bounded retry; anything else is dev/CI tooling that simply reruns. This is
+documented, not a bug — see `publishCodexPlugin`'s docblock.
+
+**Version-only skip-if-current, and its force escape hatch:** `buildCodexPlugin`
+(and therefore `npm run build:codex` / the `pretest` hook) skips regeneration
+entirely when `outDir` already holds a published plugin whose `packageVersion`
+matches `package.json` — it does not compare file content, so editing a source
+file without bumping the version is a silent no-op. Set `MUSTER_BUILD_FORCE=1`
+to force a real rebuild regardless of the published version:
+
+```
+node --test --test-name-pattern='MUSTER_BUILD_FORCE' test/codex-build-repro.test.js
+```
+
+**Legacy pre-0.5.x managed-manifest migration:** the 2026-07-15 teardown
+renamed the managed-manifest coherence key from `generation`/`bootstrapDigest`
+to `packageVersion` (see CHANGELOG.md) — an install made before that change
+fails `codex-install-generation`/`codex-hooks`/`codex-hooks-overlap` with no
+auto-migration. `runCodexDoctor` detects that exact legacy shape and reports
+"legacy pre-0.5.x install detected at `<dir>` (rerun `muster install codex
+--scope project`/`--scope user` to migrate)" instead of an opaque
+version-mismatch message. Regression coverage:
+
+```
+node --test --test-name-pattern='legacy pre-0.5.x' test/codex-doctor.test.js
+```
+
+**Expected signal:** one test passes, asserting all three checks name the
+legacy scope and the exact remediation command rather than a generic "does
+not match"/"is stale" message.
+
+**Codex limitation:** these hooks provide lifecycle context, diagnostics, and
+supported policy warnings. They do not prove subagent liveness and cannot
+reliably enforce every unified-shell or subagent action; write-capable waves
+still require isolated worktrees and event-driven, wait-first receipt handling.
 
 ---
 

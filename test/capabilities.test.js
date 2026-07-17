@@ -65,6 +65,29 @@ test("installed external agent beats a lower-ranked built-in agent", () => {
   assert.deepEqual(a.roles["implement"].chosen, { id: "ext-agent", source: "installed", kind: "agent" });
 });
 
+test("Cowork advertises only MCP or inline providers it can actually invoke", () => {
+  const a = resolveCapabilities(
+    [...catalog, ...agentCatalog],
+    {
+      runtime: "cowork",
+      plugins: ["legacy-plugin"],
+      skills: ["muster-skill-planner"],
+      agents: ["ext-agent"],
+      mcpServers: ["serena"],
+    },
+  );
+
+  assert.deepEqual(a.roles["code-navigation"].chosen, { id: "serena", source: "installed", kind: "mcp" });
+  assert.deepEqual(a.roles.implement.chosen, { id: "inline", source: "inline", kind: "inline" });
+  assert.deepEqual(a.roles.plan.chosen, { id: "inline", source: "inline", kind: "inline" });
+  assert.ok(
+    Object.values(a.roles).every(({ chosen, chain }) =>
+      [chosen, ...chain].every((provider) => provider.kind === "mcp" || provider.kind === "inline")),
+    "Cowork capability output must not advertise agent or skill dispatch targets",
+  );
+  assert.deepEqual(a.skills, [], "Cowork has no invocable skill namespace");
+});
+
 import { loadCatalog } from "../src/catalog.js";
 test("debug role resolves to a built-in on a bare machine (not inline)", async () => {
   const cat = await loadCatalog(new URL("../catalog/", import.meta.url));

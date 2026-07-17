@@ -1,7 +1,18 @@
 node_modules/
 .muster/
+# The Codex plugin (skills/MCP/commands + generated agent profiles) is
+# generated at build/install time (scripts/build-codex.mjs, src/codex-install.js)
+# into this staging directory. Nothing here is ever committed.
+.agents/
 *.log
 tmp/
 cowork-dispatch-spec.json
 wave-*/
 .worktrees/
+# install-generated, machine-specific: `muster install codex --scope project`
+# bakes this checkout's absolute path into every hook command, so neither
+# file can be tracked without leaking a machine-specific path to every clone
+# (see CHANGELOG). scripts/check-codex.mjs coherence-checks these when
+# present and skips cleanly when absent (fresh clone, pre-install).
+.codex/hooks.json
+.codex/muster/.muster-managed.json

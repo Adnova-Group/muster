@@ -1,6 +1,6 @@
 # Muster
 
-Glass-box, multi-domain agentic orchestrator for Claude Code. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.
+Glass-box, multi-domain agentic orchestrator for Claude Code and Codex. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
@@ -13,7 +13,7 @@ Glass-box, multi-domain agentic orchestrator for Claude Code. Give it an outcome
 
 Muster turns an outcome into finished work. It detects your project, discovers the capabilities you already have installed, picks the best tool for each piece of the job, and runs a crew of specialists toward your success criteria. Every decision is inspectable: which role resolved to which provider, on which model, and why.
 
-It runs on bare Claude Code with no extra services and no separate model API, and it gets better as you install more tools. The work is not limited to code. Product, business, content, and operations are first-class.
+It runs on bare Claude Code or Codex with no separate model API, and it gets better as you install more tools. The work is not limited to code. Product, business, content, and operations are first-class.
 
 ## Quickstart
 
@@ -33,6 +33,20 @@ Muster's glass-box output style ships inside the plugin and applies automaticall
 ```
 /muster:plan Add rate limiting to the public API with tests
 ```
+
+### Codex CLI and Desktop
+
+Build or install the package, then install Muster's managed Codex profiles and plugin:
+
+```sh
+npx -y @adnova-group/muster install codex --scope project
+```
+
+`--scope project` writes Muster-owned profiles under `.codex/agents/` plus the hook runtime under `.codex/muster/`, and merges owned hook groups into `.codex/hooks.json`. `--scope user` uses the corresponding paths under `$CODEX_HOME` (or `~/.codex`). Existing unrelated profiles and hook groups are preserved. With Codex on `PATH`, Muster registers `Adnova-Group/muster` and adds `muster@muster` idempotently. Without Codex it still installs the profiles and hooks, then prints the exact registration follow-up.
+
+Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. The three legacy aliases (`run`, `autopilot`, `sprint`) remain skills. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
+
+The Codex plugin bundles the deterministic CLI, all pipelines, 21 MCP tools, 27 custom-agent profiles, 11 native skills, and 51 capability skills. The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer because Codex 0.144 does not execute plugin-bundled hooks. Codex requires a one-time trust review for these non-managed hooks; inspect them with `/hooks`. The hooks inject orchestration context and surface supported diagnostics and policy warnings. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
 ## The eight modes
 
@@ -124,6 +138,8 @@ Muster's design was inspired by atomic-claude, superpowers, and gsd-core. It ven
 | obra/superpowers | MIT | Brainstorming, planning, TDD, code-review, debugging, verification skills |
 | wshobson/agents | MIT | Software and knowledge-work agents across many specialties |
 | open-gsd/gsd-core | MIT | Plan, execute, and verify workflow phases |
+
+For Codex, Muster prefers enabled authoritative upstream implementations when they exist: the official Superpowers plugin, WSHObson's per-plugin Codex skills, and GSD's installer-generated Codex skills. Bundled `sp-*`, `wsh-*`, and `muster-gsd-*` skills remain deterministic fallbacks and never install those providers implicitly. The pinned compatibility survey, including Atomic Codex, Book Genesis, humanizer sources, and Promptfoo, is recorded in [`codex/upstreams.json`](codex/upstreams.json).
 
 Alongside the vendored material, Muster ships its own clean-room specialists, authored fresh from the role concept. Full provenance lives in [NOTICE](NOTICE).
 

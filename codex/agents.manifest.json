@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "description": "Authoritative conceptual-tier and Codex-adapter mapping. DeepSWE evidence supports Luna/high for navigation, Sol/medium for routine implementation, and Sol/high for hard judgment. Sonnet defaults to the user's preferred Luna/xhigh; a small set of per-agent overrides retier specific Sonnet-sourced roles to Sol/medium-or-high instead of inheriting that default. The reservation clause is cost-based (DeepSWE v1.1: Luna/low 1.5% pass@1 vs Luna/xhigh 56.9% pass@1 at $1.54/task): Luna/xhigh is allowed and is the evidence-backed lane for muster-surgeon, wsh-api-documenter, and wsh-tutorial-engineer; Terra (any effort) and xhigh on any non-Luna model remain reserved for muster-strategist. Fable remains conceptual and adapts to Sol/high, never routine max. muster-strategist resolves to Sol/high like other Fable-tier roles, unchanged.",
+  "agents": {
+    "muster-builder": { "source": "plugin/agents/muster-builder.md", "tier": "opus", "reasoning": "medium" },
+    "muster-improver": { "source": "plugin/agents/muster-improver.md", "tier": "fable", "readOnly": true },
+    "muster-investigator": { "source": "plugin/agents/muster-investigator.md", "tier": "haiku", "readOnly": true },
+    "muster-reviewer": { "source": "plugin/agents/muster-reviewer.md", "tier": "sonnet", "model": "gpt-5.6-sol", "reasoning": "high", "readOnly": true },
+    "muster-runner": { "source": "plugin/agents/muster-runner.md", "tier": "opus", "reasoning": "medium" },
+    "muster-strategist": { "source": "plugin/agents/muster-strategist.md", "tier": "fable", "readOnly": true },
+    "muster-surgeon": { "source": "plugin/agents/muster-surgeon.md", "tier": "luna-xhigh" },
+    "wsh-api-documenter": { "source": "plugin/agents/wsh-api-documenter.md", "tier": "luna-xhigh" },
+    "wsh-backend-architect": { "source": "plugin/agents/wsh-backend-architect.md", "tier": "opus" },
+    "wsh-business-analyst": { "source": "plugin/agents/wsh-business-analyst.md", "tier": "sonnet", "model": "gpt-5.6-sol", "reasoning": "medium" },
+    "wsh-cloud-architect": { "source": "plugin/agents/wsh-cloud-architect.md", "tier": "opus" },
+    "wsh-code-reviewer": { "source": "plugin/agents/wsh-code-reviewer.md", "tier": "sonnet", "model": "gpt-5.6-sol", "reasoning": "high", "readOnly": true },
+    "wsh-content-marketer": { "source": "plugin/agents/wsh-content-marketer.md", "tier": "sonnet", "model": "gpt-5.6-sol", "reasoning": "medium" },
+    "wsh-customer-support": { "source": "plugin/agents/wsh-customer-support.md", "tier": "sonnet", "model": "gpt-5.6-sol", "reasoning": "medium" },
+    "wsh-data-engineer": { "source": "plugin/agents/wsh-data-engineer.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-data-scientist": { "source": "plugin/agents/wsh-data-scientist.md", "tier": "sonnet", "model": "gpt-5.6-sol", "reasoning": "medium" },
+    "wsh-database-optimizer": { "source": "plugin/agents/wsh-database-optimizer.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-debugger": { "source": "plugin/agents/wsh-debugger.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-devops-troubleshooter": { "source": "plugin/agents/wsh-devops-troubleshooter.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-docs-architect": { "source": "plugin/agents/wsh-docs-architect.md", "tier": "opus" },
+    "wsh-frontend-developer": { "source": "plugin/agents/wsh-frontend-developer.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-legacy-modernizer": { "source": "plugin/agents/wsh-legacy-modernizer.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-ml-engineer": { "source": "plugin/agents/wsh-ml-engineer.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-prompt-engineer": { "source": "plugin/agents/wsh-prompt-engineer.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-security-auditor": { "source": "plugin/agents/wsh-security-auditor.md", "tier": "opus", "readOnly": true },
+    "wsh-test-automator": { "source": "plugin/agents/wsh-test-automator.md", "tier": "opus", "reasoning": "medium" },
+    "wsh-tutorial-engineer": { "source": "plugin/agents/wsh-tutorial-engineer.md", "tier": "luna-xhigh" }
+  }
+}

@@ -1,10 +1,99 @@
-import { readFile, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, lstat, open, rename, unlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { join, basename, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { createHash, randomBytes } from "node:crypto";
 
 async function readIfExists(p) {
   try { return await readFile(p, "utf8"); } catch { return null; }
+}
+
+const NOFOLLOW = constants.O_NOFOLLOW || 0;
+// Exact digests of output-styles/muster.md revisions that the retired installer
+// copied into user homes. Ownership is content-based because that installer did
+// not write a registry or sidecar marker. Unknown same-name files are preserved.
+const LEGACY_STYLE_DIGESTS = new Set([
+  "02117ed091e2c1a11054631815bb0734b238652b65f664c939bdf526ed926732",
+  "48fa150dcc1999db9de9439f2a2b7cb267ece1221fc435fd166b2f6746fce6cb",
+  "49e17cb950049579c07bf2fcfcb414438f0b871ce9c66afaa92841a350bf45f8",
+  "502075b0d10f2ed3ac79a48a08db702c1e2c83e12048e45fbfba062f15a706c5",
+  "fc7eba324504fc84429156fc3527bfd09f4ce2994bfb73886633a87a6242b79b",
+]);
+
+function digest(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function statIfExists(path) {
+  try { return await lstat(path); }
+  catch (error) { if (error?.code === "ENOENT") return null; throw error; }
+}
+
+async function safeLegacyAncestry(home) {
+  for (const path of [home, join(home, ".claude"), join(home, ".claude", "output-styles")]) {
+    const stat = await statIfExists(path);
+    if (stat === null) return "absent";
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return "unsafe";
+  }
+  return "safe";
+}
+
+async function readRegularNoFollow(path) {
+  const before = await statIfExists(path);
+  if (before === null) return { kind: "absent" };
+  if (before.isSymbolicLink() || !before.isFile()) return { kind: "unsafe" };
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | NOFOLLOW);
+    const opened = await handle.stat();
+    if (!opened.isFile()) return { kind: "unsafe" };
+    const bytes = await handle.readFile();
+    return { kind: "regular", bytes, stat: opened };
+  } catch (error) {
+    if (["ELOOP", "EMLINK", "EINVAL"].includes(error?.code)) return { kind: "unsafe" };
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
+function sameFileIdentity(left, right) {
+  // ino/dev are zero or unavailable on some Windows filesystems. In that case
+  // the repeated no-follow regular-file check remains the portable safeguard.
+  return !left?.ino || !right?.ino || (left.ino === right.ino && left.dev === right.dev);
+}
+
+async function verifyUnchangedRegular(path, expected) {
+  const current = await readRegularNoFollow(path);
+  return current.kind === "regular"
+    && sameFileIdentity(expected.stat, current.stat)
+    && Buffer.compare(expected.bytes, current.bytes) === 0;
+}
+
+async function atomicReplaceRegular(path, bytes, expectedDest) {
+  const parent = dirname(path);
+  const temp = join(parent, `.${basename(path)}.${process.pid}.${randomBytes(12).toString("hex")}.muster-tmp-`);
+  let handle;
+  try {
+    handle = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | NOFOLLOW, 0o600);
+    await handle.writeFile(bytes);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    const staged = await readRegularNoFollow(temp);
+    if (staged.kind !== "regular" || Buffer.compare(staged.bytes, bytes) !== 0)
+      throw new Error("legacy restore staging verification failed");
+    if (!(await verifyUnchangedRegular(path, expectedDest)))
+      throw new Error("legacy output style changed during uninstall");
+    await rename(temp, path);
+    const published = await readRegularNoFollow(path);
+    if (published.kind !== "regular" || Buffer.compare(published.bytes, bytes) !== 0)
+      throw new Error("legacy restore publication verification failed");
+  } finally {
+    await handle?.close();
+    try { await unlink(temp); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+  }
 }
 
 // Resolve the plugin's marketplace + plugin names, falling back to "muster".
@@ -87,19 +176,34 @@ export async function runUninstall({ home = homedir() } = {}) {
   const dest = join(home, ".claude", "output-styles", "muster.md");
   const bak = `${dest}.bak`;
 
-  const existing = await readIfExists(dest);
+  const ancestry = await safeLegacyAncestry(home);
+  const existing = ancestry === "safe" ? await readRegularNoFollow(dest) : { kind: ancestry };
   let legacyStyle;
-  if (existing === null) {
+  if (existing.kind === "absent") {
     legacyStyle = "absent";
+  } else if (existing.kind === "unsafe") {
+    legacyStyle = "unsafe";
+  } else if (!LEGACY_STYLE_DIGESTS.has(digest(existing.bytes))) {
+    legacyStyle = "unowned";
   } else {
-    const backup = await readIfExists(bak);
-    if (backup !== null) {
+    const backup = await readRegularNoFollow(bak);
+    if (backup.kind === "unsafe") {
+      legacyStyle = "unsafe";
+    } else if (backup.kind === "regular") {
       // A prior install displaced your file; bring the original back.
-      await writeFile(dest, backup, "utf8");
-      await rm(bak);
+      await atomicReplaceRegular(dest, backup.bytes, existing);
+      if (!(await verifyUnchangedRegular(dest, { bytes: backup.bytes, stat: (await readRegularNoFollow(dest)).stat })))
+        throw new Error("legacy output style restore verification failed");
+      const backupNow = await readRegularNoFollow(bak);
+      if (backupNow.kind !== "regular" || !sameFileIdentity(backup.stat, backupNow.stat)
+          || Buffer.compare(backup.bytes, backupNow.bytes) !== 0)
+        throw new Error("legacy output style backup changed during uninstall");
+      await unlink(bak);
       legacyStyle = "restored";
     } else {
-      await rm(dest);
+      if (!(await verifyUnchangedRegular(dest, existing)))
+        throw new Error("legacy output style changed during uninstall");
+      await unlink(dest);
       legacyStyle = "removed";
     }
   }

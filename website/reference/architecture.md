@@ -11,7 +11,7 @@ Muster is split into two layers with a hard boundary between them.
 | Deterministic CLI | `src/*.js` | Plain Node ESM | No |
 | Model-facing | `plugin/` (commands, skills, agents) | Claude Code | Yes |
 
-The **CLI layer** is ordinary Node. It has a single runtime dependency (`yaml`), requires Node 20 or newer, and makes no model calls and no network calls -- the one carve-out is the `issue` verb, which shells out to `gh issue view` when the user passes a GitHub issue reference (opt-in; tests inject the exec dependency; cowork omits it). All other CLI verbs are local. It does the deterministic work: detecting the project, resolving roles to providers, ranking candidates by token overlap, scoring artifacts against a gate, computing prioritization math, loading and validating pipelines. Anything that can be answered by code is answered by code.
+The **CLI layer** is ordinary Node. It has a single runtime dependency (`yaml`), requires Node 20 or newer, and makes no model calls. Most verbs are fully local; three boundaries can use the network. `issue` shells out to `gh issue view` for an explicit GitHub issue reference. `vendor` fetches sources declared with `kind: github` in `vendor/manifest.yaml` (local sources stay offline). `doctor` uses `gh api` to verify vendor note SHAs against pinned refs; if that remote check is unavailable, it reports the check as skipped offline, while a missing, unreadable, or invalid local vendor manifest still fails health. The remaining deterministic verbs run without network access.
 
 The **model-facing layer** is what Claude Code loads as a plugin. It is markdown: slash commands, skills, and agents. These files instruct the model how to drive a run. They call the CLI for every deterministic decision, then use Claude Code's built-in subagent dispatch to do the judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
 
@@ -54,7 +54,7 @@ A provider resolves to one of four kinds, which decides how the orchestrator dis
 - **mcp**: an installed MCP server, surfaced as a tool.
 - **inline**: no specialist; the model does the work directly.
 
-Dispatch honors `chosen.kind`: an agent routes by `subagent_type`, anything else gets a generic subagent with the relevant skill injected. If an agent type is not yet dispatchable in the running session, the orchestrator falls back to a generic subagent with the provider's brief injected. The model override from per-role selection always applies, regardless of kind.
+Dispatch honors `chosen.kind`: an agent routes through its installed Codex profile using `agent_type` and a bounded context fork, while anything else gets a generic subagent with the relevant skill injected. Because dispatch has no cwd field, worktree briefs carry absolute worktree, manifest, and STATE paths and require that worktree as every tool call's working directory. If a named agent profile is not dispatchable, the task fails closed with a reinstall/new-session diagnostic; it never silently falls back and loses the pinned role/model policy. Generic skill/MCP/inline dispatch inherits the parent model because Codex does not expose a per-call model override for that path.
 
 ## Pipelines
 

@@ -63,7 +63,7 @@ test("readInstalledCowork: missing config dir yields empty providers, no throw",
   assert.equal(r.connectorsDiscoverable, false);
 });
 
-test("readInstalledCowork: merges Claude Code plugin inventory into all lanes", async () => {
+test("readInstalledCowork: ignores Claude Code-only agents, skills, and unregistered plugin MCP servers", async () => {
   const home = fixture((d) => {
     const install = path.join(d, ".claude/plugins/cache/official/serena/1.0.0");
     mkdirSync(path.join(install, "agents"), { recursive: true });
@@ -78,9 +78,9 @@ test("readInstalledCowork: merges Claude Code plugin inventory into all lanes", 
   });
   try {
     const r = await readInstalledCowork(home, { dir: cfg });
-    assert.deepEqual(r.mcpServers.sort(), ["foo", "serena"], "registry + plugin servers merge");
-    assert.deepEqual(r.plugins, ["serena"], "plugin lane populated");
-    assert.deepEqual(r.agents, ["serena-agent"], "agent lane populated");
+    assert.deepEqual(r.mcpServers, ["foo"], "only the Cowork registry is invocable");
+    assert.deepEqual([r.plugins, r.skills, r.agents], [[], [], []], "Claude Code-only provider lanes stay hidden");
+    assert.equal(r.runtime, "cowork", "capability resolution receives an explicit runtime contract");
     assert.equal(r.connectorsDiscoverable, false, "connector contract unchanged");
   } finally {
     rmSync(home, { recursive: true, force: true });

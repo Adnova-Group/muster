@@ -9,7 +9,7 @@ description: Execute a validated Crew Manifest in dependency-ordered waves, with
 
 You are muster's wave executor. Drive the manifest's waves and record every decision in the run STATE; emit a ticking markdown checklist and a per-wave commit.
 
-Inputs: a validated `.muster/manifest.json` and a `runId` (e.g. a slug of the outcome).
+Inputs: a validated `.muster/manifest.json`, a `runId` (e.g. a slug of the outcome), the run's already-captured `.muster/capabilities.json` (written once by the invoking verb — see `plugin/commands/go.md` step 3), and `$MUSTER_CLI` (resolved once by the invoking verb — see `plugin/commands/go.md` step -2). This skill never re-invokes `npx`; every CLI call below uses `$MUSTER_CLI`.
 
 ## Iron rule: dispatch the crew, never work inline
 
@@ -34,17 +34,28 @@ the manifest — the crew on paper is not the crew doing the work.
   exactly one hard deny, unrelated to this rule: the action-class fence — see "Enforcement model:
   gates vs conventions", below.)
 
-1. Compute waves: `npx -y @adnova-group/muster wave .muster/manifest.json` -> ordered list of waves.
-2. **Pre-flight plan review (once, before wave 1).** Scan the whole plan for conflicts before dispatching anything:
+1. Compute waves: `$MUSTER_CLI wave .muster/manifest.json` -> ordered list of waves.
+2. **Gate cadence (small-task fast path).** Read `.muster/gate-cadence.json` -> `{taskCount, waveCount,
+   specGateRounds, reviewGateBatches, fastPath, reason}` — captured once by the invoking verb at spec-gate
+   time (see `plugin/commands/go.md` step 4). Do **not** re-invoke `gate-cadence` here: the manifest's waves
+   are already fixed by this point, so recomputing the identical result per invoker is pure duplication
+   (dedup lever, same treatment as the `capabilities` capture above — see docs/performance-pass.md). Note
+   the result in STATE. When `fastPath: true` (small plans, at or
+   below the small-task threshold), step 4c below batches the review gate into a single pass over the
+   cumulative diff instead of one dispatch per wave — same reviewer tier, same pass bar, same 3-iteration fix
+   cap, only the CADENCE collapses (batching lever, not a weaker gate — see docs/performance-pass.md,
+   criterion 3). When `fastPath: false`, step 4c keeps today's per-wave cadence unchanged: depth stays
+   proportional to wave count as the plan grows.
+3. **Pre-flight plan review (once, before wave 1).** Scan the whole plan for conflicts before dispatching anything:
    tasks that contradict each other or the manifest's `successCriteria`/global constraints, and anything a task
    mandates that the review gate would later flag as a defect (a test that asserts nothing, verbatim duplication of
    a logic block, a task that undoes another). Present everything found to the human as **one batched
    AskUserQuestion** — each finding beside the plan text that mandates it, asking which governs — **before**
    execution begins, not one interrupt per discovery mid-run. If the scan is clean, proceed without comment.
    In **unattended (Routine) mode** there is no human to ask: record the conflicts to STATE and proceed best-effort.
-   This is a one-shot gate; the per-wave review loop (step 3c) remains the net for conflicts that only emerge from
+   This is a one-shot gate; the review-gate loop (step 4c) remains the net for conflicts that only emerge from
    implementation.
-3. For each wave, in order:
+4. For each wave, in order:
    a. Write the wave id (e.g. `wave-1`) to `.muster/wave-active` before dispatching any task -- glass-box bookkeeping for STATE and the review gate's after-the-fact diff, not a marker the `PreToolUse` hook reads or enforces anything against (see "SKILL discipline, not a hook block", above). Note: `.muster/run-active` is a separate, verb-level marker (not per-wave); it is written by the invoking verb (run/autopilot/diagnose/audit) at invocation start and removed when the verb exits. Then dispatch every task in the wave **concurrently** (use the harness Agent tool):
       - `mode: single` -> one implementer agent, given the task + the Crew Manifest as BRIEF.
       - `mode: tournament` -> invoke the **tournament** skill for that task (runs N competing agents, a judge scores each and produces a debate fusion map, then `muster fuse` decides: synthesize the top-K via a hardened synthesizer agent, or fall back to the best passing candidate when candidates already agree).
@@ -52,8 +63,12 @@ the manifest — the crew on paper is not the crew doing the work.
         that writes files, give each its own git worktree (`isolation: "worktree"` on the Agent tool)
         so independent same-wave tasks cannot collide on the shared working tree; the post-barrier
         step reconciles them. Read-only tasks (investigate/review) and single-task waves skip it.
-      - **Provider kind:** look up the role's chosen provider from capabilities
-        (`npx -y @adnova-group/muster capabilities` -> `roles[<role>].chosen = { id, source, kind }`):
+      - **Provider kind:** look up the role's chosen provider from the run's captured
+        `.muster/capabilities.json` (written once at run start — see plugin/commands/go.md step 3) ->
+        `roles[<role>].chosen = { id, source, kind }`. Do **not** re-invoke `capabilities` mid-run: the
+        inventory does not change during a run, so every wave's provider-kind lookup and review-gate's own
+        `AvailableCapabilities` input (below) read the SAME captured file (dedup lever, not a correctness
+        risk — see docs/performance-pass.md):
         - `chosen.kind === "agent"` -> dispatch with that agent **as the subagent type**
           (the Agent tool's `subagent_type`/`agentType` = `chosen.id`), passing the task +
           the Crew Manifest as the BRIEF.
@@ -83,23 +98,33 @@ the manifest — the crew on paper is not the crew doing the work.
         Re-dispatch ONCE with the same brief plus the error appended as context (`dispatchRetryState`
         from `src/loop.js` — max 2 attempts; model-availability rejections follow the fable→opus rule
         above instead). If the retry also fails: record the failure in STATE and treat it exactly like
-        a review-gate escalation (step 3e) — the wave's OTHER tasks still complete and the barrier
+        a review-gate escalation (step 4e) — the wave's OTHER tasks still complete and the barrier
         collects what succeeded; only the failed task escalates.
    b. BARRIER: wait for all wave tasks to finish; then remove `.muster/wave-active` (glass-box bookkeeping only — no hook reads this marker; review-gate fix agents are dispatched via the Agent tool after the barrier, same as any other task).
-   c. Invoke the **review-gate** skill over the wave's changes. The review->fix cycle loops: re-dispatch
+   c. **Review gate — cadence follows step 2's `gate-cadence` result:**
+      - `fastPath: false` (plans above the small-task threshold): invoke the **review-gate** skill over THIS
+        wave's changes now, same as always — depth stays proportional to wave count as the plan grows.
+      - `fastPath: true` (small plans): do **not** invoke review-gate after every wave. Instead accumulate
+        this wave's diff (the commits since the last batched review, or since run start for the first wave)
+        and defer the actual review-gate dispatch to step 5, after the LAST wave — one pass over the FULL
+        cumulative diff instead of one dispatch per wave. Still commit this wave's work per step d below;
+        only the review-gate DISPATCH itself batches.
+      Either way, when review-gate does run (per-wave or batched), the review->fix cycle loops: re-dispatch
       fix attempts until the gate passes (`done`) or the iteration cap is hit (`max-iterations`), then
-      escalate per step 3e below. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
-      `src/loop.js` -- a plugin-user sees this value enforced by the review-gate skill).
+      escalate per step 4e below. The cap is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` in
+      `src/loop.js` -- a plugin-user sees this value enforced by the review-gate skill) — unchanged by
+      batching: a batched pass gets the same 3-iteration cap as any single-wave pass, over the larger diff.
       **Advisor escalation (worker-signaled):** if a dispatched worker returns a structured advice-request
       (`{ question, context, decisionType, options? }`) instead of a final result, service it via the
-      **advisor** skill -- run `muster advise .muster/advice-request.json` (validates + returns
+      **advisor** skill -- run `$MUSTER_CLI advise .muster/advice-request.json` (validates + returns
       `{ advisorModel, request }`), check the consult budget (`consultBudget` in `src/advisor.js`;
       default cap 3, `MUSTER_ADVISOR_MAX_CONSULTS`), dispatch a native advisor agent on `advisorModel`
       (`fable->opus`), append the consult to STATE, and re-dispatch the worker with the advice injected.
       The advisor informs; the worker owns the final decision. See `plugin/skills/advisor/SKILL.md`.
-   d. Append to the run STATE: the wave index, tasks, winners, and review result — AND the re-rendered
-      plan checklist with completed tasks ticked (`npx -y @adnova-group/muster plan-checklist .muster/manifest.json
-      --done <comma-separated completed ids>`), so the STATE shows the plan progressing `- [ ]` -> `- [x]`.
+   d. Append to the run STATE: the wave index, tasks, winners, and review result (or "review deferred to
+      the batched pass" when fast-pathing) — AND the re-rendered plan checklist with completed tasks ticked
+      (`$MUSTER_CLI plan-checklist .muster/manifest.json --done <comma-separated completed ids>`), so the
+      STATE shows the plan progressing `- [ ]` -> `- [x]`.
    e. If the review gate escalates (fix-loop cap, or a tournament with no passing candidate), do not start
       the next wave. **First dispatch `muster-strategist` (read-only, root-cause) on the failing task plus
       the fix-loop history** — the same error surviving repeated fixes is a design/spec problem, not another
@@ -107,7 +132,10 @@ the manifest — the crew on paper is not the crew doing the work.
       present the resolution choices via the **AskUserQuestion** selection UI — e.g. **Apply the strategist's
       recommendation** / **Retry with more context** / **Re-scope the task** / **Abort the run**. In unattended
       (Routine) mode, record the strategist's root-cause to the run report instead of prompting.
-4. After the last wave, summarize the run and ensure FOLLOWUPS are recorded.
+5. After the last wave: when step 2's `gate-cadence` reported `fastPath: true`, invoke the **review-gate**
+   skill NOW, once, over the full cumulative diff of every batched wave (step 4c's deferred pass) — same
+   fix-loop/escalation handling as 4c/4e, applied to this one pass. Then summarize the run and ensure
+   FOLLOWUPS are recorded.
 
 ## Return contract (every dispatch)
 
@@ -203,14 +231,14 @@ implementation against recorded intent, not just the diff (see review-gate's "In
 
 When the orchestrator is driven remotely (Channels wired), a steering message may arrive mid-run as a
 `<channel source="...">` event. Classify **every** such event deterministically by running
-`npx -y @adnova-group/muster steer "<msg>"` (which calls `classifySteer` in `src/steer.js`) — do NOT
+`muster steer "<msg>"` (via `$MUSTER_CLI steer "<msg>"`, which calls `classifySteer` in `src/steer.js`) — do NOT
 free-interpret it. Map the returned action:
 
 - **approve** — treat as the human passing the current review gate: end the current `loopState`
   fix-cycle as `done` and continue to the next wave.
 - **stop** — halt after the current in-flight wave completes (never abandon a wave mid-flight); write
   the halt + current plan-checklist to STATE; reply through the channel that the run is stopped.
-- **status** — read-only: reply through the channel with the live `npx -y @adnova-group/muster plan-checklist
+- **status** — read-only: reply through the channel with the live `$MUSTER_CLI plan-checklist
   .muster/manifest.json --done <completed ids>` rendering; do not change run state.
 - **retarget** — a scope change: do NOT silently re-scope the run; record it as a follow-up and reply
   through the channel that it's been logged for the human to confirm (spec-as-current-truth: the

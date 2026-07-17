@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { mkdtempSync, writeFileSync, rmSync, renameSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, execFile } from "node:child_process";
@@ -15,9 +15,13 @@ const execFileP = promisify(execFile);
 
 // Drive the MCP server over stdio: send requests, resolve a map of id -> response
 // once every id with an `id` has replied. Notifications (no id) expect no reply.
-function rpc(requests, { timeout = 30_000 } = {}) {
+function rpc(requests, { timeout = 30_000, env = {}, serverPath, cwd } = {}) {
   return new Promise((resolve, reject) => {
-    const srv = spawn("node", [path.join(rootDir, "cowork", "mcp-server.mjs")], { cwd: rootDir, stdio: ["pipe", "pipe", "inherit"] });
+    const srv = spawn("node", [serverPath || path.join(rootDir, "cowork", "mcp-server.mjs")], {
+      cwd: cwd || rootDir,
+      env: { ...process.env, ...env },
+      stdio: ["pipe", "pipe", "inherit"],
+    });
     const want = new Set(requests.filter((r) => r.id != null).map((r) => r.id));
     const got = {};
     let buf = "";
@@ -186,24 +190,36 @@ test("tools/call: muster_sprint_protocol returns the sprint playbook text with k
   assert.equal(text, onDisk.trim(), "served text must match the checked-in cowork/sprint-protocol.md verbatim (drift guard)");
 });
 
-test("F3: missing cowork/sprint-protocol.md at module load does not crash the server; muster_sprint_protocol surfaces isError naming the file", async () => {
-  const protocolPath = path.join(rootDir, "cowork", "sprint-protocol.md");
-  const backupPath = path.join(rootDir, "cowork", "sprint-protocol.md.f3-test-bak");
-  renameSync(protocolPath, backupPath);
-  try {
-    // Server must still start and answer other requests (ping) with the file gone.
-    const r = await rpc([
-      INIT,
-      { jsonrpc: "2.0", id: 2, method: "ping" },
-      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_sprint_protocol", arguments: {} } },
-    ]);
-    assert.deepEqual(r[2].result, {}, "server stays alive and answers unrelated requests");
-    const res = r[3].result;
-    assert.equal(res.isError, true, "missing sprint-protocol.md must surface as isError, not crash the server");
-    assert.match(res.content[0].text, /sprint-protocol\.md/, "error text names the missing file");
-  } finally {
-    renameSync(backupPath, protocolPath);
-  }
+test("F3: missing cowork/sprint-protocol.md at module load does not crash the server; muster_sprint_protocol surfaces isError naming the file", async (t) => {
+  // Isolated temp copy, never the real repo tree: an earlier version of this test renamed the
+  // real cowork/sprint-protocol.md in place for the call's duration. Under concurrent test
+  // execution that raced with anything scanning the whole working tree at the same moment
+  // (e.g. codex.test.js's `npm pack --dry-run`, which walks the live filesystem) -- an ENOENT
+  // on the transient backup name once npm's own directory walk observed it mid-rename. Building
+  // a throwaway copy of just the files mcp-server.mjs needs (itself, guidance.js, a stub
+  // package.json) and omitting sprint-protocol.md from it reproduces the exact missing-file
+  // scenario without ever mutating the shared repo tree, so no other concurrently-running test
+  // can observe the absence.
+  const tmp = mkdtempSync(path.join(tmpdir(), "muster-cowork-f3-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  mkdirSync(path.join(tmp, "cowork"), { recursive: true });
+  mkdirSync(path.join(tmp, "plugin", "hooks"), { recursive: true });
+  copyFileSync(path.join(rootDir, "cowork", "mcp-server.mjs"), path.join(tmp, "cowork", "mcp-server.mjs"));
+  copyFileSync(path.join(rootDir, "plugin", "hooks", "guidance.js"), path.join(tmp, "plugin", "hooks", "guidance.js"));
+  writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ version: "0.0.0-test", type: "module" }));
+  // Deliberately no cowork/sprint-protocol.md written into the temp copy -- this omission IS
+  // the missing-file case under test.
+
+  // Server must still start and answer other requests (ping) with the file gone.
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "ping" },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_sprint_protocol", arguments: {} } },
+  ], { serverPath: path.join(tmp, "cowork", "mcp-server.mjs"), cwd: tmp });
+  assert.deepEqual(r[2].result, {}, "server stays alive and answers unrelated requests");
+  const res = r[3].result;
+  assert.equal(res.isError, true, "missing sprint-protocol.md must surface as isError, not crash the server");
+  assert.match(res.content[0].text, /sprint-protocol\.md/, "error text names the missing file");
 });
 
 test("string verb: muster_route returns valid JSON with a domain", async () => {
@@ -362,11 +378,124 @@ test("tools/call: muster_fuse validates candidates+fusion-map and returns a mode
   assert.ok(out.synthesizerInput?.fusionMap, "synthesizerInput.fusionMap must be present");
 });
 
-test("tools/call: muster_audit (kind=none) returns non-error JSON", async () => {
-  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_audit", arguments: {} } }]);
-  const res = r[2].result;
-  assert.equal(res.isError, false, "muster_audit must not error");
-  assert.doesNotThrow(() => JSON.parse(res.content[0].text), "muster_audit output must be valid JSON");
+test("tools/call: muster_audit requires and analyzes its explicit target directory", async () => {
+  const plain = mkdtempSync(path.join(tmpdir(), "cowork-audit-plain-"));
+  const prompting = mkdtempSync(path.join(tmpdir(), "cowork-audit-prompting-"));
+  writeFileSync(path.join(plain, "package.json"), JSON.stringify({ dependencies: {} }));
+  writeFileSync(path.join(prompting, "package.json"), JSON.stringify({ dependencies: { openai: "latest" } }));
+  try {
+    const r = await rpc([
+      INIT,
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_audit", arguments: {} } },
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_audit", arguments: { dir: plain } } },
+      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "muster_audit", arguments: { dir: prompting } } },
+    ]);
+    assert.equal(r[2].result.isError, true, "omitting the target must not silently audit the server cwd");
+    assert.match(r[2].result.content[0].text, /target directory.*required/i);
+    const plainManifest = JSON.parse(r[3].result.content[0].text);
+    const promptingManifest = JSON.parse(r[4].result.content[0].text);
+    assert.equal(plainManifest.plan.some(({ id }) => id === "audit-prompt-quality"), false);
+    assert.equal(promptingManifest.plan.some(({ id }) => id === "audit-prompt-quality"), true);
+    assert.ok(
+      promptingManifest.crew.every(({ provider }) => provider === "inline" || provider === "serena"),
+      "Cowork audit must inherit the runtime-aware provider contract",
+    );
+  } finally {
+    rmSync(plain, { recursive: true, force: true });
+    rmSync(prompting, { recursive: true, force: true });
+  }
+});
+
+test("tools/call bounds in-flight work, rejects overload, and cancels children plus temp dirs", async () => {
+  const fixture = mkdtempSync(path.join(tmpdir(), "cowork-concurrency-"));
+  const childTmp = path.join(fixture, "tmp");
+  const fakeCli = path.join(fixture, "slow-cli.mjs");
+  writeFileSync(fakeCli, [
+    'import { writeFileSync } from "node:fs";',
+    'import path from "node:path";',
+    'writeFileSync(path.join(process.env.MUSTER_TEST_MARKERS, `started-${process.pid}`), process.argv.slice(2).join("\\n"));',
+    'setInterval(() => {}, 1000);',
+  ].join("\n"));
+  writeFileSync(path.join(fixture, "package.json"), JSON.stringify({ dependencies: {} }));
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(childTmp));
+
+  const responses = await new Promise((resolve, reject) => {
+    const srv = spawn(process.execPath, [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        NODE_ENV: "test",
+        TMPDIR: childTmp,
+        MUSTER_COWORK_TEST_CLI: fakeCli,
+        MUSTER_COWORK_MAX_INFLIGHT: "1",
+        MUSTER_COWORK_MAX_QUEUE: "1",
+        MUSTER_TEST_MARKERS: fixture,
+      },
+      stdio: ["pipe", "pipe", "inherit"],
+    });
+    const got = {};
+    let cancellationScheduled = false;
+    let buf = "";
+    const timer = setTimeout(() => {
+      srv.kill("SIGKILL");
+      reject(new Error(`bounded concurrency test timeout; replies=${JSON.stringify(got)}`));
+    }, 5_000);
+    srv.stdout.setEncoding("utf8");
+    srv.stdout.on("data", (data) => {
+      buf += data;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const msg = JSON.parse(line);
+        if (msg.id != null) got[msg.id] = msg;
+        if (msg.id === 4 && !cancellationScheduled) {
+          cancellationScheduled = true;
+          const cancelAfterChildStarts = () => {
+            if (!readdirSync(fixture).some((name) => name.startsWith("started-"))) {
+              setTimeout(cancelAfterChildStarts, 10);
+              return;
+            }
+            srv.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 2 } }) + "\n");
+            srv.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 3 } }) + "\n");
+          };
+          cancelAfterChildStarts();
+        }
+        if (got[2] && got[3] && got[4]) {
+          clearTimeout(timer);
+          srv.stdin.end();
+          resolve(got);
+        }
+      }
+    });
+    srv.on("error", reject);
+    srv.stdin.write(JSON.stringify(INIT) + "\n");
+    for (const id of [2, 3, 4]) {
+      srv.stdin.write(JSON.stringify({
+        jsonrpc: "2.0", id, method: "tools/call",
+        params: { name: "muster_wave", arguments: { manifest: { plan: [{ id: `task-${id}`, deps: [] }] } } },
+      }) + "\n");
+    }
+  });
+
+  try {
+    assert.equal(responses[4].result.isError, true);
+    assert.match(responses[4].result.content[0].text, /overloaded.*queue/i);
+    for (const id of [2, 3]) {
+      assert.equal(responses[id].result.isError, true);
+      assert.match(responses[id].result.content[0].text, /cancelled/i);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const { readdir } = await import("node:fs/promises");
+    assert.deepEqual(await readdir(childTmp), [], "cancelled work must remove every request temp directory");
+    const markerNames = (await readdir(fixture)).filter((name) => name.startsWith("started-"));
+    assert.equal(markerNames.length, 1, "only the single active slot may spawn a child");
+    const pid = Number(markerNames[0].slice("started-".length));
+    assert.throws(() => process.kill(pid, 0), /ESRCH/, "the active child must be terminated on cancellation");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 test("ping returns an empty result object", async () => {

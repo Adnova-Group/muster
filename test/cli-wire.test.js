@@ -16,7 +16,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
 const pexecFile = promisify(execFile);
@@ -28,6 +28,28 @@ const CLI = join(REPO_ROOT, "src/cli.js");
 function run(args, cwd = REPO_ROOT) {
   return pexecFile(process.execPath, [CLI, ...args], { cwd });
 }
+
+test("cli wire: help and --help exit zero without dispatching mutating verbs", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-help-"));
+  const before = await readdir(cwd);
+  const direct = await run(["help", "signals"], cwd);
+  const flagged = await run(["signals", "--help"], cwd);
+  const install = await run(["install", "--help"], cwd);
+  assert.match(direct.stdout, /Usage: muster/);
+  assert.equal(flagged.stdout, direct.stdout);
+  assert.equal(install.stdout, direct.stdout);
+  assert.deepEqual(await readdir(cwd), before, "help must not create files in the caller's directory");
+});
+
+test("cli wire: signals writes signals.json under the explicit target directory", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-signals-cwd-"));
+  const target = await mkdtemp(join(tmpdir(), "muster-signals-target-"));
+  await writeFile(join(target, "package.json"), JSON.stringify({ name: "signals-target" }));
+  const { stdout } = await run(["signals", target], cwd);
+  const persisted = JSON.parse(await readFile(join(target, ".muster/signals.json"), "utf8"));
+  assert.deepEqual(persisted, JSON.parse(stdout));
+  await assert.rejects(() => readFile(join(cwd, ".muster/signals.json"), "utf8"), { code: "ENOENT" });
+});
 
 // ---------------------------------------------------------------------------
 // detect
@@ -137,6 +159,24 @@ test("cli wire: every role entry carries 'chosen' and 'model' keys", async () =>
     assert.ok("source" in roleVal.chosen, `role '${roleName}'.chosen missing 'source'`);
     assert.ok("kind" in roleVal.chosen, `role '${roleName}'.chosen missing 'kind'`);
   }
+});
+
+test("cli wire: capabilities --role returns one compact role without the skill inventory", async () => {
+  const full = JSON.parse((await run(["capabilities"])).stdout);
+  const { stdout } = await run(["capabilities", "--role", "implement"]);
+  const compact = JSON.parse(stdout);
+  assert.equal(compact.role, "implement");
+  assert.deepEqual(compact.chosen, full.roles.implement.chosen);
+  assert.equal(compact.model, full.roles.implement.model);
+  assert.ok(!("skills" in compact));
+  assert.ok(Buffer.byteLength(stdout) < Buffer.byteLength(JSON.stringify(full)) / 10, "one-role output should be at least 90% smaller than the full inventory");
+});
+
+test("cli wire: capabilities --roles-only omits skills and installed inventory", async () => {
+  const { stdout } = await run(["capabilities", "--roles-only"]);
+  const compact = JSON.parse(stdout);
+  assert.ok(compact.roles.implement);
+  assert.deepEqual(Object.keys(compact), ["roles"]);
 });
 
 // ---------------------------------------------------------------------------

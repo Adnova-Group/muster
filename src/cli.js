@@ -11,7 +11,7 @@ import { tallyReview } from "./review.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
@@ -26,6 +26,10 @@ import { scoreArtifact } from "./score.js";
 import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { buildAuditManifest } from "./audit.js";
 import { runInstall, runUninstall } from "./install.js";
+import { runCodexInstall, runCodexUninstall } from "./codex-install.js";
+import { runCodexDoctor } from "./codex-doctor.js";
+import { readCodexInventory } from "./codex-inventory.js";
+import { adaptCatalogForCodex } from "./codex-catalog.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
 import { dirFromImportMeta } from "./fs-util.js";
@@ -43,8 +47,12 @@ import { fuse } from "./fusion.js";
 import { validateAdviceRequest } from "./advisor.js";
 import { modelForRole } from "./model.js";
 import { detectScope } from "./scope.js";
+import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./hygiene.js";
+import { resolveMusterCli } from "./cli-resolve.js";
+import { planGateCadence } from "./gate-cadence.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json>|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -68,26 +76,54 @@ function readStdin() {
 const readText = async (arg) =>
   (!arg || arg === "-" || arg.startsWith("--")) ? await readStdin() : await readFile(arg, "utf8");
 
+async function resolveModeCapabilities(args) {
+  const catalog = await loadCatalog(CATALOG_DIR);
+  const codex = args.includes("--codex");
+  const installed = codex
+    ? await readCodexInventory({ cwd: process.cwd() })
+    : await readInstalled(homedir());
+  return resolveCapabilities(codex ? adaptCatalogForCodex(catalog, installed) : catalog, installed);
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   try {
+    // Help is resolved before every command branch so even mutating verbs are safe to
+    // inspect (`muster install --help`, `muster signals --help`, etc.).
+    if (cmd === "help" || cmd === "--help" || cmd === "-h" || rest.includes("--help") || rest.includes("-h")) {
+      process.stdout.write(USAGE + "\n");
+      return;
+    }
     // ── routing: project detection, capability discovery, task→provider matching ──
     if (cmd === "detect") {
       out(await detectProject(rest[0] || process.cwd()));
     } else if (cmd === "capabilities") {
       const catalog = await loadCatalog(CATALOG_DIR);
-      const home = rest.find(a => !a.startsWith("-")) || homedir();
+      const role = flagValue(rest, "--role");
+      const connectors = flagValue(rest, "--connectors");
+      const consumedValues = new Set([role, connectors].filter(Boolean));
+      const home = rest.find(a => !a.startsWith("-") && !consumedValues.has(a)) || homedir();
       // --cowork resolves providers from Cowork's MCP registry instead of ~/.claude;
       // declared remote connectors (not disk-discoverable) come from --connectors or env.
       let installed;
-      if (rest.includes("--cowork")) {
+      if (rest.includes("--codex")) {
+        installed = await readCodexInventory({ cwd: process.cwd() });
+      } else if (rest.includes("--cowork")) {
         const declared = (flagValue(rest, "--connectors") || process.env.MUSTER_COWORK_CONNECTORS || "")
           .split(",").map(s => s.trim()).filter(Boolean);
         installed = await readInstalledCowork(home, { declaredConnectors: declared });
       } else {
         installed = await readInstalled(home);
       }
-      out(resolveCapabilities(catalog, installed));
+      const capabilities = resolveCapabilities(rest.includes("--codex") ? adaptCatalogForCodex(catalog, installed) : catalog, installed);
+      if (role) {
+        if (!capabilities.roles[role]) fail(`capabilities --role ${role}: unknown role`);
+        out({ role, ...capabilities.roles[role] });
+      } else if (rest.includes("--roles-only")) {
+        out({ roles: capabilities.roles });
+      } else {
+        out(capabilities);
+      }
     } else if (cmd === "match" && rest.includes("--skills")) {
       // Skills mode: rank the live skills inventory by keyword overlap against the task
       // text (matchSkills), and separately suggest stack→skill mappings (deterministic,
@@ -97,7 +133,12 @@ async function main() {
       const task = flagValue(rest, "--skills");
       if (!task) fail("match --skills <task>: missing task");
       const catalog = await loadCatalog(CATALOG_DIR);
-      const { skills } = resolveCapabilities(catalog, await readInstalled(homedir()));
+      const codex = rest.includes("--codex");
+      const installed = codex
+        ? await readCodexInventory({ cwd: process.cwd() })
+        : await readInstalled(homedir());
+      const effectiveCatalog = codex ? adaptCatalogForCodex(catalog, installed) : catalog;
+      const { skills } = resolveCapabilities(effectiveCatalog, installed);
       const ranked = matchSkills(task, skills);
       const stackArg = flagValue(rest, "--stack");
       const signals = stackArg
@@ -107,12 +148,18 @@ async function main() {
       const suggested = suggestSkillsForStack(signals, skills);
       out({ ranked, suggested });
     } else if (cmd === "match") {
-      if (!rest[0]) fail("match <task>: missing task");
+      const args = rest.filter(arg => arg !== "--codex");
+      if (!args[0]) fail("match <task>: missing task");
       const catalog = await loadCatalog(CATALOG_DIR);
-      out(matchProviders(rest[0], catalog, await readInstalled(homedir())));
+      const codex = rest.includes("--codex");
+      const installed = codex
+        ? await readCodexInventory({ cwd: process.cwd() })
+        : await readInstalled(homedir());
+      out(matchProviders(args[0], codex ? adaptCatalogForCodex(catalog, installed) : catalog, installed));
     // ── manifest + waves: validate, order, and drive a plan ──
     } else if (cmd === "manifest" && rest[0] === "validate") {
-      const file = requireArg(rest, 1, "manifest validate <file>: missing file path", fail);
+      const args = rest.filter(arg => arg !== "--codex");
+      const file = requireArg(args, 1, "manifest validate <file>: missing file path", fail);
       const obj = JSON.parse(await readFile(file, "utf8"));
       const r = validateManifest(obj);
       // Cross-check plan[].skills bindings against the same live skills inventory
@@ -120,10 +167,22 @@ async function main() {
       // hallucinated or uninstalled bound id is actually caught here, not just at the
       // manifestWarnings unit level.
       const catalog = await loadCatalog(CATALOG_DIR);
-      const { skills } = resolveCapabilities(catalog, await readInstalled(homedir()));
+      const codex = rest.includes("--codex");
+      const installed = codex
+        ? await readCodexInventory({ cwd: process.cwd() })
+        : await readInstalled(homedir());
+      const effectiveCatalog = codex ? adaptCatalogForCodex(catalog, installed) : catalog;
+      const { skills } = resolveCapabilities(effectiveCatalog, installed);
       const warnings = manifestWarnings(obj, skills);
-      out(warnings.length ? { ...r, warnings } : r);
-      if (!r.ok) process.exit(2);
+      const unresolved = codex
+        ? warnings.filter(warning => warning.includes("not found in resolveCapabilities().skills"))
+        : [];
+      const remainingWarnings = warnings.filter(warning => !unresolved.includes(warning));
+      const result = unresolved.length
+        ? { ok: false, errors: [...r.errors, ...unresolved], ...(remainingWarnings.length ? { warnings: remainingWarnings } : {}) }
+        : (warnings.length ? { ...r, warnings } : r);
+      out(result);
+      if (!result.ok) process.exit(2);
     // ── memory + ops: local memory read/write ──
     } else if (cmd === "memory" && rest[0] === "write") {
       const dir = requireArg(rest, 1, "memory write <dir> <entry.json>: missing args", fail);
@@ -145,6 +204,15 @@ async function main() {
       if (!Array.isArray(m.plan)) fail("next: manifest has no 'plan' array");
       const doneArg = flagValue(rest, "--done");
       out(nextTasks(m.plan, doneArg ? doneArg.split(",") : []));
+    // ── performance pass: resolve the CLI invocation once, and gate-cadence's fast path ──
+    } else if (cmd === "resolve-cli") {
+      out(await resolveMusterCli({ cwd: process.cwd() }));
+    } else if (cmd === "gate-cadence") {
+      const file = requireArg(rest, 0, "gate-cadence <manifest.json>: missing file path", fail);
+      const m = JSON.parse(await readFile(file, "utf8"));
+      if (!Array.isArray(m.plan)) fail("gate-cadence: manifest has no 'plan' array");
+      const waves = computeWaves(m.plan).map((w) => w.map((t) => t.id));
+      out(planGateCadence(waves));
     } else if (cmd === "sprint-waves") {
       const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
       const content = await readFile(file, "utf8");
@@ -239,8 +307,12 @@ async function main() {
       // Deterministic 0-100 AI-tell score for human-facing text — the CI-gateable measure behind
       // the LLM humanizer. Reads a file path or capped stdin (shared readText helper).
       const text = await readText(rest[0]);
-      const threshold = Number(flagValue(rest, "--threshold")) || undefined;
-      out(scoreHumanness(text, threshold ? { threshold } : {}));
+      const thresholdArg = flagValue(rest, "--threshold");
+      const threshold = thresholdArg === undefined ? undefined : Number(thresholdArg);
+      if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 0 || threshold > 100)) {
+        fail("humanize-score --threshold must be a finite number between 0 and 100");
+      }
+      out(scoreHumanness(text, threshold === undefined ? {} : { threshold }));
     } else if (cmd === "citation-check") {
       // Deterministic citation guard for research/content artifacts: every `[src: anchor]` must
       // resolve against the trailing "Sources" list; dangling anchors fail loud (exit 2). Paragraphs
@@ -274,30 +346,34 @@ async function main() {
       const p = routePipeline(ps, outcome, domain);
       out({ domain, pipeline: p ? p.id : null });
     } else if (cmd === "diagnose") {
-      const ci = rest.includes("--ci");
+      const args = rest.filter(arg => arg !== "--codex");
+      const ci = args.includes("--ci");
       let input;
       if (ci) {
-        const ciFile = flagValue(rest, "--ci");
+        const ciFile = flagValue(args, "--ci");
         if (!ciFile) fail("diagnose --ci <file>: missing file");
         input = await readFile(ciFile, "utf8");
-      } else input = rest.join(" ");
+      } else input = args.join(" ");
       if (!input || !input.trim()) fail("diagnose <symptom> | --ci <file>: missing input");
       const failure = classifyFailure(input, { ci });
-      const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
+      const caps = await resolveModeCapabilities(rest);
       out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
     } else if (cmd === "audit") {
-      const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
+      const args = rest.filter(arg => arg !== "--codex");
+      const caps = await resolveModeCapabilities(rest);
       // Use the lightweight package.json-only check, not detectProject — audit must not
       // incur git spawns (it stays offline for CI / the MCP wrapper).
-      const prompting = await hasPromptingSignal(rest[0] || process.cwd());
+      const prompting = await hasPromptingSignal(args[0] || process.cwd());
       out(buildAuditManifest(caps, { prompting }));
     } else if (cmd === "issue") {
       if (!rest[0]) fail("issue <ref>: missing #N | number | issue-url");
       if (parseIssueRef(rest[0]).kind !== "issue") fail("not a GitHub issue reference: " + rest[0]);
       out(await resolveIssue(rest[0]));
     } else if (cmd === "assess") {
-      if (!rest[0]) fail("assess <outcome>: missing outcome");
-      out(assessOutcome(rest[0]));
+      const codex = rest.includes("--codex");
+      const args = rest.filter(arg => arg !== "--codex");
+      if (!args[0]) fail("assess <outcome>: missing outcome");
+      out(assessOutcome(args[0], { codex }));
     } else if (cmd === "steer") {
       if (!rest[0]) fail("steer <message>: missing message");
       out(classifySteer(rest.join(" ")));
@@ -308,7 +384,9 @@ async function main() {
       out(await detectScope({ cwd: process.cwd(), text: rest.join(" ") }));
     // ── memory + ops (cont.): doctor, scratchpad, profile, install/uninstall, signals ──
     } else if (cmd === "doctor") {
-      const r = await runDoctor({ root: new URL("../", import.meta.url) });
+      const r = rest.includes("--codex")
+        ? await runCodexDoctor({ root: new URL("../", import.meta.url) })
+        : await runDoctor({ root: new URL("../", import.meta.url) });
       out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "scratchpad") {
@@ -317,19 +395,53 @@ async function main() {
     } else if (cmd === "profile") {
       out(await readProfile());
     } else if (cmd === "install") {
-      out(await runInstall({ home: rest[0] || homedir() }));
+      if (rest[0] === "codex") {
+        out(await runCodexInstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));
+      } else out(await runInstall({ home: rest[0] || homedir() }));
     } else if (cmd === "uninstall") {
-      out(await runUninstall({ home: rest[0] || homedir() }));
+      if (rest[0] === "codex") {
+        out(await runCodexUninstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));
+      } else out(await runUninstall({ home: rest[0] || homedir() }));
     } else if (cmd === "signals") {
-      const dir = rest[0] || process.cwd();
+      const dir = resolve(rest[0] || process.cwd());
       const profile = await detectProject(dir);
       const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
       const sig = buildSignals(profile, caps);
-      await mkdir(".muster", { recursive: true });
-      await writeFile(".muster/signals.json", JSON.stringify(sig, null, 2));
+      const signalsDir = join(dir, ".muster");
+      await mkdir(signalsDir, { recursive: true });
+      await writeFile(join(signalsDir, "signals.json"), JSON.stringify(sig, null, 2));
       out(sig);
+    // ── memory + ops (cont.): burn-hygiene guards -- zombie provider processes, stale
+    // worktrees, stale coordination claims. Report-only by default; --reap opts into
+    // killing orphaned processes and auto-releasing stale claims (never worktree removal --
+    // that stays a human decision, see src/hygiene.js's file-level note).
+    } else if (cmd === "hygiene") {
+      const reap = rest.includes("--reap");
+      const json = rest.includes("--json");
+      const backlogPath = flagValue(rest, "--backlog") || join(".muster", "backlog.md");
+      // `Number.isFinite` (not `|| DEFAULT`) so an explicitly-passed `0` is honored as a
+      // real override instead of silently falling back to the default -- `0 || DEFAULT`
+      // would otherwise treat "explicitly zero" the same as "flag not passed at all".
+      const worktreeThresholdArg = Number(flagValue(rest, "--worktree-threshold"));
+      const worktreeThreshold = Number.isFinite(worktreeThresholdArg) ? worktreeThresholdArg : DEFAULT_WORKTREE_THRESHOLD;
+      const zombieStaleMinArg = Number(flagValue(rest, "--zombie-stale-min"));
+      const zombieStaleMin = Number.isFinite(zombieStaleMinArg) ? zombieStaleMinArg : null;
+      const claimStaleMinArg = Number(flagValue(rest, "--claim-stale-min"));
+      const claimStaleMin = Number.isFinite(claimStaleMinArg) ? claimStaleMinArg : null;
+      const result = await runHygiene({
+        backlogContent: () => readFile(backlogPath, "utf8").catch(() => null),
+        reap,
+        zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
+        worktreeOptions: { threshold: worktreeThreshold },
+        claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
+      });
+      if (reap && result.claims.content != null && result.claims.releases.length > 0) {
+        await writeFile(backlogPath, result.claims.content, "utf8");
+      }
+      if (json) out(result);
+      else process.stdout.write(renderHygieneReport(result) + "\n");
     } else {
-      fail(`unknown command: ${[cmd, ...rest].join(" ")}\nUsage: muster <detect|capabilities [--cowork]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file>|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor|scratchpad <runId>|profile|install [home]|uninstall [home]|signals [dir]>`);
+      fail(`unknown command: ${[cmd, ...rest].join(" ")}\n${USAGE}`);
     }
   } catch (e) {
     fail(formatError(e));

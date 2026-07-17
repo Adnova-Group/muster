@@ -11,7 +11,7 @@ npx @adnova-group/muster <command> [args]
 | Command | What it does |
 | --- | --- |
 | `detect` | Sniff the current project: languages, shape, greenfield flag. |
-| `capabilities` | Walk the resolution ladder for every role; report the winner, full fallback chain, recommendations, and model. |
+| `capabilities` | Walk the resolution ladder for every role; report the winner, full fallback chain, recommendations, and model. Use `capabilities --codex` to report the live Codex plugin, MCP, skills, and agents inventory. |
 | `match <task>` | Rank every catalog provider against a free-text task by deterministic token overlap. |
 | `match --skills <task> [--stack <csv>]` | Skills mode: rank the live skills inventory against the task text, and separately suggest stack→skill mappings (`{ranked, suggested}`). Signals for the suggestions default to tokens parsed from the task text; `--stack <csv>` (e.g. `--stack nextjs,supabase`) overrides them. Each suggestion carries a `missing` flag (present in the live inventory or not) — deterministic, no LLM calls. |
 | `route <outcome>` | Resolve which pipeline an outcome routes to. |
@@ -25,6 +25,8 @@ npx @adnova-group/muster <command> [args]
 | `manifest validate <file>` | Validate a Crew Manifest's shape. |
 | `wave <file>` | Compute dependency-ordered execution waves from a manifest. |
 | `next <manifest.json> [--done a,b]` | Single-agent driver: given completed task ids, return the next runnable task (and the full ready frontier). |
+| `resolve-cli` | Resolve how to invoke the muster CLI without paying an `npx -y` cold start on every call: a vendored plugin runtime (`$CLAUDE_PLUGIN_ROOT/runtime/muster.mjs`), a local checkout (`./src/cli.js`), a local/global `muster` bin, or an `npx` fallback (`degraded: true`) as a last resort. Meant to run ONCE per run; the caller reuses the answer for every later call. See docs/performance-pass.md. |
+| `gate-cadence <manifest.json>` | The small-task fast path: given the manifest's dependency-ordered waves, report how many spec-gate rounds and review-gate batches this run defaults to (`{taskCount, waveCount, specGateRounds, reviewGateBatches, fastPath, reason}`). Plans at or below the small-task threshold (3 tasks) batch the per-wave review gate into a single pass instead of one dispatch per wave; larger plans keep depth proportional to wave count. A batching lever only — the gate's own pass bar and fix-loop cap are unchanged. See docs/performance-pass.md. |
 | `sprint-waves <backlog.md>` | Parse a markdown checklist backlog (`- [ ]` items with `{id}`/`{deps}`/`{disposition}`/`{escalated}` annotations) into dependency-ordered execution waves. An item without `{deps}` implicitly depends on every item above it; `{deps: none}` opts out. |
 | `plan-checklist <file>` | Render the plan as a checklist (`--done <ids>` ticks completed tasks). |
 | `tally <file>` / `pick <file>` | Tally tournament votes; pick selects the single best candidate (fallback ranker -- fuse is the default synthesis path). |
@@ -94,16 +96,21 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 
 | Command | What it does |
 | --- | --- |
-| `install [home]` | Copy the output style and print the plugin-install steps. |
+| `install [home]` | Copy Muster's output style to `[home]/.claude/output-styles/muster.md` (default: your home directory) and print the plugin-install steps. |
 | `uninstall [home]` | Print the plugin-removal steps and clean up legacy style files. |
 | `setup [dir]` | Scaffold Muster files into a target directory. |
 | `vendor` | Generate built-in agents and skills from `vendor/manifest.yaml`. |
 | `doctor` | Health-check the installation. |
+| `doctor --codex` | Health-check the Codex CLI, generated profiles, plugin runtime, lifecycle hooks, live inventory, and advisory policy limitations. |
+| `install codex [--scope project-or-user] [--dry-run]` | Install Muster-managed Codex profiles and lifecycle hooks in the project or user scope, preserving unrelated hook groups, and register the Muster marketplace when Codex is available. |
+| `uninstall codex [--scope project-or-user] [--dry-run]` | Remove only Codex profiles, hook groups, and hook runtime files recorded in Muster's managed-install manifests, then remove the plugin when Codex is available. |
 | `profile` | Report the resolved provider profile. |
-| `signals [dir]` | Surface project signals. |
+| `signals [dir]` | Surface project signals for the target directory and persist the same JSON to `[dir]/.muster/signals.json` (default: the current directory). |
+| `help [command]` | Print CLI usage without dispatching the named command. `muster <command> --help` is equivalent and is safe for mutating verbs. |
 | `scratchpad <runId>` | Read a run's scratchpad. |
 | `memory read` / `memory write ...` | Read and write Muster's memory store. |
+| `hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]` | Burn-hygiene guards so a dead run can't strand machine state: detects zombie provider CLI (codex/claude) processes (an orphaned process -- parent dead/1 -- is reap-eligible; a merely stale-started one with a live parent is report-only, never killed), offers a stale-worktree sweep once live worktrees exceed the threshold (report-only, never deletes), and auto-releases a backlog `{claimed: runner@ts}` annotation once its heartbeat exceeds the stale-claim threshold (default 60 min). Report-only by default; `--reap` opts into killing reap-eligible zombies and rewriting the backlog to release stale claims. |
 
 ::: tip
-Run any verb with no arguments to see its usage. The CLI fails loud with a clear message on bad input.
+Run `muster help`, `muster help <command>`, or `muster <command> --help` to see usage without executing the command. The CLI fails loud with a clear message on bad input.
 :::

@@ -21,6 +21,8 @@ You review a diff. You do not edit code.
 4. List findings, severity-ordered.
 
 ## Verdict
+<!-- muster-return-template:start -->
 End with exactly one line:
 - `VERDICT: PASS` — no blockers, tests green.
 - `VERDICT: CHANGES_REQUESTED` — at least one blocker, or tests not green.
+<!-- muster-return-template:end -->

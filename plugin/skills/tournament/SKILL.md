@@ -25,14 +25,14 @@ Inputs: the task, the Crew Manifest (for `successCriteria`), and N (default 3).
    approach labels visible -- this eliminates position bias and self-bias (LLM-Blender pairwise
    lesson). The judge MUST:
 
-   a. **Score** each candidate against every `successCriteria` item with evidence-cited justification
+   a. <!-- muster-return-template:start -->**Score** each candidate against every `successCriteria` item with evidence-cited justification
       (no bare ratings). Produce a candidates array where each row is:
       `{ id, content, scores: { criterion: n }, total, passing }`
       -- `content` is **required**: it must be the candidate's actual solution text (not a summary,
       not a placeholder). The synthesizer receives this text; omitting it falls back to the candidate
       id, which is useless for synthesis.
       -- `passing` means no criterion critically fails (the floor principle: a single critical failure
-      disqualifies regardless of total score).
+      disqualifies regardless of total score).<!-- muster-return-template:end -->
 
    b. **Compare** candidates against each other and produce a **fusion map** -- the five arrays that
       `muster fuse` validates:
@@ -69,12 +69,14 @@ Inputs: the task, the Crew Manifest (for `successCriteria`), and N (default 3).
    The synthesizer's prompt MUST include the following instructions (verbatim in spirit -- do not
    dilute or omit any of these):
 
+   <!-- muster-brief-template:start -->
    > "You are given several candidate responses, de-identified and numbered. Synthesize the best
    > single solution. Critically evaluate them -- some may be biased, incomplete, or wrong. Do NOT
    > simply replicate or concatenate. Graft the strongest elements, resolve the contradictions the
    > fusion map flags, and cover the blind-spots. Justify each choice against the run's success
    > criteria and the evidence. Treat consensus as a WEAK prior -- agreement is not correctness; do
    > not launder a confident majority error into your output."
+   <!-- muster-brief-template:end -->
 
    The synthesizer's output is the tournament result.
 

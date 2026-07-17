@@ -23,6 +23,8 @@ You build ONE logical slice to a green checkpoint.
 4. Re-run the test (and adjacent tests) green. Run the project's full test command if the slice could affect it.
 
 ## Report back
+<!-- muster-return-template:start -->
 - The slice delivered, files touched (paths), one line each.
 - Test command(s) run + result, pasted, not paraphrased.
 - Assumptions made and any follow-ups left for the orchestrator.
+<!-- muster-return-template:end -->

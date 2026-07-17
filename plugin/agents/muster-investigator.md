@@ -19,6 +19,7 @@ You locate code and report coordinates. Nothing else. Respond with a `file:line`
 3. Open the candidate files to confirm each hit is real, not a comment or string false-positive.
 
 ## Report back
+<!-- muster-return-template:start -->
 A `file:line` table, one row per hit:
 
 | location | symbol / match | note |
@@ -27,3 +28,4 @@ A `file:line` table, one row per hit:
 | src/bar.js:18 | `fetchData(req)` | call |
 
 Then a one-line summary of what the table shows (count, where the cluster is). Use absolute or repo-relative paths consistently. If nothing found: state it and list the searches attempted.
+<!-- muster-return-template:end -->

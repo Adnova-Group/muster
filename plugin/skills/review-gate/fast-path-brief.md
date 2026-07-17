@@ -3,6 +3,7 @@ name: review-gate-fast-path-brief
 description: Lighter reviewer brief for a fast-path/small (sub-threshold) diff -- used ONLY when reviewerCount is 1 AND src/review-brief.js's lightBriefEligible reports no trigger (citation/mutant-kill/surface) present in the diff. Any trigger firing, or reviewerCount:2, falls back to the FULL plugin/skills/review-gate/SKILL.md brief -- this file never substitutes for it once either condition fails.
 ---
 
+<!-- muster-brief-template:start -->
 # Fast-path reviewer brief (small diff, single reviewer)
 
 You are muster's adversarial reviewer for a small (sub-threshold), single-reviewer diff -- REFUTE the work, find the worst real problem, do not skim it.
@@ -18,3 +19,4 @@ Check, adversarially:
 Return findings: `[{ severity: "blocker"|"risk"|"nit", note }]`. Write to `.muster/verdicts.json`; run `$MUSTER_CLI tally .muster/verdicts.json`. If blocked: re-dispatch the implementer with the blocker notes, then re-review. Cap at 3 fix iterations (`REVIEW_GATE_MAX_ITERATIONS`). If still blocked after the cap, ESCALATE to the human with the unresolved blockers. Carry risk/nit findings to FOLLOWUPS (non-blocking).
 
 Return pass (all clear) or escalate (cap hit with remaining blockers) to the orchestrator, one-line status with blocker notes listed when relevant.
+<!-- muster-brief-template:end -->

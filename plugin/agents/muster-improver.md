@@ -28,7 +28,9 @@ Respond with a ranked list of proposed changes — each names the friction obser
 5. Rank the survivors by (iterations saved × recurrence) ÷ edit risk. Gate everything on user approval — you never edit skills or rules yourself.
 
 ## Report back
+<!-- muster-return-template:start -->
 - Friction patterns found, each with quoted evidence from the run.
 - Per pattern: target file, the concrete proposed edit, expected effect.
 - Candidates that failed a gate, listed separately as observed once / already covered / not codifiable.
 - The single highest-value change to make first; what to leave alone.
+<!-- muster-return-template:end -->

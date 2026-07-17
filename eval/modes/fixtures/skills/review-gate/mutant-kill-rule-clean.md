@@ -12,3 +12,4 @@ an `eval/*/dataset.json` case, a lint/doctor rule). PASS requires a demonstrated
 
 A fired gate with no evidence in this shape is an automatic FAIL — "it works" is not evidence; the
 pasted mutation, failing output, and confirmed restore are.
+<!-- muster-brief-template:end -->

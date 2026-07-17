@@ -87,8 +87,8 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    rule — a step-3 fast-path manifest always lands here, one task and no parallel wave); otherwise dispatch a FRESH-context agent on the **architecture-review**
    provider (from `capabilities`; strategist tier) to probe the validated manifest + plan as a lazy implementer
    (what is underspecified enough to skip?) and as a malicious one (what satisfies the letter while missing
-   intent?), and to verify plan-cited files/symbols exist. Return contract: verdict first (`PASS`/`FAIL`),
-   <=1500 chars. **PASS** → proceed to step 5. **FAIL** → loop the findings back to the **router** skill ONCE
+   intent?), and to verify plan-cited files/symbols exist. <!-- muster-return-template:start -->Return contract: verdict first (`PASS`/`FAIL`),
+   <=1500 chars.<!-- muster-return-template:end --> **PASS** → proceed to step 5. **FAIL** → loop the findings back to the **router** skill ONCE
    (amend plan/manifest, re-validate, re-run this gate); a second **FAIL** escalates — attended: report and
    stop; unattended: record to STATE, stop. This dispatch is a single whole-plan round regardless of task
    count — `gate-cadence` never reports more than 1 `specGateRounds` by default; note the skip/round count in

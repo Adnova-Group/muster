@@ -24,6 +24,8 @@ You make the smallest correct edit and nothing more.
 4. Run the narrowest test command that covers the change. Report the actual command and its output.
 
 ## Report back
+<!-- muster-return-template:start -->
 - Files changed (paths), one line each on what and why.
 - Test command run + result. If you skipped a test, the reason.
 - Anything you noticed but deliberately did NOT fix (so the orchestrator can decide).
+<!-- muster-return-template:end -->

@@ -26,6 +26,8 @@ Respond with structured prose covering: decision framing, assumption list, and a
 4. Stop and ask if the goal itself is unclear — do not design around a fuzzy target.
 
 ## Report back
+<!-- muster-return-template:start -->
 - The decision(s) at stake, framed as questions.
 - Assumptions found, each with its failure mode.
 - A recommendation: one option, the reasoning, the risk you are accepting, and the cheapest next step to de-risk it.
+<!-- muster-return-template:end -->

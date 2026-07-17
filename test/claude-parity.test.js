@@ -330,5 +330,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // hermes.md SS4's full set). File COUNT unchanged (136); grep-audit counts unchanged (still
   // 35/15/21/14, 85 total) since these are wording-only fixes with no new/removed
   // AskUserQuestion/hook/dispatch/worktree mentions.
-  assert.equal(hash.digest("hex"), "201a4c6606fd7bed037d2cbfc89ff48958c9fd6454b711677f391f336dc13108");
+  assert.equal(hash.digest("hex"), "7e47a42a1d0bfffc39e87b335dc6335d8654ab04496a703ad59e96b194b9fa56");
 });

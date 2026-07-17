@@ -66,6 +66,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // full dump, see eval/perf/replay-plan-budget.mjs). muster-runner.md and orchestrator/SKILL.md
   // also gained the `<!-- muster-brief-template -->`/`<!-- muster-return-template -->` inline
   // markers criterion 3's lint (src/brief-lint.js) scans for -- comments only, no behavior
-  // change. This pin is re-derived again after this item's skill-size cuts (criterion 2), below.
-  assert.equal(hash.digest("hex"), "aadb195c4def7d3bed3091845dff06141f6de473cc9daf0e713ead1907fc5bce");
+  // change. review-gate/SKILL.md's prose was cut 40.9% (9193 -> 5435 chars, criterion 2) --
+  // every load-bearing rule preserved verbatim (gate names/triggers, severity vocab, the
+  // fix-iteration cap sentence, the AvailableCapabilities capture sentence); contract tests
+  // (corpus-contradiction, docs-binding-interface, prompt-scan, mode-evals) all still green.
+  // This pin is re-derived again after this item's remaining skill-size cuts, below.
+  assert.equal(hash.digest("hex"), "d948ac5e2844ae5fe2d42d2fb717eac5b52d1b274d4385ffb4f4ce6b37a36191");
 });

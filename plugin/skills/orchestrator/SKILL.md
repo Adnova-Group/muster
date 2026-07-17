@@ -139,6 +139,7 @@ the manifest — the crew on paper is not the crew doing the work.
 
 ## Return contract (every dispatch)
 
+<!-- muster-return-template:start -->
 Every crew brief MUST end with a return contract, so the orchestrator's per-task read stays a single pass:
 
 - **Implementers/builders** return raw data, <=2000 chars: files changed (as paths), test counts, deviations
@@ -148,6 +149,7 @@ Every crew brief MUST end with a return contract, so the orchestrator's per-task
 - The orchestrator reads each subagent result exactly once (one TaskOutput) and does not re-read transcripts.
 - **No accumulation between waves:** git history and the run STATE are the record, not the orchestrator's
   memory.
+<!-- muster-return-template:end -->
 
 ## Task board
 

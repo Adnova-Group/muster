@@ -63,7 +63,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // approve-first entry point, criterion 1) -- see test/plan-fast-path-wiring.test.js -- and its
   // fast-path branch also narrows the capabilities capture to `--roles-only` (a fast-path
   // manifest only ever reads the implement/code-review roles; measured ~73% smaller than the
-  // full dump, see eval/perf/replay-plan-budget.mjs). This pin is re-derived again after this
-  // item's skill-size cuts (criterion 2), below.
-  assert.equal(hash.digest("hex"), "f2fcb78bf53054795a9b0bc409e07e37bebb8c1ae7272e5e56718a0bf55efca2");
+  // full dump, see eval/perf/replay-plan-budget.mjs). muster-runner.md and orchestrator/SKILL.md
+  // also gained the `<!-- muster-brief-template -->`/`<!-- muster-return-template -->` inline
+  // markers criterion 3's lint (src/brief-lint.js) scans for -- comments only, no behavior
+  // change. This pin is re-derived again after this item's skill-size cuts (criterion 2), below.
+  assert.equal(hash.digest("hex"), "aadb195c4def7d3bed3091845dff06141f6de473cc9daf0e713ead1907fc5bce");
 });

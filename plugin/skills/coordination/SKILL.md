@@ -1,6 +1,6 @@
 ---
 name: coordination
-description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS per state change, BLOCKED/HUMAN-HOLD->RESUME, one heartbeat LEDGER per runner. Three bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP). Wired in by /muster:sprint.
+description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS per state change, BLOCKED/HUMAN-HOLD->RESUME, one heartbeat LEDGER per runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:sprint.
 ---
 
 # Coordination
@@ -12,8 +12,8 @@ silently going quiet when one gets stuck.
 Return per-item the state it left the shared backlog/label in (claimed / done / blocked / failed) plus
 the receipt(s) written — a work-cycle always ends with a receipt, even on failure.
 
-Load this when a backlog (file, `issues:<label>`, or `linear:<team or project>`) may be worked by more
-than one runner concurrently. A single-runner sprint may skip the claim/scan steps but should still
+Load this when a backlog (file, `issues:<label>`, `linear:<team or project>`, or a Hermes kanban
+board) may be worked by more than one runner concurrently. A single-runner sprint may skip the claim/scan steps but should still
 leave receipts and a ledger heartbeat for auditability. CLAIM/RECEIPTS/BLOCKED→RESUME/LEDGER is
 adapted, mechanism-only, from a well-known open multi-agent coordination pattern (attribution:
 `website/about/credits.md`, out of scope here).
@@ -48,8 +48,9 @@ adapted, mechanism-only, from a well-known open multi-agent coordination pattern
 
 An **escalation** (spec-gate/fix-loop cap) is not a new receipt type: a `FAILED` receipt plus the
 item-level escalated-marker -- Binding B's `{escalated: <runId or date>}`, Binding A's move to
-`agent:needs-input` with a question comment, Binding C's move to its blocked status -- so a later scan
-relies on that marker alone.
+`agent:needs-input` with a question comment, Binding C's move to its blocked status, Binding D's
+`kanban.failure_limit` auto-block (or a repeated same-kind `kanban_block` escalating to `triage`) -- so
+a later scan relies on that marker alone.
 
 ## Standing-context preflight
 
@@ -434,3 +435,76 @@ read-heavy pattern as Binding A -- same cadence guidance as runner.md (15-30 min
 fingerprint set (SKILL.md/go-backlog.md/go.md/runner.md/hooks/) already covers this binding's own text,
 no new file to watch. Only delta: the escalation marker is a move to the blocked status with a question
 comment, discriminated from BLOCKED/HUMAN-HOLD purely by receipt body -- identical reuse reasoning.
+
+## Binding D — Hermes kanban (native `kanban.db`)
+
+Applies when the harness itself is Hermes Agent, not Claude Code: Hermes ships its own durable
+multi-agent work queue in `~/.hermes/kanban.db` (SQLite, WAL), where every worker is a full OS
+process with its own profile identity, and the protocol above is already implemented as harness
+machinery rather than something muster's prose has to simulate on top of a label/annotation/status
+surface (docs/research/hermes.md §4, the Kanban subsection -- every citation below names that same
+source).
+
+**State map** (protocol state -> kanban primitive):
+
+- **CLAIM** -> the board's own atomic claim: `BEGIN IMMEDIATE` inside the board's 60-second tick,
+  promoting a `todo`/`ready` card to `running` and starting the claiming profile's own OS process.
+  Unlike Bindings A-C, this is a real compare-and-swap at the database layer, not a comment-race
+  arbitrated after the fact -- there is no CLAIM COMMENT to re-read because the claim itself cannot
+  race.
+- **RECEIPTS** -> a `task_runs` row per attempt (`summary` for humans, `metadata` JSON carrying
+  `changed_files`/`verification`/`dependencies`/`blocked_reason`/`retry_notes`/`residual_risk`), plus
+  the append-only `task_events` log (`claimed`, `heartbeat`, `reclaimed`, `crashed`,
+  `protocol_violation`, `gave_up`); free-text detail rides `kanban_comment`, the direct analogue of
+  Binding A/C's issue/comment receipts.
+- **BLOCKED** -> `kanban_block(reason, kind)` moves the card to the `blocked` column. `kind:
+  needs_input` is the any-reply-resumes case (a `kanban_comment` reply, then `kanban_unblock`);
+  `kind: dependency` auto-resumes once every parent card reaches `done` -- the native equivalent of
+  Binding B's `{deps:}` grammar; `kind: capability`/`transient` cover a missing tool or a transient
+  failure with no analogue in Bindings A-C.
+- **HUMAN-HOLD** -> the same `blocked` column and `kind: needs_input`, discriminated by a
+  `kanban_comment` naming the authorizer -- but the board documents no per-comment human
+  authentication the way Binding A's GitHub login or Binding C's Linear author does; a comment is
+  just text any caller could write. This is Binding B's caveat, not A/C's: an unattended resume
+  cannot trust a bare comment match, so a Binding D HUMAN-HOLD stays parked pending the same
+  attended, out-of-band confirmation Binding B requires, until the board documents an authenticated
+  human-reply channel.
+- **DONE** -> `kanban_complete(summary, metadata, result, artifacts)`; the card lands on `done`.
+- **FAILED** -> a `task_events` `gave_up` (self-reported) or `crashed` (the board's own dead-PID
+  detection on its 60-second tick) entry reverts the card to `todo`. Bindings A/C's manual
+  2-prior-failure retry cap has a native equivalent: `kanban.failure_limit` consecutive spawn
+  failures auto-blocks the card -- no counting query needed, the board counts for you.
+- **YIELD** -> not applicable. YIELD exists in Bindings A-C solely to resolve a race the comment-lock
+  loses after the fact; the board's atomic claim prevents that race from occurring, so there is no
+  losing claimant left to yield.
+- **LEDGER** -> `kanban_heartbeat`, called once per cycle by each claiming profile. `task_events` is
+  append-only (not edited in place the way Binding A's ledger-issue comment or Binding B's STATE line
+  is), so "one heartbeat, not a growing pile" is read off the most recent `heartbeat` event per
+  profile rather than a single physically-edited row -- same semantic, different storage shape. The
+  staleness monitor that reclaims a wedged profile is the board's native version of muster's own
+  60-minute stale-claim release (HYGIENE PREFLIGHT, above).
+
+**Fallback** -- Binding D only applies on a run where the board's worker tool surface is enabled
+(gated on the `HERMES_KANBAN_TASK` environment variable); anywhere else -- Claude Code, Codex, or a
+Hermes run with no board -- Bindings A/B/C apply exactly as written above. No local Hermes install
+existed on the machine this binding was authored on (docs/research/hermes.md's own sourcing-gaps
+section), so nothing below is behavior-verified against a live board.
+
+**Validate this binding** (described, not executed, per the same no-live-Hermes caveat) -- the same
+3-item smoke trail go-backlog.md's "Validate a binding" section runs for Bindings A-C, expressed in
+kanban primitives:
+- **hello-world** -- `kanban_create` a card; confirm the atomic claim promotes it to `running` with a
+  spawned profile process, the profile calls `kanban_complete`, and the result is one `task_runs` row
+  plus a `claimed`-to-completion `task_events` trail landing on `done`.
+- **blocked→resume** -- the profile calls `kanban_block(reason, kind: "needs_input")`; confirm the
+  `blocked` column plus a matching `task_events` entry, then post a `kanban_comment` answer and
+  `kanban_unblock`; confirm the card re-enters `ready`/`running` ahead of a fresh `todo` card (the
+  board's own promotion order).
+- **failed** -- kill the profile's OS process directly; confirm the 60-second tick's dead-PID
+  detection logs a `crashed` `task_events` entry and reverts the card to `todo` with a legible reason;
+  repeat past `kanban.failure_limit` and confirm auto-block replaces another attempt.
+
+**Standing-context preflight / retry cap / escalation** -- inherits the core mechanism unchanged
+(same fingerprint set as Binding C, above); the escalation marker is `kanban.failure_limit`'s
+auto-block (or a repeated same-kind `kanban_block` escalating to `triage`), discriminated from a
+plain retry purely by the `task_events` trail -- identical reuse reasoning to Bindings A-C.

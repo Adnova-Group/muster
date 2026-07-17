@@ -138,5 +138,24 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // All three content changes above are reviewed, not accidental Codex-side drift. The four PRs
   // (#56 alias-retirement, #57 test-only, #58 cowork-probe, #59 fast-path) were merged together;
   // the pinned sha below is re-derived once, after all four land, over the combined surface.
-  assert.equal(hash.digest("hex"), "62867f9bd6f0f3b4b51cc429262964f52fcf83d85b9d0ae0b275c689eef1e5bd");
+  //
+  // Pin re-derived again for the hermes-kanban-binding item (backlog item `hermes-kanban-binding`,
+  // see docs/research/hermes.md §4): file COUNT unchanged (136 -- no file added/removed) --
+  // coordination/SKILL.md gained a fourth binding, "## Binding D -- Hermes kanban (native
+  // `kanban.db`)", mapping CLAIM/RECEIPTS/BLOCKED/HUMAN-HOLD/DONE/FAILED/YIELD/LEDGER onto kanban
+  // columns/task_events/task_runs, cited to docs/research/hermes.md's Kanban subsection throughout,
+  // plus a fallback (Bindings A/B/C apply when no board is present) and a described-not-executed
+  // validation smoke-trail (no live Hermes install exists to run it against, per hermes.md's own
+  // sourcing-gaps section). The frontmatter description ("Three bindings" -> "Four bindings"), the
+  // "Load this when a backlog..." sentence, and the shared escalation-marker bullet were each
+  // updated to name the new binding, keeping the file internally consistent. Every existing
+  // contract preserved verbatim and re-verified green: corpus-contradiction.test.js's "subagent
+  // type `muster-runner`" quote site, both coordination-preflight.test.js fingerprint-set copies
+  // (Binding D's own inheritance line deliberately does not repeat the "fingerprint set (...)"
+  // parenthetical shape, so the regex-scoped first match stays Binding C's), and
+  // docs-binding-interface.test.js's four live grep-audit counts (AskUserQuestion, dispatch,
+  // hook, worktree) are all unchanged -- Binding D's prose was deliberately worded to avoid every
+  // tracked term (kanban's own "dispatcher" vocabulary was rephrased to "the board" throughout, and
+  // its `worktree` workspace kind was not cited, since isolation is out of this item's scope).
+  assert.equal(hash.digest("hex"), "757e274c574774de57d1e03140aa50e48b08bc7c0b7fe3a5e92914f439f55720");
 });

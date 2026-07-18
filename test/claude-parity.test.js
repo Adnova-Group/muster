@@ -375,5 +375,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // isCrossingStale), and the writer functions (recordCum/markNudged/recordInvite/resetCum, plus
   // the new markDirective) now stamp each marker's mtime to that same `now` after writing. This
   // is the reviewed clock-injection remediation, not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "c3442d48044ed97c1fce651dd910be9152423af98ff4f1ccea042634d2f32611");
+  //
+  // Pin re-derived 2026-07-18 (codex-mcp-cli-path fix): cowork/mcp-server.mjs's CLI
+  // resolution became layout-adaptive (repo ../src/cli.js, else bundled sibling
+  // muster.mjs) so the bundled Codex plugin's MCP server can execute tools/call --
+  // the dogfood's High packaging defect. Shared-surface change is that one file;
+  // reviewed, not drift.
+  assert.equal(hash.digest("hex"), "215a57cc7b8831b3db0c06890d152dc83aa028430731f6d88ab582527595e23e");
 });

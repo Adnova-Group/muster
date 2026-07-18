@@ -136,7 +136,7 @@ async function rawScopeRegistryEntries(home) {
 
 export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT_MS, spawnProcess = spawn } = {}) {
   return new Promise((resolve, reject) => {
-    let child, timer, buffer = "", initialized = false, settled = false, stderr = "";
+    let child, timer, buffer = "", initialized = false, settled = false, stderr = "", tools = null;
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
@@ -151,7 +151,7 @@ export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT
       child = spawnProcess(process.execPath, [entrypoint], { cwd, stdio: ["pipe", "pipe", "pipe"] });
     } catch (error) { fail(error); return; }
     if (!child?.stdin || !child?.stdout || !child?.stderr) { fail("MCP process did not expose stdio"); return; }
-    timer = setTimeout(() => fail(`MCP initialize/tools/list timed out after ${timeoutMs}ms`), timeoutMs);
+    timer = setTimeout(() => fail(`MCP initialize/tools/list/tools/call timed out after ${timeoutMs}ms`), timeoutMs);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", chunk => {
@@ -176,7 +176,21 @@ export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT
         } else if (message.id === 2) {
           if (message.error) { fail(`MCP tools/list failed: ${message.error.message || "unknown error"}`); return; }
           if (!Array.isArray(message.result?.tools)) { fail("MCP tools/list returned no tools array"); return; }
-          finish(null, { initialized, tools: message.result.tools });
+          tools = message.result.tools;
+          // A successful handshake proves the server process starts -- not that
+          // its tool handlers can reach the bundled CLI. The dogfooded failure
+          // mode was exactly that split: 21/21 tools listed while every
+          // tools/call crashed on a missing CLI path. Smoke one real call.
+          try {
+            child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_detect", arguments: {} } })}\n`);
+          } catch (error) { fail(error); return; }
+        } else if (message.id === 3) {
+          if (message.error) { fail(`MCP tools/call muster_detect failed: ${message.error.message || "unknown error"}`); return; }
+          const text = message.result?.content?.[0]?.text;
+          let toolCallOk = message.result?.isError !== true && typeof text === "string";
+          if (toolCallOk) { try { JSON.parse(text); } catch { toolCallOk = false; } }
+          if (!toolCallOk) { fail(`MCP tools/call muster_detect returned an error payload: ${String(text).slice(0, 160)}`); return; }
+          finish(null, { initialized, tools, toolCallOk });
           return;
         }
       }
@@ -186,7 +200,7 @@ export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT
     child.stderr.on("error", error => fail(error));
     child.on("error", error => fail(error));
     child.on("exit", (code, signal) => {
-      if (!settled) fail(`MCP process exited before tools/list (${signal || code || "unknown"})${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
+      if (!settled) fail(`MCP process exited before the handshake completed (${signal || code || "unknown"})${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
     });
     child.stdin.on("error", error => fail(error));
     try {
@@ -320,10 +334,13 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   try {
     const handshake = await mcpRunner({ entrypoint: join(plugin, "runtime", "muster-mcp.mjs"), cwd, timeoutMs: MCP_TIMEOUT_MS });
     const count = Array.isArray(handshake?.tools) ? handshake.tools.length : 0;
-    const ok = handshake?.initialized === true && count === CODEX_COUNTS.mcpTools;
+    // toolCallOk is the load-bearing half: a listing-only handshake passed for
+    // a bundle whose every tools/call crashed on a missing CLI path (the
+    // 2026-07-18 dogfood finding), so tool registration alone proves nothing.
+    const ok = handshake?.initialized === true && count === CODEX_COUNTS.mcpTools && handshake?.toolCallOk === true;
     checks.push({ name: "codex-mcp-handshake", ok, detail: ok
-      ? `initialize + tools/list returned ${count}/${CODEX_COUNTS.mcpTools} tools; ${mcpVisibilityNote}`
-      : `initialize + tools/list returned ${count}/${CODEX_COUNTS.mcpTools} tools${handshake?.initialized ? "" : "; initialize did not complete"}; ${mcpVisibilityNote}` });
+      ? `initialize + tools/list returned ${count}/${CODEX_COUNTS.mcpTools} tools and tools/call muster_detect executed; ${mcpVisibilityNote}`
+      : `initialize + tools/list returned ${count}/${CODEX_COUNTS.mcpTools} tools${handshake?.initialized ? "" : "; initialize did not complete"}${handshake?.toolCallOk === true ? "" : "; tools/call smoke did not pass"}; ${mcpVisibilityNote}` });
   } catch (error) {
     checks.push({ name: "codex-mcp-handshake", ok: false, detail: `bundled MCP initialize/tools/list handshake failed: ${error.message}; ${mcpVisibilityNote}` });
   }

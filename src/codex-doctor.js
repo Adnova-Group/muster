@@ -414,14 +414,31 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // The hook runtime itself has no cross-copy dedupe (each installed copy
   // independently emits its own event context; wave 1 removed the CODEX_HOME
   // bookkeeping that used to attempt it — see codex.test.js's "no cross-copy
-  // dedupe" coverage). This check only reports whether both copies are
-  // coherent with their exact ownership manifest, not whether output is
-  // deduplicated.
-  checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0, detail: staleHookScopes.length
+  // dedupe" coverage). Dual live scopes therefore fire every advisory twice —
+  // per the 2026-07-18 canonical-scope decision this is now an actionable
+  // finding (user scope wins; collapse the duplicate), not an accepted state.
+  checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0 && hookStatuses.length <= 1, detail: staleHookScopes.length
     ? [legacyHookDetail, otherStaleHookScopes.length ? "Project/user hook copies are not hash/exact-group coherent with their ownership manifest; refresh every stale scope" : null].filter(Boolean).join("; ")
     : hookStatuses.length > 1
-    ? "Muster hooks are installed at both project and user scopes; each copy independently emits its own event context (there is no cross-copy dedupe, and each event's output is idempotent)"
+    ? `Muster hooks fire from ${hookStatuses.length} scopes (${hookStatuses.join(", ")}) with no cross-copy dedupe -- every advisory is emitted ${hookStatuses.length}x per event; user scope is canonical, so run \`muster uninstall codex --scope project\` in the duplicated project(s) to collapse to one`
     : "No project and user Muster hook overlap detected" });
+  // The installed plugin cache must be the hooks-free Codex flavor: Codex
+  // >=0.144.5 fires a plugin's default hooks/hooks.json on every lifecycle
+  // event, so a with-hooks (Claude-flavor) cache double-fires on top of the
+  // scoped hooks.json install — the hook-bombardment regression (see
+  // docs/research/codex-cli.md section 5.4).
+  if (selected?.packageVersion) {
+    const cacheHooksPath = join(userCodexHome, "plugins", "cache", "muster", "muster", selected.packageVersion, "hooks", "hooks.json");
+    let cacheHookCount = null;
+    try {
+      const cacheHooks = JSON.parse(await readFile(cacheHooksPath, "utf8"));
+      cacheHookCount = Object.values(cacheHooks?.hooks || {}).flat()
+        .reduce((total, group) => total + (Array.isArray(group?.hooks) ? group.hooks.length : 0), 0);
+    } catch { /* absent or unreadable cache hooks file = nothing fires from the plugin */ }
+    checks.push({ name: "codex-plugin-cache-hooks", ok: !cacheHookCount, detail: cacheHookCount
+      ? `installed muster plugin cache ships ${cacheHookCount} firing lifecycle hook(s) at ${cacheHooksPath} -- the with-hooks (Claude) plugin flavor, which double-fires on top of the scoped hooks.json install; rerun muster install codex to reinstall the hooks-free Codex plugin`
+      : "installed muster plugin cache ships no lifecycle hooks (hooks-free Codex flavor)" });
+  }
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
     const inventory = await readCodexInventory({ cwd, codexHome, execFile });

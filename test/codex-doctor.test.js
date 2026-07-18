@@ -11,7 +11,7 @@ import { PassThrough } from "node:stream";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor, runMcpHandshake } from "../src/codex-doctor.js";
-import { repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { repoRoot, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 function fakeMcpChild() {
   const child = new EventEmitter();
@@ -37,8 +37,31 @@ test("Codex doctor reports project/user hook overlap without claiming cross-copy
   await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
   const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
-  assert.equal(overlap?.ok, true);
-  assert.match(overlap?.detail || "", /project and user.*no cross-copy dedupe/i);
+  // Canonical-scope decision (2026-07-18): dual live scopes double-fire every
+  // advisory, so coherent overlap is now an actionable finding, not accepted.
+  assert.equal(overlap?.ok, false);
+  assert.match(overlap?.detail || "", /fire from 2 scopes.*user scope is canonical.*uninstall codex --scope project/i);
+});
+
+test("Codex doctor flags an installed plugin cache that ships firing lifecycle hooks", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-cache-hooks-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const cacheHooksDir = join(codexHome, "plugins", "cache", "muster", "muster", selectedPlugin.packageVersion, "hooks");
+  await mkdir(cacheHooksDir, { recursive: true });
+  // The with-hooks (Claude) flavor: any firing hook in the cache double-fires
+  // on top of the scoped hooks.json install (the hook-bombardment regression).
+  await writeFile(join(cacheHooksDir, "hooks.json"), JSON.stringify({
+    hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node x.js" }] }] }
+  }));
+  const flagged = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const withHooks = flagged.checks.find(check => check.name === "codex-plugin-cache-hooks");
+  assert.equal(withHooks?.ok, false);
+  assert.match(withHooks?.detail || "", /ships 1 firing lifecycle hook.*rerun muster install codex/i);
+  await writeFile(join(cacheHooksDir, "hooks.json"), JSON.stringify({ hooks: {} }));
+  const clean = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  assert.equal(clean.checks.find(check => check.name === "codex-plugin-cache-hooks")?.ok, true);
 });
 
 test("Codex doctor requires exact owned hook groups from source and cache installs", async () => {
@@ -50,7 +73,10 @@ test("Codex doctor requires exact owned hook groups from source and cache instal
 
   const healthy = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
   assert.equal(healthy.checks.find(check => check.name === "codex-hooks")?.ok, true);
-  assert.equal(healthy.checks.find(check => check.name === "codex-hooks-overlap")?.ok, true);
+  // Dual coherent scopes are now the actionable canonical-scope finding, not a pass.
+  const healthyOverlap = healthy.checks.find(check => check.name === "codex-hooks-overlap");
+  assert.equal(healthyOverlap?.ok, false);
+  assert.match(healthyOverlap?.detail || "", /user scope is canonical/i);
 
   const hooksPath = join(cwd, ".codex", "hooks.json");
   const original = JSON.parse(await readFile(hooksPath, "utf8"));

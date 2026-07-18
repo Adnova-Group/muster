@@ -32,10 +32,27 @@ import { STOPWORDS } from "./keyword.js";
 const CROSS_CUTTING_RE =
   /\b(across|throughout|entire|everywhere|every\s+(?:file|module|service|package|repo|test|suite)|all\s+the|overhaul|migrate|migration|epic|rewrite|redesign|refactor\s+the\s+whole|end-to-end|end\s+to\s+end|multiple\s+(?:services|modules|packages|repos|files))\b/i;
 
-// Multiple-deliverable separators: list markers (numbered or bulleted), or connective
-// phrases that stitch two-or-more independent asks into one sentence.
-const MULTI_DELIVERABLE_RE =
-  /\band\s+then\b|\balso\b|\badditionally\b|\bas\s+well\s+as\b|;|^\s*\d+[.)]\s|\n\s*[-*]\s|\n\s*\d+[.)]\s/i;
+// Shared imperative-verb lexicon: used by CHAINED_VERBS_RE below and by
+// MULTI_DELIVERABLE_RE's clause-gated separators. Deliberately a closed list of
+// unambiguous task-starting verbs so neither signal over-fires on nouns.
+const IMPERATIVE_VERB_SRC =
+  "add|fix|update|remove|delete|refactor|implement|create|build|write|change|rename|migrate|extract|wire|extend|document|test";
+
+// Multiple-deliverable separators: connective phrases, semicolons, list markers, or --
+// clause-gated -- a comma/plus/newline INTRODUCING a new imperative clause. The gate is
+// the point: "Add retry support, update the README" is two asks (comma + imperative
+// verb), while "Add retry, backoff, and jitter to fetch" is ONE task with a compound
+// object (comma + noun) and must stay fast-path eligible. An ungated [;,+]|\n here
+// (tried and reverted in the codex-native audit, PR #73) over-routes every
+// punctuation-bearing atomic outcome onto the heavy path -- weight inflation on the
+// most common punctuation in English.
+const MULTI_DELIVERABLE_RE = new RegExp(
+  "\\band\\s+then\\b|\\balso\\b|\\badditionally\\b|\\bas\\s+well\\s+as\\b|;" +
+  `|[,+]\\s*(?:and\\s+|then\\s+)?(?:${IMPERATIVE_VERB_SRC})\\b` +
+  `|\\n\\s*(?:[-*]\\s|\\d+[.)]\\s|(?:${IMPERATIVE_VERB_SRC})\\b)` +
+  "|^\\s*\\d+[.)]\\s",
+  "i"
+);
 
 // Two (or more) independent imperative verbs joined by "and" -- "add X and fix Y" is two
 // tasks even with no other multi-deliverable signal. A single verb governing a compound
@@ -43,8 +60,6 @@ const MULTI_DELIVERABLE_RE =
 // -- MULTI_DELIVERABLE_RE and CROSS_CUTTING_RE cover those cases when they are genuinely
 // two deliverables; this signal is deliberately narrow (verb ... and ... verb) so it
 // doesn't over-fire on "read and write", "build and test" style compound single actions.
-const IMPERATIVE_VERB_SRC =
-  "add|fix|update|remove|delete|refactor|implement|create|build|write|change|rename|migrate|extract|wire|extend|document|test";
 const CHAINED_VERBS_RE = new RegExp(`\\b(?:${IMPERATIVE_VERB_SRC})\\b[^.\\n]*\\band\\b[^.\\n]*\\b(?:${IMPERATIVE_VERB_SRC})\\b`, "i");
 
 // A word-count ceiling: past this many meaningful (non-stopword) words, an outcome is
@@ -92,6 +107,10 @@ export function scoreOutcomeForFastPath(text) {
 export function buildFastPathManifest({ outcome, successCriteria, capabilities, mergeDisposition = "ask" } = {}) {
   if (typeof outcome !== "string" || !outcome.trim()) {
     throw new Error("buildFastPathManifest: outcome is required (non-empty string)");
+  }
+  const score = scoreOutcomeForFastPath(outcome);
+  if (!score.eligible) {
+    throw new Error(`buildFastPathManifest: outcome is not eligible for the fast path: ${score.reason}`);
   }
   if (!capabilities || typeof capabilities !== "object" || !capabilities.roles) {
     throw new Error("buildFastPathManifest: capabilities (resolveCapabilities() output, with a .roles map) is required");

@@ -55,6 +55,18 @@ test("an unrecognized or missing runtime degrades to the universal AskUserQuesti
   }
 });
 
+test("Object.prototype keys receive the complete universal fallback", () => {
+  for (const input of ["constructor", "__proto__", "prototype"]) {
+    assert.deepEqual(resolvePlanSurface(input), {
+      runtime: input,
+      surface: "prose",
+      primitive: "AskUserQuestion",
+      detail: "fall back to the AskUserQuestion selection UI (Approve & run / Adjust the plan / Cancel)",
+      cite: "plugin/commands/plan.md",
+    });
+  }
+});
+
 test("runtime lookup is case- and whitespace-insensitive", () => {
   assert.equal(resolvePlanSurface(" Codex ").surface, "native");
   assert.equal(resolvePlanSurface("CLAUDE-CODE").primitive, "ExitPlanMode");

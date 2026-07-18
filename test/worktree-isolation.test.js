@@ -65,6 +65,12 @@ test("resolveWorktreeIsolation: an unrecognized harness fails loud, never silent
   assert.throws(() => resolveWorktreeIsolation({ harness: "cowork" }), /unrecognized harness "cowork"/);
 });
 
+test("resolveWorktreeIsolation: Object.prototype keys are never treated as known harnesses", () => {
+  for (const harness of ["constructor", "__proto__", "prototype"]) {
+    assert.throws(() => resolveWorktreeIsolation({ harness }), /unrecognized harness/);
+  }
+});
+
 test("resolveWorktreeIsolation: a missing harness fails loud rather than defaulting to one", () => {
   assert.throws(() => resolveWorktreeIsolation({}), /harness is required/);
   assert.throws(() => resolveWorktreeIsolation(), /harness is required/);
@@ -95,6 +101,22 @@ test("buildBaseShaReceipt: worktreePath is optional (Codex has no cwd field to r
   });
   assert.equal(receipt.worktreePath, null);
   assert.equal(receipt.baseSha, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+});
+
+test("buildBaseShaReceipt: rejects unsupported isolation mechanisms", () => {
+  for (const mechanism of ["worktree", "constructor", "__proto__", "receipts_only"]) {
+    assert.throws(
+      () => buildBaseShaReceipt({ taskId: "task-unsupported", mechanism, baseSha: "deadbeef" }),
+      /supported isolation mechanism/i
+    );
+  }
+});
+
+test("buildBaseShaReceipt: rejects surrounding whitespace instead of returning a padded SHA", () => {
+  assert.throws(
+    () => buildBaseShaReceipt({ taskId: "task-padded", mechanism: WORKTREE_ISOLATION_MECHANISMS.RECEIPTS_ONLY, baseSha: " deadbeef " }),
+    /hex git SHA/i
+  );
 });
 
 test("buildBaseShaReceipt: proven against a REAL git SHA from this checkout, not a fixture string", () => {

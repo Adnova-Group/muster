@@ -24,7 +24,7 @@ Keep raw secrets and unnecessarily sensitive tool arguments out of receipts. Pre
 
 ## Codex integration boundary
 
-Codex lifecycle hooks can observe supported session, prompt, tool, subagent, and stop events after the user trusts the exact hook definition. Muster installs its owned groups through the project or user `hooks.json` layer because Codex 0.144 does not execute plugin-bundled hooks. Current `PreToolUse` hooks can surface warnings but cannot reliably deny every unified-shell or subagent action, so cryptographic receipts prove what the hook observed; they are not by themselves a complete authorization boundary.
+Codex lifecycle hooks can observe supported session, prompt, tool, subagent, and stop events after the user trusts the exact hook definition. Muster installs its owned groups through the project or user `hooks.json` layer and keeps its Codex plugin hooks-free so the two do not double-fire (Codex executes plugin-bundled hooks by default). Current `PreToolUse` hooks can surface warnings but cannot reliably deny every unified-shell or subagent action, so cryptographic receipts prove what the hook observed; they are not by themselves a complete authorization boundary.
 
 For a production control, combine:
 

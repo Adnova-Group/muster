@@ -31,7 +31,7 @@ async function stagedPlugin(root, marker) {
 
 const marketplaceTemplate = { name: "muster", plugins: [{ name: "muster", source: { source: "local", path: "./legacy" }, category: "Productivity" }] };
 const publish = (root, marker, overrides = {}) => publishCodexPlugin({
-  pluginsRoot: join(root, "plugins"),
+  pluginsRoot: join(root, ".agents", "plugins"),
   packageVersion: "0.5.0",
   marketplaceTemplate,
   ...overrides
@@ -85,21 +85,44 @@ test("publishCodexPlugin stages, validates, and publishes a plugin with a market
   const root = await tempRoot(t);
   const staged = await stagedPlugin(root, "one");
   const published = await publish(root, "one", { stagedPlugin: staged });
-  assert.equal(published.pluginRoot, join(root, "plugins", "plugin"));
-  assert.equal(published.profilesRoot, join(root, "plugins", "plugin", "agents"));
+  assert.equal(published.pluginRoot, join(root, ".agents", "plugins", "plugin"));
+  assert.equal(published.profilesRoot, join(root, ".agents", "plugins", "plugin", "agents"));
   assert.equal(published.packageVersion, "0.5.0");
-  const pointer = JSON.parse(await readFile(join(root, "plugins", "marketplace.json"), "utf8"));
-  assert.equal(pointer.plugins[0].source.path, "./plugin");
+  const pointer = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"));
+  assert.equal(pointer.plugins[0].source.path, "./.agents/plugins/plugin");
   assert.equal(await readFile(join(published.pluginRoot, "runtime", "muster.mjs"), "utf8"), 'export const marker = "one";\n');
+});
+
+test("marketplace pointer targets the hooks-free Codex plugin relative to the add-root, not the repo-root Claude plugin (hook-bombardment regression)", async t => {
+  // Codex 0.144.5 resolves a marketplace entry's source.path relative to the
+  // `codex plugin marketplace add`-ed root (== root here, since pluginsRoot is
+  // <root>/.agents/plugins), NOT the marketplace.json's own dir. "./plugin"
+  // resolves to <root>/plugin -- the Claude plugin, whose default hooks/hooks.json
+  // Codex >=0.144.5 auto-fires, duplicating the scoped hooks.json install. The
+  // pointer must descend into the sibling hooks-free .agents/plugins/plugin.
+  const root = await tempRoot(t);
+  const pluginsRoot = join(root, ".agents", "plugins");
+  const published = await publishCodexPlugin({ pluginsRoot, stagedPlugin: await stagedPlugin(root, "regression"), packageVersion: "0.5.0", marketplaceTemplate });
+  const pointerPath = join(pluginsRoot, "marketplace.json");
+  const pointer = JSON.parse(await readFile(pointerPath, "utf8"));
+  assert.equal(pointer.plugins[0].source.path, "./.agents/plugins/plugin");
+  // The path, resolved from the add-root, must reach the published plugin dir.
+  assert.equal(join(root, pointer.plugins[0].source.path), published.pluginRoot);
+  assert.equal(published.pluginRoot, join(pluginsRoot, "plugin"));
+  // Reverting to the old "./plugin" contract (which reinstalls the with-hooks
+  // Claude plugin) must now fail closed at resolve.
+  pointer.plugins[0].source.path = "./plugin";
+  await writeFile(pointerPath, JSON.stringify(pointer));
+  await assert.rejects(resolveCodexPlugin(root, { pluginsRoot }), /valid Muster plugin contract/);
 });
 
 test("publishCodexPlugin fully replaces the previous plugin tree, not merges", async t => {
   const root = await tempRoot(t);
   await publish(root, "old", { stagedPlugin: await stagedPlugin(root, "old") });
-  await write(join(root, "plugins", "plugin", "stale-leftover.txt"), "should not survive\n");
+  await write(join(root, ".agents", "plugins", "plugin", "stale-leftover.txt"), "should not survive\n");
   await publish(root, "new", { stagedPlugin: await stagedPlugin(root, "new") });
-  await assert.rejects(readFile(join(root, "plugins", "plugin", "stale-leftover.txt"), "utf8"));
-  assert.equal(await readFile(join(root, "plugins", "plugin", "runtime", "muster.mjs"), "utf8"), 'export const marker = "new";\n');
+  await assert.rejects(readFile(join(root, ".agents", "plugins", "plugin", "stale-leftover.txt"), "utf8"));
+  assert.equal(await readFile(join(root, ".agents", "plugins", "plugin", "runtime", "muster.mjs"), "utf8"), 'export const marker = "new";\n');
 });
 
 test("publishCodexPlugin copies the staged tree rather than moving it, leaving the caller's staging directory intact", async t => {
@@ -116,7 +139,7 @@ test("publishCodexPlugin copies the staged tree rather than moving it, leaving t
 test("publishCodexPlugin restores the previous plugin if the copy-publish step fails after retirement", async t => {
   const root = await tempRoot(t);
   await publish(root, "before", { stagedPlugin: await stagedPlugin(root, "before") });
-  const pluginPath = join(root, "plugins", "plugin");
+  const pluginPath = join(root, ".agents", "plugins", "plugin");
   // Staging the "new" tree at the exact path of the plugin being replaced
   // forces a deterministic, device-independent copy failure: once the
   // existing plugin is renamed aside (retirement), the directory used as
@@ -131,7 +154,7 @@ test("publishCodexPlugin restores the previous plugin if the copy-publish step f
     "a failed publish must restore the previous plugin rather than leave the directory empty or missing"
   );
   assert.deepEqual(
-    (await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")),
+    (await readdir(join(root, ".agents", "plugins"))).filter(name => name.startsWith(".muster-retired-")),
     [],
     "retired staging directory must not linger after a restore"
   );
@@ -139,22 +162,22 @@ test("publishCodexPlugin restores the previous plugin if the copy-publish step f
 
 test("publishCodexPlugin reuses a preexisting marketplace pointer instead of requiring a template", async t => {
   const root = await tempRoot(t);
-  await mkdir(join(root, "plugins"), { recursive: true });
-  await write(join(root, "plugins", "marketplace.json"), JSON.stringify({
+  await mkdir(join(root, ".agents", "plugins"), { recursive: true });
+  await write(join(root, ".agents", "plugins", "marketplace.json"), JSON.stringify({
     name: "muster",
     interface: { displayName: "Muster" },
     plugins: [{ name: "muster", source: { source: "local", path: "./somewhere-else" }, category: "Productivity" }]
   }));
-  const published = await publishCodexPlugin({ pluginsRoot: join(root, "plugins"), stagedPlugin: await stagedPlugin(root, "reuse"), packageVersion: "0.5.0" });
-  const pointer = JSON.parse(await readFile(join(root, "plugins", "marketplace.json"), "utf8"));
+  const published = await publishCodexPlugin({ pluginsRoot: join(root, ".agents", "plugins"), stagedPlugin: await stagedPlugin(root, "reuse"), packageVersion: "0.5.0" });
+  const pointer = JSON.parse(await readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"));
   assert.equal(pointer.interface.displayName, "Muster", "unrelated pointer fields must survive an update");
-  assert.equal(pointer.plugins[0].source.path, "./plugin");
+  assert.equal(pointer.plugins[0].source.path, "./.agents/plugins/plugin");
   assert.equal(published.packageVersion, "0.5.0");
 });
 
 test("publishCodexPlugin requires a package version and rejects a marketplace that does not describe muster", async t => {
   const root = await tempRoot(t);
-  await assert.rejects(publishCodexPlugin({ pluginsRoot: join(root, "plugins"), stagedPlugin: await stagedPlugin(root, "no-version"), packageVersion: "" }), /package version is required/);
+  await assert.rejects(publishCodexPlugin({ pluginsRoot: join(root, ".agents", "plugins"), stagedPlugin: await stagedPlugin(root, "no-version"), packageVersion: "" }), /package version is required/);
   await mkdir(join(root, "other-plugins"), { recursive: true });
   await write(join(root, "other-plugins", "marketplace.json"), JSON.stringify({ name: "not-muster", plugins: [] }));
   await assert.rejects(
@@ -170,7 +193,7 @@ test("publishCodexPlugin rejects a symlink in the staged tree without publishing
   await writeFile(outside, "secret");
   await symlink(outside, join(staged, "skills", "muster", "escape.md"));
   await assert.rejects(publish(root, "symlink", { stagedPlugin: staged }), /symlink|regular file/i);
-  await assert.rejects(readFile(join(root, "plugins", "marketplace.json"), "utf8"));
+  await assert.rejects(readFile(join(root, ".agents", "plugins", "marketplace.json"), "utf8"));
 });
 
 test("publishCodexPlugin's copy-time filter rejects a symlink introduced into the staged tree after pre-lock validation (TOCTOU) and restores the previous plugin", async t => {
@@ -192,12 +215,12 @@ test("publishCodexPlugin's copy-time filter rejects a symlink introduced into th
   };
   await assert.rejects(publish(root, "toctou-after", { stagedPlugin: staged, copyStagedPlugin }), /symlink|unsafe/i);
   assert.equal(
-    await readFile(join(root, "plugins", "plugin", "runtime", "muster.mjs"), "utf8"),
+    await readFile(join(root, ".agents", "plugins", "plugin", "runtime", "muster.mjs"), "utf8"),
     'export const marker = "toctou-before";\n',
     "a symlink introduced after the pre-lock validation must not overwrite the previously published plugin"
   );
   assert.deepEqual(
-    (await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")),
+    (await readdir(join(root, ".agents", "plugins"))).filter(name => name.startsWith(".muster-retired-")),
     [],
     "retired staging directory must not linger after a restore"
   );
@@ -220,11 +243,11 @@ test("publishCodexPlugin's destination re-validation independently rejects a sym
   };
   await assert.rejects(publish(root, "dest-check-after", { stagedPlugin: staged, copyStagedPlugin }), /symlink/i);
   assert.equal(
-    await readFile(join(root, "plugins", "plugin", "runtime", "muster.mjs"), "utf8"),
+    await readFile(join(root, ".agents", "plugins", "plugin", "runtime", "muster.mjs"), "utf8"),
     'export const marker = "dest-check-before";\n',
     "a symlink present only at the destination must not survive the publish"
   );
-  assert.deepEqual((await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
+  assert.deepEqual((await readdir(join(root, ".agents", "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
 });
 
 test("copyStagedPluginTree hard-fails (not a silent skip) when the source tree contains a symlink, without publishing the tainted entry", async t => {
@@ -240,31 +263,31 @@ test("copyStagedPluginTree hard-fails (not a silent skip) when the source tree c
 
 test("publishCodexPlugin sweeps an orphaned .muster-retired-* directory left by a prior crashed publish", async t => {
   const root = await tempRoot(t);
-  await mkdir(join(root, "plugins"), { recursive: true });
-  const orphan = join(root, "plugins", ".muster-retired-99999-orphan");
+  await mkdir(join(root, ".agents", "plugins"), { recursive: true });
+  const orphan = join(root, ".agents", "plugins", ".muster-retired-99999-orphan");
   await mkdir(orphan, { recursive: true });
   await writeFile(join(orphan, "leftover.txt"), "crash debris\n");
   await publish(root, "sweep", { stagedPlugin: await stagedPlugin(root, "sweep") });
-  assert.deepEqual((await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
+  assert.deepEqual((await readdir(join(root, ".agents", "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
 });
 
 test("resolveCodexPlugin absorbs a brief concurrent-publish ENOENT window with a bounded retry", async t => {
   const root = await tempRoot(t);
   await publish(root, "retry-window", { stagedPlugin: await stagedPlugin(root, "retry-window") });
-  const pluginPath = join(root, "plugins", "plugin");
+  const pluginPath = join(root, ".agents", "plugins", "plugin");
   const parked = `${pluginPath}.parked`;
   await rename(pluginPath, parked);
   setTimeout(() => { rename(parked, pluginPath).catch(() => {}); }, 20);
-  const selected = await resolveCodexPlugin(root, { pluginsRoot: join(root, "plugins") });
+  const selected = await resolveCodexPlugin(root, { pluginsRoot: join(root, ".agents", "plugins") });
   assert.equal(selected.packageVersion, "0.5.0");
 });
 
 test("resolveCodexPlugin round-trips a published plugin and fails closed when nothing was built", async t => {
   const root = await tempRoot(t);
-  await assert.rejects(resolveCodexPlugin(root, { pluginsRoot: join(root, "plugins") }), /is missing|Codex plugin staging directory/);
+  await assert.rejects(resolveCodexPlugin(root, { pluginsRoot: join(root, ".agents", "plugins") }), /is missing|Codex plugin staging directory/);
   await publish(root, "resolve", { stagedPlugin: await stagedPlugin(root, "resolve") });
-  const selected = await resolveCodexPlugin(root, { pluginsRoot: join(root, "plugins") });
-  assert.equal(selected.pluginRoot, join(root, "plugins", "plugin"));
+  const selected = await resolveCodexPlugin(root, { pluginsRoot: join(root, ".agents", "plugins") });
+  assert.equal(selected.pluginRoot, join(root, ".agents", "plugins", "plugin"));
   assert.equal(selected.packageVersion, "0.5.0");
   assert.equal(await readFile(join(selected.profilesRoot, "muster-builder.toml"), "utf8"), 'name = "muster-builder"\nmarker = "resolve"\n');
 });
@@ -272,11 +295,11 @@ test("resolveCodexPlugin round-trips a published plugin and fails closed when no
 test("resolveCodexPlugin rejects a marketplace pointer that does not name the fixed plugin path", async t => {
   const root = await tempRoot(t);
   await publish(root, "pointer", { stagedPlugin: await stagedPlugin(root, "pointer") });
-  const pointerPath = join(root, "plugins", "marketplace.json");
+  const pointerPath = join(root, ".agents", "plugins", "marketplace.json");
   const pointer = JSON.parse(await readFile(pointerPath, "utf8"));
   pointer.plugins[0].source.path = "./somewhere-else";
   await writeFile(pointerPath, JSON.stringify(pointer));
-  await assert.rejects(resolveCodexPlugin(root, { pluginsRoot: join(root, "plugins") }), /valid Muster plugin contract/);
+  await assert.rejects(resolveCodexPlugin(root, { pluginsRoot: join(root, ".agents", "plugins") }), /valid Muster plugin contract/);
 });
 
 test("resolveCodexPlugin rejects a published plugin tree containing a symlink", async t => {
@@ -285,7 +308,7 @@ test("resolveCodexPlugin rejects a published plugin tree containing a symlink", 
   const outside = join(root, "outside-published.txt");
   await writeFile(outside, "secret");
   await symlink(outside, join(published.pluginRoot, "skills", "muster", "escape.md"));
-  await assert.rejects(resolveCodexPlugin(root, { pluginsRoot: join(root, "plugins") }), /symlink/i);
+  await assert.rejects(resolveCodexPlugin(root, { pluginsRoot: join(root, ".agents", "plugins") }), /symlink/i);
 });
 
 test("concurrent publishes to the same pluginsRoot serialize and leave one coherent winner", async t => {
@@ -295,9 +318,9 @@ test("concurrent publishes to the same pluginsRoot serialize and leave one coher
     return publish(root, `race-${marker}`, { stagedPlugin: staged });
   }));
   for (const published of results) assert.equal(published.packageVersion, "0.5.0");
-  const selected = await resolveCodexPlugin(root, { pluginsRoot: join(root, "plugins") });
+  const selected = await resolveCodexPlugin(root, { pluginsRoot: join(root, ".agents", "plugins") });
   assert.match(await readFile(join(selected.pluginRoot, "runtime", "muster.mjs"), "utf8"), /export const marker = "race-[abc]";\n/);
-  assert.deepEqual((await readdir(join(root, "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
+  assert.deepEqual((await readdir(join(root, ".agents", "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
 });
 
 test("assertRegularTree and assertRegularFile reject symlinks without following them", async t => {

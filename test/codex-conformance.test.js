@@ -19,8 +19,14 @@ function rolloutLines({ threadSource, agentRole, nickname, depth, cwd, turnModel
   const lines = [
     { timestamp: "t0", type: "session_meta", payload: { session_id: "s", thread_source: threadSource, cwd: cwd || "/work/muster", source } }
   ];
-  for (const model of turnModels) {
-    lines.push({ timestamp: "t1", type: "response_item", payload: { type: "turn_context", model, effort: "medium" } });
+  // turnModels entries are "model" or "model@effort" -- effort rides where the
+  // real rollouts carry it: payload.collaboration_mode.settings.reasoning_effort.
+  for (const entry of turnModels) {
+    const [model, effort] = entry.split("@");
+    lines.push({ timestamp: "t1", type: "response_item", payload: {
+      type: "turn_context", model,
+      collaboration_mode: { mode: "default", settings: { model, reasoning_effort: effort || "medium" } }
+    } });
   }
   return lines.map(line => JSON.stringify(line)).join("\n") + "\n";
 }
@@ -46,19 +52,25 @@ test("conformance audit classifies MATCH, MISMATCH, GENERIC, NO-PIN, and IDLE th
   await writeFile(join(dayDir, "rollout-d-generic.jsonl"), rolloutLines({ threadSource: "subagent", nickname: "Erdos", depth: 2, turnModels: ["gpt-5.6-sol"] }));
   await writeFile(join(dayDir, "rollout-e-nopin.jsonl"), rolloutLines({ threadSource: "subagent", agentRole: "ghost-role", turnModels: ["gpt-5.6-terra"] }));
   await writeFile(join(dayDir, "rollout-f-idle.jsonl"), rolloutLines({ threadSource: "subagent", agentRole: "role-sol", turnModels: [] }));
+  // Effort-only drift: right model, wrong reasoning effort -- the
+  // openai/codex#32587 inheritance class (a sol/medium pin billed at the
+  // parent's high effort) must read as MISMATCH, not MATCH.
+  await writeFile(join(dayDir, "rollout-g-effort.jsonl"), rolloutLines({ threadSource: "subagent", agentRole: "role-sol", nickname: "Noether", turnModels: ["gpt-5.6-sol@high"] }));
   const report = await auditCodexModelConformance({ sessionsDir, agentsDir, day: DAY });
   const byFile = Object.fromEntries(report.rows.map(row => [row.file, row]));
+  assert.equal(byFile["rollout-g-effort.jsonl"].verdict, CONFORMANCE_VERDICTS.MISMATCH);
+  assert.deepEqual(byFile["rollout-g-effort.jsonl"].observed, [{ model: "gpt-5.6-sol", effort: "high", turns: 1 }]);
   assert.equal(byFile["rollout-a-user.jsonl"].kind, "user");
   assert.equal(byFile["rollout-a-user.jsonl"].verdict, null);
   assert.equal(byFile["rollout-b-match.jsonl"].verdict, CONFORMANCE_VERDICTS.MATCH);
-  assert.deepEqual(byFile["rollout-b-match.jsonl"].observed, [{ model: "gpt-5.6-sol", turns: 2 }]);
+  assert.deepEqual(byFile["rollout-b-match.jsonl"].observed, [{ model: "gpt-5.6-sol", effort: "medium", turns: 2 }]);
   assert.equal(byFile["rollout-c-mismatch.jsonl"].verdict, CONFORMANCE_VERDICTS.MISMATCH);
-  assert.equal(byFile["rollout-c-mismatch.jsonl"].expected, "gpt-5.6-luna");
+  assert.deepEqual(byFile["rollout-c-mismatch.jsonl"].expected, { model: "gpt-5.6-luna", effort: "xhigh" });
   assert.equal(byFile["rollout-d-generic.jsonl"].verdict, CONFORMANCE_VERDICTS.GENERIC);
   assert.equal(byFile["rollout-d-generic.jsonl"].depth, 2);
   assert.equal(byFile["rollout-e-nopin.jsonl"].verdict, CONFORMANCE_VERDICTS.NO_PIN);
   assert.equal(byFile["rollout-f-idle.jsonl"].verdict, CONFORMANCE_VERDICTS.IDLE);
-  assert.deepEqual(report.tally, { subagents: 5, match: 1, mismatch: 1, generic: 1, noPin: 1, idle: 1 });
+  assert.deepEqual(report.tally, { subagents: 6, match: 1, mismatch: 2, generic: 1, noPin: 1, idle: 1 });
   assert.equal(report.pins, 2);
 });
 

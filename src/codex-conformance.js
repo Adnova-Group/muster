@@ -32,7 +32,8 @@ async function pinnedModels(agentsDir) {
     let text;
     try { text = await readFile(join(agentsDir, name), "utf8"); } catch { continue; }
     const model = text.match(/^model\s*=\s*"([^"]+)"/m)?.[1];
-    if (model) pins.set(name.replace(/\.toml$/, ""), model);
+    const effort = text.match(/^model_reasoning_effort\s*=\s*"([^"]+)"/m)?.[1] || null;
+    if (model) pins.set(name.replace(/\.toml$/, ""), { model, effort });
   }
   return pins;
 }
@@ -46,11 +47,20 @@ function classifyThread({ meta, turnModels }, pins) {
   const expected = pins.get(spawn.agent_role);
   if (!expected) return { kind, role: spawn.agent_role, verdict: CONFORMANCE_VERDICTS.NO_PIN, observed };
   if (observed.length === 0) return { kind, role: spawn.agent_role, verdict: CONFORMANCE_VERDICTS.IDLE, observed, expected };
-  const verdict = observed.every(model => model === expected)
-    ? CONFORMANCE_VERDICTS.MATCH
-    : CONFORMANCE_VERDICTS.MISMATCH;
+  // Both halves must hold: the pinned MODEL and, when the profile pins one,
+  // the pinned reasoning EFFORT -- Codex's spawn-inheritance bug class
+  // (openai/codex#32587) silently bills children at the parent's model AND
+  // effort, and an effort-only drift (sol/medium pin running sol/high) still
+  // multiplies quota burn ~1.9x.
+  const modelOk = observed.every(key => keyModel(key) === expected.model);
+  const effortOk = !expected.effort || observed.every(key => keyEffort(key) === null || keyEffort(key) === expected.effort);
+  const verdict = modelOk && effortOk ? CONFORMANCE_VERDICTS.MATCH : CONFORMANCE_VERDICTS.MISMATCH;
   return { kind, role: spawn.agent_role, verdict, observed, expected };
 }
+
+// turnModels keys are "model@effort" ("@?" when the rollout carried no effort).
+const keyModel = key => key.split("@")[0];
+const keyEffort = key => { const effort = key.split("@")[1]; return effort === "?" ? null : effort; };
 
 function parseRollout(text) {
   let meta = null;
@@ -64,7 +74,9 @@ function parseRollout(text) {
     if (!meta && (payload.thread_source || payload.session_id)) meta = payload;
     const type = payload.type || entry.type;
     if (type === "turn_context" && typeof payload.model === "string") {
-      turnModels.set(payload.model, (turnModels.get(payload.model) || 0) + 1);
+      const effort = payload.collaboration_mode?.settings?.reasoning_effort ?? payload.effort ?? "?";
+      const key = `${payload.model}@${effort}`;
+      turnModels.set(key, (turnModels.get(key) || 0) + 1);
     }
   }
   return meta ? { meta, turnModels } : null;
@@ -99,7 +111,7 @@ export async function auditCodexModelConformance({ sessionsDir, agentsDir, day, 
       role: classified.role,
       nickname: spawn?.agent_nickname || null,
       depth: spawn?.depth ?? null,
-      observed: [...parsed.turnModels.entries()].map(([model, turns]) => ({ model, turns })),
+      observed: [...parsed.turnModels.entries()].map(([key, turns]) => ({ model: keyModel(key), effort: keyEffort(key), turns })),
       expected: classified.expected || null,
       verdict: classified.verdict
     });

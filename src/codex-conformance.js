@@ -51,16 +51,24 @@ function classifyThread({ meta, turnModels }, pins) {
   // the pinned reasoning EFFORT -- Codex's spawn-inheritance bug class
   // (openai/codex#32587) silently bills children at the parent's model AND
   // effort, and an effort-only drift (sol/medium pin running sol/high) still
-  // multiplies quota burn ~1.9x.
+  // multiplies quota burn ~1.9x. A turn whose rollout carries NO effort
+  // telemetry (keyEffort null) is deliberately fail-open on the effort half:
+  // absent telemetry proves nothing either way, and failing on it would turn
+  // every telemetry gap into a false alarm -- but a turn with a PRESENT wrong
+  // effort always fails, regardless of other turns lacking telemetry.
   const modelOk = observed.every(key => keyModel(key) === expected.model);
   const effortOk = !expected.effort || observed.every(key => keyEffort(key) === null || keyEffort(key) === expected.effort);
   const verdict = modelOk && effortOk ? CONFORMANCE_VERDICTS.MATCH : CONFORMANCE_VERDICTS.MISMATCH;
   return { kind, role: spawn.agent_role, verdict, observed, expected };
 }
 
-// turnModels keys are "model@effort" ("@?" when the rollout carried no effort).
-const keyModel = key => key.split("@")[0];
-const keyEffort = key => { const effort = key.split("@")[1]; return effort === "?" ? null : effort; };
+// turnModels keys are JSON-encoded [model, effort|null] tuples -- delimiter-safe
+// against any model/effort string Codex might emit (payload values are
+// unconstrained external input; a naive "model@effort" split would misparse a
+// model name containing "@").
+const encodeKey = (model, effort) => JSON.stringify([model, effort ?? null]);
+const keyModel = key => JSON.parse(key)[0];
+const keyEffort = key => JSON.parse(key)[1];
 
 function parseRollout(text) {
   let meta = null;
@@ -74,8 +82,8 @@ function parseRollout(text) {
     if (!meta && (payload.thread_source || payload.session_id)) meta = payload;
     const type = payload.type || entry.type;
     if (type === "turn_context" && typeof payload.model === "string") {
-      const effort = payload.collaboration_mode?.settings?.reasoning_effort ?? payload.effort ?? "?";
-      const key = `${payload.model}@${effort}`;
+      const effort = payload.collaboration_mode?.settings?.reasoning_effort ?? payload.effort ?? null;
+      const key = encodeKey(payload.model, effort);
       turnModels.set(key, (turnModels.get(key) || 0) + 1);
     }
   }

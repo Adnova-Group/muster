@@ -19,14 +19,17 @@ function rolloutLines({ threadSource, agentRole, nickname, depth, cwd, turnModel
   const lines = [
     { timestamp: "t0", type: "session_meta", payload: { session_id: "s", thread_source: threadSource, cwd: cwd || "/work/muster", source } }
   ];
-  // turnModels entries are "model" or "model@effort" -- effort rides where the
-  // real rollouts carry it: payload.collaboration_mode.settings.reasoning_effort.
+  // turnModels entries: "model" (effort medium via collaboration_mode, the real
+  // rollout shape), "model@<effort>" (explicit), "model@absent" (NO effort
+  // telemetry anywhere on the turn), "model@flat:<effort>" (legacy top-level
+  // payload.effort fallback, no collaboration_mode).
   for (const entry of turnModels) {
     const [model, effort] = entry.split("@");
-    lines.push({ timestamp: "t1", type: "response_item", payload: {
-      type: "turn_context", model,
-      collaboration_mode: { mode: "default", settings: { model, reasoning_effort: effort || "medium" } }
-    } });
+    const payload = { type: "turn_context", model };
+    if (effort === "absent") { /* no effort telemetry at all */ }
+    else if (effort?.startsWith("flat:")) payload.effort = effort.slice(5);
+    else payload.collaboration_mode = { mode: "default", settings: { model, reasoning_effort: effort || "medium" } };
+    lines.push({ timestamp: "t1", type: "response_item", payload });
   }
   return lines.map(line => JSON.stringify(line)).join("\n") + "\n";
 }
@@ -56,10 +59,20 @@ test("conformance audit classifies MATCH, MISMATCH, GENERIC, NO-PIN, and IDLE th
   // openai/codex#32587 inheritance class (a sol/medium pin billed at the
   // parent's high effort) must read as MISMATCH, not MATCH.
   await writeFile(join(dayDir, "rollout-g-effort.jsonl"), rolloutLines({ threadSource: "subagent", agentRole: "role-sol", nickname: "Noether", turnModels: ["gpt-5.6-sol@high"] }));
+  // Deliberate fail-open: a turn with NO effort telemetry proves nothing about
+  // effort, so it must NOT fail the audit (right model + absent effort = MATCH).
+  await writeFile(join(dayDir, "rollout-h-absent.jsonl"), rolloutLines({ threadSource: "subagent", agentRole: "role-sol", turnModels: ["gpt-5.6-sol@absent"] }));
+  // ...but the fail-open never masks a PRESENT wrong effort: mixed
+  // absent-telemetry and wrong-effort turns still read MISMATCH, including
+  // when the wrong effort arrives via the legacy top-level payload.effort.
+  await writeFile(join(dayDir, "rollout-i-mixed.jsonl"), rolloutLines({ threadSource: "subagent", agentRole: "role-sol", turnModels: ["gpt-5.6-sol@absent", "gpt-5.6-sol@flat:xhigh"] }));
   const report = await auditCodexModelConformance({ sessionsDir, agentsDir, day: DAY });
   const byFile = Object.fromEntries(report.rows.map(row => [row.file, row]));
   assert.equal(byFile["rollout-g-effort.jsonl"].verdict, CONFORMANCE_VERDICTS.MISMATCH);
   assert.deepEqual(byFile["rollout-g-effort.jsonl"].observed, [{ model: "gpt-5.6-sol", effort: "high", turns: 1 }]);
+  assert.equal(byFile["rollout-h-absent.jsonl"].verdict, CONFORMANCE_VERDICTS.MATCH, "absent effort telemetry is fail-open, not a mismatch");
+  assert.deepEqual(byFile["rollout-h-absent.jsonl"].observed, [{ model: "gpt-5.6-sol", effort: null, turns: 1 }]);
+  assert.equal(byFile["rollout-i-mixed.jsonl"].verdict, CONFORMANCE_VERDICTS.MISMATCH, "a present wrong effort fails even alongside absent-telemetry turns");
   assert.equal(byFile["rollout-a-user.jsonl"].kind, "user");
   assert.equal(byFile["rollout-a-user.jsonl"].verdict, null);
   assert.equal(byFile["rollout-b-match.jsonl"].verdict, CONFORMANCE_VERDICTS.MATCH);
@@ -70,7 +83,7 @@ test("conformance audit classifies MATCH, MISMATCH, GENERIC, NO-PIN, and IDLE th
   assert.equal(byFile["rollout-d-generic.jsonl"].depth, 2);
   assert.equal(byFile["rollout-e-nopin.jsonl"].verdict, CONFORMANCE_VERDICTS.NO_PIN);
   assert.equal(byFile["rollout-f-idle.jsonl"].verdict, CONFORMANCE_VERDICTS.IDLE);
-  assert.deepEqual(report.tally, { subagents: 6, match: 1, mismatch: 2, generic: 1, noPin: 1, idle: 1 });
+  assert.deepEqual(report.tally, { subagents: 8, match: 2, mismatch: 3, generic: 1, noPin: 1, idle: 1 });
   assert.equal(report.pins, 2);
 });
 

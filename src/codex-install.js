@@ -721,12 +721,25 @@ function shellCommand(path) {
 // installs its own hooks exactly as it always has (prepareHooks below only
 // calls this for scope === "project"; the user scope is never a candidate
 // to skip its own hooks).
-async function userScopeHooksHealthy({ home }) {
+//
+// Requires the user manifest's OWN recorded `packageVersion` to match the
+// version about to be installed (review fix: a self-consistent-but-stale
+// user manifest -- e.g. missing an event a newer template added -- used to
+// report "healthy" purely from internal agreement between its own manifest
+// and its own hooks.json, silently skipping the project scope's install and
+// leaving that event firing from NEITHER scope with no signal at install
+// time; `muster doctor --codex` would eventually catch the drift, but only
+// if rerun). A version mismatch fails closed to "not healthy" here, exactly
+// like every other validation failure above -- the project scope then
+// installs its own (current) hooks rather than trusting a stale peer.
+async function userScopeHooksHealthy({ home, packageVersion }) {
   const dir = codexHome(home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
   if (!(await safeExists(manifestPath))) return false;
+  const manifestRaw = await readJson(manifestPath);
+  if (manifestRaw?.packageVersion !== packageVersion) return false;
   let manifest;
-  try { manifest = validateHookManifest(await readJson(manifestPath), runtimeDir, manifestPath); }
+  try { manifest = validateHookManifest(manifestRaw, runtimeDir, manifestPath); }
   catch { return false; }
   const events = Object.entries(manifest.hookGroups || {});
   if (!manifest.files.length || !events.length) return false;
@@ -779,7 +792,7 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion }
   const previousOwnedHookStateKeys = previous ? ownedHookStateKeys(config, previous.hookGroups) : [];
   if (previous) config = removeOwnedHookGroups(config, previous.hookGroups, configPath);
 
-  const skipped = scope === "project" && await userScopeHooksHealthy({ home });
+  const skipped = scope === "project" && await userScopeHooksHealthy({ home, packageVersion });
 
   const templatePath = join(hookSourceRoot, "hooks.json");
   const template = await readJson(templatePath);

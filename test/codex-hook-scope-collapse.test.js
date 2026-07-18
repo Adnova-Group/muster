@@ -75,6 +75,26 @@ test("Codex install: project scope installs its own hooks exactly as before when
   await readFile(join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs"), "utf8");
 });
 
+test("Codex install: a self-consistent but version-stale user scope manifest is NOT treated as healthy (fails closed, project installs its own current hooks)", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-stale-user-version-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  // Hand-edit the user manifest's OWN recorded packageVersion to something
+  // stale while leaving it otherwise perfectly self-consistent with its own
+  // hooks.json/runtime -- a purely-internal-agreement health check would
+  // wrongly call this "healthy" and silently skip the project install.
+  const userManifestPath = join(home, ".codex", "muster", ".muster-managed.json");
+  const userManifest = JSON.parse(await readFile(userManifestPath, "utf8"));
+  userManifest.packageVersion = "0.0.0-stale";
+  await writeFile(userManifestPath, JSON.stringify(userManifest, null, 2));
+
+  const projectResult = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  assert.equal(projectResult.hooksSkipped, null, "a version-stale user manifest must fail closed, not report healthy");
+  assert.equal(projectResult.hooks, 7, "the project scope installs its own current hooks rather than trusting a stale peer");
+  await readFile(join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs"), "utf8");
+});
+
 test("Codex install: user-scope installs never skip, even run twice in a row", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-user-never-skips-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
@@ -219,13 +239,23 @@ test("Codex install adversarial: a failed transaction mid-migration restores the
   const beforeRuntime = await readFile(projectRuntimePath, "utf8");
 
   const calls = [];
+  let midTransactionHooksJson = null, midTransactionRuntimeExists = null;
   const failingExecFile = async (_bin, args) => {
     calls.push(args.join(" "));
     if (args[0] === "--version") return { stdout: "codex-cli test" };
     if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
     if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
-    if (args.slice(0, 2).join(" ") === "plugin add") throw new Error("registration failed mid-migration");
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      // registerPlugin runs LAST inside the transaction's try block (after
+      // every filesystem write), so reading the on-disk state HERE, before
+      // throwing, proves the migration's writes genuinely landed mid-
+      // transaction -- not an assumption about source ordering, a fact this
+      // test observes directly.
+      midTransactionHooksJson = JSON.parse(await readFile(projectHooksJsonPath, "utf8"));
+      midTransactionRuntimeExists = await readFile(projectRuntimePath, "utf8").then(() => true, () => false);
+      throw new Error("registration failed mid-migration");
+    }
     if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
@@ -233,6 +263,14 @@ test("Codex install adversarial: a failed transaction mid-migration restores the
   await assert.rejects(() => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: failingExecFile }), /registration failed mid-migration/);
   assert.ok(calls.includes("plugin add muster@muster"), "the migration reached the registration step before failing");
 
+  // Self-evident proof the migration's writes actually happened before the
+  // injected failure: at the moment of failure, project hooks.json already
+  // carried no muster group for any event, and its hook runtime was already
+  // deleted -- the fully-migrated (collapsed) state, not the pre-migration one.
+  for (const event of HOOK_EVENTS) assert.equal(musterGroupCount(midTransactionHooksJson, event), 0, `mid-transaction: ${event} was already migrated away before the injected failure`);
+  assert.equal(midTransactionRuntimeExists, false, "mid-transaction: the hook runtime was already deleted before the injected failure");
+
+  // And after the failure, the whole transaction is restored byte-identically.
   assert.equal(await readFile(projectHooksJsonPath, "utf8"), beforeHooksJson, "project hooks.json is restored byte-identically");
   assert.equal(await readFile(projectManifestPath, "utf8"), beforeManifest, "project hook manifest is restored byte-identically");
   assert.equal(await readFile(projectRuntimePath, "utf8"), beforeRuntime, "project hook runtime is restored byte-identically");

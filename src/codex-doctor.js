@@ -246,7 +246,7 @@ function ownsExactHookGroups(config, owner) {
 // === 0 is an explicit false there), which would otherwise make the
 // coherence loop below misreport a deliberately hooks-free scope as stale.
 function isHooksSkippedManifest(owner) {
-  return owner?.owner === "muster" && Array.isArray(owner.files) && owner.files.length === 0
+  return owner?.owner === "muster" && owner.format === 1 && Array.isArray(owner.files) && owner.files.length === 0
     && owner.hookGroups && typeof owner.hookGroups === "object" && !Array.isArray(owner.hookGroups)
     && Object.keys(owner.hookGroups).length === 0;
 }

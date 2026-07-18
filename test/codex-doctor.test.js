@@ -40,7 +40,48 @@ test("Codex doctor reports project/user hook overlap without claiming cross-copy
   // Canonical-scope decision (2026-07-18): dual live scopes double-fire every
   // advisory, so coherent overlap is now an actionable finding, not accepted.
   assert.equal(overlap?.ok, false);
-  assert.match(overlap?.detail || "", /fire from 2 scopes.*user scope is canonical.*uninstall codex --scope project/i);
+  // Remediation now points at reinstall (codex-hook-scope-collapse): a
+  // project-scope REINSTALL under a healthy user scope auto-collapses the
+  // duplicate, so the fix is no longer only a manual uninstall.
+  assert.match(overlap?.detail || "", /fire from 2 scopes.*user scope is canonical.*rerun `muster install codex --scope project`/i);
+});
+
+test("Codex doctor: a canonical-scope-skipped project scope is coherent and excluded from the firing count (user-then-project collapses to one)", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-collapse-doctor-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const projectInstall = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent });
+  assert.equal(projectInstall.hooksSkipped, "user-scope-canonical");
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const hooks = report.checks.find(check => check.name === "codex-hooks");
+  const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
+  assert.equal(hooks?.ok, true, hooks?.detail);
+  assert.equal(overlap?.ok, true, overlap?.detail);
+  assert.doesNotMatch(overlap?.detail || "", /fire from \d+ scopes/);
+});
+
+test("Codex doctor: a canonical-scope-skipped manifest whose hooks.json still carries a stray Muster group is reported stale, not silently coherent", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-collapse-doctor-corrupt-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent });
+  const projectHooksPath = join(cwd, ".codex", "hooks.json");
+  const userHooksPath = join(codexHome, "hooks.json");
+  const userHooks = JSON.parse(await readFile(userHooksPath, "utf8"));
+  // Corrupt the skipped project scope's hooks.json by hand-copying in a real
+  // muster-owned group its (empty) manifest no longer declares.
+  await writeFile(projectHooksPath, JSON.stringify({ hooks: { Stop: userHooks.hooks.Stop } }, null, 2));
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const hooks = report.checks.find(check => check.name === "codex-hooks");
+  // A corrupted skip scope makes the aggregate hook-health check fail (same
+  // any-stale-scope-fails-the-whole-check severity as every other drift this
+  // check already reports) -- it must NOT be silently treated as coherent.
+  assert.equal(hooks?.ok, false, "a corrupted skip scope must not be silently treated as coherent");
+  const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
+  assert.equal(overlap?.ok, false, "a corrupted skip scope must not be silently treated as non-firing either");
 });
 
 test("Codex doctor flags an installed plugin cache that ships firing lifecycle hooks", async () => {

@@ -282,6 +282,17 @@ function ownedHookStateKeys(config, hookGroups) {
 // -- so it keeps the original whole-path prune, unchanged from before this
 // fix. `[projects."<root>"]` is never inspected or touched at all (see this
 // section's header comment).
+//
+// A KEPT entry (present in `keptEntries`) with `ownedHookStateKeys` set is a
+// second, narrower case (codex-hook-scope-collapse): `muster install codex`
+// itself uses this when a canonical-scope collapse vacates every hook group
+// a still-registered, still-live scope held (nothing re-added in its
+// place) -- the scope's directory/registration survives (its profiles still
+// install), but its now-orphaned hook trust does not. Without
+// `ownedHookStateKeys` a kept entry is never a pruning candidate at all (an
+// ordinary reinstall re-adding equivalent groups must never re-prompt
+// Codex's own trust review); WITH it, pruning narrows to exactly those keys
+// instead of being skipped outright.
 export function reconcileConfigTomlHookState(text, registeredEntries, keptEntries, { onPrune = () => {} } = {}) {
   const state = parseConfigTomlTrustSections(text);
   const registered = (registeredEntries || []).map(entry => ({
@@ -301,7 +312,8 @@ export function reconcileConfigTomlHookState(text, registeredEntries, keptEntrie
     const [, prefix, event, groupIndex, hookIndex] = match;
     if (!isAbsolute(prefix)) continue;
     const known = registered.find(entry => entry.hooksJsonPath === prefix);
-    if (!known || keptHooksJsonPaths.has(known.hooksJsonPath)) continue;
+    if (!known) continue;
+    if (keptHooksJsonPaths.has(known.hooksJsonPath) && !known.ownedHookStateKeys) continue;
     if (known.ownedHookStateKeys && !known.ownedHookStateKeys.has(`${event}:${groupIndex}:${hookIndex}`)) continue;
     markRemoved(section);
     const pruned = { type: "hooks.state", scope: known.scope, configDir: known.configDir, hooksJsonPath: known.hooksJsonPath, event, groupIndex: Number(groupIndex), hookIndex: Number(hookIndex) };
@@ -695,6 +707,56 @@ function shellCommand(path) {
   return { command: `node ${posix}`, commandWindows: `node "${windows}"` };
 }
 
+// Canonical-scope collapse (2026-07-18 decision, doctor's codex-hooks-overlap
+// check): the user scope is canonical for Codex hooks. A project-scope
+// install skips writing its own hook runtime/config entirely once the USER
+// scope already carries a healthy Muster hook install -- installing project
+// hooks on top would only double-fire every event (hook-bombardment), and a
+// REINSTALL is how a dual-scope machine converges to one firing scope
+// instead of requiring a manual `muster uninstall codex --scope project`.
+// Read-only and best-effort: any validation failure (corrupt manifest,
+// missing/foreign hooks.json, a group that no longer matches exactly)
+// reports "not healthy" rather than throwing, so a broken user scope never
+// silently blocks a project-scope install -- that project scope just
+// installs its own hooks exactly as it always has (prepareHooks below only
+// calls this for scope === "project"; the user scope is never a candidate
+// to skip its own hooks).
+//
+// Requires the user manifest's OWN recorded `packageVersion` to match the
+// version about to be installed (review fix: a self-consistent-but-stale
+// user manifest -- e.g. missing an event a newer template added -- used to
+// report "healthy" purely from internal agreement between its own manifest
+// and its own hooks.json, silently skipping the project scope's install and
+// leaving that event firing from NEITHER scope with no signal at install
+// time; `muster doctor --codex` would eventually catch the drift, but only
+// if rerun). A version mismatch fails closed to "not healthy" here, exactly
+// like every other validation failure above -- the project scope then
+// installs its own (current) hooks rather than trusting a stale peer.
+async function userScopeHooksHealthy({ home, packageVersion }) {
+  const dir = codexHome(home);
+  const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
+  if (!(await safeExists(manifestPath))) return false;
+  const manifestRaw = await readJson(manifestPath);
+  if (manifestRaw?.packageVersion !== packageVersion) return false;
+  let manifest;
+  try { manifest = validateHookManifest(manifestRaw, runtimeDir, manifestPath); }
+  catch { return false; }
+  const events = Object.entries(manifest.hookGroups || {});
+  if (!manifest.files.length || !events.length) return false;
+  for (const file of manifest.files) if (!(await safeExists(join(runtimeDir, file)))) return false;
+  if (!(await safeExists(configPath))) return false;
+  let config;
+  try { config = await readJson(configPath); }
+  catch { return false; }
+  if (!config || typeof config !== "object" || Array.isArray(config) || typeof config.hooks !== "object" || !config.hooks || Array.isArray(config.hooks)) return false;
+  for (const [event, groups] of events) {
+    if (!Array.isArray(groups) || !groups.length) return false;
+    const current = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
+    for (const group of groups) if (!current.some(candidate => same(candidate, group))) return false;
+  }
+  return true;
+}
+
 async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion }) {
   const dir = configDir(scope, cwd, home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
@@ -717,20 +779,36 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion }
   if (!previous && Object.values(config.hooks).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
     throw new Error(`Codex hook conflict: ${configPath} contains an unmanaged Muster hook. Remove it or restore its Muster manifest, then rerun the command.`);
   }
+  // Captured BEFORE removeOwnedHookGroups mutates `config` below, at exactly
+  // the group/hook indices this scope's PRIOR install currently occupies in
+  // its own live hooks.json -- the same exact-key technique runCodexUninstall
+  // uses for its own departingScopeOwnedHookStateKeys (see ownedHookStateKeys'
+  // rationale above). Only consumed by runCodexInstall's writer, and only
+  // when a canonical-scope collapse (skipped below) just vacated every owned
+  // group this scope held with nothing re-added in its place -- an ordinary
+  // reinstall that re-adds equivalent groups never reads this, so
+  // config.toml's [hooks.state] trust cache stays untouched on every normal
+  // reinstall exactly as before this feature.
+  const previousOwnedHookStateKeys = previous ? ownedHookStateKeys(config, previous.hookGroups) : [];
   if (previous) config = removeOwnedHookGroups(config, previous.hookGroups, configPath);
+
+  const skipped = scope === "project" && await userScopeHooksHealthy({ home, packageVersion });
 
   const templatePath = join(hookSourceRoot, "hooks.json");
   const template = await readJson(templatePath);
   if (!template?.hooks || typeof template.hooks !== "object") throw new Error(`Codex hook template is missing or malformed: ${templatePath}`);
   const runtimeScript = join(runtimeDir, "hooks", "muster-hook.mjs");
   const command = shellCommand(runtimeScript);
-  const hookGroups = clone(template.hooks);
-  for (const groups of Object.values(hookGroups)) for (const group of groups) for (const hook of group.hooks || []) {
-    hook.command = command.command;
-    hook.commandWindows = command.commandWindows;
+  const hookGroups = skipped ? {} : clone(template.hooks);
+  if (!skipped) {
+    for (const groups of Object.values(hookGroups)) for (const group of groups) for (const hook of group.hooks || []) {
+      hook.command = command.command;
+      hook.commandWindows = command.commandWindows;
+    }
+    for (const [event, groups] of Object.entries(hookGroups)) config.hooks[event] = [...(config.hooks[event] || []), ...groups];
   }
-  for (const [event, groups] of Object.entries(hookGroups)) config.hooks[event] = [...(config.hooks[event] || []), ...groups];
-  const sourceFiles = new Map([
+  const hookFiles = skipped ? [] : HOOK_FILES;
+  const sourceFiles = skipped ? new Map() : new Map([
     ["hooks/muster-hook.mjs", join(hookSourceRoot, "muster-hook.mjs")],
     ["hooks/action-guard.mjs", join(hookSourceRoot, "action-guard.mjs")]
   ]);
@@ -738,9 +816,11 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion }
   for (const [file, sourcePath] of sourceFiles) hookHash.update(file).update("\0").update(await readSafe(sourcePath));
   return {
     dir, runtimeDir, manifestPath, manifestExists, configPath, configExists, config,
-    staleFiles: (previous?.files || []).filter(file => !HOOK_FILES.includes(file)),
-    manifest: { format: 1, owner: "muster", files: HOOK_FILES, packageVersion, hookHash: hookHash.digest("hex"), hookConfigCreated: previous?.hookConfigCreated ?? !configExists, hookGroups },
-    sourceFiles
+    staleFiles: (previous?.files || []).filter(file => !hookFiles.includes(file)),
+    manifest: { format: 1, owner: "muster", files: hookFiles, packageVersion, hookHash: hookHash.digest("hex"), hookConfigCreated: previous?.hookConfigCreated ?? !configExists, hookGroups },
+    sourceFiles, hookFiles,
+    skipped: skipped ? "user-scope-canonical" : null,
+    previousOwnedHookStateKeys
   };
 }
 
@@ -888,7 +968,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const planned = [
     ...files.map(file => ({ op: "write", path: join(dir, file) })),
     ...staleFiles.map(file => ({ op: "remove", path: join(dir, file) })),
-    ...HOOK_FILES.map(file => ({ op: "write", path: join(hooks.runtimeDir, file) })),
+    // Follows hooks.hookFiles (empty under a canonical-scope collapse), not
+    // the constant HOOK_FILES -- a skipped scope writes no hook runtime.
+    ...hooks.hookFiles.map(file => ({ op: "write", path: join(hooks.runtimeDir, file) })),
     ...hooks.staleFiles.map(file => ({ op: "remove", path: join(hooks.runtimeDir, file) })),
     { op: "merge", path: hooks.configPath },
     { op: "merge", path: threadLimitConfigPath }
@@ -959,9 +1041,28 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           // is the fix for codex-hook-bombardment (a dead or case-duplicated
           // scope's hook definitions stay trusted, and thus still fire,
           // forever without this). No ownedHookStateKeys is threaded through
-          // here: the current scope is always in `reconciled` (kept) during
-          // install, so it is never a pruning candidate in the first place.
-          const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, candidateScopeEntries, reconciled, {
+          // here for an ORDINARY reinstall: the current scope is always in
+          // `reconciled` (kept), so it is never a pruning candidate in the
+          // first place -- a plain reinstall that re-adds equivalent groups
+          // must never re-prompt Codex's own hook trust review.
+          //
+          // A canonical-scope collapse (hooks.skipped, see prepareHooks'
+          // userScopeHooksHealthy) is the one install-time exception: it just
+          // vacated every owned group this scope held with nothing re-added
+          // in its place, so its now-orphaned trust-cache entries must be
+          // pruned too -- exactly like runCodexUninstall's own departing-
+          // scope prune, narrowed to the EXACT keys previousOwnedHookStateKeys
+          // captured (see that field's rationale in prepareHooks) so a
+          // co-located non-muster hooks.state entry at this same path is
+          // never swept up. `reconciled` (kept) is unchanged either way --
+          // this scope's profiles/registration stay live; only its own
+          // vacated hook trust is eligible for narrowed pruning.
+          const hookStateEntries = hooks.skipped && hooks.previousOwnedHookStateKeys.length
+            ? candidateScopeEntries.map(entry => sameScopeEntry(entry, currentScope)
+                ? { ...entry, ownedHookStateKeys: hooks.previousOwnedHookStateKeys }
+                : entry)
+            : candidateScopeEntries;
+          const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, hookStateEntries, reconciled, {
             onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
           });
           const threadLimits = ensureCodexThreadLimits(hookStateReconcile.text);
@@ -998,6 +1099,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     actions = present ? await registerPlugin(execFile, true, distributionRoot) : [];
   }
   return { ok: true, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
+    hooksSkipped: hooks.skipped,
     prunedScopes, prunedHookState, prunedProjectTrust,
     plugin: present ? { registered: !dryRun, actions } : { registered: false, skipped: "codex-not-found" },
     nextSteps: present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${scope}`] };

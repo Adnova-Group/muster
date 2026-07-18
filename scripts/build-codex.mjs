@@ -461,6 +461,9 @@ async function buildCodexPluginOnce({ root, outDir }) {
         interface: { displayName: "Muster" },
         plugins: [{
           name: "muster",
+          // path here is a placeholder: publishCodexPlugin overwrites it with
+          // codexMarketplacePluginPath(pluginsRoot) (-> "./.agents/plugins/plugin")
+          // before persisting, so this literal is never the shipped value.
           source: { source: "local", path: "./plugin" },
           policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
           category: "Productivity"

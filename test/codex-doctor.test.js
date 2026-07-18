@@ -11,7 +11,7 @@ import { PassThrough } from "node:stream";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor, runMcpHandshake } from "../src/codex-doctor.js";
-import { repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { repoRoot, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 function fakeMcpChild() {
   const child = new EventEmitter();
@@ -37,8 +37,31 @@ test("Codex doctor reports project/user hook overlap without claiming cross-copy
   await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
   const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
-  assert.equal(overlap?.ok, true);
-  assert.match(overlap?.detail || "", /project and user.*no cross-copy dedupe/i);
+  // Canonical-scope decision (2026-07-18): dual live scopes double-fire every
+  // advisory, so coherent overlap is now an actionable finding, not accepted.
+  assert.equal(overlap?.ok, false);
+  assert.match(overlap?.detail || "", /fire from 2 scopes.*user scope is canonical.*uninstall codex --scope project/i);
+});
+
+test("Codex doctor flags an installed plugin cache that ships firing lifecycle hooks", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-cache-hooks-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const cacheHooksDir = join(codexHome, "plugins", "cache", "muster", "muster", selectedPlugin.packageVersion, "hooks");
+  await mkdir(cacheHooksDir, { recursive: true });
+  // The with-hooks (Claude) flavor: any firing hook in the cache double-fires
+  // on top of the scoped hooks.json install (the hook-bombardment regression).
+  await writeFile(join(cacheHooksDir, "hooks.json"), JSON.stringify({
+    hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node x.js" }] }] }
+  }));
+  const flagged = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const withHooks = flagged.checks.find(check => check.name === "codex-plugin-cache-hooks");
+  assert.equal(withHooks?.ok, false);
+  assert.match(withHooks?.detail || "", /ships 1 firing lifecycle hook.*rerun muster install codex/i);
+  await writeFile(join(cacheHooksDir, "hooks.json"), JSON.stringify({ hooks: {} }));
+  const clean = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  assert.equal(clean.checks.find(check => check.name === "codex-plugin-cache-hooks")?.ok, true);
 });
 
 test("Codex doctor requires exact owned hook groups from source and cache installs", async () => {
@@ -50,7 +73,10 @@ test("Codex doctor requires exact owned hook groups from source and cache instal
 
   const healthy = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
   assert.equal(healthy.checks.find(check => check.name === "codex-hooks")?.ok, true);
-  assert.equal(healthy.checks.find(check => check.name === "codex-hooks-overlap")?.ok, true);
+  // Dual coherent scopes are now the actionable canonical-scope finding, not a pass.
+  const healthyOverlap = healthy.checks.find(check => check.name === "codex-hooks-overlap");
+  assert.equal(healthyOverlap?.ok, false);
+  assert.match(healthyOverlap?.detail || "", /user scope is canonical/i);
 
   const hooksPath = join(cwd, ".codex", "hooks.json");
   const original = JSON.parse(await readFile(hooksPath, "utf8"));
@@ -168,7 +194,7 @@ test("Codex doctor verifies the bundled MCP initialize and tools/list handshake"
     execFile: absent,
     mcpRunner: async options => {
       calls.push(options);
-      return { initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools }, (_, index) => ({ name: `muster_test_${index}` })) };
+      return { initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools }, (_, index) => ({ name: `muster_test_${index}` })), toolCallOk: true };
     }
   });
   const handshake = report.checks.find(check => check.name === "codex-mcp-handshake");
@@ -205,11 +231,14 @@ test("Codex MCP handshake directly cleans up every terminal protocol path", asyn
     ["initialize missing result", child => {}, child => child.stdout.write('{"id":1}\n'), /initialize failed: missing result/],
     ["tools RPC error", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"error":{"message":"no tools"}}\n'), /tools\/list failed: no tools/],
     ["tools missing array", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{}}\n'), /returned no tools array/],
+    ["tool call RPC error", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{"tools":[{"name":"one"}]}}\n{"id":3,"error":{"message":"call boom"}}\n'), /tools\/call muster_detect failed: call boom/],
+    ["tool call error payload", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{"tools":[{"name":"one"}]}}\n{"id":3,"result":{"isError":true,"content":[{"type":"text","text":"Cannot find module x"}]}}\n'), /returned an error payload: Cannot find module x/],
+    ["tool call non-JSON payload", child => {}, child => child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{"tools":[{"name":"one"}]}}\n{"id":3,"result":{"content":[{"type":"text","text":"stack trace, not JSON"}]}}\n'), /returned an error payload/],
     ["child error", child => {}, child => child.emit("error", new Error("child broke")), /child broke/],
     ["stdout error", child => {}, child => child.stdout.emit("error", new Error("stdout broke")), /stdout broke/],
     ["stderr error", child => {}, child => child.stderr.emit("error", new Error("stderr broke")), /stderr broke/],
     ["stdin error", child => {}, child => child.stdin.emit("error", new Error("stdin broke")), /stdin broke/],
-    ["early exit", child => {}, child => { child.stderr.write("server exploded"); child.emit("exit", 7, null); }, /exited before tools\/list \(7\): server exploded/]
+    ["early exit", child => {}, child => { child.stderr.write("server exploded"); child.emit("exit", 7, null); }, /exited before the handshake completed \(7\): server exploded/]
   ];
   for (const [label, configure, terminate, expected] of cases) {
     const child = fakeMcpChild();
@@ -247,7 +276,7 @@ test("Codex MCP handshake handles synchronous stdin failure with cleanup and set
   const child = fakeMcpChild();
   const result = runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, spawnProcess: () => {
     queueMicrotask(() => {
-      child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{"tools":[{"name":"one"}]}}\n{"id":1,"result":{}}\n');
+      child.stdout.write('{"id":1,"result":{}}\n{"id":2,"result":{"tools":[{"name":"one"}]}}\n{"id":3,"result":{"content":[{"type":"text","text":"{\\"greenfield\\":true}"}]}}\n{"id":1,"result":{}}\n');
       child.stderr.write("late stderr");
       child.emit("exit", 9, null);
       child.emit("error", new Error("late child error"));
@@ -255,9 +284,9 @@ test("Codex MCP handshake handles synchronous stdin failure with cleanup and set
     });
     return child;
   }});
-  assert.deepEqual(await result, { initialized: true, tools: [{ name: "one" }] });
+  assert.deepEqual(await result, { initialized: true, tools: [{ name: "one" }], toolCallOk: true });
   assert.equal(child.killCalls, 1);
   assert.equal(child.stdin.writableEnded, true);
   assert.equal(child.stdinEndCalls, 1);
-  assert.equal(child.stdinWriteCalls, 3);
+  assert.equal(child.stdinWriteCalls, 4);
 });

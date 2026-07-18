@@ -111,3 +111,39 @@ test("resolveCodexPlugin rejects a marketplace pointer with a traversal or Windo
     await assert.rejects(resolveCodexPlugin(tmp, { pluginsRoot: join(tmp, "plugins") }), /valid Muster plugin contract/, path);
   }
 });
+
+test("the built plugin's MCP server executes tools/call from the bundle alone (no repo src/ tree)", async t => {
+  // Regression: the bundled muster-mcp.mjs resolved its CLI at ../src/cli.js
+  // (the repo layout), which the plugin bundle does not ship -- so initialize +
+  // tools/list succeeded while EVERY tools/call crashed with Cannot find module
+  // (found by the 2026-07-18 Codex dogfood). The bundle must fall back to its
+  // sibling runtime/muster.mjs.
+  const tmp = await mkdtemp(join(tmpdir(), "muster-mcp-call-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const { pluginRoot } = await resolveCodexPlugin(repoRoot);
+  const env = { ...process.env };
+  delete env.NODE_ENV;
+  delete env.MUSTER_COWORK_TEST_CLI;
+  const messages = await new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [join(pluginRoot, "runtime", "muster-mcp.mjs")], { cwd: tmp, env, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "", stderr = "";
+    const timer = setTimeout(() => { child.kill(); reject(new Error(`tools/call timed out: ${stderr}`)); }, 15_000);
+    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+    child.stdout.on("data", chunk => {
+      stdout += chunk;
+      const lines = stdout.trim().split("\n");
+      if (lines.some(line => { try { return JSON.parse(line).id === 2; } catch { return false; } })) {
+        clearTimeout(timer); child.kill(); resolvePromise(lines.map(line => JSON.parse(line)));
+      }
+    });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("error", error => { clearTimeout(timer); reject(error); });
+    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "call-test", version: "1" } } }) + "\n");
+    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_detect", arguments: {} } }) + "\n");
+  });
+  const response = messages.find(message => message.id === 2);
+  assert.ok(response?.result, `tools/call returned no result: ${JSON.stringify(response?.error || {}).slice(0, 200)}`);
+  assert.notEqual(response.result.isError, true, `tools/call errored: ${String(response.result.content?.[0]?.text).slice(0, 200)}`);
+  const detect = JSON.parse(response.result.content[0].text);
+  assert.equal(typeof detect.greenfield, "boolean", "muster_detect must return real detect JSON from the bundled CLI");
+});

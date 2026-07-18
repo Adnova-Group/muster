@@ -28,7 +28,7 @@
 // newline-delimited. No SDK dependency.
 
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -38,9 +38,22 @@ import { fileURLToPath } from "node:url";
 import { PRINCIPLES, VERBS, ROUTING_POLICY } from "../plugin/hooks/guidance.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// CLI resolution is layout-adaptive: the repo/npm layout puts the CLI at
+// ../src/cli.js (this file lives in cowork/), but the bundled Codex plugin
+// ships this server as runtime/muster-mcp.mjs with the esbuild-bundled CLI as
+// its SIBLING runtime/muster.mjs and no src/ tree at all -- resolving only the
+// repo path there made initialize/tools/list succeed while every tools/call
+// crashed with Cannot find module (the 2026-07-18 Codex dogfood's High
+// finding). Prefer the repo layout when present, fall back to the bundled
+// sibling, and keep the repo path as the default so a genuinely broken
+// install still fails loud with the expected path in the error.
+const REPO_CLI = path.join(HERE, "..", "src", "cli.js");
+const BUNDLED_CLI = path.join(HERE, "muster.mjs");
 const CLI = process.env.NODE_ENV === "test" && process.env.MUSTER_COWORK_TEST_CLI
   ? path.resolve(process.env.MUSTER_COWORK_TEST_CLI)
-  : path.join(HERE, "..", "src", "cli.js");
+  : existsSync(REPO_CLI) ? REPO_CLI
+  : existsSync(BUNDLED_CLI) ? BUNDLED_CLI
+  : REPO_CLI;
 const PROTOCOL_VERSION = "2025-06-18"; // MCP spec version date-string (matches the MCP specification header)
 // Single-source the version from package.json so serverInfo never drifts from the release.
 const VERSION = JSON.parse(readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;

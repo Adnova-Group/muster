@@ -10,7 +10,9 @@ import { repoRoot, selectedPlugin } from "../test-support/codex-helpers.js";
 
 test("Codex policy preserves the conceptual Fable fallback without routine max effort", () => {
   assert.deepEqual(CODEX_MODEL_POLICY, {
-    haiku: { model: "gpt-5.6-luna", reasoning: "high" },
+    // 2026-07-18 retier: haiku (read-only locator lane) rides terra/high --
+    // long-context safe, +9.6pts over luna/high for +$0.35/task.
+    haiku: { model: "gpt-5.6-terra", reasoning: "high" },
     sonnet: { model: "gpt-5.6-luna", reasoning: "xhigh" },
     opus: { model: "gpt-5.6-sol", reasoning: "high" },
     fable: { model: "gpt-5.6-sol", reasoning: "high" },
@@ -23,17 +25,24 @@ test("Codex policy preserves the conceptual Fable fallback without routine max e
 });
 test("Codex role profiles use the evidence-backed lanes and preserve sandbox policy", async () => {
   const mapping = JSON.parse(await readFile(join(repoRoot, "codex", "agents.manifest.json"), "utf8"));
+  // 2026-07-18 evidence-receipted retier (DeepSWE v1.1 + sol effort research;
+  // per-role rationale in the codex-tier-remap-receipts PR): investigator ->
+  // terra/high (long-context-safe locator); security -> sol/xhigh (the one
+  // rational xhigh lane); docs-architect -> sol/medium (long-form human-read);
+  // test-automator + content quartet -> luna/xhigh budget lane (bounded work,
+  // separate luna quota allowance, model diversity on verifier-adjacent work).
   const expected = {
-    "muster-investigator": { tier: "haiku", model: "gpt-5.6-luna", reasoning: "high", readOnly: true },
+    "muster-investigator": { tier: "haiku", model: "gpt-5.6-terra", reasoning: "high", readOnly: true },
     "muster-surgeon": { tier: "luna-xhigh", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
     "wsh-api-documenter": { tier: "luna-xhigh", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
     "wsh-tutorial-engineer": { tier: "luna-xhigh", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-test-automator": { tier: "luna-xhigh", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
     "muster-reviewer": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "high", readOnly: true },
     "wsh-code-reviewer": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "high", readOnly: true },
-    "wsh-business-analyst": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
-    "wsh-content-marketer": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
-    "wsh-customer-support": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
-    "wsh-data-scientist": { tier: "sonnet", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-business-analyst": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-content-marketer": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-customer-support": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
+    "wsh-data-scientist": { tier: "sonnet", model: "gpt-5.6-luna", reasoning: "xhigh", readOnly: false },
     "muster-builder": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
     "muster-runner": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
     "wsh-debugger": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
@@ -44,13 +53,12 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
     "wsh-database-optimizer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
     "wsh-ml-engineer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
     "wsh-prompt-engineer": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
-    "wsh-test-automator": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
+    "wsh-docs-architect": { tier: "opus", model: "gpt-5.6-sol", reasoning: "medium", readOnly: false },
     "muster-improver": { tier: "fable", model: "gpt-5.6-sol", reasoning: "high", readOnly: true },
     "muster-strategist": { tier: "fable", model: "gpt-5.6-sol", reasoning: "high", readOnly: true },
     "wsh-backend-architect": { tier: "opus", model: "gpt-5.6-sol", reasoning: "high", readOnly: false },
     "wsh-cloud-architect": { tier: "opus", model: "gpt-5.6-sol", reasoning: "high", readOnly: false },
-    "wsh-docs-architect": { tier: "opus", model: "gpt-5.6-sol", reasoning: "high", readOnly: false },
-    "wsh-security-auditor": { tier: "opus", model: "gpt-5.6-sol", reasoning: "high", readOnly: true }
+    "wsh-security-auditor": { tier: "opus", model: "gpt-5.6-sol", reasoning: "xhigh", readOnly: true }
   };
   assert.equal(Object.keys(mapping.agents).length, Object.keys(expected).length, "all 27 Codex roles are classified");
   for (const [id, policy] of Object.entries(expected)) {
@@ -66,21 +74,32 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
   }
   assert.ok(Object.values(mapping.agents).every(config => (config.reasoning ?? CODEX_MODEL_POLICY[config.tier].reasoning) !== "max"), "no role uses routine max effort");
 });
-test("Codex xhigh reservation is cost-based: allowed only on the Luna model, never on Terra, strategist unchanged", async () => {
-  const lunaXhighAgents = ["muster-surgeon", "wsh-api-documenter", "wsh-tutorial-engineer"];
+test("Codex effort/model reservations: xhigh only on the Luna budget lane plus the single Sol security lane; Terra only for the locator", async () => {
+  // 2026-07-18 retier invariants: above sol/high the marginal quality per
+  // credit collapses (+1.3pts for +36% burn at xhigh), so sol-xhigh is
+  // reserved for exactly one rare, high-consequence role (security audit);
+  // luna carries xhigh as its only productive effort (its budget lane); terra
+  // exists solely as the long-context-safe locator lane (haiku tier).
+  const lunaXhighAgents = [
+    "muster-surgeon", "wsh-api-documenter", "wsh-tutorial-engineer", "wsh-test-automator",
+    "wsh-business-analyst", "wsh-content-marketer", "wsh-customer-support", "wsh-data-scientist"
+  ];
   const profileNames = await readdir(selectedPlugin.profilesRoot);
   const tomlNames = profileNames.filter(name => name.endsWith(".toml"));
   assert.equal(tomlNames.length, CODEX_COUNTS.agents);
-  const xhighProfiles = [];
+  const xhighLunaProfiles = [], xhighSolProfiles = [], terraProfiles = [];
   for (const name of tomlNames) {
     const text = await readFile(join(selectedPlugin.profilesRoot, name), "utf8");
-    assert.doesNotMatch(text, /gpt-5\.6-terra/, `${name} must never carry the reserved Terra model`);
+    if (/gpt-5\.6-terra/.test(text)) terraProfiles.push(name.replace(/\.toml$/, ""));
     if (/model_reasoning_effort = "xhigh"/.test(text)) {
-      assert.match(text, /model = "gpt-5\.6-luna"/, `${name} carries xhigh only if its model is Luna`);
-      xhighProfiles.push(name.replace(/\.toml$/, ""));
+      if (/model = "gpt-5\.6-luna"/.test(text)) xhighLunaProfiles.push(name.replace(/\.toml$/, ""));
+      else if (/model = "gpt-5\.6-sol"/.test(text)) xhighSolProfiles.push(name.replace(/\.toml$/, ""));
+      else assert.fail(`${name} carries xhigh on a model outside the Luna budget lane and the Sol security lane`);
     }
   }
-  assert.deepEqual(xhighProfiles.sort(), [...lunaXhighAgents].sort(), "xhigh appears only on the three retiered Luna profiles");
+  assert.deepEqual(terraProfiles, ["muster-investigator"], "Terra is reserved for the read-only locator lane");
+  assert.deepEqual(xhighLunaProfiles.sort(), [...lunaXhighAgents].sort(), "Luna xhigh is exactly the budget lane");
+  assert.deepEqual(xhighSolProfiles, ["wsh-security-auditor"], "Sol xhigh is reserved for the security audit lane alone");
   const strategistProfile = await readFile(join(selectedPlugin.profilesRoot, "muster-strategist.toml"), "utf8");
   assert.match(strategistProfile, /model = "gpt-5\.6-sol"/, "muster-strategist stays on Sol");
   assert.match(strategistProfile, /model_reasoning_effort = "high"/, "muster-strategist stays at high effort, not xhigh");

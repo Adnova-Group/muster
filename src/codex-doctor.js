@@ -238,6 +238,19 @@ function ownsExactHookGroups(config, owner) {
   return actual.length === 0;
 }
 
+// Canonical-scope collapse (2026-07-18, codex-hook-scope-collapse): a
+// project scope installed under a healthy user scope writes exactly this
+// manifest shape (see src/codex-install.js's prepareHooks/
+// userScopeHooksHealthy) -- no owned hook groups, no hook runtime files.
+// ownsExactHookGroups above always returns false for it (expected.length
+// === 0 is an explicit false there), which would otherwise make the
+// coherence loop below misreport a deliberately hooks-free scope as stale.
+function isHooksSkippedManifest(owner) {
+  return owner?.owner === "muster" && Array.isArray(owner.files) && owner.files.length === 0
+    && owner.hookGroups && typeof owner.hookGroups === "object" && !Array.isArray(owner.hookGroups)
+    && Object.keys(owner.hookGroups).length === 0;
+}
+
 export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
@@ -390,6 +403,16 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         ? await readRegularJson(configPath)
         : JSON.parse(await readFile(configPath, "utf8"));
       if (!config) throw new Error(`managed hook configuration is missing: ${configPath}`);
+      if (isHooksSkippedManifest(owner)) {
+        // Coherent-and-non-firing: no runtime dir is expected, so it is
+        // never pushed to hookStatuses (would count toward the overlap
+        // dedupe check) OR staleHookScopes (would fail codex-hooks) --
+        // unless its hooks.json still somehow carries a live Muster group
+        // its own manifest no longer declares, which is genuine drift.
+        const carriesMusterGroups = Object.values(config?.hooks || {}).some(groups => Array.isArray(groups) && groups.some(isMusterHookGroup));
+        if (carriesMusterGroups) throw new Error(`canonical-scope-skipped hook manifest still carries a Muster hook group: ${configPath}`);
+        continue;
+      }
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
       const runtime = await Promise.all(hookFiles.map(file => registered
         ? readRegularFile(join(dir, "muster", "hooks", file))
@@ -420,7 +443,11 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0 && hookStatuses.length <= 1, detail: staleHookScopes.length
     ? [legacyHookDetail, otherStaleHookScopes.length ? "Project/user hook copies are not hash/exact-group coherent with their ownership manifest; refresh every stale scope" : null].filter(Boolean).join("; ")
     : hookStatuses.length > 1
-    ? `Muster hooks fire from ${hookStatuses.length} scopes (${hookStatuses.join(", ")}) with no cross-copy dedupe -- every advisory is emitted ${hookStatuses.length}x per event; user scope is canonical, so run \`muster uninstall codex --scope project\` in the duplicated project(s) to collapse to one`
+    // codex-hook-scope-collapse: a project-scope REINSTALL under a healthy
+    // user scope now auto-collapses the duplicate (prepareHooks'
+    // userScopeHooksHealthy), so the remediation is a plain reinstall, not
+    // only a manual uninstall.
+    ? `Muster hooks fire from ${hookStatuses.length} scopes (${hookStatuses.join(", ")}) with no cross-copy dedupe -- every advisory is emitted ${hookStatuses.length}x per event; user scope is canonical, so rerun \`muster install codex --scope project\` in the duplicated project(s) to collapse to one`
     : "No project and user Muster hook overlap detected" });
   // The installed plugin cache must be the hooks-free Codex flavor: Codex
   // >=0.144.5 fires a plugin's default hooks/hooks.json on every lifecycle

@@ -118,6 +118,7 @@ test("buildCodexPlugin's version-only skip-if-current check can be bypassed with
     marketplaceTemplate: {
       name: "muster",
       interface: { displayName: "Muster" },
+      // path is a placeholder; publishCodexPlugin overwrites it with codexMarketplacePluginPath(pluginsRoot).
       plugins: [{ name: "muster", source: { source: "local", path: "./plugin" }, category: "Productivity" }]
     }
   });

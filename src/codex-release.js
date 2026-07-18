@@ -293,6 +293,34 @@ export function copyStagedPluginTree(source, destination) {
 // `.muster-retired-*` sibling — swept at the top of the next publish, below)
 // for the next build/install to detect (via resolveCodexPlugin's tree and
 // version checks) and overwrite.
+// Codex resolves a marketplace entry's `source.path` relative to the ROOT passed
+// to `codex plugin marketplace add`, NOT relative to the marketplace.json's own
+// directory (verified empirically against Codex 0.144.5; see docs/research/codex-cli.md).
+// muster always builds the plugin at `<addedRoot>/.agents/plugins/plugin` and adds
+// the marketplace from `<addedRoot>`, so the pointer must name the plugin from that
+// root: `./.agents/plugins/plugin`. Writing `./plugin` (relative to the manifest's
+// own dir, as an earlier revision wrongly assumed Codex would resolve) makes Codex
+// install `<addedRoot>/plugin` -- the Claude plugin, whose default `hooks/hooks.json`
+// Codex >=0.144.5 auto-discovers and FIRES, duplicating muster's scoped hooks.json
+// install (the hook-bombardment regression). The path is derived purely from
+// pluginsRoot via the build invariant (pluginsRoot === <addedRoot>/.agents/plugins),
+// so publish and resolve compute the identical string with no extra plumbing, and it
+// stays an exact-match traversal guard.
+//
+// The invariant (pluginsRoot === <addedRoot>/.agents/plugins, addedRoot == the
+// `marketplace add`-ed root) holds for every shipped caller -- the CLI's build
+// (build-codex.mjs, outDir === <root>/.agents/plugins) and `runCodexInstall`
+// (marketplace add <distributionRoot>, build into <distributionRoot>/.agents/plugins).
+// It is NOT asserted at runtime: a hypothetical caller building to a differently
+// nested pluginsRoot would still make publish and resolve agree with each other
+// (muster's self-checks stay green) while Codex's external resolution installed from
+// a different dir. No such caller exists today; doctor's pluginRoot branch already
+// bypasses this pointer check for the same reason.
+function codexMarketplacePluginPath(pluginsRoot) {
+  const addedRoot = resolve(pluginsRoot, "..", "..");
+  return "./" + relative(addedRoot, join(pluginsRoot, "plugin")).replaceAll("\\", "/");
+}
+
 export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate, copyStagedPlugin = copyStagedPluginTree }) {
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex plugin package version is required");
   ordinary(stagedPlugin, "directory", "staged Codex plugin");
@@ -349,7 +377,7 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       throw new Error(`Codex marketplace does not describe the Muster plugin: ${pointerPath}`);
     }
     const plugin = pointer.plugins.find(item => item.name === "muster");
-    plugin.source = { ...plugin.source, source: "local", path: "./plugin" };
+    plugin.source = { ...plugin.source, source: "local", path: codexMarketplacePluginPath(pluginsRoot) };
     atomicWritePointer(pointerPath, JSON.stringify(pointer, null, 2) + "\n");
     return { pluginRoot: pluginPath, profilesRoot: join(pluginPath, "agents"), packageVersion };
   });
@@ -360,7 +388,7 @@ async function resolveCodexPluginOnce(pluginsRoot) {
   const pointerPath = join(pluginsRoot, "marketplace.json");
   const pointer = readRegularJson(pointerPath, "Codex marketplace pointer", 1024 * 1024);
   const path = pointer?.plugins?.find(item => item?.name === "muster")?.source?.path;
-  if (pointer?.name !== "muster" || path !== "./plugin") throw new Error(`Codex marketplace is missing a valid Muster plugin contract: ${pointerPath}`);
+  if (pointer?.name !== "muster" || path !== codexMarketplacePluginPath(pluginsRoot)) throw new Error(`Codex marketplace is missing a valid Muster plugin contract: ${pointerPath}`);
   const pluginRoot = join(pluginsRoot, "plugin");
   await assertRegularTree(pluginRoot);
   const pkg = readRegularJson(join(pluginRoot, "package.json"), "Codex plugin package descriptor", 64 * 1024);

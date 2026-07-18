@@ -13,7 +13,7 @@ Apply these bindings before following any ported Muster workflow. They override 
 - When a legacy workflow runs `muster capabilities`, use the bundled CLI with `capabilities --codex` so routing is based on enabled Codex plugins, skills, MCP servers, and profiles rather than Claude state.
 - Translate `Read`, `Write`, `Edit`, `Bash`, `Grep`, and `Glob` to the available Codex tools while respecting the generated agent profile's read/write policy.
 - When Claude Code itself is the actual subject of a workflow, retain that scope rather than claiming a nonexistent Codex equivalent.
-- `muster install codex` merges Muster's lifecycle hooks into the selected project or user `hooks.json` layer. After the user trusts their exact definitions in `/hooks`, they provide context, diagnostics, and supported policy warnings. Codex 0.144 does not execute plugin-bundled hooks, so the plugin manifest must not be treated as hook activation evidence. Treat todo and spawn policy as advisory; every write-capable wave must still run in an isolated git worktree.
+- `muster install codex` merges Muster's lifecycle hooks into the selected project or user `hooks.json` layer. After the user trusts their exact definitions in `/hooks`, they provide context, diagnostics, and supported policy warnings. Codex DOES execute plugin-bundled hooks (landed 0.128, default-on since 0.131), so Muster's Codex plugin is deliberately hooks-free — its hooks come only from the `hooks.json` layer; a plugin that shipped a `hooks/hooks.json` would double-fire on top of it (the hook-bombardment regression). Treat todo and spawn policy as advisory; every write-capable wave must still run in an isolated git worktree.
 
 ## Agent watch invariant
 

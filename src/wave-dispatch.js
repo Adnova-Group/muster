@@ -25,10 +25,12 @@ export const AGENT_TEAMS_ENV = "MUSTER_AGENT_TEAMS";
 
 export const WAVE_DISPATCH_MODES = Object.freeze({ NATIVE: "native", PROSE: "prose" });
 
-// MCPB-boolean-safe parse: only "1"/"true"-ish values enable; mirrors src/model.js's
-// fableEnabled() and src/cli.js's --native-plugin/MUSTER_COWORK_NATIVE_PLUGIN parse.
+// Capability declarations are intentionally strict: normalized "1"/"true" enable,
+// normalized "0"/"false" disable, and every other value fails closed.
 function truthyEnv(v) {
-  return !!v && v !== "0" && v.toLowerCase() !== "false";
+  if (typeof v !== "string") return false;
+  const normalized = v.trim().toLowerCase();
+  return normalized === "1" || normalized === "true";
 }
 
 export function declaredAgentTeams(env = process.env) {
@@ -143,7 +145,19 @@ export function codexSpawnAgentCall({ taskId, message, agentType } = {}) {
 // profile TOML enforces (docs/research/codex-cli.md sec 6; this is the exact
 // anti-pattern the codex burn taught muster to guard against).
 export function assertCodexSpawnAgentAccepted({ taskId, agentType, rejected, rejectionReason } = {}) {
-  if (!rejected) return { taskId, agentType, accepted: true };
+  if (typeof taskId !== "string" || !taskId.trim()) {
+    throw new Error("assertCodexSpawnAgentAccepted: taskId must be a non-empty string");
+  }
+  if (typeof agentType !== "string" || !agentType.trim()) {
+    throw new Error(`assertCodexSpawnAgentAccepted: agentType must be a non-empty string for task "${taskId}"`);
+  }
+  if (rejected === false) return { taskId, agentType, accepted: true };
+  if (rejected !== true) {
+    throw new Error(
+      `assertCodexSpawnAgentAccepted: malformed spawn_agent outcome for task "${taskId}" -- ` +
+      `rejected must be the explicit boolean false to prove acceptance`
+    );
+  }
   throw new Error(
     `Codex spawn_agent rejected agent_type "${agentType}" for task "${taskId}"` +
     (rejectionReason ? `: ${rejectionReason}` : "") +
@@ -206,16 +220,17 @@ export function resolveWorktreeIsolation({ harness } = {}) {
   if (typeof harness !== "string" || !harness) {
     throw new Error(`resolveWorktreeIsolation: harness is required (one of: ${known.join(", ")})`);
   }
-  const mechanism = HARNESS_WORKTREE_MECHANISM[harness];
-  if (!mechanism) {
+  if (!Object.prototype.hasOwnProperty.call(HARNESS_WORKTREE_MECHANISM, harness)) {
     throw new Error(`resolveWorktreeIsolation: unrecognized harness "${harness}" (one of: ${known.join(", ")})`);
   }
+  const mechanism = HARNESS_WORKTREE_MECHANISM[harness];
   // receiptRequired is always true -- even (especially) for Codex's receipts-only floor,
   // where the receipt is the entire isolation proof, not a supplement to a native one.
   return { harness, mechanism, receiptRequired: true };
 }
 
 const BASE_SHA_RE = /^[0-9a-f]{7,40}$/i;
+const SUPPORTED_WORKTREE_ISOLATION_MECHANISMS = new Set(Object.values(WORKTREE_ISOLATION_MECHANISMS));
 
 // Builds the base-SHA provenance receipt the orchestrator records per dispatched crew
 // member, regardless of which native mechanism (or none, on Codex) isolated the work --
@@ -226,7 +241,13 @@ const BASE_SHA_RE = /^[0-9a-f]{7,40}$/i;
 export function buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath } = {}) {
   if (!taskId) throw new Error("buildBaseShaReceipt: taskId is required");
   if (!mechanism) throw new Error(`buildBaseShaReceipt: mechanism is required for task "${taskId}"`);
-  if (typeof baseSha !== "string" || !BASE_SHA_RE.test(baseSha.trim())) {
+  if (!SUPPORTED_WORKTREE_ISOLATION_MECHANISMS.has(mechanism)) {
+    throw new Error(
+      `buildBaseShaReceipt: mechanism must be a supported isolation mechanism (got ${JSON.stringify(mechanism)}) ` +
+      `for task "${taskId}"`
+    );
+  }
+  if (typeof baseSha !== "string" || !BASE_SHA_RE.test(baseSha)) {
     throw new Error(
       `buildBaseShaReceipt: baseSha must be a hex git SHA (got ${JSON.stringify(baseSha)}) for task "${taskId}" -- ` +
       `never record a receipt without a real fork-point SHA`

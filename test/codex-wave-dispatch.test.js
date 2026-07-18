@@ -61,6 +61,14 @@ test("declaredCodexMultiAgent: absent env var means Codex's own shipped default 
   assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: "1" }), true);
 });
 
+test("declaredCodexMultiAgent: canonical values are normalized and unknown values fail closed", () => {
+  assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: " TRUE " }), true);
+  assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: " FALSE " }), false);
+  for (const value of ["yes", "on", "01", "tru", "2"]) {
+    assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: value }), false, `${value} must fail closed`);
+  }
+});
+
 test("resolveCodexWaveDispatch: called with no args at all still resolves (real process.env), never throws", () => {
   const r = resolveCodexWaveDispatch();
   assert.ok(r.mode === CODEX_DISPATCH_MODES.SPAWN_AGENT || r.mode === CODEX_DISPATCH_MODES.SEQUENTIAL_INLINE);
@@ -132,4 +140,19 @@ test("assertCodexSpawnAgentAccepted: rejected with no rejectionReason still thro
     () => assertCodexSpawnAgentAccepted({ taskId: "task-5", agentType: "wsh-ghost-specialist", rejected: true }),
     /[Rr]egistration diagnostic/
   );
+});
+
+test("assertCodexSpawnAgentAccepted: only an explicit rejected:false status with valid identifiers is accepted", () => {
+  for (const outcome of [
+    {},
+    { taskId: "task-6", agentType: "muster-builder" },
+    { taskId: "task-6", agentType: "muster-builder", rejected: 0 },
+    { taskId: "task-6", agentType: "muster-builder", rejected: "false" },
+    { taskId: "", agentType: "muster-builder", rejected: false },
+    { taskId: "   ", agentType: "muster-builder", rejected: false },
+    { taskId: "task-6", agentType: "", rejected: false },
+    { taskId: "task-6", agentType: "   ", rejected: false },
+  ]) {
+    assert.throws(() => assertCodexSpawnAgentAccepted(outcome), /spawn_agent|taskId|agentType|malformed/i);
+  }
 });

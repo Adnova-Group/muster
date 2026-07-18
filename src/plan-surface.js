@@ -101,7 +101,9 @@ const FALLBACK = {
 // fallback, never a thrown error: an unknown harness must always still get an approve-first gate.
 export function resolvePlanSurface(runtime) {
   const key = typeof runtime === "string" ? runtime.trim().toLowerCase() : "";
+  if (!Object.prototype.hasOwnProperty.call(PLAN_SURFACES, key)) {
+    return { runtime: key || "unknown", ...FALLBACK };
+  }
   const entry = PLAN_SURFACES[key];
-  if (!entry) return { runtime: key || "unknown", ...FALLBACK };
   return { runtime: key, ...entry };
 }

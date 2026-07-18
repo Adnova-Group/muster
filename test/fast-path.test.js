@@ -80,6 +80,19 @@ test("scoreOutcomeForFastPath: two independent imperative verbs joined by \"and\
   assert.equal(r.eligible, false);
 });
 
+test("scoreOutcomeForFastPath: common compact multi-deliverable forms are NOT eligible", () => {
+  for (const text of [
+    "Add retry support, update the README",
+    "Add retry support\nUpdate the README",
+    "Add retry support + update the README",
+    "Add retry support, tests, and documentation",
+  ]) {
+    const r = scoreOutcomeForFastPath(text);
+    assert.equal(r.eligible, false, `${JSON.stringify(text)} should not be fast-path eligible`);
+    assert.match(r.reason, /deliverable|task/i);
+  }
+});
+
 test(`scoreOutcomeForFastPath: an outcome over ${FAST_PATH_MAX_WORDS} meaningful words is NOT eligible`, () => {
   const longOutcome = Array.from({ length: FAST_PATH_MAX_WORDS + 5 }, (_, i) => `word${i}`).join(" ");
   const r = scoreOutcomeForFastPath(longOutcome);
@@ -103,6 +116,13 @@ test("buildFastPathManifest: throws without a non-empty outcome", () => {
 test("buildFastPathManifest: throws without capabilities.roles.implement/code-review", () => {
   assert.throws(() => buildFastPathManifest({ outcome: "Fix the bug" }), /capabilities/i);
   assert.throws(() => buildFastPathManifest({ outcome: "Fix the bug", capabilities: { roles: {} } }), /implement.*code-review|code-review.*implement/i);
+});
+
+test("buildFastPathManifest: rejects an outcome that is not fast-path eligible", () => {
+  assert.throws(
+    () => buildFastPathManifest({ outcome: "Add retry support, update the README", capabilities: FAKE_CAPABILITIES }),
+    /not eligible|fast.path/i
+  );
 });
 
 test("buildFastPathManifest: emits a minimal builder + one-reviewer, one-task manifest that validates", () => {

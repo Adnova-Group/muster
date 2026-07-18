@@ -32,10 +32,10 @@ import { STOPWORDS } from "./keyword.js";
 const CROSS_CUTTING_RE =
   /\b(across|throughout|entire|everywhere|every\s+(?:file|module|service|package|repo|test|suite)|all\s+the|overhaul|migrate|migration|epic|rewrite|redesign|refactor\s+the\s+whole|end-to-end|end\s+to\s+end|multiple\s+(?:services|modules|packages|repos|files))\b/i;
 
-// Multiple-deliverable separators: list markers (numbered or bulleted), or connective
+// Multiple-deliverable separators: list punctuation, bare newlines, or connective
 // phrases that stitch two-or-more independent asks into one sentence.
 const MULTI_DELIVERABLE_RE =
-  /\band\s+then\b|\balso\b|\badditionally\b|\bas\s+well\s+as\b|;|^\s*\d+[.)]\s|\n\s*[-*]\s|\n\s*\d+[.)]\s/i;
+  /\band\s+then\b|\balso\b|\badditionally\b|\bas\s+well\s+as\b|[;,+]|\n|^\s*\d+[.)]\s/i;
 
 // Two (or more) independent imperative verbs joined by "and" -- "add X and fix Y" is two
 // tasks even with no other multi-deliverable signal. A single verb governing a compound
@@ -92,6 +92,10 @@ export function scoreOutcomeForFastPath(text) {
 export function buildFastPathManifest({ outcome, successCriteria, capabilities, mergeDisposition = "ask" } = {}) {
   if (typeof outcome !== "string" || !outcome.trim()) {
     throw new Error("buildFastPathManifest: outcome is required (non-empty string)");
+  }
+  const score = scoreOutcomeForFastPath(outcome);
+  if (!score.eligible) {
+    throw new Error(`buildFastPathManifest: outcome is not eligible for the fast path: ${score.reason}`);
   }
   if (!capabilities || typeof capabilities !== "object" || !capabilities.roles) {
     throw new Error("buildFastPathManifest: capabilities (resolveCapabilities() output, with a .roles map) is required");

@@ -126,7 +126,16 @@ test("generated Codex orchestration surfaces enforce the bounded, liveness-aware
   // with per-class ceilings bounding the extension: 10 silent heartbeats for review/strategy-class
   // workers, 6 for mechanical/implementation lanes. Genuinely idle/completed/failed workers still
   // die at 3 heartbeats exactly as before.
-  const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "DeepSWE sol/high", "liveness checkpoint"];
+  //
+  // Pin re-derived again for the exhaustion-status-producer item: `wsh-security-auditor` is pinned
+  // to sol/XHIGH (DeepSWE mean ~13.3min/task) -- slower than the sol/high figure the 10-heartbeat
+  // ceiling above was sized to -- so it now carries its own explicit 14-heartbeat ceiling instead
+  // of sharing the review/strategy-class group's 10. The liveness re-check is also now explicit:
+  // re-run at EVERY silent heartbeat between 3 and the ceiling, not once at heartbeat 3. On
+  // exhaustion, the watch now also records `{reviewer: <name>, status: "exhausted"}` in the tally
+  // input for the interrupted worker (src/review.js's WORKER_ABSENCE_STATUSES contract) instead of
+  // leaving the tally with no vocabulary for the kill.
+  const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "14 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "sol/XHIGH", "DeepSWE sol/high", "liveness checkpoint"];
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
     for (const marker of watchMarkers) {
@@ -136,8 +145,13 @@ test("generated Codex orchestration surfaces enforce the bounded, liveness-aware
     assert.ok(text.indexOf("mailbox receipts first") < text.indexOf("collaboration.list_agents"), `${name} must process the wake receipt before reconciling`);
     assert.match(
       text,
-      /muster-reviewer`, `wsh-code-reviewer`, `muster-strategist`, `wsh-security-auditor`\) get a hard ceiling of 10 consecutive silent heartbeats/,
+      /muster-reviewer`, `wsh-code-reviewer`, `muster-strategist`\) get a hard ceiling of 10 consecutive silent heartbeats/,
       `${name} must bind the 10-heartbeat ceiling to the named review\\/strategy-class workers`
+    );
+    assert.match(
+      text,
+      /wsh-security-auditor` is pinned to sol\/XHIGH[\s\S]{0,200}?14 consecutive silent heartbeats/,
+      `${name} must bind the 14-heartbeat ceiling to wsh-security-auditor`
     );
     assert.match(
       text,

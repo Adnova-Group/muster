@@ -33,6 +33,12 @@ CLI call below.
    keeps both reviewers (see docs/weight-reduction.md).
 2. Dispatch the selected reviewer(s) **concurrently** (when more than one), each adversarially prompted to
    REFUTE the work / find the worst real problem. Each returns findings: `[{ severity: "blocker"|"risk"|"nit", note }]`.
+   - **Exhausted/absent reviewer:** a reviewer worker killed or exhausted (its dispatch's budget/heartbeat
+     ceiling hit — see the harness's agent-watch invariant) before returning a verdict, or never dispatched
+     at all, is never synthesized into verdict-shaped findings. Record `{reviewer: <name>, status:
+     "exhausted"}` (`status: "absent"` for a dispatch that never started) for that reviewer directly in
+     `.muster/verdicts.json` instead; step 5's `tally` (`src/review.js`) forces a deterministic block on any
+     such entry, regardless of any other reviewer's findings.
 3. **Citation guard:** run `$MUSTER_CLI citation-check <file>` on each artifact BEFORE dispatching
    reviewers, so flags travel in their briefs. A dangling anchor (`ok:false`, exit 2) is an automatic
    FAIL. `uncited` paragraphs instead get a reviewer's judgment call (`pass`/`needs_review`/`fail`).

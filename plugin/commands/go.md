@@ -88,8 +88,9 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    provider (from `capabilities`; strategist tier) to probe the validated manifest + plan as a lazy implementer
    (what is underspecified enough to skip?) and as a malicious one (what satisfies the letter while missing
    intent?), and to verify plan-cited files/symbols exist. <!-- muster-return-template:start -->Return contract: verdict first (`PASS`/`FAIL`), itemized
-   findings second (one line per finding — each round's list is what the next round's disjointness check
-   compares against), <=1500 chars.<!-- muster-return-template:end --> **PASS** → proceed to step 5.
+   findings second (one line per finding, each naming exactly one distinct defect — never merge two
+   defects into one line or split one defect across several, so the next round's disjointness check
+   compares like with like), <=1500 chars.<!-- muster-return-template:end --> **PASS** → proceed to step 5.
    **Round 1 FAIL** → loop the findings back to the **router** skill (amend plan/manifest, re-validate,
    re-run this gate) — the first amendment, always allowed. **Round 2 FAIL** → before deciding, compare
    round 2's itemized findings against round 1's: a round-2 finding is **repeated** if it restates or is a

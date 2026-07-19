@@ -2,7 +2,7 @@
 
 - retry: task completed (review-gate pass; branch sprint/retry, PR #101)
 - logging: task completed (review-gate pass; branch sprint/logging, PR #102)
-- metrics: task in_progress -> escalated (spec-gate FAIL x2; branch sprint/metrics kept for inspection)
+- metrics: task in_progress -> escalated (spec-gate FAIL x2, round 2 repeated round 1's unresolved finding; branch sprint/metrics kept for inspection)
 - docs: task completed (review-gate pass; branch sprint/docs, PR #103)
 
 ## Batch report
@@ -11,7 +11,7 @@
 |---------|-------------|--------------------|------------------------|------------|
 | retry   | pr          | sprint/retry #101  | review-gate pass       | none       |
 | logging | pr          | sprint/logging #102| review-gate pass       | none       |
-| metrics | keep        | sprint/metrics     | spec-gate FAIL (cap)   | escalated  |
+| metrics | keep        | sprint/metrics     | spec-gate FAIL (repeat)| escalated  |
 | docs    | pr          | sprint/docs #103   | review-gate pass       | none       |
 
 AskUserQuestion: Review escalated items now / Review later / Done

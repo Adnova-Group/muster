@@ -452,3 +452,102 @@ test("Codex MCP handshake handles synchronous stdin failure with cleanup and set
   assert.equal(child.stdinEndCalls, 1);
   assert.equal(child.stdinWriteCalls, 4);
 });
+
+// --- Live Codex inventory branch (run-5 audit Med #11) --------------------
+// runCodexDoctor's `if (available) { ... }` branch shells out to the real
+// `codex` CLI (through the injected execFile seam readCodexInventory and
+// codexAvailable already consume) to enumerate installed plugins + MCP servers,
+// then reports two checks: `codex-plugin-installed` and `codex-inventory`.
+// Every OTHER doctor test injects an execFile that throws (`absent`), so
+// codexAvailable resolves false and this branch never runs -- leaving the
+// installed/absent/malformed/failing live results with no regression coverage.
+// These fixtures drive the branch through that SAME seam (no new global mock):
+// `codex --version` resolves so codex reads as available and the branch
+// executes; `codex plugin list` / `codex mcp list` return -- or reject with --
+// the per-state payload. The MCP handshake is stubbed green (it has its own
+// coverage above) purely to isolate the live-inventory branch under test.
+const liveMcpRunner = async () => ({ initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools }, (_, index) => ({ name: `muster_${index}` })), toolCallOk: true });
+
+// A `plugin`/`mcp` string is handed back as `codex` stdout; a function is
+// invoked and may reject (non-zero exit / thrown error). `--version` always
+// resolves so runCodexDoctor enters the live-inventory branch.
+function liveCodexExec({ plugins, mcp }) {
+  return async (_bin, args) => {
+    if (args[0] === "--version") return { stdout: "codex-cli 0.0.0-test\n" };
+    const payload = args[0] === "plugin" ? plugins : mcp;
+    if (typeof payload === "function") return payload();
+    return { stdout: payload };
+  };
+}
+
+async function inventoryDoctor(execFile) {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-inventory-branch-"));
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile, mcpRunner: liveMcpRunner });
+  return {
+    report,
+    installed: report.checks.find(check => check.name === "codex-plugin-installed"),
+    inventory: report.checks.find(check => check.name === "codex-inventory")
+  };
+}
+
+test("Codex doctor live-inventory: INSTALLED -- well-formed plugin/MCP JSON is reported present and healthy", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-inventory-installed-"));
+  const pluginPath = join(tmp, "live-plugin");
+  await mkdir(join(pluginPath, "skills", "live-skill"), { recursive: true });
+  await mkdir(join(pluginPath, "agents"), { recursive: true });
+  await writeFile(join(pluginPath, "skills", "live-skill", "SKILL.md"), "---\nname: live-skill\n---\n");
+  await writeFile(join(pluginPath, "agents", "live-agent.toml"), "name = 'live-agent'\n");
+  const execFile = liveCodexExec({
+    plugins: JSON.stringify({ installed: [{ name: "muster", installed: true, enabled: true, source: { path: pluginPath } }], available: [] }),
+    mcp: JSON.stringify([{ name: "muster", enabled: true }])
+  });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile, mcpRunner: liveMcpRunner });
+  const installed = report.checks.find(check => check.name === "codex-plugin-installed");
+  const inventory = report.checks.find(check => check.name === "codex-inventory");
+  assert.equal(installed?.ok, true, installed?.detail);
+  assert.match(installed?.detail || "", /muster plugin is enabled in live Codex state/);
+  assert.equal(inventory?.ok, true, inventory?.detail);
+  // Plugin source skills/agents thread through to the reported counts.
+  assert.match(inventory?.detail || "", /1 plugins, 1 skills, 1 MCP servers, 1 agents from live Codex state/);
+});
+
+test("Codex doctor live-inventory: ABSENT -- empty live state reports the plugin missing with a zeroed inventory, no error", async () => {
+  const { installed, inventory } = await inventoryDoctor(liveCodexExec({
+    plugins: JSON.stringify({ installed: [], available: [] }),
+    mcp: "[]"
+  }));
+  assert.equal(installed?.ok, false, installed?.detail);
+  assert.match(installed?.detail || "", /muster plugin is not installed; run muster install codex/);
+  // Absent is not an error: the inventory check itself still passes, reporting zeros.
+  assert.equal(inventory?.ok, true, inventory?.detail);
+  assert.match(inventory?.detail || "", /0 plugins, 0 skills, 0 MCP servers, 0 agents from live Codex state/);
+});
+
+test("Codex doctor live-inventory: MALFORMED -- truncated/non-JSON `codex` output fails soft (plugin absent, inventory zeroed, doctor run completes)", async () => {
+  // The whole doctor run must resolve: a malformed live payload is advisory and
+  // must never reject runCodexDoctor. jsonCommand swallows the JSON.parse throw
+  // to null, so the branch degrades to the same zeroed/absent report as ABSENT.
+  const { report, installed, inventory } = await inventoryDoctor(liveCodexExec({
+    plugins: '{"installed":[{"name":"muster","installed":true,', // truncated JSON
+    mcp: "not json at all"
+  }));
+  assert.equal(installed?.ok, false, installed?.detail);
+  assert.match(installed?.detail || "", /not installed/);
+  assert.equal(inventory?.ok, true, inventory?.detail);
+  assert.match(inventory?.detail || "", /0 plugins, 0 skills, 0 MCP servers, 0 agents from live Codex state/);
+  // Still a real, complete doctor run: the non-inventory checks are present.
+  assert.ok(report.checks.some(check => check.name === "codex-mcp-handshake"));
+  assert.ok(report.checks.every(check => typeof check.ok === "boolean"));
+});
+
+test("Codex doctor live-inventory: FAILING -- a non-zero/throwing `codex` command is surfaced as absent and the doctor run continues", async () => {
+  // A failing live command must not abort the advisory branch or the overall run.
+  const boom = () => Promise.reject(Object.assign(new Error("codex plugin list exited 1"), { code: 1, stderr: "boom" }));
+  const { report, installed, inventory } = await inventoryDoctor(liveCodexExec({ plugins: boom, mcp: boom }));
+  assert.equal(installed?.ok, false, installed?.detail);
+  assert.match(installed?.detail || "", /not installed/);
+  assert.equal(inventory?.ok, true, inventory?.detail);
+  assert.match(inventory?.detail || "", /0 plugins, 0 skills, 0 MCP servers, 0 agents from live Codex state/);
+  // The run still produced the full check set -- the command failure was advisory only.
+  assert.ok(report.checks.length > 3 && report.checks.some(check => check.name === "codex-mcp-handshake"));
+});

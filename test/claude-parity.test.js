@@ -438,5 +438,14 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // re-derived this pin independently on their own branches; the merged tree carries
   // BOTH content changes (go.md/go-backlog.md amendment policy + orchestrator SKILL.md
   // receipt-verify paragraph), so the hash is re-derived once over the union.
-  assert.equal(hash.digest("hex"), "90e064952c124c1f4e015d117a5e171988266d2f7e6d20d5143fc5db2178bc95");
+  //
+  // Pin re-derived 2026-07-19 (backlog item tally-worker-exhaustion-contract): file COUNT
+  // unchanged (137 -- no file added/removed under this surface) but cowork/mcp-server.mjs's
+  // muster_tally tool description content changed -- it now documents the new
+  // status:"exhausted"|"absent" worker-exhaustion contract on tallyReview (src/review.js,
+  // outside this hashed surface) so an MCP caller can see the contract without reading the
+  // CLI source: a required reviewer entry with that status always forces blocked:true with
+  // a named blockedReasons entry, never a silent skip, never counted as a real PASS/FAIL.
+  // No other file under this surface changed.
+  assert.equal(hash.digest("hex"), "0870e383c1a394c0376061c28a2bcd90577c6ba301272b65c578b9ee4c858de3");
 });

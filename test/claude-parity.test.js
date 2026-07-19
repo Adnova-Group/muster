@@ -467,5 +467,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // into the Codex build) still locates it and carries the addition through unchanged.
   // Re-verified with MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs &&
   // node scripts/check-codex.mjs (clean). No other file under this surface changed.
-  assert.equal(hash.digest("hex"), "49b8d292476297e1a874da05bd3f8f28a0aa98ccaf7dc87163e4c04206d346f7");
+  //
+  // Pin re-derived once more, same item, after test/prompt-scan.test.js's repo-wide
+  // ANTH-POS-001 ("prefer positive instructions over negative ones") lint caught the new
+  // review-gate/SKILL.md bullet stacking three "never" clauses in a system-genre doc
+  // already carrying four elsewhere in the file. Reworded to the same meaning with zero
+  // added negatives ("or one whose dispatch did not start at all, gets a named status
+  // entry recorded in place of synthesized verdict-shaped findings" instead of "or never
+  // dispatched at all, is never synthesized ... instead"); no contract or anchor changed,
+  // only wording. Re-verified: node --test test/prompt-scan.test.js passes, plus
+  // MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs clean.
+  assert.equal(hash.digest("hex"), "23ff3c310bc57a5b9d46a1b8c8050a2054b1d5a1eaa1f5251a3c27e0de38f47a");
 });

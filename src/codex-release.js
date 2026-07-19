@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync, constants as fsConstants, cpSync, fsyncSync, lstatSync, mkdirSync, openSync,
-  readFileSync, readdirSync, renameSync, rmSync, writeFileSync
+  readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
 import { CODEX_MODEL_POLICY, codexProfileForConfig } from "./codex.js";
 
@@ -42,6 +42,48 @@ function ensureOrdinaryDirectory(path, label) {
   catch (error) { if (error.cause?.code !== "ENOENT") throw error; }
   mkdirSync(path, { recursive: true });
   ordinary(path, "directory", label);
+}
+
+// `ensureOrdinaryDirectory` (and the terminal `ordinary` checks) only vet the
+// LAST path component. A symlinked ANCESTOR of that component would still
+// redirect any mutation built by join()ing onto the path (a copy, a rename, a
+// cleanup rmSync, a pointer write) out of the intended tree and into the link's
+// target. Mirror the ancestry-walk discipline codex-install.js's /
+// codex-doctor.js's `ordinaryDirectoryPath` already enforce (synchronous here,
+// matching this module): walk every EXISTING component from the filesystem
+// root down to `path`, rejecting any that is a symlink or a non-directory, and
+// naming the offender. Stop at the first not-yet-existing component -- whatever
+// is below it will be created fresh (and therefore symlink-free) by the
+// subsequent mkdirSync -- so this must run BEFORE that mkdir.
+function ensureOrdinaryAncestry(path, label) {
+  const absolute = resolve(path), root = parse(absolute).root;
+  let current = root;
+  for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+    current = join(current, part);
+    let stat;
+    try { stat = lstatSync(current); }
+    catch (error) { if (error.code === "ENOENT") return; throw error; }
+    if (stat.isSymbolicLink()) throw new Error(`${label} ancestry must not be a symlink: ${current}`);
+    if (!stat.isDirectory()) throw new Error(`${label} ancestry must be an ordinary directory: ${current}`);
+  }
+}
+
+// Second, independent defense for the publish mutations. Even after the
+// pre-lock ancestry walk certifies every existing ancestor is an ordinary
+// directory, a same-user writer could swap an ancestor for a symlink in the
+// window before -- or between -- the mutations below. So immediately before
+// each mutation re-assert (a) the whole ancestry is still symlink-free, naming
+// any offending link, and (b) `pluginsRoot` still resolves to the exact
+// canonical realpath captured at validation time, so an ancestor swap that
+// redirects the path is caught and the mutation is never executed through it.
+function assertPluginsRootCanonical(pluginsRoot, expectedReal, mutation) {
+  ensureOrdinaryAncestry(pluginsRoot, "Codex plugin staging root");
+  let real;
+  try { real = realpathSync(pluginsRoot); }
+  catch (error) { throw new Error(`Codex plugin staging root vanished before the ${mutation}: ${pluginsRoot}`, { cause: error }); }
+  if (real !== expectedReal) {
+    throw new Error(`Codex plugin staging root realpath changed before the ${mutation} (ancestor swapped under publish): ${pluginsRoot} resolves to ${real}, expected ${expectedReal}`);
+  }
 }
 
 // Kept for same-device renames where cross-device copy doesn't apply and no
@@ -350,25 +392,42 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex plugin package version is required");
   ordinary(stagedPlugin, "directory", "staged Codex plugin");
   await assertRegularTree(stagedPlugin);
+  // Reject a symlinked ANCESTOR of pluginsRoot before creating or locking it:
+  // the lock file, and every publish mutation below, are built by join()ing
+  // onto pluginsRoot, so a symlinked ancestor would silently redirect them out
+  // of the intended tree. This must precede the mkdir so no fresh component is
+  // created THROUGH such a link.
+  ensureOrdinaryAncestry(pluginsRoot, "Codex plugin staging root");
   ensureOrdinaryDirectory(pluginsRoot, "Codex plugin staging root");
+  // Canonical identity captured once, now that the ancestry is certified
+  // symlink-free, to compare against before each mutation (see
+  // assertPluginsRootCanonical).
+  const canonicalPluginsRoot = realpathSync(pluginsRoot);
   return withCodexFileLock(join(pluginsRoot, ".build.lock"), async () => {
     // A publish that crashed between retiring the previous plugin and either
     // completing or restoring leaves an orphaned `.muster-retired-*`
     // sibling behind. No other process can be mid-retire right now (this
     // publish just took the lock), so any such leftover is stale crash
-    // debris from a prior run: sweep it before doing anything else.
+    // debris from a prior run: sweep it before doing anything else. The sweep
+    // is a mutation (rmSync) through pluginsRoot, so re-assert canonical
+    // resolution first -- a swapped ancestor must not redirect the delete.
+    assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "orphan sweep");
     for (const name of readdirSync(pluginsRoot)) {
       if (name.startsWith(".muster-retired-")) rmSync(join(pluginsRoot, name), { recursive: true, force: true });
     }
     const pluginPath = join(pluginsRoot, "plugin");
     const retired = join(pluginsRoot, `.muster-retired-${process.pid}-${randomUUID()}`);
     let hadPrevious = false;
-    try {
-      ordinary(pluginPath, "directory", "existing Codex plugin");
+    // Whether a previous plugin exists (ENOENT-swallowed) is decided
+    // separately from the canonical re-check, so a swapped-ancestor rejection
+    // is never mistaken for "no previous plugin" and quietly swallowed.
+    let previousExists = false;
+    try { ordinary(pluginPath, "directory", "existing Codex plugin"); previousExists = true; }
+    catch (error) { if (error.cause?.code !== "ENOENT") throw error; }
+    if (previousExists) {
+      assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "retire rename");
       renameWithRetry(pluginPath, retired);
       hadPrevious = true;
-    } catch (error) {
-      if (error.cause?.code !== "ENOENT") throw error;
     }
     try {
       // stagedPlugin was just populated by a large (several-hundred-file)
@@ -377,9 +436,21 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       // copy rather than renamed into place. copyStagedPlugin and the
       // assertRegularTree re-validation below are this function's two
       // independent copy-time-race defenses (see the docblock above).
+      assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "staged-tree copy");
       await copyStagedPlugin(stagedPlugin, pluginPath);
       await assertRegularTree(pluginPath);
     } catch (error) {
+      // The rollback itself mutates through pluginsRoot -- it wipes pluginPath
+      // and renames the retired backup back into place -- so if an ancestor was
+      // swapped for a symlink under us (e.g. during the copy that just failed),
+      // executing it would delete/restore THROUGH the link into its target.
+      // Re-assert canonical resolution first; if it no longer holds, refuse to
+      // touch the filesystem at all and surface the tamper (preserving the
+      // original failure as its cause) rather than mutate through the link.
+      try { assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "copy-failure rollback"); }
+      catch (tamperError) {
+        throw new Error(`Codex plugin publish rollback refused; ancestor tampered: ${tamperError.message} (original publish failure: ${error.message})`, { cause: error });
+      }
       // pluginPath may now hold a partial or tainted copy (unlike the old
       // copy-only failure mode, where cpSync itself never created it): wipe
       // it before restoring so a failed publish never leaves compromised
@@ -388,7 +459,14 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       if (hadPrevious) try { renameWithRetry(retired, pluginPath); } catch { /* best-effort restore */ }
       throw error;
     }
-    if (hadPrevious) rmSync(retired, { recursive: true, force: true });
+    if (hadPrevious) {
+      // Deleting the retired backup is a mutation through pluginsRoot; a wider
+      // wall-clock window (the copy + revalidation) has elapsed since the last
+      // check, so re-assert canonical resolution before the rmSync -- a swapped
+      // ancestor must not redirect this delete out of the tree.
+      assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "retired-backup cleanup");
+      rmSync(retired, { recursive: true, force: true });
+    }
 
     const pointerPath = join(pluginsRoot, "marketplace.json");
     let pointer;
@@ -403,6 +481,11 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
     }
     const plugin = pointer.plugins.find(item => item.name === "muster");
     plugin.source = { ...plugin.source, source: "local", path: codexMarketplacePluginPath(pluginsRoot) };
+    // Final mutation: the durable pointer commit. Re-assert canonical
+    // resolution so the narrow window after the destination re-validation
+    // (see this function's docblock) cannot let an ancestor swap redirect the
+    // pointer write out of the intended tree.
+    assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "marketplace pointer commit");
     atomicWritePointer(pointerPath, JSON.stringify(pointer, null, 2) + "\n");
     return { pluginRoot: pluginPath, profilesRoot: join(pluginPath, "agents"), packageVersion };
   });

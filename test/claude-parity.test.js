@@ -692,5 +692,31 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the shared Cowork server. No other file under this surface changed.
   // Pin re-derived at batch-2 merge reconciliation (2026-07-19): union hash.
   // Pin re-derived at batch-2 merge reconciliation (2026-07-19): union hash.
-  assert.equal(hash.digest("hex"), "e7de4c751669de95974a2ec56843afbdcc7a2f35d611f18f3e2f8d3fca18152b");
+  //
+  // Pin re-derived 2026-07-19 (backlog item runner-worktree-bootstrap): file COUNT unchanged
+  // (138 -- no file added/removed under this surface) -- two files changed. plugin/agents/
+  // muster-runner.md gained a new "## Worktree bootstrap" section (placed right after the
+  // Dispatch contract's return-template marker and before "## Iron rules", so neither
+  // template marker src/brief-lint.js scans for was disturbed): if the assigned worktree has
+  // no node_modules and its package-lock.json is byte-identical to the one in the repository
+  // the worktree was created from, symlink node_modules from there (the technique
+  // test/codex-build-repro.test.js already uses for its own fixture checkouts) instead of
+  // reinstalling; otherwise npm ci; the symlink is never committed, and the final clean-tree
+  // verification before disposition must show it absent or untracked only, never staged. The
+  // rule deliberately says "the repository the worktree was created from" rather than
+  // Claude-only "parent checkout" jargon, since plugin/agents/*.md bodies ship to the Codex
+  // agent profile verbatim (src/codex-release.js's profileToml is a pure, untransformed copy
+  // -- confirmed by test/codex-release.test.js's own "pure function" case), so one harness-
+  // neutral source phrase is correct on both surfaces with no separate Codex-side adaptation
+  // needed; test/runner-worktree-bootstrap.test.js pins both the source rule and its
+  // unmodified appearance in the generated muster-runner Codex profile TOML.
+  // plugin/commands/go-backlog.md's existing Isolation bullet gained one clause citing that
+  // same rule back to plugin/agents/muster-runner.md instead of duplicating its text.
+  // docs/binding-interface.md's worktree grep-audit count was re-derived (22 -> 23, files
+  // unchanged at 5) since the new muster-runner.md section adds one worktree-word mention on
+  // its own line while the go-backlog.md clause lands on an already-counted line. Re-verified
+  // with `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs`
+  // (clean) and the full suite green. This is the reviewed runner-worktree-bootstrap
+  // remediation, not accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "a305adc2d7e59fcb9a685713387b47b58ee5defd2e78fe8cf8ea2775785e29a9");
 });

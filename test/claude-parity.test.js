@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 137);
+  assert.equal(paths.length, 138);
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -626,5 +626,71 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // instances) was fixed in the same pass. Re-verified: citation-check still clean
   // (80/80 cited, 0 dangling), full suite green, MUSTER_BUILD_FORCE=1 build + check-codex
   // clean.
-  assert.equal(hash.digest("hex"), "553ab71714df3d703d7da1d6df34bd202ab17e29cb7824914020b7bb763176ba");
+  // Pin re-derived 2026-07-19 (backlog item structured-output-binding): file COUNT changed
+  // 137 -> 138 -- a genuinely new file, plugin/skills/review-gate/verdict.schema.json (the
+  // single-sourced JSON Schema for .muster/verdicts.json's two entry shapes: an ordinary
+  // reviewer's {reviewer, findings} verdict, and PR #82's {reviewer, status:
+  // "exhausted"|"absent"} worker-absence entry -- kept coherent with src/review.js's
+  // tallyReview by the new test/verdict-schema.test.js, outside this hashed surface).
+  // plugin/skills/review-gate/SKILL.md's content also changed: step 5's existing "Write
+  // verdicts to `.muster/verdicts.json`" sentence gained one clause citing the schema file
+  // as the emission contract plus a compact honesty note ("native constrained output here
+  // reaches only headless surfaces, not this call") -- both lanes' own research docs verified
+  // to say exactly that: docs/research/claude-code-cli.md secs 1/11 place `StructuredOutput`
+  // and print-mode `--json-schema` on the background-agent/`claude agents`-subcommand and
+  // headless-`-p` surfaces respectively, neither of which is the in-session Agent-tool call
+  // review-gate actually dispatches reviewers through; docs/research/codex-cli.md sec 1 binds
+  // `codex exec --output-schema` to a `codex exec` leaf's final message, and reviewer dispatch
+  // on the Codex lane runs through the native `collaboration.spawn_agent` subagent call, not a
+  // `codex exec` leaf (confirmed by grepping scripts/build-codex.mjs's one `claude -p` ->
+  // `codex exec` translation site, plugin/commands/runner.md's cron-scheduling line -- not a
+  // verdict-emitting leaf). Native constrained output therefore reaches neither lane's real
+  // reviewer-dispatch surface today; the schema is held by test/verdict-schema.test.js's
+  // coherence pin plus `muster tally`'s own parse, stated as such rather than claiming
+  // enforcement that is not there. The edit sits inside step 5's own sentence, so it disturbs
+  // neither the mutant-kill-rule drift-guard fixture (test/mode-evals.test.js, unaffected --
+  // still anchored on "## Mutant-kill gate" onward) nor scripts/build-codex.mjs's review-gate
+  // step-1/fix-iteration-cap anchors; the generic `translatePluginPaths` transform already
+  // in build-codex.mjs resolves the new citation to
+  // `${PLUGIN_ROOT}/internal-skills/review-gate/verdict.schema.json` with no Codex-specific
+  // code needed, and `rmAndCopy(plugin/skills, internal-skills)` already ships the new schema
+  // file byte-for-byte -- both re-verified with `MUSTER_BUILD_FORCE=1 node
+  // scripts/build-codex.mjs && node scripts/check-codex.mjs` (clean), the latter gaining one
+  // new assertion (`internal-skills/review-gate/verdict.schema.json` must exist and the ported
+  // SKILL.md must cite its bundled path) proven to fail on a missing file and pass once
+  // restored. docs/binding-interface.md's four grep-audit counts are unchanged (the new prose
+  // deliberately names none of AskUserQuestion/hook/dispatch-phrase/worktree). This is the
+  // reviewed structured-output-binding remediation, not accidental Codex-side drift.
+  // Pin re-derived again 2026-07-19 (backlog item codex-mcp-surface-gaps-2, round 2 of
+  // codex-mcp-surface-gaps / PR #85): file COUNT unchanged (137) -- only
+  // cowork/mcp-server.mjs's content changed. The 2026-07-19 clean Codex run's residual
+  // CLI-only list named 4 more deterministic ops with no muster_* MCP equivalent: scope,
+  // fast-path, plan-checklist, and codex-conformance. 3 became real tools, mapped onto
+  // the same per-op decision-table discipline PR #85 established: muster_scope (new
+  // "str" tool: scope <text>, detectScope -- text optional, a bare invocation is a valid
+  // input), muster_plan_checklist (new "json2" tool: plan-checklist, reusing the SAME
+  // manifest-payload + optional `flags` (`--done`) pattern muster_next already
+  // established), and muster_fast_path (new tool needing a genuinely new "fastPath" kind
+  // -- a required string positional PLUS an optional JSON payload behind a flag, a shape
+  // neither "str" nor "json2" covers, since "str"'s `flags` callback is synchronous and
+  // cannot write a temp file; mirrors "json2"'s own write/run/cleanup sequence, gated on
+  // `capabilities` actually being present -- scoreOutcomeForFastPath/buildFastPathManifest,
+  // and the SAME {roles} shape muster_capabilities_roles already returns is the exact
+  // payload buildFastPathManifest needs, not impractically large for a tool arg). The
+  // 4th residual op, codex-conformance, was judged CLI-only on the merits (not mapped
+  // onto any shape): it audits a HOST CODEX_HOME/sessions rollout tree for subagent
+  // model-conformance drift, and while this server CAN read that tree (same host Codex
+  // spawned it on), the audit is post-run forensics a human/driver runs after a session
+  // ends, not a decision the in-run orchestrating agent needs mid-wave -- documented in
+  // COWORK_PROTOCOL's "CLI-only operations" note (now naming both gaps: muster_match_skills'
+  // --stack override and codex-conformance outright). Every count this item's tool
+  // addition is pinned at (CODEX_COUNTS.mcpTools, doctor's N/N handshake text, README's
+  // "N MCP tools", cowork/README.md's tool table + prose, cowork/manifest.json's declared
+  // tool list, the check-codex.mjs regex count) was re-derived 25 -> 28 together; see
+  // test/codex-mcp-surface-gaps.test.js for the new end-to-end proof through the BUILT
+  // plugin's MCP server and test/cowork.test.js for full per-tool behavioral coverage on
+  // the shared Cowork server. No other file under this surface changed.
+  // Pin re-derived at batch-2 merge reconciliation (2026-07-19): union hash.
+  // Pin re-derived at batch-2 merge reconciliation (2026-07-19): union hash.
+  assert.equal(hash.digest("hex"), "e7de4c751669de95974a2ec56843afbdcc7a2f35d611f18f3e2f8d3fca18152b");
 });

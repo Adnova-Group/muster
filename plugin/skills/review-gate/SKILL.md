@@ -46,7 +46,9 @@ CLI call below.
    untraceable facts.
 4. **Intent vs implementation:** run `git notes --ref=muster show <wave commit>` when present; a mismatch
    between recorded decisions and code is a finding even when tests pass.
-5. Write verdicts to `.muster/verdicts.json`; run `$MUSTER_CLI tally .muster/verdicts.json`.
+5. Write verdicts to `.muster/verdicts.json`, per `plugin/skills/review-gate/verdict.schema.json`'s
+   emission contract (native constrained output here reaches only headless surfaces, not this
+   call); run `$MUSTER_CLI tally .muster/verdicts.json`.
 6. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review. Cap at
    **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3). If still blocked after the cap, ESCALATE to the human with the unresolved blockers.
 7. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking).

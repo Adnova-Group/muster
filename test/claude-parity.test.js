@@ -575,6 +575,57 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // by scripts/build-codex.mjs), left untouched per this item's own scope.
   // Pin re-derived at the PR #87 + #88 merge reconciliation (2026-07-19): union hash.
   //
+  // Pin re-derived 2026-07-19 (backlog item harness-goal-primitives): file COUNT unchanged
+  // (137 -- no file added/removed under this surface) -- only plugin/commands/runner.md's
+  // content changed. Its "Scheduling" paragraph now documents Claude Code's native `/loop
+  // /muster:runner <source>` self-pacing recurrence as a first-class alternative to firing
+  // the mode from a Claude Code Routine/cron, naming when each wins (`/loop` for attended
+  // sessions/bursty backlogs where self-pacing adapts cadence, the runner's own idle receipt
+  // as the widen signal; Routine/cron for unattended machines and a fixed cadence) --  the
+  // safety inventory clause (pr-only, 2-failure retry cap, claim lock) is preserved verbatim,
+  // now scoped explicitly to "either mechanism". scripts/build-codex.mjs (outside this hashed
+  // surface) gained a runner.md-specific wholesale-replace of the whole Scheduling paragraph
+  // (anchored `**Scheduling**` .. `\n\nGlass box:`, asserted, mirroring the audit.md
+  // dimension-sweep/coordination Standing-context-preflight wholesale-replace convention
+  // already in that file) since `/loop` is a Claude-only primitive with no Codex equivalent --
+  // re-verified with `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node
+  // scripts/check-codex.mjs` (clean) and the new test/runner-loop-binding.test.js, which reads
+  // the BUILT Codex plugin's generated runner.md and proves it carries neither `/loop` nor
+  // `$loop` nor the self-pacing framing. This is the reviewed harness-goal-primitives
+  // remediation, not accidental Codex-side drift.
+  //
+  // Pin re-derived again 2026-07-19, same item, after a review-gate fix pass: a review
+  // blocker found the /loop claim shipped without grounding it against the actual
+  // scheduled-fire documentation, which states a fire only runs a skill/command Claude
+  // is "allowed to invoke on its own" and names `disable-model-invocation: true`
+  // (runner.md's own frontmatter) as one of the types that instead "reach Claude as
+  // plain text instead of executing" -- undisambiguated for an explicitly-typed
+  // slash-command prompt. The Scheduling paragraph now carries an honest
+  // "Unverified interaction, confirm before relying on it" caveat naming exactly this,
+  // instructing a live one-cycle check before depending on `/loop` for standing cadence,
+  // and marking Routine/cron as the verified-safe default until that's confirmed -- the
+  // same "verify before wiring" bar this diff's own Codex goals record already holds
+  // itself to. test/runner-loop-binding.test.js extended to pin the caveat's presence;
+  // docs/research/claude-code-cli.md SS1 extended with the same restriction, cited to the
+  // same cc-scheduled-tasks source (citation-check clean, 80/80 claims cited, 0 dangling).
+  //
+  // Pin re-derived a third time, same item, after a second review-gate fix pass: the
+  // re-review found the caveat UNDERCLAIMED -- it reasoned only from cc-scheduled-tasks
+  // and never cross-referenced this file's own already-cited skills-page source, whose
+  // frontmatter reference states the same restriction unconditionally ("also prevents
+  // the skill from running when a scheduled task fires with the skill as its prompt", no
+  // slash-command-vs-natural-language carve-out) -- strong evidence the claim is likely
+  // FALSE, not merely unresolved. It also found a misattribution: the claude -p/cron
+  // distinction was wrongly tied to cc-scheduled-tasks's own comparison table, which only
+  // covers Cloud/Desktop/`/loop` columns. Both fixed: runner.md's caveat now reads
+  // "Likely blocked today, verify before relying on it" and cites both sources (via
+  // docs/research/claude-code-cli.md SS1, itself corrected to cite skills-page alongside
+  // cc-scheduled-tasks and to stop over-attributing the claude -p distinction to a table
+  // that doesn't contain it); a third, cosmetic nit (a lone backtick-wrapped
+  // paragraph-leading `[DOCUMENTED]` tag, inconsistent with every other of this file's 54
+  // instances) was fixed in the same pass. Re-verified: citation-check still clean
+  // (80/80 cited, 0 dangling), full suite green, MUSTER_BUILD_FORCE=1 build + check-codex
+  // clean.
   // Pin re-derived 2026-07-19 (backlog item structured-output-binding): file COUNT changed
   // 137 -> 138 -- a genuinely new file, plugin/skills/review-gate/verdict.schema.json (the
   // single-sourced JSON Schema for .muster/verdicts.json's two entry shapes: an ordinary
@@ -640,5 +691,6 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // plugin's MCP server and test/cowork.test.js for full per-tool behavioral coverage on
   // the shared Cowork server. No other file under this surface changed.
   // Pin re-derived at batch-2 merge reconciliation (2026-07-19): union hash.
-  assert.equal(hash.digest("hex"), "d0c5a8e99ffba22c80bb6fccc992dcbd95be28a4c927011aafb76f4d9a1ee7b8");
+  // Pin re-derived at batch-2 merge reconciliation (2026-07-19): union hash.
+  assert.equal(hash.digest("hex"), "e7de4c751669de95974a2ec56843afbdcc7a2f35d611f18f3e2f8d3fca18152b");
 });

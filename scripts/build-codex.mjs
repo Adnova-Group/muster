@@ -111,6 +111,20 @@ function adaptCommandForCodex(text, name) {
     ].join("\n");
     result = result.slice(0, sweepStart) + capacitySweep + "\n" + result.slice(boardStart);
   }
+  if (name === "runner.md") {
+    // The Claude lane's Scheduling section names Claude Code's native `/loop` self-pacing
+    // recurrence as a first-class alternative to a Routine/cron (backlog item
+    // harness-goal-primitives) -- `/loop` is a Claude-only harness primitive with no Codex
+    // equivalent, so it is wholesale-replaced (not merely translated) with a fixed
+    // Codex-specific paragraph naming the gap explicitly, mirroring the pre-existing
+    // cron/automation guidance. Anchored + asserted, matching the audit.md dimension-sweep
+    // and coordination Standing-context-preflight wholesale-replace convention above.
+    const schedStart = result.indexOf("**Scheduling**");
+    const schedEnd = result.indexOf("\n\nGlass box:", schedStart);
+    if (schedStart < 0 || schedEnd < 0) throw new Error("runner.md Scheduling section anchor not found");
+    const codexScheduling = "**Scheduling** — fire `$muster-runner` from a Codex automation on a timer, or from cron invoking the Codex CLI (e.g. `codex exec \"$muster-runner issues:agent:todo\"`). Codex has no equivalent recurrence primitive, so a fixed cadence is the only mechanism here: match the backlog's arrival rate, not faster — an idle cycle is cheap, but firing far ahead of new items just piles up idle receipts; start around 15-30 minutes and widen if idle cycles dominate the ledger, tighten if items queue up unclaimed. Safety inventory: pr-only (step 4 never merges/pushes to base), the 2-failure retry cap bounds reclaim loops, and the claim lock (Binding A's comment-race window / Binding B's claim-then-verify) makes concurrent firing safe alongside `$muster-go-backlog`, other scheduled runners, and humans on the same backlog.";
+    result = result.slice(0, schedStart) + codexScheduling + result.slice(schedEnd);
+  }
   const directives = {
     "run.md": "ANTH-XML-001, GUARD-SEP-003",
     "autopilot.md": "ANTH-XML-001, GUARD-SEP-003",

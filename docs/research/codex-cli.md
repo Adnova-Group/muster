@@ -57,6 +57,18 @@ The loop's anatomy, as exposed by `codex exec --json` (JSON Lines event stream),
 
 `[DOCUMENTED]` The `[features]` table gates capabilities: `hooks` (default true; canonical key, `codex_hooks` deprecated alias), `multi_agent` (true), `unified_exec` (true except Windows), `shell_tool`, `shell_snapshot`, `remote_plugin`, `goals`, `memories` (experimental, false), etc. Toggle with `codex --enable <feature>` or `[features] key = true` [src: codex-config-basic].
 
+### 3.1 Native goals: experiment-design record (2026-07-19) — NOT wired
+
+`[DECISION-RECORD]` What is documented: the `[features]` table above gates `goals` — default-on (unlike `memories`, explicitly marked "(experimental, false)" on the same line), but with no further CLI/config detail anywhere in the docs this section otherwise reimplements from [src: codex-config-basic]. The actual mechanism lives one layer down, at the **app-server** protocol this document does not otherwise cover: `thread/goal/set|get|clear` — persisted per-thread goals, `goals` feature flag default-on [src: codex-desktop-appserver]. No CLI subcommand, `codex exec` flag, or `item.*`/`turn.*` event-stream entry for goals is documented anywhere in this research corpus; the only confirmed entry point is the app-server RPC surface Desktop/IDE clients ride.
+
+What a muster binding WOULD look like, if it were ever wired: at run start, set the dispatched thread's goal to the run's outcome text (`thread/goal/set`); optionally read it back mid-run as a corroborating signal; clear it (`thread/goal/clear`) at disposition — mirroring the same set-at-start/clear-at-exit shape `.muster/run-active` already uses for the `PreToolUse` scale-gate marker [src: build-codex]. This is a plausible shape, not a proven one — nothing past this paragraph is implemented.
+
+The experiment a HUMAN must run to prove it, before any of the above gets built: (1) confirm `[features] goals = true` in a real `~/.codex/config.toml`, or set it explicitly with `codex --enable goals`; (2) start a real thread and issue `thread/goal/set` (whatever app-server/IDE surface currently exposes the RPC) with a short outcome string, then `thread/goal/get` to confirm it persisted, then `thread/goal/clear`; (3) capture the `codex exec --json` event stream (or the app-server's own event feed) across that whole sequence and check whether goal set/get/clear produces any visible `item.*`/`turn.*` entry, or is silent side-channel state invisible to the rollout; (4) run one short multi-turn thread with a goal set and compare its behavior against an identical thread with no goal set — does the model visibly steer toward the stated goal, or is the flag inert metadata with no loop-level enforcement? Record the exact Codex version, the raw event-stream excerpt, and the answer to points (1)-(4) as a new dated entry directly below this one.
+
+The wiring gate: nothing in muster wires to `thread/goal/*` until this record gains a **"proven"** entry answering all four experiment points with real evidence, not inference. Codex is the harness whose first muster integration burned a $100 quota plan in two days by working against its internals instead of its documented contract [src: dr-burn]; an unverified, possibly-silent, possibly-app-server-only primitive is exactly the shape of mistake that cost was paid to stop repeating — the gate exists so goals stays a documented option, never an assumed one.
+
+Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, already-designed surface (completion contracts — `outcome`/`verification`/`constraints`/`stop_when`, judge-based, fail-open) — designed in docs/research/reference-harness-design.md's harness-comparison table and docs/research/hermes.md, and deferred to the Hermes lane; no work happens on it here.
+
 `[DOCUMENTED]` Thread-limit settings — the exact keys muster's thread-limits item targets — live under `[agents]` [src: codex-subagents-doc]:
 
 | Key | Default | Meaning |
@@ -247,3 +259,4 @@ The loop's anatomy, as exposed by `codex exec --json` (JSON Lines event stream),
 - dr-install: docs/decisions/retriage-install-items.md:108-144
 - dr-audit: docs/decisions/retriage-audit-hardening.md:31
 - dr-burn: docs/decisions/retriage-burn-salvage.md:33-34
+- codex-desktop-appserver: docs/research/codex-desktop.md:270-285 (app-server `thread/goal/set|get|clear` API, §8)

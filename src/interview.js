@@ -27,6 +27,29 @@ const CRITERIA_KEYWORD =
 const MEASURABLE_NEARBY = /\b\d|\b(?:at least|at most|above|below|under|over|within)\b/i;
 const MEASURABLE_WORD_NEARBY = new RegExp(`\\b${NUMBER_WORD}\\b|\\b(?:at least|at most|above|below|under|over|within)\\b`, "i");
 
+// Prose-form success criteria (backlog item codex-assess-criteria-detect, 2026-07-18 Codex
+// dogfood): an engineering-shaped outcome routinely states its acceptance behavior as prose
+// clauses -- "the builder accepts an injected verifier, receipts record verified: true/false,
+// callers fail loud when verification fails" -- rather than a "Success criteria:"-labeled
+// list or a bare metric. The two clearing paths above (CRITERIA_QUANTIFIED,
+// CRITERIA_KEYWORD+MEASURABLE_NEARBY) both structurally require a digit or a
+// measurement-vocabulary word, so a purely-prose, purely-behavioral spec like that one trips
+// neither and reads as "no-success-criteria" even though it is exhaustively specific. Three
+// independent, narrow, low-false-positive prose shapes -- any ONE is concrete enough to plan
+// against on its own, each evidence-driven off the dogfood fixture plus realistic variants
+// (test/interview.test.js):
+//   - an explicit obligation ("must"/"should" + verb) -- spec-shaped contract language.
+//   - "fail(s) loud(ly)" / "fail-loud" -- muster's own named failure-discipline phrase.
+//   - a labeled field:value pair ("verified: true/false", "status: ok") -- structured,
+//     enumerable acceptance data, restricted to a boolean-ish/quoted value (not a bare digit)
+//     so it doesn't fire on a URL port, a ratio ("16:9"), or a clock time ("3:00").
+// Deliberately NOT added: a generic "enumerated concrete behaviors" verb-counting heuristic --
+// the three signals above already cover the dogfood fixture and its realistic variants
+// without the false-positive surface a loose behavior-verb count would open up.
+const CRITERIA_OBLIGATION = /\b(?:must|should)\s+(?:not\s+)?[a-z]+/i;
+const CRITERIA_FAIL_LOUD = /\bfail(?:s|ing)?[\s-]loud(?:ly)?\b/i;
+const CRITERIA_LABELED_FIELD = /\b[a-z][\w-]*\s*:\s*(?:true|false|yes|no|ok|"[^"]{1,40}"|'[^']{1,40}')\b/i;
+
 // Bare imperative verbs that, on their own with no concrete object, signal a hand-wavy ask.
 const VAGUE_VERB = /^(make|do|build|fix|improve|help|handle|update|change)\b/i;
 
@@ -45,7 +68,9 @@ export function assessOutcome(text, { codex = false } = {}) {
   const hasQuantified = CRITERIA_QUANTIFIED.test(trimmed) || (codex && CRITERIA_QUANTIFIED_WORDS.test(trimmed));
   const hasKeyword = CRITERIA_KEYWORD.test(trimmed);
   const hasMeasurable = MEASURABLE_NEARBY.test(trimmed) || (codex && MEASURABLE_WORD_NEARBY.test(trimmed));
-  const noCriteria = !(hasQuantified || (hasKeyword && hasMeasurable));
+  const hasProseCriteria =
+    CRITERIA_OBLIGATION.test(trimmed) || CRITERIA_FAIL_LOUD.test(trimmed) || CRITERIA_LABELED_FIELD.test(trimmed);
+  const noCriteria = !(hasQuantified || (hasKeyword && hasMeasurable) || hasProseCriteria);
 
   const signals = [];
   if (tooShort) signals.push("too-short");

@@ -16,6 +16,61 @@ test("thin outcome 'fix it' is not clear and flags length + missing criteria", (
 
 // WHY: a bare vague verb with a hand-wavy qualifier is the canonical case the interview
 // exists to catch — it must additionally fire vague-only on top of the other two signals.
+// WHY (backlog item codex-assess-criteria-detect, 2026-07-18 Codex dogfood): a real code
+// outcome carrying detailed acceptance behavior as PROSE clauses -- not a "Success
+// criteria:"-labeled list, not a bare metric -- was flagged no-success-criteria because it
+// tripped neither CRITERIA_QUANTIFIED (no digits) nor CRITERIA_KEYWORD (no metric/measure/
+// success/criteria/kpi/target/goal/increase/decrease/reduce/improve/conversion/rate/latency/
+// throughput word). The outcome text below is the exact dogfood fixture reconstructed from
+// the run transcript. It must now be recognized as carrying real criteria via the "fail
+// loud" phrase and the labeled verified: true/false field.
+const DOGFOOD_RECEIPT_VERIFICATION_OUTCOME =
+  "buildBaseShaReceipt in src/wave-dispatch.js validates SHA format but never verifies the SHA " +
+  "actually resolves to a real commit. Add real verification: the receipt builder accepts an " +
+  "injected verifier that checks the SHA against the repo, receipts record verified: true/false " +
+  "plus the verification mechanism, and callers that depend on the receipt fail loud when " +
+  "verification is available but fails. TDD; keep the existing fail-loud behavior for malformed SHAs.";
+
+test("dogfood fixture: prose-form code-outcome criteria (fail loud + labeled field) clears no-success-criteria", () => {
+  const r = assessOutcome(DOGFOOD_RECEIPT_VERIFICATION_OUTCOME);
+  assert.ok(
+    !r.signals.includes("no-success-criteria"),
+    `prose criteria (fail loud / verified: true/false) must clear no-success-criteria, got signals: ${JSON.stringify(r.signals)}`,
+  );
+  assert.equal(r.clear, true, "a long, detailed, prose-criteria outcome must be clear");
+});
+
+// WHY: realistic variants of the same prose-criteria grammar, not just the one dogfood
+// fixture -- an explicit obligation ("must"/"should") and a "fail loud" phrase on their own,
+// each without any digit or CRITERIA_KEYWORD word, must independently clear the signal.
+test("prose criteria: an explicit obligation ('must'/'should' + verb) clears no-success-criteria on its own", () => {
+  const r = assessOutcome(
+    "the parser must reject a malformed header and the caller should log the rejection reason before returning",
+  );
+  assert.ok(!r.signals.includes("no-success-criteria"), "must/should + verb is a concrete acceptance obligation");
+});
+
+test("prose criteria: 'fail loud'/'fail-loud' alone clears no-success-criteria", () => {
+  const r1 = assessOutcome("the importer should fail loud on a corrupt row instead of silently skipping it");
+  assert.ok(!r1.signals.includes("no-success-criteria"), "'fail loud' is a concrete, distinctive acceptance phrase");
+  const r2 = assessOutcome("keep the existing fail-loud behavior for a missing config file");
+  assert.ok(!r2.signals.includes("no-success-criteria"), "hyphenated 'fail-loud' must also clear the signal");
+});
+
+test("prose criteria: a labeled field:value pair (verified: true/false) clears no-success-criteria", () => {
+  const r = assessOutcome(
+    "the health check response carries a labeled status: ok field so downstream callers can branch on it directly",
+  );
+  assert.ok(!r.signals.includes("no-success-criteria"), "a structured field:value pair is concrete acceptance data");
+});
+
+// WHY: negative control -- a bare colon with no boolean/quoted value after it (ordinary prose
+// punctuation, not a labeled field) must NOT be mistaken for structured criteria.
+test("prose criteria: an ordinary prose colon with no boolean/quoted value does not clear no-success-criteria", () => {
+  const r = assessOutcome("the plan is simple: build a small internal tool for the support team");
+  assert.ok(r.signals.includes("no-success-criteria"), "a plain narrative colon must not be read as a labeled field");
+});
+
 test("bare/vague 'make it better' flags vague-only", () => {
   const r = assessOutcome("make it better");
   assert.equal(r.clear, false, "a bare vague instruction cannot be clear");

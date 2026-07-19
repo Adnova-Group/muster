@@ -447,5 +447,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // CLI source: a required reviewer entry with that status always forces blocked:true with
   // a named blockedReasons entry, never a silent skip, never counted as a real PASS/FAIL.
   // No other file under this surface changed.
-  assert.equal(hash.digest("hex"), "0870e383c1a394c0376061c28a2bcd90577c6ba301272b65c578b9ee4c858de3");
+  //
+  // Pin re-derived again 2026-07-19 (backlog item exhaustion-status-producer, stacked on
+  // tally-worker-exhaustion-contract + codex-agent-watch-review-budget): file COUNT
+  // unchanged (137) -- only plugin/skills/review-gate/SKILL.md and
+  // plugin/skills/orchestrator/SKILL.md changed. review-gate/SKILL.md's step 2 gained one
+  // new bullet ("Exhausted/absent reviewer") naming what the gate must do the moment a
+  // dispatched reviewer is killed/exhausted/never starts: record {reviewer, status:
+  // "exhausted"|"absent"} directly into .muster/verdicts.json instead of synthesizing
+  // verdict-shaped findings, so step 5's tally forces its already-landed deterministic
+  // block. This sits inside step 2's own paragraph, so scripts/build-codex.mjs's
+  // review-gate anchors (the step-1 "Select reviewers" replace and the step-6 fix-iteration
+  // cap replace) are untouched and re-verified clean. orchestrator/SKILL.md's
+  // "Subagent failure" bullet gained one appended sentence cross-referencing the new
+  // review-gate handling, so a reviewer killed inside the review gate (step 4c) is not
+  // mistaken for the generic re-dispatch-once path this bullet otherwise documents --
+  // appended after the bullet's existing text, so build-codex.mjs's
+  // `      - **Subagent failure` indexOf anchor (which keeps this bullet verbatim onward
+  // into the Codex build) still locates it and carries the addition through unchanged.
+  // Re-verified with MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs &&
+  // node scripts/check-codex.mjs (clean). No other file under this surface changed.
+  assert.equal(hash.digest("hex"), "49b8d292476297e1a874da05bd3f8f28a0aa98ccaf7dc87163e4c04206d346f7");
 });

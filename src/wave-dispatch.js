@@ -9,6 +9,10 @@
 // docs/strategy/native-delegation.md Part B item 1: "Workflow reached only via
 // agent-teams mode, not the single-session loop -- capability-gated").
 //
+// execFileSync backs makeGitShaVerifier's git-backed default verifier below (the ONLY
+// place in this file that shells out, and only when that verifier is actually invoked --
+// never unconditionally on buildBaseShaReceipt's hot path).
+//
 // There is no on-disk or protocol signal an outside process (this CLI) can probe to
 // detect agent-teams mode from inside a running session -- the SAME "cannot be
 // auto-probed, must be DECLARED" shape as Cowork's nativePluginRide (src/harness.js /
@@ -20,6 +24,8 @@
 // loop (orchestrator/SKILL.md step 4) is the unconditional floor for every harness/
 // session that doesn't declare native agent-teams support (Codex, Cowork, plain Claude
 // Code CLI/Desktop single-session) -- prose is the default whenever nothing is declared.
+
+import { execFileSync } from "node:child_process";
 
 export const AGENT_TEAMS_ENV = "MUSTER_AGENT_TEAMS";
 
@@ -238,7 +244,20 @@ const SUPPORTED_WORKTREE_ISOLATION_MECHANISMS = new Set(Object.values(WORKTREE_I
 // missing SHA: a receipt that isn't provably a real fork point is worse than no receipt,
 // since it would let a run claim isolation-equivalent provenance it never actually
 // captured.
-export function buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath } = {}) {
+//
+// base-SHA receipt VERIFICATION (backlog item `base-sha-receipt-verification`): format
+// validation above (BASE_SHA_RE) proves the SHA is SHAPED like a git SHA -- it does NOT
+// prove the SHA is REAL. A fabricated-but-well-formed SHA passes that regex exactly as a
+// real commit does (the finding that sent the first attempt at this item back to the
+// spec gate). The optional `verify` function closes that gap: when the CALLER supplies
+// one (hermetic in a test, git-backed via makeGitShaVerifier below in production), the
+// receipt records what it actually proved -- `verified` (the verifier's own boolean
+// answer) and `verificationMechanism` (the verifier's own `.mechanism` label when it
+// carries one, e.g. makeGitShaVerifier's "git-object", else "custom" for a bare inline
+// function). Absent a `verify` function entirely, the receipt is honest about that too:
+// `verified: false, verificationMechanism: "none"` -- format validation alone NEVER
+// claims a receipt is verified.
+export function buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath, verify } = {}) {
   if (!taskId) throw new Error("buildBaseShaReceipt: taskId is required");
   if (!mechanism) throw new Error(`buildBaseShaReceipt: mechanism is required for task "${taskId}"`);
   if (!SUPPORTED_WORKTREE_ISOLATION_MECHANISMS.has(mechanism)) {
@@ -253,5 +272,52 @@ export function buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath }
       `never record a receipt without a real fork-point SHA`
     );
   }
-  return { taskId, mechanism, baseSha, worktreePath: worktreePath ?? null };
+  if (verify === undefined) {
+    return { taskId, mechanism, baseSha, worktreePath: worktreePath ?? null, verified: false, verificationMechanism: "none" };
+  }
+  if (typeof verify !== "function") {
+    throw new Error(`buildBaseShaReceipt: verify must be a function when provided (got ${typeof verify}) for task "${taskId}"`);
+  }
+  const verified = verify(baseSha) === true;
+  const verificationMechanism = typeof verify.mechanism === "string" && verify.mechanism ? verify.mechanism : "custom";
+  return { taskId, mechanism, baseSha, worktreePath: worktreePath ?? null, verified, verificationMechanism };
+}
+
+// The git-backed default verifier factory: "reachable" is DEFINED as the SHA resolving
+// to a real commit object in the repository at an EXPLICIT cwd -- `git rev-parse
+// --verify --quiet <sha>^{commit}` succeeding (exit 0) means the object exists and is (or
+// dereferences to) a commit; any non-zero exit -- unknown object, wrong type, not a git
+// repo at all -- means false. cwd is REQUIRED and never defaults to `process.cwd()`:
+// Codex's `collaboration.spawn_agent` has no cwd field at all, so the caller (the
+// orchestrator prose, or a human running the `receipt-verify` CLI) must always state
+// which repository the SHA is being checked against -- silently trusting the running
+// process's own cwd would make the receipt meaningless on exactly the harness that needs
+// it most. `exec` is injectable (defaults to execFileSync) so callers can test this
+// factory's OWN contract hermetically without a real git shell-out; production callers
+// get the real one. The returned function carries a `.mechanism` label ("git-object")
+// that buildBaseShaReceipt reads back into the receipt's `verificationMechanism`.
+//
+// The input is ALSO shape-checked against BASE_SHA_RE before ever shelling out (review
+// finding, fixed): `git rev-parse --verify` resolves any revision expression -- a branch
+// name, a tag, `HEAD`, a relative ref like `HEAD~2` -- not just SHAs, so without this
+// guard a caller that passes something other than a SHA (the standalone `receipt-verify`
+// CLI, invoked directly, never routes through buildBaseShaReceipt's own format check
+// first) would get a false `verified: true` for input that was never a base-SHA at all.
+// A shape-invalid input is unconditionally false, same as any other non-reachable SHA --
+// this is the verifier's own definition of "reachable," not a separate error path.
+export function makeGitShaVerifier({ cwd, exec = execFileSync } = {}) {
+  if (typeof cwd !== "string" || !cwd.trim()) {
+    throw new Error("makeGitShaVerifier: cwd is required (an explicit repository path -- never process.cwd())");
+  }
+  function verifyGitSha(sha) {
+    if (typeof sha !== "string" || !BASE_SHA_RE.test(sha)) return false;
+    try {
+      exec("git", ["rev-parse", "--verify", "--quiet", `${sha}^{commit}`], { cwd, stdio: ["ignore", "ignore", "ignore"] });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  verifyGitSha.mechanism = "git-object";
+  return verifyGitSha;
 }

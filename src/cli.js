@@ -50,13 +50,13 @@ import { detectScope } from "./scope.js";
 import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./hygiene.js";
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
-import { resolveWaveDispatch, resolveWorktreeIsolation } from "./wave-dispatch.js";
+import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
 import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD] [--cwd <substr>]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD] [--cwd <substr>]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -251,6 +251,23 @@ async function main() {
       // selection, not auto-probed -- see src/wave-dispatch.js.
       const harness = flagValue(rest, "--harness");
       out(resolveWorktreeIsolation({ harness }));
+    } else if (cmd === "receipt-verify") {
+      // base-sha-receipt-verification item: the executable consumer -- proof that a
+      // base-SHA receipt's SHA is REAL, not just well-formed (buildBaseShaReceipt's
+      // format check alone can't provide that). Runs the git-backed default verifier
+      // (makeGitShaVerifier, src/wave-dispatch.js -- shape-checked before it ever shells
+      // out, so a branch/tag/HEAD/relative-ref argument is correctly reported unverified
+      // rather than a false positive) against an explicit repo `--cwd` (never
+      // process.cwd() -- Codex's spawn_agent has no cwd field, so the caller must always
+      // state the repo) and prints the same {verified, mechanism} shape
+      // buildBaseShaReceipt records.
+      const sha = requireArg(rest, 0, "receipt-verify <sha> --cwd <repo>: missing sha", fail);
+      const cwd = flagValue(rest, "--cwd");
+      if (!cwd) fail("receipt-verify <sha> --cwd <repo>: missing --cwd");
+      const verify = makeGitShaVerifier({ cwd });
+      const verified = verify(sha);
+      out({ sha, cwd, verified, mechanism: verify.mechanism });
+      if (!verified) process.exit(2);
     } else if (cmd === "fast-path") {
       // weight-reduction item, criterion 1 (flagship): pre-router single-agent fast path.
       // Score-only when --capabilities is absent (the caller hasn't resolved capabilities

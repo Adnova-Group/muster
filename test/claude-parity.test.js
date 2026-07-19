@@ -382,6 +382,44 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the dogfood's High packaging defect. Shared-surface change is that one file;
   // reviewed, not drift.
   //
+  // Pin re-derived again 2026-07-18 (backlog item `base-sha-receipt-verification`,
+  // respecified after a spec-gate escalation found the first attempt's "callers fail
+  // loud" criterion pointed at prose, not code): file COUNT unchanged (137) -- only
+  // plugin/skills/orchestrator/SKILL.md's content changed. Its "### Worktree isolation
+  // per harness + base-SHA receipts" subsection gained one new paragraph, appended after
+  // the existing "test/worktree-isolation.test.js proves..." sentence and before the
+  // "## Scope fences" heading, so no existing line in the subsection was touched or
+  // reflowed. The new paragraph names the gap this item closes -- a fabricated-but-
+  // well-formed SHA passes buildBaseShaReceipt's shape check exactly like a real commit
+  // does -- and cites the new executable consumer: run `$MUSTER_CLI receipt-verify
+  // <baseSha> --cwd <repo>` (`makeGitShaVerifier` in `src/wave-dispatch.js`) immediately
+  // after appending the receipt, escalating any nonzero exit like any other verification
+  // failure. This whole subsection falls inside build-codex.mjs's existing wholesale-
+  // replace span for the Wave-dispatch section, so the new paragraph is discarded
+  // verbatim by the Codex adaptation in favor of its own fixed Codex-specific text --
+  // re-verified by rebuilding with MUSTER_BUILD_FORCE=1 (both anchors still located,
+  // build completes clean). docs/binding-interface.md's grep-audit counts are unchanged
+  // (the new paragraph deliberately avoids "worktree", the hook terms, AskUserQuestion,
+  // and the Agent-tool/Task-tool dispatch phrasing) -- re-verified green. See
+  // test/worktree-isolation.test.js for the new buildBaseShaReceipt(verify)/
+  // makeGitShaVerifier/`muster receipt-verify` CLI coverage this item adds.
+  //
+  // Pin re-derived a third time, same day/item, after a review-gate fix pass: a
+  // review-gate blocker found `receipt-verify` reported `verified: true` for any
+  // revision expression `git rev-parse --verify` resolves (a branch name, a tag, `HEAD`,
+  // a relative ref), not just an actual SHA, since the standalone CLI never routed
+  // through buildBaseShaReceipt's own format gate -- fixed inside makeGitShaVerifier
+  // itself (src/wave-dispatch.js), so every caller of the git-backed verifier is
+  // protected, not just this one CLI. The one-clause fix note above ("<repo>" is the
+  // run's OWN repository root...) is a review nit, addressing which repo `--cwd` names --
+  // its first wording used "worktree," which bumped docs/binding-interface.md's live
+  // worktree-mention grep audit (22 -> 23) without a matching doc update, so it was
+  // reworded to "isolated copy" instead (same meaning, no tracked term), re-verified
+  // green with no docs/binding-interface.md change needed. Both fixes are inside
+  // plugin/skills/orchestrator/SKILL.md's same paragraph, still appended after (never
+  // reflowing) the file's pre-existing lines; file COUNT still unchanged (137).
+  // Regression tests added to test/worktree-isolation.test.js prove git never resolves a
+  // non-SHA-shaped input for either the factory or the CLI.
   // Pin re-derived 2026-07-18 (spec-gate-amendment-policy item): file COUNT unchanged
   // (137 -- no file added/removed under this surface) but plugin/commands/go.md's step 4
   // spec-gate FAIL handling changed content -- the one-amendment ceiling now itemizes
@@ -395,5 +433,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bullet (a second file under this surface, previously missed and caught by review) is
   // reworded identically. No src/ or eval/ code encoded the old cap, so this is a
   // reviewed prose-only remediation, not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "3c6fa5e86c483a8a29c04f265e70401d5e2c96a31fab2363587f27e2247b7884");
+  //
+  // Pin re-derived at the PR #77 + #78 merge reconciliation (2026-07-19): both items
+  // re-derived this pin independently on their own branches; the merged tree carries
+  // BOTH content changes (go.md/go-backlog.md amendment policy + orchestrator SKILL.md
+  // receipt-verify paragraph), so the hash is re-derived once over the union.
+  assert.equal(hash.digest("hex"), "90e064952c124c1f4e015d117a5e171988266d2f7e6d20d5143fc5db2178bc95");
 });

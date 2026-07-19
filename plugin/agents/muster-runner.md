@@ -35,6 +35,10 @@ Return receipts (your final report, mirrored into your item STATE):
 - assumptions made, deviations from the brief, follow-ups for the dispatcher.
 <!-- muster-return-template:end -->
 
+## Worktree bootstrap
+
+Before the baseline test run in step 2: if the assigned worktree has no `node_modules`, check its `package-lock.json` against the one in the repository the worktree was created from -- byte-identical means symlink `node_modules` from there (the technique `test/codex-build-repro.test.js` uses for its own fixture checkouts) instead of reinstalling; anything else (missing, or diverged) means `npm ci`. The symlink is never committed -- the clean-tree verification before disposition must show it absent or untracked only, never staged.
+
 ## Iron rules
 
 - ONE item per dispatch. When the brief carries a second outcome or the scope grows mid-build, STOP and bounce the split back to the dispatcher — scope decisions belong to the dispatcher alone.

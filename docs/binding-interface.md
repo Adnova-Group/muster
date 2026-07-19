@@ -292,7 +292,7 @@ stale:
 AskUserQuestion    files=13  mentions=35
 dispatch (Agent/Task tool)  files=5  mentions=17
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
-worktree   files=5  mentions=22
+worktree   files=5  mentions=23
 ```
 
 Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave
@@ -325,7 +325,15 @@ gate, `src/plan-surface.js`) that added four `AskUserQuestion` mentions (31 -> 3
 `hook`-word mentions (26 -> 28) -- file counts unchanged (still the same 13 and 11 files);
 dispatch and worktree counts are untouched by this item.
 
-Every one of those 102 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the runner-worktree-bootstrap item: `plugin/agents/muster-runner.md`
+gained a new "Worktree bootstrap" section (the node_modules symlink-or-npm-ci discipline every
+dispatched runner independently rediscovered) that added one `worktree`-word mention (22 -> 23);
+`plugin/commands/go-backlog.md`'s existing Isolation bullet gained a citing clause pointing back
+at that same rule, on its own already-counted line, adding none of its own -- file counts
+unchanged (still the same 5 files); AskUserQuestion, dispatch, and hook counts are untouched by
+this item.
+
+Every one of those 103 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

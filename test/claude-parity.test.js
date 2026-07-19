@@ -574,5 +574,24 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // grep before editing) -- that prose is Codex-only (codex/skill-adapter.md, generated
   // by scripts/build-codex.mjs), left untouched per this item's own scope.
   // Pin re-derived at the PR #87 + #88 merge reconciliation (2026-07-19): union hash.
-  assert.equal(hash.digest("hex"), "094af7919b0a74bccd7eb110c228addc408390d34a831cd1243aaa088f18f84b");
+  //
+  // Pin re-derived 2026-07-19 (backlog item harness-goal-primitives): file COUNT unchanged
+  // (137 -- no file added/removed under this surface) -- only plugin/commands/runner.md's
+  // content changed. Its "Scheduling" paragraph now documents Claude Code's native `/loop
+  // /muster:runner <source>` self-pacing recurrence as a first-class alternative to firing
+  // the mode from a Claude Code Routine/cron, naming when each wins (`/loop` for attended
+  // sessions/bursty backlogs where self-pacing adapts cadence, the runner's own idle receipt
+  // as the widen signal; Routine/cron for unattended machines and a fixed cadence) --  the
+  // safety inventory clause (pr-only, 2-failure retry cap, claim lock) is preserved verbatim,
+  // now scoped explicitly to "either mechanism". scripts/build-codex.mjs (outside this hashed
+  // surface) gained a runner.md-specific wholesale-replace of the whole Scheduling paragraph
+  // (anchored `**Scheduling**` .. `\n\nGlass box:`, asserted, mirroring the audit.md
+  // dimension-sweep/coordination Standing-context-preflight wholesale-replace convention
+  // already in that file) since `/loop` is a Claude-only primitive with no Codex equivalent --
+  // re-verified with `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node
+  // scripts/check-codex.mjs` (clean) and the new test/runner-loop-binding.test.js, which reads
+  // the BUILT Codex plugin's generated runner.md and proves it carries neither `/loop` nor
+  // `$loop` nor the self-pacing framing. This is the reviewed harness-goal-primitives
+  // remediation, not accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "4c56d9b0c892481db0efe3b45cab4934945937572b7090429632e22f6f71f42f");
 });

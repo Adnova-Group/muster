@@ -107,7 +107,7 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 | `vendor` | Generate built-in agents and skills from `vendor/manifest.yaml`. |
 | `doctor` | Health-check the installation. |
 | `doctor --codex` | Health-check the Codex CLI, generated profiles, plugin runtime, lifecycle hooks, live inventory, and advisory policy limitations. |
-| `codex-conformance [YYYY/MM/DD] [--cwd <substr>]` | Audit a day's Codex session rollouts (default: today) for subagent model conformance: each spawned thread's actual per-turn model vs its Muster profile TOML pin, flagging MISMATCH and generic-inheritance threads; exits nonzero on any mismatch. |
+| `codex-conformance [YYYY/MM/DD \| --days N] [--cwd <substr>]` | Audit Codex session rollouts for subagent model conformance: one UTC day (default: today), or an inclusive `--days N` range covering today and the preceding N-1 days. Compares each spawned thread's actual per-turn model with its Muster profile TOML pin, flags MISMATCH and generic-inheritance threads, and exits nonzero on any mismatch. |
 | `install codex [--scope project-or-user] [--dry-run]` | Install Muster-managed Codex profiles and lifecycle hooks in the project or user scope, preserving unrelated hook groups, and register the Muster marketplace when Codex is available. |
 | `uninstall codex [--scope project-or-user] [--dry-run]` | Remove only Codex profiles, hook groups, and hook runtime files recorded in Muster's managed-install manifests, then remove the plugin when Codex is available. |
 | `profile` | Report the resolved provider profile. |

@@ -2,6 +2,7 @@
 name: content-marketer
 description: Elite content marketing strategist specializing in AI-powered content creation, omnichannel distribution, SEO optimization, and data-driven performance marketing. Masters modern content tools, social media automation, and conversion optimization with 2024/2025 best practices. Use PROACTIVELY for comprehensive content marketing.
 model: sonnet
+maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 adapted_from: wshobson/agents plugins/content-marketing/agents/content-marketer.md

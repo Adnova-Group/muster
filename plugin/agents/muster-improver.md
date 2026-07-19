@@ -3,6 +3,7 @@ name: muster-improver
 description: Read-only retrospective — mines a completed run's STATE, escalations, and review-gate fix-loops for recurring friction, then proposes user-gated edits to muster's own skills/agents/rules. Proposes, never applies; never edits during a run.
 tools: Read, Bash, Grep, Glob
 model: opus
+maxTurns: 35
 ---
 <!-- Role concept inspired by atomic-claude's Improve-Agent (self-sharpening loop); authored fresh for muster, not copied. -->
 

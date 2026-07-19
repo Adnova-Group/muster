@@ -2,6 +2,7 @@
 name: business-analyst
 description: Master modern business analysis with AI-powered analytics, real-time dashboards, and data-driven insights. Build comprehensive KPI frameworks, predictive models, and strategic recommendations. Use PROACTIVELY for business intelligence or strategic analysis.
 model: sonnet
+maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 adapted_from: wshobson/agents plugins/business-analytics/agents/business-analyst.md

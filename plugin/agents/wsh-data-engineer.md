@@ -2,6 +2,7 @@
 name: data-engineer
 description: Build scalable data pipelines, modern data warehouses, and real-time streaming architectures. Implements Apache Spark, dbt, Airflow, and cloud-native data platforms. Use PROACTIVELY for data pipeline design, analytics infrastructure, or modern data stack implementation.
 model: sonnet
+maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 adapted_from: wshobson/agents plugins/data-engineering/agents/data-engineer.md

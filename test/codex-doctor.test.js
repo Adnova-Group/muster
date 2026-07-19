@@ -139,6 +139,53 @@ test("Codex doctor requires exact owned hook groups from source and cache instal
   assert.equal(missingUserConfig.checks.find(check => check.name === "codex-hooks-overlap")?.ok, false, "a missing managed scope must make dedupe reporting uncertain");
 });
 
+test("Codex doctor fails closed when a managed hook runtime file is tampered (hash mismatch)", async () => {
+  // The prior "exact owned hook groups" test drifts hooks.json (the config the
+  // hash is keyed to). This pins the OTHER half of that coherence gate: the
+  // sha256 taken over the two managed runtime files themselves. Mutating either
+  // runtime byte-stream must flip codex-hooks AND codex-hooks-overlap closed,
+  // with reinstall remediation -- the fail-closed contract for a tampered hook.
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-tamper-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  // A single canonical (user) scope keeps an untouched install green on BOTH
+  // checks, so the runtime hash is the only coherence input each iteration
+  // moves -- owner, exact-group ownership and packageVersion stay fixed.
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const runtimeDir = join(codexHome, "muster", "hooks");
+  const doctor = () => runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+
+  const baseline = await doctor();
+  assert.equal(baseline.checks.find(check => check.name === "codex-hooks")?.ok, true, "untouched install: hook health green");
+  assert.equal(baseline.checks.find(check => check.name === "codex-hooks-overlap")?.ok, true, "untouched install: overlap green");
+
+  for (const file of ["muster-hook.mjs", "action-guard.mjs"]) {
+    const runtimePath = join(runtimeDir, file);
+    const pristine = await readFile(runtimePath);
+    // Append a byte so the runtime hash diverges from the ownership manifest's
+    // recorded hookHash -- the exact tamper the check exists to catch. Nothing
+    // else about the install changes.
+    await writeFile(runtimePath, Buffer.concat([pristine, Buffer.from("\n// tampered runtime byte\n")]));
+
+    const tampered = await doctor();
+    const hooks = tampered.checks.find(check => check.name === "codex-hooks");
+    const overlap = tampered.checks.find(check => check.name === "codex-hooks-overlap");
+    assert.equal(hooks?.ok, false, `tampering ${file} must fail codex-hooks closed`);
+    assert.match(hooks?.detail || "", /stale or differ from their exact ownership manifest.*rerun muster install codex/i,
+      `tampering ${file} must surface reinstall remediation on codex-hooks`);
+    assert.equal(overlap?.ok, false, `tampering ${file} must fail codex-hooks-overlap closed`);
+    assert.match(overlap?.detail || "", /not hash\/exact-group coherent.*refresh every stale scope/i,
+      `tampering ${file} must surface reinstall remediation on codex-hooks-overlap`);
+
+    // Restoring pristine bytes returns both checks to green -- proving the
+    // failure is the tamper itself, not sticky install state.
+    await writeFile(runtimePath, pristine);
+    const restored = await doctor();
+    assert.equal(restored.checks.find(check => check.name === "codex-hooks")?.ok, true, `restoring ${file}: hook health green again`);
+    assert.equal(restored.checks.find(check => check.name === "codex-hooks-overlap")?.ok, true, `restoring ${file}: overlap green again`);
+  }
+});
+
 test("Codex doctor inspects stale registered project scopes outside the current project", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-managed-scopes-"));
   const home = join(tmp, "home"), cwd = join(tmp, "current-project"), codexHome = join(home, ".codex");

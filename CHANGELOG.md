@@ -104,6 +104,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cxd-review`, `m-memory`, `m-review-gate`); `node src/cli.js citation-check
   docs/strategy/native-delegation.md` re-verified `ok: true`, zero dangling anchors.
 
+### Tests
+- **`muster doctor --codex`'s hook-runtime hash tampering is pinned to fail closed (run-5 audit Med #9, backlog item `test-doctor-hook-tamper`).** The `codex-hooks` / `codex-hooks-overlap` health checks hash the two managed runtime files (`muster-hook.mjs`, `action-guard.mjs`) into the coherence gate alongside owner/exact-group/packageVersion, but only the hooks.json half of that gate had direct regression coverage (the existing "exact owned hook groups" test drifts config, not the runtime bytes). New `test/codex-doctor.test.js` case installs a single canonical scope (green baseline on both checks), then mutates each runtime file one at a time — appending a byte so only the sha256 diverges — and asserts BOTH checks fail closed with reinstall remediation (`rerun muster install codex` / `refresh every stale scope`), restoring pristine bytes to green between iterations to prove the tamper, not sticky install state, drives the failure. Verified to genuinely exercise the hash path by temporarily neutralizing the `owner.hookHash === hash.digest("hex")` comparison in `src/codex-doctor.js` and confirming the test goes red (tampered file treated as coherent). No src change — the check already fails closed; this is coverage that pins the contract.
+
 ## [0.5.0] - 2026-07-13
 
 ### Added

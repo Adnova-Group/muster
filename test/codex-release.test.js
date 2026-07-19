@@ -425,9 +425,22 @@ test("publishCodexPlugin does not create .build.lock through an ancestor swapped
   // realpathSync) but BEFORE the lock file is opened -- exactly residual (i)'s
   // window. The acquireLock seam runs in that gap; a same-user attacker would
   // win the identical race against a bare withCodexFileLock.
+  //
+  // Isolating the FIX (not the pre-existing orphan-sweep backstop): the lock is
+  // self-cleaning, so end-state alone cannot distinguish a version that never
+  // wired `beforeOpen` in (there, .build.lock is transiently created through
+  // the symlink, then swept + unlinked). So this seam directly asserts publish
+  // wired a working `beforeOpen` guard into the lock and that, with the ancestor
+  // now swapped, invoking it REJECTS before the real open -- which is what
+  // prevents .build.lock from ever being created through the link.
+  let wiredGuardRejectedTheSwap = false;
   const acquireLock = async (lockPath, cb, opts) => {
     await rename(mid, join(root, "mid-real"));
     await symlink(evil, mid);
+    assert.equal(typeof opts.beforeOpen, "function", "publishCodexPlugin must wire a beforeOpen lock guard");
+    assert.throws(() => opts.beforeOpen(), /realpath|resolves to|symlink|ordinary directory/i,
+      "the wired beforeOpen guard must reject the swapped-in ancestor before the lock open");
+    wiredGuardRejectedTheSwap = true;
     return withCodexFileLock(lockPath, cb, opts);
   };
   await assert.rejects(
@@ -435,6 +448,7 @@ test("publishCodexPlugin does not create .build.lock through an ancestor swapped
     /realpath|resolves to|symlink|ordinary directory/i,
     "a lock-time ancestor swap must be caught before .build.lock is opened through it"
   );
+  assert.equal(wiredGuardRejectedTheSwap, true, "the call-site beforeOpen wiring must fire and reject the swap");
   // The lock file must NOT have been created through the symlink into evil's target.
   assert.deepEqual(await readdir(join(evil, "plugins")), [], "no .build.lock may be created through the swapped-in ancestor");
 });

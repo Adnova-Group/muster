@@ -346,6 +346,90 @@ Items already captured in `.muster/backlog.md` are marked (existing #line); the 
 
 ---
 
+## Part E — 2026-07-19 gap sweep: dated verdict ledger
+
+A native-vs-replicated gap sweep run 2026-07-19 over surfaces this doc had not re-checked since
+Part B's per-harness tables were written. Recorded here, dated, so the judgment survives past the
+sweep session — the same durability discipline `codex-cli.md`'s dated experiment-design records
+use for unproven primitives.
+
+### DECLINED — evaluated and rejected, with rationale
+
+1. **Codex `review/start` as a reviewer-dispatch seed.** Codex's app-server exposes a built-in
+   reviewer via `review/start`, emitting review items over the same Thread/Turn protocol as any
+   other collaboration primitive [src: cxd-review]. Declined as a seed for muster's review gate:
+   the native reviewer cannot carry muster's own opinionated gate duties — the citation guard
+   (`$MUSTER_CLI citation-check`, review-gate SKILL step 3), the intent-vs-implementation
+   `git notes --ref=muster` check (step 4), the three surface-type definition-of-done gates
+   (design/UX, humanizer, live-verification), and the worker-exhaustion contract that forces a
+   deterministic block on any exhausted/absent reviewer entry (PR #82 `tally-worker-exhaustion`,
+   PR #84 `exhaustion-status-producer`) [src: m-review-gate]. None of these ride `review/start`'s
+   emitted items. This is not a new finding — gate ORCHESTRATION was already ruled irreducible in
+   this file's own Part C item 3 ("Harnesses give a reviewer *agent*; none gives muster's *gate
+   policy*") [src: m-surface]; `review/start` is exactly that kind of agent, and the sweep confirms
+   it changes nothing about the verdict. **[JUDGMENT]**
+2. **Native memory stores (Codex `memories`) as a replacement for `src/memory.js`.** Codex's
+   `[features]` table gates a `memories` flag that is, uniquely among the table's listed flags,
+   marked "(experimental, false)" — default OFF, unlike `hooks`/`multi_agent`/`unified_exec`/`goals`,
+   which default on [src: cx-config]. muster's own store (`src/memory.js`) is slug-indexed,
+   markdown-backed, and portable across every harness this doc targets — nothing harness-specific
+   in its shape [src: m-memory]. Declined: building a muster mechanism on an experimental,
+   default-false native primitive is exactly the codex-burn lesson — the burn record shows chasing
+   unproven internals instead of a documented, stable contract is where muster lost quota, not
+   where it won [src: dr-efficiency]. Codex's own `goals` primitive gets a dated, gated
+   experiment-design record in `codex-cli.md` §3.1 for the same reason before any binding is built;
+   `memories` doesn't even clear the "default true" bar that record demands as a precondition.
+   **[JUDGMENT]**
+
+### KEEP-AS-IS — reconfirmed, no change
+
+Each: native primitive checked against, muster's mechanism, why it stays.
+
+- **STATE.md append-only ledger** vs native per-session transcripts (Claude Code JSONL, Codex
+  rollout events). STATE.md is portable across harnesses, human-readable without a session-log
+  parser, and glass-box by design; native session logs are per-session, per-harness, and
+  machine-local [src: cc-sessions] [src: m-surface].
+- **Hygiene reaping** (`src/hygiene.js`) vs native auto-clean. No harness in this doc's inventory
+  reaps orphaned provider processes, stranded worktrees, or dead cross-runner claims on its own —
+  this is written from the real burn incident where exactly that gap cost quota [src: dr-efficiency]
+  [src: m-surface].
+- **Per-wave git commits + `git notes --ref=muster` provenance** vs Claude Code `/rewind`
+  checkpoints. Checkpoints "only track changes made through Claude's file editing tools," not Bash
+  or external processes, and are "explicitly not a git replacement" [src: cc-sessions] — they cannot
+  carry the intent-vs-implementation record the review gate's step 4 reads.
+- **Coordination CLAIM/RECEIPT/LEDGER protocol** vs the per-session task board (`TaskCreate/Update/
+  List`). No harness in this doc's inventory ships a durable cross-runner claim board — this file's
+  own earlier verdict already covers Claude Code CLI ("no native durable board on CLI") and the same
+  absence holds on every other surface checked here [src: m-surface].
+- **Advisor file round-trip** vs agent-teams `SendMessage`. `SendMessage` is reached only via
+  agent-teams mode, capability-gated and non-portable [src: cc-augment]; the file round-trip works
+  in a plain session on every harness, no mode switch required.
+- **`AGENTS.md` left user-owned.** The border where muster stays silent below it — unchanged, no
+  native primitive competes with a file muster deliberately does not write to [src: m-surface].
+
+### Cross-references — the sweep's delegations that DID land
+
+The next wave in this ledger, already shipped since Part B's tables were written:
+
+- **`agent-maxturns-native-cap`** (PR #87) — native `maxTurns` caps landed on all 27 Claude-shipped
+  agent defs, sized per role class, superseding the prose-only 25-step ceiling on that lane.
+- **`skill-frontmatter-capabilities`** (PR #88) — native Claude Code frontmatter capability keys
+  (`allowed-tools`/`disallowed-tools`, `argument-hint`, `disable-model-invocation`) landed on the
+  skills/commands whose documented workflow actually supports them, evidence-first per file.
+- **`structured-output-binding`** (PR #91) — landed with its own honest finding: native constrained
+  output (Claude `StructuredOutput`/`--json-schema`, Codex `--output-schema`) is proven out of reach
+  for reviewer dispatch on both lanes — neither binds to the in-session Agent-tool / `spawn_agent`
+  call the review gate actually dispatches reviewers through. The real win was schema
+  single-sourcing (`verdict.schema.json` read by both a hand-rolled validator and `tallyReview`),
+  not native enforcement.
+- **`harness-goal-primitives`** (PR #92) — Claude Code's native `/loop` scheduling landed as a
+  documented runner-mode option (carrying the "likely blocked today, verify before relying on it"
+  caveat its own fix loop produced); Codex's `thread/goal/*` stayed an explicitly NOT-wired, gated
+  experiment-design record — nothing wires to it until a human runs the four-point proof this
+  ledger's DECLINED `memories` verdict above holds itself to the same bar on.
+
+---
+
 ## Sources
 
 - ref-a: docs/research/reference-harness-design.md Part A + Buildability note — universal nine-component anatomy; minimal harness reconstructible; desktop internals a GAP.
@@ -372,12 +456,14 @@ Items already captured in `.muster/backlog.md` are marked (existing #line); the 
 - cw-subagents: docs/research/claude-cowork.md §4 — prompt-steered parallel fan-out; no dispatch API; per-call model override probe-only.
 - cw-augment: docs/research/claude-cowork.md §7 — augmentation table; no integrator-hookable enforcement; UI-modal permission modes.
 - cx-loop: docs/research/codex-cli.md §1 — Thread/Turn/Items via codex exec; bundled plan skill; permission_mode plan.
+- cx-config: docs/research/codex-cli.md §3 — [features] table; memories flag marked experimental, default false (unlike hooks/multi_agent/unified_exec/goals, default true).
 - cx-hooks: docs/research/codex-cli.md §4.2–4.3 — advisory-by-design line; "guardrail rather than a complete enforcement boundary"; plugin-bundled hooks not executed on 0.144.
 - cx-skills: docs/research/codex-cli.md §5 — SKILL.md; $muster-* routing; marketplaces read legacy .claude-plugin.
 - cx-subagents: docs/research/codex-cli.md §6 — collaboration.spawn_agent/wait_agent/list_agents; fork_turns:"none" + agent_type contract; no cwd on dispatch; max_threads/max_depth.
 - cx-mcp: docs/research/codex-cli.md §7 — MCP governance (required/allow-deny/approval) = the most governable, hardest-enforcing surface.
 - cxd-arch: docs/research/codex-desktop.md §1–2, §7–8 — shared Rust core; app-server; cross-surface subagent parity; Projects/tasks (desktop-only); per-project .codex worktree scripts.
 - cxd-config: docs/research/codex-desktop.md §3–5 — shared CODEX_HOME/config.toml reaches all local clients; WSL/Windows split-home; doctor for drift.
+- cxd-review: docs/research/codex-desktop.md §8 — review/start, a built-in reviewer emitting review items over the app-server Thread/Turn protocol.
 - cxd-quota: docs/research/codex-desktop.md §9 — shared 5h window; local+cloud one pool; the burn mechanism; 25-step discipline.
 - gw-sdk: docs/research/gpt-work.md §2, §4 — Agents SDK Runner loop + handoffs + agents-as-tools + per-agent model; no plan/task-board/wave primitive.
 - gw-hitl: docs/research/gpt-work.md §2.4 — default approval-free; needs_approval + RunState.reject() real blocking; MCP require_approval; hosted tools ungateable locally; Session backends.
@@ -396,3 +482,5 @@ Items already captured in `.muster/backlog.md` are marked (existing #line); the 
 - m-surface: plugin/skills/*, plugin/commands/*, plugin/agents/*, src/*.js — current muster inventory: 11 skills, 11 verbs (8 canonical + 3 legacy aliases), 27 agents (7 muster + 20 vendored wsh), the deterministic src/ brain.
 - m-hooks: plugin/hooks/pre-tool-use.js + hooks.json — 3 wired hooks (SessionStart/UserPromptSubmit/PreToolUse); enforcement collapsed to one action-class fence (sole DENY) + one border invitation (WARN).
 - m-perf: docs/weight-reduction.md + .muster/STATE.md weight/speed-tuning receipts — plan=8,831 tok; plan-to-manifest 806 ms; 4/5 largest skills cut ≥40%; small-task consumption 39.8%; fast-path 41.2% vs ≤25% target.
+- m-memory: src/memory.js — slug-indexed, markdown-backed memory store; no harness-specific dependencies, portable across every harness this doc targets.
+- m-review-gate: plugin/skills/review-gate/SKILL.md — citation guard (step 3), intent-vs-implementation git notes check (step 4), surface-type definition-of-done gates, worker-exhaustion forced-block contract (PR #82 tally-worker-exhaustion, PR #84 exhaustion-status-producer).

@@ -626,6 +626,23 @@ const profileFiles = async root => (await readdirSafe(root)).filter(name => name
 const run = (execFile, args) => execFile("codex", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
 async function runJson(execFile, args) { return JSON.parse((await run(execFile, args)).stdout); }
 
+// Defense in depth (arbitrary-write containment) behind generateCodexProfiles'
+// manifest-id guard: every profile filename here is one join() away from
+// becoming a write destination under `dir`. generateCodexProfiles already
+// rejects unsafe manifest ids at the trust boundary and profileFiles only
+// yields readdir basenames, but re-assert -- BEFORE any safeExists probe or
+// atomicWriteSafe touches it -- that each name is a bare `<id>.toml` resolving
+// back inside `dir`. A traversing name must never read or write outside
+// agentsDir. Mirrors validateManagedFiles' basename/containment shape.
+export function assertContainedProfiles(files, dir) {
+  const base = resolve(dir);
+  for (const file of files) {
+    if (typeof file !== "string" || file !== basename(file) || !PROFILE_FILENAME.test(file) || dirname(resolve(base, file)) !== base) {
+      throw new Error(`Refusing to write a Codex profile outside ${dir}: ${JSON.stringify(file)}`);
+    }
+  }
+}
+
 function validateManagedFiles(manifest, dir, manifestPath) {
   if (manifest?.owner !== "muster" || manifest.format !== 1 || !Array.isArray(manifest.files)) {
     throw new Error(`Codex installation manifest conflict: ${manifestPath}. Move it or remove it, then rerun the command.`);
@@ -932,6 +949,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   // need a second CODEX_HOME copy of itself per scope.
   const distributionRoot = pluginRoot ? resolve(root, "..") : root;
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
+  // Contain every generated profile filename to agentsDir before it is used as
+  // a write destination below (conflict probe, planned ops, write loop).
+  assertContainedProfiles(files, dir);
   // Thread-limit enforcement targets the single shared CODEX_HOME
   // config.toml (Codex CLI/IDE/Desktop all read the same file -- see
   // docs/research/codex-desktop.md section 5), independent of the profile

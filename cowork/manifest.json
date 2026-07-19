@@ -61,7 +61,11 @@
     { "name": "muster_pick", "description": "Pick the tournament winner from scored candidates." },
     { "name": "muster_tally", "description": "Tally adversarial review verdicts into a gate decision." },
     { "name": "muster_advise", "description": "Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM." },
-    { "name": "muster_fuse", "description": "Fusion decision engine: validate the debate map, apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to the single best (mode fallback). Deterministic, no LLM." }
+    { "name": "muster_fuse", "description": "Fusion decision engine: validate the debate map, apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to the single best (mode fallback). Deterministic, no LLM." },
+    { "name": "muster_capabilities_roles", "description": "Resolve every role the same way muster_capabilities does, but return only the {roles} map (lighter capture)." },
+    { "name": "muster_match_skills", "description": "Rank the live skills inventory against a free-text task, plus stack-derived suggested skills." },
+    { "name": "muster_gate_cadence", "description": "Compute review-gate cadence (spec-gate rounds, batched review-gate passes, reviewer count) from a manifest's waves." },
+    { "name": "muster_receipt_verify", "description": "Verify a base-SHA is a real, resolvable git commit object in an explicit repo." }
   ],
   "compatibility": {
     "runtimes": { "node": ">=20" }

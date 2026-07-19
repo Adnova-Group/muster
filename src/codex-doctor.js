@@ -1,11 +1,10 @@
 import { constants as fsConstants } from "node:fs";
-import { lstat, open, readFile, readdir } from "node:fs/promises";
+import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { execFile as execFileCb, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { promisify } from "node:util";
 import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
@@ -18,40 +17,121 @@ import {
   readCodexThreadLimits
 } from "./codex-thread-limits.js";
 
-const execFileDefault = promisify(execFileCb);
-
-// codex-path-shadow (backlog item run4-polish-pair): a stale globally
+// codex-path-shadow (backlog item run4-polish-pair; security-hardened by
+// run-5 audit High #3 `doctor-path-shadow-no-exec`): a stale globally
 // installed `muster` earlier on PATH than this package's own bin silently
 // serves outdated behavior when invoked bare -- the 2026-07-19 run 4 dogfood
 // found exactly this at /home/linuxbrew/.linuxbrew/bin/muster (an old `npm i
-// -g` copy lacking the codex-conformance verb entirely). `command -v` (a
-// shell builtin, portable without requiring `which` to exist) resolves what
-// a bare `muster` invocation would actually run; diffing its `help` output
-// against this running package's own bundled CLI (`runtime/muster.mjs`,
-// already verified present by the codex-runtime check above) is the
-// cheapest reliable probe -- the full USAGE string IS the verb inventory,
-// so any difference (including an unrelated binary shadowing the name) is
-// actionable drift. A broken PATH binary must not fail doctor incoherently:
-// any probe error here fails OPEN (ok:true) and simply NAMES what happened.
-async function checkPathShadow(exec, ownCliPath) {
+// -g` copy lacking the codex-conformance verb entirely).
+//
+// The first version of this check shelled out (`sh -c command -v muster`) and
+// then EXECUTED the resolved candidate (`<candidate> help`) to diff verbs --
+// running an attacker-plantable PATH binary just to inspect it, and requiring
+// a POSIX `sh`. This resolves PATH IN-PROCESS and establishes the candidate's
+// identity WITHOUT ever executing it:
+//   1. Walk process.env.PATH (PATHEXT on win32) in-process for the first
+//      `muster` bin -- no `command -v`/`which` shell-out.
+//   2. realpath the found entry (following a symlink/shim to its target) and
+//      compare canonical identity against this running package: same bin
+//      realpath, or the resolved target's sibling package.json name+version.
+//      Same => current; different version/name => stale/foreign.
+// Semantics preserved: ok:true when absent or identical; ok:false naming the
+// stale/foreign path + remediation. A broken PATH binary must not fail doctor
+// incoherently -- any probe error here fails OPEN (ok:true) and NAMES it.
+
+// Resolve the first PATH entry a bare `muster` invocation would select,
+// in-process, honoring win32 PATHEXT + `;` delimiters. `lstat` (not `stat`)
+// so a dangling symlink still counts as "found" -- its realpath failing later
+// is what drives the fail-open branch, exactly as a real bare `muster` would
+// try and fail. Directories named `muster` are skipped; the file is never
+// opened or executed.
+async function resolvePathMuster({ env, platform }) {
+  const isWin = platform === "win32";
+  const dirs = String(env.PATH ?? env.Path ?? "").split(isWin ? ";" : ":").map(entry => entry.trim()).filter(Boolean);
+  // We always search the bare name `muster` (no extension typed), so on win32
+  // the executable forms are `muster<ext>` for each PATHEXT entry; the bare
+  // `muster` is appended last only as a fallback for an extensionless file.
+  const names = isWin
+    ? [...String(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").map(ext => ext.trim()).filter(Boolean).map(ext => `muster${ext}`), "muster"]
+    : ["muster"];
+  for (const dir of dirs) {
+    for (const candidateName of names) {
+      const candidate = join(dir, candidateName);
+      try {
+        const info = await lstat(candidate);
+        if (info.isDirectory()) continue;
+        return candidate;
+      } catch { /* not present in this dir under this name */ }
+    }
+  }
+  return null;
+}
+
+// Canonical identity of the package that owns `startFile`, read WITHOUT
+// executing anything: walk up to the nearest package.json and return its
+// realpath'd root + name/version/muster-bin. null when no package.json is
+// found up to the filesystem root (a foreign standalone binary).
+async function packageIdentity(startFile) {
+  let dir = dirname(startFile);
+  for (;;) {
+    let raw;
+    try { raw = await readFile(join(dir, "package.json"), "utf8"); }
+    catch {
+      const parent = dirname(dir);
+      if (parent === dir) return null;
+      dir = parent;
+      continue;
+    }
+    let parsed = {};
+    try { parsed = JSON.parse(raw); } catch { /* found the package dir; manifest unreadable */ }
+    const binField = typeof parsed.bin === "string" ? parsed.bin : parsed.bin?.muster ?? null;
+    return { root: await realpath(dir), name: parsed.name ?? null, version: parsed.version ?? null, bin: binField };
+  }
+}
+
+const PATH_SHADOW_REMEDIATION = "npm uninstall -g @adnova-group/muster / npm i -g @adnova-group/muster@latest";
+
+async function checkPathShadow({ env = process.env, platform = process.platform, ownModuleUrl = import.meta.url } = {}) {
   const name = "codex-path-shadow";
-  let pathMuster;
+  let found = null;
+  try { found = await resolvePathMuster({ env, platform }); }
+  catch { found = null; }
+  if (!found) return { name, ok: true, detail: "no `muster` found on PATH outside this running package" };
   try {
-    const { stdout } = await exec("sh", ["-c", "command -v muster"], { timeout: 5_000 });
-    pathMuster = (stdout || "").split("\n").map(line => line.trim()).find(Boolean) || null;
-  } catch { pathMuster = null; }
-  if (!pathMuster) return { name, ok: true, detail: "no `muster` found on PATH outside this running package" };
-  try {
-    const [own, shadow] = await Promise.all([
-      exec(process.execPath, [ownCliPath, "help"], { timeout: 5_000 }),
-      exec(pathMuster, ["help"], { timeout: 5_000 })
-    ]);
-    const ok = (own.stdout || "").trim() === (shadow.stdout || "").trim();
-    return { name, ok, detail: ok
-      ? `PATH \`muster\` at ${pathMuster} matches this package's verb inventory`
-      : `PATH \`muster\` at ${pathMuster} has a stale or mismatched verb inventory -- likely a shadow install serving outdated behavior; npm uninstall -g / npm i -g @adnova-group/muster@latest (or remove the shadow)` };
+    const own = await packageIdentity(fileURLToPath(ownModuleUrl));
+    // If we cannot establish our OWN identity (a corrupted install with no
+    // ancestor package.json), we have no basis to judge whether the PATH
+    // entry is a shadow -- fail OPEN rather than cry wolf against every user.
+    if (!own?.root) {
+      return { name, ok: true, detail: `found \`muster\` on PATH at ${found} but could not establish this running package's own identity to compare it against` };
+    }
+    const resolvedFound = await realpath(found); // follow symlink/shim -> throws on a dangling entry -> fail open below
+
+    // 1) Cheapest identity: the PATH entry resolves to THIS package's own bin.
+    if (own.bin) {
+      const ownBinReal = await realpath(resolve(own.root, own.bin)).catch(() => null);
+      if (ownBinReal && ownBinReal === resolvedFound) {
+        return { name, ok: true, detail: `PATH \`muster\` at ${found} resolves to this running package's own bin (${own.name ?? "muster"}@${own.version ?? "unknown"})` };
+      }
+    }
+
+    // 2) Otherwise compare the resolved target's sibling package.json identity.
+    const target = await packageIdentity(resolvedFound);
+    if (target?.root && own?.root && target.root === own.root) {
+      return { name, ok: true, detail: `PATH \`muster\` at ${found} is this running package` };
+    }
+    if (target && own && target.name === own.name && target.version != null && target.version === own.version) {
+      return { name, ok: true, detail: `PATH \`muster\` at ${found} matches this package (${target.name}@${target.version})` };
+    }
+
+    const description = target
+      ? (target.name === own?.name
+          ? `a stale muster (${target.name ?? "muster"}@${target.version ?? "unknown"}), not this package's ${own?.version ?? "version"}`
+          : `a foreign \`${target.name ?? "unknown"}\`${target.version ? `@${target.version}` : ""} package, not muster`)
+      : "not part of any installed muster package";
+    return { name, ok: false, detail: `PATH \`muster\` at ${found} is ${description} -- a bare \`muster\` would run it instead of this package; ${PATH_SHADOW_REMEDIATION} (or remove the shadow at ${found})` };
   } catch (error) {
-    return { name, ok: true, detail: `found \`muster\` on PATH at ${pathMuster} but could not probe it: ${error.message}` };
+    return { name, ok: true, detail: `found \`muster\` on PATH at ${found} but could not probe it: ${error.message}` };
   }
 }
 
@@ -289,7 +369,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -306,10 +386,9 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   }
   const plugin = isPluginRoot ? base : (selected?.pluginRoot || join(base, ".agents", "plugins", "plugin"));
   const checks = [];
-  const exec = execFile || execFileDefault;
   const available = await codexAvailable({ execFile });
   checks.push({ name: "codex-cli", ok: available, detail: available ? "codex detected on PATH" : "codex not found — profiles can be installed, plugin registration is skipped" });
-  checks.push(await checkPathShadow(exec, join(plugin, "runtime", "muster.mjs")));
+  checks.push(await checkPathShadow({ env, platform }));
   try {
     const [manifest, pkg] = await Promise.all([
       readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),

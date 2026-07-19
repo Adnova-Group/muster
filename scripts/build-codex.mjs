@@ -436,6 +436,12 @@ async function buildCodexPluginOnce({ root, outDir }) {
       .replace("Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.", "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation.")
       .replace('{ argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork\'s MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS). Resolution is MCP-only unless MUSTER_COWORK_NATIVE_PLUGIN declares that Cowork\'s own plugin loader accepted muster\'s plugin/ tree (unverified without a live session -- a declared capability check, not a probe).", "home", false) }', '{ argv: ["capabilities", "--codex"], ...S("Resolve every Muster role against enabled Codex plugins, skills, MCP servers, and custom-agent profiles.", "home", false) }')
       .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]')
+      // codex-mcp-surface-gaps: muster_capabilities_roles resolves through the SAME
+      // capabilities.js catalog-selection code path as muster_capabilities above, so it
+      // needs the identical --cowork -> --codex swap or it would reintroduce the exact
+      // 2026-07-18 dogfood regression (MUSTER_RUNTIME/--cowork resolving against the wrong
+      // registry) through this new sibling tool instead.
+      .replace('argv: ["capabilities", "--cowork", "--roles-only"]', 'argv: ["capabilities", "--codex", "--roles-only"]')
       // Regression (2026-07-18 Codex dogfood): the shared source spawns every
       // CLI child with MUSTER_RUNTIME: "cowork" (correct for the Cowork
       // bundle -- src/capabilities.js's `cowork` OR-clause is the declared
@@ -451,6 +457,7 @@ async function buildCodexPluginOnce({ root, outDir }) {
       .replace('env: { ...process.env, MUSTER_RUNTIME: "cowork" }', 'env: { ...process.env, MUSTER_RUNTIME: "codex" }');
     if (!codexMcpSource.includes('["capabilities", "--codex"]') || codexMcpSource.includes('["capabilities", "--cowork"]')) throw new Error("Codex MCP capability adapter was not applied");
     if (!codexMcpSource.includes('muster_assess: { argv: ["assess", "--codex"]')) throw new Error("Codex MCP assess adapter was not applied");
+    if (!codexMcpSource.includes('argv: ["capabilities", "--codex", "--roles-only"]') || codexMcpSource.includes('argv: ["capabilities", "--cowork", "--roles-only"]')) throw new Error("Codex MCP capabilities-roles adapter was not applied");
     if (!codexMcpSource.includes('MUSTER_RUNTIME: "codex"') || codexMcpSource.includes('MUSTER_RUNTIME: "cowork"')) throw new Error("Codex MCP runtime-env adapter was not applied");
     await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
     write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");

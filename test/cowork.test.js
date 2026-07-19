@@ -274,10 +274,20 @@ test("tools/call: muster_scope classifies a single-item outcome (item) and a bar
   const itemBody = JSON.parse(item[2].result.content[0].text);
   assert.equal(itemBody.scope, "item");
 
-  const bare = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_scope", arguments: {} } }]);
-  assert.equal(bare[2].result.isError, false, "an omitted text arg is a valid bare invocation, not an error");
-  const bareBody = JSON.parse(bare[2].result.content[0].text);
-  assert.equal(bareBody.scope, "ambiguous", "no .muster/backlog.md at this repo's root -- bare invocation is genuinely ambiguous");
+  // Hermetic cwd: the repo checkout may legitimately carry a live (untracked)
+  // .muster/backlog.md, which makes a bare invocation resolve scope "backlog"
+  // instead of "ambiguous" -- spawn from an empty tmp dir so the no-backlog
+  // branch is what's actually under test (caught 2026-07-19: passed in a fresh
+  // worktree, failed in a working checkout).
+  const bareCwd = mkdtempSync(path.join(tmpdir(), "muster-scope-bare-"));
+  try {
+    const bare = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_scope", arguments: {} } }], { cwd: bareCwd });
+    assert.equal(bare[2].result.isError, false, "an omitted text arg is a valid bare invocation, not an error");
+    const bareBody = JSON.parse(bare[2].result.content[0].text);
+    assert.equal(bareBody.scope, "ambiguous", "no .muster/backlog.md at the cwd -- bare invocation is genuinely ambiguous");
+  } finally {
+    rmSync(bareCwd, { recursive: true, force: true });
+  }
 });
 
 test("tools/call: muster_fast_path scores eligibility with no capabilities arg (bare form)", async () => {

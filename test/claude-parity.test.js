@@ -381,5 +381,19 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // muster.mjs) so the bundled Codex plugin's MCP server can execute tools/call --
   // the dogfood's High packaging defect. Shared-surface change is that one file;
   // reviewed, not drift.
-  assert.equal(hash.digest("hex"), "215a57cc7b8831b3db0c06890d152dc83aa028430731f6d88ab582527595e23e");
+  //
+  // Pin re-derived 2026-07-18 (spec-gate-amendment-policy item): file COUNT unchanged
+  // (137 -- no file added/removed under this surface) but plugin/commands/go.md's step 4
+  // spec-gate FAIL handling changed content -- the one-amendment ceiling now itemizes
+  // findings per round (each line naming exactly one distinct defect, never merged or
+  // split, so round-to-round comparison is like-with-like) and allows a second amendment
+  // when round 2's findings are all disjoint from round 1's (no repeated/unresolved
+  // finding), hard-aborting only on a repeated round-1 finding recurring in round 2 or
+  // unconditionally at round 3 (rounds capped at 3: initial + 2 amendments). Step 7's
+  // escalation trigger list and the Routine-mode escalation bullet are reworded to match
+  // ("a spec-gate hard abort" instead of "a second FAIL"); go-backlog.md's own escalation
+  // bullet (a second file under this surface, previously missed and caught by review) is
+  // reworded identically. No src/ or eval/ code encoded the old cap, so this is a
+  // reviewed prose-only remediation, not accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "3c6fa5e86c483a8a29c04f265e70401d5e2c96a31fab2363587f27e2247b7884");
 });

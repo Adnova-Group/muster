@@ -428,9 +428,23 @@ async function buildCodexPluginOnce({ root, outDir }) {
       .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")
       .replace("Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.", "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation.")
       .replace('{ argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork\'s MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS). Resolution is MCP-only unless MUSTER_COWORK_NATIVE_PLUGIN declares that Cowork\'s own plugin loader accepted muster\'s plugin/ tree (unverified without a live session -- a declared capability check, not a probe).", "home", false) }', '{ argv: ["capabilities", "--codex"], ...S("Resolve every Muster role against enabled Codex plugins, skills, MCP servers, and custom-agent profiles.", "home", false) }')
-      .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]');
+      .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]')
+      // Regression (2026-07-18 Codex dogfood): the shared source spawns every
+      // CLI child with MUSTER_RUNTIME: "cowork" (correct for the Cowork
+      // bundle -- src/capabilities.js's `cowork` OR-clause is the declared
+      // signal a nested CLI child otherwise has no other way to observe). But
+      // that same OR-clause honors the env over the `--codex` flag this
+      // bundle's tools/list adapters above already switched to, so the
+      // Codex-bundled server poisoned every role's resolution to inline. Only
+      // "cowork" trips that check (src/capabilities.js:39 is a strict `===
+      // "cowork"`) -- verified no other branch anywhere reads
+      // MUSTER_RUNTIME, so rewriting the value (rather than deleting the
+      // line) is safe and keeps the env var self-documenting for the Codex
+      // bundle's own nested CLI children (notably `audit`).
+      .replace('env: { ...process.env, MUSTER_RUNTIME: "cowork" }', 'env: { ...process.env, MUSTER_RUNTIME: "codex" }');
     if (!codexMcpSource.includes('["capabilities", "--codex"]') || codexMcpSource.includes('["capabilities", "--cowork"]')) throw new Error("Codex MCP capability adapter was not applied");
     if (!codexMcpSource.includes('muster_assess: { argv: ["assess", "--codex"]')) throw new Error("Codex MCP assess adapter was not applied");
+    if (!codexMcpSource.includes('MUSTER_RUNTIME: "codex"') || codexMcpSource.includes('MUSTER_RUNTIME: "cowork"')) throw new Error("Codex MCP runtime-env adapter was not applied");
     await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
     write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
 

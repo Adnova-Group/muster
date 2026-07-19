@@ -90,9 +90,12 @@ function parseRollout(text) {
   return meta ? { meta, turnModels } : null;
 }
 
-// day is "YYYY/MM/DD" (the sessions tree layout). cwdFilter, when set, keeps
-// only threads whose recorded cwd contains the substring -- scoping the audit
-// to one project's sessions on a shared CODEX_HOME.
+// day is "YYYY/MM/DD" (the sessions tree layout); days (mutually exclusive
+// with day, a positive integer) instead scans the last N UTC day directories
+// ending today, skipping absent days silently, aggregating rows and the tally
+// across the range with each row stamped with its source day. cwdFilter, when
+// set, keeps only threads whose recorded cwd contains the substring -- scoping
+// the audit to one project's sessions on a shared CODEX_HOME.
 export async function auditCodexModelConformance({ sessionsDir, agentsDir, day, days, cwdFilter = null } = {}) {
   if (!sessionsDir || !agentsDir || (!day && days === undefined)) {
     throw new Error("auditCodexModelConformance: sessionsDir, agentsDir, and day (YYYY/MM/DD) or days are required");

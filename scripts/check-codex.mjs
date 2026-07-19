@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
+import { parseHookCommand } from "../src/codex-install.js";
 
 const execFileP = promisify(execFileCb);
 // Any QUOTED absolute filesystem path (POSIX home/mnt/Users root, or a
@@ -210,11 +211,14 @@ if (hooksConfigPresent) {
   if (!commands.length) fail(".codex/hooks.json is present but declares no hook commands");
   const repoRootResolved = resolve(root);
   for (const command of commands) {
-    const match = /^node '(.*)'$/.exec(command);
-    if (!match) fail(`.codex/hooks.json hook command has an unexpected shape: ${command}`);
-    const hookPath = match[1];
-    if (!hookPath.startsWith(`${repoRootResolved}${sep}`)) fail(`.codex/hooks.json points outside this checkout (stale install from another machine?): ${hookPath}`);
-    await stat(hookPath).catch(() => fail(`.codex/hooks.json references a hook runtime missing from this checkout: ${hookPath}`));
+    const parsed = parseHookCommand(command);
+    if (!parsed) fail(`.codex/hooks.json hook command has an unexpected shape: ${command}`);
+    const { interpreter, script } = parsed;
+    // Security (run-5 audit Med #5): the interpreter must be an absolute, pinned
+    // Node path, never bare `node` (PATH-hijackable at every hook event).
+    if (!/^(?:\/|[a-zA-Z]:[\\/])/.test(interpreter)) fail(`.codex/hooks.json hook interpreter must be an absolute pinned Node path, not bare node: ${command}`);
+    if (!script.startsWith(`${repoRootResolved}${sep}`)) fail(`.codex/hooks.json points outside this checkout (stale install from another machine?): ${script}`);
+    await stat(script).catch(() => fail(`.codex/hooks.json references a hook runtime missing from this checkout: ${script}`));
   }
 } else {
   notes.push(".codex/hooks.json is absent (fresh clone before `muster install codex --scope project`); hook coherence check skipped");

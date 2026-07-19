@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { cpSync, writeFileSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -368,6 +368,111 @@ test("publishCodexPlugin refuses the copy-failure rollback through an ancestor s
     "do-not-delete\n",
     "the copy-failure rollback must not delete through the swapped-in ancestor into the link's target"
   );
+});
+
+// --- Transactional publish THROUGH the marketplace pointer commit: the retired
+// plugin tree used to be swept BEFORE the pointer was read/validated/committed,
+// so a LATE failure (malformed / missing / symlinked / write-failing pointer)
+// left the NEW plugin installed with the OLD one already gone -- no rollback.
+// The retirement is now retained until the pointer is durably committed, and any
+// late failure restores BOTH the prior plugin tree AND the prior pointer.
+// run-5 security audit High #4. ---
+
+test("publishCodexPlugin restores the prior plugin and pointer when the marketplace pointer is MALFORMED (late-failure rollback)", async t => {
+  const root = await tempRoot(t);
+  const pluginsRoot = join(root, ".agents", "plugins");
+  const pointerPath = join(pluginsRoot, "marketplace.json");
+  // A good "prior" plugin: its canary marker lives in the old tree + pointer.
+  await publish(root, "prior-malformed", { stagedPlugin: await stagedPlugin(root, "prior-malformed") });
+  // Corrupt the committed pointer so the NEXT publish fails at the pointer read
+  // -- a LATE failure, after the new tree is copied and the old is retired.
+  const malformed = "{ this is : not valid json ]";
+  await writeFile(pointerPath, malformed);
+  await assert.rejects(
+    publish(root, "doomed-malformed", { stagedPlugin: await stagedPlugin(root, "doomed-malformed") }),
+    /JSON|Unexpected|Expected|token/i
+  );
+  // The prior plugin's canary must survive -- the new tree rolled back.
+  assert.equal(
+    await readFile(join(pluginsRoot, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior-malformed";\n',
+    "a malformed-pointer late failure must restore the previous plugin tree"
+  );
+  // The prior (malformed) pointer is untouched by our aborted write -- intact.
+  assert.equal(await readFile(pointerPath, "utf8"), malformed, "the prior pointer must be left intact after a malformed-pointer rollback");
+  assert.deepEqual((await readdir(pluginsRoot)).filter(n => n.startsWith(".muster-retired-")), [], "no retired backup may linger after a late-failure rollback");
+});
+
+test("publishCodexPlugin restores the prior plugin when the marketplace pointer is MISSING and no template is provided (late-failure rollback)", async t => {
+  const root = await tempRoot(t);
+  const pluginsRoot = join(root, ".agents", "plugins");
+  const pointerPath = join(pluginsRoot, "marketplace.json");
+  await publish(root, "prior-missing", { stagedPlugin: await stagedPlugin(root, "prior-missing") });
+  await rm(pointerPath);
+  // No template on the retry -> the missing pointer is an unrecoverable LATE failure.
+  await assert.rejects(
+    publishCodexPlugin({ pluginsRoot, stagedPlugin: await stagedPlugin(root, "doomed-missing"), packageVersion: "0.5.0" }),
+    /pointer is missing and no template/i
+  );
+  assert.equal(
+    await readFile(join(pluginsRoot, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior-missing";\n',
+    "a missing-pointer late failure must restore the previous plugin tree"
+  );
+  // The pointer stays absent (its prior state), and no retired backup lingers.
+  await assert.rejects(readFile(pointerPath, "utf8"), "a rolled-back publish must not fabricate a pointer where none existed");
+  assert.deepEqual((await readdir(pluginsRoot)).filter(n => n.startsWith(".muster-retired-")), [], "no retired backup may linger after a late-failure rollback");
+});
+
+test("publishCodexPlugin restores the prior plugin and pointer when the marketplace pointer is a SYMLINK (late-failure rollback)", async t => {
+  const root = await tempRoot(t);
+  const pluginsRoot = join(root, ".agents", "plugins");
+  const pointerPath = join(pluginsRoot, "marketplace.json");
+  await publish(root, "prior-symlink", { stagedPlugin: await stagedPlugin(root, "prior-symlink") });
+  // Replace the committed pointer with a symlink -> the pointer read rejects it (a LATE failure).
+  const target = join(root, "pointer-target.json");
+  await writeFile(target, JSON.stringify({ name: "muster", plugins: [{ name: "muster", source: { source: "local", path: "./x" } }] }));
+  await rm(pointerPath);
+  await symlink(target, pointerPath);
+  await assert.rejects(
+    publish(root, "doomed-symlink", { stagedPlugin: await stagedPlugin(root, "doomed-symlink") }),
+    /symlink/i
+  );
+  assert.equal(
+    await readFile(join(pluginsRoot, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior-symlink";\n',
+    "a symlinked-pointer late failure must restore the previous plugin tree"
+  );
+  // The pointer is still the untouched symlink (prior state), intact.
+  assert.equal((await lstat(pointerPath)).isSymbolicLink(), true, "the prior symlinked pointer must be left intact after the rollback");
+  assert.deepEqual((await readdir(pluginsRoot)).filter(n => n.startsWith(".muster-retired-")), [], "no retired backup may linger after a late-failure rollback");
+});
+
+test("publishCodexPlugin restores the prior plugin and pointer when the durable pointer WRITE fails (late-failure rollback)", async t => {
+  const root = await tempRoot(t);
+  const pluginsRoot = join(root, ".agents", "plugins");
+  const pointerPath = join(pluginsRoot, "marketplace.json");
+  await publish(root, "prior-write", { stagedPlugin: await stagedPlugin(root, "prior-write") });
+  const priorPointer = await readFile(pointerPath, "utf8");
+  // Inject a durable-write failure that ALSO corrupts the pointer on disk before
+  // throwing, proving the rollback restores the PRIOR pointer bytes rather than
+  // merely relying on an untouched file happening to survive.
+  const writePointer = path => {
+    writeFileSync(path, "CORRUPTED-PARTIAL-POINTER-WRITE");
+    throw new Error("simulated durable pointer write failure");
+  };
+  await assert.rejects(
+    publish(root, "doomed-write", { stagedPlugin: await stagedPlugin(root, "doomed-write"), writePointer }),
+    /simulated durable pointer write failure/
+  );
+  assert.equal(
+    await readFile(join(pluginsRoot, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior-write";\n',
+    "a pointer-write late failure must restore the previous plugin tree"
+  );
+  // The corrupting partial write is undone: the prior pointer is restored byte-for-byte.
+  assert.equal(await readFile(pointerPath, "utf8"), priorPointer, "a pointer-write late failure must restore the prior pointer content byte-for-byte");
+  assert.deepEqual((await readdir(pluginsRoot)).filter(n => n.startsWith(".muster-retired-")), [], "no retired backup may linger after a late-failure rollback");
 });
 
 test("copyStagedPluginTree hard-fails (not a silent skip) when the source tree contains a symlink, without publishing the tainted entry", async t => {

@@ -317,13 +317,20 @@ export function copyStagedPluginTree(source, destination) {
 // not an option — and even where they happen to share a device, renaming
 // that tree immediately after the write burst that produced it is exactly
 // the confirmed WSL2 drvfs (/mnt/c) rename-after-write-burst pathology
-// documented above renameWithRetry. So publish is three steps: rename the
-// existing `plugin` dir aside to a retirement path (same-device, a cold,
-// already-settled directory, not the one just hot-written — unaffected by
-// that pathology), copy the staged tree into place, then delete the retired
-// dir. On any failure between retirement and a successful copy, the retired
-// dir is best-effort restored so a failed publish leaves the previous
-// plugin intact rather than nothing.
+// documented above renameWithRetry. So publish retires-then-copies-then-
+// commits: rename the existing `plugin` dir aside to a retirement path
+// (same-device, a cold, already-settled directory, not the one just
+// hot-written — unaffected by that pathology), copy the staged tree into
+// place, then (re)write the marketplace pointer. The whole span from
+// retirement THROUGH the durable pointer commit is transactional: the retired
+// dir is RETAINED (not deleted right after a successful copy) until the
+// pointer is committed, and on ANY failure in that span — a failing copy, the
+// post-copy re-validation, or a malformed / missing / symlinked / write-
+// failing marketplace pointer — both the previous plugin tree (from the
+// retained retirement) AND the prior pointer are best-effort restored, so a
+// failed publish leaves the previous plugin+pointer intact rather than the new
+// plugin stranded with the old one already swept. The retirement is swept only
+// once the pointer is durably committed.
 //
 // `assertRegularTree(stagedPlugin)` above validates the staged tree once,
 // before the publish lock is even acquired. That leaves a real window: a
@@ -335,8 +342,9 @@ export function copyStagedPluginTree(source, destination) {
 // copy destination — is re-validated with `assertRegularTree` again before
 // anything durable (the marketplace pointer) is written. Either one on its
 // own would close the race; both run so a defect in one is not a single
-// point of failure. A failure at either point restores the retired
-// directory the same way a copy failure always has.
+// point of failure. A failure at either point restores the previous plugin
+// AND the prior pointer the same way any late failure in the transactional
+// span does.
 //
 // A narrower window still remains after that second validation: nothing
 // re-checks `pluginPath` between it and the `atomicWritePointer` call below,
@@ -388,7 +396,7 @@ function codexMarketplacePluginPath(pluginsRoot) {
   return "./" + relative(addedRoot, join(pluginsRoot, "plugin")).replaceAll("\\", "/");
 }
 
-export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate, copyStagedPlugin = copyStagedPluginTree }) {
+export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate, copyStagedPlugin = copyStagedPluginTree, writePointer = atomicWritePointer }) {
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex plugin package version is required");
   ordinary(stagedPlugin, "directory", "staged Codex plugin");
   await assertRegularTree(stagedPlugin);
@@ -429,6 +437,17 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       renameWithRetry(pluginPath, retired);
       hadPrevious = true;
     }
+    // One transactional region spans BOTH the staged-tree copy AND the
+    // marketplace pointer commit (see this function's docblock). The retired
+    // backup is deliberately NOT swept between the two: retaining it through
+    // the pointer commit is what lets a LATE pointer failure restore the prior
+    // plugin. `priorPointer` holds the exact prior pointer bytes captured just
+    // before the durable write, and `pointerWriteAttempted` records whether our
+    // write could have altered the on-disk pointer at all -- a read/validate
+    // failure never touched it and needs no pointer restore.
+    const pointerPath = join(pluginsRoot, "marketplace.json");
+    let priorPointer = null;
+    let pointerWriteAttempted = false;
     try {
       // stagedPlugin was just populated by a large (several-hundred-file)
       // write burst and is frequently on a different device than
@@ -439,15 +458,46 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "staged-tree copy");
       await copyStagedPlugin(stagedPlugin, pluginPath);
       await assertRegularTree(pluginPath);
+
+      // Marketplace pointer read/validate/commit -- INSIDE the transactional
+      // region so a malformed / missing / symlinked / write-failing pointer
+      // rolls the whole publish back to the prior plugin + pointer rather than
+      // leaving the freshly copied plugin stranded with the old one gone.
+      let pointer, priorPointerExisted = false;
+      try { pointer = readRegularJson(pointerPath, "Codex marketplace pointer", 1024 * 1024); priorPointerExisted = true; }
+      catch (error) {
+        if (error.cause?.code !== "ENOENT") throw error;
+        if (!marketplaceTemplate) throw new Error(`Codex marketplace pointer is missing and no template was provided: ${pointerPath}`);
+        pointer = structuredClone(marketplaceTemplate);
+      }
+      if (pointer?.name !== "muster" || !Array.isArray(pointer.plugins) || !pointer.plugins.some(item => item?.name === "muster")) {
+        throw new Error(`Codex marketplace does not describe the Muster plugin: ${pointerPath}`);
+      }
+      const plugin = pointer.plugins.find(item => item.name === "muster");
+      plugin.source = { ...plugin.source, source: "local", path: codexMarketplacePluginPath(pluginsRoot) };
+      // Capture the exact prior pointer bytes right before the durable write so
+      // a write failure can restore them byte-for-byte. Only a prior REGULAR
+      // pointer is captured -- a malformed/symlinked/missing pointer already
+      // failed the read above and, being untouched by our aborted write, needs
+      // no restore.
+      if (priorPointerExisted) try { priorPointer = readFileSync(pointerPath); } catch { priorPointer = null; }
+      // Final mutation: the durable pointer commit. Re-assert canonical
+      // resolution so the narrow window after the destination re-validation
+      // (see this function's docblock) cannot let an ancestor swap redirect the
+      // pointer write out of the intended tree.
+      assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "marketplace pointer commit");
+      pointerWriteAttempted = true;
+      writePointer(pointerPath, JSON.stringify(pointer, null, 2) + "\n");
     } catch (error) {
-      // The rollback itself mutates through pluginsRoot -- it wipes pluginPath
-      // and renames the retired backup back into place -- so if an ancestor was
-      // swapped for a symlink under us (e.g. during the copy that just failed),
-      // executing it would delete/restore THROUGH the link into its target.
-      // Re-assert canonical resolution first; if it no longer holds, refuse to
-      // touch the filesystem at all and surface the tamper (preserving the
-      // original failure as its cause) rather than mutate through the link.
-      try { assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "copy-failure rollback"); }
+      // The rollback itself mutates through pluginsRoot -- it wipes pluginPath,
+      // renames the retired backup back into place, and restores the prior
+      // pointer -- so if an ancestor was swapped for a symlink under us (during
+      // the copy or the pointer step that just failed), executing it would
+      // delete/restore THROUGH the link into its target. Re-assert canonical
+      // resolution first; if it no longer holds, refuse to touch the filesystem
+      // at all and surface the tamper (preserving the original failure as its
+      // cause) rather than mutate through the link.
+      try { assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "late-failure rollback"); }
       catch (tamperError) {
         throw new Error(`Codex plugin publish rollback refused; ancestor tampered: ${tamperError.message} (original publish failure: ${error.message})`, { cause: error });
       }
@@ -457,36 +507,30 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       // content in place, whether or not there was a previous plugin.
       rmSync(pluginPath, { recursive: true, force: true });
       if (hadPrevious) try { renameWithRetry(retired, pluginPath); } catch { /* best-effort restore */ }
+      // Restore the prior pointer only if OUR write could have altered it. A
+      // read/validate failure never touched the pointer, so leave it intact;
+      // a write failure is undone by rewriting the captured prior bytes with
+      // the internal atomic writer (independent of the possibly-failing
+      // injected writePointer) or, when there was no prior pointer, by removing
+      // whatever partial our write may have left behind.
+      if (pointerWriteAttempted) {
+        try {
+          if (priorPointer !== null) atomicWritePointer(pointerPath, priorPointer.toString("utf8"));
+          else rmSync(pointerPath, { force: true });
+        } catch { /* best-effort pointer restore */ }
+      }
       throw error;
     }
+    // The publish is now durably committed (plugin tree + marketplace pointer).
+    // Only now is it safe to sweep the retired backup: retaining it until here
+    // is what makes every late failure above recoverable. The sweep is a
+    // mutation through pluginsRoot after a wide wall-clock window (copy +
+    // revalidation + pointer commit), so re-assert canonical resolution first
+    // -- a swapped ancestor must not redirect this delete out of the tree.
     if (hadPrevious) {
-      // Deleting the retired backup is a mutation through pluginsRoot; a wider
-      // wall-clock window (the copy + revalidation) has elapsed since the last
-      // check, so re-assert canonical resolution before the rmSync -- a swapped
-      // ancestor must not redirect this delete out of the tree.
       assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "retired-backup cleanup");
       rmSync(retired, { recursive: true, force: true });
     }
-
-    const pointerPath = join(pluginsRoot, "marketplace.json");
-    let pointer;
-    try { pointer = readRegularJson(pointerPath, "Codex marketplace pointer", 1024 * 1024); }
-    catch (error) {
-      if (error.cause?.code !== "ENOENT") throw error;
-      if (!marketplaceTemplate) throw new Error(`Codex marketplace pointer is missing and no template was provided: ${pointerPath}`);
-      pointer = structuredClone(marketplaceTemplate);
-    }
-    if (pointer?.name !== "muster" || !Array.isArray(pointer.plugins) || !pointer.plugins.some(item => item?.name === "muster")) {
-      throw new Error(`Codex marketplace does not describe the Muster plugin: ${pointerPath}`);
-    }
-    const plugin = pointer.plugins.find(item => item.name === "muster");
-    plugin.source = { ...plugin.source, source: "local", path: codexMarketplacePluginPath(pluginsRoot) };
-    // Final mutation: the durable pointer commit. Re-assert canonical
-    // resolution so the narrow window after the destination re-validation
-    // (see this function's docblock) cannot let an ancestor swap redirect the
-    // pointer write out of the intended tree.
-    assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "marketplace pointer commit");
-    atomicWritePointer(pointerPath, JSON.stringify(pointer, null, 2) + "\n");
     return { pluginRoot: pluginPath, profilesRoot: join(pluginPath, "agents"), packageVersion };
   });
 }

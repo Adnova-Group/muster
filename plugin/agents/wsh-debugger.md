@@ -2,6 +2,7 @@
 name: debugging-toolkit-debugger
 description: Debugging specialist for errors, test failures, and unexpected behavior. Use proactively when encountering any issues.
 model: sonnet
+maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 adapted_from: wshobson/agents plugins/debugging-toolkit/agents/debugger.md

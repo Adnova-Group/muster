@@ -3,6 +3,7 @@ name: muster-runner
 description: Dispatchable single-item lifecycle runner — drives ONE claimed backlog item end to end, unattended, in its own worktree/branch — TDD build, review gate with explicit PASS, fix loops that re-verify, disposition to a receipts-backed PR. The subagent form of the runner mode; dispatch it instead of a generic catch-all subagent with a hand-written discipline brief.
 tools: Read, Write, Edit, Bash, Grep, Glob, Task, Agent
 model: sonnet
+maxTurns: 25
 ---
 <!-- Clean-room synthesis from docs/research/lifecycle-agent-patterns.md: mechanisms adapted
      from obra/superpowers (MIT), wshobson/agents (MIT), and Anthropic's subagent docs;

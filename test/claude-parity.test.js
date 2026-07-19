@@ -559,5 +559,20 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs` (clean)
   // and the full suite green. This is the reviewed skill-frontmatter-capabilities remediation,
   // not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "4d2308f4958e15e1466eecb5a062ba66bb9afd6b4e13a4751b34cb956b18d6a8");
+  // Pin re-derived 2026-07-19 (backlog item agent-maxturns-native-cap): file COUNT
+  // unchanged (137) -- every plugin/agents/*.md (all 27) gained a `maxTurns` frontmatter
+  // key sized per role class (mechanical/surgical 15, implementation 25 -- the existing
+  // burn-lesson prose ceiling, review/strategy 35, security 40), coherent with Codex's
+  // own per-class heartbeat-extension ceilings (PR #83 codex-agent-watch-review-budget).
+  // plugin/agents/muster-builder.md additionally carries the single sizing-rationale
+  // comment block (the sole source of truth for the class table, mirrored by
+  // test/agent-max-turns.test.js). Codex is unchanged: build-codex.mjs reads Codex agent
+  // tiers from codex/agents.manifest.json, never from these files' frontmatter, and
+  // `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs`
+  // re-verified clean with the new key present. No Claude-lane "25-step ceiling" prose
+  // existed anywhere in plugin/skills or plugin/commands to trim (verified by repo-wide
+  // grep before editing) -- that prose is Codex-only (codex/skill-adapter.md, generated
+  // by scripts/build-codex.mjs), left untouched per this item's own scope.
+  // Pin re-derived at the PR #87 + #88 merge reconciliation (2026-07-19): union hash.
+  assert.equal(hash.digest("hex"), "094af7919b0a74bccd7eb110c228addc408390d34a831cd1243aaa088f18f84b");
 });

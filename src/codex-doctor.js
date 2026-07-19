@@ -1,10 +1,11 @@
 import { constants as fsConstants } from "node:fs";
 import { lstat, open, readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFile as execFileCb, spawn } from "node:child_process";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import { promisify } from "node:util";
 import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
@@ -16,6 +17,43 @@ import {
   codexThreadLimitsMeetFloor,
   readCodexThreadLimits
 } from "./codex-thread-limits.js";
+
+const execFileDefault = promisify(execFileCb);
+
+// codex-path-shadow (backlog item run4-polish-pair): a stale globally
+// installed `muster` earlier on PATH than this package's own bin silently
+// serves outdated behavior when invoked bare -- the 2026-07-19 run 4 dogfood
+// found exactly this at /home/linuxbrew/.linuxbrew/bin/muster (an old `npm i
+// -g` copy lacking the codex-conformance verb entirely). `command -v` (a
+// shell builtin, portable without requiring `which` to exist) resolves what
+// a bare `muster` invocation would actually run; diffing its `help` output
+// against this running package's own bundled CLI (`runtime/muster.mjs`,
+// already verified present by the codex-runtime check above) is the
+// cheapest reliable probe -- the full USAGE string IS the verb inventory,
+// so any difference (including an unrelated binary shadowing the name) is
+// actionable drift. A broken PATH binary must not fail doctor incoherently:
+// any probe error here fails OPEN (ok:true) and simply NAMES what happened.
+async function checkPathShadow(exec, ownCliPath) {
+  const name = "codex-path-shadow";
+  let pathMuster;
+  try {
+    const { stdout } = await exec("sh", ["-c", "command -v muster"], { timeout: 5_000 });
+    pathMuster = (stdout || "").split("\n").map(line => line.trim()).find(Boolean) || null;
+  } catch { pathMuster = null; }
+  if (!pathMuster) return { name, ok: true, detail: "no `muster` found on PATH outside this running package" };
+  try {
+    const [own, shadow] = await Promise.all([
+      exec(process.execPath, [ownCliPath, "help"], { timeout: 5_000 }),
+      exec(pathMuster, ["help"], { timeout: 5_000 })
+    ]);
+    const ok = (own.stdout || "").trim() === (shadow.stdout || "").trim();
+    return { name, ok, detail: ok
+      ? `PATH \`muster\` at ${pathMuster} matches this package's verb inventory`
+      : `PATH \`muster\` at ${pathMuster} has a stale or mismatched verb inventory -- likely a shadow install serving outdated behavior; npm uninstall -g / npm i -g @adnova-group/muster@latest (or remove the shadow)` };
+  } catch (error) {
+    return { name, ok: true, detail: `found \`muster\` on PATH at ${pathMuster} but could not probe it: ${error.message}` };
+  }
+}
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -268,8 +306,10 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   }
   const plugin = isPluginRoot ? base : (selected?.pluginRoot || join(base, ".agents", "plugins", "plugin"));
   const checks = [];
+  const exec = execFile || execFileDefault;
   const available = await codexAvailable({ execFile });
   checks.push({ name: "codex-cli", ok: available, detail: available ? "codex detected on PATH" : "codex not found — profiles can be installed, plugin registration is skipped" });
+  checks.push(await checkPathShadow(exec, join(plugin, "runtime", "muster.mjs")));
   try {
     const [manifest, pkg] = await Promise.all([
       readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),

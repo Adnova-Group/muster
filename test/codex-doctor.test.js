@@ -272,6 +272,55 @@ test("Codex doctor rejects symlinked content in a registered managed scope", asy
   assert.match(scopes?.detail || "", /unsafe.*agents|agents.*unsafe/i);
 });
 
+test("Codex doctor accepts a custom user CODEX_HOME whose directory is not named .codex", async () => {
+  // A user may point CODEX_HOME at any absolute path; Codex honours it
+  // verbatim. The installer records the user scope's configDir as that raw
+  // CODEX_HOME (realpath), so doctor must accept a user scope regardless of
+  // its basename -- the `.codex`-suffix rule is a PROJECT-scope invariant.
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-custom-home-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  const customCodexHome = join(tmp, "my-codex"); // deliberately NOT ending in `.codex`
+  const absent = async () => { throw new Error("not found"); };
+  const priorCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = customCodexHome;
+  try {
+    await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+    const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: customCodexHome, execFile: absent });
+    const scopes = report.checks.find(check => check.name === "codex-managed-scopes");
+    assert.equal(scopes?.ok, true, `custom CODEX_HOME must be accepted: ${scopes?.detail}`);
+    assert.match(scopes?.detail || "", /safe registered managed scope/i);
+    // The user scope was not silently dropped: its managed hooks are recognised.
+    assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, true,
+      "custom user CODEX_HOME hooks must be recognised");
+  } finally {
+    if (priorCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = priorCodexHome;
+  }
+});
+
+test("Codex doctor still rejects a project managed scope whose configDir is not a .codex directory", async () => {
+  // Guard the other half of the scope-conditioned rule: relaxing the suffix
+  // for the user scope must NOT relax it for project scopes. A project entry
+  // pointing outside a `<repo>/.codex` directory (an escaped/unsafe scope) is
+  // still rejected as unsafe.
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-escaped-project-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current-project");
+  const escaped = join(tmp, "escaped-project-dir"); // absolute + canonical, but not `.codex`
+  const absent = async () => { throw new Error("not found"); };
+  await mkdir(escaped, { recursive: true });
+  await mkdir(join(home, ".codex", "muster"), { recursive: true });
+  await writeFile(join(home, ".codex", "muster", "install-scopes.json"), JSON.stringify({
+    format: 1,
+    owner: "muster",
+    entries: [{ scope: "project", configDir: escaped }]
+  }));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absent });
+  const scopes = report.checks.find(check => check.name === "codex-managed-scopes");
+  assert.equal(scopes?.ok, false, "an escaped project scope outside a .codex directory must stay rejected");
+  assert.match(scopes?.detail || "", /unsafe entry/i);
+});
+
 test("Codex doctor verifies the bundled MCP initialize and tools/list handshake", async () => {
   const calls = [];
   const absent = async () => { throw new Error("not found"); };

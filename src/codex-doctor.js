@@ -217,9 +217,18 @@ async function registeredManagedScopes(home) {
   const dirs = [], issues = [], seen = new Set(), expectedUserScope = resolve(home);
   for (const entry of registry.entries) {
     const dir = entry?.configDir;
+    // The `${sep}.codex` basename requirement is a PROJECT-scope invariant:
+    // project scopes are always `<repo>/.codex`. The user scope is `$CODEX_HOME`
+    // -- an arbitrary absolute path a user may set (default `~/.codex`, but
+    // Codex honours whatever CODEX_HOME points at), so it is validated by exact
+    // identity with the resolved CODEX_HOME (expectedUserScope) rather than its
+    // basename. Every other safety check stays enforced for BOTH scopes:
+    // absolute, canonical (resolve(dir) === dir), and the per-entry ordinary-
+    // directory + dev/ino content checks below; an escaped/non-`.codex` project
+    // scope is still rejected.
     const valid = entry && ["project", "user"].includes(entry.scope) && typeof dir === "string" && isAbsolute(dir)
-      && resolve(dir) === dir && dir.endsWith(`${sep}.codex`)
-      && (entry.scope !== "user" || dir === expectedUserScope);
+      && resolve(dir) === dir
+      && (entry.scope === "user" ? dir === expectedUserScope : dir.endsWith(`${sep}.codex`));
     if (!valid || seen.has(`${entry?.scope}:${dir}`)) {
       issues.push(`managed-scope registry has an unsafe entry: ${registryPath}`);
       continue;

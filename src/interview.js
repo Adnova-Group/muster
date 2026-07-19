@@ -34,38 +34,31 @@ const MEASURABLE_WORD_NEARBY = new RegExp(`\\b${NUMBER_WORD}\\b|\\b(?:at least|a
 // list or a bare metric. The two clearing paths above (CRITERIA_QUANTIFIED,
 // CRITERIA_KEYWORD+MEASURABLE_NEARBY) both structurally require a digit or a
 // measurement-vocabulary word, so a purely-prose, purely-behavioral spec like that one trips
-// neither and reads as "no-success-criteria" even though it is exhaustively specific. Three
-// independent, narrow, low-false-positive prose shapes -- any ONE is concrete enough to plan
-// against on its own, each evidence-driven off the dogfood fixture plus realistic variants
-// (test/interview.test.js):
-//   - an explicit obligation ("must"/"should" + a CONCRETE behavior verb) -- spec-shaped
-//     contract language. Gated on a closed verb whitelist, not "any word" -- review-gate
-//     fix-loop 1 proved an ungated `must/should + [a-z]+` clears ordinary vague modal usage
-//     ("you must be kidding, just handle it", "this should not take long" both cleared with
-//     zero signals) because copula/filler verbs (be, take, kidding, ...) carry no acceptance
-//     content on their own. The whitelist below is the same closed-list discipline this file
-//     already uses for VAGUE_VERB and src/fast-path.js uses for IMPERATIVE_VERB_SRC.
-//   - "fail(s) loud(ly)" / "fail-loud" -- muster's own named failure-discipline phrase.
-//   - a labeled field:value pair ("verified: true/false", "status: ok") -- structured,
-//     enumerable acceptance data. Gated on BOTH a closed field-name whitelist AND a
-//     boolean-ish/quoted value (not a bare digit, so it can't fire on a URL port, a ratio, or
-//     a clock time) -- fix-loop 1 proved an open `[a-z][\w-]*:` label cleared ordinary
-//     discourse asides ("note: yes, this includes migrations", "verdict: no further action
-//     required") that have nothing to do with structured acceptance data.
-// Deliberately NOT added: a generic "enumerated concrete behaviors" verb-counting heuristic --
-// the three signals above already cover the dogfood fixture and its realistic variants
-// without the false-positive surface a loose behavior-verb count would open up.
-const OBLIGATION_VERBS =
-  "accept|accepts|reject|rejects|return|returns|record|records|log|logs|emit|emits|verify|verifies|" +
-  "validate|validates|fail|fails|keep|keeps|preserve|preserves|raise|raises|throw|throws|call|calls|" +
-  "invoke|invokes|parse|parses|enforce|enforces|require|requires|produce|produces|generate|generates|" +
-  "store|stores|persist|persists|expose|exposes|support|supports|report|reports|resolve|resolves|" +
-  "check|checks|include|includes|exclude|excludes|block|blocks|deny|denies|allow|allows";
-const CRITERIA_OBLIGATION = new RegExp(`\\b(?:must|should)\\s+(?:not\\s+)?(?:${OBLIGATION_VERBS})\\b`, "i");
+// neither and reads as "no-success-criteria" even though it is exhaustively specific.
+//
+// "fail(s) loud(ly)" / "fail-loud" -- muster's own named failure-discipline phrase -- is the
+// ONE prose-criteria signal kept here. It survived two rounds of adversarial review with zero
+// breaks found. Two other candidate signals were tried and DELIBERATELY DROPPED after both
+// proved structurally unsound, not just under-tuned:
+//   - an explicit obligation ("must"/"should" + a verb). Fix-loop 1's ungated
+//     `must/should + [a-z]+` cleared plain vague modal filler ("you must be kidding, just
+//     handle it"). Fix-loop 2 narrowed it to a closed ~30-verb whitelist mirroring this file's
+//     VAGUE_VERB precedent -- and it STILL cleared "fix the reporting bug, it must include
+//     some improvements I guess" and "honestly you must validate my feelings sometimes, it's
+//     exhausting", because ordinary English reuses almost every verb across technical and
+//     casual registers; no verb whitelist closes that gap, only hedge-aware clause parsing
+//     could, which this module deliberately doesn't do (deterministic regex signals only).
+//   - a labeled field:value pair ("verified: true/false", "status: ok"). Fix-loop 1's open
+//     `[a-z][\w-]*:` label cleared ordinary discourse asides ("note: yes, ..."). Fix-loop 2's
+//     closed field-name whitelist (status/verified/valid/...) still cleared "handle the
+//     reporting bug, status: ok this is fine for now I think" -- the same vague-primary-clause-
+//     plus-incidental-aside shape, just with a whitelisted field name substituted for "note".
+// Neither signal is load-bearing for the dogfood fixture (CRITERIA_FAIL_LOUD alone clears it,
+// via both "fail loud" and "fail-loud" occurring in the text), so this file stays with the one
+// signal proven robust rather than continuing to narrow vocabulary against an open-ended
+// vague-sentence-plus-incidental-aside construction. Also deliberately NOT added: a generic
+// "enumerated concrete behaviors" verb-counting heuristic, for the identical reason.
 const CRITERIA_FAIL_LOUD = /\bfail(?:s|ing)?[\s-]loud(?:ly)?\b/i;
-const CRITERIA_FIELD_NAMES = "status|verified|valid|enabled|success|passed|failed|result|ready|complete|resolved|active";
-const CRITERIA_LABELED_FIELD =
-  new RegExp(`\\b(?:${CRITERIA_FIELD_NAMES})\\s*:\\s*(?:true|false|yes|no|ok|"[^"]{1,40}"|'[^']{1,40}')\\b`, "i");
 
 // Bare imperative verbs that, on their own with no concrete object, signal a hand-wavy ask.
 const VAGUE_VERB = /^(make|do|build|fix|improve|help|handle|update|change)\b/i;
@@ -85,8 +78,7 @@ export function assessOutcome(text, { codex = false } = {}) {
   const hasQuantified = CRITERIA_QUANTIFIED.test(trimmed) || (codex && CRITERIA_QUANTIFIED_WORDS.test(trimmed));
   const hasKeyword = CRITERIA_KEYWORD.test(trimmed);
   const hasMeasurable = MEASURABLE_NEARBY.test(trimmed) || (codex && MEASURABLE_WORD_NEARBY.test(trimmed));
-  const hasProseCriteria =
-    CRITERIA_OBLIGATION.test(trimmed) || CRITERIA_FAIL_LOUD.test(trimmed) || CRITERIA_LABELED_FIELD.test(trimmed);
+  const hasProseCriteria = CRITERIA_FAIL_LOUD.test(trimmed);
   const noCriteria = !(hasQuantified || (hasKeyword && hasMeasurable) || hasProseCriteria);
 
   const signals = [];

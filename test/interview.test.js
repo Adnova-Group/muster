@@ -21,7 +21,7 @@ test("thin outcome 'fix it' is not clear and flags length + missing criteria", (
 // success/criteria/kpi/target/goal/increase/decrease/reduce/improve/conversion/rate/latency/
 // throughput word). The outcome text below is the exact dogfood fixture reconstructed from
 // the run transcript. It must now be recognized as carrying real criteria via the "fail
-// loud" phrase and the labeled verified: true/false field.
+// loud"/"fail-loud" phrase (occurs twice in this fixture).
 const DOGFOOD_RECEIPT_VERIFICATION_OUTCOME =
   "buildBaseShaReceipt in src/wave-dispatch.js validates SHA format but never verifies the SHA " +
   "actually resolves to a real commit. Add real verification: the receipt builder accepts an " +
@@ -29,39 +29,18 @@ const DOGFOOD_RECEIPT_VERIFICATION_OUTCOME =
   "plus the verification mechanism, and callers that depend on the receipt fail loud when " +
   "verification is available but fails. TDD; keep the existing fail-loud behavior for malformed SHAs.";
 
-test("dogfood fixture: prose-form code-outcome criteria (fail loud + labeled field) clears no-success-criteria", () => {
+test("dogfood fixture: prose-form code-outcome criteria ('fail loud') clears no-success-criteria", () => {
   const r = assessOutcome(DOGFOOD_RECEIPT_VERIFICATION_OUTCOME);
   assert.ok(
     !r.signals.includes("no-success-criteria"),
-    `prose criteria (fail loud / verified: true/false) must clear no-success-criteria, got signals: ${JSON.stringify(r.signals)}`,
+    `the 'fail loud'/'fail-loud' phrase must clear no-success-criteria, got signals: ${JSON.stringify(r.signals)}`,
   );
   assert.equal(r.clear, true, "a long, detailed, prose-criteria outcome must be clear");
 });
 
-// WHY: realistic variants of the same prose-criteria grammar, not just the one dogfood
-// fixture -- an explicit obligation ("must"/"should") and a "fail loud" phrase on their own,
-// each without any digit or CRITERIA_KEYWORD word, must independently clear the signal.
-test("prose criteria: an explicit obligation ('must'/'should' + verb) clears no-success-criteria on its own", () => {
-  const r = assessOutcome(
-    "the parser must reject a malformed header and the caller should log the rejection reason before returning",
-  );
-  assert.ok(!r.signals.includes("no-success-criteria"), "must/should + verb is a concrete acceptance obligation");
-});
-
-// WHY (review-gate fix-loop 1, adversarial finding): an UNGATED `must/should + [a-z]+` cleared
-// ordinary vague modal usage with no acceptance content at all -- these three are the exact
-// adversarial examples the reviewer proved cleared with zero signals. CRITERIA_OBLIGATION is
-// now gated on a closed verb whitelist (accept/reject/record/log/verify/... — no "be"/"take"/
-// arbitrary word), so none of these may clear the signal. Pins the revert.
-test("negative control: 'must'/'should' followed by a non-behavior word (copula/filler) does not clear no-success-criteria", () => {
-  const r1 = assessOutcome("you must be kidding, just handle it");
-  assert.ok(r1.signals.includes("no-success-criteria"), "'must be kidding' carries no acceptance behavior");
-  const r2 = assessOutcome("please make it better, it must be simple");
-  assert.ok(r2.signals.includes("no-success-criteria"), "'must be simple' carries no acceptance behavior");
-  const r3 = assessOutcome("this should not take long, please just do it");
-  assert.ok(r3.signals.includes("no-success-criteria"), "'should not take long' carries no acceptance behavior");
-});
-
+// WHY: a realistic variant of the same prose-criteria grammar, not just the one dogfood
+// fixture -- "fail loud"/"fail-loud" on its own, with no digit or CRITERIA_KEYWORD word, must
+// independently clear the signal, in both the spaced and hyphenated spelling.
 test("prose criteria: 'fail loud'/'fail-loud' alone clears no-success-criteria", () => {
   const r1 = assessOutcome("the importer should fail loud on a corrupt row instead of silently skipping it");
   assert.ok(!r1.signals.includes("no-success-criteria"), "'fail loud' is a concrete, distinctive acceptance phrase");
@@ -69,38 +48,55 @@ test("prose criteria: 'fail loud'/'fail-loud' alone clears no-success-criteria",
   assert.ok(!r2.signals.includes("no-success-criteria"), "hyphenated 'fail-loud' must also clear the signal");
 });
 
-test("prose criteria: a labeled field:value pair (verified: true/false) clears no-success-criteria", () => {
-  const r = assessOutcome(
-    "the health check response carries a labeled status: ok field so downstream callers can branch on it directly",
-  );
-  assert.ok(!r.signals.includes("no-success-criteria"), "a structured field:value pair is concrete acceptance data");
-});
-
-// WHY: negative control -- a bare colon with no boolean/quoted value after it (ordinary prose
-// punctuation, not a labeled field) must NOT be mistaken for structured criteria.
-test("prose criteria: an ordinary prose colon with no boolean/quoted value does not clear no-success-criteria", () => {
+// WHY: negative control -- a bare colon with no "fail loud"/"fail-loud" phrase anywhere in the
+// text (ordinary prose punctuation) must NOT be mistaken for structured criteria.
+test("prose criteria: an ordinary prose colon with no 'fail loud' phrase does not clear no-success-criteria", () => {
   const r = assessOutcome("the plan is simple: build a small internal tool for the support team");
-  assert.ok(r.signals.includes("no-success-criteria"), "a plain narrative colon must not be read as a labeled field");
+  assert.ok(r.signals.includes("no-success-criteria"), "a plain narrative colon must not be read as prose criteria");
 });
 
-// WHY (review-gate fix-loop 1, adversarial finding): an open `[a-z][\w-]*\s*:\s*(true|false|
-// yes|no|ok|...)` cleared ordinary discourse asides ("note:", "bottom line:", "reply:",
-// "verdict:") paired with yes/no/ok -- none of these are structured acceptance data, just
-// conversational punctuation. CRITERIA_LABELED_FIELD is now gated on a closed field-name
-// whitelist (status/verified/valid/enabled/...), so none of these may clear the signal, and a
-// vague ask with such an aside tacked on must stay fully flagged. Pins the revert.
-test("negative control: a yes/no/ok value after a non-field-name label does not clear no-success-criteria", () => {
-  const r1 = assessOutcome("Bottom line: no additional work is needed.");
-  assert.ok(r1.signals.includes("no-success-criteria"), "'line: no' is not a labeled acceptance field");
-  const r2 = assessOutcome("Note: yes, this includes migrations.");
-  assert.ok(r2.signals.includes("no-success-criteria"), "'note: yes' is not a labeled acceptance field");
-  const r3 = assessOutcome("reply: yes we will proceed");
-  assert.ok(r3.signals.includes("no-success-criteria"), "'reply: yes' is not a labeled acceptance field");
-  const r4 = assessOutcome("verdict: no further action required");
-  assert.ok(r4.signals.includes("no-success-criteria"), "'verdict: no' is not a labeled acceptance field");
-  const r5 = assessOutcome("handle the reporting bug, note: yes this is urgent");
-  assert.equal(r5.clear, false, "a vague ask stays unclear even with an unrelated 'note: yes' aside tacked on");
-  assert.ok(r5.signals.includes("no-success-criteria"), "the aside must not launder a genuinely vague ask");
+// WHY (review-gate findings, fix-loops 1 and 2): two other candidate prose-criteria signals --
+// an explicit obligation ("must"/"should" + verb) and a labeled field:value pair
+// ("status: ok") -- were tried and DELIBERATELY DROPPED (see src/interview.js's header
+// comment) after two rounds of adversarial review proved neither closes cleanly: gating on a
+// closed verb/field-name whitelist only narrows the vocabulary, it doesn't change the
+// structural bug -- a vague, criteria-free primary clause with an incidental
+// obligation/labeled-value aside tacked on (via a comma) still cleared the signal no matter how
+// the whitelist was tightened, because ordinary English reuses almost every verb and field-name
+// word across technical and casual registers. This regression suite pins EVERY adversarial
+// string both review rounds found (8 total) as a permanent negative control, so neither pattern
+// can silently reappear if a future change reaches for "must/should" or "label:" again.
+test("negative control: 'must'/'should' obligation phrasing (fix-loop 1 + 2 examples) does not clear no-success-criteria", () => {
+  for (const outcome of [
+    "you must be kidding, just handle it",
+    "please make it better, it must be simple",
+    "this should not take long, please just do it",
+    "fix the reporting bug, it must include some improvements I guess",
+    "handle the auth flow better, it should support more cases somehow",
+    "update the config loader, it must validate stuff properly please",
+    "you must return my call about the project sometime today",
+    "honestly you must validate my feelings sometimes, it's exhausting",
+  ]) {
+    const r = assessOutcome(outcome);
+    assert.ok(r.signals.includes("no-success-criteria"), `must/should phrasing must not clear: "${outcome}"`);
+  }
+});
+
+test("negative control: labeled field:value phrasing (fix-loop 1 + 2 examples) does not clear no-success-criteria", () => {
+  for (const outcome of [
+    "Bottom line: no additional work is needed.",
+    "Note: yes, this includes migrations.",
+    "reply: yes we will proceed",
+    "verdict: no further action required",
+    "handle the reporting bug, note: yes this is urgent",
+    "handle the reporting bug, status: ok this is fine for now I think",
+    "just fix the thing, result: yes whenever you get a chance",
+    "make it better somehow, success: true if you think it's good enough",
+    "handle this mess, ready: yes let's just ship it",
+  ]) {
+    const r = assessOutcome(outcome);
+    assert.ok(r.signals.includes("no-success-criteria"), `labeled field:value phrasing must not clear: "${outcome}"`);
+  }
 });
 
 // WHY: a bare vague verb with a hand-wavy qualifier is the canonical case the interview

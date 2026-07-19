@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -104,6 +104,8 @@ test("conformance audit classifies MATCH, MISMATCH, GENERIC, NO-PIN, and IDLE th
   assert.equal(byFile["rollout-a-user.jsonl"].kind, "user");
   assert.equal(byFile["rollout-a-user.jsonl"].verdict, null);
   assert.equal(byFile["rollout-b-match.jsonl"].verdict, CONFORMANCE_VERDICTS.MATCH);
+  assert.equal(byFile["rollout-b-match.jsonl"].pinsNewerThanRollout, undefined, "pinsNewerThanRollout is only stamped on MISMATCH rows");
+  assert.equal(byFile["rollout-c-mismatch.jsonl"].pinsNewerThanRollout, false, "these fixture pins predate every rollout write, so no mismatch here is pre-retier");
   assert.deepEqual(byFile["rollout-b-match.jsonl"].observed, [{ model: "gpt-5.6-sol", effort: "medium", turns: 2 }]);
   assert.equal(byFile["rollout-c-mismatch.jsonl"].verdict, CONFORMANCE_VERDICTS.MISMATCH);
   assert.deepEqual(byFile["rollout-c-mismatch.jsonl"].expected, { model: "gpt-5.6-luna", effort: "xhigh" });
@@ -111,7 +113,7 @@ test("conformance audit classifies MATCH, MISMATCH, GENERIC, NO-PIN, and IDLE th
   assert.equal(byFile["rollout-d-generic.jsonl"].depth, 2);
   assert.equal(byFile["rollout-e-nopin.jsonl"].verdict, CONFORMANCE_VERDICTS.NO_PIN);
   assert.equal(byFile["rollout-f-idle.jsonl"].verdict, CONFORMANCE_VERDICTS.IDLE);
-  assert.deepEqual(report.tally, { subagents: 8, match: 2, mismatch: 3, generic: 1, noPin: 1, idle: 1 });
+  assert.deepEqual(report.tally, { subagents: 8, match: 2, mismatch: 3, generic: 1, noPin: 1, idle: 1, prePinMismatch: 0 });
   assert.equal(report.pins, 2);
 });
 
@@ -237,7 +239,7 @@ test("codex-conformance API and CLI enforce the inclusive 1..3660 day range", as
   });
   assert.equal(boundary.days, 3660);
   assert.deepEqual(boundary.rows, []);
-  assert.deepEqual(boundary.tally, { subagents: 0, match: 0, mismatch: 0, generic: 0, noPin: 0, idle: 0 });
+  assert.deepEqual(boundary.tally, { subagents: 0, match: 0, mismatch: 0, generic: 0, noPin: 0, idle: 0, prePinMismatch: 0 });
   const { stdout } = await runCli(["codex-conformance", "--days", "3660"], root);
   assert.equal(JSON.parse(stdout).days, 3660);
   assert.equal(stdout, JSON.stringify(JSON.parse(stdout), null, 2) + "\n", "valid reports keep canonical JSON stdout");
@@ -262,7 +264,7 @@ test("codex-conformance CLI applies --cwd filtering to every day in a two-day ra
   assert.equal(report.days, 2);
   assert.deepEqual(report.rows.map(row => row.file), ["rollout-today-match.jsonl", "rollout-yesterday-match.jsonl"]);
   assert.deepEqual(report.rows.map(row => row.day).sort(), [today, yesterday].sort());
-  assert.deepEqual(report.tally, { subagents: 2, match: 2, mismatch: 0, generic: 0, noPin: 0, idle: 0 });
+  assert.deepEqual(report.tally, { subagents: 2, match: 2, mismatch: 0, generic: 0, noPin: 0, idle: 0, prePinMismatch: 0 });
   assert.equal(stdout, JSON.stringify(report, null, 2) + "\n", "valid reports keep canonical JSON stdout");
 });
 
@@ -312,4 +314,72 @@ test("codex-conformance CLI exits nonzero when any mismatch appears in the reque
       return true;
     }
   );
+});
+
+// Pre-retier mismatch annotation (backlog item run4-polish-pair, part b): a
+// range crossing a profile retier legitimately contains historical MISMATCH
+// rows -- comparing a rollout that ran before the retier against the CURRENT
+// pins always disagrees. Fixtures control real mtimes via utimes rather than
+// relying on write-order timing.
+test("conformance audit stamps a pre-retier MISMATCH (old rollout, newer pins) and --current-pins-only excludes it from the exit-code decision without hiding it", async t => {
+  const { agentsDir, sessionsDir, dayDir, root } = await fixture(t);
+  const rolloutPath = join(dayDir, "rollout-old-mismatch.jsonl");
+  await writeFile(rolloutPath, rolloutLines({ threadSource: "subagent", agentRole: "role-luna", turnModels: ["gpt-5.6-sol"] }));
+  const old = new Date("2020-01-01T00:00:00Z");
+  await utimes(rolloutPath, old, old);
+  // Simulate a retier landing AFTER this historical rollout ran.
+  const retier = new Date();
+  await utimes(join(agentsDir, "role-sol.toml"), retier, retier);
+  await utimes(join(agentsDir, "role-luna.toml"), retier, retier);
+
+  const report = await auditCodexModelConformance({ sessionsDir, agentsDir, day: DAY });
+  const row = report.rows.find(r => r.file === "rollout-old-mismatch.jsonl");
+  assert.equal(row.verdict, CONFORMANCE_VERDICTS.MISMATCH);
+  assert.equal(row.pinsNewerThanRollout, true, "current pins postdate this historical rollout");
+  assert.equal(report.tally.mismatch, 1);
+  assert.equal(report.tally.prePinMismatch, 1);
+
+  await assert.rejects(
+    () => runCli(["codex-conformance", DAY], root),
+    error => {
+      assert.equal(error.code, 2, "a pre-pin mismatch still exits 2 by default -- never silently hidden");
+      const defaultReport = JSON.parse(error.stdout);
+      assert.equal(defaultReport.tally.mismatch, 1);
+      assert.equal(defaultReport.tally.prePinMismatch, 1);
+      assert.equal(defaultReport.rows.find(r => r.file === "rollout-old-mismatch.jsonl").pinsNewerThanRollout, true, "the row stays listed and annotated, not hidden");
+      return true;
+    }
+  );
+
+  const { stdout } = await runCli(["codex-conformance", DAY, "--current-pins-only"], root);
+  const flagged = JSON.parse(stdout);
+  assert.equal(flagged.tally.mismatch, 1, "the row is still listed under the flag");
+  assert.equal(flagged.tally.prePinMismatch, 1);
+  assert.equal(flagged.rows.find(r => r.file === "rollout-old-mismatch.jsonl").pinsNewerThanRollout, true);
+});
+
+test("conformance: a genuinely-current MISMATCH (pins no newer than the rollout) exits 2 under --current-pins-only too", async t => {
+  const { agentsDir, sessionsDir, dayDir, root } = await fixture(t);
+  const rolloutPath = join(dayDir, "rollout-current-mismatch.jsonl");
+  await writeFile(rolloutPath, rolloutLines({ threadSource: "subagent", agentRole: "role-luna", turnModels: ["gpt-5.6-sol"] }));
+  // No retier since: the pins are explicitly OLDER than this rollout.
+  const past = new Date("2020-01-01T00:00:00Z");
+  await utimes(join(agentsDir, "role-sol.toml"), past, past);
+  await utimes(join(agentsDir, "role-luna.toml"), past, past);
+
+  const report = await auditCodexModelConformance({ sessionsDir, agentsDir, day: DAY });
+  const row = report.rows.find(r => r.file === "rollout-current-mismatch.jsonl");
+  assert.equal(row.verdict, CONFORMANCE_VERDICTS.MISMATCH);
+  assert.equal(row.pinsNewerThanRollout, false);
+  assert.equal(report.tally.prePinMismatch, 0);
+
+  for (const args of [["codex-conformance", DAY], ["codex-conformance", DAY, "--current-pins-only"]]) {
+    await assert.rejects(
+      () => runCli(args, root),
+      error => {
+        assert.equal(error.code, 2, `${args.join(" ")} must still exit 2 -- a genuinely current mismatch is never excluded`);
+        return true;
+      }
+    );
+  }
 });

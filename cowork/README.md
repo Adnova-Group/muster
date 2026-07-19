@@ -8,7 +8,7 @@ Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-
 
 ## What you get
 
-Twenty-five tools, plus an execution protocol that teaches the agent how to drive them:
+Twenty-eight tools, plus an execution protocol that teaches the agent how to drive them:
 
 | Tool | Does |
 | --- | --- |
@@ -30,6 +30,9 @@ Twenty-five tools, plus an execution protocol that teaches the agent how to driv
 | `muster_fuse` | Fusion decision engine -- apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to single best (mode fallback). Deterministic, no LLM. |
 | `muster_advise` | Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM. |
 | `muster_receipt_verify` | Verify a base-SHA is a real, resolvable git commit object in an explicit repo |
+| `muster_scope` | Deterministic backlog-vs-item scope detection for the plan/go verb family |
+| `muster_fast_path` | Score an outcome for the pre-router fast path; with `capabilities` (the `_roles` shape), also emits the minimal builder+one-reviewer manifest |
+| `muster_plan_checklist` | Render a crew manifest's `plan` array as a markdown checklist |
 
 muster's principles, routing policy, and a per-mode execution protocol (the core loop plus the plan/go/plan-backlog/diagnose/audit/go-backlog lifecycles) ride in the server's MCP `instructions`. That replaces the SessionStart and UserPromptSubmit hooks the Claude Code plugin uses.
 
@@ -90,7 +93,7 @@ In Cowork, prompt:
 
 > List your `muster_*` tools, then call `muster_detect` on `&lt;path to a project&gt;`.
 
-You should see all twenty-five tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
+You should see all twenty-eight tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
 
 ## Install (Route B): MCPB desktop extension
 

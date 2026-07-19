@@ -574,5 +574,35 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // grep before editing) -- that prose is Codex-only (codex/skill-adapter.md, generated
   // by scripts/build-codex.mjs), left untouched per this item's own scope.
   // Pin re-derived at the PR #87 + #88 merge reconciliation (2026-07-19): union hash.
-  assert.equal(hash.digest("hex"), "094af7919b0a74bccd7eb110c228addc408390d34a831cd1243aaa088f18f84b");
+  //
+  // Pin re-derived again 2026-07-19 (backlog item codex-mcp-surface-gaps-2, round 2 of
+  // codex-mcp-surface-gaps / PR #85): file COUNT unchanged (137) -- only
+  // cowork/mcp-server.mjs's content changed. The 2026-07-19 clean Codex run's residual
+  // CLI-only list named 4 more deterministic ops with no muster_* MCP equivalent: scope,
+  // fast-path, plan-checklist, and codex-conformance. 3 became real tools, mapped onto
+  // the same per-op decision-table discipline PR #85 established: muster_scope (new
+  // "str" tool: scope <text>, detectScope -- text optional, a bare invocation is a valid
+  // input), muster_plan_checklist (new "json2" tool: plan-checklist, reusing the SAME
+  // manifest-payload + optional `flags` (`--done`) pattern muster_next already
+  // established), and muster_fast_path (new tool needing a genuinely new "fastPath" kind
+  // -- a required string positional PLUS an optional JSON payload behind a flag, a shape
+  // neither "str" nor "json2" covers, since "str"'s `flags` callback is synchronous and
+  // cannot write a temp file; mirrors "json2"'s own write/run/cleanup sequence, gated on
+  // `capabilities` actually being present -- scoreOutcomeForFastPath/buildFastPathManifest,
+  // and the SAME {roles} shape muster_capabilities_roles already returns is the exact
+  // payload buildFastPathManifest needs, not impractically large for a tool arg). The
+  // 4th residual op, codex-conformance, was judged CLI-only on the merits (not mapped
+  // onto any shape): it audits a HOST CODEX_HOME/sessions rollout tree for subagent
+  // model-conformance drift, and while this server CAN read that tree (same host Codex
+  // spawned it on), the audit is post-run forensics a human/driver runs after a session
+  // ends, not a decision the in-run orchestrating agent needs mid-wave -- documented in
+  // COWORK_PROTOCOL's "CLI-only operations" note (now naming both gaps: muster_match_skills'
+  // --stack override and codex-conformance outright). Every count this item's tool
+  // addition is pinned at (CODEX_COUNTS.mcpTools, doctor's N/N handshake text, README's
+  // "N MCP tools", cowork/README.md's tool table + prose, cowork/manifest.json's declared
+  // tool list, the check-codex.mjs regex count) was re-derived 25 -> 28 together; see
+  // test/codex-mcp-surface-gaps.test.js for the new end-to-end proof through the BUILT
+  // plugin's MCP server and test/cowork.test.js for full per-tool behavioral coverage on
+  // the shared Cowork server. No other file under this surface changed.
+  assert.equal(hash.digest("hex"), "a54edd25faa433814476bb3b8dd10e638875082a19e7d698dd3525181d7de56a");
 });

@@ -106,11 +106,12 @@ test("instructions cover the full autopilot/audit/diagnose lifecycle (dispatch c
   assert.match(instr, /diagnose/i, "diagnose mode described");
 });
 
-test("instructions document the one CLI-only surface gap: muster_match_skills omits --stack override", async () => {
+test("instructions document both CLI-only surface gaps: muster_match_skills' --stack override and codex-conformance", async () => {
   const r = await rpc([INIT]);
   const instr = r[1].result.instructions;
   assert.match(instr, /CLI-only/i, "names a CLI-only operations note");
   assert.match(instr, /--stack/, "names the un-exposed --stack override");
+  assert.match(instr, /codex-conformance/, "names codex-conformance as CLI-only");
 });
 
 // ── verb rename: cowork/mcp-server.mjs, cowork/sprint-protocol.md, cowork/README.md ─────────
@@ -175,12 +176,12 @@ test("verb-rename: zero pre-rename verb-name citations remain in the 3 cowork su
   }
 });
 
-test("tools/list exposes exactly the 25 brain verbs, matching the MCPB manifest", async () => {
+test("tools/list exposes exactly the 28 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 25, "25 tools served");
+  assert.equal(served.length, 28, "28 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -261,6 +262,68 @@ test("tools/call: muster_receipt_verify -- omitting required sha reports the CLI
   assert.equal(res.isError, true, "missing required sha must error");
   assert.match(res.content[0].text, /missing sha/, "must be the CLI's own usage error, not a --cwd-as-sha misfire");
   assert.doesNotMatch(res.content[0].text, /"sha":"--cwd"/, "the --cwd flag must never shift into the sha slot");
+});
+
+// ── codex-mcp-surface-gaps round 2: 3 more deterministic ops the 2026-07-19 clean ──
+// Codex run's residual CLI-only list named (scope, fast-path, plan-checklist) — see
+// the per-op rationale on each TOOLS entry in cowork/mcp-server.mjs. codex-conformance,
+// the 4th residual op, was judged CLI-only and is documented in COWORK_PROTOCOL instead.
+test("tools/call: muster_scope classifies a single-item outcome (item) and a bare invocation (ambiguous, no live backlog)", async () => {
+  const item = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_scope", arguments: { text: "fix a typo in the README" } } }]);
+  assert.equal(item[2].result.isError, false, "muster_scope must not error");
+  const itemBody = JSON.parse(item[2].result.content[0].text);
+  assert.equal(itemBody.scope, "item");
+
+  const bare = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_scope", arguments: {} } }]);
+  assert.equal(bare[2].result.isError, false, "an omitted text arg is a valid bare invocation, not an error");
+  const bareBody = JSON.parse(bare[2].result.content[0].text);
+  assert.equal(bareBody.scope, "ambiguous", "no .muster/backlog.md at this repo's root -- bare invocation is genuinely ambiguous");
+});
+
+test("tools/call: muster_fast_path scores eligibility with no capabilities arg (bare form)", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_fast_path", arguments: { outcome: "fix a typo in the README" } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "muster_fast_path must not error");
+  const body = JSON.parse(res.content[0].text);
+  assert.equal(body.eligible, true);
+  assert.equal(body.manifest, undefined, "no capabilities arg -> score only, no manifest");
+});
+
+test("tools/call: muster_fast_path with capabilities (the muster_capabilities_roles {roles} shape) also emits the minimal builder+reviewer manifest", async () => {
+  const capsRun = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities_roles", arguments: {} } }]);
+  const capabilities = JSON.parse(capsRun[2].result.content[0].text);
+
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_fast_path", arguments: { outcome: "fix a typo in the README", capabilities } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "muster_fast_path must not error");
+  const body = JSON.parse(res.content[0].text);
+  assert.equal(body.eligible, true);
+  assert.ok(body.manifest, "eligible outcome + capabilities -> manifest present");
+  assert.equal(body.manifest.crew.length, 2, "builder + one reviewer only");
+  assert.equal(body.manifest.plan[0].task, "fix a typo in the README");
+});
+
+test("tools/call: muster_fast_path -- missing outcome errors instead of silently scoring an empty string", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_fast_path", arguments: {} } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, true, "missing required outcome must error");
+  assert.match(res.content[0].text, /outcome is required/);
+});
+
+test("tools/call: muster_plan_checklist renders a manifest's plan as a markdown checklist", async () => {
+  const manifest = { plan: [{ id: "a", task: "Add X", deps: [] }, { id: "b", task: "Add Y", deps: ["a"] }] };
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_plan_checklist", arguments: { manifest } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "muster_plan_checklist must not error");
+  assert.equal(res.content[0].text, "- [ ] a — Add X\n- [ ] b — Add Y");
+});
+
+test("tools/call: muster_plan_checklist marks the given ids done", async () => {
+  const manifest = { plan: [{ id: "a", task: "Add X", deps: [] }, { id: "b", task: "Add Y", deps: ["a"] }] };
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_plan_checklist", arguments: { manifest, done: ["a"] } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false);
+  assert.equal(res.content[0].text, "- [x] a — Add X\n- [ ] b — Add Y");
 });
 
 test("tools/call: muster_sprint_protocol returns the sprint playbook text with key protocol markers", async () => {

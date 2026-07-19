@@ -29,6 +29,10 @@
 // keep being excluded from both the numerator (it cast no vote) and the denominator (it
 // is not an eligible voter) — never counted as present.
 const WORKER_ABSENCE_STATUSES = new Set(["exhausted", "absent"]);
+// An exhausted/absent entry with no `reviewer` field (a producer bug, or a dispatch that
+// died before its brief even recorded a name) must never leak a raw `undefined` into the
+// blocked reason string or the `exhausted` receipt -- name it instead of interpolating.
+const UNNAMED_REVIEWER = "(unnamed reviewer)";
 
 export function tallyReview(verdicts) {
   const counts = { blocker: 0, risk: 0, nit: 0 };
@@ -37,8 +41,9 @@ export function tallyReview(verdicts) {
   const exhausted = [];
   for (const v of verdicts) {
     if (WORKER_ABSENCE_STATUSES.has(v.status)) {
-      exhausted.push({ reviewer: v.reviewer, status: v.status });
-      blockedReasons.push(`reviewer ${v.reviewer} ${v.status} before verdict`);
+      const reviewer = v.reviewer || UNNAMED_REVIEWER;
+      exhausted.push({ reviewer, status: v.status });
+      blockedReasons.push(`${v.reviewer ? `reviewer ${reviewer}` : reviewer} ${v.status} before verdict`);
       continue; // no verdict was ever produced -- findings (if any) are not real signal
     }
     for (const f of (v.findings || [])) {

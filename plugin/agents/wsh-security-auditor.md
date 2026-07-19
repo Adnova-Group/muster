@@ -2,6 +2,7 @@
 name: backend-development-security-auditor
 description: Review code and architecture for security vulnerabilities, OWASP Top 10, auth flaws, and compliance issues. Use for security review during feature development.
 model: sonnet
+maxTurns: 40
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 adapted_from: wshobson/agents plugins/backend-development/agents/security-auditor.md

@@ -3,6 +3,7 @@ name: muster-reviewer
 description: Read-only diff/branch reviewer. One severity-tagged line per finding, no praise, no scope creep. Re-runs the stated test signals and ends with an explicit verdict.
 tools: Read, Bash, Grep, Glob
 model: sonnet
+maxTurns: 35
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

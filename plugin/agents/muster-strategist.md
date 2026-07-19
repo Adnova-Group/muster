@@ -3,6 +3,7 @@ name: muster-strategist
 description: Read-only heavyweight reasoning — revise plans, audit specs/designs, surface hidden assumptions and tradeoffs. Answers "is this the right approach?", not "is this code correct?". Does not implement.
 tools: Read, Bash, Grep, Glob
 model: opus
+maxTurns: 35
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

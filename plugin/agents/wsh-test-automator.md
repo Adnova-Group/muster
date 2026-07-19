@@ -2,6 +2,7 @@
 name: backend-development-test-automator
 description: Create comprehensive test suites including unit, integration, and E2E tests. Supports TDD/BDD workflows. Use for test creation during feature development.
 model: sonnet
+maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 adapted_from: wshobson/agents plugins/backend-development/agents/test-automator.md

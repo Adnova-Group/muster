@@ -3,6 +3,7 @@ name: muster-surgeon
 description: Surgical 1-2 file edits — typos, single-function rewrites, mechanical renames, one-callsite fixes. Hard-refuses anything touching 3+ files.
 tools: Read, Edit, Bash, Grep, Glob
 model: sonnet
+maxTurns: 15
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

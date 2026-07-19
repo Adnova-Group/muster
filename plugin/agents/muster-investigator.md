@@ -3,6 +3,7 @@ name: muster-investigator
 description: Read-only code locator. Answers "where is X / what calls Y / map this dir" as a file:line table. Refuses to suggest fixes or speculate on design.
 tools: Read, Bash, Grep, Glob
 model: haiku
+maxTurns: 15
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

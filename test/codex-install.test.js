@@ -9,7 +9,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "n
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CODEX_COUNTS } from "../src/codex.js";
-import { formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
+import { assertContainedProfiles, formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { canonicalMusterMarketplace, localMusterMarketplace, repoRoot, runCodexHook, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 test("Codex installation owns only its profile manifest and is repeatable", async () => {
@@ -427,4 +427,34 @@ test("Codex install rolls profiles and marketplace back when plugin registration
   await assert.rejects(() => readFile(join(agents, ".muster-managed.json"), "utf8"));
   await assert.rejects(() => readFile(join(agents, "muster-builder.toml"), "utf8"));
   assert.ok(calls.includes("plugin marketplace remove muster"));
+});
+
+// --- Destination containment: a generated `<id>.toml` must resolve inside
+// agentsDir before it is join()'d into a write path (run-5 security audit
+// High #1, defense in depth behind generateCodexProfiles' id guard). ---
+
+test("assertContainedProfiles refuses any profile filename that would escape the agents directory", () => {
+  const dir = join("/srv", "proj", ".codex", "agents");
+  for (const bad of ["../evil.toml", "../../etc/cron.d/x.toml", "/etc/cron.d/x.toml", "sub/x.toml", "..\\evil.toml", "evil.txt", ".toml", "muster builder.toml"]) {
+    assert.throws(() => assertContainedProfiles([bad], dir), /outside/,
+      `${JSON.stringify(bad)} must be refused before it becomes a write destination`);
+  }
+  assert.doesNotThrow(() => assertContainedProfiles(["muster-builder.toml", "muster-reviewer.toml"], dir));
+});
+
+test("runCodexInstall refuses a manifest whose agent id escapes agentsDir and writes nothing outside it", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-id-escape-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const fakeRepo = join(tmp, "repo"), cwd = join(tmp, "project"), home = join(tmp, "home");
+  // Enough real source tree for generateCodexProfiles + prepareHooks to run;
+  // only the manifest is poisoned with a traversing id.
+  await cp(join(repoRoot, "codex"), join(fakeRepo, "codex"), { recursive: true });
+  await cp(join(repoRoot, "plugin", "agents"), join(fakeRepo, "plugin", "agents"), { recursive: true });
+  await cp(join(repoRoot, "package.json"), join(fakeRepo, "package.json"));
+  await writeFile(join(fakeRepo, "codex", "agents.manifest.json"),
+    JSON.stringify({ format: 1, agents: { "../pwned": { source: "plugin/agents/muster-builder.md", tier: "opus" } } }));
+  const absent = async () => { throw new Error("codex not found"); };
+  await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot: fakeRepo, execFile: absent }), /is not a safe token|outside/);
+  // The escaping `<id>.toml` join(agentsDir, "../pwned.toml") == cwd/.codex/pwned.toml must never be written.
+  await assert.rejects(readFile(join(cwd, ".codex", "pwned.toml"), "utf8"), "no profile may be materialized outside agentsDir");
 });

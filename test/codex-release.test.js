@@ -13,6 +13,9 @@ import {
   publishCodexPlugin,
   resolveCodexPlugin
 } from "../src/codex-release.js";
+import { CODEX_COUNTS } from "../src/codex.js";
+
+const repoRoot = new URL("../", import.meta.url).pathname;
 
 async function write(path, content) {
   await mkdir(dirname(path), { recursive: true });
@@ -333,4 +336,53 @@ test("assertRegularTree and assertRegularFile reject symlinks without following 
   await symlink(outside, join(root, "file-link.txt"));
   await assert.rejects(assertRegularFile(join(root, "file-link.txt")), /symlink/i);
   await assert.doesNotReject(assertRegularFile(outside));
+});
+
+// --- Trust-boundary containment: codex/agents.manifest.json is attacker-shaped
+// input (a manifest-controlled `id` becomes a `<id>.toml` path segment and
+// `config.source` becomes a read path). run-5 security audit High #1. ---
+
+test("generateCodexProfiles refuses a manifest agent id that is not a safe kebab token", async t => {
+  const root = await tempRoot(t);
+  await write(join(root, "sources", "role.md"), "---\nname: role\ndescription: role\n---\n\nBody\n");
+  // Each of these, unguarded, becomes a `<id>.toml` Map key that a downstream
+  // writer join()s into a destination path -- "../evil" -> "../evil.toml"
+  // escapes agentsDir (arbitrary write). Reject the id BEFORE it is a segment.
+  // Also rejects trailing/doubled hyphens ("a-", "a--b"): the token is the
+  // exact stem of PROFILE_FILENAME, so no accepted id can trip the downstream
+  // destination guard (assertContainedProfiles) on a legitimate input.
+  for (const id of ["../evil", "a/../../b", "evil/sub", "..", ".", "UPPER", "has space", "-lead", "a-", "a--b", "", "a\\b"]) {
+    await write(join(root, "codex", "agents.manifest.json"),
+      JSON.stringify({ format: 1, agents: { [id]: { source: "sources/role.md", tier: "opus" } } }));
+    await assert.rejects(generateCodexProfiles(root), /is not a safe token/,
+      `id ${JSON.stringify(id)} must be rejected before becoming a path segment`);
+  }
+});
+
+test("generateCodexProfiles refuses a config.source that escapes the distribution root, without reading it", async t => {
+  const parent = await mkdtemp(join(tmpdir(), "muster-codex-src-escape-"));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const root = join(parent, "root");
+  // A real, readable agent markdown planted OUTSIDE the distribution root. An
+  // unguarded reader would happily read it and emit a profile; the containment
+  // check must reject BEFORE the read, so this file is provably never touched.
+  const sentinel = join(parent, "SENTINEL.md");
+  await writeFile(sentinel, "---\nname: leak\ndescription: SENTINEL-CONTENT\n---\n\nSENTINEL-CONTENT body\n");
+  for (const source of ["../SENTINEL.md", "../../SENTINEL.md", sentinel /* absolute */]) {
+    await write(join(root, "codex", "agents.manifest.json"),
+      JSON.stringify({ format: 1, agents: { role: { source, tier: "opus" } } }));
+    await assert.rejects(generateCodexProfiles(root), err => {
+      // The containment guard fires before readRegular, so the error is the
+      // path-only containment rejection -- never the sentinel's contents.
+      assert.match(err.message, /is not contained by/, `source ${JSON.stringify(source)} must be a containment rejection`);
+      assert.doesNotMatch(err.message, /SENTINEL-CONTENT/, "the escaping source must never be read");
+      return true;
+    });
+  }
+});
+
+test("generateCodexProfiles accepts every real committed manifest id and source (no regression)", async () => {
+  const profiles = await generateCodexProfiles(repoRoot);
+  assert.equal(profiles.size, CODEX_COUNTS.agents);
+  for (const key of profiles.keys()) assert.match(key, /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/);
 });

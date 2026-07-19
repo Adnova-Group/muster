@@ -56,7 +56,7 @@ import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <substr>] [--current-pins-only]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <substr>] [--current-pins-only]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -455,12 +455,21 @@ async function main() {
       const caps = await resolveModeCapabilities(rest);
       out({ mode: failure.mode, manifest: buildDiagnoseManifest(failure, caps) });
     } else if (cmd === "audit") {
-      const args = rest.filter(arg => arg !== "--codex");
+      // --backlog: read-only sweep -> ranked capture, no fix/verify (the $muster-audit
+      // skill's backlog mode). Remaining positionals are optional path scopes.
+      const backlog = rest.includes("--backlog");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--backlog");
+      // Remaining positionals are path scopes; a "-"-leading token is an unrecognized flag,
+      // not a path (path scopes never start with "-"). Fail cleanly rather than silently
+      // scoping to a bogus path -- mirrors the muster_audit MCP boundary's own guard.
+      const unknownFlag = args.find(a => a.startsWith("-"));
+      if (unknownFlag) fail(`audit: unknown option "${unknownFlag}" (path scopes must not start with "-")`);
       const caps = await resolveModeCapabilities(rest);
       // Use the lightweight package.json-only check, not detectProject — audit must not
-      // incur git spawns (it stays offline for CI / the MCP wrapper).
+      // incur git spawns (it stays offline for CI / the MCP wrapper). args[0], the first
+      // scope path, also seeds the prompting-signal probe (unchanged for whole-repo runs).
       const prompting = await hasPromptingSignal(args[0] || process.cwd());
-      out(buildAuditManifest(caps, { prompting }));
+      out(buildAuditManifest(caps, { prompting, backlog, paths: args }));
     } else if (cmd === "issue") {
       if (!rest[0]) fail("issue <ref>: missing #N | number | issue-url");
       if (parseIssueRef(rest[0]).kind !== "issue") fail("not a GitHub issue reference: " + rest[0]);

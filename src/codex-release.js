@@ -180,6 +180,19 @@ export function profileToml(id, source, config) {
   ].join("\n");
 }
 
+// codex/agents.manifest.json is a trust boundary: every `id` becomes a
+// `${id}.toml` path segment a downstream writer join()s into a destination,
+// and every `config.source` becomes a read path. A manifest-controlled id like
+// "../evil" or a source like "../../etc/passwd" would otherwise escape their
+// roots (arbitrary write / arbitrary read). Each id must be a strict safe
+// kebab token BEFORE it is ever a segment. This is the exact stem of
+// codex-install.js's PROFILE_FILENAME (`^[a-z0-9]+(?:-[a-z0-9]+)*$`), so every
+// id accepted here yields a `${id}.toml` that also satisfies that destination
+// guard -- no id can pass here yet trip the containment check there. It is a
+// strict subset of src/sprint-waves.js's ID_TOKEN_RE (which tolerates the
+// trailing/doubled hyphens this rejects).
+const ID_TOKEN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 // Returns a Map of `${id}.toml` -> generated profile content, sourced only
 // from the frozen codex/agents.manifest.json mapping and its referenced agent
 // markdown files. No build step, no staging directory, no Codex CLI needed.
@@ -187,8 +200,15 @@ export async function generateCodexProfiles(root) {
   const mapping = readRegularJson(join(root, "codex", "agents.manifest.json"), "Codex agent mapping", 256 * 1024);
   const files = new Map();
   for (const [id, config] of Object.entries(mapping.agents || {})) {
+    if (!ID_TOKEN_RE.test(id)) throw new Error(`Codex agent mapping id is not a safe token: ${JSON.stringify(id)}`);
     if (typeof config.source !== "string" || !config.source) throw new Error(`Codex agent mapping entry ${id} has no source`);
-    const source = readRegular(join(root, config.source), `Codex agent source for ${id}`).toString("utf8");
+    // resolve() honors an absolute source as-is (so it escapes root and is
+    // rejected) and normalizes any `..` before the containment check; the
+    // same resolved path is what gets read, so contained() rejecting an escape
+    // guarantees the escaping file is never read.
+    const sourcePath = resolve(root, config.source);
+    contained(root, sourcePath, `Codex agent source for ${id}`);
+    const source = readRegular(sourcePath, `Codex agent source for ${id}`).toString("utf8");
     files.set(`${id}.toml`, profileToml(id, source, config));
   }
   return files;

@@ -121,6 +121,95 @@ test("scoreOutcomeForFastPath: an outcome at the word-count boundary is still el
   assert.equal(r.eligible, true);
 });
 
+// --- audit/review-scope + multi-file disqualifiers (run-5 dogfood misfire) --------------
+// A terse whole-codebase/multi-file AUDIT outcome slipped through as fast-path ELIGIBLE:
+// none of the cross-cutting/multi-deliverable/chained-verb/word-count signals catch a short
+// "audit src/a.js src/b.js src/c.js ..." (its verb is not in the imperative lexicon and its
+// scope words are not the cross-cutting vocabulary). But an audit/review/sweep is a
+// read-and-assess task ACROSS a scope -- never the single build/fix slice the fast path is
+// for (builder + ONE reviewer, one task). Two independent signals now disqualify it: a
+// review-scope action verb, and 2+ enumerated file paths.
+
+test("scoreOutcomeForFastPath: the run-5 multi-file AUDIT outcome is NOT eligible", () => {
+  const r = scoreOutcomeForFastPath("audit src/a.js src/b.js src/c.js for security and coverage");
+  assert.equal(r.eligible, false, "a multi-file audit outcome must never take the builder-only fast path");
+  assert.match(r.reason, /audit|review|scope|file/i);
+});
+
+test("scoreOutcomeForFastPath: leading audit/review/sweep-scope outcomes are NOT eligible", () => {
+  for (const text of [
+    "audit src/a.js src/b.js src/c.js for security and coverage",
+    "review src/auth.js src/db.js src/api.js for error handling",
+    "sweep the repo for unused exports",
+    "audit the payments module for security and tech-debt issues",
+    "re-audit the auth module after the last remediation",
+  ]) {
+    const r = scoreOutcomeForFastPath(text);
+    assert.equal(r.eligible, false, `${JSON.stringify(text)} is a review-scope task, never a single fast-path slice`);
+    assert.match(r.reason, /audit|review|sweep|file/i);
+  }
+});
+
+test("scoreOutcomeForFastPath: an outcome enumerating 2+ distinct file paths is NOT eligible", () => {
+  // Even without a review verb, naming multiple concrete source files is a multi-file
+  // shape, not one small slice.
+  const r = scoreOutcomeForFastPath("tidy up imports in src/a.js and src/b.js");
+  assert.equal(r.eligible, false);
+  assert.match(r.reason, /file/i);
+});
+
+test("scoreOutcomeForFastPath: a single-file build/fix task stays eligible (one path is not multi-file)", () => {
+  // The multi-file signal must require 2+ paths -- a genuine single-slice task that names
+  // exactly one file, and uses no review-scope verb, must remain on the fast path.
+  for (const text of [
+    "add a retry helper to src/fetch.js",
+    "refactor the getUser function in src/auth.js",
+    "fix the null check in src/db.js",
+  ]) {
+    const r = scoreOutcomeForFastPath(text);
+    assert.equal(r.eligible, true, `${JSON.stringify(text)} is a single-file slice and must stay fast-path eligible`);
+  }
+});
+
+// --- false-positive guards: the disqualifiers must NOT fire on ordinary build tasks -------
+// Regression pins for the shapes an earlier draft over-matched (adversarial review round 1):
+// the review-scope signal is anchored to the LEADING verb, and the file-path signal requires
+// an alphabetic extension and dedupes -- so review-NOUN proper nouns, a file named twice, and
+// numeric fractions never disqualify a genuine single build slice.
+
+test("scoreOutcomeForFastPath: review-noun proper nouns (code review bot, dependency review action) stay eligible", () => {
+  // "code review"/"dependency review" are common CI/tooling nouns (GitHub's own
+  // dependency-review-action); the governing verb here is add/wire, not a review-scope verb,
+  // so these single build tasks must stay on the fast path.
+  for (const text of [
+    "add a code review bot config to .github/config.yml",
+    "wire up the dependency review action in the CI workflow",
+    "add a review step to the checkout flow",
+  ]) {
+    const r = scoreOutcomeForFastPath(text);
+    assert.equal(r.eligible, true, `${JSON.stringify(text)} is a single build task naming a review noun, not a review action`);
+  }
+});
+
+test("scoreOutcomeForFastPath: 'audit' as a feature noun (audit log) does not disqualify a build task", () => {
+  // The review-scope signal is anchored to the LEADING imperative, so "add an audit log" (a
+  // build task whose object happens to be an audit log) stays eligible -- the verb is "add".
+  const r = scoreOutcomeForFastPath("add an audit log to the payments service");
+  assert.equal(r.eligible, true);
+});
+
+test("scoreOutcomeForFastPath: the same file named twice is one distinct path, still eligible", () => {
+  const r = scoreOutcomeForFastPath("add a retry helper to src/fetch.js as described in the src/fetch.js TODO");
+  assert.equal(r.eligible, true, "a duplicate mention of one file is still a single-file slice");
+});
+
+test("scoreOutcomeForFastPath: numeric fractions/versions are not counted as file paths", () => {
+  // "3/4.5", "7/8.2" are ratios, not paths -- the file-path signal requires an ALPHABETIC
+  // extension, so this single build task stays eligible.
+  const r = scoreOutcomeForFastPath("update the ratio from 3/4.5 to 7/8.2 in the pricing calc");
+  assert.equal(r.eligible, true);
+});
+
 // --- buildFastPathManifest ---------------------------------------------------------------
 
 test("buildFastPathManifest: throws without a non-empty outcome", () => {

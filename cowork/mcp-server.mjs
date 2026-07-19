@@ -149,8 +149,17 @@ const TOOLS = {
   muster_diagnose: { argv: ["diagnose"], ...S("Classify a failure symptom and build a diagnose manifest.", "symptom") },
   muster_audit: {
     argv: ["audit"], kind: "target",
-    description: "Build the whole-codebase audit manifest for an explicit connected project directory (six parallel review dimensions).",
-    inputSchema: { type: "object", properties: { dir: { type: "string" } }, required: ["dir"] },
+    // audit-mcp-backlog-mode: two OPTIONAL params on the existing "target" kind, appended
+    // onto the CLI argv by the "target" branch's `flags` below (mirrors "str"'s `flags`).
+    // `backlog:true` exposes the $muster-audit skill's read-only backlog sweep (read-only
+    // dimension sweep -> ranked capture, NO fix/verify stages); `paths` scopes the sweep.
+    // Default (dir only) is unchanged: the whole-codebase fix+verify remediation manifest.
+    description: "Build the audit manifest for an explicit connected project directory (six parallel review dimensions). Default: whole-codebase remediation (consolidate -> fix -> verify). `backlog: true`: read-only sweep -> ranked capture into a backlog, NO fix/verify stages. `paths`: scope the sweep to the given paths/subsystems.",
+    inputSchema: { type: "object", properties: { dir: { type: "string" }, backlog: { type: "boolean" }, paths: { type: "array", items: { type: "string" } } }, required: ["dir"] },
+    flags: (a) => [
+      ...(a.backlog ? ["--backlog"] : []),
+      ...(Array.isArray(a.paths) ? a.paths.filter((p) => typeof p === "string" && p.trim()) : []),
+    ],
   },
 
   // gate/math verbs — JSON in, written to a temp file
@@ -258,7 +267,21 @@ async function callTool(name, args = {}, signal) {
     if (typeof args.dir !== "string" || !args.dir.trim()) {
       return { ok: false, text: "muster_audit: explicit target directory is required" };
     }
-    return runCli(tool.argv, { cwd: path.resolve(args.dir), signal });
+    // `paths` entries are spread as POSITIONAL argv, but the CLI's flag scans (--help/-h,
+    // --codex, --backlog) read the whole argv -- so a "-"-leading path would masquerade as
+    // a flag (paths:["-h"] prints USAGE not JSON; paths:["--backlog"] silently flips the
+    // mode). Path scopes are filesystem paths/subsystems and never start with "-"; reject
+    // such an entry at this trust boundary before it ever reaches argv.
+    if (Array.isArray(args.paths)) {
+      const badPath = args.paths.find((p) => typeof p === "string" && p.trim().startsWith("-"));
+      if (badPath !== undefined) {
+        return { ok: false, text: `muster_audit: path scope must not start with "-" (got ${JSON.stringify(badPath)}); it would masquerade as a CLI flag` };
+      }
+    }
+    // Append any tool-declared flags (muster_audit's --backlog / path scopes) after the
+    // verb; the target's own required `dir` stays the resolved cwd, never a positional.
+    const extra = tool.flags ? tool.flags(args) : [];
+    return runCli([...tool.argv, ...extra], { cwd: path.resolve(args.dir), signal });
   }
   // static: no CLI call at all — return pre-loaded file content verbatim (muster_sprint_protocol).
   // A load-time read failure (tool.error set) surfaces as isError instead of serving `null` text.

@@ -14,6 +14,91 @@ test("thin outcome 'fix it' is not clear and flags length + missing criteria", (
   );
 });
 
+// WHY (backlog item codex-assess-criteria-detect, 2026-07-18 Codex dogfood): a real code
+// outcome carrying detailed acceptance behavior as PROSE clauses -- not a "Success
+// criteria:"-labeled list, not a bare metric -- was flagged no-success-criteria because it
+// tripped neither CRITERIA_QUANTIFIED (no digits) nor CRITERIA_KEYWORD (no metric/measure/
+// success/criteria/kpi/target/goal/increase/decrease/reduce/improve/conversion/rate/latency/
+// throughput word). The outcome text below is the exact dogfood fixture reconstructed from
+// the run transcript. It must now be recognized as carrying real criteria via the "fail
+// loud"/"fail-loud" phrase (occurs twice in this fixture).
+const DOGFOOD_RECEIPT_VERIFICATION_OUTCOME =
+  "buildBaseShaReceipt in src/wave-dispatch.js validates SHA format but never verifies the SHA " +
+  "actually resolves to a real commit. Add real verification: the receipt builder accepts an " +
+  "injected verifier that checks the SHA against the repo, receipts record verified: true/false " +
+  "plus the verification mechanism, and callers that depend on the receipt fail loud when " +
+  "verification is available but fails. TDD; keep the existing fail-loud behavior for malformed SHAs.";
+
+test("dogfood fixture: prose-form code-outcome criteria ('fail loud') clears no-success-criteria", () => {
+  const r = assessOutcome(DOGFOOD_RECEIPT_VERIFICATION_OUTCOME);
+  assert.ok(
+    !r.signals.includes("no-success-criteria"),
+    `the 'fail loud'/'fail-loud' phrase must clear no-success-criteria, got signals: ${JSON.stringify(r.signals)}`,
+  );
+  assert.equal(r.clear, true, "a long, detailed, prose-criteria outcome must be clear");
+});
+
+// WHY: a realistic variant of the same prose-criteria grammar, not just the one dogfood
+// fixture -- "fail loud"/"fail-loud" on its own, with no digit or CRITERIA_KEYWORD word, must
+// independently clear the signal, in both the spaced and hyphenated spelling.
+test("prose criteria: 'fail loud'/'fail-loud' alone clears no-success-criteria", () => {
+  const r1 = assessOutcome("the importer should fail loud on a corrupt row instead of silently skipping it");
+  assert.ok(!r1.signals.includes("no-success-criteria"), "'fail loud' is a concrete, distinctive acceptance phrase");
+  const r2 = assessOutcome("keep the existing fail-loud behavior for a missing config file");
+  assert.ok(!r2.signals.includes("no-success-criteria"), "hyphenated 'fail-loud' must also clear the signal");
+});
+
+// WHY: negative control -- a bare colon with no "fail loud"/"fail-loud" phrase anywhere in the
+// text (ordinary prose punctuation) must NOT be mistaken for structured criteria.
+test("prose criteria: an ordinary prose colon with no 'fail loud' phrase does not clear no-success-criteria", () => {
+  const r = assessOutcome("the plan is simple: build a small internal tool for the support team");
+  assert.ok(r.signals.includes("no-success-criteria"), "a plain narrative colon must not be read as prose criteria");
+});
+
+// WHY (review-gate findings, fix-loops 1 and 2): two other candidate prose-criteria signals --
+// an explicit obligation ("must"/"should" + verb) and a labeled field:value pair
+// ("status: ok") -- were tried and DELIBERATELY DROPPED (see src/interview.js's header
+// comment) after two rounds of adversarial review proved neither closes cleanly: gating on a
+// closed verb/field-name whitelist only narrows the vocabulary, it doesn't change the
+// structural bug -- a vague, criteria-free primary clause with an incidental
+// obligation/labeled-value aside tacked on (via a comma) still cleared the signal no matter how
+// the whitelist was tightened, because ordinary English reuses almost every verb and field-name
+// word across technical and casual registers. This regression suite pins EVERY adversarial
+// string both review rounds found (8 total) as a permanent negative control, so neither pattern
+// can silently reappear if a future change reaches for "must/should" or "label:" again.
+test("negative control: 'must'/'should' obligation phrasing (fix-loop 1 + 2 examples) does not clear no-success-criteria", () => {
+  for (const outcome of [
+    "you must be kidding, just handle it",
+    "please make it better, it must be simple",
+    "this should not take long, please just do it",
+    "fix the reporting bug, it must include some improvements I guess",
+    "handle the auth flow better, it should support more cases somehow",
+    "update the config loader, it must validate stuff properly please",
+    "you must return my call about the project sometime today",
+    "honestly you must validate my feelings sometimes, it's exhausting",
+  ]) {
+    const r = assessOutcome(outcome);
+    assert.ok(r.signals.includes("no-success-criteria"), `must/should phrasing must not clear: "${outcome}"`);
+  }
+});
+
+test("negative control: labeled field:value phrasing (fix-loop 1 + 2 examples) does not clear no-success-criteria", () => {
+  for (const outcome of [
+    "Bottom line: no additional work is needed.",
+    "Note: yes, this includes migrations.",
+    "reply: yes we will proceed",
+    "verdict: no further action required",
+    "handle the reporting bug, note: yes this is urgent",
+    "handle the reporting bug, status: ok this is fine for now I think",
+    "just fix the thing, result: yes whenever you get a chance",
+    "make it better somehow, success: true if you think it's good enough",
+    "handle this mess, ready: yes let's just ship it",
+  ]) {
+    const r = assessOutcome(outcome);
+    assert.ok(r.signals.includes("no-success-criteria"), `labeled field:value phrasing must not clear: "${outcome}"`);
+  }
+});
+
 // WHY: a bare vague verb with a hand-wavy qualifier is the canonical case the interview
 // exists to catch — it must additionally fire vague-only on top of the other two signals.
 test("bare/vague 'make it better' flags vague-only", () => {

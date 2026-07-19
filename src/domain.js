@@ -11,7 +11,21 @@ const DOMAIN_KEYWORDS = {
   sales: ["case study", "customer story", "sales deck", "battlecard"],
   book: ["book", "novel", "manuscript", "memoir"],
   video: ["video script", "video content", "screencast", "b-roll", "shot list", "video edit", "youtube script", "video plan", "video"],
-  software: ["implement", "refactor", "bug", "api", "endpoint", "function", "deploy"]
+  // "tdd"/"sha" (backlog item codex-assess-criteria-detect, 2026-07-18 Codex dogfood): a
+  // concrete code outcome ("buildBaseShaReceipt in src/wave-dispatch.js validates SHA format
+  // but never verifies...") classified domain:unknown because neither the original keyword
+  // list nor the workspace-shape fallback (profile.shape stays "unknown" for a repo like
+  // muster's own -- no package.json main/exports, no FE/BE framework deps) caught it.
+  // "validate(s)"/"verify"/"verifies"/"verification" were tried first and REVERTED: review-gate
+  // fix-loop 1 proved them too common outside software (compliance/HR/finance/QA/research all
+  // routinely "validate"/"verify" something -- a compliance memo, a timesheet, an expense
+  // claim, survey responses -- and every one of those misrouted straight to domain:software
+  // with no earlier domain in this list catching them first). "tdd" and "sha" are kept: both
+  // are distinctive engineering jargon with no realistic non-software false-positive shown,
+  // and together they already classify this fixture correctly without the risky verbs. "test"
+  // and "receipt" were considered and deliberately left out for the same over-fit reason (a
+  // QA/usability "test", a purchase/expense "receipt").
+  software: ["implement", "refactor", "bug", "api", "endpoint", "function", "deploy", "tdd", "sha"]
 };
 
 // The domain vocabulary the classifier knows about (used by doctor's

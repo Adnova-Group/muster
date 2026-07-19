@@ -90,14 +90,37 @@ function parseRollout(text) {
   return meta ? { meta, turnModels } : null;
 }
 
-// day is "YYYY/MM/DD" (the sessions tree layout). cwdFilter, when set, keeps
-// only threads whose recorded cwd contains the substring -- scoping the audit
-// to one project's sessions on a shared CODEX_HOME.
-export async function auditCodexModelConformance({ sessionsDir, agentsDir, day, cwdFilter = null } = {}) {
-  if (!sessionsDir || !agentsDir || !day) {
-    throw new Error("auditCodexModelConformance: sessionsDir, agentsDir, and day (YYYY/MM/DD) are required");
+// day is "YYYY/MM/DD" (the sessions tree layout); days (mutually exclusive
+// with day, a positive integer) instead scans the last N UTC day directories
+// ending today, skipping absent days silently, aggregating rows and the tally
+// across the range with each row stamped with its source day. cwdFilter, when
+// set, keeps only threads whose recorded cwd contains the substring -- scoping
+// the audit to one project's sessions on a shared CODEX_HOME.
+export async function auditCodexModelConformance({ sessionsDir, agentsDir, day, days, cwdFilter = null } = {}) {
+  if (!sessionsDir || !agentsDir || (!day && days === undefined)) {
+    throw new Error("auditCodexModelConformance: sessionsDir, agentsDir, and day (YYYY/MM/DD) or days are required");
+  }
+  if (day && days !== undefined) {
+    throw new Error("auditCodexModelConformance: day and days cannot be combined");
+  }
+  if (days !== undefined && (!Number.isSafeInteger(days) || days < 1)) {
+    throw new Error("auditCodexModelConformance: days must be a positive integer");
   }
   const pins = await pinnedModels(agentsDir);
+  if (!days) return auditDay({ sessionsDir, day, cwdFilter, pins });
+
+  const rows = [];
+  const tally = emptyTally();
+  const range = utcDays(days);
+  for (const sourceDay of range) {
+    const report = await auditDay({ sessionsDir, day: sourceDay, cwdFilter, pins });
+    rows.push(...report.rows.map(row => ({ ...row, day: sourceDay })));
+    addTally(tally, report.tally);
+  }
+  return { days, rows, tally, pins: pins.size };
+}
+
+async function auditDay({ sessionsDir, day, cwdFilter, pins }) {
   const dir = join(sessionsDir, day);
   let names;
   try { names = (await readdir(dir)).filter(name => name.endsWith(".jsonl")).sort(); }
@@ -135,6 +158,17 @@ export async function auditCodexModelConformance({ sessionsDir, agentsDir, day, 
     else tally.idle += 1;
   }
   return { day, rows, tally, pins: pins.size };
+}
+
+function utcDays(count, anchor = new Date()) {
+  const midnight = Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate());
+  return Array.from({ length: count }, (_, offset) =>
+    new Date(midnight - offset * 86_400_000).toISOString().slice(0, 10).replaceAll("-", "/")
+  );
+}
+
+function addTally(target, source) {
+  for (const key of Object.keys(target)) target[key] += source[key];
 }
 
 function emptyTally() {

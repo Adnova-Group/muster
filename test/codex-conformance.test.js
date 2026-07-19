@@ -5,12 +5,40 @@
 // profile pins, or inherit the orchestrator's?" (2026-07-18 dogfood follow-up).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { auditCodexModelConformance, CONFORMANCE_VERDICTS } from "../src/codex-conformance.js";
 
 const DAY = "2026/07/18";
+const pexecFile = promisify(execFile);
+const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+function utcDay(offset = 0, reference = new Date()) {
+  const date = new Date(Date.UTC(
+    reference.getUTCFullYear(),
+    reference.getUTCMonth(),
+    reference.getUTCDate() + offset
+  ));
+  return date.toISOString().slice(0, 10).replaceAll("-", "/");
+}
+
+async function writeDayRollout(sessionsDir, day, name, options) {
+  const dayDir = join(sessionsDir, day);
+  await mkdir(dayDir, { recursive: true });
+  await writeFile(join(dayDir, name), rolloutLines(options));
+}
+
+function runCli(args, codexHome) {
+  return pexecFile(process.execPath, [CLI, ...args], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, CODEX_HOME: codexHome }
+  });
+}
 
 function rolloutLines({ threadSource, agentRole, nickname, depth, cwd, turnModels }) {
   const source = threadSource === "subagent"
@@ -44,7 +72,7 @@ async function fixture(t) {
   const sessionsDir = join(root, "sessions");
   const dayDir = join(sessionsDir, DAY);
   await mkdir(dayDir, { recursive: true });
-  return { agentsDir, sessionsDir, dayDir };
+  return { root, agentsDir, sessionsDir, dayDir };
 }
 
 test("conformance audit classifies MATCH, MISMATCH, GENERIC, NO-PIN, and IDLE threads", async t => {
@@ -106,4 +134,108 @@ test("conformance audit fails loud on missing required inputs and tolerates junk
   const report = await auditCodexModelConformance({ sessionsDir, agentsDir, day: DAY });
   assert.equal(report.rows.length, 1);
   assert.equal(report.rows[0].verdict, CONFORMANCE_VERDICTS.MATCH);
+});
+
+test("conformance audit scans a UTC-inclusive multi-day range, aggregates tally, and skips missing days", async t => {
+  const { agentsDir, sessionsDir } = await fixture(t);
+  const anchor = new Date();
+  const today = utcDay(0, anchor);
+  const yesterday = utcDay(-1, anchor);
+  const missing = utcDay(-2, anchor);
+  await writeDayRollout(sessionsDir, today, "rollout-today-match.jsonl", {
+    threadSource: "subagent", agentRole: "role-sol", turnModels: ["gpt-5.6-sol"]
+  });
+  await writeDayRollout(sessionsDir, yesterday, "rollout-yesterday-mismatch.jsonl", {
+    threadSource: "subagent", agentRole: "role-luna", turnModels: ["gpt-5.6-sol"]
+  });
+
+  const report = await auditCodexModelConformance({ sessionsDir, agentsDir, days: 3 });
+  assert.equal(report.tally.subagents, 2, "an absent day is skipped without an empty row");
+  assert.equal(report.tally.match, 1);
+  assert.equal(report.tally.mismatch, 1);
+  assert.deepEqual(report.rows.map(row => row.day).sort(), [today, yesterday].sort());
+  assert.ok(!report.rows.some(row => row.day === missing), "missing day must not abort or fabricate rows");
+  const mismatch = report.rows.find(row => row.verdict === CONFORMANCE_VERDICTS.MISMATCH);
+  assert.equal(mismatch.day, yesterday, "the mismatch keeps its source day");
+});
+
+test("codex-conformance CLI rejects an explicit day combined with --days", async t => {
+  const { root } = await fixture(t);
+  const explicitDay = utcDay();
+  await assert.rejects(
+    () => runCli(["codex-conformance", explicitDay, "--days", "2"], root),
+    error => {
+      assert.notEqual(error.code, 0);
+      assert.match(error.stderr, /day.*days|days.*day|conflict/i);
+      return true;
+    }
+  );
+});
+
+test("codex-conformance CLI validates --days as a positive base-10 integer", async t => {
+  const { root } = await fixture(t);
+  for (const value of ["0", "-1", "1.5", "abc"]) {
+    await assert.rejects(
+      () => runCli(["codex-conformance", "--days", value], root),
+      error => {
+        assert.notEqual(error.code, 0, `--days ${value} must fail`);
+        assert.match(error.stderr, /days.*positive|positive.*integer|base-10|invalid/i);
+        return true;
+      }
+    );
+  }
+  await assert.rejects(
+    () => runCli(["codex-conformance", "--days"], root),
+    error => {
+      assert.notEqual(error.code, 0);
+      assert.match(error.stderr, /days.*positive|positive.*integer|missing|invalid/i);
+      return true;
+    }
+  );
+});
+
+test("codex-conformance CLI without a day or --days audits only today's UTC directory", async t => {
+  const { root, sessionsDir } = await fixture(t);
+  const anchor = new Date();
+  const today = utcDay(0, anchor);
+  const yesterday = utcDay(-1, anchor);
+  await writeDayRollout(sessionsDir, today, "rollout-today-match.jsonl", {
+    threadSource: "subagent", agentRole: "role-sol", turnModels: ["gpt-5.6-sol"]
+  });
+  await writeDayRollout(sessionsDir, yesterday, "rollout-yesterday-mismatch.jsonl", {
+    threadSource: "subagent", agentRole: "role-luna", turnModels: ["gpt-5.6-sol"]
+  });
+  // Resolve the UTC day immediately before spawning so the assertion follows the
+  // CLI's own default anchor rather than a stale test constant.
+  const dayBeforeSpawn = utcDay();
+  const { stdout } = await runCli(["codex-conformance"], root);
+  const report = JSON.parse(stdout);
+  assert.equal(report.day, dayBeforeSpawn);
+  assert.equal(report.tally.mismatch, 0, "a mismatch on yesterday must not enter today's default audit");
+  assert.equal(report.rows.length, 1);
+});
+
+test("codex-conformance CLI exits nonzero when any mismatch appears in the requested range", async t => {
+  const { root, sessionsDir } = await fixture(t);
+  const anchor = new Date();
+  const today = utcDay(0, anchor);
+  const yesterday = utcDay(-1, anchor);
+  await writeDayRollout(sessionsDir, today, "rollout-today-match.jsonl", {
+    threadSource: "subagent", agentRole: "role-sol", turnModels: ["gpt-5.6-sol"]
+  });
+  await writeDayRollout(sessionsDir, yesterday, "rollout-yesterday-mismatch.jsonl", {
+    threadSource: "subagent", agentRole: "role-luna", turnModels: ["gpt-5.6-sol"]
+  });
+  // Resolve immediately before spawn; the range is today plus its prior day.
+  const dayBeforeSpawn = utcDay();
+  await assert.rejects(
+    () => runCli(["codex-conformance", "--days", "2"], root),
+    error => {
+      assert.notEqual(error.code, 0);
+      const report = JSON.parse(error.stdout);
+      assert.equal(report.tally.mismatch, 1);
+      assert.ok(report.rows.some(row => row.day !== dayBeforeSpawn && row.verdict === CONFORMANCE_VERDICTS.MISMATCH));
+      return true;
+    }
+  );
 });

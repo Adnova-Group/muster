@@ -56,7 +56,7 @@ import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD] [--cwd <substr>]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <substr>]|scratchpad <runId>|profile|install codex [--scope project-or-user] [--dry-run]|uninstall codex [--scope project-or-user] [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -481,17 +481,29 @@ async function main() {
       out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "codex-conformance") {
-      // Post-run forensics, not a health check (that's doctor): audits a day's
-      // Codex rollouts for subagent model-conformance -- did each spawned
+      // Post-run forensics, not a health check (that's doctor): audits Codex
+      // rollouts for subagent model-conformance -- did each spawned
       // thread run its profile-pinned model, or inherit the orchestrator's?
       const { auditCodexModelConformance } = await import("./codex-conformance.js");
       const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
-      const day = rest.find(arg => /^\d{4}\/\d{2}\/\d{2}$/.test(arg))
-        || new Date().toISOString().slice(0, 10).replaceAll("-", "/");
+      const daysIndex = rest.indexOf("--days");
+      const cwdIndex = rest.indexOf("--cwd");
+      const day = rest.find((arg, index) =>
+        (daysIndex < 0 || index !== daysIndex + 1)
+        && (cwdIndex < 0 || index !== cwdIndex + 1)
+        && /^\d{4}\/\d{2}\/\d{2}$/.test(arg)
+      );
+      const daysArg = flagValue(rest, "--days");
+      if (rest.some(arg => arg.startsWith("--days="))) fail("codex-conformance --days requires a separate positive base-10 integer argument");
+      if (day && daysIndex >= 0) fail("codex-conformance: explicit day conflicts with --days");
+      if (daysIndex >= 0 && (!daysArg || !/^[1-9]\d*$/.test(daysArg) || !Number.isSafeInteger(Number(daysArg)))) {
+        fail("codex-conformance --days must be a positive base-10 integer");
+      }
+      const today = new Date().toISOString().slice(0, 10).replaceAll("-", "/");
       const r = await auditCodexModelConformance({
         sessionsDir: join(codexHome, "sessions"),
         agentsDir: join(codexHome, "agents"),
-        day,
+        ...(daysIndex >= 0 ? { days: Number(daysArg) } : { day: day || today }),
         cwdFilter: flagValue(rest, "--cwd") || null
       });
       out(r);

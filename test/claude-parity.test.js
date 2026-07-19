@@ -608,5 +608,23 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // itself to. test/runner-loop-binding.test.js extended to pin the caveat's presence;
   // docs/research/claude-code-cli.md SS1 extended with the same restriction, cited to the
   // same cc-scheduled-tasks source (citation-check clean, 80/80 claims cited, 0 dangling).
-  assert.equal(hash.digest("hex"), "3537717e4fd34db63d41e99a26ff31b5620818767e01f5763c82a0305bb91827");
+  //
+  // Pin re-derived a third time, same item, after a second review-gate fix pass: the
+  // re-review found the caveat UNDERCLAIMED -- it reasoned only from cc-scheduled-tasks
+  // and never cross-referenced this file's own already-cited skills-page source, whose
+  // frontmatter reference states the same restriction unconditionally ("also prevents
+  // the skill from running when a scheduled task fires with the skill as its prompt", no
+  // slash-command-vs-natural-language carve-out) -- strong evidence the claim is likely
+  // FALSE, not merely unresolved. It also found a misattribution: the claude -p/cron
+  // distinction was wrongly tied to cc-scheduled-tasks's own comparison table, which only
+  // covers Cloud/Desktop/`/loop` columns. Both fixed: runner.md's caveat now reads
+  // "Likely blocked today, verify before relying on it" and cites both sources (via
+  // docs/research/claude-code-cli.md SS1, itself corrected to cite skills-page alongside
+  // cc-scheduled-tasks and to stop over-attributing the claude -p distinction to a table
+  // that doesn't contain it); a third, cosmetic nit (a lone backtick-wrapped
+  // paragraph-leading `[DOCUMENTED]` tag, inconsistent with every other of this file's 54
+  // instances) was fixed in the same pass. Re-verified: citation-check still clean
+  // (80/80 cited, 0 dangling), full suite green, MUSTER_BUILD_FORCE=1 build + check-codex
+  // clean.
+  assert.equal(hash.digest("hex"), "553ab71714df3d703d7da1d6df34bd202ab17e29cb7824914020b7bb763176ba");
 });

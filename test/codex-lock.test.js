@@ -55,6 +55,39 @@ test("withCodexFileLock times out on a live, fresh lock without ever touching it
   assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), owner, "a contended live lock must be left untouched");
 });
 
+// codex-release.js's residual (i): the `.build.lock` is created by
+// open(path,"wx") before any in-lock canonical re-check can fire, so an
+// ancestor swapped in the realpath-capture -> lock-open window materializes the
+// lock through the symlink. The `beforeOpen` hook fires synchronously ahead of
+// each create attempt; a throwing guard aborts acquisition before the open.
+
+test("withCodexFileLock runs beforeOpen before creating the lock, and a throwing beforeOpen prevents the lock file and the callback", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-guard-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "guard.lock");
+  let guardCalls = 0, ranCallback = false;
+  await assert.rejects(
+    withCodexFileLock(lock, async () => { ranCallback = true; }, {
+      beforeOpen: () => { guardCalls++; throw new Error("pre-open guard rejected acquisition"); }
+    }),
+    /pre-open guard rejected acquisition/
+  );
+  assert.equal(guardCalls, 1, "beforeOpen must fire before the lock is created");
+  assert.equal(ranCallback, false, "a rejected beforeOpen must prevent the callback from running");
+  await assert.rejects(readFile(lock, "utf8"), "a rejected beforeOpen must leave no lock file behind");
+});
+
+test("withCodexFileLock invokes beforeOpen ahead of a clean lock acquisition", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-guard-ok-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "guard-ok.lock");
+  const order = [];
+  await withCodexFileLock(lock, async () => { order.push("callback"); }, {
+    beforeOpen: () => { order.push("beforeOpen"); }
+  });
+  assert.deepEqual(order, ["beforeOpen", "callback"], "beforeOpen must run before the callback on a clean acquisition");
+});
+
 test("withCodexFileLock's simplified surface no longer invokes the removed quarantine/retirement hooks", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-no-hooks-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

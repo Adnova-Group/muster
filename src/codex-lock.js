@@ -77,12 +77,20 @@ async function reclaimIfStale(path, options) {
 export async function withCodexFileLock(path, callback, {
   staleMs = 60_000,
   maxStaleMs = 15 * 60_000,
-  timeoutMs = 30_000
+  timeoutMs = 30_000,
+  beforeOpen
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
   const started = Date.now();
   for (;;) {
+    // Optional caller guard fired synchronously before EACH create attempt (a
+    // contended lock retries, and the guarded condition — e.g. a symlinked
+    // ancestor swapped under `path` — can change between attempts). A throw
+    // here aborts acquisition before open(path,"wx") can create the lock file
+    // through a swapped ancestor into an attacker's target (codex-release.js's
+    // residual (i)). O_CREAT|O_EXCL ("wx") itself does not guard ancestors.
+    if (beforeOpen) await beforeOpen();
     let handle;
     try {
       handle = await open(path, "wx", 0o600);

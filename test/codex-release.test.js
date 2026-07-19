@@ -11,8 +11,10 @@ import {
   generateCodexProfiles,
   profileToml,
   publishCodexPlugin,
+  readRegularNoFollow,
   resolveCodexPlugin
 } from "../src/codex-release.js";
+import { withCodexFileLock } from "../src/codex-lock.js";
 import { CODEX_COUNTS } from "../src/codex.js";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -368,6 +370,100 @@ test("publishCodexPlugin refuses the copy-failure rollback through an ancestor s
     "do-not-delete\n",
     "the copy-failure rollback must not delete through the swapped-in ancestor into the link's target"
   );
+});
+
+// --- No-follow descriptor reads (run-5 audit Med #6) + descriptor-pinned
+// publish TOCTOU closure. The audit finding: file reads validated a
+// re-lstat(path) rather than the held descriptor and the tree walk read files
+// by path, so a symlink swapped in after the type check would be followed.
+// Reads now open O_NOFOLLOW and validate via fstat on that descriptor. Two
+// residual publish windows a check-before strategy cannot close are folded in:
+// (i) .build.lock was created before the first in-lock canonical re-check, so
+// an ancestor swapped in the realpath-capture -> lock-open window materialized
+// it through the symlink; (ii) an ancestor swapped to a symlink mid-copy and
+// swapped back defeats final-state realpath equality, redirecting the copy
+// undetected. ---
+
+test("readRegularNoFollow opens O_NOFOLLOW and validates the held descriptor via fstat, never following a symlink to its target", async t => {
+  const root = await tempRoot(t);
+  const real = join(root, "real.txt");
+  await writeFile(real, "REGULAR-CONTENT");
+  assert.equal(readRegularNoFollow(real, "sample", 1024).toString("utf8"), "REGULAR-CONTENT");
+  // A symlink whose TARGET is a perfectly readable regular file is still
+  // rejected (O_NOFOLLOW on the open), and the rejection must never surface the
+  // target's secret bytes -- proving the open does not follow the link and read
+  // through it (the exact defect the audit finding names).
+  const secret = join(root, "secret.txt");
+  await writeFile(secret, "SECRET-TARGET-BYTES");
+  const link = join(root, "link.txt");
+  await symlink(secret, link);
+  assert.throws(() => readRegularNoFollow(link, "sample", 1024), err => {
+    assert.match(err.message, /symlink|must not be a symlink/i);
+    assert.doesNotMatch(err.message, /SECRET-TARGET-BYTES/, "the symlink target's bytes must never be read");
+    return true;
+  });
+});
+
+test("readRegularNoFollow enforces its byte bound on the held descriptor (fstat), not a re-resolved path", async t => {
+  const root = await tempRoot(t);
+  const big = join(root, "big.txt");
+  await writeFile(big, "x".repeat(2048));
+  assert.throws(() => readRegularNoFollow(big, "bounded", 1024), /bounded regular file/);
+});
+
+test("publishCodexPlugin does not create .build.lock through an ancestor swapped in the realpath-capture -> lock-open window (residual i)", async t => {
+  const root = await tempRoot(t);
+  // The attacker's redirect target: creating .build.lock through the swapped
+  // ancestor would materialize it HERE, inside evil/plugins.
+  const evil = join(root, "evil");
+  await mkdir(join(evil, "plugins"), { recursive: true });
+  const mid = join(root, "mid");
+  const pluginsRoot = join(mid, "plugins");
+  await mkdir(pluginsRoot, { recursive: true });
+  // Swap the real `mid` ancestor for a symlink to evil AFTER publish has
+  // captured pluginsRoot's canonical realpath (the pre-lock ancestry walk +
+  // realpathSync) but BEFORE the lock file is opened -- exactly residual (i)'s
+  // window. The acquireLock seam runs in that gap; a same-user attacker would
+  // win the identical race against a bare withCodexFileLock.
+  const acquireLock = async (lockPath, cb, opts) => {
+    await rename(mid, join(root, "mid-real"));
+    await symlink(evil, mid);
+    return withCodexFileLock(lockPath, cb, opts);
+  };
+  await assert.rejects(
+    publishCodexPlugin({ pluginsRoot, stagedPlugin: await stagedPlugin(root, "lock-swap"), packageVersion: "0.5.0", marketplaceTemplate, acquireLock }),
+    /realpath|resolves to|symlink|ordinary directory/i,
+    "a lock-time ancestor swap must be caught before .build.lock is opened through it"
+  );
+  // The lock file must NOT have been created through the symlink into evil's target.
+  assert.deepEqual(await readdir(join(evil, "plugins")), [], "no .build.lock may be created through the swapped-in ancestor");
+});
+
+test("publishCodexPlugin catches a mid-copy ancestor swap-restore via the staged-vs-copied digest comparison, restoring the prior plugin (residual ii)", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "digest-before", { stagedPlugin: await stagedPlugin(root, "digest-before") });
+  const staged = await stagedPlugin(root, "digest-after");
+  // A same-user attacker swapping an ancestor to a symlink mid-copy and swapping
+  // it back defeats final-state realpath equality (pluginPath resolves to the
+  // intended location again), yet the bytes that landed at pluginPath diverge
+  // from the staged tree. Simulate that observable outcome deterministically:
+  // copy the staged tree faithfully, then alter one copied file's bytes exactly
+  // as a redirected/truncated copy would leave the destination.
+  const copyStagedPlugin = async (source, destination) => {
+    copyStagedPluginTree(source, destination);
+    await writeFile(join(destination, "runtime", "muster.mjs"), 'export const marker = "REDIRECTED-MID-COPY";\n');
+  };
+  await assert.rejects(
+    publish(root, "digest-after", { stagedPlugin: staged, copyStagedPlugin }),
+    /digest|staged-vs-copied|mismatch/i,
+    "a copied tree whose content diverges from the staged tree must be rejected by the digest comparison"
+  );
+  assert.equal(
+    await readFile(join(root, ".agents", "plugins", "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "digest-before";\n',
+    "a digest-mismatch late failure must restore the previous plugin tree"
+  );
+  assert.deepEqual((await readdir(join(root, ".agents", "plugins"))).filter(n => n.startsWith(".muster-retired-")), [], "no retired backup may linger after a digest-mismatch rollback");
 });
 
 // --- Transactional publish THROUGH the marketplace pointer commit: the retired

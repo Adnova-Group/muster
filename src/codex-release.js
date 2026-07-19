@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  closeSync, constants as fsConstants, cpSync, fsyncSync, lstatSync, mkdirSync, openSync,
+  closeSync, constants as fsConstants, cpSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync,
   readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
 import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
@@ -125,14 +125,34 @@ function contained(base, target, label) {
   }
 }
 
-function readRegular(path, label, maxBytes = 32 * 1024 * 1024) {
-  ordinary(path, "file", label);
-  const fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+// Descriptor-pinned no-follow read (run-5 audit Med #6). O_NOFOLLOW makes the
+// open itself refuse to traverse a symlinked FINAL component (a same-user
+// writer swapping the file for a symlink after any prior lstat cannot redirect
+// the read to the link's target), and the size/type gate is asserted with
+// fstat on the RETURNED descriptor -- never a second lstat(path), which would
+// re-resolve the name and reopen the very TOCTOU the descriptor exists to pin.
+// O_NOFOLLOW guards only the final component; a symlinked ANCESTOR is still
+// followed (Node has no openat to hold each parent by descriptor), which is why
+// the tree-level ancestry walks and the staged-vs-copied digest below exist.
+export function readRegularNoFollow(path, label, maxBytes = 32 * 1024 * 1024) {
+  let fd;
+  try { fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0)); }
+  catch (error) {
+    if (error.code === "ELOOP") throw new Error(`${label} must not be a symlink: ${path}`, { cause: error });
+    if (error.code === "ENOENT") throw new Error(`${label} is missing: ${path}`, { cause: error });
+    throw error;
+  }
   try {
-    const stat = lstatSync(path);
-    if (!stat.isFile() || stat.size > maxBytes) throw new Error(`${label} must be a bounded regular file: ${path}`);
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error(`${label} must be a regular file: ${path}`);
+    if (stat.size > maxBytes) throw new Error(`${label} must be a bounded regular file: ${path}`);
     return readFileSync(fd);
   } finally { closeSync(fd); }
+}
+
+function readRegular(path, label, maxBytes = 32 * 1024 * 1024) {
+  ordinary(path, "file", label);
+  return readRegularNoFollow(path, label, maxBytes);
 }
 const readRegularJson = (path, label, maxBytes = 64 * 1024) => JSON.parse(readRegular(path, label, maxBytes).toString("utf8"));
 const sha256 = value => createHash("sha256").update(value).digest("hex");
@@ -169,13 +189,35 @@ export async function assertRegularTree(root) {
         dirs.push(rel);
         walk(path);
       } else if (stat.isFile()) {
-        const content = readFileSync(path);
+        // Read through a no-follow descriptor, not readFileSync(path): the
+        // lstat above and this read are two syscalls, and a same-user writer
+        // could swap this entry for a symlink in between. O_NOFOLLOW + fstat
+        // (readRegularNoFollow) reject that swap instead of reading the link's
+        // target (run-5 audit Med #6).
+        const content = readRegularNoFollow(path, "tree entry");
         files.push({ path: rel, sha256: sha256(content), size: content.length });
       } else throw new Error(`tree entry must be a regular file or directory: ${path}`);
     }
   }
   walk(root);
   return { dirs, files };
+}
+
+// Content identity of an assertRegularTree result: a single digest over every
+// directory's relative path plus every file's relative path, size, and content
+// sha256, order-independent (sorted first). Used to compare the STAGED tree
+// against the tree that actually landed at the copy destination: a same-user
+// attacker who swaps an ancestor to a symlink mid-copy and swaps it back leaves
+// the final-state realpath equal (defeating that check) but changes the bytes
+// the destination received -- so a redirected or truncated copy produces a
+// different copied digest and is rejected (run-5 audit Med #6, residual ii).
+function treeDigest(tree) {
+  const hash = createHash("sha256");
+  for (const dir of [...tree.dirs].sort()) hash.update(`d\0${dir}\0`);
+  for (const file of [...tree.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
+    hash.update(`f\0${file.path}\0${file.size}\0${file.sha256}\0`);
+  }
+  return hash.digest("hex");
 }
 
 export async function assertRegularFile(path) {
@@ -335,21 +377,41 @@ export function copyStagedPluginTree(source, destination) {
 // `assertRegularTree(stagedPlugin)` above validates the staged tree once,
 // before the publish lock is even acquired. That leaves a real window: a
 // same-user writer (or a crashed/racing build) could mutate the staged
-// tmpdir between that validation and the copy below. Two independent
+// tmpdir between that validation and the copy below. THREE independent
 // defenses close it: `copyStagedPlugin` (default `copyStagedPluginTree`)
 // rejects/skips any symlink or special file it finds while copying, hard
-// failing rather than silently dropping it, and `pluginPath` — the actual
-// copy destination — is re-validated with `assertRegularTree` again before
-// anything durable (the marketplace pointer) is written. Either one on its
-// own would close the race; both run so a defect in one is not a single
-// point of failure. A failure at either point restores the previous plugin
-// AND the prior pointer the same way any late failure in the transactional
-// span does.
+// failing rather than silently dropping it; `pluginPath` — the actual copy
+// destination — is re-validated with `assertRegularTree` again before
+// anything durable (the marketplace pointer) is written; and the STAGED tree
+// (hashed at copy time) is compared against the COPIED tree by content digest
+// (treeDigest over every relative path + size + sha256). The digest check is
+// the one that closes residual (ii): a same-user attacker who swaps an
+// ancestor to a symlink mid-copy and swaps it back leaves the final-state
+// realpath equal (so assertPluginsRootCanonical's realpath equality is
+// defeated) but changes the bytes that reached `pluginPath`, so the copied
+// digest no longer matches the staged digest and the publish is rejected —
+// whether the redirect truncated the copy, dropped files, or swapped content.
+// Any of the three firing restores the previous plugin AND the prior pointer
+// the same way any late failure in the transactional span does.
 //
-// A narrower window still remains after that second validation: nothing
-// re-checks `pluginPath` between it and the `atomicWritePointer` call below,
-// so a same-user writer racing in just that gap could still mutate the
-// just-validated tree before the marketplace pointer commits to it.
+// Residual (i) — the `.build.lock` create — is closed by re-asserting
+// canonical resolution immediately BEFORE acquiring the lock AND again inside
+// the lock primitive's `beforeOpen` hook, which fires synchronously right
+// before each `open(lock,"wx")`. An ancestor swapped in the window between the
+// pre-lock realpath capture and the lock open is therefore caught before the
+// lock file can be created THROUGH the symlink into the attacker's target.
+//
+// DOCUMENTED RESIDUAL (genuinely unclosable in Node, same honesty as the
+// atomicWritePointer window below): every guard here is check-then-syscall.
+// Between a synchronous canonical re-check returning and the kernel resolving
+// the very next open/copy path, a same-user attacker could still swap an
+// ANCESTOR and — for a mutation whose final on-disk realpath it then restores
+// — evade realpath equality. The digest comparison closes that for the copy
+// (content, not path, is compared), but the sub-instruction window on the lock
+// create and on the pointer commit is closable only by an openat/openat2
+// primitive holding each parent by descriptor, which Node core does not
+// expose; binding libc for it is out of proportion to a same-user,
+// build/install-time-only threat, so it is documented rather than closed.
 //
 // Concurrent publishes to the same `pluginsRoot` are serialized by the
 // shared codex-lock.js primitive, so two publishers never interleave. But
@@ -396,7 +458,7 @@ function codexMarketplacePluginPath(pluginsRoot) {
   return "./" + relative(addedRoot, join(pluginsRoot, "plugin")).replaceAll("\\", "/");
 }
 
-export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate, copyStagedPlugin = copyStagedPluginTree, writePointer = atomicWritePointer }) {
+export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate, copyStagedPlugin = copyStagedPluginTree, writePointer = atomicWritePointer, acquireLock = withCodexFileLock }) {
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex plugin package version is required");
   ordinary(stagedPlugin, "directory", "staged Codex plugin");
   await assertRegularTree(stagedPlugin);
@@ -411,7 +473,15 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
   // symlink-free, to compare against before each mutation (see
   // assertPluginsRootCanonical).
   const canonicalPluginsRoot = realpathSync(pluginsRoot);
-  return withCodexFileLock(join(pluginsRoot, ".build.lock"), async () => {
+  // Residual (i): `.build.lock` is created by the lock primitive's
+  // open(lock,"wx") BEFORE the first in-lock canonical re-check ("orphan
+  // sweep") could fire. Re-assert canonical resolution here, synchronously
+  // just before handing off to the lock, and again via the primitive's
+  // `beforeOpen` hook (which fires immediately before each open attempt), so an
+  // ancestor swapped in the realpath-capture -> lock-open window cannot
+  // materialize the lock file THROUGH the symlink at the attacker's target.
+  assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "lock acquisition");
+  return acquireLock(join(pluginsRoot, ".build.lock"), async () => {
     // A publish that crashed between retiring the previous plugin and either
     // completing or restoring leaves an orphaned `.muster-retired-*`
     // sibling behind. No other process can be mid-retire right now (this
@@ -452,12 +522,23 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       // stagedPlugin was just populated by a large (several-hundred-file)
       // write burst and is frequently on a different device than
       // pluginPath (see this function's docblock), so it is published by
-      // copy rather than renamed into place. copyStagedPlugin and the
-      // assertRegularTree re-validation below are this function's two
-      // independent copy-time-race defenses (see the docblock above).
+      // copy rather than renamed into place. copyStagedPlugin, the
+      // assertRegularTree re-validation, and the staged-vs-copied digest
+      // comparison below are this function's THREE independent copy-time-race
+      // defenses (see the docblock above).
       assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "staged-tree copy");
+      // Hash the staged tree at copy time (as close to the cpSync read as
+      // possible: a mutation between here and the read changes what cpSync
+      // copies, and the copied digest then diverges from this one). Its content
+      // digest is compared against the copied tree's after the copy to catch a
+      // mid-copy ancestor swap-restore that final-state realpath equality would
+      // miss (residual ii).
+      const stagedTree = await assertRegularTree(stagedPlugin);
       await copyStagedPlugin(stagedPlugin, pluginPath);
-      await assertRegularTree(pluginPath);
+      const copiedTree = await assertRegularTree(pluginPath);
+      if (treeDigest(stagedTree) !== treeDigest(copiedTree)) {
+        throw new Error(`Codex plugin publish staged-vs-copied digest mismatch (copy redirected or truncated mid-publish): ${pluginPath}`);
+      }
 
       // Marketplace pointer read/validate/commit -- INSIDE the transactional
       // region so a malformed / missing / symlinked / write-failing pointer
@@ -537,6 +618,11 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       rmSync(retired, { recursive: true, force: true });
     }
     return { pluginRoot: pluginPath, profilesRoot: join(pluginPath, "agents"), packageVersion };
+  }, {
+    // Fires synchronously right before each open(lock,"wx"): closes residual
+    // (i) by rejecting an ancestor swapped into the realpath-capture ->
+    // lock-open window before the lock file can be created through the symlink.
+    beforeOpen: () => assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "lock file creation")
   });
 }
 

@@ -391,6 +391,14 @@ async function buildCodexPluginOnce({ root, outDir }) {
     rmAndCopy(join(root, "catalog"), join(plugin, "catalog"));
     rmAndCopy(join(root, "pipelines"), join(plugin, "pipelines"));
     rmAndCopy(join(root, "vendor"), join(plugin, "vendor"));
+    // The bundled runtime/muster.mjs reads the frozen agent mapping at runtime
+    // (src/codex.js's codexAgentProfiles: `new URL("../codex/agents.manifest.json",
+    // import.meta.url)`, resolving to plugin/codex/ from plugin/runtime/) to
+    // resolve `capabilities --codex`'s per-role codexModel {model, effort} — the
+    // same data profileToml pins into .codex/agents/<id>.toml. Ship it verbatim,
+    // like catalog/ above, so the runtime stays self-contained without a Node
+    // experimental-JSON-modules import warning on the Node 20/22 source lane.
+    write(join(plugin, "codex", "agents.manifest.json"), readFileSync(join(root, "codex", "agents.manifest.json"), "utf8"));
     write(join(runtime, "codex-skill-adapter.md"), readFileSync(join(root, "codex", "skill-adapter.md"), "utf8"));
     rmAndCopy(join(root, "codex", "hooks"), join(runtime, "install-hooks"));
     write(join(runtime, "sprint-protocol.md"), readFileSync(join(root, "cowork", "sprint-protocol.md"), "utf8"));
@@ -460,7 +468,7 @@ async function buildCodexPluginOnce({ root, outDir }) {
     const codexMcpSource = sharedMcpSource
       .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")
       .replace("Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.", "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation.")
-      .replace('{ argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork\'s MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS). Resolution is MCP-only unless MUSTER_COWORK_NATIVE_PLUGIN declares that Cowork\'s own plugin loader accepted muster\'s plugin/ tree (unverified without a live session -- a declared capability check, not a probe).", "home", false) }', '{ argv: ["capabilities", "--codex"], ...S("Resolve every Muster role against enabled Codex plugins, skills, MCP servers, and custom-agent profiles.", "home", false) }')
+      .replace('{ argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork\'s MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS). Resolution is MCP-only unless MUSTER_COWORK_NATIVE_PLUGIN declares that Cowork\'s own plugin loader accepted muster\'s plugin/ tree (unverified without a live session -- a declared capability check, not a probe).", "home", false) }', '{ argv: ["capabilities", "--codex"], ...S("Resolve every Muster role against enabled Codex plugins, skills, MCP servers, and custom-agent profiles. Each agent-backed role also carries codexModel {model, effort} -- the exact gpt-5.6 profile (model + reasoning effort) it dispatches on, resolved from the same committed .codex/agents mapping, so no post-run codex-conformance audit is needed to see the pre-dispatch profile.", "home", false) }')
       .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]')
       // codex-mcp-surface-gaps: muster_capabilities_roles resolves through the SAME
       // capabilities.js catalog-selection code path as muster_capabilities above, so it

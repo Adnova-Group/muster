@@ -5,7 +5,7 @@ import {
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
-import { CODEX_MODEL_POLICY } from "./codex.js";
+import { CODEX_MODEL_POLICY, codexProfileForConfig } from "./codex.js";
 
 // Wave 2 teardown: the Codex plugin used to be published as a committed,
 // content-addressed generation (release.json + releases/<sha256>/, an
@@ -156,7 +156,12 @@ export function profileToml(id, source, config) {
   if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) {
     throw new Error(`invalid Codex profile model override for ${id}: ${config.model}`);
   }
-  const model = { model: config.model ?? defaultModel.model, reasoning: config.reasoning ?? defaultModel.reasoning };
+  // Single-sourced with the `capabilities --codex` lane: codexProfileForConfig
+  // applies the same per-agent override-over-tier-default resolution, so the
+  // committed TOML pin and the capabilities codexModel can never diverge. The
+  // id-rich validation above stays here (defaultModel/override guards) for the
+  // generator's fail-closed error messages.
+  const model = codexProfileForConfig(config);
   const isolation = config.readOnly
     ? "Remain read-only. Do not edit files or run commands that mutate the workspace."
     : "Before writing, verify the task is running in an isolated git worktree; do not write directly on a base branch.";
@@ -164,7 +169,7 @@ export function profileToml(id, source, config) {
     `name = ${JSON.stringify(id)}`,
     `description = ${JSON.stringify(description)}`,
     `model = ${JSON.stringify(model.model)}`,
-    `model_reasoning_effort = ${JSON.stringify(model.reasoning)}`,
+    `model_reasoning_effort = ${JSON.stringify(model.effort)}`,
     `sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`,
     "developer_instructions = \"\"\"",
     body,

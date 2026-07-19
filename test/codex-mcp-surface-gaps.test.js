@@ -53,6 +53,25 @@ test("built Codex plugin's MCP server: tools/list carries the 4 new tools and th
   }
 });
 
+test("built Codex plugin's MCP server: muster_capabilities_roles resolves against the Codex catalog, not inline (same --cowork -> --codex adapter as muster_capabilities)", async () => {
+  // Functional companion to the tools/list presence check above: proves the
+  // build-codex.mjs `--cowork` -> `--codex` swap actually took effect at
+  // runtime for this NEW sibling tool, not just that the source text contains
+  // the right substring (scripts/check-codex.mjs / build-codex.mjs's own
+  // assertions only prove the latter). Without the swap this tool would
+  // resolve every role through Cowork's registry inside the Codex-bundled
+  // server -- the exact class of regression test/codex-mcp-runtime-env.test.js
+  // already guards for muster_capabilities/muster_assess.
+  const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities_roles", arguments: {} } }]);
+  const res = r[2].result;
+  assert.ok(res, "tools/call returned no result");
+  assert.equal(res.isError, false, `muster_capabilities_roles errored: ${JSON.stringify(res?.content)}`);
+  const body = JSON.parse(res.content[0].text);
+  assert.equal(body.roles?.implement?.chosen?.id, "muster-builder", `implement must resolve to the named Codex profile, got ${JSON.stringify(body.roles?.implement?.chosen)}`);
+  assert.notEqual(body.roles?.implement?.chosen?.source, "inline", "must not fall back to inline (the --cowork/--codex swap missing on this tool)");
+  assert.equal(body.skills, undefined, "roles-only capture omits skills");
+});
+
 test("built Codex plugin's MCP server: muster_receipt_verify -- a REAL SHA from this checkout verifies true", async () => {
   const { stdout } = await execFileP("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
   const sha = stdout.trim();

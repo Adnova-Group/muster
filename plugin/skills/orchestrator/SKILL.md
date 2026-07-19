@@ -69,7 +69,10 @@ doing the work.
       - **Subagent failure:** never a silent stop -- re-dispatch ONCE with the error appended as
         context (`dispatchRetryState`, `src/loop.js`, max 2 attempts). A second failure records to
         STATE and escalates like a review-gate escalation (step 4e); the wave's other tasks still
-        complete.
+        complete. A reviewer dispatched inside the review gate (step 4c) that is killed, exhausted, or
+        never starts before returning a verdict is not retried under this generic path -- see
+        `plugin/skills/review-gate/SKILL.md`'s exhausted/absent reviewer handling, which records a
+        blocking status entry instead of retrying.
    b. BARRIER: wait for all wave tasks, then remove `.muster/wave-active`.
    c. **Review gate — cadence follows step 2's result:** `fastPath: false` -> invoke **review-gate**
       over this wave now. `fastPath: true` -> accumulate the diff and defer the dispatch to step 5,

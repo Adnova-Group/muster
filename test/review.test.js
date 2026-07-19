@@ -124,3 +124,32 @@ test("an entry with no status behaves exactly as before status existed — full 
   assert.deepEqual(r.blockedReasons, []);
   assert.deepEqual(r.exhausted, []);
 });
+
+// exhaustion-status-producer item, carried review finding: an exhausted/absent entry
+// with no `reviewer` field previously interpolated the literal string "undefined" into
+// blockedReasons ("reviewer undefined exhausted before verdict") -- unguarded template
+// interpolation of a missing field, not a real reviewer name. Name it instead.
+test("exhausted/absent entry with no reviewer field is named, not interpolated as undefined", () => {
+  const r = tallyReview([
+    { status: "exhausted" }
+  ]);
+  assert.equal(r.blocked, true);
+  assert.deepEqual(r.blockedReasons, ["(unnamed reviewer) exhausted before verdict"]);
+  assert.deepEqual(r.exhausted, [{ reviewer: "(unnamed reviewer)", status: "exhausted" }]);
+});
+
+test("two simultaneously exhausted reviewers both get named reasons and both block", () => {
+  const r = tallyReview([
+    { reviewer: "a", status: "exhausted" },
+    { reviewer: "b", status: "exhausted" }
+  ]);
+  assert.equal(r.blocked, true);
+  assert.deepEqual(r.blockedReasons, [
+    "reviewer a exhausted before verdict",
+    "reviewer b exhausted before verdict"
+  ]);
+  assert.deepEqual(r.exhausted, [
+    { reviewer: "a", status: "exhausted" },
+    { reviewer: "b", status: "exhausted" }
+  ]);
+});

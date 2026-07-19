@@ -448,6 +448,35 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // a named blockedReasons entry, never a silent skip, never counted as a real PASS/FAIL.
   // No other file under this surface changed.
   //
+  // Pin re-derived again 2026-07-19 (backlog item exhaustion-status-producer, stacked on
+  // tally-worker-exhaustion-contract + codex-agent-watch-review-budget): file COUNT
+  // unchanged (137) -- only plugin/skills/review-gate/SKILL.md and
+  // plugin/skills/orchestrator/SKILL.md changed. review-gate/SKILL.md's step 2 gained one
+  // new bullet ("Exhausted/absent reviewer") naming what the gate must do the moment a
+  // dispatched reviewer is killed/exhausted/never starts: record {reviewer, status:
+  // "exhausted"|"absent"} directly into .muster/verdicts.json instead of synthesizing
+  // verdict-shaped findings, so step 5's tally forces its already-landed deterministic
+  // block. This sits inside step 2's own paragraph, so scripts/build-codex.mjs's
+  // review-gate anchors (the step-1 "Select reviewers" replace and the step-6 fix-iteration
+  // cap replace) are untouched and re-verified clean. orchestrator/SKILL.md's
+  // "Subagent failure" bullet gained one appended sentence cross-referencing the new
+  // review-gate handling, so a reviewer killed inside the review gate (step 4c) is not
+  // mistaken for the generic re-dispatch-once path this bullet otherwise documents --
+  // appended after the bullet's existing text, so build-codex.mjs's
+  // `      - **Subagent failure` indexOf anchor (which keeps this bullet verbatim onward
+  // into the Codex build) still locates it and carries the addition through unchanged.
+  // Re-verified with MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs &&
+  // node scripts/check-codex.mjs (clean). No other file under this surface changed.
+  //
+  // Pin re-derived once more, same item, after test/prompt-scan.test.js's repo-wide
+  // ANTH-POS-001 ("prefer positive instructions over negative ones") lint caught the new
+  // review-gate/SKILL.md bullet stacking three "never" clauses in a system-genre doc
+  // already carrying four elsewhere in the file. Reworded to the same meaning with zero
+  // added negatives ("or one whose dispatch did not start at all, gets a named status
+  // entry recorded in place of synthesized verdict-shaped findings" instead of "or never
+  // dispatched at all, is never synthesized ... instead"); no contract or anchor changed,
+  // only wording. Re-verified: node --test test/prompt-scan.test.js passes, plus
+  // MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs clean.
   // Pin re-derived again 2026-07-19 (backlog item codex-mcp-surface-gaps, stacked on
   // tally-worker-exhaustion-contract): file COUNT unchanged (137) -- only
   // cowork/mcp-server.mjs's content changed. The 2026-07-19 Codex dogfood fell back to the
@@ -488,5 +517,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // missing required positional now falls through to the bare argv, reaching the CLI's own
   // required-arg check untouched. Regression test added to test/cowork.test.js. File COUNT
   // still unchanged (137).
-  assert.equal(hash.digest("hex"), "f4d8ce602572d2bc2f44fd038da05b5542ebf991465667ea8ca9194791d96026");
+  //
+  // Pin re-derived at the PR #84 + #85 merge reconciliation (2026-07-19): union of both
+  // branches' shared-surface changes (producer prose + MCP tool-table description).
+  assert.equal(hash.digest("hex"), "751f966ed614e2cf6dd7427283cd6b27e87895ec5fb4fdf15783c05ba1721c41");
 });

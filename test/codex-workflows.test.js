@@ -92,6 +92,24 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
   assert.match(orchestrator, /multiAgent: false|MUSTER_CODEX_MULTI_AGENT/);
   assert.match(orchestrator, /receipts-only/);
   assert.match(orchestrator, /worktree-isolation --harness codex/);
+
+  // codex-receipt-verify-parity item: PR #78 wired the orchestrator's Claude-side prose to run
+  // `receipt-verify` right after appending each dispatch receipt, but this same wave-dispatch
+  // span is wholesale-replaced for Codex (adaptOrchestratorForCodex's waveDispatchHeading
+  // replacement, above) and that replacement text never carried the instruction forward -- so
+  // Codex-generated prose silently omitted verification on exactly the harness whose isolation
+  // floor is receipts-only. Assert the replacement text now runs receipt-verify against the
+  // bundled CLI and treats a nonzero exit as an escalation, never a silent continue.
+  assert.match(orchestrator, /runtime\/muster\.mjs receipt-verify <baseSha> --cwd <absolute worktree path>/);
+  assert.match(orchestrator, /nonzero exit as a receipt failure/);
+  assert.match(orchestrator, /escalat(?:e|ion)/i);
+
+  // The bundled runtime IS `src/cli.js` (esbuild-bundled, scripts/build-codex.mjs), so the
+  // `receipt-verify` command ships automatically once PR #78 lands -- prove the actual generated
+  // package's runtime carries it, not just the source repo's src/cli.js.
+  const runtimeSource = await readFile(runtimeCli, "utf8");
+  assert.match(runtimeSource, /receipt-verify/);
+  assert.match(runtimeSource, /makeGitShaVerifier/);
 });
 
 test("generated Codex orchestration surfaces enforce the bounded agent watch invariant", async () => {

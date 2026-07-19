@@ -475,6 +475,31 @@ test("publishCodexPlugin restores the prior plugin and pointer when the durable 
   assert.deepEqual((await readdir(pluginsRoot)).filter(n => n.startsWith(".muster-retired-")), [], "no retired backup may linger after a late-failure rollback");
 });
 
+test("publishCodexPlugin restores the prior plugin and pointer when the marketplace pointer parses but does not describe muster (late-failure rollback)", async t => {
+  const root = await tempRoot(t);
+  const pluginsRoot = join(root, ".agents", "plugins");
+  const pointerPath = join(pluginsRoot, "marketplace.json");
+  await publish(root, "prior-shape", { stagedPlugin: await stagedPlugin(root, "prior-shape") });
+  // Valid JSON, but not the muster marketplace -> the shape check throws AFTER
+  // the new tree is copied and the old is retired (a LATE failure that reads +
+  // parses fine, distinct from the malformed case).
+  const foreign = JSON.stringify({ name: "not-muster", plugins: [] }, null, 2) + "\n";
+  await writeFile(pointerPath, foreign);
+  await assert.rejects(
+    publish(root, "doomed-shape", { stagedPlugin: await stagedPlugin(root, "doomed-shape") }),
+    /does not describe the Muster plugin/
+  );
+  assert.equal(
+    await readFile(join(pluginsRoot, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior-shape";\n',
+    "a shape-invalid-pointer late failure must restore the previous plugin tree"
+  );
+  // Our write never ran, so the prior pointer must be left byte-intact (never
+  // rewritten or deleted by the rollback).
+  assert.equal(await readFile(pointerPath, "utf8"), foreign, "the prior pointer must be left intact after a shape-invalid rollback");
+  assert.deepEqual((await readdir(pluginsRoot)).filter(n => n.startsWith(".muster-retired-")), [], "no retired backup may linger after a late-failure rollback");
+});
+
 test("copyStagedPluginTree hard-fails (not a silent skip) when the source tree contains a symlink, without publishing the tainted entry", async t => {
   const root = await tempRoot(t);
   const source = join(root, "copy-source"), destination = join(root, "copy-destination");

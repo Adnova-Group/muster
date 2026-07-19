@@ -463,24 +463,29 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       // region so a malformed / missing / symlinked / write-failing pointer
       // rolls the whole publish back to the prior plugin + pointer rather than
       // leaving the freshly copied plugin stranded with the old one gone.
-      let pointer, priorPointerExisted = false;
-      try { pointer = readRegularJson(pointerPath, "Codex marketplace pointer", 1024 * 1024); priorPointerExisted = true; }
+      //
+      // The prior pointer's bytes are retained from THIS single read (not a
+      // second readFileSync): the exact bytes that validate the pointer are the
+      // ones a later write failure restores byte-for-byte, with no second read
+      // that could transiently fail for a non-ENOENT reason and be mistaken for
+      // "no prior pointer" -- which would delete a pointer that legitimately
+      // existed. `priorPointer` therefore holds the prior REGULAR pointer's raw
+      // bytes, or null when none existed (missing, or rejected as a symlink /
+      // non-regular file). It is consumed on restore only once
+      // `pointerWriteAttempted` is set, so a malformed pointer's captured bytes
+      // (JSON.parse fails below, before any write) are never written back.
+      let pointer;
+      try { priorPointer = readRegular(pointerPath, "Codex marketplace pointer", 1024 * 1024); }
       catch (error) {
         if (error.cause?.code !== "ENOENT") throw error;
         if (!marketplaceTemplate) throw new Error(`Codex marketplace pointer is missing and no template was provided: ${pointerPath}`);
-        pointer = structuredClone(marketplaceTemplate);
       }
+      pointer = priorPointer !== null ? JSON.parse(priorPointer.toString("utf8")) : structuredClone(marketplaceTemplate);
       if (pointer?.name !== "muster" || !Array.isArray(pointer.plugins) || !pointer.plugins.some(item => item?.name === "muster")) {
         throw new Error(`Codex marketplace does not describe the Muster plugin: ${pointerPath}`);
       }
       const plugin = pointer.plugins.find(item => item.name === "muster");
       plugin.source = { ...plugin.source, source: "local", path: codexMarketplacePluginPath(pluginsRoot) };
-      // Capture the exact prior pointer bytes right before the durable write so
-      // a write failure can restore them byte-for-byte. Only a prior REGULAR
-      // pointer is captured -- a malformed/symlinked/missing pointer already
-      // failed the read above and, being untouched by our aborted write, needs
-      // no restore.
-      if (priorPointerExisted) try { priorPointer = readFileSync(pointerPath); } catch { priorPointer = null; }
       // Final mutation: the durable pointer commit. Re-assert canonical
       // resolution so the narrow window after the destination re-validation
       // (see this function's docblock) cannot let an ancestor swap redirect the

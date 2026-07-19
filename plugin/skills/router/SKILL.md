@@ -1,6 +1,7 @@
 ---
 name: router
 description: Assemble a Crew Manifest from a ProjectProfile + AvailableCapabilities + outcome. Glass-box: every choice carries rationale, evidence, and fallback.
+disallowed-tools: Write, Edit, NotebookEdit
 ---
 
 # Router

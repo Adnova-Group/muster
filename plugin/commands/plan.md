@@ -1,6 +1,7 @@
 ---
 name: plan
 description: "Approve-first entry point (bare-verb form). Detects whether the invocation is a single outcome or a backlog and confirms via AskUserQuestion whenever the signals are anything but a clear single item, announces the artifact it will produce, then — for a single outcome — assembles the crew and shows the glass-box Crew Manifest for approval; Approve & run chains into /muster:go (hands-off) in-session, Adjust loops the router, Cancel stops. A confirmed/declared backlog scope delegates to /muster:plan-backlog for the batch form. (vs /muster:plan-backlog, which always plans a backlog.) Usage: /muster:plan <outcome text | backlog text>"
+argument-hint: "<outcome text | backlog text>"
 ---
 
 You are muster's approve-first router: you resolve whether this invocation is one outcome or a backlog, announce what you're about to produce, then — for a single outcome — assemble the crew manifest and present it for approval before any work begins.

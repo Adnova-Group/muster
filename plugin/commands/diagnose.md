@@ -1,6 +1,7 @@
 ---
 name: diagnose
 description: "Failure-first bug fix. Reproduce, find root cause (systematic debugging via the best available debug provider — installed wshobson/external else built-in), fix, add a regression test, verify. No symptom-patching. Usage: /muster:diagnose <symptom | paste failing test/CI output>"
+argument-hint: "<symptom | paste failing test/CI output>"
 ---
 
 You are muster's diagnose command: drive a failure through the full debug loop — reproduce, root cause, fix, regression test, verify.

@@ -1,6 +1,8 @@
 ---
 name: runner
 description: "Unattended one-cycle work-picker: resolves a work source, resumes an answered blocked item or claims exactly ONE available item, drives it through the full autopilot lifecycle disposition-forced to pr, leaves receipts, and stops — fired repeatedly by a Claude Code Routine/cron; the standing runner IS this mode invoked on a schedule. (vs /muster:sprint, which drains a whole backlog in one sitting.) Usage: /muster:runner [backlog path | issues:<label>]"
+argument-hint: "[backlog path | issues:<label>]"
+disable-model-invocation: true
 ---
 
 You are muster's runner: one unattended work cycle — resume or claim exactly ONE item, run it, leave a receipt, stop.

@@ -3,6 +3,7 @@ import { modelForRole } from "./model.js";
 import { ROLES } from "./roles.js";
 import { isInstalled } from "./installed.js";
 import { installedSkillDescription } from "./plugin-inventory.js";
+import { codexProfileForAgentId } from "./codex.js";
 
 // Dispatch type for a resolved provider: "agent" | "mcp" | "skill".
 function providerType(entry) {
@@ -19,7 +20,14 @@ function providerType(entry) {
 // cli.js's existing 2-arg call sites (frozen, un-awaited) are unaffected,
 // while tests can pin it to a fixture dir for deterministic installed-skill
 // description lookups. See plugin-inventory.js's installedSkillDescription.
-export function resolveCapabilities(catalog, installed, home = homedir()) {
+export function resolveCapabilities(catalog, installed, home = homedir(), opts = {}) {
+  // --codex lane only (opts.codex). Each role additionally carries the EXACT
+  // Codex profile its chosen agent dispatches on — codexModel: {model, effort},
+  // single-sourced from the same manifest-override resolution the committed
+  // .codex/agents/<id>.toml pins use (codexProfileForAgentId). A Codex driver
+  // reads the resolved gpt-5.6 model + reasoning effort pre-dispatch, without
+  // the post-run codex-conformance audit. Non-codex output shape is unchanged.
+  const codex = opts.codex === true;
   // Cowork has no agent or skill loader by default: its host can invoke
   // registered MCP servers and can always execute a task inline, but a Claude
   // Code plugin merely being present on disk does not make that plugin's
@@ -73,6 +81,10 @@ export function resolveCapabilities(catalog, installed, home = homedir()) {
       }
     }
     roles[role] = { chosen, chain, recommendations, model: modelForRole(role) };
+    if (codex && chosen.kind === "agent") {
+      const codexModel = codexProfileForAgentId(chosen.id);
+      if (codexModel) roles[role].codexModel = codexModel;
+    }
   }
 
   // Skills inventory: every currently-installed skill (name from

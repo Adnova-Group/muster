@@ -104,6 +104,26 @@ test("built Codex plugin's MCP server: muster_capabilities_roles resolves agains
   assert.equal(body.skills, undefined, "roles-only capture omits skills");
 });
 
+test("built Codex plugin's MCP server: muster_capabilities_roles carries the resolved codexModel {model, effort} per agent-backed role", async () => {
+  // capabilities-codex-exact-model: the --codex lane augments each agent-backed
+  // role with the EXACT gpt-5.6 model + reasoning effort its chosen profile
+  // dispatches on. Prove it rides the actual bundle Codex loads (the static
+  // agents.manifest.json import inlined by esbuild), not just the source CLI.
+  const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities_roles", arguments: {} } }]);
+  const res = r[2].result;
+  assert.ok(res, "tools/call returned no result");
+  assert.equal(res.isError, false, `muster_capabilities_roles errored: ${JSON.stringify(res?.content)}`);
+  const body = JSON.parse(res.content[0].text);
+  // Same four cross-tier lanes the coherence unit test pins, but end-to-end
+  // through the built MCP surface.
+  assert.deepEqual(body.roles?.implement?.codexModel, { model: "gpt-5.6-sol", effort: "medium" });
+  assert.deepEqual(body.roles?.["security-review"]?.codexModel, { model: "gpt-5.6-sol", effort: "xhigh" });
+  assert.deepEqual(body.roles?.["test-author"]?.codexModel, { model: "gpt-5.6-luna", effort: "xhigh" });
+  assert.deepEqual(body.roles?.["code-navigation"]?.codexModel, { model: "gpt-5.6-terra", effort: "high" });
+  // A skill-provider role has no profile TOML, so no codexModel is fabricated.
+  assert.equal("codexModel" in (body.roles?.brainstorm ?? {}), false, "skill-backed role must not carry a codexModel");
+});
+
 test("built Codex plugin's MCP server: muster_receipt_verify -- a REAL SHA from this checkout verifies true", async () => {
   const { stdout } = await execFileP("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
   const sha = stdout.trim();

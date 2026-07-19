@@ -128,7 +128,12 @@ async function main() {
       } else {
         installed = await readInstalled(home);
       }
-      const capabilities = resolveCapabilities(rest.includes("--codex") ? adaptCatalogForCodex(catalog, installed) : catalog, installed);
+      // --codex lane resolves through the codex-adapted catalog AND augments each
+      // agent-backed role with its resolved codexModel {model, effort} (opts.codex).
+      // The non-codex/cowork call is left byte-identical to preserve output shape.
+      const capabilities = rest.includes("--codex")
+        ? resolveCapabilities(adaptCatalogForCodex(catalog, installed), installed, home, { codex: true })
+        : resolveCapabilities(catalog, installed);
       if (role) {
         if (!capabilities.roles[role]) fail(`capabilities --role ${role}: unknown role`);
         out({ role, ...capabilities.roles[role] });

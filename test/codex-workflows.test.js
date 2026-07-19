@@ -112,20 +112,38 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
   assert.match(runtimeSource, /makeGitShaVerifier/);
 });
 
-test("generated Codex orchestration surfaces enforce the bounded agent watch invariant", async () => {
+test("generated Codex orchestration surfaces enforce the bounded, liveness-aware agent watch invariant", async () => {
   const surfaces = new Map([
     ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
     ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
     ...["muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
       .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
   ]);
+  // Pin re-derived for the codex-agent-watch-review-budget item (2026-07-19 dogfood: a healthy
+  // gpt-5.6-sol/high muster-reviewer was interrupted mid-review by the flat 3-heartbeat kill --
+  // review-class reasoning routinely exceeds 3 silent minutes with zero mailbox receipts). The
+  // watch is now liveness-aware (a `list_agents`-confirmed in-turn worker is extended, not killed)
+  // with per-class ceilings bounding the extension: 10 silent heartbeats for review/strategy-class
+  // workers, 6 for mechanical/implementation lanes. Genuinely idle/completed/failed workers still
+  // die at 3 heartbeats exactly as before.
+  const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "DeepSWE sol/high", "liveness checkpoint"];
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
-    for (const marker of ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion"]) {
+    for (const marker of watchMarkers) {
       assert.match(text, new RegExp(marker.replaceAll(".", "\\.")), `${name} must carry watch marker ${marker}`);
     }
     assert.ok(text.indexOf("collaboration.wait_agent") < text.indexOf("collaboration.list_agents"), `${name} must wait before its first reconciliation poll`);
     assert.ok(text.indexOf("mailbox receipts first") < text.indexOf("collaboration.list_agents"), `${name} must process the wake receipt before reconciling`);
+    assert.match(
+      text,
+      /muster-reviewer`, `wsh-code-reviewer`, `muster-strategist`, `wsh-security-auditor`\) get a hard ceiling of 10 consecutive silent heartbeats/,
+      `${name} must bind the 10-heartbeat ceiling to the named review\\/strategy-class workers`
+    );
+    assert.match(
+      text,
+      /Mechanical\/implementation workers[\s\S]{0,200}?6 consecutive silent heartbeats/,
+      `${name} must bind the 6-heartbeat ceiling to mechanical\\/implementation workers`
+    );
   }
 });
 

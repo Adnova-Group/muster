@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 137);
+  assert.equal(paths.length, 138);
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -574,5 +574,41 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // grep before editing) -- that prose is Codex-only (codex/skill-adapter.md, generated
   // by scripts/build-codex.mjs), left untouched per this item's own scope.
   // Pin re-derived at the PR #87 + #88 merge reconciliation (2026-07-19): union hash.
-  assert.equal(hash.digest("hex"), "094af7919b0a74bccd7eb110c228addc408390d34a831cd1243aaa088f18f84b");
+  //
+  // Pin re-derived 2026-07-19 (backlog item structured-output-binding): file COUNT changed
+  // 137 -> 138 -- a genuinely new file, plugin/skills/review-gate/verdict.schema.json (the
+  // single-sourced JSON Schema for .muster/verdicts.json's two entry shapes: an ordinary
+  // reviewer's {reviewer, findings} verdict, and PR #82's {reviewer, status:
+  // "exhausted"|"absent"} worker-absence entry -- kept coherent with src/review.js's
+  // tallyReview by the new test/verdict-schema.test.js, outside this hashed surface).
+  // plugin/skills/review-gate/SKILL.md's content also changed: step 5's existing "Write
+  // verdicts to `.muster/verdicts.json`" sentence gained one clause citing the schema file
+  // as the emission contract plus a compact honesty note ("native constrained output here
+  // reaches only headless surfaces, not this call") -- both lanes' own research docs verified
+  // to say exactly that: docs/research/claude-code-cli.md secs 1/11 place `StructuredOutput`
+  // and print-mode `--json-schema` on the background-agent/`claude agents`-subcommand and
+  // headless-`-p` surfaces respectively, neither of which is the in-session Agent-tool call
+  // review-gate actually dispatches reviewers through; docs/research/codex-cli.md sec 1 binds
+  // `codex exec --output-schema` to a `codex exec` leaf's final message, and reviewer dispatch
+  // on the Codex lane runs through the native `collaboration.spawn_agent` subagent call, not a
+  // `codex exec` leaf (confirmed by grepping scripts/build-codex.mjs's one `claude -p` ->
+  // `codex exec` translation site, plugin/commands/runner.md's cron-scheduling line -- not a
+  // verdict-emitting leaf). Native constrained output therefore reaches neither lane's real
+  // reviewer-dispatch surface today; the schema is held by test/verdict-schema.test.js's
+  // coherence pin plus `muster tally`'s own parse, stated as such rather than claiming
+  // enforcement that is not there. The edit sits inside step 5's own sentence, so it disturbs
+  // neither the mutant-kill-rule drift-guard fixture (test/mode-evals.test.js, unaffected --
+  // still anchored on "## Mutant-kill gate" onward) nor scripts/build-codex.mjs's review-gate
+  // step-1/fix-iteration-cap anchors; the generic `translatePluginPaths` transform already
+  // in build-codex.mjs resolves the new citation to
+  // `${PLUGIN_ROOT}/internal-skills/review-gate/verdict.schema.json` with no Codex-specific
+  // code needed, and `rmAndCopy(plugin/skills, internal-skills)` already ships the new schema
+  // file byte-for-byte -- both re-verified with `MUSTER_BUILD_FORCE=1 node
+  // scripts/build-codex.mjs && node scripts/check-codex.mjs` (clean), the latter gaining one
+  // new assertion (`internal-skills/review-gate/verdict.schema.json` must exist and the ported
+  // SKILL.md must cite its bundled path) proven to fail on a missing file and pass once
+  // restored. docs/binding-interface.md's four grep-audit counts are unchanged (the new prose
+  // deliberately names none of AskUserQuestion/hook/dispatch-phrase/worktree). This is the
+  // reviewed structured-output-binding remediation, not accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "bba11e21c5c8eca9c5650865d7c23201be1dfddc985d4cb85bc6de7a9fc1befc");
 });

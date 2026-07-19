@@ -284,6 +284,29 @@ test("detectScope: a plain outcome sentence -> item", async () => {
   assert.ok(r.signals.length > 0, "item still carries a human-readable signal");
 });
 
+// --- rule 4, by-design: an audit-shaped outcome is a single OUTCOME, not a backlog ref ---
+// run-5 dogfood flagged scope calling a multi-file AUDIT outcome an "item" as a misfire.
+// It is not: "backlog" here means a REF to a checklist/issues/linear source to iterate, and
+// an audit outcome ("audit src/a.js src/b.js src/c.js ...") is none of those -- it is a
+// single outcome the router then hands to the audit verb, which PRODUCES a findings backlog
+// by running. Classifying it "backlog" would misroute go/plan into the -backlog batch form,
+// which would try to parse the prose as a ref and fail. Multiple file paths + an audit/review
+// verb is exactly the "multi-deliverable intent buried in prose" this deterministic detector
+// is documented to leave to mode prompts. These pins lock the by-design "item" verdict.
+
+test("detectScope: a multi-file audit/review outcome is a single outcome -> item (by design, not a backlog ref)", async () => {
+  for (const text of [
+    "audit src/a.js src/b.js src/c.js for security and coverage",
+    "review src/auth.js src/db.js src/api.js for error handling",
+    "sweep the repo for unused exports",
+    "audit the payments module for security and tech-debt issues",
+  ]) {
+    const r = await withTempDir(async (dir) => detectScope({ cwd: dir, text }));
+    assert.equal(r.scope, "item", `${JSON.stringify(text)} is a single audit outcome, not a backlog ref`);
+    assert.ok(r.signals.length > 0, "item still carries a human-readable signal");
+  }
+});
+
 test("detectScope: an invalid issues: ref (empty label) is not a parseable backlog ref -> item, with a distinct malformed-ref signal", async () => {
   // parseBacklogRef("issues:") returns kind:"invalid", not one of file/issues/linear — a
   // malformed ref is deliberately NOT auto-classified as backlog here; mode-level

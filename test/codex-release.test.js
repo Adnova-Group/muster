@@ -253,6 +253,123 @@ test("publishCodexPlugin's destination re-validation independently rejects a sym
   assert.deepEqual((await readdir(join(root, ".agents", "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
 });
 
+// --- Symlinked-ANCESTOR containment: `ensureOrdinaryDirectory` validated only
+// the terminal pluginsRoot, so a symlinked ANCESTOR of pluginsRoot could
+// redirect every publish mutation (copy / retire rename / orphan sweep /
+// pointer commit) out of the intended tree and into the link's target.
+// run-5 security audit High #2. ---
+
+test("publishCodexPlugin refuses a symlinked ANCESTOR of pluginsRoot and never copies the staged tree through it into the link's target", async t => {
+  const root = await tempRoot(t);
+  // The attacker's redirect target: a real, initially-empty directory the
+  // symlinked ancestor points at. A publish that walks through the symlink
+  // would materialize the plugin tree HERE instead of the intended location.
+  const victim = join(root, "victim-target");
+  await mkdir(victim, { recursive: true });
+  // `redirect` is a symlinked ANCESTOR of pluginsRoot (before this fix only
+  // the terminal pluginsRoot itself was checked for being an ordinary dir).
+  await symlink(victim, join(root, "redirect"));
+  const pluginsRoot = join(root, "redirect", "plugins");
+  await assert.rejects(
+    publishCodexPlugin({ pluginsRoot, stagedPlugin: await stagedPlugin(root, "ancestor-copy"), packageVersion: "0.5.0", marketplaceTemplate }),
+    /symlink|ordinary directory/i,
+    "a symlinked ancestor of pluginsRoot must be rejected before any publish mutation"
+  );
+  // Nothing may have been written THROUGH the symlink into the link's target:
+  // no `plugins` dir, no plugin tree, no marketplace pointer.
+  assert.deepEqual(await readdir(victim), [], "no publish mutation may reach the symlinked ancestor's target");
+});
+
+test("publishCodexPlugin refuses a symlinked ANCESTOR of pluginsRoot and never retires the previous plugin or sweeps its orphans through it", async t => {
+  const root = await tempRoot(t);
+  // Publish a real plugin at the CANONICAL (symlink-free) location first.
+  const canonicalPlugins = join(root, "canonical", "plugins");
+  await publishCodexPlugin({ pluginsRoot: canonicalPlugins, stagedPlugin: await stagedPlugin(root, "victim-plugin"), packageVersion: "0.5.0", marketplaceTemplate });
+  // Plant crash-debris the sweep would delete and content the retire rename
+  // would move, if either ran through the symlinked ancestor.
+  const orphan = join(canonicalPlugins, ".muster-retired-1-canary");
+  await mkdir(orphan, { recursive: true });
+  await writeFile(join(orphan, "keepme.txt"), "canary\n");
+  // Reach the SAME real directory via a symlinked ancestor.
+  await symlink(join(root, "canonical"), join(root, "redirect"));
+  await assert.rejects(
+    publishCodexPlugin({ pluginsRoot: join(root, "redirect", "plugins"), stagedPlugin: await stagedPlugin(root, "attacker"), packageVersion: "0.5.0", marketplaceTemplate }),
+    /symlink|ordinary directory/i,
+    "a symlinked ancestor must be rejected before the sweep or retire rename runs"
+  );
+  // The retire rename must NOT have moved the previous plugin, and the orphan
+  // sweep must NOT have deleted the canary, through the symlinked ancestor.
+  assert.equal(
+    await readFile(join(canonicalPlugins, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "victim-plugin";\n',
+    "previous plugin must not be retired/renamed through a symlinked ancestor"
+  );
+  assert.equal(await readFile(join(orphan, "keepme.txt"), "utf8"), "canary\n", "orphan sweep must not run through a symlinked ancestor");
+});
+
+test("publishCodexPlugin re-validates pluginsRoot canonically before the pointer commit and refuses an ancestor swapped in mid-publish", async t => {
+  const root = await tempRoot(t);
+  // A VALID plugin tree the swapped-in symlink will point at, so the post-copy
+  // assertRegularTree still passes and ONLY the pre-pointer-commit realpath
+  // re-validation can catch the ancestor swap.
+  const evil = join(root, "evil");
+  await mkdir(join(evil, "plugins"), { recursive: true });
+  cpSync(await stagedPlugin(root, "evil-src"), join(evil, "plugins", "plugin"), { recursive: true });
+  const mid = join(root, "mid");
+  const pluginsRoot = join(mid, "plugins");
+  // Swap the real `mid` ancestor for a symlink to the evil tree AFTER the copy
+  // has completed, mimicking a same-user writer redirecting the ancestor in
+  // the window between the copy and the marketplace-pointer commit.
+  const copyStagedPlugin = async (source, destination) => {
+    copyStagedPluginTree(source, destination);
+    await rename(mid, join(root, "mid-real"));
+    await symlink(evil, mid);
+  };
+  await assert.rejects(
+    publishCodexPlugin({ pluginsRoot, stagedPlugin: await stagedPlugin(root, "mid-swap"), packageVersion: "0.5.0", marketplaceTemplate, copyStagedPlugin }),
+    /symlink|ordinary directory|realpath|resolves to/i,
+    "an ancestor swapped in after the copy must be caught by the pre-pointer-commit re-validation"
+  );
+  // The marketplace pointer must NEVER have been committed through the swapped
+  // ancestor into the evil tree.
+  await assert.rejects(
+    readFile(join(evil, "plugins", "marketplace.json"), "utf8"),
+    "the pointer commit must not reach the swapped-in ancestor's target"
+  );
+});
+
+test("publishCodexPlugin refuses the copy-failure rollback through an ancestor swapped in during the failed copy, never deleting through the symlink", async t => {
+  const root = await tempRoot(t);
+  // The link's target holds a canary the rollback's `rmSync(pluginPath)` would
+  // destroy if it resolved pluginPath (join(pluginsRoot, "plugin")) through the
+  // swapped ancestor: join(root, "mid", "plugins", "plugin") -> evil/plugins/plugin.
+  const evil = join(root, "evil");
+  await mkdir(join(evil, "plugins", "plugin"), { recursive: true });
+  await writeFile(join(evil, "plugins", "plugin", "CANARY.txt"), "do-not-delete\n");
+  const mid = join(root, "mid");
+  const pluginsRoot = join(mid, "plugins");
+  // Swap the real `mid` ancestor for a symlink to the evil tree, THEN fail the
+  // copy -- mimicking any copy/validation failure racing an ancestor swap. The
+  // catch handler's rollback (`rmSync(pluginPath)` + the retired-backup restore)
+  // must refuse to run through the now-poisoned ancestor rather than delete the
+  // canary out from under the link.
+  const copyStagedPlugin = async () => {
+    await rename(mid, join(root, "mid-real"));
+    await symlink(evil, mid);
+    throw new Error("simulated copy failure");
+  };
+  await assert.rejects(
+    publishCodexPlugin({ pluginsRoot, stagedPlugin: await stagedPlugin(root, "rollback"), packageVersion: "0.5.0", marketplaceTemplate, copyStagedPlugin }),
+    /rollback refused|symlink|ordinary directory/i,
+    "a rollback through a swapped-in ancestor must be refused, not executed"
+  );
+  assert.equal(
+    await readFile(join(evil, "plugins", "plugin", "CANARY.txt"), "utf8"),
+    "do-not-delete\n",
+    "the copy-failure rollback must not delete through the swapped-in ancestor into the link's target"
+  );
+});
+
 test("copyStagedPluginTree hard-fails (not a silent skip) when the source tree contains a symlink, without publishing the tainted entry", async t => {
   const root = await tempRoot(t);
   const source = join(root, "copy-source"), destination = join(root, "copy-destination");

@@ -225,9 +225,12 @@ to its own distinct mechanism string, never a silent default.
 
 **Shape is not proof.** A fabricated-but-well-formed SHA passes the shape check above exactly like
 a real commit does. Immediately after appending the receipt, run
-`$MUSTER_CLI receipt-verify <baseSha> --cwd <repo>` (`makeGitShaVerifier` in `src/wave-dispatch.js`)
-against it. Treat any nonzero exit the same as any other verification failure -- escalate it, never
-swallow it silently.
+`$MUSTER_CLI receipt-verify <baseSha> --cwd <repo>` (`<repo>` is the run's OWN repository root --
+the base SHA is a fork point in that history, never a dispatched crew member's own isolated copy,
+which may not exist yet or share no history with it) -- `makeGitShaVerifier` in
+`src/wave-dispatch.js`.
+Treat any nonzero exit the same as any other verification failure -- escalate it, never swallow it
+silently.
 
 ## Scope fences
 

@@ -252,12 +252,15 @@ async function main() {
       const harness = flagValue(rest, "--harness");
       out(resolveWorktreeIsolation({ harness }));
     } else if (cmd === "receipt-verify") {
-      // base-sha-receipt-verification item: the executable consumer buildBaseShaReceipt's
-      // format check alone can't be -- proof a base-SHA receipt's SHA is REAL, not just
-      // well-formed. Runs the git-backed default verifier (makeGitShaVerifier,
-      // src/wave-dispatch.js) against an explicit repo `--cwd` (never process.cwd() --
-      // Codex's spawn_agent has no cwd field, so the caller must always state the repo)
-      // and prints the same {verified, mechanism} shape buildBaseShaReceipt records.
+      // base-sha-receipt-verification item: the executable consumer -- proof that a
+      // base-SHA receipt's SHA is REAL, not just well-formed (buildBaseShaReceipt's
+      // format check alone can't provide that). Runs the git-backed default verifier
+      // (makeGitShaVerifier, src/wave-dispatch.js -- shape-checked before it ever shells
+      // out, so a branch/tag/HEAD/relative-ref argument is correctly reported unverified
+      // rather than a false positive) against an explicit repo `--cwd` (never
+      // process.cwd() -- Codex's spawn_agent has no cwd field, so the caller must always
+      // state the repo) and prints the same {verified, mechanism} shape
+      // buildBaseShaReceipt records.
       const sha = requireArg(rest, 0, "receipt-verify <sha> --cwd <repo>: missing sha", fail);
       const cwd = flagValue(rest, "--cwd");
       if (!cwd) fail("receipt-verify <sha> --cwd <repo>: missing --cwd");

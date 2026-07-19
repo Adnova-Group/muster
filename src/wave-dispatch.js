@@ -296,11 +296,21 @@ export function buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath, 
 // factory's OWN contract hermetically without a real git shell-out; production callers
 // get the real one. The returned function carries a `.mechanism` label ("git-object")
 // that buildBaseShaReceipt reads back into the receipt's `verificationMechanism`.
+//
+// The input is ALSO shape-checked against BASE_SHA_RE before ever shelling out (review
+// finding, fixed): `git rev-parse --verify` resolves any revision expression -- a branch
+// name, a tag, `HEAD`, a relative ref like `HEAD~2` -- not just SHAs, so without this
+// guard a caller that passes something other than a SHA (the standalone `receipt-verify`
+// CLI, invoked directly, never routes through buildBaseShaReceipt's own format check
+// first) would get a false `verified: true` for input that was never a base-SHA at all.
+// A shape-invalid input is unconditionally false, same as any other non-reachable SHA --
+// this is the verifier's own definition of "reachable," not a separate error path.
 export function makeGitShaVerifier({ cwd, exec = execFileSync } = {}) {
   if (typeof cwd !== "string" || !cwd.trim()) {
     throw new Error("makeGitShaVerifier: cwd is required (an explicit repository path -- never process.cwd())");
   }
   function verifyGitSha(sha) {
+    if (typeof sha !== "string" || !BASE_SHA_RE.test(sha)) return false;
     try {
       exec("git", ["rev-parse", "--verify", "--quiet", `${sha}^{commit}`], { cwd, stdio: ["ignore", "ignore", "ignore"] });
       return true;

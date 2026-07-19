@@ -53,6 +53,10 @@ function realHeadSha() {
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO_ROOT, encoding: "utf8" }).trim();
 }
 
+function branchName() {
+  return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: REPO_ROOT, encoding: "utf8" }).trim();
+}
+
 function runReceiptVerify(args) {
   try {
     const stdout = execFileSync(process.execPath, [CLI, "receipt-verify", ...args], { encoding: "utf8" });
@@ -281,6 +285,25 @@ test("makeGitShaVerifier: a fabricated well-formed SHA that is not a real object
   assert.equal(receipt.verificationMechanism, "git-object");
 });
 
+test("makeGitShaVerifier: a non-SHA revision expression (branch, tag, HEAD, relative ref) is rejected, never treated as reachable (review fix -- git rev-parse resolves more than SHAs)", () => {
+  const verify = makeGitShaVerifier({ cwd: REPO_ROOT });
+  // Every one of these genuinely resolves via `git rev-parse --verify` in this checkout
+  // (this is itself the bug the review caught) -- the shape guard must reject all of them
+  // before a single one ever reaches git.
+  for (const revision of ["main", "HEAD", "HEAD~1", branchName()]) {
+    assert.equal(verify(revision), false, `expected "${revision}" to be rejected as not SHA-shaped`);
+  }
+});
+
+test("makeGitShaVerifier: the shape guard runs before any shell-out -- an injected exec proves git is never invoked for non-SHA input", () => {
+  let execCalled = false;
+  const fakeExec = () => { execCalled = true; return ""; };
+  const verify = makeGitShaVerifier({ cwd: "/fake/repo", exec: fakeExec });
+  assert.equal(verify("main"), false);
+  assert.equal(verify("HEAD~1"), false);
+  assert.equal(execCalled, false, "git must never be invoked for a non-SHA-shaped revision expression");
+});
+
 // ── executable consumer: `muster receipt-verify <sha> --cwd <repo>` CLI ────────────
 
 test("receipt-verify CLI: a REAL SHA from this checkout verifies true and exits 0", () => {
@@ -296,6 +319,18 @@ test("receipt-verify CLI: a fabricated well-formed SHA fails verification and ex
   assert.equal(status, 2);
   const parsed = JSON.parse(stdout);
   assert.deepEqual(parsed, { sha: FABRICATED_SHA, cwd: REPO_ROOT, verified: false, mechanism: "git-object" });
+});
+
+test("receipt-verify CLI: a real revision expression that is NOT a SHA (branch name, HEAD, relative ref) is correctly reported unverified, not a false positive (review fix)", () => {
+  // `git rev-parse --verify` genuinely resolves each of these in this checkout -- proving
+  // the CLI's own shape guard (routed through makeGitShaVerifier), not git's own failure,
+  // is what rejects them.
+  for (const revision of ["main", "HEAD", "HEAD~1", branchName()]) {
+    const { status, stdout } = runReceiptVerify([revision, "--cwd", REPO_ROOT]);
+    assert.equal(status, 2, `expected "${revision}" to exit 2 (not verified)`);
+    const parsed = JSON.parse(stdout);
+    assert.equal(parsed.verified, false, `expected "${revision}" to report verified:false`);
+  }
 });
 
 test("receipt-verify CLI: a malformed sha argument still fails verification (exits 2, not a crash) -- no behavior regression on the not-a-real-object path", () => {

@@ -403,5 +403,22 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // and the Agent-tool/Task-tool dispatch phrasing) -- re-verified green. See
   // test/worktree-isolation.test.js for the new buildBaseShaReceipt(verify)/
   // makeGitShaVerifier/`muster receipt-verify` CLI coverage this item adds.
-  assert.equal(hash.digest("hex"), "4a54cbdad3c35e138abdd2e6d94631fb64367941dc437e683542ba36fe121eb5");
+  //
+  // Pin re-derived a third time, same day/item, after a review-gate fix pass: a
+  // review-gate blocker found `receipt-verify` reported `verified: true` for any
+  // revision expression `git rev-parse --verify` resolves (a branch name, a tag, `HEAD`,
+  // a relative ref), not just an actual SHA, since the standalone CLI never routed
+  // through buildBaseShaReceipt's own format gate -- fixed inside makeGitShaVerifier
+  // itself (src/wave-dispatch.js), so every caller of the git-backed verifier is
+  // protected, not just this one CLI. The one-clause fix note above ("<repo>" is the
+  // run's OWN repository root...) is a review nit, addressing which repo `--cwd` names --
+  // its first wording used "worktree," which bumped docs/binding-interface.md's live
+  // worktree-mention grep audit (22 -> 23) without a matching doc update, so it was
+  // reworded to "isolated copy" instead (same meaning, no tracked term), re-verified
+  // green with no docs/binding-interface.md change needed. Both fixes are inside
+  // plugin/skills/orchestrator/SKILL.md's same paragraph, still appended after (never
+  // reflowing) the file's pre-existing lines; file COUNT still unchanged (137).
+  // Regression tests added to test/worktree-isolation.test.js prove git never resolves a
+  // non-SHA-shaped input for either the factory or the CLI.
+  assert.equal(hash.digest("hex"), "3c6b0e495998aaedfc19a31e1c6c72d8ba9845b2eeb020edcccd8a435a20a1ee");
 });

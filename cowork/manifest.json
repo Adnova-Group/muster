@@ -65,7 +65,10 @@
     { "name": "muster_capabilities_roles", "description": "Resolve every role the same way muster_capabilities does, but return only the {roles} map (lighter capture)." },
     { "name": "muster_match_skills", "description": "Rank the live skills inventory against a free-text task, plus stack-derived suggested skills." },
     { "name": "muster_gate_cadence", "description": "Compute review-gate cadence (spec-gate rounds, batched review-gate passes, reviewer count) from a manifest's waves." },
-    { "name": "muster_receipt_verify", "description": "Verify a base-SHA is a real, resolvable git commit object in an explicit repo." }
+    { "name": "muster_receipt_verify", "description": "Verify a base-SHA is a real, resolvable git commit object in an explicit repo." },
+    { "name": "muster_scope", "description": "Deterministic backlog-vs-item scope detection for the plan/go verb family." },
+    { "name": "muster_fast_path", "description": "Score an outcome for the pre-router fast path; with capabilities, also emits the minimal builder+reviewer manifest." },
+    { "name": "muster_plan_checklist", "description": "Render a crew manifest's plan array as a markdown checklist." }
   ],
   "compatibility": {
     "runtimes": { "node": ">=20" }

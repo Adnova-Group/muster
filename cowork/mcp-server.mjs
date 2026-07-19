@@ -99,7 +99,7 @@ const COWORK_PROTOCOL = [
   "",
   "Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog.",
   "",
-  "CLI-only operations: every deterministic op the tools above expose has an MCP tool now, except one -- muster_match_skills always derives stack signals from the task text itself (signalsFromTask), never from an explicit override. To pass an explicit --stack <csv> (or any other CLI flag with no MCP equivalent), run the bundled CLI directly instead of the MCP tool.",
+  "CLI-only operations: every deterministic op the tools above expose has an MCP tool now, except two. muster_match_skills always derives stack signals from the task text itself (signalsFromTask), never from an explicit override -- to pass an explicit --stack <csv> (or any other CLI flag with no MCP equivalent), run the bundled CLI directly instead of the MCP tool. codex-conformance stays CLI-only outright: it audits a HOST CODEX_HOME/sessions rollout tree for subagent model-conformance drift -- this server CAN read that tree (it runs on the same host Codex spawned it on), but the audit is post-run forensics a human/driver runs after a session ends, not a decision the in-run orchestrating agent needs mid-wave. Run `codex-conformance [YYYY/MM/DD | --days N] [--cwd <substr>] [--current-pins-only]` on the bundled CLI directly.",
 ].join("\n");
 
 const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("\n\n");
@@ -185,6 +185,29 @@ const TOOLS = {
     inputSchema: { type: "object", properties: { sha: { type: "string" }, cwd: { type: "string" } }, required: ["sha", "cwd"] },
     flags: (a) => ["--cwd", String(a.cwd ?? "")],
   },
+
+  // codex-mcp-surface-gaps round 2 (PR #85 precedent, same per-op decision-table
+  // discipline): 3 more deterministic ops the 2026-07-19 clean Codex run's residual
+  // CLI-only list named. muster_scope and muster_plan_checklist map cleanly onto the
+  // existing "str"/"json2" factory shapes -- no scheme change. muster_fast_path needed a
+  // genuinely new shape (a string positional PLUS an optional JSON payload behind a
+  // flag): "str"'s `flags` callback (muster_receipt_verify's --cwd) is synchronous and
+  // cannot write a temp file, so it gets its own bespoke "fastPath" kind -- the same kind
+  // of one-off muster_audit's "target" kind already established for a shape no existing
+  // factory covers. The 4th residual op, codex-conformance, was judged CLI-only outright
+  // (post-run forensics a human/driver runs, not an in-run orchestration decision) --
+  // see the rationale in COWORK_PROTOCOL's "CLI-only operations" note above.
+  muster_scope: { argv: ["scope"], ...S("Deterministic backlog-vs-item scope detection for the plan/go verb family (detectScope): does free text look like a backlog reference/file, or read as a single-item outcome? Returns {scope: \"backlog\"|\"item\"|\"ambiguous\", signals}. An empty/omitted `text` is a valid bare invocation -- checks the default .muster/backlog.md under the server's own working directory (this tool has no `dir` override, matching the CLI's own scope command).", "text", false) },
+  muster_fast_path: {
+    argv: ["fast-path"], kind: "fastPath", prop: "outcome",
+    description: "Score an outcome for the pre-router fast path (scoreOutcomeForFastPath): a single-task/small outcome with no cross-cutting or multi-deliverable signal skips full crew assembly. Returns {eligible, wordCount, reason}. When `capabilities` is ALSO given -- the SAME {roles} shape muster_capabilities_roles returns -- and the outcome scores eligible, also emits the minimal builder+one-reviewer manifest (buildFastPathManifest; no LLM dispatch). Omit `capabilities` for eligibility scoring only.",
+    inputSchema: {
+      type: "object",
+      properties: { outcome: { type: "string" }, capabilities: { type: "object" } },
+      required: ["outcome"],
+    },
+  },
+  muster_plan_checklist: { argv: ["plan-checklist"], ...J2("Render a crew manifest's `plan` array as a markdown checklist (renderPlanChecklist): `- [ ]`/`- [x]`, a tournament marker, and owns/frozen fence suffixes. Optional `done` (array of task ids) marks matching tasks complete.", { manifest: { type: "object" }, done: { type: "array", items: { type: "string" } } }, ["manifest"]), picks: (a) => [a.manifest], flags: (a) => a.done?.length ? ["--done", a.done.join(",")] : [] },
 };
 
 // ── CLI invocation ──────────────────────────────────────────────────────────
@@ -240,6 +263,29 @@ async function callTool(name, args = {}, signal) {
   // static: no CLI call at all — return pre-loaded file content verbatim (muster_sprint_protocol).
   // A load-time read failure (tool.error set) surfaces as isError instead of serving `null` text.
   if (tool.kind === "static") return tool.error ? { ok: false, text: tool.error } : { ok: true, text: tool.text };
+
+  // fastPath: muster_fast_path's bespoke kind -- a required string positional (`outcome`)
+  // PLUS an OPTIONAL JSON payload (`capabilities`) behind a flag. Neither "str" (single
+  // positional, synchronous `flags`) nor "json2" (payload-only positionals) covers that
+  // shape, so this writes its own temp file only when `capabilities` is actually present,
+  // mirroring "json2"'s write/run/cleanup sequence below rather than reusing "str"'s
+  // (synchronous, therefore file-write-incapable) `flags` callback.
+  if (tool.kind === "fastPath") {
+    const v = args[tool.prop];
+    if (typeof v !== "string" || !v.trim()) {
+      return { ok: false, text: "muster_fast_path: outcome is required" };
+    }
+    const capabilities = args.capabilities;
+    if (capabilities == null) return runCli([...tool.argv, v], { signal });
+    const dir = await mkdtemp(path.join(tmpdir(), "muster-mcp-"));
+    try {
+      const f = path.join(dir, "capabilities.json");
+      await writeFile(f, JSON.stringify(capabilities));
+      return await runCli([...tool.argv, v, "--capabilities", f], { signal });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
 
   // text: write the single string payload verbatim (no JSON.stringify) to one temp file,
   // then invoke the CLI with that file's path — mirrors json2's temp-file handoff for

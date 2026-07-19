@@ -4,6 +4,13 @@
 // BUILT Codex plugin's MCP server (mirrors test/codex-mcp-runtime-env.test.js's spawn
 // pattern), that the new tools ride the actual bundle Codex loads, not just the shared
 // cowork/mcp-server.mjs source.
+//
+// codex-mcp-surface-gaps round 2: the same dogfood's clean-run residual CLI-only list
+// named 4 more ops (scope, fast-path, plan-checklist, codex-conformance). 3 became real
+// tools here (scope, fast-path, plan-checklist); codex-conformance was judged CLI-only
+// on the merits -- post-run forensics a human/driver runs after a session ends, not an
+// in-run orchestration decision -- and documented in COWORK_PROTOCOL's "CLI-only
+// operations" note instead (cowork/mcp-server.mjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
@@ -44,13 +51,38 @@ function rpc(entry, requests, { cwd = repoRoot, timeout = 15_000 } = {}) {
 const INIT = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "surface-gaps-test", version: "1" } } };
 const entry = () => join(selectedPluginRoot, "runtime", "muster-mcp.mjs");
 
-test("built Codex plugin's MCP server: tools/list carries the 4 new tools and the new total count", async () => {
+test("built Codex plugin's MCP server: tools/list carries the round-1 + round-2 new tools and the new total count", async () => {
   const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const names = r[2].result.tools.map((t) => t.name);
   assert.equal(names.length, CODEX_COUNTS.mcpTools);
-  for (const name of ["muster_receipt_verify", "muster_capabilities_roles", "muster_match_skills", "muster_gate_cadence"]) {
+  for (const name of [
+    "muster_receipt_verify", "muster_capabilities_roles", "muster_match_skills", "muster_gate_cadence",
+    "muster_scope", "muster_fast_path", "muster_plan_checklist",
+  ]) {
     assert.ok(names.includes(name), `tools/list must include ${name}`);
   }
+  // codex-conformance judged CLI-only (post-run forensics, not in-run orchestration) --
+  // must never appear as an MCP tool.
+  assert.ok(!names.includes("muster_codex_conformance"), "codex-conformance stays CLI-only, never an MCP tool");
+});
+
+test("built Codex plugin's MCP server: muster_scope returns real scope JSON for a single-item outcome", async () => {
+  const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_scope", arguments: { text: "fix a typo in the README" } } }]);
+  const res = r[2].result;
+  assert.ok(res, "tools/call returned no result");
+  assert.equal(res.isError, false, `muster_scope errored: ${JSON.stringify(res?.content)}`);
+  const body = JSON.parse(res.content[0].text);
+  assert.equal(body.scope, "item");
+  assert.ok(Array.isArray(body.signals) && body.signals.length > 0, "signals cite the deciding evidence");
+});
+
+test("built Codex plugin's MCP server: muster_plan_checklist round-trips a minimal manifest", async () => {
+  const manifest = { plan: [{ id: "a", task: "Add X", deps: [] }] };
+  const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_plan_checklist", arguments: { manifest } } }]);
+  const res = r[2].result;
+  assert.ok(res, "tools/call returned no result");
+  assert.equal(res.isError, false, `muster_plan_checklist errored: ${JSON.stringify(res?.content)}`);
+  assert.equal(res.content[0].text, "- [ ] a — Add X");
 });
 
 test("built Codex plugin's MCP server: muster_capabilities_roles resolves against the Codex catalog, not inline (same --cowork -> --codex adapter as muster_capabilities)", async () => {

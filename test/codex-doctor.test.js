@@ -321,6 +321,31 @@ test("Codex doctor still rejects a project managed scope whose configDir is not 
   assert.match(scopes?.detail || "", /unsafe entry/i);
 });
 
+test("Codex doctor still rejects a user managed scope whose configDir is not the resolved CODEX_HOME", async () => {
+  // Now that the `.codex` suffix no longer gates the user scope, exact identity
+  // with expectedUserScope (= resolve(CODEX_HOME)) is its SOLE path guard. A
+  // user entry pointing anywhere other than the resolved CODEX_HOME -- even at
+  // a `.codex`-named directory, so the suffix cannot be what rejects it -- must
+  // stay rejected; a mislabeled "user" scope can never smuggle an arbitrary
+  // path through.
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-user-mismatch-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current-project");
+  const codexHome = join(home, ".codex");
+  const foreign = join(tmp, "elsewhere", ".codex"); // absolute + canonical + `.codex`, but != resolve(codexHome)
+  const absent = async () => { throw new Error("not found"); };
+  await mkdir(join(codexHome, "muster"), { recursive: true });
+  await writeFile(join(codexHome, "muster", "install-scopes.json"), JSON.stringify({
+    format: 1,
+    owner: "muster",
+    entries: [{ scope: "user", configDir: foreign }]
+  }));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const scopes = report.checks.find(check => check.name === "codex-managed-scopes");
+  assert.equal(scopes?.ok, false, "a user scope not equal to the resolved CODEX_HOME must stay rejected");
+  assert.match(scopes?.detail || "", /unsafe entry/i);
+});
+
 test("Codex doctor verifies the bundled MCP initialize and tools/list handshake", async () => {
   const calls = [];
   const absent = async () => { throw new Error("not found"); };

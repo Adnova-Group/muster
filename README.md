@@ -46,7 +46,7 @@ npx -y @adnova-group/muster install codex --scope project
 
 Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. The three legacy aliases (`run`, `autopilot`, `sprint`) remain skills. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
 
-The Codex plugin bundles the deterministic CLI, all pipelines, 25 MCP tools, 27 custom-agent profiles, 11 native skills, and 51 capability skills. The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire (Codex executes plugin-bundled hooks by default). Codex requires a one-time trust review for these non-managed hooks; inspect them with `/hooks`. The hooks inject orchestration context and surface supported diagnostics and policy warnings. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
+The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 custom-agent profiles, 11 native skills, and 51 capability skills. The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire (Codex executes plugin-bundled hooks by default). Codex requires a one-time trust review for these non-managed hooks; inspect them with `/hooks`. The hooks inject orchestration context and surface supported diagnostics and policy warnings. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
 ## The eight modes
 

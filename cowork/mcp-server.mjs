@@ -98,6 +98,8 @@ const COWORK_PROTOCOL = [
   "- diagnose (one bug): reproduce first, find the root cause, fix, add a regression test, verify. No symptom-patching.",
   "",
   "Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog.",
+  "",
+  "CLI-only operations: every deterministic op the tools above expose has an MCP tool now, except one -- muster_match_skills always derives stack signals from the task text itself (signalsFromTask), never from an explicit override. To pass an explicit --stack <csv> (or any other CLI flag with no MCP equivalent), run the bundled CLI directly instead of the MCP tool.",
 ].join("\n");
 
 const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("\n\n");
@@ -106,6 +108,12 @@ const INSTRUCTIONS = [PRINCIPLES, VERBS, ROUTING_POLICY, COWORK_PROTOCOL].join("
 // Factory shapes used by most TOOLS entries:
 //
 //   S(desc, prop, required?)  — "str": receives a single string arg, passed directly as a CLI arg.
+//                               An entry may also carry its own `flags: (args) => [...]` (same
+//                               convention as json2's `flags` below) to append extra plain CLI
+//                               args/flags after the primary positional value — e.g.
+//                               muster_receipt_verify's `--cwd <repo>` pair. Optional; only
+//                               defined where a tool actually needs it, so every existing "str"
+//                               tool's behavior is unchanged.
 //   J2(desc, props, required) — "json2": one OR more payloads; each is written to its own temp file
 //                               (JSON.stringify'd) and the paths are spread onto the CLI argv in order.
 //                               `picks` (plural, returns an ARRAY) not `pick` (singular).
@@ -161,6 +169,22 @@ const TOOLS = {
   muster_tally: { argv: ["tally"], ...J2("Tally adversarial review verdicts into a gate decision. A reviewer entry may carry status:\"exhausted\"|\"absent\" naming the WORKER's own failure to deliver a verdict (killed/ran out of budget, or never responded) instead of findings -- this always forces blocked:true with a named reason in blockedReasons, never a silent skip and never counted as a real PASS or FAIL.", { verdicts: { type: "array" } }, ["verdicts"]), picks: (a) => [a.verdicts] },
   muster_advise: { argv: ["advise"], ...J2("Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM.", { request: { type: "object" } }, ["request"]), picks: (a) => [a.request] },
   muster_fuse: { argv: ["fuse"], ...J2("Fusion decision engine: validate the debate map, apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to the single best (mode fallback). Deterministic, no LLM.", { candidates: { type: "array" }, fusionMap: { type: "object" } }, ["candidates", "fusionMap"]), picks: (a) => [a.candidates, a.fusionMap] },
+
+  // codex-mcp-surface-gaps: 4 deterministic ops the 2026-07-19 Codex dogfood fell back to
+  // the bundled CLI for, closed here as real tools instead of a documented CLI-only
+  // rationale -- each maps cleanly onto an existing factory shape, no scheme redesign
+  // needed except muster_receipt_verify's `flags` use on "str" (see the factory-shape
+  // comment above). The one op that stays partially CLI-only (muster_match_skills' --stack
+  // override) is named in COWORK_PROTOCOL's own "CLI-only operations" note below.
+  muster_capabilities_roles: { argv: ["capabilities", "--cowork", "--roles-only"], ...S("Resolve every muster role the same way muster_capabilities does, but return ONLY the {roles} map -- skips skills/providers, ~73% smaller than the full dump (the same lighter capture a fast-path manifest reads). Same MUSTER_COWORK_NATIVE_PLUGIN declared capability check as muster_capabilities.", "home", false) },
+  muster_match_skills: { argv: ["match", "--skills"], ...S("Rank the live skills inventory against a free-text task by token overlap, plus stack-derived suggested skills (matchSkills + suggestSkillsForStack; no model call). Stack signals are always derived from the task text itself (signalsFromTask) -- the CLI's --stack <csv> override is not exposed here; see COWORK_PROTOCOL's CLI-only operations note.", "task") },
+  muster_gate_cadence: { argv: ["gate-cadence"], ...J2("Compute review-gate cadence (spec-gate rounds, batched review-gate passes, and -- when changedLines is given -- reviewer count + reasoning tier) from a manifest's dependency-ordered waves. Deterministic, no LLM.", { manifest: { type: "object" }, changedLines: { type: "number" } }, ["manifest"]), picks: (a) => [a.manifest], flags: (a) => a.changedLines !== undefined ? ["--changed-lines", String(a.changedLines)] : [] },
+  muster_receipt_verify: {
+    argv: ["receipt-verify"], kind: "str", prop: "sha",
+    description: "Verify a base-SHA is a REAL, resolvable git commit object in an explicit repo -- proof a well-formed-but-fabricated SHA does not pass (makeGitShaVerifier's git-backed default verifier: `git rev-parse --verify --quiet <sha>^{commit}`, never a branch/tag/HEAD/relative ref). Returns {sha, cwd, verified, mechanism}. `cwd` is required and never defaults to this server's own cwd -- state which repository the SHA is being checked against explicitly.",
+    inputSchema: { type: "object", properties: { sha: { type: "string" }, cwd: { type: "string" } }, required: ["sha", "cwd"] },
+    flags: (a) => ["--cwd", String(a.cwd ?? "")],
+  },
 };
 
 // ── CLI invocation ──────────────────────────────────────────────────────────
@@ -196,7 +220,15 @@ async function callTool(name, args = {}, signal) {
 
   if (tool.kind === "str") {
     const v = args[tool.prop];
-    return runCli(v != null && v !== "" ? [...tool.argv, String(v)] : tool.argv, { signal });
+    const hasValue = v != null && v !== "";
+    // `flags` only fires alongside a PRESENT primary value -- appending it when the
+    // positional is missing would let it shift into the positional's own argv slot
+    // (e.g. muster_receipt_verify omitting `sha` would otherwise send `["receipt-verify",
+    // "--cwd", cwd]`, with the CLI reading "--cwd" itself as the sha and silently
+    // "verifying" a nonsense ref instead of reporting the missing-sha usage error).
+    // Suppressing flags too when the value is absent lets the bare argv reach the CLI's
+    // own required-arg check for a clean, correct diagnostic.
+    return runCli(hasValue ? [...tool.argv, String(v), ...(tool.flags ? tool.flags(args) : [])] : tool.argv, { signal });
   }
   if (tool.kind === "none") return runCli(tool.argv, { signal });
   if (tool.kind === "target") {

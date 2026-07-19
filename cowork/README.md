@@ -8,13 +8,13 @@ Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-
 
 ## What you get
 
-Twenty-one tools, plus an execution protocol that teaches the agent how to drive them:
+Twenty-five tools, plus an execution protocol that teaches the agent how to drive them:
 
 | Tool | Does |
 | --- | --- |
 | `muster_detect` | Project profile (languages, frameworks, VCS, test runner) |
-| `muster_capabilities` | Resolve every role to its best provider, fallback chain, and model tier |
-| `muster_match` | Rank providers against a free-text task |
+| `muster_capabilities` / `muster_capabilities_roles` | Resolve every role to its best provider, fallback chain, and model tier -- the `_roles` variant returns only the lighter `{roles}` capture |
+| `muster_match` / `muster_match_skills` | Rank providers, or the live skills inventory, against a free-text task |
 | `muster_domain` / `muster_route` | Classify an outcome and route it to a pipeline |
 | `muster_pipeline` | Load a pipeline definition |
 | `muster_assess` | Gap-check an outcome before running |
@@ -24,10 +24,12 @@ Twenty-one tools, plus an execution protocol that teaches the agent how to drive
 | `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
 | `muster_sprint_protocol` | Return the Cowork-adapted sprint playbook (no args) -- see below |
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
+| `muster_gate_cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves |
 | `muster_score` / `muster_prioritize` | Score against a gate / rank a backlog |
 | `muster_pick` / `muster_tally` | Tournament winner / review-gate decision |
 | `muster_fuse` | Fusion decision engine -- apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to single best (mode fallback). Deterministic, no LLM. |
 | `muster_advise` | Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM. |
+| `muster_receipt_verify` | Verify a base-SHA is a real, resolvable git commit object in an explicit repo |
 
 muster's principles, routing policy, and a per-mode execution protocol (the core loop plus the plan/go/plan-backlog/diagnose/audit/go-backlog lifecycles) ride in the server's MCP `instructions`. That replaces the SessionStart and UserPromptSubmit hooks the Claude Code plugin uses.
 
@@ -88,7 +90,7 @@ In Cowork, prompt:
 
 > List your `muster_*` tools, then call `muster_detect` on `&lt;path to a project&gt;`.
 
-You should see all twenty-one tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
+You should see all twenty-five tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
 
 ## Install (Route B): MCPB desktop extension
 

@@ -107,7 +107,7 @@ test("Codex inventory excludes disabled plugins and MCP servers", async () => {
   assert.deepEqual(inventory.mcpServers, ["active"]);
 });
 
-test("packaged Codex MCP runtime registers the shared 21 tools", async () => {
+test("packaged Codex MCP runtime registers the shared muster_* tools (CODEX_COUNTS.mcpTools)", async () => {
   const tools = await packagedMcpTools();
   assert.equal(tools.length, CODEX_COUNTS.mcpTools);
   assert.ok(tools.every(tool => tool.name.startsWith("muster_")));

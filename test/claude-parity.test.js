@@ -477,5 +477,48 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // dispatched at all, is never synthesized ... instead"); no contract or anchor changed,
   // only wording. Re-verified: node --test test/prompt-scan.test.js passes, plus
   // MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs clean.
-  assert.equal(hash.digest("hex"), "23ff3c310bc57a5b9d46a1b8c8050a2054b1d5a1eaa1f5251a3c27e0de38f47a");
+  // Pin re-derived again 2026-07-19 (backlog item codex-mcp-surface-gaps, stacked on
+  // tally-worker-exhaustion-contract): file COUNT unchanged (137) -- only
+  // cowork/mcp-server.mjs's content changed. The 2026-07-19 Codex dogfood fell back to the
+  // bundled CLI for 4 deterministic ops with no muster_* MCP equivalent; this closes the
+  // gap for the 3 that map cleanly onto existing factory shapes plus one ("str" kind's
+  // `flags` extension, precedented by json2's own existing `flags`) rather than a scheme
+  // redesign: muster_receipt_verify (new "str"+flags tool: sha positional, --cwd via
+  // flags -- makeGitShaVerifier's git-backed verifier, src/wave-dispatch.js),
+  // muster_capabilities_roles (new tool: capabilities --cowork --roles-only, the lighter
+  // {roles}-only capture a fast-path manifest already reads -- kept as a SIBLING tool
+  // rather than an optional flag on muster_capabilities itself, since the existing "str"
+  // scheme has no optional-flag support today and touching muster_capabilities' own argv/
+  // description would break build-codex.mjs's exact-string Codex adapter for no gain),
+  // muster_match_skills (new tool: match --skills <task>, always deriving stack signals
+  // from the task text -- the CLI's --stack override stays CLI-only, documented in a new
+  // "CLI-only operations" paragraph appended to COWORK_PROTOCOL), and muster_gate_cadence
+  // (new tool: gate-cadence, reusing the SAME json2 manifest-payload + optional `flags`
+  // pattern muster_next/muster_prioritize already established -- the manifest "file-passing
+  // awkwardness" turned out not to be awkward at all once mapped onto that existing
+  // machinery). The factory-shape comment block above TOOLS documents "str"'s new optional
+  // `flags` field. scripts/build-codex.mjs gained one more --cowork -> --codex adapter
+  // (muster_capabilities_roles resolves through the identical capabilities.js code path as
+  // muster_capabilities, so it needs the same swap or it reintroduces the 2026-07-18
+  // dogfood's MUSTER_RUNTIME/--cowork regression through this new sibling tool) plus a
+  // matching verification assertion; that script sits outside this hashed surface. Every
+  // count this item's tool addition is pinned at (CODEX_COUNTS.mcpTools, doctor's N/N
+  // handshake text, README's "N MCP tools", cowork/manifest.json's declared tool list, the
+  // check-codex.mjs regex count) was re-derived 21 -> 25 together; see
+  // test/codex-mcp-surface-gaps.test.js for the new end-to-end proof through the BUILT
+  // plugin's MCP server. No other file under this surface changed.
+  //
+  // Pin re-derived again 2026-07-19, same item, after a review-gate fix pass: a review
+  // blocker found that omitting muster_receipt_verify's required `sha` while `cwd` was
+  // present let the "str" kind's trailing `flags` (--cwd <repo>) shift into the sha's own
+  // positional argv slot, producing a misleading `{"sha":"--cwd",...}` diagnostic instead
+  // of the CLI's own clean "missing sha" usage error -- fixed in callTool's "str" branch
+  // (cowork/mcp-server.mjs) so `flags` only fires alongside a PRESENT primary value; a
+  // missing required positional now falls through to the bare argv, reaching the CLI's own
+  // required-arg check untouched. Regression test added to test/cowork.test.js. File COUNT
+  // still unchanged (137).
+  //
+  // Pin re-derived at the PR #84 + #85 merge reconciliation (2026-07-19): union of both
+  // branches' shared-surface changes (producer prose + MCP tool-table description).
+  assert.equal(hash.digest("hex"), "751f966ed614e2cf6dd7427283cd6b27e87895ec5fb4fdf15783c05ba1721c41");
 });

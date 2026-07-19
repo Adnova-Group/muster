@@ -240,7 +240,7 @@ test("Codex doctor verifies the bundled MCP initialize and tools/list handshake"
   });
   const handshake = report.checks.find(check => check.name === "codex-mcp-handshake");
   assert.equal(handshake?.ok, true);
-  assert.match(handshake?.detail || "", /21\/21.*Codex may defer MCP tool visibility until lookup or a new session/i);
+  assert.match(handshake?.detail || "", /25\/25.*Codex may defer MCP tool visibility until lookup or a new session/i);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].entrypoint, join(selectedPluginRoot, "runtime", "muster-mcp.mjs"));
 });
@@ -249,7 +249,7 @@ test("Codex doctor reports MCP launch and tool-count handshake failures", async 
   const absent = async () => { throw new Error("not found"); };
   for (const [label, mcpRunner, expected] of [
     ["launch", async () => { throw new Error("spawn ENOENT"); }, /spawn ENOENT/],
-    ["tool-count", async () => ({ initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools - 1 }, () => ({})) }), /20\/21/]
+    ["tool-count", async () => ({ initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools - 1 }, () => ({})) }), /24\/25/]
   ]) {
     const report = await runCodexDoctor({
       root: repoRoot,

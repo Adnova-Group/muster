@@ -194,6 +194,78 @@ test("codex-conformance CLI validates --days as a positive base-10 integer", asy
   );
 });
 
+test("codex-conformance CLI rejects --days=N loudly with exit 1 and no stdout", async t => {
+  const { root } = await fixture(t);
+  await assert.rejects(
+    () => runCli(["codex-conformance", "--days=2"], root),
+    error => {
+      assert.equal(error.code, 1);
+      assert.equal(error.stdout, "", "usage errors must not emit a JSON report");
+      assert.match(error.stderr, /--days requires a separate positive base-10 integer argument/);
+      return true;
+    }
+  );
+});
+
+test("codex-conformance API and CLI enforce the inclusive 1..3660 day range", async t => {
+  const { root, sessionsDir, agentsDir } = await fixture(t);
+  for (const value of [3661, 5_000_000_000]) {
+    await assert.rejects(
+      () => auditCodexModelConformance({ sessionsDir, agentsDir, days: value }),
+      error => {
+        assert.match(error.message, /days.*3660|3660.*days/i, `API error names the 3660-day upper bound for ${value}`);
+        return true;
+      }
+    );
+    await assert.rejects(
+      () => runCli(["codex-conformance", "--days", String(value)], root),
+      error => {
+        assert.equal(error.code, 1, `--days ${value} is a usage error, not an audit mismatch`);
+        assert.equal(error.stdout, "", "range validation must not emit a JSON report");
+        assert.match(error.stderr, /days.*3660|3660.*days/i, `CLI error names the 3660-day upper bound for ${value}`);
+        return true;
+      }
+    );
+  }
+
+  // Boundary acceptance uses an empty, non-existent sessions tree: the API must
+  // validate and accept the bound without requiring thousands of fixture files.
+  const boundary = await auditCodexModelConformance({
+    sessionsDir: join(root, "empty-sessions"),
+    agentsDir: join(root, "empty-agents"),
+    days: 3660
+  });
+  assert.equal(boundary.days, 3660);
+  assert.deepEqual(boundary.rows, []);
+  assert.deepEqual(boundary.tally, { subagents: 0, match: 0, mismatch: 0, generic: 0, noPin: 0, idle: 0 });
+  const { stdout } = await runCli(["codex-conformance", "--days", "3660"], root);
+  assert.equal(JSON.parse(stdout).days, 3660);
+  assert.equal(stdout, JSON.stringify(JSON.parse(stdout), null, 2) + "\n", "valid reports keep canonical JSON stdout");
+});
+
+test("codex-conformance CLI applies --cwd filtering to every day in a two-day range", async t => {
+  const { root, sessionsDir } = await fixture(t);
+  const anchor = new Date();
+  const today = utcDay(0, anchor);
+  const yesterday = utcDay(-1, anchor);
+  for (const [day, label] of [[today, "today"], [yesterday, "yesterday"]]) {
+    await writeDayRollout(sessionsDir, day, `rollout-${label}-match.jsonl`, {
+      threadSource: "subagent", agentRole: "role-sol", cwd: "/work/muster", turnModels: ["gpt-5.6-sol"]
+    });
+    await writeDayRollout(sessionsDir, day, `rollout-${label}-outside.jsonl`, {
+      threadSource: "subagent", agentRole: "role-luna", cwd: "/elsewhere/app", turnModels: ["gpt-5.6-sol"]
+    });
+  }
+
+  const { stdout } = await runCli(["codex-conformance", "--days", "2", "--cwd", "muster"], root);
+  const report = JSON.parse(stdout);
+  assert.equal(report.days, 2);
+  assert.deepEqual(report.rows.map(row => row.file), ["rollout-today-match.jsonl", "rollout-yesterday-match.jsonl"]);
+  assert.deepEqual(report.rows.map(row => row.day).sort(), [today, yesterday].sort());
+  assert.deepEqual(report.tally, { subagents: 2, match: 2, mismatch: 0, generic: 0, noPin: 0, idle: 0 });
+  assert.equal(stdout, JSON.stringify(report, null, 2) + "\n", "valid reports keep canonical JSON stdout");
+});
+
 test("codex-conformance CLI without a day or --days audits only today's UTC directory", async t => {
   const { root, sessionsDir } = await fixture(t);
   const anchor = new Date();
@@ -231,10 +303,12 @@ test("codex-conformance CLI exits nonzero when any mismatch appears in the reque
   await assert.rejects(
     () => runCli(["codex-conformance", "--days", "2"], root),
     error => {
-      assert.notEqual(error.code, 0);
+      assert.equal(error.code, 2, "an audit mismatch is a distinct nonzero status from usage errors");
+      assert.equal(error.stderr, "", "a valid audit report does not write diagnostics to stderr");
       const report = JSON.parse(error.stdout);
       assert.equal(report.tally.mismatch, 1);
       assert.ok(report.rows.some(row => row.day !== dayBeforeSpawn && row.verdict === CONFORMANCE_VERDICTS.MISMATCH));
+      assert.equal(error.stdout, JSON.stringify(report, null, 2) + "\n", "valid reports keep canonical JSON stdout");
       return true;
     }
   );

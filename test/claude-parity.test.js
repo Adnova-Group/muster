@@ -478,5 +478,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // check-codex.mjs regex count) was re-derived 21 -> 25 together; see
   // test/codex-mcp-surface-gaps.test.js for the new end-to-end proof through the BUILT
   // plugin's MCP server. No other file under this surface changed.
-  assert.equal(hash.digest("hex"), "3036dc71aa6a0531fff33bc9d98b8ab91d4a9942034fa8cba46872e5a82f4108");
+  //
+  // Pin re-derived again 2026-07-19, same item, after a review-gate fix pass: a review
+  // blocker found that omitting muster_receipt_verify's required `sha` while `cwd` was
+  // present let the "str" kind's trailing `flags` (--cwd <repo>) shift into the sha's own
+  // positional argv slot, producing a misleading `{"sha":"--cwd",...}` diagnostic instead
+  // of the CLI's own clean "missing sha" usage error -- fixed in callTool's "str" branch
+  // (cowork/mcp-server.mjs) so `flags` only fires alongside a PRESENT primary value; a
+  // missing required positional now falls through to the bare argv, reaching the CLI's own
+  // required-arg check untouched. Regression test added to test/cowork.test.js. File COUNT
+  // still unchanged (137).
+  assert.equal(hash.digest("hex"), "f4d8ce602572d2bc2f44fd038da05b5542ebf991465667ea8ca9194791d96026");
 });

@@ -250,6 +250,19 @@ test("tools/call: muster_receipt_verify -- a fabricated well-formed SHA verifies
   assert.equal(body.verified, false);
 });
 
+// Review-gate fix: omitting the required `sha` while `cwd` is present must NOT let the
+// "str" kind's trailing `flags` (--cwd <repo>) shift into the sha's positional slot --
+// that produced a misleading `{"sha":"--cwd","cwd":...,"verified":false}` diagnostic that
+// falsely implied a real git-object verification attempt occurred, instead of the CLI's
+// own clean "missing sha" usage error.
+test("tools/call: muster_receipt_verify -- omitting required sha reports the CLI's own missing-sha error, not a shifted --cwd", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_receipt_verify", arguments: { cwd: rootDir } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, true, "missing required sha must error");
+  assert.match(res.content[0].text, /missing sha/, "must be the CLI's own usage error, not a --cwd-as-sha misfire");
+  assert.doesNotMatch(res.content[0].text, /"sha":"--cwd"/, "the --cwd flag must never shift into the sha slot");
+});
+
 test("tools/call: muster_sprint_protocol returns the sprint playbook text with key protocol markers", async () => {
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_protocol", arguments: {} } }]);
   const res = r[2].result;

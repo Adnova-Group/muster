@@ -220,8 +220,15 @@ async function callTool(name, args = {}, signal) {
 
   if (tool.kind === "str") {
     const v = args[tool.prop];
-    const base = v != null && v !== "" ? [...tool.argv, String(v)] : tool.argv;
-    return runCli(tool.flags ? [...base, ...tool.flags(args)] : base, { signal });
+    const hasValue = v != null && v !== "";
+    // `flags` only fires alongside a PRESENT primary value -- appending it when the
+    // positional is missing would let it shift into the positional's own argv slot
+    // (e.g. muster_receipt_verify omitting `sha` would otherwise send `["receipt-verify",
+    // "--cwd", cwd]`, with the CLI reading "--cwd" itself as the sha and silently
+    // "verifying" a nonsense ref instead of reporting the missing-sha usage error).
+    // Suppressing flags too when the value is absent lets the bare argv reach the CLI's
+    // own required-arg check for a clean, correct diagnostic.
+    return runCli(hasValue ? [...tool.argv, String(v), ...(tool.flags ? tool.flags(args) : [])] : tool.argv, { signal });
   }
   if (tool.kind === "none") return runCli(tool.argv, { signal });
   if (tool.kind === "target") {

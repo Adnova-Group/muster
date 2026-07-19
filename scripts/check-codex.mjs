@@ -138,7 +138,10 @@ for (const marker of ["Quota-bounded dimension sweep", "three nonredundant read-
   if (!auditCommand.includes(marker)) fail(`Codex audit lacks quota policy marker ${marker}`);
 }
 if (auditCommand.includes("requested=6") || auditCommand.includes("six core dimensions remain independent")) fail("Codex audit retains redundant six-worker fan-out");
-const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion"];
+// codex-agent-watch-review-budget item (2026-07-19 dogfood): liveness-aware watch plus
+// per-class extension ceilings replaced the flat 3-heartbeat kill -- see codex/skill-adapter.md's
+// "## Agent watch invariant" section and scripts/build-codex.mjs's agentWatchProtocol const.
+const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "DeepSWE sol/high", "liveness checkpoint"];
 for (const [name, path] of [
   ["adapter", join(plugin, "runtime", "codex-skill-adapter.md")],
   ["orchestrator", join(plugin, "internal-skills", "orchestrator", "SKILL.md")],
@@ -147,6 +150,8 @@ for (const [name, path] of [
   const text = await readFile(path, "utf8");
   for (const marker of watchMarkers) if (!text.includes(marker)) fail(`${name} lacks agent watch invariant marker ${marker}`);
   if (text.indexOf("collaboration.wait_agent") > text.indexOf("collaboration.list_agents")) fail(`${name} polls agent state before its first event-driven wait`);
+  if (!text.includes("`muster-reviewer`, `wsh-code-reviewer`, `muster-strategist`, `wsh-security-auditor`) get a hard ceiling of 10 consecutive silent heartbeats")) fail(`${name} does not bind the 10-heartbeat ceiling to review/strategy-class workers`);
+  if (!text.includes("Mechanical/implementation workers") || text.indexOf("Mechanical/implementation workers") > text.indexOf("6 consecutive silent heartbeats")) fail(`${name} does not bind the 6-heartbeat ceiling to mechanical/implementation workers`);
 }
 if (native.length !== CODEX_COUNTS.nativeSkills || builtins.length !== CODEX_COUNTS.builtinSkills) fail("source skill count drift");
 if (skills.size !== CODEX_COUNTS.publicSkills || internalSkills.size !== CODEX_COUNTS.internalSkills) fail("Codex public/internal skill surface count drift");

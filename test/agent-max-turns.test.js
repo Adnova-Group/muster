@@ -25,7 +25,6 @@ const CLASS_MAP = {
   // alone. Every wsh "engineer"/builder role not named in another tier lands here.
   25: [
     "muster-builder",
-    "muster-runner",
     "wsh-business-analyst",
     "wsh-content-marketer",
     "wsh-customer-support",
@@ -57,6 +56,17 @@ const CLASS_MAP = {
   40: [
     "wsh-security-auditor",
   ],
+  // orchestrator -- NOT a leaf. muster-runner drives a whole item lifecycle
+  // (detect -> route -> spec gate -> build wave -> review gate with up to 3 fix
+  // loops -> disposition), dispatching builder/reviewer SUB-agents and waiting on
+  // them; its turns are mostly cheap dispatch-and-wait, not leaf rumination the
+  // burn-lesson ceiling guards against. A leaf-sized cap (the 25 it wrongly
+  // carried) kills it mid-lifecycle -- observed 2026-07-19 halting every
+  // go-backlog runner right after baseline. This is a runaway backstop, not a
+  // work budget; it must never falsely terminate a legitimate lifecycle.
+  200: [
+    "muster-runner",
+  ],
 };
 
 function expectedCapFor(id) {
@@ -71,9 +81,9 @@ test("class map classifies each agent exactly once (no duplicates)", () => {
   assert.equal(new Set(classified).size, classified.length, "an agent id appears in more than one tier");
 });
 
-test("the sizing tiers are monotonically ordered mechanical < implementation < review/strategy < security", () => {
+test("the sizing tiers are monotonically ordered mechanical < implementation < review/strategy < security < orchestrator", () => {
   const tiers = Object.keys(CLASS_MAP).map(Number).sort((a, b) => a - b);
-  assert.deepEqual(tiers, [15, 25, 35, 40]);
+  assert.deepEqual(tiers, [15, 25, 35, 40, 200]);
 });
 
 test("every plugin/agents/*.md carries a maxTurns cap coherent with its role class", async () => {

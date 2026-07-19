@@ -718,5 +718,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // with `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs`
   // (clean) and the full suite green. This is the reviewed runner-worktree-bootstrap
   // remediation, not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "a305adc2d7e59fcb9a685713387b47b58ee5defd2e78fe8cf8ea2775785e29a9");
+  // Pin re-derived 2026-07-19 (HOTFIX: muster-runner maxTurns 25->200): the leaf-sized
+  // cap PR #87 gave the lifecycle-orchestrator role killed every go-backlog runner
+  // mid-lifecycle; muster-runner moved to its own orchestrator class (see
+  // test/agent-max-turns.test.js). Only that one frontmatter line changed under this surface.
+  assert.equal(hash.digest("hex"), "f9479f25dd88934fbe445cc0ac3ed4d387e3cc5bc128e368b0babc5ec1684fdf");
 });

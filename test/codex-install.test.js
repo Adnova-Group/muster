@@ -291,7 +291,11 @@ test("Codex commandWindows maps WSL drive paths to their Windows equivalent", {
   const hooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
   const commandWindows = hooks.hooks.SessionStart[0].hooks[0].commandWindows;
   const expectedPath = `C:${join(cwd.slice("/mnt/c".length), ".codex", "muster", "hooks", "muster-hook.mjs").replaceAll("\\", "/")}`;
-  assert.equal(commandWindows, `node "${expectedPath}"`);
+  // The interpreter is now the pinned absolute Node executable (run-5 security
+  // audit Med #5), quoted and Windows-mapped exactly like the script path --
+  // never bare `node`, which PATH could shadow at every hook event.
+  const expectedNode = formatCodexWindowsPath(process.execPath).replaceAll('"', '\\"');
+  assert.equal(commandWindows, `"${expectedNode}" "${expectedPath}"`);
 });
 
 test("Codex commandWindows treats native Windows and WSL drives alike without normalizing POSIX case", () => {

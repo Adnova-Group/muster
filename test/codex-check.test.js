@@ -42,9 +42,13 @@ test("Codex validation skips the hooks.json coherence check when it is absent (f
 test("Codex validation rejects a tracked project hooks.json baked for a different checkout", async () => {
   const hooksConfigPath = join(repoRoot, ".codex", "hooks.json");
   const backup = await readHooksConfigBackup(hooksConfigPath);
-  const base = backup ? JSON.parse(backup) : { hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node 'placeholder'" }] }] } };
+  const base = backup ? JSON.parse(backup) : { hooks: { SessionStart: [{ hooks: [{ type: "command", command: `'${process.execPath}' 'placeholder'` }] }] } };
+  // New pinned-interpreter shape (run-5 security audit Med #5): '<absNode>'
+  // '<scriptPath>'. The interpreter is a valid absolute Node; only the SCRIPT
+  // path points to a foreign checkout, so the guard must reject on the script,
+  // not on the interpreter or on an "unexpected shape".
   for (const groups of Object.values(base.hooks)) for (const group of groups) for (const hook of group.hooks || []) {
-    hook.command = "node '/some/other/checkout/.codex/muster/hooks/muster-hook.mjs'";
+    hook.command = `'${process.execPath}' '/some/other/checkout/.codex/muster/hooks/muster-hook.mjs'`;
   }
   await writeFile(hooksConfigPath, JSON.stringify(base, null, 2));
   try {

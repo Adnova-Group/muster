@@ -420,5 +420,23 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // reflowing) the file's pre-existing lines; file COUNT still unchanged (137).
   // Regression tests added to test/worktree-isolation.test.js prove git never resolves a
   // non-SHA-shaped input for either the factory or the CLI.
-  assert.equal(hash.digest("hex"), "3c6b0e495998aaedfc19a31e1c6c72d8ba9845b2eeb020edcccd8a435a20a1ee");
+  // Pin re-derived 2026-07-18 (spec-gate-amendment-policy item): file COUNT unchanged
+  // (137 -- no file added/removed under this surface) but plugin/commands/go.md's step 4
+  // spec-gate FAIL handling changed content -- the one-amendment ceiling now itemizes
+  // findings per round (each line naming exactly one distinct defect, never merged or
+  // split, so round-to-round comparison is like-with-like) and allows a second amendment
+  // when round 2's findings are all disjoint from round 1's (no repeated/unresolved
+  // finding), hard-aborting only on a repeated round-1 finding recurring in round 2 or
+  // unconditionally at round 3 (rounds capped at 3: initial + 2 amendments). Step 7's
+  // escalation trigger list and the Routine-mode escalation bullet are reworded to match
+  // ("a spec-gate hard abort" instead of "a second FAIL"); go-backlog.md's own escalation
+  // bullet (a second file under this surface, previously missed and caught by review) is
+  // reworded identically. No src/ or eval/ code encoded the old cap, so this is a
+  // reviewed prose-only remediation, not accidental Codex-side drift.
+  //
+  // Pin re-derived at the PR #77 + #78 merge reconciliation (2026-07-19): both items
+  // re-derived this pin independently on their own branches; the merged tree carries
+  // BOTH content changes (go.md/go-backlog.md amendment policy + orchestrator SKILL.md
+  // receipt-verify paragraph), so the hash is re-derived once over the union.
+  assert.equal(hash.digest("hex"), "90e064952c124c1f4e015d117a5e171988266d2f7e6d20d5143fc5db2178bc95");
 });

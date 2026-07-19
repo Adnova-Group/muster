@@ -1023,7 +1023,17 @@ async function profileSource(root, isPluginRoot) {
   return { files: [...generated.keys()].sort(), read: async file => generated.get(file) };
 }
 
-export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
+// Preparation phase for runCodexInstall: everything the transaction below
+// needs to know, computed read-only (no snapshot()/atomicWriteSafe()/removeSafe()
+// touches the rollback-covered filesystem here). Validation throws, source
+// resolution, path derivation, hook preparation, conflict probes, the
+// marketplace pre-flight, the (non-transactional) plugin staging build, and the
+// planned-op listing all live here so the transactional core stays a pure
+// snapshot/write/restore sequence. Ordering is preserved exactly: profile
+// conflict probe precedes the marketplace + build pre-flight, which precede the
+// transaction. The only side effects are the pre-existing esbuild staging build
+// and ordinaryDirectoryPath probes (create:false) -- neither is rollback-owned.
+async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, nodeExecPath }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
@@ -1086,6 +1096,12 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     { op: "merge", path: hooks.configPath },
     { op: "merge", path: threadLimitConfigPath }
   ];
+  return { files, readProfile, distributionRoot, dir, manifestPath, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
+}
+
+export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
+  const { files, readProfile, distributionRoot, dir, manifestPath, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
+    await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, nodeExecPath });
   let originals, changed;
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
@@ -1230,7 +1246,13 @@ async function remainingManagedScopes(registry, currentScope) {
   return liveScopes;
 }
 
-export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile = execFileDefault } = {}) {
+// Preparation phase for runCodexUninstall: resolve profile/hook/thread-limit
+// state and the removal decisions read-only, before the transaction. No
+// snapshot()/atomicWriteSafe()/removeSafe() runs here -- every rollback-covered
+// mutation stays inside uninstallScope's try/restore boundary. Order-sensitive
+// steps are preserved exactly: departingScopeOwnedHookStateKeys is captured from
+// the raw hooks.json BEFORE removeOwnedHookGroups strips muster's own groups.
+async function prepareCodexUninstall({ scope, cwd, home, execFile }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
   await ordinaryDirectoryPath(configDir(scope, cwd, home));
@@ -1273,6 +1295,12 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   const threadLimitManifest = threadLimitManifestExists
     ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath)
     : null;
+  return { dir, manifestPath, manifestExists, files, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest };
+}
+
+export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile = execFileDefault } = {}) {
+  const { dir, manifestPath, manifestExists, files, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest } =
+    await prepareCodexUninstall({ scope, cwd, home, execFile });
   let liveScopes = [], ownershipCertain = false, removePlugin = false, restoreThreadLimits = false, removeThreadLimitConfig = false;
   const prunedHookState = [], prunedProjectTrust = [];
   const uninstallScope = async registry => {

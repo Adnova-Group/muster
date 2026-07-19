@@ -348,7 +348,10 @@ test("generateCodexProfiles refuses a manifest agent id that is not a safe kebab
   // Each of these, unguarded, becomes a `<id>.toml` Map key that a downstream
   // writer join()s into a destination path -- "../evil" -> "../evil.toml"
   // escapes agentsDir (arbitrary write). Reject the id BEFORE it is a segment.
-  for (const id of ["../evil", "a/../../b", "evil/sub", "..", ".", "UPPER", "has space", "-lead", "", "a\\b"]) {
+  // Also rejects trailing/doubled hyphens ("a-", "a--b"): the token is the
+  // exact stem of PROFILE_FILENAME, so no accepted id can trip the downstream
+  // destination guard (assertContainedProfiles) on a legitimate input.
+  for (const id of ["../evil", "a/../../b", "evil/sub", "..", ".", "UPPER", "has space", "-lead", "a-", "a--b", "", "a\\b"]) {
     await write(join(root, "codex", "agents.manifest.json"),
       JSON.stringify({ format: 1, agents: { [id]: { source: "sources/role.md", tier: "opus" } } }));
     await assert.rejects(generateCodexProfiles(root), /is not a safe token/,

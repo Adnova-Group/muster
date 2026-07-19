@@ -180,10 +180,13 @@ export function profileToml(id, source, config) {
 // and every `config.source` becomes a read path. A manifest-controlled id like
 // "../evil" or a source like "../../etc/passwd" would otherwise escape their
 // roots (arbitrary write / arbitrary read). Each id must be a strict safe
-// kebab token BEFORE it is ever a segment (mirrors src/sprint-waves.js's
-// ID_TOKEN_RE, tightened to lowercase so `${id}.toml` also satisfies
-// codex-install.js's PROFILE_FILENAME).
-const ID_TOKEN_RE = /^[a-z0-9][a-z0-9-]*$/;
+// kebab token BEFORE it is ever a segment. This is the exact stem of
+// codex-install.js's PROFILE_FILENAME (`^[a-z0-9]+(?:-[a-z0-9]+)*$`), so every
+// id accepted here yields a `${id}.toml` that also satisfies that destination
+// guard -- no id can pass here yet trip the containment check there. It is a
+// strict subset of src/sprint-waves.js's ID_TOKEN_RE (which tolerates the
+// trailing/doubled hyphens this rejects).
+const ID_TOKEN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 // Returns a Map of `${id}.toml` -> generated profile content, sourced only
 // from the frozen codex/agents.manifest.json mapping and its referenced agent

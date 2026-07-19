@@ -223,6 +223,12 @@ member, not per wave. `test/worktree-isolation.test.js` proves the builder enfor
 shape (against this checkout's own live `git rev-parse HEAD`) and that every harness above resolves
 to its own distinct mechanism string, never a silent default.
 
+**Shape is not proof.** A fabricated-but-well-formed SHA passes the shape check above exactly like
+a real commit does. Immediately after appending the receipt, run
+`$MUSTER_CLI receipt-verify <baseSha> --cwd <repo>` (`makeGitShaVerifier` in `src/wave-dispatch.js`)
+against it. Treat any nonzero exit the same as any other verification failure -- escalate it, never
+swallow it silently.
+
 ## Scope fences
 
 When plan tasks carry `owns`/`frozen` fields, copy them into the brief verbatim as `OWNS:`/`FROZEN:`

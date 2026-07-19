@@ -381,5 +381,27 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // muster.mjs) so the bundled Codex plugin's MCP server can execute tools/call --
   // the dogfood's High packaging defect. Shared-surface change is that one file;
   // reviewed, not drift.
-  assert.equal(hash.digest("hex"), "215a57cc7b8831b3db0c06890d152dc83aa028430731f6d88ab582527595e23e");
+  //
+  // Pin re-derived again 2026-07-18 (backlog item `base-sha-receipt-verification`,
+  // respecified after a spec-gate escalation found the first attempt's "callers fail
+  // loud" criterion pointed at prose, not code): file COUNT unchanged (137) -- only
+  // plugin/skills/orchestrator/SKILL.md's content changed. Its "### Worktree isolation
+  // per harness + base-SHA receipts" subsection gained one new paragraph, appended after
+  // the existing "test/worktree-isolation.test.js proves..." sentence and before the
+  // "## Scope fences" heading, so no existing line in the subsection was touched or
+  // reflowed. The new paragraph names the gap this item closes -- a fabricated-but-
+  // well-formed SHA passes buildBaseShaReceipt's shape check exactly like a real commit
+  // does -- and cites the new executable consumer: run `$MUSTER_CLI receipt-verify
+  // <baseSha> --cwd <repo>` (`makeGitShaVerifier` in `src/wave-dispatch.js`) immediately
+  // after appending the receipt, escalating any nonzero exit like any other verification
+  // failure. This whole subsection falls inside build-codex.mjs's existing wholesale-
+  // replace span for the Wave-dispatch section, so the new paragraph is discarded
+  // verbatim by the Codex adaptation in favor of its own fixed Codex-specific text --
+  // re-verified by rebuilding with MUSTER_BUILD_FORCE=1 (both anchors still located,
+  // build completes clean). docs/binding-interface.md's grep-audit counts are unchanged
+  // (the new paragraph deliberately avoids "worktree", the hook terms, AskUserQuestion,
+  // and the Agent-tool/Task-tool dispatch phrasing) -- re-verified green. See
+  // test/worktree-isolation.test.js for the new buildBaseShaReceipt(verify)/
+  // makeGitShaVerifier/`muster receipt-verify` CLI coverage this item adds.
+  assert.equal(hash.digest("hex"), "4a54cbdad3c35e138abdd2e6d94631fb64367941dc437e683542ba36fe121eb5");
 });

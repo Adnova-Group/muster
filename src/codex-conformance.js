@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 // Codex subagent model-conformance audit: proves (from Codex's own rollout
@@ -25,19 +25,28 @@ export const CONFORMANCE_VERDICTS = Object.freeze({
 
 export const MAX_CONFORMANCE_DAYS = 3660;
 
+// Also returns the NEWEST profile-TOML mtime in agentsDir (across every
+// .toml file present, not just parseable ones) -- the pre-retier annotation
+// below compares this against each MISMATCH row's rollout file mtime.
 async function pinnedModels(agentsDir) {
   const pins = new Map();
   let names = [];
-  try { names = await readdir(agentsDir); } catch { return pins; }
+  try { names = await readdir(agentsDir); } catch { return { pins, newestMtimeMs: null }; }
+  let newestMtimeMs = null;
   for (const name of names) {
     if (!name.endsWith(".toml")) continue;
+    const path = join(agentsDir, name);
+    try {
+      const stats = await stat(path);
+      if (newestMtimeMs === null || stats.mtimeMs > newestMtimeMs) newestMtimeMs = stats.mtimeMs;
+    } catch { continue; }
     let text;
-    try { text = await readFile(join(agentsDir, name), "utf8"); } catch { continue; }
+    try { text = await readFile(path, "utf8"); } catch { continue; }
     const model = text.match(/^model\s*=\s*"([^"]+)"/m)?.[1];
     const effort = text.match(/^model_reasoning_effort\s*=\s*"([^"]+)"/m)?.[1] || null;
     if (model) pins.set(name.replace(/\.toml$/, ""), { model, effort });
   }
-  return pins;
+  return { pins, newestMtimeMs };
 }
 
 function classifyThread({ meta, turnModels }, pins) {
@@ -108,21 +117,21 @@ export async function auditCodexModelConformance({ sessionsDir, agentsDir, day, 
   if (days !== undefined && (!Number.isSafeInteger(days) || days < 1 || days > MAX_CONFORMANCE_DAYS)) {
     throw new Error(`auditCodexModelConformance: days must be an integer between 1 and ${MAX_CONFORMANCE_DAYS}`);
   }
-  const pins = await pinnedModels(agentsDir);
-  if (!days) return auditDay({ sessionsDir, day, cwdFilter, pins });
+  const { pins, newestMtimeMs } = await pinnedModels(agentsDir);
+  if (!days) return auditDay({ sessionsDir, day, cwdFilter, pins, newestMtimeMs });
 
   const rows = [];
   const tally = emptyTally();
   const range = utcDays(days);
   for (const sourceDay of range) {
-    const report = await auditDay({ sessionsDir, day: sourceDay, cwdFilter, pins });
+    const report = await auditDay({ sessionsDir, day: sourceDay, cwdFilter, pins, newestMtimeMs });
     rows.push(...report.rows.map(row => ({ ...row, day: sourceDay })));
     addTally(tally, report.tally);
   }
   return { days, rows, tally, pins: pins.size };
 }
 
-async function auditDay({ sessionsDir, day, cwdFilter, pins }) {
+async function auditDay({ sessionsDir, day, cwdFilter, pins, newestMtimeMs }) {
   const dir = join(sessionsDir, day);
   let names;
   try { names = (await readdir(dir)).filter(name => name.endsWith(".jsonl")).sort(); }
@@ -132,13 +141,18 @@ async function auditDay({ sessionsDir, day, cwdFilter, pins }) {
   }
   const rows = [];
   for (const name of names) {
-    let parsed;
-    try { parsed = parseRollout(await readFile(join(dir, name), "utf8")); } catch { continue; }
+    const filePath = join(dir, name);
+    let parsed, rolloutMtimeMs = null;
+    try {
+      const [content, stats] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
+      parsed = parseRollout(content);
+      rolloutMtimeMs = stats.mtimeMs;
+    } catch { continue; }
     if (!parsed) continue;
     if (cwdFilter && !(parsed.meta.cwd || "").includes(cwdFilter)) continue;
     const spawn = parsed.meta.source?.subagent?.thread_spawn;
     const classified = classifyThread(parsed, pins);
-    rows.push({
+    const row = {
       file: name,
       kind: classified.kind,
       role: classified.role,
@@ -147,14 +161,27 @@ async function auditDay({ sessionsDir, day, cwdFilter, pins }) {
       observed: [...parsed.turnModels.entries()].map(([key, turns]) => ({ model: keyModel(key), effort: keyEffort(key), turns })),
       expected: classified.expected || null,
       verdict: classified.verdict
-    });
+    };
+    // Pre-retier annotation: a range crossing a profile retier legitimately
+    // contains historical MISMATCH rows -- the rollout ran under the OLD
+    // pins, but every verdict above compares against the CURRENT ones. When
+    // the newest profile TOML postdates this rollout, the mismatch reflects
+    // a retier, not a live drift; --current-pins-only (src/cli.js) uses this
+    // to decide the exit code without ever hiding the row itself.
+    if (classified.verdict === CONFORMANCE_VERDICTS.MISMATCH) {
+      row.pinsNewerThanRollout = newestMtimeMs !== null && rolloutMtimeMs !== null && newestMtimeMs > rolloutMtimeMs;
+    }
+    rows.push(row);
   }
   const tally = emptyTally();
   for (const row of rows) {
     if (row.kind !== "subagent") continue;
     tally.subagents += 1;
     if (row.verdict === CONFORMANCE_VERDICTS.MATCH) tally.match += 1;
-    else if (row.verdict === CONFORMANCE_VERDICTS.MISMATCH) tally.mismatch += 1;
+    else if (row.verdict === CONFORMANCE_VERDICTS.MISMATCH) {
+      tally.mismatch += 1;
+      if (row.pinsNewerThanRollout) tally.prePinMismatch += 1;
+    }
     else if (row.verdict === CONFORMANCE_VERDICTS.GENERIC) tally.generic += 1;
     else if (row.verdict === CONFORMANCE_VERDICTS.NO_PIN) tally.noPin += 1;
     else tally.idle += 1;
@@ -174,5 +201,5 @@ function addTally(target, source) {
 }
 
 function emptyTally() {
-  return { subagents: 0, match: 0, mismatch: 0, generic: 0, noPin: 0, idle: 0 };
+  return { subagents: 0, match: 0, mismatch: 0, generic: 0, noPin: 0, idle: 0, prePinMismatch: 0 };
 }

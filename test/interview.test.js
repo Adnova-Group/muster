@@ -14,8 +14,6 @@ test("thin outcome 'fix it' is not clear and flags length + missing criteria", (
   );
 });
 
-// WHY: a bare vague verb with a hand-wavy qualifier is the canonical case the interview
-// exists to catch — it must additionally fire vague-only on top of the other two signals.
 // WHY (backlog item codex-assess-criteria-detect, 2026-07-18 Codex dogfood): a real code
 // outcome carrying detailed acceptance behavior as PROSE clauses -- not a "Success
 // criteria:"-labeled list, not a bare metric -- was flagged no-success-criteria because it
@@ -50,6 +48,20 @@ test("prose criteria: an explicit obligation ('must'/'should' + verb) clears no-
   assert.ok(!r.signals.includes("no-success-criteria"), "must/should + verb is a concrete acceptance obligation");
 });
 
+// WHY (review-gate fix-loop 1, adversarial finding): an UNGATED `must/should + [a-z]+` cleared
+// ordinary vague modal usage with no acceptance content at all -- these three are the exact
+// adversarial examples the reviewer proved cleared with zero signals. CRITERIA_OBLIGATION is
+// now gated on a closed verb whitelist (accept/reject/record/log/verify/... — no "be"/"take"/
+// arbitrary word), so none of these may clear the signal. Pins the revert.
+test("negative control: 'must'/'should' followed by a non-behavior word (copula/filler) does not clear no-success-criteria", () => {
+  const r1 = assessOutcome("you must be kidding, just handle it");
+  assert.ok(r1.signals.includes("no-success-criteria"), "'must be kidding' carries no acceptance behavior");
+  const r2 = assessOutcome("please make it better, it must be simple");
+  assert.ok(r2.signals.includes("no-success-criteria"), "'must be simple' carries no acceptance behavior");
+  const r3 = assessOutcome("this should not take long, please just do it");
+  assert.ok(r3.signals.includes("no-success-criteria"), "'should not take long' carries no acceptance behavior");
+});
+
 test("prose criteria: 'fail loud'/'fail-loud' alone clears no-success-criteria", () => {
   const r1 = assessOutcome("the importer should fail loud on a corrupt row instead of silently skipping it");
   assert.ok(!r1.signals.includes("no-success-criteria"), "'fail loud' is a concrete, distinctive acceptance phrase");
@@ -71,6 +83,28 @@ test("prose criteria: an ordinary prose colon with no boolean/quoted value does 
   assert.ok(r.signals.includes("no-success-criteria"), "a plain narrative colon must not be read as a labeled field");
 });
 
+// WHY (review-gate fix-loop 1, adversarial finding): an open `[a-z][\w-]*\s*:\s*(true|false|
+// yes|no|ok|...)` cleared ordinary discourse asides ("note:", "bottom line:", "reply:",
+// "verdict:") paired with yes/no/ok -- none of these are structured acceptance data, just
+// conversational punctuation. CRITERIA_LABELED_FIELD is now gated on a closed field-name
+// whitelist (status/verified/valid/enabled/...), so none of these may clear the signal, and a
+// vague ask with such an aside tacked on must stay fully flagged. Pins the revert.
+test("negative control: a yes/no/ok value after a non-field-name label does not clear no-success-criteria", () => {
+  const r1 = assessOutcome("Bottom line: no additional work is needed.");
+  assert.ok(r1.signals.includes("no-success-criteria"), "'line: no' is not a labeled acceptance field");
+  const r2 = assessOutcome("Note: yes, this includes migrations.");
+  assert.ok(r2.signals.includes("no-success-criteria"), "'note: yes' is not a labeled acceptance field");
+  const r3 = assessOutcome("reply: yes we will proceed");
+  assert.ok(r3.signals.includes("no-success-criteria"), "'reply: yes' is not a labeled acceptance field");
+  const r4 = assessOutcome("verdict: no further action required");
+  assert.ok(r4.signals.includes("no-success-criteria"), "'verdict: no' is not a labeled acceptance field");
+  const r5 = assessOutcome("handle the reporting bug, note: yes this is urgent");
+  assert.equal(r5.clear, false, "a vague ask stays unclear even with an unrelated 'note: yes' aside tacked on");
+  assert.ok(r5.signals.includes("no-success-criteria"), "the aside must not launder a genuinely vague ask");
+});
+
+// WHY: a bare vague verb with a hand-wavy qualifier is the canonical case the interview
+// exists to catch — it must additionally fire vague-only on top of the other two signals.
 test("bare/vague 'make it better' flags vague-only", () => {
   const r = assessOutcome("make it better");
   assert.equal(r.clear, false, "a bare vague instruction cannot be clear");

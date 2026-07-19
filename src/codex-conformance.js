@@ -23,6 +23,8 @@ export const CONFORMANCE_VERDICTS = Object.freeze({
   IDLE: "IDLE"
 });
 
+export const MAX_CONFORMANCE_DAYS = 3660;
+
 async function pinnedModels(agentsDir) {
   const pins = new Map();
   let names = [];
@@ -103,8 +105,8 @@ export async function auditCodexModelConformance({ sessionsDir, agentsDir, day, 
   if (day && days !== undefined) {
     throw new Error("auditCodexModelConformance: day and days cannot be combined");
   }
-  if (days !== undefined && (!Number.isSafeInteger(days) || days < 1)) {
-    throw new Error("auditCodexModelConformance: days must be a positive integer");
+  if (days !== undefined && (!Number.isSafeInteger(days) || days < 1 || days > MAX_CONFORMANCE_DAYS)) {
+    throw new Error(`auditCodexModelConformance: days must be an integer between 1 and ${MAX_CONFORMANCE_DAYS}`);
   }
   const pins = await pinnedModels(agentsDir);
   if (!days) return auditDay({ sessionsDir, day, cwdFilter, pins });

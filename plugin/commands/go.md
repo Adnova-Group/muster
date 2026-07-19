@@ -1,6 +1,7 @@
 ---
 name: go
 description: "Hands-off full lifecycle. Bare invocation detects scope from the outcome text (single item vs backlog) via `muster scope` and confirms before proceeding; on confirmed backlog scope, delegates to /muster:go-backlog. Otherwise plans THEN executes end to end: branch, route, run waves (parallel fan-out + tournaments + adversarial review gate), commit per wave, then present merge. Only stops for a scope confirmation, the merge decision, or an escalation. (vs /muster:plan, which only plans and shows.) Usage: /muster:go <outcome>"
+argument-hint: "<outcome>"
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001: orchestration/safety-gate prompt — the never-push-to-main, never-auto-merge, and never-silently-choose directives below are load-bearing safety guarantees, not prose to prune. File scope is the tightest this disable can be: src/prompt-lint.js's disabledRules() applies a matched id to the whole document, with no line- or block-scoped form to narrow to -->

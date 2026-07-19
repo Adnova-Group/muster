@@ -213,6 +213,15 @@ function bindBundledCodexCli(text) {
     .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} audit(?! --codex)`, "g"), `${cli} audit --codex`)
     .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} manifest validate(?! --codex)`, "g"), `${cli} manifest validate --codex`);
 }
+// skill-frontmatter-capabilities item: Claude Code skill frontmatter supports capability
+// keys (disallowed-tools, argument-hint, disable-model-invocation, etc. --
+// docs/research/claude-code-cli.md:170) that the open agent-skills standard Codex targets
+// does not. scripts/check-codex.mjs's own `allowedSkillKeys` gate (kept in sync here by
+// hand, same as this file's other Codex-side accept-lists) fails a generated SKILL.md that
+// carries any other key, so any Claude-only key must be stripped from a ported skill's
+// header before it reaches the Codex output rather than leak through name:/description:'s
+// existing line-targeted rewrites below.
+const CODEX_SKILL_KEYS = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
 const codexSkillId = name => name.startsWith("gsd-") ? `muster-${name}` : name;
 function codexSkill(source, id) {
   const match = source.match(/^(---\r?\n[\s\S]*?\r?\n---)([\s\S]*)$/);
@@ -224,6 +233,9 @@ function codexSkill(source, id) {
     const codexDescription = `Codex-compatible Muster workflow. ${description}`.replaceAll("<", "[").replaceAll(">", "]");
     return `description: ${JSON.stringify(codexDescription)}`;
   });
+  // Single-line scalar keys only (every key this repo's skills carry today is one line);
+  // a future block-scalar value would need a smarter strip, not silently mis-handled here.
+  header = header.replace(/^([A-Za-z][\w-]*):.*\r?\n?/gm, (line, key) => (CODEX_SKILL_KEYS.has(key) ? line : ""));
   let body = translatePluginPaths(bindBundledCodexCli(translateCodexProse(translateModeNames(match[2]))))
     .replaceAll("${CLAUDE_PLUGIN_ROOT}", "${PLUGIN_ROOT}")
     .replaceAll("AskUserQuestion", "interactive user input")

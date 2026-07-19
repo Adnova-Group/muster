@@ -521,6 +521,44 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // Pin re-derived at the PR #84 + #85 merge reconciliation (2026-07-19): union of both
   // branches' shared-surface changes (producer prose + MCP tool-table description).
   //
+  // Pin re-derived 2026-07-19 (backlog item skill-frontmatter-capabilities): file COUNT
+  // unchanged (137 -- no file added/removed under this surface) -- 12 files gained native
+  // Claude Code capability-scoping frontmatter keys (docs/research/claude-code-cli.md:170,217),
+  // applied conservatively and evidence-first, never guessed: plugin/skills/router/SKILL.md
+  // gained `disallowed-tools: Write, Edit, NotebookEdit` -- the only one of the item's four
+  // candidate skills (review-gate/advisor/tournament/router) whose documented workflow is
+  // genuinely read-only (its contract is "Emit ONLY the Crew Manifest JSON" as response text;
+  // the invoking command writes `.muster/manifest.json`, not router itself). The other three
+  // were verified, not guessed, and skipped: review-gate writes `.muster/verdicts.json` (step 5)
+  // and mutates-then-reverts real files for the mutant-kill gate's evidence; advisor appends
+  // `.muster/STATE.md` at steps 1 and 5; tournament writes `.muster/candidates.json` +
+  // `.muster/fusion-map.json` (step 2) and appends STATE (step 6) -- denying Write/Edit/
+  // NotebookEdit on any of the three would break its own documented workflow. Every
+  // plugin/commands/*.md file (11) gained `argument-hint`, extracted verbatim from the
+  // "Usage: ..." string already embedded in its own frontmatter description (never invented;
+  // audit.md's two separate Usage sentences are recombined with " | ", each fragment still a
+  // literal substring of its own source text -- test/skill-frontmatter-capabilities.test.js
+  // proves this per file). audit.md and runner.md additionally gained
+  // `disable-model-invocation: true`: audit's bare (non-"backlog") invocation fixes the WHOLE
+  // repo via TDD with no per-file confirmation, a blast radius that should never fire from an
+  // ambiguous conversational cue; runner's own prose frames it as fired by a Routine/cron, never
+  // a conversational trigger, and never describes a natural-language invocation phrase the way
+  // diagnose/capture/go do. The hands-off/approve-first pipeline verbs (go, go-backlog, plan,
+  // plan-backlog, diagnose, capture) and the three legacy aliases (run, autopilot, sprint) were
+  // deliberately left model-invocable -- muster's border model routes natural-language
+  // invitations to exactly these verbs by design (docs/research/claude-code-cli.md's
+  // augmentation-surface table: "`disable-model-invocation` for side-effectful verbs" is a
+  // targeted lever, not a default). `context: fork` and skill-scoped `hooks` were declined
+  // outright, out of this item's scope (muster's explicit Agent dispatch and global hook wiring
+  // are deliberate). scripts/build-codex.mjs's `codexSkill()` (outside this hashed surface)
+  // gained a `CODEX_SKILL_KEYS` strip so router's new `disallowed-tools` line -- a key
+  // scripts/check-codex.mjs's own `allowedSkillKeys` gate does not recognize -- never leaks
+  // into the generated Codex SKILL.md; `plugin/commands/*.md` frontmatter passes through
+  // unvalidated on the Codex side (no schema gate there), so `argument-hint`/
+  // `disable-model-invocation` needed no matching transform. Re-verified with
+  // `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs` (clean)
+  // and the full suite green. This is the reviewed skill-frontmatter-capabilities remediation,
+  // not accidental Codex-side drift.
   // Pin re-derived 2026-07-19 (backlog item agent-maxturns-native-cap): file COUNT
   // unchanged (137) -- every plugin/agents/*.md (all 27) gained a `maxTurns` frontmatter
   // key sized per role class (mechanical/surgical 15, implementation 25 -- the existing
@@ -535,5 +573,6 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // existed anywhere in plugin/skills or plugin/commands to trim (verified by repo-wide
   // grep before editing) -- that prose is Codex-only (codex/skill-adapter.md, generated
   // by scripts/build-codex.mjs), left untouched per this item's own scope.
-  assert.equal(hash.digest("hex"), "dbd100a01e8ee960c6667cb69b54be84d5171c89857643086398950d6e8c99d7");
+  // Pin re-derived at the PR #87 + #88 merge reconciliation (2026-07-19): union hash.
+  assert.equal(hash.digest("hex"), "094af7919b0a74bccd7eb110c228addc408390d34a831cd1243aaa088f18f84b");
 });

@@ -1,6 +1,7 @@
 ---
 name: capture
 description: "Conversation-to-backlog generator — the third and final backlog generator, alongside the interview skill's decomposition check and audit's backlog mode, so hand-written backlog items are never needed. Turns a session's discussion (research findings, design decisions, review residuals, explicit user directives like 'add those 5') into backlog items via the identical extract/validate/dedupe/write machinery, gated by human approval before anything is written. Usage: /muster:capture [hint] — hint optionally scopes which part of the conversation to mine; empty = the whole session so far."
+argument-hint: "[hint]"
 ---
 
 You are muster's conversation-to-backlog generator: you turn a session's discussion into backlog items nobody has to hand-write, each one traced to what was actually said.

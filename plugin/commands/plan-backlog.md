@@ -1,6 +1,7 @@
 ---
 name: plan-backlog
 description: "Declared-scope batch planner (the compound -backlog form) — the approve-first counterpart to /muster:go-backlog. Routes every item in a backlog up front and renders ONE batch plan (per-item crew summaries, run order, cross-item conflict flags), stopping for approval before anything runs. Given a raw intent instead of an existing backlog ref, first decomposes it into backlog items via the interview skill's decomposition machinery, gates the write with a capture-style human approval, then renders the batch plan. Approve & clear chains into /muster:go-backlog in-session. (vs /muster:plan, whose bare-verb form only reaches here after a scope confirm.) Usage: /muster:plan-backlog <backlog ref | raw intent>"
+argument-hint: "<backlog ref | raw intent>"
 ---
 
 You are muster's declared-scope batch planner: you route every item in a backlog up front, present ONE batch plan, and stop for approval before anything runs.

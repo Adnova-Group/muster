@@ -1,6 +1,7 @@
 ---
 name: run
 description: "Legacy alias of /muster:plan — same behavior, kept working for backward compatibility; deprecated 2026-07-17, retiring in muster 0.7.0. Usage: /muster:run <outcome | backlog ref>"
+argument-hint: "<outcome | backlog ref>"
 ---
 
 Heads-up for the user (say this once per session): /muster:run is now /muster:plan — same behavior, clearer name; this alias keeps working. Deprecation notice (2026-07-17): /muster:run retires in muster 0.7.0 — switch to /muster:plan before then; behavior stays unchanged for the rest of this window.

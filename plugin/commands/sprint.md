@@ -1,6 +1,7 @@
 ---
 name: sprint
 description: "Legacy alias of /muster:go-backlog — same behavior, kept working for backward compatibility; deprecated 2026-07-17, retiring in muster 0.7.0. Usage: /muster:sprint <backlog ref>"
+argument-hint: "<backlog ref>"
 ---
 
 Heads-up for the user (say this once per session): /muster:sprint is now /muster:go-backlog — same behavior, clearer name; this alias keeps working. Deprecation notice (2026-07-17): /muster:sprint retires in muster 0.7.0 — switch to /muster:go-backlog before then; behavior stays unchanged for the rest of this window.

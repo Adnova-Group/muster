@@ -484,7 +484,7 @@ async function main() {
       // Post-run forensics, not a health check (that's doctor): audits Codex
       // rollouts for subagent model-conformance -- did each spawned
       // thread run its profile-pinned model, or inherit the orchestrator's?
-      const { auditCodexModelConformance } = await import("./codex-conformance.js");
+      const { auditCodexModelConformance, MAX_CONFORMANCE_DAYS } = await import("./codex-conformance.js");
       const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
       const daysIndex = rest.indexOf("--days");
       const cwdIndex = rest.indexOf("--cwd");
@@ -498,6 +498,9 @@ async function main() {
       if (day && daysIndex >= 0) fail("codex-conformance: explicit day conflicts with --days");
       if (daysIndex >= 0 && (!daysArg || !/^[1-9]\d*$/.test(daysArg) || !Number.isSafeInteger(Number(daysArg)))) {
         fail("codex-conformance --days must be a positive base-10 integer");
+      }
+      if (daysIndex >= 0 && Number(daysArg) > MAX_CONFORMANCE_DAYS) {
+        fail(`codex-conformance --days must not exceed ${MAX_CONFORMANCE_DAYS}`);
       }
       const today = new Date().toISOString().slice(0, 10).replaceAll("-", "/");
       const r = await auditCodexModelConformance({

@@ -336,6 +336,62 @@ test("tools/call: muster_plan_checklist marks the given ids done", async () => {
   assert.equal(res.content[0].text, "- [x] a — Add X\n- [ ] b — Add Y");
 });
 
+// ── audit-mcp-backlog-mode: muster_audit gains `backlog` + `paths`, exposing the
+// $muster-audit skill's read-only backlog sweep (plugin/commands/audit.md) at the MCP
+// surface. Previously the tool always returned a whole-codebase remediation manifest
+// (fix + verify) regardless of a scoped read-only request, so Codex backlog mode had to
+// drive the sweep via skill prose. Same tool (count unchanged at CODEX_COUNTS.mcpTools);
+// two new OPTIONAL params on the existing `target` kind.
+test("tools/call: muster_audit default -> whole-codebase remediation manifest (fix + verify)", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_audit", arguments: { dir: rootDir } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "muster_audit must not error");
+  const ids = JSON.parse(res.content[0].text).plan.map((p) => p.id);
+  assert.ok(ids.includes("fix"), "default manifest keeps the fix stage");
+  assert.ok(ids.includes("verify"), "default manifest keeps the verify stage");
+  assert.ok(!ids.includes("capture"), "default manifest has no capture stage");
+});
+
+test("tools/call: muster_audit backlog:true -> read-only manifest, no fix/verify, a capture stage", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_audit", arguments: { dir: rootDir, backlog: true } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "muster_audit backlog must not error");
+  const ids = JSON.parse(res.content[0].text).plan.map((p) => p.id);
+  assert.ok(!ids.includes("fix"), "backlog manifest drops the fix stage");
+  assert.ok(!ids.includes("verify"), "backlog manifest drops the verify stage");
+  assert.ok(ids.includes("capture"), "backlog manifest carries the read-only capture stage");
+});
+
+test("tools/call: muster_audit paths -> manifest scoped to the requested paths", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_audit", arguments: { dir: rootDir, paths: ["src/audit.js"] } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, false, "muster_audit paths must not error");
+  const m = JSON.parse(res.content[0].text);
+  assert.match(m.outcome, /src\/audit\.js/, "scope names the requested path in the outcome");
+  assert.match(m.plan.find((p) => p.id === "audit-security").task, /src\/audit\.js/, "scope reaches the audit tasks");
+});
+
+// A `paths` entry is spread as a positional CLI arg, and the CLI's flag scans (--help/-h,
+// --codex, --backlog) read the WHOLE argv -- so a "-"-leading path would masquerade as a
+// flag: paths:["-h"] would print the global USAGE string (not JSON, breaking every
+// JSON.parse caller), and paths:["--backlog"] would silently flip the mode with `backlog`
+// omitted. Path scopes are filesystem paths/subsystems and never start with "-"; reject
+// such an entry at the trust boundary instead of letting it reach argv.
+test("tools/call: muster_audit rejects a `-h` path scope (no USAGE leak) instead of shifting it into a flag slot", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_audit", arguments: { dir: rootDir, paths: ["-h"] } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, true, "a -h path scope must error, not print USAGE");
+  assert.match(res.content[0].text, /path scope/i, "message names the offending path scope");
+  assert.doesNotMatch(res.content[0].text, /Usage: muster/, "must never leak the global USAGE string");
+});
+
+test("tools/call: muster_audit rejects a `--backlog` path scope instead of silently flipping the mode", async () => {
+  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_audit", arguments: { dir: rootDir, paths: ["--backlog"] } } }]);
+  const res = r[2].result;
+  assert.equal(res.isError, true, "a --backlog path scope must error, never masquerade as the backlog flag");
+  assert.match(res.content[0].text, /path scope/i);
+});
+
 test("tools/call: muster_sprint_protocol returns the sprint playbook text with key protocol markers", async () => {
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_protocol", arguments: {} } }]);
   const res = r[2].result;

@@ -106,3 +106,73 @@ test("chosen provider for a role surfaces in crew", () => {
   assert.equal(secCrew.source, "installed");
   assert.ok(m.recommendations.includes("install audit-tool"));
 });
+
+// ── backlog mode (read-only sweep -> ranked capture, no fix/verify waves) ────
+// Parity with the $muster-audit skill's backlog mode (plugin/commands/audit.md):
+// same read-only dimension sweep + consolidate, then WRITE a ranked backlog instead
+// of fixing. The remediation crew (implement + review-gate) and the fix/verify plan
+// stages are dropped; a single read-only `capture` stage replaces them.
+test("backlog mode: drops the fix/verify plan stages for a single capture stage after consolidate", () => {
+  const m = buildAuditManifest({}, { backlog: true });
+  assert.ok(validateManifest(m).ok, `backlog manifest must validate: ${JSON.stringify(validateManifest(m).errors)}`);
+  const ids = m.plan.map(p => p.id);
+  assert.ok(!ids.includes("fix"), "no fix stage in backlog mode");
+  assert.ok(!ids.includes("verify"), "no verify stage in backlog mode");
+  const capture = m.plan.find(p => p.id === "capture");
+  assert.ok(capture, "capture stage present");
+  assert.deepEqual(capture.deps, ["consolidate"], "capture waits on the consolidated ledger");
+  // the read-only sweep is unchanged: 6 dimensions fanned out, consolidate waits on all 6
+  assert.equal(m.plan.filter(p => p.id.startsWith("audit-")).length, 6);
+  assert.equal(m.plan.find(p => p.id === "consolidate").deps.length, 6);
+});
+
+test("backlog mode: no remediation crew (implement + review-gate); dimension reviewers remain", () => {
+  const m = buildAuditManifest({}, { backlog: true });
+  assert.ok(!m.crew.some(c => c.stage === "implement"), "no implement/remediate crew member");
+  // the readability dimension's role IS code-review; only the extra review-gate member drops,
+  // so exactly one code-review crew member (the dimension) survives.
+  assert.equal(m.crew.filter(c => c.stage === "code-review").length, 1, "only the readability dimension's code-review remains");
+  for (const dim of AUDIT_DIMENSIONS) {
+    assert.ok(m.crew.some(c => c.stage === dim.role), `dimension role ${dim.role} still present`);
+  }
+});
+
+test("backlog mode waves: audits fan out -> consolidate -> capture (3 waves, no fix/verify tail)", () => {
+  const m = buildAuditManifest({}, { backlog: true });
+  const waves = computeWaves(m.plan);
+  assert.deepEqual(waves[0].map(t => t.id).sort(), AUDIT_DIMENSIONS.map(d => `audit-${d.id}`).sort());
+  assert.deepEqual(waves[1].map(t => t.id), ["consolidate"]);
+  assert.deepEqual(waves[2].map(t => t.id), ["capture"]);
+  assert.equal(waves.length, 3);
+});
+
+test("backlog mode: prompting projects still add the 7th dimension", () => {
+  const m = buildAuditManifest({}, { backlog: true, prompting: true });
+  assert.equal(m.plan.filter(p => p.id.startsWith("audit-")).length, 7);
+  assert.equal(m.plan.find(p => p.id === "consolidate").deps.length, 7);
+  assert.ok(!m.plan.some(p => p.id === "fix" || p.id === "verify"));
+});
+
+// ── scoped mode (paths) ─────────────────────────────────────────────────────
+test("paths scope: outcome + audit task text name the scope; default (no paths) leaks nothing", () => {
+  const scoped = buildAuditManifest({}, { paths: ["src/audit.js", "cowork/"] });
+  assert.ok(validateManifest(scoped).ok);
+  assert.match(scoped.outcome, /src\/audit\.js/, "outcome names the scope");
+  assert.match(scoped.plan.find(p => p.id === "audit-security").task, /src\/audit\.js/, "audit task names the scope");
+  const plain = buildAuditManifest({});
+  assert.equal(plain.outcome, "Audit + remediate the codebase", "default outcome unchanged");
+  assert.doesNotMatch(plain.plan.find(p => p.id === "audit-security").task, /scope:/i, "no scope leakage by default");
+});
+
+test("backlog + paths compose: scoped, read-only, capture-only", () => {
+  const m = buildAuditManifest({}, { backlog: true, paths: ["src/"] });
+  assert.ok(validateManifest(m).ok);
+  assert.ok(!m.plan.some(p => p.id === "fix" || p.id === "verify"), "no fix/verify");
+  assert.ok(m.plan.some(p => p.id === "capture"), "capture present");
+  assert.match(m.outcome, /src\//, "scope named");
+  assert.match(m.outcome, /read-only|backlog/i, "read-only intent stated");
+});
+
+test("default mode is unchanged: no opts === {backlog:false, paths:[]}", () => {
+  assert.deepEqual(buildAuditManifest({}), buildAuditManifest({}, { backlog: false, paths: [] }));
+});

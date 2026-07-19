@@ -722,5 +722,33 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // cap PR #87 gave the lifecycle-orchestrator role killed every go-backlog runner
   // mid-lifecycle; muster-runner moved to its own orchestrator class (see
   // test/agent-max-turns.test.js). Only that one frontmatter line changed under this surface.
-  assert.equal(hash.digest("hex"), "f9479f25dd88934fbe445cc0ac3ed4d387e3cc5bc128e368b0babc5ec1684fdf");
+  // Pin re-derived 2026-07-19 (backlog item audit-mcp-backlog-mode): file COUNT unchanged
+  // (138 -- no file added/removed under this surface) -- only cowork/mcp-server.mjs's content
+  // changed. muster_audit gained two OPTIONAL params on its existing "target" kind: `backlog`
+  // (boolean) and `paths` (string[]), exposing the $muster-audit skill's read-only backlog
+  // sweep (plugin/commands/audit.md) at the MCP surface -- previously the tool always returned
+  // the whole-codebase fix+verify remediation manifest regardless of a scoped read-only
+  // request, so Codex backlog mode had to drive the sweep via skill prose. The MCP tool COUNT
+  // is UNCHANGED (still 28, no top-level `  muster_x:` key added -- only muster_audit's object
+  // body grew); check-codex.mjs's `^  muster_[a-z_]+:` regex and every mcpTools count site stay
+  // green. Wiring: buildAuditManifest (src/audit.js) gained a read-only `backlog` branch (drops
+  // the implement+review-gate crew and the fix/verify plan stages for a single `capture` stage)
+  // and a `paths` scope; the CLI `audit` verb (src/cli.js) accepts `--backlog` + positional path
+  // scopes; the "target" branch in callTool (cowork/mcp-server.mjs) now appends a tool-declared
+  // `flags(args)` after the verb (mirroring the "str" kind's `flags`), the dir staying the
+  // resolved cwd. All edits sit BELOW line 100, so corpus-contradiction.test.js's line-100
+  // alias pin is untouched. Re-verified with `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs
+  // && node scripts/check-codex.mjs` (clean, mcpTools:28) and the full suite green; the
+  // end-to-end MCP proof is in test/cowork.test.js (backlog:true drops fix/verify -> capture;
+  // paths scopes the manifest). This is the reviewed audit-mcp-backlog-mode change, not drift.
+  // Pin re-derived again 2026-07-19 (same item, review-gate fix pass): the adversarial
+  // reviewer found a blocker -- `paths` entries are spread as POSITIONAL argv, but the CLI's
+  // flag scans (--help/-h, --codex, --backlog) read the whole argv, so a "-"-leading path
+  // masqueraded as a flag (paths:["-h"] returned the global USAGE string instead of JSON,
+  // breaking every JSON.parse caller; paths:["--backlog"] silently flipped the mode with
+  // `backlog` omitted). Fixed by rejecting "-"-leading path scopes at the muster_audit MCP
+  // trust boundary (callTool's "target" branch) with defense-in-depth in the CLI `audit`
+  // branch (both below line 100 -- the line-100 alias pin still passes). Regression tests in
+  // test/cowork.test.js. File COUNT still unchanged (138); MCP tool count still 28.
+  assert.equal(hash.digest("hex"), "af09a2be82e3885f147a04540f56d7f1a2f2b3a47a0cf5419dd69804467c0506");
 });

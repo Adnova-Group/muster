@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, stat, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
@@ -717,11 +717,102 @@ export function formatCodexWindowsPath(path) {
   return windowsDrive ? `${windowsDrive[1].toUpperCase()}:/${windowsDrive[2]}` : normalized;
 }
 
-function shellCommand(path) {
-  if (/[\r\n\0]/.test(path)) throw new Error(`Codex hook path contains unsupported control characters: ${path}`);
-  const posix = `'${path.replaceAll("'", `'\\''`)}'`;
-  const windows = formatCodexWindowsPath(path).replaceAll('"', '\\"');
-  return { command: `node ${posix}`, commandWindows: `node "${windows}"` };
+const posixShellQuote = value => `'${value.replaceAll("'", `'\\''`)}'`;
+const windowsShellQuote = value => `"${formatCodexWindowsPath(value).replaceAll('"', '\\"')}"`;
+
+// Pin an ABSOLUTE, validated Node interpreter into the generated hook commands
+// instead of a bare `node` (run-5 security audit Med #5, src/codex-install.js):
+// a bare `node` is resolved through PATH on EVERY lifecycle event, so an
+// attacker who prepends a directory to PATH with a malicious `node` hijacks the
+// interpreter on every hook fire. `process.execPath` is machine-specific --
+// exactly like the hook SCRIPT path this same command already bakes (the reason
+// .codex/hooks.json is gitignored, not tracked; see scripts/check-codex.mjs) --
+// so pinning it stays consistent with the existing per-checkout, machine-baked
+// trust model rather than introducing a new kind of machine dependence.
+function shellCommand(scriptPath, nodePath) {
+  for (const value of [nodePath, scriptPath]) {
+    if (/[\r\n\0]/.test(value)) throw new Error(`Codex hook path contains unsupported control characters: ${value}`);
+  }
+  return {
+    command: `${posixShellQuote(nodePath)} ${posixShellQuote(scriptPath)}`,
+    commandWindows: `${windowsShellQuote(nodePath)} ${windowsShellQuote(scriptPath)}`
+  };
+}
+
+// Resolve the current Node executable to an absolute path and validate it is an
+// ordinary regular file before it is baked into a hook command's interpreter
+// slot. Follows symlinks (a nvm/homebrew node reached through a symlink is a
+// legitimate interpreter) but rejects a missing path, a directory, or a
+// non-absolute value so a bare/relative token can never be emitted.
+async function validatedHookNode(execPath) {
+  if (typeof execPath !== "string" || !execPath || !isAbsolute(execPath)) {
+    throw new Error(`Cannot pin the Codex hook Node interpreter: ${JSON.stringify(execPath)} is not an absolute path. Rerun muster install codex from a normal Node installation.`);
+  }
+  let info;
+  try { info = await stat(execPath); }
+  catch (error) { throw new Error(`Cannot pin the Codex hook Node interpreter: ${execPath} is not accessible (${error.code || error.message}). Rerun muster install codex from a normal Node installation.`); }
+  if (!info.isFile()) throw new Error(`Cannot pin the Codex hook Node interpreter: ${execPath} is not a regular file. Rerun muster install codex from a normal Node installation.`);
+  return execPath;
+}
+
+// Parse a hook command emitted by shellCommand back into its two pinned tokens.
+// POSIX (`command`): single-quoted segments with '\'' escaping. Windows
+// (`commandWindows`): double-quoted segments with \" escaping. Returns
+// { interpreter, script } or null when the string is not the expected
+// two-token shape -- used by `muster doctor --codex` to verify the persisted
+// interpreter still exists, and by scripts/check-codex.mjs to coherence-check a
+// materialized hooks.json against this checkout.
+export function parseHookCommand(command, { windows = false } = {}) {
+  const tokens = typeof command === "string" ? (windows ? parseWindowsShellTokens(command) : parsePosixShellTokens(command)) : null;
+  return tokens && tokens.length === 2 ? { interpreter: tokens[0], script: tokens[1] } : null;
+}
+
+function parsePosixShellTokens(command) {
+  const tokens = [];
+  let index = 0;
+  while (index < command.length) {
+    while (index < command.length && command[index] === " ") index++;
+    if (index >= command.length) break;
+    let token = "";
+    while (index < command.length && command[index] !== " ") {
+      const char = command[index];
+      if (char === "'") {
+        index++;
+        while (index < command.length && command[index] !== "'") token += command[index++];
+        if (index >= command.length) return null;
+        index++;
+      } else if (char === "\\") {
+        if (index + 1 >= command.length) return null;
+        token += command[index + 1];
+        index += 2;
+      } else {
+        token += char;
+        index++;
+      }
+    }
+    tokens.push(token);
+  }
+  return tokens;
+}
+
+function parseWindowsShellTokens(command) {
+  const tokens = [];
+  let index = 0;
+  while (index < command.length) {
+    while (index < command.length && command[index] === " ") index++;
+    if (index >= command.length) break;
+    if (command[index] !== '"') return null;
+    index++;
+    let token = "";
+    while (index < command.length && command[index] !== '"') {
+      if (command[index] === "\\" && command[index + 1] === '"') { token += '"'; index += 2; }
+      else token += command[index++];
+    }
+    if (index >= command.length) return null;
+    index++;
+    tokens.push(token);
+  }
+  return tokens;
 }
 
 // Canonical-scope collapse (2026-07-18 decision, doctor's codex-hooks-overlap
@@ -774,7 +865,7 @@ async function userScopeHooksHealthy({ home, packageVersion }) {
   return true;
 }
 
-async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion }) {
+async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath }) {
   const dir = configDir(scope, cwd, home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
   await ordinaryDirectoryPath(dir);
@@ -815,7 +906,7 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion }
   const template = await readJson(templatePath);
   if (!template?.hooks || typeof template.hooks !== "object") throw new Error(`Codex hook template is missing or malformed: ${templatePath}`);
   const runtimeScript = join(runtimeDir, "hooks", "muster-hook.mjs");
-  const command = shellCommand(runtimeScript);
+  const command = skipped ? null : shellCommand(runtimeScript, await validatedHookNode(nodeExecPath));
   const hookGroups = skipped ? {} : clone(template.hooks);
   if (!skipped) {
     for (const groups of Object.values(hookGroups)) for (const group of groups) for (const hook of group.hooks || []) {
@@ -932,7 +1023,7 @@ async function profileSource(root, isPluginRoot) {
   return { files: [...generated.keys()].sort(), read: async file => generated.get(file) };
 }
 
-export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions } = {}) {
+export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
@@ -965,7 +1056,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const manifestExists = await safeExists(manifestPath);
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
   const hookSourceRoot = pluginRoot ? join(root, "runtime", "install-hooks") : join(root, "codex", "hooks");
-  const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion });
+  const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
   const staleFiles = managedFiles.filter(file => !files.includes(file));
   for (const file of files) {

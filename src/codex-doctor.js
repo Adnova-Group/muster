@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
+import { lstat, open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
@@ -9,7 +9,7 @@ import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
 import { resolveCodexPlugin } from "./codex-release.js";
-import { reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { parseHookCommand, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
   codexThreadLimitConfigPath,
@@ -507,6 +507,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const hookStatuses = [];
   const staleHookScopes = [];
   const legacyHookScopes = [];
+  const hookInterpreters = [];
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
@@ -541,7 +542,25 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
       const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.packageVersion === selected?.packageVersion
         && owner.hookHash === hash.digest("hex");
-      if (coherent) hookStatuses.push(dir); else staleHookScopes.push(dir);
+      if (coherent) {
+        hookStatuses.push(dir);
+        // Persisted-interpreter capture (run-5 security audit Med #5): each
+        // managed hook command now bakes an absolute, pinned Node interpreter
+        // instead of a bare `node`. ownsExactHookGroups above already proves
+        // hooks.json matches the ownership manifest byte-for-byte, so the live
+        // command is authoritative -- read the interpreter Codex will actually
+        // exec (POSIX `command`, or `commandWindows` on win32) and verify below
+        // that the pinned file still exists. A vanished/replaced pinned node is
+        // NOT caught by the coherence loop (the command still matches its
+        // manifest; only the file it points at is gone), so it needs its own
+        // check.
+        const musterHook = Object.values(config.hooks).flat().filter(isMusterHookGroup)
+          .flatMap(group => Array.isArray(group?.hooks) ? group.hooks : [])
+          .find(hook => typeof (platform === "win32" ? hook?.commandWindows : hook?.command) === "string");
+        const rawCommand = musterHook && (platform === "win32" ? musterHook.commandWindows : musterHook.command);
+        const parsed = rawCommand ? parseHookCommand(rawCommand, { windows: platform === "win32" }) : null;
+        if (parsed?.interpreter) hookInterpreters.push({ dir, interpreter: parsed.interpreter });
+      } else staleHookScopes.push(dir);
     } catch { staleHookScopes.push(dir); }
   }
   const hookStatus = staleHookScopes.length === 0 ? hookStatuses[0] || null : null;
@@ -568,6 +587,23 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     // only a manual uninstall.
     ? `Muster hooks fire from ${hookStatuses.length} scopes (${hookStatuses.join(", ")}) with no cross-copy dedupe -- every advisory is emitted ${hookStatuses.length}x per event; user scope is canonical, so rerun \`muster install codex --scope project\` in the duplicated project(s) to collapse to one`
     : "No project and user Muster hook overlap detected" });
+  // codex-hook-interpreter (run-5 security audit Med #5): the pinned absolute
+  // Node interpreter baked into each managed hook command must still exist as a
+  // regular file. If the pinned node was removed or replaced (e.g. an nvm
+  // version pruned), Codex would fail every hook fire; reinstalling re-pins the
+  // current node. Only coherent scopes are inspected -- a stale scope is already
+  // reported by codex-hooks, and its command may not even carry a pinned node.
+  const missingInterpreters = [];
+  for (const { dir, interpreter } of hookInterpreters) {
+    let ok = false;
+    try { ok = (await stat(interpreter)).isFile(); } catch { ok = false; }
+    if (!ok) missingInterpreters.push({ dir, interpreter });
+  }
+  checks.push({ name: "codex-hook-interpreter", ok: missingInterpreters.length === 0, detail: missingInterpreters.length
+    ? `the pinned Node interpreter baked into managed Codex hooks is missing or not a regular file: ${missingInterpreters.map(item => `${item.interpreter} (${item.dir})`).join(", ")}; rerun muster install codex to re-pin the current Node`
+    : hookInterpreters.length
+    ? `pinned Node interpreter present and a regular file for ${hookInterpreters.length} managed hook scope(s)`
+    : "no managed Codex hook interpreter to verify" });
   // The installed plugin cache must be the hooks-free Codex flavor: Codex
   // >=0.144.5 fires a plugin's default hooks/hooks.json on every lifecycle
   // event, so a with-hooks (Claude-flavor) cache double-fires on top of the

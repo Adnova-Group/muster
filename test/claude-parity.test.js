@@ -593,5 +593,20 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the BUILT Codex plugin's generated runner.md and proves it carries neither `/loop` nor
   // `$loop` nor the self-pacing framing. This is the reviewed harness-goal-primitives
   // remediation, not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "4c56d9b0c892481db0efe3b45cab4934945937572b7090429632e22f6f71f42f");
+  //
+  // Pin re-derived again 2026-07-19, same item, after a review-gate fix pass: a review
+  // blocker found the /loop claim shipped without grounding it against the actual
+  // scheduled-fire documentation, which states a fire only runs a skill/command Claude
+  // is "allowed to invoke on its own" and names `disable-model-invocation: true`
+  // (runner.md's own frontmatter) as one of the types that instead "reach Claude as
+  // plain text instead of executing" -- undisambiguated for an explicitly-typed
+  // slash-command prompt. The Scheduling paragraph now carries an honest
+  // "Unverified interaction, confirm before relying on it" caveat naming exactly this,
+  // instructing a live one-cycle check before depending on `/loop` for standing cadence,
+  // and marking Routine/cron as the verified-safe default until that's confirmed -- the
+  // same "verify before wiring" bar this diff's own Codex goals record already holds
+  // itself to. test/runner-loop-binding.test.js extended to pin the caveat's presence;
+  // docs/research/claude-code-cli.md SS1 extended with the same restriction, cited to the
+  // same cc-scheduled-tasks source (citation-check clean, 80/80 claims cited, 0 dangling).
+  assert.equal(hash.digest("hex"), "3537717e4fd34db63d41e99a26ff31b5620818767e01f5763c82a0305bb91827");
 });

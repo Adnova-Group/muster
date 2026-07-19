@@ -24,6 +24,12 @@ test("plugin/commands/runner.md documents the native /loop binding as a first-cl
   for (const term of ["pr-only", "2-failure retry cap", "claim lock"]) {
     assert.ok(text.includes(term), `Scheduling section must still name ${term}`);
   }
+  // Review-gate finding: runner.md carries disable-model-invocation:true, and Claude Code's own
+  // scheduled-fire docs don't resolve whether that blocks /loop's own re-fires of an explicit
+  // slash-command prompt -- the Scheduling section must caveat this honestly rather than assert
+  // unconditional certainty (the same "verify before wiring" bar the Codex goals record holds).
+  assert.match(text, /disable-model-invocation/, "must name the disable-model-invocation interaction");
+  assert.match(text, /confirm|verif/i, "must instruct confirming/verifying the behavior before relying on it");
 });
 
 test("generated Codex runner command does NOT carry the Claude-only /loop binding", async () => {

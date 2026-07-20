@@ -427,6 +427,14 @@ The next wave in this ledger, already shipped since Part B's tables were written
   caveat its own fix loop produced); Codex's `thread/goal/*` stayed an explicitly NOT-wired, gated
   experiment-design record — nothing wires to it until a human runs the four-point proof this
   ledger's DECLINED `memories` verdict above holds itself to the same bar on.
+  - Later settled by **`loop-dmi-conflict`** (2026-07-20): the `/loop` caveat resolved to a
+    definitive negative from primary docs, so no live cycle was needed. As of Claude Code v2.1.196
+    a scheduled/`/loop` fire does not execute a `disable-model-invocation: true` command (it reaches
+    Claude as plain text), so `/loop /muster:runner` is documented-inert — `runner.md` keeps
+    `disable-model-invocation: true` on the routing-safety rationale, standing cadence stays
+    Routine/cron, and Claude Code's `/goal` (a completion CONDITION re-checked each turn, distinct
+    from `/loop`'s time-interval re-fire) is confirmed as the native condition-based self-continuing
+    alternative.
 
 ---
 

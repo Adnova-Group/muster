@@ -111,6 +111,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gated on proof). Four new `[src: ...]` anchors added to the Sources list (`cx-config`,
   `cxd-review`, `m-memory`, `m-review-gate`); `node src/cli.js citation-check
   docs/strategy/native-delegation.md` re-verified `ok: true`, zero dangling anchors.
+- **The `/loop`×`disable-model-invocation` conflict is settled from primary docs, replacing the
+  hedge with the documented fact (backlog item `loop-dmi-conflict`).** The `harness-goal-primitives`
+  fix loop had left `plugin/commands/runner.md`'s Scheduling paragraph carrying a "likely blocked
+  today, verify before relying on it" caveat and a call for a live one-cycle check. Primary sources
+  now give a definitive answer, so the live cycle is no longer needed: as of Claude Code
+  **v2.1.196** a scheduled/`/loop` fire does not execute a `disable-model-invocation: true` command
+  — it "reaches Claude as plain text instead of executing" — so `/loop /muster:runner` will not
+  re-fire `runner.md` (which carries `disable-model-invocation: true`). Verified 2026-07-20 against
+  two current primary docs: `scheduled-tasks.md`'s "As of v2.1.196, a scheduled fire only runs
+  skills that Claude is allowed to invoke on its own" list (which names `disable-model-invocation:
+  true`) and `skills.md`'s `disable-model-invocation` row ("As of v2.1.196, also prevents the skill
+  from running when a scheduled task fires with the skill as its prompt"). Decision applied:
+  `disable-model-invocation: true` is KEPT on `runner.md` — the routing-safety rationale (never let
+  the model auto-invoke a heavy unattended runner) stands, not flipped to buy back `/loop`.
+  Consequence: `/loop /muster:runner` is not a working standing-loop mechanism as configured;
+  Routine/cron remain the verified-safe standing-cadence default, and Claude Code's `/goal` (a
+  completion CONDITION re-checked each turn until a model confirms it, session-scoped — a distinct
+  built-in from `/loop`'s time-interval re-fire, per `goal.md`) is the native condition-based
+  self-continuing alternative, now recorded as a confirmed primitive. `runner.md`'s Scheduling
+  paragraph was rewritten from the hedge to this definitive statement (dated, with both citations);
+  `docs/research/claude-code-cli.md` §1 replaced its "strong (not certain) … live verification
+  settles it" wording with the definitive finding and added `/goal` as a confirmed distinct native
+  primitive (`[src: cc-goal]`, citing `goal.md`); `docs/strategy/native-delegation.md`'s PR #92
+  ledger entry records the settlement. The built Codex `runner.md` invariant holds — `/loop`,
+  `/goal`, and the self-pacing framing are Claude-only, wholesale-replaced by `scripts/build-codex.mjs`,
+  so the generated Codex command carries none of them. `test/claude-parity.test.js`'s Claude-surface
+  pin was re-derived (file COUNT unchanged at 138; only `plugin/commands/runner.md` content
+  changed) and `test/runner-loop-binding.test.js` updated to pin the definitive wording.
 
 ### Tests
 - **`test/hook-border-long-session-sim.test.js` is deterministic under concurrent full-suite runners (backlog item `reharden-border-sim-flake`).** The week-long simulation used a FIXED session id (`"homebase-week-sim"`), and `cumFile`/`cooldownFile` derive a HOST-GLOBAL marker path from the sid alone (`os.tmpdir()/muster-{cum,cooldown}-<safeSession(sid)>`). Within one suite that path is unique, but across CONCURRENT full-suite runners on one host — muster's own wave model runs several worktrees' `npm test` at once, e.g. the path-shadow + capabilities sprint that surfaced this — both processes ran THIS file's simulation against the same two marker files simultaneously, one run's `clearSessionState`/day-1 write clobbering the other's mid-week crossing state, so a later-day `"3rd file crosses the border and invites"` assertion failed ~1/8. Root cause is a **cross-process marker-path collision, not a clock/mtime race** (the injected `MUSTER_TEST_NOW_MS` clock is already exact, and instrumentation across 25 serial full-suite runs recorded zero mtime-stamp misses) — proven by running N concurrent copies of the file: with the fixed sid **60/60 copies fail** with the exact assertion, with a unique sid **0/60 fail**. Fixed by deriving the sid from the test's already-unique `mkdtemp` suffix (`homebase-week-sim-<suffix>`), giving each invocation a private marker pair; verified with **0 border-sim failures across 20 full-suite runs launched as concurrent pairs** (the faithful two-runner condition). Test-only; `src/` untouched. Follow-up noted separately: other hook tests use fixed sids on the same shared-`os.tmpdir()` surface and would collide under heavily-overlapping concurrent runners too (rare in practice under staggered timing, which is why only this long, many-step sequence was ever observed flaking).

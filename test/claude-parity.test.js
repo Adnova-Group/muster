@@ -750,5 +750,33 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // trust boundary (callTool's "target" branch) with defense-in-depth in the CLI `audit`
   // branch (both below line 100 -- the line-100 alias pin still passes). Regression tests in
   // test/cowork.test.js. File COUNT still unchanged (138); MCP tool count still 28.
-  assert.equal(hash.digest("hex"), "af09a2be82e3885f147a04540f56d7f1a2f2b3a47a0cf5419dd69804467c0506");
+  //
+  // Pin re-derived 2026-07-20 (backlog item loop-dmi-conflict): file COUNT unchanged (138 -- no
+  // file added/removed under this surface) -- only plugin/commands/runner.md's content changed.
+  // This SETTLES the /loop x disable-model-invocation conflict the harness-goal-primitives fix
+  // loop left hedged above (the three 2026-07-19 re-derivations that ended at a "Likely blocked
+  // today, verify before relying on it" caveat and a call for a live one-cycle check). Primary
+  // docs now give a definitive answer, so no live cycle is needed: as of Claude Code v2.1.196 a
+  // scheduled/`/loop` fire does NOT execute a `disable-model-invocation: true` command -- it
+  // "reach[es] Claude as plain text instead of executing" -- so `/loop /muster:runner` will not
+  // re-fire runner.md (which carries disable-model-invocation: true). runner.md's Scheduling
+  // paragraph was rewritten from the hedge to that definitive fact (dated 2026-07-20, both
+  // citations: scheduled-tasks.md's "allowed to invoke on its own" list + skills.md's
+  // disable-model-invocation row, re-fetched and confirmed current), keeping
+  // disable-model-invocation: true on the command by DECISION (the routing-safety rationale that
+  // set it stands -- not flipped to buy back `/loop`), naming Routine/cron as the verified-safe
+  // standing-cadence default, and pointing a native self-continuing loop at `/goal` (a condition-
+  // based built-in, distinct from `/loop`'s time-interval re-fire). docs/research/
+  // claude-code-cli.md SS1 replaced its "strong (not certain) ... live verification settles it"
+  // wording with the definitive finding and added `/goal` as a confirmed distinct native primitive
+  // (new `[src: cc-goal]` -> goal.md; citation-check clean, 81/81 cited, 0 dangling);
+  // docs/strategy/native-delegation.md's PR #92 ledger entry records the settlement. The BUILT
+  // Codex runner.md invariant is UNCHANGED: `/loop`, `/goal`, and the self-pacing framing are
+  // Claude-only, wholesale-replaced by scripts/build-codex.mjs's runner.md Scheduling anchor
+  // (`**Scheduling**` .. `\n\nGlass box:`), so the generated Codex command carries none of them --
+  // re-verified by test/runner-loop-binding.test.js (updated to pin the definitive wording and to
+  // assert the Codex command leaks neither `/loop` nor `/goal`) and by `MUSTER_BUILD_FORCE=1 node
+  // scripts/build-codex.mjs && node scripts/check-codex.mjs` (clean). This is the reviewed
+  // loop-dmi-conflict remediation, not accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "a4173e1a460327c6e3c36059cd44ab1e661bc37f1ed42861cf0a71a851360e4d");
 });

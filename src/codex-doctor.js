@@ -194,6 +194,17 @@ function isLegacyManagedManifest(owner) {
 // descriptor BEFORE the file's contents are read (see readRegularFile).
 export const DOCTOR_READ_MAX_BYTES = 1024 * 1024;
 
+// A separate, deliberately generous cap for CODEX_HOME/config.toml. Unlike the
+// managed markers/hooks/runtime above, config.toml is USER/Codex-owned -- muster
+// does not control its size, and its `[projects]`/`[hooks.state]` trust caches
+// accumulate without pruning (see codex-hook-state below), so a long-lived
+// install could legitimately grow well past the 1 MiB managed-file cap. Bounding
+// it at 16 MiB still forecloses a hostile unbounded allocation while giving a
+// genuinely large real config millions of bytes of headroom -- so hardening the
+// read never newly fails codex-thread-limits/codex-hook-state on a well-formed
+// (if large) config that previously read fine.
+export const DOCTOR_CONFIG_READ_MAX_BYTES = 16 * 1024 * 1024;
+
 // Tags a rejection thrown by the no-follow bounded reader (symlink, non-regular
 // file, symlinked ancestor, TOCTOU dev/ino change, or oversize) so callers can
 // distinguish an ACTIVE fail-closed rejection of an unsafe trust file from a
@@ -471,7 +482,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8") } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.

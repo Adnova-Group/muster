@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
-import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP, DOCTOR_READ_MAX_BYTES } from "../src/codex-doctor.js";
+import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP, DOCTOR_READ_MAX_BYTES, DOCTOR_CONFIG_READ_MAX_BYTES } from "../src/codex-doctor.js";
 import { repoRoot, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 function fakeMcpChild() {
@@ -746,5 +746,33 @@ test("Codex doctor: UNREGISTERED project scope reached through a SYMLINKED ances
   assert.match(hooks?.detail || "", /unsafe managed hook scope read rejected/i);
   assert.match(hooks?.detail || "", /ordinary directory/i);
   assert.match(hooks?.detail || "", new RegExp(reEscape(join(cwd, ".codex"))));
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: a large-but-well-formed config.toml above the managed-file cap still reads (user-owned file gets the larger config cap, no false size rejection)", async () => {
+  // Parity guard for the config.toml read (Codex dogfood review): config.toml
+  // is USER/Codex-owned and its trust caches accumulate unpruned, so it can grow
+  // past the 1 MiB managed-file cap. It must use the larger DOCTOR_CONFIG_READ_
+  // MAX_BYTES cap -- a well-formed config just over the managed cap must still be
+  // read and validated identically, not newly rejected as oversized.
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-large-config-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const configPath = join(codexHome, "config.toml");
+  const base = await readFile(configPath, "utf8");
+  // Append valid TOML comment padding to push the file well past the managed cap
+  // (1 MiB) while staying far under the config cap (16 MiB).
+  const padBytes = DOCTOR_READ_MAX_BYTES + 256 * 1024;
+  assert.ok(padBytes < DOCTOR_CONFIG_READ_MAX_BYTES, "test padding must stay under the config cap");
+  await writeFile(configPath, `${base}\n${"# padding to exceed the managed-file cap\n".repeat(Math.ceil(padBytes / 41))}`);
+  assert.ok((await readFile(configPath)).length > DOCTOR_READ_MAX_BYTES, "fixture config.toml must exceed the managed-file cap");
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const threadLimits = report.checks.find(check => check.name === "codex-thread-limits");
+  // The large config is still read and its limits validated -- NOT rejected on a
+  // size bound (which would surface a cap-exceeded error and fail this check).
+  assert.equal(threadLimits?.ok, true, threadLimits?.detail);
+  assert.doesNotMatch(threadLimits?.detail || "", /read cap/i);
   await rm(tmp, { recursive: true, force: true });
 });

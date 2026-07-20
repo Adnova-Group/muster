@@ -1057,3 +1057,86 @@ test("Codex doctor fails codex-runtime when a runtime entry is a symlink to a re
   assert.equal(report.ok, false, "the overall report must reflect the codex-runtime failure");
   await rm(tmp, { recursive: true, force: true });
 });
+
+// --- Per-scope NORMALIZED cause + path in install/hook diagnostics -----------
+// (backlog item `doctor-scope-cause-details`, Codex dogfood audit): a failing
+// managed scope must preserve WHICH distinct cause it was -- MISSING file vs
+// MALFORMED JSON vs UNSAFE SYMLINK/non-regular vs HASH MISMATCH -- with the
+// offending PATH, instead of collapsing every non-unsafe failure into a generic
+// "version mismatch" (install) / "stale or differ" (hooks) aggregate. Each
+// fixture below fails ONE scope with ONE distinct cause beside a HEALTHY
+// co-scope and asserts (a) the distinct cause + specific path are named, and
+// (b) aggregate health stays accurate -- ok:false, the healthy scope still
+// counted, no cross-scope masking. RED against pre-fix code (cause/path
+// flattened or the healthy count/specific path missing), green after.
+async function twoProjectScopes(prefix) {
+  const tmp = await mkdtemp(join(tmpdir(), prefix));
+  const home = join(tmp, "home"), cwd = join(tmp, "current"), codexHome = join(home, ".codex");
+  const scopeA = join(tmp, "scope-a"), scopeB = join(tmp, "scope-b");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ cwd: scopeA, home, repoRoot, execFile: absent });
+  await runCodexInstall({ cwd: scopeB, home, repoRoot, execFile: absent });
+  return { tmp, home, cwd, codexHome, scopeA, scopeB, absent };
+}
+
+test("Codex doctor: install-generation names a MISSING profile manifest with its path (distinct cause), not a generic version mismatch, and still counts the healthy scope", async () => {
+  const { tmp, cwd, codexHome, scopeA, scopeB, absent } = await twoProjectScopes("m-doctor-dcause-1-");
+  const missingManifest = join(scopeB, ".codex", "agents", ".muster-managed.json");
+  await unlink(missingManifest);
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const gen = report.checks.find(c => c.name === "codex-install-generation");
+  assert.equal(gen?.ok, false, gen?.detail);
+  assert.match(gen?.detail || "", /missing/i);
+  assert.match(gen?.detail || "", new RegExp(reEscape(missingManifest)));
+  assert.doesNotMatch(gen?.detail || "", /do not match the selected package version/i);
+  assert.match(gen?.detail || "", /1 managed scope\(s\) match/);
+  assert.doesNotMatch(gen?.detail || "", new RegExp(reEscape(join(scopeA, ".codex"))));
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: codex-hooks names a MALFORMED hook manifest as a parse failure with its path, not a generic stale/differ mismatch", async () => {
+  const { tmp, cwd, codexHome, scopeA, scopeB, absent } = await twoProjectScopes("m-doctor-dcause-2-");
+  const malformedManifest = join(scopeB, ".codex", "muster", ".muster-managed.json");
+  await writeFile(malformedManifest, "{ not valid json");
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const hooks = report.checks.find(c => c.name === "codex-hooks");
+  assert.equal(hooks?.ok, false, hooks?.detail);
+  assert.match(hooks?.detail || "", /malformed|invalid json|parse/i);
+  assert.match(hooks?.detail || "", new RegExp(reEscape(malformedManifest)));
+  assert.doesNotMatch(hooks?.detail || "", /stale or differ from their exact ownership/i);
+  assert.doesNotMatch(hooks?.detail || "", new RegExp(reEscape(join(scopeA, ".codex"))));
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: install-generation names an UNSAFE symlinked profile manifest distinctly and still counts the healthy scope (no masking, target not adopted)", { skip: process.platform === "win32" ? "symlink fixture is POSIX-only" : false }, async () => {
+  const { tmp, cwd, codexHome, scopeA, scopeB, absent } = await twoProjectScopes("m-doctor-dcause-3-");
+  const manifest = join(scopeB, ".codex", "agents", ".muster-managed.json");
+  const outside = join(tmp, "outside-profile.json");
+  await writeFile(outside, JSON.stringify({ owner: "muster", packageVersion: selectedPlugin.packageVersion }));
+  await unlink(manifest);
+  await symlink(outside, manifest);
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const gen = report.checks.find(c => c.name === "codex-install-generation");
+  assert.equal(gen?.ok, false, gen?.detail);
+  assert.match(gen?.detail || "", /unsafe managed profile scope read rejected/i);
+  assert.match(gen?.detail || "", /regular file/i);
+  assert.match(gen?.detail || "", new RegExp(reEscape(manifest)));
+  assert.match(gen?.detail || "", /1 managed scope\(s\) match/);
+  assert.doesNotMatch(gen?.detail || "", new RegExp(reEscape(join(scopeA, ".codex"))));
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: codex-hooks names a HASH-MISMATCHED hook runtime with the specific runtime path, distinct from missing/malformed", async () => {
+  const { tmp, cwd, codexHome, scopeA, scopeB, absent } = await twoProjectScopes("m-doctor-dcause-4-");
+  const runtimePath = join(scopeB, ".codex", "muster", "hooks", "muster-hook.mjs");
+  const pristine = await readFile(runtimePath);
+  await writeFile(runtimePath, Buffer.concat([pristine, Buffer.from("\n// tampered runtime byte\n")]));
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const hooks = report.checks.find(c => c.name === "codex-hooks");
+  assert.equal(hooks?.ok, false, hooks?.detail);
+  assert.match(hooks?.detail || "", /stale or differ from their exact ownership manifest.*rerun muster install codex/i);
+  assert.match(hooks?.detail || "", new RegExp(reEscape(join(scopeB, ".codex", "muster", "hooks"))));
+  assert.doesNotMatch(hooks?.detail || "", /malformed|managed hook file missing/i);
+  assert.doesNotMatch(hooks?.detail || "", new RegExp(reEscape(join(scopeA, ".codex"))));
+  await rm(tmp, { recursive: true, force: true });
+});

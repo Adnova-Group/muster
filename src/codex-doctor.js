@@ -290,6 +290,70 @@ function unsafeScopeRead(message) {
   return error;
 }
 
+// A managed trust file that MUST exist is absent: readRegularJson/readRegularFile
+// returned null (benign ENOENT/ENOTDIR) at a path the check requires. Tagged
+// (`musterMissing`) and carrying the offending `path` so the shared cause
+// classifier below reports MISSING with that exact path rather than folding it
+// into a generic version/coherence mismatch.
+function missingScopeFile(subject, path) {
+  const error = new Error(`${subject} is missing: ${path}`);
+  error.musterMissing = true;
+  error.path = path;
+  return error;
+}
+
+// The normalized per-scope failure vocabulary shared by the install-generation
+// AND hook diagnostics, so the SAME underlying failure of a managed scope reads
+// identically in both. An operator gets WHICH distinct thing failed WHERE, not a
+// flattened "scope unhealthy": a MISSING managed file, MALFORMED JSON, an UNSAFE
+// symlink/non-regular refusal, or a MISMATCH (present + parsed but incoherent
+// with the expected package version / hook hash / owned groups). LEGACY (a
+// pre-0.5.x manifest) keeps its own dedicated remediation and is not classified
+// here.
+const SCOPE_CAUSE = Object.freeze({
+  MISSING: "MISSING",
+  MALFORMED: "MALFORMED",
+  UNSAFE: "UNSAFE",
+  OTHER: "OTHER"
+});
+
+// One classifier mapping a caught trust-read error -> { cause, path } for the
+// THROWING causes (MISSING / MALFORMED / UNSAFE / OTHER); MISMATCH is a
+// non-throwing "present but incoherent" verdict the caller records directly.
+// `fallbackPath` is the file the scope was reading when it threw, used when the
+// error carries no path of its own (e.g. a bare JSON.parse SyntaxError). Both
+// per-scope loops route their catch through this so the vocabulary stays shared.
+function classifyScopeReadError(error, fallbackPath) {
+  const path = typeof error?.path === "string" ? error.path : fallbackPath;
+  if (error?.musterUnsafeRead) return { cause: SCOPE_CAUSE.UNSAFE, path };
+  // The tagged `musterMissing` is the reachable MISSING signal today: the safe
+  // reader converts ENOENT/ENOTDIR to a null return (see openRegularFile's
+  // missingPath), which callers turn into a `missingScopeFile` throw. The raw
+  // ENOENT/ENOTDIR arm is defensive only -- kept so any future direct fs throw
+  // still classifies as MISSING rather than falling through to OTHER.
+  if (error?.musterMissing || error?.code === "ENOENT" || error?.code === "ENOTDIR") return { cause: SCOPE_CAUSE.MISSING, path };
+  if (error instanceof SyntaxError) return { cause: SCOPE_CAUSE.MALFORMED, path };
+  return { cause: SCOPE_CAUSE.OTHER, path };
+}
+
+// Shared formatter: render the caught (non-mismatch, non-unsafe, non-legacy)
+// per-scope failures into DISTINCT cause clauses naming the offending path, for
+// either check (`noun` is "profile" or "hook"). Each cause gets its own clause
+// so a missing file is never reported as malformed and vice versa, and the
+// remediation (rerun muster install codex) is preserved on every clause.
+function scopeCauseClauses(noun, failures) {
+  const of = cause => failures.filter(item => item.cause === cause);
+  const paths = list => list.map(item => item.path).join(", ");
+  const missing = of(SCOPE_CAUSE.MISSING);
+  const malformed = of(SCOPE_CAUSE.MALFORMED);
+  const other = of(SCOPE_CAUSE.OTHER);
+  return [
+    missing.length ? `managed ${noun} file missing at: ${paths(missing)}; rerun muster install codex for each scope` : null,
+    malformed.length ? `managed ${noun} file is malformed JSON at: ${paths(malformed)}; rerun muster install codex for each scope` : null,
+    other.length ? `managed ${noun} scope unreadable at: ${other.map(item => `${item.path} (${item.message})`).join(", ")}; rerun muster install codex for each scope` : null
+  ];
+}
+
 async function ordinaryDirectoryPath(path) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
@@ -797,33 +861,50 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   if (selected) {
     const installations = [];
     const unsafeProfileScopes = [];
+    // Caught, NON-unsafe per-scope read failures normalized to a distinct cause
+    // + the offending path (MISSING / MALFORMED / OTHER), so a missing manifest
+    // is no longer misreported as a version mismatch. A present-but-incoherent
+    // manifest stays a version MISMATCH via `installations` below; aggregate
+    // health is computed from the same failing sets as before -- these records
+    // only ENRICH the detail, they never change a verdict.
+    const profileFailures = [];
     for (const dir of hookHomes) {
       const registered = scopeHomes.get(dir);
       const manifestPath = join(dir, "agents", ".muster-managed.json");
       // Every scope -- registered AND unregistered current-project/user --
       // reads its managed profile marker through the same no-follow bounded
-      // reader (readRegularJson): null = benign absence, a musterUnsafeRead
-      // throw = an ACTIVE fail-closed rejection (symlink / special / oversized
-      // / symlinked ancestor) reported per-scope, a plain throw = malformed.
+      // reader (readRegularJson): null = benign absence (surfaced as a tagged
+      // MISSING error), a musterUnsafeRead throw = an ACTIVE fail-closed
+      // rejection (symlink / special / oversized / symlinked ancestor), a plain
+      // JSON.parse throw = MALFORMED -- each classified to its distinct cause.
       try {
         const owner = await readRegularJson(manifestPath);
-        if (!owner) throw new Error(`managed profile manifest is missing: ${manifestPath}`);
+        if (!owner) throw missingScopeFile("managed profile manifest", manifestPath);
         installations.push({ dir, ok: owner.owner === "muster" && owner.packageVersion === selected.packageVersion, legacy: isLegacyManagedManifest(owner) });
       } catch (error) {
-        if (error?.musterUnsafeRead) unsafeProfileScopes.push({ dir, reason: error.message });
-        else if (registered) installations.push({ dir, ok: false, legacy: false });
+        const { cause, path } = classifyScopeReadError(error, manifestPath);
+        if (cause === SCOPE_CAUSE.UNSAFE) unsafeProfileScopes.push({ dir, reason: error.message });
+        else if (registered) profileFailures.push({ dir, cause, path, message: error.message });
         // Unregistered + benign (absent/malformed): stay silent, as before.
       }
     }
     const stale = installations.filter(item => !item.ok);
     const legacyStale = stale.filter(item => item.legacy).map(item => item.dir);
     const versionStale = stale.filter(item => !item.legacy).map(item => item.dir);
-    const ok = stale.length === 0 && unsafeProfileScopes.length === 0;
+    const matched = installations.filter(item => item.ok).map(item => item.dir);
+    // ok:false whenever ANY scope fails for ANY cause; each failing scope is
+    // counted in exactly one bucket (legacy / version-mismatch / caught-cause /
+    // unsafe), so no cross-scope masking or double-count.
+    const ok = stale.length === 0 && unsafeProfileScopes.length === 0 && profileFailures.length === 0;
     checks.push({ name: "codex-install-generation", ok, detail: ok
-      ? (installations.length ? `${installations.length} managed scope(s) match package version ${selected.packageVersion}` : "no managed profile scopes detected")
+      ? (matched.length ? `${matched.length} managed scope(s) match package version ${selected.packageVersion}` : "no managed profile scopes detected")
       : [
+          // Surface the healthy count even on failure so an operator sees the
+          // other scopes are still counted correctly, not masked by the failure.
+          matched.length ? `${matched.length} managed scope(s) match package version ${selected.packageVersion}` : null,
           legacyStale.length ? legacyRemediation(legacyStale) : null,
           versionStale.length ? `installed profiles do not match the selected package version at: ${versionStale.join(", ")}; rerun muster install codex` : null,
+          ...scopeCauseClauses("profile", profileFailures),
           unsafeProfileScopes.length ? `unsafe managed profile scope read rejected: ${unsafeProfileScopes.map(item => `${item.dir} (${item.reason})`).join(", ")}` : null
         ].filter(Boolean).join("; ") });
   } else if (selectionFailed) {
@@ -837,6 +918,13 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const legacyHookScopes = [];
   const unsafeHookScopes = [];
   const hookInterpreters = [];
+  // A present-but-incoherent scope (owner/version/groups/hash MISMATCH) with the
+  // specific offending path (the runtime dir for a hash mismatch, else the
+  // manifest); and the caught MISSING/MALFORMED/OTHER failures with their paths.
+  // These ONLY enrich the codex-hooks detail -- staleHookScopes below still
+  // drives aggregate health exactly as before, so no verdict/count changes.
+  const mismatchHookScopes = [];
+  const hookCauseFailures = [];
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
@@ -845,15 +933,18 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     // its hook manifest, hooks.json, and hook runtime through the same
     // no-follow bounded reader (readRegularJson/readRegularFile). A
     // musterUnsafeRead throw (symlink / special / oversized / symlinked
-    // ancestor) is an ACTIVE fail-closed rejection reported per-scope below;
-    // any other throw stays a plain stale verdict, exactly as before.
+    // ancestor), a benign-absence MISSING throw, and a MALFORMED JSON parse
+    // throw are each classified to their distinct cause below; `readingPath`
+    // tracks which managed file was in hand so the cause names the right path.
+    let readingPath = manifestPath;
     try {
       const owner = await readRegularJson(manifestPath);
-      if (!owner) throw new Error(`managed hook manifest is missing: ${manifestPath}`);
+      if (!owner) throw missingScopeFile("managed hook manifest", manifestPath);
       if (isLegacyManagedManifest(owner)) { legacyHookScopes.push(dir); staleHookScopes.push(dir); continue; }
       const configPath = join(dir, "hooks.json");
+      readingPath = configPath;
       const config = await readRegularJson(configPath);
-      if (!config) throw new Error(`managed hook configuration is missing: ${configPath}`);
+      if (!config) throw missingScopeFile("managed hook configuration", configPath);
       if (isHooksSkippedManifest(owner)) {
         // Coherent-and-non-firing: no runtime dir is expected, so it is
         // never pushed to hookStatuses (would count toward the overlap
@@ -865,12 +956,15 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         continue;
       }
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
-      const runtime = await Promise.all(hookFiles.map(file => readRegularFile(join(dir, "muster", "hooks", file))));
-      if (runtime.some(file => file === null)) throw new Error(`managed hook runtime is missing: ${dir}`);
+      const runtimeDir = join(dir, "muster", "hooks");
+      readingPath = runtimeDir;
+      const runtime = await Promise.all(hookFiles.map(file => readRegularFile(join(runtimeDir, file))));
+      if (runtime.some(file => file === null)) throw missingScopeFile("managed hook runtime", runtimeDir);
       const hash = createHash("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
+      const digest = hash.digest("hex");
       const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.packageVersion === selected?.packageVersion
-        && owner.hookHash === hash.digest("hex");
+        && owner.hookHash === digest;
       if (coherent) {
         hookStatuses.push(dir);
         // Persisted-interpreter capture (run-5 security audit Med #5): each
@@ -889,10 +983,20 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         const rawCommand = musterHook && (platform === "win32" ? musterHook.commandWindows : musterHook.command);
         const parsed = rawCommand ? parseHookCommand(rawCommand, { windows: platform === "win32" }) : null;
         if (parsed?.interpreter) hookInterpreters.push({ dir, interpreter: parsed.interpreter });
-      } else staleHookScopes.push(dir);
+      } else {
+        staleHookScopes.push(dir);
+        // Present + parsed but not coherent: a MISMATCH. Name the runtime dir
+        // when the managed runtime's sha differs (a HASH MISMATCH), else the
+        // manifest (a version/owned-group mismatch).
+        mismatchHookScopes.push({ dir, path: owner.hookHash !== digest ? runtimeDir : manifestPath });
+      }
     } catch (error) {
-      if (error?.musterUnsafeRead) unsafeHookScopes.push({ dir, reason: error.message });
-      else staleHookScopes.push(dir);
+      const { cause, path } = classifyScopeReadError(error, readingPath);
+      if (cause === SCOPE_CAUSE.UNSAFE) { unsafeHookScopes.push({ dir, reason: error.message }); continue; }
+      // Still count the scope as stale for aggregate health (unchanged), and
+      // record its DISTINCT cause + path for the enriched detail below.
+      staleHookScopes.push(dir);
+      hookCauseFailures.push({ dir, cause, path, message: error.message });
     }
   }
   const hookStatus = staleHookScopes.length === 0 ? hookStatuses[0] || null : null;
@@ -900,11 +1004,16 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const legacyHookDetail = legacyHookScopes.length ? legacyRemediation(legacyHookScopes) : null;
   const unsafeHookDetail = unsafeHookScopes.length ? `unsafe managed hook scope read rejected: ${unsafeHookScopes.map(item => `${item.dir} (${item.reason})`).join(", ")}` : null;
   const hooksOk = Boolean(hookStatus) && unsafeHookScopes.length === 0;
+  // Each non-legacy stale scope appears in exactly one clause: MISMATCH scopes
+  // in the stale/differ clause (naming the runtime/manifest path), and the
+  // caught MISSING/MALFORMED/OTHER scopes in their own cause clauses -- so a
+  // missing hooks.json is never also reported as a hash/coherence mismatch.
   checks.push({ name: "codex-hooks", ok: hooksOk, detail: hooksOk
     ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks`
     : [
         legacyHookDetail,
-        otherStaleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${otherStaleHookScopes.join(", ")}; rerun muster install codex for each scope` : null,
+        mismatchHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${mismatchHookScopes.map(item => `${item.dir} (${item.path})`).join(", ")}; rerun muster install codex for each scope` : null,
+        ...scopeCauseClauses("hook", hookCauseFailures),
         unsafeHookDetail
       ].filter(Boolean).join("; ") || "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
   // The hook runtime itself has no cross-copy dedupe (each installed copy

@@ -110,7 +110,7 @@ The linter is genre-aware (`--system` relaxes task-only rules for instruction pr
 
 ```sh
 # lint a runtime agent prompt piped straight from your app
-your-app --print-agent-prompt | npx @adnova-group/muster prompt lint - --agent --tools
+your-app --print-agent-prompt | npx -y @adnova-group/muster prompt lint - --agent --tools
 ```
 
 See the [commands reference](https://adnova-group.github.io/muster/reference/commands) for the full surface.

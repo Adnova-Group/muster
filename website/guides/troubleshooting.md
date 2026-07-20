@@ -3,8 +3,8 @@
 Almost every first-run failure is one command away from an answer:
 
 ```sh
-npx @adnova-group/muster doctor
-npx @adnova-group/muster doctor --codex
+npx -y @adnova-group/muster doctor
+npx -y @adnova-group/muster doctor --codex
 ```
 
 `doctor` is **read-only**. It reads the catalog, the pipelines, the installed plugin, and (on `--codex`) the managed Codex scopes, then reports. It never repairs, never writes, and never touches your `~/.claude` or `$CODEX_HOME` files. The fix is always a command you run afterwards.
@@ -42,8 +42,8 @@ A task that fails closed with a reinstall/new-session diagnostic means the runni
 Reinstall, then start a new session:
 
 ```sh
-npx @adnova-group/muster install     # Claude Code
-npx @adnova-group/muster install codex --scope project   # Codex
+npx -y @adnova-group/muster install     # Claude Code
+npx -y @adnova-group/muster install codex --scope project   # Codex
 ```
 
 `doctor`'s `install-integrity` check confirms the plugin cache copy actually landed — a missing cache directory, or one without `hooks/hooks.json`, means the copy silently failed even though the version string still looks healthy. No check enumerates individual agent profiles, so if `install-integrity` is green the profile is on disk and the problem is session binding: only a fresh session makes it dispatchable.
@@ -53,7 +53,7 @@ npx @adnova-group/muster install codex --scope project   # Codex
 A leftover global install (`npm i -g`) sits earlier on `PATH` than the copy you meant to run, so a bare `muster` silently serves outdated behavior — including missing verbs entirely.
 
 ```sh
-npx @adnova-group/muster doctor --codex
+npx -y @adnova-group/muster doctor --codex
 ```
 
 The `codex-path-shadow` check names the exact file and what owns it. It establishes that identity by **reading the file and its sibling `package.json`** — it never executes the shadow. Remediation:
@@ -80,8 +80,8 @@ npm i -g @adnova-group/muster@latest
 All six reconcile the same way:
 
 ```sh
-npx @adnova-group/muster install codex --scope user      # canonical for hooks
-npx @adnova-group/muster install codex --scope project
+npx -y @adnova-group/muster install codex --scope user      # canonical for hooks
+npx -y @adnova-group/muster install codex --scope project
 ```
 
 Rerunning the project scope under a healthy user scope collapses to one firing scope — see [the canonical-scope hook collapse](/guides/codex#the-canonical-scope-hook-collapse).
@@ -91,7 +91,7 @@ Rerunning the project scope under a healthy user scope collapses to one firing s
 Codex can silently let a spawned thread inherit the orchestrator's model instead of the profile's pin. That is invisible during the run, so it is audited afterwards against Codex's own rollout records:
 
 ```sh
-npx @adnova-group/muster codex-conformance --days 3
+npx -y @adnova-group/muster codex-conformance --days 3
 ```
 
 Each spawned thread gets a verdict: `MATCH`, `MISMATCH`, `GENERIC` (no role recorded — the inheritance signature), `NO-PIN`, or `IDLE`. It exits `2` on any actionable mismatch. A range that crosses a profile retier legitimately contains historical mismatches; those rows are stamped `pinsNewerThanRollout`, and `--current-pins-only` excludes them from the **exit-code decision only** — the rows are always listed either way.
@@ -101,8 +101,8 @@ Each spawned thread gets a verdict: `MATCH`, `MISMATCH`, `GENERIC` (no role reco
 A crashed or killed run can leave provider processes, git worktrees, and backlog claims behind.
 
 ```sh
-npx @adnova-group/muster hygiene           # report only
-npx @adnova-group/muster hygiene --reap    # act
+npx -y @adnova-group/muster hygiene           # report only
+npx -y @adnova-group/muster hygiene --reap    # act
 ```
 
 `hygiene` reports three things: orphaned `codex`/`claude` processes, live worktrees over the threshold (default 10) plus git-prunable candidates, and `.muster/backlog.md` claims whose heartbeat is stale (default 60 minutes).

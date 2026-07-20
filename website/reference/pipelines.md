@@ -7,7 +7,7 @@ A pipeline is a phased, gated recipe for producing one kind of artifact. Each pi
 Routing to a pipeline is deterministic. `muster route "<outcome>"` matches the outcome against each pipeline's `match` keywords on word boundaries; if nothing matches, it falls back to the domain default.
 
 ```sh
-npx @adnova-group/muster route "draft a PRD for a referral program"
+npx -y @adnova-group/muster route "draft a PRD for a referral program"
 npx -y @adnova-group/muster pipeline prd
 ```
 

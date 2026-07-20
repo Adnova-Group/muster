@@ -40,7 +40,7 @@ Every variable is read at the point of use, so all three of these work and none 
 
 ```sh
 # one invocation
-MUSTER_MAX_TIER=sonnet npx @adnova-group/muster capabilities
+MUSTER_MAX_TIER=sonnet npx -y @adnova-group/muster capabilities
 
 # this shell, this session
 export MUSTER_ENABLE_FABLE=1

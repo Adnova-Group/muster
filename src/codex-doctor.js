@@ -145,7 +145,29 @@ const same = (left, right) => JSON.stringify(canonical(left)) === JSON.stringify
 const groupCommands = group => (group?.hooks || []).flatMap(hook => [hook?.command, hook?.commandWindows, hook?.command_windows]);
 const isMusterHookGroup = group => groupCommands(group).some(command => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs"));
 const MCP_TIMEOUT_MS = 5_000;
+// A misbehaving or compromised MCP child could stream unbounded output into the
+// doctor process (memory blowup) and get raw bytes echoed into a check detail.
+// Retain at most these many decoded characters of the child's stdout (the
+// JSON-RPC parse buffer) and stderr before we stop retaining and terminate the
+// child. The real bundled handshake's largest single line is ~10 KB, so 64 KiB
+// leaves ample headroom for well-behaved children while capping memory growth.
+export const MCP_STDOUT_CAP = 64 * 1024;
+export const MCP_STDERR_CAP = 64 * 1024;
+// A much smaller, separate budget for how many characters of captured child
+// output may EVER be echoed into a check `detail` -- after control/non-printable
+// bytes are replaced -- so raw or oversized bytes are never dumped into the
+// diagnostic even though up to the retention cap is held in memory.
+export const MCP_DIAGNOSTIC_CAP = 512;
 const mcpVisibilityNote = "Codex may defer MCP tool visibility until lookup or a new session";
+
+// Bound and sanitize captured child output before it appears in a check detail:
+// slice to the diagnostic-echo budget FIRST (so bytes beyond it are never
+// processed or echoed), then replace C0/C1 control and DEL bytes with the
+// Unicode replacement char so no raw control bytes are dumped into the detail.
+function sanitizeMcpDiagnostic(text, limit = MCP_DIAGNOSTIC_CAP) {
+  if (typeof text !== "string" || !text) return "";
+  return text.slice(0, limit).replace(/[\u0000-\u001f\u007f-\u009f]/g, "\uFFFD").trim();
+}
 
 function missingPath(error) {
   return error?.code === "ENOENT" || error?.code === "ENOTDIR";
@@ -264,16 +286,39 @@ async function rawScopeRegistryEntries(home) {
 export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT_MS, spawnProcess = spawn } = {}) {
   return new Promise((resolve, reject) => {
     let child, timer, buffer = "", initialized = false, settled = false, stderr = "", tools = null;
+    let killed = false, stdoutCapped = false, stderrCapped = false;
+    // Terminate the child EXACTLY once. A cap hit, the terminal finish(), a
+    // second cap hit on the other stream, or a close/exit event may each reach
+    // here; the `killed` guard makes every call after the first a no-op, and
+    // kill is best-effort so it never throws back into an event handler.
+    const terminateChild = () => {
+      if (killed) return;
+      killed = true;
+      try { if (child && !child.killed) child.kill(); } catch { /* kill is best-effort */ }
+    };
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       let cleanupError = null;
       try { if (child?.stdin && !child.stdin.destroyed) child.stdin.end(); } catch (failure) { cleanupError = failure; }
-      try { if (child && !child.killed) child.kill(); } catch (failure) { cleanupError ||= failure; }
+      terminateChild();
       if (error) reject(error); else if (cleanupError) reject(cleanupError); else resolve(result);
     };
     const fail = message => finish(message instanceof Error ? message : new Error(message));
+    // Shared cap handler: truncate the retained buffer to its cap, terminate the
+    // child once, and reject with a bounded, sanitized diagnostic that names the
+    // stream and carries the retained size (so callers/tests can prove the bound
+    // held) -- never echoing beyond the diagnostic budget or raw control bytes.
+    const failCapped = (streamName, retainedLength, echo = "") => {
+      const detail = sanitizeMcpDiagnostic(echo);
+      const cap = streamName === "stdout" ? MCP_STDOUT_CAP : MCP_STDERR_CAP;
+      const error = new Error(`MCP ${streamName} exceeded the ${cap}-character retention cap; terminated the handshake child${detail ? `: ${detail}` : ""}`);
+      error.mcpStream = streamName;
+      error.mcpRetainedChars = retainedLength;
+      terminateChild();
+      fail(error);
+    };
     try {
       child = spawnProcess(process.execPath, [entrypoint], { cwd, stdio: ["pipe", "pipe", "pipe"] });
     } catch (error) { fail(error); return; }
@@ -282,8 +327,23 @@ export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", chunk => {
-      if (settled) return;
+      if (settled || stdoutCapped) return;
       buffer += chunk;
+      // A well-behaved child's JSON-RPC lines are consumed below as fast as they
+      // arrive, so `buffer` only ever holds one in-flight line and never nears
+      // the cap. Unbounded newline-free output (a misbehaving/compromised child)
+      // is what grows it without bound -- cap it, stop retaining, and kill.
+      // The cap check precedes the parse loop, so if one `data` event delivered a
+      // complete line AND enough trailing bytes to blow the cap, that line is
+      // discarded rather than parsed -- an intentional fail-closed tradeoff: a
+      // child flooding this hard is already outside the well-behaved contract.
+      if (buffer.length > MCP_STDOUT_CAP) {
+        buffer = buffer.slice(0, MCP_STDOUT_CAP);
+        stdoutCapped = true;
+        // Do not echo raw stdout into the diagnostic; naming the cap is enough.
+        failCapped("stdout", buffer.length);
+        return;
+      }
       for (;;) {
         const newline = buffer.indexOf("\n");
         if (newline < 0) return;
@@ -316,18 +376,29 @@ export async function runMcpHandshake({ entrypoint, cwd, timeoutMs = MCP_TIMEOUT
           const text = message.result?.content?.[0]?.text;
           let toolCallOk = message.result?.isError !== true && typeof text === "string";
           if (toolCallOk) { try { JSON.parse(text); } catch { toolCallOk = false; } }
-          if (!toolCallOk) { fail(`MCP tools/call muster_detect returned an error payload: ${String(text).slice(0, 160)}`); return; }
+          if (!toolCallOk) { fail(`MCP tools/call muster_detect returned an error payload: ${sanitizeMcpDiagnostic(String(text), 160)}`); return; }
           finish(null, { initialized, tools, toolCallOk });
           return;
         }
       }
     });
     child.stdout.on("error", error => fail(error));
-    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.stderr.on("data", chunk => {
+      if (settled || stderrCapped) return;
+      stderr += chunk;
+      if (stderr.length > MCP_STDERR_CAP) {
+        stderr = stderr.slice(0, MCP_STDERR_CAP);
+        stderrCapped = true;
+        failCapped("stderr", stderr.length, stderr);
+        return;
+      }
+    });
     child.stderr.on("error", error => fail(error));
     child.on("error", error => fail(error));
     child.on("exit", (code, signal) => {
-      if (!settled) fail(`MCP process exited before the handshake completed (${signal || code || "unknown"})${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
+      if (settled) return;
+      const detail = sanitizeMcpDiagnostic(stderr);
+      fail(`MCP process exited before the handshake completed (${signal || code || "unknown"})${detail ? `: ${detail}` : ""}`);
     });
     child.stdin.on("error", error => fail(error));
     try {

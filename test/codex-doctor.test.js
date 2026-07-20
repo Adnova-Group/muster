@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
-import { runCodexDoctor, runMcpHandshake } from "../src/codex-doctor.js";
+import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP } from "../src/codex-doctor.js";
 import { repoRoot, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 function fakeMcpChild() {
@@ -451,6 +451,90 @@ test("Codex MCP handshake handles synchronous stdin failure with cleanup and set
   assert.equal(child.stdin.writableEnded, true);
   assert.equal(child.stdinEndCalls, 1);
   assert.equal(child.stdinWriteCalls, 4);
+});
+
+// --- MCP handshake output bounding (Codex dogfood audit) ------------------
+// A misbehaving or compromised MCP child could stream unbounded output into the
+// doctor: memory blows up as stdout/stderr accumulate, and raw bytes get echoed
+// straight into the check `detail`. runMcpHandshake must BOUND each stream with
+// a retention cap, terminate the child EXACTLY once when a cap is hit, and echo
+// at most a small, control-byte-sanitized slice into any diagnostic. These two
+// chunked-output tests drive a fake child that emits far past each cap.
+const controlByteRe = /[\u0000-\u001f\u007f-\u009f]/;
+
+test("Codex MCP handshake bounds unbounded stdout: caps retention, kills once, no oversized/raw diagnostic", async () => {
+  const child = fakeMcpChild();
+  // 320 KiB of newline-free junk -- a compromised child streaming raw bytes the
+  // JSON-RPC line parser can never consume, so the parse buffer would grow
+  // without bound. Emitted in chunks that individually stay under, but together
+  // blow past, the stdout cap.
+  const chunk = "x".repeat(40 * 1024);
+  const promise = runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, timeoutMs: 5_000, spawnProcess: () => {
+    queueMicrotask(() => {
+      for (let i = 0; i < 8; i++) child.stdout.write(chunk);
+      // Fallback so the CURRENT (unbounded) code still settles quickly for the
+      // red run; scheduled after the stream data has drained so a bounded child
+      // has already capped + killed by the time this fires.
+      setTimeout(() => { if (!child.killed) child.emit("exit", 1, null); }, 40);
+    });
+    return child;
+  }});
+  await assert.rejects(promise, err => {
+    assert.match(err.message, /stdout exceeded/i, "diagnostic names the stdout cap");
+    assert.ok(err.mcpRetainedChars <= MCP_STDOUT_CAP, `retained stdout ${err.mcpRetainedChars} must stay within cap ${MCP_STDOUT_CAP}`);
+    assert.ok(err.message.length <= 200 + MCP_DIAGNOSTIC_CAP, `stdout diagnostic length ${err.message.length} must stay within echo budget`);
+    assert.ok(!controlByteRe.test(err.message), "stdout diagnostic must not dump raw control bytes");
+    return true;
+  });
+  assert.equal(child.killCalls, 1, "stdout cap must terminate the child exactly once");
+});
+
+test("Codex MCP handshake bounds unbounded stderr: caps retention, kills once, sanitizes diagnostic", async () => {
+  const child = fakeMcpChild();
+  // ~196 KiB of control-byte-laden stderr emitted in chunks that cumulatively
+  // exceed the stderr cap; sanitization must keep raw control bytes out of the
+  // echoed detail even though up to the retention cap is held in memory.
+  const ctrl = String.fromCharCode(0) + String.fromCharCode(7) + String.fromCharCode(27); // NUL, BEL, ESC
+  const chunk = ("warn" + ctrl + " ").repeat(4 * 1024);
+  const promise = runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, timeoutMs: 5_000, spawnProcess: () => {
+    queueMicrotask(() => {
+      for (let i = 0; i < 8; i++) child.stderr.write(chunk);
+      // Fallback: after stderr drains, emit exit so the CURRENT code echoes its
+      // raw unbounded stderr into the exit diagnostic (the red signal).
+      setTimeout(() => { if (!child.killed) { child.stderr.write(chunk); child.emit("exit", 1, null); } }, 40);
+    });
+    return child;
+  }});
+  await assert.rejects(promise, err => {
+    assert.ok(err.mcpRetainedChars <= MCP_STDERR_CAP, `retained stderr ${err.mcpRetainedChars} must stay within cap ${MCP_STDERR_CAP}`);
+    assert.ok(err.message.length <= 200 + MCP_DIAGNOSTIC_CAP, `stderr diagnostic length ${err.message.length} must stay within echo budget`);
+    assert.ok(!controlByteRe.test(err.message), "stderr diagnostic must not dump raw control bytes");
+    return true;
+  });
+  assert.equal(child.killCalls, 1, "stderr cap must terminate the child exactly once");
+});
+
+test("Codex MCP handshake sanitizes control bytes in the tools/call error-payload diagnostic", async () => {
+  const child = fakeMcpChild();
+  // A well-formed handshake through tools/list, then a tools/call payload that
+  // is a plain (non-JSON) string laced with control bytes -- the third
+  // sanitizeMcpDiagnostic call site. The failure detail must echo it without
+  // dumping raw control bytes.
+  const payload = "boom" + String.fromCharCode(0) + String.fromCharCode(7) + String.fromCharCode(27) + " not json";
+  const promise = runMcpHandshake({ entrypoint: "fake.mjs", cwd: repoRoot, timeoutMs: 5_000, spawnProcess: () => {
+    queueMicrotask(() => child.stdout.write(
+      '{"id":1,"result":{}}\n'
+      + '{"id":2,"result":{"tools":[{"name":"one"}]}}\n'
+      + `{"id":3,"result":{"content":[{"type":"text","text":${JSON.stringify(payload)}}]}}\n`
+    ));
+    return child;
+  }});
+  await assert.rejects(promise, err => {
+    assert.match(err.message, /returned an error payload/, "names the error-payload path");
+    assert.ok(!controlByteRe.test(err.message), "tools/call diagnostic must not dump raw control bytes");
+    return true;
+  });
+  assert.equal(child.killCalls, 1, "tools/call failure must terminate the child exactly once");
 });
 
 // --- Live Codex inventory branch (run-5 audit Med #11) --------------------

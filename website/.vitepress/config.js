@@ -8,9 +8,6 @@ const { version } = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8")
 );
 
-// Project Pages live under https://<owner>.github.io/muster/, so the base path
-// must be "/muster/". If you later point a custom domain at the site (a CNAME),
-// change base to "/" and add a website/public/CNAME file.
 // One sidebar shape for the whole site, reused under every path prefix so a page in
 // any section can reach every other section (and so a new page is added in one place).
 const guideItems = [
@@ -37,6 +34,9 @@ const sidebarGroups = [
   { text: "About", items: aboutItems },
 ];
 
+// Project Pages live under https://<owner>.github.io/muster/, so the base path
+// must be "/muster/". If you later point a custom domain at the site (a CNAME),
+// change base to "/" and add a website/public/CNAME file.
 export default defineConfig({
   title: "Muster",
   description:

@@ -46,7 +46,7 @@ npx @adnova-group/muster install     # Claude Code
 npx @adnova-group/muster install codex --scope project   # Codex
 ```
 
-`doctor`'s `builtins` and `install-integrity` checks confirm the profiles are on disk; only a fresh session makes them dispatchable.
+`doctor`'s `install-integrity` check confirms the plugin cache copy actually landed — a missing cache directory, or one without `hooks/hooks.json`, means the copy silently failed even though the version string still looks healthy. No check enumerates individual agent profiles, so if `install-integrity` is green the profile is on disk and the problem is session binding: only a fresh session makes it dispatchable.
 
 ### A stale `muster` on `PATH` is shadowing this package
 

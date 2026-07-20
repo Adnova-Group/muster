@@ -225,6 +225,42 @@ export async function assertRegularFile(path) {
   return path;
 }
 
+// TOML basic-string encoder (run-5 audit Med #7). A subagent's Markdown body is
+// attacker-influenceable free text. Emitted raw between multiline `"""`
+// delimiters it could contain its own `"""` to close the string early and have
+// the remainder parsed as TOP-LEVEL TOML keys -- injecting model /
+// model_reasoning_effort / sandbox_mode (or a fresh privilege key such as
+// approval_policy) that override the muster-pinned policy. (Even short of a full
+// string break-out, a body line like `model = "..."` would also spoof the
+// line-oriented pin readers in codex-conformance.js / codex-thread-limits.js.)
+//
+// Encoding the value as a SINGLE-LINE TOML basic string closes every escape
+// route at once and is trivial to prove correct: the string is delimited by a
+// single `"`, and this encoder replaces EVERY `"` with `\"` (so no byte can
+// terminate the string early) and EVERY newline with `\n` (so the whole value
+// is one physical line -- no byte in it can begin a `key = ...` line). `\` is
+// doubled and control chars become `\uXXXX`, both required for the output to be
+// a spec-valid basic string. The guarantee: no byte sequence in `value` can
+// terminate the string or introduce a key, and the emitted string round-trips
+// through a spec TOML parser to the original bytes exactly.
+const TOML_BASIC_STRING_ESCAPES = new Map([
+  ["\b", "\\b"], ["\t", "\\t"], ["\n", "\\n"], ["\f", "\\f"], ["\r", "\\r"],
+  ["\"", "\\\""], ["\\", "\\\\"]
+]);
+export function encodeTomlBasicString(value) {
+  let out = "\"";
+  for (const ch of value) {
+    const shortEscape = TOML_BASIC_STRING_ESCAPES.get(ch);
+    if (shortEscape !== undefined) { out += shortEscape; continue; }
+    const code = ch.codePointAt(0);
+    // TOML basic strings forbid unescaped control chars (U+0000-U+001F, U+007F);
+    // everything the short-escape map did not cover is emitted as \uXXXX.
+    if (code < 0x20 || code === 0x7f) { out += `\\u${code.toString(16).padStart(4, "0").toUpperCase()}`; continue; }
+    out += ch;
+  }
+  return out + "\"";
+}
+
 // Pure, dependency-free profile generation: the project/user-scope `.codex/agents/`
 // materialization (codex-install.js) needs only this — no esbuild bundle, no
 // Codex plugin tree — so it stays available even when the heavier plugin
@@ -255,11 +291,10 @@ export function profileToml(id, source, config) {
     `model = ${JSON.stringify(model.model)}`,
     `model_reasoning_effort = ${JSON.stringify(model.effort)}`,
     `sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`,
-    "developer_instructions = \"\"\"",
-    body,
-    "",
-    isolation,
-    "\"\"\"",
+    // Encode the whole instruction payload (body + isolation footer) as a
+    // single-line TOML basic string so no byte in the attacker-influenceable
+    // body can terminate the string or open a top-level key (run-5 audit Med #7).
+    `developer_instructions = ${encodeTomlBasicString(`${body}\n\n${isolation}`)}`,
     ""
   ].join("\n");
 }

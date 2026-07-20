@@ -35,7 +35,7 @@ Each role resolves through a **ladder** of provider sources, best available firs
 Because the ladder always terminates at inline, **every role resolves to something**. Muster works on bare Claude Code and gets better as you install more tools.
 
 ```sh
-npx @adnova-group/muster capabilities
+npx -y @adnova-group/muster capabilities
 ```
 
 For each role this reports `chosen` (the winner), `chain` (the full fallback list, always ending in `inline`), `recommendations` (installable providers that would beat the current fallback), and `model`.
@@ -45,7 +45,7 @@ For each role this reports `chosen` (the winner), `chain` (the full fallback lis
 The role enum is fixed, but the set of providers is not, and some specialists do not map cleanly onto a named role. The escape hatch is **description-search**: a deterministic token-overlap ranker, no LLM call.
 
 ```sh
-npx @adnova-group/muster match "audit this code for security vulnerabilities"
+npx -y @adnova-group/muster match "audit this code for security vulnerabilities"
 ```
 
 It tokenizes the task, scores every catalog provider by overlap (id, roles, and keywords weighted high; the free-text description weighted low), and boosts installed providers so a present tool edges out an equal-scoring fallback. That is how a task surfaces the right specialist even when it never names a role.

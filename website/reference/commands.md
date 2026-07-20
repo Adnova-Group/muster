@@ -3,7 +3,7 @@
 The `muster` CLI is plain Node ESM. It makes **no model calls**. Every verb does deterministic work and prints JSON you can read or pipe. This is the layer that makes routing reproducible.
 
 ```sh
-npx @adnova-group/muster <command> [args]
+npx -y @adnova-group/muster <command> [args]
 ```
 
 ## Routing and capabilities
@@ -61,7 +61,7 @@ npx @adnova-group/muster <command> [args]
 
 ```sh
 # rank a JSON file of initiatives with WSJF
-npx @adnova-group/muster prioritize initiatives.json --model wsjf
+npx -y @adnova-group/muster prioritize initiatives.json --model wsjf
 ```
 
 The input file is either an array of items or `{ "items": [...], "model": "wsjf" }`. A `--model` flag overrides the file's `model`.
@@ -80,7 +80,7 @@ Lint, eval, and optimize prompts an application generates to build agents/agenti
 
 ```sh
 # lint a runtime agent prompt piped from your app
-your-app --print-agent-prompt | npx @adnova-group/muster prompt lint - --agent --tools
+your-app --print-agent-prompt | npx -y @adnova-group/muster prompt lint - --agent --tools
 ```
 
 The linter enforces the structure (role, XML tags, multishot examples, explicit output format, positive framing) and the agent/guardrail rules (imperative tool framing, stop conditions, "I don't know" allowance, citations, input separation). Every finding cites the doc rule it comes from. Code in fenced/inline blocks is ignored across languages, so a `never` keyword or `${x}` in an example is not mistaken for an instruction.

@@ -733,6 +733,28 @@ async function resolveCodexPluginOnce(pluginsRoot) {
   await assertRegularTree(pluginRoot);
   const pkg = readRegularJson(join(pluginRoot, "package.json"), "Codex plugin package descriptor", 64 * 1024);
   if (typeof pkg?.version !== "string" || !pkg.version.trim()) throw new Error(`Codex plugin is missing a coherent package version: ${pluginRoot}`);
+  // Identity is the COMPLETE contract, not the package version alone (Codex
+  // dogfood audit of this resolution path). A plugin whose package.json version
+  // matches but whose .codex-plugin/plugin.json name or version disagrees is a
+  // mislabeled or swapped manifest: version-only validation would resolve it as
+  // valid and let buildCodexPlugin's same-version skip treat it as up-to-date,
+  // never regenerating an internally inconsistent plugin. Re-assert the same
+  // name + both-versions contract assertStagedPublishContract enforces at
+  // publish time, now on the RESOLVED tree: the manifest name must equal
+  // EXPECTED_PLUGIN_NAME, and its version must agree with the package version
+  // (so both manifests are internally consistent and equal to the resolved
+  // version). Read through the same no-follow reader (readRegularJson) so a
+  // manifest swapped for a symlink is rejected rather than followed. A mismatch
+  // makes resolution REJECT, so the build cache regenerates instead of skipping.
+  // assertRegularTree above already proved this file is a present regular file,
+  // so a mismatch here is a genuine identity violation, not a partial-copy race.
+  const manifest = readRegularJson(join(pluginRoot, ".codex-plugin", "plugin.json"), "Codex plugin manifest", 64 * 1024);
+  if (manifest?.name !== EXPECTED_PLUGIN_NAME) {
+    throw new Error(`Codex plugin manifest name ${JSON.stringify(manifest?.name)} does not match expected plugin name ${JSON.stringify(EXPECTED_PLUGIN_NAME)}: ${pluginRoot}`);
+  }
+  if (manifest?.version !== pkg.version) {
+    throw new Error(`Codex plugin manifest version ${JSON.stringify(manifest?.version)} does not match package version ${JSON.stringify(pkg.version)}: ${pluginRoot}`);
+  }
   return { pluginRoot, profilesRoot: join(pluginRoot, "agents"), packageVersion: pkg.version };
 }
 

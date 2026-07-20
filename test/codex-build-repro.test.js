@@ -144,6 +144,56 @@ test("buildCodexPlugin's version-only skip-if-current check can be bypassed with
   }
 });
 
+test("buildCodexPlugin regenerates (does not same-version-skip) when the published plugin's identity is mislabeled", async t => {
+  const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mislabel-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const root = join(tmp, "root");
+  await mkdir(root, { recursive: true });
+  const packageVersion = "9.9.9-identity-test";
+  await writeFile(join(root, "package.json"), JSON.stringify({ version: packageVersion }));
+
+  // Publish a coherent plugin at the matching version (as the force-flag test
+  // above does), then MISLABEL its published .codex-plugin/plugin.json. Each
+  // mismatch (name, then version) must make buildCodexPlugin's version-only
+  // same-version skip treat the published plugin as needing REGENERATION
+  // rather than up-to-date. Regeneration is proven the same way the force-flag
+  // test proves a real rebuild was attempted: this synthetic root has none of
+  // the real source directories, so a genuine rebuild fails fast with "tree
+  // root is missing". A same-version SKIP would instead return the cached
+  // publish with no error — which is exactly the bug.
+  const mislabels = [
+    { name: "not-muster", version: packageVersion },              // manifest name != "muster"
+    { name: "muster", version: "0.0.0-manifest-disagrees" }        // manifest version != package version
+  ];
+  delete process.env.MUSTER_BUILD_FORCE;
+  for (const manifest of mislabels) {
+    const outDir = join(tmp, `plugins-${manifest.name}-${manifest.version}`);
+    const staged = join(tmp, `staged-${manifest.name}-${manifest.version}`);
+    await mkdir(join(staged, "skills"), { recursive: true });
+    await mkdir(join(staged, ".codex-plugin"), { recursive: true });
+    await writeFile(join(staged, "package.json"), JSON.stringify({ version: packageVersion }));
+    await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: packageVersion }));
+    await publishCodexPlugin({
+      pluginsRoot: outDir,
+      stagedPlugin: staged,
+      packageVersion,
+      marketplaceTemplate: {
+        name: "muster",
+        interface: { displayName: "Muster" },
+        plugins: [{ name: "muster", source: { source: "local", path: "./plugin" }, category: "Productivity" }]
+      }
+    });
+    // Mislabel the PUBLISHED manifest after the publish contract check has run.
+    await writeFile(join(outDir, "plugin", ".codex-plugin", "plugin.json"), JSON.stringify(manifest));
+    await assert.rejects(
+      buildCodexPlugin({ root, outDir }),
+      /tree root is missing/i,
+      `a mislabeled published manifest (${JSON.stringify(manifest)}) must trigger regeneration, not a same-version skip`
+    );
+  }
+});
+
 test("overlapping Codex builders serialize and both leave a fully coherent plugin", { skip: process.platform === "win32" }, async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-overlap-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

@@ -5,7 +5,7 @@ import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { resolveCodexPlugin } from "../src/codex-release.js";
+import { publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -110,6 +110,67 @@ test("resolveCodexPlugin rejects a marketplace pointer with a traversal or Windo
     await writeFile(join(tmp, "plugins", "marketplace.json"), JSON.stringify({ name: "muster", plugins: [{ name: "muster", source: { source: "local", path } }] }));
     await assert.rejects(resolveCodexPlugin(tmp, { pluginsRoot: join(tmp, "plugins") }), /valid Muster plugin contract/, path);
   }
+});
+
+// Publishes a minimal but coherent plugin (skills/ dir, package.json,
+// .codex-plugin/plugin.json all agreeing on `version` and name "muster") into
+// `outDir` via the real publish path, so the marketplace pointer is computed
+// correctly. Mirrors the synthetic-tree recipe in codex-build-repro.test.js's
+// force-flag test. Returns the manifest path so a test can then mislabel it
+// AFTER publication (the publish contract check forbids a mislabeled STAGED
+// tree) to simulate a swapped/mislabeled published manifest.
+async function publishMinimalPlugin(tmp, outDir, version) {
+  const staged = join(tmp, "staged");
+  await rm(staged, { recursive: true, force: true });
+  await mkdir(join(staged, "skills"), { recursive: true });
+  await mkdir(join(staged, ".codex-plugin"), { recursive: true });
+  await writeFile(join(staged, "package.json"), JSON.stringify({ version }));
+  await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version }));
+  await publishCodexPlugin({
+    pluginsRoot: outDir,
+    stagedPlugin: staged,
+    packageVersion: version,
+    marketplaceTemplate: {
+      name: "muster",
+      interface: { displayName: "Muster" },
+      plugins: [{ name: "muster", source: { source: "local", path: "./plugin" }, category: "Productivity" }]
+    }
+  });
+  return join(outDir, "plugin", ".codex-plugin", "plugin.json");
+}
+
+test("resolveCodexPlugin rejects a resolved plugin whose .codex-plugin/plugin.json NAME disagrees, not version alone", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-resolve-name-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const outDir = join(tmp, "plugins");
+  const version = "1.2.3-name-fixture";
+  const manifestPath = await publishMinimalPlugin(tmp, outDir, version);
+  // The package.json version still matches (version-only identity would still
+  // resolve valid), but the manifest declares a different plugin name: a
+  // mislabeled or swapped manifest that must be rejected during resolution.
+  await writeFile(manifestPath, JSON.stringify({ name: "not-muster", version }));
+  await assert.rejects(
+    resolveCodexPlugin(tmp, { pluginsRoot: outDir }),
+    /manifest name .* does not match expected plugin name/,
+    "a manifest name != \"muster\" must make resolution reject even when package.json version matches"
+  );
+});
+
+test("resolveCodexPlugin rejects a resolved plugin whose .codex-plugin/plugin.json VERSION disagrees with the package version", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-resolve-version-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const outDir = join(tmp, "plugins");
+  const version = "1.2.3-version-fixture";
+  const manifestPath = await publishMinimalPlugin(tmp, outDir, version);
+  // Name is right, but the two manifests disagree on version: package.json
+  // says `version`, the plugin.json says something else. The identity contract
+  // requires both to be internally consistent, so resolution must reject.
+  await writeFile(manifestPath, JSON.stringify({ name: "muster", version: "9.9.9-manifest-disagrees" }));
+  await assert.rejects(
+    resolveCodexPlugin(tmp, { pluginsRoot: outDir }),
+    /manifest version .* does not match package version/,
+    "a plugin.json version disagreeing with package.json version must make resolution reject"
+  );
 });
 
 test("the built plugin's MCP server executes tools/call from the bundle alone (no repo src/ tree)", async t => {

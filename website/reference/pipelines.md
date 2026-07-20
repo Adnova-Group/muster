@@ -8,7 +8,7 @@ Routing to a pipeline is deterministic. `muster route "<outcome>"` matches the o
 
 ```sh
 npx @adnova-group/muster route "draft a PRD for a referral program"
-npx @adnova-group/muster pipeline prd
+npx -y @adnova-group/muster pipeline prd
 ```
 
 ## The gate: a floor principle
@@ -25,8 +25,8 @@ There are **20 pipelines**, spanning software and knowledge work. Ask for any of
 
 ```sh
 # print one pipeline's phases, roles, and gate
-npx @adnova-group/muster pipeline runbook
-npx @adnova-group/muster pipeline release-notes
+npx -y @adnova-group/muster pipeline runbook
+npx -y @adnova-group/muster pipeline release-notes
 ```
 
 `pipeline` also accepts a domain (`pipeline ops`, `pipeline pm`), which resolves that domain's default pipeline. The set:

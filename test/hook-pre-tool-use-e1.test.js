@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import os from "node:os";
-import { cleanDir, makeMarker, makeRunActive, editPayload, spawnHook } from "./test-support/hook-helpers.js";
+import { cleanDir, makeMarker, makeRunActive, editPayload, spawnHook, uniqueSid } from "./test-support/hook-helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -82,7 +82,7 @@ test("A: Edit to .muster/ path is allowed", async () => {
 // Field repro (a): 3 Writes in a fresh session, no .muster/ dir at all -> no deny.
 test("field repro (a): 3 Writes, fresh session, no .muster/ dir -> never denied", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
-  const sid = "e1-repro-a";
+  const sid = uniqueSid("e1-repro-a");
   clearCum(sid);
   try {
     const a = await runRaw(editPayload(path.join(tmpDir, "a.js"), tmpDir, { session_id: sid }));
@@ -104,7 +104,7 @@ test("field repro (b): 3 Writes with live wave-active+run-active markers present
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
   makeMarker(tmpDir, "wave-repro-b");
   makeRunActive(tmpDir);
-  const sid = "e1-repro-b";
+  const sid = uniqueSid("e1-repro-b");
   clearCum(sid);
   try {
     const a = await runRaw(editPayload(path.join(tmpDir, "a.js"), tmpDir, { session_id: sid }));
@@ -131,7 +131,7 @@ test("stale wave-active marker (>60min) has no effect — still never denied", a
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-e1-test-"));
   const stale = new Date(Date.now() - 61 * 60 * 1000);
   makeMarker(tmpDir, "wave-stale", { mtime: stale });
-  const sid = "e1-repro-stale";
+  const sid = uniqueSid("e1-repro-stale");
   clearCum(sid);
   try {
     const { stdout, code } = await runRaw(

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cumFile, readCum, directiveFile } from "../plugin/hooks/inline-budget.js";
+import { uniqueSid } from "./test-support/hook-helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -92,7 +93,7 @@ test("session-start hook: emits the same one-line pointer on a compact-source ev
 // ── cumulative cross-turn drift counter is reset on SessionStart ───────────
 test("session-start hook: resets the cumulative cross-turn drift counter for the session", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-cum-"));
-  const sid = "ss-cum-1";
+  const sid = uniqueSid("ss-cum-1");
   const cFile = cumFile(sid, tmpdir());
   await writeFile(cFile, JSON.stringify({ files: ["a.js", "b.js"], nudged: true }));
   try {
@@ -113,7 +114,7 @@ test("session-start hook: resets the cumulative cross-turn drift counter for the
 
 test("session-start hook: the cumulative drift counter SURVIVES a compact-source event", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-cum2-"));
-  const sid = "ss-cum-2";
+  const sid = uniqueSid("ss-cum-2");
   const cFile = cumFile(sid, tmpdir());
   const seeded = { files: ["a.js", "b.js", "c.js"], nudged: true };
   await writeFile(cFile, JSON.stringify(seeded));
@@ -135,7 +136,7 @@ test("session-start hook: the cumulative drift counter SURVIVES a compact-source
 
 test("session-start hook: resets the cumulative drift counter on a clear-source event", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-cum3-"));
-  const sid = "ss-cum-3";
+  const sid = uniqueSid("ss-cum-3");
   const cFile = cumFile(sid, tmpdir());
   await writeFile(cFile, JSON.stringify({ files: ["a.js", "b.js"], nudged: true }));
   try {
@@ -158,7 +159,7 @@ test("session-start hook: resets the cumulative drift counter on a clear-source 
 
 test("session-start hook: clears the once-per-crossing directive marker on a clear-source event", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-dir1-"));
-  const sid = "ss-dir-1";
+  const sid = uniqueSid("ss-dir-1");
   const dFile = directiveFile(sid, tmpdir());
   await writeFile(dFile, "1");
   try {
@@ -175,7 +176,7 @@ test("session-start hook: clears the once-per-crossing directive marker on a cle
 
 test("session-start hook: the once-per-crossing directive marker SURVIVES a compact-source event", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "muster-hook-dir2-"));
-  const sid = "ss-dir-2";
+  const sid = uniqueSid("ss-dir-2");
   const dFile = directiveFile(sid, tmpdir());
   await writeFile(dFile, "1");
   try {

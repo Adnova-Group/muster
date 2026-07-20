@@ -13,7 +13,36 @@
 
 import { execFile } from "node:child_process";
 import { mkdirSync, writeFileSync, utimesSync, rmSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
+
+/**
+ * Return a unique, per-run session id derived from `base`.
+ *
+ * The hook border-invitation markers (inline-budget.js: cumFile/cooldownFile/
+ * directiveFile, and the Codex port's `muster-codex-border-*`) derive a
+ * HOST-GLOBAL os.tmpdir() path from the session id ALONE. A test that hardcodes
+ * a fixed sid therefore shares that exact path with every other process on the
+ * host using the same sid -- so two concurrent full-suite runners (muster's own
+ * wave model runs several worktrees' `npm test` at once) run the SAME hook test
+ * against the SAME marker files and clobber each other's crossing state. Giving
+ * each run a private sid gives it a private marker path, so the tests can never
+ * collide. This is the general form of the mkdtemp-suffix trick
+ * hook-border-long-session-sim.test.js already uses for exactly this reason.
+ *
+ * The result stays inside inline-budget.js's safeSession() charset
+ * ([A-Za-z0-9_-]) so it survives sanitization byte-for-byte: callers pass a
+ * `base` literal in that charset, process.pid is digits, and randomBytes hex is
+ * [0-9a-f]. Both the pid and the crypto-random suffix are included so distinct
+ * concurrent processes (same base) and repeated calls within one process (same
+ * pid) are each unique.
+ *
+ * @param {string} base - stable, human-readable prefix (e.g. "border-flap")
+ * @returns {string} `${base}-${pid}-${hex}`
+ */
+export function uniqueSid(base = "sid") {
+  return `${base}-${process.pid}-${randomBytes(8).toString("hex")}`;
+}
 
 /**
  * Remove `dir` recursively, ignoring errors (best-effort cleanup).

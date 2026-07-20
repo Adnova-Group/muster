@@ -9,6 +9,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { repoRoot, runCodexHook, selectedPluginRoot } from "../test-support/codex-helpers.js";
+// Shared per-run session-id isolator (test/test-support/hook-helpers.js, a
+// different test-support dir than codex-helpers above): the Codex border marker
+// `muster-codex-border-<sid>` is HOST-GLOBAL, keyed by session id alone, so the
+// border-count tests below derive their sid from uniqueSid("<base>") instead of
+// a fixed literal to stay isolated across concurrent full-suite runners.
+import { uniqueSid } from "./test-support/hook-helpers.js";
 
 // Border-invitation state lives in os.tmpdir(), keyed by a sanitized
 // session_id (mirrors plugin/hooks/inline-budget.js's cumFile naming, kept
@@ -124,7 +130,7 @@ test("Codex PreToolUse no longer keys any advisory off .muster/wave-active (book
   t.after(() => rm(tmp, { recursive: true, force: true }));
   await mkdir(join(tmp, ".muster"), { recursive: true });
   await writeFile(join(tmp, ".muster", "wave-active"), "wave-1\n");
-  const sessionId = "no-wave-guard-session";
+  const sessionId = uniqueSid("no-wave-guard-session");
   t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
   const result = await runCodexHook(
     { hook_event_name: "PreToolUse", session_id: sessionId, tool_use_id: "edit-1", tool_name: "Edit", tool_input: { file_path: join(tmp, "a.txt") }, cwd: tmp },
@@ -137,7 +143,7 @@ test("Codex PreToolUse's border invitation warns exactly once per crossing (3 di
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
-  const sessionId = "border-crossing-session";
+  const sessionId = uniqueSid("border-crossing-session");
   t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
   const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
   const editCall = n => runCodexHook(
@@ -171,7 +177,7 @@ test("Codex PreToolUse's border invitation warns exactly once per crossing (3 di
 test("Codex PreToolUse never counts Bash calls toward the border invitation (no precise write classifier on this port; avoids the blunt-matcher false positive)", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-bash-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
-  const sessionId = "border-bash-session";
+  const sessionId = uniqueSid("border-bash-session");
   t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
   const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
   const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
@@ -187,7 +193,7 @@ test("Codex PreToolUse never counts Bash calls toward the border invitation (no 
 test("Codex PreToolUse's border invitation counts every EDIT_TOOLS member (apply_patch, Write, NotebookEdit), keyed by whichever of file_path/path/notebook_path is present", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-tools-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
-  const sessionId = "border-tools-session";
+  const sessionId = uniqueSid("border-tools-session");
   t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
   const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
   const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
@@ -207,7 +213,7 @@ test("Codex PreToolUse's border invitation counts every EDIT_TOOLS member (apply
 test("Codex PreToolUse's border invitation falls back to tool_name as the distinct key when tool_input carries no path field", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-nopath-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
-  const sessionId = "border-nopath-session";
+  const sessionId = uniqueSid("border-nopath-session");
   t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
   const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
   const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
@@ -226,7 +232,7 @@ test("Codex PreToolUse's border invitation falls back to tool_name as the distin
 test("Codex PreToolUse's border-invitation threshold rejects a non-integer MUSTER_INLINE_SCALE rather than parseInt-truncating it", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-badenv-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
-  const sessionId = "border-badenv-session";
+  const sessionId = uniqueSid("border-badenv-session");
   t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
   const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
   // "2foo" must NOT be accepted as 2 (Number.parseInt would truncate-parse this
@@ -247,7 +253,7 @@ test("Codex PreToolUse's border-invitation threshold rejects a non-integer MUSTE
 test("Codex SessionStart re-arms a previously-nudged border invitation on a fresh session start", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-sessionstart-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
-  const sessionId = "border-sessionstart-session";
+  const sessionId = uniqueSid("border-sessionstart-session");
   t.after(() => unlink(borderStateFile(sessionId)).catch(() => {}));
   const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
   const hookEnv = { CODEX_HOME: join(tmp, "codex-home") };
@@ -274,7 +280,7 @@ test("Codex SessionStart re-arms a previously-nudged border invitation on a fres
 test("Codex PreToolUse's border invitation re-arms once its state file goes stale past the 60-minute crossing age", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-border-stale-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
-  const sessionId = "border-stale-session";
+  const sessionId = uniqueSid("border-stale-session");
   const stateFile = borderStateFile(sessionId);
   t.after(() => unlink(stateFile).catch(() => {}));
   const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");

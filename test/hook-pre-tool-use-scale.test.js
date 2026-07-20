@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync } from "node:
 import os from "node:os";
 import {
   cleanDir, makeRunActive,
-  editPayload as editPayloadBase, spawnHook,
+  editPayload as editPayloadBase, spawnHook, uniqueSid,
 } from "./test-support/hook-helpers.js";
 import { cumFile, readCum, CROSSING_MAX_AGE_MS, cooldownFile, DEFAULT_INVITE_COOLDOWN_MS } from "../plugin/hooks/inline-budget.js";
 
@@ -80,7 +80,7 @@ function decision(stdout) {
 // ── core: 1st & 2nd allowed silently, 3rd crosses the border and warns once ──
 test("no run active: 1st & 2nd distinct files silent, 3rd crosses the border and warns with value-toned copy", async () => {
   const dir = noRunDir();
-  const sid = "border-core-1";
+  const sid = uniqueSid("border-core-1");
   clearCum(sid);
   try {
     const a = await runPre(editPayload(path.join(dir, "src", "a.js"), dir, sid));
@@ -109,7 +109,7 @@ test("no run active: 1st & 2nd distinct files silent, 3rd crosses the border and
 
 test("no run active: 4th distinct file in the same crossing stays silent (warned once)", async () => {
   const dir = noRunDir();
-  const sid = "border-core-2";
+  const sid = uniqueSid("border-core-2");
   clearCum(sid);
   try {
     await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
@@ -129,7 +129,7 @@ test("no run active: 4th distinct file in the same crossing stays silent (warned
 // ── re-editing the same file never advances the count ───────────────────────
 test("re-editing the same file never advances the cumulative count or warns", async () => {
   const dir = noRunDir();
-  const sid = "border-same-1";
+  const sid = uniqueSid("border-same-1");
   clearCum(sid);
   try {
     for (let i = 0; i < 5; i++) {
@@ -146,7 +146,7 @@ test("re-editing the same file never advances the cumulative count or warns", as
 // ── subagent edits are exempt and never counted ─────────────────────────────
 test("subagent (agent_id) edits are never denied and never counted toward the border", async () => {
   const dir = noRunDir();
-  const sid = "border-sub-1";
+  const sid = uniqueSid("border-sub-1");
   clearCum(sid);
   try {
     for (let i = 0; i < 4; i++) {
@@ -167,7 +167,7 @@ test("subagent (agent_id) edits are never denied and never counted toward the bo
 // ── .muster/ writes are exempt (STATE bookkeeping) ──────────────────────────
 test(".muster/ edits never count toward the border", async () => {
   const dir = noRunDir();
-  const sid = "border-muster-1";
+  const sid = uniqueSid("border-muster-1");
   clearCum(sid);
   try {
     for (let i = 0; i < 4; i++) {
@@ -216,7 +216,7 @@ test("all-punctuation session_id: no tracking, no warn (fail-open)", async () =>
 // ── Bash escape hatch is closed: shell writes count toward the border ──────
 test("a high-confidence Bash file write counts toward the border (not an escape hatch)", async () => {
   const dir = noRunDir();
-  const sid = "border-bash-1";
+  const sid = uniqueSid("border-bash-1");
   clearCum(sid);
   try {
     const a = await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
@@ -234,7 +234,7 @@ test("a high-confidence Bash file write counts toward the border (not an escape 
 
 test("distinct sed -i targets each consume a border slot (no key-collapse)", async () => {
   const dir = noRunDir();
-  const sid = "border-sedi-1";
+  const sid = uniqueSid("border-sedi-1");
   clearCum(sid);
   try {
     await runPre(bashPayload("sed -i 's/x/y/' /proj/a.js", dir, sid));
@@ -250,7 +250,7 @@ test("distinct sed -i targets each consume a border slot (no key-collapse)", asy
 
 test("mixed Edit + Bash write reach the border together", async () => {
   const dir = noRunDir();
-  const sid = "border-mixed-1";
+  const sid = uniqueSid("border-mixed-1");
   clearCum(sid);
   try {
     await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
@@ -266,7 +266,7 @@ test("mixed Edit + Bash write reach the border together", async () => {
 
 test("read-only Bash never counts toward the border and never denies", async () => {
   const dir = noRunDir();
-  const sid = "border-bash-2";
+  const sid = uniqueSid("border-bash-2");
   clearCum(sid);
   try {
     for (let i = 0; i < 5; i++) {
@@ -286,7 +286,7 @@ test("read-only Bash never counts toward the border and never denies", async () 
 
 test("a Bash write to an EXEMPT target (/tmp) never counts toward the border", async () => {
   const dir = noRunDir();
-  const sid = "border-exempt-1";
+  const sid = uniqueSid("border-exempt-1");
   clearCum(sid);
   try {
     await runPre(editPayload(path.join(dir, "a.js"), dir, sid));
@@ -304,7 +304,7 @@ test("a Bash write to an EXEMPT target (/tmp) never counts toward the border", a
 // ── MUSTER_INLINE_SCALE overrides the border threshold ──────────────────────
 test("MUSTER_INLINE_SCALE=2 crosses the border at the 2nd distinct file", async () => {
   const dir = noRunDir();
-  const sid = "border-env-1";
+  const sid = uniqueSid("border-env-1");
   clearCum(sid);
   try {
     const a = await runPre(editPayload(path.join(dir, "a.js"), dir, sid), { MUSTER_INLINE_SCALE: "2" });
@@ -321,7 +321,7 @@ test("MUSTER_INLINE_SCALE=2 crosses the border at the 2nd distinct file", async 
 // ── a live muster run resets the cumulative counter and doesn't record ─────
 test("a live muster run resets the cumulative counter and doesn't record", async () => {
   const dir = noRunDir();
-  const sid = "border-run-1";
+  const sid = uniqueSid("border-run-1");
   clearCum(sid);
   const cFile = cumFile(sid, os.tmpdir());
   writeFileSync(cFile, JSON.stringify({ files: ["x.js", "y.js"], nudged: false }));
@@ -351,7 +351,7 @@ test("a live muster run resets the cumulative counter and doesn't record", async
 // own real-clock read lands far enough past it.
 test("flapping: a run restart re-arms the crossing immediately, but the shared cooldown absorbs the repeat fire", async () => {
   const dir = noRunDir();
-  const sid = "border-flap-1";
+  const sid = uniqueSid("border-flap-1");
   clearCum(sid);
   let clock = 1_700_000_000_000; // arbitrary fixed instant; entirely test-controlled
   try {
@@ -406,7 +406,7 @@ test("flapping: a run restart re-arms the crossing immediately, but the shared c
 // boundary regardless of real spawn/schedule latency under --test-concurrency.
 test("age-reset: a crossing untouched past 60 minutes re-arms — the border warns again", async () => {
   const dir = noRunDir();
-  const sid = "border-age-1";
+  const sid = uniqueSid("border-age-1");
   clearCum(sid);
   const cFile = cumFile(sid, os.tmpdir());
   const T0 = 1_700_000_000_000; // arbitrary fixed instant; entirely test-controlled
@@ -432,7 +432,7 @@ test("age-reset: a crossing untouched past 60 minutes re-arms — the border war
 // ── corrupt cum file fails open ──────────────────────────────────────────────
 test("a corrupt cum file is treated as empty, never crashes and never denies", async () => {
   const dir = noRunDir();
-  const sid = "border-corrupt-1";
+  const sid = uniqueSid("border-corrupt-1");
   clearCum(sid);
   const cFile = cumFile(sid, os.tmpdir());
   writeFileSync(cFile, "{{{ not json at all");

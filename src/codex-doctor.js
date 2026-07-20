@@ -89,10 +89,55 @@ async function packageIdentity(startFile) {
   }
 }
 
+// Owning-package identity of a win32 npm SHIM, resolved by FILE READ ONLY --
+// never executing the shim or any candidate. npm installs a command on Windows
+// as shim scripts (`muster.cmd`/`muster.ps1`/a bare Bourne `muster`) that WRAP
+// the real JS entry under a sibling node_modules; the shim is a script, not a
+// symlink, so realpath() returns the shim itself and packageIdentity's upward
+// walk lands on the install prefix's package.json (absent/unrelated), never the
+// package the shim wraps. Resolve the owner from the npm shim LAYOUT instead:
+//   global prefix:  <prefix>/muster.cmd   -> <prefix>/node_modules/<pkg>/package.json
+//   local .bin:     <nm>/.bin/muster.cmd  -> <nm>/<pkg>/package.json  (../<pkg> from .bin)
+// where <pkg> is `@adnova-group/muster` (scoped) or `muster` (unscoped). Each
+// candidate package.json is read through the SAME descriptor-pinned no-follow
+// bounded reader (readRegularJson -> O_NOFOLLOW + fstat size bound) every other
+// trust read uses: a symlink / oversized / non-regular / absent candidate
+// yields no identity here (skip/return null) rather than a followed link or an
+// allocation -- and, above all, no process is ever spawned. Returns a
+// packageIdentity-shaped {root,name,version,bin} for the first resolvable
+// owner, else null (the caller reports the shim present-but-unverified).
+async function windowsShimOwnerIdentity(shimPath) {
+  const shimDir = dirname(shimPath);
+  // A local install's shim lives in `node_modules/.bin`; a global install's
+  // shim lives directly in the install prefix beside its own `node_modules`.
+  const nodeModules = parse(shimDir).base === ".bin" ? dirname(shimDir) : join(shimDir, "node_modules");
+  for (const pkgName of [join("@adnova-group", "muster"), "muster"]) {
+    const pkgRoot = join(nodeModules, pkgName);
+    let parsed;
+    try { parsed = await readRegularJson(join(pkgRoot, "package.json")); }
+    catch { continue; } // unsafe (symlink/oversized/non-regular) or malformed -> not a verifiable owner
+    if (!parsed) continue; // benign absence -> try the next package name
+    const root = await realpath(pkgRoot).catch(() => pkgRoot);
+    const binField = typeof parsed.bin === "string" ? parsed.bin : parsed.bin?.muster ?? null;
+    return { root, name: parsed.name ?? null, version: parsed.version ?? null, bin: binField };
+  }
+  return null;
+}
+
 const PATH_SHADOW_REMEDIATION = "npm uninstall -g @adnova-group/muster / npm i -g @adnova-group/muster@latest";
 
-async function checkPathShadow({ env = process.env, platform = process.platform, ownModuleUrl = import.meta.url } = {}) {
+export async function checkPathShadow({ env = process.env, platform = process.platform, ownModuleUrl = import.meta.url, spawnProcess = spawn } = {}) {
   const name = "codex-path-shadow";
+  // NO-EXECUTION CONTRACT: `spawnProcess` is the child-process spawn capability
+  // this check is handed but MUST NEVER invoke. The shadowing entry's owning
+  // package version is established by FILE READ alone (realpath + the npm shim
+  // LAYOUT via windowsShimOwnerIdentity, and packageIdentity for POSIX) -- the
+  // shim (a .cmd/.ps1/script that could be attacker-planted on PATH) is never
+  // run just to read a version. The seam is kept injectable so the contract is
+  // provable by a spy asserting zero invocations (see
+  // test/codex-path-shadow-windows-shim.test.js); it is intentionally never
+  // called anywhere below.
+  void spawnProcess;
   let found = null;
   try { found = await resolvePathMuster({ env, platform }); }
   catch { found = null; }
@@ -115,13 +160,32 @@ async function checkPathShadow({ env = process.env, platform = process.platform,
       }
     }
 
-    // 2) Otherwise compare the resolved target's sibling package.json identity.
-    const target = await packageIdentity(resolvedFound);
+    // 2) Otherwise compare the resolved target's owning-package identity. On
+    //    win32 the PATH entry is an npm SHIM SCRIPT (muster.cmd/.ps1/bare
+    //    Bourne shim), not a symlink to the real bin -- realpath returns the
+    //    shim itself, so the generic upward walk lands on the install prefix's
+    //    package.json (absent/unrelated), never the package the shim wraps.
+    //    Resolve the owner from the npm shim LAYOUT by file read instead
+    //    (windowsShimOwnerIdentity, zero execution), falling back to the
+    //    generic walk for POSIX symlinks and any non-shim win32 layout so their
+    //    behavior is unchanged.
+    const target = (platform === "win32" ? await windowsShimOwnerIdentity(found) : null)
+      ?? await packageIdentity(resolvedFound);
     if (target?.root && own?.root && target.root === own.root) {
       return { name, ok: true, detail: `PATH \`muster\` at ${found} is this running package` };
     }
     if (target && own && target.name === own.name && target.version != null && target.version === own.version) {
       return { name, ok: true, detail: `PATH \`muster\` at ${found} matches this package (${target.name}@${target.version})` };
+    }
+
+    // On win32, a shim whose owning package.json cannot be resolved by file
+    // read is reported present-but-UNVERIFIED (ok:true, named) rather than
+    // executed to read its version -- honoring the no-execution contract and
+    // this check's fail-open doctrine. On POSIX, realpath already followed the
+    // link to a real target, so a null target there is a genuine foreign
+    // standalone binary and stays the shadow finding below.
+    if (!target && platform === "win32") {
+      return { name, ok: true, detail: `found a \`muster\` npm shim on PATH at ${found} but could not resolve its owning package.json by file read to verify its version; the shim was NOT executed -- if it is a stale global install, ${PATH_SHADOW_REMEDIATION} (or remove the shadow at ${found})` };
     }
 
     const description = target

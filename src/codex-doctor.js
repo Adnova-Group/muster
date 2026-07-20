@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
-import { resolveCodexPlugin } from "./codex-release.js";
+import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
 import { parseHookCommand, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -232,7 +232,13 @@ async function ordinaryDirectoryPath(path) {
   return true;
 }
 
-async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES) {
+// Descriptor-pinned no-follow open + regular-file validation, factored so BOTH
+// the bounded reader below and the content-free validator (assertRegularFilePresent)
+// share ONE lstat + O_NOFOLLOW open + fstat dev/ino sequence -- no parallel copy.
+// Returns null for a benign absence, the held descriptor + its fstat size for a
+// present regular file, and throws a musterUnsafeRead for a symlink / non-regular
+// / TOCTOU-changed target. The caller owns closing the returned descriptor.
+async function openRegularFile(path) {
   if (!(await ordinaryDirectoryPath(dirname(path)))) return null;
   let before;
   try { before = await lstat(path); }
@@ -241,18 +247,43 @@ async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES)
     throw error;
   }
   if (before.isSymbolicLink() || !before.isFile()) throw unsafeScopeRead(`Codex configuration target must be a regular file: ${path}`);
-  let handle;
+  const handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
   try {
-    handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
     const current = await handle.stat();
     if (!current.isFile() || current.dev !== before.dev || current.ino !== before.ino) throw unsafeScopeRead(`Codex configuration target changed while reading: ${path}`);
+    return { handle, size: current.size };
+  } catch (error) {
+    await handle.close().catch(() => {});
+    throw error;
+  }
+}
+
+async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES) {
+  const opened = await openRegularFile(path);
+  if (opened === null) return null;
+  const { handle, size } = opened;
+  try {
     // Size-bound on the HELD descriptor before any read: a hostile oversized
     // file is rejected without ever allocating its contents.
-    if (current.size > maxBytes) throw unsafeScopeRead(`Codex configuration target exceeds the ${maxBytes}-byte read cap (${current.size} bytes): ${path}`);
+    if (size > maxBytes) throw unsafeScopeRead(`Codex configuration target exceeds the ${maxBytes}-byte read cap (${size} bytes): ${path}`);
     return handle.readFile(encoding);
   } finally {
-    if (handle) await handle.close().catch(() => {});
+    await handle.close().catch(() => {});
   }
+}
+
+// Regular-file validation WITHOUT reading the file: reuses openRegularFile's
+// lstat + O_NOFOLLOW + fstat machinery to prove `path` is a real regular file
+// (rejecting a symlink/dir/FIFO exactly as readRegularFile does), then closes
+// the descriptor without allocating the file -- so an arbitrarily large bundled
+// runtime is validated without a read cap. Returns true for a present regular
+// file, false for a benign absence, and throws the same musterUnsafeRead a
+// non-regular/symlinked target raises.
+async function assertRegularFilePresent(path) {
+  const opened = await openRegularFile(path);
+  if (opened === null) return false;
+  await opened.handle.close().catch(() => {});
+  return true;
 }
 
 async function readRegularJson(path) {
@@ -551,16 +582,44 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     try {
       const profileDir = isPluginRoot ? join(plugin, "agents") : selected.profilesRoot;
       const files = (await readdir(profileDir)).filter(name => name.endsWith(".toml"));
-      checks.push({ name: "codex-agents", ok: files.length === CODEX_COUNTS.agents, detail: `${files.length}/${CODEX_COUNTS.agents} generated profiles` });
+      // A `.toml` SUFFIX COUNT alone let a directory named `*.toml` or a malformed
+      // profile count toward the total. Validate each counted profile is a REGULAR
+      // FILE (via the same no-follow safe reader used everywhere else -- a dir /
+      // symlink / FIFO throws a musterUnsafeRead) AND parses as the restricted
+      // profile TOML the generator emits; either failure drops it from a healthy
+      // verdict rather than silently counting.
+      const malformed = [];
+      for (const file of files) {
+        try {
+          const text = await readRegularFile(join(profileDir, file), "utf8");
+          if (text === null) { malformed.push(`${file} (vanished)`); continue; }
+          parseAgentProfileToml(text);
+        } catch (error) { malformed.push(`${file} (${error.message})`); }
+      }
+      const ok = files.length === CODEX_COUNTS.agents && malformed.length === 0;
+      checks.push({ name: "codex-agents", ok, detail: malformed.length
+        ? `${files.length}/${CODEX_COUNTS.agents} generated profiles; ${malformed.length} not a well-formed profile: ${malformed.join(", ")}`
+        : `${files.length}/${CODEX_COUNTS.agents} generated profiles` });
     } catch (error) { checks.push({ name: "codex-agents", ok: false, detail: error.message }); }
   }
   if (selectionFailed) {
     checks.push({ name: "codex-runtime", ok: false, detail: selectionSkip("the bundled runtime and MCP entrypoint were") });
   } else {
-    const required = ["runtime/muster.mjs", "runtime/muster-mcp.mjs", ".mcp.json"];
-    const missing = [];
-    for (const item of required) if (!(await exists(join(plugin, item)))) missing.push(item);
-    checks.push({ name: "codex-runtime", ok: missing.length === 0, detail: missing.length ? `missing: ${missing.join(", ")}` : "bundled runtime and MCP entrypoint present" });
+    // Mere PATH EXISTENCE passed a non-regular entry (symlink / dir / FIFO) and a
+    // malformed `.mcp.json`. Validate each bundled runtime artifact is a REGULAR
+    // FILE via the same no-follow safe reader (assertRegularFilePresent -- fstat
+    // regular-file check, no content read for the large bundles), and PARSE the
+    // MCP entrypoint JSON it is supposed to be; either failure fails codex-runtime.
+    const problems = [];
+    for (const item of ["runtime/muster.mjs", "runtime/muster-mcp.mjs"]) {
+      try { if (!(await assertRegularFilePresent(join(plugin, item)))) problems.push(`${item} (missing)`); }
+      catch (error) { problems.push(`${item} (${error.message})`); }
+    }
+    try { if ((await readRegularJson(join(plugin, ".mcp.json"))) === null) problems.push(".mcp.json (missing)"); }
+    catch (error) { problems.push(`.mcp.json (${error.message})`); }
+    checks.push({ name: "codex-runtime", ok: problems.length === 0, detail: problems.length
+      ? `malformed or non-regular runtime artifacts: ${problems.join(", ")}`
+      : "bundled runtime and MCP entrypoint present" });
   }
   const userCodexHome = codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
   const registeredScopes = await registeredManagedScopes(userCodexHome);

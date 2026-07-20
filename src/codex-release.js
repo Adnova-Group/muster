@@ -299,6 +299,46 @@ export function profileToml(id, source, config) {
   ].join("\n");
 }
 
+// Read-side validator for the profiles profileToml above emits: the doctor's
+// codex-agents check must REJECT a generated `.codex/agents/*.toml` that EXISTS
+// but is malformed (a truncated/garbled profile that still ends in `.toml`),
+// not merely count it. The codebase carries no general TOML parser by design --
+// config.toml is handled by the scoped line editors in codex-thread-limits.js /
+// codex-install.js ("a general parser is unwarranted complexity") -- so this is
+// the counterpart line validator for the exact restricted subset profileToml
+// produces: a flat list of top-level `key = <single-line scalar>` assignments
+// (a double-quoted basic string, plus -- for robustness against hand-authored
+// fixtures -- a single-quoted literal string, boolean, or integer), blank lines,
+// and `#` comments. A generated profile is NEVER a table, array, or multiline
+// string, so any of those -- or an unterminated string, an invalid escape, a
+// bare value, or a duplicate key -- is malformed for THIS artifact class and
+// throws. Returns the parsed key->raw-value map (proving it parsed) for a
+// well-formed profile; every real generated profile round-trips through it.
+const TOML_BASIC_STRING = String.raw`"(?:[^"\\]|\\(?:["\\btnfr/]|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}))*"`;
+const TOML_LITERAL_STRING = String.raw`'[^']*'`;
+const TOML_SCALAR_PREFIX = new RegExp(`^(?:${TOML_BASIC_STRING}|${TOML_LITERAL_STRING}|true|false|[+-]?(?:0|[1-9](?:_?\\d)*))`);
+const TOML_KEY_ASSIGNMENT = /^\s*([A-Za-z0-9_-]+)\s*=\s*(.*)$/;
+
+export function parseAgentProfileToml(text) {
+  const profile = {};
+  const lines = String(text).split("\n");
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index].replace(/\r$/, "");
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const assignment = line.match(TOML_KEY_ASSIGNMENT);
+    if (!assignment) throw new Error(`malformed agent profile TOML at line ${index + 1}: ${trimmed.slice(0, 40)}`);
+    const [, key, valueRaw] = assignment;
+    const scalar = valueRaw.match(TOML_SCALAR_PREFIX);
+    if (!scalar || !/^\s*(?:#.*)?$/.test(valueRaw.slice(scalar[0].length))) {
+      throw new Error(`malformed agent profile TOML value for "${key}" at line ${index + 1}`);
+    }
+    if (Object.hasOwn(profile, key)) throw new Error(`duplicate agent profile TOML key "${key}" at line ${index + 1}`);
+    profile[key] = scalar[0];
+  }
+  return profile;
+}
+
 // codex/agents.manifest.json is a trust boundary: every `id` becomes a
 // `${id}.toml` path segment a downstream writer join()s into a destination,
 // and every `config.source` becomes a read path. A manifest-controlled id like

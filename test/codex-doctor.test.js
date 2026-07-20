@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -948,5 +948,112 @@ test("Codex doctor fails codex-plugin-selection and refuses to green-light an un
     const check = report.checks.find(item => item.name === name);
     assert.notEqual(check?.ok, true, `${name} must not green-light a tree that was never confirmed as selected`);
   }
+  await rm(tmp, { recursive: true, force: true });
+});
+
+// -- deep artifact validation (fix/doctor-generated-artifact-validation) --------
+// codex-agents/codex-runtime used to trust a `.toml` SUFFIX COUNT and mere PATH
+// EXISTENCE: a directory named `*.toml`, a malformed-TOML profile, a malformed
+// `.mcp.json`, or a non-regular runtime entry all slipped through. Each fixture
+// stages the REAL built plugin tree under a temp base with a VALID marketplace
+// pointer (so selection succeeds and both checks actually run), then corrupts ONE
+// artifact class and asserts the NAMED check AND the overall report fail. The
+// uncorrupted stage proves the genuinely well-formed artifacts still PASS.
+async function stageSelectableTree() {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-artifact-"));
+  const base = join(tmp, "dist");
+  const src = join(repoRoot, ".agents", "plugins");
+  const dst = join(base, ".agents", "plugins");
+  await mkdir(join(dst, "plugin"), { recursive: true });
+  await cp(join(src, "marketplace.json"), join(dst, "marketplace.json"));
+  await cp(join(src, "plugin", "package.json"), join(dst, "plugin", "package.json"));
+  await cp(join(src, "plugin", ".codex-plugin"), join(dst, "plugin", ".codex-plugin"), { recursive: true });
+  await cp(join(src, "plugin", "agents"), join(dst, "plugin", "agents"), { recursive: true });
+  await cp(join(src, "plugin", "runtime"), join(dst, "plugin", "runtime"), { recursive: true });
+  await cp(join(src, "plugin", ".mcp.json"), join(dst, "plugin", ".mcp.json"));
+  return { tmp, base, pluginDir: join(dst, "plugin") };
+}
+
+function artifactDoctor(root, tmp) {
+  const absent = async () => { throw new Error("not found"); };
+  const passingMcp = async () => ({ initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools }, (_, index) => ({ name: `muster_${index}` })), toolCallOk: true });
+  return runCodexDoctor({ root, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile: absent, mcpRunner: passingMcp });
+}
+
+test("Codex doctor passes codex-agents and codex-runtime for the genuinely well-formed built plugin tree", async () => {
+  const { tmp, base } = await stageSelectableTree();
+  const report = await artifactDoctor(base, tmp);
+  const agents = report.checks.find(check => check.name === "codex-agents");
+  const runtime = report.checks.find(check => check.name === "codex-runtime");
+  assert.equal(agents?.ok, true, agents?.detail);
+  assert.match(agents?.detail || "", new RegExp(`${CODEX_COUNTS.agents}/${CODEX_COUNTS.agents}`));
+  assert.equal(runtime?.ok, true, runtime?.detail);
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor fails codex-agents when a .codex/agents entry is a directory, not a regular profile", async () => {
+  const { tmp, base, pluginDir } = await stageSelectableTree();
+  const target = join(pluginDir, "agents", "muster-builder.toml");
+  await rm(target);
+  await mkdir(target); // a DIRECTORY named *.toml still ends in .toml and counts toward the suffix total
+  const report = await artifactDoctor(base, tmp);
+  const agents = report.checks.find(check => check.name === "codex-agents");
+  assert.equal(agents?.ok, false, "a directory named *.toml must FAIL codex-agents, not count toward the total");
+  assert.match(agents?.detail || "", /muster-builder\.toml/);
+  assert.equal(report.ok, false, "the overall report must reflect the codex-agents failure");
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor fails codex-agents when a generated profile is not parseable as TOML", async () => {
+  const { tmp, base, pluginDir } = await stageSelectableTree();
+  await writeFile(join(pluginDir, "agents", "muster-builder.toml"), 'name = "muster-builder\nthis is not valid toml [[[\n');
+  const report = await artifactDoctor(base, tmp);
+  const agents = report.checks.find(check => check.name === "codex-agents");
+  assert.equal(agents?.ok, false, "a malformed-TOML profile must FAIL codex-agents, not count toward the total");
+  assert.match(agents?.detail || "", /muster-builder\.toml/);
+  assert.equal(report.ok, false, "the overall report must reflect the codex-agents failure");
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor fails codex-runtime when the .mcp.json entrypoint is malformed JSON", async () => {
+  const { tmp, base, pluginDir } = await stageSelectableTree();
+  await writeFile(join(pluginDir, ".mcp.json"), "{ not: valid json,, }");
+  const report = await artifactDoctor(base, tmp);
+  const runtime = report.checks.find(check => check.name === "codex-runtime");
+  assert.equal(runtime?.ok, false, "a malformed .mcp.json must FAIL codex-runtime, not pass on mere existence");
+  assert.match(runtime?.detail || "", /\.mcp\.json/);
+  assert.equal(report.ok, false, "the overall report must reflect the codex-runtime failure");
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor fails codex-runtime when a runtime entry is a directory where a regular file is required", async () => {
+  const { tmp, base, pluginDir } = await stageSelectableTree();
+  const target = join(pluginDir, "runtime", "muster.mjs");
+  await rm(target);
+  await mkdir(target); // a DIRECTORY where a regular file is expected still "exists"
+  const report = await artifactDoctor(base, tmp);
+  const runtime = report.checks.find(check => check.name === "codex-runtime");
+  assert.equal(runtime?.ok, false, "a non-regular runtime entry must FAIL codex-runtime, not pass on mere existence");
+  assert.match(runtime?.detail || "", /muster\.mjs/);
+  assert.equal(report.ok, false, "the overall report must reflect the codex-runtime failure");
+  await rm(tmp, { recursive: true, force: true });
+});
+
+// POSIX-only: symlink creation needs privilege on win32, so guard the special-file fixture.
+// Driven through the isPluginRoot path (root = the plugin dir itself) so codex-runtime is the
+// check under test: the non-plugin-root selection path already rejects any symlink in the tree
+// via assertRegularTree, but the bundled-runtime layout builds `selected` directly with no such
+// tree walk, so codex-runtime's own regular-file validation is the sole guard for a symlink here.
+test("Codex doctor fails codex-runtime when a runtime entry is a symlink to a regular file", { skip: process.platform === "win32" ? "symlink fixture is POSIX-only" : false }, async () => {
+  const { tmp, pluginDir } = await stageSelectableTree();
+  const target = join(pluginDir, "runtime", "muster-mcp.mjs");
+  const realFile = join(pluginDir, "runtime", "muster.mjs");
+  await rm(target);
+  await symlink(realFile, target); // a symlink RESOLVING to a real regular file still passes plain existence
+  const report = await artifactDoctor(pluginDir, tmp);
+  const runtime = report.checks.find(check => check.name === "codex-runtime");
+  assert.equal(runtime?.ok, false, "a symlinked runtime entry must FAIL codex-runtime even though it resolves to a regular file");
+  assert.match(runtime?.detail || "", /muster-mcp\.mjs/);
+  assert.equal(report.ok, false, "the overall report must reflect the codex-runtime failure");
   await rm(tmp, { recursive: true, force: true });
 });

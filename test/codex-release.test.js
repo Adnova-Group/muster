@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, writeFileSync } from "node:fs";
+import { cpSync, lstatSync, writeFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import net from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -979,4 +981,122 @@ test("publishCodexPlugin still publishes a staged tree whose package.json + plug
   const manifest = JSON.parse(await readFile(join(published.pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
   assert.equal(manifest.name, "muster", "the published plugin manifest name is the expected plugin name");
   assert.equal(manifest.version, "0.5.0", "the published plugin manifest version matches the requested version");
+});
+
+// --- Special-file rejection (run-5 audit Low #14). assertRegularTree walks the
+// staged tree and classifies every entry: a symlink is rejected (covered
+// above), a directory recurses, a regular file is read through the no-follow
+// descriptor, and ANYTHING ELSE -- a FIFO, a socket, a device node: a
+// non-regular "special" file that is neither isFile() nor isDirectory() -- hits
+// the terminal `else throw` and is rejected as "not a regular file or
+// directory". publishCodexPlugin runs that same assertRegularTree on the staged
+// tree BEFORE any destination mutation (no pluginsRoot mkdir, no lock, no retire
+// rename, no copy has run yet), so a special file in the staged tree fails the
+// publish closed with the destination byte-unchanged and no success receipt --
+// exactly like the pre-mutation contract checks above.
+//
+// FIFO/socket creation is POSIX-only (mkfifo(3) / bind(2) on an AF_UNIX path)
+// and unavailable on win32 and some sandboxed CI filesystems. Each fixture
+// probes the capability by trying to create the special file and, on failure,
+// SKIPS with the reason (matching the try/create -> catch -> t.skip idiom the
+// symlink fixtures in test/uninstall.test.js and test/vendor.test.js already
+// use), so the coverage never turns into a false failure on an unsupported
+// platform.
+
+// Create a FIFO (named pipe) at `path` via mkfifo(1); throws if the platform or
+// filesystem cannot make one (no mkfifo binary, EPERM, ENOTSUP), letting the
+// caller t.skip. lstat-asserts the result really is a FIFO so the fixture never
+// passes vacuously against a stand-in regular file.
+function makeFifoOrThrow(path) {
+  execFileSync("mkfifo", [path], { stdio: "ignore" });
+  assert.ok(lstatSync(path).isFIFO(), "probe must produce a real FIFO, not a regular file");
+}
+
+// Bind an AF_UNIX stream socket at `path` (a bound socket is a non-regular
+// special file on disk), registering teardown so the listening handle never
+// leaks past the test; throws if binding is unsupported (win32, EPERM/ENOTSUP,
+// or a path over the ~108-byte sun_path limit), letting the caller t.skip.
+async function bindSocketOrThrow(t, path) {
+  const server = net.createServer();
+  t.after(() => new Promise(resolve => server.close(() => resolve())));
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(path, () => resolve());
+  });
+  assert.ok(lstatSync(path).isSocket(), "probe must produce a real socket, not a regular file");
+  return server;
+}
+
+test("assertRegularTree rejects a FIFO (named pipe) staged entry, naming the offending non-regular path", async t => {
+  const root = await tempRoot(t);
+  const tree = join(root, "tree");
+  await write(join(tree, "keep.txt"), "kept\n");
+  const fifo = join(tree, "pipe.fifo");
+  try { makeFifoOrThrow(fifo); }
+  catch (error) { t.skip(`mkfifo unavailable: ${error.code ?? error.message}`); return; }
+  await assert.rejects(assertRegularTree(tree), err => {
+    assert.match(err.message, /must be a regular file or directory/, "a FIFO must be rejected as a non-regular tree entry");
+    assert.ok(err.message.includes(fifo), "the rejection must name the offending FIFO path");
+    return true;
+  });
+});
+
+test("assertRegularTree rejects a bound unix socket staged entry, naming the offending non-regular path", async t => {
+  const root = await tempRoot(t);
+  const tree = join(root, "tree");
+  await write(join(tree, "keep.txt"), "kept\n");
+  const sock = join(tree, "srv.sock");
+  try { await bindSocketOrThrow(t, sock); }
+  catch (error) { t.skip(`unix socket bind unavailable: ${error.code ?? error.message}`); return; }
+  await assert.rejects(assertRegularTree(tree), err => {
+    assert.match(err.message, /must be a regular file or directory/, "a socket must be rejected as a non-regular tree entry");
+    assert.ok(err.message.includes(sock), "the rejection must name the offending socket path");
+    return true;
+  });
+});
+
+test("publishCodexPlugin rejects a FIFO in the staged tree pre-lock, with zero destination mutation and no success receipt", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "prior", { stagedPlugin: await stagedPlugin(root, "prior") });
+  const pluginsDir = join(root, ".agents", "plugins");
+  const before = await snapshotDir(pluginsDir);
+  const staged = await stagedPlugin(root, "fifo");
+  const fifo = join(staged, "runtime", "extra.fifo");
+  try { makeFifoOrThrow(fifo); }
+  catch (error) { t.skip(`mkfifo unavailable: ${error.code ?? error.message}`); return; }
+  await expectPublishRejects(
+    publish(root, "fifo", { stagedPlugin: staged }),
+    /must be a regular file or directory/,
+    "a FIFO in the staged tree must be rejected as a non-regular entry before any destination mutation"
+  );
+  assert.deepEqual(await snapshotDir(pluginsDir), before, "no destination mutation on a FIFO staged entry");
+  assert.equal(
+    await readFile(join(pluginsDir, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior";\n',
+    "the prior plugin must survive byte-for-byte"
+  );
+  assert.deepEqual((await readdir(pluginsDir)).filter(name => name.startsWith(".muster-retired-")), [], "no retired orphan may linger");
+});
+
+test("publishCodexPlugin rejects a bound unix socket in the staged tree pre-lock, with zero destination mutation and no success receipt", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "prior", { stagedPlugin: await stagedPlugin(root, "prior") });
+  const pluginsDir = join(root, ".agents", "plugins");
+  const before = await snapshotDir(pluginsDir);
+  const staged = await stagedPlugin(root, "socket");
+  const sock = join(staged, "runtime", "extra.sock");
+  try { await bindSocketOrThrow(t, sock); }
+  catch (error) { t.skip(`unix socket bind unavailable: ${error.code ?? error.message}`); return; }
+  await expectPublishRejects(
+    publish(root, "socket", { stagedPlugin: staged }),
+    /must be a regular file or directory/,
+    "a socket in the staged tree must be rejected as a non-regular entry before any destination mutation"
+  );
+  assert.deepEqual(await snapshotDir(pluginsDir), before, "no destination mutation on a socket staged entry");
+  assert.equal(
+    await readFile(join(pluginsDir, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior";\n',
+    "the prior plugin must survive byte-for-byte"
+  );
+  assert.deepEqual((await readdir(pluginsDir)).filter(name => name.startsWith(".muster-retired-")), [], "no retired orphan may linger");
 });

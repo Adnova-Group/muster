@@ -11,10 +11,36 @@ const { version } = JSON.parse(
 // Project Pages live under https://<owner>.github.io/muster/, so the base path
 // must be "/muster/". If you later point a custom domain at the site (a CNAME),
 // change base to "/" and add a website/public/CNAME file.
+// One sidebar shape for the whole site, reused under every path prefix so a page in
+// any section can reach every other section (and so a new page is added in one place).
+const guideItems = [
+  { text: "Install", link: "/guides/install" },
+  { text: "Quickstart", link: "/guides/quickstart" },
+  { text: "Codex", link: "/guides/codex" },
+  { text: "Troubleshooting", link: "/guides/troubleshooting" },
+];
+
+const referenceItems = [
+  { text: "Concepts", link: "/reference/concepts" },
+  { text: "The eight modes", link: "/reference/modes" },
+  { text: "CLI commands", link: "/reference/commands" },
+  { text: "Configuration", link: "/reference/configuration" },
+  { text: "Pipelines", link: "/reference/pipelines" },
+  { text: "Architecture", link: "/reference/architecture" },
+];
+
+const aboutItems = [{ text: "Credits", link: "/about/credits" }];
+
+const sidebarGroups = [
+  { text: "Guide", items: guideItems },
+  { text: "Reference", items: referenceItems },
+  { text: "About", items: aboutItems },
+];
+
 export default defineConfig({
   title: "Muster",
   description:
-    "Glass-box agentic orchestrator for Claude Code. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
+    "Glass-box agentic orchestrator for Claude Code and Codex. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
   lang: "en-US",
   base: "/muster/",
   cleanUrls: true,
@@ -28,17 +54,17 @@ export default defineConfig({
       {
         property: "og:description",
         content:
-          "Glass-box agentic orchestrator for Claude Code. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
+          "Glass-box agentic orchestrator for Claude Code and Codex. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
       },
     ],
   ],
   themeConfig: {
     nav: [
-      { text: "Guide", link: "/guides/install", activeMatch: "/guides/" },
+      { text: "Guide", activeMatch: "/guides/", items: guideItems },
       {
         text: "Reference",
-        link: "/reference/concepts",
         activeMatch: "/reference/",
+        items: referenceItems,
       },
       { text: "Credits", link: "/about/credits" },
       {
@@ -56,44 +82,9 @@ export default defineConfig({
       },
     ],
     sidebar: {
-      "/guides/": [
-        {
-          text: "Guide",
-          items: [
-            { text: "Install", link: "/guides/install" },
-            { text: "Quickstart", link: "/guides/quickstart" },
-          ],
-        },
-        {
-          text: "Reference",
-          items: [
-            { text: "Concepts", link: "/reference/concepts" },
-            { text: "The eight modes", link: "/reference/modes" },
-            { text: "CLI commands", link: "/reference/commands" },
-            { text: "Pipelines", link: "/reference/pipelines" },
-            { text: "Architecture", link: "/reference/architecture" },
-          ],
-        },
-      ],
-      "/reference/": [
-        {
-          text: "Guide",
-          items: [
-            { text: "Install", link: "/guides/install" },
-            { text: "Quickstart", link: "/guides/quickstart" },
-          ],
-        },
-        {
-          text: "Reference",
-          items: [
-            { text: "Concepts", link: "/reference/concepts" },
-            { text: "The eight modes", link: "/reference/modes" },
-            { text: "CLI commands", link: "/reference/commands" },
-            { text: "Pipelines", link: "/reference/pipelines" },
-            { text: "Architecture", link: "/reference/architecture" },
-          ],
-        },
-      ],
+      "/guides/": sidebarGroups,
+      "/reference/": sidebarGroups,
+      "/about/": sidebarGroups,
     },
     socialLinks: [
       { icon: "github", link: "https://github.com/Adnova-Group/muster" },

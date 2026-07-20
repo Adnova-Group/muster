@@ -777,6 +777,116 @@ test("Codex doctor: a large-but-well-formed config.toml above the managed-file c
   await rm(tmp, { recursive: true, force: true });
 });
 
+// --- codex-plugin + codex-plugin-cache-hooks read hardening (deferred [risk]
+// from doctor-safe-unregistered-reads / PR #119; item doctor-plugin-check-safe-
+// reads) ------------------------------------------------------------------
+// PR #119 routed the doctor's SCOPE reads through the descriptor-pinned no-follow
+// bounded reader but explicitly left these two checks' plugin-file reads on raw,
+// follow-capable, unbounded readFile. A planted SYMLINK could be followed to an
+// attacker target, and an OVERSIZED regular file read/allocated unbounded. Each
+// fixture below plants one attack on a read one of these two checks performs and
+// asserts it now fails CLOSED with a clear diagnostic and no follow/unbounded
+// read. Each is RED against the pre-fix code (which follows the symlink / reads
+// the oversized file) and green after. A stub mcpRunner keeps these from
+// spawning the (absent) bundled runtime.
+const stubMcp = async () => ({ initialized: false, tools: [], toolCallOk: false });
+
+test("Codex doctor: codex-plugin whose .codex-plugin/plugin.json is a SYMLINK is rejected fail-closed, target never adopted", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-plugin-symlink-"));
+  const base = join(tmp, "plugin-root");
+  const version = selectedPlugin.packageVersion;
+  const absent = async () => { throw new Error("not found"); };
+  // A plugin-ROOT layout (base has .codex-plugin/plugin.json) so the codex-plugin
+  // check reads plugin.json + package.json from base. package.json is an ordinary
+  // file (drives isPluginRoot selection); ONLY plugin.json is the planted symlink.
+  await mkdir(join(base, ".codex-plugin"), { recursive: true });
+  await writeFile(join(base, "package.json"), JSON.stringify({ name: "muster", version }));
+  // A VALID manifest planted OUTSIDE the tree: were the symlink followed, the
+  // check would read {name:"muster", version} and PASS (ok:true). Rejecting the
+  // symlink means the target is never read, so the check must NOT adopt it.
+  const outside = join(tmp, "outside-plugin.json");
+  await writeFile(outside, JSON.stringify({ name: "muster", version }));
+  const manifestPath = join(base, ".codex-plugin", "plugin.json");
+  await symlink(outside, manifestPath);
+
+  const report = await runCodexDoctor({ root: base, cwd: join(tmp, "p"), codexHome: join(tmp, "home", ".codex"), execFile: absent, mcpRunner: stubMcp });
+  const plugin = report.checks.find(check => check.name === "codex-plugin");
+  assert.equal(plugin?.ok, false, plugin?.detail);
+  assert.match(plugin?.detail || "", /regular file/i);
+  assert.match(plugin?.detail || "", new RegExp(reEscape(manifestPath)));
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: codex-plugin whose .codex-plugin/plugin.json EXCEEDS the read cap is rejected on the size bound before an unbounded read", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-plugin-oversized-"));
+  const base = join(tmp, "plugin-root");
+  const version = selectedPlugin.packageVersion;
+  const absent = async () => { throw new Error("not found"); };
+  await mkdir(join(base, ".codex-plugin"), { recursive: true });
+  await writeFile(join(base, "package.json"), JSON.stringify({ name: "muster", version }));
+  // A VALID but oversized manifest: were it read unbounded, JSON.parse would
+  // succeed and {name:"muster", version} would PASS (ok:true). The safe reader
+  // must reject it on the fstat size bound BEFORE allocating/reading its bytes.
+  const manifestPath = join(base, ".codex-plugin", "plugin.json");
+  await writeFile(manifestPath, JSON.stringify({ name: "muster", version, _pad: "a".repeat(DOCTOR_READ_MAX_BYTES) }));
+
+  const report = await runCodexDoctor({ root: base, cwd: join(tmp, "p"), codexHome: join(tmp, "home", ".codex"), execFile: absent, mcpRunner: stubMcp });
+  const plugin = report.checks.find(check => check.name === "codex-plugin");
+  assert.equal(plugin?.ok, false, plugin?.detail);
+  assert.match(plugin?.detail || "", /exceeds the \d+-byte read cap/i);
+  assert.match(plugin?.detail || "", new RegExp(reEscape(manifestPath)));
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: codex-plugin-cache-hooks whose cache hooks.json is a SYMLINK is rejected fail-closed, target's firing hooks never counted", async () => {
+  // NB: the tmp prefix deliberately avoids the substrings "symlink"/"ordinary"/
+  // "regular" -- codex-install.js's readJson re-throws a benign "manifest is
+  // missing" during runCodexInstall setup whenever the manifest PATH matches
+  // /symlink|ordinary|regular/i, which a "-symlink-" tmp dir name would trip.
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-cache-lnk-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const cacheHooksDir = join(codexHome, "plugins", "cache", "muster", "muster", selectedPlugin.packageVersion, "hooks");
+  await mkdir(cacheHooksDir, { recursive: true });
+  // A firing-hooks file OUTSIDE the cache: were the symlink followed, the check
+  // would count its firing hook (ok:false, "ships 1 firing"). Rejecting means the
+  // target is never read, so its firing count must never reach the verdict.
+  const outside = join(tmp, "outside-cache-hooks.json");
+  await writeFile(outside, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node x.js" }] }] } }));
+  const cacheHooksPath = join(cacheHooksDir, "hooks.json");
+  await symlink(outside, cacheHooksPath);
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const check = report.checks.find(item => item.name === "codex-plugin-cache-hooks");
+  assert.equal(check?.ok, false, check?.detail);
+  assert.match(check?.detail || "", /refused to read.*regular file/i);
+  assert.match(check?.detail || "", new RegExp(reEscape(cacheHooksPath)));
+  assert.doesNotMatch(check?.detail || "", /ships \d+ firing/i);
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: codex-plugin-cache-hooks whose cache hooks.json EXCEEDS the read cap is rejected on the size bound before an unbounded read", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-cache-oversized-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const cacheHooksDir = join(codexHome, "plugins", "cache", "muster", "muster", selectedPlugin.packageVersion, "hooks");
+  await mkdir(cacheHooksDir, { recursive: true });
+  // A VALID but oversized hooks.json: were it read unbounded, JSON.parse would
+  // succeed and {hooks:{}} would count 0 firing hooks -> PASS (ok:true). The safe
+  // reader must reject it on the fstat size bound BEFORE the unbounded read.
+  const cacheHooksPath = join(cacheHooksDir, "hooks.json");
+  await writeFile(cacheHooksPath, JSON.stringify({ hooks: {}, _pad: "a".repeat(DOCTOR_READ_MAX_BYTES) }));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const check = report.checks.find(item => item.name === "codex-plugin-cache-hooks");
+  assert.equal(check?.ok, false, check?.detail);
+  assert.match(check?.detail || "", /exceeds the \d+-byte read cap/i);
+  assert.match(check?.detail || "", new RegExp(reEscape(cacheHooksPath)));
+  await rm(tmp, { recursive: true, force: true });
+});
+
 // --- Plugin SELECTION failure (Codex dogfood audit of src/codex-doctor.js) --
 // When the marketplace pointer that authoritatively SELECTS which plugin tree
 // Codex uses is invalid/missing/malformed, resolveCodexPlugin throws and the

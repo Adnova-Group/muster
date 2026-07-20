@@ -528,11 +528,20 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   if (selectionFailed) {
     checks.push({ name: "codex-plugin", ok: false, detail: selectionSkip("the plugin manifest was") });
   } else {
+    // Both trust-boundary plugin descriptors are read through the SAME
+    // descriptor-pinned no-follow bounded reader (readRegularJson -> readRegularFile,
+    // O_NOFOLLOW + fstat size bound at DOCTOR_READ_MAX_BYTES) the scope reads use:
+    // a symlink / non-regular / oversized / symlinked-ancestor file throws a
+    // musterUnsafeRead the catch surfaces as a clear fail-closed diagnostic --
+    // never following the link to its target or allocating the oversized file --
+    // and a benign absence returns null so it is named as missing, not an opaque
+    // null-deref. A well-formed manifest/package.json reads and validates identically.
+    const manifestPath = join(plugin, ".codex-plugin", "plugin.json");
+    const pkgPath = join(plugin, "package.json");
     try {
-      const [manifest, pkg] = await Promise.all([
-        readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),
-        readFile(join(plugin, "package.json"), "utf8").then(JSON.parse)
-      ]);
+      const [manifest, pkg] = await Promise.all([readRegularJson(manifestPath), readRegularJson(pkgPath)]);
+      if (!manifest) throw new Error(`plugin manifest is missing: ${manifestPath}`);
+      if (!pkg) throw new Error(`plugin package descriptor is missing: ${pkgPath}`);
       checks.push({ name: "codex-plugin", ok: manifest.name === "muster" && manifest.version === pkg.version, detail: `muster ${manifest.version || "unknown"}` });
     } catch (error) { checks.push({ name: "codex-plugin", ok: false, detail: error.message }); }
   }
@@ -805,12 +814,27 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   if (selected?.packageVersion) {
     const cacheHooksPath = join(userCodexHome, "plugins", "cache", "muster", "muster", selected.packageVersion, "hooks", "hooks.json");
     let cacheHookCount = null;
+    let unsafeCacheRead = null;
     try {
-      const cacheHooks = JSON.parse(await readFile(cacheHooksPath, "utf8"));
+      // Read the installed cache's hooks.json through the SAME no-follow bounded
+      // reader (readRegularJson -> readRegularFile, O_NOFOLLOW + fstat size bound at
+      // DOCTOR_READ_MAX_BYTES) the scope reads use. A symlink / non-regular /
+      // oversized / symlinked-ancestor file throws a musterUnsafeRead we surface as
+      // an ACTIVE fail-closed rejection below -- never following the link to its
+      // target or allocating the oversized file. A benign absence returns null
+      // (nothing fires), and a malformed-but-ordinary hooks.json stays swallowed as
+      // "unreadable = nothing fires" exactly as before; only the unsafe-read verdict
+      // is new (the raw read used to swallow a followed symlink / oversized file too).
+      const cacheHooks = await readRegularJson(cacheHooksPath);
       cacheHookCount = Object.values(cacheHooks?.hooks || {}).flat()
         .reduce((total, group) => total + (Array.isArray(group?.hooks) ? group.hooks.length : 0), 0);
-    } catch { /* absent or unreadable cache hooks file = nothing fires from the plugin */ }
-    checks.push({ name: "codex-plugin-cache-hooks", ok: !cacheHookCount, detail: cacheHookCount
+    } catch (error) {
+      if (error?.musterUnsafeRead) unsafeCacheRead = error;
+      /* else: absent or unreadable cache hooks file = nothing fires from the plugin */
+    }
+    checks.push({ name: "codex-plugin-cache-hooks", ok: !cacheHookCount && !unsafeCacheRead, detail: unsafeCacheRead
+      ? `refused to read the installed muster plugin cache hooks at ${cacheHooksPath}: ${unsafeCacheRead.message}; rerun muster install codex to reinstall the hooks-free Codex plugin`
+      : cacheHookCount
       ? `installed muster plugin cache ships ${cacheHookCount} firing lifecycle hook(s) at ${cacheHooksPath} -- the with-hooks (Claude) plugin flavor, which double-fires on top of the scoped hooks.json install; rerun muster install codex to reinstall the hooks-free Codex plugin`
       : "installed muster plugin cache ships no lifecycle hooks (hooks-free Codex flavor)" });
   }

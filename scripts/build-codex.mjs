@@ -112,11 +112,13 @@ function adaptCommandForCodex(text, name) {
     result = result.slice(0, sweepStart) + capacitySweep + "\n" + result.slice(boardStart);
   }
   if (name === "runner.md") {
-    // The Claude lane's Scheduling section names Claude Code's native `/loop` self-pacing
-    // recurrence as a first-class alternative to a Routine/cron (backlog item
-    // harness-goal-primitives) -- `/loop` is a Claude-only harness primitive with no Codex
-    // equivalent, so it is wholesale-replaced (not merely translated) with a fixed
-    // Codex-specific paragraph naming the gap explicitly, mirroring the pre-existing
+    // The Claude lane's Scheduling section discusses Claude-only harness primitives with no
+    // Codex equivalent: as settled by backlog item loop-dmi-conflict, native `/loop` is
+    // documented-inert against this `disable-model-invocation: true` command (v2.1.196), and
+    // `/goal` is named as the native condition-based self-continuing alternative. Both `/loop`
+    // and `/goal` (and the earlier `harness-goal-primitives` self-pacing framing) are Claude-only,
+    // so the whole paragraph is wholesale-replaced (not merely translated) with a fixed
+    // Codex-specific paragraph naming the recurrence gap explicitly and keeping the pre-existing
     // cron/automation guidance. Anchored + asserted, matching the audit.md dimension-sweep
     // and coordination Standing-context-preflight wholesale-replace convention above.
     const schedStart = result.indexOf("**Scheduling**");

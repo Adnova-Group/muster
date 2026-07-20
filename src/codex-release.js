@@ -312,13 +312,35 @@ export function profileToml(id, source, config) {
 // trailing/doubled hyphens this rejects).
 const ID_TOKEN_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+// The manifest's top-level `agents` object (id -> config) is the SOLE input
+// every profile, the staged agents tree, and the published plugin are built
+// from. Validate its SHAPE before generating a single profile -- and therefore
+// before the caller stages any TOML or mutates any publish destination -- so a
+// missing / null / non-object / empty mapping fails closed with nothing staged
+// or published (Codex dogfood audit of this path: the old `mapping.agents || {}`
+// silently coerced missing/null/number/empty to ZERO profiles -- a degenerate
+// publish -- and let an array/string crash late mid-iteration with a confusing
+// per-entry "has no source" instead of naming the real shape problem). A valid
+// nonempty mapping is returned unchanged, so the committed manifest generates
+// the exact same profile set as before.
+function assertAgentMapping(agents) {
+  if (agents === undefined) throw new Error("Codex agent mapping is missing: agents.manifest.json must define a top-level \"agents\" object");
+  if (agents === null) throw new Error("Codex agent mapping is null: agents.manifest.json \"agents\" must be a plain object, not null");
+  if (typeof agents !== "object" || Array.isArray(agents)) {
+    throw new Error(`Codex agent mapping must be a plain object mapping agent ids to configs, not ${Array.isArray(agents) ? "an array" : typeof agents}`);
+  }
+  if (Object.keys(agents).length === 0) throw new Error("Codex agent mapping is empty: agents.manifest.json \"agents\" defines no agents");
+  return agents;
+}
+
 // Returns a Map of `${id}.toml` -> generated profile content, sourced only
 // from the frozen codex/agents.manifest.json mapping and its referenced agent
 // markdown files. No build step, no staging directory, no Codex CLI needed.
 export async function generateCodexProfiles(root) {
   const mapping = readRegularJson(join(root, "codex", "agents.manifest.json"), "Codex agent mapping", 256 * 1024);
+  const agents = assertAgentMapping(mapping.agents);
   const files = new Map();
-  for (const [id, config] of Object.entries(mapping.agents || {})) {
+  for (const [id, config] of Object.entries(agents)) {
     if (!ID_TOKEN_RE.test(id)) throw new Error(`Codex agent mapping id is not a safe token: ${JSON.stringify(id)}`);
     if (typeof config.source !== "string" || !config.source) throw new Error(`Codex agent mapping entry ${id} has no source`);
     // resolve() honors an absolute source as-is (so it escapes root and is

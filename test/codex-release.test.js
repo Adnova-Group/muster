@@ -100,6 +100,46 @@ test("generateCodexProfiles fails closed on an invalid tier, reasoning, or model
   }
 });
 
+// --- Malformed top-level agent MAPPING shape (Codex dogfood audit of this
+// path). generateCodexProfiles turns the manifest's top-level `agents` object
+// into the staged `.codex/agents/*.toml` tree the plugin build then stages and
+// publishes. A missing / null / non-object / empty mapping must be REJECTED
+// before a single profile is generated -- and therefore before the caller
+// stages any TOML or mutates any publish destination -- naming the shape
+// problem, not silently coerced to zero profiles (a degenerate publish) nor
+// crashed late mid-iteration with a confusing per-entry error. The good source
+// tree present below means the ONLY defect is the mapping SHAPE, so a rejection
+// proves the shape gate fires before any per-agent source read or generation. ---
+test("generateCodexProfiles rejects a malformed top-level agent mapping BEFORE generating any profile", async t => {
+  const root = await tempRoot(t);
+  await write(join(root, "sources", "role.md"), "---\nname: role\ndescription: role\n---\n\nBody\n");
+  const writeManifest = agents => write(
+    join(root, "codex", "agents.manifest.json"),
+    JSON.stringify(agents === undefined ? { format: 1 } : { format: 1, agents })
+  );
+  for (const [label, agents, expected] of [
+    ["missing/undefined", undefined, /Codex agent mapping is missing/],
+    ["null", null, /Codex agent mapping is null/],
+    ["empty object", {}, /Codex agent mapping is empty/]
+  ]) {
+    await writeManifest(agents);
+    await assert.rejects(generateCodexProfiles(root), expected, `malformed mapping (${label}) must fail closed naming the shape problem`);
+  }
+  // Non-object family: an array, a string, and a number all fail closed with the
+  // same plain-object shape error (the array/string cases currently crash late
+  // with a confusing per-entry "has no source"; the number silently yields zero).
+  for (const [label, agents] of [["array", ["role"]], ["string", "role"], ["number", 5], ["boolean", true]]) {
+    await writeManifest(agents);
+    await assert.rejects(generateCodexProfiles(root), /Codex agent mapping must be a plain object/i, `non-object mapping (${label}) must fail closed naming the shape problem`);
+  }
+});
+
+test("generateCodexProfiles still generates the committed manifest's full expected profile count (behavior unchanged for a valid nonempty mapping)", async () => {
+  const profiles = await generateCodexProfiles(repoRoot);
+  assert.equal(profiles.size, CODEX_COUNTS.agents, "the committed nonempty manifest must still generate exactly the expected profile set");
+  assert.ok([...profiles.keys()].every(name => name.endsWith(".toml")), "every generated profile is a .toml");
+});
+
 test("profileToml is a pure function usable independent of the manifest reader", () => {
   const source = "---\nname: x\ndescription: X role.\n---\n\nInstructions.\n";
   const text = profileToml("x", source, { tier: "opus" });

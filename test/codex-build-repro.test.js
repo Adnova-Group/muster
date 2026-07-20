@@ -110,7 +110,12 @@ test("buildCodexPlugin's version-only skip-if-current check can be bypassed with
   // force flag actually attempted a real rebuild below.
   const staged = join(tmp, "staged");
   await mkdir(join(staged, "skills"), { recursive: true });
+  await mkdir(join(staged, ".codex-plugin"), { recursive: true });
   await writeFile(join(staged, "package.json"), JSON.stringify({ version: packageVersion }));
+  // publishCodexPlugin's pre-publication contract check reads the staged
+  // manifest, so this synthetic staged tree must carry a coherent one (the
+  // real build always writes it — scripts/build-codex.mjs).
+  await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: packageVersion }));
   await publishCodexPlugin({
     pluginsRoot: outDir,
     stagedPlugin: staged,

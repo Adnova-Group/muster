@@ -493,10 +493,48 @@ function codexMarketplacePluginPath(pluginsRoot) {
   return "./" + relative(addedRoot, join(pluginsRoot, "plugin")).replaceAll("\\", "/");
 }
 
+// The canonical Muster plugin name. It is the value scripts/build-codex.mjs
+// stamps into the staged `.codex-plugin/plugin.json` `name`, and the same
+// literal the marketplace-pointer contract (below and in resolveCodexPluginOnce)
+// requires. A staged manifest declaring any other name is a mislabeled build.
+const EXPECTED_PLUGIN_NAME = "muster";
+
+// Pre-publication contract check (run-5 audit Med #8). Before ANY destination
+// mutation, prove the STAGED tree's declared identity matches the version this
+// publish was ASKED to ship. A staging bug, a stale build tree, or a swapped
+// file could otherwise land a plugin whose package.json / plugin.json name or
+// version disagrees with `packageVersion`, mislabeling the plugin at the
+// marketplace pointer (which pins `.../<version>/` paths). Both staged files
+// are read through the no-follow reader (readRegularJson -> readRegular ->
+// readRegularNoFollow), consistent with the harden-release-no-follow-io work,
+// so a file swapped for a symlink is rejected rather than followed. Any
+// mismatch throws naming the field and expected-vs-actual. This is called
+// BEFORE the first destination mutation (before the pluginsRoot mkdir, the
+// lock, the retire rename, and the copy), so a rejection leaves the destination
+// byte-unchanged and emits no success receipt.
+function assertStagedPublishContract(stagedPlugin, packageVersion) {
+  const pkg = readRegularJson(join(stagedPlugin, "package.json"), "staged Codex plugin package descriptor", 64 * 1024);
+  if (pkg?.version !== packageVersion) {
+    throw new Error(`Codex plugin publish contract violation: staged package.json version ${JSON.stringify(pkg?.version)} does not match requested package version ${JSON.stringify(packageVersion)}`);
+  }
+  const manifest = readRegularJson(join(stagedPlugin, ".codex-plugin", "plugin.json"), "staged Codex plugin manifest", 64 * 1024);
+  if (manifest?.version !== packageVersion) {
+    throw new Error(`Codex plugin publish contract violation: staged .codex-plugin/plugin.json version ${JSON.stringify(manifest?.version)} does not match requested package version ${JSON.stringify(packageVersion)}`);
+  }
+  if (manifest?.name !== EXPECTED_PLUGIN_NAME) {
+    throw new Error(`Codex plugin publish contract violation: staged .codex-plugin/plugin.json name ${JSON.stringify(manifest?.name)} does not match expected plugin name ${JSON.stringify(EXPECTED_PLUGIN_NAME)}`);
+  }
+}
+
 export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate, copyStagedPlugin = copyStagedPluginTree, writePointer = atomicWritePointer, acquireLock = withCodexFileLock }) {
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex plugin package version is required");
   ordinary(stagedPlugin, "directory", "staged Codex plugin");
   await assertRegularTree(stagedPlugin);
+  // Verify the staged tree's declared name/version match what we were asked to
+  // publish BEFORE touching the destination (no mkdir, no lock, no retire, no
+  // copy has run yet), so a mislabeled build fails closed with the previous
+  // plugin + pointer untouched. See assertStagedPublishContract's docblock.
+  assertStagedPublishContract(stagedPlugin, packageVersion);
   // Reject a symlinked ANCESTOR of pluginsRoot before creating or locking it:
   // the lock file, and every publish mutation below, are built by join()ing
   // onto pluginsRoot, so a symlinked ancestor would silently redirect them out

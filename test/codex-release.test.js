@@ -48,6 +48,26 @@ async function tempRoot(t) {
   return root;
 }
 
+// Byte-for-byte snapshot of a directory tree (relative path -> content, plus a
+// marker per directory), so a failed publish can be proven to have left the
+// destination BYTE-UNCHANGED: capture before, capture after, deepEqual.
+async function snapshotDir(dir) {
+  const out = {};
+  async function walk(current, prefix) {
+    let entries;
+    try { entries = await readdir(current, { withFileTypes: true }); }
+    catch { return; }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) { out[`${rel}/`] = "<dir>"; await walk(full, rel); }
+      else out[rel] = await readFile(full, "utf8");
+    }
+  }
+  await walk(dir, "");
+  return out;
+}
+
 test("generateCodexProfiles reads the frozen agent mapping and produces one TOML per role", async t => {
   const root = await tempRoot(t);
   await write(join(root, "codex", "agents.manifest.json"), JSON.stringify({
@@ -865,4 +885,98 @@ test("generateCodexProfiles accepts every real committed manifest id and source 
   const profiles = await generateCodexProfiles(repoRoot);
   assert.equal(profiles.size, CODEX_COUNTS.agents);
   for (const key of profiles.keys()) assert.match(key, /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/);
+});
+
+// run-5 audit Med #8: publishCodexPlugin must verify the STAGED tree's declared
+// name/version matches the requested packageVersion BEFORE any destination
+// mutation. A staging bug, stale build tree, or swapped file would otherwise
+// land a mislabeled plugin at the marketplace pointer (which pins .../<version>/
+// paths). Each mismatch fixture proves: (1) the publish throws naming the field,
+// (2) the destination is left byte-unchanged with the prior plugin intact and no
+// retired orphan, and (3) no success receipt is returned. A happy-path fixture
+// proves a correctly-versioned staged tree still publishes.
+
+// A publish that resolves instead of rejecting must not have its receipt
+// silently swallowed: capture it so the "no success receipt" claim is explicit.
+async function expectPublishRejects(promise, pattern, message) {
+  let receipt;
+  await assert.rejects(async () => { receipt = await promise; }, pattern, message);
+  assert.equal(receipt, undefined, "a rejected publish must produce no success receipt");
+}
+
+test("publishCodexPlugin rejects a staged package.json whose version disagrees with the requested version, mutating nothing", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "prior", { stagedPlugin: await stagedPlugin(root, "prior") });
+  const pluginsDir = join(root, ".agents", "plugins");
+  const before = await snapshotDir(pluginsDir);
+  const staged = await stagedPlugin(root, "pkg-version");
+  await writeFile(join(staged, "package.json"), JSON.stringify({ version: "9.9.9" })); // requested is "0.5.0"
+  await expectPublishRejects(
+    publish(root, "pkg-version", { stagedPlugin: staged }),
+    /staged package\.json version .*does not match requested package version/,
+    "a staged package.json version != requested must be rejected, naming the field"
+  );
+  assert.deepEqual(await snapshotDir(pluginsDir), before, "no destination mutation on a package.json version mismatch");
+  assert.equal(
+    await readFile(join(pluginsDir, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior";\n',
+    "the prior plugin must survive byte-for-byte"
+  );
+  assert.deepEqual((await readdir(pluginsDir)).filter(name => name.startsWith(".muster-retired-")), [], "no retired orphan may linger");
+});
+
+test("publishCodexPlugin rejects a staged plugin.json whose version disagrees with the requested version, mutating nothing", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "prior", { stagedPlugin: await stagedPlugin(root, "prior") });
+  const pluginsDir = join(root, ".agents", "plugins");
+  const before = await snapshotDir(pluginsDir);
+  const staged = await stagedPlugin(root, "plugin-version");
+  // package.json version stays "0.5.0" (matches requested) so only plugin.json diverges.
+  await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: "9.9.9" }));
+  await expectPublishRejects(
+    publish(root, "plugin-version", { stagedPlugin: staged }),
+    /staged \.codex-plugin\/plugin\.json version .*does not match requested package version/,
+    "a staged plugin.json version != requested must be rejected, naming the field"
+  );
+  assert.deepEqual(await snapshotDir(pluginsDir), before, "no destination mutation on a plugin.json version mismatch");
+  assert.equal(
+    await readFile(join(pluginsDir, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior";\n',
+    "the prior plugin must survive byte-for-byte"
+  );
+  assert.deepEqual((await readdir(pluginsDir)).filter(name => name.startsWith(".muster-retired-")), [], "no retired orphan may linger");
+});
+
+test("publishCodexPlugin rejects a staged plugin.json whose name is not the expected plugin name, mutating nothing", async t => {
+  const root = await tempRoot(t);
+  await publish(root, "prior", { stagedPlugin: await stagedPlugin(root, "prior") });
+  const pluginsDir = join(root, ".agents", "plugins");
+  const before = await snapshotDir(pluginsDir);
+  const staged = await stagedPlugin(root, "plugin-name");
+  // Versions all match the requested "0.5.0"; only the manifest name is wrong.
+  await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "not-muster", version: "0.5.0" }));
+  await expectPublishRejects(
+    publish(root, "plugin-name", { stagedPlugin: staged }),
+    /staged \.codex-plugin\/plugin\.json name .*does not match expected plugin name/,
+    "a staged plugin.json name != expected must be rejected, naming the field"
+  );
+  assert.deepEqual(await snapshotDir(pluginsDir), before, "no destination mutation on a plugin.json name mismatch");
+  assert.equal(
+    await readFile(join(pluginsDir, "plugin", "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "prior";\n',
+    "the prior plugin must survive byte-for-byte"
+  );
+  assert.deepEqual((await readdir(pluginsDir)).filter(name => name.startsWith(".muster-retired-")), [], "no retired orphan may linger");
+});
+
+test("publishCodexPlugin still publishes a staged tree whose package.json + plugin.json name/version all match the requested version", async t => {
+  const root = await tempRoot(t);
+  const staged = await stagedPlugin(root, "contract-ok"); // package.json + plugin.json both declare version 0.5.0, name muster
+  const published = await publish(root, "contract-ok", { stagedPlugin: staged });
+  assert.equal(published.packageVersion, "0.5.0");
+  const pkg = JSON.parse(await readFile(join(published.pluginRoot, "package.json"), "utf8"));
+  assert.equal(pkg.version, "0.5.0", "the published package.json version matches the requested version");
+  const manifest = JSON.parse(await readFile(join(published.pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+  assert.equal(manifest.name, "muster", "the published plugin manifest name is the expected plugin name");
+  assert.equal(manifest.version, "0.5.0", "the published plugin manifest version matches the requested version");
 });

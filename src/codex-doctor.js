@@ -115,7 +115,17 @@ async function windowsShimOwnerIdentity(shimPath) {
     const pkgRoot = join(nodeModules, pkgName);
     let parsed;
     try { parsed = await readRegularJson(join(pkgRoot, "package.json")); }
-    catch { continue; } // unsafe (symlink/oversized/non-regular) or malformed -> not a verifiable owner
+    catch (error) {
+      // An ACTIVE fail-closed rejection of a PLANTED owning manifest (symlinked
+      // / oversized / non-regular package.json, or a symlinked node_modules
+      // ancestor) is surfaced by NAME rather than silently skipped -- it
+      // propagates to checkPathShadow's outer catch, which fails OPEN (ok:true)
+      // and names both the shim and the unsafe path per this check's doctrine.
+      // A malformed-but-ordinary manifest (a plain JSON/parse error) is benign
+      // and simply moves on to the next candidate.
+      if (error?.musterUnsafeRead) throw error;
+      continue;
+    }
     if (!parsed) continue; // benign absence -> try the next package name
     const root = await realpath(pkgRoot).catch(() => pkgRoot);
     const binField = typeof parsed.bin === "string" ? parsed.bin : parsed.bin?.muster ?? null;

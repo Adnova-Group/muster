@@ -18,7 +18,7 @@
 // invoked for the shim.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, chmod, rm, stat, realpath } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, chmod, rm, stat, realpath, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -171,6 +171,34 @@ test("windows shim: unresolvable owner -- shim present but no node_modules packa
     assert.match(check.detail, new RegExp(escape(shim)));
     assert.match(check.detail, /could not resolve|unverified|NOT executed/i);
     assert.equal(spy.calls.length, 0, "an unverifiable shim must never be executed");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("windows shim: a PLANTED symlinked owning package.json is refused (no-follow) and surfaced by name, never executed", async () => {
+  const dir = await scratch();
+  try {
+    const ownModuleUrl = await ownPackage(dir);
+    const prefix = join(dir, "prefix");
+    const pkgDir = join(prefix, "node_modules", PKG);
+    await mkdir(pkgDir, { recursive: true });
+    // An attacker points the owning package.json at a manifest they control.
+    // The no-follow bounded reader (O_NOFOLLOW) must refuse to follow it; the
+    // shim's version stays unverifiable rather than being read via the symlink.
+    const planted = join(dir, "attacker-manifest.json");
+    await writeFile(planted, JSON.stringify({ name: "@adnova-group/muster", version: OWN_VERSION }));
+    await symlink(planted, join(pkgDir, "package.json"));
+    const shim = join(prefix, "muster.cmd");
+    await writeFile(shim, "@echo off\r\nnode x %*\r\n");
+
+    const spy = spawnSpy();
+    const check = await checkPathShadow({ env: { PATH: prefix, PATHEXT: WIN_PATHEXT }, platform: "win32", ownModuleUrl, spawnProcess: spy.fn });
+
+    // Fail OPEN (ok:true) but NAMED, per this check's doctrine -- the symlinked
+    // manifest was refused, not followed to claim the injected version.
+    assert.equal(check.ok, true, check.detail);
+    assert.match(check.detail, new RegExp(escape(shim)));
+    assert.match(check.detail, /could not probe|regular file/i);
+    assert.equal(spy.calls.length, 0, "a shim with a planted owning manifest must never be executed");
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

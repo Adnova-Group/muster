@@ -776,3 +776,67 @@ test("Codex doctor: a large-but-well-formed config.toml above the managed-file c
   assert.doesNotMatch(threadLimits?.detail || "", /read cap/i);
   await rm(tmp, { recursive: true, force: true });
 });
+
+// --- Plugin SELECTION failure (Codex dogfood audit of src/codex-doctor.js) --
+// When the marketplace pointer that authoritatively SELECTS which plugin tree
+// Codex uses is invalid/missing/malformed, resolveCodexPlugin throws and the
+// doctor cannot determine the selected plugin directory. The pre-fix code fell
+// back to diagnosing `<base>/.agents/plugins/plugin` ANYWAY and emitted
+// healthy-looking plugin/agent/runtime/version checks about that UNSELECTED
+// tree -- masking the selection failure with green checks about a tree Codex
+// isn't actually using. The fix fails an explicit codex-plugin-selection check
+// and stops green-lighting any fallback tree.
+test("Codex doctor fails codex-plugin-selection and refuses to green-light an unselected fallback tree when the marketplace pointer is invalid", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-bad-pointer-"));
+  const base = join(tmp, "dist");
+  const pluginsRoot = join(base, ".agents", "plugins");
+  const pluginDir = join(pluginsRoot, "plugin");
+  const version = selectedPlugin.packageVersion;
+  const absent = async () => { throw new Error("not found"); };
+  // A COMPLETE, valid-looking plugin tree at the conventional fallback path:
+  // its manifest, package version, generated profiles, and bundled runtime all
+  // look healthy, so the pre-fix code green-lights plugin/agent/runtime on it.
+  await mkdir(join(pluginDir, ".codex-plugin"), { recursive: true });
+  await mkdir(join(pluginDir, "agents"), { recursive: true });
+  await mkdir(join(pluginDir, "runtime"), { recursive: true });
+  await writeFile(join(pluginDir, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version }));
+  await writeFile(join(pluginDir, "package.json"), JSON.stringify({ name: "muster", version }));
+  await writeFile(join(pluginDir, "agents", "muster-builder.toml"), "name = 'muster-builder'\n");
+  await writeFile(join(pluginDir, "runtime", "muster.mjs"), "");
+  await writeFile(join(pluginDir, "runtime", "muster-mcp.mjs"), "");
+  await writeFile(join(pluginDir, ".mcp.json"), "{}");
+  // ...but an INVALID marketplace pointer: valid JSON naming muster, yet the
+  // plugin source.path is the WRONG path (the hook-bombardment `./plugin`
+  // mistake -- not `./.agents/plugins/plugin`), so resolveCodexPlugin cannot
+  // authoritatively confirm this tree is the selected one and throws.
+  await writeFile(join(pluginsRoot, "marketplace.json"), JSON.stringify({
+    name: "muster",
+    plugins: [{ name: "muster", source: { source: "local", path: "./plugin" } }]
+  }));
+
+  // A handshake runner that WOULD pass if consulted, proving the fix stops the
+  // runtime claim rather than merely relying on an absent runtime entrypoint.
+  const passingMcp = async () => ({ initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools }, (_, index) => ({ name: `muster_${index}` })), toolCallOk: true });
+
+  const report = await runCodexDoctor({
+    root: base,
+    cwd: join(tmp, "project"),
+    codexHome: join(tmp, "home", ".codex"),
+    execFile: absent,
+    mcpRunner: passingMcp
+  });
+
+  // (a) selection failure is surfaced explicitly and names the problem.
+  const selection = report.checks.find(check => check.name === "codex-plugin-selection");
+  assert.equal(selection?.ok, false, "selection failure must be surfaced as an explicit FAILED check");
+  assert.match(selection?.detail || "", /select/i);
+  assert.match(selection?.detail || "", new RegExp(reEscape(pluginsRoot)));
+
+  // (b) ZERO healthy (ok:true) plugin/agent/runtime/version claims about the
+  // unselected fallback tree -- each downstream tree check is skipped/failed.
+  for (const name of ["codex-plugin", "codex-agents", "codex-runtime", "codex-mcp-handshake", "codex-install-generation"]) {
+    const check = report.checks.find(item => item.name === name);
+    assert.notEqual(check?.ok, true, `${name} must not green-light a tree that was never confirmed as selected`);
+  }
+  await rm(tmp, { recursive: true, force: true });
+});

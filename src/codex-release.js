@@ -664,8 +664,24 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       // copy-only failure mode, where cpSync itself never created it): wipe
       // it before restoring so a failed publish never leaves compromised
       // content in place, whether or not there was a previous plugin.
+      //
+      // Both restore steps below are still attempted independently and remain
+      // best-EFFORT in the sense that a failure of one does not skip the other
+      // -- but a failure is COLLECTED, never swallowed. If a publish fails AND
+      // its rollback also fails, the retired backup or the pointer is left
+      // inconsistent, and the caller must not see only the publish error while
+      // silently losing that fact. Each rollback failure is recorded with the
+      // EXACT affected paths and surfaced in an aggregate error whose `cause`
+      // preserves the original publish failure (and its chain) unchanged. A
+      // fully successful rollback still rethrows the original error untouched.
       rmSync(pluginPath, { recursive: true, force: true });
-      if (hadPrevious) try { renameWithRetry(retired, pluginPath); } catch { /* best-effort restore */ }
+      const rollbackFailures = [];
+      if (hadPrevious) {
+        try { renameWithRetry(retired, pluginPath); }
+        catch (restoreError) {
+          rollbackFailures.push(`retired-plugin restore failed: ${restoreError.message} (retired backup ${retired} could not be renamed back to ${pluginPath}; prior plugin now missing)`);
+        }
+      }
       // Restore the prior pointer only if OUR write could have altered it. A
       // read/validate failure never touched the pointer, so leave it intact;
       // a write failure is undone by rewriting the captured prior bytes with
@@ -676,7 +692,15 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
         try {
           if (priorPointer !== null) atomicWritePointer(pointerPath, priorPointer.toString("utf8"));
           else rmSync(pointerPath, { force: true });
-        } catch { /* best-effort pointer restore */ }
+        } catch (pointerError) {
+          rollbackFailures.push(`marketplace-pointer restore failed: ${pointerError.message} (pointer ${pointerPath} left inconsistent)`);
+        }
+      }
+      if (rollbackFailures.length > 0) {
+        throw new Error(
+          `Codex plugin publish failed AND its rollback did not fully restore prior state; the Codex plugin/marketplace is now inconsistent: ${rollbackFailures.join("; ")} (original publish failure: ${error.message})`,
+          { cause: error }
+        );
       }
       throw error;
     }

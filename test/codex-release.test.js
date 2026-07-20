@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, lstatSync, writeFileSync } from "node:fs";
+import { cpSync, lstatSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import net from "node:net";
@@ -308,6 +308,91 @@ test("publishCodexPlugin restores the previous plugin if the copy-publish step f
     [],
     "retired staging directory must not linger after a restore"
   );
+});
+
+// --- Rollback-integrity: a late publish failure whose ROLLBACK also fails must
+// not be swallowed. The old catch block wrapped both restore steps
+// (renameWithRetry(retired, pluginPath) and the pointer restore) in empty
+// `catch {}` and rethrew ONLY the original publish error, so a publish that
+// failed AND could not be rolled back left the plugin/marketplace inconsistent
+// with no signal. The two tests below force each restore step to fail and assert
+// the thrown error surfaces the rollback failure (with the affected paths) while
+// preserving the original publish error as its cause. ---
+
+test("publishCodexPlugin surfaces (not swallows) a retired-plugin rename-back failure when a late publish failure's rollback cannot restore the prior plugin", async t => {
+  const root = await tempRoot(t);
+  const pluginsRoot = join(root, ".agents", "plugins");
+  await publish(root, "before", { stagedPlugin: await stagedPlugin(root, "before") });
+  const pluginPath = join(pluginsRoot, "plugin");
+  const pointerPath = join(pluginsRoot, "marketplace.json");
+  const pointerBefore = await readFile(pointerPath, "utf8");
+  // A late copy failure that ALSO removes the retired backup, so the rollback's
+  // renameWithRetry(retired, pluginPath) can never rename it back (source now
+  // missing -> ENOENT). The prior-plugin restore is therefore unrecoverable --
+  // exactly the failure the old code silently swallowed.
+  const copyStagedPlugin = async (source, destination) => {
+    const dir = dirname(destination);
+    for (const name of await readdir(dir)) {
+      if (name.startsWith(".muster-retired-")) await rm(join(dir, name), { recursive: true, force: true });
+    }
+    throw new Error("simulated late copy failure");
+  };
+  let thrown;
+  await assert.rejects(
+    publish(root, "broken", { stagedPlugin: await stagedPlugin(root, "broken"), copyStagedPlugin }),
+    error => { thrown = error; return true; }
+  );
+  // The aggregate must name the ORIGINAL publish failure AND the rename-restore
+  // failure AND the exact affected paths (the retired backup + intended pluginPath).
+  assert.match(thrown.message, /rollback did not fully restore|inconsistent/i);
+  assert.match(thrown.message, /retired-plugin restore failed/i);
+  assert.ok(thrown.message.includes(pluginPath), "names the intended restore destination pluginPath");
+  assert.ok(thrown.message.includes(".muster-retired-"), "names the retired backup path");
+  assert.match(thrown.message, /simulated late copy failure/, "names the original publish failure");
+  assert.equal(thrown.cause?.message, "simulated late copy failure", "original publish error preserved as cause");
+  // The pointer write was never reached, so the recoverable prior pointer must
+  // remain byte-identical -- a rollback failure on the plugin must not corrupt
+  // the untouched pointer.
+  assert.equal(await readFile(pointerPath, "utf8"), pointerBefore, "prior marketplace pointer must remain byte-identical");
+});
+
+test("publishCodexPlugin surfaces (not swallows) a marketplace-pointer restore failure while still restoring the recoverable prior plugin", async t => {
+  const root = await tempRoot(t);
+  const pluginsRoot = join(root, ".agents", "plugins");
+  await publish(root, "before", { stagedPlugin: await stagedPlugin(root, "before") });
+  const pluginPath = join(pluginsRoot, "plugin");
+  const pointerPath = join(pluginsRoot, "marketplace.json");
+  // A pointer WRITE that fails (so pointerWriteAttempted is set and the rollback
+  // tries to restore the prior pointer) AND, before failing, replaces the
+  // pointer FILE with a directory so the rollback's internal atomicWritePointer
+  // can never rename its temp file into place (EISDIR). The prior pointer bytes
+  // were already captured before this write, so the failure is purely in the
+  // restore. Synchronous fs ops: writePointer is invoked synchronously.
+  const writePointer = path => {
+    rmSync(path, { force: true });
+    mkdirSync(path);
+    throw new Error("simulated pointer write failure");
+  };
+  let thrown;
+  await assert.rejects(
+    publish(root, "broken", { stagedPlugin: await stagedPlugin(root, "broken"), writePointer }),
+    error => { thrown = error; return true; }
+  );
+  assert.match(thrown.message, /rollback did not fully restore|inconsistent/i);
+  assert.match(thrown.message, /marketplace-pointer restore failed/i);
+  assert.ok(thrown.message.includes(pointerPath), "names the affected marketplace pointer path");
+  assert.match(thrown.message, /simulated pointer write failure/, "names the original publish failure");
+  assert.equal(thrown.cause?.message, "simulated pointer write failure", "original publish error preserved as cause");
+  // The retired-plugin rename-back SUCCEEDED, so the recoverable prior plugin
+  // must be restored byte-identical -- a pointer-restore failure must not corrupt
+  // what the plugin restore correctly recovered.
+  assert.equal(
+    await readFile(join(pluginPath, "runtime", "muster.mjs"), "utf8"),
+    'export const marker = "before";\n',
+    "prior plugin must be restored byte-identical despite the pointer-restore failure"
+  );
+  // The successful rename-back consumed the retired backup -- none must linger.
+  assert.deepEqual((await readdir(pluginsRoot)).filter(name => name.startsWith(".muster-retired-")), []);
 });
 
 test("publishCodexPlugin reuses a preexisting marketplace pointer instead of requiring a template", async t => {

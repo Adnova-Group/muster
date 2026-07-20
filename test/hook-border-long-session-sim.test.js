@@ -91,9 +91,27 @@ function simulateOvernightGap() {
 }
 
 test("long-lived session (simulated week, homebase tmux profile): at most one invite per genuine crossing, zero on trivial single-file days, never dead for the week", async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "muster-week-sim-"));
+  const WEEK_SIM_PREFIX = "muster-week-sim-";
+  const dir = mkdtempSync(path.join(os.tmpdir(), WEEK_SIM_PREFIX));
   mkdirSync(path.join(dir, ".muster"), { recursive: true });
-  const sid = "homebase-week-sim";
+  // The session id must be UNIQUE per test invocation, not a fixed literal.
+  // cumFile/cooldownFile derive a HOST-GLOBAL path from the sid alone
+  // (os.tmpdir()/muster-{cum,cooldown}-<safeSession(sid)>), shared by every
+  // process on the machine that uses the same sid. A fixed "homebase-week-sim"
+  // collided across CONCURRENT full-suite runners (multiple worktrees each
+  // running `npm test` on one host -- the exact path-shadow + capabilities
+  // sprint that surfaced this): both ran THIS file's week simulation against
+  // the same two marker files at once, one run's clearSessionState/day-1 write
+  // clobbering the other's mid-week crossing state, so a later-day
+  // "3rd file crosses the border and invites" assertion failed ~1/8. This is a
+  // cross-process marker-path collision, NOT a clock/mtime race (the injected
+  // MUSTER_TEST_NOW_MS clock is already exact) -- proven by running N concurrent
+  // copies of this file: with a fixed sid every copy fails, with a unique sid
+  // every copy passes. Deriving the sid from the unique mkdtemp suffix gives
+  // each invocation its own private marker pair, so concurrent runs never touch
+  // each other's state. (Other hook tests use fixed sids too, but this
+  // long, many-step stateful sequence is uniquely exposed to a mid-run clobber.)
+  const sid = `homebase-week-sim-${path.basename(dir).slice(WEEK_SIM_PREFIX.length)}`;
   clearSessionState(sid);
 
   // Day plan across a simulated week: "active" days genuinely cross the

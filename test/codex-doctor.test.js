@@ -4,13 +4,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
-import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP } from "../src/codex-doctor.js";
+import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP, DOCTOR_READ_MAX_BYTES } from "../src/codex-doctor.js";
 import { repoRoot, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 function fakeMcpChild() {
@@ -634,4 +635,116 @@ test("Codex doctor live-inventory: FAILING -- a non-zero/throwing `codex` comman
   assert.match(inventory?.detail || "", /0 plugins, 0 skills, 0 MCP servers, 0 agents from live Codex state/);
   // The run still produced the full check set -- the command failure was advisory only.
   assert.ok(report.checks.length > 3 && report.checks.some(check => check.name === "codex-mcp-handshake"));
+});
+
+// --- UNREGISTERED-scope read hardening (Codex dogfood audit) --------------
+// The doctor inspects the current-project scope (`<cwd>/.codex`) and the user
+// scope (CODEX_HOME) EVEN WHEN NEITHER IS REGISTERED in install-scopes.json.
+// Those unregistered read paths used to bypass the descriptor-pinned no-follow
+// bounded reader registered scopes already go through -- reading manifests /
+// hooks.json / hook runtime via a plain follow-capable, unbounded readFile. A
+// planted symlink, FIFO/socket, oversized file, or symlinked ancestor could be
+// followed / read unbounded. Each fixture below plants one attack on an
+// UNREGISTERED scope read path and asserts the check now fails CLOSED with a
+// per-scope diagnostic. Each is RED against the pre-fix code (which follows the
+// symlink / reads the special or oversized file) and green after.
+const reEscape = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+test("Codex doctor: UNREGISTERED user scope whose profile manifest is a SYMLINK is rejected fail-closed, target never adopted", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-unreg-symlink-"));
+  const cwd = join(tmp, "p"), codexHome = join(tmp, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await mkdir(join(codexHome, "agents"), { recursive: true });
+  // A coherent manifest planted OUTSIDE the scope: were the symlink followed,
+  // the doctor would read it and count this scope as a version match (flipping
+  // codex-install-generation GREEN). Rejecting the symlink means the target is
+  // never read, so the check must NOT adopt it.
+  const outside = join(tmp, "outside-manifest.json");
+  await writeFile(outside, JSON.stringify({ owner: "muster", packageVersion: selectedPlugin.packageVersion }));
+  await symlink(outside, join(codexHome, "agents", ".muster-managed.json"));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const generation = report.checks.find(check => check.name === "codex-install-generation");
+  assert.equal(generation?.ok, false, generation?.detail);
+  assert.match(generation?.detail || "", /unsafe managed profile scope read rejected/i);
+  assert.match(generation?.detail || "", /regular file/i);
+  assert.match(generation?.detail || "", new RegExp(reEscape(codexHome)));
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: UNREGISTERED user scope whose hook manifest is a SOCKET (non-regular) is rejected fail-closed", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-unreg-socket-"));
+  const cwd = join(tmp, "p"), codexHome = join(tmp, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await mkdir(join(codexHome, "muster"), { recursive: true });
+  const manifestPath = join(codexHome, "muster", ".muster-managed.json");
+  // Border/platform guard: unix domain sockets (or this path length) may be
+  // unsupported -- probe by binding at the real read path, skip if it throws.
+  let server;
+  try {
+    server = await new Promise((resolve, reject) => {
+      const s = createServer();
+      s.once("error", reject);
+      s.listen(manifestPath, () => resolve(s));
+    });
+  } catch (error) {
+    t.skip(`unix domain sockets unsupported here: ${error.message}`);
+    await rm(tmp, { recursive: true, force: true });
+    return;
+  }
+  try {
+    const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+    const hooks = report.checks.find(check => check.name === "codex-hooks");
+    assert.equal(hooks?.ok, false, hooks?.detail);
+    assert.match(hooks?.detail || "", /unsafe managed hook scope read rejected/i);
+    assert.match(hooks?.detail || "", /regular file/i);
+    assert.match(hooks?.detail || "", new RegExp(reEscape(codexHome)));
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("Codex doctor: UNREGISTERED user scope whose hook manifest EXCEEDS the read cap is rejected on the size bound before an unbounded read", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-unreg-oversized-"));
+  const cwd = join(tmp, "p"), codexHome = join(tmp, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await mkdir(join(codexHome, "muster"), { recursive: true });
+  const manifestPath = join(codexHome, "muster", ".muster-managed.json");
+  // A regular file one byte past the doctor read cap. The safe reader must
+  // reject it on the fstat size bound BEFORE allocating/reading its bytes.
+  await writeFile(manifestPath, "a".repeat(DOCTOR_READ_MAX_BYTES + 1));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const hooks = report.checks.find(check => check.name === "codex-hooks");
+  assert.equal(hooks?.ok, false, hooks?.detail);
+  assert.match(hooks?.detail || "", /unsafe managed hook scope read rejected/i);
+  assert.match(hooks?.detail || "", /exceeds the \d+-byte read cap/i);
+  assert.match(hooks?.detail || "", new RegExp(reEscape(codexHome)));
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("Codex doctor: UNREGISTERED project scope reached through a SYMLINKED ancestor directory is rejected fail-closed", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "m-doctor-unreg-ancestor-"));
+  const cwd = join(tmp, "p"), codexHome = join(tmp, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  // The project scope's `muster/` directory is a SYMLINK to an attacker dir
+  // holding a plausible manifest. A follow-capable read would traverse it; the
+  // safe reader must reject the symlinked ancestor.
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  const outsideMuster = join(tmp, "outside-muster");
+  await mkdir(outsideMuster, { recursive: true });
+  await writeFile(join(outsideMuster, ".muster-managed.json"), JSON.stringify({
+    owner: "muster", packageVersion: selectedPlugin.packageVersion,
+    hookGroups: { SessionStart: [{ hooks: [{ command: "x/muster/hooks/muster-hook.mjs" }] }] }
+  }));
+  await symlink(outsideMuster, join(cwd, ".codex", "muster"), "dir");
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const hooks = report.checks.find(check => check.name === "codex-hooks");
+  assert.equal(hooks?.ok, false, hooks?.detail);
+  assert.match(hooks?.detail || "", /unsafe managed hook scope read rejected/i);
+  assert.match(hooks?.detail || "", /ordinary directory/i);
+  assert.match(hooks?.detail || "", new RegExp(reEscape(join(cwd, ".codex"))));
+  await rm(tmp, { recursive: true, force: true });
 });

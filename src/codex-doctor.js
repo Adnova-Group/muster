@@ -186,6 +186,25 @@ function isLegacyManagedManifest(owner) {
     && (typeof owner.generation === "string" || typeof owner.bootstrapDigest === "string");
 }
 
+// Upper bound on a single trust-boundary scope file the doctor will read into
+// memory. The largest managed file is the bundled hook runtime (~12 KB), so
+// 1 MiB leaves ~85x headroom for every well-formed config.toml / hooks.json /
+// managed marker / hook runtime while capping how much a hostile oversized file
+// can force the reader to allocate. The size is checked via fstat on the held
+// descriptor BEFORE the file's contents are read (see readRegularFile).
+export const DOCTOR_READ_MAX_BYTES = 1024 * 1024;
+
+// Tags a rejection thrown by the no-follow bounded reader (symlink, non-regular
+// file, symlinked ancestor, TOCTOU dev/ino change, or oversize) so callers can
+// distinguish an ACTIVE fail-closed rejection of an unsafe trust file from a
+// benign absence (null) or a malformed-but-ordinary file (a plain parse error),
+// and surface a per-scope diagnostic for the former without swallowing it.
+function unsafeScopeRead(message) {
+  const error = new Error(message);
+  error.musterUnsafeRead = true;
+  return error;
+}
+
 async function ordinaryDirectoryPath(path) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
@@ -197,12 +216,12 @@ async function ordinaryDirectoryPath(path) {
       if (missingPath(error)) return false;
       throw error;
     }
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Codex configuration ancestry must be an ordinary directory: ${current}`);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw unsafeScopeRead(`Codex configuration ancestry must be an ordinary directory: ${current}`);
   }
   return true;
 }
 
-async function readRegularFile(path, encoding) {
+async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES) {
   if (!(await ordinaryDirectoryPath(dirname(path)))) return null;
   let before;
   try { before = await lstat(path); }
@@ -210,12 +229,15 @@ async function readRegularFile(path, encoding) {
     if (missingPath(error)) return null;
     throw error;
   }
-  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`Codex configuration target must be a regular file: ${path}`);
+  if (before.isSymbolicLink() || !before.isFile()) throw unsafeScopeRead(`Codex configuration target must be a regular file: ${path}`);
   let handle;
   try {
     handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
     const current = await handle.stat();
-    if (!current.isFile() || current.dev !== before.dev || current.ino !== before.ino) throw new Error(`Codex configuration target changed while reading: ${path}`);
+    if (!current.isFile() || current.dev !== before.dev || current.ino !== before.ino) throw unsafeScopeRead(`Codex configuration target changed while reading: ${path}`);
+    // Size-bound on the HELD descriptor before any read: a hostile oversized
+    // file is rejected without ever allocating its contents.
+    if (current.size > maxBytes) throw unsafeScopeRead(`Codex configuration target exceeds the ${maxBytes}-byte read cap (${current.size} bytes): ${path}`);
     return handle.readFile(encoding);
   } finally {
     if (handle) await handle.close().catch(() => {});
@@ -581,46 +603,58 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     .join(", ")}`;
   if (selected) {
     const installations = [];
+    const unsafeProfileScopes = [];
     for (const dir of hookHomes) {
+      const registered = scopeHomes.get(dir);
+      const manifestPath = join(dir, "agents", ".muster-managed.json");
+      // Every scope -- registered AND unregistered current-project/user --
+      // reads its managed profile marker through the same no-follow bounded
+      // reader (readRegularJson): null = benign absence, a musterUnsafeRead
+      // throw = an ACTIVE fail-closed rejection (symlink / special / oversized
+      // / symlinked ancestor) reported per-scope, a plain throw = malformed.
       try {
-        const manifestPath = join(dir, "agents", ".muster-managed.json");
-        const owner = scopeHomes.get(dir)
-          ? await readRegularJson(manifestPath)
-          : JSON.parse(await readFile(manifestPath, "utf8"));
+        const owner = await readRegularJson(manifestPath);
         if (!owner) throw new Error(`managed profile manifest is missing: ${manifestPath}`);
         installations.push({ dir, ok: owner.owner === "muster" && owner.packageVersion === selected.packageVersion, legacy: isLegacyManagedManifest(owner) });
-      } catch {
-        if (scopeHomes.get(dir)) installations.push({ dir, ok: false, legacy: false });
+      } catch (error) {
+        if (error?.musterUnsafeRead) unsafeProfileScopes.push({ dir, reason: error.message });
+        else if (registered) installations.push({ dir, ok: false, legacy: false });
+        // Unregistered + benign (absent/malformed): stay silent, as before.
       }
     }
     const stale = installations.filter(item => !item.ok);
     const legacyStale = stale.filter(item => item.legacy).map(item => item.dir);
     const versionStale = stale.filter(item => !item.legacy).map(item => item.dir);
-    checks.push({ name: "codex-install-generation", ok: stale.length === 0, detail: stale.length
-      ? [
+    const ok = stale.length === 0 && unsafeProfileScopes.length === 0;
+    checks.push({ name: "codex-install-generation", ok, detail: ok
+      ? (installations.length ? `${installations.length} managed scope(s) match package version ${selected.packageVersion}` : "no managed profile scopes detected")
+      : [
           legacyStale.length ? legacyRemediation(legacyStale) : null,
-          versionStale.length ? `installed profiles do not match the selected package version at: ${versionStale.join(", ")}; rerun muster install codex` : null
-        ].filter(Boolean).join("; ")
-      : installations.length ? `${installations.length} managed scope(s) match package version ${selected.packageVersion}` : "no managed profile scopes detected" });
+          versionStale.length ? `installed profiles do not match the selected package version at: ${versionStale.join(", ")}; rerun muster install codex` : null,
+          unsafeProfileScopes.length ? `unsafe managed profile scope read rejected: ${unsafeProfileScopes.map(item => `${item.dir} (${item.reason})`).join(", ")}` : null
+        ].filter(Boolean).join("; ") });
   }
   const hookStatuses = [];
   const staleHookScopes = [];
   const legacyHookScopes = [];
+  const unsafeHookScopes = [];
   const hookInterpreters = [];
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
     if (!registered && !(await exists(manifestPath))) continue;
+    // Every scope -- registered AND unregistered current-project/user -- reads
+    // its hook manifest, hooks.json, and hook runtime through the same
+    // no-follow bounded reader (readRegularJson/readRegularFile). A
+    // musterUnsafeRead throw (symlink / special / oversized / symlinked
+    // ancestor) is an ACTIVE fail-closed rejection reported per-scope below;
+    // any other throw stays a plain stale verdict, exactly as before.
     try {
-      const owner = registered
-        ? await readRegularJson(manifestPath)
-        : JSON.parse(await readFile(manifestPath, "utf8"));
+      const owner = await readRegularJson(manifestPath);
       if (!owner) throw new Error(`managed hook manifest is missing: ${manifestPath}`);
       if (isLegacyManagedManifest(owner)) { legacyHookScopes.push(dir); staleHookScopes.push(dir); continue; }
       const configPath = join(dir, "hooks.json");
-      const config = registered
-        ? await readRegularJson(configPath)
-        : JSON.parse(await readFile(configPath, "utf8"));
+      const config = await readRegularJson(configPath);
       if (!config) throw new Error(`managed hook configuration is missing: ${configPath}`);
       if (isHooksSkippedManifest(owner)) {
         // Coherent-and-non-firing: no runtime dir is expected, so it is
@@ -633,9 +667,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         continue;
       }
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
-      const runtime = await Promise.all(hookFiles.map(file => registered
-        ? readRegularFile(join(dir, "muster", "hooks", file))
-        : readFile(join(dir, "muster", "hooks", file))));
+      const runtime = await Promise.all(hookFiles.map(file => readRegularFile(join(dir, "muster", "hooks", file))));
       if (runtime.some(file => file === null)) throw new Error(`managed hook runtime is missing: ${dir}`);
       const hash = createHash("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
@@ -660,16 +692,22 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         const parsed = rawCommand ? parseHookCommand(rawCommand, { windows: platform === "win32" }) : null;
         if (parsed?.interpreter) hookInterpreters.push({ dir, interpreter: parsed.interpreter });
       } else staleHookScopes.push(dir);
-    } catch { staleHookScopes.push(dir); }
+    } catch (error) {
+      if (error?.musterUnsafeRead) unsafeHookScopes.push({ dir, reason: error.message });
+      else staleHookScopes.push(dir);
+    }
   }
   const hookStatus = staleHookScopes.length === 0 ? hookStatuses[0] || null : null;
   const otherStaleHookScopes = staleHookScopes.filter(dir => !legacyHookScopes.includes(dir));
   const legacyHookDetail = legacyHookScopes.length ? legacyRemediation(legacyHookScopes) : null;
-  checks.push({ name: "codex-hooks", ok: Boolean(hookStatus), detail: hookStatus
+  const unsafeHookDetail = unsafeHookScopes.length ? `unsafe managed hook scope read rejected: ${unsafeHookScopes.map(item => `${item.dir} (${item.reason})`).join(", ")}` : null;
+  const hooksOk = Boolean(hookStatus) && unsafeHookScopes.length === 0;
+  checks.push({ name: "codex-hooks", ok: hooksOk, detail: hooksOk
     ? `managed lifecycle hooks configured at ${hookStatus}; non-managed hooks require one-time trust review in /hooks`
     : [
         legacyHookDetail,
-        otherStaleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${otherStaleHookScopes.join(", ")}; rerun muster install codex for each scope` : null
+        otherStaleHookScopes.length ? `managed lifecycle hooks are stale or differ from their exact ownership manifest at ${otherStaleHookScopes.join(", ")}; rerun muster install codex for each scope` : null,
+        unsafeHookDetail
       ].filter(Boolean).join("; ") || "managed Codex lifecycle hooks are not installed; run muster install codex for the intended project or user scope" });
   // The hook runtime itself has no cross-copy dedupe (each installed copy
   // independently emits its own event context; wave 1 removed the CODEX_HOME
@@ -677,8 +715,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // dedupe" coverage). Dual live scopes therefore fire every advisory twice —
   // per the 2026-07-18 canonical-scope decision this is now an actionable
   // finding (user scope wins; collapse the duplicate), not an accepted state.
-  checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0 && hookStatuses.length <= 1, detail: staleHookScopes.length
-    ? [legacyHookDetail, otherStaleHookScopes.length ? "Project/user hook copies are not hash/exact-group coherent with their ownership manifest; refresh every stale scope" : null].filter(Boolean).join("; ")
+  checks.push({ name: "codex-hooks-overlap", ok: staleHookScopes.length === 0 && unsafeHookScopes.length === 0 && hookStatuses.length <= 1, detail: (staleHookScopes.length || unsafeHookScopes.length)
+    ? [legacyHookDetail, otherStaleHookScopes.length ? "Project/user hook copies are not hash/exact-group coherent with their ownership manifest; refresh every stale scope" : null, unsafeHookDetail].filter(Boolean).join("; ")
     : hookStatuses.length > 1
     // codex-hook-scope-collapse: a project-scope REINSTALL under a healthy
     // user scope now auto-collapses the duplicate (prepareHooks'

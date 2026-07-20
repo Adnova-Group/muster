@@ -12,7 +12,7 @@ Muster runs on your interactive Claude Code subscription. There is no separate m
 ## 1. Run the installer
 
 ```sh
-npx @adnova-group/muster install
+npx -y @adnova-group/muster install
 ```
 
 `install` mutates nothing in your `~/.claude`. It only prints the steps it cannot do for you, because registering a plugin is a Claude Code action, not a shell command.
@@ -29,7 +29,11 @@ Run these inside Claude Code:
 Muster's glass-box output style ships **inside the plugin** and applies automatically when the plugin is enabled (it sets `force-for-plugin: true`), so there is no style command to run. The old `/output-style <name>` command was removed from Claude Code in v2.1.91; auto-apply replaces it. To pick a different style at any time, use `/config` and select **Output style**.
 
 ::: tip Restart to activate
-Plugin install is a Claude Code action, so the running session only picks Muster up after you (re)install it through `/plugin`. The plugin's agents, the three session hooks, and the output style become active in your next fresh session (restart or `/clear`).
+Plugin install is a Claude Code action, so the running session only picks Muster up after you (re)install it through `/plugin`. The plugin's agents, the four session hooks, and the output style become active in your next fresh session (restart or `/clear`).
+:::
+
+::: tip Installing on Codex instead?
+Codex has its own install path — managed profiles, a hooks-free plugin, and a separate hook runtime. See the [Codex guide](/guides/codex).
 :::
 
 ## 3. Verify
@@ -45,17 +49,20 @@ Muster detects your project, assembles a crew, and shows the glass-box manifest 
 You can also exercise the CLI directly in a terminal. Every verb is plain Node and prints JSON:
 
 ```sh
-npx @adnova-group/muster detect
-npx @adnova-group/muster capabilities
+npx -y @adnova-group/muster detect
+npx -y @adnova-group/muster capabilities
 ```
+
+If the crew manifest does not appear, or `/muster:*` commands are missing, run `npx -y @adnova-group/muster doctor` and see [Troubleshooting](/guides/troubleshooting).
 
 ## What the plugin adds
 
 - **Eight slash commands**: `/muster:plan`, `/muster:go`, `/muster:plan-backlog`, `/muster:go-backlog`, `/muster:diagnose`, `/muster:audit`, `/muster:runner`, `/muster:capture`. `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work as aliases of `plan`, `go`, and `go-backlog`. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged until then.
-- **Three session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled. Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits: the action-class fence below is the only hard deny left in the stack; everything else is a single warn-only "border invitation" that sells the value of a crew run rather than commanding.
+- **Four session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled. Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits: the action-class fence below is the only hard deny on a tool call, and the `TaskCompleted` gate below is the one other block surface (it gates a task-board completion tick, not a tool call); everything else is a single warn-only "border invitation" that sells the value of a crew run rather than commanding.
   - **`SessionStart`** injects a one-line pointer ("muster available; `/muster:plan` for orchestration-scale work") into every session, and clears stale run/session state on a genuinely fresh start. Never writes to your `~/.claude` files.
   - **`UserPromptSubmit`** fires the ONLY prompt-time nudge: a directive-shaped prompt (fix/build/implement, etc.) with no active run sells the value of a crew run (parallel dispatch, adversarial review, a receipts trail) once per crossing, then stays silent until a run starts, a fresh session, or 60 minutes of inactivity re-arms it.
   - **`PreToolUse`** enforces the **action-class fence**: while a run is active and `.muster/forbidden-actions` lists a class, a tool call that would perform a run-forbidden send/sign/submit/publish/purchase/delete-remote action is denied, controlled by `MUSTER_ACTION_GUARD` (`deny` / `warn` / `off`). Independently, a cumulative counter of distinct inline-edited files across turns (with no run active) crossing `MUSTER_INLINE_SCALE` (default 3) warns once per crossing with the same value-toned copy -- never denies. Writes into `.muster/` and `.claude/` (in-cwd repo) are always exempt.
+  - **`TaskCompleted`** is the second block surface. Muster writes `.muster/task-board.json` (one entry per native task it created) and flips an entry to `reviewGate: "pass"` only once the review gate actually passes that task. The hook **denies (exit 2) a completion tick on a tracked task with no recorded PASS**, so a task cannot be ticked done before it has been reviewed. If you see a completion refused mid-run, that is this gate: finish the review, or set `MUSTER_TASK_GATE=off` to disable it. It fails open for any task the board does not track.
 - **Built-in agents and skills**, vendored from MIT-licensed upstreams plus Muster's own clean-room specialists.
 
 ## Uninstall
@@ -63,7 +70,7 @@ npx @adnova-group/muster capabilities
 Because everything Muster adds lives **inside the plugin**, removal is mostly a matter of removing the plugin. Muster never writes to your `~/.claude/CLAUDE.md` or `settings.json`, so there is nothing tangled to unpick.
 
 ```sh
-npx @adnova-group/muster uninstall
+npx -y @adnova-group/muster uninstall
 ```
 
 `uninstall` prints the steps it cannot do for you, because removing a plugin is a Claude Code action:
@@ -76,7 +83,7 @@ npx @adnova-group/muster uninstall
 It also cleans up after older Muster versions: if a pre-`force-for-plugin` install left a copied style at `~/.claude/output-styles/muster.md`, `uninstall` removes it (and restores the original it had displaced, if there is a `.bak`). On a current install there is nothing there to remove.
 
 ::: tip Everything leaves with the plugin
-The output style (`force-for-plugin`) and all three session hooks are plugin-native, so uninstalling the plugin removes them automatically. The forced style auto-reverts to whatever output style you had before. There is no global file or `CLAUDE.md` block to clean up by hand.
+The output style (`force-for-plugin`) and all four session hooks are plugin-native, so uninstalling the plugin removes them automatically. The forced style auto-reverts to whatever output style you had before. There is no global file or `CLAUDE.md` block to clean up by hand.
 :::
 
 Next: the [Quickstart](/guides/quickstart).

@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: Muster
-  text: Glass-box agentic orchestrator for Claude Code
+  text: Glass-box agentic orchestrator for Claude Code and Codex
   tagline: Give it an outcome. It detects your project, assembles the right crew, and shows its reasoning before it acts.
   actions:
     - theme: brand
@@ -22,7 +22,7 @@ features:
     details: Every routing decision is inspectable. Which role resolved to which provider, on which model, and why. The crew manifest shows the plan before any work begins.
   - icon: 🧩
     title: Multi-runtime
-    details: Composes the tools you already have (plugins, agents, MCP servers) and falls back to its own built-ins. Runs on bare Claude Code and gets better as you install more.
+    details: Composes the tools you already have (plugins, agents, MCP servers) and falls back to its own built-ins. Runs on bare Claude Code or Codex and gets better as you install more.
   - icon: 🌐
     title: Multi-domain
     details: Not just code. Product, business, content, and operations pipelines are first-class. PRDs, roadmaps, launch plans, runbooks, and more.

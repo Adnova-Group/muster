@@ -113,6 +113,8 @@ The unattended, single-cycle counterpart to Go-backlog's batch clear -- meant to
 /muster:runner issues:agent:todo
 ```
 
+**Scheduling.** A Claude Code Routine on a timer, or cron invoking the CLI (`claude -p "/muster:runner issues:agent:todo"`), is the verified-safe standing cadence; match the backlog's arrival rate rather than firing faster, and use the runner's own idle receipts as the widen signal. Claude Code's native `/loop` binding is documented here too, with its limit: as of v2.1.196 a scheduled or `/loop` fire does not execute a `disable-model-invocation: true` command -- it reaches Claude as plain text instead -- and `/muster:runner` carries that flag by decision, so `/loop /muster:runner <source>` re-runs nothing after the first fire. For a native self-continuing loop, `/goal` re-runs on a *condition* rather than a time interval and is unaffected by that restriction. The safety inventory (pr-only, the 2-failure retry cap, the claim lock) applies to every firing mechanism unchanged.
+
 Runner shares the same **coordination** skill as Go-backlog, so it composes safely with a running batch clear, other scheduled runners, and humans working the same backlog or `issues:<label>` -- the claim lock (Binding A's comment-race window, Binding B's claim-then-verify) is what makes concurrent firing safe. On escalation, Runner posts a `FAILED` receipt and marks the item escalated so the next cycle's claim step skips it; a 2-failure retry cap bounds reclaim loops before an item redirects to blocked rather than being retried forever.
 
 ## Capture

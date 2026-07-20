@@ -21,7 +21,15 @@ Human-facing pipelines end with a `humanize` phase. The `muster-humanizer` built
 
 ## The set
 
-The catalog spans software and knowledge work:
+There are **20 pipelines**, spanning software and knowledge work. Ask for any of them by id:
+
+```sh
+# print one pipeline's phases, roles, and gate
+npx @adnova-group/muster pipeline runbook
+npx @adnova-group/muster pipeline release-notes
+```
+
+`pipeline` also accepts a domain (`pipeline ops`, `pipeline pm`), which resolves that domain's default pipeline. The set:
 
 - **Product**: PRD, epic, user-story, roadmap
 - **Business**: business-case, executive-summary, OKRs, competitive-battlecard
@@ -30,7 +38,7 @@ The catalog spans software and knowledge work:
 - **Engineering specs**: AI implementation spec, AI test plan
 - **Operations**: runbook
 
-Content pipelines that resolve an audience or a voice read named profiles from `docs/profiles/`: `AUDIENCES.md` (depth, jargon, altitude), `VOICE.md` (register, rhythm, anti-patterns), and `BRAND.md` (a visual anchor for the `image`/`video` roles) -- created or extended on first use, not hand-authored up front. Blog-post, lead-magnet, and social-post also carry an `optional_phases: [publish]` phase: skippable, terminal, and scoped to assembling the ready-to-publish packet and evidence -- never the deploy/post/send act itself, which stays behind the action-class fence.
+Content pipelines that resolve an audience or a voice read named profiles from `docs/profiles/`: `AUDIENCES.md` (depth, jargon, altitude), `VOICE.md` (register, rhythm, anti-patterns), and `BRAND.md` (a visual anchor for the `image`/`video` roles) -- created or extended on first use, not hand-authored up front. Blog-post, lead-magnet, and social-post also carry an `optional_phases: [publish]` phase: skippable, terminal, and scoped to assembling the ready-to-publish packet and evidence -- never the deploy/post/send act itself, which stays behind the [action-class fence](/reference/architecture#session-hooks).
 
 ## Roadmap prioritization
 

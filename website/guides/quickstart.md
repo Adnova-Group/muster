@@ -4,6 +4,10 @@ Muster turns an outcome into finished work. You give it a goal in plain language
 
 Pick the mode that matches what you want.
 
+::: tip On Codex?
+Every mode below is available on Codex as a skill (`$muster-plan`, `$muster-go`, and so on) once Muster's managed profiles and plugin are installed. See the [Codex guide](/guides/codex) for that install path. If something does not appear or behaves oddly, start at [Troubleshooting](/guides/troubleshooting).
+:::
+
 ## Plan and review: `/muster:plan`
 
 The approve-first router. It detects whether the invocation is one outcome or a backlog, confirming via AskUserQuestion (stating the signals verbatim) whenever it isn't a clear single item, announces the artifact it's about to produce, then -- for a single outcome -- assembles the crew and shows the glass-box manifest plus a plan, and **stops for your approval**. It plans and shows; selecting Approve & run chains into `/muster:go` in-session, while Adjust and Cancel stay plan-only.
@@ -105,16 +109,16 @@ Because the CLI is deterministic and makes no model calls, you can run it in a t
 
 ```sh
 # What did Muster detect about this project?
-npx @adnova-group/muster detect
+npx -y @adnova-group/muster detect
 
 # Which provider wins each role, on which model, and what would beat it?
-npx @adnova-group/muster capabilities
+npx -y @adnova-group/muster capabilities
 
 # Which specialist matches a free-text task?
-npx @adnova-group/muster match "audit this code for security vulnerabilities"
+npx -y @adnova-group/muster match "audit this code for security vulnerabilities"
 
 # Which pipeline routes for an outcome?
-npx @adnova-group/muster route "draft a PRD for a referral program"
+npx -y @adnova-group/muster route "draft a PRD for a referral program"
 ```
 
 Next: read [Concepts](/reference/concepts) to understand the router that powers all of this.

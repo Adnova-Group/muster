@@ -488,36 +488,71 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // plugin root itself. Support both layouts without requiring npm at runtime.
   const isPluginRoot = await exists(join(base, ".codex-plugin", "plugin.json"));
   let selected = null;
+  let selectionError = null;
   if (isPluginRoot) {
     try {
       const pkg = JSON.parse(await readFile(join(base, "package.json"), "utf8"));
       selected = { packageVersion: pkg.version, pluginRoot: base, profilesRoot: join(base, "agents") };
-    } catch { /* plugin checks below report malformed cache layout */ }
+    } catch { /* a plugin-root layout is already the selected tree; a malformed package.json is reported by the plugin checks below, not a selection failure */ }
   } else {
+    // resolveCodexPlugin reads the marketplace pointer through the SAME
+    // descriptor-pinned no-follow safe reader used elsewhere; an
+    // invalid/missing/malformed pointer makes it throw and leaves `selected`
+    // null. Capture that throw (do not add a parallel pointer read) so the
+    // selection failure can be named explicitly below.
     try { selected = await resolveCodexPlugin(base); }
-    catch { /* report the selected-plugin failure through the plugin/profile checks */ }
+    catch (error) { selectionError = error; }
   }
+  // Plugin SELECTION failure: only the non-plugin-root path resolves the
+  // authoritative "which plugin tree is selected" answer through the marketplace
+  // pointer. When that fails, no plugin can be authoritatively selected, and the
+  // old code silently fell back to diagnosing `<base>/.agents/plugins/plugin`
+  // anyway -- emitting healthy-looking plugin/agent/runtime/version checks about
+  // an UNSELECTED tree Codex isn't actually using. Instead, fail an explicit
+  // codex-plugin-selection check and refuse to green-light any fallback tree.
+  const selectionFailed = !isPluginRoot && !selected;
   const plugin = isPluginRoot ? base : (selected?.pluginRoot || join(base, ".agents", "plugins", "plugin"));
+  const selectionSkip = subject => `Codex plugin selection failed; ${subject} not diagnosed (see codex-plugin-selection)`;
   const checks = [];
   const available = await codexAvailable({ execFile });
   checks.push({ name: "codex-cli", ok: available, detail: available ? "codex detected on PATH" : "codex not found — profiles can be installed, plugin registration is skipped" });
   checks.push(await checkPathShadow({ env, platform }));
-  try {
-    const [manifest, pkg] = await Promise.all([
-      readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),
-      readFile(join(plugin, "package.json"), "utf8").then(JSON.parse)
-    ]);
-    checks.push({ name: "codex-plugin", ok: manifest.name === "muster" && manifest.version === pkg.version, detail: `muster ${manifest.version || "unknown"}` });
-  } catch (error) { checks.push({ name: "codex-plugin", ok: false, detail: error.message }); }
-  try {
-    const profileDir = isPluginRoot ? join(plugin, "agents") : selected.profilesRoot;
-    const files = (await readdir(profileDir)).filter(name => name.endsWith(".toml"));
-    checks.push({ name: "codex-agents", ok: files.length === CODEX_COUNTS.agents, detail: `${files.length}/${CODEX_COUNTS.agents} generated profiles` });
-  } catch (error) { checks.push({ name: "codex-agents", ok: false, detail: error.message }); }
-  const required = ["runtime/muster.mjs", "runtime/muster-mcp.mjs", ".mcp.json"];
-  const missing = [];
-  for (const item of required) if (!(await exists(join(plugin, item)))) missing.push(item);
-  checks.push({ name: "codex-runtime", ok: missing.length === 0, detail: missing.length ? `missing: ${missing.join(", ")}` : "bundled runtime and MCP entrypoint present" });
+  if (selectionFailed) {
+    checks.push({ name: "codex-plugin-selection", ok: false, detail: `could not select which Muster plugin Codex uses from the marketplace pointer under ${join(base, ".agents", "plugins")}: ${selectionError?.message || "invalid or missing marketplace pointer"}; downstream plugin/agent/runtime/version checks are not diagnosed against any unselected fallback tree -- rerun muster install codex / build:codex to regenerate a valid pointer` });
+  }
+  // The three checks below (and the version/handshake checks further down) draw
+  // health conclusions from `plugin` -- the SELECTED tree. When selection failed
+  // `plugin` is only an unconfirmed fallback path, so they are skipped (reported
+  // ok:false, "not diagnosed") rather than green-lighting a tree Codex may not
+  // be using. When selection SUCCEEDS they run exactly as before.
+  if (selectionFailed) {
+    checks.push({ name: "codex-plugin", ok: false, detail: selectionSkip("the plugin manifest was") });
+  } else {
+    try {
+      const [manifest, pkg] = await Promise.all([
+        readFile(join(plugin, ".codex-plugin", "plugin.json"), "utf8").then(JSON.parse),
+        readFile(join(plugin, "package.json"), "utf8").then(JSON.parse)
+      ]);
+      checks.push({ name: "codex-plugin", ok: manifest.name === "muster" && manifest.version === pkg.version, detail: `muster ${manifest.version || "unknown"}` });
+    } catch (error) { checks.push({ name: "codex-plugin", ok: false, detail: error.message }); }
+  }
+  if (selectionFailed) {
+    checks.push({ name: "codex-agents", ok: false, detail: selectionSkip("generated agent profiles were") });
+  } else {
+    try {
+      const profileDir = isPluginRoot ? join(plugin, "agents") : selected.profilesRoot;
+      const files = (await readdir(profileDir)).filter(name => name.endsWith(".toml"));
+      checks.push({ name: "codex-agents", ok: files.length === CODEX_COUNTS.agents, detail: `${files.length}/${CODEX_COUNTS.agents} generated profiles` });
+    } catch (error) { checks.push({ name: "codex-agents", ok: false, detail: error.message }); }
+  }
+  if (selectionFailed) {
+    checks.push({ name: "codex-runtime", ok: false, detail: selectionSkip("the bundled runtime and MCP entrypoint were") });
+  } else {
+    const required = ["runtime/muster.mjs", "runtime/muster-mcp.mjs", ".mcp.json"];
+    const missing = [];
+    for (const item of required) if (!(await exists(join(plugin, item)))) missing.push(item);
+    checks.push({ name: "codex-runtime", ok: missing.length === 0, detail: missing.length ? `missing: ${missing.join(", ")}` : "bundled runtime and MCP entrypoint present" });
+  }
   const userCodexHome = codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
   const registeredScopes = await registeredManagedScopes(userCodexHome);
   checks.push({ name: "codex-managed-scopes", ok: registeredScopes.issues.length === 0, detail: registeredScopes.issues.length
@@ -595,7 +630,12 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const scopeHomes = new Map([[join(cwd, ".codex"), false], [userCodexHome, false]]);
   for (const dir of registeredScopes.dirs) scopeHomes.set(dir, true);
   const hookHomes = [...scopeHomes.keys()];
-  try {
+  // The handshake spawns `plugin`'s bundled MCP entrypoint -- a runtime claim
+  // about the SELECTED tree. On selection failure `plugin` is unconfirmed, so
+  // skip the handshake rather than green-light an unselected runtime.
+  if (selectionFailed) {
+    checks.push({ name: "codex-mcp-handshake", ok: false, detail: `${selectionSkip("the bundled MCP handshake was")}; ${mcpVisibilityNote}` });
+  } else try {
     const handshake = await mcpRunner({ entrypoint: join(plugin, "runtime", "muster-mcp.mjs"), cwd, timeoutMs: MCP_TIMEOUT_MS });
     const count = Array.isArray(handshake?.tools) ? handshake.tools.length : 0;
     // toolCallOk is the load-bearing half: a listing-only handshake passed for
@@ -644,6 +684,11 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
           versionStale.length ? `installed profiles do not match the selected package version at: ${versionStale.join(", ")}; rerun muster install codex` : null,
           unsafeProfileScopes.length ? `unsafe managed profile scope read rejected: ${unsafeProfileScopes.map(item => `${item.dir} (${item.reason})`).join(", ")}` : null
         ].filter(Boolean).join("; ") });
+  } else if (selectionFailed) {
+    // No selected package version to compare installed profiles against, so this
+    // version claim is not diagnosed rather than silently omitted -- it must
+    // never report ok:true about a tree that was never confirmed as selected.
+    checks.push({ name: "codex-install-generation", ok: false, detail: selectionSkip("installed profile package versions were") });
   }
   const hookStatuses = [];
   const staleHookScopes = [];

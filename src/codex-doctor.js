@@ -378,7 +378,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8") } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -426,8 +426,26 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // time manifest, and reuses the exact same remediation text a failed
   // install throws (backlog item `codex-thread-limits-enforcement`).
   const threadLimitConfigPath = codexThreadLimitConfigPath(userCodexHome);
+  // ONE safe config.toml snapshot per doctor run (run-5 audit Low #13): the
+  // thread-limit and hook-state checks below -- and any future config.toml
+  // consumer -- reuse these exact bytes (or this exact read error) rather than
+  // re-reading. A concurrent mutation between checks can no longer make them
+  // disagree, since there is only one read. Parity with the prior per-check
+  // reads is preserved: a null snapshot (missing file) still yields each
+  // check's own not-found/nothing-to-reconcile diagnostic, and a read error is
+  // re-thrown INTO each check's own try below so it produces the same per-check
+  // message it did before -- one failed read feeds every dependent check, it
+  // does not newly abort the whole run.
+  let configTomlText = null;
+  let configTomlReadError = null;
   try {
-    const text = await readRegularFile(threadLimitConfigPath, "utf8");
+    configTomlText = await readConfigToml(threadLimitConfigPath);
+  } catch (error) {
+    configTomlReadError = error;
+  }
+  try {
+    if (configTomlReadError) throw configTomlReadError;
+    const text = configTomlText;
     if (text === null) {
       checks.push({ name: "codex-thread-limits", ok: false, detail: `Codex config.toml not found at ${threadLimitConfigPath}. ${CODEX_THREAD_LIMIT_REMEDIATION}` });
     } else {
@@ -448,7 +466,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // would reconcile away, purely to detect and report drift -- doctor never
   // mutates config.toml (and never touches [projects] either way).
   try {
-    const text = await readRegularFile(threadLimitConfigPath, "utf8");
+    if (configTomlReadError) throw configTomlReadError;
+    const text = configTomlText;
     if (text === null) {
       checks.push({ name: "codex-hook-state", ok: true, detail: "Codex config.toml not found; nothing to reconcile" });
     } else {

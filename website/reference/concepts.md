@@ -67,11 +67,14 @@ The orchestrator passes the chosen model as the dispatch override when it spawns
 
 A provider resolves to one of four kinds, which decides how it is dispatched:
 
-- **agent**: a subagent definition, dispatched through its installed Codex `agent_type` profile with a bounded context fork.
+- **agent**: a subagent definition — dispatched by `subagent_type` on Claude Code, and through its installed `agent_type` profile with a bounded context fork on Codex.
 - **skill**: a markdown skill injected into a generic subagent.
 - **mcp**: an installed MCP server, surfaced as a tool.
 - **inline**: no specialist; the model does the work directly.
 
-When a role resolves to an agent whose type is not yet dispatchable in the running session (for example, plugin agents installed before a restart), the orchestrator falls back to a generic subagent with the resolved provider's brief injected. The model override still applies, so model selection is never lost on the fallback.
+What happens when a role resolves to an agent whose type is **not dispatchable** in the running session (for example, plugin agents installed mid-session, before a restart) depends on the harness:
+
+- **On Claude Code**, the orchestrator falls back to a generic subagent with the resolved provider's brief injected, and records the fallback in the run STATE. The model override still applies, so model selection is never lost on the fallback.
+- **On Codex**, there is no fallback: a non-dispatchable agent profile fails closed with a reinstall/new-session diagnostic, because a generic Codex subagent would silently lose the profile's pinned role and model policy. See [Architecture](/reference/architecture#provider-kinds).
 
 Next: [The eight modes](/reference/modes).

@@ -12,6 +12,12 @@ Muster's design was inspired by [atomic-claude](https://atomic.alonso.network/),
 
 Every vendored item is listed in `vendor/manifest.yaml` with its repository, license, and ref, and provenance is written into [NOTICE](https://github.com/Adnova-Group/muster/blob/main/NOTICE).
 
+## Upstream routing on Codex
+
+On Codex, Muster prefers an enabled authoritative upstream implementation over its own copy whenever one exists: the official [Superpowers](https://github.com/obra/superpowers) plugin, [wshobson](https://github.com/wshobson/agents)'s per-plugin Codex skills, and GSD's installer-generated Codex skills.
+
+The bundled `sp-*`, `wsh-*`, and `muster-gsd-*` skills are deterministic **fallbacks**: they keep every role resolvable when an upstream is absent, and they never implicitly install those providers on your behalf. The pinned compatibility survey — which upstreams were checked, at which refs, including Atomic Codex, Book Genesis, the humanizer sources, and Promptfoo — is recorded in [`codex/upstreams.json`](https://github.com/Adnova-Group/muster/blob/main/codex/upstreams.json).
+
 ## Clean-room specialists
 
 Alongside the vendored material, Muster ships its own specialists in `plugin/agents/`, authored fresh from the role concept:
@@ -26,7 +32,7 @@ Alongside the vendored material, Muster ships its own specialists in `plugin/age
 
 ## Additional inspiration (clean-room, mechanism-level)
 
-A cluster of systems introduced in this release -- the sprint coordination protocol (claim/receipt/ledger discipline), the citation-guard gate, QA runbook memory, the voice/audience/brand profile system, newsletter signal-diff, the assumption checker, and the document-ingestion contract -- were designed with mechanism-level inspiration from Nate B. Jones's Unlock AI open-skills/open-engine patterns ([unlock-ai.natebjones.com](https://unlock-ai.natebjones.com)). No code, prose, or configuration was copied; Muster's implementations are original, adapted to its own deterministic-CLI/model-facing-skill architecture.
+A cluster of systems introduced in 0.5.0 -- the sprint coordination protocol (claim/receipt/ledger discipline), the citation-guard gate, QA runbook memory, the voice/audience/brand profile system, newsletter signal-diff, the assumption checker, and the document-ingestion contract -- were designed with mechanism-level inspiration from Nate B. Jones's Unlock AI open-skills/open-engine patterns ([unlock-ai.natebjones.com](https://unlock-ai.natebjones.com)). No code, prose, or configuration was copied; Muster's implementations are original, adapted to its own deterministic-CLI/model-facing-skill architecture.
 
 ## License
 

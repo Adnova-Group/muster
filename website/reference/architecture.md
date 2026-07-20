@@ -1,6 +1,6 @@
 # Architecture
 
-Muster is a glass-box, multi-runtime, multi-domain agentic orchestrator. It runs on bare Claude Code, with no extra services and no separate model API. This page is the source-level map. For the gentler tour, start with [Concepts](/reference/concepts).
+Muster is a glass-box, multi-runtime, multi-domain agentic orchestrator. It runs on bare Claude Code or Codex, with no extra services and no separate model API. This page is the source-level map. For the gentler tour, start with [Concepts](/reference/concepts).
 
 ## Two layers
 
@@ -9,11 +9,11 @@ Muster is split into two layers with a hard boundary between them.
 | Layer | Lives in | Runtime | Talks to a model? |
 | --- | --- | --- | --- |
 | Deterministic CLI | `src/*.js` | Plain Node ESM | No |
-| Model-facing | `plugin/` (commands, skills, agents) | Claude Code | Yes |
+| Model-facing | `plugin/` (commands, skills, agents) | Claude Code and Codex | Yes |
 
 The **CLI layer** is ordinary Node. It has a single runtime dependency (`yaml`), requires Node 20 or newer, and makes no model calls. Most verbs are fully local; three boundaries can use the network. `issue` shells out to `gh issue view` for an explicit GitHub issue reference. `vendor` fetches sources declared with `kind: github` in `vendor/manifest.yaml` (local sources stay offline). `doctor` uses `gh api` to verify vendor note SHAs against pinned refs; if that remote check is unavailable, it reports the check as skipped offline, while a missing, unreadable, or invalid local vendor manifest still fails health. The remaining deterministic verbs run without network access.
 
-The **model-facing layer** is what Claude Code loads as a plugin. It is markdown: slash commands, skills, and agents. These files instruct the model how to drive a run. They call the CLI for every deterministic decision, then use Claude Code's built-in subagent dispatch to do the judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
+The **model-facing layer** is what the harness loads as a plugin — Claude Code's plugin format, and a built Codex plugin (skills and custom-agent profiles) generated from the same sources. It is markdown: slash commands, skills, and agents. These files instruct the model how to drive a run. They call the CLI for every deterministic decision, then use the harness's built-in subagent dispatch to do the judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
 
 ## The capability and domain router
 
@@ -54,7 +54,11 @@ A provider resolves to one of four kinds, which decides how the orchestrator dis
 - **mcp**: an installed MCP server, surfaced as a tool.
 - **inline**: no specialist; the model does the work directly.
 
-Dispatch honors `chosen.kind`: an agent routes through its installed Codex profile using `agent_type` and a bounded context fork, while anything else gets a generic subagent with the relevant skill injected. Because dispatch has no cwd field, worktree briefs carry absolute worktree, manifest, and STATE paths and require that worktree as every tool call's working directory. If a named agent profile is not dispatchable, the task fails closed with a reinstall/new-session diagnostic; it never silently falls back and loses the pinned role/model policy. Generic skill/MCP/inline dispatch inherits the parent model because Codex does not expose a per-call model override for that path.
+Dispatch honors `chosen.kind`, but the mechanism and the not-dispatchable contract differ by harness.
+
+**On Claude Code**, an agent is dispatched by `subagent_type` and anything else gets a generic subagent with the relevant skill injected; the crew member's `model` is always passed as the Agent tool's model override. If the agent type is not dispatchable in the running session (a plugin installed mid-session), the orchestrator **falls back** to a generic subagent with the provider's brief injected and records the fallback in STATE — the model override still applies, so model selection survives the fallback (`plugin/skills/orchestrator/SKILL.md`).
+
+**On Codex**, an agent routes through its installed Codex profile using `agent_type` and a bounded context fork. Because dispatch has no cwd field, worktree briefs carry absolute worktree, manifest, and STATE paths and require that worktree as every tool call's working directory. If a named agent profile is not dispatchable, the task **fails closed** with a reinstall/new-session diagnostic; it never silently falls back and loses the pinned role/model policy. Generic skill/MCP/inline dispatch inherits the parent model because Codex does not expose a per-call model override for that path.
 
 ## Pipelines
 
@@ -76,7 +80,7 @@ Orchestration loops until done via a Ralph-style primitive (`src/loop.js`). Each
 
 Plan tasks may declare `owns`/`frozen` arrays -- opaque path-label strings, shape-validated only, never glob-matched or overlap-checked -- which the orchestrator copies verbatim into a dispatch brief as scope fences, dispatching same-wave tasks in parallel only when their `owns` sets are disjoint. A manifest or task may also declare `forbiddenActions` (`send`/`sign`/`submit`/`publish`/`purchase`/`delete-remote`); the orchestrator writes the run's effective set to `.muster/forbidden-actions` at start, copies it into each brief, and removes the file just before the run's declared merge disposition executes. Every dispatch brief also ends with a mandatory return contract: implementers return raw data (<=2000 chars), reviewers return a verdict first with <=1500 chars of findings, and the orchestrator reads each subagent result exactly once with no cross-wave accumulation. Immediately after each wave commit, the orchestrator attaches a `git notes --ref=muster` record of the wave's intent (decisions, review cycles, findings fixed/accepted); the review gate reads it back to check the implementation against recorded intent, not just the diff against the spec -- and runs `muster citation-check` on research/content artifacts before dispatching reviewers so a dangling citation travels in their briefs as a finding.
 
-Before wave 1, autopilot's pre-wave spec gate dispatches a fresh strategist-tier agent to probe the validated manifest and plan as a lazy-or-malicious implementer; a round-1 `FAIL` always loops the findings back to the router (amendment 1). A round-2 `FAIL` compares its itemized findings against round 1's: any repeated/unresolved round-1 finding hard-aborts, but if every round-2 finding is disjoint (genuinely new, not a restatement) the gate allows a second amendment (amendment 2, the final one) instead of escalating immediately -- the disjointness call is recorded in STATE. A round-3 `FAIL` always hard-aborts regardless of disjointness (rounds capped at 3: initial + 2 amendments), and the gate is skippable for trivial single-task plans. At finish, a manifest-declared `mergeDisposition` (`merge-local`/`merge-push`/`pr`/`keep`) executes without asking; absent or `ask` falls back to the interactive merge-decision prompt, and unattended (Routine) runs always downgrade `merge-local`/`merge-push` to `pr` rather than push to a base branch.
+Before wave 1, go's pre-wave spec gate dispatches a fresh strategist-tier agent to probe the validated manifest and plan as a lazy-or-malicious implementer; a round-1 `FAIL` always loops the findings back to the router (amendment 1). A round-2 `FAIL` compares its itemized findings against round 1's: any repeated/unresolved round-1 finding hard-aborts, but if every round-2 finding is disjoint (genuinely new, not a restatement) the gate allows a second amendment (amendment 2, the final one) instead of escalating immediately -- the disjointness call is recorded in STATE. A round-3 `FAIL` always hard-aborts regardless of disjointness (rounds capped at 3: initial + 2 amendments), and the gate is skippable for trivial single-task plans. At finish, a manifest-declared `mergeDisposition` (`merge-local`/`merge-push`/`pr`/`keep`) executes without asking; absent or `ask` falls back to the interactive merge-decision prompt, and unattended (Routine) runs always downgrade `merge-local`/`merge-push` to `pr` rather than push to a base branch.
 
 After a run, the `improve` role (the read-only `muster-improver` agent) mines the run STATE, escalations, and review-gate fix-loops for recurring friction and proposes user-gated edits to Muster's own skills, agents, and rules. It proposes; it never applies, and never edits during a run.
 
@@ -105,6 +109,18 @@ Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-re
 **Invite cooldown (hysteresis):** a crossing re-arming only makes the next touch eligible to invite -- a shared, session-keyed cooldown (`MUSTER_INVITE_COOLDOWN_MS`, default 15 minutes) started by the last actual invite from either signal still gates whether that eligible touch is spoken. This absorbs a noisy border -- a rapid Muster-run restart, or a drift counter oscillating around the threshold -- so it cannot flap a repeat invite seconds apart, while a genuinely long-lived session (crossings spaced hours or days apart) still gets one invite per crossing.
 
 **`TaskCompleted`** (`task-completed-gate.js`) gates the native task board's own completion tick: the orchestrator writes `.muster/task-board.json` (one entry per native task Muster created) at `TaskCreate` time and flips it to `reviewGate: "pass"` only once review-gate actually passes that task, before ever marking it completed via `TaskUpdate`. This hook denies (exit 2) a completion attempt on a tracked task with no recorded PASS, and fails open for anything the map doesn't track. `MUSTER_TASK_GATE=off` disables it.
+
+## Codex install architecture
+
+Codex is a first-class runtime, but it installs differently enough to be worth spelling out. `muster install codex [--scope project|user]` is an npm-installer action, not a Codex one.
+
+**Managed manifests.** Every artifact the installer writes is recorded in a Muster-owned manifest (`.muster-managed.json`, `owner: "muster"`, `format: 1`) listing the exact profile files, hook runtime files, and hook groups it owns. Uninstall removes only what a manifest claims, so unrelated profiles and hook groups in the same `hooks.json` survive untouched. A manifest that fails validation is a hard conflict — the command refuses rather than guessing at ownership.
+
+**`packageVersion` as the coherence key.** Each manifest records the package version that wrote it. An install scope is only "healthy" when its own recorded `packageVersion` matches the selected plugin's, so a scope left behind by an older Muster is reported as stale instead of passing a health check on internal self-agreement. `muster doctor --codex` reads the same key.
+
+**Hook-scope collapse.** The user scope is canonical for hooks. If `$CODEX_HOME` (or `~/.codex`) already carries a healthy Muster hook install, a `--scope project` install skips its own hook merge entirely — profiles still install. Rerunning `--scope project` on a machine with both scopes therefore converges to one firing scope instead of double-firing every lifecycle event.
+
+**The Codex plugin is deliberately hooks-free.** Codex executes plugin-bundled hooks by default, so bundling them there would double-fire against the installed ones. Instead, the **hook runtime lives under `.codex/muster/`** (or the user-scope equivalent) and is installed by the npm installer, which merges owned hook groups into `.codex/hooks.json` through Codex's supported project/user hook layer. Codex requires a one-time trust review for these non-managed hooks; inspect them with `/hooks`. The hooks inject orchestration context and surface diagnostics and policy warnings; todo and spawn enforcement stay advisory on Codex, and write-capable waves must use isolated Git worktrees.
 
 ## Vendoring
 

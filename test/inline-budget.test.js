@@ -331,9 +331,16 @@ test("corroboratingCount: exactly at the staleness boundary is not yet stale", (
   const { dir, file } = tmpFile();
   try {
     recordCum(file, "a.js");
-    const now = Date.now();
-    const atBoundary = new Date(now - CROSSING_MAX_AGE_MS);
-    utimesSync(file, atBoundary, atBoundary);
+    // Backdate the marker, then read the ACTUAL stored mtime -- filesystems round
+    // mtime (second precision on some FSes), so the stored value differs from what
+    // we wrote. Anchoring `now` to the stored mtime + CROSSING_MAX_AGE_MS puts us
+    // EXACTLY at the boundary regardless of fs precision; isCrossingStale uses `>`
+    // (strict), so exactly-at-boundary is not yet stale. (Deriving `now` from the
+    // written value instead let fs rounding push it a hair past the boundary -- the
+    // CI flake this replaces.)
+    const anchor = Date.now() - CROSSING_MAX_AGE_MS;
+    utimesSync(file, new Date(anchor), new Date(anchor));
+    const now = statSync(file).mtimeMs + CROSSING_MAX_AGE_MS;
     assert.equal(corroboratingCount(file, now), 1, "exactly at the boundary: still counts");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -168,8 +168,12 @@ test("cli wire: capabilities --role returns one compact role without the skill i
   assert.equal(compact.role, "implement");
   assert.deepEqual(compact.chosen, full.roles.implement.chosen);
   assert.equal(compact.model, full.roles.implement.model);
-  assert.ok(!("skills" in compact));
-  assert.ok(Buffer.byteLength(stdout) < Buffer.byteLength(JSON.stringify(full)) / 10, "one-role output should be at least 90% smaller than the full inventory");
+  // "compact" is a STRUCTURAL guarantee, not a size ratio: the single-role output
+  // omits the heavy parts (the skills inventory and the full roles map). A byte
+  // ratio against the full output is env-coupled (it swings with how many
+  // providers are installed), so assert the structure directly instead.
+  assert.ok(!("skills" in compact), "compact role output omits the skills inventory");
+  assert.ok(!("roles" in compact), "compact role output omits the full roles map");
 });
 
 test("cli wire: capabilities --roles-only omits skills and installed inventory", async () => {
@@ -187,8 +191,11 @@ test("cli wire: capabilities --roles-only omits skills and installed inventory",
 // MUSTER_COWORK_NATIVE_PLUGIN env var), mirroring the existing --connectors /
 // MUSTER_COWORK_CONNECTORS declared-connector pattern. These pin the branch
 // logic end-to-end through the real CLI: default stays MCP-only (today's
-// behavior, regression-pinned); either declaration flips a builtin,
-// non-MCP role (debug's wsh-debugger) off the forced-inline fallback.
+// behavior, regression-pinned); either declaration flips a builtin, non-MCP
+// role off the forced-inline fallback to its NORMAL (non-cowork) resolution.
+// The assertions compare against that non-cowork resolution rather than a frozen
+// provider id, so a catalog re-rank (whichever builtin currently wins the debug
+// role) can never make these brittle.
 test("cli wire: capabilities --cowork with no native-plugin declaration keeps the MCP-only default (regression pin)", async () => {
   const { stdout } = await run(["capabilities", "--cowork", "--role", "debug"]);
   const { chosen } = JSON.parse(stdout);
@@ -196,9 +203,10 @@ test("cli wire: capabilities --cowork with no native-plugin declaration keeps th
 });
 
 test("cli wire: capabilities --cowork --native-plugin lets a builtin non-MCP role resolve (native plugin ride declared via flag)", async () => {
-  const { stdout } = await run(["capabilities", "--cowork", "--native-plugin", "--role", "debug"]);
-  const { chosen } = JSON.parse(stdout);
-  assert.equal(chosen.id, "wsh-debugger", "native-ride declared: debug resolves its builtin agent, same as non-cowork");
+  const nativeRide = JSON.parse((await run(["capabilities", "--cowork", "--native-plugin", "--role", "debug"])).stdout).chosen;
+  const plain = JSON.parse((await run(["capabilities", "--role", "debug"])).stdout).chosen;
+  assert.notEqual(nativeRide.id, "inline", "native-ride declared must flip debug off the forced-inline fallback");
+  assert.deepEqual(nativeRide, plain, "native-ride declared: debug resolves the same as its non-cowork resolution");
 });
 
 test("cli wire: capabilities --cowork with MUSTER_COWORK_NATIVE_PLUGIN=1 declares the same native ride as --native-plugin", async () => {
@@ -206,8 +214,10 @@ test("cli wire: capabilities --cowork with MUSTER_COWORK_NATIVE_PLUGIN=1 declare
     cwd: REPO_ROOT,
     env: { ...process.env, MUSTER_COWORK_NATIVE_PLUGIN: "1" },
   });
-  const { chosen } = JSON.parse(stdout);
-  assert.equal(chosen.id, "wsh-debugger", "env-var declaration must resolve identically to the --native-plugin flag");
+  const envRide = JSON.parse(stdout).chosen;
+  const plain = JSON.parse((await run(["capabilities", "--role", "debug"])).stdout).chosen;
+  assert.notEqual(envRide.id, "inline", "env-var declaration must flip debug off the forced-inline fallback");
+  assert.deepEqual(envRide, plain, "env-var declaration must resolve identically to the non-cowork resolution");
 });
 
 test("cli wire: MUSTER_COWORK_NATIVE_PLUGIN=0/false do not declare native ride (MCPB-boolean-safe, mirrors MUSTER_ENABLE_FABLE parsing)", async () => {

@@ -87,13 +87,18 @@ test("generateCodexProfiles reads the frozen agent mapping and produces one TOML
   assert.match(content, /Body instructions\./);
 });
 
-test("generateCodexProfiles fails closed on an invalid tier, reasoning, or model override", async t => {
+test("generateCodexProfiles fails closed on an invalid tier or effort, and on a legacy model/reasoning key", async t => {
   const root = await tempRoot(t);
   await write(join(root, "sources", "role.md"), "---\nname: role\ndescription: role\n---\n\nBody\n");
+  // Neutral shape: an agent is { tier, effort? }. An unknown tier or an invalid
+  // SEMANTIC effort fails closed; a leftover concrete model/reasoning key (the
+  // pre-migration override shape) is rejected as legacy rather than silently
+  // ignored by the neutral resolver.
   for (const [config, expected] of [
     [{ source: "sources/role.md", tier: "not-a-tier" }, /unknown Codex profile tier/],
-    [{ source: "sources/role.md", tier: "sonnet", reasoning: "max" }, /invalid Codex profile reasoning override/],
-    [{ source: "sources/role.md", tier: "sonnet", model: "gpt-4" }, /invalid Codex profile model override/]
+    [{ source: "sources/role.md", tier: "opus", effort: "not-an-effort" }, /invalid Codex profile effort override/],
+    [{ source: "sources/role.md", tier: "sonnet", reasoning: "max" }, /legacy model\/reasoning key/],
+    [{ source: "sources/role.md", tier: "sonnet", model: "gpt-4" }, /legacy model\/reasoning key/]
   ]) {
     await write(join(root, "codex", "agents.manifest.json"), JSON.stringify({ format: 1, agents: { role: config } }));
     await assert.rejects(generateCodexProfiles(root), expected);

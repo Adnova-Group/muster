@@ -268,19 +268,25 @@ export function encodeTomlBasicString(value) {
 export function profileToml(id, source, config) {
   const body = source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
   const description = (source.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].match(/^description:\s*(.+)$/m)?.[1] || "").trim().replace(/^['"]|['"]$/g, "") || `${id} Muster specialist.`;
-  const defaultModel = CODEX_MODEL_POLICY[config.tier];
+  const defaultModel = CODEX_MODEL_POLICY.tiers[config.tier];
   if (!defaultModel) throw new Error(`unknown Codex profile tier for ${id}: ${config.tier}`);
-  if (config.reasoning !== undefined && !["medium", "high", "xhigh"].includes(config.reasoning)) {
-    throw new Error(`invalid Codex profile reasoning override for ${id}: ${config.reasoning}`);
+  // Harness-neutral shape: an agent carries an optional SEMANTIC effort override
+  // (workhorse|judgment|peak), never a concrete model/reasoning string. This
+  // accept-list stays in exact parity with scripts/check-codex.mjs (test/codex-check.test.js
+  // parses both literals) so the checker never green-lights an effort the generator rejects.
+  if (config.effort !== undefined && !["workhorse", "judgment", "peak"].includes(config.effort)) {
+    throw new Error(`invalid Codex profile effort override for ${id}: ${config.effort}`);
   }
-  if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) {
-    throw new Error(`invalid Codex profile model override for ${id}: ${config.model}`);
+  // Fail loud on a half-migrated entry: a leftover concrete model/reasoning key
+  // would be silently ignored by the neutral resolver, so reject it here.
+  if (config.model !== undefined || config.reasoning !== undefined) {
+    throw new Error(`legacy model/reasoning key on ${id}: the neutral shape uses { tier, effort? } only`);
   }
   // Single-sourced with the `capabilities --codex` lane: codexProfileForConfig
-  // applies the same per-agent override-over-tier-default resolution, so the
+  // resolves the neutral { tier, effort? } through CODEX_MODEL_POLICY, so the
   // committed TOML pin and the capabilities codexModel can never diverge. The
-  // id-rich validation above stays here (defaultModel/override guards) for the
-  // generator's fail-closed error messages.
+  // id-rich validation above stays here (tier/effort guards) for the generator's
+  // fail-closed error messages.
   const model = codexProfileForConfig(config);
   const isolation = config.readOnly
     ? "Remain read-only. Do not edit files or run commands that mutate the workspace."

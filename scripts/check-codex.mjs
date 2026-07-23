@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
+import { CODEX_COUNTS, CODEX_MODEL_POLICY, codexProfileForConfig } from "../src/codex.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
 import { parseHookCommand } from "../src/codex-install.js";
 
@@ -53,23 +53,23 @@ const legacyProfiles = await files(join(root, "codex", "agents")).catch(error =>
 });
 if (legacyProfiles.some(name => name.endsWith(".toml"))) fail("deprecated static codex/agents profiles must not coexist with generated release profiles");
 for (const [id, config] of Object.entries(mapping.agents)) {
-  const expected = CODEX_MODEL_POLICY[config.tier];
-  if (!expected) fail(`${id} has an unknown model tier`);
-  // Kept in exact parity with src/codex-release.js's profileToml override
-  // accept-list (FROZEN this wave) -- see test/codex.test.js's parity test,
-  // which parses both source literals and fails if they ever diverge. This
-  // list only governs per-agent reasoning OVERRIDES, not tier defaults, so it
-  // need not list every effort a tier default may resolve to.
-  if (config.reasoning !== undefined && !["medium", "high", "xhigh"].includes(config.reasoning)) fail(`${id} has an invalid reasoning override`);
-  if (config.model !== undefined && !/^gpt-5\.6-(?:luna|terra|sol)$/.test(config.model)) fail(`${id} has an invalid model override`);
+  if (!CODEX_MODEL_POLICY.tiers[config.tier]) fail(`${id} has an unknown model tier`);
+  // Kept in exact parity with src/codex-release.js's profileToml effort
+  // accept-list -- see test/codex-check.test.js's parity test, which parses both
+  // source literals and fails if they ever diverge. This list governs per-agent
+  // SEMANTIC effort overrides (workhorse|judgment|peak), not the native reasoning
+  // efforts a tier default resolves to.
+  if (config.effort !== undefined && !["workhorse", "judgment", "peak"].includes(config.effort)) fail(`${id} has an invalid effort override`);
+  // Fail loud on a half-migrated entry: a leftover concrete model/reasoning key
+  // would be silently ignored by the neutral resolver.
+  if (config.model !== undefined || config.reasoning !== undefined) fail(`${id} has a legacy model/reasoning key; the neutral shape uses { tier, effort? } only`);
   if (config.readOnly !== undefined && typeof config.readOnly !== "boolean") fail(`${id} has an invalid read/write policy`);
   const name = `${id}.toml`;
   if (!profiles.includes(name)) fail(`missing generated profile ${name}`);
   const text = await readFile(join(profilesRoot, name), "utf8");
   if (!/^name\s*=/m.test(text) || !/^description\s*=/m.test(text) || !/^developer_instructions\s*=/m.test(text)) fail(`${name} is not a custom-agent profile`);
-  const reasoning = config.reasoning ?? expected.reasoning;
-  const model = config.model ?? expected.model;
-  if (!text.includes(`model = ${JSON.stringify(model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(reasoning)}`)) fail(`${name} does not match its model policy`);
+  const { model, effort } = codexProfileForConfig(config);
+  if (!text.includes(`model = ${JSON.stringify(model)}`) || !text.includes(`model_reasoning_effort = ${JSON.stringify(effort)}`)) fail(`${name} does not match its model policy`);
   if (!text.includes(`sandbox_mode = ${JSON.stringify(config.readOnly ? "read-only" : "workspace-write")}`)) fail(`${name} does not match its read/write policy`);
 }
 const skills = new Set(await dirs(join(plugin, "skills")));

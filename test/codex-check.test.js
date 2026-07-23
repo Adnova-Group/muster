@@ -93,15 +93,15 @@ test("Codex validation guard's quote-anchored machine-path pattern does not trip
   }
 });
 
-test("Codex reasoning accept-list stays in single-source-of-truth parity with the frozen profileToml generator", async () => {
-  // src/codex-release.js is FROZEN this wave, so its profileToml override
-  // accept-list can't be refactored into a shared export; this parses both
-  // literals directly and asserts check-codex.mjs never accepts a reasoning
-  // override profileToml would reject (which would otherwise pass
-  // validation and then crash profile generation).
+test("Codex effort accept-list stays in single-source-of-truth parity with the profileToml generator", async () => {
+  // check-codex.mjs and src/codex-release.js's profileToml each carry a literal
+  // SEMANTIC effort accept-list (workhorse|judgment|peak). This parses both
+  // literals directly and asserts check-codex.mjs never accepts an effort
+  // override profileToml would reject (which would otherwise pass validation and
+  // then crash profile generation).
   const extractAcceptList = (source, label) => {
-    const match = source.match(/\[((?:\s*"[a-z]+"\s*,?)+)\]\.includes\(config\.reasoning\)/);
-    if (!match) throw new Error(`could not locate the ${label} reasoning accept-list literal`);
+    const match = source.match(/\[((?:\s*"[a-z]+"\s*,?)+)\]\.includes\(config\.effort\)/);
+    if (!match) throw new Error(`could not locate the ${label} effort accept-list literal`);
     return match[1].match(/"[a-z]+"/g).map(entry => entry.slice(1, -1));
   };
   const checkCodexSource = await readFile(join(repoRoot, "scripts", "check-codex.mjs"), "utf8");
@@ -109,9 +109,9 @@ test("Codex reasoning accept-list stays in single-source-of-truth parity with th
   const checkCodexList = extractAcceptList(checkCodexSource, "check-codex.mjs");
   const releaseList = extractAcceptList(releaseSource, "codex-release.js profileToml");
   for (const value of checkCodexList) {
-    assert.ok(releaseList.includes(value), `check-codex.mjs accepts reasoning override ${JSON.stringify(value)} that profileToml would reject`);
+    assert.ok(releaseList.includes(value), `check-codex.mjs accepts effort override ${JSON.stringify(value)} that profileToml would reject`);
   }
-  assert.deepEqual(new Set(checkCodexList), new Set(releaseList), "check-codex.mjs and profileToml reasoning accept-lists have diverged");
+  assert.deepEqual(new Set(checkCodexList), new Set(releaseList), "check-codex.mjs and profileToml effort accept-lists have diverged");
 });
 
 test("Codex manifest validation fails closed on a bound skill absent from live Codex inventory", async () => {

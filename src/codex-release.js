@@ -383,7 +383,7 @@ function assertAgentMapping(agents) {
 // from the frozen codex/agents.manifest.json mapping and its referenced agent
 // markdown files. No build step, no staging directory, no Codex CLI needed.
 export async function generateCodexProfiles(root) {
-  const mapping = readRegularJson(join(root, "codex", "agents.manifest.json"), "Codex agent mapping", 256 * 1024);
+  const mapping = readRegularJson(join(root, "catalog", "agents.manifest.json"), "Codex agent mapping", 256 * 1024);
   const agents = assertAgentMapping(mapping.agents);
   const files = new Map();
   for (const [id, config] of Object.entries(agents)) {

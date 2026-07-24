@@ -375,6 +375,7 @@ test("Codex install rejects a case-distinct POSIX marketplace root", async () =>
   // source tree to succeed so the marketplace-trust check below is the first
   // thing that legitimately fails, not a missing-source error.
   await cp(join(repoRoot, "codex"), join(trusted, "codex"), { recursive: true });
+  await cp(join(repoRoot, "catalog"), join(trusted, "catalog"), { recursive: true }); // manifest lives here now (Phase D)
   await cp(join(repoRoot, "plugin", "agents"), join(trusted, "plugin", "agents"), { recursive: true });
   await cp(join(repoRoot, "package.json"), join(trusted, "package.json"));
   const marketplace = { name: "muster", root: attacker, marketplaceSource: { sourceType: "local", source: attacker } };
@@ -453,9 +454,11 @@ test("runCodexInstall refuses a manifest whose agent id escapes agentsDir and wr
   // Enough real source tree for generateCodexProfiles + prepareHooks to run;
   // only the manifest is poisoned with a traversing id.
   await cp(join(repoRoot, "codex"), join(fakeRepo, "codex"), { recursive: true });
+  await cp(join(repoRoot, "catalog"), join(fakeRepo, "catalog"), { recursive: true });
   await cp(join(repoRoot, "plugin", "agents"), join(fakeRepo, "plugin", "agents"), { recursive: true });
   await cp(join(repoRoot, "package.json"), join(fakeRepo, "package.json"));
-  await writeFile(join(fakeRepo, "codex", "agents.manifest.json"),
+  // The manifest lives in catalog/ now (shared, harness-neutral path); poison it there.
+  await writeFile(join(fakeRepo, "catalog", "agents.manifest.json"),
     JSON.stringify({ format: 1, agents: { "../pwned": { source: "plugin/agents/muster-builder.md", tier: "opus" } } }));
   const absent = async () => { throw new Error("codex not found"); };
   await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot: fakeRepo, execFile: absent }), /is not a safe token|outside/);

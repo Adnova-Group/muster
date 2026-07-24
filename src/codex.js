@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { modelForRole } from "./model.js";
+import { agentProfiles } from "./agent-manifest.js";
 import { resolveNeutralProfile } from "./model-policy.js";
 
 // Codex is an adapter target, not a second tier resolver. Keep the conceptual
@@ -61,24 +61,10 @@ export function codexModelForRole(role) {
   return codexModelForTier(modelForRole(role));
 }
 
-// Lazy + cached read of the frozen conceptual-tier + Codex-adapter mapping
-// (per-agent overrides layered on the tier default), keyed by agent id
-// (== .codex/agents/<id>.toml filename == `capabilities --codex` chosen.id for
-// an agent provider). Read via fs — NOT a JSON module import — so the un-bundled
-// source path stays free of Node's experimental-JSON-modules warning on the
-// Node 20/22 CI lane (test/codex-conformance.test.js pins byte-empty CLI
-// stderr). The file ships into the bundle at plugin/codex/ (build-codex.mjs) and
-// resolves relative to import.meta.url exactly like cli.js's CATALOG_DIR reads
-// plugin/catalog at runtime. Lazy so importing codex.js for pure tier math never
-// touches the filesystem.
-let agentProfilesCache;
-function codexAgentProfiles() {
-  if (!agentProfilesCache) {
-    const raw = readFileSync(new URL("../codex/agents.manifest.json", import.meta.url), "utf8");
-    agentProfilesCache = Object.freeze(JSON.parse(raw).agents);
-  }
-  return agentProfilesCache;
-}
+// The frozen agent map comes from the shared, harness-neutral manifest
+// (agent-manifest.js reads catalog/agents.manifest.json) — the SAME file the Kimi
+// adapter resolves. Keyed by agent id (== .codex/agents/<id>.toml filename ==
+// `capabilities --codex` chosen.id for an agent provider).
 
 // SINGLE SOURCE for the concrete {model, effort} a manifest agent entry
 // resolves to on Codex: the harness-neutral { tier, effort? } config resolves
@@ -95,7 +81,7 @@ export function codexProfileForConfig(config) {
 // {model, effort}. Returns null for an id with no manifest profile (a non-agent
 // provider — skill/mcp/inline — has no .codex/agents TOML to dispatch on).
 export function codexProfileForAgentId(id) {
-  const config = codexAgentProfiles()[id];
+  const config = agentProfiles()[id];
   return config ? codexProfileForConfig(config) : null;
 }
 

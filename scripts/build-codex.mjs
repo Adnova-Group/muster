@@ -393,14 +393,14 @@ async function buildCodexPluginOnce({ root, outDir }) {
     rmAndCopy(join(root, "catalog"), join(plugin, "catalog"));
     rmAndCopy(join(root, "pipelines"), join(plugin, "pipelines"));
     rmAndCopy(join(root, "vendor"), join(plugin, "vendor"));
-    // The bundled runtime/muster.mjs reads the frozen agent mapping at runtime
-    // (src/codex.js's codexAgentProfiles: `new URL("../codex/agents.manifest.json",
-    // import.meta.url)`, resolving to plugin/codex/ from plugin/runtime/) to
-    // resolve `capabilities --codex`'s per-role codexModel {model, effort} — the
-    // same data profileToml pins into .codex/agents/<id>.toml. Ship it verbatim,
-    // like catalog/ above, so the runtime stays self-contained without a Node
+    // The bundled runtime/muster.mjs reads the shared harness-neutral agent
+    // manifest at runtime (src/agent-manifest.js: `new URL(
+    // "../catalog/agents.manifest.json", import.meta.url)`, resolving to
+    // plugin/catalog/ from plugin/runtime/) to resolve `capabilities --codex`/
+    // `--kimi` per-role model profiles. It rides into the plugin as part of the
+    // catalog/ copy above (rmAndCopy catalog -> plugin/catalog), so no separate
+    // staging step is needed — the runtime stays self-contained without a Node
     // experimental-JSON-modules import warning on the Node 20/22 source lane.
-    write(join(plugin, "codex", "agents.manifest.json"), readFileSync(join(root, "codex", "agents.manifest.json"), "utf8"));
     write(join(runtime, "codex-skill-adapter.md"), readFileSync(join(root, "codex", "skill-adapter.md"), "utf8"));
     rmAndCopy(join(root, "codex", "hooks"), join(runtime, "install-hooks"));
     write(join(runtime, "sprint-protocol.md"), readFileSync(join(root, "cowork", "sprint-protocol.md"), "utf8"));

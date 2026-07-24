@@ -29,7 +29,7 @@ const files = async (path) => (await readdir(path, { withFileTypes: true })).fil
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
 
 const [pkg, marketplace, manifest, mapping, upstreams, assetManifest] = await Promise.all([
-  json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "codex/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
+  json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "catalog/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
 ]);
 if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster"
   || marketplace.plugins?.[0]?.source?.path !== "./.agents/plugins/plugin") fail("marketplace does not point at the generated Muster plugin");

@@ -43,7 +43,7 @@ test("Codex policy preserves the conceptual Fable fallback without routine max e
   assert.equal(CODEX_MODEL_POLICY.applyEffort(sol, "peak").effort, "xhigh");
 });
 test("Codex role profiles use the evidence-backed lanes and preserve sandbox policy", async () => {
-  const mapping = JSON.parse(await readFile(join(repoRoot, "codex", "agents.manifest.json"), "utf8"));
+  const mapping = JSON.parse(await readFile(join(repoRoot, "catalog", "agents.manifest.json"), "utf8"));
   // The resolved {model, effort} each neutral { tier, effort? } entry must yield
   // -- byte-identical to the pre-neutral-shape hardcoded mapping. investigator ->
   // terra/high (long-context-safe locator); security -> sol/xhigh (the one

@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 138);
+  assert.equal(paths.length, 139); // +1: agent manifest moved into catalog/ (Phase D)
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -778,5 +778,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // assert the Codex command leaks neither `/loop` nor `/goal`) and by `MUSTER_BUILD_FORCE=1 node
   // scripts/build-codex.mjs && node scripts/check-codex.mjs` (clean). This is the reviewed
   // loop-dmi-conflict remediation, not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "a4173e1a460327c6e3c36059cd44ab1e661bc37f1ed42861cf0a71a851360e4d");
+  assert.equal(hash.digest("hex"), "d1d0a512e943e260894b12e6eec963860b0080c2cf8e0a6712d659f8d72e26e6");
 });

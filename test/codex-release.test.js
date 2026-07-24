@@ -72,7 +72,7 @@ async function snapshotDir(dir) {
 
 test("generateCodexProfiles reads the frozen agent mapping and produces one TOML per role", async t => {
   const root = await tempRoot(t);
-  await write(join(root, "codex", "agents.manifest.json"), JSON.stringify({
+  await write(join(root, "catalog", "agents.manifest.json"), JSON.stringify({
     format: 1,
     agents: {
       "test-role": { source: "sources/test-role.md", tier: "sonnet", readOnly: true }
@@ -100,7 +100,7 @@ test("generateCodexProfiles fails closed on an invalid tier or effort, and on a 
     [{ source: "sources/role.md", tier: "sonnet", reasoning: "max" }, /legacy model\/reasoning key/],
     [{ source: "sources/role.md", tier: "sonnet", model: "gpt-4" }, /legacy model\/reasoning key/]
   ]) {
-    await write(join(root, "codex", "agents.manifest.json"), JSON.stringify({ format: 1, agents: { role: config } }));
+    await write(join(root, "catalog", "agents.manifest.json"), JSON.stringify({ format: 1, agents: { role: config } }));
     await assert.rejects(generateCodexProfiles(root), expected);
   }
 });
@@ -119,7 +119,7 @@ test("generateCodexProfiles rejects a malformed top-level agent mapping BEFORE g
   const root = await tempRoot(t);
   await write(join(root, "sources", "role.md"), "---\nname: role\ndescription: role\n---\n\nBody\n");
   const writeManifest = agents => write(
-    join(root, "codex", "agents.manifest.json"),
+    join(root, "catalog", "agents.manifest.json"),
     JSON.stringify(agents === undefined ? { format: 1 } : { format: 1, agents })
   );
   for (const [label, agents, expected] of [
@@ -984,7 +984,7 @@ test("generateCodexProfiles refuses a manifest agent id that is not a safe kebab
   // exact stem of PROFILE_FILENAME, so no accepted id can trip the downstream
   // destination guard (assertContainedProfiles) on a legitimate input.
   for (const id of ["../evil", "a/../../b", "evil/sub", "..", ".", "UPPER", "has space", "-lead", "a-", "a--b", "", "a\\b"]) {
-    await write(join(root, "codex", "agents.manifest.json"),
+    await write(join(root, "catalog", "agents.manifest.json"),
       JSON.stringify({ format: 1, agents: { [id]: { source: "sources/role.md", tier: "opus" } } }));
     await assert.rejects(generateCodexProfiles(root), /is not a safe token/,
       `id ${JSON.stringify(id)} must be rejected before becoming a path segment`);
@@ -1001,7 +1001,7 @@ test("generateCodexProfiles refuses a config.source that escapes the distributio
   const sentinel = join(parent, "SENTINEL.md");
   await writeFile(sentinel, "---\nname: leak\ndescription: SENTINEL-CONTENT\n---\n\nSENTINEL-CONTENT body\n");
   for (const source of ["../SENTINEL.md", "../../SENTINEL.md", sentinel /* absolute */]) {
-    await write(join(root, "codex", "agents.manifest.json"),
+    await write(join(root, "catalog", "agents.manifest.json"),
       JSON.stringify({ format: 1, agents: { role: { source, tier: "opus" } } }));
     await assert.rejects(generateCodexProfiles(root), err => {
       // The containment guard fires before readRegular, so the error is the

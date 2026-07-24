@@ -122,7 +122,7 @@ test("npm package ships install-time generation sources, not a committed Codex p
   const files = JSON.parse(stdout)[0].files.map(file => file.path);
   const paths = new Set(files);
   assert.ok(paths.has("scripts/build-codex.mjs"), "npm package must ship the install-time Codex generation script");
-  assert.ok(paths.has("codex/agents.manifest.json"), "npm package must ship the frozen Codex agent mapping");
+  assert.ok(paths.has("catalog/agents.manifest.json"), "npm package must ship the frozen Codex agent mapping");
   assert.ok(!files.some(path => path.startsWith(".agents/")), "npm package must not ship a pre-generated .agents/ payload");
 });
 

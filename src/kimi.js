@@ -6,39 +6,43 @@ import { resolveNeutralProfile } from "./model-policy.js";
 // Kimi config. Evidence: docs/research/kimi-code-cli.md section 11 (2026-07-23,
 // Moonshot platform docs + AA/DeepSWE/vendor benchmarks).
 //
+// Model ids are the Kimi Code config ALIASES a live install resolves (`kimi -m
+// <alias>` / default_model), NOT raw platform API ids. Grounded in the actual
+// managed Kimi Code plan (~/.kimi-code/config.toml, 2026-07-23): it serves three
+// coding models -- kimi-code/k3, kimi-code/kimi-for-coding, and
+// kimi-code/kimi-for-coding-highspeed -- and ALL THREE are always-thinking (the
+// managed coding plan exposes no non-thinking or cheaper general model; k2.6/k2.5
+// are Open-Platform general models on a different endpoint, not offered here).
+//
 // The two constraints Kimi imposes that Codex/Claude do not:
-// - Reasoning EFFORT exists on K3 ONLY, and is 3 rungs: low | high | max (K3 is
-//   always-thinking; API default max, Kimi Code default high). K2.7-Code and K2.6
-//   expose NO effort field -- thinking is binary (K2.7-Code always-on; K2.6
-//   toggleable). So a semantic effort override only bites on the two K3 tiers; on
-//   sonnet/haiku it is a documented no-op.
-// - muster's medium/xhigh efforts are not native. Kimi's own ladder collapses them
+// - Reasoning EFFORT exists on K3 ONLY, and is 3 rungs: low | high | max (default
+//   high on the managed plan). kimi-for-coding[-highspeed] expose NO effort field
+//   -- always-thinking, no knob. So a semantic effort override only bites on the
+//   two K3 tiers; on sonnet/haiku it is a documented no-op.
+// - muster's medium/xhigh efforts are not native. Kimi's ladder collapses them
 //   (medium -> high, xhigh -> max), so workhorse and judgment both land on high.
 //
-// Per-lane rationale:
-// - haiku  = kimi-k2.6, thinking off: cheap read-only locator/research on the
-//   general model Moonshot recommends for non-coding, deliberately a different
-//   family than the coding builders (mirrors Codex's terra locator lane). K2.5 is
-//   cheaper but sunsets 2026-08-31, so it is not a build target.
-// - sonnet = kimi-k2.7-code, thinking on: the dedicated coding workhorse (beats
-//   k2.6 +11..31% on every coding+agentic benchmark, ~1/3 K3's price, faster).
-//   No effort knob -- always-thinking.
-// - opus   = kimi-k3, effort high: the judgment lane. K3 is frontier and the only
-//   Kimi model that holds quality to 1M context (BrowseComp 90.4 @ 1M), required
-//   for judgment over large diffs. high = Kimi Code's own default judgment effort.
-// - fable  = kimi-k3, effort max: same model, max reserved to the rare peak only --
-//   the exact discipline Codex applies to xhigh. K3's effort knob gives a cleaner
-//   opus/fable split than Codex (where both are sol/high).
+// Per-lane rationale (reconciled to what the managed plan actually installs):
+// - haiku  = kimi-for-coding-highspeed: the FAST variant for read-only
+//   locate/gather. On the managed coding plan there is no CHEAPER model (the
+//   research's k2.6 locator lane does not exist here), only this faster one --
+//   same price/params as kimi-for-coding, ~2x throughput, always-thinking (no way
+//   to disable on this plan). If a live model-probe at install time finds a
+//   cheaper general alias (k2.6/k2.5), remap haiku to it then.
+// - sonnet = kimi-for-coding: the dedicated coding workhorse. Always-thinking.
+// - opus   = k3, effort high: the judgment lane. K3 is frontier and holds quality
+//   to 1M context (BrowseComp 90.4 @ 1M). high = the plan's default judgment effort.
+// - fable  = k3, effort max: same model, max reserved to the rare peak only -- the
+//   discipline Codex applies to xhigh. K3's effort knob gives a cleaner opus/fable
+//   split than Codex (where both are sol/high).
 //
 // A tier entry carries EITHER `effort` (a K3 reasoning level) OR `thinking` (the
-// on/off toggle for the effort-less models). Model ids are the platform API ids
-// (kimi-k3, kimi-k2.7-code, kimi-k2.6); in a Kimi Code config they are referenced
-// through [models.<alias>] entries (k3, kimi-for-coding, ...).
+// always-on toggle for the effort-less coding models).
 const KIMI_TIERS = Object.freeze({
-  haiku: Object.freeze({ model: "kimi-k2.6", thinking: "disabled" }),
-  sonnet: Object.freeze({ model: "kimi-k2.7-code", thinking: "enabled" }),
-  opus: Object.freeze({ model: "kimi-k3", effort: "high" }),
-  fable: Object.freeze({ model: "kimi-k3", effort: "max" }),
+  haiku: Object.freeze({ model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" }),
+  sonnet: Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }),
+  opus: Object.freeze({ model: "kimi-code/k3", effort: "high" }),
+  fable: Object.freeze({ model: "kimi-code/k3", effort: "max" }),
 });
 
 // Semantic effort -> Kimi K3 reasoning level. K3's native ladder is 3 rungs, so
@@ -53,8 +57,8 @@ const KIMI_EFFORT = Object.freeze({
 export const KIMI_MODEL_POLICY = Object.freeze({
   tiers: KIMI_TIERS,
   // A semantic effort override only applies where the resolved model exposes an
-  // effort knob (K3). On a `thinking`-toggle model (k2.7-code/k2.6) it is
-  // intentionally a no-op: Kimi gives no way to dial reasoning there.
+  // effort knob (K3). On an always-thinking model (kimi-for-coding[-highspeed])
+  // it is intentionally a no-op: Kimi gives no way to dial reasoning there.
   applyEffort(base, semantic) {
     if (!("effort" in base)) return base;
     return { ...base, effort: KIMI_EFFORT[semantic] ?? base.effort };
@@ -69,8 +73,8 @@ export function kimiModelForTier(tier) {
 
 // Adapter boundary for callers that resolve a role at runtime. modelForRole keeps
 // MUSTER_MAX_TIER and Fable's deterministic fallback (fable -> opus when Fable is
-// disabled), so a fable-set role with Fable off resolves to the opus (kimi-k3/high)
-// profile, and with MUSTER_ENABLE_FABLE to the fable (kimi-k3/max) profile.
+// disabled), so a fable-set role with Fable off resolves to the opus (k3/high)
+// profile, and with MUSTER_ENABLE_FABLE to the fable (k3/max) profile.
 export function kimiModelForRole(role) {
   return kimiModelForTier(modelForRole(role));
 }

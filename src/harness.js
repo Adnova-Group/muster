@@ -89,6 +89,60 @@ export async function readInstalledCowork(home, opts = {}) {
   };
 }
 
+// --- Kimi Code CLI adapter ----------------------------------------------------
+// Kimi-flavored readInstalled: same {plugins, skills, mcpServers, agents} shape
+// resolveCapabilities consumes, read from a gen2 Kimi Code data root
+// (docs/research/kimi-code-cli.md sections 5+8). The root is KIMI_CODE_HOME, or
+// ~/.kimi-code by default; opts.dir overrides it (tests / a probed install).
+//   - plugins:    plugins/installed.json (the on-disk registry -- the Capability
+//                 scan bind, sibling to Claude Code's installed_plugins.json).
+//   - skills:     skills/<name>/SKILL.md (Anthropic SKILL.md convention) under the
+//                 Kimi root AND the shared cross-tool ~/.agents/skills/ lane.
+//   - agents:     agents/*.md (Claude-Code-format agent files) under the Kimi root
+//                 AND ~/.agents/agents/.
+//   - mcpServers: mcp.json's mcpServers map (Kimi is an MCP client).
+// A fresh install (no plugins/agents/skills/mcp.json yet) yields an empty
+// inventory -- the "works on a bare install, better as you install more" floor.
+export async function readInstalledKimi(home, opts = {}) {
+  const root = opts.dir || process.env.KIMI_CODE_HOME || join(home, ".kimi-code");
+  const agentsHome = join(home, ".agents"); // shared cross-tool lane (does NOT move with KIMI_CODE_HOME)
+
+  // plugins/installed.json: schema is not published field-for-field, so parse
+  // defensively -- accept a {plugins:[...]}, a {plugins:{id:{}}}, or a flat
+  // {id:{}} map, and take the ids.
+  const registry = await readJson(join(root, "plugins", "installed.json"));
+  const pluginBag = registry?.plugins ?? registry ?? {};
+  const plugins = Array.isArray(pluginBag)
+    ? pluginBag.map(p => (typeof p === "string" ? p : p?.id || p?.name)).filter(Boolean)
+    : Object.keys(pluginBag);
+
+  const skills = [];
+  for (const base of [join(root, "skills"), join(agentsHome, "skills")]) {
+    for (const name of await readdirSafe(base)) {
+      const entries = await readdirSafe(join(base, name));
+      if (entries.includes("SKILL.md")) skills.push(name);
+    }
+  }
+
+  const agents = [];
+  for (const base of [join(root, "agents"), join(agentsHome, "agents")]) {
+    for (const f of await readdirSafe(base)) {
+      if (f.endsWith(".md")) agents.push(f.slice(0, -3));
+    }
+  }
+
+  const mcp = await readJson(join(root, "mcp.json"));
+  const mcpServers = mcp && mcp.mcpServers ? Object.keys(mcp.mcpServers) : [];
+
+  return {
+    runtime: "kimi",
+    plugins: [...new Set(plugins)],
+    skills: [...new Set(skills)],
+    agents: [...new Set(agents)],
+    mcpServers: [...new Set(mcpServers)]
+  };
+}
+
 export async function readInstalled(home) {
   // Installed Claude Code plugins: names + the agents/skills/MCP servers they
   // ship (installPath-driven, see plugin-inventory.js).

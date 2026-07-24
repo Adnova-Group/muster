@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { modelForRole } from "./model.js";
 import { resolveNeutralProfile } from "./model-policy.js";
 
@@ -85,4 +86,29 @@ export function kimiModelForRole(role) {
 // Mirrors codexProfileForConfig's role in the Codex adapter.
 export function kimiProfileForConfig(config) {
   return resolveNeutralProfile(config, KIMI_MODEL_POLICY);
+}
+
+// Lazy + cached read of the shared harness-neutral agent manifest -- the SAME
+// codex/agents.manifest.json codex.js reads. Its { tier, effort? } entries carry
+// no concrete model strings, so both adapters consume one file (the payoff of the
+// neutral-shape migration). Read via fs (not a JSON import) to stay off Node's
+// experimental-JSON-modules warning, mirroring codex.js's codexAgentProfiles.
+// NOTE: Phase D of the Kimi leg moves this to a harness-neutral path + a shared
+// reader; until then kimi reads the codex-namespaced path directly.
+let agentProfilesCache;
+function kimiAgentProfiles() {
+  if (!agentProfilesCache) {
+    const raw = readFileSync(new URL("../codex/agents.manifest.json", import.meta.url), "utf8");
+    agentProfilesCache = Object.freeze(JSON.parse(raw).agents);
+  }
+  return agentProfilesCache;
+}
+
+// Resolve an agent id (a `capabilities --kimi` chosen.id == a manifest agent key)
+// to its concrete Kimi profile {model, effort|thinking}. Returns null for a
+// non-agent provider (skill/mcp/inline) with no manifest entry. Mirrors
+// codexProfileForAgentId -- the Kimi driver reads the resolved model pre-dispatch.
+export function kimiProfileForAgentId(id) {
+  const config = kimiAgentProfiles()[id];
+  return config ? kimiProfileForConfig(config) : null;
 }

@@ -4,6 +4,7 @@ import { ROLES } from "./roles.js";
 import { isInstalled } from "./installed.js";
 import { installedSkillDescription } from "./plugin-inventory.js";
 import { codexProfileForAgentId } from "./codex.js";
+import { kimiProfileForAgentId } from "./kimi.js";
 
 // Dispatch type for a resolved provider: "agent" | "mcp" | "skill".
 function providerType(entry) {
@@ -28,6 +29,11 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   // reads the resolved gpt-5.6 model + reasoning effort pre-dispatch, without
   // the post-run codex-conformance audit. Non-codex output shape is unchanged.
   const codex = opts.codex === true;
+  // --kimi lane (opts.kimi): the Kimi sibling of the codex lane. Each agent-backed
+  // role additionally carries kimiModel: {model, effort|thinking} -- the exact Kimi
+  // Code alias + effort it dispatches on, resolved from the SAME neutral manifest
+  // (kimiProfileForAgentId). Non-kimi output shape is unchanged.
+  const kimi = opts.kimi === true;
   // Cowork has no agent or skill loader by default: its host can invoke
   // registered MCP servers and can always execute a task inline, but a Claude
   // Code plugin merely being present on disk does not make that plugin's
@@ -84,6 +90,10 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     if (codex && chosen.kind === "agent") {
       const codexModel = codexProfileForAgentId(chosen.id);
       if (codexModel) roles[role].codexModel = codexModel;
+    }
+    if (kimi && chosen.kind === "agent") {
+      const kimiModel = kimiProfileForAgentId(chosen.id);
+      if (kimiModel) roles[role].kimiModel = kimiModel;
     }
   }
 

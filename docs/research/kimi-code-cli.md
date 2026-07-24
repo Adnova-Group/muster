@@ -439,19 +439,19 @@ Same shape as `CODEX_MODEL_POLICY`, evidence-anchored per lane:
 // The shipped policy nests these under `.tiers` and pairs them with an
 // `applyEffort` the shared resolver (src/model-policy.js) calls — see the file.
 const KIMI_TIERS = Object.freeze({
-  haiku:  Object.freeze({ model: "kimi-k2.6",      thinking: "disabled" }),
-  sonnet: Object.freeze({ model: "kimi-k2.7-code", thinking: "enabled"  }),
-  opus:   Object.freeze({ model: "kimi-k3",        effort: "high"       }),
-  fable:  Object.freeze({ model: "kimi-k3",        effort: "max"        }),
+  haiku:  Object.freeze({ model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" }),
+  sonnet: Object.freeze({ model: "kimi-code/kimi-for-coding",           thinking: "enabled" }),
+  opus:   Object.freeze({ model: "kimi-code/k3",                        effort: "high"      }),
+  fable:  Object.freeze({ model: "kimi-code/k3",                        effort: "max"       }),
 });
 ```
 
 | muster tier | Kimi model | effort / thinking | why (evidence) |
 |---|---|---|---|
-| **haiku** (read-only locate/gather: `code-navigation`, `docs-research`, `research`) | `kimi-k2.6` | thinking **off** | Cheapest *current* model at the general-work Moonshot recommends for non-coding (K2.5 is cheaper but sunsets 2026-08-31 — don't build on it). Mechanical lookups need no reasoning; thinking-off is the cost/latency floor and, like Codex's `terra` locator, deliberately a **different model family** than the coding builders. 256K is ample for lookups. Open-weight (self-hostable) if a cheap lane is ever wanted. |
-| **sonnet** (workhorse: implement, review, author, score) | `kimi-k2.7-code` | thinking **on** (no knob) | The **dedicated coding model**, beats K2.6 on every published coding+agentic benchmark (+11% to +31.5%), at 1/3 K3's price and ~2× the speed (`-highspeed` ~180 tok/s). This is Kimi's "measured workhorse point," the analogue of Codex `sol/medium`. No effort field — always-thinking. |
-| **opus** (judgment that gates other work; explicit pins: `muster-builder`, `muster-runner`; fable's fallback) | `kimi-k3` | effort **high** | Frontier tier (AA Index 57.1, #4, *ahead of Opus 4.8*; Terminal-Bench 88.3; FrontierSWE 81.2) and the only Kimi model that holds quality to 1M context (BrowseComp 90.4 @1M) — required for judgment over large diffs/codebases. `high` = Kimi Code's own default judgment effort; mirrors Codex `sol/high`. |
-| **fable** (peak: `judge`, `architecture-review`, `improve`, `advisor`) | `kimi-k3` | effort **max** | Same model as opus, but `max` is **reserved here only** — the exact discipline Codex applies to `xhigh` ("above high the marginal quality per credit collapses"). Because K3 exposes the effort knob, muster gets a *cleaner* opus/fable split than on Codex (where both are `sol/high`): opus=high, fable=max. |
+| **haiku** (read-only locate/gather: `code-navigation`, `docs-research`, `research`) | `kimi-code/kimi-for-coding-highspeed` | thinking **on** | The **FAST** variant for mechanical lookups. On the managed coding plan there is no *cheaper* model (the research's k2.6 general locator lane does not exist on this endpoint — see §11.6), so haiku gets the faster same-price variant, not a cheaper family. Always-thinking (no way to disable here). A live install-time probe (§11.6) remaps this to a cheaper alias if one turns out to be served. |
+| **sonnet** (workhorse: implement, review, author, score) | `kimi-code/kimi-for-coding` | thinking **on** (no knob) | The **dedicated coding model** (K2.7 Coding). Kimi's "measured workhorse point," the analogue of Codex `sol/medium`. No effort field — always-thinking. |
+| **opus** (judgment that gates other work; explicit pins: `muster-builder`, `muster-runner`; fable's fallback) | `kimi-code/k3` | effort **high** | Frontier tier (AA Index 57.1, #4, *ahead of Opus 4.8*; Terminal-Bench 88.3) and the only Kimi model that holds quality to 1M context (BrowseComp 90.4 @1M) — required for judgment over large diffs/codebases. `high` = the managed plan's own `default_effort`; mirrors Codex `sol/high`. |
+| **fable** (peak: `judge`, `architecture-review`, `improve`, `advisor`) | `kimi-code/k3` | effort **max** | Same model as opus, but `max` is **reserved here only** — the exact discipline Codex applies to `xhigh`. Because K3 exposes the effort knob (`low/high/max`), muster gets a *cleaner* opus/fable split than on Codex (where both are `sol/high`): opus=high, fable=max. |
 
 ### 11.3 Reasoning-level ladder — muster/Codex effort → Kimi emit
 
@@ -504,13 +504,36 @@ history — which Kimi's context-isolated subagents already give (§6) — and m
 *resume* a k2.7-code session into k3. Fresh K3 subagent per judgment call, never a mid-session
 model swap.
 
-**Status: first slice built.** `src/kimi.js` (`KIMI_MODEL_POLICY` + `kimiModelForTier/Role` +
-`kimiProfileForConfig`, mirroring `src/codex.js`) and the harness-neutral `{tier, effort?}` shape
-(`src/model-policy.js`: `resolveNeutralProfile`) are implemented and tested (`test/kimi.test.js`).
-Still parked as the **next slice**: migrating `src/codex.js`'s `CODEX_MODEL_POLICY` and
-`codex/agents.manifest.json` onto the same neutral shape (dropping the hardcoded `gpt-5.6-sol`
-strings), plus a Kimi agent-profile manifest, so one entry resolves on Codex, Kimi, and Claude
-alike. Nothing here touches 0.5.0.
+### 11.6 Install-grounded reconciliation (2026-07-23, verified against a real gen2 install)
+
+§11.1–11.5 above were derived from the model-lineup research (§2). Probing an actual logged-in
+gen2 install (`~/.kimi-code/config.toml`, managed OAuth plan) corrected three things, now baked
+into `src/kimi.js`:
+
+1. **Model ids are Kimi Code ALIASES, not raw API ids.** The policy emits `kimi-code/k3`,
+   `kimi-code/kimi-for-coding`, `kimi-code/kimi-for-coding-highspeed` — the `[models.<alias>]`
+   names a live `kimi -m <alias>` / `default_model` resolves — not `kimi-k3`/`kimi-k2.7-code`.
+2. **The managed coding plan has no k2.6 and no non-thinking model.** It serves exactly three
+   models, all **always-thinking**. `k2.6`/`k2.5` are Open-Platform *general* models on a
+   different endpoint (`api.moonshot.ai`), not offered on the managed *coding* endpoint
+   (`api.kimi.com/coding/v1`). So the research's "haiku → k2.6, thinking-off cheap locator" lane
+   **does not exist here**: haiku instead rides `kimi-for-coding-highspeed` (faster, *not*
+   cheaper — same price/params as `kimi-for-coding`), always-thinking. There is no cost-differentiated
+   cheap lane on this plan, only a speed-differentiated one.
+3. **K3's effort ladder + default confirmed** exactly: `support_efforts=["low","high","max"]`,
+   `default_effort="high"`.
+
+**Deferred to install time (§ the leg's install path):** a live `GET …/v1/models` probe (needs a
+fresh `kimi login` — the probed token was expired) checks whether the account actually serves a
+cheaper general alias (k2.6/k2.5); if so, `muster install kimi` adds it to `config.toml` and
+remaps haiku to it. Until then, haiku = `kimi-for-coding-highspeed`.
+
+**Status: model policy reconciled to a real install (Phase A).** `src/kimi.js`
+(`KIMI_MODEL_POLICY` + `kimiModelForTier/Role` + `kimiProfileForConfig`), the harness-neutral
+`{tier, effort?}` shape (`src/model-policy.js`), and the Codex adapter's migration onto it are all
+shipped. Remaining harness-leg slices: `readInstalledKimi()`, a `capabilities --kimi` lane +
+`kimiProfileForAgentId`, the shared-manifest path move, and a `muster install kimi` path (with the
+live model-probe above). Nothing here touches 0.5.0.
 
 ## Sources
 

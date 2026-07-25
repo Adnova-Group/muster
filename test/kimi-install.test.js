@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runKimiInstall, runKimiUninstall, probeKimiModels, stampModelPreference, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS } from "../src/kimi-install.js";
+import { runKimiInstall, runKimiUninstall, probeKimiModels, stampModelPreference, stampSkillName, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS } from "../src/kimi-install.js";
 import { readInstalledKimi } from "../src/harness.js";
 import { KIMI_LANES, kimiModelPreferenceForTier, kimiPreferenceForAgentId } from "../src/kimi.js";
 
@@ -250,4 +250,67 @@ test("probeKimiModels: an HTTP error is reported, not thrown", async () => {
     assert.equal(r.ok, false);
     assert.equal(r.reason, "http-401");
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+// --- Verbs: muster's entry points -------------------------------------------
+
+test("stampSkillName: rewrites the frontmatter name, preserving everything else", () => {
+  const src = "---\nname: go\ndescription: d\nargument-hint: x\n---\nbody\n";
+  const out = stampSkillName(src, "muster-go");
+  assert.match(out, /^name: muster-go$/m);
+  assert.match(out, /^description: d$/m);
+  assert.match(out, /^argument-hint: x$/m);
+  assert.match(out, /^body$/m);
+  assert.equal(out.match(/name:/g).length, 1); // replaced, not duplicated
+  assert.equal(stampSkillName("no frontmatter\n", "muster-go"), null);
+});
+
+test("runKimiInstall: installs muster's VERBS as namespaced skills", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    write(join(repo, "plugin", "commands", "go.md"), "---\nname: go\ndescription: hands-off lifecycle\n---\nverb body");
+    write(join(repo, "plugin", "commands", "plan.md"), "---\nname: plan\ndescription: approve-first\n---\nverb body");
+
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    assert.deepEqual(r.verbs.sort(), ["muster-go", "muster-plan"]);
+
+    const root = join(home, ".kimi-code");
+    const go = readFileSync(join(root, "skills", "muster-go", "SKILL.md"), "utf8");
+    // Kimi registers a skill by its FRONTMATTER name, so the namespace must be
+    // written into the file -- a renamed directory alone would still collide.
+    assert.match(go, /^name: muster-go$/m);
+    assert.match(go, /^description: hands-off lifecycle$/m);
+    // `plan` is Kimi's own Plan-mode command; the prefix is what avoids it.
+    assert.match(readFileSync(join(root, "skills", "muster-plan", "SKILL.md"), "utf8"), /^name: muster-plan$/m);
+    assert.ok(!existsSync(join(root, "skills", "plan")));
+
+    // verbs are manifest-owned, so uninstall reclaims them
+    const manifest = JSON.parse(readFileSync(join(root, "muster", KIMI_MANIFEST), "utf8"));
+    assert.ok(manifest.verbs.includes("skills/muster-go/SKILL.md"));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiUninstall: removes the installed verbs too", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    write(join(repo, "plugin", "commands", "go.md"), "---\nname: go\ndescription: d\n---\nb");
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    assert.ok(existsSync(join(root, "skills", "muster-go", "SKILL.md")));
+    await runKimiUninstall({ home });
+    assert.ok(!existsSync(join(root, "skills", "muster-go")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiUninstall: a pre-verbs manifest (no verbs key) still uninstalls cleanly", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const mPath = join(home, ".kimi-code", "muster", KIMI_MANIFEST);
+    const m = JSON.parse(readFileSync(mPath, "utf8"));
+    delete m.verbs;                                  // simulate the older manifest
+    writeFileSync(mPath, JSON.stringify(m, null, 2));
+    const r = await runKimiUninstall({ home });
+    assert.ok(r.removed.length > 0);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });

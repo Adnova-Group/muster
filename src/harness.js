@@ -95,7 +95,10 @@ export async function readInstalledCowork(home, opts = {}) {
 // (docs/research/kimi-code-cli.md sections 5+8). The root is KIMI_CODE_HOME, or
 // ~/.kimi-code by default; opts.dir overrides it (tests / a probed install).
 //   - plugins:    plugins/installed.json (the on-disk registry -- the Capability
-//                 scan bind, sibling to Claude Code's installed_plugins.json).
+//                 scan bind, sibling to Claude Code's installed_plugins.json)
+//                 UNION plugins/managed/<id>/ dirs carrying a manifest at
+//                 kimi.plugin.json or .kimi-plugin/plugin.json (the documented
+//                 stable managed-plugin surface).
 //   - skills:     skills/<name>/SKILL.md (Anthropic SKILL.md convention) under the
 //                 Kimi root AND the shared cross-tool ~/.agents/skills/ lane.
 //   - agents:     agents/*.md (Claude-Code-format agent files) under the Kimi root
@@ -115,6 +118,20 @@ export async function readInstalledKimi(home, opts = {}) {
   const plugins = Array.isArray(pluginBag)
     ? pluginBag.map(p => (typeof p === "string" ? p : p?.id || p?.name)).filter(Boolean)
     : Object.keys(pluginBag);
+
+  // plugins/managed/<id>/: the documented stable surface -- a dir counts as an
+  // installed plugin only when it carries a manifest at kimi.plugin.json or
+  // .kimi-plugin/plugin.json; the id is the directory name.
+  const managedDir = join(root, "plugins", "managed");
+  for (const id of await readdirSafe(managedDir)) {
+    const entries = await readdirSafe(join(managedDir, id));
+    if (entries.includes("kimi.plugin.json")) {
+      plugins.push(id);
+    } else if (entries.includes(".kimi-plugin")) {
+      const inner = await readdirSafe(join(managedDir, id, ".kimi-plugin"));
+      if (inner.includes("plugin.json")) plugins.push(id);
+    }
+  }
 
   const skills = [];
   for (const base of [join(root, "skills"), join(agentsHome, "skills")]) {

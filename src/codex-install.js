@@ -326,6 +326,38 @@ export function reconcileConfigTomlHookState(text, registeredEntries, keptEntrie
   return { text: renderConfigTomlTrustSections(state), prunedHookState, prunedProjects: [] };
 }
 
+// -- hook TRUST gaps: the inverse of the stale-entry reconciliation above -----
+//
+// Codex trusts hooks per CONTENT HASH and, per its docs, "records trust against
+// the hook's current hash, so new or changed hooks are marked for review and
+// SKIPPED until trusted". So the dangerous direction is not a leftover entry --
+// reconcileConfigTomlHookState already handles that -- but a MISSING one: every
+// `muster install codex` that alters a hook body silently stops that hook from
+// firing until a human trusts it, and nothing in muster noticed. A gate that
+// quietly stops firing is precisely the failure this project's guard design
+// exists to prevent, so it must be reported loudly rather than inferred.
+//
+// Pure and text-scoped, mirroring reconcileConfigTomlHookState: it reads the
+// same `[hooks.state."<hooksJsonPath>:<event>:<group>:<hook>"]` keys and
+// compares them against the exact keys this scope's OWN muster hook groups
+// currently occupy in its live hooks.json (ownedHookStateKeys). Returns the
+// owned keys with NO trust entry -- i.e. the hooks Codex is skipping.
+export function musterHookTrustGaps({ configTomlText, hooksJsonPath, config, hookGroups } = {}) {
+  const owned = ownedHookStateKeys(config, hookGroups);
+  if (!owned.length) return { owned: [], untrusted: [], trusted: [] };
+  const trusted = new Set();
+  for (const section of parseConfigTomlTrustSections(configTomlText ?? "").sections) {
+    if (section.table !== "hooks.state" || section.key == null) continue;
+    const match = section.key.match(HOOK_STATE_KEY);
+    if (!match) continue;
+    const [, prefix, event, groupIndex, hookIndex] = match;
+    if (prefix !== hooksJsonPath) continue;
+    trusted.add(`${event}:${groupIndex}:${hookIndex}`);
+  }
+  const untrusted = owned.filter(key => !trusted.has(key));
+  return { owned, untrusted, trusted: owned.filter(key => trusted.has(key)) };
+}
+
 async function scopeLockText(token) {
   return JSON.stringify({
     format: 1,

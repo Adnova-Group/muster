@@ -33,8 +33,11 @@ export const KIMI_MANIFEST = ".muster-managed.json";
 // Live-probed 2026-07-24 (GET https://api.kimi.com/coding/v1/models, HTTP 200):
 // the managed coding plan serves EXACTLY these four, all supports_thinking_type
 // "only" (always-thinking). No k2.6/k2.5, no non-thinking/general model -- so the
-// haiku lane stays kimi-for-coding-highspeed (there is nothing cheaper to remap
-// to). See src/kimi.js's KIMI_TIERS and docs/research/kimi-code-cli.md 11.6.
+// haiku lane rides kimi-for-coding (there is nothing cheaper to remap to).
+// kimi-for-coding-highspeed is served but muster never ROUTES to it: it is the
+// identical K2.7 model at ~3x plan usage, so it stays in this served-set list
+// (the probe confirms the plan offers it) but never in KIMI_TIERS. See
+// src/kimi.js's KIMI_TIERS and docs/research/kimi-code-cli.md 11.6-11.7.
 export const KIMI_MODELS_BASE_URL = "https://api.kimi.com/coding/v1";
 export const KIMI_EXPECTED_MODEL_IDS = Object.freeze([
   "kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k"

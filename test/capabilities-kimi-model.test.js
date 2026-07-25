@@ -52,8 +52,9 @@ test("kimiProfileForAgentId resolves known agents to the reconciled aliases", ()
   assert.deepEqual(kimiProfileForAgentId("muster-surgeon"), { model: "kimi-code/kimi-for-coding", thinking: "enabled" });
   // wsh-security-auditor = {tier:opus, effort:peak} -> k3/max
   assert.deepEqual(kimiProfileForAgentId("wsh-security-auditor"), { model: "kimi-code/k3", effort: "max" });
-  // muster-investigator = {tier:haiku} -> the fast locator variant
-  assert.deepEqual(kimiProfileForAgentId("muster-investigator"), { model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" });
+  // muster-investigator = {tier:haiku} -> the same dedicated coding model as
+  // sonnet (highspeed is the identical model at ~3x usage, never routed).
+  assert.deepEqual(kimiProfileForAgentId("muster-investigator"), { model: "kimi-code/kimi-for-coding", thinking: "enabled" });
 });
 
 test("kimiProfileForAgentId returns null for a non-agent id", () => {

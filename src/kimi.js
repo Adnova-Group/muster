@@ -24,16 +24,20 @@ import { agentProfiles } from "./agent-manifest.js";
 //   (medium -> high, xhigh -> max), so workhorse and judgment both land on high.
 //
 // Per-lane rationale (reconciled to what the managed plan actually installs):
-// - haiku  = kimi-for-coding-highspeed: the FAST variant for read-only
-//   locate/gather. On the managed coding plan there is no CHEAPER model (the
-//   research's k2.6 locator lane does not exist here), only this faster one --
-//   same price/params as kimi-for-coding, ~2x throughput, always-thinking (no way
-//   to disable on this plan). CONFIRMED by a live GET /v1/models probe
-//   (2026-07-24, HTTP 200): the managed plan serves EXACTLY {kimi-for-coding,
+// - haiku  = kimi-for-coding: the dedicated coding model, the SAME lane as sonnet.
+//   The managed coding plan has no cheaper/general model (no k2.6/k2.5 -- the
+//   research's cheap locator lane does not exist on this endpoint), so read-only
+//   locate/gather rides the same model as the build workhorse. NEVER highspeed:
+//   kimi-for-coding-highspeed is the IDENTICAL K2.7 model that merely burns ~3x
+//   the plan usage to trade for latency -- pointing the "cheap" read-only lane at
+//   a 3x-cost SKU of the same model would be exactly backwards, so muster never
+//   spends quota there. haiku and sonnet therefore resolve identically on Kimi;
+//   the tier split survives at model.js for routing/budget/degradation, mirroring
+//   Codex's fable->opus collapse. Confirmed by a live GET /v1/models probe
+//   (2026-07-24, HTTP 200): the plan serves EXACTLY {kimi-for-coding,
 //   kimi-for-coding-highspeed, k3, k3-256k}, all supports_thinking_type "only" --
-//   no k2.6/k2.5, no non-thinking/general model -- so there is nothing cheaper to
-//   remap haiku to; the lane stays highspeed. `muster install kimi --probe`
-//   re-runs that check (src/kimi-install.js probeKimiModels) and would flag a
+//   no cheaper family exists to remap to. `muster install kimi --probe` re-runs
+//   that check (src/kimi-install.js probeKimiModels) and would flag a genuinely
 //   cheaper alias IF the plan ever gains one.
 // - sonnet = kimi-for-coding: the dedicated coding workhorse. Always-thinking.
 // - opus   = k3, effort high: the judgment lane. K3 is frontier and holds quality
@@ -45,7 +49,7 @@ import { agentProfiles } from "./agent-manifest.js";
 // A tier entry carries EITHER `effort` (a K3 reasoning level) OR `thinking` (the
 // always-on toggle for the effort-less coding models).
 const KIMI_TIERS = Object.freeze({
-  haiku: Object.freeze({ model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" }),
+  haiku: Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }),
   sonnet: Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }),
   opus: Object.freeze({ model: "kimi-code/k3", effort: "high" }),
   fable: Object.freeze({ model: "kimi-code/k3", effort: "max" }),

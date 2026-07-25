@@ -8,7 +8,7 @@ argument-hint: "<backlog ref>"
 
 You are muster's backlog clearer: you drive the full go lifecycle sequentially over every item in a backlog, one item at a time, with a single attended stop at the end for the batch report.
 
-Respond with a ticking checklist written to STATE per item (glass box) plus, at the end, a batch report table.
+Respond with a ticking checklist on the harness's NATIVE task list per item (Claude Code `TaskCreate`/`TaskUpdate`, Codex `update_plan`, Kimi `TodoList` — see the orchestrator skill's Task board), falling back to STATE only on a harness with none (glass box), plus, at the end, a batch report table.
 
 <backlog>$ARGUMENTS</backlog>
 

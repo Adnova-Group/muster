@@ -9,7 +9,7 @@ import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { parseHookCommand, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { musterHookTrustGaps, parseHookCommand, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
   codexThreadLimitConfigPath,
@@ -918,6 +918,9 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const legacyHookScopes = [];
   const unsafeHookScopes = [];
   const hookInterpreters = [];
+  // Muster-owned hook groups that are correctly installed but carry NO
+  // config.toml [hooks.state] trust entry -- i.e. Codex is skipping them.
+  const hookTrustGaps = [];
   // A present-but-incoherent scope (owner/version/groups/hash MISMATCH) with the
   // specific offending path (the runtime dir for a hash mismatch, else the
   // manifest); and the caught MISSING/MALFORMED/OTHER failures with their paths.
@@ -983,6 +986,14 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         const rawCommand = musterHook && (platform === "win32" ? musterHook.commandWindows : musterHook.command);
         const parsed = rawCommand ? parseHookCommand(rawCommand, { windows: platform === "win32" }) : null;
         if (parsed?.interpreter) hookInterpreters.push({ dir, interpreter: parsed.interpreter });
+        // Codex TRUSTS hooks per content hash and SKIPS new-or-changed ones
+        // until a human trusts them, so a coherent, correctly-installed hook can
+        // still be silently not firing. Coherence proves the bytes are right;
+        // only a [hooks.state] entry proves Codex will actually run them.
+        const gaps = musterHookTrustGaps({
+          configTomlText, hooksJsonPath: configPath, config, hookGroups: owner.hookGroups
+        });
+        if (gaps.untrusted.length) hookTrustGaps.push({ dir, untrusted: gaps.untrusted });
       } else {
         staleHookScopes.push(dir);
         // Present + parsed but not coherent: a MISMATCH. Name the runtime dir
@@ -1048,6 +1059,20 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     : hookInterpreters.length
     ? `pinned Node interpreter present and a regular file for ${hookInterpreters.length} managed hook scope(s)`
     : "no managed Codex hook interpreter to verify" });
+  // A coherent hook install can still be INERT: Codex records trust per hook
+  // content hash and, per its docs, new or changed hooks "are marked for review
+  // and skipped until trusted". So every `muster install codex` that alters a
+  // hook body silently stops that hook firing. This FAILS rather than warns --
+  // a gate that quietly stopped firing is indistinguishable from a passing one,
+  // which is the exact failure mode muster's guard design exists to prevent.
+  // Remediation is a human trusting the hook in Codex, never
+  // --dangerously-bypass-hook-trust.
+  const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.untrusted.length, 0);
+  checks.push({ name: "codex-hook-trust", ok: untrustedCount === 0, detail: untrustedCount
+    ? `${untrustedCount} Muster-owned Codex hook${untrustedCount === 1 ? " is" : "s are"} installed but NOT trusted, so Codex is skipping ${untrustedCount === 1 ? "it" : "them"}: ${hookTrustGaps.map(item => `${item.dir} (${item.untrusted.join(", ")})`).join("; ")}. Codex trusts hooks per content hash and skips new or changed hooks until reviewed -- open Codex and approve the hook review to restore ${untrustedCount === 1 ? "it" : "them"}`
+    : hookStatuses.length
+    ? `all Muster-owned Codex hooks in ${hookStatuses.length} scope(s) carry a config.toml trust entry`
+    : "no managed Codex hooks to verify trust for" });
   // The installed plugin cache must be the hooks-free Codex flavor: Codex
   // >=0.144.5 fires a plugin's default hooks/hooks.json on every lifecycle
   // event, so a with-hooks (Claude-flavor) cache double-fires on top of the

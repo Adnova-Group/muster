@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
-import { readdirSafe } from "./fs-util.js";
+import { readdirSafe, readJson } from "./fs-util.js";
 
 const execFileDefault = promisify(execFileCb);
 
@@ -84,4 +84,21 @@ export async function readCodexInventory({ cwd = process.cwd(), codexHome = proc
 export async function codexAvailable({ execFile = execFileDefault } = {}) {
   try { await execFile("codex", ["--version"], { timeout: 5_000 }); return true; }
   catch { return false; }
+}
+
+// --- Model catalog: which subagent API version a model speaks ----------------
+//
+// Codex resolves v1-vs-v2 from the model catalog's per-model
+// `multi_agent_version` (docs/research/codex-cli.md sec 10.1). The catalog is a
+// CACHE Codex refreshes on its own schedule, so this is a best-effort read: a
+// missing file, a missing model, or a missing field all return null and the
+// caller falls back (resolveCodexMultiAgentVersion defaults to v1, never v2).
+export async function readCodexMultiAgentVersion(model, { home = homedir(), dir } = {}) {
+  if (typeof model !== "string" || !model) return null;
+  const root = dir || process.env.CODEX_HOME || join(home, ".codex");
+  const catalog = await readJson(join(root, "models_cache.json"));
+  const models = Array.isArray(catalog?.models) ? catalog.models : [];
+  const entry = models.find(m => m?.slug === model || m?.id === model);
+  const version = entry?.multi_agent_version;
+  return version === "v1" || version === "v2" ? version : null;
 }

@@ -778,5 +778,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // assert the Codex command leaks neither `/loop` nor `/goal`) and by `MUSTER_BUILD_FORCE=1 node
   // scripts/build-codex.mjs && node scripts/check-codex.mjs` (clean). This is the reviewed
   // loop-dmi-conflict remediation, not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "d1d0a512e943e260894b12e6eec963860b0080c2cf8e0a6712d659f8d72e26e6");
+  //
+  // 2026-07-25 re-pin (codex-native-adoption): the orchestrator skill's Task board
+  // section and the go/go-backlog verbs changed to name each harness's NATIVE
+  // task-tracking primitive. The prior text asserted "Codex has no
+  // TaskCreate/TaskUpdate counterpart on the CLI today" -- FALSE against Codex
+  // 0.145.0, which registers `update_plan` unconditionally, and that false claim
+  // is why muster runs on Codex showed no on-screen task list while Claude Code
+  // and Kimi runs did. The verbs now tick the native list (Claude `TaskCreate`,
+  // Codex `update_plan`, Kimi `TodoList`) and fall back to STATE only on a
+  // harness with none. Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "0ca850adcb444487066d3e9009506af4d71779436bd91b40528496c9a607579f");
 });

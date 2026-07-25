@@ -270,12 +270,21 @@ already matches. **No documented size cap** on the handoff (unlike muster's 2000
 convention — muster's cap still applies as its own prose discipline).
 
 **Two constraints muster must plan around:**
-1. **No per-subagent model (gen2).** The `Agent` tool has no `model` param and the agent-file
-   `model` is ignored; gen1 had `Agent(model=…)` and dropped it. Model is set once per launch
-   (`kimi -m <alias>`, `default_model`, or the `KIMI_MODEL_*` env family). muster's tier→role map
-   therefore collapses to **one model per Kimi launch**, not per role within a run. To get
-   per-tier models you would run separate top-level Kimi invocations per tier, or drive via ACP
-   `session/set_model` (marked unstable).
+1. **~~No per-subagent model (gen2).~~ CORRECTED 2026-07-25 — there IS a per-agent model
+   selector; it is just not Claude Code's field.** Claude Code's `model:` *is* ignored (that part
+   held), but Kimi has its own: agent frontmatter takes **`model_preference: primary | secondary`**,
+   where "`primary` selects the caller's main model, while `secondary` selects `[secondary_model]
+   model`" — and `[secondary_model]` is "a second model pointer next to the primary
+   `default_model`" in config.toml, with its own `model` **and `default_effort`**. An explicit
+   tool-call `model` on `Agent`/`AgentSwarm` overrides both ("An explicit tool-call `model` wins").
+   So Kimi gives **two models per launch, selectable per agent**, not one model per launch.
+   Caveats: the feature is **experimental and off by default** (`KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1`
+   under `kimi web`; `KIMI_CODE_EXPERIMENTAL_FLAG=1` under `kimi -p`), and **"The TUI currently
+   ignores this field."** Critically, omission is not neutral: with a secondary model configured,
+   an agent that omits `model_preference` **defaults to secondary** — so un-annotated judgment
+   agents silently demote to the cheap lane. muster therefore stamps the field on every installed
+   agent (§11.8). *This entry is the standing example of why this doc quotes primary sources: the
+   original claim was asserted from memory and disproven by one reading of the agents page.*
 2. **Nesting is version-contradictory.** Gen2 says `coder` can nest subagents (`subagents`
    allowlist); gen1 says only the root agent may use `Agent`. Assume gen2 nests, gen1 does not.
 
@@ -554,6 +563,46 @@ inside the root and a symlinked `agents/`/`skills/` dest is refused. Reinstall i
 prunes files a prior manifest no longer ships. Verified live: 40 files written to a real
 `~/.kimi-code`, read back through `readInstalledKimi` (27 agents + 11 skills), and
 `capabilities --kimi` resolves the installed root to `kimi-code/k3`/high.
+
+### 11.8 The two-lane bind — `model_preference` (2026-07-25)
+
+§6's corrected constraint turns the tier map from "resolution only" into a real **dispatch bind**.
+Kimi honours `model_preference: primary | secondary` per agent, so muster's four conceptual tiers
+fold onto two lanes along the family line `KIMI_TIERS` already draws:
+
+| lane | config.toml | muster tiers | why |
+|---|---|---|---|
+| **primary** | `default_model = "kimi-code/k3"` | opus, fable | the K3 judgment family |
+| **secondary** | `[secondary_model] model = "kimi-code/kimi-for-coding"` | haiku, sonnet | the K2.7 Coding execution family |
+
+`fable` collapses into `opus`'s lane — effort is per-launch, not per-agent — which is the **same**
+degradation Codex already accepts (both `sol/high`), so nothing new is lost.
+
+Two deliberate design calls:
+
+- **Which lane is primary.** K3 primary / K2.7 secondary means an un-annotated agent fails
+  *cheap*. Inverting it (K2.7 primary) would give better orchestrator quota but make an
+  un-annotated third-party agent default to frontier K3. Fail-cheap wins.
+- **muster does not write `config.toml`.** It is a shared, user-owned file, and the
+  hook-bombardment diagnosis is the standing lesson on muster mutating shared harness config. The
+  install *reports* the required delta (`modelPreference.requiredConfig`) and leaves the edit to the
+  user. Declining it is safe: with no secondary model configured, every agent inherits the caller's
+  model and the stamps are inert. The **preferred** route is the per-process env pair
+  `KIMI_CODE_EXPERIMENTAL_FLAG=1` + `KIMI_SECONDARY_MODEL=kimi-code/kimi-for-coding`, which binds
+  the lanes for a muster-launched `kimi -p` while mutating nothing and leaving the user's
+  interactive sessions untouched. (`KIMI_SECONDARY_EFFORT` sets the lane's effort.)
+
+The gate is not optional: `model_preference` "applies only to newly spawned subagents when the
+secondary-model experiment is enabled", and **"The TUI currently ignores this field."** Lanes bind
+under `kimi -p` / `kimi web`, never in the interactive TUI. An explicit `model: "primary"|"secondary"`
+on the `Agent`/`AgentSwarm` *call* overrides the profile — so muster can also tier per dispatch, not
+just per profile (it is "ignored when resuming"; resumed subagents keep their model).
+
+`muster install kimi` stamps every agent's lane from its manifest tier (`kimiPreferenceForAgentId`
+→ `stampModelPreference`, a line-scoped frontmatter edit that leaves every other byte untouched).
+Verified on the live install: **18 primary / 9 secondary / 0 unstamped.** An agent with no manifest
+entry is copied through *unstamped and surfaced* in the result rather than given a lane muster
+cannot justify.
 
 **Status: Kimi harness leg complete (Phases A–E).** `src/kimi.js` (`KIMI_MODEL_POLICY`), the
 harness-neutral `{tier, effort?}` shape (`src/model-policy.js`) + the Codex adapter's migration onto

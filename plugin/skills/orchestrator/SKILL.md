@@ -114,9 +114,10 @@ Every crew brief MUST end with a return contract, so the orchestrator's per-task
 The native task board is the AUTHORITATIVE live-progress surface for the whole run -- a
 REPLACEMENT for the pending/in_progress/completed tracking that used to be re-listed in STATE
 too, not a second place that same status also lives. Create one harness-visible task per work
-item via the harness's native task-tracking primitive when present -- on Claude Code CLI/Desktop,
-`TaskCreate`/`TaskUpdate`/`TaskList` (see docs/research/reference-harness-design.md's `cc-plan`
-source): create at dispatch (subject: the task/item id plus a short description), `in_progress`
+item via the harness's native task-tracking primitive when present -- **Claude Code CLI/Desktop:**
+`TaskCreate`/`TaskUpdate`/`TaskList` (docs/research/reference-harness-design.md's `cc-plan`);
+**Codex:** `update_plan`; **Kimi Code CLI:** `TodoList` (both detailed below) --
+create at dispatch (subject: the task/item id plus a short description), `in_progress`
 when the builder launches, `completed` only after its disposition executes AND the review gate
 has recorded PASS for it (below) -- `TaskList` is the live query, and STATE never re-lists that
 same pending/in_progress/completed status per item again.
@@ -139,10 +140,21 @@ and escalations -- never a pending/in_progress/completed list the native board (
 board to be authoritative, so it relies on STATE alone (note it once) -- the one case where a
 per-item status line in STATE is not duplication, since nothing else exists to carry it.
 
-Codex has no `TaskCreate`/`TaskUpdate` counterpart on the CLI today (Projects/tasks are
-desktop-only -- docs/research/codex-desktop.md's `cxd-arch` citation); Codex's own
-`collaboration` thread/goal state is the nearest analog, noted here as a future mapping target
-for `.muster/task-board.json`'s semantics, not built out by this item.
+**Codex DOES have a counterpart: `update_plan`** (corrected 2026-07-25 against Codex 0.145.0 --
+the prior claim that Codex had none was wrong, and it is why muster runs on Codex showed no
+on-screen task list while Claude Code and Kimi runs did). It is registered UNCONDITIONALLY --
+not feature-gated -- and takes `{explanation?, plan: [{step, status: pending|in_progress|completed}]}`
+with the harness-enforced invariant *"At most one step can be in_progress at a time"*, which is the
+same one-in-flight rule this board already requires. It renders in the Codex TUI and streams out of
+`codex exec --json` as a `todo_list` item, so the tick becomes a machine-readable receipt rather
+than a STATE line nothing else can parse. Use it on Codex exactly as `TaskCreate`/`TaskUpdate` are
+used on Claude Code: emit the full plan at dispatch, re-emit on each status transition (the tool
+takes the whole list, so a transition is a re-emit, not a patch).
+
+Kimi Code CLI's counterpart is `TodoList` (`{todos: [{title, status}]}`, auto-allowed,
+session-scoped; omitting `todos` queries, `[]` clears) -- see docs/research/kimi-code-cli.md.
+
+Only a harness with genuinely none of these falls back to the STATE-carried status line below.
 
 ## Wave dispatch: native Workflow vs prose fallback
 

@@ -77,8 +77,12 @@ test("resolveCodexWaveDispatch: called with no args at all still resolves (real 
 // ── criterion 1: a routed multi-wave run dispatches each crew member via
 //    spawn_agent honoring its agent_type ─────────────────────────────────
 
-test("codexSpawnAgentCall: builds a spawn_agent packet with fork_turns:none and the exact resolved agent_type", () => {
-  const call = codexSpawnAgentCall({ taskId: "task-1", message: "implement X", agentType: "muster-builder" });
+// Codex 0.145.0 split the subagent API into v1/v2, resolved PER MODEL from the
+// catalog (docs/research/codex-cli.md sec 10.1), so the packet shape is now
+// version-dependent and the caller must say which. Full coverage of the split
+// lives in test/codex-multi-agent-version.test.js.
+test("codexSpawnAgentCall: builds a v2 spawn_agent packet with fork_turns:none and the exact resolved agent_type", () => {
+  const call = codexSpawnAgentCall({ taskId: "task-1", message: "implement X", agentType: "muster-builder", version: "v2" });
   assert.equal(call.tool, "collaboration.spawn_agent");
   assert.equal(call.task_name, "task-1");
   assert.equal(call.fork_turns, "none");
@@ -92,11 +96,18 @@ test("codexSpawnAgentCall: a multi-wave routed run honors each crew member's own
     { taskId: "wave1-b", agentType: "wsh-frontend-developer" },
     { taskId: "wave2-a", agentType: "muster-reviewer" },
   ];
-  const calls = wave.map(codexSpawnAgentCall);
+  const calls = wave.map(task => codexSpawnAgentCall({ ...task, version: "v2" }));
   assert.deepEqual(calls.map(c => c.agent_type), ["muster-builder", "wsh-frontend-developer", "muster-reviewer"]);
   for (const call of calls) {
     assert.equal(call.fork_turns, "none", `${call.task_name} must never fork_turns:"all"`);
     assert.equal(call.tool, "collaboration.spawn_agent");
+  }
+  // The same crew on a v1 model gets the v1 packet, agent_type still exact.
+  const v1 = wave.map(task => codexSpawnAgentCall({ ...task, version: "v1" }));
+  assert.deepEqual(v1.map(c => c.agent_type), ["muster-builder", "wsh-frontend-developer", "muster-reviewer"]);
+  for (const call of v1) {
+    assert.equal(call.tool, "multi_agent_v1.spawn_agent");
+    assert.equal(call.fork_context, false);
   }
 });
 

@@ -8,7 +8,7 @@ argument-hint: "<outcome>"
 
 You are muster's hands-off runner: you run the full plan-execute lifecycle end to end, from scope detection through branch creation through wave orchestration, stopping only for a scope confirmation, an escalation, or the final merge decision.
 
-Respond with a ticking checklist written to STATE at each step; every branch, commit, escalation, and gate outcome is recorded (glass box).
+Respond with a ticking checklist on the harness's NATIVE task list (Claude Code `TaskCreate`/`TaskUpdate`, Codex `update_plan`, Kimi `TodoList` — see the orchestrator skill's Task board), falling back to STATE only on a harness with none; every branch, commit, escalation, and gate outcome is recorded in STATE (glass box).
 
 <outcome>$ARGUMENTS</outcome>
 

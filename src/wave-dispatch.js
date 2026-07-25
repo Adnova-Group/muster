@@ -210,6 +210,43 @@ export function codexSpawnAgentCall({ taskId, message, agentType, version, forkT
   };
 }
 
+// Wait-timeout bounds Codex enforces on the v2 barrier
+// (DEFAULT_MULTI_AGENT_V2_{MIN,MAX,DEFAULT}_WAIT_TIMEOUT_MS).
+export const CODEX_WAIT_TIMEOUT_MS = Object.freeze({ min: 10_000, max: 3_600_000, default: 30_000 });
+
+// Builds the wave BARRIER call. The two API versions differ in kind, not just
+// in spelling, and muster's prior instruction ("<=60s per outstanding agent id")
+// described only the v1 shape:
+//
+//   v1  wait_agent(targets: [...ids], timeout_ms) -> {status: {id: AgentStatus}, timed_out}
+//       Waits on named agents and returns on the FIRST to finish.
+//   v2  wait_agent(timeout_ms)                    -> {message, timed_out}
+//       No targets at all: wakes on a mailbox update from ANY live agent, and
+//       also wakes early when new user input is steered into the turn.
+//
+// Neither is an all-barrier -- the caller loops until every dispatched member
+// has settled. That is the whole reason this is a barrier and not a poll: each
+// call BLOCKS until something actually happens, so there is no interval to tune
+// and no tight-poll to guard against.
+export function codexWaitAgentCall({ version, targets, timeoutMs = CODEX_WAIT_TIMEOUT_MS.default } = {}) {
+  const api = resolveCodexMultiAgentVersion({ override: version });
+  if (!Number.isInteger(timeoutMs) || timeoutMs < CODEX_WAIT_TIMEOUT_MS.min || timeoutMs > CODEX_WAIT_TIMEOUT_MS.max) {
+    throw new Error(`codexWaitAgentCall: timeoutMs must be an integer within ${CODEX_WAIT_TIMEOUT_MS.min}..${CODEX_WAIT_TIMEOUT_MS.max} ms; got ${JSON.stringify(timeoutMs)}`);
+  }
+  if (api === CODEX_MULTI_AGENT_VERSIONS.V1) {
+    if (!Array.isArray(targets) || !targets.length || targets.some(id => typeof id !== "string" || !id)) {
+      throw new Error("codexWaitAgentCall: v1 wait_agent requires a non-empty targets array of agent ids");
+    }
+    return { tool: "multi_agent_v1.wait_agent", targets: [...targets], timeout_ms: timeoutMs };
+  }
+  // v2 takes no targets; passing them is a caller misunderstanding worth failing
+  // on rather than silently dropping.
+  if (targets !== undefined) {
+    throw new Error("codexWaitAgentCall: v2 wait_agent takes no targets -- it wakes on a mailbox update from ANY live agent; omit targets");
+  }
+  return { tool: "collaboration.wait_agent", timeout_ms: timeoutMs };
+}
+
 // Fail-closed guard on the ACTUAL outcome of a spawn_agent call. Only an
 // actually-rejected call proves a profile unavailable -- never infer
 // unavailability from a displayed tool schema or an omitted field -- and the

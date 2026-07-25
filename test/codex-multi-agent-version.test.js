@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { codexSpawnAgentCall, resolveCodexMultiAgentVersion, CODEX_MULTI_AGENT_VERSIONS } from "../src/wave-dispatch.js";
+import { codexSpawnAgentCall, codexWaitAgentCall, resolveCodexMultiAgentVersion, CODEX_MULTI_AGENT_VERSIONS, CODEX_WAIT_TIMEOUT_MS } from "../src/wave-dispatch.js";
 import { readCodexMultiAgentVersion } from "../src/codex-inventory.js";
 
 test("resolveCodexMultiAgentVersion: override wins, then catalog, then a v1 floor", () => {
@@ -109,4 +109,41 @@ test("a tier moving across the v1/v2 line changes the emitted shape (the real ha
     assert.equal(codexSpawnAgentCall({ taskId: "t", agentType: "muster-surgeon", version }).tool, expectedTool,
       `${sonnet} on ${catalogVersion}`);
   }
+});
+
+// --- the wave BARRIER -------------------------------------------------------
+// v1 and v2 wait_agent differ in kind: v1 waits on named targets and returns on
+// the first to finish; v2 takes only a timeout and wakes on a mailbox update
+// from ANY live agent. muster's prior instruction described only the v1 shape.
+
+test("codexWaitAgentCall: v2 takes only a timeout — no targets", () => {
+  const call = codexWaitAgentCall({ version: "v2" });
+  assert.equal(call.tool, "collaboration.wait_agent");
+  assert.equal(call.timeout_ms, CODEX_WAIT_TIMEOUT_MS.default);
+  assert.equal(call.targets, undefined);
+});
+
+test("codexWaitAgentCall: v2 rejects targets rather than silently dropping them", () => {
+  assert.throws(() => codexWaitAgentCall({ version: "v2", targets: ["agent-0"] }), /v2 wait_agent takes no targets/);
+});
+
+test("codexWaitAgentCall: v1 requires a non-empty targets array", () => {
+  const call = codexWaitAgentCall({ version: "v1", targets: ["agent-0", "agent-1"] });
+  assert.equal(call.tool, "multi_agent_v1.wait_agent");
+  assert.deepEqual(call.targets, ["agent-0", "agent-1"]);
+  assert.throws(() => codexWaitAgentCall({ version: "v1" }), /requires a non-empty targets array/);
+  assert.throws(() => codexWaitAgentCall({ version: "v1", targets: [] }), /requires a non-empty targets array/);
+  assert.throws(() => codexWaitAgentCall({ version: "v1", targets: [""] }), /requires a non-empty targets array/);
+});
+
+test("codexWaitAgentCall: enforces Codex's own wait-timeout bounds", () => {
+  assert.equal(codexWaitAgentCall({ version: "v2", timeoutMs: 10_000 }).timeout_ms, 10_000);
+  assert.equal(codexWaitAgentCall({ version: "v2", timeoutMs: 3_600_000 }).timeout_ms, 3_600_000);
+  assert.throws(() => codexWaitAgentCall({ version: "v2", timeoutMs: 9_999 }), /must be an integer within/);
+  assert.throws(() => codexWaitAgentCall({ version: "v2", timeoutMs: 3_600_001 }), /must be an integer within/);
+  assert.throws(() => codexWaitAgentCall({ version: "v2", timeoutMs: 30.5 }), /must be an integer within/);
+});
+
+test("codexWaitAgentCall: an unknown version falls to the v1 shape, matching dispatch", () => {
+  assert.equal(codexWaitAgentCall({ targets: ["a"] }).tool, "multi_agent_v1.wait_agent");
 });

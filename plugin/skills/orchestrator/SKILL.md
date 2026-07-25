@@ -187,12 +187,30 @@ One worked example of each path (the same 2-task wave, routed both ways): docs/n
 
 Codex has no `Workflow`-tool counterpart, so wave dispatch rides Codex's OWN native primitive,
 subagent collaboration itself, never a prose-loop substitute for the Claude-only `Workflow` tool.
-Each wave task calls `collaboration.spawn_agent` (`task_name`, `message`, `fork_turns: "none"`,
-`agent_type: "<exact chosen.id>"`); the barrier is `collaboration.wait_agent` (<=60s per outstanding
-agent id, mailbox receipts first), `collaboration.list_agents` reconciles once per wake, never
-tight-poll (docs/research/codex-cli.md sec 6's `[CODE-VERIFIED]` dispatch-mechanics citation).
-`fork_turns` is always `"none"`: Codex rejects a named `agent_type` combined with a full-history
-fork (`"all"`), since full-history agents inherit the parent's type/model/effort.
+**The dispatch and barrier shapes are VERSION-DEPENDENT** (corrected 2026-07-25 against Codex
+0.145.0). Codex resolves its subagent API per MODEL from the catalog's `multi_agent_version`, and
+the live catalog puts `gpt-5.6-sol`/`terra` on v2 but `gpt-5.6-luna` -- muster's SONNET tier -- on
+v1. Never hardcode one shape; build both through `codexSpawnAgentCall`/`codexWaitAgentCall`
+(`src/wave-dispatch.js`), which resolve the version and fail closed to v1 rather than guessing v2
+(docs/research/codex-cli.md sec 10.1).
+
+| | v2 (`sol`, `terra`) | v1 (`luna`) |
+|---|---|---|
+| dispatch | `collaboration.spawn_agent` (`task_name`, `message`, `fork_turns`, `agent_type`) | `multi_agent_v1.spawn_agent` (`message`, `fork_context: false`, `agent_type`) |
+| barrier | `collaboration.wait_agent(timeout_ms)` -- **no targets** | `multi_agent_v1.wait_agent(targets[], timeout_ms)` |
+| wake | a mailbox update from ANY live agent (also wakes early on steered input) | the FIRST of the named targets to finish |
+
+`wait_agent` BLOCKS until something happens, so there is no interval to tune and nothing to
+tight-poll -- call it in a loop until every dispatched member has settled (neither version is an
+all-barrier). Timeouts are bounded 10s..3600s, default 30s. **Take receipts from the mailbox, not
+from `list_agents`**: Codex 0.145.0 removed task messages from `list_agents` output (`#33030`), so
+it now reconciles liveness only.
+
+`fork_turns` (v2 only) is a **STRING**: Codex rejects the integer `3` and accepts `"3"`. Default
+`"none"`; `"all"` is refused before dispatch because Codex will not combine a full-history fork with
+a named `agent_type` (full-history agents inherit the parent's type/model/effort). A positive
+integer string is the useful middle -- it keeps that many turns of context AND still accepts
+`agent_type` plus model/effort overrides.
 
 `resolveCodexWaveDispatch({ multiAgent, env })` (`src/wave-dispatch.js`) selects between this and a
 sequential-inline floor purely on the session's own `features.multi_agent` signal -- same

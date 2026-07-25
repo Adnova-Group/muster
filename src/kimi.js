@@ -81,6 +81,63 @@ export function kimiModelForTier(tier) {
   return { ...resolved };
 }
 
+// --- The two-lane dispatch bind (model_preference) ---------------------------
+//
+// Kimi DOES support a per-agent model selector -- it is just not Claude Code's
+// `model:` field (which Kimi explicitly ignores). An agent file carries
+// `model_preference: primary | secondary`, where (docs, customization/agents):
+// "`primary` selects the caller's main model, while `secondary` selects
+// `[secondary_model] model`". `[secondary_model]` is "a second model pointer
+// next to the primary `default_model`" in config.toml, carrying its own `model`
+// and `default_effort`.
+//
+// So Kimi gives TWO models per launch, selectable per agent -- not the "one
+// model per launch" the earlier research recorded. muster's four conceptual
+// tiers fold onto those two lanes along the family line KIMI_TIERS already
+// draws: the K3 judgment family and the K2.7 Coding execution family.
+//
+//   primary   = kimi-code/k3               <- opus + fable
+//   secondary = kimi-code/kimi-for-coding  <- haiku + sonnet
+//
+// fable collapses into opus's lane (both k3, but effort is per-launch, not
+// per-agent) -- the SAME degradation Codex already accepts, where fable and opus
+// are both sol/high. Nothing new is lost.
+//
+// Two constraints on using this (both are the caller's job, not this map's):
+//  1. It is EXPERIMENTAL and off by default -- `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1`
+//     under `kimi web`, or `KIMI_CODE_EXPERIMENTAL_FLAG=1` under `kimi -p`.
+//     The interactive TUI "currently ignores this field".
+//  2. The mapping is only CORRECT if config.toml's default_model/[secondary_model]
+//     match KIMI_LANES below -- muster emits that block for the user rather than
+//     mutating a shared config itself (see src/kimi-install.js).
+//
+// Omitting the field is NOT neutral: per the docs, when a secondary model is
+// configured and an agent omits model_preference, "the configured secondary
+// model remains the default" -- i.e. every un-annotated agent silently binds to
+// the CHEAP lane, judgment agents included. That is precisely why the install
+// stamps this field on every agent instead of copying files through untouched.
+export const KIMI_LANES = Object.freeze({
+  primary: "kimi-code/k3",
+  secondary: "kimi-code/kimi-for-coding"
+});
+
+// Derived from KIMI_TIERS (never a parallel hand-maintained table): a tier's
+// lane is whichever KIMI_LANES entry names the same model its tier resolves to.
+// A tier whose model matches no lane fails loud rather than guessing a lane.
+export function kimiModelPreferenceForTier(tier) {
+  const { model } = kimiModelForTier(tier);
+  const lane = Object.keys(KIMI_LANES).find(name => KIMI_LANES[name] === model);
+  if (!lane) throw new Error(`Kimi tier ${tier} resolves to ${model}, which is not a configured lane`);
+  return lane;
+}
+
+// Resolve an agent id (a manifest key) to its Kimi lane. Returns null for an id
+// with no manifest entry -- the caller decides whether that is a skip or a fault.
+export function kimiPreferenceForAgentId(id) {
+  const config = agentProfiles()[id];
+  return config ? kimiModelPreferenceForTier(config.tier) : null;
+}
+
 // Adapter boundary for callers that resolve a role at runtime. modelForRole keeps
 // MUSTER_MAX_TIER and Fable's deterministic fallback (fable -> opus when Fable is
 // disabled), so a fable-set role with Fable off resolves to the opus (k3/high)

@@ -7,8 +7,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runKimiInstall, runKimiUninstall, probeKimiModels, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS } from "../src/kimi-install.js";
+import { runKimiInstall, runKimiUninstall, probeKimiModels, stampModelPreference, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS } from "../src/kimi-install.js";
 import { readInstalledKimi } from "../src/harness.js";
+import { KIMI_LANES, kimiModelPreferenceForTier, kimiPreferenceForAgentId } from "../src/kimi.js";
 
 function tmp() { return mkdtempSync(join(tmpdir(), "muster-kimi-install-")); }
 function write(p, s) { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); }
@@ -18,7 +19,7 @@ function fixtureRepo() {
   const repo = tmp();
   write(join(repo, "package.json"), JSON.stringify({ version: "9.9.9" }));
   write(join(repo, "plugin", "agents", "muster-builder.md"), "---\nname: muster-builder\nmodel: opus\n---\nbody");
-  write(join(repo, "plugin", "agents", "wsh-debugger.md"), "---\nname: wsh-debugger\nmodel: haiku\n---\nbody");
+  write(join(repo, "plugin", "agents", "muster-investigator.md"), "---\nname: muster-investigator\nmodel: haiku\n---\nbody");
   write(join(repo, "plugin", "skills", "orchestrator", "SKILL.md"), "---\nname: orchestrator\n---\nbody");
   write(join(repo, "plugin", "skills", "review-gate", "SKILL.md"), "---\nname: review-gate\n---\nbody");
   write(join(repo, "plugin", "skills", "review-gate", "verdict.schema.json"), "{}");
@@ -33,7 +34,7 @@ test("runKimiInstall: writes agents + skills into the kimi root with an ownershi
     const r = await runKimiInstall({ home, repoRoot: repo });
     assert.equal(r.dest, join(home, ".kimi-code"));
     assert.equal(r.packageVersion, "9.9.9");
-    assert.deepEqual(r.agents.sort(), ["muster-builder.md", "wsh-debugger.md"]);
+    assert.deepEqual(r.agents.sort(), ["muster-builder.md", "muster-investigator.md"]);
     assert.deepEqual(r.skills.sort(), ["orchestrator", "review-gate"]);
 
     const root = join(home, ".kimi-code");
@@ -43,8 +44,12 @@ test("runKimiInstall: writes agents + skills into the kimi root with an ownershi
     // the non-skill dir was skipped
     assert.ok(!existsSync(join(root, "skills", "not-a-skill")));
 
-    // agent file copied VERBATIM (model: field left inert, not rewritten)
-    assert.match(readFileSync(join(root, "agents", "muster-builder.md"), "utf8"), /model: opus/);
+    // the inert Claude-Code `model:` field is left alone (Kimi ignores it), and
+    // the field Kimi DOES honour is stamped in from the manifest tier.
+    const builder = readFileSync(join(root, "agents", "muster-builder.md"), "utf8");
+    assert.match(builder, /model: opus/);
+    assert.match(builder, /^model_preference: primary$/m);
+    assert.match(builder, /^body$/m); // body preserved
 
     const manifest = JSON.parse(readFileSync(join(root, "muster", KIMI_MANIFEST), "utf8"));
     assert.equal(manifest.owner, "muster");
@@ -59,7 +64,7 @@ test("runKimiInstall: the installed root reads back through readInstalledKimi", 
   try {
     await runKimiInstall({ home, repoRoot: repo });
     const inv = await readInstalledKimi(home, { dir: join(home, ".kimi-code") });
-    assert.deepEqual(inv.agents.sort(), ["muster-builder", "wsh-debugger"]);
+    assert.deepEqual(inv.agents.sort(), ["muster-builder", "muster-investigator"]);
     assert.deepEqual(inv.skills.sort(), ["orchestrator", "review-gate"]);
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
@@ -69,11 +74,11 @@ test("runKimiInstall: reinstall is idempotent and prunes stale owned files", asy
   try {
     await runKimiInstall({ home, repoRoot: repo });
     // drop an agent from the source, then reinstall
-    rmSync(join(repo, "plugin", "agents", "wsh-debugger.md"));
+    rmSync(join(repo, "plugin", "agents", "muster-investigator.md"));
     const r = await runKimiInstall({ home, repoRoot: repo });
-    assert.deepEqual(r.removedStale, ["agents/wsh-debugger.md"]);
+    assert.deepEqual(r.removedStale, ["agents/muster-investigator.md"]);
     const root = join(home, ".kimi-code");
-    assert.ok(!existsSync(join(root, "agents", "wsh-debugger.md")));
+    assert.ok(!existsSync(join(root, "agents", "muster-investigator.md")));
     assert.ok(existsSync(join(root, "agents", "muster-builder.md")));
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
@@ -125,6 +130,78 @@ test("runKimiInstall: refuses to write through a symlinked agents dir", async ()
     symlinkSync(elsewhere, join(home, ".kimi-code", "agents"));
     await assert.rejects(runKimiInstall({ home, repoRoot: repo }), /non-ordinary Kimi directory/);
   } finally { [repo, home, elsewhere].forEach(d => rmSync(d, { recursive: true, force: true })); }
+});
+
+// --- model_preference: the two-lane dispatch bind ---------------------------
+
+test("kimiModelPreferenceForTier: tiers fold onto the two configured lanes", () => {
+  // K3 judgment family -> primary; K2.7 Coding execution family -> secondary.
+  assert.equal(kimiModelPreferenceForTier("opus"), "primary");
+  assert.equal(kimiModelPreferenceForTier("fable"), "primary");
+  assert.equal(kimiModelPreferenceForTier("sonnet"), "secondary");
+  assert.equal(kimiModelPreferenceForTier("haiku"), "secondary");
+});
+
+test("kimiPreferenceForAgentId: resolves real manifest agents, null for a non-agent", () => {
+  assert.equal(kimiPreferenceForAgentId("muster-strategist"), "primary");   // fable
+  assert.equal(kimiPreferenceForAgentId("muster-reviewer"), "primary");     // opus
+  assert.equal(kimiPreferenceForAgentId("muster-surgeon"), "secondary");    // sonnet
+  assert.equal(kimiPreferenceForAgentId("muster-investigator"), "secondary"); // haiku
+  assert.equal(kimiPreferenceForAgentId("no-such-agent"), null);
+});
+
+test("KIMI_LANES stays consistent with the tier policy (no drift)", () => {
+  // The lane map is derived from KIMI_TIERS, so every tier must land on a lane;
+  // an unmapped model must fail loud rather than silently pick one.
+  for (const tier of ["haiku", "sonnet", "opus", "fable"]) {
+    assert.ok(Object.keys(KIMI_LANES).includes(kimiModelPreferenceForTier(tier)));
+  }
+});
+
+test("stampModelPreference: appends, replaces, and preserves the rest byte-for-byte", () => {
+  const src = "---\nname: a\ndescription: d\n---\nbody text\n";
+  assert.match(stampModelPreference(src, "primary"), /^---\nname: a\ndescription: d\nmodel_preference: primary\n---\nbody text\n$/);
+  // an existing line is REPLACED, not duplicated
+  const already = "---\nname: a\nmodel_preference: secondary\n---\nb\n";
+  const out = stampModelPreference(already, "primary");
+  assert.equal(out.match(/model_preference:/g).length, 1);
+  assert.match(out, /model_preference: primary/);
+  // CRLF survives
+  assert.match(stampModelPreference("---\r\nname: a\r\n---\r\nb\r\n", "primary"), /\r\nmodel_preference: primary\r\n/);
+  // no frontmatter -> null (caller surfaces it rather than inventing a block)
+  assert.equal(stampModelPreference("no frontmatter here\n", "primary"), null);
+});
+
+test("runKimiInstall: stamps each agent's lane and reports the required config", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    // muster-builder = opus -> primary; muster-investigator = haiku -> secondary
+    assert.equal(r.modelPreference.primary, 1);
+    assert.equal(r.modelPreference.secondary, 1);
+    assert.deepEqual(r.modelPreference.unstamped, []);
+    assert.equal(r.modelPreference.requiredConfig.default_model, KIMI_LANES.primary);
+    assert.match(r.modelPreference.requiredConfig.toml, /\[secondary_model\]/);
+    // the preferred route mutates nothing shared: per-process env vars
+    assert.equal(r.modelPreference.requiredConfig.env.KIMI_SECONDARY_MODEL, KIMI_LANES.secondary);
+    assert.equal(r.modelPreference.requiredConfig.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
+    assert.match(r.modelPreference.note, /experimental/i);
+
+    const root = join(home, ".kimi-code");
+    assert.match(readFileSync(join(root, "agents", "muster-investigator.md"), "utf8"), /^model_preference: secondary$/m);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: an agent with no manifest entry is copied through and SURFACED, not silently defaulted", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    write(join(repo, "plugin", "agents", "not-in-manifest.md"), "---\nname: not-in-manifest\n---\nbody");
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    assert.deepEqual(r.modelPreference.unstamped, [{ id: "not-in-manifest", reason: "no manifest entry" }]);
+    // copied through unstamped -- never given a lane muster cannot justify
+    const text = readFileSync(join(home, ".kimi-code", "agents", "not-in-manifest.md"), "utf8");
+    assert.ok(!text.includes("model_preference"));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
 test("probeKimiModels: managed plan (no cheaper model) confirms the policy, no remap", async () => {

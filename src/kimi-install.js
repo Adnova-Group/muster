@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exists, readdirSafe, readJson } from "./fs-util.js";
+import { matchFrontmatter } from "./frontmatter.js";
+import { KIMI_LANES, kimiPreferenceForAgentId } from "./kimi.js";
 
 // --- Kimi Code CLI install adapter -------------------------------------------
 // The write side of the Kimi harness leg (docs/research/kimi-code-cli.md). Kimi
@@ -22,11 +24,13 @@ import { exists, readdirSafe, readJson } from "./fs-util.js";
 // every written path is containment-checked inside the dest, and a symlinked
 // agents/ or skills/ dest is refused rather than written through.
 //
-// The agent `model:` frontmatter is copied VERBATIM and is inert on Kimi: gen2
-// has no per-subagent model (the second data point behind the model-policy
-// refactor). The concrete Kimi model a manifest agent resolves to is surfaced
-// through `capabilities --kimi` / kimiProfileForAgentId (src/kimi.js), not baked
-// into the on-disk file -- so rewriting the field would only mislead.
+// The agent `model:` frontmatter is left as-is and is inert on Kimi (the docs
+// state Claude Code's `model` field is ignored). What Kimi DOES honour is
+// `model_preference: primary | secondary`, so the install STAMPS that field on
+// every agent from its manifest tier (see src/kimi.js's KIMI_LANES). Copying
+// agents through untouched would be actively wrong: with a `[secondary_model]`
+// configured, an agent that omits the field defaults to the SECONDARY (cheap)
+// lane, which would silently demote every judgment agent.
 
 export const KIMI_MANIFEST = ".muster-managed.json";
 
@@ -42,6 +46,33 @@ export const KIMI_MODELS_BASE_URL = "https://api.kimi.com/coding/v1";
 export const KIMI_EXPECTED_MODEL_IDS = Object.freeze([
   "kimi-for-coding", "kimi-for-coding-highspeed", "k3", "k3-256k"
 ]);
+
+// What has to be true for the stamped model_preference lanes to actually bind.
+// muster does NOT write config.toml itself: it is a shared, user-owned file, and
+// the hook-bombardment diagnosis (see codex-install.js) is the standing lesson
+// about muster mutating shared harness config. Declining all of this is safe --
+// with no secondary model configured, every agent inherits the caller's model
+// and the stamps are simply inert.
+//
+// Two routes, and the ENV one is preferred precisely because it touches nothing
+// shared: `KIMI_SECONDARY_MODEL` / `KIMI_SECONDARY_EFFORT` are per-process, so a
+// muster-launched `kimi -p` gets the lanes without editing the user's config at
+// all (and without changing what their interactive sessions do).
+//
+// The experiment gate is not optional: model_preference "applies only to newly
+// spawned subagents when the secondary-model experiment is enabled", and "The TUI
+// currently ignores this field" -- so lanes bind under `kimi -p` /`kimi web`, never
+// in the interactive TUI.
+const KIMI_SECONDARY_MODEL_CONFIG = Object.freeze({
+  // Preferred: per-process, mutates nothing.
+  env: Object.freeze({
+    KIMI_CODE_EXPERIMENTAL_FLAG: "1",
+    KIMI_SECONDARY_MODEL: KIMI_LANES.secondary
+  }),
+  // Alternative: persistent, but edits the user's shared config.toml.
+  default_model: KIMI_LANES.primary,
+  toml: `[secondary_model]\nmodel = "${KIMI_LANES.secondary}"\n`
+});
 
 const kimiHome = home => process.env.KIMI_CODE_HOME || join(home, ".kimi-code");
 
@@ -105,6 +136,27 @@ async function copyInto(srcFile, destFile) {
   await copyFile(srcFile, destFile);
 }
 
+const MODEL_PREFERENCE_LINE = /^model_preference[ \t]*:.*$/m;
+
+// Stamp `model_preference: <lane>` into an agent file's YAML frontmatter,
+// replacing an existing line or appending one. Deliberately line-scoped rather
+// than a parse/re-serialize round trip (the same discipline codex-install.js
+// applies to config.toml): every other byte of the file passes through
+// untouched, so a hand-authored agent never gets silently reformatted.
+// Returns null when the file has no frontmatter at all -- Kimi requires a
+// `description`, so such a file is already malformed for Kimi and the caller
+// surfaces it rather than inventing a frontmatter block.
+export function stampModelPreference(text, lane) {
+  const fm = matchFrontmatter(text);
+  if (!fm) return null;
+  const newline = fm.raw.includes("\r\n") ? "\r\n" : "\n";
+  const line = `model_preference: ${lane}`;
+  const body = MODEL_PREFERENCE_LINE.test(fm.body)
+    ? fm.body.replace(MODEL_PREFERENCE_LINE, line)
+    : `${fm.body}${newline}${line}`;
+  return `---${newline}${body}${newline}---${newline}${fm.rest}`;
+}
+
 async function readManifest(manifestPath, dest) {
   const raw = await readJson(manifestPath);
   if (!raw) return null;
@@ -124,7 +176,15 @@ async function rmdirIfEmpty(path) {
 
 // Classify a served model id: a "cheaper" haiku-lane candidate is a served
 // model that is NEITHER a coding model (kimi-for-coding*) NOR a k3* frontier
-// model -- i.e. the general k2.6/k2.5 family the plan's probe went looking for.
+// model -- i.e. a general k2.x family alias, should the plan ever list one.
+//
+// NOTE (2026-07-25 doc sweep): K2.6 IS reachable on this endpoint, but never as
+// a served model id -- "K3 / K2.7 without Thinking routes to K2.6", i.e. it is
+// reached by DISABLING thinking (effort `none`), not by selecting an alias. So
+// this probe correctly never finds it, and muster does not route there: every
+// managed model is `always_thinking`, K2.7-Code already uses "30% lower
+// reasoning-token usage compared to K2.6", and no quota multiplier is published
+// for K2.6 -- so a thinking-off K2.6 lane is not a documented saving.
 function cheaperHaikuCandidates(servedIds) {
   return servedIds.filter(id => !id.startsWith("kimi-for-coding") && !id.startsWith("k3"));
 }
@@ -173,7 +233,13 @@ export async function probeKimiModels({
 async function collectSource(pluginRoot) {
   const agentsSrc = join(pluginRoot, "agents"), skillsSrc = join(pluginRoot, "skills");
   const agentFiles = (await readdirSafe(agentsSrc)).filter(f => f.endsWith(".md")).sort();
-  const agents = agentFiles.map(f => ({ rel: `agents/${f}`, src: join(agentsSrc, f) }));
+  // Each agent carries the Kimi lane its manifest tier resolves to; a file with
+  // no manifest entry gets lane null and is copied through unstamped (surfaced
+  // in the install result, never silently defaulted).
+  const agents = agentFiles.map(f => {
+    const id = f.slice(0, -3);
+    return { rel: `agents/${f}`, src: join(agentsSrc, f), id, lane: kimiPreferenceForAgentId(id) };
+  });
   const skills = [];
   for (const name of (await readdirSafe(skillsSrc)).sort()) {
     const skillDir = join(skillsSrc, name);
@@ -224,7 +290,23 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
     catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 
-  for (const { rel, src } of [...agents, ...skills]) await copyInto(src, join(dest, rel));
+  // Skills copy byte-for-byte; agents are stamped with their model_preference
+  // lane (see the header note -- an un-stamped agent would silently bind to the
+  // secondary/cheap lane once a [secondary_model] is configured).
+  for (const { rel, src } of skills) await copyInto(src, join(dest, rel));
+  const lanes = { primary: [], secondary: [] }, unstamped = [];
+  for (const { rel, src, id, lane } of agents) {
+    const destFile = join(dest, rel);
+    const stamped = lane ? stampModelPreference(await readFile(src, "utf8"), lane) : null;
+    if (stamped === null) {
+      await copyInto(src, destFile);
+      unstamped.push({ id, reason: lane ? "no frontmatter" : "no manifest entry" });
+      continue;
+    }
+    await mkdir(dirname(destFile), { recursive: true });
+    await writeFile(destFile, stamped);
+    lanes[lane].push(id);
+  }
 
   await mkdir(dirname(manifestPath), { recursive: true });
   await atomicWriteJson(manifestPath, {
@@ -235,6 +317,11 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   return {
     dest, packageVersion, agents: agents.map(a => basename(a.rel)), skills: skillNames,
     fileCount: ownedRel.length, removedStale,
+    modelPreference: {
+      primary: lanes.primary.length, secondary: lanes.secondary.length, unstamped,
+      requiredConfig: KIMI_SECONDARY_MODEL_CONFIG,
+      note: "model_preference is experimental: set KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1 (kimi web) or KIMI_CODE_EXPERIMENTAL_FLAG=1 (kimi -p). The interactive TUI ignores it."
+    },
     ...(probeResult ? { probe: probeResult } : {})
   };
 }

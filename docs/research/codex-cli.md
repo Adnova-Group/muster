@@ -455,3 +455,36 @@ which is the model's job. Roles whose work is a single reasoned edit (`muster-su
 *Measurement muster still owes before enabling:* a token/latency comparison on one representative
 `muster-investigator` task, code mode on vs off. Until that exists this stays an assessment, not a
 recommendation to flip the flag.
+
+### 10.9 SubagentStop blocking — NOT adopted, and why the audit was wrong to propose it
+
+The 0.145.0 audit correctly established that a `SubagentStop` hook returning
+`{"decision":"block","reason":...}` makes Codex generate a continuation prompt, and §10.4 listed it
+as a native run-until-done loop worth riding. **That recommendation was wrong, and was retracted the
+same day.**
+
+muster has already tried this class of thing and retired it. Per
+`docs/decisions/retriage-codex-efficiency-enforcement.md` and §4 here: Codex lifecycle hooks are
+**advisory by design** — `PreToolUse` "is still a guardrail rather than a complete enforcement
+boundary" per Codex's own docs, hook failures are **fail-open** (any non-zero exit that is not the
+blocking code allows the action), and the agent loop routes around any single interception point
+(`unified_exec`, subagent tool work, non-shell tools, concurrent hook launch). A muster construct
+that ASSUMES a Codex hook will fail closed is broken by design and burns quota fighting the harness;
+the retired `codex-efficiency-enforcement` item hit that wall on every Codex-side clause.
+
+`test/codex-hooks-advisory-guard.test.js` enumerates every Codex-targeted hook/gate muster ships and
+asserts none emits or assumes a blocking decision, expressly so the assumption "can never silently
+creep back in". It fired on the attempted implementation and stopped it — the guard doing exactly
+its job.
+
+**The generalizable trap:** a capability existing in the harness is not the same as it being
+*reliable enough to depend on*. 0.145.0 genuinely added blocking power to hooks (`PreToolUse` can
+now `deny` and rewrite `updatedInput`; `SubagentStop` can block with a reason). None of that changes
+the fail-open failure mode or the routing-around problem that made the original decision. Re-reading
+release notes is not sufficient grounds to reverse a decision record — the decision has to be
+re-argued on its own terms.
+
+Anything muster needs enforced on Codex belongs in **config**, not hooks: `[[permission.rules]]`
+(`allow`/`deny`/`ask` with `scope`), `[tools] enabled/disabled`, `sandbox_mode`, and the role
+`.toml` pins — all of which the harness applies deterministically. §10.4's `SubagentStop` bullet
+should be read as superseded by this section.

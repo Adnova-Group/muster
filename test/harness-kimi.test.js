@@ -53,6 +53,42 @@ test("readInstalledKimi: honors KIMI_CODE_HOME when opts.dir is absent", async (
   }
 });
 
+test("readInstalledKimi: reads the documented plugins/managed/<id>/ surface (managed-only root)", async () => {
+  const root = tmp(), home = tmp();
+  try {
+    // Documented stable surface (docs/research/kimi-code-cli.md): a managed
+    // plugin is a directory under plugins/managed/ carrying a manifest at
+    // kimi.plugin.json or .kimi-plugin/plugin.json. No installed.json here.
+    write(join(root, "plugins", "managed", "kimi-finance", "kimi.plugin.json"), JSON.stringify({ name: "kimi-finance" }));
+    write(join(root, "plugins", "managed", "kimi-docs", ".kimi-plugin", "plugin.json"), JSON.stringify({ name: "kimi-docs" }));
+    // a managed dir with NO manifest is not an installed plugin
+    mkdirSync(join(root, "plugins", "managed", "manifestless"), { recursive: true });
+    const inv = await readInstalledKimi(home, { dir: root });
+    assert.deepEqual(inv.plugins.sort(), ["kimi-docs", "kimi-finance"]);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("readInstalledKimi: installed.json-only root behaves exactly as before (no managed dir)", async () => {
+  const root = tmp(), home = tmp();
+  try {
+    write(join(root, "plugins", "installed.json"), JSON.stringify({ plugins: { "plug-a": { enabled: true }, "plug-b": {} } }));
+    const inv = await readInstalledKimi(home, { dir: root });
+    assert.deepEqual(inv.plugins.sort(), ["plug-a", "plug-b"]);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("readInstalledKimi: unions installed.json and the managed surface when both are present", async () => {
+  const root = tmp(), home = tmp();
+  try {
+    write(join(root, "plugins", "installed.json"), JSON.stringify({ plugins: { "plug-a": { enabled: true }, "shared-plug": {} } }));
+    write(join(root, "plugins", "managed", "shared-plug", "kimi.plugin.json"), JSON.stringify({ name: "shared-plug" }));
+    write(join(root, "plugins", "managed", "plug-c", ".kimi-plugin", "plugin.json"), JSON.stringify({ name: "plug-c" }));
+    const inv = await readInstalledKimi(home, { dir: root });
+    // union, deduped: shared-plug appears in both surfaces but only once
+    assert.deepEqual(inv.plugins.sort(), ["plug-a", "plug-c", "shared-plug"]);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("readInstalledKimi: tolerates a flat-map installed.json (unpublished schema)", async () => {
   const root = tmp(), home = tmp();
   try {

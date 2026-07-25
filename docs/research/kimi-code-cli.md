@@ -439,7 +439,7 @@ Same shape as `CODEX_MODEL_POLICY`, evidence-anchored per lane:
 // The shipped policy nests these under `.tiers` and pairs them with an
 // `applyEffort` the shared resolver (src/model-policy.js) calls — see the file.
 const KIMI_TIERS = Object.freeze({
-  haiku:  Object.freeze({ model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" }),
+  haiku:  Object.freeze({ model: "kimi-code/kimi-for-coding",           thinking: "enabled" }), // same as sonnet — NOT highspeed
   sonnet: Object.freeze({ model: "kimi-code/kimi-for-coding",           thinking: "enabled" }),
   opus:   Object.freeze({ model: "kimi-code/k3",                        effort: "high"      }),
   fable:  Object.freeze({ model: "kimi-code/k3",                        effort: "max"       }),
@@ -448,7 +448,7 @@ const KIMI_TIERS = Object.freeze({
 
 | muster tier | Kimi model | effort / thinking | why (evidence) |
 |---|---|---|---|
-| **haiku** (read-only locate/gather: `code-navigation`, `docs-research`, `research`) | `kimi-code/kimi-for-coding-highspeed` | thinking **on** | The **FAST** variant for mechanical lookups. On the managed coding plan there is no *cheaper* model (the research's k2.6 general locator lane does not exist on this endpoint — see §11.6), so haiku gets the faster same-price variant, not a cheaper family. Always-thinking (no way to disable here). A live install-time probe (§11.6) remaps this to a cheaper alias if one turns out to be served. |
+| **haiku** (read-only locate/gather: `code-navigation`, `docs-research`, `research`) | `kimi-code/kimi-for-coding` | thinking **on** | The **same dedicated coding model as sonnet**. The managed coding plan has no *cheaper* model (the research's k2.6 general locator lane does not exist on this endpoint — see §11.6), so read-only work rides the same model as the workhorse. **NOT highspeed**: `kimi-for-coding-highspeed` is the *identical* K2.7 model that merely burns ~3× the plan usage for latency — pointing the "cheap" lane at a 3×-cost SKU of the same model is backwards, so muster never routes there. haiku and sonnet resolve identically on Kimi; the tier split survives at `model.js` (routing/budget/degradation), mirroring Codex's fable→opus collapse. |
 | **sonnet** (workhorse: implement, review, author, score) | `kimi-code/kimi-for-coding` | thinking **on** (no knob) | The **dedicated coding model** (K2.7 Coding). Kimi's "measured workhorse point," the analogue of Codex `sol/medium`. No effort field — always-thinking. |
 | **opus** (judgment that gates other work; explicit pins: `muster-builder`, `muster-runner`; fable's fallback) | `kimi-code/k3` | effort **high** | Frontier tier (AA Index 57.1, #4, *ahead of Opus 4.8*; Terminal-Bench 88.3) and the only Kimi model that holds quality to 1M context (BrowseComp 90.4 @1M) — required for judgment over large diffs/codebases. `high` = the managed plan's own `default_effort`; mirrors Codex `sol/high`. |
 | **fable** (peak: `judge`, `architecture-review`, `improve`, `advisor`) | `kimi-code/k3` | effort **max** | Same model as opus, but `max` is **reserved here only** — the exact discipline Codex applies to `xhigh`. Because K3 exposes the effort knob (`low/high/max`), muster gets a *cleaner* opus/fable split than on Codex (where both are `sol/high`): opus=high, fable=max. |
@@ -517,9 +517,11 @@ into `src/kimi.js`:
    models, all **always-thinking**. `k2.6`/`k2.5` are Open-Platform *general* models on a
    different endpoint (`api.moonshot.ai`), not offered on the managed *coding* endpoint
    (`api.kimi.com/coding/v1`). So the research's "haiku → k2.6, thinking-off cheap locator" lane
-   **does not exist here**: haiku instead rides `kimi-for-coding-highspeed` (faster, *not*
-   cheaper — same price/params as `kimi-for-coding`), always-thinking. There is no cost-differentiated
-   cheap lane on this plan, only a speed-differentiated one.
+   **does not exist here**: haiku instead rides `kimi-for-coding` — the same dedicated coding model
+   as sonnet. (The initial reconciliation pointed haiku at `kimi-for-coding-highspeed`; corrected
+   2026-07-24 — highspeed is the *identical* K2.7 model that burns ~3× the plan usage for latency,
+   so muster never routes the "cheap" read-only lane there.) There is no cost-differentiated cheap
+   lane on this plan at all.
 3. **K3's effort ladder + default confirmed** exactly: `support_efforts=["low","high","max"]`,
    `default_effort="high"`.
 
@@ -531,8 +533,11 @@ returned **HTTP 200** with exactly four served models — `kimi-for-coding`,
 (always-thinking), and `k3`'s `think_efforts` live-confirmed `{valid_efforts:[low,high,max],
 default:high}`. **No k2.6, no k2.5, no non-thinking/general model.** So the "remap haiku to a
 cheaper alias if the plan serves one" branch resolves to a no-op: there is nothing cheaper on this
-plan, and haiku stays `kimi-for-coding-highspeed`. (One new datum: `k3-256k`, a 256k-context K3
-variant with the same effort ladder — not wanted; opus/fable want full-1M `k3`.)
+plan, and haiku rides `kimi-for-coding` — the same model as sonnet. **`kimi-for-coding-highspeed`
+is served but never routed to**: it is the identical K2.7 model at ~3× plan usage (a latency
+convenience, not a cheaper/better lane), so it stays in the served-set the probe confirms but out of
+`KIMI_TIERS`. (One new datum: `k3-256k`, a 256k-context K3 variant with the same effort ladder —
+not wanted; opus/fable want full-1M `k3`.)
 
 That probe is now reusable, tested code (`probeKimiModels` in `src/kimi-install.js`, injectable
 fetch): `muster install kimi --probe` re-runs it and would flag a cheaper candidate (any served id

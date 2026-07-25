@@ -22,7 +22,9 @@ delete process.env.MUSTER_MAX_TIER;
 // --- Tier defaults: the section 11 table -----------------------------------
 
 test("tier defaults resolve to the section-11 Kimi profiles", () => {
-  assert.deepEqual(kimiModelForTier("haiku"), { model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" });
+  // haiku rides the SAME dedicated coding model as sonnet -- highspeed is the
+  // identical K2.7 model at ~3x usage (never routed), and no cheaper model exists.
+  assert.deepEqual(kimiModelForTier("haiku"), { model: "kimi-code/kimi-for-coding", thinking: "enabled" });
   assert.deepEqual(kimiModelForTier("sonnet"), { model: "kimi-code/kimi-for-coding", thinking: "enabled" });
   assert.deepEqual(kimiModelForTier("opus"), { model: "kimi-code/k3", effort: "high" });
   assert.deepEqual(kimiModelForTier("fable"), { model: "kimi-code/k3", effort: "max" });
@@ -44,7 +46,7 @@ test("semantic effort overrides map onto K3's 3-rung ladder", () => {
 test("effort override is a no-op on thinking-toggle tiers (no K3 effort knob)", () => {
   // sonnet + haiku (the always-thinking coding models) expose no reasoning dial -- the override is ignored.
   assert.deepEqual(kimiProfileForConfig({ tier: "sonnet", effort: "peak" }), { model: "kimi-code/kimi-for-coding", thinking: "enabled" });
-  assert.deepEqual(kimiProfileForConfig({ tier: "haiku", effort: "judgment" }), { model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" });
+  assert.deepEqual(kimiProfileForConfig({ tier: "haiku", effort: "judgment" }), { model: "kimi-code/kimi-for-coding", thinking: "enabled" });
 });
 
 test("no effort override returns the tier default unchanged", () => {
@@ -57,8 +59,8 @@ test("kimiModelForRole routes roles through the conceptual tiers", () => {
   const prev = process.env.MUSTER_ENABLE_FABLE;
   delete process.env.MUSTER_ENABLE_FABLE;
   try {
-    // mechanical read-only roles -> haiku
-    assert.deepEqual(kimiModelForRole("research"), { model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" });
+    // mechanical read-only roles -> haiku (same kimi-for-coding as sonnet on Kimi)
+    assert.deepEqual(kimiModelForRole("research"), { model: "kimi-code/kimi-for-coding", thinking: "enabled" });
     // default implementation roles -> sonnet
     assert.deepEqual(kimiModelForRole("code-review"), { model: "kimi-code/kimi-for-coding", thinking: "enabled" });
     // fable-set role with Fable DISABLED degrades to opus (k3/high)
@@ -129,7 +131,7 @@ test("real manifest overrides survive the neutral rewrite (Codex output preserve
     ["wsh-security-auditor", { tier: "opus", effort: "peak" }, { model: "gpt-5.6-sol", reasoning: "xhigh" }, { model: "kimi-code/k3", effort: "max" }],
     // luna-xhigh collapses to plain sonnet: Codex's sonnet policy IS luna/xhigh.
     ["muster-surgeon", { tier: "sonnet" }, { model: "gpt-5.6-luna", reasoning: "xhigh" }, { model: "kimi-code/kimi-for-coding", thinking: "enabled" }],
-    ["muster-investigator", { tier: "haiku" }, { model: "gpt-5.6-terra", reasoning: "high" }, { model: "kimi-code/kimi-for-coding-highspeed", thinking: "enabled" }],
+    ["muster-investigator", { tier: "haiku" }, { model: "gpt-5.6-terra", reasoning: "high" }, { model: "kimi-code/kimi-for-coding", thinking: "enabled" }],
   ];
   for (const [agent, neutral, expectedCodex, expectedKimi] of cases) {
     assert.deepEqual(resolveNeutralProfile(neutral, CODEX_STYLE_POLICY), expectedCodex, `${agent} on Codex`);

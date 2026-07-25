@@ -28,8 +28,13 @@ import { agentProfiles } from "./agent-manifest.js";
 //   locate/gather. On the managed coding plan there is no CHEAPER model (the
 //   research's k2.6 locator lane does not exist here), only this faster one --
 //   same price/params as kimi-for-coding, ~2x throughput, always-thinking (no way
-//   to disable on this plan). If a live model-probe at install time finds a
-//   cheaper general alias (k2.6/k2.5), remap haiku to it then.
+//   to disable on this plan). CONFIRMED by a live GET /v1/models probe
+//   (2026-07-24, HTTP 200): the managed plan serves EXACTLY {kimi-for-coding,
+//   kimi-for-coding-highspeed, k3, k3-256k}, all supports_thinking_type "only" --
+//   no k2.6/k2.5, no non-thinking/general model -- so there is nothing cheaper to
+//   remap haiku to; the lane stays highspeed. `muster install kimi --probe`
+//   re-runs that check (src/kimi-install.js probeKimiModels) and would flag a
+//   cheaper alias IF the plan ever gains one.
 // - sonnet = kimi-for-coding: the dedicated coding workhorse. Always-thinking.
 // - opus   = k3, effort high: the judgment lane. K3 is frontier and holds quality
 //   to 1M context (BrowseComp 90.4 @ 1M). high = the plan's default judgment effort.

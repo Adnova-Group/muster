@@ -73,9 +73,9 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 
 | Key | Default | Meaning |
 |---|---|---|
-| `agents.max_threads` | `6` | Cap on concurrently open agent threads [src: codex-subagents-doc] |
+| `agents.max_threads` | `6` (v1) | Cap on concurrently open agent threads [src: codex-subagents-doc]. **0.145.0: renamed** — `agents.max_concurrent_threads_per_session` is canonical, `max_threads` is now documented as "Legacy alias". Default is version-dependent: v1 `6`, v2 `4` minus the primary thread (§10) |
 | `agents.max_depth` | `1` | Spawn nesting depth (root = 0): root can spawn children, children cannot recurse. Docs explicitly warn raising it turns broad delegation into repeated fan-out, multiplying tokens/latency [src: codex-subagents-doc] |
-| `agents.job_max_runtime_seconds` | 1800 (per-call default) | Default per-worker timeout for `spawn_agents_on_csv` batch jobs [src: codex-subagents-doc] |
+| `agents.job_max_runtime_seconds` | 1800 (per-call default) | ~~Default per-worker timeout for `spawn_agents_on_csv` batch jobs~~ — **the CSV batch tool was REMOVED in 0.145.0** (§10); the key survives in the binary's `[agents]` struct |
 | `agents.interrupt_message` | `true` | Record a model-visible message when an agent turn is interrupted [src: codex-subagents-doc] |
 
 `[DECISION-RECORD]` **Thread-limits gap, verified live:** nothing in muster currently writes `[agents] max_threads`/`max_depth` at install time — `grep -rn "max_threads\|max_depth" src/*.js` returns zero hits in any install/config-writing path; the only occurrences in the tree are generated *prose* telling the runtime to "Respect `agents.max_threads`; neither lower nor raise it". The module that would have done it (`src/codex-thread-limits.js`, `ensureCodexThreadLimits`/`restoreCodexThreadLimits`, writing `max_threads >= 12` / `max_depth >= 2`) died on the never-merged burn branch commit `f2da066`. The item is re-opened as `codex-thread-limits-enforcement` with explicit success criteria including: install **fails outright** with exact remediation if the `config.toml` write cannot complete **or the written config fails strict validation**, plus a separate doctor-side drift check [src: dr-install] [src: dr-audit].
@@ -174,7 +174,9 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 
 `[CODE-VERIFIED]` **There is no cwd field on subagent dispatch.** Worktree-scoped briefs must carry the absolute `WORKTREE CWD` and absolute manifest/STATE paths and instruct the child to use that workdir for every tool call — the harness will not scope the child's filesystem for you [src: skill-adapter].
 
-`[DOCUMENTED]` Recursive delegation is governed by `agents.max_depth` (default 1: children cannot spawn); concurrency by `agents.max_threads` (default 6). Batch fan-out exists as the experimental `spawn_agents_on_csv` tool (one worker per CSV row, `instruction` templating with `{column}` placeholders, optional `output_schema`, per-worker `report_agent_job_result` contract, SQLite-backed job state, single-line stderr progress under `codex exec`) [src: codex-subagents-doc].
+`[DOCUMENTED]` Recursive delegation is governed by `agents.max_depth` (default 1: children cannot spawn — **v1 only; v2 ignores `max_depth`**); concurrency by `agents.max_concurrent_threads_per_session`.
+
+> **REMOVED in 0.145.0 — `spawn_agents_on_csv` no longer exists.** This paragraph previously documented it as the native batch fan-out (one worker per CSV row, `instruction` templating, `report_agent_job_result`, SQLite job state). PR `#34413 Remove CSV-backed agent jobs` deleted it, and the string appears **zero** times in the shipped 0.145.0 binary (verified by `strings` on the installed `codex`). `features.enable_fanout` is likewise `removed`. **Codex has no in-model batch fan-out primitive as of 0.145.0** — see §10 for what replaces it.
 
 `[CODE-VERIFIED]` muster's quota discipline on top of this loop — written in blood from the two-day burn — is baked into every generated skill as the "Agent watch invariant": retain every spawned agent id, immediately `wait_agent` with ≤60s timeout, process mailbox receipts then `list_agents` exactly once per wake, never tight-poll; three consecutive heartbeats without a receipt is a liveness checkpoint, not an automatic kill — a worker that `list_agents` shows actively in a turn is extended instead of interrupted, bounded by a per-class ceiling (10 silent heartbeats for review/strategy-class workers, 6 for mechanical/implementation lanes; a worker not in a turn after three silent heartbeats, or one that outlives its ceiling, is interrupted/recorded/escalated exactly as before) — every brief sets a 25-step ceiling, at most one follow-up, focused tests only, broad suites deferred to final verification; respect `agents.max_threads`, never raise or lower it [src: skill-adapter] [src: build-codex] [src: dr-burn].
 
@@ -260,3 +262,123 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 - dr-audit: docs/decisions/retriage-audit-hardening.md:31
 - dr-burn: docs/decisions/retriage-burn-salvage.md:33-34
 - codex-desktop-appserver: docs/research/codex-desktop.md:270-285 (app-server `thread/goal/set|get|clear` API, §8)
+
+---
+
+## 10. Codex 0.145.0 — re-audit (2026-07-25)
+
+Codex 0.145.0 (`rust-v0.145.0`, published 2026-07-21) was audited against three primary sources:
+GitHub release bodies, the source tree at that tag, and **the shipped binary on this machine**
+(`strings` over the 297MB `codex` — it carries the full config struct field list, tool descriptions,
+and validation strings). Where the docs and the binary disagree, the binary is what runs. There is
+**no `CHANGELOG.md`** in the repo and `docs/*.md` are redirect stubs; release bodies are the changelog.
+
+### 10.1 The v1/v2 subagent split — the finding that matters most
+
+The subagent API has **two incompatible versions**, and the active one is resolved per model, not
+per install:
+
+```rust
+multi_agent_version_override().or(model_multi_agent_version).unwrap_or_else(|| from_features())
+```
+
+The live catalog on this machine (`~/.codex/models_cache.json`, `client_version 0.145.0`):
+
+| model | muster tier | `multi_agent_version` |
+|---|---|---|
+| `gpt-5.6-sol` | opus, fable | **v2** |
+| `gpt-5.6-terra` | haiku | **v2** |
+| `gpt-5.6-luna` | **sonnet** | **v1** |
+
+| | v1 | v2 |
+|---|---|---|
+| namespace | `multi_agent_v1` | `collaboration` (configurable) |
+| context fork | `fork_context` (bool, default false) | `fork_turns` (**string**: `"none"`/`"all"`/`"3"`, default `all`) |
+| required params | none | `task_name`, `message` |
+| concurrency default | 6 | 4 (minus the primary thread) |
+| `max_depth` | honored | **ignored** |
+| extra tools | `send_input`, `resume_agent`, `close_agent` | `send_message`, `followup_task`, `interrupt_agent`, `list_agents` |
+
+**muster hardcodes the v2 packet** (`src/wave-dispatch.js` `codexSpawnAgentCall`), so its sonnet lane
+emits a v2 shape at a v1 model. A model-catalog refresh can move a tier across this line with no
+muster-visible change — this needs a resolver, not a constant.
+
+Two related corrections to muster's existing rule:
+- `fork_turns` must be a **string**; `3` is rejected, `"3"` is not.
+- Always sending `"none"` is over-conservative. The full-history rejection
+  (`"Full-history forked agents inherit the parent agent type"`) fires **only** on `all`, so `"3"`
+  legally keeps 3 turns *and* accepts `agent_type` plus model/effort overrides.
+
+### 10.2 Removed / inert (verify before relying on any of it)
+
+- **`spawn_agents_on_csv`** — gone (`#34413`); zero occurrences in the binary. See §6.
+- **`features.enable_fanout`** — `removed`.
+- **`features.remote_control`** — `removed`, yet still present in this machine's `config.toml` as
+  `remote_control = true`, silently inert.
+- **`features.plugin_hooks`** — `removed`. Plugin-materialized hooks still exist and still route
+  through the trust gate (`#32301`), so muster's hooks-free-plugin posture is moot as a *flag* but
+  not as a behavior.
+- **`#33030 Remove task messages from `list_agents` output`** — receipts must now come from
+  `wait_agent`'s mailbox, not from listing.
+
+### 10.3 Hook trust — an install-time hazard
+
+Hooks are trusted **per content hash**: "new or changed hooks are marked for review and skipped
+until trusted", recorded as `[hooks.state."<path>:<event>:<group>:<idx>"] trusted_hash`. So **every
+`muster install codex` that alters a hook body silently disables that hook** until a human trusts
+it. A gate that quietly stops firing is the exact failure mode muster's guard-design work exists to
+prevent. `--dangerously-bypass-hook-trust` exists but is the wrong answer for an installer.
+
+`SessionEnd` is new in 0.145.0 (`#33895`) — but its timeout is 1s default / 3s max, so it is a
+flush-only slot, not an analysis hook.
+
+### 10.4 Native capability muster should ride
+
+- **`wait_agent` (v2) is a real barrier with early wake** — "waits for a mailbox update from any live
+  agent… also ends early when new user input is steered into the active turn." This replaces the
+  poll loop. Note it is *first-completion* (v1) / *any-update* (v2), **not** an all-barrier.
+- **`SubagentStop` returning `{"decision":"block","reason":...}`** creates a continuation prompt — a
+  harness-side run-until-done loop, i.e. muster's fix-loop.
+- **`codex exec --json -C <DIR>`** — N detached processes give OS-level parallelism, **per-process
+  cwd** (real filesystem isolation, which `spawn_agent` explicitly cannot do: "all agents share the
+  same directory"), plus `--output-schema`, `--ephemeral`, and exit 1 on fatal error. muster owns the
+  barrier here, which is stronger than either `wait_agent` semantic.
+- **`codex review --base <branch> | --uncommitted | --commit <sha>`** — native non-interactive review
+  gate with its own `review_model`.
+- **`update_plan`** — native plan checklist (`{step, status}`, "at most one in_progress"), surfacing
+  as `todo_list` in `codex exec --json`.
+- **`agents.default_subagent_model` / `default_subagent_reasoning_effort`** — fleet-wide default
+  without per-call plumbing.
+- **`--strict-config`** — a ready-made doctor primitive (verified: an unknown key errors with
+  `file:line`).
+- **`[features.token_budget]` / `[rollout_budget]`** — native context/cost ceilings with
+  model-visible reminders and auto-compact fallback. Both `under development / false`: evaluate, but
+  stop building the muster equivalent.
+
+### 10.5 Code mode — adopt for the inner loop, not for orchestration
+
+`features.code_mode` (`under development / false`; `code_mode_host` is `stable / true` and ships a
+45MB out-of-process V8 runner). The `exec` tool runs JavaScript in a fresh V8 isolate where every
+other tool is `await tools.<name>(...)`, with `store(k,v)`/`load(k)` persisting across `exec` calls in
+a session, `yield_control()` for partial output, and `ALL_TOOLS` metadata. No Node, no filesystem, no
+network, no console.
+
+This is **exactly** muster's "prefer code over the model for deterministic work" principle, expressed
+as a harness primitive: a crew member's mechanical read/grep/transform/aggregate chain collapses from
+N model round-trips into one call.
+
+It does **not** displace muster's orchestration layer, by explicit design:
+
+> "collaboration tools cannot be called from inside `functions.exec` … they are intentionally absent
+> from the `functions.exec` `tools.*` namespace."
+
+So code mode composes **tools**, not **waves**. Adopt it inside a crew member; keep muster's wave
+layer above it. Gated additionally on model metadata advertising support.
+
+### 10.6 Method note
+
+The binary is the best source here. It is stripped but static-pie, so string literals survive: the
+complete `ConfigToml` field list, every `[features]` sub-struct, the model-facing tool descriptions,
+and the validation error strings are all recoverable with `strings`. That is how the v1/v2 split,
+`spawn_agents_on_csv`'s removal, and the `fork_turns`-must-be-a-string rule were confirmed — none of
+which are stated in the published docs. See [[research-quote-primary-sources]].

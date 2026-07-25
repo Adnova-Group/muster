@@ -788,5 +788,14 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // and Kimi runs did. The verbs now tick the native list (Claude `TaskCreate`,
   // Codex `update_plan`, Kimi `TodoList`) and fall back to STATE only on a
   // harness with none. Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "0ca850adcb444487066d3e9009506af4d71779436bd91b40528496c9a607579f");
+  //
+  // 2026-07-25 re-pin #2 (codex-wait-agent-barrier): the orchestrator's
+  // Codex-native dispatch section was v1-flavored -- it prescribed
+  // `collaboration.wait_agent` "<=60s per outstanding agent id", but v2's
+  // wait_agent takes ONLY timeout_ms with no targets, while v1's takes targets
+  // and returns on the first to finish. It also read receipts from
+  // `list_agents`, which Codex 0.145.0 stripped of task messages (#33030). Now
+  // documents both shapes and points at codexSpawnAgentCall/codexWaitAgentCall.
+  // Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "79a22afbae020d4fb50c3c25c3c41ab76b9ffdb486aee57a014aea68b79bed79");
 });

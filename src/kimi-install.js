@@ -136,7 +136,33 @@ async function copyInto(srcFile, destFile) {
   await copyFile(srcFile, destFile);
 }
 
+// muster's VERBS (plugin/commands/*.md) are the entry points -- without them
+// muster cannot be invoked at all, which is exactly the state the first Kimi
+// install shipped in. Kimi has no separate "command" surface: it auto-registers
+// SKILLS as slash commands, so a verb installs as a skill and surfaces as
+// `/skill:<name>` (or bare `/<name>` when nothing system-level takes it).
+//
+// They are namespaced `muster-<verb>` rather than installed bare, for one
+// concrete reason: Kimi already owns `/plan` (its Plan-mode toggle), and a bare
+// `plan` verb would collide with it. Prefixing sidesteps that collision for
+// every verb at once and keeps the verb namespace legible next to Kimi's own
+// commands -- `/muster-go`, `/muster-diagnose`.
+export const KIMI_VERB_PREFIX = "muster-";
+
+const NAME_LINE = /^name[ \t]*:.*$/m;
 const MODEL_PREFERENCE_LINE = /^model_preference[ \t]*:.*$/m;
+
+// Kimi resolves a directory-form skill by its FRONTMATTER `name`, not its
+// directory, so the prefix has to be written into the file -- renaming only the
+// directory would still register the verb as bare `go`/`plan`.
+export function stampSkillName(text, name) {
+  const fm = matchFrontmatter(text);
+  if (!fm) return null;
+  const newline = fm.raw.includes("\r\n") ? "\r\n" : "\n";
+  const line = `name: ${name}`;
+  const body = NAME_LINE.test(fm.body) ? fm.body.replace(NAME_LINE, line) : `${fm.body}${newline}${line}`;
+  return `---${newline}${body}${newline}---${newline}${fm.rest}`;
+}
 
 // Stamp `model_preference: <lane>` into an agent file's YAML frontmatter,
 // replacing an existing line or appending one. Deliberately line-scoped rather
@@ -163,7 +189,12 @@ async function readManifest(manifestPath, dest) {
   if (raw.owner !== "muster" || raw.format !== 1 || !Array.isArray(raw.agents) || !Array.isArray(raw.skills)) {
     throw new Error(`Kimi installation manifest conflict: ${manifestPath}. Move or remove it, then rerun.`);
   }
-  assertContained([...raw.agents, ...raw.skills], dest);
+  // `verbs` is optional: a manifest written before verbs shipped has none, and
+  // must still uninstall cleanly rather than being rejected as malformed.
+  if (raw.verbs !== undefined && !Array.isArray(raw.verbs)) {
+    throw new Error(`Kimi installation manifest conflict: ${manifestPath}. Move or remove it, then rerun.`);
+  }
+  assertContained([...raw.agents, ...raw.skills, ...(raw.verbs || [])], dest);
   return raw;
 }
 
@@ -248,7 +279,16 @@ async function collectSource(pluginRoot) {
       skills.push({ rel: `skills/${name}/${rel}`, src: join(skillDir, rel), skill: name });
     }
   }
-  return { agents, skills };
+
+  // The verbs, installed as skills under the muster- namespace (see
+  // KIMI_VERB_PREFIX). Each becomes skills/muster-<verb>/SKILL.md with its
+  // frontmatter `name` rewritten to match.
+  const commandsSrc = join(pluginRoot, "commands");
+  const verbs = (await readdirSafe(commandsSrc)).filter(f => f.endsWith(".md")).sort().map(f => {
+    const verb = f.slice(0, -3), name = `${KIMI_VERB_PREFIX}${verb}`;
+    return { rel: `skills/${name}/SKILL.md`, src: join(commandsSrc, f), skill: name, verb, name };
+  });
+  return { agents, skills, verbs };
 }
 
 // Install muster's agents + builtin skills into the Kimi Code data root.
@@ -261,9 +301,9 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   const dest = kimiHome(home);
   const packageVersion = await readPackageVersion(root);
 
-  const { agents, skills } = await collectSource(pluginRoot);
+  const { agents, skills, verbs } = await collectSource(pluginRoot);
   const skillNames = [...new Set(skills.map(s => s.skill))];
-  const ownedRel = [...agents.map(a => a.rel), ...skills.map(s => s.rel)];
+  const ownedRel = [...agents.map(a => a.rel), ...skills.map(s => s.rel), ...verbs.map(v => v.rel)];
   assertContained(ownedRel, dest);
 
   const probeResult = probe ? await probeKimiModels({ home, fetchImpl }) : null;
@@ -272,6 +312,7 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
     return {
       dryRun: true, dest, packageVersion,
       agents: agents.map(a => basename(a.rel)), skills: skillNames,
+      verbs: verbs.map(v => v.name),
       fileCount: ownedRel.length, ...(probeResult ? { probe: probeResult } : {})
     };
   }
@@ -284,7 +325,7 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   const previous = await readManifest(manifestPath, dest);
   const ownedSet = new Set(ownedRel);
   const removedStale = [];
-  for (const rel of previous ? [...previous.agents, ...previous.skills] : []) {
+  for (const rel of previous ? [...previous.agents, ...previous.skills, ...(previous.verbs || [])] : []) {
     if (ownedSet.has(rel)) continue;
     try { await unlink(join(dest, rel)); removedStale.push(rel); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
@@ -308,14 +349,27 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
     lanes[lane].push(id);
   }
 
+  // The verbs: muster's entry points. Each is written with its frontmatter
+  // `name` rewritten to the muster- namespace, since Kimi registers a skill by
+  // its frontmatter name (not its directory) and `/plan` is already Kimi's own.
+  const installedVerbs = [];
+  for (const { rel, src, name } of verbs) {
+    const destFile = join(dest, rel);
+    const stamped = stampSkillName(await readFile(src, "utf8"), name);
+    await mkdir(dirname(destFile), { recursive: true });
+    await writeFile(destFile, stamped ?? await readFile(src, "utf8"));
+    installedVerbs.push(name);
+  }
+
   await mkdir(dirname(manifestPath), { recursive: true });
   await atomicWriteJson(manifestPath, {
     format: 1, owner: "muster", packageVersion,
-    agents: agents.map(a => a.rel), skills: skills.map(s => s.rel)
+    agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel)
   });
 
   return {
     dest, packageVersion, agents: agents.map(a => basename(a.rel)), skills: skillNames,
+    verbs: installedVerbs,
     fileCount: ownedRel.length, removedStale,
     modelPreference: {
       primary: lanes.primary.length, secondary: lanes.secondary.length, unstamped,
@@ -335,7 +389,7 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
   const manifest = await readManifest(manifestPath, dest);
   if (!manifest) return { dest, removed: [], note: "no muster install found" };
 
-  const owned = [...manifest.agents, ...manifest.skills];
+  const owned = [...manifest.agents, ...manifest.skills, ...(manifest.verbs || [])];
   if (dryRun) return { dryRun: true, dest, wouldRemove: owned, fileCount: owned.length };
 
   const removed = [];
@@ -344,7 +398,7 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
     catch (error) { if (error.code !== "ENOENT") throw error; }
   }
   // Prune empty skill dirs (deepest first), then the agents/skills roots.
-  const skillDirs = [...new Set(manifest.skills.map(rel => rel.split("/").slice(0, 2).join("/")))];
+  const skillDirs = [...new Set([...manifest.skills, ...(manifest.verbs || [])].map(rel => rel.split("/").slice(0, 2).join("/")))];
   for (const rel of skillDirs) await rmdirIfEmpty(join(dest, rel));
   await rmdirIfEmpty(join(dest, "skills"));
   await rmdirIfEmpty(join(dest, "agents"));

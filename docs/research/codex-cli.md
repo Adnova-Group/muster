@@ -382,3 +382,76 @@ complete `ConfigToml` field list, every `[features]` sub-struct, the model-facin
 and the validation error strings are all recoverable with `strings`. That is how the v1/v2 split,
 `spawn_agents_on_csv`'s removal, and the `fork_turns`-must-be-a-string rule were confirmed — none of
 which are stated in the published docs. See [[research-quote-primary-sources]].
+
+### 10.7 Adoption outcomes (2026-07-25)
+
+Four of the eleven §10 items landed as code (PRs #141, #142); three of those turned out to be
+**defects**, not adoptions — the v1/v2 split had propagated into both `spawn_agent` and the
+`wait_agent` barrier, and neither failed loudly. Two items were assessed and NOT adopted, for
+reasons worth recording so they are not re-litigated:
+
+**`--strict-config` as a doctor primitive — WON'T DO (unsafe).** The flag exists only on `codex` and
+`codex exec`; every non-session subcommand rejects it (verified: `codex doctor`, `codex features
+list`, and `codex debug` all return `error: unexpected argument '--strict-config' found`). Both
+hosts start a billable session, and with a *valid* config the process proceeds past config load into
+a real turn — so a doctor check built on it would burn quota on every healthy run. muster's own
+config validation stays in-process.
+
+**`agents.default_subagent_model` / `default_subagent_reasoning_effort` — LOW VALUE for muster.**
+These set a fleet-wide default for spawns that omit a model. But every muster crew member is
+dispatched with a named `agent_type` whose `.codex/agents/<id>.toml` role file **pins** `model` and
+`model_reasoning_effort`, and a role pin *wins* — Codex even advertises it in the spawn tool
+description ("This role's model is set to `X` … These settings cannot be changed."). So the default
+would never bite on a muster dispatch. Writing it would mean teaching
+`src/codex-thread-limits.js`'s deliberately narrow integer-only `[agents]` editor to handle string
+values, mutating a shared `config.toml` for no behavioral change. Revisit only if muster ever
+dispatches unnamed subagents.
+
+**Actionable leftover from that assessment:** muster writes `[agents] max_threads`, which 0.145.0
+now documents as a *"Legacy alias for `agents.max_concurrent_threads_per_session`"*. It still works,
+but the canonical key should be preferred before the alias is retired.
+
+### 10.8 Code mode — the evaluation
+
+**Verdict: adopt inside a crew member's inner loop; do NOT wait for it to replace orchestration; do
+not enable it yet.**
+
+*What it is.* One `exec` tool call evaluates JavaScript in a fresh V8 isolate where every other tool
+is a method on a global `tools` object (`await tools.exec_command(...)`,
+`await tools.mcp__x__y(...)`), with `store(k,v)`/`load(k)` persisting across `exec` calls in a
+session, `notify()` for mid-run output, `yield_control()` to stream partial results while the script
+runs on, and `ALL_TOOLS` metadata for discovery. No Node, no filesystem, no network, no console.
+Defaults: `yield_time_ms` 10 000, `max_output_tokens` 10 000, overridable via a first-line
+`// @exec: {...}` pragma. A long-running cell is resumed with `wait(cell_id)`.
+
+*Why it fits muster.* This is muster's own "prefer code over the model for deterministic work
+(routing, retries, transforms)" principle, expressed as a harness primitive. A crew member that
+today spends N model round-trips on a mechanical read → grep → transform → aggregate chain collapses
+to one call, and the deterministic middle stops being model-mediated at all. The read-budget
+discipline muster documents in prose (`head_limit`, truncation) becomes ordinary control flow.
+
+*Where it explicitly does not reach.* Collaboration tools are absent from the `exec` namespace by
+design:
+
+> "collaboration tools cannot be called from inside `functions.exec` … they are intentionally absent
+> from the `functions.exec` `tools.*` namespace."
+
+So code mode composes **tools**, not **waves**. muster's orchestration layer is not displaced by it,
+and no roadmap should assume it will be. There is also `features.multi_agent_v2.non_code_mode_only`,
+which suggests the two surfaces are kept deliberately disjoint.
+
+*Why not yet.* `features.code_mode` is `under development / false`; `code_mode_only` and
+`code_mode_buffered_exec` likewise. Only `code_mode_host` (the out-of-process V8 runner) is stable
+and default-on, and it is infrastructure, not the feature. Enablement is additionally gated on model
+metadata — a model that does not advertise support produces "Code Mode is enabled in configuration,
+but model `X` does not advertise Code Mode support. This may degrade model performance."
+
+*Which crew members are code-mode-shaped* (candidates when it stabilises): `muster-investigator`
+(read-only locate/map — pure mechanical fan-out over Grep/Glob/Read), `wsh-api-documenter` and
+`wsh-tutorial-engineer` (read many files, emit one structured artifact), and the review gate's
+evidence-gathering leg (re-run stated test signals, collect outputs) — but NOT the review *judgment*,
+which is the model's job. Roles whose work is a single reasoned edit (`muster-surgeon`) gain nothing.
+
+*Measurement muster still owes before enabling:* a token/latency comparison on one representative
+`muster-investigator` task, code mode on vs off. Until that exists this stays an assessment, not a
+recommendation to flip the flag.

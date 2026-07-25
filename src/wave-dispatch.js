@@ -426,3 +426,99 @@ export function makeGitShaVerifier({ cwd, exec = execFileSync } = {}) {
   verifyGitSha.mechanism = "git-object";
   return verifyGitSha;
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// codex exec: the process-level dispatch lane
+//
+// `spawn_agent` CANNOT isolate. Codex says so in its own shipped prompt: "All
+// agents have access to the same container and filesystem as you. All agents
+// use the same current working directory. As a result, edits made by one agent
+// are immediately visible to all other agents." Its only mitigation is asking
+// the model nicely to keep write sets disjoint.
+//
+// `codex exec` is the escape hatch, and the ONLY path on this harness with real
+// filesystem isolation: each wave member is a separate OS process with its own
+// `-C <dir>`, so muster can hand conflicting members separate worktrees. It also
+// gives a true ALL-barrier (wait on N pids) rather than wait_agent's
+// first-completion/any-update semantics, a schema-validated final message, and a
+// nonzero exit on fatal error.
+//
+// Cost: a cold process per member and no shared prompt cache (the cache key is
+// the session id), so this is for waves that NEED isolation, not the default.
+// ───────────────────────────────────────────────────────────────────────────
+
+export const CODEX_EXEC_MODES = Object.freeze({
+  SPAWN_AGENT: "spawn_agent",
+  EXEC_PROCESS: "exec-process"
+});
+
+// Choose the dispatch lane for a wave. Conflicting write sets are the deciding
+// factor because they are the one thing spawn_agent cannot make safe.
+export function resolveCodexDispatchLane({ members = [], forceProcess = false } = {}) {
+  const writers = members.filter(m => m?.writes);
+  const paths = writers.flatMap(m => Array.isArray(m.writes) ? m.writes : []);
+  const conflicting = paths.length !== new Set(paths).size;
+  if (forceProcess || conflicting) {
+    return {
+      mode: CODEX_EXEC_MODES.EXEC_PROCESS,
+      reason: forceProcess
+        ? "caller forced process isolation"
+        : "wave members declare overlapping write sets -- spawn_agent shares one cwd across all agents, so only separate `codex exec -C <dir>` processes can isolate them",
+      isolation: "process-cwd"
+    };
+  }
+  return {
+    mode: CODEX_EXEC_MODES.SPAWN_AGENT,
+    reason: "disjoint write sets -- in-session spawn_agent keeps the prompt cache and avoids a cold process per member",
+    isolation: "context-only"
+  };
+}
+
+// Build the argv for one wave member dispatched as its own `codex exec` process.
+// `--json` is always on: muster parses the JSONL event stream (thread.started /
+// turn.completed with usage / item.completed) rather than scraping prose.
+export function codexExecCall({ prompt, cwd, model, schemaPath, ephemeral = false, skipGitCheck = false, lastMessagePath } = {}) {
+  if (typeof prompt !== "string" || !prompt.trim()) throw new Error("codexExecCall: prompt is required");
+  const argv = ["exec", "--json"];
+  if (cwd) argv.push("-C", cwd);
+  if (model) argv.push("-m", model);
+  if (schemaPath) argv.push("--output-schema", schemaPath);
+  if (lastMessagePath) argv.push("-o", lastMessagePath);
+  if (ephemeral) argv.push("--ephemeral");
+  if (skipGitCheck) argv.push("--skip-git-repo-check");
+  argv.push(prompt);
+  return { command: "codex", argv, isolation: cwd ? "process-cwd" : "process" };
+}
+
+// `codex exec` exits 1 when a fatal error was reported, 0 otherwise. There are
+// no other distinct codes, so anything else is a harness fault rather than a
+// task verdict -- never silently read as success.
+export function interpretCodexExecExit(code) {
+  if (code === 0) return { ok: true, fatal: false };
+  if (code === 1) return { ok: false, fatal: true, reason: "codex exec reported a fatal error" };
+  return { ok: false, fatal: true, reason: `codex exec exited ${code} -- not a documented exec status` };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// codex review: the native diff-review gate
+//
+// A first-class non-interactive reviewer with its OWN `review_model` (config
+// `review_model`), so the review leg neither pollutes the run's session nor
+// spends the orchestrator's model. Replaces muster's hand-dispatched reviewer
+// for the diff leg specifically -- the judgment legs (architecture, spec) still
+// route through muster's own reviewers.
+// ───────────────────────────────────────────────────────────────────────────
+
+export function codexReviewCall({ base, uncommitted = false, commit, title, prompt } = {}) {
+  const selectors = [base && "base", uncommitted && "uncommitted", commit && "commit"].filter(Boolean);
+  if (selectors.length !== 1) {
+    throw new Error(`codexReviewCall: pass exactly one of base | uncommitted | commit (got ${selectors.length ? selectors.join(", ") : "none"})`);
+  }
+  const argv = ["review"];
+  if (base) argv.push("--base", base);
+  if (uncommitted) argv.push("--uncommitted");
+  if (commit) argv.push("--commit", commit);
+  if (title) argv.push("--title", title);
+  if (prompt) argv.push(prompt);
+  return { command: "codex", argv };
+}

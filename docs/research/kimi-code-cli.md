@@ -523,17 +523,38 @@ into `src/kimi.js`:
 3. **K3's effort ladder + default confirmed** exactly: `support_efforts=["low","high","max"]`,
    `default_effort="high"`.
 
-**Deferred to install time (§ the leg's install path):** a live `GET …/v1/models` probe (needs a
-fresh `kimi login` — the probed token was expired) checks whether the account actually serves a
-cheaper general alias (k2.6/k2.5); if so, `muster install kimi` adds it to `config.toml` and
-remaps haiku to it. Until then, haiku = `kimi-for-coding-highspeed`.
+### 11.7 Live `/v1/models` probe + install leg (2026-07-24, Phase E — done)
 
-**Status: model policy reconciled to a real install (Phase A).** `src/kimi.js`
-(`KIMI_MODEL_POLICY` + `kimiModelForTier/Role` + `kimiProfileForConfig`), the harness-neutral
-`{tier, effort?}` shape (`src/model-policy.js`), and the Codex adapter's migration onto it are all
-shipped. Remaining harness-leg slices: `readInstalledKimi()`, a `capabilities --kimi` lane +
-`kimiProfileForAgentId`, the shared-manifest path move, and a `muster install kimi` path (with the
-live model-probe above). Nothing here touches 0.5.0.
+The deferred probe ran. Against a fresh `kimi login`, `GET https://api.kimi.com/coding/v1/models`
+returned **HTTP 200** with exactly four served models — `kimi-for-coding`,
+`kimi-for-coding-highspeed`, `k3`, `k3-256k` — every one `supports_thinking_type: "only"`
+(always-thinking), and `k3`'s `think_efforts` live-confirmed `{valid_efforts:[low,high,max],
+default:high}`. **No k2.6, no k2.5, no non-thinking/general model.** So the "remap haiku to a
+cheaper alias if the plan serves one" branch resolves to a no-op: there is nothing cheaper on this
+plan, and haiku stays `kimi-for-coding-highspeed`. (One new datum: `k3-256k`, a 256k-context K3
+variant with the same effort ladder — not wanted; opus/fable want full-1M `k3`.)
+
+That probe is now reusable, tested code (`probeKimiModels` in `src/kimi-install.js`, injectable
+fetch): `muster install kimi --probe` re-runs it and would flag a cheaper candidate (any served id
+that is neither `kimi-for-coding*` nor `k3*`) if the plan ever gains one. The default install stays
+hermetic — no network, no token dependency.
+
+**`muster install kimi` / `uninstall kimi`** (`src/kimi-install.js`) copy muster's 27 agents
+(`agents/*.md`, verbatim — the `model:` field is inert; Kimi has no per-subagent model) and 11
+builtin skills (`skills/<name>/**`, whole tree incl. assets like `review-gate/verdict.schema.json`)
+into `$KIMI_CODE_HOME`/`~/.kimi-code`. Hooks-free (unlike the Codex install fortress — Kimi has no
+shared trust cache to reconcile). A `.muster-managed.json` manifest scopes uninstall to muster's
+own files (a user's co-located agents/skills are never touched); every path is containment-checked
+inside the root and a symlinked `agents/`/`skills/` dest is refused. Reinstall is idempotent and
+prunes files a prior manifest no longer ships. Verified live: 40 files written to a real
+`~/.kimi-code`, read back through `readInstalledKimi` (27 agents + 11 skills), and
+`capabilities --kimi` resolves the installed root to `kimi-code/k3`/high.
+
+**Status: Kimi harness leg complete (Phases A–E).** `src/kimi.js` (`KIMI_MODEL_POLICY`), the
+harness-neutral `{tier, effort?}` shape (`src/model-policy.js`) + the Codex adapter's migration onto
+it, `readInstalledKimi()`, the `capabilities --kimi` lane + `kimiProfileForAgentId`, the shared
+`catalog/agents.manifest.json` path (`src/agent-manifest.js`), and `muster install/uninstall kimi`
+are all shipped. Nothing here touches 0.5.0.
 
 ## Sources
 

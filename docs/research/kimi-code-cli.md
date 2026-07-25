@@ -604,6 +604,43 @@ Verified on the live install: **18 primary / 9 secondary / 0 unstamped.** An age
 entry is copied through *unstamped and surfaced* in the result rather than given a lane muster
 cannot justify.
 
+### 11.9 Native dispatch — AgentSwarm + `/goal` (2026-07-25)
+
+Where Codex offers only per-agent spawn (muster supplies fan-out, barrier, aggregation), Kimi ships
+**both halves natively**, so `src/kimi-dispatch.js` keeps the judgment and hands over the mechanics:
+
+| muster hand-rolls | Kimi native |
+|---|---|
+| wave fan-out + barrier + result aggregation | **`AgentSwarm`** — one call, ≤128 subagents, waits for all, returns an aggregated report |
+| run-until-done loop + escalation signal | **`/goal`** — auto-continuing turns, and `kimi -p` exits **0 complete / 3 blocked / 6 paused** |
+
+**Constants are read from the shipped binary, not the prose.** `~/.kimi-code/bin/kimi` (v0.29.0) is
+unstripped, so its own tool schema is readable — which matters, because the published docs say the
+`prompt_template` placeholder exists *without ever naming it*, and omit one rule entirely:
+
+- `PROMPT_TEMPLATE_PLACEHOLDER = "{{item}}"` — "The placeholder is exactly `{{item}}`."
+- `GOAL_EXIT_CODES = { complete: 0, blocked: 3, paused: 6 }`; `MAX_GOAL_OBJECTIVE_LENGTH = 4000`
+- Four rules "rejected before any subagent starts": ≥2 items unless `resume_agent_ids`; template
+  required when items present; template must contain `{{item}}`; and — **undocumented** — *"the
+  filled-in prompts must be distinct (two items that expand to the same prompt are rejected)"*.
+
+That last one is the one muster would actually trip (two crew members handed the same file), and it
+kills the *whole* swarm, so `kimiSwarmCall` validates all four up front rather than paying a wave's
+round trip to learn them.
+
+**Wave shape is a real choice, not a preference.** Kimi's own guidance: AgentSwarm is for "the same
+kind of task over different inputs"; "For a few differently-shaped tasks, make separate `Agent` calls
+in one message instead." A muster wave is usually the second shape — N distinct roles
+(builder + test-author + reviewer) — so `resolveKimiWaveDispatch` defaults to **agent-calls** and
+selects **swarm** only for a genuinely uniform fan-out (audit N files), which is also the only shape
+that satisfies the distinct-prompts rule cleanly.
+
+**`/goal` carries the acceptance criteria.** "`/goal` does not have a separate stop-limit flag. Write
+stop conditions into the objective", and goals "work best when the objective names the finish line
+and the evidence that proves it" — so muster's assessed acceptance criteria compile straight *into*
+the objective string, spent on the harness's own loop instead of a file muster re-reads each turn. A
+non-goal exit code is treated as a **fault**, never a clean stop.
+
 **Status: Kimi harness leg complete (Phases A–E).** `src/kimi.js` (`KIMI_MODEL_POLICY`), the
 harness-neutral `{tier, effort?}` shape (`src/model-policy.js`) + the Codex adapter's migration onto
 it, `readInstalledKimi()`, the `capabilities --kimi` lane + `kimiProfileForAgentId`, the shared

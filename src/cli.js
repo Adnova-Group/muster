@@ -103,6 +103,7 @@ import {
   runDesignWorkflow,
   scanDesign,
 } from "./design.js";
+import { createCodexFixLoopBinding, planCodexFixContinuation } from "./codex-fix-loop.js";
 
 const CODEX_WAVE_FILE_MAX_BYTES = 1024 * 1024;
 const CODEX_THREAD_CONFIG_MAX_BYTES = 128 * 1024;
@@ -126,7 +127,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fix-loop-bind <dispatch.json> <receipt.json>|fix-loop-continue <receipt.json> <current.json> <review-state.json>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
@@ -452,6 +453,22 @@ async function main() {
       const verified = verify(sha);
       out({ sha, cwd, verified, mechanism: verify.mechanism });
       if (!verified) process.exit(2);
+    } else if (cmd === "fix-loop-bind") {
+      const dispatchFile = requireArg(rest, 0, "fix-loop-bind <dispatch.json> <receipt.json>: missing dispatch file", fail);
+      const receiptFile = requireArg(rest, 1, "fix-loop-bind <dispatch.json> <receipt.json>: missing receipt file", fail);
+      const binding = createCodexFixLoopBinding(JSON.parse(await readFile(dispatchFile, "utf8")));
+      await mkdir(dirname(resolve(receiptFile)), { recursive: true });
+      await writeFile(receiptFile, JSON.stringify(binding, null, 2) + "\n", { flag: "wx" });
+      out({ ok: true, receiptFile, binding });
+    } else if (cmd === "fix-loop-continue") {
+      const receiptFile = requireArg(rest, 0, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing receipt file", fail);
+      const currentFile = requireArg(rest, 1, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing current context file", fail);
+      const reviewFile = requireArg(rest, 2, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing review state file", fail);
+      out(planCodexFixContinuation({
+        binding: JSON.parse(await readFile(receiptFile, "utf8")),
+        current: JSON.parse(await readFile(currentFile, "utf8")),
+        reviewState: JSON.parse(await readFile(reviewFile, "utf8"))
+      }));
     } else if (cmd === "fast-path") {
       // weight-reduction item, criterion 1 (flagship): pre-router single-agent fast path.
       // Score-only when --capabilities is absent (the caller hasn't resolved capabilities

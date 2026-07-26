@@ -1,0 +1,208 @@
+{
+  "harness": "local-process fresh-dispatch vs retained-thread protocol benchmark",
+  "command": "node scripts/benchmark-codex-fix-loop.mjs --output test/fixtures/codex-fix-loop/benchmark-evidence.json",
+  "nodeVersion": "v26.0.0",
+  "generatedAt": "2026-07-26T23:01:34.500Z",
+  "cases": [
+    {
+      "case": "auth",
+      "payloadSha256": "a7cabc37511535e94a57926cb0cbcc4d9fa00f59e8d3bad49aba655f403bf507",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 13187
+        },
+        "digest": "d86297a8cdffb1306c7ed6636e6ef6b9ebc529f331d4dc62074030acc8c6a9cb",
+        "wallTimeMs": 63.42844800000002
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "93b9cd16c5e73a04cfa97513993e72dfceaccd9833b13cc5779c136bf3eb04c0",
+        "wallTimeMs": 0.4982479999999896
+      }
+    },
+    {
+      "case": "billing",
+      "payloadSha256": "ba8f354af8b93a3b308595d982c8768146fa571f691b479c2d4eca030d001e81",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 14151
+        },
+        "digest": "8ca6bcff96d87cfc2e889e53047ff2d6bc72d9b65a912702d5f83ef88dabf791",
+        "wallTimeMs": 59.17479399999999
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "229a1a6d060ba1e97ab03594c802250ad2720181adfdcb69af4d3cf79de5f57b",
+        "wallTimeMs": 0.4720630000000199
+      }
+    },
+    {
+      "case": "catalog",
+      "payloadSha256": "d6d4b748081188d29f727142c2ac227fd7d2e41dd0cebbb2c4dc69b7fdf904fd",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 14476
+        },
+        "digest": "46433146e098853fb0c2c1120de92b335b8a63de80d431df32899d7a2e2e6fb7",
+        "wallTimeMs": 64.201325
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "2c616101f9c5802a956e1d8c4d51785fae2815a17646f6789a0fbc014d5f0df5",
+        "wallTimeMs": 0.5773550000000114
+      }
+    },
+    {
+      "case": "cli",
+      "payloadSha256": "958cfbc5796d80bca103685983c598e2b187ccadb5bb38951935f0f9597c8a82",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 13889
+        },
+        "digest": "ec48132a6c8fa253d02684c6348776d31d7d3d216c553f9dd5ee6e349b22ec59",
+        "wallTimeMs": 62.242898000000025
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 9
+        },
+        "digest": "23527941bb2c118078dc4c2d4b3ab716e7ce47fc31a7f131694f5890e41debd0",
+        "wallTimeMs": 0.5355690000000095
+      }
+    },
+    {
+      "case": "config",
+      "payloadSha256": "3bc2565c93283be8d3334c14eb42f2ff6457685d9f96502d080d96f5648666e1",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 14893
+        },
+        "digest": "b4dccc7d85d38bc8c958e8dc0a3943560f2260603ce729b860630d2643628c77",
+        "wallTimeMs": 65.087716
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "f835dac9ebc520e0ab3e968c8d84b5052f3daeca6d4437fbc85ceaae5dd3005f",
+        "wallTimeMs": 0.7191700000000196
+      }
+    },
+    {
+      "case": "doctor",
+      "payloadSha256": "c3dc40b458797f210d27ae5fea08f7d6472ab4afe6966b28c8a18e116b4ea14a",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 15213
+        },
+        "digest": "f23fe5a9224da4d7a515aa92e76d66cd97de83d65b3c9b04876f3a0dcd09cfc1",
+        "wallTimeMs": 58.39611400000001
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "0836aa75c58c36ab3887a6f0743837ca64c1d02b1839b4895a9db0b040bf5212",
+        "wallTimeMs": 0.5441809999999805
+      }
+    },
+    {
+      "case": "hooks",
+      "payloadSha256": "05bea6a0c6d8b0f30473ed9c7bb88311b0e79bc89110a29cc941441eccf12cf2",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 15290
+        },
+        "digest": "a7f6f9677090f3313e7386326bc1d6f928196b8ac2b04ebfdafdc827c45f9a98",
+        "wallTimeMs": 63.38457699999998
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "b6e6f8d59e256a22d863bc51b574214341787bd10113ab3a9860b057b69e1e64",
+        "wallTimeMs": 0.5447350000000597
+      }
+    },
+    {
+      "case": "install",
+      "payloadSha256": "49e3d21aa1c4920f5e383171607cff4b6536d1257d0032e33acd6deabb989eac",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 16101
+        },
+        "digest": "08691a6319cab2e4b8b2112e33b645e578ddabdf6e91b55fa81f3a191da9aba9",
+        "wallTimeMs": 63.10213600000009
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "04688fdf797b17c1c4e0e1256d0954c4087af0a5b9477c1f3ee31a80e5115b96",
+        "wallTimeMs": 0.7092720000000554
+      }
+    },
+    {
+      "case": "router",
+      "payloadSha256": "f2def53f90c11cd84d2f5ad9a31c7793c362b865c3852b6783cc56ed1a919260",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 16173
+        },
+        "digest": "470a75d56681583ececbfaa8905e4b05a8cdde4d8c1cbaf3f475f6bd3d724b02",
+        "wallTimeMs": 61.419850999999994
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "58fbf130a1daa63c03d52d7c04782a529f132315c20bc29318c2c4763109a5e2",
+        "wallTimeMs": 0.5416269999999486
+      }
+    },
+    {
+      "case": "wave",
+      "payloadSha256": "bf78b3de04b050be241890874c4e4ca01a475d15c5fca3583d89e6cb88e4db6c",
+      "fresh": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 15977
+        },
+        "digest": "9b6c74950fea7514d232fce9d12f3046aa569dbf2e2cfa26f5112c5f976d20d2",
+        "wallTimeMs": 63.12340700000004
+      },
+      "continued": {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 10
+        },
+        "digest": "597dd0e373dc3e2cf28ce24cf20e3d0abc53b5e45da5c4817af9a4dcf40f04bd",
+        "wallTimeMs": 0.4851260000000366
+      }
+    }
+  ]
+}

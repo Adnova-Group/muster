@@ -6,13 +6,13 @@
     "cwd": "/worktrees/catalog",
     "baseSha": "3333333333333333333333333333333333333333",
     "codexVersion": "0.145.0",
-    "roleProfile": "muster-builder"
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
   },
-  "blockers": ["src/catalog.js:7 drops the provider profile"],
+  "reviewState": { "sentBlockers": [], "currentBlockers": ["src/catalog.js:7 drops the provider profile"] },
   "mismatches": [
     { "field": "cwd", "value": "/worktrees/other" },
     { "field": "baseSha", "value": "4444444444444444444444444444444444444444" },
     { "field": "codexVersion", "value": "0.146.0" },
-    { "field": "roleProfile", "value": "muster-surgeon" }
+    { "field": "roleProfile", "value": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "high", "sandbox": "workspace-write" } }
   ]
 }

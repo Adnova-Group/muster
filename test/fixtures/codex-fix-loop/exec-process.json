@@ -6,15 +6,15 @@
     "cwd": "/worktrees/billing",
     "baseSha": "2222222222222222222222222222222222222222",
     "codexVersion": "0.145.0",
-    "roleProfile": "muster-builder"
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
   },
   "current": {
     "cwd": "/worktrees/billing",
     "baseSha": "2222222222222222222222222222222222222222",
     "codexVersion": "0.145.0",
-    "roleProfile": "muster-builder"
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
   },
-  "blockers": ["test/billing.test.js:18 still permits a negative invoice"],
+  "reviewState": { "sentBlockers": [], "currentBlockers": ["test/billing.test.js:18 still permits a negative invoice"] },
   "expectedMechanism": "exec-resume",
   "expectedTarget": "018f3f62-7f12-7d35-8b1e-123456789abc"
 }

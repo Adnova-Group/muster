@@ -5,6 +5,7 @@
 // GOAL_EXIT_CODES {complete:0, blocked:3, paused:6}.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, interpretKimiGoalExit, resolveKimiWaveDispatch,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_DISPATCH_MODES
@@ -153,4 +154,82 @@ test("resolveKimiWaveDispatch: swarm for a uniform fan-out, agent-calls for a mi
   const single = resolveKimiWaveDispatch({ items: ["only"], uniformTask: true });
   assert.equal(single.mode, KIMI_DISPATCH_MODES.AGENT_CALLS);
   assert.match(single.reason, /below AgentSwarm's 2-item floor/);
+});
+
+// --- Resolved wave -> packet composition (orchestrator/SKILL.md's Kimi subsection) ---
+
+test("a uniform wave resolves to ONE validated AgentSwarm packet", () => {
+  const items = ["src/a.ts", "src/b.ts", "src/c.ts"];
+  const decision = resolveKimiWaveDispatch({ items, uniformTask: true });
+  assert.equal(decision.mode, KIMI_DISPATCH_MODES.SWARM);
+
+  // The resolved wave builds exactly one swarm packet, already validated by
+  // kimiSwarmCall -- dispatch never reaches Kimi with a malformed packet.
+  const packet = kimiSwarmCall({
+    promptTemplate: `Review ${KIMI_SWARM_PLACEHOLDER} for likely regressions.`,
+    items,
+    subagentType: "muster-reviewer"
+  });
+  assert.equal(packet.tool, "AgentSwarm");
+  assert.deepEqual(packet.items, items);
+  assert.equal(packet.soleToolCall, true); // must be the only tool call in its response
+});
+
+test("a mixed-role wave resolves to per-agent calls with each crew member's own lane", () => {
+  const crew = [
+    { agentId: "muster-builder", prompt: "Implement the feature." },
+    { agentId: "muster-reviewer", prompt: "Review the diff." },
+    { agentId: "muster-surgeon", prompt: "Fix the typo." }
+  ];
+  const decision = resolveKimiWaveDispatch({ items: crew.map(c => c.agentId) });
+  assert.equal(decision.mode, KIMI_DISPATCH_MODES.AGENT_CALLS);
+
+  const calls = crew.map(c => kimiAgentCall(c));
+  assert.equal(calls.length, crew.length);
+  for (const [i, call] of calls.entries()) {
+    assert.equal(call.tool, "Agent");
+    assert.equal(call.subagent_type, crew[i].agentId);
+    assert.equal(call.prompt, crew[i].prompt);
+  }
+  // lanes come from the shared manifest, never a shared default
+  assert.equal(calls[0].model, "primary");    // builder: opus tier
+  assert.equal(calls[1].model, "primary");    // reviewer: opus tier
+  assert.equal(calls[2].model, "secondary");  // surgeon: sonnet tier
+});
+
+// --- Named up-front rejection of the four swarm rules ------------------------
+
+test("every swarm rejection is a NAMED up-front error, never a wave round trip", () => {
+  const cases = [
+    // rule 1: >=2 items unless resuming
+    [{ promptTemplate: "x {{item}}", items: ["only-one"] }, /kimiSwarmCall: AgentSwarm requires at least 2 items/],
+    // rule 2: prompt_template required when items are present
+    [{ items: ["a", "b"] }, /kimiSwarmCall: prompt_template is required/],
+    // rule 3: template must contain {{item}}
+    [{ promptTemplate: "no placeholder", items: ["a", "b"] }, /kimiSwarmCall: prompt_template must contain the \{\{item\}\} placeholder/],
+    // rule 4: filled prompts must be DISTINCT (undocumented in Kimi's docs)
+    [{ promptTemplate: "Audit {{item}}.", items: ["src/a.ts", "src/a.ts"] }, /kimiSwarmCall: items must expand to DISTINCT prompts/]
+  ];
+  for (const [input, pattern] of cases) {
+    assert.throws(() => kimiSwarmCall(input), pattern);
+  }
+});
+
+// --- Prose wiring: the orchestrator skill names the shipped helpers ----------
+
+test("orchestrator/SKILL.md's native-dispatch block has a Kimi subsection naming the shipped helpers", async () => {
+  const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+  const match = text.match(/### Kimi-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
+  assert.ok(match, "orchestrator/SKILL.md must carry a '### Kimi-native dispatch' subsection in the native-dispatch block");
+  const section = match[1];
+  // names the tool and the builder exactly (src/kimi-dispatch.js is canonical)
+  assert.match(section, /`AgentSwarm`/, "the Kimi subsection must name the AgentSwarm tool");
+  assert.match(section, /kimiSwarmCall/, "the Kimi subsection must name kimiSwarmCall exactly");
+  assert.match(section, /kimiAgentCall/, "the Kimi subsection must name kimiAgentCall exactly");
+  assert.match(section, /resolveKimiWaveDispatch/, "the Kimi subsection must route every wave through resolveKimiWaveDispatch");
+  assert.match(section, /src\/kimi-dispatch\.js/, "the Kimi subsection must cite src/kimi-dispatch.js");
+  // the up-front validation posture, including the distinct-prompts rule
+  assert.match(section, /\{\{item\}\}/, "the Kimi subsection must name the exact placeholder");
+  assert.match(section, /DISTINCT/i, "the Kimi subsection must state the distinct-prompts rejection rule");
+  assert.match(section, /BEFORE dispatch/i, "the Kimi subsection must mandate pre-dispatch validation");
 });

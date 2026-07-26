@@ -6,15 +6,15 @@
     "cwd": "/worktrees/auth",
     "baseSha": "1111111111111111111111111111111111111111",
     "codexVersion": "0.145.0",
-    "roleProfile": "muster-builder"
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
   },
   "current": {
     "cwd": "/worktrees/auth",
     "baseSha": "1111111111111111111111111111111111111111",
     "codexVersion": "0.145.0",
-    "roleProfile": "muster-builder"
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
   },
-  "blockers": ["src/auth.js:42 rejects a valid refresh token"],
+  "reviewState": { "sentBlockers": [], "currentBlockers": ["src/auth.js:42 rejects a valid refresh token"] },
   "expectedMechanism": "followup_task",
   "expectedTarget": "/root/build_auth"
 }

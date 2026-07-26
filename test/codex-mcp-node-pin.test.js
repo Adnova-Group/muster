@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { chmod, cp, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildCodexPlugin } from "../scripts/build-codex.mjs";
 import { runCodexDoctor } from "../src/codex-doctor.js";
@@ -43,6 +43,12 @@ test("Linux/current: generated Codex MCP config pins the current canonical proce
   const mcp = JSON.parse(await readFile(join(plugin, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.muster.command, process.execPath);
   assert.equal((await doctorRuntime(plugin, tmp, "linux"))?.ok, true);
+
+  mcp.mcpServers.muster.command = relative(process.cwd(), process.execPath);
+  await writeFile(join(plugin, ".mcp.json"), JSON.stringify(mcp, null, 2) + "\n");
+  const relativeCommand = await doctorRuntime(plugin, tmp, "linux");
+  assert.equal(relativeCommand?.ok, false);
+  assert.match(relativeCommand?.detail || "", /absolute path/i);
 });
 
 test("Windows/missing: doctor rejects a vanished pinned MCP Node executable", async t => {

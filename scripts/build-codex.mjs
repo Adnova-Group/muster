@@ -4,7 +4,7 @@ import {
   cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRegularTree, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
 
@@ -358,7 +358,7 @@ function currentMcpNode(pluginRoot, nodeExecPath) {
   try {
     const mcp = JSON.parse(readFileSync(join(pluginRoot, ".mcp.json"), "utf8"));
     const command = mcp?.mcpServers?.muster?.command;
-    if (typeof command !== "string" || !command) return false;
+    if (typeof command !== "string" || !isAbsolute(command)) return false;
     const actual = realpathSync(command);
     const expected = realpathSync(nodeExecPath);
     return statSync(actual).isFile() && actual === expected;

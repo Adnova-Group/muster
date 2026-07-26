@@ -759,8 +759,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         problems.push(".mcp.json (missing)");
       } else {
         const command = mcp?.mcpServers?.muster?.command;
-        if (typeof command !== "string" || !command) {
-          problems.push(".mcp.json (MCP Node executable is missing)");
+        if (typeof command !== "string" || !isAbsolute(command)) {
+          problems.push(".mcp.json (MCP Node executable must be an absolute path)");
         } else {
           let actual;
           try {

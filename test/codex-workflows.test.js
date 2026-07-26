@@ -168,6 +168,12 @@ test("generated Codex review gates use compact, risk-based review dispatch", asy
   assert.match(text, /Select one code reviewer for ordinary waves/);
   assert.match(text, /Add the security reviewer only/);
   assert.match(text, /one fix-and-re-review iteration/);
+  assert.match(text, /retain the exact original implementer identity/);
+  assert.match(text, /`collaboration\.followup_task`/);
+  assert.match(text, /`codex exec resume <thread-id>`/);
+  assert.match(text, /cwd, base SHA, Codex version, and role profile/);
+  assert.match(text, /only the new blocker deltas/);
+  assert.doesNotMatch(text, /resume --last/);
 });
 
 test("generated Codex audits cover six dimensions with three nonredundant scans", async () => {

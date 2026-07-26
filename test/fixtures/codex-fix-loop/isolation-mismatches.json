@@ -1,0 +1,18 @@
+{
+  "name": "context binding rejects drift",
+  "binding": {
+    "lane": "spawn_agent",
+    "workerId": "/root/build_catalog",
+    "cwd": "/worktrees/catalog",
+    "baseSha": "3333333333333333333333333333333333333333",
+    "codexVersion": "0.145.0",
+    "roleProfile": "muster-builder"
+  },
+  "blockers": ["src/catalog.js:7 drops the provider profile"],
+  "mismatches": [
+    { "field": "cwd", "value": "/worktrees/other" },
+    { "field": "baseSha", "value": "4444444444444444444444444444444444444444" },
+    { "field": "codexVersion", "value": "0.146.0" },
+    { "field": "roleProfile", "value": "muster-surgeon" }
+  ]
+}

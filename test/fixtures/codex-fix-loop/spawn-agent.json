@@ -1,0 +1,20 @@
+{
+  "name": "in-session exact worker continuation",
+  "binding": {
+    "lane": "spawn_agent",
+    "workerId": "/root/build_auth",
+    "cwd": "/worktrees/auth",
+    "baseSha": "1111111111111111111111111111111111111111",
+    "codexVersion": "0.145.0",
+    "roleProfile": "muster-builder"
+  },
+  "current": {
+    "cwd": "/worktrees/auth",
+    "baseSha": "1111111111111111111111111111111111111111",
+    "codexVersion": "0.145.0",
+    "roleProfile": "muster-builder"
+  },
+  "blockers": ["src/auth.js:42 rejects a valid refresh token"],
+  "expectedMechanism": "followup_task",
+  "expectedTarget": "/root/build_auth"
+}

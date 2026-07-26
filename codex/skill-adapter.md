@@ -15,6 +15,12 @@ Apply these bindings before following any ported Muster workflow. They override 
 - When Claude Code itself is the actual subject of a workflow, retain that scope rather than claiming a nonexistent Codex equivalent.
 - `muster install codex` merges Muster's lifecycle hooks into the selected project or user `hooks.json` layer. After the user trusts their exact definitions in `/hooks`, they provide context, diagnostics, and supported policy warnings. Codex DOES execute plugin-bundled hooks (landed 0.128, default-on since 0.131), so Muster's Codex plugin is deliberately hooks-free — its hooks come only from the `hooks.json` layer; a plugin that shipped a `hooks/hooks.json` would double-fire on top of it (the hook-bombardment regression). Treat todo and spawn policy as advisory; every write-capable wave must still run in an isolated git worktree.
 
+## Context-preserving review fix loops
+
+At the original implementer dispatch, retain its exact canonical identity in STATE: the `collaboration.spawn_agent` worker id for an in-session worker, or the `thread.started` id from `codex exec --json` for a process worker. Bind that identity to the dispatch's absolute cwd, base SHA, Codex version, and exact role profile. A continuation proceeds only when all four values still match; any mismatch is an isolation failure and escalates instead of falling back to a fresh worker.
+
+When review returns blockers, send only the new blocker deltas back to the retained implementer. For an in-session worker, call `collaboration.followup_task` with the exact retained worker id. For a process worker, run `codex exec resume <thread-id> "<blocker-deltas>"` from the bound cwd with the exact retained thread id. Never use `resume --last`, never choose a worker by nickname or recency, and never repeat the original brief, manifest, transcript, or already-resolved findings. Re-review the resulting diff as usual.
+
 ## Agent watch invariant
 
 <!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->

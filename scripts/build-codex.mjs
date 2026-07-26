@@ -294,8 +294,8 @@ function codexSkill(source, id) {
         "1. Select one code reviewer for ordinary waves. Add the security reviewer only when the task is security-scoped or the diff touches authentication, authorization, secrets, cryptography, shell execution, network boundaries, installers, or lifecycle hooks. Add a surface reviewer only when its definition-of-done gate fires. Never dispatch two reviewers for the same quality dimension; always use at least one reviewer."
       )
       .replace(
-        "Cap at\n   **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3). If still blocked after the cap, ESCALATE",
-        "Allow **one fix-and-re-review iteration**. If the same blocker remains, ESCALATE"
+        /6\. If `blocked`:[\s\S]*?\*\*3 fix iterations\*\* \(`REVIEW_GATE_MAX_ITERATIONS` = 3\)\. If still blocked after the cap, ESCALATE/,
+        "6. If `blocked`: retain the exact original implementer identity and verify its bound cwd, base SHA, Codex version, and role profile still match the dispatch receipt. Send only the new blocker deltas: use `collaboration.followup_task` with the exact canonical worker id for an in-session implementer, or run `codex exec resume <thread-id>` from the bound cwd with the exact `thread.started` id for a process implementer. Never use a recency selector, never fresh re-dispatch, and never repeat the original brief or prior transcript. Then re-review. Allow **one fix-and-re-review iteration**. If the same blocker remains, ESCALATE"
       );
   }
   if (id === "interview") body = body.replace("Present both for approval via the **interactive user input** selection UI", "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");

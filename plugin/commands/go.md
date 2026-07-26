@@ -115,6 +115,20 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    iteration cap escalates — see step 7 below. After each green + reviewed wave: commit (`feat(wave N): <summary>`)
    and re-render the checklist with completed ids (`--done …`) into the run STATE. Maintain the orchestrator
    skill's task-board discipline per plan task (create at dispatch, in_progress at launch, completed at merge).
+
+   **Kimi run loop — the native `/goal` runner, not the prose Ralph loop.** On Kimi, step 6's
+   continue-until-criteria loop moves off the prose iteration entirely: drive it through
+   `kimiGoalInvocation({ objective })` (`src/kimi-dispatch.js`), which builds the unattended
+   `kimi -p "/goal <objective>"` invocation with the item's assessed acceptance criteria compiled
+   INTO the objective string — `/goal` has no separate stop-limit flag ("write stop conditions into
+   the objective", docs/research/kimi-code-cli.md §11.9), so the same enrichment that would land in
+   a file muster re-reads goes into the harness's own loop instead. Interpret the process exit code
+   through `interpretKimiGoalExit(code)`: **0 complete** → the objective's own evidence was
+   satisfied, proceed to the wave commit/finish; **3 blocked** → muster's escalation, arriving as an
+   exit code instead of being parsed out of a STATE file — STOP and report per step 7; **6 paused**
+   → interrupted/resumable — resume the goal, never restart from scratch. Any other nonzero exit is
+   a harness FAULT, never a clean stop (it escalates as a fault, not as a goal outcome). On non-Kimi
+   harnesses nothing here changes: the Ralph loop above keeps re-reading STATE each turn.
 7. **Escalation** — if a review gate escalates (fix-loop cap), a tournament has no passing candidate,
    the spec gate hard-aborts (a round-2 FAIL repeats an unresolved round-1 finding, or a round-3 FAIL
    regardless of disjointness), or a subagent dispatch that still fails after its retry, STOP and

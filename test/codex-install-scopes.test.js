@@ -5,11 +5,85 @@
 // quarantine dance (see test/codex-lock.test.js for withCodexFileLock itself).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { reconcileScopeRegistryEntries, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { localMusterMarketplace, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+
+test("Codex user install declares shipped agents in CODEX_HOME config.toml and preserves unrelated TOML", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-user-agent-declarations-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), configPath = join(home, ".codex", "config.toml");
+  const original = "[telemetry]\nenabled = false\n";
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(configPath, original);
+  const absent = async () => { throw new Error("not found"); };
+
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const installed = await readFile(configPath, "utf8");
+  assert.match(installed, /\[agents\.muster-reviewer\]\ndescription = "Read-only diff\/branch reviewer[^"]*"\nconfig_file = "agents\/muster-reviewer\.toml"/);
+  assert.equal((installed.match(/^\[agents\.[a-z0-9-]+\]$/gm) || []).length, 27);
+  assert.ok(installed.startsWith(original), "unrelated TOML must remain byte-for-byte before managed tables");
+
+  await runCodexUninstall({ scope: "user", cwd, home, execFile: absent });
+  assert.equal(await readFile(configPath, "utf8"), original);
+});
+
+test("Codex user declaration ownership rejects shared-config and manifest races before scope mutation", async t => {
+  for (const operation of ["reinstall", "uninstall"]) {
+    for (const mutation of ["unrelated config bytes", "valid manifest field"]) {
+      await t.test(`${operation}: ${mutation}`, async () => {
+        const tmp = await mkdtemp(join(tmpdir(), `muster-codex-user-declaration-race-${operation}-`));
+        const cwd = join(tmp, "project"), home = join(tmp, "home");
+        const codexHome = join(home, ".codex"), agents = join(codexHome, "agents");
+        const configPath = join(codexHome, "config.toml");
+        const manifestPath = join(agents, ".muster-managed.json");
+        const registryPath = join(codexHome, "muster", "install-scopes.json");
+        const absent = async () => { throw new Error("not found"); };
+        await runCodexInstall({ scope: "user", cwd, home, repoRoot: selectedPluginRoot, execFile: absent });
+
+        const profileNames = (await readdir(agents)).filter(file => file.endsWith(".toml"));
+        const profilesBefore = await Promise.all(profileNames.map(file => readFile(join(agents, file), "utf8")));
+        const configBefore = await readFile(configPath, "utf8");
+        const manifestBefore = await readFile(manifestPath, "utf8");
+        const registryBefore = await readFile(registryPath, "utf8");
+        let racedConfig, racedManifest, interleaved = false;
+        const execFile = async (_bin, args) => {
+          if (args[0] === "--version" && !interleaved) {
+            interleaved = true;
+            if (mutation === "unrelated config bytes") {
+              racedConfig = `# concurrent shared config edit\n${await readFile(configPath, "utf8")}`;
+              await writeFile(configPath, racedConfig);
+            } else {
+              const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+              manifest.packageVersion = `${manifest.packageVersion}-concurrent`;
+              racedManifest = JSON.stringify(manifest, null, 2) + "\n";
+              await writeFile(manifestPath, racedManifest);
+            }
+            return { stdout: "codex-cli test" };
+          }
+          if (args.slice(0, 3).join(" ") === "plugin marketplace list") {
+            const root = dirname(selectedPluginRoot);
+            return { stdout: JSON.stringify({ marketplaces: [{
+              name: "muster", root, marketplaceSource: { sourceType: "local", source: root }
+            }] }) };
+          }
+          throw new Error(`unexpected command: ${args.join(" ")}`);
+        };
+
+        const action = operation === "reinstall"
+          ? () => runCodexInstall({ scope: "user", cwd, home, repoRoot: selectedPluginRoot, execFile })
+          : () => runCodexUninstall({ scope: "user", cwd, home, execFile });
+        await assert.rejects(action, /concurrent state change/i);
+        assert.equal(interleaved, true);
+        assert.equal(await readFile(configPath, "utf8"), racedConfig ?? configBefore);
+        assert.equal(await readFile(manifestPath, "utf8"), racedManifest ?? manifestBefore);
+        assert.deepEqual(await Promise.all(profileNames.map(file => readFile(join(agents, file), "utf8"))), profilesBefore);
+        assert.equal(await readFile(registryPath, "utf8"), registryBefore);
+      });
+    }
+  }
+});
 
 test("Codex uninstall retains the shared plugin until the final managed scope is removed", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-dual-scope-")), cwd = join(tmp, "project"), home = join(tmp, "home"), calls = [];

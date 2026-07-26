@@ -233,3 +233,29 @@ test("orchestrator/SKILL.md's native-dispatch block has a Kimi subsection naming
   assert.match(section, /DISTINCT/i, "the Kimi subsection must state the distinct-prompts rejection rule");
   assert.match(section, /BEFORE dispatch/i, "the Kimi subsection must mandate pre-dispatch validation");
 });
+
+// --- Prose wiring: the runner prose routes the Kimi run loop through /goal ----
+
+test("the runner prose (go.md + runner.md) routes the Kimi run loop through the native /goal runner", async () => {
+  // NOTE on file choice: plugin/commands/run.md is a pinned alias stub -- the
+  // alias-shape guard (test/mode-evals.test.js) pins its body to exactly 2
+  // paragraphs -- so the run-loop prose it historically carried now lives in
+  // go.md (the hands-off runner, whose step 6 names the Ralph loop). The Kimi
+  // arm lands there and in runner.md's Scheduling paragraph, where Claude's
+  // /goal is already discussed.
+  const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
+  const runner = await readFile(new URL("../plugin/commands/runner.md", import.meta.url), "utf8");
+  for (const [file, text] of [["go.md", go], ["runner.md", runner]]) {
+    assert.match(text, /\/goal/, `${file} must name Kimi's native /goal runner`);
+    assert.match(text, /kimiGoalInvocation/, `${file} must name kimiGoalInvocation exactly (src/kimi-dispatch.js is canonical)`);
+    assert.match(text, /interpretKimiGoalExit/, `${file} must name interpretKimiGoalExit exactly`);
+    // the exit-code contract: escalation arrives as an exit code, not a STATE parse
+    assert.match(text, /0 complete/, `${file} must state the 0-complete exit code`);
+    assert.match(text, /3 blocked/, `${file} must state the 3-blocked (escalation) exit code`);
+    assert.match(text, /6 paused/, `${file} must state the 6-paused (resumable) exit code`);
+    assert.match(text, /instead of being parsed out of a STATE file/, `${file} must state that escalation arrives as an exit code, not a STATE-file parse`);
+    assert.match(text, /non-Kimi\s+harnesses/i, `${file} must keep the existing STATE-file loop on non-Kimi harnesses`);
+  }
+  // acceptance criteria compile INTO the objective string (no separate stop flag)
+  assert.match(go, /acceptance criteria compiled\s*INTO the objective string/, "go.md must state that acceptance criteria compile into the /goal objective string");
+});

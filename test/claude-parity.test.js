@@ -807,5 +807,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // lane-aware kimiAgentCall fan-out for mixed-role waves), with the four swarm
   // rejection rules (including the distinct-prompts rule) pre-validated before
   // dispatch. Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "598764fb129b50996c927386b2e37b5297db7d0935cc3037bd89848f91db4ed2");
+  //
+  // 2026-07-26 re-pin (kimi-goal-run-loop): file COUNT unchanged (139) -- only
+  // plugin/commands/go.md and plugin/commands/runner.md content changed. The
+  // runner prose gains the Kimi run-loop arm: on Kimi, the continue-until-done
+  // loop routes through the native /goal runner via kimiGoalInvocation
+  // (acceptance criteria compiled INTO the objective string) and the outcome is
+  // read off the process exit code via interpretKimiGoalExit (0 complete /
+  // 3 blocked / 6 paused) -- escalation arrives as an exit code instead of a
+  // STATE-file parse; non-Kimi harnesses keep the existing STATE-file loop.
+  // Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "06dc4555b9c9430cc61e8f2deb59ed268ff7045e3ee3293acda8d64a4b5d8110");
 });

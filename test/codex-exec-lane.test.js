@@ -21,6 +21,19 @@ test("resolveCodexDispatchLane: overlapping write sets force process isolation",
   assert.match(r.reason, /overlapping write sets/);
 });
 
+test("resolveCodexDispatchLane: nested and globbed write fences also conflict", () => {
+  for (const writes of [
+    [["src/**"], ["src/auth/session.js"]],
+    [["src/auth"], ["src/auth/session.js"]],
+    [["src\\auth\\*\\session.js"], ["src/auth/session.js"]],
+  ]) {
+    assert.equal(resolveCodexDispatchLane({ members: [
+      { id: "a", writes: writes[0] },
+      { id: "b", writes: writes[1] },
+    ] }).mode, CODEX_EXEC_MODES.EXEC_PROCESS);
+  }
+});
+
 test("resolveCodexDispatchLane: disjoint writers stay on the cheaper in-session lane", () => {
   const r = resolveCodexDispatchLane({ members: [
     { id: "a", writes: ["src/x.js"] },
@@ -46,19 +59,30 @@ test("resolveCodexDispatchLane: the caller can force isolation explicitly", () =
 test("codexExecCall: always emits --json, and -C is what actually isolates", () => {
   const call = codexExecCall({ prompt: "do the thing", cwd: "/w/item-1" });
   assert.equal(call.command, "codex");
-  assert.deepEqual(call.argv, ["exec", "--json", "-C", "/w/item-1", "do the thing"]);
+  assert.deepEqual(call.argv, [
+    "--ask-for-approval", "never", "exec", "--json", "--ignore-user-config", "--strict-config", "--ephemeral",
+    "--sandbox", "workspace-write",
+    "-C", "/w/item-1", "do the thing"
+  ]);
   assert.equal(call.isolation, "process-cwd");
 });
 
-test("codexExecCall: threads model, schema, last-message, ephemeral and git-check flags", () => {
+test("codexExecCall: threads model, schema, last-message and git-check flags after hermetic pins", () => {
   const call = codexExecCall({
     prompt: "p", cwd: "/w", model: "gpt-5.6-sol", schemaPath: "/s.json",
-    lastMessagePath: "/out.txt", ephemeral: true, skipGitCheck: true
+    lastMessagePath: "/out.txt", skipGitCheck: true
   });
   assert.deepEqual(call.argv, [
-    "exec", "--json", "-C", "/w", "-m", "gpt-5.6-sol",
-    "--output-schema", "/s.json", "-o", "/out.txt", "--ephemeral", "--skip-git-repo-check", "p"
+    "--ask-for-approval", "never", "exec", "--json", "--ignore-user-config", "--strict-config", "--ephemeral",
+    "--sandbox", "workspace-write",
+    "-C", "/w", "-m", "gpt-5.6-sol",
+    "--output-schema", "/s.json", "-o", "/out.txt", "--skip-git-repo-check", "p"
   ]);
+});
+
+test("codexExecCall: refuses unsupported sandbox or approval values before launch", () => {
+  assert.throws(() => codexExecCall({ prompt: "p", sandbox: "off" }), /unsupported sandbox/);
+  assert.throws(() => codexExecCall({ prompt: "p", approvalPolicy: "always" }), /unsupported approval policy/);
 });
 
 test("codexExecCall: the prompt is always last, so it is never parsed as a flag value", () => {

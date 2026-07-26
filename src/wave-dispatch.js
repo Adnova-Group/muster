@@ -26,6 +26,7 @@
 // Code CLI/Desktop single-session) -- prose is the default whenever nothing is declared.
 
 import { execFileSync } from "node:child_process";
+import { crossItemConflicts } from "./batch-plan.js";
 
 export const AGENT_TEAMS_ENV = "MUSTER_AGENT_TEAMS";
 
@@ -456,8 +457,9 @@ export const CODEX_EXEC_MODES = Object.freeze({
 // factor because they are the one thing spawn_agent cannot make safe.
 export function resolveCodexDispatchLane({ members = [], forceProcess = false } = {}) {
   const writers = members.filter(m => m?.writes);
-  const paths = writers.flatMap(m => Array.isArray(m.writes) ? m.writes : []);
-  const conflicting = paths.length !== new Set(paths).size;
+  const conflicting = crossItemConflicts(
+    writers.map((member, index) => ({ id: member.id || `member-${index}`, owns: member.writes })),
+  ).conflicts.length > 0;
   if (forceProcess || conflicting) {
     return {
       mode: CODEX_EXEC_MODES.EXEC_PROCESS,
@@ -477,14 +479,38 @@ export function resolveCodexDispatchLane({ members = [], forceProcess = false } 
 // Build the argv for one wave member dispatched as its own `codex exec` process.
 // `--json` is always on: muster parses the JSONL event stream (thread.started /
 // turn.completed with usage / item.completed) rather than scraping prose.
-export function codexExecCall({ prompt, cwd, model, schemaPath, ephemeral = false, skipGitCheck = false, lastMessagePath } = {}) {
+export function codexExecCall({
+  prompt,
+  cwd,
+  model,
+  schemaPath,
+  sandbox = "workspace-write",
+  approvalPolicy = "never",
+  skipGitCheck = false,
+  lastMessagePath
+} = {}) {
   if (typeof prompt !== "string" || !prompt.trim()) throw new Error("codexExecCall: prompt is required");
-  const argv = ["exec", "--json"];
+  if (!["read-only", "workspace-write", "danger-full-access"].includes(sandbox)) {
+    throw new Error(`codexExecCall: unsupported sandbox ${JSON.stringify(sandbox)}`);
+  }
+  if (!["untrusted", "on-request", "never"].includes(approvalPolicy)) {
+    throw new Error(`codexExecCall: unsupported approval policy ${JSON.stringify(approvalPolicy)}`);
+  }
+  const argv = [
+    "--ask-for-approval",
+    approvalPolicy,
+    "exec",
+    "--json",
+    "--ignore-user-config",
+    "--strict-config",
+    "--ephemeral",
+    "--sandbox",
+    sandbox,
+  ];
   if (cwd) argv.push("-C", cwd);
   if (model) argv.push("-m", model);
   if (schemaPath) argv.push("--output-schema", schemaPath);
   if (lastMessagePath) argv.push("-o", lastMessagePath);
-  if (ephemeral) argv.push("--ephemeral");
   if (skipGitCheck) argv.push("--skip-git-repo-check");
   argv.push(prompt);
   return { command: "codex", argv, isolation: cwd ? "process-cwd" : "process" };

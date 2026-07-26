@@ -245,6 +245,14 @@ test("cli wire: worktree-isolation --harness codex selects the receipts-only flo
   assert.equal(parsed.receiptRequired, true);
 });
 
+test("cli wire: worktree-isolation --harness kimi resolves cleanly to the same receipts-only floor as codex (kimi-worktree-isolation item)", async () => {
+  const { stdout } = await run(["worktree-isolation", "--harness", "kimi"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.harness, "kimi");
+  assert.equal(parsed.mechanism, "receipts-only");
+  assert.equal(parsed.receiptRequired, true);
+});
+
 test("cli wire: worktree-isolation with no --harness fails loud (exit 1), never guesses a mechanism", async () => {
   try {
     await run(["worktree-isolation"]);

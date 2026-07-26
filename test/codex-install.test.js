@@ -12,6 +12,279 @@ import { CODEX_COUNTS } from "../src/codex.js";
 import { assertContainedProfiles, formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { canonicalMusterMarketplace, localMusterMarketplace, repoRoot, runCodexHook, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
+test("Codex project install declares every shipped agent and removes only Muster declarations on uninstall", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-agent-declarations-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), configPath = join(cwd, ".codex", "config.toml");
+  const original = [
+    "model = \"user-choice\"",
+    "",
+    "[agents.user-agent]",
+    "description = \"User-owned agent\"",
+    "config_file = \"agents/user-agent.toml\"",
+    ""
+  ].join("\n");
+  await mkdir(dirname(configPath), { recursive: true });
+  await writeFile(configPath, original);
+  const absent = async () => { throw new Error("not found"); };
+
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+  const installed = await readFile(configPath, "utf8");
+  const manifestPath = join(cwd, ".codex", "agents", ".muster-managed.json");
+  const receipt = JSON.parse(await readFile(manifestPath, "utf8")).declarationRegion;
+  assert.equal(receipt?.format, 1);
+  assert.equal(receipt?.algorithm, "sha256");
+  assert.match(receipt?.digest, /^[a-f0-9]{64}$/);
+  assert.equal((installed.match(/^\[agents\.[a-z0-9-]+\]$/gm) || []).length, CODEX_COUNTS.agents + 1);
+  assert.match(installed, /\[agents\.muster-builder\]\ndescription = "Feature-checkpoint builder[^"]*"\nconfig_file = "agents\/muster-builder\.toml"/);
+  assert.ok(installed.startsWith(original), "root keys and unrelated TOML must remain before the managed tables");
+
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+  assert.equal(await readFile(configPath, "utf8"), installed, "reinstall must be byte-idempotent");
+
+  await runCodexUninstall({ cwd, home, execFile: absent });
+  assert.equal(await readFile(configPath, "utf8"), original);
+});
+
+test("Codex install rejects marker-looking config without a declaration receipt", async t => {
+  const absent = async () => { throw new Error("not found"); };
+  for (const [label, original, withLegacyManifest] of [
+    ["foreign markers", [
+      "# >>> muster managed agent declarations >>>",
+      "[foreign]",
+      "value = true",
+      "# <<< muster managed agent declarations <<<",
+      ""
+    ].join("\n"), false],
+    ["markers inside a multiline string", [
+      "payload = \"\"\"",
+      "# >>> muster managed agent declarations >>>",
+      "foreign text",
+      "# <<< muster managed agent declarations <<<",
+      "\"\"\"",
+      ""
+    ].join("\n"), false],
+    ["ambiguous legacy manifest", [
+      "# >>> muster managed agent declarations >>>",
+      "[agents.retired-specialist]",
+      "description = \"Foreign or legacy\"",
+      "# <<< muster managed agent declarations <<<",
+      ""
+    ].join("\n"), true]
+  ]) {
+    await t.test(label, async () => {
+      const tmp = await mkdtemp(join(tmpdir(), "muster-codex-unreceipted-markers-"));
+      const cwd = join(tmp, "project"), home = join(tmp, "home");
+      const agents = join(cwd, ".codex", "agents"), configPath = join(cwd, ".codex", "config.toml");
+      await mkdir(agents, { recursive: true });
+      await writeFile(configPath, original);
+      if (withLegacyManifest) {
+        await writeFile(join(agents, ".muster-managed.json"), JSON.stringify({
+          format: 1, owner: "muster", files: []
+        }));
+      }
+
+      await assert.rejects(
+        () => runCodexInstall({ cwd, home, repoRoot, execFile: absent }),
+        /declaration.*receipt|ownership.*receipt/i
+      );
+      assert.equal(await readFile(configPath, "utf8"), original);
+      assert.deepEqual(await readdir(agents), withLegacyManifest ? [".muster-managed.json"] : []);
+    });
+  }
+});
+
+test("Codex install and uninstall reject a modified or missing receipted declaration region before mutation", async t => {
+  const absent = async () => { throw new Error("not found"); };
+  for (const [operation, mutation] of [
+    ["install", "modified"],
+    ["uninstall", "modified"],
+    ["install", "missing"],
+    ["uninstall", "missing"]
+  ]) {
+    await t.test(`${operation}: ${mutation}`, async () => {
+      const tmp = await mkdtemp(join(tmpdir(), `muster-codex-tampered-declarations-${operation}-${mutation}-`));
+      const cwd = join(tmp, "project"), home = join(tmp, "home");
+      const agents = join(cwd, ".codex", "agents"), configPath = join(cwd, ".codex", "config.toml");
+      await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+      const installed = await readFile(configPath, "utf8");
+      const tampered = mutation === "modified"
+        ? installed.replace("description = \"Feature-checkpoint builder", "description = \"Tampered builder")
+        : installed.slice(0, installed.indexOf("# >>> muster managed agent declarations >>>"));
+      assert.notEqual(tampered, installed);
+      await writeFile(configPath, tampered);
+      const manifestBefore = await readFile(join(agents, ".muster-managed.json"), "utf8");
+      const profilesBefore = await readdir(agents);
+
+      const action = operation === "install"
+        ? () => runCodexInstall({ cwd, home, repoRoot, execFile: absent })
+        : () => runCodexUninstall({ cwd, home, execFile: absent });
+      await assert.rejects(action, /declaration.*modified|digest.*mismatch|integrity/i);
+      assert.equal(await readFile(configPath, "utf8"), tampered);
+      assert.equal(await readFile(join(agents, ".muster-managed.json"), "utf8"), manifestBefore);
+      assert.deepEqual(await readdir(agents), profilesBefore);
+    });
+  }
+});
+
+test("Codex project declaration ownership rejects config and manifest races before scope mutation", async t => {
+  for (const operation of ["reinstall", "uninstall"]) {
+    for (const mutation of ["unrelated config bytes", "valid manifest field"]) {
+      await t.test(`${operation}: ${mutation}`, async () => {
+        const tmp = await mkdtemp(join(tmpdir(), `muster-codex-project-declaration-race-${operation}-`));
+        const cwd = join(tmp, "project"), home = join(tmp, "home");
+        const agents = join(cwd, ".codex", "agents");
+        const configPath = join(cwd, ".codex", "config.toml");
+        const manifestPath = join(agents, ".muster-managed.json");
+        const registryPath = join(home, ".codex", "muster", "install-scopes.json");
+        const absent = async () => { throw new Error("not found"); };
+        await runCodexInstall({ cwd, home, repoRoot: selectedPluginRoot, execFile: absent });
+
+        const profileNames = (await readdir(agents)).filter(file => file.endsWith(".toml"));
+        const profilesBefore = await Promise.all(profileNames.map(file => readFile(join(agents, file), "utf8")));
+        const configBefore = await readFile(configPath, "utf8");
+        const manifestBefore = await readFile(manifestPath, "utf8");
+        const registryBefore = await readFile(registryPath, "utf8");
+        let racedConfig, racedManifest, interleaved = false;
+        const execFile = async (_bin, args) => {
+          if (args[0] === "--version" && !interleaved) {
+            interleaved = true;
+            if (mutation === "unrelated config bytes") {
+              racedConfig = `# concurrent unrelated edit\n${await readFile(configPath, "utf8")}`;
+              await writeFile(configPath, racedConfig);
+            } else {
+              const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+              manifest.packageVersion = `${manifest.packageVersion}-concurrent`;
+              racedManifest = JSON.stringify(manifest, null, 2) + "\n";
+              await writeFile(manifestPath, racedManifest);
+            }
+            return { stdout: "codex-cli test" };
+          }
+          if (args.slice(0, 3).join(" ") === "plugin marketplace list") {
+            const root = dirname(selectedPluginRoot);
+            return { stdout: JSON.stringify({ marketplaces: [{
+              name: "muster", root, marketplaceSource: { sourceType: "local", source: root }
+            }] }) };
+          }
+          throw new Error(`unexpected command: ${args.join(" ")}`);
+        };
+
+        const action = operation === "reinstall"
+          ? () => runCodexInstall({ cwd, home, repoRoot: selectedPluginRoot, execFile })
+          : () => runCodexUninstall({ cwd, home, execFile });
+        await assert.rejects(action, /concurrent state change/i);
+        assert.equal(interleaved, true);
+        assert.equal(await readFile(configPath, "utf8"), racedConfig ?? configBefore);
+        assert.equal(await readFile(manifestPath, "utf8"), racedManifest ?? manifestBefore);
+        assert.deepEqual(await Promise.all(profileNames.map(file => readFile(join(agents, file), "utf8"))), profilesBefore);
+        assert.equal(await readFile(registryPath, "utf8"), registryBefore);
+      });
+    }
+  }
+});
+
+test("Codex agent declarations preserve LF, CRLF, and missing-final-newline config semantics", async t => {
+  const absent = async () => { throw new Error("not found"); };
+  for (const [label, original, newline] of [
+    ["lf", "model = \"lf\"\n", "\n"],
+    ["crlf", "model = \"crlf\"\r\n", "\r\n"],
+    ["no-final-newline", "model = \"none\"", "\n"]
+  ]) {
+    await t.test(label, async () => {
+      const tmp = await mkdtemp(join(tmpdir(), `muster-codex-agent-newline-${label}-`));
+      const cwd = join(tmp, "project"), home = join(tmp, "home"), configPath = join(cwd, ".codex", "config.toml");
+      await mkdir(dirname(configPath), { recursive: true });
+      await writeFile(configPath, original);
+      await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+      const installed = await readFile(configPath, "utf8");
+      assert.ok(installed.startsWith(original + (original.endsWith("\n") ? "" : newline) + "# >>> muster managed agent declarations >>>"));
+      assert.ok(installed.includes(`${newline}[agents.muster-builder]${newline}`));
+      await runCodexUninstall({ cwd, home, execFile: absent });
+      assert.equal(await readFile(configPath, "utf8"), original);
+    });
+  }
+});
+
+test("Codex declaration reconciliation preserves the inserted separator when unrelated TOML follows the managed region", async t => {
+  const absent = async () => { throw new Error("not found"); };
+  for (const operation of ["reinstall", "uninstall"]) {
+    await t.test(operation, async () => {
+      const tmp = await mkdtemp(join(tmpdir(), `muster-codex-agent-suffix-${operation}-`));
+      const cwd = join(tmp, "project"), home = join(tmp, "home");
+      const configPath = join(cwd, ".codex", "config.toml");
+      const original = "model = \"no-final-newline\"";
+      const suffix = "[telemetry]\nenabled = false\n";
+      await mkdir(dirname(configPath), { recursive: true });
+      await writeFile(configPath, original);
+      await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+      await writeFile(configPath, await readFile(configPath, "utf8") + suffix);
+
+      if (operation === "reinstall") {
+        await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+        const reinstalled = await readFile(configPath, "utf8");
+        assert.ok(reinstalled.startsWith(`${original}\n${suffix}`));
+        assert.match(reinstalled, /\n# >>> muster managed agent declarations >>>\n/);
+      } else {
+        await runCodexUninstall({ cwd, home, execFile: absent });
+        assert.equal(await readFile(configPath, "utf8"), `${original}\n${suffix}`);
+      }
+    });
+  }
+});
+
+test("Codex install rejects TOML-equivalent foreign agent declaration tables", async t => {
+  const absent = async () => { throw new Error("not found"); };
+  for (const header of [
+    "[agents.muster-builder]",
+    "[ agents . muster-builder ]",
+    '["agents"."muster-builder"]',
+    "['agents'.'muster-builder']",
+    '[agents."muster-builder"]',
+    "['agents'.muster-builder]",
+    '["ag\\u0065nts".muster-builder]',
+    '[agents."muster\\u002dbuilder"]',
+    '[ "agents" . \'muster-builder\' ]'
+  ]) {
+    await t.test(header, async () => {
+      const tmp = await mkdtemp(join(tmpdir(), "muster-codex-agent-table-conflict-"));
+      const cwd = join(tmp, "project"), home = join(tmp, "home"), configPath = join(cwd, ".codex", "config.toml");
+      const original = `${header}\ndescription = "foreign"\nconfig_file = "agents/foreign.toml"\n`;
+      await mkdir(dirname(configPath), { recursive: true });
+      await writeFile(configPath, original);
+      await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot, execFile: absent }), /agent declaration conflict/);
+      assert.equal(await readFile(configPath, "utf8"), original);
+    });
+  }
+});
+
+test("Codex legacy manifest upgrade derives declaration config ownership from pre-install state", async t => {
+  const absent = async () => { throw new Error("not found"); };
+  for (const [label, original, shouldRemove] of [
+    ["absent config", null, true],
+    ["unrelated pre-existing config", "[user]\ntheme = \"dark\"\n", false]
+  ]) {
+    await t.test(label, async () => {
+      const tmp = await mkdtemp(join(tmpdir(), "muster-codex-legacy-declaration-ownership-"));
+      const cwd = join(tmp, "project"), home = join(tmp, "home");
+      const agents = join(cwd, ".codex", "agents"), configPath = join(cwd, ".codex", "config.toml");
+      await mkdir(agents, { recursive: true });
+      await writeFile(join(agents, ".muster-managed.json"), JSON.stringify({
+        format: 1,
+        owner: "muster",
+        files: []
+      }));
+      if (original !== null) await writeFile(configPath, original);
+
+      await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+      const manifest = JSON.parse(await readFile(join(agents, ".muster-managed.json"), "utf8"));
+      assert.equal(manifest.declarationConfigCreated, shouldRemove);
+
+      await runCodexUninstall({ cwd, home, execFile: absent });
+      if (shouldRemove) await assert.rejects(() => readFile(configPath, "utf8"), { code: "ENOENT" });
+      else assert.equal(await readFile(configPath, "utf8"), original);
+    });
+  }
+});
+
 test("Codex installation owns only its profile manifest and is repeatable", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-install-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home");
@@ -48,11 +321,12 @@ test("Codex installation owns only its profile manifest and is repeatable", asyn
   }
   await writeFile(join(agents, "user-agent.toml"), "name = 'user-agent'\n");
   const removed = await runCodexUninstall({ cwd, home, execFile });
-  // +3 hook runtime/config files, +1 the shared CODEX_HOME config.toml
+  // +3 hook runtime/config files, +1 the scoped declaration config.toml,
+  // +1 the shared CODEX_HOME config.toml
   // thread-limit restore (this is the only/last Muster-managed scope for
   // this home, so uninstall also reports and restores it -- see
   // test/codex-thread-limits.test.js for dedicated coverage).
-  assert.equal(removed.files.length, CODEX_COUNTS.agents + 4);
+  assert.equal(removed.files.length, CODEX_COUNTS.agents + 5);
   assert.equal(await readFile(join(agents, "user-agent.toml"), "utf8"), "name = 'user-agent'\n");
   assert.deepEqual(JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8")), userHook);
   await assert.rejects(() => readFile(installedHook, "utf8"));
@@ -231,10 +505,18 @@ test("Codex upgrade and uninstall clean historical managed profiles", async () =
   await mkdir(agents, { recursive: true });
   await writeFile(stale, "name = 'retired'\n");
   await writeFile(join(agents, ".muster-managed.json"), JSON.stringify({ format: 1, owner: "muster", files: ["retired-specialist.toml"] }));
+  const configPath = join(cwd, ".codex", "config.toml");
+  await writeFile(configPath, [
+    "[user]",
+    "theme = \"dark\"",
+    ""
+  ].join("\n"));
   const absent = async () => { throw new Error("not found"); };
   const upgraded = await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
   assert.ok(upgraded.files.some(item => item.op === "remove" && item.path === stale));
   await assert.rejects(() => readFile(stale, "utf8"));
+  assert.doesNotMatch(await readFile(configPath, "utf8"), /\[agents\.retired-specialist\]/);
+  assert.match(await readFile(configPath, "utf8"), /\[user\]\ntheme = "dark"/);
   const manifest = JSON.parse(await readFile(join(agents, ".muster-managed.json"), "utf8"));
   assert.ok(!manifest.files.includes("retired-specialist.toml"));
 
@@ -249,7 +531,10 @@ test("Codex upgrade and uninstall clean historical managed profiles", async () =
   await assert.rejects(() => readFile(retiredHook, "utf8"));
 
   await writeFile(stale, "name = 'retired'\n");
-  await writeFile(join(agents, ".muster-managed.json"), JSON.stringify({ format: 1, owner: "muster", files: ["retired-specialist.toml"] }));
+  const uninstallManifestPath = join(agents, ".muster-managed.json");
+  const uninstallManifest = JSON.parse(await readFile(uninstallManifestPath, "utf8"));
+  uninstallManifest.files = ["retired-specialist.toml"];
+  await writeFile(uninstallManifestPath, JSON.stringify(uninstallManifest));
   const uninstalled = await runCodexUninstall({ cwd, home, execFile: absent });
   assert.ok(uninstalled.files.some(item => item.op === "remove" && item.path === stale));
   assert.ok(uninstalled.files.some(item => item.op === "remove" && item.path.endsWith("muster-hook.mjs")));
@@ -431,6 +716,7 @@ test("Codex install rolls profiles and marketplace back when plugin registration
   const agents = join(cwd, ".codex", "agents");
   await assert.rejects(() => readFile(join(agents, ".muster-managed.json"), "utf8"));
   await assert.rejects(() => readFile(join(agents, "muster-builder.toml"), "utf8"));
+  await assert.rejects(() => readFile(join(cwd, ".codex", "config.toml"), "utf8"));
   assert.ok(calls.includes("plugin marketplace remove muster"));
 });
 

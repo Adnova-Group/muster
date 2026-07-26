@@ -27,6 +27,8 @@ const PROFILE_FILENAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/;
 const HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
 const SCOPE_LOCK_STALE_MS = 5 * 60_000;
 const SCOPE_LOCK_MAX_STALE_MS = 15 * 60_000;
+const AGENT_DECLARATIONS_START = "# >>> muster managed agent declarations >>>";
+const AGENT_DECLARATIONS_END = "# <<< muster managed agent declarations <<<";
 
 const codexHome = home => process.env.CODEX_HOME || join(home, ".codex");
 const agentsDir = (scope, cwd, home) => scope === "user" ? join(codexHome(home), "agents") : join(cwd, ".codex", "agents");
@@ -65,6 +67,37 @@ async function safeExists(path) { return Boolean(await regularFileState(path)); 
 async function readSafe(path, encoding = "utf8") {
   if (!(await regularFileState(path))) throw new Error(`Codex configuration file is missing: ${path}`);
   return readFile(path, encoding);
+}
+async function ownershipFileSnapshot(path) {
+  if (!(await regularFileState(path))) return { exists: false, bytes: null };
+  return { exists: true, bytes: await readFile(path) };
+}
+async function declarationOwnershipSnapshot(manifestPath, configPath) {
+  const [manifest, config] = await Promise.all([
+    ownershipFileSnapshot(manifestPath),
+    ownershipFileSnapshot(configPath)
+  ]);
+  return { manifest, config };
+}
+function ownershipSnapshotText(file) {
+  return file.exists ? file.bytes.toString("utf8") : "";
+}
+function ownershipSnapshotManifest(file) {
+  if (!file.exists) return null;
+  try { return JSON.parse(file.bytes.toString("utf8")); }
+  catch { return null; }
+}
+function sameOwnershipFile(left, right) {
+  return left.exists === right.exists
+    && (!left.exists || left.bytes.equals(right.bytes));
+}
+async function verifyDeclarationOwnershipSnapshot(expected, manifestPath, configPath) {
+  const current = await declarationOwnershipSnapshot(manifestPath, configPath);
+  if (!sameOwnershipFile(expected.manifest, current.manifest)
+    || !sameOwnershipFile(expected.config, current.config)) {
+    throw new Error("Codex agent declaration concurrent state change detected; no installation state was modified.");
+  }
+  return current;
 }
 const readJson = async path => { try { return JSON.parse(await readSafe(path, "utf8")); } catch (error) {
   if (/symlink|ordinary|regular/i.test(error.message)) throw error;
@@ -679,6 +712,14 @@ function validateManagedFiles(manifest, dir, manifestPath) {
   if (manifest?.owner !== "muster" || manifest.format !== 1 || !Array.isArray(manifest.files)) {
     throw new Error(`Codex installation manifest conflict: ${manifestPath}. Move it or remove it, then rerun the command.`);
   }
+  if ((manifest.declarationConfigCreated !== undefined && typeof manifest.declarationConfigCreated !== "boolean")
+    || (manifest.declarationSeparatorAdded !== undefined && typeof manifest.declarationSeparatorAdded !== "boolean")
+    || (manifest.declarationRegion !== undefined
+      && (manifest.declarationRegion?.format !== 1
+        || manifest.declarationRegion.algorithm !== "sha256"
+        || !/^[a-f0-9]{64}$/.test(manifest.declarationRegion.digest)))) {
+    throw new Error(`Codex installation manifest conflict: ${manifestPath}. Move it or remove it, then rerun the command.`);
+  }
   const base = resolve(dir), seen = new Set();
   for (const file of manifest.files) {
     const destination = typeof file === "string" ? resolve(base, file) : "";
@@ -688,6 +729,158 @@ function validateManagedFiles(manifest, dir, manifestPath) {
     seen.add(file);
   }
   return [...seen];
+}
+
+function agentDescription(profile, file) {
+  const match = String(profile).match(/^description\s*=\s*("(?:[^"\\]|\\.)*")\s*(?:#.*)?$/m);
+  if (!match) throw new Error(`Codex profile ${file} has no valid description`);
+  try {
+    const description = JSON.parse(match[1]);
+    if (typeof description !== "string" || !description) throw new Error("empty description");
+    return description;
+  } catch (error) {
+    throw new Error(`Codex profile ${file} has no valid description`, { cause: error });
+  }
+}
+
+function declarationRegion(declarations, newline = "\n") {
+  const lines = [AGENT_DECLARATIONS_START];
+  for (const [name, description] of declarations) {
+    lines.push(
+      `[agents.${name}]`,
+      `description = ${JSON.stringify(description)}`,
+      `config_file = ${JSON.stringify(`agents/${name}.toml`)}`,
+      ""
+    );
+  }
+  lines.push(AGENT_DECLARATIONS_END);
+  return lines.join(newline) + newline;
+}
+
+function declarationBounds(text) {
+  const markerLines = marker => {
+    const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return [...text.matchAll(new RegExp(`^${escaped}\\r?$`, "gm"))];
+  };
+  const starts = markerLines(AGENT_DECLARATIONS_START);
+  const ends = markerLines(AGENT_DECLARATIONS_END);
+  if (starts.length !== ends.length || starts.length > 1
+    || (starts.length === 1 && ends[0].index < starts[0].index)) {
+    throw new Error("Codex config.toml has malformed Muster agent declaration ownership markers");
+  }
+  if (!starts.length) return null;
+  const start = starts[0].index;
+  let end = ends[0].index + ends[0][0].length;
+  if (text.startsWith("\r\n", end)) end += 2;
+  else if (text.startsWith("\n", end)) end += 1;
+  return { start, end };
+}
+
+function declarationRegionReceipt(text) {
+  const bounds = declarationBounds(text);
+  if (!bounds) throw new Error("Cannot receipt a missing Muster agent declaration region");
+  return {
+    format: 1,
+    algorithm: "sha256",
+    digest: createHash("sha256").update(text.slice(bounds.start, bounds.end), "utf8").digest("hex")
+  };
+}
+
+function verifiedDeclarationBounds(text, receipt, manifestPath) {
+  const bounds = declarationBounds(text);
+  if (!receipt) {
+    if (bounds) {
+      throw new Error(`Codex config.toml has Muster agent declaration markers without an explicit ownership receipt in ${manifestPath}. Move or remove the ambiguous markers before retrying.`);
+    }
+    return null;
+  }
+  if (!bounds) {
+    throw new Error(`Codex agent declaration integrity check failed: the receipted region from ${manifestPath} is missing.`);
+  }
+  const digest = createHash("sha256").update(text.slice(bounds.start, bounds.end), "utf8").digest("hex");
+  if (digest !== receipt.digest) {
+    throw new Error(`Codex agent declaration integrity check failed: the receipted region from ${manifestPath} was modified.`);
+  }
+  return bounds;
+}
+
+function removeAgentDeclarations(text, { separatorAdded = false, receipt, manifestPath } = {}) {
+  const bounds = verifiedDeclarationBounds(text, receipt, manifestPath);
+  if (!bounds) return text;
+  let start = bounds.start;
+  if (separatorAdded && bounds.end === text.length) {
+    if (text.slice(Math.max(0, start - 2), start) === "\r\n") start -= 2;
+    else if (text[start - 1] === "\n") start -= 1;
+    else throw new Error("Codex config.toml Muster agent declaration separator was modified");
+  }
+  return text.slice(0, start) + text.slice(bounds.end);
+}
+
+function agentDeclarationHeaderPath(line) {
+  let cursor = 0;
+  const whitespace = () => { while (/\s/.test(line[cursor] ?? "")) cursor++; };
+  const component = () => {
+    const start = cursor;
+    if (line[cursor] === "'" || line[cursor] === '"') {
+      const quote = line[cursor++];
+      while (cursor < line.length) {
+        if (line[cursor] === quote) {
+          cursor++;
+          return decodeTomlQuotedKey(line.slice(start, cursor));
+        }
+        if (quote === '"' && line[cursor] === "\\") cursor++;
+        cursor++;
+      }
+      return null;
+    }
+    const match = line.slice(cursor).match(/^[A-Za-z0-9_-]+/);
+    if (!match) return null;
+    cursor += match[0].length;
+    return match[0];
+  };
+
+  whitespace();
+  if (line[cursor++] !== "[") return null;
+  whitespace();
+  const first = component();
+  if (first === null) return null;
+  whitespace();
+  if (line[cursor++] !== ".") return null;
+  whitespace();
+  const second = component();
+  if (second === null) return null;
+  whitespace();
+  if (line[cursor++] !== "]") return null;
+  whitespace();
+  if (cursor < line.length && line[cursor] !== "#") return null;
+  return [first, second];
+}
+
+function foreignAgentDeclarationNames(text) {
+  const names = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    const path = agentDeclarationHeaderPath(line);
+    if (path?.[0] === "agents") names.add(path[1]);
+  }
+  return names;
+}
+
+function reconcileAgentDeclarations(text, declarations, { separatorAdded = false, receipt, manifestPath } = {}) {
+  const unrelated = removeAgentDeclarations(text, { separatorAdded, receipt, manifestPath });
+  const foreignNames = foreignAgentDeclarationNames(unrelated);
+  for (const name of declarations.keys()) {
+    if (foreignNames.has(name)) {
+      throw new Error(`Codex agent declaration conflict for ${name}. Move or remove the unrelated [agents.${name}] table, then rerun muster install codex.`);
+    }
+  }
+  const newline = unrelated.includes("\r\n") ? "\r\n" : "\n";
+  const region = declarationRegion(declarations, newline);
+  const nextSeparatorAdded = unrelated !== "" && !unrelated.endsWith("\n");
+  return {
+    text: unrelated + (nextSeparatorAdded ? newline : "") + region,
+    separatorAdded: nextSeparatorAdded,
+    receipt: declarationRegionReceipt(unrelated + (nextSeparatorAdded ? newline : "") + region)
+  };
 }
 
 function validateHookManifest(manifest, dir, manifestPath) {
@@ -1073,6 +1266,9 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex installation source is missing a coherent package version");
   const { files, read: readProfile } = await profileSource(root, pluginRoot);
   if (!files.length) throw new Error("Codex profiles are missing; run npm run build:codex first");
+  const profileContents = new Map();
+  for (const file of files) profileContents.set(file, await readProfile(file));
+  const declarations = new Map(files.map(file => [file.slice(0, -".toml".length), agentDescription(profileContents.get(file), file)]));
   // The richer Codex "plugin" (skills/commands/MCP) is generated fresh at
   // install time into `<distributionRoot>/.agents/plugins/`, a gitignored
   // staging directory alongside muster's own source — never into a
@@ -1082,6 +1278,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   // need a second CODEX_HOME copy of itself per scope.
   const distributionRoot = pluginRoot ? resolve(root, "..") : root;
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
+  const declarationConfigPath = join(configDir(scope, cwd, home), "config.toml");
   // Contain every generated profile filename to agentsDir before it is used as
   // a write destination below (conflict probe, planned ops, write loop).
   assertContainedProfiles(files, dir);
@@ -1094,9 +1291,21 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   const threadLimitManifestPath = codexThreadLimitManifestPath(codexHome(home));
   await ordinaryDirectoryPath(configDir(scope, cwd, home));
   await ordinaryDirectoryPath(dir);
-  const manifest = await readJson(manifestPath);
-  const manifestExists = await safeExists(manifestPath);
+  const declarationOwnership = await declarationOwnershipSnapshot(manifestPath, declarationConfigPath);
+  const manifest = ownershipSnapshotManifest(declarationOwnership.manifest);
+  const manifestExists = declarationOwnership.manifest.exists;
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
+  const declarationConfigExists = declarationOwnership.config.exists;
+  const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
+  reconcileAgentDeclarations(
+    ownershipSnapshotText(declarationOwnership.config),
+    declarations,
+    {
+      separatorAdded: declarationSeparatorAdded,
+      receipt: manifest?.declarationRegion,
+      manifestPath
+    }
+  );
   const hookSourceRoot = pluginRoot ? join(root, "runtime", "install-hooks") : join(root, "codex", "hooks");
   const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
@@ -1126,13 +1335,14 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
     ...hooks.hookFiles.map(file => ({ op: "write", path: join(hooks.runtimeDir, file) })),
     ...hooks.staleFiles.map(file => ({ op: "remove", path: join(hooks.runtimeDir, file) })),
     { op: "merge", path: hooks.configPath },
+    { op: "merge", path: declarationConfigPath },
     { op: "merge", path: threadLimitConfigPath }
   ];
-  return { files, readProfile, distributionRoot, dir, manifestPath, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
+  return { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
 }
 
 export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
-  const { files, readProfile, distributionRoot, dir, manifestPath, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
+  const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, nodeExecPath });
   let originals, changed;
   let actions = [];
@@ -1140,6 +1350,13 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   if (!dryRun) {
     originals = new Map(); changed = [];
     await withScopeRegistryTransaction(home, async registry => {
+      const checkedOwnership = await verifyDeclarationOwnershipSnapshot(
+        declarationOwnership, manifestPath, declarationConfigPath
+      );
+      const manifest = ownershipSnapshotManifest(checkedOwnership.manifest);
+      const manifestExists = checkedOwnership.manifest.exists;
+      const declarationConfigExists = checkedOwnership.config.exists;
+      const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
       await ordinaryDirectoryPath(dir, { create: true });
       try {
         const currentScope = await scopeEntry(scope, cwd, home);
@@ -1167,15 +1384,16 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         for (const file of files) {
           const destination = join(dir, file);
           await snapshot(originals, changed, destination);
-          await atomicWriteSafe(destination, await readProfile(file));
+          await atomicWriteSafe(destination, profileContents.get(file));
         }
         for (const file of staleFiles) {
           const destination = join(dir, file);
           await snapshot(originals, changed, destination);
           await removeSafe(destination);
         }
-        await snapshot(originals, changed, manifestPath);
-        await atomicWriteSafe(manifestPath, JSON.stringify({ format: 1, owner: "muster", files, packageVersion }, null, 2) + "\n");
+        const declarationConfigCreated = manifestExists && manifest.declarationConfigCreated !== undefined
+          ? manifest.declarationConfigCreated
+          : !declarationConfigExists;
         for (const [file, sourcePath] of hooks.sourceFiles) {
           const destination = join(hooks.runtimeDir, file);
           await snapshot(originals, changed, destination);
@@ -1236,7 +1454,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             : null;
           const before = previousManifest?.before ?? threadLimits.before;
           const sectionCreated = previousManifest ? previousManifest.sectionCreated : threadLimits.sectionCreated;
-          const configCreated = previousManifest ? previousManifest.configCreated : !configExistedBefore;
+          const configCreated = previousManifest
+            ? previousManifest.configCreated
+            : !(scope === "user" ? declarationConfigExists : configExistedBefore);
           await snapshot(originals, changed, threadLimitConfigPath);
           await atomicWriteSafe(threadLimitConfigPath, threadLimits.text);
           await snapshot(originals, changed, threadLimitManifestPath);
@@ -1248,6 +1468,29 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         } catch (error) {
           throw new Error(`Codex config.toml thread limits could not be enforced at ${threadLimitConfigPath}: ${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}`);
         }
+        // Declarations are appended only after the shared [agents] thread-limit
+        // table is reconciled. This keeps pre-existing root assignments at the
+        // TOML root and also makes the first user-scope install byte-identical
+        // to every reinstall.
+        const currentDeclarationText = await safeExists(declarationConfigPath) ? await readSafe(declarationConfigPath) : "";
+        const declarationReconcile = reconcileAgentDeclarations(
+          currentDeclarationText,
+          declarations,
+          {
+            separatorAdded: declarationSeparatorAdded,
+            receipt: manifest?.declarationRegion,
+            manifestPath
+          }
+        );
+        await snapshot(originals, changed, declarationConfigPath);
+        await atomicWriteSafe(declarationConfigPath, declarationReconcile.text);
+        await snapshot(originals, changed, manifestPath);
+        await atomicWriteSafe(manifestPath, JSON.stringify({
+          format: 1, owner: "muster", files, packageVersion,
+          declarationConfigCreated,
+          declarationSeparatorAdded: declarationReconcile.separatorAdded,
+          declarationRegion: declarationReconcile.receipt
+        }, null, 2) + "\n");
         actions = present ? await registerPlugin(execFile, false, distributionRoot) : [];
       } catch (error) {
         await restoreFilesystem(originals, changed);
@@ -1287,12 +1530,27 @@ async function remainingManagedScopes(registry, currentScope) {
 async function prepareCodexUninstall({ scope, cwd, home, execFile }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
+  const declarationConfigPath = join(configDir(scope, cwd, home), "config.toml");
   await ordinaryDirectoryPath(configDir(scope, cwd, home));
   await ordinaryDirectoryPath(dir);
-  const manifest = await readJson(manifestPath);
-  const manifestExists = await safeExists(manifestPath);
+  const declarationOwnership = await declarationOwnershipSnapshot(manifestPath, declarationConfigPath);
+  const manifest = ownershipSnapshotManifest(declarationOwnership.manifest);
+  const manifestExists = declarationOwnership.manifest.exists;
   const managedFiles = manifestExists ? validateManagedFiles(manifest, dir, manifestPath) : [];
   const files = managedFiles.map(file => join(dir, file));
+  const declarationConfigExists = declarationOwnership.config.exists;
+  const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
+  const declarationConfig = manifestExists
+    ? removeAgentDeclarations(
+      ownershipSnapshotText(declarationOwnership.config),
+      {
+        separatorAdded: declarationSeparatorAdded,
+        receipt: manifest.declarationRegion,
+        manifestPath
+      }
+    )
+    : null;
+  const declarationConfigCreated = manifestExists && manifest.declarationConfigCreated === true;
   const hookDir = configDir(scope, cwd, home), hookRuntimeDir = join(hookDir, "muster"), hookManifestPath = join(hookRuntimeDir, MANIFEST), hookConfigPath = join(hookDir, "hooks.json");
   await ordinaryDirectoryPath(hookRuntimeDir);
   const hookManifestExists = await safeExists(hookManifestPath), hookConfigExists = await safeExists(hookConfigPath);
@@ -1327,15 +1585,39 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile }) {
   const threadLimitManifest = threadLimitManifestExists
     ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath)
     : null;
-  return { dir, manifestPath, manifestExists, files, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest };
+  return { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig, declarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest };
 }
 
 export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile = execFileDefault } = {}) {
-  const { dir, manifestPath, manifestExists, files, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest } =
+  const { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig: preflightDeclarationConfig, declarationConfigCreated: preflightDeclarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope: preflightOwnsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest } =
     await prepareCodexUninstall({ scope, cwd, home, execFile });
   let liveScopes = [], ownershipCertain = false, removePlugin = false, restoreThreadLimits = false, removeThreadLimitConfig = false;
+  let manifestExists = declarationOwnership.manifest.exists;
+  let ownsScope = preflightOwnsScope;
+  let declarationConfigExists = declarationOwnership.config.exists;
+  let declarationConfig = preflightDeclarationConfig;
+  let declarationConfigCreated = preflightDeclarationConfigCreated;
+  let removeDeclarationConfig = declarationConfigExists && declarationConfigCreated && declarationConfig?.trim() === "";
   const prunedHookState = [], prunedProjectTrust = [];
   const uninstallScope = async registry => {
+    if (!dryRun) {
+      const checkedOwnership = await verifyDeclarationOwnershipSnapshot(
+        declarationOwnership, manifestPath, declarationConfigPath
+      );
+      const checkedManifest = ownershipSnapshotManifest(checkedOwnership.manifest);
+      manifestExists = checkedOwnership.manifest.exists;
+      ownsScope = manifestExists || hookManifestExists;
+      declarationConfigExists = checkedOwnership.config.exists;
+      declarationConfigCreated = manifestExists && checkedManifest.declarationConfigCreated === true;
+      declarationConfig = manifestExists
+        ? removeAgentDeclarations(ownershipSnapshotText(checkedOwnership.config), {
+          separatorAdded: checkedManifest.declarationSeparatorAdded === true,
+          receipt: checkedManifest.declarationRegion,
+          manifestPath
+        })
+        : null;
+      removeDeclarationConfig = declarationConfigExists && declarationConfigCreated && declarationConfig?.trim() === "";
+    }
     liveScopes = await remainingManagedScopes(registry, currentScope);
     ownershipCertain = registry.present;
     removePlugin = present && ownsScope && ownershipCertain && liveScopes.length === 0;
@@ -1347,6 +1629,11 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
       await atomicWriteSafe(registry.path, registryText(liveScopes));
       for (const file of files) { await snapshot(originals, changed, file); await removeSafe(file); }
       if (manifestExists) { await snapshot(originals, changed, manifestPath); await removeSafe(manifestPath); }
+      if (manifestExists && declarationConfigExists) {
+        await snapshot(originals, changed, declarationConfigPath);
+        if (removeDeclarationConfig) await removeSafe(declarationConfigPath);
+        else await atomicWriteSafe(declarationConfigPath, declarationConfig);
+      }
       for (const file of hookFiles) { await snapshot(originals, changed, file); await removeSafe(file); }
       if (hookManifestExists) { await snapshot(originals, changed, hookManifestPath); await removeSafe(hookManifestPath); }
       if (hookManifest) {
@@ -1409,6 +1696,7 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   else await withScopeRegistryTransaction(home, uninstallScope);
   const planned = [
     ...files.map(path => ({ op: "remove", path })),
+    ...(manifestExists && declarationConfigExists ? [{ op: removeDeclarationConfig ? "remove" : "merge", path: declarationConfigPath }] : []),
     ...hookFiles.map(path => ({ op: "remove", path })),
     ...(hookManifest ? [{ op: removeHookConfig ? "remove" : "merge", path: hookConfigPath }] : []),
     ...(restoreThreadLimits ? [{ op: removeThreadLimitConfig ? "remove" : "merge", path: threadLimitConfigPath }] : [])

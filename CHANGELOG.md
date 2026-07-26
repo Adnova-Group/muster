@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Codex installs now validate the complete effective `config.toml` transaction with the bounded, non-billable `codex app-server --strict-config --listen stdio://` closed-stdin parser before commit and roll back every staged change on failure. `muster doctor --codex` reuses the same check and reports file/line diagnostics, missing app-server support, timeouts, and any unexpected model-turn event.
+
 ## [0.5.0] - 2026-07-20
 
 ### Added

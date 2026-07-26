@@ -18,6 +18,7 @@ import {
   ensureCodexThreadLimits,
   restoreCodexThreadLimits
 } from "./codex-thread-limits.js";
+import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
 
 const execFileDefault = promisify(execFileCb);
 export const CODEX_MARKETPLACE = "Adnova-Group/muster";
@@ -1341,7 +1342,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   return { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
 }
 
-export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
+export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile = execFileDefault, strictConfigRunner, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
   const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, nodeExecPath });
   let originals, changed;
@@ -1491,6 +1492,14 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           declarationSeparatorAdded: declarationReconcile.separatorAdded,
           declarationRegion: declarationReconcile.receipt
         }, null, 2) + "\n");
+        // Validate the complete effective configuration only after both the
+        // shared CODEX_HOME edits and the scope declaration edits are on disk,
+        // but before plugin registration commits the install. The app-server
+        // closed-stdin path parses config without initializing a thread/turn.
+        // Existing tests that inject a non-production execFile opt into this
+        // boundary explicitly; production always uses the real bounded parser.
+        const configParser = strictConfigRunner || (execFile === execFileDefault ? runCodexStrictConfigCheck : null);
+        if (configParser) await configParser({ cwd, codexHome: codexHome(home) });
         actions = present ? await registerPlugin(execFile, false, distributionRoot) : [];
       } catch (error) {
         await restoreFilesystem(originals, changed);

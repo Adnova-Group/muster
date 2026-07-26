@@ -16,6 +16,7 @@ import {
   codexThreadLimitsMeetFloor,
   readCodexThreadLimits
 } from "./codex-thread-limits.js";
+import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
 
 // codex-path-shadow (backlog item run4-polish-pair; security-hardened by
 // run-5 audit High #3 `doctor-path-shadow-no-exec`): a stale globally
@@ -651,7 +652,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, strictConfigRunner, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -685,6 +686,14 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const checks = [];
   const available = await codexAvailable({ execFile });
   checks.push({ name: "codex-cli", ok: available, detail: available ? "codex detected on PATH" : "codex not found — profiles can be installed, plugin registration is skipped" });
+  const configParser = strictConfigRunner || (execFile === undefined ? runCodexStrictConfigCheck : null);
+  if (configParser) try {
+    const parsed = await configParser({ cwd, codexHome: codexHome || process.env.CODEX_HOME || join(homedir(), ".codex"), env });
+    checks.push({ name: "codex-config-strict", ok: parsed?.ok === true && parsed?.modelTurnEvents === 0,
+      detail: "Codex app-server strict parser accepted the complete effective config with zero model-turn events" });
+  } catch (error) {
+    checks.push({ name: "codex-config-strict", ok: false, detail: error.message });
+  }
   checks.push(await checkPathShadow({ env, platform }));
   if (selectionFailed) {
     checks.push({ name: "codex-plugin-selection", ok: false, detail: `could not select which Muster plugin Codex uses from the marketplace pointer under ${join(base, ".agents", "plugins")}: ${selectionError?.message || "invalid or missing marketplace pointer"}; downstream plugin/agent/runtime/version checks are not diagnosed against any unselected fallback tree -- rerun muster install codex / build:codex to regenerate a valid pointer` });

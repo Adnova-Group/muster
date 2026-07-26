@@ -390,12 +390,15 @@ Four of the eleven §10 items landed as code (PRs #141, #142); three of those tu
 `wait_agent` barrier, and neither failed loudly. Two items were assessed and NOT adopted, for
 reasons worth recording so they are not re-litigated:
 
-**`--strict-config` as a doctor primitive — WON'T DO (unsafe).** The flag exists only on `codex` and
-`codex exec`; every non-session subcommand rejects it (verified: `codex doctor`, `codex features
-list`, and `codex debug` all return `error: unexpected argument '--strict-config' found`). Both
-hosts start a billable session, and with a *valid* config the process proceeds past config load into
-a real turn — so a doctor check built on it would burn quota on every healthy run. muster's own
-config validation stays in-process.
+**`--strict-config` as a parser primitive — REOPENED through app-server (2026-07-26).** The earlier
+assessment correctly rejected `codex` and `codex exec`: both proceed into a billable model session
+after a valid parse. It missed the non-session app-server host. `codex app-server --strict-config
+--listen stdio://` with stdin closed immediately parses the complete effective config and exits
+without a `thread/*` or `turn/*` event. Muster now uses that bounded process before an install
+transaction commits (a failure rolls the transaction back) and as a doctor check. The runner
+preserves Codex's file:line diagnostics, fails loudly when the installed Codex lacks app-server
+support, kills the process on timeout or capped output, and rejects any model-turn event so this
+health check cannot silently become billable.
 
 **`agents.default_subagent_model` / `default_subagent_reasoning_effort` — LOW VALUE for muster.**
 These set a fleet-wide default for spawns that omit a model. But every muster crew member is

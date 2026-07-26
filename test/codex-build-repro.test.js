@@ -94,7 +94,7 @@ test("Codex build writes nothing outside its gitignored staging directory that g
   assert.deepEqual(after, before, "the build must only ever create the gitignored .agents/ staging directory");
 });
 
-test("buildCodexPlugin's version-only skip-if-current check can be bypassed with MUSTER_BUILD_FORCE=1", async t => {
+test("buildCodexPlugin's current-version/current-Node cache hit can be bypassed with MUSTER_BUILD_FORCE=1", async t => {
   const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-force-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
@@ -112,6 +112,9 @@ test("buildCodexPlugin's version-only skip-if-current check can be bypassed with
   await mkdir(join(staged, "skills"), { recursive: true });
   await mkdir(join(staged, ".codex-plugin"), { recursive: true });
   await writeFile(join(staged, "package.json"), JSON.stringify({ version: packageVersion }));
+  await writeFile(join(staged, ".mcp.json"), JSON.stringify({
+    mcpServers: { muster: { command: process.execPath, args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
+  }));
   // publishCodexPlugin's pre-publication contract check reads the staged
   // manifest, so this synthetic staged tree must carry a coherent one (the
   // real build always writes it — scripts/build-codex.mjs).
@@ -131,7 +134,7 @@ test("buildCodexPlugin's version-only skip-if-current check can be bypassed with
   try {
     delete process.env.MUSTER_BUILD_FORCE;
     const cached = await buildCodexPlugin({ root, outDir });
-    assert.equal(cached.packageVersion, packageVersion, "an unforced call with a matching version must return the cached publish without attempting real generation");
+    assert.equal(cached.packageVersion, packageVersion, "an unforced call with matching version and Node identity must return the cached publish without attempting real generation");
 
     process.env.MUSTER_BUILD_FORCE = "1";
     await assert.rejects(

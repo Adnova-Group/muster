@@ -1,7 +1,7 @@
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import {
-  cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
+  cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -339,30 +339,46 @@ async function adaptPortedSkills(internalSkillDir, names) {
 // publish rename); it should rarely if ever fire.
 //
 // Idempotent: skips regeneration entirely when `outDir` already holds a
-// published plugin whose packageVersion matches the current package.json.
+// published plugin whose packageVersion matches the current package.json AND
+// whose pinned MCP Node executable canonically identifies the requested
+// `nodeExecPath`. A Node upgrade/removal therefore repairs a same-version
+// install instead of preserving a stale machine-local command.
 // This is the one shared implementation both the CLI entry below and
 // codex-install.js's install-time trigger use, so `npm run build:codex` /
 // `pretest` skip exactly like a `muster install codex` call does — neither
 // path had its own separate, possibly-diverging copy of this check before.
-// Known limitation: this compares only the package version, not file
-// content, so editing a source file without bumping the version will not by
-// itself trigger regeneration and this call is a silent no-op — delete
+// Known limitation: outside the MCP Node identity check, this does not compare
+// source content, so editing another source file without bumping the version
+// will not by itself trigger regeneration and this call is a silent no-op — delete
 // `outDir`, bump the version, or set `MUSTER_BUILD_FORCE=1` (honored here,
 // and therefore by `npm run build:codex` / the `pretest` hook that invokes
 // this same script's CLI entry below) to force a fresh build regardless of
 // the published version.
+function currentMcpNode(pluginRoot, nodeExecPath) {
+  try {
+    const mcp = JSON.parse(readFileSync(join(pluginRoot, ".mcp.json"), "utf8"));
+    const command = mcp?.mcpServers?.muster?.command;
+    if (typeof command !== "string" || !command) return false;
+    const actual = realpathSync(command);
+    const expected = realpathSync(nodeExecPath);
+    return statSync(actual).isFile() && actual === expected;
+  } catch {
+    return false;
+  }
+}
+
 export async function buildCodexPlugin(options, retries = 1) {
-  const { root, outDir } = options;
+  const { root, outDir, nodeExecPath = process.execPath } = options;
   const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
   if (process.env.MUSTER_BUILD_FORCE !== "1") {
     try {
       const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
-      if (current.packageVersion === packageVersion) return current;
+      if (current.packageVersion === packageVersion && currentMcpNode(current.pluginRoot, nodeExecPath)) return current;
     } catch { /* nothing published yet, or what's there is stale/invalid: generate below */ }
   }
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt++) {
-    try { return await buildCodexPluginOnce(options); }
+    try { return await buildCodexPluginOnce({ ...options, nodeExecPath }); }
     catch (error) {
       if (error?.code !== "ENOENT") throw error;
       lastError = error;
@@ -371,7 +387,9 @@ export async function buildCodexPlugin(options, retries = 1) {
   throw new Error(`Codex plugin generation did not succeed after ${retries + 1} attempts: ${lastError.message}`, { cause: lastError });
 }
 
-async function buildCodexPluginOnce({ root, outDir }) {
+async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
+  const canonicalNode = realpathSync(nodeExecPath);
+  if (!statSync(canonicalNode).isFile()) throw new Error(`Codex MCP Node executable is not a regular file: ${nodeExecPath}`);
   ensure(outDir);
   // Stage on the native filesystem, not under outDir — see the top-of-file
   // comment. outDir itself may still be on drvfs (it usually is: the
@@ -490,16 +508,21 @@ async function buildCodexPluginOnce({ root, outDir }) {
       // MUSTER_RUNTIME, so rewriting the value (rather than deleting the
       // line) is safe and keeps the env var self-documenting for the Codex
       // bundle's own nested CLI children (notably `audit`).
-      .replace('env: { ...process.env, MUSTER_RUNTIME: "cowork" }', 'env: { ...process.env, MUSTER_RUNTIME: "codex" }');
+      .replace('env: { ...process.env, MUSTER_RUNTIME: "cowork" }', 'env: { ...process.env, MUSTER_RUNTIME: "codex" }')
+      // Codex must keep using the exact Node executable that generated the
+      // plugin for every nested CLI child. Rewriting only the Codex bundle
+      // preserves the shared Cowork server byte-for-byte.
+      .replace('execFile("node", [CLI, ...argv]', 'execFile(process.execPath, [CLI, ...argv]');
     if (!codexMcpSource.includes('["capabilities", "--codex"]') || codexMcpSource.includes('["capabilities", "--cowork"]')) throw new Error("Codex MCP capability adapter was not applied");
     if (!codexMcpSource.includes('muster_assess: { argv: ["assess", "--codex"]')) throw new Error("Codex MCP assess adapter was not applied");
     if (!codexMcpSource.includes('argv: ["capabilities", "--codex", "--roles-only"]') || codexMcpSource.includes('argv: ["capabilities", "--cowork", "--roles-only"]')) throw new Error("Codex MCP capabilities-roles adapter was not applied");
     if (!codexMcpSource.includes('MUSTER_RUNTIME: "codex"') || codexMcpSource.includes('MUSTER_RUNTIME: "cowork"')) throw new Error("Codex MCP runtime-env adapter was not applied");
+    if (!codexMcpSource.includes("execFile(process.execPath, [CLI, ...argv]") || codexMcpSource.includes('execFile("node", [CLI, ...argv]')) throw new Error("Codex MCP Node executable adapter was not applied");
     await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
     write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
 
     write(join(plugin, ".mcp.json"), JSON.stringify({
-      mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
+      mcpServers: { muster: { command: nodeExecPath, args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
     }, null, 2) + "\n");
     write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({
       name: "muster", version: pkg.version,

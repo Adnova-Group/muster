@@ -651,7 +651,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -753,8 +753,36 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       try { if (!(await assertRegularFilePresent(join(plugin, item)))) problems.push(`${item} (missing)`); }
       catch (error) { problems.push(`${item} (${error.message})`); }
     }
-    try { if ((await readRegularJson(join(plugin, ".mcp.json"))) === null) problems.push(".mcp.json (missing)"); }
-    catch (error) { problems.push(`.mcp.json (${error.message})`); }
+    try {
+      const mcp = await readRegularJson(join(plugin, ".mcp.json"));
+      if (mcp === null) {
+        problems.push(".mcp.json (missing)");
+      } else {
+        const command = mcp?.mcpServers?.muster?.command;
+        if (typeof command !== "string" || !command) {
+          problems.push(".mcp.json (MCP Node executable is missing)");
+        } else {
+          let actual;
+          try {
+            actual = await realpath(command);
+            const info = await stat(actual);
+            if (!info.isFile()) throw new Error("not a regular file");
+          } catch (error) {
+            problems.push(`.mcp.json (MCP Node executable is missing or not a regular file: ${command}: ${error.message})`);
+          }
+          if (actual) {
+            try {
+              const expected = await realpath(nodeExecPath);
+              if (actual !== expected) {
+                problems.push(`.mcp.json (MCP Node executable canonical identity ${actual} does not match current Node ${expected})`);
+              }
+            } catch (error) {
+              problems.push(`.mcp.json (current Node executable cannot be verified: ${nodeExecPath}: ${error.message})`);
+            }
+          }
+        }
+      }
+    } catch (error) { problems.push(`.mcp.json (${error.message})`); }
     checks.push({ name: "codex-runtime", ok: problems.length === 0, detail: problems.length
       ? `malformed or non-regular runtime artifacts: ${problems.join(", ")}`
       : "bundled runtime and MCP entrypoint present" });

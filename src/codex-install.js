@@ -1324,7 +1324,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
       // tests whose actual subject is unrelated registry/hook transaction
       // behavior, not plugin generation.
       const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
-      await buildCodexPlugin({ root, outDir: join(distributionRoot, ".agents", "plugins") });
+      await buildCodexPlugin({ root, outDir: join(distributionRoot, ".agents", "plugins"), nodeExecPath });
     }
   }
   const planned = [

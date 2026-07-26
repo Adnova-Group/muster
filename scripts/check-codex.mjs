@@ -236,8 +236,9 @@ for (const relativePath of trackedCodexFiles) {
 }
 
 const mcp = await json(join(plugin, ".mcp.json"));
-if (mcp.mcpServers?.muster?.command !== "node" || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not Codex-native");
+if (mcp.mcpServers?.muster?.command !== process.execPath || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not pinned to the current Node executable");
 const bundledMcp = await readFile(join(plugin, "runtime", "muster-mcp.mjs"), "utf8");
+if (!/execFile\(process\d*\.execPath,/.test(bundledMcp) || bundledMcp.includes('execFile("node"')) fail("MCP nested CLI launch is not pinned to process.execPath");
 if (!bundledMcp.includes('"capabilities", "--codex"') || bundledMcp.includes('"capabilities", "--cowork"')) fail("MCP capability tool is not bound to live Codex inventory");
 if (!bundledMcp.includes('"assess", "--codex"')) fail("MCP assess tool is not bound to Codex-aware criteria parsing");
 const mcpSource = await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8");

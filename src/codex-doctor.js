@@ -993,7 +993,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         const gaps = musterHookTrustGaps({
           configTomlText, hooksJsonPath: configPath, config, hookGroups: owner.hookGroups
         });
-        if (gaps.untrusted.length) hookTrustGaps.push({ dir, untrusted: gaps.untrusted });
+        const blocked = gaps.results.filter(result => result.status !== "trusted");
+        if (blocked.length) hookTrustGaps.push({ dir, results: blocked });
       } else {
         staleHookScopes.push(dir);
         // Present + parsed but not coherent: a MISMATCH. Name the runtime dir
@@ -1067,11 +1068,11 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // which is the exact failure mode muster's guard design exists to prevent.
   // Remediation is a human trusting the hook in Codex, never
   // --dangerously-bypass-hook-trust.
-  const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.untrusted.length, 0);
+  const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length, 0);
   checks.push({ name: "codex-hook-trust", ok: untrustedCount === 0, detail: untrustedCount
-    ? `${untrustedCount} Muster-owned Codex hook${untrustedCount === 1 ? " is" : "s are"} installed but NOT trusted, so Codex is skipping ${untrustedCount === 1 ? "it" : "them"}: ${hookTrustGaps.map(item => `${item.dir} (${item.untrusted.join(", ")})`).join("; ")}. Codex trusts hooks per content hash and skips new or changed hooks until reviewed -- open Codex and approve the hook review to restore ${untrustedCount === 1 ? "it" : "them"}`
+    ? `${untrustedCount} Muster-owned Codex hook${untrustedCount === 1 ? " is" : "s are"} blocked by exact trust verification: ${hookTrustGaps.map(item => `${item.dir} (${item.results.map(result => `${result.key}=${result.status}`).join(", ")})`).join("; ")}. Codex runs a hook only when it is enabled and its trusted_hash equals the exact current hash -- open Codex, run /hooks, trust the exact current definitions, then rerun muster doctor --codex`
     : hookStatuses.length
-    ? `all Muster-owned Codex hooks in ${hookStatuses.length} scope(s) carry a config.toml trust entry`
+    ? `all Muster-owned Codex hooks in ${hookStatuses.length} scope(s) have the exact current hash and enabled state`
     : "no managed Codex hooks to verify trust for" });
   // The installed plugin cache must be the hooks-free Codex flavor: Codex
   // >=0.144.5 fires a plugin's default hooks/hooks.json on every lifecycle

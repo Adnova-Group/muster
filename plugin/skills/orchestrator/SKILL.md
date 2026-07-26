@@ -53,7 +53,10 @@ doing the work.
         and produces a debate fusion map, then `muster fuse` decides).
       - **Parallel isolation:** when a wave dispatches more than one file-writing task,
         give each its own git worktree (`isolation: "worktree"` on the Agent tool) so
-        same-wave tasks cannot collide; the barrier reconciles them. Read-only/single-task waves skip it.
+        same-wave tasks cannot collide; the barrier reconciles them. On a harness whose
+        dispatch carries no isolation parameter, muster supplies the worktree itself before
+        dispatch -- the per-harness selection below ("Worktree isolation per harness +
+        base-SHA receipts") says which case this harness is. Read-only/single-task waves skip it.
       - **Provider kind:** look up the role's chosen provider from `.muster/capabilities.json` ->
         `roles[<role>].chosen = { id, source, kind }` (do NOT re-invoke `capabilities` mid-run).
         `chosen.kind === "agent"` -> dispatch that agent as the `subagent_type`, task + Crew Manifest as BRIEF; if
@@ -283,16 +286,21 @@ capability checks above):
 - **Codex** -- no native mechanism: `collaboration.spawn_agent` has no cwd field
   (docs/research/codex-cli.md sec 6). The brief's absolute `WORKTREE CWD` (Codex-native dispatch,
   above) plus the base-SHA receipt below stand in for isolation muster cannot get from the harness.
+- **Kimi** -- exactly the Codex floor: its subagent dispatch carries no cwd/isolation parameter
+  (docs/research/kimi-code-cli.md sec 7). muster supplies the worktree itself
+  (`git worktree add .worktrees/<item-branch>` before dispatch), and the base-SHA receipt below
+  verifies the branch/base from the runner's return receipt.
 
 **Every harness records the same base-SHA receipt, regardless of which mechanism (or none)
-isolated the work.** None of the four self-report a fork point, so capture one per dispatched crew
+isolated the work.** None of the five self-report a fork point, so capture one per dispatched crew
 member at dispatch time: `buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath })`
 (`src/wave-dispatch.js`) refuses to build one over a missing or non-hex `baseSha` -- a receipt that
 isn't provably a real fork point is worse than no receipt. Append it to STATE alongside the
 per-task dispatch line (step 4a's "Announce before acting"); one receipt per dispatched crew
 member, not per wave. `test/worktree-isolation.test.js` proves the builder enforces a real SHA
 shape (against this checkout's own live `git rev-parse HEAD`) and that every harness above resolves
-to its own distinct mechanism string, never a silent default.
+to its declared mechanism -- each native mechanism a distinct string, with Kimi deliberately sharing
+Codex's receipts-only floor -- never a silent default.
 
 **Shape is not proof.** A fabricated-but-well-formed SHA passes the shape check above exactly like
 a real commit does. Immediately after appending the receipt, run

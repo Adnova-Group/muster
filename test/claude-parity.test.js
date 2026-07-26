@@ -817,5 +817,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 3 blocked / 6 paused) -- escalation arrives as an exit code instead of a
   // STATE-file parse; non-Kimi harnesses keep the existing STATE-file loop.
   // Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "06dc4555b9c9430cc61e8f2deb59ed268ff7045e3ee3293acda8d64a4b5d8110");
+  //
+  // 2026-07-26 re-pin (kimi-worktree-isolation): file COUNT unchanged (139) --
+  // only plugin/skills/orchestrator/SKILL.md's content changed. Its "Worktree
+  // isolation per harness + base-SHA receipts" list gained a **Kimi** bullet
+  // (exactly the Codex receipts-only floor: Kimi's subagent dispatch carries no
+  // cwd/isolation parameter -- docs/research/kimi-code-cli.md sec 7 -- so muster
+  // supplies the worktree itself before dispatch and verifies branch/base from
+  // the runner's return receipt), and step 4a's "Parallel isolation" bullet
+  // gained a harness-neutral clause pointing at that per-harness selection so
+  // the rule no longer dead-ends on a harness with no dispatch-time isolation
+  // parameter. Paired with the src/-side mapping (kimi -> receipts-only in
+  // HARNESS_WORKTREE_MECHANISM, src/wave-dispatch.js, outside this surface).
+  // This subsection falls inside build-codex.mjs's wholesale-replace span for
+  // the Wave-dispatch section (`waveDispatchStart` .. "## Scope fences"), so the
+  // Kimi bullet never leaks into the generated Codex skill; the step-4a clause
+  // is harness-neutral and ships verbatim on both lanes. Re-verified with
+  // MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node
+  // scripts/check-codex.mjs (clean). docs/binding-interface.md's worktree
+  // grep-audit count re-derived (23 -> 26, files unchanged at 5) for the three
+  // new worktree-mention lines. Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "2d5e1e6d4aca7cf2b855ed955709ff66d0cf339781f5d61fb7a2698d2ed75b8e");
 });

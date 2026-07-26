@@ -298,11 +298,15 @@ export function assertCodexSpawnAgentAccepted({ taskId, agentType, rejected, rej
 //     mechanism to select at all (docs/research/codex-cli.md sec 6's skill-adapter
 //     citation); isolation there is muster's own dispatch discipline, verified by a
 //     receipt, not a harness guarantee (docs/strategy/native-delegation.md Part B item 4).
+//   - Kimi is exactly the Codex floor: its subagent dispatch carries no cwd/worktree
+//     parameter either (docs/research/kimi-code-cli.md sec 7's kc-isolate citation), so
+//     muster supplies worktrees itself (`git worktree add` before dispatch) and the same
+//     receipts-only discipline stands in for isolation.
 //
-// What's common across all four: none of them self-report a fork point back to the
+// What's common across all five: none of them self-report a fork point back to the
 // orchestrator, so the orchestrator captures one base SHA per dispatched crew member,
 // at dispatch time, and carries it as the provenance receipt regardless of which
-// mechanism (or lack of one, on Codex) actually isolated the work. Selection (which
+// mechanism (or lack of one, on Codex/Kimi) actually isolated the work. Selection (which
 // mechanism) and the receipt (proof of the fork point) are two different questions --
 // the receipt is recorded on every harness, even where the mechanism is genuinely native.
 // ───────────────────────────────────────────────────────────────────────────
@@ -311,7 +315,7 @@ export const WORKTREE_ISOLATION_MECHANISMS = Object.freeze({
   AGENT_TOOL: "agent-tool-isolation", // Claude Code CLI: isolation:"worktree" on the Agent tool
   DESKTOP_AUTO: "desktop-auto-worktree", // Claude Code Desktop: automatic <root>/.claude/worktrees/
   HERMES_W: "hermes-w", // Hermes: `hermes -w` / kanban worktree workspaces
-  RECEIPTS_ONLY: "receipts-only", // Codex: no cwd-on-dispatch -- receipt discipline stands in for isolation
+  RECEIPTS_ONLY: "receipts-only", // Codex/Kimi: no cwd-on-dispatch -- receipt discipline stands in for isolation
 });
 
 const HARNESS_WORKTREE_MECHANISM = Object.freeze({
@@ -319,6 +323,7 @@ const HARNESS_WORKTREE_MECHANISM = Object.freeze({
   "claude-desktop": WORKTREE_ISOLATION_MECHANISMS.DESKTOP_AUTO,
   hermes: WORKTREE_ISOLATION_MECHANISMS.HERMES_W,
   codex: WORKTREE_ISOLATION_MECHANISMS.RECEIPTS_ONLY,
+  kimi: WORKTREE_ISOLATION_MECHANISMS.RECEIPTS_ONLY, // exactly Codex's floor: muster supplies worktrees itself
 });
 
 // Pure per-harness selection: the orchestrator names its own running harness (declared

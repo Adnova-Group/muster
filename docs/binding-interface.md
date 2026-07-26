@@ -292,7 +292,7 @@ stale:
 AskUserQuestion    files=13  mentions=35
 dispatch (Agent/Task tool)  files=5  mentions=17
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
-worktree   files=5  mentions=23
+worktree   files=5  mentions=26
 ```
 
 Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave
@@ -333,7 +333,15 @@ at that same rule, on its own already-counted line, adding none of its own -- fi
 unchanged (still the same 5 files); AskUserQuestion, dispatch, and hook counts are untouched by
 this item.
 
-Every one of those 103 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the kimi-worktree-isolation item: `plugin/skills/orchestrator/
+SKILL.md`'s "Worktree isolation per harness + base-SHA receipts" list gained a **Kimi** bullet
+(exactly the Codex receipts-only floor -- its subagent dispatch carries no cwd/isolation
+parameter, so muster supplies the worktree itself before dispatch), and step 4a's "Parallel
+isolation" bullet gained a harness-neutral clause pointing at that per-harness selection -- three
+more `worktree` mentions on their own lines (23 -> 26). File counts unchanged (still the same 5
+files); AskUserQuestion, dispatch, and hook counts are untouched by this item.
+
+Every one of those 106 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

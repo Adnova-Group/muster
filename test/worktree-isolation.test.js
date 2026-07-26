@@ -10,7 +10,12 @@
 // at all (Codex: no cwd field on `collaboration.spawn_agent`, docs/research/codex-cli.md
 // sec 6's `skill-adapter` citation) -- then records the SAME base-SHA receipt on every
 // harness alike, since none of the four self-report a fork point back to the
-// orchestrator. None of the four native mechanisms are invocable from a unit test; what's
+// orchestrator. (A later item, kimi-worktree-isolation, added Kimi as a SECOND
+// receipts-only harness -- its subagent dispatch carries no cwd/isolation parameter
+// either, docs/research/kimi-code-cli.md sec 7 -- so the distinct-mechanism guarantee
+// below is scoped to the four native-selection harnesses, with Kimi's collapse onto
+// Codex's floor pinned as deliberate.) None of the four native mechanisms are invocable
+// from a unit test; what's
 // fixture-driven and testable here is the pure per-harness SELECTION (which mechanism
 // string a harness resolves to, failing loud on an unrecognized one) and the receipt
 // BUILDER (which refuses to build a receipt over a missing/non-hex baseSha -- a receipt
@@ -95,7 +100,24 @@ test("resolveWorktreeIsolation: Codex has no native mechanism -- selects the rec
   assert.equal(r.receiptRequired, true);
 });
 
+test("resolveWorktreeIsolation: Kimi resolves cleanly -- exactly the Codex receipts-only floor (no cwd/isolation parameter on its subagent dispatch, docs/research/kimi-code-cli.md sec 7)", () => {
+  const r = resolveWorktreeIsolation({ harness: "kimi" });
+  assert.equal(r.harness, "kimi");
+  assert.equal(r.mechanism, WORKTREE_ISOLATION_MECHANISMS.RECEIPTS_ONLY);
+  assert.equal(r.receiptRequired, true);
+});
+
+test("resolveWorktreeIsolation: kimi DELIBERATELY shares codex's receipts-only mechanism -- a documented collapse, not a silent default", () => {
+  const codex = resolveWorktreeIsolation({ harness: "codex" });
+  const kimi = resolveWorktreeIsolation({ harness: "kimi" });
+  assert.equal(kimi.mechanism, codex.mechanism);
+  assert.notEqual(kimi.harness, codex.harness);
+});
+
 test("resolveWorktreeIsolation: every mechanism is a distinct string -- no two harnesses silently collapse onto the same one", () => {
+  // kimi is excluded here on purpose: it shares codex's receipts-only floor BY DESIGN
+  // (the case above pins that collapse as deliberate). The four harnesses with their own
+  // selection still must never collapse onto each other.
   const harnesses = ["claude-code", "claude-desktop", "hermes", "codex"];
   const mechanisms = harnesses.map((harness) => resolveWorktreeIsolation({ harness }).mechanism);
   assert.equal(new Set(mechanisms).size, harnesses.length);

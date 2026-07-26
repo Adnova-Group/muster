@@ -651,6 +651,12 @@ function codexSkill(source, id, contract) {
         "1. Select one code reviewer for ordinary waves. Add the security reviewer only when the task is security-scoped or the diff touches authentication, authorization, secrets, cryptography, shell execution, network boundaries, installers, or lifecycle hooks. Add a surface reviewer only when its definition-of-done gate fires. Never dispatch two reviewers for the same quality dimension; always use at least one reviewer."
       )
       ;
+    const fixLoopPrefixRe = /6\. If `blocked`:[^\n]*\n\s+On Codex,[\s\S]*?available\. Cap at/;
+    if (!fixLoopPrefixRe.test(body)) throw new Error("review-gate fix-loop context anchor not found for Codex rewrite");
+    body = body.replace(
+      fixLoopPrefixRe,
+      "6. If `blocked`: retain the exact original implementer identity and verify its bound cwd, base SHA, Codex version, and role profile still match the dispatch receipt. Send only the new blocker deltas: use `collaboration.followup_task` with the exact canonical worker id for an in-session implementer, or run `codex exec resume <thread-id>` from the bound cwd with the exact `thread.started` id for a process implementer. Never use a recency selector, never fresh re-dispatch, and never repeat the original brief or prior transcript. Then re-review. Cap at"
+    );
     // Anchored as a REGEX tolerant of Claude-side rewording between the cap
     // sentence and its ESCALATE, and guarded fail-loud: the previous literal
     // string here silently no-opped when #158's prose tightening dropped

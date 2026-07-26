@@ -41,7 +41,9 @@ serves every wave). Reuse the invoking verb's resolved `$MUSTER_CLI`.
    `VERDICT: PASS` to be recorded in STATE for this exact reviewed diff. Human approval or input is
    an acknowledgment or a decision about escalation; it is never a substitute for review and can
    never synthesize or waive a missing `VERDICT: PASS`.
-6. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review. Cap at
+6. If `blocked`: resume the exact original implementer with only the new blocker notes, then re-review.
+   On Codex, use the context-preserving fix-loop protocol in `codex/skill-adapter.md`; never select a
+   worker by recency or fresh re-dispatch when the retained identity is available. Cap at
    **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3). If still blocked, ESCALATE to the human with the unresolved blockers.
 7. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking).
 

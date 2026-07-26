@@ -285,13 +285,15 @@ test("Codex uninstall: a canonical-scope-skipped project scope uninstalls cleanl
   assert.equal(installed.hooksSkipped, "user-scope-canonical");
 
   const removed = await runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex });
-  // 27 profile files plus the (empty) hooks.json removal; no hook runtime
-  // files and no thread-limit restore since the user scope is still live.
-  assert.equal(removed.files.length, CODEX_COUNTS.agents + 1);
+  // 27 profile files plus config.toml and the (empty) hooks.json removal; no
+  // hook runtime files and no thread-limit restore since the user scope is still live.
+  assert.equal(removed.files.length, CODEX_COUNTS.agents + 2);
   assert.equal(removed.files.filter(item => item.path.includes(join("muster", "hooks"))).length, 0, "no hook runtime files to remove for a skipped scope");
+  assert.ok(removed.files.some(item => item.op === "remove" && item.path === join(cwd, ".codex", "config.toml")));
   assert.ok(removed.files.some(item => item.op === "remove" && item.path === join(cwd, ".codex", "hooks.json")));
   await assert.rejects(() => readFile(join(cwd, ".codex", "agents", ".muster-managed.json"), "utf8"));
   await assert.rejects(() => readFile(join(cwd, ".codex", "muster", ".muster-managed.json"), "utf8"));
+  await assert.rejects(() => readFile(join(cwd, ".codex", "config.toml"), "utf8"));
   await assert.rejects(() => readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
 
   // The user scope, still the sole firing scope, is untouched.

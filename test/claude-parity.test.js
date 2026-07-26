@@ -797,5 +797,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // `list_agents`, which Codex 0.145.0 stripped of task messages (#33030). Now
   // documents both shapes and points at codexSpawnAgentCall/codexWaitAgentCall.
   // Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "79a22afbae020d4fb50c3c25c3c41ab76b9ffdb486aee57a014aea68b79bed79");
+  //
+  // 2026-07-26 re-pin (kimi-native-runtime-wiring): file COUNT unchanged (139) --
+  // only plugin/skills/orchestrator/SKILL.md's content changed. Its native-dispatch
+  // block gained a "### Kimi-native dispatch: AgentSwarm waves + per-agent calls"
+  // subsection alongside the Claude/Codex ones, wiring the previously-unreferenced
+  // src/kimi-dispatch.js onto the live orchestration path: every Kimi wave resolves
+  // through resolveKimiWaveDispatch (kimiSwarmCall/AgentSwarm for uniform fan-out,
+  // lane-aware kimiAgentCall fan-out for mixed-role waves), with the four swarm
+  // rejection rules (including the distinct-prompts rule) pre-validated before
+  // dispatch. Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "598764fb129b50996c927386b2e37b5297db7d0935cc3037bd89848f91db4ed2");
 });

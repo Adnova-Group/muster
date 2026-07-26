@@ -228,6 +228,44 @@ registration diagnostic naming the `agent_type` and task on a rejection, and the
 task rather than silently re-dispatching on a generic/default agent. Fix the registration
 (reinstall the profile, verify `.codex/agents/`), then re-dispatch that one task.
 
+### Kimi-native dispatch: AgentSwarm waves + per-agent calls
+
+Kimi ships BOTH halves of wave dispatch natively -- `AgentSwarm` (fan-out + barrier +
+aggregated report in ONE tool call) and the per-agent `Agent` call -- so on Kimi every wave
+resolves through `resolveKimiWaveDispatch({ items, uniformTask })` (`src/kimi-dispatch.js`),
+which picks the native shape straight from Kimi's own guidance: AgentSwarm is for "the same
+kind of task over different inputs"; "For a few differently-shaped tasks, make separate
+`Agent` calls in one message instead" (docs/research/kimi-code-cli.md sec 11.9). Step 4b's
+barrier and step 4c's review gate are UNCHANGED in both modes -- only the fan-out mechanism
+moves off the prose loop.
+
+- **`mode: "agent-swarm"`** (uniform fan-out: one task over N inputs -- audit N files,
+  review N modules) -- build ONE packet with `kimiSwarmCall({ promptTemplate, items,
+  subagentType, model })` and dispatch it as the `AgentSwarm` tool; the swarm fans out,
+  barriers, and returns the aggregated report itself. The `AgentSwarm` call MUST be the
+  sole tool call in its response (the binary enforces it; `soleToolCall: true` on the
+  packet is that contract). Swarm concurrency is the harness's own
+  `KIMI_CODE_AGENT_SWARM_MAX_CONCURRENCY`, not a muster knob.
+- **`mode: "agent-calls"`** (the default, and muster's usual case: a wave is N DISTINCT
+  roles, not one template over N inputs) -- one `kimiAgentCall({ agentId, prompt,
+  description, background })` per crew member, dispatched as separate `Agent` calls in one
+  message. `agentId` is the crew member's resolved `chosen.id`; the call derives its model
+  lane from the shared manifest, so a dispatch can never contradict the installed agent
+  file's stamped `model_preference` -- and Kimi takes a LANE (`primary`|`secondary`), never
+  a model id.
+
+**Pre-validate the four swarm rejection rules BEFORE dispatch -- never pay a whole-wave
+round trip to learn them.** Kimi rejects a malformed swarm before any subagent starts, so
+a bad packet costs the wave's entire fan-out. `kimiSwarmCall` enforces all four up front
+and throws with the offending detail named: (1) at least 2 items unless resuming; (2)
+`prompt_template` required whenever items are present; (3) the template must contain the
+exact `{{item}}` placeholder; (4) -- absent from Kimi's published docs, enforced in the
+binary -- the FILLED prompts must be DISTINCT: two items expanding to the same prompt
+reject the WHOLE swarm, and duplicate wave items (two crew members handed the same file)
+are exactly how muster would trip it. On a validation error, FIX the packet (rename or
+merge the duplicate item, repair the template) and rebuild; a wave that cannot satisfy the
+distinct-prompts rule is not a uniform fan-out at all -- resolve it as agent-calls instead.
+
 ### Worktree isolation per harness + base-SHA receipts
 
 Step 4a's "Parallel isolation" bullet already names Claude Code CLI's mechanism (the Agent tool's

@@ -935,5 +935,23 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // docs/binding-interface.md's grep-audit counts re-scanned live -- unchanged
   // (test/docs-binding-interface.test.js green without a re-derivation).
   // Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "4992b7588b571f24f4a285f9803437eb12bc0532d424a45eae4ea3a08cd2c5f6");
+  //
+  // 2026-07-27 re-pin (kimi-loop-background-tuning): file COUNT unchanged (139) --
+  // only plugin/commands/go.md's content changed. Its Kimi run-loop step gained
+  // the "Kimi loop/background profile -- binary defaults, pinned not emitted"
+  // block: the chosen [loop_control]/[background] values for unattended
+  // `kimi -p "/goal ..."` runs (max_steps_per_turn unset, max_retries_per_step
+  // unset/10, reserved_context_size unset/50000, max_running_tasks unset,
+  // print_background_mode steer) pinned in prose with the per-process env
+  // overrides named, NOT emitted into the user-global config.toml (wave 1's
+  // docs-pin decision; probe evidence in docs/research/kimi-code-cli.md
+  // sec 11.10, non-emission rationale comment in src/kimi-install.js, both
+  // outside this surface). The block is a clearly-labeled Kimi-only branch,
+  // same shape as the existing per-harness branches that ship to every
+  // harness's build. Re-verified with MUSTER_BUILD_FORCE=1 node
+  // scripts/build-codex.mjs && node scripts/check-codex.mjs (clean).
+  // docs/binding-interface.md's grep-audit counts re-scanned live -- unchanged
+  // (test/docs-binding-interface.test.js green without a re-derivation).
+  // Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "b5389d9ab88596348a6277f019b96f4258f53e8adc9efcfeb0e512913fafe427");
 });

@@ -69,7 +69,12 @@ export function createAgentWatch({ deadlineAt, clock = Date.now, idleHeartbeatLi
         };
       }
       if (NON_RUNNING_STATES.has(threadState) && heartbeat >= idleHeartbeatLimit) {
-        return { action: "interrupt", reason: "heartbeat-exhausted", heartbeat };
+        return {
+          action: "interrupt",
+          reason: "heartbeat-exhausted",
+          heartbeat,
+          ...(toolStarted && !toolStopped ? { processGroupId } : {})
+        };
       }
       return {
         action: "continue",

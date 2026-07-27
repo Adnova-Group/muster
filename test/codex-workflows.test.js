@@ -150,6 +150,44 @@ test("Codex agent watch uses absolute deadlines and deterministic owned-process 
     );
   }
 
+  for (const threadState of ["idle", "failed"]) {
+    const activeWatch = createAgentWatch({ clock: () => 1_000, deadlineAt: 9_000 });
+    activeWatch.receipt({ type: "tool-start", process_group_id: 84, deadline_at: 9_000 });
+    activeWatch.tick({ threadState });
+    activeWatch.tick({ threadState });
+    const decision = activeWatch.tick({ threadState });
+    assert.deepEqual(decision, {
+      action: "interrupt",
+      reason: "heartbeat-exhausted",
+      heartbeat: 3,
+      processGroupId: 84
+    });
+
+    const cleanup = [];
+    await cancelOwnedProcessGroup({
+      processGroupId: decision.processGroupId,
+      reason: decision.reason,
+      interruptWorker: async () => cleanup.push("interrupt"),
+      terminateProcessGroup: async processGroupId => cleanup.push(["terminate", processGroupId]),
+      waitForExit: async processGroupId => cleanup.push(["wait", processGroupId]),
+      recordCleanupReceipt: async receipt => {
+        cleanup.push(receipt);
+        return receipt;
+      }
+    });
+    assert.deepEqual(cleanup, [
+      "interrupt",
+      ["terminate", 84],
+      ["wait", 84],
+      {
+        type: "tool-stop",
+        process_group_id: 84,
+        reason: "heartbeat-exhausted",
+        cleanup: "complete"
+      }
+    ]);
+  }
+
   const calls = [];
   await cancelOwnedProcessGroup({
     processGroupId: 42,

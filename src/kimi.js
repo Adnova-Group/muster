@@ -19,31 +19,31 @@ import { agentProfiles } from "./agent-manifest.js";
 // - Reasoning EFFORT exists on K3 ONLY, and is 3 rungs: low | high | max (default
 //   high on the managed plan). kimi-for-coding[-highspeed] expose NO effort field
 //   -- always-thinking, no knob. So a semantic effort override only bites on the
-//   two K3 tiers; on sonnet/haiku it is a documented no-op.
+//   two K3 tiers; on core/scout it is a documented no-op.
 // - muster's medium/xhigh efforts are not native. Kimi's ladder collapses them
 //   (medium -> high, xhigh -> max), so workhorse and judgment both land on high.
 //
 // Per-lane rationale (reconciled to what the managed plan actually installs):
-// - haiku  = kimi-for-coding: the dedicated coding model, the SAME lane as sonnet.
+// - scout  = kimi-for-coding: the dedicated coding model, the SAME lane as core.
 //   The managed coding plan has no cheaper/general model (no k2.6/k2.5 -- the
 //   research's cheap locator lane does not exist on this endpoint), so read-only
 //   locate/gather rides the same model as the build workhorse. NEVER highspeed:
 //   kimi-for-coding-highspeed is the IDENTICAL K2.7 model that merely burns ~3x
 //   the plan usage to trade for latency -- pointing the "cheap" read-only lane at
 //   a 3x-cost SKU of the same model would be exactly backwards, so muster never
-//   spends quota there. haiku and sonnet therefore resolve identically on Kimi;
+//   spends quota there. scout and core therefore resolve identically on Kimi;
 //   the tier split survives at model.js for routing/budget/degradation, mirroring
-//   Codex's fable->opus collapse. Confirmed by a live GET /v1/models probe
+//   Codex's apex->prime collapse. Confirmed by a live GET /v1/models probe
 //   (2026-07-24, HTTP 200): the plan serves EXACTLY {kimi-for-coding,
 //   kimi-for-coding-highspeed, k3, k3-256k}, all supports_thinking_type "only" --
 //   no cheaper family exists to remap to. `muster install kimi --probe` re-runs
 //   that check (src/kimi-install.js probeKimiModels) and would flag a genuinely
 //   cheaper alias IF the plan ever gains one.
-// - sonnet = kimi-for-coding: the dedicated coding workhorse. Always-thinking.
-// - opus   = k3, effort high: the judgment lane. K3 is frontier and holds quality
+// - core   = kimi-for-coding: the dedicated coding workhorse. Always-thinking.
+// - prime  = k3, effort high: the judgment lane. K3 is frontier and holds quality
 //   to 1M context (BrowseComp 90.4 @ 1M). high = the plan's default judgment effort.
-// - fable  = k3, effort max: same model, max reserved to the rare peak only -- the
-//   discipline Codex applies to xhigh. K3's effort knob gives a cleaner opus/fable
+// - apex   = k3, effort max: same model, max reserved to the rare peak only -- the
+//   discipline Codex applies to xhigh. K3's effort knob gives a cleaner prime/apex
 //   split than Codex (where both are sol/high).
 //
 // A tier entry carries EITHER `effort` (a K3 reasoning level) OR `thinking` (the
@@ -96,12 +96,12 @@ export function kimiModelForTier(tier) {
 // tiers fold onto those two lanes along the family line KIMI_TIERS already
 // draws: the K3 judgment family and the K2.7 Coding execution family.
 //
-//   primary   = kimi-code/k3               <- opus + fable
-//   secondary = kimi-code/kimi-for-coding  <- haiku + sonnet
+//   primary   = kimi-code/k3               <- prime + apex
+//   secondary = kimi-code/kimi-for-coding  <- scout + core
 //
-// fable collapses into opus's lane (both k3, but effort is per-launch, not
-// per-agent) -- the SAME degradation Codex already accepts, where fable and opus
-// are both sol/high. Nothing new is lost.
+// apex collapses into prime's lane (both k3, but effort is per-launch, not
+// per-agent) -- the SAME degradation Codex already accepts, where apex and prime
+// both resolve to sol/high. Nothing new is lost.
 //
 // Two constraints on using this (both are the caller's job, not this map's):
 //  1. It is EXPERIMENTAL and off by default -- `KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1`
@@ -150,7 +150,7 @@ export function kimiPreferenceForAgentId(id) {
 // model_preference anyway -- lanes bind under `kimi -p` / `kimi web` only).
 //
 // Both values are DERIVED here from the tier map, never re-stated by callers:
-// the lane models are whatever the judgment (opus) and execution (sonnet)
+// the lane models are whatever the judgment (prime) and execution (core)
 // families resolve to, checked against KIMI_LANES so a hand edit that drifts
 // the two apart fails loud instead of silently binding the wrong lane. Every
 // Kimi spawn path shares this one derivation -- kimiGoalInvocation
@@ -181,9 +181,10 @@ export function kimiLaneEnv() {
 }
 
 // Adapter boundary for callers that resolve a role at runtime. modelForRole keeps
-// MUSTER_MAX_TIER and Fable's deterministic fallback (fable -> opus when Fable is
-// disabled), so a fable-set role with Fable off resolves to the opus (k3/high)
-// profile, and with MUSTER_ENABLE_FABLE to the fable (k3/max) profile.
+// MUSTER_MAX_TIER and apex's deterministic fallback (apex -> prime when apex is
+// disabled), so an apex-set role with apex off resolves to the prime (k3/high)
+// profile, and with MUSTER_ENABLE_APEX (legacy env alias MUSTER_ENABLE_FABLE
+// still honored) to the apex (k3/max) profile.
 export function kimiModelForRole(role) {
   return kimiModelForTier(modelForRole(role));
 }

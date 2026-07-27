@@ -1,13 +1,13 @@
 // Harness-neutral model-tier override shape + resolver.
 //
-// The parked model-policy refactor's first slice. Today an agent's per-agent
-// override in codex/agents.manifest.json names a CONCRETE Codex model/effort:
-//   "muster-reviewer": { "tier": "sonnet", "model": "gpt-5.6-sol", "reasoning": "high" }
-// Those strings are Codex-only — a Kimi (or Hermes) adapter cannot reuse them, so
-// every new harness would re-hardcode its own model names into the manifest. This
-// module defines the neutral vocabulary every adapter shares, so an agent declares
-// only its conceptual tier and an OPTIONAL semantic effort, and each harness policy
-// resolves those to its own concrete profile.
+// The adopted model-policy shape (2026-07-23 neutral-shape migration, documented
+// in catalog/agents.manifest.json): an agent's per-agent override names NO concrete
+// model — it declares only its conceptual tier and an OPTIONAL semantic effort:
+//   "muster-reviewer": { "tier": "prime", "effort": "judgment" }
+// Harness-neutral by construction — a Kimi (or Hermes) adapter reuses the same
+// entry unchanged, so no harness hardcodes its own model names into the manifest.
+// This module defines the neutral vocabulary every adapter shares; each harness
+// policy resolves it to its own concrete profile.
 //
 // Neutral agent profile: { tier, effort? }
 //   tier   — a conceptual tier from MODEL_TIER_ORDER (model.js): scout|core|prime|apex.
@@ -19,13 +19,13 @@
 //              "peak"      — the rare high-consequence maximum, reserved not routine
 //            Omit to take the tier's default effort.
 //
-// The three real override shapes in today's manifest all reduce to { tier, effort }:
-//   opus + reasoning:medium  (builders/debuggers)  -> { tier: opus,   effort: workhorse }
-//   opus + reasoning:xhigh   (security-auditor)    -> { tier: opus,   effort: peak }
-//   sonnet + model:sol,high  (the two reviewers)   -> { tier: opus,   effort: judgment }
-//   tier: "luna-xhigh"       (surgeon/doc recipes) -> { tier: sonnet }  (Codex's sonnet
-//                                                       policy IS luna/xhigh — byte-identical)
-// so no manifest entry needs a concrete model string once the adapters adopt this shape.
+// The manifest's real overrides all fit this shape directly (Codex resolution
+// shown; each harness policy resolves the same entry its own way):
+//   prime + effort workhorse (builders/debuggers)  — Sol/medium on Codex
+//   prime + effort judgment  (the two reviewers)   — Sol/high on Codex
+//   prime + effort peak      (security-auditor)    — Sol/xhigh on Codex
+//   core                     (surgeon/doc recipes) — Luna/xhigh on Codex
+// so no manifest entry needs a concrete model string.
 //
 // Each harness supplies a policy:
 //   { tiers: { <tier>: <concrete profile> }, applyEffort(baseProfile, semanticEffort) }

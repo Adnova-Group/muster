@@ -1071,5 +1071,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // legacy vocabulary. All remaining legacy-name occurrences in plugin/ are
   // deliberate: agent frontmatter (Claude-concrete by design), compat-alias
   // documentation, and adapter-output examples. Deliberate change, not drift.
-  assert.equal(hash.digest("hex"), "326249087f04e4dc09037410d669f166ac14f8e66517974e71aad80847fef279");
+  //
+  // 2026-07-27 re-pin #4 (audit S5, canonical tier vocabulary in live comments):
+  // file COUNT unchanged (140) -- only plugin/skills/orchestrator/SKILL.md's
+  // content changed, one prose fix in the "Codex-native dispatch: spawn_agent"
+  // subsection: "muster's SONNET tier" -> "muster's core tier" (the semantic
+  // tier rename; gpt-5.6-luna is muster's core tier). Comment/prose-only, no
+  // behavior change. Deliberate change, not drift.
+  assert.equal(hash.digest("hex"), "a2a6ee8ebf3ee4168d09b9e7da73a538dff83de453d750925db9675cdb60bc89");
 });

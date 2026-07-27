@@ -10,7 +10,7 @@
 //     call counts are genuinely different, not just the per-call cost. See
 //     eval/perf/replay-3task.mjs for the script that produces these numbers, and
 //     docs/performance-pass.md for the recorded run output and the count derivation.
-//   - Gate-round cost (`msPerGateRound`): a modeled wall-clock cost for one opus-tier
+//   - Gate-round cost (`msPerGateRound`): a modeled wall-clock cost for one prime-tier
 //     gate dispatch (spec gate or review gate) — dispatch + reasoning latency, not
 //     included in the CLI-call cost above since a gate round is an LLM dispatch, not a
 //     muster CLI invocation.

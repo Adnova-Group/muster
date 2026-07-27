@@ -2,7 +2,7 @@
 // per-wave review gate into fewer passes, never by weakening any gate's own pass bar.
 //
 // Seed evidence (codex-teardown run): a 3-task plan that split into 3 sequential waves
-// paid 3 separate opus-tier gate dispatches — one per wave — even though the whole plan
+// paid 3 separate prime-tier gate dispatches — one per wave — even though the whole plan
 // was small enough to review as a single cumulative diff. `go.md`'s pre-execution spec
 // gate was already a single, whole-plan dispatch (skippable for a single trivial task),
 // so the real fixed-depth cost was the PER-WAVE review gate (`review-gate/SKILL.md` step

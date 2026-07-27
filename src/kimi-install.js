@@ -42,7 +42,7 @@ export const KIMI_MANIFEST = ".muster-managed.json";
 // Live-probed 2026-07-24 (GET https://api.kimi.com/coding/v1/models, HTTP 200):
 // the managed coding plan serves EXACTLY these four, all supports_thinking_type
 // "only" (always-thinking). No k2.6/k2.5, no non-thinking/general model -- so the
-// haiku lane rides kimi-for-coding (there is nothing cheaper to remap to).
+// scout lane rides kimi-for-coding (there is nothing cheaper to remap to).
 // kimi-for-coding-highspeed is served but muster never ROUTES to it: it is the
 // identical K2.7 model at ~3x plan usage, so it stays in this served-set list
 // (the probe confirms the plan offers it) but never in KIMI_TIERS. See
@@ -361,7 +361,7 @@ async function rmdirIfEmpty(path) {
   catch (error) { if (["ENOTEMPTY", "ENOENT", "EEXIST"].includes(error.code)) return false; throw error; }
 }
 
-// Classify a served model id: a "cheaper" haiku-lane candidate is a served
+// Classify a served model id: a "cheaper" scout-lane candidate is a served
 // model that is NEITHER a coding model (kimi-for-coding*) NOR a k3* frontier
 // model -- i.e. a general k2.x family alias, should the plan ever list one.
 //

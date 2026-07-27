@@ -202,7 +202,7 @@ Codex has no `Workflow`-tool counterpart, so wave dispatch rides Codex's OWN nat
 subagent collaboration itself, never a prose-loop substitute for the Claude-only `Workflow` tool.
 **The dispatch and barrier shapes are VERSION-DEPENDENT** (corrected 2026-07-25 against Codex
 0.145.0). Codex resolves its subagent API per MODEL from the catalog's `multi_agent_version`, and
-the live catalog puts `gpt-5.6-sol`/`terra` on v2 but `gpt-5.6-luna` -- muster's SONNET tier -- on
+the live catalog puts `gpt-5.6-sol`/`terra` on v2 but `gpt-5.6-luna` -- muster's core tier -- on
 v1. Never hardcode one shape; build both through `codexSpawnAgentCall`/`codexWaitAgentCall`
 (`src/wave-dispatch.js`), which resolve the version and fail closed to v1 rather than guessing v2
 (docs/research/codex-cli.md sec 10.1).

@@ -862,5 +862,28 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // scripts/build-codex.mjs && node scripts/check-codex.mjs (clean).
   // docs/binding-interface.md's grep-audit counts re-scanned live -- unchanged.
   // Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "2114d5d8aa13180a13654091e1781519dd0a96eb98ab775d088f7f592f0d5c85");
+  //
+  // 2026-07-27 re-pin (kimi-subagent-resume-retry): file COUNT unchanged (139) --
+  // only plugin/skills/orchestrator/SKILL.md's content changed. Step 4a's
+  // "Subagent failure" bullet gained the Kimi native-resume branch (on Kimi the
+  // re-dispatch-once rule RESUMES the failed subagent -- Agent `resume` for a
+  // per-agent dispatch, AgentSwarm `resume_agent_ids` for a swarm dispatch, both
+  // modeled by kimiAgentCall/kimiSwarmCall in src/kimi-dispatch.js -- keeping the
+  // failed subagent's prior context and appending only the error, instead of
+  // paying the full prompt/context cost again; non-Kimi harnesses keep the fresh
+  // re-dispatch), and the Kimi-native dispatch subsection gained the matching
+  // failure-retry paragraph. The bullet's `      - **Subagent failure` indexOf
+  // anchor in build-codex.mjs is untouched, so the bullet still ships verbatim
+  // into the Codex build -- the new clause is a clearly-labeled Kimi-only
+  // branch, same shape as the existing per-harness branches that ship to every
+  // harness's build; the Kimi subsection falls inside build-codex.mjs's
+  // wholesale-replace span (`waveDispatchStart` .. "## Scope fences") and never
+  // leaks into the generated Codex skill. Paired with the src/-side resume
+  // modeling (kimiAgentCall's resume parameter, kimiSwarmCall's resumeAgentIds
+  // validation, outside this surface). Re-verified with MUSTER_BUILD_FORCE=1
+  // node scripts/build-codex.mjs && node scripts/check-codex.mjs (clean).
+  // docs/binding-interface.md's dispatch grep-audit count re-derived (17 -> 19,
+  // files unchanged at 5) for the two new dispatch-mention lines. Deliberate
+  // surface change, not drift.
+  assert.equal(hash.digest("hex"), "1580576dd3e6dc23f9b324b6061ef3d6cae810374848732a2b02d641f2e62c1a");
 });

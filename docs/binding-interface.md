@@ -290,7 +290,7 @@ stale:
 
 ```
 AskUserQuestion    files=13  mentions=36
-dispatch (Agent/Task tool)  files=5  mentions=17
+dispatch (Agent/Task tool)  files=5  mentions=19
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
 worktree   files=5  mentions=26
 ```
@@ -348,7 +348,14 @@ fallback named for anything the gate can't express) -- one more `AskUserQuestion
 its own line (35 -> 36). File counts unchanged (still the same 13 files); dispatch, hook, and
 worktree counts are untouched by this item.
 
-Every one of those 107 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the kimi-subagent-resume-retry item: `plugin/skills/orchestrator/
+SKILL.md`'s step 4a "Subagent failure" bullet gained the Kimi native-resume branch (naming "the
+Agent tool's `resume`" for a per-agent dispatch) and its Kimi-native dispatch subsection gained
+the matching failure-retry paragraph (naming `subagent_type`'s mutual exclusion with `resume`)
+-- two more dispatch mentions on their own lines (17 -> 19). File counts unchanged (still the
+same 5 files); AskUserQuestion, hook, and worktree counts are untouched by this item.
+
+Every one of those 109 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

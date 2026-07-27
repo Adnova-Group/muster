@@ -166,6 +166,20 @@ function adaptOrchestratorForCodex(text) {
   result = result.replace("the `PreToolUse` hook reads this marker to enforce the iron rule", "the trusted Codex `PreToolUse` hook uses this marker to diagnose likely policy violations; the orchestrator still enforces the iron rule through dispatch and repository evidence");
   result = result.replace("the `PreToolUse` hook treats it as stale and applies the scale-gate rather than the full wave-guard", "the Codex hook reports it as potentially stale; verify ownership and state before continuing");
   result = result.replaceAll("the `PreToolUse` hook reads this\nfile to deny matching tool calls", "the trusted Codex `PreToolUse` hook reads this\nfile to surface supported policy warnings for matching tool calls");
+  // kimi-subagent-resume-retry item: the step-4a "Subagent failure" bullet's Kimi
+  // native-resume branch ships verbatim into this build (it sits below the
+  // `      - **Subagent failure` anchor, outside every wholesale-replace span),
+  // and the upstream word-swap rewrites its "the Agent tool's `resume`" into
+  // "the Codex subagent dispatcher's `resume`" -- fabricating a Codex resume
+  // primitive that does not exist (spawn_agent has no resume field; there is no
+  // AgentSwarm on this harness). On Codex the generic fresh re-dispatch IS the
+  // whole rule, so replace the entire Kimi clause with exactly that. Guarded:
+  // if the Claude-side clause drifts and this stops matching, fail the build
+  // rather than ship the fabricated claim.
+  const kimiResumeClause = /\*\*On Kimi the re-dispatch is\s+a native RESUME, never a fresh spawn\*\*[\s\S]*?Non-Kimi harnesses keep the fresh re-dispatch\.\s+/;
+  if (!kimiResumeClause.test(result)) throw new Error("orchestrator Kimi resume clause not found for Codex rewrite");
+  result = result.replace(kimiResumeClause, "The re-dispatch spawns a fresh agent with the error appended -- this harness's subagent dispatch has no native resume primitive.\n        ");
+  if (result.includes("Codex subagent dispatcher's `resume`")) throw new Error("orchestrator Kimi resume clause leaked into the Codex build");
   const providerStart = result.indexOf("      - **Provider kind:**");
   const failureStart = result.indexOf("      - **Subagent failure", providerStart);
   if (providerStart < 0 || failureStart < 0) throw new Error("orchestrator provider/model section not found");

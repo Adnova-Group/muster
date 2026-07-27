@@ -67,6 +67,7 @@ const EXPECTED_ARGUMENT_HINTS = {
   diagnose: "<symptom | paste failing test/CI output>",
   "go-backlog": "<backlog ref>",
   go: "<outcome>",
+  init: "[dir]",
   "plan-backlog": "<backlog ref | raw intent>",
   plan: "<outcome text | backlog text>",
   run: "<outcome | backlog ref>",

@@ -1,10 +1,12 @@
 # Mode-prompt eval harness
 
-An empirical eval of the 8 mode prompts (`plugin/commands/*.md`: `plan`, `plan-backlog`,
+An empirical eval of 8 run-lifecycle mode prompts (`plugin/commands/*.md`: `plan`, `plan-backlog`,
 `go`, `go-backlog`, `runner`, `audit`, `diagnose`, `capture`) plus the 3 legacy alias
 stubs that delegate to them (`run` -> `plan`, `autopilot` -> `go`, `sprint` ->
 `go-backlog` — thin, minimal files graded structurally, not via dataset cases; see "Alias
-stubs" below), the 10 skill-protocol skills they delegate to (`plugin/skills/*` —
+stubs" below). The ninth mode, `init`, is graded structurally and through its filesystem
+and receipt contract tests rather than response-quality fixtures. The harness also covers
+the 10 skill-protocol skills the modes delegate to (`plugin/skills/*` —
 `orchestrator`, `review-gate`, `coordination`,
 `interview`, `tournament`, `domain-router`, `advisor`, `greenfield`, `prd-pipeline`,
 `roadmap-prioritization`; `router` is excluded, it already has its own `eval:router`),

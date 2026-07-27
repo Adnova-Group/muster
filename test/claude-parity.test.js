@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 139); // +1: agent manifest moved into catalog/ (Phase D)
+  assert.equal(paths.length, 140); // +1: first-class init command
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1053,5 +1053,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // REBASE-NOTE (2026-07-27): hash refreshed after the mid-batch rebase onto the
   // semantic-tier rename (main 6d565a3); covers the rename re-pin and this
   // branch's process-lane/token-accounting re-pins above.
-  assert.equal(hash.digest("hex"), "ce49565c95e2b725e68f27ddf3865eba683c5e6272e7a7380802f52e5832b6cf");
+  //
+  // 2026-07-27 re-pin (first-class init): one reviewed command was added and the
+  // greenfield skill now delegates repository preparation to its receipted lifecycle.
+  assert.equal(hash.digest("hex"), "aac0f3c1dbbbea2b51eff20fe6d06414b9b7ce2786d11e2533cae67c63b3bedf");
 });

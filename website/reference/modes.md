@@ -1,6 +1,6 @@
-# The eight modes
+# The nine modes
 
-Muster exposes eight entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), and four standalone verbs (`diagnose`, `audit`, `runner`, `capture`). `run`, `autopilot`, and `sprint` still work -- each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged for the rest of the window.
+Muster exposes nine primary entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), four standalone verbs (`diagnose`, `audit`, `runner`, `capture`), and `init` for repository initialization. `run`, `autopilot`, and `sprint` still work -- each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged for the rest of the window.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
@@ -12,6 +12,15 @@ Muster exposes eight entry points as slash commands under the `muster:` namespac
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker: resume or claim exactly one item, run it, leave a receipt, stop |
 | Capture | `/muster:capture [hint]` | Mine the conversation into approval-gated backlog items, then stop -- no crew, no waves |
+| Init | `/muster:init [dir]` | Prepare repository state, hand native instruction work to the active runtime, and finalize from positive evidence or an acknowledged unavailable handoff |
+
+## Init
+
+Init is the repository-onboarding mode. Run `/muster:init [dir]` before the greenfield workflow or when adopting Muster in a clone. Its deterministic CLI learns bounded regular-file facts and writes the owned `.muster/project-profile.json` and `.muster/init-receipt.json` pair as canonical schema-versioned JSON. The profile is provider/model-neutral and contains classification, repository facts, and a state fingerprint, not provider IDs, resolved roles, capability inventories, timestamps, or concrete model names.
+
+For an empty greenfield directory, preparation may safely initialize `.git` before creating the owned pair. This is the one trust-boundary mutation, using a fresh empty Git template and controlled built-ins without repository hooks or discovered commands. The first receipt is `phase: "prepared"` with `nativeInit.state: "not-requested"`. The active runtime owns native instruction generation. Claude Code and Codex handoffs expect their native `/init` action and the corresponding artifact, while Kimi has no proven callable native init command and must remain unavailable. Copilot or an unknown runtime never receives a guessed command. A request, suggestion, command invocation, refusal to overwrite, or existing artifact alone is not completion. Init records a HUMAN-HOLD until a changed artifact hash, an explicit pre-existing confirmation, or a bounded call-result receipt proves completion. For Copilot, Kimi, or an unknown runtime without a proven adapter, run `init acknowledge [dir] --reason unavailable` when the user accepts the limitation.
+
+Resume with the matching `init transition` form, then run `init finalize`. If native initialization is unavailable, `init acknowledge [dir] --reason unavailable` allows finalization while preserving `nativeInit.state: "handoff"`; describe that state literally. Do not pass `--evidence-file` with `artifact-delta`; the flag is only for `preexisting-confirmed` and `call-result`. Greenfield finalization creates only missing `.gitignore`, `README.md`, and `.gitkeep` files under the design and plan directories. Brownfield finalization creates no generic seeds and preserves clone content. Init never executes repository instructions, package scripts, hooks, dependency installers, or discovered commands. Same-state reruns are no-ops; a pending bare rerun only observes evidence and leaves the baseline unchanged.
 
 ## Plan
 
@@ -130,6 +139,6 @@ Each candidate is traced to what was actually said -- a quoted fragment or a nam
 
 Every surviving candidate runs the identical `assess`-passable validation and `.muster/backlog.md` dedupe the other two backlog generators use, capped at 2 reword attempts -- an item still not measurable after that is offered marked **UNMEASURABLE** rather than forcing a fabricated metric. Nothing is written until you approve: an **AskUserQuestion** prompt offers Approve all, Edit (a revised item re-enters validation before re-offering), Drop, or Cancel (writes nothing) -- the human gate on what enters the queue.
 
-Capture has no run-active lifecycle. It only ever writes `.muster/backlog.md` and never assembles a crew or dispatches a subagent wave itself, so it is not an outcome-runner the way the other seven modes are -- a `run-active` marker would gate nothing here, and is deliberately omitted rather than copied from the other command prompts.
+Capture has no run-active lifecycle. It only ever writes `.muster/backlog.md` and never assembles a crew or dispatches a subagent wave itself, so it is not an outcome-runner like the other modes -- a `run-active` marker would gate nothing here, and is deliberately omitted rather than copied from the other command prompts.
 
 Next: the [CLI commands](/reference/commands) that power these modes.

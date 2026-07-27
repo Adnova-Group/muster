@@ -296,6 +296,19 @@ test("runKimiInstall: installs muster's VERBS as namespaced skills", async () =>
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: auto-discovers the authoritative init verb", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    write(join(repo, "plugin", "commands", "init.md"), "---\nname: init\ndescription: native init handoff\n---\ninit body");
+
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    assert.ok(r.verbs.includes("muster-init"));
+    const installed = readFileSync(join(home, ".kimi-code", "skills", "muster-init", "SKILL.md"), "utf8");
+    assert.match(installed, /^name: muster-init$/m);
+    assert.match(installed, /^init body$/m);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiUninstall: removes the installed verbs too", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {

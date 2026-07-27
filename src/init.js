@@ -482,19 +482,35 @@ function exactKeys(value, keys) {
     JSON.stringify(Object.keys(value).sort(utf8Sort)) === JSON.stringify([...keys].sort(utf8Sort));
 }
 
-function validFileRows(rows) {
-  return Array.isArray(rows) && rows.every((row) => exactKeys(row, ["bytes", "path", "sha256"]) &&
-    Number.isInteger(row.bytes) && row.bytes >= 0 && row.bytes <= INIT_LIMITS.learnFileBytes &&
-    HEX64.test(row.sha256) && (() => { try { safeRelative(row.path); return true; } catch { return false; } })()) &&
-    new Set(rows.map((row) => row.path)).size === rows.length &&
-    JSON.stringify(rows.map((row) => row.path)) === JSON.stringify(rows.map((row) => row.path).sort(utf8Sort));
+function invalidInit(kind, field, clause) {
+  throw new Error(`invalid ${kind}: ${field} (${clause})`);
 }
 
-function validSortedPaths(values) {
-  return Array.isArray(values) && values.every((path) => {
-    try { safeRelative(path); return true; } catch { return false; }
-  }) && new Set(values).size === values.length &&
-    JSON.stringify(values) === JSON.stringify([...values].sort(utf8Sort));
+function checkFileRows(rows, kind, field) {
+  if (!Array.isArray(rows)) invalidInit(kind, field, "must be an array of file rows");
+  for (const row of rows) {
+    if (!exactKeys(row, ["bytes", "path", "sha256"])) {
+      invalidInit(kind, field, "each row must have exactly the keys bytes, path, sha256");
+    }
+    if (!Number.isInteger(row.bytes) || row.bytes < 0 || row.bytes > INIT_LIMITS.learnFileBytes) {
+      invalidInit(kind, field, "row bytes must be an integer within the learn file byte limit");
+    }
+    if (!HEX64.test(row.sha256)) invalidInit(kind, field, "row sha256 must be 64 lowercase hex characters");
+    try { safeRelative(row.path); } catch { invalidInit(kind, field, "row path must be a safe relative path"); }
+  }
+  if (new Set(rows.map((row) => row.path)).size !== rows.length) invalidInit(kind, field, "row paths must be unique");
+  if (!rowsSortedByPath(rows)) invalidInit(kind, field, "rows must be sorted by UTF-8 path order");
+}
+
+function checkSortedPaths(values, kind, field) {
+  if (!Array.isArray(values)) invalidInit(kind, field, "must be an array of safe relative paths");
+  for (const path of values) {
+    try { safeRelative(path); } catch { invalidInit(kind, field, "every entry must be a safe relative path"); }
+  }
+  if (new Set(values).size !== values.length) invalidInit(kind, field, "entries must be unique");
+  if (JSON.stringify(values) !== JSON.stringify([...values].sort(utf8Sort))) {
+    invalidInit(kind, field, "entries must be sorted in UTF-8 order");
+  }
 }
 
 function rowsSortedByPath(rows) {
@@ -503,77 +519,178 @@ function rowsSortedByPath(rows) {
 }
 
 function validateProfile(profile) {
-  if (!exactKeys(profile, ["format", "schemaVersion", "classification", "facts", "repositoryFingerprint"]) ||
-      profile.format !== PROFILE_FORMAT || profile.schemaVersion !== 1 ||
-      !["greenfield", "brownfield"].includes(profile.classification) ||
-      !exactKeys(profile.facts, ["frameworks", "instructionFiles", "languages", "manifests", "packageManagers", "shape", "sourceRoots", "testRunners", "vcs"]) ||
-      !["empty", "library", "application", "monorepo", "unknown"].includes(profile.facts.shape) ||
-      !validFileRows(profile.facts.manifests) || !validFileRows(profile.facts.instructionFiles) ||
-      !exactKeys(profile.facts.vcs, ["branch", "head", "kind", "layout"]) ||
-      !["git", "none"].includes(profile.facts.vcs.kind) ||
-      !["directory", "worktree-file", "none"].includes(profile.facts.vcs.layout) ||
-      !(profile.facts.vcs.branch === null || typeof profile.facts.vcs.branch === "string") ||
-      !(profile.facts.vcs.head === null || GIT_HEAD.test(profile.facts.vcs.head)) ||
-      !exactKeys(profile.repositoryFingerprint, ["algorithm", "basis", "digest"]) ||
-      profile.repositoryFingerprint.algorithm !== "sha256" || profile.repositoryFingerprint.basis !== FINGERPRINT_BASIS ||
-      !HEX64.test(profile.repositoryFingerprint.digest)) throw new Error("invalid project profile");
+  const fail = (field, clause) => invalidInit("project profile", field, clause);
+  if (!exactKeys(profile, ["format", "schemaVersion", "classification", "facts", "repositoryFingerprint"])) {
+    fail("profile", "keys must be exactly classification, facts, format, repositoryFingerprint, schemaVersion");
+  }
+  if (profile.format !== PROFILE_FORMAT) fail("format", `must be ${PROFILE_FORMAT}`);
+  if (profile.schemaVersion !== 1) fail("schemaVersion", "must be 1");
+  if (!["greenfield", "brownfield"].includes(profile.classification)) {
+    fail("classification", "must be greenfield or brownfield");
+  }
+  if (!exactKeys(profile.facts, ["frameworks", "instructionFiles", "languages", "manifests", "packageManagers", "shape", "sourceRoots", "testRunners", "vcs"])) {
+    fail("facts", "keys must be exactly frameworks, instructionFiles, languages, manifests, packageManagers, shape, sourceRoots, testRunners, vcs");
+  }
+  if (!["empty", "library", "application", "monorepo", "unknown"].includes(profile.facts.shape)) {
+    fail("facts.shape", "must be empty, library, application, monorepo, or unknown");
+  }
+  checkFileRows(profile.facts.manifests, "project profile", "facts.manifests");
+  checkFileRows(profile.facts.instructionFiles, "project profile", "facts.instructionFiles");
+  if (!exactKeys(profile.facts.vcs, ["branch", "head", "kind", "layout"])) {
+    fail("facts.vcs", "keys must be exactly branch, head, kind, layout");
+  }
+  if (!["git", "none"].includes(profile.facts.vcs.kind)) fail("facts.vcs.kind", "must be git or none");
+  if (!["directory", "worktree-file", "none"].includes(profile.facts.vcs.layout)) {
+    fail("facts.vcs.layout", "must be directory, worktree-file, or none");
+  }
+  if (!(profile.facts.vcs.branch === null || typeof profile.facts.vcs.branch === "string")) {
+    fail("facts.vcs.branch", "must be null or a string");
+  }
+  if (!(profile.facts.vcs.head === null || GIT_HEAD.test(profile.facts.vcs.head))) {
+    fail("facts.vcs.head", "must be null or a 40/64-character lowercase hex commit id");
+  }
+  if (!exactKeys(profile.repositoryFingerprint, ["algorithm", "basis", "digest"])) {
+    fail("repositoryFingerprint", "keys must be exactly algorithm, basis, digest");
+  }
+  if (profile.repositoryFingerprint.algorithm !== "sha256") fail("repositoryFingerprint.algorithm", "must be sha256");
+  if (profile.repositoryFingerprint.basis !== FINGERPRINT_BASIS) {
+    fail("repositoryFingerprint.basis", `must be ${FINGERPRINT_BASIS}`);
+  }
+  if (!HEX64.test(profile.repositoryFingerprint.digest)) {
+    fail("repositoryFingerprint.digest", "must be 64 lowercase hex characters");
+  }
   for (const key of ["frameworks", "languages", "packageManagers", "sourceRoots", "testRunners"]) {
     const values = profile.facts[key];
-    if (!Array.isArray(values) || values.some((x) => typeof x !== "string" || !x) ||
-        new Set(values).size !== values.length || JSON.stringify(values) !== JSON.stringify([...values].sort(utf8Sort))) {
-      throw new Error("invalid project profile");
+    const field = `facts.${key}`;
+    if (!Array.isArray(values) || values.some((x) => typeof x !== "string" || !x)) {
+      fail(field, "must be an array of non-empty strings");
+    }
+    if (new Set(values).size !== values.length) fail(field, "entries must be unique");
+    if (JSON.stringify(values) !== JSON.stringify([...values].sort(utf8Sort))) {
+      fail(field, "entries must be sorted in UTF-8 order");
     }
   }
   return profile;
 }
 
 function validateReceipt(receipt) {
-  if (!exactKeys(receipt, ["format", "schemaVersion", "classification", "phase", "profileDigest", "artifacts", "nativeInit", "finalStateFingerprint"]) ||
-      receipt.format !== RECEIPT_FORMAT || receipt.schemaVersion !== 1 ||
-      !["greenfield", "brownfield"].includes(receipt.classification) ||
-      !["prepared", "finalized"].includes(receipt.phase) || !HEX64.test(receipt.profileDigest) ||
-      !exactKeys(receipt.artifacts, ["created", "preserved", "skipped"]) ||
-      !validSortedPaths(receipt.artifacts.created) || !validSortedPaths(receipt.artifacts.preserved) ||
-      !Array.isArray(receipt.artifacts.skipped) ||
-      receipt.artifacts.skipped.some((row) => !exactKeys(row, ["path", "reason"]) ||
-        !["exists", "brownfield", "native-pending", "unsafe"].includes(row.reason) ||
-        (() => { try { safeRelative(row.path); return false; } catch { return true; } })()) ||
-      new Set(receipt.artifacts.skipped.map((row) => row.path)).size !== receipt.artifacts.skipped.length ||
-      !rowsSortedByPath(receipt.artifacts.skipped) ||
-      !exactKeys(receipt.nativeInit, ["state", "reason", "expectedArtifacts", "baseline", "attemptId", "handoffAcknowledged", "evidence"]) ||
-      !["not-requested", "handoff", "attempted", "completed"].includes(receipt.nativeInit.state) ||
-      !(receipt.nativeInit.reason === null || ["not-callable", "unavailable", "instruction-present"].includes(receipt.nativeInit.reason)) ||
-      !validSortedPaths(receipt.nativeInit.expectedArtifacts) ||
-      receipt.nativeInit.expectedArtifacts.some((path) => !NATIVE_ARTIFACTS.has(path)) ||
-      !Array.isArray(receipt.nativeInit.baseline) ||
-      receipt.nativeInit.baseline.length !== receipt.nativeInit.expectedArtifacts.length ||
-      receipt.nativeInit.baseline.some((row, index) =>
-        !exactKeys(row, ["bytes", "path", "sha256"]) || row.path !== receipt.nativeInit.expectedArtifacts[index] ||
-        !((row.bytes === null && row.sha256 === null) ||
-          (Number.isInteger(row.bytes) && row.bytes >= 0 && row.bytes <= INIT_LIMITS.learnFileBytes && HEX64.test(row.sha256)))) ||
-      !(receipt.nativeInit.attemptId === null || HEX64.test(receipt.nativeInit.attemptId)) ||
-      typeof receipt.nativeInit.handoffAcknowledged !== "boolean" ||
-      !exactKeys(receipt.finalStateFingerprint, ["algorithm", "basis", "digest"]) ||
-      receipt.finalStateFingerprint.algorithm !== "sha256" || receipt.finalStateFingerprint.basis !== FINGERPRINT_BASIS ||
-      !HEX64.test(receipt.finalStateFingerprint.digest)) throw new Error("invalid init receipt");
+  const fail = (field, clause) => invalidInit("init receipt", field, clause);
+  if (!exactKeys(receipt, ["format", "schemaVersion", "classification", "phase", "profileDigest", "artifacts", "nativeInit", "finalStateFingerprint"])) {
+    fail("receipt", "keys must be exactly artifacts, classification, finalStateFingerprint, format, nativeInit, phase, profileDigest, schemaVersion");
+  }
+  if (receipt.format !== RECEIPT_FORMAT) fail("format", `must be ${RECEIPT_FORMAT}`);
+  if (receipt.schemaVersion !== 1) fail("schemaVersion", "must be 1");
+  if (!["greenfield", "brownfield"].includes(receipt.classification)) {
+    fail("classification", "must be greenfield or brownfield");
+  }
+  if (!["prepared", "finalized"].includes(receipt.phase)) fail("phase", "must be prepared or finalized");
+  if (!HEX64.test(receipt.profileDigest)) fail("profileDigest", "must be 64 lowercase hex characters");
+  if (!exactKeys(receipt.artifacts, ["created", "preserved", "skipped"])) {
+    fail("artifacts", "keys must be exactly created, preserved, skipped");
+  }
+  checkSortedPaths(receipt.artifacts.created, "init receipt", "artifacts.created");
+  checkSortedPaths(receipt.artifacts.preserved, "init receipt", "artifacts.preserved");
+  if (!Array.isArray(receipt.artifacts.skipped)) fail("artifacts.skipped", "must be an array");
+  for (const row of receipt.artifacts.skipped) {
+    if (!exactKeys(row, ["path", "reason"])) {
+      fail("artifacts.skipped", "each row must have exactly the keys path, reason");
+    }
+    if (!["exists", "brownfield", "native-pending", "unsafe"].includes(row.reason)) {
+      fail("artifacts.skipped", "row reason must be exists, brownfield, native-pending, or unsafe");
+    }
+    try { safeRelative(row.path); } catch { fail("artifacts.skipped", "row path must be a safe relative path"); }
+  }
+  if (new Set(receipt.artifacts.skipped.map((row) => row.path)).size !== receipt.artifacts.skipped.length) {
+    fail("artifacts.skipped", "row paths must be unique");
+  }
+  if (!rowsSortedByPath(receipt.artifacts.skipped)) {
+    fail("artifacts.skipped", "rows must be sorted by UTF-8 path order");
+  }
+  const native = receipt.nativeInit;
+  if (!exactKeys(native, ["state", "reason", "expectedArtifacts", "baseline", "attemptId", "handoffAcknowledged", "evidence"])) {
+    fail("nativeInit", "keys must be exactly attemptId, baseline, evidence, expectedArtifacts, handoffAcknowledged, reason, state");
+  }
+  if (!["not-requested", "handoff", "attempted", "completed"].includes(native.state)) {
+    fail("nativeInit.state", "must be not-requested, handoff, attempted, or completed");
+  }
+  if (!(native.reason === null || ["not-callable", "unavailable", "instruction-present"].includes(native.reason))) {
+    fail("nativeInit.reason", "must be null, not-callable, unavailable, or instruction-present");
+  }
+  checkSortedPaths(native.expectedArtifacts, "init receipt", "nativeInit.expectedArtifacts");
+  if (native.expectedArtifacts.some((path) => !NATIVE_ARTIFACTS.has(path))) {
+    fail("nativeInit.expectedArtifacts", "entries must be known native artifacts");
+  }
+  if (!Array.isArray(native.baseline)) fail("nativeInit.baseline", "must be an array");
+  if (native.baseline.length !== native.expectedArtifacts.length) {
+    fail("nativeInit.baseline", "must align with nativeInit.expectedArtifacts");
+  }
+  native.baseline.forEach((row, index) => {
+    if (!exactKeys(row, ["bytes", "path", "sha256"])) {
+      fail("nativeInit.baseline", "each row must have exactly the keys bytes, path, sha256");
+    }
+    if (row.path !== native.expectedArtifacts[index]) {
+      fail("nativeInit.baseline", "row path must match the expected artifact at the same index");
+    }
+    if (!((row.bytes === null && row.sha256 === null) ||
+        (Number.isInteger(row.bytes) && row.bytes >= 0 && row.bytes <= INIT_LIMITS.learnFileBytes && HEX64.test(row.sha256)))) {
+      fail("nativeInit.baseline", "row bytes/sha256 must both be null or a bounded byte count with a 64-hex digest");
+    }
+  });
+  if (!(native.attemptId === null || HEX64.test(native.attemptId))) {
+    fail("nativeInit.attemptId", "must be null or 64 lowercase hex characters");
+  }
+  if (typeof native.handoffAcknowledged !== "boolean") fail("nativeInit.handoffAcknowledged", "must be a boolean");
+  if (!exactKeys(receipt.finalStateFingerprint, ["algorithm", "basis", "digest"])) {
+    fail("finalStateFingerprint", "keys must be exactly algorithm, basis, digest");
+  }
+  if (receipt.finalStateFingerprint.algorithm !== "sha256") fail("finalStateFingerprint.algorithm", "must be sha256");
+  if (receipt.finalStateFingerprint.basis !== FINGERPRINT_BASIS) {
+    fail("finalStateFingerprint.basis", `must be ${FINGERPRINT_BASIS}`);
+  }
+  if (!HEX64.test(receipt.finalStateFingerprint.digest)) {
+    fail("finalStateFingerprint.digest", "must be 64 lowercase hex characters");
+  }
   const evidence = receipt.nativeInit.evidence;
   if (evidence !== null) {
-    if (!["artifact-delta", "preexisting-artifact-confirmed", "call-result"].includes(evidence.kind) ||
-        !Array.isArray(evidence.artifacts) || evidence.artifacts.length === 0 ||
-        new Set(evidence.artifacts.map((row) => row.path)).size !== evidence.artifacts.length ||
-        !rowsSortedByPath(evidence.artifacts)) throw new Error("invalid init receipt");
+    if (!["artifact-delta", "preexisting-artifact-confirmed", "call-result"].includes(evidence.kind)) {
+      fail("nativeInit.evidence.kind", "must be artifact-delta, preexisting-artifact-confirmed, or call-result");
+    }
+    if (!Array.isArray(evidence.artifacts) || evidence.artifacts.length === 0) {
+      fail("nativeInit.evidence.artifacts", "must be a non-empty array");
+    }
+    if (new Set(evidence.artifacts.map((row) => row.path)).size !== evidence.artifacts.length) {
+      fail("nativeInit.evidence.artifacts", "paths must be unique");
+    }
+    if (!rowsSortedByPath(evidence.artifacts)) {
+      fail("nativeInit.evidence.artifacts", "must be sorted by UTF-8 path order");
+    }
     for (const row of evidence.artifacts) {
       safeRelative(row.path);
       if (evidence.kind === "artifact-delta") {
-        if (!exactKeys(row, ["after", "before", "path"]) || !HEX64.test(row.after) ||
-            !(row.before === null || HEX64.test(row.before))) throw new Error("invalid init receipt");
-      } else if (!exactKeys(row, ["path", "sha256"]) || !HEX64.test(row.sha256)) throw new Error("invalid init receipt");
+        if (!exactKeys(row, ["after", "before", "path"])) {
+          fail("nativeInit.evidence.artifacts", "artifact-delta rows must have exactly the keys after, before, path");
+        }
+        if (!HEX64.test(row.after)) {
+          fail("nativeInit.evidence.artifacts", "row after must be 64 lowercase hex characters");
+        }
+        if (!(row.before === null || HEX64.test(row.before))) {
+          fail("nativeInit.evidence.artifacts", "row before must be null or 64 lowercase hex characters");
+        }
+      } else if (!exactKeys(row, ["path", "sha256"]) || !HEX64.test(row.sha256)) {
+        fail("nativeInit.evidence.artifacts", "rows must have exactly the keys path, sha256 with a 64-hex digest");
+      }
     }
     if (evidence.kind === "call-result") {
-      if (!exactKeys(evidence, ["kind", "artifacts", "resultDigest"]) || !HEX64.test(evidence.resultDigest)) throw new Error("invalid init receipt");
-    } else if (!exactKeys(evidence, ["kind", "artifacts"])) throw new Error("invalid init receipt");
+      if (!exactKeys(evidence, ["kind", "artifacts", "resultDigest"])) {
+        fail("nativeInit.evidence", "call-result evidence must have exactly the keys artifacts, kind, resultDigest");
+      }
+      if (!HEX64.test(evidence.resultDigest)) {
+        fail("nativeInit.evidence.resultDigest", "must be 64 lowercase hex characters");
+      }
+    } else if (!exactKeys(evidence, ["kind", "artifacts"])) {
+      fail("nativeInit.evidence", "evidence must have exactly the keys artifacts, kind");
+    }
   }
-  const native = receipt.nativeInit;
   const computedAttemptId = sha256(canonicalInitJson({
     expectedArtifacts: native.expectedArtifacts,
     profileDigest: receipt.profileDigest,
@@ -604,9 +721,13 @@ function validateReceipt(receipt) {
   const phaseIsValid = receipt.phase === "prepared" ||
     native.state === "completed" ||
     (native.state === "handoff" && native.reason === "unavailable" && native.handoffAcknowledged);
-  if (!stateIsValid || !phaseIsValid || !evidenceMatchesBaseline) {
-    throw new Error("invalid init receipt");
+  if (!stateIsValid) {
+    fail("nativeInit", "state is inconsistent with reason, expectedArtifacts, baseline, attemptId, handoffAcknowledged, and evidence");
   }
+  if (!phaseIsValid) {
+    fail("phase", "finalized requires a completed native init or an acknowledged unavailable handoff");
+  }
+  if (!evidenceMatchesBaseline) fail("nativeInit.evidence", "artifacts must match the handoff baseline");
   return receipt;
 }
 
@@ -621,7 +742,8 @@ async function readOwned(root) {
     profile = validateProfile(parseStrictJson(profileFile.bytes, "project profile"));
     receipt = validateReceipt(parseStrictJson(receiptFile.bytes, "init receipt"));
   } catch (error) {
-    throw new Error(error.message.includes("receipt") ? error.message : "invalid owned init state");
+    const detailed = error.message.includes("receipt") || error.message.startsWith("invalid project profile");
+    throw new Error(detailed ? error.message : "invalid owned init state");
   }
   if (profile.classification !== receipt.classification ||
       sha256(canonicalInitJson(profile)) !== receipt.profileDigest) throw new Error("owned init state does not match");

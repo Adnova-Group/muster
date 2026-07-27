@@ -116,6 +116,14 @@ The invocation text: `$ARGUMENTS`
      `plan` skill/`/goal` contract, not a stop-the-world gate), so the actual **Approve & run** / **Adjust the
      plan** / **Cancel** decision rides Hermes's `clarify` tool — the same AskUserQuestion-shaped fallback
      below, named here as `clarify` because that is Hermes's structured user-input mechanism.
+   - **Kimi session** (docs/research/kimi-code-cli.md §4, §9): author the rendered Crew
+     Manifest, then ride Kimi's native Plan mode — an approve/reject/revise gate (`kc-approval`)
+     — as the approval surface: approve maps to **Approve & run**, reject/revise maps to
+     **Adjust the plan**, backing out of the plan maps to **Cancel**; `default_plan_mode: true`
+     in config.toml starts the session in plan mode. The gate is shaped around tool approval
+     rather than arbitrary multi-choice questions, so any decision the gate's own
+     approve/reject/revise options can't express still rides the **AskUserQuestion** fallback
+     below.
    - **Every other case** — not in plan mode, an unattended Routine, or a harness with no native plan
      surface at all: **Cowork** degrades here explicitly (its documented 5-step task loop exposes no
      task-graph or plan object — "the plan is prose in the agent's head," docs/research/claude-cowork.md §2

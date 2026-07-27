@@ -837,5 +837,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // scripts/check-codex.mjs (clean). docs/binding-interface.md's worktree
   // grep-audit count re-derived (23 -> 26, files unchanged at 5) for the three
   // new worktree-mention lines. Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "2d5e1e6d4aca7cf2b855ed955709ff66d0cf339781f5d61fb7a2698d2ed75b8e");
+  // 2026-07-26 re-pin (kimi-plan-flow-lane): file COUNT unchanged (139) -- only
+  // plugin/commands/plan.md's content changed. Step 7's per-harness surface list
+  // gained a **Kimi session** bullet (native Plan mode approve/reject/revise
+  // gate, docs/research/kimi-code-cli.md sec 4/9, mapped onto Approve & run /
+  // Adjust the plan / Cancel with the AskUserQuestion fallback for anything the
+  // gate can't express), paired with the src/-side kimi entry in
+  // src/plan-surface.js's PLAN_SURFACES (outside this surface). The bullet is a
+  // clearly-labeled Kimi-only branch, same shape as the existing Claude/Codex/
+  // Hermes branches that already ship to every harness's build. Deliberate
+  // surface change, not drift.
+  assert.equal(hash.digest("hex"), "35787245f7ef097a21fdf482938c69b1fc1f2eb2d8193345770fcfd3d492132c");
 });

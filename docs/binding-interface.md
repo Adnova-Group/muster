@@ -289,7 +289,7 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=13  mentions=35
+AskUserQuestion    files=13  mentions=36
 dispatch (Agent/Task tool)  files=5  mentions=17
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
 worktree   files=5  mentions=26
@@ -341,7 +341,14 @@ isolation" bullet gained a harness-neutral clause pointing at that per-harness s
 more `worktree` mentions on their own lines (23 -> 26). File counts unchanged (still the same 5
 files); AskUserQuestion, dispatch, and hook counts are untouched by this item.
 
-Every one of those 106 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the kimi-plan-flow-lane item: `plugin/commands/plan.md`'s step 7
+per-harness surface list gained a **Kimi session** bullet (native Plan mode approve/reject/
+revise gate mapped onto Approve & run / Adjust the plan / Cancel, with the AskUserQuestion
+fallback named for anything the gate can't express) -- one more `AskUserQuestion` mention on
+its own line (35 -> 36). File counts unchanged (still the same 13 files); dispatch, hook, and
+worktree counts are untouched by this item.
+
+Every one of those 107 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

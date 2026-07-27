@@ -37,6 +37,12 @@
 //     [docs/research/hermes.md §4]. Hermes's own docs name no blocking plan-approval mode
 //     (hermes.md's augmentation table: "Partial -- approve-first must be enforced by muster's
 //     own skill flow + clarify"), so the front-door block still rides Hermes's `clarify` tool.
+//   - kimi: Plan mode is a native approve/reject/revise gate
+//     [docs/research/kimi-code-cli.md §9, `kc-approval`], and `default_plan_mode` (bool) in
+//     config.toml starts a session in plan mode [docs/research/kimi-code-cli.md §4]. The gate
+//     is shaped around tool approval, not arbitrary multi-choice questions, so any decision
+//     the gate's own approve/reject/revise options can't express still rides the universal
+//     AskUserQuestion fallback (see plan.md).
 //   - cowork: the documented 5-step task loop has no exposed task-graph, plan object, or
 //     dependency ordering -- "the plan is prose in the agent's head"
 //     [docs/research/claude-cowork.md §2]. No native surface exists; the whole approve-first
@@ -58,6 +64,7 @@ const CC_CITE = "docs/research/claude-code-cli.md §6";
 const CODEX_CITE = "docs/research/codex-cli.md §1, §4.2, §5.2";
 const HERMES_CITE = "docs/research/hermes.md §4";
 const COWORK_CITE = "docs/research/claude-cowork.md §2";
+const KIMI_CITE = "docs/research/kimi-code-cli.md §4, §9";
 
 const PLAN_SURFACES = {
   "claude-code": {
@@ -83,6 +90,12 @@ const PLAN_SURFACES = {
     primitive: null,
     detail: "no exposed plan-mode object or task-graph primitive exists -- degrade to muster's own prose approve-first flow",
     cite: COWORK_CITE
+  },
+  kimi: {
+    surface: "native",
+    primitive: "plan-mode-gate",
+    detail: "ride Kimi's native Plan mode -- an approve/reject/revise gate -- as the approval surface (approve -> Approve & run, reject/revise -> Adjust the plan, backing out -> Cancel); `default_plan_mode: true` in config.toml starts the session in plan mode; decisions the gate's own options can't express still ride the AskUserQuestion fallback",
+    cite: KIMI_CITE
   }
 };
 

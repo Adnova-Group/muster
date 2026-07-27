@@ -39,6 +39,15 @@ test("hermes resolves to the native plan-skill + goal-completion-contract surfac
   assert.match(r.cite, /hermes\.md/);
 });
 
+test("kimi resolves to the native plan-mode approve/reject/revise gate", () => {
+  const r = resolvePlanSurface("kimi");
+  assert.equal(r.runtime, "kimi");
+  assert.equal(r.surface, "native");
+  assert.match(r.detail, /approve\/reject\/revise/);
+  assert.match(r.detail, /default_plan_mode/);
+  assert.match(r.cite, /kimi-code-cli\.md/);
+});
+
 test("cowork has no native plan surface -- resolves to the prose fallback", () => {
   const r = resolvePlanSurface("cowork");
   assert.equal(r.runtime, "cowork");
@@ -73,7 +82,7 @@ test("runtime lookup is case- and whitespace-insensitive", () => {
 });
 
 test("every entry names a citation and a one-line detail string, never empty", () => {
-  for (const runtime of ["claude-code", "codex", "hermes", "cowork", "unknown"]) {
+  for (const runtime of ["claude-code", "codex", "hermes", "cowork", "kimi", "unknown"]) {
     const r = resolvePlanSurface(runtime);
     assert.ok(r.detail && r.detail.length > 0, `${runtime} must carry a detail string`);
     assert.ok(r.cite && r.cite.length > 0, `${runtime} must carry a citation`);

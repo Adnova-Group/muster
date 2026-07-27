@@ -18,10 +18,12 @@ It runs on bare Claude Code or Codex with no separate model API, and it gets bet
 ## Quickstart
 
 ```sh
-npx -y @adnova-group/muster install
+npx -y @adnova-group/muster@0.5.0 install
 ```
 
-`install` mutates nothing in your `~/.claude`. It just prints the steps it cannot do for you, because registering a plugin is a Claude Code action:
+Pin the reviewed release in automation and copy the current version from `package.json` when updating. `npx` uses npm's execution path and may download the named package from the configured registry before running it. Review the package provenance and release notes before changing the pin.
+
+`install` mutates nothing in your `~/.claude`. It only prints the steps it cannot do for you, because registering a plugin is a Claude Code action:
 
 ```sh
 /plugin marketplace add Adnova-Group/muster  # register the marketplace
@@ -39,14 +41,29 @@ Muster's glass-box output style ships inside the plugin and applies automaticall
 Build or install the package, then install Muster's managed Codex profiles and plugin:
 
 ```sh
-npx -y @adnova-group/muster install codex --scope project
+npx -y @adnova-group/muster@0.5.0 install codex --scope project
 ```
 
-`--scope project` writes Muster-owned profiles under `.codex/agents/` plus the hook runtime under `.codex/muster/`, and merges owned hook groups into `.codex/hooks.json`. `--scope user` uses the corresponding paths under `$CODEX_HOME` (or `~/.codex`). The user scope is canonical for hooks: if it already carries a healthy Muster hook install, a project-scope install skips its own hook merge entirely (profiles still install), so rerunning `--scope project` on a machine with both scopes converges to one firing scope instead of double-firing every event. Existing unrelated profiles and hook groups are preserved. With Codex on `PATH`, Muster registers `Adnova-Group/muster` and adds `muster@muster` idempotently. Without Codex it still installs the profiles and hooks, then prints the exact registration follow-up.
+`--scope project` writes Muster-owned profiles and declarations under the project's `.codex/` layer, installs the hook runtime under `.codex/muster/`, and merges owned hook groups into `.codex/hooks.json`. The install also records ownership receipts and registers the plugin. Existing unrelated profiles, configuration, and hook groups are preserved.
+
+Codex CLI, Desktop, and the IDE share `$CODEX_HOME/config.toml`. Even for `--scope project`, the installer raises that shared file's orchestration floor to `max_threads >= 12` and `max_depth >= 2`, with a receipt so the last managed-scope uninstall can restore values Muster changed. The user scope is canonical for hooks: a healthy user install makes a project install skip its own hook merge, avoiding duplicate events. Use `--dry-run` to inspect the complete write, merge, registration, and cleanup plan first:
+
+```sh
+npx -y @adnova-group/muster@0.5.0 install codex --scope project --dry-run
+```
+
+Codex requires a new trust review when installed hook definitions change. Inspect exact definitions with `/hooks`; update-sensitive trust means a previously trusted hash does not authorize changed code. To remove only Muster-owned project state, preview and then run:
+
+```sh
+npx -y @adnova-group/muster@0.5.0 uninstall codex --scope project --dry-run
+npx -y @adnova-group/muster@0.5.0 uninstall codex --scope project
+```
+
+Uninstall preserves unrelated config and Codex's project trust records, removes only receipted Muster declarations and hook groups, prunes Muster-owned hook trust entries, and unregisters the plugin only after the last managed scope is gone. With Codex on `PATH`, install registers `Adnova-Group/muster` and adds `muster@muster` idempotently. Without Codex it installs profiles and hooks, then prints the exact registration follow-up.
 
 Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. The three legacy aliases (`run`, `autopilot`, `sprint`) remain skills. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
 
-The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 custom-agent profiles, 11 native skills, and 51 capability skills. The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire (Codex executes plugin-bundled hooks by default). Codex requires a one-time trust review for these non-managed hooks; inspect them with `/hooks`. The hooks inject orchestration context and surface supported diagnostics and policy warnings. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
+The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 custom-agent profiles, 11 native skills, and 51 capability skills. The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
 ## The nine modes
 
@@ -95,14 +112,16 @@ The novel core is a capability and domain router. Muster names a fixed vocabular
 
 The role set is fixed but the provider set is not. When an outcome does not fit a named role, description-search bridges the gap: `muster match "<task>"` ranks every catalog provider by deterministic token overlap (no model call), so "audit this code for security vulnerabilities" surfaces the security specialist even though it never names a role.
 
-Each role also carries a conceptual tier picked to fit the work. The ladder, from least to most capable, is `scout`, `core`, `prime`, and `apex`. Mechanical roles use scout, routine work defaults to core, and peak-judgment roles use apex with a deterministic fallback to prime. Harness adapters map those tiers to concrete models. Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
+Each role also carries a conceptual tier picked to fit the work. The ladder, from least to most capable, is `scout`, `core`, `prime`, and `apex`. Mechanical roles use scout, routine work defaults to core, and peak-judgment roles use apex with a deterministic fallback to prime. Runtime adapters map those tiers to concrete models. Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
 
-## Always-on guidance
+## Claude Code-only lifecycle hooks
 
-Muster ships four plugin-native hooks. Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits: the only hard deny on a tool call is the action-class fence, scoped to a live run that declared a forbidden action. A second, narrower block lives on `TaskCompleted`, gating the native task board's own completion tick rather than a tool call. Everything else is a single warn-only "border invitation" that sells the value of a crew run rather than commanding, and review gates remain muster's actual quality enforcement.
+This section describes the plugin-native Claude Code hooks. Codex uses the diagnostic hook layer described above. Other harnesses receive only the lifecycle primitives they actively subscribe to; Muster does not infer an active harness subscription from files on disk.
+
+Claude Code receives four plugin-native hooks. Enforcement follows the run's external effects, not the orchestrator's own in-repo edits: the only hard deny on a tool call is the action-class fence, scoped to a live run that declared a forbidden action. The fence fails open when run markers are absent or unreadable, classification is ambiguous, or no forbidden class matches. Calls inside a subagent carry `agent_id` and are exempt because ownership and worktree checks happen at the wave barrier. This means the fence cannot police a forbidden external effect performed by a subagent; the dispatch brief and review gate remain required. A second, narrower block lives on `TaskCompleted`, gating the native task board's own completion tick rather than a tool call. Everything else is a warn-only border invitation.
 
 - **`SessionStart`**: injects a one-line pointer (muster available; `/muster:plan` for orchestration-scale work) at the start of every session, and clears stale `.muster/run-active`/`wave-active` markers and per-session drift state so a new session never inherits a crashed run's state.
-- **`UserPromptSubmit`**: the ONLY prompt-time nudge is the isDirective-triggered border invitation -- a directive-shaped prompt (an imperative verb like fix/build/implement, optionally after a polite lead-in; declaratives like "Update:"/"Fix for" and questions are excluded) landing with no muster run active sells the value of a crew run (parallel dispatch, adversarial review, a receipts trail) once per crossing, then stays silent until re-armed by a muster run starting, `SessionStart`, or 60 minutes of inactivity.
+- **`UserPromptSubmit`**: the only prompt-time nudge is the isDirective-triggered border invitation. A directive-shaped prompt is eligible only after inline-file activity corroborates orchestration scale; a cold "fix typo" does not trigger it. One invitation starts a shared 15-minute cooldown. The signal re-arms after a Muster run starts, `SessionStart`, or 60 minutes of inactivity, but the cooldown still prevents rapid repeats.
 - **`PreToolUse`**: the action-class fence (the one hard deny) plus the tool-call half of the same border invitation. While a muster run is active AND `.muster/forbidden-actions` lists a class, a tool call classified into that class (send/sign/submit/publish/purchase/delete-remote) is denied, honoring `MUSTER_ACTION_GUARD` (`off`/`warn`/deny-by-default). Independently, a cumulative counter of distinct inline-edited files (across turns, with no muster run active) crossing `MUSTER_INLINE_SCALE` (default 3) warns once per crossing with the same value-toned copy -- never denies. Writes into `.muster/` and `.claude/` (in-cwd repo) are always exempt.
 - **`TaskCompleted`**: the second block surface. The orchestrator writes `.muster/task-board.json` (one entry per native task muster created) and flips an entry to `reviewGate: "pass"` only once the review gate actually passes that task. This hook denies (exit 2) a completion tick on a tracked task that has no recorded PASS, so a task cannot be marked done before it has been reviewed; it fails open for anything the board does not track. `MUSTER_TASK_GATE=off` disables it.
 
@@ -146,6 +165,8 @@ Muster's runtime behavior can be tuned with environment variables:
 | `MUSTER_FUSE_TOPK` | `3` | Maximum number of tournament candidates passed to the fusion synthesizer. Must be >= 1. |
 | `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis. Below this threshold `muster fuse` falls back to the single best candidate. Set to 0 to always fuse when >= 2 candidates pass. |
 | `MUSTER_SPRINT_PARALLEL` | `5` | Max concurrent item-runner subagents per wave in `/muster:go-backlog` wave mode; hard ceiling `10` (higher values clamp, `0` is invalid; concurrency is never unbounded). Read by go-backlog's orchestration protocol, not by library code. |
+
+This table covers the most common controls. See the [full configuration reference](https://adnova-group.github.io/muster/reference/configuration) for hook cooldown, model, concurrency, and advanced runtime settings.
 
 <!-- legacy-tier-compat:start -->
 Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.

@@ -15,7 +15,7 @@ Muster is split into two layers with a hard boundary between them.
 | Deterministic CLI | `src/*.js` | Plain Node ESM | No |
 | Model-facing | `plugin/` (commands, skills, agents) | Claude Code | Yes |
 
-The **CLI layer** is ordinary Node with a single runtime dependency. It does the deterministic work: detecting the project, resolving roles to providers, ranking candidates, scoring artifacts against a gate, computing prioritization math, validating pipelines. Anything that can be answered by code is answered by code.
+The **CLI layer** is ordinary Node with two runtime dependencies, `yaml` and `esbuild`. It does the deterministic work: detecting the project, resolving roles to providers, ranking candidates, scoring artifacts against a gate, computing prioritization math, validating pipelines. Anything that can be answered by code is answered by code.
 
 The **model-facing layer** is markdown that Claude Code loads as a plugin. It instructs the model how to drive a run, calling the CLI for every deterministic decision and using Claude Code's subagent dispatch for the judgment work.
 
@@ -83,4 +83,4 @@ What happens when a role resolves to an agent whose type is **not dispatchable**
 - **On Claude Code**, the orchestrator falls back to a generic subagent with the resolved provider's brief injected, and records the fallback in the run STATE. The model override still applies, so model selection is never lost on the fallback.
 - **On Codex**, there is no fallback: a non-dispatchable agent profile fails closed with a reinstall/new-session diagnostic, because a generic Codex subagent would silently lose the profile's pinned role and model policy. See [Architecture](/reference/architecture#provider-kinds).
 
-Next: [The eight modes](/reference/modes).
+Next: [The nine modes](/reference/modes).

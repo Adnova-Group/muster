@@ -19,10 +19,10 @@ and explicitly parked, not built.
 ## Scope of the audit
 
 "Plugin prose" here means the model-facing surface Claude Code actually loads and reads at
-dispatch time: `plugin/commands` (the eight modes plus the `run`/`autopilot`/`sprint` alias
-stubs, as `*.md` files), `plugin/skills` (the eleven core skills, one `SKILL.md` per
+dispatch time: `plugin/commands` (the nine modes plus the three legacy aliases,
+as `*.md` files), `plugin/skills` (the eleven core skills, one `SKILL.md` per
 subdirectory), muster's own agents in `plugin/agents` (seven `muster-*.md` files; not the
-vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- thirty files.
+vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- thirty-one files.
 
 Two adjacent trees were deliberately excluded, with evidence rather than assertion:
 
@@ -264,7 +264,7 @@ scanned.
 
 ## Grep audit
 
-Reproducible commands, run from the repo root against the thirty-file "plugin prose" scope
+Reproducible commands, run from the repo root against the thirty-one-file "plugin prose" scope
 defined above (`FILES` set to every `*.md` in `plugin/commands`, every `SKILL.md` in
 `plugin/skills`, every `muster-*.md` in `plugin/agents`, and every `*.md` in
 `plugin/output-styles`):

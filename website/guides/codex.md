@@ -1,13 +1,13 @@
 # Codex
 
-Muster runs on Codex CLI and Codex Desktop as a first-class harness, not a port. The same deterministic CLI does the routing math; the Codex plugin carries the model-facing layer, and the npm installer writes the Codex-native profiles and lifecycle hooks that Codex itself cannot install for you.
+Muster runs on Codex CLI and Codex Desktop as a first-class runtime. The same deterministic CLI does the routing math. The Codex plugin carries the model-facing layer, and the npm installer writes the profiles and lifecycle hooks that Codex itself cannot install.
 
 ## Requirements
 
 - [Codex CLI or Codex Desktop](https://developers.openai.com/codex)
 - Node.js 20 or newer (`node --version`)
 
-Muster draws your interactive Codex subscription. There is no separate model API and no key to manage.
+Model work uses the account or subscription of the active Codex session. Muster's CLI makes no model calls and needs no separate model API key.
 
 ## Install
 
@@ -20,8 +20,10 @@ npx -y @adnova-group/muster install codex --scope project
 - Muster-owned agent profiles under `.codex/agents/`
 - the hook runtime under `.codex/muster/`
 - Muster-owned hook groups merged into `.codex/hooks.json`
+- a managed agent-declaration region in `.codex/config.toml`
+- a shared `[agents]` floor of `max_threads = 12` and `max_depth = 2`
 
-`--scope user` writes the same three things under `$CODEX_HOME` (or `~/.codex` when that is unset).
+`--scope user` writes the same owned material under `$CODEX_HOME` (or `~/.codex` when that is unset). The thread-limit floor is shared in the Codex home config. Existing higher values survive. Muster records the previous values so the last managed-scope uninstall can restore keys it raised, while preserving a later user increase.
 
 With Codex on `PATH`, the installer also registers the `Adnova-Group/muster` marketplace and adds `muster@muster`, idempotently. Without Codex on `PATH` it still installs the profiles and hooks, then prints the exact registration follow-up for you to run.
 
@@ -31,7 +33,7 @@ npx -y @adnova-group/muster install codex --scope user
 
 ## The canonical-scope hook collapse
 
-The **user scope is canonical for hooks.** If the user scope already carries a healthy Muster hook install, a project-scope install **skips its own hook merge entirely** — profiles still install as normal. Rerunning `--scope project` on a machine that has both scopes therefore converges on **one firing scope** instead of double-firing every lifecycle event.
+The **user scope is canonical for hooks.** If the user scope already carries a healthy Muster hook install, a project-scope install **skips its own hook merge entirely**. Profiles still install as normal. Rerunning `--scope project` on a machine that has both scopes therefore converges on **one firing scope** instead of double-firing every lifecycle event.
 
 Existing unrelated profiles and hook groups are preserved in both scopes. Muster only owns what it wrote; the merge is additive against your own entries.
 
@@ -41,13 +43,15 @@ You do not have to choose. Install the user scope once for hooks that follow you
 
 ## Why the Codex plugin is hooks-free
 
-Codex executes plugin-bundled hooks by default. If Muster's Codex plugin bundled its hooks, every event would fire twice — once from the plugin and once from the `hooks.json` layer.
+Codex executes plugin-bundled hooks by default. If Muster's Codex plugin bundled its hooks, every event would fire twice: once from the plugin and once from the `hooks.json` layer.
 
 So the Codex plugin is **deliberately hooks-free.** Hooks come from the npm installer through the supported project or user `hooks.json` layer instead, which is also the layer you can inspect and revoke. The two paths never overlap.
 
 ## Trust review
 
-These hooks are non-managed, so Codex asks for a **one-time trust review** the first time they would fire. Approve them once and Codex remembers the decision. Inspect what is registered at any time:
+Codex stores trust per hook definition, keyed by the hooks file, event, group, hook index, and current content hash. A fresh definition or changed command needs review before it fires. An unchanged reinstall keeps the matching trust entry. Removing or collapsing a Muster scope prunes only the exact trust keys owned by that departing definition; another definition at the same path and Codex project-trust records remain.
+
+Inspect current definitions at any time:
 
 ```
 /hooks
@@ -70,8 +74,11 @@ $muster Add rate limiting to the public API with tests
 | `$muster-go` | Hands-off full lifecycle: branch, route, waves, gates, disposition. |
 | `$muster-audit` | Breadth-first whole-codebase review and fix. |
 | `$muster-capture` | Mine the conversation into approval-gated backlog items. |
+| `$muster-init` | Prepare repository state and coordinate Codex native Init evidence. |
 
-All eight modes have a skill: the four above plus `$muster-plan-backlog`, `$muster-go-backlog`, `$muster-diagnose`, and `$muster-runner`. The three legacy aliases remain skills too — `run` (→ `plan`), `autopilot` (→ `go`), and `sprint` (→ `go-backlog`). They are deprecated as of 2026-07-17 and retire in muster 0.7.0.
+All nine modes have a skill: the five above plus `$muster-plan-backlog`, `$muster-go-backlog`, `$muster-diagnose`, and `$muster-runner`. The three legacy aliases remain skills too: `run` maps to `plan`, `autopilot` maps to `go`, and `sprint` maps to `go-backlog`. They are deprecated as of 2026-07-17 and retire in Muster 0.7.0.
+
+Codex native Init expects `AGENTS.md`. A request to run Init, an existing file, or a refusal to overwrite does not prove completion. Muster finalizes only from an artifact delta, an explicit pre-existing confirmation, or an attempt-bound call-result receipt.
 
 ## What the Codex plugin bundles
 
@@ -79,7 +86,7 @@ All eight modes have a skill: the four above plus `$muster-plan-backlog`, `$must
 | --- | --- |
 | Deterministic CLI | the full `muster` verb surface |
 | Pipelines | all of them |
-| MCP tools | 28 |
+| MCP tools | 27 CLI wrappers plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
 | Native skills | 11 |
 | Capability skills | 51 |
@@ -91,9 +98,30 @@ muster capabilities --codex
 muster doctor --codex
 ```
 
-`capabilities --codex` reports the live Codex plugin, MCP, skills, and agents inventory, and walks the same resolution ladder as the Claude Code lane. On this lane only, every **agent-backed** role additionally carries `codexModel: {model, effort}` — the exact model and reasoning effort the role's chosen profile resolves to, so a driver can see the dispatch policy before it dispatches rather than auditing it after the run.
+`capabilities --codex` reports the live Codex plugin, MCP, skills, and agents inventory, and walks the same resolution ladder as the Claude Code lane. On this lane only, every **agent-backed** role additionally carries `codexModel: {model, effort}`, the exact model and reasoning effort the role's chosen profile resolves to. A driver can see the dispatch policy before dispatch instead of auditing it after the run.
 
 `doctor --codex` is read-only and names the failing scope and cause for generation/version mismatches between installed scopes, hook coherence failures, and stale hook trust entries. See [Troubleshooting](/guides/troubleshooting) for how to read the output.
+
+## Codex audit shape
+
+The Codex audit covers the same six core dimensions as other runtimes, but it uses three read-only briefs to stay within the Codex thread budget:
+
+1. Architecture and tech debt
+2. Coverage and simplification
+3. Readability and security
+
+A prompting project adds prompt-quality coverage to the relevant scan. Each required dimension must return a receipt before consolidation. The three-brief shape is a quota adaptation, not a smaller audit inventory.
+
+## Preview, provenance, and conflicts
+
+```sh
+muster install codex --scope project --dry-run
+muster uninstall codex --scope project --dry-run
+```
+
+Dry-run reports the planned files, merges, hook-collapse decision, and plugin actions without writing, locking, registering, or removing anything. The plan is a preview, not proof that a later real install will see the same filesystem.
+
+Muster refuses to overwrite unrelated profiles or mutate a managed declaration region whose provenance receipt no longer matches. Treat that refusal as an ownership warning. Inspect the named file instead of deleting the manifest to force an install.
 
 ## Uninstall
 
@@ -102,13 +130,15 @@ muster uninstall codex --scope project
 muster uninstall codex --scope user
 ```
 
-Each removes only the Muster-owned profiles, hook runtime, and hook groups from that scope. Unrelated entries in `.codex/hooks.json` (or the `$CODEX_HOME` equivalent) stay where they are.
+Each command removes only material owned in the scope you name: receipted profiles, the managed declaration region, hook runtime, hook groups, and exact hook-trust keys. Unrelated entries remain. The Codex plugin stays registered while another managed scope is live and is removed only after the last registered scope leaves with certain ownership. Shared thread limits restore only at that last-scope point.
 
 ## Policy limits on Codex
 
-Two of Muster's enforcement surfaces behave differently here, and both are deliberate:
+Some controls are weaker on Codex:
 
 - **Todo and spawn enforcement remain advisory.** Codex's hook layer surfaces the warning; it does not hard-block the call. The review gate, not the hook, is Muster's actual quality enforcement on this harness.
-- **Write-capable waves must use isolated Git worktrees.** Codex's `spawn_agent` has no cwd field, so there is no native per-subagent isolation to ride. Muster shells out `git worktree add` before dispatch and verifies each runner's branch and base from its own base-SHA receipt (`muster receipt-verify <sha> --cwd <repo>`).
+- **The action fence is not a Codex sandbox.** Codex does not register a blocking hook event for Muster. Forbidden action classes still travel in run state and worker briefs, but that is instruction-level policy on this runtime. Keep Codex permissions and human approval in place for external effects.
+- **Write-capable waves need isolated Git worktrees.** `spawn_agent` has no cwd field. Muster creates worktrees before dispatch, names the absolute worktree in every brief, and requires a base-SHA receipt.
+- **Receipt verification proves one narrow fact.** Format validation alone is insufficient. `muster receipt-verify <sha> --cwd <repo>` confirms that the SHA resolves to a real commit object in the explicit repository. It does not prove that a worker used the assigned worktree, stayed on a branch, forked from that commit, respected ownership, or produced a clean diff. Those checks remain separate dispatch and review duties.
 
 Next: [Troubleshooting](/guides/troubleshooting) and the [CLI commands](/reference/commands) reference.

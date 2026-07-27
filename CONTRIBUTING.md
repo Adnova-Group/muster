@@ -12,7 +12,7 @@ cd muster
 npm install
 ```
 
-There is a single runtime dependency (`yaml`), so install is quick.
+The runtime dependencies are `yaml` for deterministic catalog and pipeline parsing, and `esbuild` for packaging the Codex plugin.
 
 Run the test suite with:
 
@@ -20,9 +20,9 @@ Run the test suite with:
 npm test
 ```
 
-That runs the [`node:test`](https://nodejs.org/api/test.html) suites under `test/`. Node 20 or newer is required (see `engines` in `package.json`).
+The `pretest` lifecycle first runs `npm run build:codex`, then `npm test` runs the [`node:test`](https://nodejs.org/api/test.html) suites under `test/`. Node 20 or newer is required (see `engines` in `package.json`).
 
-There is no build step. The CLI runs the `src/` tree directly:
+The deterministic CLI runs the `src/` tree directly:
 
 ```bash
 node src/cli.js <verb>
@@ -30,12 +30,30 @@ node src/cli.js <verb>
 
 Try `node src/cli.js detect` or `node src/cli.js capabilities` to see it work against the current directory.
 
+Build and validate the generated Codex distribution with:
+
+```bash
+npm run build:codex
+npm run check:codex
+```
+
+`prepublishOnly` runs both Codex commands followed by the test suite. The documentation website has its own build:
+
+```bash
+cd website
+npm install
+npm run docs:build
+```
+
 ## Project layout
 
 | Path | What lives here |
 | --- | --- |
 | `src/` | The deterministic CLI. Plain Node modules, no LLM calls. Each verb maps to a module dispatched from `src/cli.js`. |
 | `plugin/` | The model-facing surface: `commands/`, `skills/`, `agents/`, `hooks/`, and `output-styles/`. This is what Claude Code loads. The glass-box output style ships here with `force-for-plugin` so it auto-applies when the plugin is enabled. |
+| `codex/` | Codex source assets, hook templates, fallback skills, and generated-package inputs. |
+| `cowork/` | Cowork MCP server packaging and harness adapter assets. |
+| `scripts/` | Release builds, Codex validation, asset synchronization, and maintenance scripts. |
 | `catalog/*.yaml` | The capability catalog. Maps provider IDs to roles and ranks so the router can pick a crew. |
 | `pipelines/*.yaml` | Domain pipelines (one file per pipeline). Each defines the phases for an outcome like a PRD or a roadmap. |
 | `vendor/manifest.yaml` | The vendoring source of truth. Lists upstream skills and agents to pull in and the role each maps to. |

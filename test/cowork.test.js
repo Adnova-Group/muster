@@ -93,7 +93,7 @@ test("instructions carry a Cowork execution protocol with the sequential (no-fan
   assert.match(instr, /muster_next.*fan-out is unavailable|fan-out is unavailable/i, "spells out the no-fan-out fallback via muster_next");
 });
 
-test("instructions cover the full autopilot/audit/diagnose lifecycle (dispatch confirmed on Cowork)", async () => {
+test("instructions cover the six-mode MCP protocol subset (dispatch confirmed on Cowork)", async () => {
   const r = await rpc([INIT]);
   const instr = r[1].result.instructions;
   assert.match(instr, /parallel/i, "leads with parallel fan-out now that dispatch is confirmed");
@@ -152,9 +152,9 @@ test("verb-rename: sprint-protocol.md cites go-backlog.md (not the sprint.md ali
 test("verb-rename: README.md enumeration uses plan/go/plan-backlog/go-backlog and cites /muster:go-backlog", async () => {
   const text = await read("cowork/README.md");
   const norm = text.replace(/\s+/g, " ");
-  assert.match(norm, /full orchestration lifecycle \(plan, go, plan-backlog, diagnose, audit, go-backlog\)/, "lifecycle enumeration uses the new lexicon");
+  assert.match(norm, /six-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit\)/, "MCP protocol subset uses the new lexicon");
   assert.doesNotMatch(norm, /\(autopilot, audit, diagnose\)/, "no pre-rename enumeration");
-  assert.match(norm, /the core loop plus the plan\/go\/plan-backlog\/diagnose\/audit\/go-backlog lifecycles/, "protocol-summary sentence uses the new lexicon");
+  assert.match(norm, /the core loop plus the Plan\/Go\/Plan-backlog\/Go-backlog\/Diagnose\/Audit lifecycles/, "protocol-summary sentence uses the exact six-mode subset");
   assert.doesNotMatch(norm, /autopilot\/audit\/diagnose\/run lifecycles/, "no pre-rename lifecycle slash-list");
   assert.match(norm, /Claude Code plugin's `\/muster:go-backlog` lifecycle/, "sprint citation repoints to /muster:go-backlog");
   assert.doesNotMatch(norm, /Claude Code plugin's `\/muster:sprint` lifecycle/, "no more citation of the pre-rename /muster:sprint verb");
@@ -184,6 +184,42 @@ test("tools/list exposes exactly the 28 brain verbs, matching the MCPB manifest"
   assert.equal(served.length, 28, "28 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
+});
+
+test("Cowork distribution metadata and README document the exact MCP-only support contract", async () => {
+  const pkg = JSON.parse(await read("package.json"));
+  const manifest = JSON.parse(await read("cowork/manifest.json"));
+  const text = await read("cowork/README.md");
+  const norm = text.replace(/\s+/g, " ");
+
+  assert.equal(pkg.license, "Apache-2.0");
+  assert.equal(manifest.license, pkg.license, "MCPB license must match the package license");
+  assert.equal(manifest.tools.length, 28, "MCPB manifest declares the complete deterministic tool surface");
+  assert.match(manifest.long_description, /28 deterministic MCP tools/);
+  assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit/);
+
+  assert.match(norm, /nine canonical product modes/i);
+  assert.match(norm, /six-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit\)/);
+  assert.doesNotMatch(norm, /full orchestration lifecycle is available/i);
+  for (const [mode, status] of [
+    ["Plan", "MCP protocol"],
+    ["Go", "MCP protocol"],
+    ["Plan-backlog", "MCP protocol"],
+    ["Go-backlog", "MCP protocol"],
+    ["Diagnose", "MCP protocol"],
+    ["Audit", "MCP protocol"],
+    ["Runner", "Not provided"],
+    ["Capture", "Not provided"],
+    ["Init", "CLI-only"],
+  ]) {
+    assert.match(norm, new RegExp(`\\| ${mode} \\| ${status.replace("-", "\\-")}`), `${mode} support status is explicit`);
+  }
+
+  assert.match(norm, /`muster_sprint_protocol` is a protocol-content tool, not an MCP wrapper for a same-name CLI command/);
+  assert.match(norm, /MCP-only route has no lifecycle-hook enforcement/i);
+  assert.match(norm, /native plugin ride remains conditional and unverified/i);
+  assert.match(norm, /@anthropic-ai\/mcpb@2\.1\.2/);
+  assert.match(norm, /@adnova-group\/muster@0\.5\.0/);
 });
 
 // MCPB validators may reject a ${user_config.X} substitution for a key that is

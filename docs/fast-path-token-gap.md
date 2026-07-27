@@ -66,8 +66,9 @@ restored per review-gate/SKILL.md's own Mutant-kill gate discipline.
 `src/gate-cadence.js`'s `reviewerReasoningForCount(reviewerCount)` is a new, additive,
 deterministic decision alongside `reviewerCountForDiff`: `reviewerCount: 1` (sub-threshold
 diff) resolves to `"medium"` reasoning effort, `reviewerCount: 2` (unchanged default) stays
-`"high"`. Evidence: `codex/agents.manifest.json`'s own DeepSWE-backed rationale ("Sol/medium
-for routine implementation, and Sol/high for hard judgment") -- a single reviewer under the
+`"high"`. Evidence: `catalog/agents.manifest.json`'s DeepSWE-backed rationale and
+`src/model-policy.js`'s semantic `workhorse`/`judgment` split (resolved by Codex to
+Sol/medium for routine implementation and Sol/high for hard judgment) -- a single reviewer under the
 diff-size threshold is reviewing a well-defined, small, mechanical-scope surface, exactly the
 "routine" class that rationale already says medium effort suffices for.
 `planGateCadence(waves, { changedLines, reviewDiffThreshold })` folds `reviewerReasoning` into
@@ -86,8 +87,9 @@ either harness, and this item does not claim otherwise.** Checked directly:
   build/install time (`src/codex-release.js`'s `profileToml()`, "the profile TOML is treated
   as the authoritative model, reasoning, and sandbox boundary for a dispatched role" --
   `docs/research/codex-cli.md`), not a runtime, per-call override a diff-size decision could
-  reach. `codex/agents.manifest.json`'s `muster-reviewer`/`wsh-code-reviewer` entries are
-  already statically pinned to `"high"`; nothing in this item's diff retiers them, and doing
+  reach. `catalog/agents.manifest.json`'s `muster-reviewer`/`wsh-code-reviewer` entries are
+  statically pinned to the harness-neutral `prime` + `judgment` profile, which Codex resolves
+  to Sol/high; nothing in this item's diff retiers them, and doing
   so would apply to EVERY dispatch of that agent, not just a sub-threshold-diff one.
 
 Given that, crediting lever 2 with a modeled token reduction (as an earlier draft of this

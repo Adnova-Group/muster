@@ -4,6 +4,8 @@ Muster turns an outcome into finished work. You give it a goal in plain language
 
 Pick the mode that matches what you want.
 
+Muster has nine modes. The eight delivery and backlog modes below are joined by Init, which prepares a repository and coordinates the active harness's native instruction setup.
+
 ::: tip On Codex?
 Every mode below is available on Codex as a skill (`$muster-plan`, `$muster-go`, and so on) once Muster's managed profiles and plugin are installed. See the [Codex guide](/guides/codex) for that install path. If something does not appear or behaves oddly, start at [Troubleshooting](/guides/troubleshooting).
 :::
@@ -102,6 +104,17 @@ Had a conversation that produced findings, decisions, or an explicit "add those 
 ```
 
 Approve, and the items land in `.muster/backlog.md` alongside anything `/muster:audit backlog` or an interview decomposition already wrote there, ready for `/muster:go-backlog` to clear.
+
+## Initialize a repository: `/muster:init`
+
+Init learns bounded repository facts, writes `.muster/project-profile.json` plus `.muster/init-receipt.json`, and hands native instruction generation to the active harness. It never runs repository scripts, hooks, installers, or discovered commands.
+
+```sh
+/muster:init
+/muster:init path/to/repo
+```
+
+Claude Code expects `CLAUDE.md`; Codex expects `AGENTS.md`. Kimi has no proven callable native Init action, so Muster records an unavailable handoff and waits for an explicit acknowledgement instead of inventing a command. See [The nine modes](/reference/modes#init) for the evidence and finalization states.
 
 ## Inspect the routing yourself
 

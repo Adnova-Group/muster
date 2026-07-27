@@ -1,6 +1,6 @@
 # Architecture
 
-Muster is a glass-box, multi-runtime, multi-domain agentic orchestrator. It runs on bare Claude Code or Codex, with no extra services and no separate model API. This page is the source-level map. For the gentler tour, start with [Concepts](/reference/concepts).
+Muster is a glass-box, multi-runtime, multi-domain agentic orchestrator. Supported lanes include Claude Code, Codex, Kimi, and Cowork. The deterministic CLI needs no separate model API. This page is the source-level map. For the gentler tour, start with [Concepts](/reference/concepts).
 
 ## Two layers
 
@@ -11,7 +11,7 @@ Muster is split into two layers with a hard boundary between them.
 | Deterministic CLI | `src/*.js` | Plain Node ESM | No |
 | Model-facing | `plugin/` (commands, skills, agents) | Claude Code and Codex | Yes |
 
-The **CLI layer** is ordinary Node. It has a single runtime dependency (`yaml`), requires Node 20 or newer, and makes no model calls. Most verbs are fully local; three boundaries can use the network. `issue` shells out to `gh issue view` for an explicit GitHub issue reference. `vendor` fetches sources declared with `kind: github` in `vendor/manifest.yaml` (local sources stay offline). `doctor` uses `gh api` to verify vendor note SHAs against pinned refs; if that remote check is unavailable, it reports the check as skipped offline, while a missing, unreadable, or invalid local vendor manifest still fails health. The remaining deterministic verbs run without network access.
+The **CLI layer** is ordinary Node. The published package has two runtime dependencies, `yaml` and `esbuild`, requires Node 20 or newer, and makes no model calls. Direct CLI verbs need no precompile, while tests, publishing, and Codex plugin installation run the Codex build pipeline. Most verbs are fully local; three boundaries can use the network. `issue` shells out to `gh issue view` for an explicit GitHub issue reference. `vendor` fetches sources declared with `kind: github` in `vendor/manifest.yaml` (local sources stay offline). `doctor` uses `gh api` to verify vendor note SHAs against pinned refs; if that remote check is unavailable, it reports the check as skipped offline, while a missing, unreadable, or invalid local vendor manifest still fails health. The remaining deterministic verbs run without network access.
 
 The **model-facing layer** is what the harness loads as a plugin — Claude Code's plugin format, and a built Codex plugin (skills and custom-agent profiles) generated from the same sources. It is markdown: slash commands, skills, and agents. These files instruct the model how to drive a run. They call the CLI for every deterministic decision, then use the harness's built-in subagent dispatch to do the judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
 
@@ -74,9 +74,9 @@ See [Pipelines](/reference/pipelines) for the full set and the prioritization mo
 
 ## Execution model
 
-Muster runs on the interactive Claude Code subscription. Model work goes through Claude Code's built-in subagent dispatch, not through `claude -p` and not through the Agent SDK. The CLI itself makes no model calls. The practical consequences:
+Model work uses the account or subscription of the active runtime. On Claude Code it goes through built-in subagent dispatch, not the Agent SDK. Codex, Kimi, and Cowork use their documented native or MCP dispatch lanes. The CLI itself makes no model calls. The practical consequences:
 
-- Muster draws normal interactive subscription quota. It does not hit the separate Agent-SDK credit pool.
+- Muster draws the active runtime's normal quota. On Claude Code it does not hit a separate Agent-SDK credit pool.
 - Fan-out spends that same quota faster, since parallel subagents are parallel quota.
 - There is no separate runtime to deploy or key to manage.
 
@@ -124,7 +124,7 @@ Codex is a first-class runtime, but it installs differently enough to be worth s
 
 **Hook-scope collapse.** The user scope is canonical for hooks. If `$CODEX_HOME` (or `~/.codex`) already carries a healthy Muster hook install, a `--scope project` install skips its own hook merge entirely — profiles still install. Rerunning `--scope project` on a machine with both scopes therefore converges to one firing scope instead of double-firing every lifecycle event.
 
-**The Codex plugin is deliberately hooks-free.** Codex executes plugin-bundled hooks by default, so bundling them there would double-fire against the installed ones. Instead, the **hook runtime lives under `.codex/muster/`** (or the user-scope equivalent) and is installed by the npm installer, which merges owned hook groups into `.codex/hooks.json` through Codex's supported project/user hook layer. Codex requires a one-time trust review for these non-managed hooks; inspect them with `/hooks`. The hooks inject orchestration context and surface diagnostics and policy warnings; todo and spawn enforcement stay advisory on Codex, and write-capable waves must use isolated Git worktrees.
+**The Codex plugin is deliberately hooks-free.** Codex executes plugin-bundled hooks by default, so bundling them there would double-fire against the installed ones. Instead, the **hook runtime lives under `.codex/muster/`** (or the user-scope equivalent) and is installed by the npm installer, which merges owned hook groups into `.codex/hooks.json` through Codex's supported project/user hook layer. Trust applies to the exact hook definition. Review again after an update changes hook content, because Codex skips the changed hook until it is trusted; project trust and managed-only policy can also suppress hooks. Inspect the active definitions with `/hooks` and confirm them with `muster doctor --codex`. The hooks inject orchestration context and surface diagnostics and policy warnings; todo and spawn enforcement stay advisory on Codex, and write-capable waves must use isolated Git worktrees.
 
 ## Vendoring
 

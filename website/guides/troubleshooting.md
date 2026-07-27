@@ -113,4 +113,5 @@ Report-only is the default. `--reap` opts into exactly two actions: `SIGTERM` to
 
 - A setting that seems to have no effect: check it against the [Configuration reference](/reference/configuration) — several variables fail closed to their default on an unrecognized value.
 - A Codex-specific install question: see the [Codex guide](/guides/codex).
-- Anything else: [open an issue](https://github.com/Adnova-Group/muster/issues) and paste the full `doctor` output.
+- Anything else: [open an issue](https://github.com/Adnova-Group/muster/issues) with the relevant `doctor` output after redaction. Remove local paths, usernames, repository names, executable locations, private remote URLs, provider metadata you cannot share, and any token or credential. Doctor is read-only, but read-only output can still identify your machine and projects.
+- A security vulnerability: use the private route in [Security and reporting](/guides/security), not a public issue.

@@ -2,9 +2,9 @@
 
 Wave-1 input for `harness-internals-research`. Target: the desktop/IDE Codex surface — the
 ChatGPT desktop app and the Codex IDE extension — versus the Codex CLI, with emphasis on
-install/config/cache boundaries. Reconciliation target: muster's `codex-desktop-install`
-backlog item (74 skills / 27 agent profiles / 21 MCP tools, WSL-vs-Windows split state)
-[src: backlog] and the retriage record that re-verified it live [src: retriage].
+install/config/cache boundaries. The original `codex-desktop-install` backlog item recorded a
+dated 74-skill / 27-profile / 21-tool snapshot [src: backlog]. Current generated-surface counts
+are taken from `CODEX_COUNTS`, not that historical decision record.
 
 Evidence tags used throughout:
 
@@ -227,10 +227,11 @@ with the GPT-5.6 family split into Sol (deep reasoning), Terra (balanced default
   set their transport, but can control on/off state and tool policy under
   `plugins.<plugin>.mcp_servers.<server>` keys [DOCUMENTED] [src: mcp] [src: cfg-ref].
 
-muster's 21 MCP tools ride the plugin path: the generated plugin's `.mcp.json` starts the
-bundled `runtime/muster-mcp.mjs` server (`scripts/build-codex.mjs:401-403`), and the count
-is live-enforced — `doctor --codex` performed a real `initialize` + `tools/list` handshake
-returning "21/21 tools" [LIVE-VERIFIED-DECISION-RECORD] [src: build-codex] [src: retriage].
+muster's 28 MCP tools ride the plugin path: the generated plugin's `.mcp.json` starts the
+bundled `runtime/muster-mcp.mjs` server. `CODEX_COUNTS.mcpTools` and the focused generated
+surface tests pin the current inventory [src: build-codex] [src: codex-js]. The retriage's
+"21/21 tools" result remains a valid dated 2026-07-16 handshake, not a current count
+[LIVE-VERIFIED-DECISION-RECORD] [src: retriage].
 
 ## 7. Skills and custom agents: parity across surfaces
 
@@ -253,13 +254,14 @@ returning "21/21 tools" [LIVE-VERIFIED-DECISION-RECORD] [src: build-codex] [src:
   CLI, and the IDE extension"; the CLI adds `/agent` for thread switching; the IDE shows a
   background-agent panel above the composer [DOCUMENTED] [src: subagents].
 
-Reconciling the 74/27/21 surface: the 27 profiles are `.codex/agents/*.toml` /
-`$CODEX_HOME/agents/*.toml` files (the documented custom-agent surface shared by all three
-local clients), the 74 skills (12 public + 62 internal) and 21 MCP tools ship inside the
-plugin that both the desktop marketplace reader and the CLI plugin registry install from the
-same `.agents/plugins` catalog. The counts were re-verified three ways against the CLI-side
-install (staging tree count, `check-codex.mjs` invariants, live `doctor --codex` +
-MCP handshake) and the item ruled still-true [LIVE-VERIFIED-DECISION-RECORD] [src: retriage].
+Current generated surface: 75 skills (13 public + 62 internal) and 28 MCP tools, plus 27
+profiles. The public skills include `$muster-init` (Init), the other eight primary
+`$muster-*` modes, three legacy aliases, and the root `$muster` router. Profiles are
+`.codex/agents/*.toml` / `$CODEX_HOME/agents/*.toml` files shared by all three local clients;
+skills and MCP runtime ship in the plugin installed from the same catalog. These current
+counts are code-verified from `CODEX_COUNTS` and `scripts/build-codex.mjs`; the earlier
+74/27/21 figures below and in the retriage record are dated snapshots, not live inventory
+[src: codex-js] [src: build-codex] [LIVE-VERIFIED-DECISION-RECORD for the dated snapshot].
 Desktop-side count parity is mechanism-level documented (same registry, same catalog, same
 cache) but was not independently re-counted inside the desktop UI during the retriage — the
 original item's dual-client criterion was accepted on the strength of the shared-host

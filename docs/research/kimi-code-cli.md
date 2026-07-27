@@ -472,28 +472,27 @@ Same shape as `CODEX_MODEL_POLICY`, evidence-anchored per lane:
 // The shipped policy nests these under `.tiers` and pairs them with an
 // `applyEffort` the shared resolver (src/model-policy.js) calls — see the file.
 const KIMI_TIERS = Object.freeze({
-  haiku:  Object.freeze({ model: "kimi-code/kimi-for-coding",           thinking: "enabled" }), // same as sonnet — NOT highspeed
-  sonnet: Object.freeze({ model: "kimi-code/kimi-for-coding",           thinking: "enabled" }),
-  opus:   Object.freeze({ model: "kimi-code/k3",                        effort: "high"      }),
-  fable:  Object.freeze({ model: "kimi-code/k3",                        effort: "max"       }),
+  scout: Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }), // same as core — NOT highspeed
+  core:  Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }),
+  prime: Object.freeze({ model: "kimi-code/k3", effort: "high" }),
+  apex:  Object.freeze({ model: "kimi-code/k3", effort: "max" }),
 });
 ```
 
 | muster tier | Kimi model | effort / thinking | why (evidence) |
 |---|---|---|---|
-| **haiku** (read-only locate/gather: `code-navigation`, `docs-research`, `research`) | `kimi-code/kimi-for-coding` | thinking **on** | The **same dedicated coding model as sonnet**. The managed coding plan has no *cheaper* model (the research's k2.6 general locator lane does not exist on this endpoint — see §11.6), so read-only work rides the same model as the workhorse. **NOT highspeed**: `kimi-for-coding-highspeed` is the *identical* K2.7 model that merely burns ~3× the plan usage for latency — pointing the "cheap" lane at a 3×-cost SKU of the same model is backwards, so muster never routes there. haiku and sonnet resolve identically on Kimi; the tier split survives at `model.js` (routing/budget/degradation), mirroring Codex's fable→opus collapse. |
-| **sonnet** (workhorse: implement, review, author, score) | `kimi-code/kimi-for-coding` | thinking **on** (no knob) | The **dedicated coding model** (K2.7 Coding). Kimi's "measured workhorse point," the analogue of Codex `sol/medium`. No effort field — always-thinking. |
-| **opus** (judgment that gates other work; explicit pins: `muster-builder`, `muster-runner`; fable's fallback) | `kimi-code/k3` | effort **high** | Frontier tier (AA Index 57.1, #4, *ahead of Opus 4.8*; Terminal-Bench 88.3) and the only Kimi model that holds quality to 1M context (BrowseComp 90.4 @1M) — required for judgment over large diffs/codebases. `high` = the managed plan's own `default_effort`; mirrors Codex `sol/high`. |
-| **fable** (peak: `judge`, `architecture-review`, `improve`, `advisor`) | `kimi-code/k3` | effort **max** | Same model as opus, but `max` is **reserved here only** — the exact discipline Codex applies to `xhigh`. Because K3 exposes the effort knob (`low/high/max`), muster gets a *cleaner* opus/fable split than on Codex (where both are `sol/high`): opus=high, fable=max. |
+| **scout** (read-only locate/gather) | `kimi-code/kimi-for-coding` | thinking **on** | The same dedicated coding model as core. The managed coding plan has no cheaper model, and highspeed is the identical K2.7 model at roughly 3× plan usage, so Muster never routes the scout lane there. |
+| **core** (bounded execution) | `kimi-code/kimi-for-coding` | thinking **on** (no knob) | The dedicated K2.7 Coding workhorse. No effort field; always-thinking. |
+| **prime** (judgment and general high-capability work) | `kimi-code/k3` | effort **high** | Frontier K3 holds quality to long context; `high` is the managed plan's judgment default. A semantic `workhorse` override also resolves to K3/high because K3 has no medium rung. |
+| **apex** (rare peak judgment) | `kimi-code/k3` | effort **max** | Same provider model as prime, with `max` reserved for the conceptual peak tier. |
 
 ### 11.3 Reasoning-level ladder — muster/Codex effort → Kimi emit
 
-| muster intent (Codex effort) | Kimi model it lands on | Kimi emit | native? |
+| Muster semantic effort | Kimi model it lands on | Kimi emit | native? |
 |---|---|---|---|
-| mechanical (`none`/off) | k2.6 | `thinking:"disabled"` | yes (toggle) |
-| workhorse (`medium`) | k2.7-code | `thinking:"enabled"` (no effort field) | n/a — no knob |
-| judgment (`high`) | k3 | `reasoning_effort:"high"` | yes |
-| peak (`xhigh`/`max`) | k3 | `reasoning_effort:"max"` | `xhigh`→`max` alias |
+| `workhorse` | K3 on prime; K2.7 Coding on core/scout | `reasoning_effort:"high"` on K3; always-thinking on K2.7 | K3 has no medium rung |
+| `judgment` | K3 | `reasoning_effort:"high"` | yes |
+| `peak` | K3 | `reasoning_effort:"max"` | yes |
 
 Emit rule: collapse `medium→high` and `xhigh→max` before sending; never emit `medium`/`xhigh`
 to K3. Pin the effort explicitly (don't rely on defaults — API says `max`, Kimi Code says
@@ -507,25 +506,19 @@ rows show the *tier default* for the effort-less models, where a semantic effort
 
 ### 11.4 Codex-only lanes and per-agent overrides
 
-- **`luna-xhigh`** (Codex's budget lane for bounded, low-context, downstream-verified work —
-  `muster-surgeon`, doc recipes, `wsh-test-automator`, the content quartet) exists on Codex
+- **`core`** (the conceptual bounded-work tier used by `muster-surgeon`, doc recipes,
+  `wsh-test-automator`, and the content quartet) resolves to Luna/xhigh on Codex
   *because* `luna`'s long-context recall is a 41.3% cliff. Kimi has **no analogous cliff** (K3
-  holds 1M; K2.7-Code/K2.6 are 256K but stable), so `luna-xhigh` **collapses into `sonnet`**
+  holds 1M; K2.7-Code/K2.6 are 256K but stable), so `core` **collapses into the same model as `scout`**
   (`kimi-k2.7-code`) on Kimi — there is no separate budget model to preserve premium quota, and
-  the family-diversity argument is already served by k2.6 on the haiku lane. (If quota pressure
-  ever wants a cheaper bounded lane, `kimi-k2.6/thinking-on` is the natural `luna-xhigh` analogue.)
-- **`muster-reviewer`'s override** (Codex bumps it `sonnet → sol/high` — a stronger model, a
-  different family than the builders it checks, per METR reward-hack diversity) maps on Kimi to
-  `kimi-k3/high` (stronger + different family than the k2.7-code builder) or, cheaper,
-  `kimi-k2.6/thinking-on` (different family, same-ish strength). Recommend `kimi-k3/high` when
-  verdicts gate merges.
-- **The refactor this exposes.** `codex/agents.manifest.json`'s per-agent `model`/`reasoning`
-  overrides are **hardcoded Codex strings** (`"gpt-5.6-sol"`, `"high"`). A Kimi adapter cannot
-  reuse them — it needs its own override values, or (better) the overrides re-expressed
-  **harness-neutrally** as a *tier bump* + *effort bump* ("reviewer runs one tier up at judgment
-  effort") that each adapter resolves through its own policy. That neutral-override shape is
-  exactly the model-policy refactor already parked for Codex/Hermes; Kimi is the third data point
-  that the per-agent layer, not just the tier layer, has to stop naming concrete models.
+  no cheaper family exists on the managed endpoint.
+- **`muster-reviewer`'s override** is expressed in `catalog/agents.manifest.json` as
+  `{ tier: "prime", effort: "judgment" }`. Codex resolves that neutral profile to Sol/high;
+  Kimi resolves it to K3/high.
+- **The neutral refactor is implemented.** `catalog/agents.manifest.json` contains only
+  canonical tiers (`scout|core|prime|apex`) and optional semantic effort
+  (`workhorse|judgment|peak`). `src/model-policy.js` validates the shared shape, and each
+  harness adapter resolves it without provider model names leaking into the conceptual layer.
 
 ### 11.5 One harness-specific caveat that constrains dispatch
 
@@ -549,9 +542,9 @@ into `src/kimi.js`:
 2. **The managed coding plan has no k2.6 and no non-thinking model.** It serves exactly three
    models, all **always-thinking**. `k2.6`/`k2.5` are Open-Platform *general* models on a
    different endpoint (`api.moonshot.ai`), not offered on the managed *coding* endpoint
-   (`api.kimi.com/coding/v1`). So the research's "haiku → k2.6, thinking-off cheap locator" lane
-   **does not exist here**: haiku instead rides `kimi-for-coding` — the same dedicated coding model
-   as sonnet. (The initial reconciliation pointed haiku at `kimi-for-coding-highspeed`; corrected
+   (`api.kimi.com/coding/v1`). So the research's "scout → k2.6, thinking-off cheap locator" lane
+   **does not exist here**: scout instead rides `kimi-for-coding` — the same dedicated coding model
+   as core. (The initial reconciliation pointed scout at `kimi-for-coding-highspeed`; corrected
    2026-07-24 — highspeed is the *identical* K2.7 model that burns ~3× the plan usage for latency,
    so muster never routes the "cheap" read-only lane there.) There is no cost-differentiated cheap
    lane on this plan at all.
@@ -564,13 +557,13 @@ The deferred probe ran. Against a fresh `kimi login`, `GET https://api.kimi.com/
 returned **HTTP 200** with exactly four served models — `kimi-for-coding`,
 `kimi-for-coding-highspeed`, `k3`, `k3-256k` — every one `supports_thinking_type: "only"`
 (always-thinking), and `k3`'s `think_efforts` live-confirmed `{valid_efforts:[low,high,max],
-default:high}`. **No k2.6, no k2.5, no non-thinking/general model.** So the "remap haiku to a
+default:high}`. **No k2.6, no k2.5, no non-thinking/general model.** So the "remap scout to a
 cheaper alias if the plan serves one" branch resolves to a no-op: there is nothing cheaper on this
-plan, and haiku rides `kimi-for-coding` — the same model as sonnet. **`kimi-for-coding-highspeed`
+plan, and scout rides `kimi-for-coding` — the same model as core. **`kimi-for-coding-highspeed`
 is served but never routed to**: it is the identical K2.7 model at ~3× plan usage (a latency
 convenience, not a cheaper/better lane), so it stays in the served-set the probe confirms but out of
 `KIMI_TIERS`. (One new datum: `k3-256k`, a 256k-context K3 variant with the same effort ladder —
-not wanted; opus/fable want full-1M `k3`.)
+not wanted; prime/apex want full-1M `k3`.)
 
 That probe is now reusable, tested code (`probeKimiModels` in `src/kimi-install.js`, injectable
 fetch): `muster install kimi --probe` re-runs it and would flag a cheaper candidate (any served id
@@ -596,10 +589,10 @@ fold onto two lanes along the family line `KIMI_TIERS` already draws:
 
 | lane | config.toml | muster tiers | why |
 |---|---|---|---|
-| **primary** | `default_model = "kimi-code/k3"` | opus, fable | the K3 judgment family |
-| **secondary** | `[secondary_model] model = "kimi-code/kimi-for-coding"` | haiku, sonnet | the K2.7 Coding execution family |
+| **primary** | `default_model = "kimi-code/k3"` | prime, apex | the K3 judgment family |
+| **secondary** | `[secondary_model] model = "kimi-code/kimi-for-coding"` | scout, core | the K2.7 Coding execution family |
 
-`fable` collapses into `opus`'s lane — effort is per-launch, not per-agent — which is the **same**
+`apex` collapses into `prime`'s lane — effort is per-launch, not per-agent — which is the **same**
 degradation Codex already accepts (both `sol/high`), so nothing new is lost.
 
 Two deliberate design calls:
@@ -630,7 +623,7 @@ Until now the stamped lanes were inert on a real run: nothing in the live path s
 with a secondary model configured every agent — judgment included — would have ridden the cheap
 lane. The bind is now wired end to end: `kimiLaneBinding()` / `kimiLaneEnv()` (`src/kimi.js`) derive
 the pair from `KIMI_TIERS` → `KIMI_LANES` as the single source (the lane models are whatever the
-opus/sonnet families resolve to, checked against `KIMI_LANES` so a hand edit that drifts the two
+prime/core tiers resolve to, checked against `KIMI_LANES` so a hand edit that drifts the two
 apart fails loud); `kimiGoalInvocation` (`src/kimi-dispatch.js`) sets it on every muster-launched
 `kimi -p "/goal …"` run — the go.md step-6 run loop — so the 27 stamped lanes engage on a real run;
 lane-sensitive dispatches carry the per-call `model` override (`kimiAgentCall` derives the lane from

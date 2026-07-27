@@ -7,9 +7,63 @@ const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
 const exists = (p) => access(new URL(p, root)).then(() => true, () => false);
 
-test("public OSS essentials are present", async () => {
-  for (const f of ["README.md", "LICENSE", "NOTICE", "CONTRIBUTING.md", "docs/architecture.md"]) {
+test("public OSS essentials are present and published", async () => {
+  for (const f of ["README.md", "LICENSE", "NOTICE", "CONTRIBUTING.md", "SECURITY.md", "docs/README.md", "docs/architecture.md"]) {
     assert.equal(await exists(f), true, `${f} must exist for a public repo`);
+  }
+  const pkg = JSON.parse(await read("package.json"));
+  assert.ok(pkg.files.includes("SECURITY.md"), "the npm package must include SECURITY.md");
+});
+
+test("security policy documents the private reporting and disclosure contract", async () => {
+  const security = await read("SECURITY.md");
+  assert.match(security, /GitHub private vulnerability reporting|private security advisory/i);
+  assert.match(security, /current minor release/i);
+  assert.match(security, /acknowledge[\s\S]{0,100}(?:business )?days?/i);
+  assert.match(security, /embargo|coordinated disclosure/i);
+  assert.match(security, /muster doctor[\s\S]{0,180}redact/i);
+});
+
+test("README documents current install, lifecycle, and configuration boundaries", async () => {
+  const readme = await read("README.md");
+  assert.match(readme, /@adnova-group\/muster@0\.5\.0/);
+  assert.match(readme, /npm exec|npx[\s\S]{0,180}(?:registry|provenance|download)/i);
+  assert.match(readme, /--scope project[\s\S]{0,900}config\.toml[\s\S]{0,300}max_threads[\s\S]{0,160}max_depth/i);
+  assert.match(readme, /--dry-run/);
+  assert.match(readme, /uninstall codex --scope project/);
+  assert.match(readme, /Claude Code-only lifecycle hooks|Claude-only lifecycle hooks/i);
+  assert.match(readme, /fail(?:s)? open[\s\S]{0,220}subagent/i);
+  assert.match(readme, /directive-shaped prompt[\s\S]{0,220}corroborates orchestration scale/i);
+  assert.match(readme, /15-minute cooldown[\s\S]{0,220}60 minutes/i);
+  assert.match(readme, /full configuration reference/i);
+  assert.match(readme, /active harness subscription/i);
+});
+
+test("contributor and architecture docs describe the current build and dispatch shape", async () => {
+  const contributing = await read("CONTRIBUTING.md");
+  for (const expected of ["yaml", "esbuild", "npm run build:codex", "npm run check:codex", "pretest", "prepublishOnly", "npm run docs:build", "`codex/`", "`cowork/`", "`scripts/`"]) {
+    assert.ok(contributing.includes(expected), `CONTRIBUTING.md must include ${expected}`);
+  }
+  const architecture = await read("docs/architecture.md");
+  assert.match(architecture, /two runtime dependencies[\s\S]{0,80}`yaml`[\s\S]{0,80}`esbuild`/i);
+  assert.doesNotMatch(architecture, /single runtime dependency/i);
+  assert.match(architecture, /catalog\/agents\.manifest\.json/);
+  assert.doesNotMatch(architecture, /codex\/agents\.manifest\.json/);
+  assert.match(architecture, /harness-neutral[\s\S]{0,220}(?:tier|effort|readOnly)/i);
+  assert.match(architecture, /three nonredundant read-only briefs|three read-only briefs/i);
+  assert.match(architecture, /system quality[\s\S]{0,220}coverage[\s\S]{0,180}security/i);
+  const voice = await read("docs/profiles/VOICE.md");
+  assert.doesNotMatch(voice, /single runtime dependency/i);
+  assert.match(voice, /two runtime dependencies/i);
+});
+
+test("binding inventory and docs index match the public surface", async () => {
+  const binding = await read("docs/binding-interface.md");
+  assert.match(binding, /nine modes plus the three.*aliases/i);
+  assert.match(binding, /thirty-one files|31 files/i);
+  const index = await read("docs/README.md");
+  for (const expected of ["Architecture", "Binding", "Operations", "Research", "Historical"]) {
+    assert.match(index, new RegExp(`## ${expected}`, "i"));
   }
 });
 

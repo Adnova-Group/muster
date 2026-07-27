@@ -135,7 +135,7 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 
 ## MCP tools
 
-The same deterministic core is also exposed as a local MCP server (`cowork/mcp-server.mjs`, declared in `cowork/manifest.json`), so a host without slash commands or skills — Claude Cowork, the Codex plugin, any MCP client — can drive Muster through tools instead of a shell. There are **28 tools**, each a thin wrapper over the CLI verb of the same name: no model calls, same JSON out.
+The same deterministic core is also exposed as a local MCP server (`cowork/mcp-server.mjs`, declared in `cowork/manifest.json`), so a host without slash commands or skills can drive Muster through tools instead of a shell. There are **27 CLI-wrapper MCP tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
 
 | Tool | Wraps | What it does |
 | --- | --- | --- |

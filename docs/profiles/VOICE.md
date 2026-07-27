@@ -99,10 +99,10 @@ A voice profile is extracted from evidence, not vibes. To build one:
 
 - **Register rule — formality (plain, exact, no adjectives standing alone):**
   Technical nouns are used precisely (role, gate, floor principle,
-  `pipelineForDomain`) instead of being dressed up. CONTRIBUTING's *"There is
-  a single runtime dependency (`yaml`), so install is quick"* states the fact
-  and lets the reader draw the "quick" conclusion from the number, not from
-  an adjective doing the work alone.
+  `pipelineForDomain`) instead of being dressed up. CONTRIBUTING's *"There are
+  two runtime dependencies: `yaml` and `esbuild`"* states the fact and lets the
+  reader assess the installation surface from named packages, not from an
+  adjective doing the work alone.
 
 - **Register rule — evidence-first (claim, then the mechanism, in that
   order):** A claim is immediately followed by the specific mechanism that

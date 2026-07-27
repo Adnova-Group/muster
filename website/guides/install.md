@@ -7,7 +7,7 @@ Muster has two parts that install together: a deterministic CLI (an npm package)
 - [Claude Code](https://claude.com/claude-code)
 - Node.js 20 or newer (`node --version`)
 
-Muster runs on your interactive Claude Code subscription. There is no separate model API, no runtime to deploy, and no key to manage.
+Model work uses the account or subscription of the active Claude Code session. Muster's CLI makes no model calls, so there is no separate model API, hosted runtime, or key to manage.
 
 ## 1. Run the installer
 
@@ -32,8 +32,8 @@ Muster's glass-box output style ships **inside the plugin** and applies automati
 Plugin install is a Claude Code action, so the running session only picks Muster up after you (re)install it through `/plugin`. The plugin's agents, the four session hooks, and the output style become active in your next fresh session (restart or `/clear`).
 :::
 
-::: tip Installing on Codex instead?
-Codex has its own install path — managed profiles, a hooks-free plugin, and a separate hook runtime. See the [Codex guide](/guides/codex).
+::: tip Using another runtime?
+Codex, Kimi, and Cowork have their own install and enforcement paths. Start with [Harness support](/guides/harnesses).
 :::
 
 ## 3. Verify
@@ -57,7 +57,7 @@ If the crew manifest does not appear, or `/muster:*` commands are missing, run `
 
 ## What the plugin adds
 
-- **Eight slash commands**: `/muster:plan`, `/muster:go`, `/muster:plan-backlog`, `/muster:go-backlog`, `/muster:diagnose`, `/muster:audit`, `/muster:runner`, `/muster:capture`. `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work as aliases of `plan`, `go`, and `go-backlog`. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged until then.
+- **Nine slash commands**: `/muster:plan`, `/muster:go`, `/muster:plan-backlog`, `/muster:go-backlog`, `/muster:diagnose`, `/muster:audit`, `/muster:runner`, `/muster:capture`, and `/muster:init`. `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work as aliases of `plan`, `go`, and `go-backlog`. Deprecated as of 2026-07-17 and retiring in Muster 0.7.0; behavior stays unchanged until then.
 - **Four session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled. Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits: the action-class fence below is the only hard deny on a tool call, and the `TaskCompleted` gate below is the one other block surface (it gates a task-board completion tick, not a tool call); everything else is a single warn-only "border invitation" that sells the value of a crew run rather than commanding.
   - **`SessionStart`** injects a one-line pointer ("muster available; `/muster:plan` for orchestration-scale work") into every session, and clears stale run/session state on a genuinely fresh start. Never writes to your `~/.claude` files.
   - **`UserPromptSubmit`** fires the ONLY prompt-time nudge: a directive-shaped prompt (fix/build/implement, etc.) with no active run sells the value of a crew run (parallel dispatch, adversarial review, a receipts trail) once per crossing, then stays silent until a run starts, a fresh session, or 60 minutes of inactivity re-arms it.

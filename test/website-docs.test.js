@@ -8,6 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { scoreHumanness } from "../src/humanizer-score.js";
 
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
@@ -32,14 +33,29 @@ function extractSubcommands(cliSource) {
   if (!usageMatch) throw new Error("Could not parse usage string in cli.js");
 
   const inner = usageMatch[1];
-  // split on | and take first word of each segment, filtering out arg placeholders
-  return inner
-    .split("|")
+  const segments = [];
+  let segment = "", angleDepth = 0, squareDepth = 0;
+  for (const char of inner) {
+    if (char === "<") angleDepth++;
+    else if (char === ">") angleDepth--;
+    else if (char === "[") squareDepth++;
+    else if (char === "]") squareDepth--;
+    if (char === "|" && angleDepth === 0 && squareDepth === 0) {
+      segments.push(segment);
+      segment = "";
+    } else {
+      segment += char;
+    }
+  }
+  segments.push(segment);
+  return segments
     .map((seg) => seg.trim().split(/[\s<]/)[0])
     .filter(Boolean)
     // strip any leftover ">" suffix from tokens like "id>" (e.g. from "<domain|id>")
     .map((tok) => tok.replace(/>$/, ""))
     .filter(Boolean)
+    // nested alternatives in the usage grammar, not top-level commands
+    .filter((tok) => tok !== "write" && !tok.startsWith("-"))
     // deduplicate
     .filter((tok, i, arr) => arr.indexOf(tok) === i);
 }
@@ -62,12 +78,108 @@ test("every CLI subcommand in usage string appears in website/reference/commands
   const subcommands = extractSubcommands(cliSrc);
   assert.ok(subcommands.length > 0, "should find at least one subcommand");
 
-  const missing = subcommands.filter((cmd) => !commandsMd.includes(cmd));
+  const documented = new Set();
+  for (const [, cell] of commandsMd.matchAll(/^\|\s*((?:`[^`]+`(?:\s*\/\s*)?)+)\s*\|/gm)) {
+    for (const [, command] of cell.matchAll(/`([^`\s[\]<|]+)/g)) documented.add(command);
+  }
+  const missing = subcommands.filter((cmd) => !documented.has(cmd));
   assert.deepEqual(
     missing,
     [],
     `commands.md is missing these subcommands from cli.js usage string: ${missing.join(", ")}`
   );
+});
+
+test("public navigation exposes every guide route and names the nine-mode reference", async () => {
+  const config = await read("website/.vitepress/config.js");
+  for (const route of [
+    "/guides/install",
+    "/guides/quickstart",
+    "/guides/harnesses",
+    "/guides/codex",
+    "/guides/kimi",
+    "/guides/cowork",
+    "/guides/security",
+    "/guides/troubleshooting",
+  ]) {
+    assert.match(config, new RegExp(`link:\\s*"${route}"`), `${route} must be reachable from navigation`);
+  }
+  assert.match(config, /text:\s*"The nine modes"/);
+  assert.doesNotMatch(config, /The eight modes/);
+});
+
+test("public entry points consistently document nine modes including Init", async () => {
+  const pages = await Promise.all([
+    read("website/index.md"),
+    read("website/guides/quickstart.md"),
+    read("website/guides/codex.md"),
+  ]);
+  for (const page of pages) {
+    assert.match(page, /\b[Nn]ine modes\b/);
+    assert.match(page, /\bInit\b/);
+    assert.doesNotMatch(page, /\b[Ee]ight modes\b/);
+  }
+  assert.match(pages[1], /\/muster:init/);
+  assert.match(pages[2], /\$muster-init/);
+});
+
+test("harness documentation routes and support claims are explicit", async () => {
+  const [harnesses, kimi, cowork] = await Promise.all([
+    read("website/guides/harnesses.md"),
+    read("website/guides/kimi.md"),
+    read("website/guides/cowork.md"),
+  ]);
+  for (const harness of ["Claude Code", "Codex", "Kimi", "Cowork"]) {
+    assert.match(harnesses, new RegExp(harness));
+  }
+  assert.match(kimi, /support matrix/i);
+  assert.match(kimi, /hooks-free/i);
+  assert.match(cowork, /support matrix/i);
+  assert.match(cowork, /27 CLI-wrapper tools/i);
+  assert.match(cowork, /`muster_sprint_protocol`/);
+});
+
+test("Codex guide documents current install, trust, audit, and safety limits", async () => {
+  const codex = await read("website/guides/codex.md");
+  for (const phrase of [
+    /per hook definition/i,
+    /dry-run/i,
+    /provenance/i,
+    /three read-only briefs/i,
+    /format validation/i,
+    /real commit object/i,
+    /scope you name/i,
+  ]) {
+    assert.match(codex, phrase);
+  }
+  assert.doesNotMatch(codex, /All eight modes/);
+  assert.equal(scoreHumanness(codex).passing, true, "website/guides/codex.md must pass humanizer score");
+});
+
+test("architecture pages describe current dependencies and repeatable Codex trust", async () => {
+  const [architecture, concepts] = await Promise.all([
+    read("website/reference/architecture.md"),
+    read("website/reference/concepts.md"),
+  ]);
+  for (const page of [architecture, concepts]) {
+    assert.match(page, /two runtime dependencies[\s\S]{0,100}(?:yaml[\s\S]{0,80}esbuild|esbuild[\s\S]{0,80}yaml)/i);
+    assert.doesNotMatch(page, /single runtime dependency/i);
+  }
+  assert.match(architecture, /exact hook definition/i);
+  assert.match(architecture, /review again|re-review/i);
+  assert.doesNotMatch(architecture, /one-time trust review/i);
+});
+
+test("website publishes security reporting and doctor redaction guidance", async () => {
+  const [security, troubleshooting] = await Promise.all([
+    read("website/guides/security.md"),
+    read("website/guides/troubleshooting.md"),
+  ]);
+  assert.match(security, /security advisories/i);
+  assert.match(security, /privately/i);
+  assert.match(troubleshooting, /redact/i);
+  assert.match(troubleshooting, /doctor output/i);
+  assert.doesNotMatch(troubleshooting, /paste the full `doctor` output/);
 });
 
 test("every hook event in hooks.json appears in website/reference/architecture.md", async () => {

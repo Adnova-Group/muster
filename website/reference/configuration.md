@@ -34,6 +34,8 @@ These are read only on the harness they name, and mostly by its host rather than
 | `MUSTER_COWORK_MAX_INFLIGHT` | `4` | Max concurrent MCP tool executions in the Cowork server. Hard ceiling `64`. | `cowork/mcp-server.mjs` |
 | `MUSTER_COWORK_MAX_QUEUE` | `16` | Max queued MCP tool executions before overload rejection. Hard ceiling `1024`. | `cowork/mcp-server.mjs` |
 
+Kimi also reads host-owned settings rather than `MUSTER_*` settings. `KIMI_CODE_HOME` selects the Kimi data root. `KIMI_SECONDARY_MODEL` and `KIMI_CODE_EXPERIMENTAL_FLAG` enable the per-process secondary model lane used by Muster-launched Kimi processes. Kimi's own loop and background concurrency variables remain Kimi runtime controls, not Muster configuration. See the [Kimi guide](/guides/kimi) before changing them.
+
 ## Where to set them
 
 Every variable is read at the point of use, so all three of these work and none of them need a restart of anything but the process that reads the value:
@@ -64,3 +66,5 @@ Three more `MUSTER_*` names appear in the tree and are deliberately absent from 
 - `MUSTER_TEST_NOW_MS` and `MUSTER_COWORK_TEST_CLI` are **test-only injection points** (a frozen clock for the hook cooldown tests; a CLI path override honored only under `NODE_ENV=test`). Neither affects a real run.
 
 Next: [Troubleshooting](/guides/troubleshooting) for what to do when a setting is not taking effect.
+
+Harness setup and support boundaries are documented in [Harness support](/guides/harnesses), [Codex](/guides/codex), [Kimi](/guides/kimi), and [Cowork](/guides/cowork). Security-sensitive diagnostics and reporting use [Security and reporting](/guides/security).

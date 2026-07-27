@@ -4,11 +4,27 @@ Muster's deterministic brain, packaged as a local MCP server for [Claude Cowork]
 
 Cowork extends through MCP and MCPB desktop extensions -- the port this directory targets -- and, as of ~May 2026, its own plugin system bundling skills, connectors, hooks, and sub-agents in the Claude Code plugin format (see `docs/research/claude-cowork.md` section 3d for the primary sources; this corrects an earlier version of this file that claimed Cowork "has no plugin, skill, slash-command, or hook primitives," which was true in January 2026 but is stale now). Whether muster's Claude Code plugin (`plugin/`) actually loads under Cowork's plugin loader is **unverified**: no live Cowork session was reachable to test it hands-on, and Cowork exposes no on-disk or protocol signal this MCP server (or the CLI it wraps) can inspect to auto-detect a native load. So `muster_capabilities` carries a DECLARED capability check instead of a probe -- `--native-plugin` / `MUSTER_COWORK_NATIVE_PLUGIN` (see Configuration below), the same declare-not-discover shape as remote connectors. Declare it true once a native load is confirmed on your Cowork build and muster's builtin skills/agents resolve exactly as they do on Claude Code, instead of collapsing to MCP-only; the default (false) keeps today's verified-working ride. Until a native load is confirmed, this MCP server is the whole ride: project detection, capability and domain routing, gate scoring, RICE prioritization, and wave planning, riding plain Node with no model calls. Cowork runs the local MCP server natively on the device (the agent loop), and its verbs are exposed here as MCP tools.
 
-Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-call model override, so the full orchestration lifecycle (plan, go, plan-backlog, diagnose, audit, go-backlog) runs here, not just the router. (Claude Code's legacy aliases -- `/muster:run`, `/muster:autopilot`, `/muster:sprint` -- still work there too, mapping to `/muster:plan`, `/muster:go`, `/muster:go-backlog` respectively; noted once since this file uses the new names throughout.)
+Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-call model override, so the six-mode MCP protocol subset (Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit) runs here, not just the router. Muster has nine canonical product modes overall; Runner, Capture, and Init have different support status on the MCP-only route, shown below. (Claude Code's legacy aliases -- `/muster:run`, `/muster:autopilot`, `/muster:sprint` -- still work there too, mapping to `/muster:plan`, `/muster:go`, `/muster:go-backlog` respectively; noted once since this file uses the new names throughout.)
+
+## Mode support
+
+This matrix describes the verified MCP-only distribution in this directory. It does not claim that the conditional native plugin ride is active.
+
+| Mode | MCP-only support | How to use it |
+| --- | --- | --- |
+| Plan | MCP protocol | Drive the Plan lifecycle from the server instructions and deterministic tools. |
+| Go | MCP protocol | Drive the Go lifecycle from the server instructions and deterministic tools. |
+| Plan-backlog | MCP protocol | Drive the batch planning lifecycle from the server instructions and deterministic tools. |
+| Go-backlog | MCP protocol | Drive the batch clearing lifecycle; load `muster_sprint_protocol` for the Cowork-specific playbook. |
+| Diagnose | MCP protocol | Drive the failure-first lifecycle from the server instructions and deterministic tools. |
+| Audit | MCP protocol | Drive the whole-codebase lifecycle from the server instructions and deterministic tools. |
+| Runner | Not provided | There is no Runner-mode MCP protocol or tool in this distribution. |
+| Capture | Not provided | There is no Capture-mode MCP protocol or tool in this distribution. |
+| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 28 MCP tools. |
 
 ## What you get
 
-Twenty-eight tools, plus an execution protocol that teaches the agent how to drive them:
+Twenty-eight deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, and scheduling operations without model calls; the Cowork agent still performs the judgment and execution work.
 
 | Tool | Does |
 | --- | --- |
@@ -34,13 +50,13 @@ Twenty-eight tools, plus an execution protocol that teaches the agent how to dri
 | `muster_fast_path` | Score an outcome for the pre-router fast path; with `capabilities` (the `_roles` shape), also emits the minimal builder+one-reviewer manifest |
 | `muster_plan_checklist` | Render a crew manifest's `plan` array as a markdown checklist |
 
-muster's principles, routing policy, and a per-mode execution protocol (the core loop plus the plan/go/plan-backlog/diagnose/audit/go-backlog lifecycles) ride in the server's MCP `instructions`. That replaces the SessionStart and UserPromptSubmit hooks the Claude Code plugin uses.
+muster's principles, routing policy, and a per-mode execution protocol (the core loop plus the Plan/Go/Plan-backlog/Go-backlog/Diagnose/Audit lifecycles) ride in the server's MCP `instructions`. Instructions provide session context, but they do not reproduce hook enforcement: the MCP-only route has no lifecycle-hook enforcement. The native plugin ride remains conditional and unverified; if a Cowork build loads `plugin/` natively, its hooks may be available through that separate loader, but this MCP server neither proves nor activates them.
 
 ### Sprint on Cowork
 
-`muster_sprint_protocol` (no arguments) returns `cowork/sprint-protocol.md` verbatim -- a condensed, Cowork-native port of the Claude Code plugin's `/muster:go-backlog` lifecycle: backlog resolution against `.muster/backlog.md`, calling `muster_sprint_waves` for dependency order, the per-item go lifecycle, and claim/receipt discipline for shared backlogs. Call it at the start of a sprint the same way you'd load the slash command's protocol on Claude Code.
+`muster_sprint_protocol` is a protocol-content tool, not an MCP wrapper for a same-name CLI command. With no arguments, it returns `cowork/sprint-protocol.md` verbatim -- a condensed, Cowork-native port of the Claude Code plugin's `/muster:go-backlog` lifecycle: backlog resolution against `.muster/backlog.md`, calling `muster_sprint_waves` for dependency order, the per-item go lifecycle, and claim/receipt discipline for shared backlogs. Call it at the start of a sprint the same way you'd load the slash command's protocol on Claude Code.
 
-Be honest about what does not port: Cowork has no hooks (no wave-guard, no scale-gate, no action-class fence), no slash verbs, and no isolated per-item worktree runners, so sprint's parallel wave-mode dispatch has no safe Cowork equivalent -- every wave runs sequentially, one item at a time, in the main tree; that degradation path *is* the path here, not a fallback. And with no wave-guard hook bounding a direct-to-base merge, a `merge-local`/`merge-push` disposition executes with no structural safety net beyond the session's own diligence -- prefer `pr`/`keep` when authoring a backlog for a Cowork sprint. The full caveats live in the protocol file itself.
+Be honest about what does not port on the verified MCP-only route: it has no lifecycle hooks (no wave-guard, no scale-gate, no action-class fence), no slash verbs, and no isolated per-item worktree runners, so sprint's parallel wave-mode dispatch has no safe equivalent -- every wave runs sequentially, one item at a time, in the main tree; that degradation path *is* the path here, not a fallback. And with no wave-guard hook bounding a direct-to-base merge, a `merge-local`/`merge-push` disposition executes with no structural safety net beyond the session's own diligence -- prefer `pr`/`keep` when authoring a backlog for a Cowork sprint. The full caveats live in the protocol file itself. A declared native plugin load may change those capabilities, but it remains conditional and unverified until tested on the specific Cowork build.
 
 ## Prerequisites
 
@@ -100,10 +116,12 @@ You should see all twenty-eight tools and a project profile (language, package m
 For a packaged, one-click install instead of hand-edited config. `manifest.json` in this directory is the MCPB descriptor (`manifest_version` 0.3).
 
 ```bash
-npx @anthropic-ai/mcpb validate cowork
-npx @anthropic-ai/mcpb pack cowork muster.mcpb
-# optional: npx @anthropic-ai/mcpb sign muster.mcpb
+npx -y @anthropic-ai/mcpb@2.1.2 validate cowork
+npx -y @anthropic-ai/mcpb@2.1.2 pack cowork muster.mcpb
+# optional: npx -y @anthropic-ai/mcpb@2.1.2 sign muster.mcpb
 ```
+
+These copy-paste commands were reviewed with MCPB CLI `@anthropic-ai/mcpb@2.1.2` against Muster package `@adnova-group/muster@0.5.0`. The extension itself runs the local checkout bundled into `muster.mcpb`; it does not fetch Muster from npm. The pinned `npx` versions make both tool provenance and reviewed behavior explicit.
 
 Then in Cowork: Settings → Extensions → install `muster.mcpb`. The extension's `user_config` (Apex toggle, max tier, declared connectors) appears as fields in the extension's settings and is passed to the server as environment variables.
 
@@ -150,7 +168,7 @@ node scripts/cowork-probe.mjs
 node scripts/cowork-probe.mjs --dispatch-results results.json
 ```
 
-Phase 3 passing means parallel fan-out plus per-call model override work, so the full orchestration lifecycle is available. If it fails, muster still runs as a router plus single-agent executor: the agent walks each wave one task at a time via `muster_next`, and every routing, scoring, and gate decision stays deterministic.
+Phase 3 passing means parallel fan-out plus per-call model override work, so the six-mode MCP protocol lifecycle can use parallel dispatch. If it fails, muster still runs as a router plus single-agent executor: the agent walks each wave one task at a time via `muster_next`, and every routing, scoring, and gate decision stays deterministic.
 
 ## Troubleshooting
 

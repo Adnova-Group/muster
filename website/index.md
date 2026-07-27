@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: Muster
-  text: Glass-box agentic orchestrator for Claude Code and Codex
+  text: Glass-box agentic orchestrator across agent harnesses
   tagline: Give it an outcome. It detects your project, assembles the right crew, and shows its reasoning before it acts.
   actions:
     - theme: brand
@@ -22,7 +22,7 @@ features:
     details: Every routing decision is inspectable. Which role resolved to which provider, on which model, and why. The crew manifest shows the plan before any work begins.
   - icon: 🧩
     title: Multi-runtime
-    details: Composes the tools you already have (plugins, agents, MCP servers) and falls back to its own built-ins. Runs on bare Claude Code or Codex and gets better as you install more.
+    details: Composes the tools you already have and falls back to its own built-ins. Supported lanes include Claude Code, Codex, Kimi, and Cowork, with each harness's limits documented.
   - icon: 🌐
     title: Multi-domain
     details: Not just code. Product, business, content, and operations pipelines are first-class. PRDs, roadmaps, launch plans, runbooks, and more.
@@ -30,9 +30,9 @@ features:
     title: Code over model
     details: A deterministic Node CLI owns routing, scoring, and validation. No LLM calls. Reproducible by construction. The model is reserved for judgment.
   - icon: 🚦
-    title: Eight modes
-    details: Plan plans and shows; Go runs the full lifecycle hands-off, both confirming scope first. Plan-backlog and Go-backlog are their batch counterparts. Diagnose fixes one bug failure-first. Audit sweeps the whole codebase. Runner picks one item per scheduled cycle. Capture mines a conversation into approval-gated backlog items.
+    title: Nine modes
+    details: Plan and Go handle one outcome; Plan-backlog and Go-backlog handle batches. Diagnose fixes one bug. Audit sweeps the codebase. Runner picks one scheduled item. Capture writes approved backlog items. Init prepares repository state and coordinates native instructions.
   - icon: 🔒
     title: No extra services
-    details: No separate model API, no runtime to deploy, no keys to manage. It draws your interactive Claude Code subscription. If you can run Claude Code, you can run Muster.
+    details: The CLI makes no model calls. Model work uses the account or subscription of the active harness, so Muster adds no separate model API key or hosted runtime.
 ---

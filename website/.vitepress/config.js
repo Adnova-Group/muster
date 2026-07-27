@@ -13,13 +13,17 @@ const { version } = JSON.parse(
 const guideItems = [
   { text: "Install", link: "/guides/install" },
   { text: "Quickstart", link: "/guides/quickstart" },
+  { text: "Harness support", link: "/guides/harnesses" },
   { text: "Codex", link: "/guides/codex" },
+  { text: "Kimi", link: "/guides/kimi" },
+  { text: "Cowork", link: "/guides/cowork" },
+  { text: "Security", link: "/guides/security" },
   { text: "Troubleshooting", link: "/guides/troubleshooting" },
 ];
 
 const referenceItems = [
   { text: "Concepts", link: "/reference/concepts" },
-  { text: "The eight modes", link: "/reference/modes" },
+  { text: "The nine modes", link: "/reference/modes" },
   { text: "CLI commands", link: "/reference/commands" },
   { text: "Configuration", link: "/reference/configuration" },
   { text: "Pipelines", link: "/reference/pipelines" },

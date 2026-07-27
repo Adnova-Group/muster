@@ -11,6 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
+import { CODEX_COUNTS } from "../src/codex.js";
 import { ROLES } from "../src/roles.js";
 
 const root = new URL("../", import.meta.url);
@@ -84,4 +85,36 @@ test("docs/architecture.md points at the anti-pattern ledger (docs/anti-patterns
     /docs\/anti-patterns\.md/,
     "docs/architecture.md must reference docs/anti-patterns.md so the ledger is reachable from the architecture index"
   );
+});
+
+// ─── research/current-state references anchored to generated Codex sources ──
+
+const ownedCurrencyDocs = [
+  "docs/research/codex-cli.md",
+  "docs/research/codex-desktop.md",
+  "docs/research/kimi-code-cli.md",
+  "docs/fast-path-token-gap.md"
+];
+
+test("current research docs do not reference the deleted Codex agent manifest", async () => {
+  for (const path of ownedCurrencyDocs) {
+    const text = await read(path);
+    assert.doesNotMatch(
+      text,
+      /codex\/agents\.manifest\.json/,
+      `${path} must reference the shared catalog/agents.manifest.json`
+    );
+  }
+});
+
+test("current Codex research inventories match the generated plugin surface", async () => {
+  const totalSkills = CODEX_COUNTS.publicSkills + CODEX_COUNTS.internalSkills;
+  const expectedInventory = new RegExp(
+    `${totalSkills} skills \\(${CODEX_COUNTS.publicSkills} public \\+ ${CODEX_COUNTS.internalSkills} internal\\).*${CODEX_COUNTS.mcpTools} MCP tools`
+  );
+  for (const path of ["docs/research/codex-cli.md", "docs/research/codex-desktop.md"]) {
+    const text = await read(path);
+    assert.match(text, expectedInventory, `${path} must state the current generated Codex surface`);
+    assert.match(text, /\$muster-init/, `${path} must include Init in the current public skill inventory`);
+  }
 });

@@ -689,6 +689,60 @@ it, `readInstalledKimi()`, the `capabilities --kimi` lane + `kimiProfileForAgent
 `catalog/agents.manifest.json` path (`src/agent-manifest.js`), and `muster install/uninstall kimi`
 are all shipped. Nothing here touches 0.5.0.
 
+### 11.10 Loop/background tuning for long unattended `/goal` runs — binary-probed defaults (2026-07-27)
+
+The §3 schema (lines 129–130) names the `[loop_control]` and `[background]` knobs but documents
+**no default and almost no semantics** for any of them. Probed against the installed v0.29.1 binary
+(`~/.kimi-code/bin/kimi`, unstripped — same evidence style as §11.9 and the §8 usage probe):
+
+- **`loop_control.max_steps_per_turn`** — unset or `0` means **no cap** (the step-budget check
+  returns true whenever the cap is undefined or ≤0); a tripped cap aborts the turn with
+  `LOOP_MAX_STEPS_EXCEEDED`. Per-process env override: `KIMI_LOOP_MAX_STEPS_PER_TURN`.
+- **`loop_control.max_retries_per_step`** — built-in default **10** when unset (the step's tenacity
+  wrapper falls back with `?? 10`); backoff on connection/status/timeout per §1 (line 55). Env:
+  `KIMI_LOOP_MAX_RETRIES_PER_STEP`.
+- **`loop_control.reserved_context_size`** — built-in default **50000** when unset
+  (`DEFAULT_COMPACTION_CONFIG.reservedContextSize = 5e4`, alongside `triggerRatio 0.85`). This is
+  the `reserved` in §1's compaction trigger (lines 62–63): `context_tokens + reserved >=
+  max_context_size`, or `>= max_context_size * 0.85`, whichever fires first. No env override.
+- **`background.max_running_tasks`** — unset means **no cap**; a configured cap is an admission
+  gate that **throws** `"Too many background tasks are already running."` (a hard dispatch error,
+  not a queue). Env: `KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS`.
+- **`background.print_background_mode`** (`steer | drain | exit`, §3 line 130) — the `kimi -p`
+  end-of-turn policy for pending background tasks. **`steer` is the default when nothing is set**:
+  the driver stays alive (`'continue'`) while background tasks are pending so each completion
+  `turn.steer`s a new main turn, finishing once quiescent. `drain` waits for tasks but suppresses
+  steering (completions cannot start new main turns); `exit` finishes immediately, orphaning legs.
+  **Legacy hazard:** a `background.keep_alive_on_exit = true` left in config.toml silently maps the
+  effective mode to `drain` when `print_background_mode` itself is unset. No direct env override
+  (only `KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT` for the legacy boolean).
+
+**Chosen values for muster's unattended `kimi -p "/goal …"` runs — all left at the binary
+defaults, pinned in runner prose (`plugin/commands/go.md` step 6), NOT emitted into config.toml:**
+`max_steps_per_turn` unset (no cap — a cap is a second, harsher stop rule that would abort a
+healthy long run mid-wave; `/goal`'s stop conditions already live in the objective, §11.9);
+`max_retries_per_step` unset (10 — generous transient-failure absorption on the shared 5-hour rate
+window, §0 lines 42–45; raising it further burns shared quota on persistent failures instead of
+failing the step so the run can re-plan); `reserved_context_size` unset (50000 — on K3's 1M window,
+§2 line 76, the 0.85 ratio fires first at 850k and the 50k reserve is the post-compaction headroom;
+shrinking it risks overflow mid-response, growing it discards usable context);
+`max_running_tasks` unset (no cap — muster backgrounds only non-barrier-gated read-only legs, a
+handful per wave, and AgentSwarm already ramps admission, §6 line 254; a cap converts directly into
+dispatch errors the orchestrator must retry); `print_background_mode` `steer` (the default — the
+only mode under which a background completion arrives mid-run as a synthetic user message, which
+`interpretKimiBackgroundCompletion` in `src/kimi-dispatch.js` is built on; operators must ensure no
+legacy `keep_alive_on_exit = true` downgrades it to `drain`).
+
+**Why docs-pin, not emission.** Four of five chosen values *are* the binary defaults — emitting
+them would write no-op overrides into the user's config that go stale the day Kimi changes a
+default, with zero behavioral benefit. And config.toml is user-global only (§3 line 107; "There is
+no project-level `config.toml` override", line 110), so a muster-specific run profile written there
+leaks into every non-muster interactive session — the exact shared-config-mutation posture
+`src/kimi-install.js` declines for the model half, and every knob except `print_background_mode`
+has a per-process env override for the one run that wants a non-default. The `[[permission.rules]]`
+fence is different in kind: it adds a declarative deny that does not exist by default (a safety
+requirement), not a restatement of tuning defaults.
+
 ## Sources
 
 Moonshot docs: `www.kimi.com/code/docs/en/kimi-code-cli/{customization/{hooks,agents,skills,

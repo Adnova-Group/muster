@@ -82,6 +82,20 @@ const KIMI_SECONDARY_MODEL_CONFIG = Object.freeze({
   toml: `[secondary_model]\nmodel = "${KIMI_LANES.secondary}"\n`
 });
 
+// Why there is NO [loop_control]/[background] emission alongside the fence:
+// muster's chosen values for long unattended `/goal` runs (pinned in
+// plugin/commands/go.md step 6, rationale + binary-probed defaults in
+// docs/research/kimi-code-cli.md 11.10) are the v0.29.1 binary defaults in
+// four of five cases -- emitting them would write no-op overrides into the
+// user-global config.toml (no project-level override exists) that leak into
+// non-muster interactive sessions and go stale when Kimi changes a default.
+// The per-process env overrides (KIMI_LOOP_MAX_STEPS_PER_TURN,
+// KIMI_LOOP_MAX_RETRIES_PER_STEP, KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS)
+// cover the one run that wants a non-default -- the same env-over-shared-config
+// posture as the lane bind above. The [[permission.rules]] fence is different
+// in kind: a declarative deny that does not exist by default, not a
+// restatement of tuning defaults.
+
 const kimiHome = home => process.env.KIMI_CODE_HOME || join(home, ".kimi-code");
 
 // Resolve the plugin content root that carries agents/ and skills/. In the dev

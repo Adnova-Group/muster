@@ -65,10 +65,12 @@ instruction seeds.
      Do not invent or suggest a Kimi init command. Leave a **HUMAN-HOLD** offering
      explicit acknowledgement of the unavailable handoff.
    - **Copilot/unknown** — run
-     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason not-callable --expect .github/copilot-instructions.md`.
+     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason unavailable --expect .github/copilot-instructions.md`.
      Never shell `copilot init` merely because a binary exists. Leave a
-     **HUMAN-HOLD** for a native action plus positive evidence, or explicit
-     unavailable acknowledgement.
+     **HUMAN-HOLD** for explicit unavailable acknowledgement. If a future
+     externally performed native action produces positive evidence, it may use
+     the evidence path below; the handoff itself proves neither callability nor
+     completion.
 
    Current command/skill surfaces cannot invoke another harness's built-in init
    command in-session. A request, suggestion, command invocation, refusal to

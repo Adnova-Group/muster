@@ -57,3 +57,16 @@ test("init command binds confirmation and callable-result evidence files exactly
   assert.match(text, /call-result is valid only from `attempted`/);
   assert.match(text, /evidence-file path must not\s+appear in `nativeInit\.expectedArtifacts`/);
 });
+
+test("Copilot and unknown harnesses use an unavailable handoff that acknowledgement can finalize", async () => {
+  const text = await read("plugin/commands/init.md");
+
+  assert.match(
+    text,
+    /Copilot\/unknown[\s\S]*?\$MUSTER_CLI init transition "\$TARGET" --to handoff --reason unavailable --expect \.github\/copilot-instructions\.md/,
+  );
+  assert.match(text, /\$MUSTER_CLI init acknowledge "\$TARGET" --reason unavailable/);
+  assert.match(text, /Copilot\/unknown[\s\S]*?HUMAN-HOLD/);
+  assert.match(text, /Never shell `copilot init`/);
+  assert.match(text, /mere artifact existence is not completion/);
+});

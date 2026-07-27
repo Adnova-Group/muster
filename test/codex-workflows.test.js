@@ -77,8 +77,8 @@ test("generated Codex init binds the bundled runtime without Claude resolver lea
   assert.doesNotMatch(init, /\bCLAUDE_PLUGIN_ROOT\b/);
   assert.match(init, /MUSTER_CLI="node \$\{PLUGIN_ROOT\}\/runtime\/muster\.mjs"/);
   assert.match(init, /--to handoff --reason not-callable --expect AGENTS\.md/);
-  assert.match(init, /provider\/model-neutral|model-neutral|provider-neutral/i);
-  assert.doesNotMatch(init, /project-profile\.json[\s\S]{0,240}(?:scout|core|prime|apex|gpt-5)/i);
+  assert.match(init, /generated project profile is provider\/model-neutral/i);
+  assert.doesNotMatch(init, /\b(?:scout|core|prime|apex|haiku|sonnet|opus|fable|gpt-5(?:\.\d+)?)\b/i);
 });
 
 test("generated Codex package exposes the native-dispatch resolvers the orchestrator needs at runtime", async () => {

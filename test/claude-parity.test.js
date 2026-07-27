@@ -885,5 +885,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // docs/binding-interface.md's dispatch grep-audit count re-derived (17 -> 19,
   // files unchanged at 5) for the two new dispatch-mention lines. Deliberate
   // surface change, not drift.
-  assert.equal(hash.digest("hex"), "1580576dd3e6dc23f9b324b6061ef3d6cae810374848732a2b02d641f2e62c1a");
+  //
+  // 2026-07-27 re-pin (kimi-background-dispatch): file COUNT unchanged (139) --
+  // only plugin/skills/orchestrator/SKILL.md's content changed. Its Kimi-native
+  // dispatch subsection gained a "Background a leg only when the wave does not
+  // barrier on it" paragraph: independent read-only legs (a reviewer whose
+  // verdict does not gate the current wave, an investigator whose findings only
+  // a later wave needs) dispatch as kimiAgentCall({ ..., background: true })
+  // (run_in_background) and fold back from the background-completion receipt
+  // (synthetic user message + on-disk tasks/<task_id>.json/output.log,
+  // interpreted by src/kimi-dispatch.js's interpretKimiBackgroundCompletion),
+  // while anything step 4b's barrier or step 4c's review gate depends on stays
+  // FOREGROUND so the barrier still means done. The paragraph sits inside
+  // build-codex.mjs's wholesale-replace span (`waveDispatchStart` ..
+  // "## Scope fences") -- verified the generated Codex orchestrator skill
+  // carries zero occurrences of it, so no guarded rewrite was needed. Paired
+  // with the src/-side receipt interpretation helper (outside this surface).
+  // Re-verified with MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node
+  // scripts/check-codex.mjs (clean). docs/binding-interface.md's grep-audit
+  // counts re-scanned live -- unchanged (test/docs-binding-interface.test.js
+  // green without a re-derivation). Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "a613f5c5729c248f30d87c052213002d9ed32c369802a2f88ca80f0855180518");
 });

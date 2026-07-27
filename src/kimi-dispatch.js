@@ -151,6 +151,44 @@ export function kimiAgentCall({ agentId, prompt, description, background = false
   };
 }
 
+// --- Background legs (run_in_background) -------------------------------------
+
+// `background: true` maps to Kimi's `run_in_background`: the dispatch returns a
+// TASK ID immediately (the parent does NOT wait) and the result arrives in a
+// LATER turn as a synthetic user message, with the on-disk receipt at the
+// session's tasks/<task_id>.json + tasks/<task_id>/output.log
+// (docs/research/kimi-code-cli.md secs 6+8). muster never polls a backgrounded
+// leg -- the completion arrives on its own -- so the fold-back is a pure
+// function of the completion receipt:
+//   completed -> the synthetic message's body IS the subagent's final message
+//     (the whole handoff, same return contract as a foreground leg); fold it
+//     back verbatim.
+//   failed (any terminal state that is not completed) -> the leg re-enters
+//     orchestrator step 4a's re-dispatch-once rule (a resume retry on Kimi) --
+//     a backgrounded leg is never a silent drop.
+//   anything else -> still in flight: pending. The wave's barrier does NOT
+//     cover a pending leg -- which is exactly why barrier-gated work never
+//     dispatches background (orchestrator/SKILL.md's Kimi-native dispatch
+//     subsection).
+export function interpretKimiBackgroundCompletion({ status, result, terminalReason } = {}) {
+  if (status === "completed") {
+    return {
+      status: "complete",
+      terminal: true,
+      result,
+      reason: "completion receipt arrived as a synthetic user message -- the body is the subagent's final message, the whole handoff"
+    };
+  }
+  if (status === "failed" || status === "stopped" || status === "timed_out") {
+    return {
+      status: "failed",
+      terminal: true,
+      reason: `background leg ended ${status}${terminalReason ? ` (${terminalReason})` : ""} -- re-enters the re-dispatch-once rule (a resume retry), never a silent drop`
+    };
+  }
+  return { status: "pending", terminal: false, reason: "no completion receipt yet -- the leg is still in flight and the wave's barrier does not cover it" };
+}
+
 // --- /goal: the run loop ----------------------------------------------------
 
 // Verbatim from the binary: `GOAL_EXIT_CODES = { complete: 0, blocked: 3,

@@ -474,8 +474,8 @@ export function buildCostComparison(cells) {
       sum.total += c.tokens.total;
     }
     byLane[lane] = {
-      cellsCounted: counted.map(c => c.probe),
-      cellsExcluded: excluded.map(c => `${c.probe} (${excludedLabel(c)})`),
+      cellsCounted: counted.map(c => c.effort ? `${c.probe} @ ${c.effort}` : c.probe),
+      cellsExcluded: excluded.map(c => `${c.effort ? `${c.probe} @ ${c.effort}` : c.probe} (${excludedLabel(c)})`),
       tokens: sum
     };
   }

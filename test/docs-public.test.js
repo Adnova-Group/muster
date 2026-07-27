@@ -20,6 +20,46 @@ test("README has no dead links to removed internal docs", async () => {
   }
 });
 
+test("public references document init as the ninth primary mode", async () => {
+  const readme = await read("README.md");
+  const architecture = await read("docs/architecture.md");
+  const modes = await read("website/reference/modes.md");
+  assert.match(readme, /## The nine modes/);
+  assert.match(architecture, /## The nine modes/);
+  assert.match(modes, /# The nine modes/);
+  for (const text of [readme, architecture, modes]) {
+    assert.match(text, /Init[^\n]*\/muster:init \[dir\]/);
+    assert.match(text, /native instruction|native initialization/i);
+  }
+});
+
+test("init reference documents deterministic state, reruns, and model-neutral profiles", async () => {
+  const files = [
+    await read("README.md"),
+    await read("docs/architecture.md"),
+    await read("website/reference/commands.md"),
+    await read("plugin/skills/greenfield/SKILL.md"),
+  ];
+  for (const text of files) {
+    assert.match(text, /project-profile\.json/);
+    assert.match(text, /init-receipt\.json/);
+    assert.match(text, /deterministic|same-state|idempotent|rerun/i);
+  }
+  assert.match(files[0], /provider\/model-neutral|model-neutral|provider-neutral/i);
+  assert.doesNotMatch(files[0], /Claude-specific model|claude-[a-z]|claude model/i);
+});
+
+test("CLI and greenfield references keep init separate from legacy setup", async () => {
+  const commands = await read("website/reference/commands.md");
+  const greenfield = await read("plugin/skills/greenfield/SKILL.md");
+  assert.match(commands, /`init \[dir\]`[\s\S]*`init transition \[dir\]/);
+  assert.match(commands, /`init acknowledge \[dir\] --reason unavailable`/);
+  assert.match(commands, /`init finalize \[dir\]`/);
+  assert.match(greenfield, /muster:init/);
+  assert.match(greenfield, /muster setup \[dir\].*legacy/i);
+  assert.doesNotMatch(greenfield, /Scaffold.*muster setup|setup.*README\/AGENTS seeds/i);
+});
+
 test("public prose carries no em-dashes (humanizer rule)", async () => {
   for (const f of ["README.md", "docs/architecture.md", "CONTRIBUTING.md", "docs/anti-patterns.md"]) {
     const text = await read(f);

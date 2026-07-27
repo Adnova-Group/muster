@@ -48,7 +48,7 @@ Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-aud
 
 The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 custom-agent profiles, 11 native skills, and 51 capability skills. The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire (Codex executes plugin-bundled hooks by default). Codex requires a one-time trust review for these non-managed hooks; inspect them with `/hooks`. The hooks inject orchestration context and surface supported diagnostics and policy warnings. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
-## The eight modes
+## The nine modes
 
 | Mode | Command | What it does |
 | --- | --- | --- |
@@ -60,10 +60,27 @@ The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions (seven when the project builds prompts or agents), then fixes everything with tests and verifies. |
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker for a Claude Code Routine or cron: resumes an answered blocked item or claims exactly one available item, drives it through the full Go lifecycle force-coerced to a `pr` disposition, leaves a receipt, and stops. The schedule provides the loop, not the verb. |
 | Capture | `/muster:capture [hint]` | Conversation-to-backlog generator: mines the session's discussion (findings, decisions, review residuals, an explicit directive) into backlog items via the same extract/validate/dedupe/write machinery, gated by your approval before anything is written. Writes only `.muster/backlog.md` -- it never assembles a crew or runs work itself. |
+| Init | `/muster:init [dir]` | Prepare a repository profile and receipt, hand native instruction work to the active harness, and finalize only after positive evidence or an acknowledged unavailable handoff. |
 
 `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work: each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`, respectively) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0 -- migrate to the replacement verb before then; behavior stays unchanged for the rest of the window.
 
 Plan and Go accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome; both also accept the same backlog refs as Plan-backlog and Go-backlog (a backlog `.md` path, `issues:<label>`, or `linear:<key>`) and confirm the scope before planning a whole batch. A thin outcome gets refined first: `muster assess` does a deterministic gap-check, and if the outcome is vague, an interview skill asks one question at a time behind an approval gate before any crew is assembled. An outcome that decomposes into independent parts can instead be written to a backlog (`.muster/backlog.md`) for `/muster:go-backlog` to clear as a batch, or for `/muster:plan-backlog` to batch-plan first; `/muster:audit backlog [path]` fills the same backlog from audit's findings, sweeping read-only instead of fixing them inline; `/muster:capture [hint]` fills it a third way, mining a conversation's findings and decisions instead of an audit sweep or an interview decomposition. A backlog item annotated with `{id}`/`{deps}` switches `/muster:go-backlog` into wave mode: `pr`/`keep` items in a wave dispatch as parallel worktree-isolated runners capped by `MUSTER_SPRINT_PARALLEL`, while `merge-local`/`merge-push` items serialize at the wave barrier. Go-backlog and Runner share a **coordination** skill (claim/receipt/ledger discipline) so a scheduled Runner and an attended Go-backlog clear can safely work the same backlog or `issues:<label>` at once.
+
+## Initialize a repository
+
+Use Init before the greenfield workflow or when adopting Muster in a cloned repository:
+
+```sh
+/muster:init [dir]
+# or
+npx -y @adnova-group/muster init [dir]
+```
+
+Init performs bounded, read-only project learning and writes only the owned pair `.muster/project-profile.json` and `.muster/init-receipt.json`. Both are schema-versioned canonical JSON files. The profile records classification, repository facts, and a SHA-256 state fingerprint. It is provider/model-neutral: it never stores provider IDs, concrete model names, resolved roles, capability inventories, or timestamps. Same-state reruns return the same receipt without rewriting bytes. A pending bare rerun only observes expected native artifacts and does not change the baseline or state.
+
+Native instruction generation stays with the active harness. Init records a `not-requested` state, then the harness-specific workflow moves it to `handoff` or a proven callable adapter moves it to `attempted`. A native `/init` request, suggestion, command invocation, refusal to overwrite, or existing artifact alone is not completion. Completion requires artifact-delta evidence, an explicit confirmation of a pre-existing artifact, or a bounded call-result receipt. If the handoff is unavailable, Init leaves a HUMAN-HOLD; an explicit `acknowledge --reason unavailable` permits finalization while the native state remains `handoff`.
+
+Greenfield finalization may create only a missing `.gitignore`, `README.md`, and `.gitkeep` files under the `docs/design` and `docs/plan` directories. Brownfield finalization creates none of those seeds and preserves the clone's README, docs, instruction files, hooks, settings, and other user content. Init never executes repository setup instructions, package scripts, hooks, dependency installers, or discovered commands. The explicit legacy `muster setup [dir]` command still scaffolds its older seed set; new greenfield guidance uses Init and keeps the design-before-plan-before-implementation gate.
 
 ## How it works
 

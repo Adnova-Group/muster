@@ -60,6 +60,27 @@ test("CLI and greenfield references keep init separate from legacy setup", async
   assert.doesNotMatch(greenfield, /Scaffold.*muster setup|setup.*README\/AGENTS seeds/i);
 });
 
+test("init docs bind safe greenfield git preparation, unavailable fallback, and evidence-file scope", async () => {
+  const readme = await read("README.md");
+  const architecture = await read("docs/architecture.md");
+  const commands = await read("website/reference/commands.md");
+  const modes = await read("website/reference/modes.md");
+  const greenfield = await read("plugin/skills/greenfield/SKILL.md");
+  for (const text of [readme, architecture, commands, modes, greenfield]) {
+    assert.match(text, /greenfield[\s\S]{0,240}(?:initialize|create)[\s\S]{0,240}\.git/i);
+    assert.match(text, /Copilot|unknown harness/i);
+    assert.match(text, /acknowledge[^\n]*unavailable/i);
+  }
+  assert.match(commands, /--evidence-file[\s\S]*only for `?preexisting-confirmed`? and `?call-result`?/i);
+  assert.match(commands, /artifact-delta[\s\S]*not[^\n]*--evidence-file/i);
+});
+
+test("newly changed README and modes prose remains humanizer-passing", async () => {
+  for (const f of ["README.md", "website/reference/modes.md"]) {
+    assert.equal(scoreHumanness(await read(f)).passing, true, `${f} must pass humanizer score`);
+  }
+});
+
 test("public prose carries no em-dashes (humanizer rule)", async () => {
   for (const f of ["README.md", "docs/architecture.md", "CONTRIBUTING.md", "docs/anti-patterns.md"]) {
     const text = await read(f);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpProject } from "../test-support/helpers.js";
 import { detectProject } from "../src/detect.js";
@@ -33,6 +33,13 @@ test("init keeps native handoff pending until explicit acknowledgement and final
   assert.equal(prepared.receipt.classification, "greenfield");
   assert.equal(prepared.receipt.nativeInit.state, "not-requested");
   assert.equal(prepared.observedNativeEvidence, null);
+  assert.equal(prepared.receipt.finalStateFingerprint.basis, "muster.repository-state.v1");
+  assert.equal((await stat(join(dir, ".git"))).isDirectory(), true);
+  assert.deepEqual((await readdir(dir)).sort(), [".git", ".muster"]);
+  assert.equal(await exists(join(dir, ".git/hooks")), false);
+  const profile = JSON.parse(await readFile(join(dir, ".muster/project-profile.json"), "utf8"));
+  assert.equal(profile.facts.vcs.kind, "git");
+  assert.equal(profile.facts.vcs.layout, "directory");
 
   const handoff = await transitionNativeInit(dir, {
     to: "handoff", reason: "unavailable", expectedArtifacts: [],
@@ -53,7 +60,7 @@ test("init keeps native handoff pending until explicit acknowledgement and final
   const clone = await tmpProject({
     "README.md": "User README\n",
     "AGENTS.md": "User instructions\n",
-    "package.json": "{}\n",
+    "package.json": { scripts: { prepare: "touch PWNED" } },
   });
   await initializeProject(clone);
   await transitionNativeInit(clone, { to: "handoff", reason: "unavailable", expectedArtifacts: [] });
@@ -62,4 +69,5 @@ test("init keeps native handoff pending until explicit acknowledgement and final
   assert.deepEqual(preserved.receipt.artifacts.created, []);
   assert.equal(await readFile(join(clone, "README.md"), "utf8"), "User README\n");
   assert.equal(await exists(join(clone, "docs/design/.gitkeep")), false);
+  assert.equal(await exists(join(clone, "PWNED")), false);
 });

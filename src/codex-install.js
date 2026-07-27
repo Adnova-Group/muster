@@ -899,12 +899,22 @@ function validateHookManifest(manifest, dir, manifestPath) {
   return { files: [...seen], hookGroups: manifest.hookGroups, hookConfigCreated: manifest.hookConfigCreated === true };
 }
 
-function validateThreadLimitManifest(manifest, manifestPath) {
-  const validValues = value => value && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(REQUIRED_CODEX_THREAD_LIMITS).every(key => value[key] === null || Number.isInteger(value[key]));
-  if (manifest?.owner !== "muster" || manifest.format !== 1 || typeof manifest.configPath !== "string"
+function validateThreadLimitManifest(manifest, manifestPath, expectedConfigPath) {
+  const currentKeys = Object.keys(REQUIRED_CODEX_THREAD_LIMITS);
+  const legacyKeys = ["max_threads", "max_depth"];
+  const schemaFor = value => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const keys = Object.keys(value).sort();
+    const exact = schema => keys.length === schema.length
+      && keys.every((key, index) => key === [...schema].sort()[index]);
+    const schema = exact(currentKeys) ? "current" : exact(legacyKeys) ? "legacy" : null;
+    return schema && Object.values(value).every(item => item === null || Number.isInteger(item)) ? schema : null;
+  };
+  const beforeSchema = schemaFor(manifest?.before);
+  const installedSchema = schemaFor(manifest?.installed);
+  if (manifest?.owner !== "muster" || manifest.format !== 1 || manifest.configPath !== expectedConfigPath
     || typeof manifest.configCreated !== "boolean" || typeof manifest.sectionCreated !== "boolean"
-    || !validValues(manifest.before) || !validValues(manifest.installed)) {
+    || !beforeSchema || beforeSchema !== installedSchema) {
     throw new Error(`Codex thread-limit manifest conflict: ${manifestPath}. Move it or remove it, then rerun the command.`);
   }
   return manifest;
@@ -1442,18 +1452,25 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, hookStateEntries, reconciled, {
             onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
           });
-          const threadLimits = ensureCodexThreadLimits(hookStateReconcile.text);
+          const previousManifest = await safeExists(threadLimitManifestPath)
+            ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath, threadLimitConfigPath)
+            : null;
+          const previousKeys = Object.keys(previousManifest?.installed || {});
+          const legacyManifest = previousKeys.includes("max_threads");
+          const reconciledThreadText = legacyManifest
+            ? restoreCodexThreadLimits(hookStateReconcile.text, previousManifest)
+            : hookStateReconcile.text;
+          const threadLimits = ensureCodexThreadLimits(reconciledThreadText);
           // A repeat install must not re-derive before/sectionCreated/
           // configCreated from the ALREADY-raised file -- that would
           // permanently lose the true pre-Muster baseline the very first
           // install recorded, so an eventual last-scope uninstall could
           // never fully restore it. Mirrors prepareHooks' identical
           // `previous?.hookConfigCreated ?? !configExists` guard above.
-          const previousManifest = await safeExists(threadLimitManifestPath)
-            ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath)
-            : null;
-          const before = previousManifest?.before ?? threadLimits.before;
-          const sectionCreated = previousManifest ? previousManifest.sectionCreated : threadLimits.sectionCreated;
+          const before = previousManifest && !legacyManifest ? previousManifest.before : threadLimits.before;
+          const sectionCreated = previousManifest && !legacyManifest
+            ? previousManifest.sectionCreated
+            : threadLimits.sectionCreated;
           const configCreated = previousManifest
             ? previousManifest.configCreated
             : !(scope === "user" ? declarationConfigExists : configExistedBefore);
@@ -1583,7 +1600,7 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile }) {
   const threadLimitManifestPath = codexThreadLimitManifestPath(codexHome(home));
   const threadLimitManifestExists = await safeExists(threadLimitManifestPath);
   const threadLimitManifest = threadLimitManifestExists
-    ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath)
+    ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath, threadLimitConfigPath)
     : null;
   return { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig, declarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest };
 }

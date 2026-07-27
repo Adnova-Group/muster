@@ -796,9 +796,10 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     } else {
       const limits = readCodexThreadLimits(text);
       const ok = codexThreadLimitsMeetFloor(limits);
+      const ceiling = limits.max_concurrent_threads_per_session;
       checks.push({ name: "codex-thread-limits", ok, detail: ok
-        ? `max_threads=${limits.max_threads}, max_depth=${limits.max_depth} at ${threadLimitConfigPath} meet the Muster floor (>=12/>=2)`
-        : `max_threads=${limits.max_threads ?? "unset"}, max_depth=${limits.max_depth ?? "unset"} at ${threadLimitConfigPath} below the Muster floor. ${CODEX_THREAD_LIMIT_REMEDIATION}` });
+        ? `max_concurrent_threads_per_session=${ceiling} at ${threadLimitConfigPath} is a valid user ceiling`
+        : `max_concurrent_threads_per_session=${ceiling ?? "unset"} at ${threadLimitConfigPath} is not configured. ${CODEX_THREAD_LIMIT_REMEDIATION}` });
     }
   } catch (error) {
     checks.push({ name: "codex-thread-limits", ok: false, detail: `${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}` });

@@ -53,6 +53,10 @@ import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
 import { runCodexWave } from "./codex-wave-runner.js";
+import {
+  codexThreadLimitConfigPath,
+  resolveCodexThreadCeiling,
+} from "./codex-thread-limits.js";
 import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
@@ -261,18 +265,28 @@ async function main() {
       if (!wave || typeof wave !== "object" || Array.isArray(wave)) {
         fail("codex-wave <wave.json>: expected an object");
       }
+      const waveCodexHome = wave.codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
+      let threadConfigText = "";
+      try {
+        threadConfigText = await readFile(codexThreadLimitConfigPath(waveCodexHome), "utf8");
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
       out(await runCodexWave({
         members: wave.members,
         forceProcess: wave.forceProcess === true,
         sandbox: wave.sandbox,
         approvalPolicy: wave.approvalPolicy,
         catalogVersions: wave.catalogVersions,
-        codexHome: wave.codexHome,
+        codexHome: waveCodexHome,
+        maxConcurrentThreadsPerSession: wave.maxConcurrentThreadsPerSession,
+        configuredThreadCeiling: resolveCodexThreadCeiling(threadConfigText),
+        availableThreadLimit: wave.availableThreadLimit,
         codexCommand: process.env.MUSTER_CODEX_COMMAND || "codex",
         // The CLI cannot call Codex collaboration tools from inside a child
         // process. On that lane it emits the version-correct packets for the
         // live orchestrator to invoke; process-isolated waves execute here.
-        dispatchAgent: async () => ({ dispatchRequired: true }),
+        packetOnly: true,
       }));
     } else if (cmd === "worktree-isolation") {
       // worktree-isolation-native item: per-harness native worktree isolation mechanism

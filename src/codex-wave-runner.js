@@ -132,6 +132,35 @@ function validateMembers(members) {
   }
 }
 
+function effectiveWaveCeiling(maxConcurrentThreadsPerSession, configuredThreadCeiling, availableThreadLimit) {
+  const desired = maxConcurrentThreadsPerSession ?? 12;
+  if (!Number.isInteger(desired) || desired < 1) {
+    throw new Error("runCodexWave: maxConcurrentThreadsPerSession must be a positive integer");
+  }
+  const configured = configuredThreadCeiling ?? 12;
+  if (!Number.isInteger(configured) || configured < 1) {
+    throw new Error("runCodexWave: configuredThreadCeiling must be a positive integer");
+  }
+  if (availableThreadLimit !== undefined
+    && (!Number.isInteger(availableThreadLimit) || availableThreadLimit < 1)) {
+    throw new Error("runCodexWave: availableThreadLimit must be a positive integer when provided");
+  }
+  return Math.min(desired, configured, availableThreadLimit ?? desired);
+}
+
+async function mapBounded(values, ceiling, mapper) {
+  const results = new Array(values.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < values.length) {
+      const index = next++;
+      results[index] = await mapper(values[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(ceiling, values.length) }, worker));
+  return results;
+}
+
 async function runProcessWave({
   members,
   codexCommand,
@@ -139,6 +168,7 @@ async function runProcessWave({
   spawnProcess,
   sandbox,
   approvalPolicy,
+  effectiveCeiling,
 }) {
   const canonicalMembers = await Promise.all(members.map(async member => {
     if (typeof member.cwd !== "string" || !member.cwd) {
@@ -157,7 +187,7 @@ async function runProcessWave({
     seenCwds.set(member.cwd, member.id);
   }
   const support = await assertCodexProcessSupport({ command: codexCommand, env, spawnProcess });
-  const settled = await Promise.all(canonicalMembers.map(async member => {
+  const settled = await mapBounded(canonicalMembers, effectiveCeiling, async member => {
     const call = codexExecCall({
       prompt: member.prompt,
       cwd: member.cwd,
@@ -195,13 +225,14 @@ async function runProcessWave({
     } catch (error) {
       return { member, error };
     }
-  }));
+  });
   const failure = settled.find(row => row.error);
   if (failure) throw failure.error;
   return {
     mode: CODEX_EXEC_MODES.EXEC_PROCESS,
     isolation: "process-cwd",
     codexVersion: support.version,
+    effectiveCeiling,
     results: settled.map(row => row.value),
   };
 }
@@ -213,11 +244,19 @@ async function versionForMember(member, { catalogVersions, codexHome }) {
   return resolveCodexMultiAgentVersion({ catalogVersion });
 }
 
-async function runAgentWave({ members, catalogVersions, codexHome, dispatchAgent }) {
-  if (typeof dispatchAgent !== "function") {
+async function runAgentWave({
+  members,
+  catalogVersions,
+  codexHome,
+  dispatchAgent,
+  waitForAgentBatch,
+  packetOnly,
+  effectiveCeiling,
+}) {
+  if (!packetOnly && typeof dispatchAgent !== "function") {
     throw new Error("runCodexWave: dispatchAgent is required for the spawn_agent lane");
   }
-  const results = await Promise.all(members.map(async member => {
+  const planned = await Promise.all(members.map(async member => {
     const version = await versionForMember(member, { catalogVersions, codexHome });
     const packet = codexSpawnAgentCall({
       taskId: member.id,
@@ -226,12 +265,45 @@ async function runAgentWave({ members, catalogVersions, codexHome, dispatchAgent
       version,
       forkTurns: member.forkTurns || "none",
     });
-    return { id: member.id, version, packet, result: await dispatchAgent(packet, member) };
+    return { id: member.id, version, packet, member };
   }));
+  const plannedBatches = [];
+  for (let index = 0; index < planned.length; index += effectiveCeiling) {
+    plannedBatches.push(planned.slice(index, index + effectiveCeiling));
+  }
+  if (packetOnly) {
+    const batches = plannedBatches.map(batch => batch.map(({ member, ...row }) => ({
+      ...row,
+      result: { dispatchRequired: true },
+    })));
+    return {
+      mode: CODEX_EXEC_MODES.SPAWN_AGENT,
+      isolation: "context-only",
+      effectiveCeiling,
+      batches,
+      results: batches.flat(),
+    };
+  }
+  if (plannedBatches.length > 1 && typeof waitForAgentBatch !== "function") {
+    throw new Error("runCodexWave: waitForAgentBatch is required when a spawn_agent wave exceeds the effective ceiling");
+  }
+  const batches = [];
+  for (const [batchIndex, batch] of plannedBatches.entries()) {
+    const dispatched = await Promise.all(batch.map(async row => ({
+      id: row.id,
+      version: row.version,
+      packet: row.packet,
+      result: await dispatchAgent(row.packet, row.member),
+    })));
+    batches.push(dispatched);
+    if (typeof waitForAgentBatch === "function") await waitForAgentBatch(dispatched, batchIndex);
+  }
   return {
     mode: CODEX_EXEC_MODES.SPAWN_AGENT,
     isolation: "context-only",
-    results,
+    effectiveCeiling,
+    batches,
+    results: batches.flat(),
   };
 }
 
@@ -246,8 +318,18 @@ export async function runCodexWave({
   catalogVersions,
   codexHome,
   dispatchAgent,
+  waitForAgentBatch,
+  packetOnly = false,
+  maxConcurrentThreadsPerSession,
+  configuredThreadCeiling,
+  availableThreadLimit,
 } = {}) {
   validateMembers(members);
+  const effectiveCeiling = effectiveWaveCeiling(
+    maxConcurrentThreadsPerSession,
+    configuredThreadCeiling,
+    availableThreadLimit,
+  );
   const lane = resolveCodexDispatchLane({ members, forceProcess });
   if (lane.mode === CODEX_EXEC_MODES.EXEC_PROCESS) {
     return runProcessWave({
@@ -257,7 +339,16 @@ export async function runCodexWave({
       spawnProcess,
       sandbox,
       approvalPolicy,
+      effectiveCeiling,
     });
   }
-  return runAgentWave({ members, catalogVersions, codexHome, dispatchAgent });
+  return runAgentWave({
+    members,
+    catalogVersions,
+    codexHome,
+    dispatchAgent,
+    waitForAgentBatch,
+    packetOnly,
+    effectiveCeiling,
+  });
 }

@@ -141,14 +141,14 @@ for (const marker of ["capabilities --codex --role <role>", "never attach the fu
 await stat(join(plugin, "internal-skills", "review-gate", "verdict.schema.json")).catch(() => fail("missing bundled review-gate verdict schema"));
 if (!reviewGate.includes("${PLUGIN_ROOT}/internal-skills/review-gate/verdict.schema.json")) fail("Codex review gate does not cite the bundled verdict schema path");
 const auditCommand = await readFile(join(plugin, "commands", "audit.md"), "utf8");
-for (const marker of ["Quota-bounded dimension sweep", "three nonredundant read-only briefs", "system quality", "Respect `agents.max_threads`", "fork_turns: \"none\""]) {
+for (const marker of ["Quota-bounded dimension sweep", "three nonredundant read-only briefs", "system quality", "Respect `agents.max_concurrent_threads_per_session`", "fork_turns: \"none\""]) {
   if (!auditCommand.includes(marker)) fail(`Codex audit lacks quota policy marker ${marker}`);
 }
 if (auditCommand.includes("requested=6") || auditCommand.includes("six core dimensions remain independent")) fail("Codex audit retains redundant six-worker fan-out");
 // codex-agent-watch-review-budget item (2026-07-19 dogfood): liveness-aware watch plus
 // per-class extension ceilings replaced the flat 3-heartbeat kill -- see codex/skill-adapter.md's
 // "## Agent watch invariant" section and scripts/build-codex.mjs's agentWatchProtocol const.
-const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "14 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "sol/XHIGH", "DeepSWE sol/high", "liveness checkpoint"];
+const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_concurrent_threads_per_session`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "14 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "sol/XHIGH", "DeepSWE sol/high", "liveness checkpoint"];
 // Bounded text-proximity check: a marker pair must sit within MAX_BINDING_DISTANCE chars of
 // each other, not merely both appear somewhere in the surface -- an unbounded indexOf-order
 // check (the review finding this closes) would still pass if the two phrases drifted apart

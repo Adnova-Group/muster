@@ -135,7 +135,7 @@ test("generated Codex orchestration surfaces enforce the bounded, liveness-aware
   // exhaustion, the watch now also records `{reviewer: <name>, status: "exhausted"}` in the tally
   // input for the interrupted worker (src/review.js's WORKER_ABSENCE_STATUSES contract) instead of
   // leaving the tally with no vocabulary for the kill.
-  const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "14 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "sol/XHIGH", "DeepSWE sol/high", "liveness checkpoint"];
+  const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_concurrent_threads_per_session`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "14 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "sol/XHIGH", "DeepSWE sol/high", "liveness checkpoint"];
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
     for (const marker of watchMarkers) {
@@ -174,7 +174,7 @@ test("generated Codex audits cover six dimensions with three nonredundant scans"
   const text = await readFile(join(selectedPluginRoot, "commands", "audit.md"), "utf8");
   assert.match(text, /Quota-bounded dimension sweep/);
   assert.match(text, /three nonredundant read-only briefs/);
-  assert.match(text, /Respect `agents\.max_threads`/);
+  assert.match(text, /Respect `agents\.max_concurrent_threads_per_session`/);
   assert.match(text, /fork_turns: "none"/);
   assert.doesNotMatch(text, /requested=6|six core dimensions remain independent/);
 });

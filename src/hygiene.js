@@ -416,12 +416,26 @@ export function renderHygieneReport(result) {
 
   lines.push(`  zombies: ${result.zombies.length} detected` +
     (result.reap ? `, ${result.reapedProcesses?.reaped.length ?? 0} reaped` : " (report-only; pass --reap to reap orphaned ones)"));
+  const blind = result.provenance?.blind === true;
   for (const z of result.zombies) {
     const eligibility = z.reapable
       ? `reapable (${z.provenance})`
-      : (z.reasons.includes("orphaned-parent") ? "report-only (no muster provenance)" : "report-only (parent alive)");
+      : (z.reasons.includes("orphaned-parent")
+        ? (blind ? "report-only (provenance unavailable)" : "report-only (no muster provenance)")
+        : "report-only (parent alive)");
     lines.push(`    pid ${z.pid} ppid ${z.ppid ?? "?"} [${z.reasons.join(",")}] ` +
       `${eligibility} :: ${z.command}`);
+  }
+  // Honest surfacing (review-gate round 1): when the provider could supply no
+  // cwd provenance (non-Linux /proc readlink always fails) AND no dispatch
+  // receipts were injected, --reap can NEVER fire -- the report must say so
+  // rather than silently listing orphans as if provenance had been evaluated.
+  if (blind) {
+    const disabled = result.zombies.filter((z) => z.reasons.includes("orphaned-parent") && !z.reapable).length;
+    if (disabled > 0) {
+      lines.push(`  provenance unavailable: reap disabled for ${disabled} candidate${disabled === 1 ? "" : "s"} ` +
+        `(no cwd provenance from the process provider, no dispatch receipts)`);
+    }
   }
 
   lines.push(`  worktrees: ${result.worktrees.count} live (threshold ${result.worktrees.threshold})` +
@@ -477,11 +491,28 @@ export async function runHygiene({
 
   const reapedProcesses = reap ? reapZombieProcesses(zombieResult.zombies, { kill }) : { reaped: [], skipped: [] };
 
+  // Provenance availability (surfaced by renderHygieneReport, never silently
+  // dropped): cwd provenance requires the provider to have read at least one
+  // process's cwd (on non-Linux the /proc readlink always fails, so every
+  // entry's cwd is null), and dispatch-receipt provenance requires injected
+  // receipts (the CLI's hygiene branch wires none today -- no dispatch-receipt
+  // store exists yet). When a process list WAS captured but neither source can
+  // corroborate anything, --reap can never fire: mark the report blind rather
+  // than letting orphans read as "checked, no muster provenance".
+  const receiptPids = zombieOptions.dispatchPids;
+  const provenance = {
+    cwdAvailable: processList.some((p) => p && typeof p.cwd === "string" && p.cwd !== ""),
+    dispatchReceipts: Array.isArray(receiptPids) ? receiptPids.length : 0,
+    blind: false,
+  };
+  provenance.blind = processList.length > 0 && !provenance.cwdAvailable && provenance.dispatchReceipts === 0;
+
   return {
     ok: true,
     reap,
     zombies: zombieResult.zombies,
     reapedProcesses,
+    provenance,
     worktrees: worktreeResult,
     claims: {
       // releases (with their would-be receipt text) are always computed and reported,

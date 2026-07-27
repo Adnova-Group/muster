@@ -9,6 +9,7 @@ import {
   releaseStaleClaims,
   deriveMusterWorktreeRoots,
   runHygiene,
+  renderHygieneReport,
 } from "../src/hygiene.js";
 
 // Direct unit tests for src/hygiene.js -- the burn-hygiene guards' pure-function
@@ -139,6 +140,59 @@ test("runHygiene: reap corroborates via the repo's own muster worktrees by defau
   assert.equal(result.reapedProcesses.skipped.length, 1);
   assert.equal(result.reapedProcesses.skipped[0].pid, 200);
   assert.match(result.reapedProcesses.skipped[0].reason, /no muster provenance/);
+});
+
+// Provenance surfacing (review-gate round 1): on non-Linux the provider's
+// /proc readlink always fails so NO process carries a cwd, and the CLI wires
+// no dispatch receipts (no receipt store exists) -- --reap can never fire,
+// and the report must SAY that instead of silently listing orphans as if
+// provenance had been evaluated.
+test("runHygiene + renderHygieneReport: provenance unavailable is surfaced, not silent", async () => {
+  const result = await runHygiene({
+    processes: [
+      // the non-Linux shape: provider captured the process but cwd is null
+      { pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: null },
+      { pid: 101, ppid: 1, command: "claude --print", startedAt: "2026-07-14T00:00:00Z" },
+    ],
+    worktrees: [{ path: "/repo/.worktrees/burn-fix", bare: false }],
+    now: Date.parse("2026-07-16T00:00:00Z"),
+    reap: true,
+    kill: () => assert.fail("nothing may be killed when provenance is unavailable"),
+  });
+  assert.equal(result.zombies.length, 2);
+  assert.equal(result.provenance.blind, true);
+  assert.equal(result.provenance.cwdAvailable, false);
+  assert.equal(result.provenance.dispatchReceipts, 0);
+  assert.deepEqual(result.reapedProcesses.reaped, []);
+  const report = renderHygieneReport(result);
+  assert.match(report, /provenance unavailable: reap disabled for 2 candidates/);
+  assert.match(report, /report-only \(provenance unavailable\)/);
+  assert.doesNotMatch(report, /report-only \(no muster provenance\)/,
+    "a blind report must not read as if provenance had been checked");
+});
+
+test("runHygiene: cwd provenance from ANY process (or injected receipts) means NOT blind", async () => {
+  const base = {
+    worktrees: [],
+    now: Date.parse("2026-07-16T00:00:00Z"),
+    kill: () => {},
+  };
+  const withCwd = await runHygiene({
+    ...base,
+    processes: [{ pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: "/somewhere" }],
+  });
+  assert.equal(withCwd.provenance.blind, false, "a readable cwd means provenance was evaluated");
+  assert.doesNotMatch(renderHygieneReport(withCwd), /provenance unavailable/);
+
+  const withReceipts = await runHygiene({
+    ...base,
+    processes: [{ pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: null }],
+    zombieOptions: { dispatchPids: [999] },
+  });
+  assert.equal(withReceipts.provenance.blind, false, "injected receipts mean provenance was evaluated");
+
+  const empty = await runHygiene({ ...base, processes: [] });
+  assert.equal(empty.provenance.blind, false, "no process list captured at all is a degraded provider, not a blind one");
 });
 
 test("findZombieProcesses + reapZombieProcesses (adversarial): a live run's process is reported but NEVER reaped, even past the stale-start threshold", () => {

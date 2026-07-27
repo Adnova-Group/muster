@@ -7,7 +7,7 @@ import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves, nextTasks } from "./wave.js";
 import { computeSprintWaves } from "./sprint-waves.js";
-import { tallyReview } from "./review.js";
+import { tallyReview, verdictsTallyCorruptionErrors } from "./review.js";
 import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
@@ -367,14 +367,30 @@ async function main() {
       const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
       const verdicts = JSON.parse(await readFile(file, "utf8"));
       // verdicts.json is a structured-output-binding contract
-      // (plugin/skills/review-gate/verdict.schema.json). The schema is the strict
-      // boundary validator and tallyReview only the defensive floor (see
-      // src/verdict-schema.js's header), so validate BEFORE tallying and fail
-      // loud on a malformed emission -- same fail() convention as the advise
-      // branch's validateAdviceRequest gate -- rather than letting a producer
-      // that broke the contract ride tallyReview's tolerance.
+      // (plugin/skills/review-gate/verdict.schema.json). Validation runs BEFORE
+      // tallying and reports violations loudly -- but the schema is deliberately
+      // STRICTER than tallyReview, whose tolerance of a malformed-but-consumable
+      // emission is documented (its header, and the schema's own description).
+      // So a schema violation splits two ways (boundary pinned by
+      // verdictsTallyCorruptionErrors in src/review.js):
+      //   - still tally-able (every entry is an object carrying a reviewer
+      //     identity): a structured warning on stderr naming the violations,
+      //     then the tally proceeds -- the defensive floor doing its job;
+      //   - tally-corrupting (non-array top level, non-object entry, no
+      //     reviewer identity): fail loud, same fail() convention as the
+      //     advise branch's validateAdviceRequest gate. Unparseable JSON
+      //     already fails loud above via main()'s catch.
       const v = await validateVerdicts(verdicts);
-      if (!v.ok) fail(`tally <verdicts.json>: fails verdict.schema.json:\n${v.errors.join("\n")}`);
+      if (!v.ok) {
+        const corrupt = verdictsTallyCorruptionErrors(verdicts);
+        if (corrupt.length > 0) {
+          fail(`tally <verdicts.json>: fails verdict.schema.json and is not tally-able:\n${[...corrupt, ...v.errors].join("\n")}`);
+        }
+        process.stderr.write(JSON.stringify({
+          warn: "tally <verdicts.json>: fails verdict.schema.json; tallying under tallyReview's documented tolerance",
+          violations: v.errors,
+        }) + "\n");
+      }
       out(tallyReview(verdicts));
     } else if (cmd === "pick") {
       const file = requireArg(rest, 0, "pick <candidates.json>: missing file path", fail);

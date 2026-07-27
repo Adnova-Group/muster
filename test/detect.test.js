@@ -107,6 +107,25 @@ test("populates vcs from a real git repo", async () => {
   assert.equal(p.vcs.hasRemote, false);              // no remote added
 });
 
+test("a git-sandbox (mkdtemp) failure degrades to the same null-on-error contract as a git failure, never rejects", async (t) => {
+  const dir = await tmpProject({ "package.json": { name: "x" }, "a.txt": "hi" });
+  await pexec("git", ["init", "-q"], { cwd: dir });
+  // Point TMPDIR at a nonexistent directory so detect's sandbox mkdtemp fails
+  // with ENOENT -- the old wrapper rejected here where a git failure returned
+  // null; detect must degrade identically either way.
+  const prevTmpdir = process.env.TMPDIR;
+  process.env.TMPDIR = join(dir, "no-such-tmp-dir");
+  t.after(() => {
+    if (prevTmpdir === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = prevTmpdir;
+  });
+  const p = await detectProject(dir);
+  assert.equal(p.vcs.isRepo, true);
+  assert.equal(p.vcs.branch, null, "sandbox failure degrades to null, exactly like a git failure");
+  assert.equal(p.vcs.dirty, false);
+  assert.equal(p.vcs.hasRemote, false);
+});
+
 // --- security: hostile repo config must not execute (audit S3) ---
 
 test("hostile .git/config core.fsmonitor is never executed during detect", async () => {

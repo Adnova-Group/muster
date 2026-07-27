@@ -186,6 +186,28 @@ test("tools/list exposes exactly the 28 brain verbs, matching the MCPB manifest"
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
 
+// MCPB validators may reject a ${user_config.X} substitution for a key that is
+// not declared in user_config -- pin that every substituted key IS declared,
+// and the apex/legacy-fable key shapes the server's precedence shim relies on
+// (enable_apex: no default, so "unset" stays distinguishable from an explicit
+// "false"; enable_fable: declared, marked deprecated/hidden in its prose --
+// the manifest schema has no dedicated deprecated/hidden field).
+test("manifest: every user_config substitution is declared; apex/legacy keys carry the shapes the shim relies on", async () => {
+  const manifest = JSON.parse(await read("cowork/manifest.json"));
+  const declared = new Set(Object.keys(manifest.user_config || {}));
+  for (const [envName, value] of Object.entries(manifest.server.mcp_config.env || {})) {
+    for (const m of String(value).matchAll(/\$\{user_config\.([A-Za-z0-9_]+)\}/g)) {
+      assert.ok(declared.has(m[1]), `${envName} substitutes undeclared user_config key "${m[1]}"`);
+    }
+  }
+  assert.ok(!("default" in manifest.user_config.enable_apex),
+    "enable_apex must declare no default -- a false-by-default boolean makes 'unset' indistinguishable from an explicit disable");
+  const fable = manifest.user_config.enable_fable;
+  assert.ok(fable, "the legacy enable_fable key must stay declared for its env substitution");
+  assert.equal(fable.type, "boolean");
+  assert.match(`${fable.title} ${fable.description}`, /deprecat/i, "enable_fable must be marked deprecated");
+});
+
 // ── codex-mcp-surface-gaps: 4 deterministic ops the 2026-07-19 Codex dogfood ──
 // fell back to the bundled CLI for, closed as real MCP tools (receipt-verify,
 // roles-only capabilities, skill matching, gate-cadence) — see the per-op
@@ -589,6 +611,38 @@ test("tools/call: muster_advise validates an advice-request and returns advisorM
   assert.equal(res.isError, false, "valid advice-request must not error");
   const out = JSON.parse(res.content[0].text);
   assert.ok("advisorModel" in out, "output must contain advisorModel");
+});
+
+// Legacy apex opt-in shim (the startup env-merge in cowork/mcp-server.mjs):
+// enable_apex SET TO EITHER VALUE always wins; a stale legacy enable_fable=true
+// applies only when enable_apex is unset ("" is what MCPB substitutes for an
+// unset no-default key). Observed through muster_advise's advisorModel
+// ("advisor" is an apex role: modelForRole returns "apex" only when enabled,
+// else its prime fallback).
+test("apex opt-in precedence: enable_apex set to either value always wins; legacy enable_fable applies only when enable_apex is unset", async () => {
+  const request = { question: "q?", context: "c", decisionType: "architecture" };
+  const advisorModel = async (env) => {
+    const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_advise", arguments: { request } } }], { env });
+    const res = r[2].result;
+    assert.equal(res.isError, false);
+    return JSON.parse(res.content[0].text).advisorModel;
+  };
+  assert.equal(
+    await advisorModel({ MUSTER_ENABLE_APEX: "", MUSTER_ENABLE_FABLE: "true" }), "apex",
+    "enable_apex unset + legacy enable_fable=true -> the legacy opt-in still applies",
+  );
+  assert.equal(
+    await advisorModel({ MUSTER_ENABLE_APEX: "true", MUSTER_ENABLE_FABLE: "false" }), "apex",
+    "explicit enable_apex=true wins",
+  );
+  assert.notEqual(
+    await advisorModel({ MUSTER_ENABLE_APEX: "false", MUSTER_ENABLE_FABLE: "true" }), "apex",
+    "explicit enable_apex=false beats a stale legacy enable_fable=true",
+  );
+  assert.notEqual(
+    await advisorModel({ MUSTER_ENABLE_APEX: "", MUSTER_ENABLE_FABLE: "" }), "apex",
+    "both unset -> apex off",
+  );
 });
 
 test("tools/call: muster_fuse validates candidates+fusion-map and returns a mode field", async () => {

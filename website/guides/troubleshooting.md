@@ -107,7 +107,7 @@ npx -y @adnova-group/muster hygiene --reap    # act
 
 `hygiene` reports three things: orphaned `codex`/`claude` processes, live worktrees over the threshold (default 10) plus git-prunable candidates, and `.muster/backlog.md` claims whose heartbeat is stale (default 60 minutes).
 
-Report-only is the default. `--reap` opts into exactly two actions: `SIGTERM` to processes already flagged reap-eligible (orphaned parent — a merely old process with a live parent is never killed on age alone), and rewriting the backlog to release stale claims. **Worktrees are never deleted**, with or without `--reap`; removing them stays a human decision.
+Report-only is the default. `--reap` opts into exactly two actions: `SIGTERM` to processes already flagged reap-eligible (an orphaned parent **and** corroborated Muster provenance — the process's cwd sits under a known Muster run worktree, or its pid appears in a dispatch receipt; orphanage alone is never enough, and a merely old process with a live parent is never killed on age alone), and rewriting the backlog to release stale claims. **Worktrees are never deleted**, with or without `--reap`; removing them stays a human decision.
 
 ## Still stuck
 

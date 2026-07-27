@@ -1097,5 +1097,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // target reached through an in-tree symlink pointing outside cwd classifies
   // as out-of-scope instead of in-scope. Deliberate security remediation, not
   // drift.
-  assert.equal(hash.digest("hex"), "060a3943e1f8d10d79108bca8482744de44584cc2ab60b1c1c3780ea2b548143");
+  //
+  // 2026-07-27 re-pin #7 (audit review-gate round 1: cowork legacy-key shim
+  // precedence): file COUNT unchanged (140) -- only cowork/mcp-server.mjs's
+  // content changed: the startup env-merge now treats enable_apex SET TO
+  // EITHER VALUE as always winning over the legacy enable_fable key (which
+  // applies only when enable_apex is unset), so a stale legacy opt-in can no
+  // longer override an explicit enable_apex=false. The pinned
+  // `env: { ...process.env, MUSTER_RUNTIME: "cowork" }` spawn line the Codex
+  // build transform rewrites FROM is byte-identical. Deliberate review-gate
+  // remediation, not drift.
+  assert.equal(hash.digest("hex"), "cff6af4923c8ff86376b2d0e1f574a5804a99f73a20b647079d53083c2b995a2");
 });

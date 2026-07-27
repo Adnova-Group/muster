@@ -132,6 +132,32 @@ test("runKimiInstall: refuses to write through a symlinked agents dir", async ()
   } finally { [repo, home, elsewhere].forEach(d => rmSync(d, { recursive: true, force: true })); }
 });
 
+test("runKimiInstall: a stale manifest temp from a crashed install (pid recycled) never blocks the publish", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    // The pre-fix temp name was pid-only with no random component
+    // (`.<name>.tmp-<pid>`); atomicWrite opens O_EXCL, so a leftover temp from
+    // a crashed install whose pid was later recycled threw EEXIST where the
+    // old plain writeFile simply overwrote. Pre-create exactly that leftover.
+    const staleDir = join(home, ".kimi-code", "muster");
+    mkdirSync(staleDir, { recursive: true });
+    writeFileSync(join(staleDir, `.${KIMI_MANIFEST}.tmp-${process.pid}`), "stale leftover");
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    assert.ok(r.fileCount > 0);
+    const manifest = JSON.parse(readFileSync(join(home, ".kimi-code", "muster", KIMI_MANIFEST), "utf8"));
+    assert.equal(manifest.owner, "muster");
+  } finally { [repo, home].forEach(d => rmSync(d, { recursive: true, force: true })); }
+});
+
+test("runKimiUninstall: a manifest entry resolving to the kimi root itself ('.') is refused, not contained", async () => {
+  const home = tmp();
+  try {
+    write(join(home, ".kimi-code", "muster", KIMI_MANIFEST),
+      JSON.stringify({ owner: "muster", format: 1, agents: ["."], skills: [] }));
+    await assert.rejects(runKimiUninstall({ home }), /Refusing a Kimi path outside/);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
 // --- model_preference: the two-lane dispatch bind ---------------------------
 
 test("kimiModelPreferenceForTier: tiers fold onto the two configured lanes", () => {

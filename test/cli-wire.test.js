@@ -361,11 +361,17 @@ test("cli wire: plan-checklist shows task ids and names from the fixture", async
 
 // .muster/verdicts.json is a structured-output-binding contract
 // (plugin/skills/review-gate/verdict.schema.json, loaded via src/verdict-schema.js).
-// The schema is the STRICT boundary validator; src/review.js's tallyReview is only
-// the defensive floor (see test/verdict-schema.test.js's header). The CLI's tally
-// verb is the real consumer boundary, so a schema-violating file must fail loud
-// BEFORE tallying -- same fail() convention as the advise branch's validation --
-// never ride tallyReview's tolerance into a silently-miscounting gate.
+// The schema is the STRICT boundary validator; src/review.js's tallyReview is the
+// defensive floor (see test/verdict-schema.test.js's header). The CLI's tally verb
+// validates BEFORE tallying and splits violations into three pinned classes:
+//   1. schema-valid                    -> exit 0, tally JSON on stdout;
+//   2. schema-invalid but tally-able   -> exit 0, tally JSON on stdout PLUS a
+//      structured stderr warning naming the violations (tallyReview's documented
+//      tolerance -- findings alongside an exhaustion status, a reviewer with no
+//      findings, a finding with no `note`);
+//   3. tally-corrupting                -> exit 1, no tally JSON: unparseable JSON,
+//      a non-array top level, or an entry with no reviewer identity (the exact
+//      floor verdictsTallyCorruptionErrors pins from tallyReview's needs).
 test("cli wire: tally on a schema-valid verdicts file exits 0 with the tally shape", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-cli-tally-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
@@ -380,23 +386,57 @@ test("cli wire: tally on a schema-valid verdicts file exits 0 with the tally sha
   assert.deepEqual(parsed.counts, { blocker: 1, risk: 0, nit: 0 });
 });
 
-test("cli wire: tally on a schema-violating verdicts file exits 1 and names the violations", async (t) => {
+test("cli wire: tally on a schema-violating but tally-able file exits 0, tallies, and warns with named violations", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-cli-tally-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const file = join(tmp, "verdicts.json");
   await writeFile(file, JSON.stringify([
-    { reviewer: "a", findings: [{ severity: "critical", note: "hallucinated severity" }] },
-    { reviewer: "b", status: "exhausted", findings: [{ severity: "blocker", note: "spoofed alongside exhaustion" }] },
+    // status + findings: tallyReview ignores the spoofed finding (documented tolerance)
+    { reviewer: "killed-worker", status: "exhausted", findings: [{ severity: "blocker", note: "spoofed alongside exhaustion" }] },
+    // a reviewer entry with no findings at all
+    { reviewer: "quiet-reviewer" },
+    // a finding missing its `note`
+    { reviewer: "sloppy", findings: [{ severity: "risk" }] },
   ]));
-  try {
-    await run(["tally", file]);
-    assert.fail("should have exited non-zero on a schema-violating verdicts file");
-  } catch (err) {
-    assert.equal(err.code, 1, `expected exit 1, got ${err.code}`);
-    assert.match(err.stderr, /schema/i, "stderr must name the schema as the failing contract");
-    assert.match(err.stderr, /oneOf branch/, "stderr must list the actual schema violations");
-    assert.equal(err.stdout ?? "", "", "no tally JSON may be emitted for an invalid verdicts file");
-  }
+  const { stdout, stderr } = await run(["tally", file]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.blocked, true, "the exhausted entry still forces blocked:true");
+  assert.deepEqual(parsed.counts, { blocker: 0, risk: 1, nit: 0 },
+    "the spoofed finding is discarded; the note-less risk finding still tallies");
+  const warning = JSON.parse(stderr.trim());
+  assert.match(warning.warn, /verdict\.schema\.json/, "the warning names the schema as the bent contract");
+  assert.ok(Array.isArray(warning.violations) && warning.violations.length > 0,
+    "the warning carries the named schema violations");
+});
+
+test("cli wire: tally on tally-corrupting files exits 1 and names why (unparseable JSON, non-array, no reviewer identity)", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-cli-tally-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+
+  const expectFail = async (name, content, patterns) => {
+    const file = join(tmp, name);
+    await writeFile(file, content);
+    try {
+      await run(["tally", file]);
+      assert.fail(`${name}: should have exited non-zero`);
+    } catch (err) {
+      assert.equal(err.code, 1, `${name}: expected exit 1, got ${err.code}`);
+      for (const pattern of patterns) assert.match(err.stderr, pattern, `${name}: stderr must name the failure`);
+      assert.equal(err.stdout ?? "", "", `${name}: no tally JSON may be emitted`);
+    }
+  };
+
+  // unparseable JSON -- fails loud before validation ever runs
+  await expectFail("garbage.json", "this is not json{", [/tally|error|JSON/i]);
+  // a non-array top level would for-of into silent garbage or throw
+  await expectFail("object.json", JSON.stringify({ reviewer: "a", findings: [] }),
+    [/not tally-able/, /must be an array/]);
+  // entries lacking a reviewer identity silently break blocker/blockedReasons
+  // attribution -- stricter than tallyReview's UNNAMED_REVIEWER floor
+  await expectFail("nameless-findings.json", JSON.stringify([{ findings: [{ severity: "blocker", note: "x" }] }]),
+    [/not tally-able/, /no reviewer identity/]);
+  await expectFail("nameless-status.json", JSON.stringify([{ status: "exhausted" }]),
+    [/not tally-able/, /no reviewer identity/]);
 });
 
 // ---------------------------------------------------------------------------

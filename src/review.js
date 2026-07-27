@@ -63,3 +63,40 @@ export function tallyReview(verdicts) {
     exhausted
   };
 }
+
+// The CLI `tally` verb's fail-loud boundary (src/cli.js), pinned from what
+// tallyReview above actually needs to produce a truthful tally. The verdict
+// schema is deliberately STRICTER than this tally (its own description calls
+// the runtime tolerance deliberate), so a schema violation alone is not
+// grounds to refuse the tally -- but these shapes would corrupt the result
+// itself, not just bend the contract:
+//   - a non-array top level: a string/object would for-of into silent garbage
+//     (a string iterates chars, each silently producing nothing) or throw;
+//   - a non-object entry: null throws on property access, a primitive is
+//     silently skipped -- either way entries vanish from the tally;
+//   - an entry with no reviewer identity: tallyReview interpolates `reviewer`
+//     into blocker attributions and blockedReasons, so a nameless entry
+//     silently breaks the gate's glass-box attribution. (tallyReview's own
+//     UNNAMED_REVIEWER fallback stays for direct programmatic callers; the
+//     CLI boundary is deliberately stricter than the defensive floor.)
+// Everything ELSE the schema rejects -- findings alongside an exhaustion
+// status, a reviewer with no findings, a finding with no `note`, an
+// unrecognized severity/status value -- is exactly the malformed-but-
+// consumable set tallyReview's header documents as deliberate tolerance: the
+// caller warns loudly (named violations on stderr) and tallies anyway.
+export function verdictsTallyCorruptionErrors(verdicts) {
+  const errors = [];
+  if (!Array.isArray(verdicts)) {
+    errors.push(`$: must be an array of reviewer entries, got ${verdicts === null ? "null" : typeof verdicts}`);
+    return errors;
+  }
+  verdicts.forEach((entry, i) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      const got = entry === null ? "null" : Array.isArray(entry) ? "array" : typeof entry;
+      errors.push(`$[${i}]: must be a reviewer entry object, got ${got}`);
+    } else if (typeof entry.reviewer !== "string" || entry.reviewer.trim() === "") {
+      errors.push(`$[${i}]: carries no reviewer identity`);
+    }
+  });
+  return errors;
+}

@@ -25,19 +25,23 @@ function gitEnvironment() {
 }
 
 async function git(cwd, suffix) {
-  const sandbox = await mkdtemp(join(tmpdir(), "muster-git-"));
-  const args = [
-    "--no-optional-locks", "-c", `core.hooksPath=${sandbox}`, "-c", "core.fsmonitor=false",
-    "-c", "core.untrackedCache=false", "-c", "diff.external=", "-c", "pager.branch=false",
-    ...suffix,
-  ];
+  // Sandbox creation sits INSIDE the try: a mkdtemp failure (a broken TMPDIR,
+  // exhausted tmp, ...) must degrade to the same null-on-error contract a git
+  // failure gets, never reject detectProject's git probing.
+  let sandbox = null;
   try {
+    sandbox = await mkdtemp(join(tmpdir(), "muster-git-"));
+    const args = [
+      "--no-optional-locks", "-c", `core.hooksPath=${sandbox}`, "-c", "core.fsmonitor=false",
+      "-c", "core.untrackedCache=false", "-c", "diff.external=", "-c", "pager.branch=false",
+      ...suffix,
+    ];
     const { stdout } = await pexec("git", args, { cwd, env: gitEnvironment(), encoding: "utf8" });
     return stdout.trim();
   } catch {
     return null;
   } finally {
-    await rm(sandbox, { recursive: true, force: true });
+    if (sandbox) await rm(sandbox, { recursive: true, force: true });
   }
 }
 

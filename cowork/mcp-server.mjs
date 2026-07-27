@@ -221,18 +221,23 @@ const TOOLS = {
 
 // ── CLI invocation ──────────────────────────────────────────────────────────
 // The canonical apex opt-in rides MUSTER_ENABLE_APEX (MCPB user_config key
-// enable_apex). Installs upgraded from the fable-era manifest may still carry a
-// stored enable_fable value, which the manifest keeps substituting into the
-// legacy MUSTER_ENABLE_FABLE; MCPB booleans substitute as the strings
-// "true"/"false", so a false-by-default enable_apex would otherwise shadow the
-// legacy opt-in via src/model.js's `APEX ?? FABLE` precedence. Honor either
-// here -- new key preferred, legacy key still able to opt in -- so an upgrade
-// never silently revokes it. Merged once into process.env at startup (every
+// enable_apex, declared with NO default: a false-by-default boolean substitutes
+// "false" whether the user toggled it or not, which would make "unset"
+// indistinguishable from an explicit disable and let a stale legacy value
+// override it). Installs upgraded from the fable-era manifest may still carry
+// a stored enable_fable=true, which the manifest keeps substituting into the
+// legacy MUSTER_ENABLE_FABLE. Precedence is explicit: enable_apex SET TO
+// EITHER VALUE always wins; the legacy key applies only when enable_apex is
+// unset (absent or substituting empty) -- so an upgrade never silently
+// revokes the old opt-in, and a stale legacy value never overrides an
+// explicit enable_apex=false. Merged once into process.env at startup (every
 // runCli spawn below inherits it); tier aliasing itself stays owned by
 // src/model.js.
 {
   const on = (v) => !!v && v !== "0" && String(v).toLowerCase() !== "false";
-  if (!on(process.env.MUSTER_ENABLE_APEX) && on(process.env.MUSTER_ENABLE_FABLE)) {
+  const apexUnset = process.env.MUSTER_ENABLE_APEX === undefined
+    || String(process.env.MUSTER_ENABLE_APEX).trim() === "";
+  if (apexUnset && on(process.env.MUSTER_ENABLE_FABLE)) {
     process.env.MUSTER_ENABLE_APEX = process.env.MUSTER_ENABLE_FABLE;
   }
 }

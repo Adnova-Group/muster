@@ -25,7 +25,12 @@
     "enable_apex": {
       "type": "boolean",
       "title": "Enable Apex tier",
-      "description": "Route peak-judgment roles to Apex. Off by default; degrades to Prime when disabled.",
+      "description": "Route peak-judgment roles to Apex. Unset means off (degrades to Prime), except that a stale legacy enable_fable=true from a pre-0.5 install is still honored. Set to either value to decide explicitly -- an explicit 'false' always beats the legacy key. Declared with no default so 'unset' stays distinguishable from an explicit 'false' (a false-by-default boolean would substitute 'false' for both)."
+    },
+    "enable_fable": {
+      "type": "boolean",
+      "title": "Enable Fable tier (deprecated, hidden legacy shim)",
+      "description": "DEPRECATED pre-0.5 name of enable_apex, declared only so MCPB validators accept the legacy ${user_config.enable_fable} env substitution and an upgraded install's stored value keeps working. Ignored whenever enable_apex is set to either value. Do not use for new installs.",
       "default": false
     },
     "max_tier": {

@@ -118,8 +118,20 @@ export function parseBacklogRef(text) {
 // canonical path to read for a contained file ref; null for a non-file ref
 // (nothing to resolve), a missing target, or a canonical escape (which a
 // caller must treat like any other unreadable backlog, never as a green light
-// to read the un-resolved path). src/scope.js's readBacklogCandidate applies
-// the same check to its raw file candidates.
+// to read the un-resolved path).
+//
+// CANONICAL SEAM, no production caller today: the one in-repo code path that
+// actually reads a backlog file candidate -- src/scope.js's
+// readBacklogCandidate -- applies this SAME canonical containment check itself
+// (resolveContainedRealpath, audit S4 finding 5) and must stay the only read
+// path for scope detection. This function exists as the single code-backed
+// resolution step for the PROSE-side consumers: plan-backlog.md B1 and
+// go-backlog.md step 1 treat parseBacklogRef's kind:"file" as a green light
+// to read `path`, and any future code consumer of that classification must
+// resolve through HERE (or replicate the check deliberately) rather than
+// reading the un-resolved path. Keep it exported and tested
+// (test/fs-safe.test.js) even while unwired -- deleting it would orphan the
+// prose contract with no code seam to point at.
 export async function resolveBacklogFileRef(root, ref) {
   if (!ref || ref.kind !== "file") return null;
   return resolveContainedRealpath(root, join(root, ref.path));

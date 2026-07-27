@@ -129,13 +129,16 @@ async function assertWritableDir(path) {
 // defense-in-depth containment gate so a crafted manifest (uninstall) or a
 // traversing source name (install) can never read/write outside the kimi root.
 // The string-shape checks stay local; the resolved-path escape check delegates
-// to fs-safe.js's lexical containment (audit S4).
+// to fs-safe.js's lexical containment (audit S4). Note `target === base` is
+// REJECTED even though isContainedLexical is deliberately base-inclusive: a
+// rel of "." resolves to dest itself, and no manifest entry may name the kimi
+// root as a file to write/unlink (the pre-S4 guard rejected it; restored).
 function assertContained(relPaths, dest) {
   const base = resolve(dest);
   for (const rel of relPaths) {
     const target = resolve(base, rel);
     if (typeof rel !== "string" || rel === "" || rel.startsWith(sep) || rel.split("/").includes("..")
-      || !isContainedLexical(base, target)) {
+      || !isContainedLexical(base, target) || target === base) {
       throw new Error(`Refusing a Kimi path outside ${dest}: ${JSON.stringify(rel)}`);
     }
   }
@@ -616,13 +619,14 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
 }
 
 // Manifest publish: temp-write-then-rename via fs-safe.js's shared atomicWrite
-// (audit S4), keeping this site's historical contract -- its temp name and no
-// fsync (the manifest is small and a torn publish is self-healing on rerun;
-// the fence block's config.toml write is deliberately NOT this helper -- see
-// the "deliberately a plain writeFile" comment at the install merge).
+// (audit S4) with its DEFAULT temp name -- the pid+RANDOM suffix is the
+// collision handling: this site's historical pid-only temp name
+// (`.tmp-<pid>`, no random) could hit EEXIST under atomicWrite's O_EXCL open
+// when a stale temp from a crashed install met a recycled pid, where the old
+// plain writeFile simply overwrote. fsync stays off (the manifest is small
+// and a torn publish is self-healing on rerun; the fence block's config.toml
+// write is deliberately NOT this helper -- see the "deliberately a plain
+// writeFile" comment at the install merge).
 async function atomicWriteJson(path, value) {
-  await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", {
-    fsync: false,
-    tempName: (targetPath) => join(dirname(targetPath), `.${basename(targetPath)}.tmp-${process.pid}`),
-  });
+  await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", { fsync: false });
 }

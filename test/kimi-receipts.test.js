@@ -9,9 +9,29 @@ import { readFile, mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseWireUsage, sumUsage, readSessionUsage, KIMI_USAGE_FIELDS } from "../src/kimi-receipts.js";
+import {
+  parseWireUsage, sumUsage, readSessionUsage, KIMI_USAGE_FIELDS,
+  captureSessionId, resolveSessionForCwd, formatUsageLine, summarizeItemReceipts,
+  UNKNOWN_REASONS
+} from "../src/kimi-receipts.js";
 
 const FIXTURE_SESSION = fileURLToPath(new URL("./fixtures/kimi-session-usage", import.meta.url));
+const FIXTURE_STDOUT = fileURLToPath(new URL("./fixtures/kimi-stream-stdout.jsonl", import.meta.url));
+// Committed session dirs for the fallback resolver: sess-old/sess-new share
+// one cwd (sess-new has the later state.json updatedAt); sess-other is a
+// different cwd. The index file itself is written per-test into a temp dir so
+// sessionDir paths can be absolute -- the real index never uses line order.
+const FIXTURE_INDEX_SESSIONS = fileURLToPath(new URL("./fixtures/kimi-session-index/sessions", import.meta.url));
+const LEG_CWD = "/repo/leg";
+
+async function writeIndex(entries) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-index-"));
+  const indexPath = path.join(dir, "session_index.jsonl");
+  await writeFile(indexPath, entries.map(e => JSON.stringify(e)).join("\n") + "\n");
+  return indexPath;
+}
+
+const indexEntry = (id, dirName, workDir) => ({ sessionId: id, sessionDir: path.join(FIXTURE_INDEX_SESSIONS, dirName), workDir });
 
 // --- parseWireUsage ----------------------------------------------------------
 
@@ -116,4 +136,153 @@ test("readSessionUsage: throws when the session dir has no agents tree", async (
   const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-"));
   await assert.rejects(() => readSessionUsage(dir), /cannot read agents tree/);
   await assert.rejects(() => readSessionUsage(""), /sessionDir is required/);
+});
+
+// --- captureSessionId (PREFERRED: capture-at-dispatch) -----------------------
+
+test("captureSessionId: extracts the session id from a real captured stream-json stdout", async () => {
+  const stdout = await readFile(FIXTURE_STDOUT, "utf8");
+  assert.equal(captureSessionId(stdout), "session_fb2161ac-ff97-40f2-9f2c-dd60f5e84c5f");
+});
+
+test("captureSessionId: returns null when stdout has no resume_hint (and skips non-JSON lines)", () => {
+  assert.equal(captureSessionId('{"role":"assistant","content":"ok"}\n'), null);
+  assert.equal(captureSessionId("not json at all\n\n" + '{"role":"meta","type":"other"}'), null);
+  assert.equal(captureSessionId(""), null);
+});
+
+test("captureSessionId: rejects non-string input", () => {
+  assert.throws(() => captureSessionId(null), /stdoutText must be a string/);
+});
+
+// --- resolveSessionForCwd (FALLBACK resolver) --------------------------------
+
+test("resolveSessionForCwd: a captured id resolves even when the index has many sessions", async () => {
+  const indexPath = await writeIndex([
+    indexEntry("session_new", "sess-new", LEG_CWD),
+    indexEntry("session_old", "sess-old", LEG_CWD),
+    indexEntry("session_other", "sess-other", "/repo/other"),
+    { sessionId: "session_unrelated", sessionDir: "/nonexistent/dir", workDir: "/elsewhere" }
+  ]);
+  const resolution = await resolveSessionForCwd({ indexPath, cwd: "/no/match/needed", capturedSessionId: "session_old" });
+  assert.deepEqual(resolution, {
+    resolved: true,
+    sessionId: "session_old",
+    sessionDir: path.join(FIXTURE_INDEX_SESSIONS, "sess-old"),
+    source: "captured"
+  });
+});
+
+test("resolveSessionForCwd: throws named errors for a captured id gone from the index or disk", async () => {
+  const indexPath = await writeIndex([indexEntry("session_old", "sess-old", LEG_CWD)]);
+  await assert.rejects(
+    () => resolveSessionForCwd({ indexPath, cwd: LEG_CWD, capturedSessionId: "session_gone" }),
+    /captured session session_gone not found in session index/
+  );
+  const deadPath = await writeIndex([{ sessionId: "session_dead", sessionDir: "/nonexistent/dir", workDir: LEG_CWD }]);
+  await assert.rejects(
+    () => resolveSessionForCwd({ indexPath: deadPath, cwd: LEG_CWD, capturedSessionId: "session_dead" }),
+    /captured session session_dead has no readable session dir/
+  );
+});
+
+test("resolveSessionForCwd: throws on an unreadable or malformed index (broken input, never UNKNOWN)", async () => {
+  await assert.rejects(
+    () => resolveSessionForCwd({ indexPath: "/nonexistent/session_index.jsonl", cwd: LEG_CWD }),
+    /cannot read session index/
+  );
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-index-"));
+  const badPath = path.join(dir, "session_index.jsonl");
+  await writeFile(badPath, '{"sessionId":"a","sessionDir":"/x","workDir":"/y"}\n{"sessionId":\n');
+  await assert.rejects(() => resolveSessionForCwd({ indexPath: badPath, cwd: LEG_CWD }), /line 2 is not valid JSON/);
+  await assert.rejects(() => resolveSessionForCwd({ indexPath: badPath }), /cwd is required/);
+});
+
+test("resolveSessionForCwd: newest-wins by state.json updatedAt, NEVER index line order", async () => {
+  // sess-new is FIRST in the index -- line order alone would pick it for the
+  // wrong reason; the assertion that matters is the source + the loser's
+  // earlier updatedAt (01:00 vs 02:00).
+  const indexPath = await writeIndex([
+    indexEntry("session_new", "sess-new", LEG_CWD),
+    indexEntry("session_old", "sess-old", LEG_CWD),
+    indexEntry("session_other", "sess-other", "/repo/other")
+  ]);
+  const resolution = await resolveSessionForCwd({ indexPath, cwd: LEG_CWD });
+  assert.equal(resolution.resolved, true);
+  assert.equal(resolution.sessionId, "session_new");
+  assert.equal(resolution.source, "index-newest");
+});
+
+test("resolveSessionForCwd: one candidate for the cwd resolves without reading state.json", async () => {
+  const indexPath = await writeIndex([
+    indexEntry("session_old", "sess-old", LEG_CWD),
+    indexEntry("session_other", "sess-other", "/repo/other")
+  ]);
+  const resolution = await resolveSessionForCwd({ indexPath, cwd: "/repo/other" });
+  assert.deepEqual(resolution, {
+    resolved: true,
+    sessionId: "session_other",
+    sessionDir: path.join(FIXTURE_INDEX_SESSIONS, "sess-other"),
+    source: "index-unique"
+  });
+});
+
+test("resolveSessionForCwd: tied updatedAt across candidates is UNKNOWN-with-reason, never a throw", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-sessions-"));
+  const state = '{"updatedAt":"2026-07-27T01:00:00.000Z","agents":{}}';
+  for (const name of ["sess-a", "sess-b"]) {
+    await mkdir(path.join(dir, name), { recursive: true });
+    await writeFile(path.join(dir, name, "state.json"), state);
+  }
+  const indexPath = await writeIndex([
+    { sessionId: "session_a", sessionDir: path.join(dir, "sess-a"), workDir: LEG_CWD },
+    { sessionId: "session_b", sessionDir: path.join(dir, "sess-b"), workDir: LEG_CWD }
+  ]);
+  const resolution = await resolveSessionForCwd({ indexPath, cwd: LEG_CWD });
+  assert.equal(resolution.resolved, false);
+  assert.equal(resolution.reason, "ambiguous-tie");
+  assert.deepEqual(resolution.candidates.sort(), ["session_a", "session_b"]);
+});
+
+test("resolveSessionForCwd: a candidate with missing updatedAt is UNKNOWN-with-reason", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-sessions-"));
+  await mkdir(path.join(dir, "sess-a"), { recursive: true });
+  await writeFile(path.join(dir, "sess-a/state.json"), '{"agents":{}}'); // no updatedAt
+  await mkdir(path.join(dir, "sess-b"), { recursive: true });
+  await writeFile(path.join(dir, "sess-b/state.json"), '{"updatedAt":"2026-07-27T01:00:00.000Z","agents":{}}');
+  const indexPath = await writeIndex([
+    { sessionId: "session_a", sessionDir: path.join(dir, "sess-a"), workDir: LEG_CWD },
+    { sessionId: "session_b", sessionDir: path.join(dir, "sess-b"), workDir: LEG_CWD }
+  ]);
+  const resolution = await resolveSessionForCwd({ indexPath, cwd: LEG_CWD });
+  assert.deepEqual(resolution, { resolved: false, reason: "missing-updated-at", candidates: ["session_a", "session_b"] });
+});
+
+test("resolveSessionForCwd: no sessions for the cwd is UNKNOWN, and reasons are pinned", async () => {
+  const indexPath = await writeIndex([indexEntry("session_other", "sess-other", "/repo/other")]);
+  const resolution = await resolveSessionForCwd({ indexPath, cwd: LEG_CWD });
+  assert.deepEqual(resolution, { resolved: false, reason: "no-sessions-for-cwd", candidates: [] });
+  assert.deepEqual([...UNKNOWN_REASONS], ["no-sessions-for-cwd", "ambiguous-tie", "missing-updated-at"]);
+});
+
+// --- batch accounting summary ------------------------------------------------
+
+test("formatUsageLine: one compact line with session totals + per-dispatch breakdown", async () => {
+  const usage = await readSessionUsage(FIXTURE_SESSION);
+  assert.equal(
+    formatUsageLine("item-7", usage),
+    "item-7: session=kimi-session-usage total=74952 in=74335 out=617 cache-read=68096 cache-create=0 records=5 dispatches: agent-0=29470"
+  );
+});
+
+test("summarizeItemReceipts: one line per item, UNKNOWN resolutions become lines (never throws)", async () => {
+  const lines = await summarizeItemReceipts([
+    { itemId: "item-1", resolution: { resolved: true, sessionId: "s", sessionDir: FIXTURE_SESSION, source: "captured" } },
+    { itemId: "item-2", resolution: { resolved: false, reason: "ambiguous-tie", candidates: ["a", "b"] } },
+    { itemId: "item-3", resolution: { resolved: false, reason: "no-sessions-for-cwd", candidates: [] } }
+  ]);
+  assert.equal(lines.length, 3); // input order preserved
+  assert.match(lines[0], /^item-1: session=kimi-session-usage total=74952 /);
+  assert.equal(lines[1], "item-2: UNKNOWN (ambiguous-tie)");
+  assert.equal(lines[2], "item-3: UNKNOWN (no-sessions-for-cwd)");
 });

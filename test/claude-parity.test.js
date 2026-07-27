@@ -1050,5 +1050,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // (src/kimi-receipts.js, outside this surface). test/kimi-receipts.test.js's
   // prose-consistency pins were extended to lock the scoping.
   // Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "a4775efda3940954b0ac94519bceaea15471fb4ef574df88b9b62d6edfcfa3ba");
+  // REBASE-NOTE (2026-07-27): hash refreshed after the mid-batch rebase onto the
+  // semantic-tier rename (main 6d565a3); covers the rename re-pin and this
+  // branch's process-lane/token-accounting re-pins above.
+  assert.equal(hash.digest("hex"), "ce49565c95e2b725e68f27ddf3865eba683c5e6272e7a7380802f52e5832b6cf");
 });

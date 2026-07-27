@@ -69,7 +69,7 @@ Nine components appear, under different names, in all seven harnesses. Each subs
 | Harness | Dispatch | Isolation + limits |
 |---|---|---|
 | Claude Code CLI | `Agent` tool (`subagent_type`, `model`, `isolation: worktree`) [src: cc-subagents] | own context; nesting ≤5; worktree shell-lock (v2.1.203+) [src: cc-subagents] |
-| Codex CLI | `collaboration.spawn_agent`/`wait_agent`/`list_agents`; `fork_turns:"none"` [src: cx-subagents] | `agents.max_threads`(6)/`max_depth`(1); NO cwd field on dispatch [src: cx-subagents] |
+| Codex CLI | Model-selected packets: v1 `multi_agent_v1`, or v2 `collaboration.spawn_agent`/`wait_agent`/`list_agents`; `resolveCodexMultiAgentVersion` emits the matching shape and rejects an unknown version fail loud [src: cx-subagents] | v1 `agents.max_threads` default 6; v2 concurrency default 4 minus the primary thread; NO cwd field on dispatch [src: cx-subagents] |
 | Hermes | `delegate_task(goal,context,toolsets,role)`; parallel batches [src: hermes-delegation] | fresh context; depth-1 default; `hermes -w` worktrees [src: hermes-worktree] |
 | Agents SDK | agents-as-tools + handoffs; per-agent `model`, `RunConfig.model` [src: gw-sdk] | Sandbox agents beta: `Manifest` + capabilities + resumable [src: gw-sandbox] |
 | Cowork | agent-owned parallel fan-out; steered by prompt only [src: cw-subagents] | no dispatch API; per-item worktree isolation absent [src: cw-subagents] |
@@ -210,13 +210,13 @@ Every disagreement surfaced across the seven docs, the three decision records, a
 
 4. **"Cowork has no plugin/skill/slash/hook primitives" (doc-vs-muster-code).** Muster's shipping adapter comment asserts this; current Cowork docs describe a plugin system bundling skills/connectors/hooks/subagents in the Claude Code plugin format. The adapter predates the surface — stale. Resolves by a hands-on test of whether muster's `plugin/` loads under Cowork's loader (the port's highest-value open question). [src: cw-plugins]
 
-5. **Cowork per-call model override (doc-absence vs muster-code).** No public Cowork source documents per-subagent model selection; muster's probe records it "confirmed working." Treat as CODE-VERIFIED-but-fragile. Resolves by re-probing after any Cowork update. [src: cw-subagents]
+5. **Cowork per-call model override (doc-absence vs probe instrument).** No public Cowork source documents per-subagent model selection, and no retained successful phase-3 receipt proves that the active build honors muster's probe packet. Sequential `muster_next` is the verified default; parallel fan-out and model override remain unverified until the active build produces a fresh successful phase-3 receipt. [src: cw-subagents]
 
-6. **Codex plugin-bundled hooks execute? (docs vs decision-record/0.144 ground truth).** Current Codex docs say enabled plugins' hooks load alongside other layers; muster's verified 0.144 behavior is that "Codex 0.144 does not execute plugin-bundled hooks," so muster installs into the supported `hooks.json` layer instead. Flagged as version-gated. Resolves by establishing a floor Codex version that provably runs bundled hooks. [src: cx-hooks]
+6. **Codex plugin-bundled hooks execute? (prior record vs 0.144.5 ground truth).** **Resolved:** plugin-bundled hooks execute on Codex 0.144.5 (and landed earlier in the 0.128–0.134 release sequence), subject to hook trust. Muster keeps its generated Codex plugin hooks-free and installs its one scoped `hooks.json` source separately, preventing double firing/double-injection. [src: cx-hooks]
 
 7. **`codex-efficiency-enforcement`: fail-closed premise vs reality (backlog-item vs decision-record).** The contract assumed a controllable native dispatch runner sitting in front of Codex's collaboration schema; the retriage found every fail-closed clause "architecturally unreachable" because Codex hooks are advisory/fail-open by design. **Resolved: retired**, not rescoped; the claim was released and the dependency dropped as unresolvable on the lineage. [src: dr-efficiency]
 
-8. **`codex-install-thread-limits`: claimed-done vs zero enforcement (backlog vs decision-record + code).** The item cited PR 34 as done, but `grep -rn "max_threads\|max_depth" src/*.js` found only generated *prose*, no `config.toml` write; the enforcing module (`src/codex-thread-limits.js`) died on the never-merged burn commit `f2da066`. **Resolved: invalidated and re-opened** as a fresh scoped item (`codex-thread-limits-enforcement`, floors `max_threads ≥ 12`/`max_depth ≥ 2`, fail-loud install). [src: dr-install] [src: dr-audit]
+8. **`codex-install-thread-limits`: historical gap vs current enforcement.** **Resolved and landed:** `ensureCodexThreadLimits` now raises the shared Codex configuration to `max_threads ≥ 12` and `max_depth ≥ 2` without lowering higher values; the final managed-scope uninstall calls `restoreCodexThreadLimits` to restore only Muster's recorded change while preserving unrelated configuration and later user raises. Install fails loud on malformed or unverifiable state. [src: dr-install] [src: dr-audit] [src: cx-subagents]
 
 9. **Hermes scale: "215,942 stars, 40,332 forks" on a `v0.18.2` (0.x) release created 2025-07-22 — [UNVERIFIED-SUSPECT].** A ~1-year-old 0.x project at 216k stars is internally implausible (that would rival the most-starred repos on GitHub while still pre-1.0); the figure is a single GitHub-API reading. Never stated here as fact; Hermes's harness-target verdict does not depend on it. Resolves by an independent, dated `api.github.com` re-query. [src: hermes-scale]
 
@@ -281,5 +281,5 @@ A minimal CLI+desktop harness is reconstructible from Part A: A1 gives the loop,
 - hermes-worktree: docs/research/hermes.md §6 — hermes -w worktrees; checkpoint managers; kanban worktree workspaces.
 - hermes-port: docs/research/hermes.md §10–11 — augmentation table; first-class verdict; port constraints.
 - dr-efficiency: docs/decisions/retriage-codex-efficiency-enforcement.md — retire-not-rescope; fail-closed unreachable on Codex; advisory-only consequence.
-- dr-install: docs/decisions/retriage-install-items.md — counts still-true; thread-limits invalidated and re-opened with fail-loud floor.
-- dr-audit: docs/decisions/retriage-audit-hardening.md — audit-stack retriage; f2da066 thread-limits module flagged-gap DROP.
+- dr-install: docs/decisions/retriage-install-items.md — historical retriage that identified the thread-limit gap later closed by `ensureCodexThreadLimits`/`restoreCodexThreadLimits`.
+- dr-audit: docs/decisions/retriage-audit-hardening.md — historical audit-stack retriage and provenance for the previously dropped thread-limit module.

@@ -301,10 +301,15 @@ step, not a settled fact [INFERRED] [src: retriage] [src: backlog].
 - Hooks fire at the same lifecycle points across the host: layered from `~/.codex/hooks.json`,
   inline `[hooks]` in user `config.toml`, `<repo>/.codex/hooks.json`, and project config
   (trusted only), plus plugin-bundled `hooks/hooks.json`; events include `SessionStart`,
-  `SubagentStart`, `PreToolUse`, `PostToolUse` [DOCUMENTED] [src: hooks]. muster installs
-  its hook groups into `<configDir>/hooks.json` with a runtime under `<configDir>/muster/`
-  at both project and user scope (`prepareHooks`, `src/codex-install.js:516-563`), and the
-  live doctor run reported both scopes healthy [src: codex-install] [src: retriage].
+  `SubagentStart`, `PreToolUse`, `PostToolUse` [DOCUMENTED] [src: hooks]. Muster's user
+  scope is canonical, and matching project hooks are skipped or collapsed when that user
+  installation is healthy and the same version: a user-scope install writes its hook groups to
+  `<CODEX_HOME>/hooks.json` with the runtime under `<CODEX_HOME>/muster/`; a later
+  project-scope install therefore leaves profiles and registration live but removes its
+  duplicate hook groups. If that user scope is absent, stale, or invalid, the project
+  install fails safe to installing its own hooks. Earlier
+  dual-scope doctor evidence is historical; current doctor treats overlap as drift
+  because it would double-fire every advisory [src: codex-install] [src: retriage].
 
 ## 9. Auth and quota metering (the thing that got burned)
 

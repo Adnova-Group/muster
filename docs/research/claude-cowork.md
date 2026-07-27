@@ -357,7 +357,7 @@ What actually ships [CODE-VERIFIED]:
 | Local MCP server (`claude_desktop_config.json`) | Register host-local tools with the agent loop [src: cw-arch] | Route A: the whole 28-tool MCP server [src: readme-11] [src: harness-17] | Tool *results* are advisory to the agent; the server enforces its own contracts (required `dir` on audit, overload rejection, cancellation) [src: mcps-106] | Claude Code loads the full plugin (hooks, commands, agents); and this surface is contradicted for current Cowork / absent in remote sessions [src: cw-connectors] |
 | MCPB desktop extension + `user_config` | One-click packaged local server with a settings UI [src: mcpb-spec] | Development-only Route B descriptor; not self-contained or installable today [src: manifest-10] | Intended config mapping is deterministic, but no packaged runtime executes it yet | Claude Code has no equivalent packaging need (plugins carry servers); bundling and MSIX virtualized-spawn remain open Cowork work [src: readme-105] |
 | MCP `instructions` at initialize | Server-supplied session guidance [src: mcps-294] | Carries principles + routing policy + full per-mode execution protocol [src: readme-32] | Pure advisory — prompt text the model can ignore; nothing re-injects it per turn | Claude Code gets SessionStart/UserPromptSubmit hooks (guaranteed injection) plus PreToolUse denial [src: sprint-14] |
-| Sub-agent fan-out + per-call model override | Parallel workstreams on the right model tier [src: cw-start] | Wave dispatch + tournament/review crews per `COWORK_PROTOCOL`; model per role from `muster_capabilities` [src: mcps-56] [src: readme-7] | Entirely advisory — dispatch discipline is prompted; no hook can force crew dispatch over inline editing | Claude Code has a real Task tool contract, agent definitions, worktree isolation, wave-guard enforcement [src: sprint-24] |
+| Sub-agent fan-out + per-call model override | Parallel workstreams on the right model tier [src: cw-start] | Sequential `muster_next` is the verified default; wave fan-out and per-role model selection are enabled only after a fresh successful phase-3 receipt from the active Cowork build [src: probe-137] [src: readme-7] | Unverified until that receipt; even after a pass, dispatch discipline is advisory prompt text and no hook can force crew dispatch over inline editing | Claude Code has a real Task tool contract, agent definitions, worktree isolation, wave-guard enforcement [src: sprint-24] |
 | Remote connectors (OAuth, cloud-brokered) | External SaaS tools, org-governed [src: cw-connectors] | Declared-only via `MUSTER_COWORK_CONNECTORS`; `connectorsDiscoverable:false` keeps the blindness visible [src: harness-46] | Declaration is trust-me config; muster cannot verify a connector exists or is enabled | Claude Code MCP configs are disk-discoverable; muster reads them directly there [src: caps-23] |
 | Plugins (skills + hooks + sub-agents + connectors) | Role/team customization, marketplace-distributed [src: cw-plugins] | **Not ridden by default** — a declared, unverified opt-in exists (`MUSTER_COWORK_NATIVE_PLUGIN`, see section 9) but no live-loaded plugin has been confirmed [src: readme-5] | Skills advisory; plugin hooks' enforcement semantics undocumented | Same plugin format as Claude Code per docs — potentially closes the skills/commands/hooks gap wholesale; unverified [src: cw-plugins] |
 | Permission modes + deletion protection | Native action gating (Manual/Auto/Skip; hard delete-approval) [src: cw-start] | Acknowledged only: sprint protocol prefers `pr`/`keep` because muster's own fences don't exist here [src: sprint-131] | Cowork-enforced, but not hookable — muster can't add its action-class fence into it | Claude Code permissions are rule-configurable (settings allow/deny) and hook-extensible |
@@ -367,10 +367,11 @@ What actually ships [CODE-VERIFIED]:
 
 ## 8. Sourcing gaps and confidence notes
 
-- **Per-call model override** rests solely on muster's probe run [src: readme-7]
-  [src: probe-137]; zero public documentation. Treat as CODE-VERIFIED-but-fragile:
-  re-probe after any Cowork update, exactly as the README prescribes for new runtimes
-  [src: readme-146].
+- **Per-call model override** has a code-backed probe instrument but no retained successful
+  phase-3 receipt and zero public documentation [src: readme-7] [src: probe-137].
+  Sequential `muster_next` remains the verified default; treat parallel dispatch and model
+  override as unverified until the active Cowork build produces a fresh successful phase-3
+  receipt, and re-probe after every Cowork update [src: readme-146].
 - **Sub-agent internals** (how many, scheduling, context inheritance, whether plugin
   sub-agents and loop-native sub-agents are the same mechanism) are undocumented;
   official sources say only that parallel sub-agent coordination happens

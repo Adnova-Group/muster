@@ -34,8 +34,9 @@ then a verdict.
   gate a true pre-execution veto, the way Claude Code's `PreToolUse deny` already is
   [src: cc-hooks].
 - **No per-harness porting tax.** Today muster reasons about seven surfaces with different
-  hook, permission, and dispatch semantics, plus live contradictions — config-file local
-  MCP servers in Cowork [src: cw-mcp], plugin-bundled hooks not executing on Codex 0.144
+  hook, permission, and dispatch semantics, plus live integration differences — config-file
+  local MCP servers in Cowork [src: cw-mcp], and plugin-bundled hooks that execute on Codex
+  0.144.5 while Muster deliberately keeps its Codex plugin hooks-free to prevent double firing
   [src: cx-hooks]. One surface erases all of that.
 - **Muster's opinionated lifecycle becomes first-class.** Waves, barriers, adversarial
   review gates, and tournaments are prose discipline riding on top of a loop muster doesn't
@@ -149,6 +150,10 @@ construct stays load-bearing.
 
 ### 3. Claude Cowork — MCP-only today, but a native plugin surface may now exist
 
+Sequential `muster_next` is the verified default. Parallel fan-out and per-call model
+override remain unverified until the active Cowork build produces a fresh successful
+phase-3 receipt.
+
 | muster construct | native replacement | win | risk | effort |
 |---|---|---|---|---|
 | the whole ride (28-tool MCP server + `instructions` protocol injection, sequential by default) | **possibly** native plugins — Cowork now bundles skills/hooks/subagents in the Claude Code plugin format [src: cw-plugins] | if `plugin/` loads under Cowork's loader, muster rides skills-as-`/`-menu natively instead of MCP-only [src: cw-plugins] | **unverified** — the single highest-value open question; adapter's "no plugin/skill/hook primitives" claim is stale; parallel/model override also requires a fresh phase-3 receipt [src: cw-plugins] | **probe (L)** |
@@ -161,13 +166,13 @@ construct stays load-bearing.
 
 | muster construct | native replacement | win | risk | effort |
 |---|---|---|---|---|
-| orchestrator wave dispatch | `collaboration.spawn_agent` / `wait_agent` / `list_agents`; custom-agent TOML per profile [src: cx-subagents] | native multi-agent dispatch; 27 TOML profiles ride it | must send `fork_turns:"none"` + `agent_type`; Codex REJECTS `agent_type`+`fork_turns:"all"`; fail-closed on rejected profile, never silent-degrade [src: cx-subagents] | M |
+| orchestrator wave dispatch | Model-selected packets: Luna uses v1 `multi_agent_v1`; Sol/Terra use v2 `collaboration.spawn_agent` / `wait_agent` / `list_agents`; custom-agent TOML per profile [src: cx-subagents] | native multi-agent dispatch; 27 TOML profiles ride it | `resolveCodexMultiAgentVersion` selects the matching packet and rejects an unknown version fail loud; v2 rejects `agent_type`+`fork_turns:"all"` [src: cx-subagents] | done |
 | worktree isolation | **no cwd field on subagent dispatch** [src: cx-subagents] | — | isolation is muster's own dispatch discipline verified by path/base-SHA receipts, not harness-guaranteed [src: cx-subagents] | keep |
 | action fence / any gate | hooks are **advisory-by-design** — narrow interception, loop routes around [src: cx-hooks] | redesign every Codex gate to advisory-or-absent — **landed (codex-enforcement-port)** [src: dr-efficiency] | fail-closed clauses are unreachable; "it never existed" [src: dr-efficiency] | done |
 | genuine hard gate | MCP governance (`required`, allow/deny tool lists, per-tool approval), `sandbox_mode` [src: cx-mcp] | "use MCP (not hooks) when a gate genuinely must gate" [src: cx-mcp] | narrow surface | ride |
 | approve-first flow | bundled `plan` skill + `permission_mode:"plan"` + plan-update loop items [src: cx-loop] | native plan surface for `/muster:plan` | no standalone plan-mode object | M |
-| skills / verbs | `SKILL.md` (agent-skills standard); `$muster-*` routing; marketplaces read legacy `.claude-plugin/` [src: cx-skills] | verbs+skills already native | plugin-bundled hooks not executed on 0.144 → install into `hooks.json` layer [src: cx-hooks] | done |
-| thread/quota budgets | `agents.max_threads`(6)/`max_depth`(1); 25-step ceiling discipline [src: cx-subagents] [src: cxd-quota] | honor native limits — shared 5h pool is the burn hazard [src: cxd-quota] | budgets/timeouts have no install-time host [src: dr-efficiency] | ride |
+| skills / verbs | `SKILL.md` (agent-skills standard); `$muster-*` routing; marketplaces read legacy `.claude-plugin/` [src: cx-skills] | verbs+skills already native | plugin-bundled hooks execute on 0.144.5, so Muster's Codex plugin stays hooks-free and scoped `hooks.json` remains the single source, preventing double firing [src: cx-hooks] | done |
+| thread/quota budgets | `ensureCodexThreadLimits` raises `max_threads ≥ 12` and `max_depth ≥ 2`; final-scope uninstall uses `restoreCodexThreadLimits`; 25-step ceiling discipline [src: cx-subagents] [src: cxd-quota] | install-time managed floors are landed without lowering higher user values; shared 5h pool remains the burn hazard [src: cxd-quota] | runtime token budgets/timeouts remain advisory [src: dr-efficiency] | done |
 
 ### 5. Codex Desktop — same core, cross-surface parity, one shared config
 
@@ -285,12 +290,12 @@ Items already captured in `.muster/backlog.md` are marked (existing #line); the 
    binding]` — map CLAIM/RECEIPT/BLOCKED/LEDGER onto Hermes `kanban.db` as Binding D. Success:
    a Binding D spec mapping each protocol state to a kanban column/annotation/`task_event`,
    cited to hermes.md §4, fallback + validation smoke-trail, suite green.
-4. **codex-spawn-agent-dispatch** `[Codex CLI/Desktop | thins: orchestrator dispatch mechanic]`
-   — wave dispatch rides `collaboration.spawn_agent`/`wait_agent`/`list_agents` with
-   `fork_turns:"none"` + `agent_type`, fail-closed on a rejected profile (never silent-degrade
-   to generic). Success: a routed multi-wave run dispatches each crew member via `spawn_agent`
-   honoring `agent_type`; a rejected-profile case fails loud with a registration diagnostic;
-   sequential-inline fallback when `multi_agent` is off; cited to codex-cli.md §6; suite green.
+4. **codex-spawn-agent-dispatch — landed** `[Codex CLI/Desktop | thins: orchestrator dispatch
+   mechanic]` — `resolveCodexMultiAgentVersion` routes Luna through v1 `multi_agent_v1` and
+   Sol/Terra through v2 `collaboration.spawn_agent`/`wait_agent`/`list_agents`, emitting the
+   packet each model accepts. Unknown versions and rejected profiles fail loud rather than
+   degrading to generic; when `multi_agent` is off, work runs sequentially inline
+   [src: cx-subagents].
 5. **task-board-authoritative** `[Claude Code (+Codex partial) | thins: STATE-mirrored board
    bookkeeping]` — native task board becomes the authoritative progress surface: `TaskCreate/
    Update` per item, `TaskCompleted` gating hook ties the tick to review-gate PASS, STATE.md
@@ -465,9 +470,9 @@ The next wave in this ledger, already shipped since Part B's tables were written
 - cw-augment: docs/research/claude-cowork.md §7 — augmentation table; no integrator-hookable enforcement; UI-modal permission modes.
 - cx-loop: docs/research/codex-cli.md §1 — Thread/Turn/Items via codex exec; bundled plan skill; permission_mode plan.
 - cx-config: docs/research/codex-cli.md §3 — [features] table; memories flag marked experimental, default false (unlike hooks/multi_agent/unified_exec/goals, default true).
-- cx-hooks: docs/research/codex-cli.md §4.2–4.3 — advisory-by-design line; "guardrail rather than a complete enforcement boundary"; plugin-bundled hooks not executed on 0.144.
+- cx-hooks: docs/research/codex-cli.md §4.2–5.4 — advisory-by-design enforcement boundary; plugin-bundled hooks execute on 0.144.5; Muster's Codex plugin remains hooks-free to prevent double-injection.
 - cx-skills: docs/research/codex-cli.md §5 — SKILL.md; $muster-* routing; marketplaces read legacy .claude-plugin.
-- cx-subagents: docs/research/codex-cli.md §6 — collaboration.spawn_agent/wait_agent/list_agents; fork_turns:"none" + agent_type contract; no cwd on dispatch; max_threads/max_depth.
+- cx-subagents: docs/research/codex-cli.md §6 and §10.1 — `resolveCodexMultiAgentVersion`; v1 `multi_agent_v1` and v2 `collaboration` packet contracts; fail-loud unknown versions; no cwd on dispatch; managed thread floors.
 - cx-mcp: docs/research/codex-cli.md §7 — MCP governance (required/allow-deny/approval) = the most governable, hardest-enforcing surface.
 - cxd-arch: docs/research/codex-desktop.md §1–2, §7–8 — shared Rust core; app-server; cross-surface subagent parity; Projects/tasks (desktop-only); per-project .codex worktree scripts.
 - cxd-config: docs/research/codex-desktop.md §3–5 — shared CODEX_HOME/config.toml reaches all local clients; WSL/Windows split-home; doctor for drift.
@@ -486,7 +491,7 @@ The next wave in this ledger, already shipped since Part B's tables were written
 - hermes-worktree: docs/research/hermes.md §6 — hermes -w disposable worktrees; kanban worktree workspaces; checkpoints/rollback.
 - hermes-port: docs/research/hermes.md §10–11 — first-class verdict; skills/hooks Direct; kanban = coordination protocol as harness machinery; Python-shim port constraints.
 - dr-efficiency: docs/decisions/retriage-codex-efficiency-enforcement.md — retire-not-rescope; fail-closed unreachable on Codex ("it never existed"); advisory-diagnostics-only consequence.
-- dr-install: docs/decisions/retriage-install-items.md — thread-limits invalidated and re-opened with fail-loud floor.
+- dr-install: docs/decisions/retriage-install-items.md — historical retriage that identified the thread-limit gap now closed by `ensureCodexThreadLimits`/`restoreCodexThreadLimits`.
 - m-surface: plugin/skills/*, plugin/commands/*, plugin/agents/*, src/*.js — current muster inventory: 11 skills, 11 verbs (8 canonical + 3 legacy aliases), 27 agents (7 muster + 20 vendored wsh), the deterministic src/ brain.
 - m-hooks: plugin/hooks/pre-tool-use.js + hooks.json — 3 wired hooks (SessionStart/UserPromptSubmit/PreToolUse); enforcement collapsed to one action-class fence (sole DENY) + one border invitation (WARN).
 - m-perf: docs/weight-reduction.md + .muster/STATE.md weight/speed-tuning receipts — plan=8,831 tok; plan-to-manifest 806 ms; 4/5 largest skills cut ≥40%; small-task consumption 39.8%; fast-path 41.2% vs ≤25% target.

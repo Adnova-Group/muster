@@ -170,7 +170,36 @@ test("current Cowork research uses the live MCP tool count and phase-3-gated dis
     const text = await read(path);
     assert.match(text, new RegExp(`${manifest.tools.length}-tool MCP server`), `${path} must state the live Cowork tool count`);
     assert.doesNotMatch(text, /\b21-tool MCP server\b|all twenty-one tools/i, `${path} must not present the retired count as current`);
-    assert.doesNotMatch(text, /Dispatch is confirmed working/i, `${path} must not claim dispatch without a retained phase-3 receipt`);
+    assert.doesNotMatch(
+      text,
+      /(?:dispatch|parallel fan-out|per-call model override)[\s\S]{0,100}(?:confirmed working|confirmed|CODE-VERIFIED-but-fragile)|CODE-VERIFIED-but-fragile[\s\S]{0,100}(?:dispatch|parallel fan-out|per-call model override)/i,
+      `${path} must not claim dispatch without a retained phase-3 receipt`,
+    );
+    assert.match(text, /sequential\s+`?muster_next`?[\s\S]{0,180}(?:default|verified)/i, `${path} must name the verified sequential default`);
+    assert.match(text, /fresh\s+successful\s+phase-3\s+receipt|phase-3\s+receipt[\s\S]{0,100}(?:required|require)/i, `${path} must require active-build phase-3 evidence`);
     assert.match(text, /phase-3/i, `${path} must identify the dispatch evidence gate`);
   }
+});
+
+test("cross-harness research preserves current Codex hook, dispatch, thread, and canonical-scope contracts", async () => {
+  const reference = await read("docs/research/reference-harness-design.md");
+  const strategy = await read("docs/strategy/native-delegation.md");
+  const desktop = await read("docs/research/codex-desktop.md");
+
+  for (const [path, text] of [
+    ["docs/research/reference-harness-design.md", reference],
+    ["docs/strategy/native-delegation.md", strategy],
+  ]) {
+    assert.match(text, /multi_agent_v1[\s\S]{0,220}(?:collaboration|multi_agent_v2)|(?:collaboration|multi_agent_v2)[\s\S]{0,220}multi_agent_v1/i, `${path} must document both Codex dispatch packet versions`);
+    assert.match(text, /resolveCodexMultiAgentVersion[\s\S]{0,220}(?:unknown|unrecognized)[\s\S]{0,80}(?:fail loud|reject)/i, `${path} must document fail-closed unknown-version handling`);
+    assert.match(text, /plugin-bundled hooks[\s\S]{0,180}(?:execute|fire)[\s\S]{0,120}0\.144\.5/i, `${path} must retain verified plugin-hook execution`);
+    assert.match(text, /Codex plugin[\s\S]{0,140}hooks-free[\s\S]{0,140}(?:double firing|double-inject)/i, `${path} must explain Muster's hooks-free plugin`);
+    assert.doesNotMatch(text, /Codex 0\.144(?:\.0)? does not execute plugin-bundled hooks|plugin-bundled hooks not executed on 0\.144/i, `${path} must not repeat the falsified hook claim`);
+    assert.match(text, /ensureCodexThreadLimits[\s\S]{0,220}restoreCodexThreadLimits/i, `${path} must document landed thread-limit ownership`);
+    assert.match(text, /max_threads[\s\S]{0,100}(?:>=|≥)\s*12[\s\S]{0,140}max_depth[\s\S]{0,100}(?:>=|≥)\s*2/i, `${path} must state the managed floors`);
+    assert.doesNotMatch(text, /thread-limits invalidated and re-opened|invalidated and re-opened[\s\S]{0,80}thread/i, `${path} must not present the landed thread-limit item as open`);
+  }
+
+  assert.match(desktop, /user\s+scope\s+is\s+canonical[\s\S]{0,260}(?:project\s+hooks[\s\S]{0,80}(?:skip|collapse)|(?:skip|collapse)[\s\S]{0,80}project)/i, "Codex Desktop must describe canonical-scope collapse");
+  assert.doesNotMatch(desktop, /installs[\s\S]{0,100}at both project and user scope/i, "Codex Desktop must not promise duplicate live hook scopes");
 });

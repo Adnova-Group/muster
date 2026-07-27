@@ -86,7 +86,10 @@ const KIMI_SECONDARY_MODEL_CONFIG = Object.freeze({
 // muster's chosen values for long unattended `/goal` runs (pinned in
 // plugin/commands/go.md step 6, rationale + binary-probed defaults in
 // docs/research/kimi-code-cli.md 11.10) are the v0.29.1 binary defaults in
-// four of five cases -- emitting them would write no-op overrides into the
+// all five cases (the four-of-five count in earlier drafts owed solely to the
+// legacy keep_alive_on_exit conditional, which can downgrade an unset
+// print_background_mode to drain) -- emitting them would write no-op overrides
+// into the
 // user-global config.toml (no project-level override exists) that leak into
 // non-muster interactive sessions and go stale when Kimi changes a default.
 // The per-process env overrides (KIMI_LOOP_MAX_STEPS_PER_TURN,

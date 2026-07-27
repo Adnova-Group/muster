@@ -137,7 +137,10 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
 
    **Kimi loop/background profile — binary defaults, pinned not emitted.** The run leaves
    `[loop_control]`/`[background]` (docs/research/kimi-code-cli.md §3, lines 129-130) at the
-   v0.29.1 binary defaults, verified by probe in §11.10: `max_steps_per_turn` unset (no cap — a
+   v0.29.1 binary defaults, verified by probe in §11.10 — the defaults apply unless the user's
+   config.toml already sets those keys, and a user-set `max_steps_per_turn` cap would abort a
+   healthy long run mid-wave with `LOOP_MAX_STEPS_EXCEEDED` and must be removed or raised:
+   `max_steps_per_turn` unset (no cap — a
    cap aborts a healthy long turn with `LOOP_MAX_STEPS_EXCEEDED`; the objective already carries the
    stop conditions), `max_retries_per_step` unset (built-in 10 with backoff, §1 line 55 — generous
    transient-failure absorption on the shared quota window), `reserved_context_size` unset
@@ -149,7 +152,9 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    `interpretKimiBackgroundCompletion` relies on; a legacy `keep_alive_on_exit = true` in the
    user's config silently downgrades this to `drain` and must be removed). These are NOT written
    into the user's config.toml: it is user-global with no project-level override (§3 lines 107-110),
-   four of the five values restate defaults, and the per-process env overrides
+   all five values restate defaults (the four-of-five count in earlier drafts owed solely to the
+   legacy `keep_alive_on_exit` conditional above, which can downgrade an unset
+   `print_background_mode` to `drain`), and the per-process env overrides
    (`KIMI_LOOP_MAX_STEPS_PER_TURN`, `KIMI_LOOP_MAX_RETRIES_PER_STEP`,
    `KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS`) cover any run that wants a non-default — same
    shared-config posture as the `KIMI_SECONDARY_MODEL` env pair above.

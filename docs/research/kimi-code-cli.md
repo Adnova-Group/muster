@@ -720,7 +720,10 @@ The §3 schema (lines 129–130) names the `[loop_control]` and `[background]` k
 **Chosen values for muster's unattended `kimi -p "/goal …"` runs — all left at the binary
 defaults, pinned in runner prose (`plugin/commands/go.md` step 6), NOT emitted into config.toml:**
 `max_steps_per_turn` unset (no cap — a cap is a second, harsher stop rule that would abort a
-healthy long run mid-wave; `/goal`'s stop conditions already live in the objective, §11.9);
+healthy long run mid-wave; `/goal`'s stop conditions already live in the objective, §11.9; and the
+uncapped-steps concern is bounded by the binary's own backstops — `handlePrintMainTurnCompleted`
+finishes a `-p` print run once quiescent or when `print_wait_ceiling_s`/`print_max_turns` is
+reached, binary-probed v0.29.1);
 `max_retries_per_step` unset (10 — generous transient-failure absorption on the shared 5-hour rate
 window, §0 lines 42–45; raising it further burns shared quota on persistent failures instead of
 failing the step so the run can re-plan); `reserved_context_size` unset (50000 — on K3's 1M window,
@@ -733,8 +736,10 @@ only mode under which a background completion arrives mid-run as a synthetic use
 `interpretKimiBackgroundCompletion` in `src/kimi-dispatch.js` is built on; operators must ensure no
 legacy `keep_alive_on_exit = true` downgrades it to `drain`).
 
-**Why docs-pin, not emission.** Four of five chosen values *are* the binary defaults — emitting
-them would write no-op overrides into the user's config that go stale the day Kimi changes a
+**Why docs-pin, not emission.** All five chosen values *are* the binary defaults (the four-of-five
+count in earlier drafts owed solely to the legacy `keep_alive_on_exit` conditional above, which can
+map an unset `print_background_mode` to `drain` — the chosen value itself was never non-default) —
+emitting them would write no-op overrides into the user's config that go stale the day Kimi changes a
 default, with zero behavioral benefit. And config.toml is user-global only (§3 line 107; "There is
 no project-level `config.toml` override", line 110), so a muster-specific run profile written there
 leaks into every non-muster interactive session — the exact shared-config-mutation posture

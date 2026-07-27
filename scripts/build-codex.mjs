@@ -180,6 +180,20 @@ function adaptOrchestratorForCodex(text) {
   if (!kimiResumeClause.test(result)) throw new Error("orchestrator Kimi resume clause not found for Codex rewrite");
   result = result.replace(kimiResumeClause, "The re-dispatch spawns a fresh agent with the error appended -- this harness's subagent dispatch has no native resume primitive.\n        ");
   if (result.includes("Codex subagent dispatcher's `resume`")) throw new Error("orchestrator Kimi resume clause leaked into the Codex build");
+  // kimi-native-steer-binding item: the Channel steering section's Kimi
+  // paragraph ships verbatim into this build (the section sits above the
+  // enforcement-cut below, outside every wholesale-replace span) and would
+  // tell a Codex-hosted run to deliver steers through Kimi's steer queue /
+  // Wire / ACP / `kimi web` routes -- mechanisms that do not exist on this
+  // harness. On Codex a steering message arrives as ordinary user input and
+  // the classify-and-map rule above the paragraph is the whole story, so
+  // replace the paragraph with exactly that. Guarded: if the Claude-side
+  // paragraph drifts and this stops matching, fail the build rather than ship
+  // the fabricated claim.
+  const kimiSteerParagraph = /\*\*On Kimi the same message arrives through the harness's native steer seam\.\*\*[\s\S]*?it does not open the connection itself\.\n/;
+  if (!kimiSteerParagraph.test(result)) throw new Error("orchestrator Kimi steer paragraph not found for Codex rewrite");
+  result = result.replace(kimiSteerParagraph, "**On this harness there is no native between-steps steer seam:** a steering message arrives as ordinary user input -- classify it with the bundled runtime's `steer` verb and apply the mapping above unchanged.\n");
+  if (result.includes("prompts::steer")) throw new Error("orchestrator Kimi steer paragraph leaked into the Codex build");
   const providerStart = result.indexOf("      - **Provider kind:**");
   const failureStart = result.indexOf("      - **Subagent failure", providerStart);
   if (providerStart < 0 || failureStart < 0) throw new Error("orchestrator provider/model section not found");

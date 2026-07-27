@@ -913,5 +913,27 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // orchestration protocol, not library code), pinned consistently across
   // README/docs/website by test/sprint-parallel-cap.test.js. Deliberate surface
   // change, not drift.
-  assert.equal(hash.digest("hex"), "0b417e1b1ba5b1c91bd5f81d76a4d7769f6a57f9b0efb23846b570c16f80b195");
+  // 2026-07-27 re-pin (kimi-native-steer-binding): file COUNT unchanged (139) --
+  // only plugin/skills/orchestrator/SKILL.md's content changed. Its Channel
+  // steering (remote) section gained a clearly-labeled Kimi paragraph: on Kimi a
+  // steered correction arrives through the harness's native steer seam (the
+  // steer queue -- queued injection BETWEEN STEPS without ending the turn,
+  // docs/research/kimi-code-cli.md sec 1 "Steer"; surfaces TUI Ctrl-S, Wire
+  // `steer` gen1-only, ACP mid-turn, and `kimi web`'s
+  // POST /sessions/{session_id}/prompts + /prompts::steer routes read from the
+  // shipped binary), classified by the same `muster steer` with the action
+  // mapping unchanged, and `muster steer --harness kimi` constructs the native
+  // delivery via kimiSteerDelivery (src/kimi-steer.js, outside this surface).
+  // The paragraph sits ABOVE build-codex.mjs's enforcement cut and would ship
+  // verbatim into the Codex build, so build-codex.mjs gained a guarded rewrite
+  // (same convention as the kimi-subagent-resume-retry clause) replacing it
+  // with Codex-accurate text -- verified the generated Codex orchestrator skill
+  // carries zero occurrences of "prompts::steer". Paired with the src/-side
+  // harness-conditional steer arm (src/cli.js + src/kimi-steer.js, outside
+  // this surface). Re-verified with MUSTER_BUILD_FORCE=1 node
+  // scripts/build-codex.mjs && node scripts/check-codex.mjs (clean).
+  // docs/binding-interface.md's grep-audit counts re-scanned live -- unchanged
+  // (test/docs-binding-interface.test.js green without a re-derivation).
+  // Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "4992b7588b571f24f4a285f9803437eb12bc0532d424a45eae4ea3a08cd2c5f6");
 });

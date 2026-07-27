@@ -411,6 +411,19 @@ free-interpret. Map the returned action:
   that it's logged for the human to confirm (the manifest stays the single source).
 - **unknown** -- say so rather than guess: ask the human to rephrase (approve/stop/status/retarget).
 
+**On Kimi the same message arrives through the harness's native steer seam.** Kimi's agent loop
+queues user interjections in its steer queue and injects them BETWEEN STEPS without ending the
+turn (docs/research/kimi-code-cli.md sec 1 "Steer") -- so a steered correction shows up as an
+injected user message at a step boundary, not a `<channel>` event. Classify it with
+`muster steer "<msg>"` exactly as above; the action mapping is unchanged. The surfaces into that
+queue: TUI `Ctrl-S` (interactive only), Wire `steer` (gen1 kimi-cli only), ACP mid-turn (gen2),
+and `kimi web`'s HTTP API -- `POST /sessions/{session_id}/prompts` then
+`POST /sessions/{session_id}/prompts::steer` ("Steer queued prompts into the active turn"; route
+shapes read from the shipped binary). `muster steer --harness kimi "<msg>"` constructs that
+native delivery (`kimiSteerDelivery` in `src/kimi-steer.js`) for the driver holding the live
+session; muster's own `kimi -p` run loop holds no session handle, so the CLI builds the delivery
+and names the seam -- it does not open the connection itself.
+
 ## Enforcement model: gates vs conventions
 
 Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits. See

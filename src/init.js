@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
-  constants, lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath,
+  constants, lstat, mkdir, mkdtemp, open, readdir, readlink, realpath,
   rename, rm, stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -176,23 +176,40 @@ async function ensureSafeAncestors(root, rel) {
   }
 }
 
+async function readNoFollowRegular(path, maxBytes, label, expectedInfo = null, requireSingleLink = false) {
+  let handle;
+  try {
+    handle = await open(
+      path,
+      constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0),
+    );
+    const info = await handle.stat();
+    if (!info.isFile() || (requireSingleLink && info.nlink !== 1) || info.size > maxBytes) {
+      throw new Error(`unsafe regular file: ${label}`);
+    }
+    if (expectedInfo && (info.ino !== expectedInfo.ino || info.dev !== expectedInfo.dev)) {
+      throw new Error(`file changed while reading: ${label}`);
+    }
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (after.ino !== info.ino || after.dev !== info.dev || after.size !== info.size ||
+        after.nlink !== info.nlink || !after.isFile()) {
+      throw new Error(`file changed while reading: ${label}`);
+    }
+    return { bytes, info };
+  } finally {
+    await handle?.close();
+  }
+}
+
 async function readRegular(root, rel, maxBytes) {
   await ensureSafeAncestors(root, rel);
   const path = join(root, ...safeRelative(rel).split("/"));
-  let handle;
   try {
-    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
-    const info = await handle.stat();
-    if (!info.isFile() || info.nlink !== 1 || info.size > maxBytes) throw new Error(`unsafe regular file: ${rel}`);
-    const bytes = await handle.readFile();
-    const after = await handle.stat();
-    if (after.ino !== info.ino || after.dev !== info.dev || after.size !== info.size) throw new Error(`file changed while reading: ${rel}`);
-    return { bytes, info };
+    return await readNoFollowRegular(path, maxBytes, rel, null, true);
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
-  } finally {
-    await handle?.close();
   }
 }
 
@@ -308,11 +325,15 @@ async function repositoryFingerprint(root) {
           await walk(path, rel, depth + 1);
         }
       } else if (info.isFile()) {
-        if (info.size > INIT_LIMITS.fingerprintFileBytes) throw new Error("repository fingerprint file limit exceeded");
-        total += info.size;
+        const opened = await readNoFollowRegular(
+          path, INIT_LIMITS.fingerprintFileBytes, rel, info,
+        );
+        total += opened.info.size;
         if (total > INIT_LIMITS.fingerprintTotalBytes) throw new Error("repository fingerprint total limit exceeded");
-        const bytes = await readFile(path);
-        rows.push({ path: rel, row: `F\0${rel}\0${(info.mode & 0o111) ? 1 : 0}\0${info.size}\0${sha256(bytes)}\n` });
+        rows.push({
+          path: rel,
+          row: `F\0${rel}\0${(opened.info.mode & 0o111) ? 1 : 0}\0${opened.info.size}\0${sha256(opened.bytes)}\n`,
+        });
       } else if (info.isSymbolicLink()) {
         const target = await readlink(path, { encoding: "buffer" });
         if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
@@ -372,11 +393,18 @@ async function learnFacts(root) {
       } else if (info.isFile()) {
         const dot = name.lastIndexOf(".");
         if (dot >= 0) extensions.add(name.slice(dot).toLowerCase());
+        if (++count > INIT_LIMITS.learnFiles) throw new Error("project learning limit exceeded");
         if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
-        if (++count > INIT_LIMITS.learnFiles || info.size > INIT_LIMITS.learnFileBytes ||
-            (total += info.size) > INIT_LIMITS.learnTotalBytes) throw new Error("project learning limit exceeded");
-        const bytes = await readFile(path);
-        rows.push({ bytes: info.size, content: bytes, instruction: INSTRUCTION_NAMES.has(name), path: rel, sha256: sha256(bytes) });
+        const opened = await readNoFollowRegular(path, INIT_LIMITS.learnFileBytes, rel, info);
+        total += opened.info.size;
+        if (total > INIT_LIMITS.learnTotalBytes) throw new Error("project learning limit exceeded");
+        rows.push({
+          bytes: opened.info.size,
+          content: opened.bytes,
+          instruction: INSTRUCTION_NAMES.has(name),
+          path: rel,
+          sha256: sha256(opened.bytes),
+        });
       }
     }
   }
@@ -597,6 +625,20 @@ async function readOwned(root) {
   }
   if (profile.classification !== receipt.classification ||
       sha256(canonicalInitJson(profile)) !== receipt.profileDigest) throw new Error("owned init state does not match");
+  if (receipt.nativeInit.state === "completed") {
+    const current = await artifactSnapshot(
+      root, receipt.nativeInit.evidence.artifacts.map((row) => row.path),
+    );
+    for (let index = 0; index < current.length; index++) {
+      const persisted = receipt.nativeInit.evidence.artifacts[index];
+      const expectedHash = receipt.nativeInit.evidence.kind === "artifact-delta"
+        ? persisted.after
+        : persisted.sha256;
+      if (current[index].sha256 !== expectedHash) {
+        throw new Error(`completed evidence artifact changed or is missing: ${persisted.path}`);
+      }
+    }
+  }
   return { profile, receipt };
 }
 
@@ -689,13 +731,22 @@ async function readEvidence(root, rel) {
 
 async function completionEvidence(root, receipt, kind, evidenceFile) {
   const expected = receipt.nativeInit.expectedArtifacts;
-  const current = await artifactSnapshot(root, expected);
+  if (kind === "call-result") {
+    if (receipt.nativeInit.state !== "attempted") {
+      throw new Error("call-result evidence requires an attempted native init");
+    }
+    if (!evidenceFile) throw new Error("evidence file is required");
+    if (expected.includes(safeRelative(evidenceFile))) {
+      throw new Error("call-result evidence file must not be an expected artifact");
+    }
+  }
   if (kind === "artifact-delta") {
     const observed = await observeNativeInit(root);
     if (!observed.observedNativeEvidence) throw new Error("artifact delta evidence is not present");
     return observed.observedNativeEvidence;
   }
   const { value } = await readEvidence(root, evidenceFile);
+  const current = await artifactSnapshot(root, expected);
   if (kind === "preexisting-confirmed") {
     if (!exactKeys(value, ["format", "schemaVersion", "confirmation", "artifacts"]) ||
         value.format !== "muster.native-init-confirmation" || value.schemaVersion !== 1 ||
@@ -712,9 +763,12 @@ async function completionEvidence(root, receipt, kind, evidenceFile) {
     return { kind: "preexisting-artifact-confirmed", artifacts: rows };
   }
   if (kind === "call-result") {
-    if (!exactKeys(value, ["format", "schemaVersion", "ok", "operation", "artifacts"]) ||
+    if (!exactKeys(value, ["format", "schemaVersion", "ok", "operation", "attemptId", "artifacts"]) ||
         value.format !== "muster.native-init-result" || value.schemaVersion !== 1 ||
         value.ok !== true || value.operation !== "native-init") throw new Error("invalid native init call result");
+    if (value.attemptId !== receipt.nativeInit.attemptId) {
+      throw new Error("native init call result attempt id does not match");
+    }
     const artifacts = expectedArtifacts(value.artifacts);
     if (!artifacts.length) throw new Error("call result requires artifacts");
     const rows = artifacts.map((path) => {

@@ -61,12 +61,13 @@ import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./h
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
+import { resolvePlanSurface } from "./plan-surface.js";
 import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -270,6 +271,13 @@ async function main() {
       // is a declared selection, not auto-probed -- see src/wave-dispatch.js.
       const harness = flagValue(rest, "--harness");
       out(resolveWorktreeIsolation({ harness }));
+    } else if (cmd === "plan-surface") {
+      // native-plan-mode-parity item: per-harness plan-surface capability selection for the
+      // approve-first gate (native plan mode/skill vs the AskUserQuestion prose fallback).
+      // The runtime is a declared selection, never auto-probed; unknown/missing runtimes
+      // resolve to the universal AskUserQuestion fallback, never a thrown error -- see
+      // src/plan-surface.js.
+      out(resolvePlanSurface(rest[0]));
     } else if (cmd === "receipt-verify") {
       // base-sha-receipt-verification item: the executable consumer -- proof that a
       // base-SHA receipt's SHA is REAL, not just well-formed (buildBaseShaReceipt's

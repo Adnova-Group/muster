@@ -274,6 +274,61 @@ test("cli wire: worktree-isolation with an unrecognized --harness fails loud (ex
 });
 
 // ---------------------------------------------------------------------------
+// plan-surface (native-plan-mode-parity item): per-harness plan-surface capability
+// selection for the approve-first gate -- a declared runtime selection, never auto-probed.
+// Unknown runtimes resolve to the universal AskUserQuestion prose fallback, never an error.
+// See src/plan-surface.js's resolvePlanSurface.
+// ---------------------------------------------------------------------------
+
+test("cli wire: plan-surface claude-code selects the native ExitPlanMode surface", async () => {
+  const { stdout } = await run(["plan-surface", "claude-code"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.runtime, "claude-code");
+  assert.equal(parsed.surface, "native");
+  assert.equal(parsed.primitive, "ExitPlanMode");
+});
+
+test("cli wire: plan-surface codex selects the native plan-skill + permission-mode surface", async () => {
+  const { stdout } = await run(["plan-surface", "codex"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.runtime, "codex");
+  assert.equal(parsed.surface, "native");
+  assert.equal(parsed.primitive, "plan-skill+permission-mode");
+});
+
+test("cli wire: plan-surface hermes selects the native plan-skill + goal-contract surface", async () => {
+  const { stdout } = await run(["plan-surface", "hermes"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.runtime, "hermes");
+  assert.equal(parsed.surface, "native");
+  assert.equal(parsed.primitive, "plan-skill+goal-contract");
+});
+
+test("cli wire: plan-surface cowork resolves to the prose degradation (no native primitive)", async () => {
+  const { stdout } = await run(["plan-surface", "cowork"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.runtime, "cowork");
+  assert.equal(parsed.surface, "prose");
+  assert.equal(parsed.primitive, null);
+});
+
+test("cli wire: plan-surface kimi selects the native plan-mode-gate surface", async () => {
+  const { stdout } = await run(["plan-surface", "kimi"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.runtime, "kimi");
+  assert.equal(parsed.surface, "native");
+  assert.equal(parsed.primitive, "plan-mode-gate");
+});
+
+test("cli wire: plan-surface with an unknown runtime resolves to the AskUserQuestion fallback (exit 0, never throws)", async () => {
+  const { stdout } = await run(["plan-surface", "agents-sdk"]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.runtime, "agents-sdk");
+  assert.equal(parsed.surface, "prose");
+  assert.equal(parsed.primitive, "AskUserQuestion");
+});
+
+// ---------------------------------------------------------------------------
 // review-brief (fast-path-token-gap item, lever 1): a code-backed CLI wrapper over
 // src/review-brief.js's lightBriefEligible/detectReviewTriggers, the SAME "code over model"
 // decision pattern gate-cadence/citation-check/fast-path already established for a

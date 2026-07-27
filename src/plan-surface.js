@@ -8,7 +8,8 @@
 // readInstalledCowork's `nativePluginRide` (src/harness.js) and the `--codex` capabilities flag
 // (src/cli.js) both take a caller-supplied signal rather than probing a live harness. The caller
 // (a command file's own runtime-detection step -- an in-session hook signal, MUSTER_RUNTIME, or
-// an explicit CLI flag) supplies the runtime identifier; this module only judges the static,
+// an explicit CLI flag; the `muster plan-surface <runtime>` verb in src/cli.js is the
+// deterministic entry point) supplies the runtime identifier; this module only judges the static,
 // per-harness SELECTION -- does this harness expose a native plan surface at all, and which one
 // -- never whether a given live session is presently in that mode. That finer, session-scoped
 // check ("is permission_mode actually plan right now") is prose discipline in the command files
@@ -109,9 +110,10 @@ const FALLBACK = {
 // resolvePlanSurface(runtime) -> { runtime, surface, primitive, detail, cite }
 //
 // `runtime` is the caller-supplied, DECLARED harness identifier (never auto-probed here):
-// "claude-code" | "codex" | "hermes" | "cowork". Anything else -- undefined, empty, unrecognized
-// (e.g. a bare Agents SDK runner lane) -- resolves to the universal AskUserQuestion prose
-// fallback, never a thrown error: an unknown harness must always still get an approve-first gate.
+// "claude-code" | "codex" | "hermes" | "cowork" | "kimi". Anything else -- undefined, empty,
+// unrecognized (e.g. a bare Agents SDK runner lane) -- resolves to the universal AskUserQuestion
+// prose fallback, never a thrown error: an unknown harness must always still get an approve-first
+// gate.
 export function resolvePlanSurface(runtime) {
   const key = typeof runtime === "string" ? runtime.trim().toLowerCase() : "";
   if (!Object.prototype.hasOwnProperty.call(PLAN_SURFACES, key)) {

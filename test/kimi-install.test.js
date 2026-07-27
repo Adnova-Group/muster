@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runKimiInstall, runKimiUninstall, probeKimiModels, stampModelPreference, stampSkillName, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS } from "../src/kimi-install.js";
+import { runKimiInstall, runKimiUninstall, probeKimiModels, stampModelPreference, stampSkillName, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS, KIMI_PERMISSION_RULES, KIMI_RULES_MARKER_BEGIN, KIMI_RULES_MARKER_END, renderPermissionRulesBlock, mergePermissionRules, stripPermissionRules } from "../src/kimi-install.js";
 import { readInstalledKimi } from "../src/harness.js";
 import { KIMI_LANES, kimiModelPreferenceForTier, kimiPreferenceForAgentId } from "../src/kimi.js";
 
@@ -312,5 +312,173 @@ test("runKimiUninstall: a pre-verbs manifest (no verbs key) still uninstalls cle
     writeFileSync(mPath, JSON.stringify(m, null, 2));
     const r = await runKimiUninstall({ home });
     assert.ok(r.removed.length > 0);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+// --- Declarative action-class fence: [[permission.rules]] deny --------------
+
+const ACTION_CLASSES = ["send", "sign", "submit", "publish", "purchase", "delete-remote"];
+
+test("KIMI_PERMISSION_RULES: covers the same action classes the hook fence classifies", () => {
+  // The fixed class set mirrored from plugin/hooks/action-guard.js (itself
+  // mirrored from src/manifest.js's forbiddenActions enum).
+  const covered = new Set(KIMI_PERMISSION_RULES.map(r => r.cls));
+  for (const cls of ACTION_CLASSES) assert.ok(covered.has(cls), `missing class ${cls}`);
+  // Bash surface: each of action-guard.js's BASH_PATTERNS has a declarative twin.
+  for (const frag of ["git push*--delete", "git push* -d *", "gh release create", "npm publish", "git push", "curl", "gh pr merge"]) {
+    assert.ok(KIMI_PERMISSION_RULES.some(r => r.pattern === `Bash({*,*/**}${frag}{*,*/**})` || r.pattern.includes(frag)), `missing Bash rule for ${frag}`);
+  }
+  // MCP surface: the five tool-name classes, each in both word-boundary shapes.
+  for (const cls of ["send", "sign", "submit", "publish", "purchase"]) {
+    const shapes = KIMI_PERMISSION_RULES.filter(r => r.cls === cls && r.pattern.startsWith("mcp__"));
+    assert.equal(shapes.length, 2, `${cls} needs the mid-name and name-end shapes`);
+    assert.ok(shapes.every(r => r.pattern.includes("[^a-zA-Z]")), `${cls} lost the word boundary`);
+  }
+  // every rule is a deny with a reason rendered into the block
+  const block = renderPermissionRulesBlock();
+  assert.equal(block.match(/\[\[permission\.rules\]\]/g).length, KIMI_PERMISSION_RULES.length);
+  assert.equal(block.match(/decision = "deny"/g).length, KIMI_PERMISSION_RULES.length);
+  assert.ok(block.startsWith(KIMI_RULES_MARKER_BEGIN));
+  assert.ok(block.endsWith(KIMI_RULES_MARKER_END));
+});
+
+test("runKimiInstall --dry-run: reports the deny rules without writing", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const r = await runKimiInstall({ home, repoRoot: repo, dryRun: true });
+    assert.equal(r.dryRun, true);
+    assert.equal(r.permissionRules.created, true);
+    assert.equal(r.permissionRules.config, join(home, ".kimi-code", "config.toml"));
+    assert.equal(r.permissionRules.rules.length, KIMI_PERMISSION_RULES.length);
+    assert.ok(r.permissionRules.rules.every(rule => rule.decision === "deny"));
+    assert.ok(r.permissionRules.rules.some(rule => rule.cls === "delete-remote"));
+    // nothing written, not even config.toml
+    assert.ok(!existsSync(join(home, ".kimi-code")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: writes the marker-delimited fence into a fresh config.toml, uninstall removes the file it created", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    assert.equal(r.permissionRules.created, true);
+    const configPath = join(home, ".kimi-code", "config.toml");
+    const config = readFileSync(configPath, "utf8");
+    assert.ok(config.includes(KIMI_RULES_MARKER_BEGIN));
+    assert.ok(config.includes(`pattern = "Bash({*,*/**}git push{*,*/**})"`));
+    const manifest = JSON.parse(readFileSync(join(home, ".kimi-code", "muster", KIMI_MANIFEST), "utf8"));
+    assert.deepEqual(manifest.permissionRules, { created: true });
+
+    const u = await runKimiUninstall({ home });
+    assert.equal(u.permissionRules.configRemoved, true);
+    assert.ok(!existsSync(configPath)); // muster made it, muster removes it
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: merges into a pre-existing config without touching user entries; uninstall is a byte-identical round trip", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    mkdirSync(root, { recursive: true });
+    const userConfig = "# my config\ndefault_plan_mode = true\n\n[[permission.rules]]\ndecision = \"allow\"\npattern = \"Read\"\n";
+    writeFileSync(join(root, "config.toml"), userConfig);
+
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    assert.equal(r.permissionRules.created, false);
+    const merged = readFileSync(join(root, "config.toml"), "utf8");
+    assert.ok(merged.startsWith(userConfig)); // user entries untouched, block appended
+
+    const u = await runKimiUninstall({ home });
+    assert.equal(u.permissionRules.configRemoved, false);
+    assert.equal(readFileSync(join(root, "config.toml"), "utf8"), userConfig); // exact round trip
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: reinstall is idempotent -- one block, user entries after the block survive, created receipt is sticky", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const configPath = join(root, "config.toml");
+    await runKimiInstall({ home, repoRoot: repo });
+    // the user appends their own rule AFTER muster's block between installs
+    const userTail = "\n# mine\n[[permission.rules]]\ndecision = \"ask\"\npattern = \"Bash\"\n";
+    writeFileSync(configPath, readFileSync(configPath, "utf8") + userTail);
+
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    const config = readFileSync(configPath, "utf8");
+    assert.equal(config.split(KIMI_RULES_MARKER_BEGIN).length - 1, 1); // replaced, not duplicated
+    assert.ok(config.endsWith(userTail)); // user tail untouched
+    assert.equal(r.permissionRules.created, true); // sticky: muster still owns the file
+
+    const u = await runKimiUninstall({ home });
+    // the user's own tail is real content: the file survives, only muster's
+    // block is stripped
+    assert.equal(u.permissionRules.configRemoved, false);
+    assert.equal(readFileSync(configPath, "utf8"), userTail);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: malformed fence markers fail loud instead of clobbering", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "config.toml"), `x = 1\n${KIMI_RULES_MARKER_BEGIN}\n`); // begin without end
+    await assert.rejects(runKimiInstall({ home, repoRoot: repo }), /malformed Muster action-class fence markers/);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiUninstall: a pre-fence manifest (no permissionRules key) leaves config.toml alone", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    const configPath = join(root, "config.toml");
+    const configBefore = readFileSync(configPath, "utf8");
+    const mPath = join(root, "muster", KIMI_MANIFEST);
+    const m = JSON.parse(readFileSync(mPath, "utf8"));
+    delete m.permissionRules;                       // simulate the older manifest
+    writeFileSync(mPath, JSON.stringify(m, null, 2));
+    const u = await runKimiUninstall({ home });
+    assert.equal(u.permissionRules, undefined);     // nothing claimed
+    assert.equal(readFileSync(configPath, "utf8"), configBefore); // untouched
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("mergePermissionRules / stripPermissionRules: unit round trips", () => {
+  // null -> created; strip -> file should be deleted (null)
+  const fresh = mergePermissionRules(null);
+  assert.equal(fresh.created, true);
+  assert.equal(stripPermissionRules(fresh.text, { created: true }), null);
+  // existing content: append, then strip back to byte-identical
+  const user = "a = 1\n";
+  const merged = mergePermissionRules(user);
+  assert.equal(merged.created, false);
+  assert.deepEqual(stripPermissionRules(merged.text, { created: false }), { text: user });
+  // merge over a prior block replaces in place
+  const again = mergePermissionRules(merged.text);
+  assert.equal(again.text.split(KIMI_RULES_MARKER_BEGIN).length - 1, 1);
+  // no markers -> strip is a pass-through; half-markers throw
+  assert.deepEqual(stripPermissionRules("a = 1\n", { created: false }), { text: "a = 1\n" });
+  assert.throws(() => mergePermissionRules(`${KIMI_RULES_MARKER_END}\n`), /malformed/);
+});
+
+// The installed config must pass Kimi's OWN validation (`kimi doctor config`).
+// Opt-in: skipped when no kimi binary is on PATH; everything else in this file
+// stays hermetic.
+test("the emitted fence config passes `kimi doctor config`", async (t) => {
+  const { execFile: execFileCb } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFile = promisify(execFileCb);
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const configPath = join(home, ".kimi-code", "config.toml");
+    try {
+      await execFile("kimi", ["doctor", "config", configPath], { env: { ...process.env, KIMI_CODE_HOME: join(home, ".kimi-code") } });
+    } catch (error) {
+      if (error.code === "ENOENT") { t.skip("kimi binary not on PATH"); return; }
+      throw error; // doctor ran and rejected the config -- a real failure
+    }
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });

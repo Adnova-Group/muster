@@ -293,6 +293,21 @@ the retry packet drops the lane override too; a failed swarm member is retried a
 the >=2-item floor lifts when resuming. One retry, the same cap every harness gets; a second
 failure escalates exactly as step 4a says.
 
+**Background a leg only when the wave does not barrier on it.** An independent read-only
+leg -- a reviewer whose verdict does not gate the CURRENT wave, an investigator whose
+findings only a later wave (or the deferred fast-path review pass) needs -- dispatches as
+`kimiAgentCall({ ..., background: true })` (`run_in_background`): the call returns a task id
+immediately and the orchestrator keeps making progress, with the leg's result folding back
+from the background-completion receipt -- a synthetic user message carrying the subagent's
+final message (the whole handoff, same return contract as a foreground leg), backed by the
+on-disk `tasks/<task_id>.json` + `output.log` (docs/research/kimi-code-cli.md secs 6+8;
+`interpretKimiBackgroundCompletion` in `src/kimi-dispatch.js` maps the receipt onto the
+fold-back, and a failed backgrounded leg re-enters step 4a's re-dispatch-once rule
+unchanged). Anything step 4b's barrier or step 4c's review gate depends on dispatches
+FOREGROUND: a backgrounded leg is still in flight at the barrier, so backgrounding
+barrier-gated work would silently empty the barrier's "all wave tasks done" meaning.
+AgentSwarm needs no background mode -- the swarm IS the barrier.
+
 ### Worktree isolation per harness + base-SHA receipts
 
 Step 4a's "Parallel isolation" bullet already names Claude Code CLI's mechanism (the Agent tool's

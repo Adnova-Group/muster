@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, interpretKimiGoalExit, resolveKimiWaveDispatch,
+  interpretKimiBackgroundCompletion,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
@@ -88,6 +89,64 @@ test("kimiAgentCall: background flag and required args", () => {
   assert.equal(kimiAgentCall({ agentId: "muster-reviewer", prompt: "x", background: true }).run_in_background, true);
   assert.throws(() => kimiAgentCall({ prompt: "x" }), /agentId is required/);
   assert.throws(() => kimiAgentCall({ agentId: "muster-reviewer" }), /prompt is required/);
+});
+
+// --- Background legs (run_in_background) -------------------------------------
+
+test("kimiAgentCall: background construction -- the packet shape with background: true", () => {
+  // An independent read-only leg (a reviewer the current wave does not barrier
+  // on) dispatches background: the full packet is the normal typed call plus
+  // run_in_background, lane derivation untouched.
+  const bg = kimiAgentCall({ agentId: "muster-reviewer", prompt: "Review the previous wave's diff.", background: true });
+  assert.equal(bg.tool, "Agent");
+  assert.equal(bg.subagent_type, "muster-reviewer");
+  assert.equal(bg.prompt, "Review the previous wave's diff.");
+  assert.equal(bg.model, "primary"); // lane derivation is unaffected by backgrounding
+  assert.equal(bg.run_in_background, true);
+
+  // Foreground is the default and OMITS the key -- anything the wave's barrier
+  // or the review gate depends on dispatches foreground, so the barrier still
+  // means done.
+  const fg = kimiAgentCall({ agentId: "muster-reviewer", prompt: "Review this wave." });
+  assert.ok(!("run_in_background" in fg), "a foreground dispatch must not carry run_in_background");
+
+  // The resume retry of a backgrounded leg keeps the flag (and still drops
+  // subagent_type/model, per the resume contract).
+  const retry = kimiAgentCall({ resume: "agent-7", prompt: "previous attempt failed: timeout", background: true });
+  assert.equal(retry.resume, "agent-7");
+  assert.equal(retry.run_in_background, true);
+  assert.equal(retry.subagent_type, undefined);
+});
+
+test("interpretKimiBackgroundCompletion: a completed receipt folds back as the whole handoff", () => {
+  // The completion arrives as a synthetic user message whose body IS the
+  // subagent's final message -- same return contract as a foreground leg.
+  const done = interpretKimiBackgroundCompletion({ status: "completed", result: "verdict: PASS; no findings" });
+  assert.equal(done.status, "complete");
+  assert.equal(done.terminal, true);
+  assert.equal(done.result, "verdict: PASS; no findings");
+  assert.match(done.reason, /synthetic user message/);
+});
+
+test("interpretKimiBackgroundCompletion: a failed leg re-enters the re-dispatch-once rule, never a silent drop", () => {
+  const failed = interpretKimiBackgroundCompletion({ status: "failed", terminalReason: "timed_out" });
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.terminal, true);
+  assert.match(failed.reason, /re-dispatch-once/);
+  assert.match(failed.reason, /never a silent drop/);
+
+  for (const status of ["stopped", "timed_out"]) {
+    assert.equal(interpretKimiBackgroundCompletion({ status }).status, "failed");
+  }
+});
+
+test("interpretKimiBackgroundCompletion: no receipt yet is pending -- the barrier does not cover it", () => {
+  for (const input of [{}, { status: "running" }]) {
+    const pending = interpretKimiBackgroundCompletion(input);
+    assert.equal(pending.status, "pending");
+    assert.equal(pending.terminal, false);
+    assert.match(pending.reason, /barrier does not cover it/);
+  }
 });
 
 // --- Resume-after-failure (orchestrator step 4a's Kimi re-dispatch-once path) ---
@@ -314,6 +373,27 @@ test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resum
   assert.match(kimi[1], /kimiAgentCall\(\{ resume: /, "the Kimi subsection must show the per-agent resume retry shape");
   assert.match(kimi[1], /kimiSwarmCall\(\{ resumeAgentIds: /, "the Kimi subsection must show the swarm resume retry shape");
   assert.match(kimi[1], /mutually exclusive with `subagent_type`/, "the Kimi subsection must state resume's mutual exclusion with subagent_type");
+});
+
+// --- Prose wiring: the Kimi subsection names the background-vs-barrier rule --
+
+test("orchestrator/SKILL.md's Kimi subsection names when to background a leg versus barrier on it", async () => {
+  const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+  const match = text.match(/### Kimi-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
+  assert.ok(match, "orchestrator/SKILL.md must carry a '### Kimi-native dispatch' subsection");
+  const section = match[1];
+  // the rule itself: independent read-only legs background; barrier-gated work foreground
+  assert.match(section, /Background a leg only when the wave does not barrier on it/, "the Kimi subsection must state the background-vs-barrier rule");
+  assert.match(section, /independent read-only\s+leg/, "the rule must scope backgrounding to independent read-only legs");
+  assert.match(section, /background: true/, "the rule must name the kimiAgentCall background flag");
+  assert.match(section, /run_in_background/, "the rule must name Kimi's run_in_background parameter");
+  // the completion/receipt semantics the fold-back rides on
+  assert.match(section, /synthetic user message/, "the rule must state the result arrives as a synthetic user message");
+  assert.match(section, /tasks\/<task_id>\.json/, "the rule must name the on-disk tasks/ receipt");
+  assert.match(section, /interpretKimiBackgroundCompletion/, "the rule must name the shipped receipt interpreter");
+  // the barrier is not weakened: barrier/review-gate work stays foreground
+  assert.match(section, /step 4b's barrier[\s\S]*?step 4c's review gate[\s\S]*?FOREGROUND/, "the rule must keep barrier/review-gate work foreground");
+  assert.match(section, /re-dispatch-once/, "a failed backgrounded leg must re-enter the re-dispatch-once rule");
 });
 
 // --- Prose wiring: the runner prose routes the Kimi run loop through /goal ----

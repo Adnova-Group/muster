@@ -41,6 +41,27 @@ test("cli wire: help and --help exit zero without dispatching mutating verbs", a
   assert.deepEqual(await readdir(cwd), before, "help must not create files in the caller's directory");
 });
 
+test("cli wire: init lifecycle emits the complete envelope and setup remains legacy", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-init-wire-"));
+  const prepared = JSON.parse((await run(["init", cwd])).stdout);
+  assert.equal(prepared.receipt.format, "muster.init-receipt");
+  assert.equal(prepared.observedNativeEvidence, null);
+  assert.equal(prepared.receipt.phase, "prepared");
+  await assert.rejects(() => readFile(join(cwd, "AGENTS.md"), "utf8"), { code: "ENOENT" });
+
+  const transitioned = JSON.parse((await run([
+    "init", "transition", cwd, "--to", "handoff", "--reason", "unavailable", "--expect", "",
+  ])).stdout);
+  assert.equal(transitioned.receipt.nativeInit.state, "handoff");
+  await run(["init", "acknowledge", cwd, "--reason", "unavailable"]);
+  const finalized = JSON.parse((await run(["init", "finalize", cwd])).stdout);
+  assert.equal(finalized.receipt.phase, "finalized");
+
+  const legacy = await mkdtemp(join(tmpdir(), "muster-setup-wire-"));
+  await run(["setup", legacy]);
+  assert.match(await readFile(join(legacy, "AGENTS.md"), "utf8"), /managed with muster/);
+});
+
 test("cli wire: signals writes signals.json under the explicit target directory", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "muster-signals-cwd-"));
   const target = await mkdtemp(join(tmpdir(), "muster-signals-target-"));

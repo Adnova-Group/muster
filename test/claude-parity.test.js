@@ -935,5 +935,39 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // docs/binding-interface.md's grep-audit counts re-scanned live -- unchanged
   // (test/docs-binding-interface.test.js green without a re-derivation).
   // Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "4992b7588b571f24f4a285f9803437eb12bc0532d424a45eae4ea3a08cd2c5f6");
+  //
+  // 2026-07-27 re-pin (kimi-loop-background-tuning): file COUNT unchanged (139) --
+  // only plugin/commands/go.md's content changed. Its Kimi run-loop step gained
+  // the "Kimi loop/background profile -- binary defaults, pinned not emitted"
+  // block: the chosen [loop_control]/[background] values for unattended
+  // `kimi -p "/goal ..."` runs (max_steps_per_turn unset, max_retries_per_step
+  // unset/10, reserved_context_size unset/50000, max_running_tasks unset,
+  // print_background_mode steer) pinned in prose with the per-process env
+  // overrides named, NOT emitted into the user-global config.toml (wave 1's
+  // docs-pin decision; probe evidence in docs/research/kimi-code-cli.md
+  // sec 11.10, non-emission rationale comment in src/kimi-install.js, both
+  // outside this surface). The block is a clearly-labeled Kimi-only branch,
+  // same shape as the existing per-harness branches that ship to every
+  // harness's build. Re-verified with MUSTER_BUILD_FORCE=1 node
+  // scripts/build-codex.mjs && node scripts/check-codex.mjs (clean).
+  // docs/binding-interface.md's grep-audit counts re-scanned live -- unchanged
+  // (test/docs-binding-interface.test.js green without a re-derivation).
+  // Deliberate surface change, not drift.
+  //
+  // 2026-07-27 re-pin (kimi-loop-background-tuning, review-gate round-1 minors):
+  // file COUNT unchanged (139) -- only plugin/commands/go.md's content changed
+  // again, wave 2's review-gate round-1 fix pass on the same Kimi
+  // loop/background profile block. Two prose corrections, no value/decision
+  // change: the "four of the five values restate defaults" claim was factually
+  // wrong (the binary probe shows print_background_mode defaults to steer too,
+  // so all five restate defaults on a clean config; the four-of-five count owed
+  // solely to the legacy keep_alive_on_exit conditional, now named explicitly),
+  // and the "leaves [loop_control]/[background] at the binary defaults"
+  // sentence gained its caveat clause -- defaults apply unless the user's
+  // config.toml already sets those keys, with the operator advisory that a
+  // user-set max_steps_per_turn cap would abort a healthy long run. The chosen
+  // values themselves, the docs-pin/no-emission decision, and all src/ logic
+  // are unchanged; the paired §11.10/kimi-install.js/test updates sit outside
+  // this surface. Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "3676fc7411d75f7f925c9f9f0a52d5ec3a16f576e63c1e85b3acb0777026e9cc");
 });

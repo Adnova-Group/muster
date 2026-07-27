@@ -80,13 +80,34 @@ instruction seeds.
      baseline uses
      `$MUSTER_CLI init transition "$TARGET" --to completed --evidence artifact-delta`.
    - An expected artifact that predated the baseline requires the user's
-     explicit confirmation and uses
-     `$MUSTER_CLI init transition "$TARGET" --to completed --evidence preexisting-confirmed`.
-   - A future proven callable adapter must first transition to `attempted`, then
-     may use
-     `$MUSTER_CLI init transition "$TARGET" --to completed --evidence call-result --evidence-file "$EVIDENCE_FILE"`
-     only for a bounded regular JSON result validating
-     `{"ok":true,"operation":"native-init"}`.
+     explicit confirmation. Set
+     `CONFIRMATION_FILE=".muster/native-init-confirmation.json"` and create that
+     safe-relative regular file beneath `TARGET` with the exact external shape
+     below (the `artifacts` array is the sorted, unchanged, baseline-present
+     expected-artifact subset the user explicitly confirmed):
+
+     ```json
+     {"format":"muster.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":["AGENTS.md"]}
+     ```
+
+     Then run
+     `$MUSTER_CLI init transition "$TARGET" --to completed --evidence preexisting-confirmed --evidence-file "$CONFIRMATION_FILE"`.
+     The confirmation file is required; a conversational “yes” alone is not
+     evidence.
+   - A future proven callable adapter must first transition to `attempted`.
+     A call-result is valid only from `attempted`; copy the non-null
+     `receipt.nativeInit.attemptId` into the bounded result rather than inventing
+     or omitting it. For example:
+
+     ```json
+     {"format":"muster.native-init-result","schemaVersion":1,"ok":true,"operation":"native-init","attemptId":"<receipt.nativeInit.attemptId>","artifacts":["AGENTS.md"]}
+     ```
+
+     Set `EVIDENCE_FILE=".muster/native-init-result.json"` and run
+     `$MUSTER_CLI init transition "$TARGET" --to completed --evidence call-result --evidence-file "$EVIDENCE_FILE"`.
+     For both confirmation and call-result, the evidence-file path must not
+     appear in `nativeInit.expectedArtifacts`; those entries name native
+     instruction artifacts, never the JSON proof file itself.
    - When native init is unavailable and the user explicitly accepts that
      limitation, run
      `$MUSTER_CLI init acknowledge "$TARGET" --reason unavailable`. The native

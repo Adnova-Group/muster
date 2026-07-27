@@ -37,3 +37,23 @@ test("init command preserves the cloned-repository trust boundary", async () => 
   assert.match(text, /Brownfield/);
   assert.match(text, /never (?:be )?overwritten?/i);
 });
+
+test("init command binds confirmation and callable-result evidence files exactly", async () => {
+  const text = await read("plugin/commands/init.md");
+
+  assert.match(text, /CONFIRMATION_FILE="\.muster\/native-init-confirmation\.json"/);
+  assert.match(
+    text,
+    /\{"format":"muster\.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":\["AGENTS\.md"\]\}/,
+  );
+  assert.match(
+    text,
+    /\$MUSTER_CLI init transition "\$TARGET" --to completed --evidence preexisting-confirmed --evidence-file "\$CONFIRMATION_FILE"/,
+  );
+  assert.match(
+    text,
+    /\{"format":"muster\.native-init-result","schemaVersion":1,"ok":true,"operation":"native-init","attemptId":"<receipt\.nativeInit\.attemptId>","artifacts":\["AGENTS\.md"\]\}/,
+  );
+  assert.match(text, /call-result is valid only from `attempted`/);
+  assert.match(text, /evidence-file path must not\s+appear in `nativeInit\.expectedArtifacts`/);
+});

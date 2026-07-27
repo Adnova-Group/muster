@@ -847,5 +847,20 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // clearly-labeled Kimi-only branch, same shape as the existing Claude/Codex/
   // Hermes branches that already ship to every harness's build. Deliberate
   // surface change, not drift.
-  assert.equal(hash.digest("hex"), "35787245f7ef097a21fdf482938c69b1fc1f2eb2d8193345770fcfd3d492132c");
+  //
+  // 2026-07-27 re-pin (kimi-model-lane-binding): file COUNT unchanged (139) --
+  // only plugin/skills/orchestrator/SKILL.md and plugin/commands/go.md content
+  // changed. Both name the now-WIRED runtime lane bind: the orchestrator's
+  // Kimi-native dispatch subsection gained a paragraph stating the stamped
+  // model_preference lanes engage only because kimiGoalInvocation sets
+  // KIMI_CODE_EXPERIMENTAL_FLAG=1 + KIMI_SECONDARY_MODEL per process (derived by
+  // src/kimi.js's kimiLaneEnv, reported by `muster doctor`'s kimi-lane-binding
+  // check), and go.md's Kimi run-loop block gained the same env-pair sentence
+  // where the `kimi -p "/goal"` invocation is built. Paired with the src/-side
+  // single-derivation change (kimiLaneEnv/kimiLaneBinding in src/kimi.js,
+  // outside this surface). Re-verified with MUSTER_BUILD_FORCE=1 node
+  // scripts/build-codex.mjs && node scripts/check-codex.mjs (clean).
+  // docs/binding-interface.md's grep-audit counts re-scanned live -- unchanged.
+  // Deliberate surface change, not drift.
+  assert.equal(hash.digest("hex"), "2114d5d8aa13180a13654091e1781519dd0a96eb98ab775d088f7f592f0d5c85");
 });

@@ -138,6 +138,48 @@ export function kimiPreferenceForAgentId(id) {
   return config ? kimiModelPreferenceForTier(config.tier) : null;
 }
 
+// --- The runtime lane bind (single source of truth) --------------------------
+//
+// The stamped model_preference lanes engage only when the secondary-model
+// experiment is on for the PROCESS (docs/research/kimi-code-cli.md section 11.8):
+//   KIMI_CODE_EXPERIMENTAL_FLAG=1   selects the v2 engine under `kimi -p`,
+//                                   which is what makes model_preference bite
+//   KIMI_SECONDARY_MODEL=<alias>    points the secondary lane at a model
+// Both are per-process, so binding this way mutates nothing in the user's
+// shared config.toml and leaves interactive sessions untouched (the TUI ignores
+// model_preference anyway -- lanes bind under `kimi -p` / `kimi web` only).
+//
+// Both values are DERIVED here from the tier map, never re-stated by callers:
+// the lane models are whatever the judgment (opus) and execution (sonnet)
+// families resolve to, checked against KIMI_LANES so a hand edit that drifts
+// the two apart fails loud instead of silently binding the wrong lane. Every
+// Kimi spawn path shares this one derivation -- kimiGoalInvocation
+// (src/kimi-dispatch.js) for the live `kimi -p` run loop, the install report
+// (src/kimi-install.js), and `muster doctor` (src/doctor.js).
+export function kimiLaneBinding() {
+  const primary = kimiModelForTier("opus").model;    // the K3 judgment family
+  const secondary = kimiModelForTier("sonnet").model; // the K2.7 Coding execution family
+  if (KIMI_LANES.primary !== primary || KIMI_LANES.secondary !== secondary) {
+    throw new Error(`KIMI_LANES drifted from KIMI_TIERS: lanes name ${KIMI_LANES.primary} / ${KIMI_LANES.secondary}, but the tiers resolve ${primary} / ${secondary}`);
+  }
+  const tiers = {};
+  for (const tier of Object.keys(KIMI_TIERS)) tiers[tier] = kimiModelPreferenceForTier(tier);
+  return {
+    lanes: { primary, secondary },
+    tiers,
+    env: {
+      KIMI_CODE_EXPERIMENTAL_FLAG: "1",
+      KIMI_SECONDARY_MODEL: secondary
+    }
+  };
+}
+
+// Just the env pair, for spawn sites that need nothing else. Returns a fresh
+// object each call -- a caller mutating it must not corrupt the next spawn.
+export function kimiLaneEnv() {
+  return { ...kimiLaneBinding().env };
+}
+
 // Adapter boundary for callers that resolve a role at runtime. modelForRole keeps
 // MUSTER_MAX_TIER and Fable's deterministic fallback (fable -> opus when Fable is
 // disabled), so a fable-set role with Fable off resolves to the opus (k3/high)

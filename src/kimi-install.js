@@ -4,7 +4,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exists, readdirSafe, readJson } from "./fs-util.js";
 import { matchFrontmatter } from "./frontmatter.js";
-import { KIMI_LANES, kimiPreferenceForAgentId } from "./kimi.js";
+import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 
 // --- Kimi Code CLI install adapter -------------------------------------------
 // The write side of the Kimi harness leg (docs/research/kimi-code-cli.md). Kimi
@@ -72,11 +72,11 @@ export const KIMI_EXPECTED_MODEL_IDS = Object.freeze([
 // currently ignores this field" -- so lanes bind under `kimi -p` /`kimi web`, never
 // in the interactive TUI.
 const KIMI_SECONDARY_MODEL_CONFIG = Object.freeze({
-  // Preferred: per-process, mutates nothing.
-  env: Object.freeze({
-    KIMI_CODE_EXPERIMENTAL_FLAG: "1",
-    KIMI_SECONDARY_MODEL: KIMI_LANES.secondary
-  }),
+  // Preferred: per-process, mutates nothing. Derived from the single source in
+  // src/kimi.js -- the same pair kimiGoalInvocation sets on a live `kimi -p`
+  // run -- so the install report can never describe a different bind than the
+  // run loop actually applies.
+  env: Object.freeze(kimiLaneEnv()),
   // Alternative: persistent, but edits the user's shared config.toml.
   default_model: KIMI_LANES.primary,
   toml: `[secondary_model]\nmodel = "${KIMI_LANES.secondary}"\n`
@@ -541,7 +541,7 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
     modelPreference: {
       primary: lanes.primary.length, secondary: lanes.secondary.length, unstamped,
       requiredConfig: KIMI_SECONDARY_MODEL_CONFIG,
-      note: "model_preference is experimental: set KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1 (kimi web) or KIMI_CODE_EXPERIMENTAL_FLAG=1 (kimi -p). The interactive TUI ignores it."
+      note: "model_preference is experimental: muster's `kimi -p` run loop binds the lanes LIVE -- kimiGoalInvocation (src/kimi-dispatch.js) sets KIMI_CODE_EXPERIMENTAL_FLAG=1 + KIMI_SECONDARY_MODEL per process, derived from src/kimi.js's kimiLaneEnv. The interactive TUI ignores the field; a `kimi web` session needs KIMI_CODE_EXPERIMENTAL_SECONDARY_MODEL=1."
     },
     ...(probeResult ? { probe: probeResult } : {})
   };

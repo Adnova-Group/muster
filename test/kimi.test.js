@@ -7,9 +7,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  KIMI_LANES,
   KIMI_MODEL_POLICY,
+  kimiLaneBinding,
+  kimiLaneEnv,
   kimiModelForTier,
   kimiModelForRole,
+  kimiModelPreferenceForTier,
   kimiProfileForConfig,
 } from "../src/kimi.js";
 import { resolveNeutralProfile, assertNeutralProfile } from "../src/model-policy.js";
@@ -32,6 +36,41 @@ test("tier defaults resolve to the section-11 Kimi profiles", () => {
 
 test("unknown tier fails loud", () => {
   assert.throws(() => kimiModelForTier("luna-xhigh"), /unknown Muster model tier/);
+});
+
+// --- The runtime lane bind: env derivation (section 11.8) -------------------
+
+test("kimiLaneBinding: both lanes derive from the tier map, every tier folds onto a lane", () => {
+  const binding = kimiLaneBinding();
+  // judgment family -> primary; execution family -> secondary
+  assert.equal(binding.lanes.primary, "kimi-code/k3");
+  assert.equal(binding.lanes.secondary, "kimi-code/kimi-for-coding");
+  assert.deepEqual(binding.tiers, { haiku: "secondary", sonnet: "secondary", opus: "primary", fable: "primary" });
+  // the derivation agrees with KIMI_LANES -- a drift between the two throws
+  // instead of silently binding the wrong lane.
+  assert.deepEqual(binding.lanes, { primary: KIMI_LANES.primary, secondary: KIMI_LANES.secondary });
+});
+
+test("kimiLaneEnv: the sanctioned per-process pair, with every tier's model on its own lane", () => {
+  const env = kimiLaneEnv();
+  assert.equal(env.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
+  // derived, not restated: the secondary lane is whatever the execution family
+  // (sonnet AND haiku -- they collapse on Kimi) resolves to.
+  assert.equal(env.KIMI_SECONDARY_MODEL, "kimi-code/kimi-for-coding");
+  assert.equal(env.KIMI_SECONDARY_MODEL, kimiModelForTier("sonnet").model);
+  assert.equal(env.KIMI_SECONDARY_MODEL, kimiModelForTier("haiku").model);
+  // every tier mapping: a tier's resolved model IS its lane's bound model
+  const binding = kimiLaneBinding();
+  for (const tier of ["haiku", "sonnet", "opus", "fable"]) {
+    assert.equal(binding.lanes[kimiModelPreferenceForTier(tier)], kimiModelForTier(tier).model, `${tier} rides the lane naming its own model`);
+  }
+});
+
+test("kimiLaneEnv returns a fresh object -- a mutating caller cannot corrupt the next spawn", () => {
+  const env = kimiLaneEnv();
+  env.KIMI_SECONDARY_MODEL = "tampered";
+  delete env.KIMI_CODE_EXPERIMENTAL_FLAG;
+  assert.deepEqual(kimiLaneEnv(), { KIMI_CODE_EXPERIMENTAL_FLAG: "1", KIMI_SECONDARY_MODEL: "kimi-code/kimi-for-coding" });
 });
 
 // --- Semantic effort override on K3 tiers ----------------------------------

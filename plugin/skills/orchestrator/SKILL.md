@@ -257,6 +257,15 @@ moves off the prose loop.
   file's stamped `model_preference` -- and Kimi takes a LANE (`primary`|`secondary`), never
   a model id.
 
+**The lanes ENGAGE only because the run loop binds them per-process.** A stamped
+`model_preference` is inert until the secondary-model experiment is on for the process --
+`kimiGoalInvocation` (the go.md step-6 Kimi run loop) sets `KIMI_CODE_EXPERIMENTAL_FLAG=1`
++ `KIMI_SECONDARY_MODEL` from the single derivation `kimiLaneEnv()` (`src/kimi.js`), and
+the flag is also what selects the v2 engine under `kimi -p`. The interactive TUI ignores
+`model_preference` entirely, so lanes bind under a muster-launched `kimi -p`, never in the
+TUI (docs/research/kimi-code-cli.md sec 11.8). `muster doctor`'s `kimi-lane-binding` check
+reports the active binding.
+
 **Pre-validate the four swarm rejection rules BEFORE dispatch -- never pay a whole-wave
 round trip to learn them.** Kimi rejects a malformed swarm before any subagent starts, so
 a bad packet costs the wave's entire fan-out. `kimiSwarmCall` enforces all four up front

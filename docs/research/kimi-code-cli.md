@@ -604,6 +604,21 @@ under `kimi -p` / `kimi web`, never in the interactive TUI. An explicit `model: 
 on the `Agent`/`AgentSwarm` *call* overrides the profile — so muster can also tier per dispatch, not
 just per profile (it is "ignored when resuming"; resumed subagents keep their model).
 
+**IMPLEMENTED 2026-07-27 — the env bind is live, closing the omission §6 flags as "not neutral."**
+Until now the stamped lanes were inert on a real run: nothing in the live path set the env pair, so
+with a secondary model configured every agent — judgment included — would have ridden the cheap
+lane. The bind is now wired end to end: `kimiLaneBinding()` / `kimiLaneEnv()` (`src/kimi.js`) derive
+the pair from `KIMI_TIERS` → `KIMI_LANES` as the single source (the lane models are whatever the
+opus/sonnet families resolve to, checked against `KIMI_LANES` so a hand edit that drifts the two
+apart fails loud); `kimiGoalInvocation` (`src/kimi-dispatch.js`) sets it on every muster-launched
+`kimi -p "/goal …"` run — the go.md step-6 run loop — so the 27 stamped lanes engage on a real run;
+lane-sensitive dispatches carry the per-call `model` override (`kimiAgentCall` derives the lane from
+the shared manifest, so a dispatch never contradicts the stamped file); and `muster doctor` reports
+the active binding (`kimi-lane-binding`). A config-side bind was rejected on the evidence: the
+experiment flag is process-env only (the config schema's `[providers.<name>].env{}` is provider
+credentials, not a flag surface), so the only config route is the `default_model`/`[secondary_model]`
+edit the design call above already declines — per-process is the complete bind that mutates nothing.
+
 `muster install kimi` stamps every agent's lane from its manifest tier (`kimiPreferenceForAgentId`
 → `stampModelPreference`, a line-scoped frontmatter edit that leaves every other byte untouched).
 Verified on the live install: **18 primary / 9 secondary / 0 unstamped.** An agent with no manifest

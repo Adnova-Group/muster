@@ -122,7 +122,12 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    `kimi -p "/goal <objective>"` invocation with the item's assessed acceptance criteria compiled
    INTO the objective string — `/goal` has no separate stop-limit flag ("write stop conditions into
    the objective", docs/research/kimi-code-cli.md §11.9), so the same enrichment that would land in
-   a file muster re-reads goes into the harness's own loop instead. Interpret the process exit code
+   a file muster re-reads goes into the harness's own loop instead. Its env pair
+   (`KIMI_CODE_EXPERIMENTAL_FLAG=1` + `KIMI_SECONDARY_MODEL`, derived by `kimiLaneEnv()` in
+   `src/kimi.js`) is what binds the stamped `model_preference` lanes for the whole run —
+   the experiment gate is per-process and the TUI ignores the field, so a muster-launched
+   `kimi -p` is exactly where the installed agents' lanes engage (docs/research/kimi-code-cli.md
+   §11.8). Interpret the process exit code
    through `interpretKimiGoalExit(code)`: **0 complete** → the objective's own evidence was
    satisfied, proceed to the wave commit/finish; **3 blocked** → muster's escalation, arriving as an
    exit code instead of being parsed out of a STATE file — STOP and report per step 7; **6 paused**

@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists, readJson, readdirSafe } from "./fs-util.js";
+import { kimiLaneBinding } from "./kimi.js";
 
 // All event names Claude Code recognises as valid hook event keys.
 const KNOWN_HOOK_EVENTS = new Set([
@@ -449,6 +450,27 @@ export async function runDoctor({ root, home, exec } = {}) {
           }
         }
       }
+    }
+  }
+
+  // --- Kimi lane binding ---
+  // Reports the ACTIVE two-lane bind the stamped model_preference agents engage
+  // under (docs/research/kimi-code-cli.md section 11.8). Pure derivation, no
+  // network: kimiLaneBinding() is the same single source kimiGoalInvocation
+  // binds a live `kimi -p` run with, so doctor can never report a bind the run
+  // loop wouldn't apply. A drift between KIMI_LANES and KIMI_TIERS throws --
+  // surfaced here as ok:false rather than crashing the whole report.
+  {
+    try {
+      const binding = kimiLaneBinding();
+      const tiersOn = lane => Object.keys(binding.tiers).filter(t => binding.tiers[t] === lane).join(", ");
+      checks.push({
+        name: "kimi-lane-binding",
+        ok: true,
+        detail: `primary=${binding.lanes.primary} (${tiersOn("primary")}), secondary=${binding.lanes.secondary} (${tiersOn("secondary")}) — bound per-process by kimiGoalInvocation via KIMI_CODE_EXPERIMENTAL_FLAG=${binding.env.KIMI_CODE_EXPERIMENTAL_FLAG} + KIMI_SECONDARY_MODEL=${binding.env.KIMI_SECONDARY_MODEL} (TUI ignores model_preference)`
+      });
+    } catch (e) {
+      checks.push({ name: "kimi-lane-binding", ok: false, detail: e.message });
     }
   }
 

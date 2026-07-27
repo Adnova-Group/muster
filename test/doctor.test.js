@@ -716,8 +716,8 @@ describe("runDoctor kimi-lane-binding check", () => {
     assert.ok(check, "kimi-lane-binding check must exist");
     assert.equal(check.ok, true, `not ok: ${check.detail}`);
     // both lanes, with the tier fold named
-    assert.match(check.detail, /primary=kimi-code\/k3 \(opus, fable\)/);
-    assert.match(check.detail, /secondary=kimi-code\/kimi-for-coding \(haiku, sonnet\)/);
+    assert.match(check.detail, /primary=kimi-code\/k3 \(prime, apex\)/);
+    assert.match(check.detail, /secondary=kimi-code\/kimi-for-coding \(scout, core\)/);
     // the per-process env pair that engages the stamped model_preference lanes
     assert.match(check.detail, /KIMI_CODE_EXPERIMENTAL_FLAG=1/);
     assert.match(check.detail, /KIMI_SECONDARY_MODEL=kimi-code\/kimi-for-coding/);

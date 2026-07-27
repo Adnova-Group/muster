@@ -6,6 +6,7 @@ import { parse } from "yaml";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { splitFrontmatter, modelForRoles } from "../src/vendor.js";
+import { claudeModelForTier } from "../src/claude.js";
 import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const catalogDir = new URL("../catalog/", import.meta.url);
@@ -62,7 +63,9 @@ test("vendored agent plugin files have model frontmatter matching current policy
     const f = fileURLToPath(new URL(`../plugin/agents/${e.id}.md`, import.meta.url));
     const text = await readFile(f, "utf8");
     const { data: fm } = splitFrontmatter(text);
-    const expected = modelForRoles(e.roles);
+    // Frontmatter `model:` is a Claude Code surface — the conceptual tier from
+    // policy resolves to its Claude-concrete value through the adapter.
+    const expected = claudeModelForTier(modelForRoles(e.roles)).model;
     assert.equal(
       fm.model, expected,
       `${e.id}.md has model: ${fm.model} but policy for roles [${e.roles.join(", ")}] requires model: ${expected} — run \`muster vendor\` or fix the frontmatter`

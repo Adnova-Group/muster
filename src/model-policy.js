@@ -10,8 +10,9 @@
 // resolves those to its own concrete profile.
 //
 // Neutral agent profile: { tier, effort? }
-//   tier   — a conceptual tier from MODEL_TIER_ORDER (model.js): haiku|sonnet|opus|fable.
-//            Selects the model. This is already what the manifest calls "tier".
+//   tier   — a conceptual tier from MODEL_TIER_ORDER (model.js): scout|core|prime|apex.
+//            Selects the model. Legacy names (haiku|sonnet|opus|fable) are accepted
+//            and normalized — see LEGACY_TIER_ALIASES in model.js.
 //   effort — an OPTIONAL semantic reasoning intent, NOT a harness effort string:
 //              "workhorse" — the cost/quality sweet spot for producing work
 //              "judgment"  — stronger reasoning where the output gates other work
@@ -32,7 +33,7 @@
 // effort onto a base profile in that harness's native ladder — and MAY be a no-op
 // where the resolved model exposes no effort knob (e.g. Kimi's k2.7-code/k2.6).
 
-import { MODEL_TIER_ORDER } from "./model.js";
+import { MODEL_TIER_ORDER, normalizeTier } from "./model.js";
 
 export const NEUTRAL_EFFORTS = Object.freeze(["workhorse", "judgment", "peak"]);
 
@@ -43,9 +44,9 @@ export function assertNeutralProfile(profile) {
   if (!profile || typeof profile !== "object") {
     throw new Error(`neutral profile must be an object, got ${typeof profile}`);
   }
-  if (!MODEL_TIER_ORDER.includes(profile.tier)) {
+  if (!MODEL_TIER_ORDER.includes(normalizeTier(profile.tier))) {
     throw new Error(
-      `unknown neutral tier: ${JSON.stringify(profile.tier)} (expected one of ${MODEL_TIER_ORDER.join(", ")})`
+      `unknown neutral tier: ${JSON.stringify(profile.tier)} (expected one of ${MODEL_TIER_ORDER.join(", ")}, or a legacy alias)`
     );
   }
   if (profile.effort !== undefined && !NEUTRAL_EFFORTS.includes(profile.effort)) {
@@ -63,7 +64,7 @@ export function resolveNeutralProfile(profile, policy) {
   if (!policy || typeof policy.tiers !== "object" || typeof policy.applyEffort !== "function") {
     throw new Error("harness policy must be an object with { tiers, applyEffort }");
   }
-  const base = policy.tiers[profile.tier];
+  const base = policy.tiers[normalizeTier(profile.tier)];
   if (!base) throw new Error(`harness policy has no entry for tier: ${profile.tier}`);
   if (profile.effort === undefined) return { ...base };
   return policy.applyEffort({ ...base }, profile.effort);

@@ -6,6 +6,7 @@ import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { matchProviders } from "../src/match.js";
 import { modelForRole } from "../src/model.js";
+import { claudeModelForTier } from "../src/claude.js";
 import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 import { sliceMdSection } from "./test-support/md-section-helpers.js";
 
@@ -49,8 +50,8 @@ test("the lifecycle role resolves to muster-runner on a bare machine", async () 
   const caps = resolveCapabilities(catalog, BARE);
   assert.equal(caps.roles["lifecycle"].chosen.id, "muster-runner");
   assert.equal(caps.roles["lifecycle"].chosen.kind, "agent");
-  assert.equal(caps.roles["lifecycle"].model, "sonnet",
-    "lifecycle drives via delegation, not peak judgment — default sonnet tier");
+  assert.equal(caps.roles["lifecycle"].model, "core",
+    "lifecycle drives via delegation, not peak judgment — default core tier");
 });
 
 test("muster-runner is reachable via muster match (description search)", async () => {
@@ -73,7 +74,9 @@ test("frontmatter: name/description/tools/model present, model matches role poli
   const fm = parse(m[1]);
   assert.equal(fm.name, "muster-runner");
   assert.ok(fm.description && fm.description.length > 0);
-  assert.equal(fm.model, modelForRole("lifecycle"));
+  // Frontmatter `model:` is Claude-concrete (the harness consumes it); the
+  // conceptual tier resolves through the Claude adapter.
+  assert.equal(fm.model, claudeModelForTier(modelForRole("lifecycle")).model);
   const tools = String(fm.tools || "");
   for (const t of ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]) {
     assert.ok(tools.includes(t), `runner needs ${t} to build; tools: ${tools}`);

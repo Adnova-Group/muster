@@ -969,5 +969,14 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // values themselves, the docs-pin/no-emission decision, and all src/ logic
   // are unchanged; the paired §11.10/kimi-install.js/test updates sit outside
   // this surface. Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "3676fc7411d75f7f925c9f9f0a52d5ec3a16f576e63c1e85b3acb0777026e9cc");
+  //
+  // 2026-07-27 re-pin (semantic-tier rename): catalog/agents.manifest.json's 27
+  // entries moved from the legacy Claude-family tier vocabulary to muster's
+  // canonical conceptual ladder (haiku|sonnet|opus|fable -> scout|core|prime|
+  // apex, model.js LEGACY_TIER_ALIASES). Concrete adapter outputs are proven
+  // byte-identical by codex-policy/kimi tests; plugin agent frontmatter is
+  // untouched (it is Claude-concrete by design, emitted via claude.js).
+  // Deliberate surface change, not drift.
+  // (Also covers the router skill's crew[].model vocabulary update.)
+  assert.equal(hash.digest("hex"), "a4775efda3940954b0ac94519bceaea15471fb4ef574df88b9b62d6edfcfa3ba");
 });

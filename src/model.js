@@ -1,8 +1,23 @@
-// Pick the cheapest model that fits a role's work (quota-aware, atomic-style).
-// haiku: cheap/mechanical (locating, gathering). fable: peak judgment (the
-// tournament judge, architecture review) — the only spots worth its 2x cost.
-// sonnet: the default for implementation, review, authoring, scoring.
-const HAIKU = new Set(["code-navigation", "docs-research", "research"]);
+// Pick the cheapest model tier that fits a role's work (quota-aware, atomic-style).
+//
+// Tiers are muster's OWN conceptual capability ladder — harness-neutral, like the
+// semantic efforts (workhorse|judgment|peak in model-policy.js). Each harness
+// adapter maps a tier to its concrete model: Claude (claude.js) → haiku/sonnet/
+// opus/fable, Codex (codex.js) → gpt-5.6-terra/luna/sol, Kimi (kimi.js) →
+// kimi-for-coding/k3. The ladder:
+//   scout — cheap/mechanical recon: locating, gathering, read-only mapping.
+//   core  — the bounded default: implementation, review, authoring, scoring.
+//   prime — frontier judgment that gates other work.
+//   apex  — rare peak above prime (tournament judge, architecture review) — the
+//           only spots worth its 2x cost; degrades to prime by default.
+//
+// HISTORY: through 2026-07-26 the tiers were NAMED after Claude model families
+// (haiku|sonnet|opus|fable) — the Claude adapter was an identity assumption
+// rather than an adapter. The legacy names remain accepted EVERYWHERE tier input
+// enters (manifests, MUSTER_MAX_TIER, adapter lookups) via LEGACY_TIER_ALIASES,
+// and live on as the CLAUDE adapter's concrete values — a Claude word now, not a
+// muster word, exactly like "gpt-5.6-terra" is a Codex word.
+const SCOUT = new Set(["code-navigation", "docs-research", "research"]);
 // "judge" is an intentional conceptual role OUTSIDE the resolved ROLES enum
 // (roles.js): the tournament skill (plugin/skills/tournament/SKILL.md) dispatches
 // a judge agent to score candidates. "architecture-review" is a canonical ROLES
@@ -12,73 +27,97 @@ const HAIKU = new Set(["code-navigation", "docs-research", "research"]);
 // "advisor" is also an intentional conceptual role outside ROLES: dispatched by the
 // advisor escalate-up pattern (muster_advise) for hard architectural decisions —
 // peak-judgment like judge, intentionally out of the ROLES enum.
-// Dead names (strategist, architect) removed — never passed to
-// modelForRole; muster-strategist is a provider id, not a role.
-const FABLE = new Set(["judge", "architecture-review", "improve", "advisor"]);
+const APEX = new Set(["judge", "architecture-review", "improve", "advisor"]);
 
-// Ascending capability order. opus is included because it is a valid dispatch
-// tier via fallbackModelFor (fable degrades to opus) even though modelForRole
+// Ascending capability order. prime is included because it is a valid dispatch
+// tier via fallbackModelFor (apex degrades to prime) even though modelForRole
 // never emits it directly. Declared before capTier/modelForRole to avoid TDZ.
-export const MODEL_TIER_ORDER = ["haiku", "sonnet", "opus", "fable"];
+export const MODEL_TIER_ORDER = ["scout", "core", "prime", "apex"];
 
-// Caps a resolved tier to a maximum. If cap is a valid tier name from
-// MODEL_TIER_ORDER and tier sits strictly above cap in the order, returns cap;
-// otherwise returns tier unchanged. An invalid or unset cap is a no-op
-// (fail-open so a misconfigured env never breaks dispatch).
-export function capTier(tier, cap = process.env.MUSTER_MAX_TIER) {
-  if (!cap) return tier;
-  const capIdx = MODEL_TIER_ORDER.indexOf(cap);
-  if (capIdx === -1) return tier; // invalid cap name — ignore
-  const tierIdx = MODEL_TIER_ORDER.indexOf(tier);
-  if (tierIdx === -1) return tier; // unknown tier — ignore
-  return tierIdx > capIdx ? cap : tier;
+// The pre-rename tier vocabulary, accepted for backward compatibility at every
+// input boundary: existing Crew Manifests, agents.manifest.json entries authored
+// against the old names, MUSTER_MAX_TIER values in user environments, and
+// third-party callers. Normalization is one-way (legacy → canonical); nothing
+// emits the legacy names except the Claude adapter, where they are concrete
+// model values rather than tiers.
+export const LEGACY_TIER_ALIASES = Object.freeze({
+  haiku: "scout",
+  sonnet: "core",
+  opus: "prime",
+  fable: "apex",
+});
+
+// Canonicalize a tier name: legacy aliases map to their canonical tier, canonical
+// names pass through, anything unknown passes through unchanged (callers that
+// validate do so against MODEL_TIER_ORDER after normalizing; fail-open callers
+// like capTier just ignore unknowns).
+export function normalizeTier(tier) {
+  return LEGACY_TIER_ALIASES[tier] ?? tier;
 }
 
-// Fable can be disabled platform-wide (Anthropic has done so), and a dispatch on
-// a disabled tier is rejected — which historically choked the run because the
-// only fallback was a prose instruction the orchestrator had to catch. So fable
-// degrades to opus deterministically and BY DEFAULT, here at the emission layer:
-// capabilities/crew/signals never emit fable, so the orchestrator never dispatches
-// it. Opt back in with MUSTER_ENABLE_FABLE once the tier is available again.
-function fableEnabled() {
+// Caps a resolved tier to a maximum. Both the tier and the cap accept legacy
+// names. If cap is a valid tier and tier sits strictly above it, returns cap
+// (canonical); otherwise returns the (canonical) tier unchanged. An invalid or
+// unset cap is a no-op (fail-open so a misconfigured env never breaks dispatch).
+export function capTier(tier, cap = process.env.MUSTER_MAX_TIER) {
+  const canonicalTier = normalizeTier(tier);
+  if (!cap) return canonicalTier;
+  const capIdx = MODEL_TIER_ORDER.indexOf(normalizeTier(cap));
+  if (capIdx === -1) return canonicalTier; // invalid cap name — ignore
+  const tierIdx = MODEL_TIER_ORDER.indexOf(canonicalTier);
+  if (tierIdx === -1) return canonicalTier; // unknown tier — ignore
+  return tierIdx > capIdx ? MODEL_TIER_ORDER[capIdx] : canonicalTier;
+}
+
+// The apex tier can be disabled platform-wide (Anthropic has done so for Fable,
+// its Claude mapping), and a dispatch on a disabled tier is rejected — which
+// historically choked the run because the only fallback was a prose instruction
+// the orchestrator had to catch. So apex degrades to prime deterministically and
+// BY DEFAULT, here at the emission layer: capabilities/crew/signals never emit
+// apex, so the orchestrator never dispatches it. Opt back in with
+// MUSTER_ENABLE_APEX (legacy env MUSTER_ENABLE_FABLE still honored) once the
+// tier is available again.
+function apexEnabled() {
   // Robust against MCPB boolean user_config, which substitutes as the string
   // "false"/"true": only "1"/"true"-ish values enable; "0"/"false"/"" do not.
-  const v = process.env.MUSTER_ENABLE_FABLE;
+  const v = process.env.MUSTER_ENABLE_APEX ?? process.env.MUSTER_ENABLE_FABLE;
   return !!v && v !== "0" && v.toLowerCase() !== "false";
 }
 
 export function modelForRole(role) {
-  if (HAIKU.has(role)) return capTier("haiku");
-  if (FABLE.has(role)) return capTier(fableEnabled() ? "fable" : fallbackModelFor("fable"));
-  return capTier("sonnet");
+  if (SCOUT.has(role)) return capTier("scout");
+  if (APEX.has(role)) return capTier(apexEnabled() ? "apex" : fallbackModelFor("apex"));
+  return capTier("core");
 }
 
-// Fable degrades per this map — never fail the task over a model tier, and never
+// Apex degrades per this map — never fail the task over a model tier, and never
 // silently inherit the orchestrator's model. Tiers without an entry are their own
 // fallback. Wired into modelForRole (above) and used by the orchestrator's
-// dispatch-retry path when an opted-in fable dispatch is still rejected.
-const FALLBACK = { fable: "opus" };
+// dispatch-retry path when an opted-in apex dispatch is still rejected.
+const FALLBACK = { apex: "prime" };
 
 export function fallbackModelFor(model) {
-  return FALLBACK[model] || model;
+  const canonical = normalizeTier(model);
+  return FALLBACK[canonical] || canonical;
 }
 
-// Floors a resolved tier at sonnet. An agent never pins below sonnet — haiku-
-// tier (mechanical) roles ride the orchestrator's override instead.
-// Returns sonnet if tier is undefined or below sonnet in MODEL_TIER_ORDER.
-const SONNET_IDX = MODEL_TIER_ORDER.indexOf("sonnet");
-export function floorAtSonnet(tier) {
-  if (tier === undefined) return MODEL_TIER_ORDER[SONNET_IDX];
-  return MODEL_TIER_ORDER.indexOf(tier) >= SONNET_IDX ? tier : MODEL_TIER_ORDER[SONNET_IDX];
+// Floors a resolved tier at core. An agent never pins below core — scout-tier
+// (mechanical) roles ride the orchestrator's override instead. Returns core if
+// tier is undefined or below core in MODEL_TIER_ORDER.
+const CORE_IDX = MODEL_TIER_ORDER.indexOf("core");
+export function floorAtCore(tier) {
+  if (tier === undefined) return MODEL_TIER_ORDER[CORE_IDX];
+  const canonical = normalizeTier(tier);
+  return MODEL_TIER_ORDER.indexOf(canonical) >= CORE_IDX ? canonical : MODEL_TIER_ORDER[CORE_IDX];
 }
 
-// Returns the highest-capability tier from a list of model names, according to
-// MODEL_TIER_ORDER. Unknown names are silently ignored. Returns undefined when
-// the list is empty or contains no known tiers.
+// Returns the highest-capability tier from a list of tier names (legacy names
+// accepted), according to MODEL_TIER_ORDER. Unknown names are silently ignored.
+// Returns undefined when the list is empty or contains no known tiers.
 export function maxTier(models) {
   let best = -1;
   for (const m of models) {
-    const idx = MODEL_TIER_ORDER.indexOf(m);
+    const idx = MODEL_TIER_ORDER.indexOf(normalizeTier(m));
     if (idx > best) best = idx;
   }
   return best === -1 ? undefined : MODEL_TIER_ORDER[best];

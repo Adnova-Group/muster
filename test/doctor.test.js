@@ -705,3 +705,23 @@ describe("runDoctor version-parity check", () => {
     assert.match(check.detail, /2\.0\.0/, "detail must include plugin.json version");
   });
 });
+
+// ---------- kimi lane binding ----------
+
+describe("runDoctor kimi-lane-binding check", () => {
+  it("reports the ACTIVE two-lane bind from the same derivation the run loop uses", async () => {
+    const fakeHome = await mkdtemp(join(tmpdir(), "muster-doctor-kimi-home-"));
+    const result = await runDoctor({ root: repoRoot, home: fakeHome, exec: noNetworkExec });
+    const check = result.checks.find(c => c.name === "kimi-lane-binding");
+    assert.ok(check, "kimi-lane-binding check must exist");
+    assert.equal(check.ok, true, `not ok: ${check.detail}`);
+    // both lanes, with the tier fold named
+    assert.match(check.detail, /primary=kimi-code\/k3 \(opus, fable\)/);
+    assert.match(check.detail, /secondary=kimi-code\/kimi-for-coding \(haiku, sonnet\)/);
+    // the per-process env pair that engages the stamped model_preference lanes
+    assert.match(check.detail, /KIMI_CODE_EXPERIMENTAL_FLAG=1/);
+    assert.match(check.detail, /KIMI_SECONDARY_MODEL=kimi-code\/kimi-for-coding/);
+    // and WHERE the bind is applied (the kimi -p run loop)
+    assert.match(check.detail, /kimiGoalInvocation/);
+  });
+});

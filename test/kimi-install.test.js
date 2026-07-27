@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runKimiInstall, runKimiUninstall, probeKimiModels, stampModelPreference, stampSkillName, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS, KIMI_PERMISSION_RULES, KIMI_RULES_MARKER_BEGIN, KIMI_RULES_MARKER_END, renderPermissionRulesBlock, mergePermissionRules, stripPermissionRules } from "../src/kimi-install.js";
 import { readInstalledKimi } from "../src/harness.js";
-import { KIMI_LANES, kimiModelPreferenceForTier, kimiPreferenceForAgentId } from "../src/kimi.js";
+import { KIMI_LANES, kimiLaneEnv, kimiModelPreferenceForTier, kimiPreferenceForAgentId } from "../src/kimi.js";
 
 function tmp() { return mkdtempSync(join(tmpdir(), "muster-kimi-install-")); }
 function write(p, s) { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); }
@@ -182,10 +182,16 @@ test("runKimiInstall: stamps each agent's lane and reports the required config",
     assert.deepEqual(r.modelPreference.unstamped, []);
     assert.equal(r.modelPreference.requiredConfig.default_model, KIMI_LANES.primary);
     assert.match(r.modelPreference.requiredConfig.toml, /\[secondary_model\]/);
-    // the preferred route mutates nothing shared: per-process env vars
+    // the preferred route mutates nothing shared: per-process env vars, from the
+    // SAME single derivation the live `kimi -p` run loop binds with
+    assert.deepEqual(r.modelPreference.requiredConfig.env, kimiLaneEnv());
     assert.equal(r.modelPreference.requiredConfig.env.KIMI_SECONDARY_MODEL, KIMI_LANES.secondary);
     assert.equal(r.modelPreference.requiredConfig.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
     assert.match(r.modelPreference.note, /experimental/i);
+    // the install output reports the ACTIVE lane binding, not just the delta:
+    // the run loop sets the pair live, per process.
+    assert.match(r.modelPreference.note, /kimiGoalInvocation/);
+    assert.match(r.modelPreference.note, /KIMI_SECONDARY_MODEL/);
 
     const root = join(home, ".kimi-code");
     assert.match(readFileSync(join(root, "agents", "muster-investigator.md"), "utf8"), /^model_preference: secondary$/m);

@@ -1,4 +1,4 @@
-import { KIMI_LANES, kimiPreferenceForAgentId } from "./kimi.js";
+import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Kimi-native dispatch: AgentSwarm (waves) + /goal (the run loop)
@@ -151,9 +151,11 @@ export function interpretKimiGoalExit(code) {
 // spent on the harness's own loop instead of on a file muster re-reads.
 //
 // The env pair is what binds the model lanes (src/kimi-install.js): per-process,
-// so nothing in the user's shared config.toml is touched. Note the flag is also
-// what selects the v2 engine under `kimi -p`, which is what makes
-// model_preference bite at all.
+// so nothing in the user's shared config.toml is touched. It comes from
+// kimiLaneEnv() -- the single derivation in src/kimi.js -- so this run loop,
+// the install report, and `muster doctor` can never disagree on the bind.
+// Note the flag is also what selects the v2 engine under `kimi -p`, which is
+// what makes model_preference bite at all.
 export function kimiGoalInvocation({ objective, primaryModel = KIMI_LANES.primary, secondaryModel = KIMI_LANES.secondary, streamJson = false } = {}) {
   if (typeof objective !== "string" || !objective.trim()) throw new Error("kimiGoalInvocation: objective is required");
   if (objective.length > KIMI_GOAL_MAX_OBJECTIVE) {
@@ -163,8 +165,9 @@ export function kimiGoalInvocation({ objective, primaryModel = KIMI_LANES.primar
   return {
     argv: ["-p", `/goal ${objective}`, ...(streamJson ? ["--output-format", "stream-json"] : []), "-m", primaryModel],
     env: {
-      // Selects the v2 engine AND enables the secondary-model experiment.
-      KIMI_CODE_EXPERIMENTAL_FLAG: "1",
+      // Selects the v2 engine AND enables the secondary-model experiment; the
+      // lane model follows the (rarely overridden) secondaryModel argument.
+      ...kimiLaneEnv(),
       KIMI_SECONDARY_MODEL: secondaryModel
     },
     exitCodes: KIMI_GOAL_EXIT_CODES

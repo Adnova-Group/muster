@@ -10,7 +10,7 @@ import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, interpretKimiGoalExit, resolveKimiWaveDispatch,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
-import { KIMI_LANES } from "../src/kimi.js";
+import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
 
 // --- AgentSwarm -------------------------------------------------------------
 
@@ -123,6 +123,18 @@ test("kimiGoalInvocation: builds argv + the per-process lane env", () => {
   // the env pair binds the lanes without touching the user's config.toml
   assert.equal(inv.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
   assert.equal(inv.env.KIMI_SECONDARY_MODEL, KIMI_LANES.secondary);
+});
+
+test("kimiGoalInvocation: the env pair IS the shared kimiLaneEnv() derivation", () => {
+  // One source of truth (src/kimi.js): the run loop, the install report, and
+  // `muster doctor` can never disagree on the bind.
+  assert.deepEqual(kimiGoalInvocation({ objective: "Ship the lane bind" }).env, kimiLaneEnv());
+});
+
+test("kimiGoalInvocation: a secondaryModel override flows into the env, the flag untouched", () => {
+  const inv = kimiGoalInvocation({ objective: "x", secondaryModel: "kimi-code/k3-256k" });
+  assert.equal(inv.env.KIMI_SECONDARY_MODEL, "kimi-code/k3-256k");
+  assert.equal(inv.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
 });
 
 test("kimiGoalInvocation: stream-json is opt-in, and the /goal prefix is never doubled", () => {

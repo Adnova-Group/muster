@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { codexFallbackSkillId } from "../src/codex-catalog.js";
+import { createAgentWatch, cancelOwnedProcessGroup } from "../src/codex-agent-watch.js";
 import { execFile, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 test("packaged Codex workflows use the bundled CLI and Codex-native mode names", async () => {
@@ -112,7 +113,75 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
   assert.match(runtimeSource, /makeGitShaVerifier/);
 });
 
-test("generated Codex orchestration surfaces enforce the bounded, liveness-aware agent watch invariant", async () => {
+test("Codex agent watch uses absolute deadlines and deterministic owned-process cleanup", async () => {
+  let now = 1_000;
+  const watch = createAgentWatch({ clock: () => now, deadlineAt: 2_000 });
+  watch.receipt({
+    type: "tool-start",
+    process_group_id: 42,
+    deadline_at: 2_000
+  });
+
+  for (let heartbeat = 1; heartbeat <= 6; heartbeat += 1) {
+    now += 100;
+    assert.deepEqual(
+      watch.tick({ threadState: "running" }),
+      { action: "continue", reason: "running-before-deadline", heartbeat },
+      `running worker must survive silent heartbeat ${heartbeat}`
+    );
+  }
+
+  watch.receipt({ type: "tool-alive", process_group_id: 42 });
+  watch.receipt({ type: "message", text: "mailbox chatter is not liveness" });
+  now = 2_000;
+  assert.deepEqual(
+    watch.tick({ threadState: "running" }),
+    { action: "interrupt", reason: "deadline-exhausted", heartbeat: 7, processGroupId: 42 }
+  );
+
+  for (const threadState of ["idle", "failed"]) {
+    now = 1_000;
+    const idleWatch = createAgentWatch({ clock: () => now, deadlineAt: 9_000 });
+    assert.equal(idleWatch.tick({ threadState }).action, "continue");
+    assert.equal(idleWatch.tick({ threadState }).action, "continue");
+    assert.deepEqual(
+      idleWatch.tick({ threadState }),
+      { action: "interrupt", reason: "heartbeat-exhausted", heartbeat: 3 }
+    );
+  }
+
+  const calls = [];
+  await cancelOwnedProcessGroup({
+    processGroupId: 42,
+    reason: "deadline-exhausted",
+    interruptWorker: async reason => calls.push(["interrupt", reason]),
+    terminateProcessGroup: async processGroupId => calls.push(["terminate", processGroupId]),
+    waitForExit: async processGroupId => calls.push(["wait", processGroupId]),
+    recordCleanupReceipt: async receipt => {
+      calls.push(["receipt", receipt]);
+      return receipt;
+    }
+  });
+  assert.deepEqual(calls, [
+    ["interrupt", "deadline-exhausted"],
+    ["terminate", 42],
+    ["wait", 42],
+    ["receipt", { type: "tool-stop", process_group_id: 42, reason: "deadline-exhausted", cleanup: "complete" }]
+  ]);
+  await assert.rejects(
+    cancelOwnedProcessGroup({
+      processGroupId: 42,
+      reason: "deadline-exhausted",
+      interruptWorker: async () => {},
+      terminateProcessGroup: async () => {},
+      waitForExit: async () => {},
+      recordCleanupReceipt: async () => undefined
+    }),
+    /cleanup receipt required/
+  );
+});
+
+test("generated Codex orchestration surfaces enforce the deadline-based, liveness-aware agent watch invariant", async () => {
   const surfaces = new Map([
     ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
     ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
@@ -122,20 +191,11 @@ test("generated Codex orchestration surfaces enforce the bounded, liveness-aware
   // Pin re-derived for the codex-agent-watch-review-budget item (2026-07-19 dogfood: a healthy
   // gpt-5.6-sol/high muster-reviewer was interrupted mid-review by the flat 3-heartbeat kill --
   // review-class reasoning routinely exceeds 3 silent minutes with zero mailbox receipts). The
-  // watch is now liveness-aware (a `list_agents`-confirmed in-turn worker is extended, not killed)
-  // with per-class ceilings bounding the extension: 10 silent heartbeats for review/strategy-class
-  // workers, 6 for mechanical/implementation lanes. Genuinely idle/completed/failed workers still
-  // die at 3 heartbeats exactly as before.
-  //
-  // Pin re-derived again for the exhaustion-status-producer item: `wsh-security-auditor` is pinned
-  // to sol/XHIGH (DeepSWE mean ~13.3min/task) -- slower than the sol/high figure the 10-heartbeat
-  // ceiling above was sized to -- so it now carries its own explicit 14-heartbeat ceiling instead
-  // of sharing the review/strategy-class group's 10. The liveness re-check is also now explicit:
-  // re-run at EVERY silent heartbeat between 3 and the ceiling, not once at heartbeat 3. On
-  // exhaustion, the watch now also records `{reviewer: <name>, status: "exhausted"}` in the tally
-  // input for the interrupted worker (src/review.js's WORKER_ABSENCE_STATUSES contract) instead of
-  // leaving the tally with no vocabulary for the kill.
-  const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "14 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "sol/XHIGH", "DeepSWE sol/high", "liveness checkpoint"];
+  // Mailbox silence is now reconciliation-only. Structured tool receipts expose the subprocess
+  // liveness that wait_agent/list_agents cannot: tool-start establishes an immutable absolute
+  // deadline and owned process group, tool-alive reports progress without moving that deadline,
+  // and tool-stop proves cleanup. Genuinely idle/failed workers still die at heartbeat 3.
+  const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "mailbox silence is reconciliation-only", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "tool-start", "tool-alive", "tool-stop", "deadline_at", "deadline-exhausted", "process group", "cleanup receipt", "liveness checkpoint"];
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
     for (const marker of watchMarkers) {
@@ -143,21 +203,9 @@ test("generated Codex orchestration surfaces enforce the bounded, liveness-aware
     }
     assert.ok(text.indexOf("collaboration.wait_agent") < text.indexOf("collaboration.list_agents"), `${name} must wait before its first reconciliation poll`);
     assert.ok(text.indexOf("mailbox receipts first") < text.indexOf("collaboration.list_agents"), `${name} must process the wake receipt before reconciling`);
-    assert.match(
-      text,
-      /muster-reviewer`, `wsh-code-reviewer`, `muster-strategist`\) get a hard ceiling of 10 consecutive silent heartbeats/,
-      `${name} must bind the 10-heartbeat ceiling to the named review\\/strategy-class workers`
-    );
-    assert.match(
-      text,
-      /wsh-security-auditor` is pinned to sol\/XHIGH[\s\S]{0,200}?14 consecutive silent heartbeats/,
-      `${name} must bind the 14-heartbeat ceiling to wsh-security-auditor`
-    );
-    assert.match(
-      text,
-      /Mechanical\/implementation workers[\s\S]{0,200}?6 consecutive silent heartbeats/,
-      `${name} must bind the 6-heartbeat ceiling to mechanical\\/implementation workers`
-    );
+    assert.doesNotMatch(text, /(?:6|10|14) consecutive silent heartbeats/, `${name} must not kill running workers by receipt-silent count`);
+    assert.match(text, /deadline_at[\s\S]{0,300}?must not move/, `${name} must keep the absolute deadline immutable`);
+    assert.match(text, /terminate[\s\S]{0,300}?process group[\s\S]{0,300}?wait for exit[\s\S]{0,300}?cleanup receipt/i, `${name} must enforce ordered process cleanup`);
   }
 });
 

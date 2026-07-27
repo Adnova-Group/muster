@@ -168,7 +168,7 @@ recorded split-state hazards, and the code paths that survive them are live-veri
 Implementation-grade consequence [INFERRED from the two documented CODEX_HOME defaults]: on
 a Windows+WSL machine there are two physical `CODEX_HOME`s unless the user applies the
 documented bridge. Any muster guarantee phrased as "the active Codex CLI and Desktop global
-config" (e.g. the re-opened thread-limits item) must therefore either write both homes or
+config" (including the managed thread-limit floor) must therefore either write both homes or
 detect the bridge, and doctor's split-state reporting is the right surface for the
 undecidable cases [src: backlog] [src: retriage].
 
@@ -196,21 +196,22 @@ Thread limits are global `[agents]` settings in this same shared file [DOCUMENTE
 install and records the owned change; `restoreCodexThreadLimits` runs on the last
 managed-scope uninstall and preserves unrelated settings and later user raises:
 
-- `agents.max_threads`: concurrent open agent thread cap, defaults to 6 when unset [src: subagents].
+- `agents.max_threads`: legacy v1 name for the concurrent thread cap, default 6; Codex
+  0.145.0 names `agents.max_concurrent_threads_per_session` as the v2 key, with a default
+  of 4 minus the primary thread [src: subagents].
 - `agents.max_depth`: spawn nesting depth, defaults to 1 (root spawns children; children
   cannot spawn deeper), with an explicit doc warning that raising it multiplies token/latency
   cost [src: subagents].
-- Also `agents.job_max_runtime_seconds` (CSV fan-out worker timeout, default 1800s per call)
-  and `agents.interrupt_message` (default true) [src: subagents].
+- `agents.job_max_runtime_seconds` remains in the binary's configuration struct, but its
+  CSV fan-out consumer was removed in 0.145.0; treat the 1800-second behavior as historical.
+  `agents.interrupt_message` still defaults to true [src: subagents].
 
-So the target state muster's item names (max_threads >= 12, max_depth >= 2) is a documented,
-supported write to the shared `config.toml` — one write per physical `CODEX_HOME` covers
-desktop, CLI, and IDE simultaneously, and the only multiplicity comes from the WSL/Windows
-dual-home case in section 4 [DOCUMENTED for the keys and sharing; INFERRED for the coverage
-claim] [src: subagents] [src: mcp] [src: backlog]. Current mainline muster writes no
-`config.toml` at all (`src/codex-install.js` has no configToml handling — verified by grep
-in the retriage), which is why the item was re-opened [LIVE-VERIFIED-DECISION-RECORD]
-[src: retriage].
+Muster's managed `max_threads >= 12`, `max_depth >= 2` floor is a supported write to the
+shared `config.toml`. One write per physical `CODEX_HOME` reaches desktop, CLI, and IDE;
+the WSL/Windows dual-home case in section 4 is the remaining multiplicity. Install and
+uninstall own that write through the recorded ensure/restore contract described above
+[DOCUMENTED for the keys and sharing; CODE-VERIFIED for Muster's ownership behavior]
+[src: subagents] [src: mcp] [src: codex-install].
 
 Model selection lives in the same file (`model = "gpt-5.6"`, `model_reasoning_effort`),
 with the GPT-5.6 family split into Sol (deep reasoning), Terra (balanced default), and Luna
@@ -356,7 +357,7 @@ Top three for muster's purposes: (1) the repo/personal marketplace + plugin bund
 generated artifact carries skills, MCP tools, and hooks to every local client), (2) the
 custom-agent TOML directories (the 27-profile surface, shared verbatim), (3) the shared
 `config.toml` (thread limits, model tiering, plugin/MCP policy — the write target for the
-re-opened thread-limits item) [src: build-codex] [src: subagents] [src: backlog].
+managed thread-limit floor) [src: build-codex] [src: subagents] [src: codex-install].
 
 ## 11. Desktop-vs-CLI divergence table
 

@@ -137,8 +137,10 @@ test("current Codex docs match live model policy, installer, marketplace, and di
 
   for (const [path, text] of [["docs/research/codex-cli.md", cli], ["docs/research/codex-desktop.md", desktop]]) {
     assert.match(text, /ensureCodexThreadLimits[\s\S]{0,260}restoreCodexThreadLimits/);
-    assert.doesNotMatch(text, /nothing in muster currently writes[^.]+max_threads/i, `${path} must not present the retired thread-limit gap as current`);
+    assert.doesNotMatch(text, /nothing in muster currently writes[^.]+max_threads|current mainline muster writes no\s+`config\.toml`|re-opened thread-limits/i, `${path} must not present the retired thread-limit gap as current`);
   }
+  assert.match(desktop, /max_threads[\s\S]{0,160}v1[\s\S]{0,80}6[\s\S]{0,120}v2[\s\S]{0,80}4/i);
+  assert.match(desktop, /job_max_runtime_seconds[\s\S]{0,180}(?:removed|historical)/i);
   assert.match(desktop, /source:[\s\S]{0,80}path:[\s\S]{0,40}\.\/\.agents\/plugins\/plugin/);
   assert.doesNotMatch(desktop, /entry uses `source:[\s\S]{0,100}path:\s*\n?\s*["`]?\.\x2fplugin/i);
   assert.match(cli, /resolveCodexMultiAgentVersion[\s\S]{0,220}(?:v1[\s\S]{0,80}v2|v2[\s\S]{0,80}v1)/);

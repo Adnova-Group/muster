@@ -183,7 +183,7 @@ construct stays load-bearing.
 
 | muster construct | native replacement | win | risk | effort |
 |---|---|---|---|---|
-| ChatGPT Work lane | **none needed** — ChatGPT Work = Codex substrate; the Codex lane covers it [src: gw-verdict] | zero new porting for the product surface | write-only Workspace-agents trigger today [src: gw-verdict] | done |
+| ChatGPT Work lane | **unverified** — Work and Codex are distinct experiences with separate history/access controls [src: gw-verdict] | a Work-mode load probe can determine whether any Codex artifacts carry over | AGENTS.md/skills/plugins/hooks/MCP/config inheritance is undocumented [src: gw-verdict] | probe |
 | inner per-turn agent/tool/handoff loop | `Runner.run` loop + handoffs + agents-as-tools + per-agent `model` [src: gw-sdk] | muster need not hand-roll the inner loop on an SDK lane | it's a build, not an augmentation [src: gw-verdict] | keep muster loop (spike) |
 | wave-barrier / review-gate / tournament | **no native equivalent** — SDK has no plan/task-board/wave primitive [src: gw-sdk] | — | muster MUST keep its dependency-ordered wave loop + gates on top [src: gw-sdk] | keep |
 | action fence (DENY) | `needs_approval` predicates + `RunState.reject()`; MCP `require_approval` — real blocking [src: gw-hitl] | genuine hard deny (opt-in), unlike Codex hooks | hosted shell/tools cannot be gated locally; nothing gates by default [src: gw-hitl] | M (lane) |
@@ -476,7 +476,7 @@ The next wave in this ledger, already shipped since Part B's tables were written
 - gw-sdk: docs/research/gpt-work.md §2, §4 — Agents SDK Runner loop + handoffs + agents-as-tools + per-agent model; no plan/task-board/wave primitive.
 - gw-hitl: docs/research/gpt-work.md §2.4 — default approval-free; needs_approval + RunState.reject() real blocking; MCP require_approval; hosted tools ungateable locally; Session backends.
 - gw-sandbox: docs/research/gpt-work.md §6 — Sandbox agents beta; Manifest + capabilities + resumable.
-- gw-verdict: docs/research/gpt-work.md §1.1, §9 — ChatGPT Work = Codex substrate; Agents SDK is a build (runner lane), not an augmentation.
+- gw-verdict: docs/research/gpt-work.md §1.1, §9 — ChatGPT Work compatibility is unverified pending a Work-mode load probe; Agents SDK is a build (runner lane), not an augmentation.
 - hermes-loop: docs/research/hermes.md §2, §4 — AIAgent loop; protected plan skill + /plan; /goal completion contracts.
 - hermes-approval: docs/research/hermes.md §3 — dangerous-pattern interception; approvals.deny globs survive yolo (hard block); permissive default.
 - hermes-hooks: docs/research/hermes.md §7 — pre_tool_call {"action":"block"} veto; accepts Claude Code block-JSON verbatim; UserPromptSubmit→pre_llm_call.

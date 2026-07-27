@@ -8,6 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { CODEX_COUNTS } from "../src/codex.js";
 import { scoreHumanness } from "../src/humanizer-score.js";
 
 const root = new URL("../", import.meta.url);
@@ -149,6 +150,7 @@ test("harness documentation routes and support claims are explicit", async () =>
 
 test("Codex guide documents current install, trust, audit, and safety limits", async () => {
   const codex = await read("website/guides/codex.md");
+  const totalSkills = CODEX_COUNTS.publicSkills + CODEX_COUNTS.internalSkills;
   for (const phrase of [
     /per hook definition/i,
     /dry-run/i,
@@ -160,6 +162,11 @@ test("Codex guide documents current install, trust, audit, and safety limits", a
   ]) {
     assert.match(codex, phrase);
   }
+  assert.match(codex, new RegExp(`Skills \\| ${totalSkills} total`));
+  assert.match(codex, new RegExp(`${CODEX_COUNTS.publicSkills} public`));
+  assert.match(codex, /system quality[\s\S]{0,180}architecture[\s\S]{0,100}tech debt[\s\S]{0,100}simplification[\s\S]{0,100}readability/i);
+  assert.match(codex, /coverage[\s\S]{0,120}test gaps/i);
+  assert.match(codex, /security[\s\S]{0,120}(?:injection|secrets|unsafe IO|trust boundaries)/i);
   assert.doesNotMatch(codex, /All eight modes/);
   assert.equal(scoreHumanness(codex).passing, true, "website/guides/codex.md must pass humanizer score");
 });

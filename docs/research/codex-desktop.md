@@ -101,8 +101,9 @@ This is precisely the topology muster's installer targets [LIVE-VERIFIED-DECISIO
 - `scripts/build-codex.mjs` generates the full plugin (skills, commands, agents, bundled
   CLI + MCP runtime) into `<distributionRoot>/.agents/plugins/` — the documented repo
   marketplace root — writing `.codex-plugin/plugin.json` and `.mcp.json` in the documented
-  shapes, and a `marketplace.json` whose entry uses `source: {source: "local", path:
-  "./plugin"}` with `policy.installation`/`policy.authentication`/`category` exactly as the
+  shapes, and a `marketplace.json` whose published entry uses `source: {source: "local",
+  path: "./.agents/plugins/plugin"}` with
+  `policy.installation`/`policy.authentication`/`category` exactly as the
   marketplace metadata spec requires [src: build-codex] [src: build-plugins].
 - `src/codex-install.js` registers it with the live CLI: `codex plugin marketplace add
   <repoRoot>` then `codex plugin add muster@muster`, with rollback on failure
@@ -190,8 +191,10 @@ Desktop, CLI, and IDE extension read the same configuration layers [DOCUMENTED]:
   admin-enforced `requirements.toml` constraints, including `marketplaces.allowed_sources`
   restrictions and `features.plugin_sharing = false` [src: cfg-basic] [src: cfg-ref].
 
-Thread limits — the keys behind muster's re-opened `codex-thread-limits-enforcement` item —
-are global `[agents]` settings in this same shared file [DOCUMENTED] [src: subagents]:
+Thread limits are global `[agents]` settings in this same shared file [DOCUMENTED]
+[src: subagents]. Muster now manages a safe floor through `ensureCodexThreadLimits` during
+install and records the owned change; `restoreCodexThreadLimits` runs on the last
+managed-scope uninstall and preserves unrelated settings and later user raises:
 
 - `agents.max_threads`: concurrent open agent thread cap, defaults to 6 when unset [src: subagents].
 - `agents.max_depth`: spawn nesting depth, defaults to 1 (root spawns children; children

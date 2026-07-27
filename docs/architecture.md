@@ -59,7 +59,7 @@ The model comes back as `roles[<role>].model` from `muster capabilities`, and th
 
 Apex is disabled by default, so `modelForRole` (`src/model.js`) degrades it to prime deterministically. Set `MUSTER_ENABLE_APEX=1` to enable it when the harness can serve it. `MUSTER_MAX_TIER` caps the highest conceptual tier Muster will use; `core` is the budget setting and `prime` excludes apex.
 
-`catalog/agents.manifest.json` is the shared harness-neutral agent policy. Each profile declares a conceptual `tier`, optional `effort`, and `readOnly` boundary without naming a concrete provider model. Claude and Codex adapters translate that policy for their harness. Codex currently maps bounded mechanical work to Terra/high, routine implementation to Sol/medium, and security to Sol/high. The generator and `check:codex` validate the concrete TOML against the neutral manifest.
+`catalog/agents.manifest.json` is the shared harness-neutral agent policy. Each profile declares a conceptual `tier`, optional `effort`, and `readOnly` boundary without naming a concrete provider model. Claude and Codex adapters translate that policy for their harness. Codex currently maps bounded implementation work to `gpt-5.6-luna`/xhigh, read-only locator work to `gpt-5.6-terra`/high, ordinary review and strategy to `gpt-5.6-sol`/high, and security to `gpt-5.6-sol`/xhigh through its `peak` effort override. The generator and `check:codex` validate the concrete TOML against the neutral manifest.
 
 <!-- legacy-tier-compat:start -->
 Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.

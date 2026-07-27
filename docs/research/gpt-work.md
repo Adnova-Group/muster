@@ -19,7 +19,7 @@ Eight distinct things plausibly answer to the banner. They are NOT one product.
 
 | # | Candidate | What it is | Status (2026-07) | Muster harness target? |
 |---|---|---|---|---|
-| 1 | **ChatGPT Work** | Agent mode in ChatGPT (web/mobile/desktop) with "Codex technology built-in"; produces sheets/slides/docs/Sites; runs hours-long tasks [src: chatgpt-work] | GA rollout since 2026-07-09 [src: chatgpt-work] | NO as a separate target — it is the Codex substrate in a deliverables skin (§1.1) [INFERRED] |
+| 1 | **ChatGPT Work** | Agent mode in ChatGPT (web/mobile/desktop) for research and finished deliverables [src: work-codex-help] | GA rollout since 2026-07-09 [src: chatgpt-work] | UNVERIFIED — distinct from the Codex experience; requires a Work-mode load probe (§1.1) |
 | 2 | **Workspace agents in ChatGPT** | Shared, Codex-powered cloud agents for teams; evolution of GPTs; Slack + schedule + API trigger [src: workspace-agents] | Research preview since 2026-04-22 [src: workspace-agents] | NOT YET — write-only trigger API, no run retrieval (§1.2) [src: workspace-trigger] |
 | 3 | **OpenAI Agents SDK** (Python/JS) | Code-first agent runtime: agent loop, handoffs, guardrails, sessions, MCP, sandbox agents [src: sdk-index] | Actively developed; the recommended code path [src: agentkit] | YES — the muster-relevant execution model; but it is a framework to build ON, not an installed harness to augment (§9) [INFERRED] |
 | 4 | **Responses API** | The API primitive under everything; own-the-loop tool calling, hosted tools, conversations [src: platform-agents] | Core, current [src: platform-agents] | Substrate, not a harness [INFERRED] |
@@ -28,12 +28,14 @@ Eight distinct things plausibly answer to the banner. They are NOT one product.
 | 7 | **Assistants API** | The old threads/runs/steps agent API | Filed under "Legacy APIs" with a migration guide to Responses [src: platform-agents] | NO — legacy [src: platform-agents] |
 | 8 | **Apps / plugins / connectors in ChatGPT** | MCP-based integration fabric (apps) packaged into a Plugins Directory as of 2026-07-09 [src: apps-help] | Current | Integration fabric, not a harness; but a distribution channel (§7) [INFERRED] |
 
-The one-line resolution: **"GPT Work" resolves to ChatGPT Work, which is Codex wearing a
-non-developer skin. The independently interesting execution model under the banner is the
-OpenAI Agents SDK. Everything else is either substrate, legacy, or an end-user feature.**
-[INFERRED from the sources cited above; the merge evidence is §1.1] [src: chatgpt-work]
+The one-line resolution: **"GPT Work" resolves to ChatGPT Work, a distinct ChatGPT
+experience that shares an agentic usage pool with Codex but has separate history and
+access controls. Muster compatibility is unverified until a Work-mode load probe checks
+the actual instruction, plugin, hook, MCP, and config surfaces.** The independently
+interesting programmable execution model under the banner is the OpenAI Agents SDK.
+[src: work-codex-help]
 
-### 1.1 ChatGPT Work is Codex — the load-bearing disambiguation fact
+### 1.1 ChatGPT Work and Codex share usage, not a proven extension surface
 
 - ChatGPT Work is "an agent that can take action across your apps and files, stay with a
   project for hours if needed, and turn a goal into finished work," launched 2026-07-09
@@ -44,8 +46,8 @@ OpenAI Agents SDK. Everything else is either substrate, legacy, or an end-user f
 - "Starting today, the Codex app is merging with the new ChatGPT desktop app"; the old
   ChatGPT desktop app is renamed "ChatGPT Classic"; Chat, Work, and Codex are three modes
   of one desktop app, on every plan including Free [DOCUMENTED] [src: chatgpt-work].
-- The help center frames the split by task type: "Choose Work for research and
-  deliverables, or Codex for software development" — same machinery, different lane
+- The help center frames them as distinct experiences: Work is for research and finished
+  deliverables; Codex is for software development and technical work
   [DOCUMENTED] [src: work-codex-help].
 - "Work follows the same usage structure as Codex," pointing at the Codex pricing page for
   included usage and credits [DOCUMENTED] [src: work-codex-help].
@@ -55,10 +57,11 @@ OpenAI Agents SDK. Everything else is either substrate, legacy, or an end-user f
 - The Codex developer docs now carry Work pages directly: "Get started with Work" and a
   "ChatGPT Work Admin FAQ" live inside developers.openai.com/codex [DOCUMENTED]
   [src: platform-agents].
-- Consequence for muster: whatever muster builds for the Codex lane (AGENTS.md, skills,
-  plugins, hooks, MCP, config.toml, permission profiles — all present in the Codex docs
-  tree [src: platform-agents]) is the augmentation surface for ChatGPT Work too. There is
-  no separate "ChatGPT Work harness" to integrate with [INFERRED].
+- Codex remains a separate desktop view with separate history, and Work access is
+  controlled separately from Codex Local [DOCUMENTED] [src: work-codex-help]. The
+  article does not say that Work loads Codex's `AGENTS.md`, skills, plugins, hooks, MCP,
+  or `config.toml`. Muster must treat those capabilities as unverified until a Work-mode
+  load probe observes them directly.
 
 ### 1.2 Workspace agents — the team-shared cloud lane
 
@@ -366,7 +369,7 @@ today; product rows are constrained by what OpenAI exposes.)
 | Agents SDK: sessions | Custom Session protocol backends | Glass-box STATE persistence in muster-owned storage | [src: sdk-sessions] |
 | Agents SDK: MCP | stdio/HTTP servers, tool filtering, `HostedMCPTool` | muster CLI exposed as an MCP server to SDK agents | [src: sdk-mcp] |
 | Agents SDK: models | Per-agent `model`, `RunConfig.model`, `model_provider` | Tiered model routing per role, muster-style | [src: sdk-running] |
-| ChatGPT Work (desktop) | Inherits Codex surface: AGENTS.md, skills/plugins, hooks, MCP, config, permission profiles, subagents | Covered by muster's Codex lane; no separate work needed | [src: platform-agents] |
+| ChatGPT Work (desktop) | Product tools and permissions vary by selected experience; Codex extension-surface inheritance is undocumented | Run a Work-mode load probe before claiming support | [src: work-codex-help] |
 | Workspace agents | Trigger API (202, fire-and-forget, `conversation_key`, idempotency) | Dispatch-only today; unusable for muster's verify-and-gate loop until response retrieval ships | [src: workspace-trigger] |
 | ChatGPT apps/plugins | Custom MCP app via Apps SDK; admin action controls + parameter constraints | Distribution channel for muster-as-a-connector, not a harness hook | [src: apps-help] |
 
@@ -374,12 +377,13 @@ today; product rows are constrained by what OpenAI exposes.)
 
 Per-candidate, explicitly:
 
-- **ChatGPT Work — NO (as its own target).** It is the Codex agent substrate with a
-  deliverables skin, merged into one desktop app, governed by Codex's enterprise controls,
-  metered like Codex [src: chatgpt-work]. Muster's Codex teardown/augmentation lane is the
-  correct and sufficient vehicle; a separate "gpt-work lane" would duplicate it. Action:
-  fold a "Work-mode divergence watch" note into the Codex lane instead [INFERRED]
-  [src: work-codex-help].
+- **ChatGPT Work — UNVERIFIED.** Work and Codex share agentic usage, but the current help
+  article keeps them as distinct experiences with separate history and separate Work versus
+  Codex Local access controls [src: work-codex-help]. No official source establishes that
+  Work loads the Codex extension plane. Action: run a Work-mode load probe covering
+  `AGENTS.md`, skills, plugins, hooks, MCP, project/global config, and local versus cloud
+  sessions before deciding whether the Codex lane can be reused or a separate adapter is
+  needed.
 - **OpenAI Agents SDK — YES, with a category caveat.** It is the real, documented,
   loop-level execution model under the banner, and sandbox agents make it a genuine
   repo/workspace execution surface [src: sdk-sandbox]. But it is a framework, not an

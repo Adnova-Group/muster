@@ -88,8 +88,8 @@ Codex native Init expects `AGENTS.md`. A request to run Init, an existing file, 
 | Pipelines | all of them |
 | MCP tools | 27 CLI wrappers plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
-| Native skills | 11 |
-| Capability skills | 51 |
+| Skills | 75 total: 13 public + 62 internal |
+| Internal skill breakdown | 11 native orchestration + 51 capability |
 
 ## Inspecting a Codex install
 
@@ -106,9 +106,9 @@ muster doctor --codex
 
 The Codex audit covers the same six core dimensions as other runtimes, but it uses three read-only briefs to stay within the Codex thread budget:
 
-1. Architecture and tech debt
-2. Coverage and simplification
-3. Readability and security
+1. **System quality:** architecture, tech debt, simplification, and readability
+2. **Coverage:** test gaps and untested failure paths
+3. **Security:** injection, secrets, unsafe IO, trust boundaries, installers, and lifecycle hooks
 
 A prompting project adds prompt-quality coverage to the relevant scan. Each required dimension must return a receipt before consolidation. The three-brief shape is a quota adaptation, not a smaller audit inventory.
 

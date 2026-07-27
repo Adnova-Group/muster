@@ -78,7 +78,7 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 | `agents.job_max_runtime_seconds` | 1800 (per-call default) | ~~Default per-worker timeout for `spawn_agents_on_csv` batch jobs~~ — **the CSV batch tool was REMOVED in 0.145.0** (§10); the key survives in the binary's `[agents]` struct |
 | `agents.interrupt_message` | `true` | Record a model-visible message when an agent turn is interrupted [src: codex-subagents-doc] |
 
-`[DECISION-RECORD]` **Thread-limits gap, verified live:** nothing in muster currently writes `[agents] max_threads`/`max_depth` at install time — `grep -rn "max_threads\|max_depth" src/*.js` returns zero hits in any install/config-writing path; the only occurrences in the tree are generated *prose* telling the runtime to "Respect `agents.max_threads`; neither lower nor raise it". The module that would have done it (`src/codex-thread-limits.js`, `ensureCodexThreadLimits`/`restoreCodexThreadLimits`, writing `max_threads >= 12` / `max_depth >= 2`) died on the never-merged burn branch commit `f2da066`. The item is re-opened as `codex-thread-limits-enforcement` with explicit success criteria including: install **fails outright** with exact remediation if the `config.toml` write cannot complete **or the written config fails strict validation**, plus a separate doctor-side drift check [src: dr-install] [src: dr-audit].
+`[DECISION-RECORD]` **Thread-limits gap, now closed:** the original audit found that Muster did not write `[agents] max_threads`/`max_depth`; that statement is historical, not current. `src/codex-thread-limits.js` now provides `ensureCodexThreadLimits` and `restoreCodexThreadLimits`. Codex install raises the shared configuration floor to `max_threads >= 12` and `max_depth >= 2`, records the exact owned change, and fails loud on malformed or unverifiable configuration. The last managed-scope uninstall calls `restoreCodexThreadLimits`, restoring only Muster's recorded change while preserving unrelated settings and a user's later raise [src: dr-install] [src: dr-audit].
 
 `[DOCUMENTED]` Other config-file facts a reimplementation needs: `CODEX_HOME` (default `~/.codex`) is the root for config, auth (`auth.json` — treat as a password), logs, sessions, skills, and package metadata, and **must already exist if overridden**; `CODEX_SQLITE_HOME`/`sqlite_home` relocates SQLite-backed state (agent jobs, exported CSV results); `log_dir` opts into the plaintext `codex-tui.log`; `RUST_LOG` controls diagnostics; `CODEX_API_KEY` is honored only by `codex exec` [src: codex-env-doc] [src: codex-subagents-doc].
 
@@ -299,9 +299,11 @@ The live catalog on this machine (`~/.codex/models_cache.json`, `client_version 
 | `max_depth` | honored | **ignored** |
 | extra tools | `send_input`, `resume_agent`, `close_agent` | `send_message`, `followup_task`, `interrupt_agent`, `list_agents` |
 
-**muster hardcodes the v2 packet** (`src/wave-dispatch.js` `codexSpawnAgentCall`), so its core lane
-emits a v2 shape at a v1 model. A model-catalog refresh can move a tier across this line with no
-muster-visible change — this needs a resolver, not a constant.
+**Historical audit finding, now closed:** Muster once hardcoded the v2 packet and could
+emit a v2 shape at a v1 model. `resolveCodexMultiAgentVersion` now resolves an explicit
+override first, then the catalog's `multi_agent_version`, and otherwise uses a conservative
+v1 floor. `codexSpawnAgentCall` and `codexWaitAgentCall` emit the matching v1
+`multi_agent_v1` or v2 `collaboration` packet and fail loud on an unknown version.
 
 Two related corrections to muster's existing rule:
 - `fork_turns` must be a **string**; `3` is rejected, `"3"` is not.

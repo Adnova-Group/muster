@@ -36,6 +36,45 @@ test("validateVendorManifest rejects item missing from/id/roles", () => {
   assert.ok(r.errors.some(e => /roles/.test(e)));
 });
 
+// Audit S10 (security): source.url lands verbatim in the git clone/fetch argv
+// (cloneCommandsFor) -- a value like `--upload-pack=<cmd>` is parsed by git as
+// an OPTION, not a remote, yielding command execution. Validation must reject
+// `-`-leading values and allowlist schemes (https/file, or an absolute local
+// path for the fixture seam), mirroring the REF_RE + leading-`-` guard on ref.
+test("validateVendorManifest rejects a `-`-leading source.url (git option injection)", () => {
+  const doc = { sources: [
+    { id: "evil", kind: "github", repo: "owner/repo", license: "MIT",
+      url: "--upload-pack=touch /tmp/pwned",
+      items: [{ from: "a/SKILL.md", id: "x", roles: ["brainstorm"] }] }
+  ]};
+  const r = validateVendorManifest(doc);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /url/.test(e) && /must not start with "-"/.test(e)),
+    `expected a leading-dash url error, got: ${JSON.stringify(r.errors)}`);
+});
+
+test("validateVendorManifest rejects source.url schemes outside the https/file allowlist", () => {
+  for (const url of ["ssh://git@github.com/owner/repo.git", "git@github.com:owner/repo.git", "ftp://x/repo.git", "javascript:alert(1)"]) {
+    const doc = { sources: [
+      { id: "s", kind: "github", repo: "owner/repo", license: "MIT", url,
+        items: [{ from: "a/SKILL.md", id: "x", roles: ["brainstorm"] }] }
+    ]};
+    const r = validateVendorManifest(doc);
+    assert.equal(r.ok, false, `url ${url} must be rejected`);
+    assert.ok(r.errors.some(e => /url/.test(e)), `expected a url error for ${url}`);
+  }
+});
+
+test("validateVendorManifest accepts https/file/absolute-path source.url values", () => {
+  for (const url of ["https://github.com/owner/repo.git", "file:///tmp/local-bare.git", "/tmp/local-bare.git"]) {
+    const doc = { sources: [
+      { id: "s", kind: "github", repo: "owner/repo", license: "MIT", url,
+        items: [{ from: "a/SKILL.md", id: "x", roles: ["brainstorm"] }] }
+    ]};
+    assert.deepEqual(validateVendorManifest(doc), { ok: true, errors: [] }, `url ${url} must be accepted`);
+  }
+});
+
 const src = `---\nname: brainstorming\ndescription: Explore before building\n---\n\n# Brainstorming\nDo the thing.\n`;
 const item = { from: "brainstorming/SKILL.md", id: "sp-brainstorm", roles: ["brainstorm"] };
 const source = { repo: "obra/superpowers", license: "MIT" };

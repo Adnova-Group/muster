@@ -65,7 +65,7 @@
 // whether a shell command IS a file write for cumulative-counter keying; it no
 // longer backs any deny path.
 
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { emit, CREW_INVITATION } from "./guidance.js";
 import { bashWriteTarget } from "./bash-write-target.js";
@@ -127,6 +127,19 @@ function warnBorder(count) {
   );
 }
 
+// Best-effort canonical path for the scope tests below (audit S10): a target
+// reached through an in-tree SYMLINK that points outside the cwd tree must
+// classify as OUT of scope, which a purely lexical path.resolve() prefix
+// compare cannot see. Falls back to the lexical path when the target does not
+// exist yet (ENOENT -- e.g. a Write to a new file), preserving prior behavior.
+function realpathOr(p) {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
 try {
   // Resolved once per invocation: real Date.now() in production, or the
   // injected MUSTER_TEST_NOW_MS clock under test (see inline-budget.js:
@@ -160,20 +173,26 @@ try {
     ? (path.isAbsolute(rawTarget) ? rawTarget : path.resolve(cwd, rawTarget))
     : "";
 
+  // Canonical scope paths: realpath both sides (best-effort -- see realpathOr)
+  // so a symlink that escapes the cwd tree cannot masquerade as in-scope.
+  // `target` (lexical) is kept for counter keying below; every SCOPE decision
+  // uses the canonical pair.
+  const cwdAbs = realpathOr(path.resolve(cwd));
+  const targetCanon = target ? realpathOr(target) : "";
+
   // 2. Meta-exempt roots — orchestrator bookkeeping dirs always allowed.
   //    (Bash has no file_path/notebook_path; target is "" so this gate is skipped.)
   //    To add a new exempt root, extend META_EXEMPT_ROOTS here and nowhere else.
   const META_EXEMPT_ROOTS = [".muster", ".claude"];
   for (const root of META_EXEMPT_ROOTS) {
-    const rootAbs = path.resolve(cwd, root);
-    if (target && (target === rootAbs || target.startsWith(rootAbs + path.sep))) {
+    const rootAbs = path.resolve(cwdAbs, root);
+    if (targetCanon && (targetCanon === rootAbs || targetCanon.startsWith(rootAbs + path.sep))) {
       allow();
     }
   }
 
   // 3. GUARD-SCOPE: targets outside the cwd tree are out of this hook's scope.
-  const cwdAbs = path.resolve(cwd);
-  if (target && !target.startsWith(cwdAbs + path.sep) && target !== cwdAbs) {
+  if (targetCanon && !targetCanon.startsWith(cwdAbs + path.sep) && targetCanon !== cwdAbs) {
     allow();
   }
 

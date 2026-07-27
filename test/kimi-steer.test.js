@@ -80,6 +80,39 @@ test("kimiSteerDelivery: validates its inputs loud, before any delivery is built
   assert.throws(() => kimiSteerDelivery({ message: "x", promptId: 7 }), /promptId must be/);
 });
 
+// Audit S10 (security): sessionId is interpolated raw into the constructed
+// `kimi web` request path (`/sessions/<id>/prompts`). An id carrying `/`, `?`,
+// or `..` reshapes that path server-side, so the id is validated against the
+// real session-id shape's safe superset (letters/digits/`_`/`-` -- real ids
+// look like `session_<uuid>`, see ~/.kimi-code/sessions/) and anything else
+// fails loud, before any path is built.
+test("kimiSteerDelivery: a sessionId that would reshape the request path fails loud", () => {
+  for (const bad of ["../admin", "a/b", "a?b=1", "a b", "a%2fb", ".", "..", "a.b", "a#b"]) {
+    assert.throws(
+      () => kimiSteerDelivery({ message: "x", sessionId: bad }),
+      /sessionId must be/,
+      `sessionId ${JSON.stringify(bad)} must be rejected`
+    );
+  }
+});
+
+test("kimiSteerDelivery: a real-shaped session id (session_<uuid>) is accepted and concretizes the path", () => {
+  const id = "session_13b9e00a-2b2f-42c7-a31d-88704b739cc5";
+  const d = kimiSteerDelivery({ message: "hold", sessionId: id });
+  assert.equal(d.requests[0].path, `/sessions/${id}/prompts`);
+  assert.equal(d.requests[1].path, `/sessions/${id}/prompts::steer`);
+});
+
+test("muster steer --harness kimi: a path-reshaping --session value fails loud", async () => {
+  await assert.rejects(
+    pexec("node", [CLI, "steer", "stop", "--harness", "kimi", "--session", "../admin"]),
+    (err) => {
+      assert.match(err.stderr, /sessionId must be/);
+      return true;
+    }
+  );
+});
+
 // --- the CLI arm: harness-conditional ------------------------------------------
 
 test("muster steer --harness kimi: classification composes with the native delivery", async () => {

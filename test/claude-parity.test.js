@@ -1089,5 +1089,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the Codex build transform rewrites FROM is byte-identical, verified by
   // test/codex-mcp-runtime-env.test.js). Tier aliasing stays owned by
   // src/model.js. Deliberate change, not drift.
-  assert.equal(hash.digest("hex"), "818db26cd63ce9232f5156a6837d159cecb089ba681d1049107c648226093203");
+  //
+  // 2026-07-27 re-pin #6 (audit S10, security P2: pre-tool-use realpath
+  // scoping): file COUNT unchanged (140) -- only plugin/hooks/pre-tool-use.js's
+  // content changed: the guard-scope/meta-exempt prefix tests now realpath()
+  // both cwd and target (best-effort, lexical fallback on ENOENT) so an edit
+  // target reached through an in-tree symlink pointing outside cwd classifies
+  // as out-of-scope instead of in-scope. Deliberate security remediation, not
+  // drift.
+  assert.equal(hash.digest("hex"), "060a3943e1f8d10d79108bca8482744de44584cc2ab60b1c1c3780ea2b548143");
 });

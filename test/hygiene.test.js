@@ -7,6 +7,8 @@ import {
   evaluateWorktreeSweep,
   findStaleClaims,
   releaseStaleClaims,
+  deriveMusterWorktreeRoots,
+  runHygiene,
 } from "../src/hygiene.js";
 
 // Direct unit tests for src/hygiene.js -- the burn-hygiene guards' pure-function
@@ -22,18 +24,22 @@ import {
 // Guard 1 -- zombie provider CLI process: detect + reap
 // ---------------------------------------------------------------------------
 
-test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned provider CLI process fixture", () => {
+test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned provider CLI process fixture with muster provenance", () => {
   const processes = [
     // The zombie fixture: a codex CLI process reparented to init after its
     // supervisor died -- exactly the burn incident's "2 zombie codex CLI
-    // processes running for a day" shape.
-    { pid: 100, ppid: 1, command: "codex --profile default", startedAt: "2026-07-14T00:00:00Z" },
+    // processes running for a day" shape. Its cwd sits under a known muster
+    // run worktree, which is the provenance that makes it reap-eligible.
+    { pid: 100, ppid: 1, command: "codex --profile default", startedAt: "2026-07-14T00:00:00Z", cwd: "/repo/.worktrees/burn-fix" },
     // A live provider process whose parent is still running -- must be left alone.
-    { pid: 200, ppid: 50, command: "claude --print", startedAt: "2026-07-15T23:50:00Z" },
+    { pid: 200, ppid: 50, command: "claude --print", startedAt: "2026-07-15T23:50:00Z", cwd: "/repo/.worktrees/burn-fix" },
     { pid: 50, ppid: 10, command: "bash orchestrator.sh", startedAt: "2026-07-15T23:00:00Z" },
   ];
 
-  const { ok, zombies } = findZombieProcesses(processes, { newestRunMarkerAt: "2026-07-16T00:00:00Z" });
+  const { ok, zombies } = findZombieProcesses(processes, {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    musterRoots: ["/repo/.worktrees/burn-fix"],
+  });
   assert.equal(ok, true);
   assert.equal(zombies.length, 1);
   assert.equal(zombies[0].pid, 100);
@@ -41,6 +47,7 @@ test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned p
   // start predates the run marker past the default threshold) -- the
   // reapable gate below is what actually matters, not which reason(s) fired.
   assert.deepEqual(zombies[0].reasons, ["orphaned-parent", "stale-start"]);
+  assert.equal(zombies[0].provenance, "muster-worktree-cwd");
   assert.equal(zombies[0].reapable, true);
 
   const killed = [];
@@ -48,6 +55,90 @@ test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned p
   assert.deepEqual(reaped, [100]);
   assert.deepEqual(skipped, []);
   assert.deepEqual(killed, [100]);
+});
+
+// Audit S10 (security): orphanage alone is NOT sufficient to SIGTERM a host
+// process -- another tool's legitimately orphaned codex/claude process (a
+// detached editor session, a crashed non-muster run) matches the same shape.
+// Reap eligibility must be corroborated by muster-owned state: the process's
+// cwd under a known muster worktree, or a recorded dispatch receipt.
+test("findZombieProcesses + reapZombieProcesses (adversarial): an orphaned provider process with NO muster provenance is reported but NEVER reaped", () => {
+  const processes = [
+    // Another tool's legitimately orphaned codex process: dead parent, old
+    // start -- but its cwd is nowhere near a muster worktree and no dispatch
+    // receipt names its pid.
+    { pid: 150, ppid: 1, command: "codex --profile default", startedAt: "2026-07-14T00:00:00Z", cwd: "/home/ryan/other-tool" },
+  ];
+
+  const { zombies } = findZombieProcesses(processes, {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    musterRoots: ["/repo/.worktrees/burn-fix"],
+  });
+  assert.equal(zombies.length, 1, "still detected and reported");
+  assert.deepEqual(zombies[0].reasons, ["orphaned-parent", "stale-start"]);
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].reapable, false, "orphanage alone is never sufficient to kill");
+
+  const { reaped, skipped } = reapZombieProcesses(zombies, {
+    kill: () => { throw new Error("must not be called -- no muster provenance"); },
+  });
+  assert.deepEqual(reaped, []);
+  assert.equal(skipped.length, 1);
+  assert.equal(skipped[0].pid, 150);
+  assert.match(skipped[0].reason, /no muster provenance/);
+});
+
+test("findZombieProcesses + reapZombieProcesses: a recorded dispatch receipt corroborates reap eligibility without a cwd", () => {
+  const processes = [
+    { pid: 4242, ppid: 1, command: "claude --print", startedAt: "2026-07-14T00:00:00Z" },
+  ];
+  const { zombies } = findZombieProcesses(processes, {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    dispatchPids: [4242],
+  });
+  assert.equal(zombies.length, 1);
+  assert.equal(zombies[0].provenance, "dispatch-receipt");
+  assert.equal(zombies[0].reapable, true);
+
+  const killed = [];
+  const { reaped } = reapZombieProcesses(zombies, { kill: (pid) => killed.push(pid) });
+  assert.deepEqual(reaped, [4242]);
+  assert.deepEqual(killed, [4242]);
+});
+
+test("deriveMusterWorktreeRoots: only `.worktrees/` entries are muster-owned roots", () => {
+  const roots = deriveMusterWorktreeRoots([
+    { path: "/repo", bare: false },
+    { path: "/repo/.bare", bare: true },
+    { path: "/repo/.worktrees/item-1", bare: false },
+    { path: "/repo/.worktrees/item-2", bare: false },
+    { path: "/elsewhere/scratch", bare: false },
+  ]);
+  assert.deepEqual(roots.sort(), ["/repo/.worktrees/item-1", "/repo/.worktrees/item-2"]);
+});
+
+test("runHygiene: reap corroborates via the repo's own muster worktrees by default -- a foreign orphan survives --reap", async () => {
+  const killed = [];
+  const result = await runHygiene({
+    processes: [
+      // muster-owned orphan: cwd inside the repo's .worktrees entry -> reaped
+      { pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: "/repo/.worktrees/burn-fix/sub" },
+      // foreign orphan: same shape, cwd elsewhere -> reported, never killed
+      { pid: 200, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: "/opt/other-tool" },
+    ],
+    worktrees: [
+      { path: "/repo", bare: false },
+      { path: "/repo/.worktrees/burn-fix", bare: false },
+    ],
+    now: Date.parse("2026-07-16T00:00:00Z"),
+    reap: true,
+    kill: (pid) => killed.push(pid),
+  });
+  assert.deepEqual(killed, [100], "only the muster-provenanced orphan is reaped");
+  assert.deepEqual(result.reapedProcesses.reaped, [100]);
+  assert.equal(result.reapedProcesses.skipped.length, 1);
+  assert.equal(result.reapedProcesses.skipped[0].pid, 200);
+  assert.match(result.reapedProcesses.skipped[0].reason, /no muster provenance/);
 });
 
 test("findZombieProcesses + reapZombieProcesses (adversarial): a live run's process is reported but NEVER reaped, even past the stale-start threshold", () => {

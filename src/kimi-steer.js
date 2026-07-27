@@ -54,6 +54,14 @@ export const KIMI_STEER_STEER_PATH = "/sessions/{session_id}/prompts::steer";
 // before the submit request is sent).
 export const KIMI_STEER_PROMPT_ID_PLACEHOLDER = "<promptId from the submit response>";
 
+// The expected session-id shape, as a safe superset: real Kimi session ids
+// look like `session_<uuid>` (e.g. session_13b9e00a-2b2f-42c7-a31d-... -- see
+// ~/.kimi-code/sessions/ dir names), all letters/digits/`_`/`-`. The id is
+// interpolated raw into the constructed `kimi web` request path below, so any
+// character that could RESHAPE that path (`/`, `?`, `#`, `%`, `.` traversal
+// segments, whitespace) must fail loud here rather than reach the wire.
+export const KIMI_SESSION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
 // Build the native steer delivery for a correction message: the seam it rides,
 // every documented surface into that queue, and the concrete two-request
 // `kimi web` delivery (submit the message as a queued prompt, then steer that
@@ -67,8 +75,8 @@ export function kimiSteerDelivery({ message, sessionId, promptId } = {}) {
   if (typeof message !== "string" || !message.trim()) {
     throw new Error("kimiSteerDelivery: message is required (the correction text to inject between steps)");
   }
-  if (sessionId !== undefined && (typeof sessionId !== "string" || !sessionId)) {
-    throw new Error("kimiSteerDelivery: sessionId must be the live Kimi session id (a non-empty string)");
+  if (sessionId !== undefined && (typeof sessionId !== "string" || !KIMI_SESSION_ID_RE.test(sessionId))) {
+    throw new Error("kimiSteerDelivery: sessionId must be the live Kimi session id (e.g. session_<uuid>; letters, digits, '_' and '-' only)");
   }
   if (promptId !== undefined && (typeof promptId !== "string" || !promptId)) {
     throw new Error("kimiSteerDelivery: promptId must be the queued prompt's id from the submit response (a non-empty string)");

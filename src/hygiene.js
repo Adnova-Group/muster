@@ -13,12 +13,18 @@
 // pure-function tests.
 //
 // Conservative by construction:
-//   - Zombie reap is opt-in (`--reap`) AND further gated per-process: only a
-//     process whose parent is provably dead (ppid 1, or a ppid absent from the
-//     same snapshot) is ever reap-eligible. A process merely flagged by the
-//     stale-start age heuristic, but whose parent is still alive, is reported
-//     ONLY -- it is still owned by a live supervisor, and killing it on an age
-//     guess alone is exactly the burn this guard exists to prevent, not cause.
+//   - Zombie reap is opt-in (`--reap`) AND further gated per-process TWICE:
+//     only a process whose parent is provably dead (ppid 1, or a ppid absent
+//     from the same snapshot) AND whose muster provenance is corroborated
+//     (cwd under a known muster run worktree, or a recorded dispatch receipt
+//     -- see the reap-provenance note below) is ever reap-eligible. A process
+//     merely flagged by the stale-start age heuristic, but whose parent is
+//     still alive, is reported ONLY -- it is still owned by a live supervisor,
+//     and killing it on an age guess alone is exactly the burn this guard
+//     exists to prevent, not cause. An orphaned process with no muster
+//     provenance is likewise reported ONLY -- another tool's legitimately
+//     orphaned codex/claude process has the same ps shape, and SIGTERMing it
+//     would itself be the burn (audit S10).
 //   - The worktree guard never deletes anything, `--reap` or not -- worktree
 //     removal can destroy uncommitted work, which stays a human decision; this
 //     guard only ever *offers* a sweep (reports candidates + a suggested command).
@@ -27,6 +33,8 @@
 //     it just needs to keep its own claim timestamp fresh.
 
 import { execFileSync } from "node:child_process";
+import { readlinkSync } from "node:fs";
+import { sep } from "node:path";
 import { computeSprintWaves } from "./sprint-waves.js";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +43,36 @@ import { computeSprintWaves } from "./sprint-waves.js";
 
 export const DEFAULT_PROVIDER_PROCESS_PATTERN = /^(codex|claude)$/i;
 export const DEFAULT_ZOMBIE_STALE_MS = 60 * 60 * 1000; // 60 minutes
+
+// Reap PROVENANCE (audit S10, security): a dead parent alone never makes a
+// host process muster's to kill -- another tool's legitimately orphaned
+// codex/claude process (a detached editor session, a crashed non-muster run)
+// matches the exact same ps shape, and SIGTERMing it would be the very burn
+// this guard exists to prevent. Reap eligibility must be corroborated by
+// MUSTER-OWNED state before any kill:
+//   - "muster-worktree-cwd": the process's cwd sits under a known muster run
+//     worktree (entries under `.worktrees/`, see deriveMusterWorktreeRoots), or
+//   - "dispatch-receipt": the pid appears in a recorded dispatch receipt
+//     (injected via the `dispatchPids` option).
+// An orphaned process with NEITHER is still detected and reported -- it is
+// just never reaped.
+
+// True when `cwd` equals `root` or sits strictly inside it (lexical; both are
+// expected absolute here -- ps /proc readlinks and git worktree paths are).
+function cwdUnderRoot(cwd, root) {
+  return cwd === root || cwd.startsWith(root.endsWith(sep) ? root : root + sep);
+}
+
+// The muster-owned worktree roots out of a worktree list (parseWorktreePorcelain
+// output or equivalent): live entries whose path sits under a `.worktrees/`
+// directory -- muster's run-worktree convention. The repo root and any
+// non-muster worktree are NOT provenance: a process parked there proves nothing
+// about who dispatched it.
+export function deriveMusterWorktreeRoots(worktrees) {
+  return (Array.isArray(worktrees) ? worktrees : [])
+    .filter((w) => w && !w.bare && typeof w.path === "string" && /[\\/]\.worktrees(?:[\\/]|$)/.test(w.path))
+    .map((w) => w.path);
+}
 
 // A command LINE (full argv joined with spaces) is not the same thing as the
 // invoked EXECUTABLE -- matching the pattern against the whole line would
@@ -49,20 +87,28 @@ function commandExecutableName(command) {
   return base.replace(/\.(exe|cmd|bat)$/i, "");
 }
 
-// processes: [{ pid, ppid, command, startedAt }], startedAt is epoch ms or an
-// ISO string. newestRunMarkerAt anchors the stale-start heuristic -- the most
-// recent known "a run started" timestamp (epoch ms or ISO string); a provider
-// process whose start predates it by more than staleMs is flagged as stale.
+// processes: [{ pid, ppid, command, startedAt, cwd? }], startedAt is epoch ms or an
+// ISO string; cwd (when the provider can supply it -- listSystemProcessesSync
+// reads /proc/<pid>/cwd) corroborates muster provenance. newestRunMarkerAt
+// anchors the stale-start heuristic -- the most recent known "a run started"
+// timestamp (epoch ms or ISO string); a provider process whose start predates
+// it by more than staleMs is flagged as stale. musterRoots: known muster run
+// worktree roots (see deriveMusterWorktreeRoots); dispatchPids: pids recorded
+// in muster dispatch receipts. Both feed the reap-provenance gate above.
 export function findZombieProcesses(processes, {
   pattern = DEFAULT_PROVIDER_PROCESS_PATTERN,
   newestRunMarkerAt,
   staleMs = DEFAULT_ZOMBIE_STALE_MS,
+  musterRoots = [],
+  dispatchPids = [],
 } = {}) {
   const list = Array.isArray(processes) ? processes : [];
   const knownPids = new Set(list.map((p) => p.pid));
   const markerMs = newestRunMarkerAt == null
     ? null
     : (typeof newestRunMarkerAt === "number" ? newestRunMarkerAt : Date.parse(newestRunMarkerAt));
+  const roots = Array.isArray(musterRoots) ? musterRoots : [];
+  const receiptPids = new Set((Array.isArray(dispatchPids) ? dispatchPids : []).map(Number));
 
   const zombies = [];
   for (const proc of list) {
@@ -86,15 +132,27 @@ export function findZombieProcesses(processes, {
     if (orphaned) reasons.push("orphaned-parent");
     if (staleStart) reasons.push("stale-start");
 
+    // Reap provenance (see the gate at the top of this section): cwd under a
+    // known muster worktree, or a recorded dispatch receipt for this pid.
+    let provenance = null;
+    if (typeof proc.cwd === "string" && proc.cwd && roots.some((r) => cwdUnderRoot(proc.cwd, r))) {
+      provenance = "muster-worktree-cwd";
+    } else if (receiptPids.has(Number(proc.pid))) {
+      provenance = "dispatch-receipt";
+    }
+
     zombies.push({
       pid: proc.pid,
       ppid: Number.isFinite(ppid) ? ppid : null,
       command: proc.command,
       startedAt: proc.startedAt ?? null,
       reasons,
-      // The conservative reap gate: ONLY an orphaned process is ever eligible
-      // for --reap. See the file-level note above for why age alone never is.
-      reapable: orphaned,
+      provenance,
+      // The conservative reap gate: ONLY an orphaned process whose muster
+      // provenance is corroborated is ever eligible for --reap. See the
+      // file-level note above for why age alone -- and now orphanage alone --
+      // never is.
+      reapable: orphaned && provenance !== null,
     });
   }
   return { ok: true, zombies };
@@ -108,7 +166,17 @@ export function reapZombieProcesses(zombies, { kill } = {}) {
   const skipped = [];
   for (const z of (zombies || [])) {
     if (!z.reapable) {
-      skipped.push({ pid: z.pid, reason: "parent alive -- not reaped (the stale-start age heuristic alone is never sufficient to kill)" });
+      // Distinguish the two non-reapable shapes: a parent-alive process (the
+      // stale-start age heuristic alone is never sufficient), vs an orphan
+      // with no muster provenance (orphanage alone is never sufficient --
+      // audit S10; it could be another tool's legitimately orphaned process).
+      const orphaned = (z.reasons || []).includes("orphaned-parent");
+      skipped.push({
+        pid: z.pid,
+        reason: orphaned
+          ? "no muster provenance -- not reaped (an orphaned parent alone is never sufficient to kill; the process must also tie back to a muster run via its cwd or a dispatch receipt)"
+          : "parent alive -- not reaped (the stale-start age heuristic alone is never sufficient to kill)",
+      });
       continue;
     }
     try {
@@ -317,7 +385,12 @@ export function listSystemProcessesSync() {
       const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
       if (!m) return null;
       const [, pid, ppid, etimes, command] = m;
-      return { pid: Number(pid), ppid: Number(ppid), startedAt: now - Number(etimes) * 1000, command };
+      // Best-effort cwd via /proc (Linux) -- the muster-provenance signal for
+      // the reap gate. Any failure (non-Linux, race with process exit,
+      // permissions) degrades to null, which simply means "no cwd provenance".
+      let cwd = null;
+      try { cwd = readlinkSync(`/proc/${pid}/cwd`); } catch { /* no cwd provenance */ }
+      return { pid: Number(pid), ppid: Number(ppid), startedAt: now - Number(etimes) * 1000, command, cwd };
     }).filter(Boolean);
   } catch {
     return [];
@@ -344,8 +417,11 @@ export function renderHygieneReport(result) {
   lines.push(`  zombies: ${result.zombies.length} detected` +
     (result.reap ? `, ${result.reapedProcesses?.reaped.length ?? 0} reaped` : " (report-only; pass --reap to reap orphaned ones)"));
   for (const z of result.zombies) {
+    const eligibility = z.reapable
+      ? `reapable (${z.provenance})`
+      : (z.reasons.includes("orphaned-parent") ? "report-only (no muster provenance)" : "report-only (parent alive)");
     lines.push(`    pid ${z.pid} ppid ${z.ppid ?? "?"} [${z.reasons.join(",")}] ` +
-      `${z.reapable ? "reapable" : "report-only (parent alive)"} :: ${z.command}`);
+      `${eligibility} :: ${z.command}`);
   }
 
   lines.push(`  worktrees: ${result.worktrees.count} live (threshold ${result.worktrees.threshold})` +
@@ -379,14 +455,20 @@ export async function runHygiene({
   kill,
 } = {}) {
   const processList = typeof processes === "function" ? await processes() : (processes || []);
-  const zombieResult = findZombieProcesses(processList, {
-    newestRunMarkerAt: now,
-    ...zombieOptions,
-  });
 
   const wtRaw = typeof worktrees === "function" ? await worktrees() : worktrees;
   const wtList = typeof wtRaw === "string" ? parseWorktreePorcelain(wtRaw) : (wtRaw || []);
   const worktreeResult = evaluateWorktreeSweep(wtList, worktreeOptions);
+
+  // The reap-provenance gate (see findZombieProcesses) defaults its muster
+  // roots to the repo's OWN muster run worktrees (the `.worktrees/` entries
+  // of the worktree list just fetched) -- an explicit zombieOptions.musterRoots
+  // or dispatchPids overrides/augments that.
+  const zombieResult = findZombieProcesses(processList, {
+    newestRunMarkerAt: now,
+    musterRoots: deriveMusterWorktreeRoots(wtList),
+    ...zombieOptions,
+  });
 
   const content = typeof backlogContent === "function" ? await backlogContent() : backlogContent;
   const claimResult = content != null

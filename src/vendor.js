@@ -148,6 +148,19 @@ export function validateVendorManifest(doc) {
       if (!REF_RE.test(s.ref) || s.ref.startsWith("-"))
         errors.push(`sources[${i}].ref: invalid — must not start with "-" and may only contain alphanumeric, _./${String.fromCharCode(126)}^- chars`);
     }
+    // source.url is interpolated verbatim into the git clone/fetch argv
+    // (cloneCommandsFor). A `-`-leading value is parsed by git as an OPTION
+    // (e.g. `--upload-pack=<cmd>` -> command execution), so it gets the same
+    // leading-dash guard as ref, plus a scheme allowlist: https, file, or an
+    // absolute local path (the test/local-fixture seam — git clones those
+    // exactly like file://). Anything else (ssh://, scp-style, ...) is rejected.
+    if (s.url !== undefined) {
+      if (typeof s.url !== "string" || s.url.startsWith("-")) {
+        errors.push(`sources[${i}].url: invalid — must not start with "-" (git would parse it as an option, not a remote)`);
+      } else if (!/^(https|file):\/\//.test(s.url) && !s.url.startsWith("/")) {
+        errors.push(`sources[${i}].url: invalid — scheme must be https:// or file:// (or an absolute local path)`);
+      }
+    }
     if (!Array.isArray(s.items)) errors.push(`sources[${i}].items: must be an array`);
     else s.items.forEach((it, j) => {
       if (!it.from) errors.push(`sources[${i}].items[${j}].from: required`);

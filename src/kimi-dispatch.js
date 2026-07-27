@@ -1,3 +1,6 @@
+import { existsSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -247,6 +250,64 @@ export function kimiGoalInvocation({ objective, primaryModel = KIMI_LANES.primar
       KIMI_SECONDARY_MODEL: secondaryModel
     },
     exitCodes: KIMI_GOAL_EXIT_CODES
+  };
+}
+
+// --- Headless process dispatch (`kimi -p --agent-file`) ----------------------
+
+// Where `muster install kimi` places the stamped agent files
+// (src/kimi-install.js): $KIMI_CODE_HOME/agents, else ~/.kimi-code/agents.
+// Resolved per call so a relocated Kimi home (and tests) are honored.
+const kimiAgentsDir = () => join(process.env.KIMI_CODE_HOME || join(homedir(), ".kimi-code"), "agents");
+
+// Build the argv + env for a headless `kimi -p <brief> --agent-file <path>`
+// process -- a wave leg dispatched as its OWN Kimi process rather than as an
+// in-session Agent/AgentSwarm call. `--agent-file` binds a custom MAIN agent
+// (docs/research/kimi-code-cli.md section 6, "How muster would actually drive
+// Kimi non-interactively"), which requires the v2 engine -- that, and ONLY
+// that, is why the kimiLaneEnv() pair rides along: KIMI_CODE_EXPERIMENTAL_FLAG=1
+// selects the engine --agent-file needs. The stamped model_preference does NOT
+// apply here: it binds only SPAWNED SUBAGENTS, never the -p process's own main
+// agent (sections 6 + 11.8) -- so the process's model comes ONLY from `-m`.
+//
+// LANE IS THEREFORE REQUIRED AND ALWAYS EMITTED as `-m KIMI_LANES[lane]`.
+// Omitting -m is not neutral: the process would silently fall to config.toml's
+// default_model (k3), demoting an execution-lane leg onto the judgment model
+// (and its quota) with no signal. There is no construction path without -m.
+export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
+  if (typeof brief !== "string" || !brief.trim()) {
+    throw new Error("kimiProcessDispatch: brief is required (the -p prompt the dispatched process runs)");
+  }
+  if (!LANES.includes(lane)) {
+    throw new Error(`kimiProcessDispatch: lane is required and must be one of ${LANES.join("|")} -- model_preference never binds the -p process's own main agent, so its model comes ONLY from -m; omitting it silently falls to config default_model; got ${JSON.stringify(lane)}`);
+  }
+  if (typeof cwd !== "string" || !cwd) {
+    throw new Error("kimiProcessDispatch: cwd is required (the directory the process runs in)");
+  }
+  const resolvedCwd = resolve(cwd);
+  if (!existsSync(resolvedCwd) || !statSync(resolvedCwd).isDirectory()) {
+    throw new Error(`kimiProcessDispatch: cwd must be an existing directory; got ${JSON.stringify(cwd)}`);
+  }
+  if (typeof agentFile !== "string" || !agentFile) {
+    throw new Error("kimiProcessDispatch: agentFile is required (a name under the installed agents dir, or an explicit path)");
+  }
+  // A bare name resolves under the installed agents dir; anything carrying a
+  // path separator is an explicit path (absolute as-is, or relative to the
+  // run's cwd). Either way the file must exist -- discovered here, not from a
+  // failed spawn.
+  const resolvedAgentFile = isAbsolute(agentFile)
+    ? agentFile
+    : agentFile.includes("/") || agentFile.includes(sep)
+      ? resolve(resolvedCwd, agentFile)
+      : join(kimiAgentsDir(), agentFile);
+  if (!existsSync(resolvedAgentFile) || !statSync(resolvedAgentFile).isFile()) {
+    throw new Error(`kimiProcessDispatch: agentFile ${JSON.stringify(agentFile)} resolved to ${resolvedAgentFile}, which does not exist (bare names resolve under the installed agents dir ${kimiAgentsDir()}; explicit paths resolve against cwd)`);
+  }
+  return {
+    argv: ["-p", brief, "--agent-file", resolvedAgentFile, "--output-format", "stream-json", "-m", KIMI_LANES[lane]],
+    env: kimiLaneEnv(),
+    cwd: resolvedCwd,
+    lane
   };
 }
 

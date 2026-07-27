@@ -6,8 +6,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
-  kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, interpretKimiGoalExit, resolveKimiWaveDispatch,
+  kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, interpretKimiGoalExit, resolveKimiWaveDispatch,
   interpretKimiBackgroundCompletion,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
@@ -420,4 +423,142 @@ test("the runner prose (go.md + runner.md) routes the Kimi run loop through the 
   }
   // acceptance criteria compile INTO the objective string (no separate stop flag)
   assert.match(go, /acceptance criteria compiled\s*INTO the objective string/, "go.md must state that acceptance criteria compile into the /goal objective string");
+});
+
+// --- Headless process dispatch (kimi -p --agent-file) -------------------------
+
+// A scratch Kimi home with an installed agents/ dir, bound via KIMI_CODE_HOME
+// for the duration of fn (the dispatch resolves the dir per call).
+function withKimiHome(fn) {
+  const home = mkdtempSync(join(tmpdir(), "kimi-dispatch-"));
+  mkdirSync(join(home, "agents"), { recursive: true });
+  const previous = process.env.KIMI_CODE_HOME;
+  process.env.KIMI_CODE_HOME = home;
+  try {
+    return fn(home);
+  } finally {
+    if (previous === undefined) delete process.env.KIMI_CODE_HOME;
+    else process.env.KIMI_CODE_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+test("kimiProcessDispatch: builds the headless -p invocation, -m ALWAYS emitted per lane", () => {
+  withKimiHome(home => {
+    writeFileSync(join(home, "agents", "muster-builder.md"), "---\nname: muster-builder\n---\n");
+    for (const lane of ["primary", "secondary"]) {
+      const d = kimiProcessDispatch({ brief: "Implement the feature.", agentFile: "muster-builder.md", cwd: home, lane });
+      assert.deepEqual(d.argv, [
+        "-p", "Implement the feature.",
+        "--agent-file", join(home, "agents", "muster-builder.md"),
+        "--output-format", "stream-json",
+        "-m", KIMI_LANES[lane]
+      ]);
+      assert.deepEqual(d.env, kimiLaneEnv()); // the shared derivation, never re-stated
+      assert.equal(d.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1"); // the v2 engine --agent-file needs
+      assert.equal(d.cwd, home);
+      assert.equal(d.lane, lane);
+    }
+  });
+});
+
+test("kimiProcessDispatch: agentFile forms -- bare name under the installed dir, absolute as-is, relative against cwd", () => {
+  withKimiHome(home => {
+    writeFileSync(join(home, "agents", "muster-builder.md"), "x");
+    writeFileSync(join(home, "custom.md"), "x");
+    mkdirSync(join(home, "run", "agents"), { recursive: true });
+    writeFileSync(join(home, "run", "agents", "local.md"), "x");
+
+    const bare = kimiProcessDispatch({ brief: "b", agentFile: "muster-builder.md", cwd: home, lane: "primary" });
+    assert.equal(bare.argv[3], join(home, "agents", "muster-builder.md"));
+
+    const abs = kimiProcessDispatch({ brief: "b", agentFile: join(home, "custom.md"), cwd: home, lane: "primary" });
+    assert.equal(abs.argv[3], join(home, "custom.md"));
+
+    const rel = kimiProcessDispatch({ brief: "b", agentFile: "agents/local.md", cwd: join(home, "run"), lane: "secondary" });
+    assert.equal(rel.argv[3], join(home, "run", "agents", "local.md"));
+  });
+});
+
+test("kimiProcessDispatch: NO construction path omits -m (omission falls to config default_model)", () => {
+  // The spec-gate amendment: model_preference binds only SPAWNED SUBAGENTS,
+  // never the -p process's own main agent, so the process model comes ONLY
+  // from -m -- every accepted (agentFile form x lane) pair must carry it.
+  withKimiHome(home => {
+    writeFileSync(join(home, "agents", "muster-builder.md"), "x");
+    writeFileSync(join(home, "custom.md"), "x");
+    for (const agentFile of ["muster-builder.md", join(home, "custom.md")]) {
+      for (const lane of ["primary", "secondary"]) {
+        const d = kimiProcessDispatch({ brief: "b", agentFile, cwd: home, lane });
+        const occurrences = d.argv.filter(a => a === "-m").length;
+        assert.equal(occurrences, 1, `-m must appear exactly once in ${JSON.stringify(d.argv)}`);
+        assert.equal(d.argv[d.argv.indexOf("-m") + 1], KIMI_LANES[lane]);
+      }
+    }
+  });
+});
+
+test("kimiProcessDispatch: rejects an empty brief", () => {
+  withKimiHome(home => {
+    writeFileSync(join(home, "agents", "muster-builder.md"), "x");
+    for (const brief of [undefined, "", "   ", 42]) {
+      assert.throws(
+        () => kimiProcessDispatch({ brief, agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
+        /kimiProcessDispatch: brief is required/
+      );
+    }
+  });
+});
+
+test("kimiProcessDispatch: lane is REQUIRED and must be primary|secondary, never a model id", () => {
+  withKimiHome(home => {
+    writeFileSync(join(home, "agents", "muster-builder.md"), "x");
+    for (const lane of [undefined, "tertiary", "kimi-code/k3"]) {
+      assert.throws(
+        () => kimiProcessDispatch({ brief: "b", agentFile: "muster-builder.md", cwd: home, lane }),
+        /kimiProcessDispatch: lane is required and must be one of primary\|secondary/
+      );
+    }
+  });
+});
+
+test("kimiProcessDispatch: rejects an agentFile that resolves to nothing", () => {
+  withKimiHome(home => {
+    writeFileSync(join(home, "agents", "muster-builder.md"), "x");
+    // a bare name absent from the installed agents dir
+    assert.throws(
+      () => kimiProcessDispatch({ brief: "b", agentFile: "ghost.md", cwd: home, lane: "primary" }),
+      /kimiProcessDispatch: agentFile "ghost\.md" resolved to .+ which does not exist/
+    );
+    // an explicit absolute path that does not exist
+    assert.throws(
+      () => kimiProcessDispatch({ brief: "b", agentFile: join(home, "nope.md"), cwd: home, lane: "primary" }),
+      /which does not exist/
+    );
+    // and the argument itself is required
+    for (const agentFile of [undefined, "", 42]) {
+      assert.throws(
+        () => kimiProcessDispatch({ brief: "b", agentFile, cwd: home, lane: "primary" }),
+        /kimiProcessDispatch: agentFile is required/
+      );
+    }
+  });
+});
+
+test("kimiProcessDispatch: cwd must be an existing directory", () => {
+  withKimiHome(home => {
+    writeFileSync(join(home, "agents", "muster-builder.md"), "x");
+    for (const cwd of [undefined, ""]) {
+      assert.throws(
+        () => kimiProcessDispatch({ brief: "b", agentFile: "muster-builder.md", cwd, lane: "primary" }),
+        /kimiProcessDispatch: cwd is required/
+      );
+    }
+    for (const cwd of [join(home, "missing"), join(home, "agents", "muster-builder.md")]) {
+      assert.throws(
+        () => kimiProcessDispatch({ brief: "b", agentFile: "muster-builder.md", cwd, lane: "primary" }),
+        /kimiProcessDispatch: cwd must be an existing directory/
+      );
+    }
+  });
 });

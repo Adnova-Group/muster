@@ -38,6 +38,7 @@ import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask } f
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
 import { classifySteer } from "./steer.js";
+import { kimiSteerDelivery } from "./kimi-steer.js";
 import { lintPrompt, lintChat, lintWorkflow } from "./prompt-lint.js";
 import { scoreHumanness } from "./humanizer-score.js";
 import { checkCitations } from "./citation-guard.js";
@@ -57,7 +58,7 @@ import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <substr>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
+const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <substr>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -486,7 +487,30 @@ async function main() {
       out(assessOutcome(args[0], { codex }));
     } else if (cmd === "steer") {
       if (!rest[0]) fail("steer <message>: missing message");
-      out(classifySteer(rest.join(" ")));
+      // Harness-conditional Kimi arm (kimi-native-steer-binding): ONLY
+      // `--harness kimi` activates it -- every other invocation (no flag, or
+      // any other --harness value) falls through to today's exact behavior,
+      // classifying the raw args, so the Claude Code / Codex / Hermes steer
+      // paths stay byte-identical. The Kimi arm composes the SAME classifier
+      // with the native steer delivery construction (src/kimi-steer.js):
+      // queued injection between steps without ending the turn, driven over
+      // `kimi web`'s HTTP routes by whoever holds the live session.
+      if (flagValue(rest, "--harness") === "kimi") {
+        const flags = new Set(["--harness", "--session", "--prompt-id"]);
+        const message = rest.filter((arg, i) => !flags.has(arg) && !flags.has(rest[i - 1])).join(" ");
+        if (!message) fail("steer --harness kimi <message>: missing message");
+        out({
+          ...classifySteer(message),
+          harness: "kimi",
+          delivery: kimiSteerDelivery({
+            message,
+            sessionId: flagValue(rest, "--session"),
+            promptId: flagValue(rest, "--prompt-id")
+          })
+        });
+      } else {
+        out(classifySteer(rest.join(" ")));
+      }
     } else if (cmd === "scope") {
       // Deterministic backlog-vs-item scope detection for the plan/go verb family. An
       // empty rest (bare `muster scope`) is a valid input (rule 3's bare-invocation

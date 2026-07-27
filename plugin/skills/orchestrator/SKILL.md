@@ -272,6 +272,27 @@ the flag is also what selects the v2 engine under `kimi -p`. The interactive TUI
 TUI (docs/research/kimi-code-cli.md sec 11.8). `muster doctor`'s `kimi-lane-binding` check
 reports the active binding.
 
+**Attended sessions dispatch lane-sensitive legs as headless `kimi -p` processes.** The
+AgentSwarm/agent-calls shapes above are the UNATTENDED in-session path -- lanes bind there
+only because `kimiGoalInvocation` (go.md step 6) already set the env pair for the whole run
+loop. An ATTENDED/interactive session (a human driving this skill in the TUI) has no such
+bind, and the TUI ignores `model_preference` entirely, so an in-session `Agent` call there
+can never engage a lane. Lane-sensitive legs in an attended session therefore dispatch via
+`kimiProcessDispatch({ brief, agentFile, cwd, lane })` (`src/kimi-dispatch.js`) -- one
+headless `kimi -p` process per leg, spawned straight from the descriptor's `{ argv, env,
+cwd, lane }`: `argv` is `["-p", brief, "--agent-file", <absolute agent file>,
+"--output-format", "stream-json", "-m", KIMI_LANES[lane]]`, and `env` is the shared
+`kimiLaneEnv()` pair, carried for the v2 engine flag `--agent-file` needs. `-m` is ALWAYS
+emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
+SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
+`-m` and omitting it silently falls to config `default_model`. The leg's receipt is the
+stream-json result on stdout plus the process exit code, with per-leg token accounting from
+`readSessionUsage` (`src/kimi-receipts.js`) over the fresh session dir the process writes
+(docs/research/kimi-code-cli.md sec 8). Reserve the attended session's native `Agent` tool
+for legs that genuinely need the parent's live context; the pre-validation, resume-retry,
+and background rules below keep governing the unattended in-session path, which a process
+lane never replaces mid-loop.
+
 **Pre-validate the four swarm rejection rules BEFORE dispatch -- never pay a whole-wave
 round trip to learn them.** Kimi rejects a malformed swarm before any subagent starts, so
 a bad packet costs the wave's entire fan-out. `kimiSwarmCall` enforces all four up front

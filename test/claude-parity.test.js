@@ -978,5 +978,23 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // untouched (it is Claude-concrete by design, emitted via claude.js).
   // Deliberate surface change, not drift.
   // (Also covers the router skill's crew[].model vocabulary update.)
+  // 2026-07-27 re-pin (kimi-process-lane-dispatch): file COUNT unchanged (139) --
+  // only plugin/skills/orchestrator/SKILL.md's content changed. Its Kimi-native
+  // dispatch subsection gained the attended-session process-lane paragraph:
+  // lane-sensitive legs in an attended/interactive Kimi session dispatch via
+  // kimiProcessDispatch (wave 1's headless `kimi -p --agent-file` descriptor
+  // builder, src/kimi-dispatch.js -- outside this surface) because the TUI
+  // ignores model_preference, with -m always emitted (it alone binds the -p
+  // process's own model; model_preference binds only spawned subagents) and the
+  // receipt path named (stream-json stdout + exit code + readSessionUsage per-leg
+  // token accounting). The paragraph sits INSIDE build-codex.mjs's wholesale
+  // "## Wave dispatch" -> "## Scope fences" replacement span, so it ships to no
+  // Codex build and needs no guarded rewrite -- verified the generated Codex
+  // orchestrator skill carries zero occurrences of "kimiProcessDispatch".
+  // Re-verified with MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node
+  // scripts/check-codex.mjs (clean). docs/binding-interface.md's grep-audit
+  // counts re-scanned live -- unchanged (test/docs-binding-interface.test.js
+  // green without a re-derivation). Deliberate surface change, not drift.
+  // REBASE-NOTE: hash refreshed post-rebase onto the tier rename.
   assert.equal(hash.digest("hex"), "a4775efda3940954b0ac94519bceaea15471fb4ef574df88b9b62d6edfcfa3ba");
 });

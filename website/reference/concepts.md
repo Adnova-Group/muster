@@ -56,10 +56,12 @@ Each resolved role carries a model picked to fit the work, so quota spend tracks
 
 | Tier | Roles | Why |
 | --- | --- | --- |
-| haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
-| sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| fable | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
-| opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
+| scout | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
+| core | everything else (the default) | Implementation, review, authoring, scoring |
+| apex | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
+| prime | fallback only (apex -> prime via `fallbackModelFor`) | Used when apex is unavailable on the plan |
+
+Tiers are muster's own conceptual ladder; each harness adapter resolves them to concrete models (Claude: haiku/sonnet/opus/fable via `src/claude.js`; Codex: gpt-5.6-terra/luna/sol; Kimi: kimi-for-coding/k3). The pre-rename names (haiku|sonnet|opus|fable) remain accepted everywhere as legacy aliases.
 
 The orchestrator passes the chosen model as the dispatch override when it spawns each subagent.
 

@@ -50,14 +50,16 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 
 | Tier | Roles | Why |
 | --- | --- | --- |
-| haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
-| sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| fable | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
-| opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
+| scout | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
+| core | everything else (the default) | Implementation, review, authoring, scoring |
+| apex | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
+| prime | fallback only (apex -> prime via `fallbackModelFor`) | Used when apex is unavailable on the plan |
+
+Tiers are muster's own conceptual ladder; each harness adapter resolves them to concrete models (Claude: haiku/sonnet/opus/fable via `src/claude.js`; Codex: gpt-5.6-terra/luna/sol; Kimi: kimi-for-coding/k3). The pre-rename names (haiku|sonnet|opus|fable) remain accepted everywhere as legacy aliases.
 
 The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work: cheap models do the cheap parts, the expensive model is reserved for the calls that need it.
 
-Fable can be disabled platform-wide, so `modelForRole` (`src/model.js`) degrades it to opus deterministically by default -- set `MUSTER_ENABLE_FABLE=1` to opt back in once the tier is available. `MUSTER_MAX_TIER` (e.g. `sonnet`) caps the highest tier Muster will use regardless.
+The apex tier can be disabled platform-wide (its Claude mapping, Fable, has been), so `modelForRole` (`src/model.js`) degrades it to prime deterministically by default -- set `MUSTER_ENABLE_APEX=1` (legacy `MUSTER_ENABLE_FABLE` still honored) to opt back in once the tier is available. `MUSTER_MAX_TIER` (e.g. `core`; legacy values accepted) caps the highest tier Muster will use regardless.
 
 Codex profiles translate conceptual tiers with an evidence-backed policy: Haiku is Luna/high, Sonnet is Luna/xhigh, and Opus and Fable are both Sol/high. That retains `MUSTER_MAX_TIER` and Fable fallback semantics without routine `max` effort. `codex/agents.manifest.json` records the role rationale and supports narrowly scoped `model` and `reasoning` overrides: bounded mechanical roles use Terra/high, routine implementation uses Sol/medium, and security remains Sol/high. The generator and `check:codex` validate those overrides. Review and investigation profiles are explicitly read-only in the same manifest.
 

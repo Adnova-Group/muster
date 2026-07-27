@@ -1064,5 +1064,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // attaches (claudeModel / advisorClaudeModel / codexModel / kimiModel) --
   // a conceptual tier is never passed raw to an Agent tool again. Deliberate
   // surface change, not drift.
-  assert.equal(hash.digest("hex"), "8bf50a2c40412b09b55b1fcb0e98f1de1b29480c5b5133d246e7c0aae8c6d2f6");
+  //
+  // 2026-07-27 re-pin #3 (tier-vocabulary-prose-pass): gsd-execute-phase's
+  // model= examples clarified as Claude Code's OWN aliases (harness-concrete,
+  // not muster tiers) -- the last plugin prose that could read as teaching the
+  // legacy vocabulary. All remaining legacy-name occurrences in plugin/ are
+  // deliberate: agent frontmatter (Claude-concrete by design), compat-alias
+  // documentation, and adapter-output examples. Deliberate change, not drift.
+  assert.equal(hash.digest("hex"), "326249087f04e4dc09037410d669f166ac14f8e66517974e71aad80847fef279");
 });

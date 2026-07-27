@@ -8,6 +8,12 @@ npx -y @adnova-group/muster <command> [args]
 
 ## Routing and capabilities
 
+Muster reports the conceptual ladder in ascending order: `scout`, `core`, `prime`, `apex`. Harness adapters map those tiers to concrete models.
+
+<!-- legacy-tier-compat:start -->
+Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
+<!-- legacy-tier-compat:end -->
+
 | Command | What it does |
 | --- | --- |
 | `detect` | Sniff the current project: languages, shape, greenfield flag. |
@@ -36,7 +42,7 @@ npx -y @adnova-group/muster <command> [args]
 | `plan-checklist <file>` | Render the plan as a checklist (`--done <ids>` ticks completed tasks). |
 | `tally <file>` / `pick <file>` | `tally` tallies adversarial review verdicts into a gate decision (ANY `severity: "blocker"` finding, from any reviewer, blocks -- not majority); a reviewer entry may instead carry `status: "exhausted"` / `"absent"` naming the WORKER's own failure to ever deliver a verdict (killed, ran out of budget, or never responded) -- that always forces `blocked: true` with a named reason in `blockedReasons`, never a silent skip and never counted as a real PASS or FAIL. `pick` selects the single best candidate (fallback ranker -- fuse is the default synthesis path). |
 | `fuse <candidates.json> <fusion-map.json>` | Fusion decision engine: validates the debate map, applies the agreement gate, and either selects top-K candidates for synthesis (mode `fuse`) or falls back to the single best candidate (mode `fallback`). Deterministic, no LLM calls. |
-| `advise <advice-request.json>` | Validate an advice request and emit the structured advisor dispatch input (`advisorModel` + `request`). Deterministic, no LLM calls. The advisor role resolves to the apex tier, degrading to prime when apex is disabled; `advisorClaudeModel` carries the Claude-concrete dispatch value (opus by default). |
+| `advise <advice-request.json>` | Validate an advice request and emit the structured advisor dispatch input (`advisorModel` + `request`). Deterministic, no LLM calls. The advisor role resolves to apex, degrading to prime when apex is disabled; `advisorClaudeModel` carries the Claude-concrete dispatch value. |
 | `scope [text]` | Deterministic backlog-vs-item scope detection for the `plan`/`go` verb family: a parseable backlog ref, a named file that looks like a backlog checklist, or a live default `.muster/backlog.md` on a bare invocation all resolve to `backlog`; a non-empty outcome sentence resolves to `item`; empty text with no live backlog is `ambiguous`. Returns `{scope, signals}` — `signals` are human-readable strings a caller can echo in a confirm question. Deterministic, no LLM calls. |
 
 ## Scoring and prioritization

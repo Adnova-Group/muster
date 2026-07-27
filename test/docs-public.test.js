@@ -93,6 +93,43 @@ test("command reference never pairs artifact-delta with an evidence file", async
   );
 });
 
+const MODEL_POLICY_DOCS = [
+  "README.md",
+  "docs/architecture.md",
+  "website/reference/architecture.md",
+  "website/reference/concepts.md",
+  "website/reference/configuration.md",
+  "website/reference/commands.md",
+];
+
+const withoutLegacyCompatibility = (text) =>
+  text.replace(
+    /<!-- legacy-tier-compat:start -->[\s\S]*?<!-- legacy-tier-compat:end -->/g,
+    "",
+  );
+
+test("public model-policy docs teach the canonical ladder and isolate legacy aliases", async () => {
+  for (const file of MODEL_POLICY_DOCS) {
+    const text = await read(file);
+    assert.match(
+      text,
+      /scout[\s\S]*core[\s\S]*prime[\s\S]*apex/i,
+      `${file} must teach the complete canonical ladder in order`,
+    );
+    assert.doesNotMatch(
+      withoutLegacyCompatibility(text),
+      /\b(?:haiku|sonnet|opus|fable|MUSTER_ENABLE_FABLE)\b/i,
+      `${file} may name legacy tiers only inside a labeled compatibility block`,
+    );
+  }
+  const readme = await read("README.md");
+  const configuration = await read("website/reference/configuration.md");
+  for (const text of [readme, configuration]) {
+    assert.match(text, /MUSTER_ENABLE_APEX/);
+    assert.match(text, /MUSTER_MAX_TIER=(?:core|prime)/);
+  }
+});
+
 test("public prose carries no em-dashes (humanizer rule)", async () => {
   for (const f of ["README.md", "docs/architecture.md", "CONTRIBUTING.md", "docs/anti-patterns.md"]) {
     const text = await read(f);

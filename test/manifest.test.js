@@ -73,6 +73,52 @@ test("accepts fable as a model tier (top tier, ready for routing)", () => {
   assert.deepEqual(r, { ok: true, errors: [] });
 });
 
+// --- Neutral { tier, effort? } crew model profile (the post-rename shape) ----
+// crew[].model also accepts the same neutral profile agents declare in
+// catalog/agents.manifest.json: { tier, effort? }. The effort vocabulary is the
+// SEMANTIC ladder workhorse|judgment|peak -- harness effort strings like "high"
+// are NOT legal here (that is the point of the neutral shape).
+test("accepts a neutral {tier} crew model profile", () => {
+  const member = { stage: "implement", provider: "x", source: "builtin", model: { tier: "prime" },
+                   rationale: "r", evidence: "e", fallback: "inline" };
+  assert.deepEqual(validateManifest({ ...valid, crew: [member] }), { ok: true, errors: [] });
+});
+
+for (const effort of ["workhorse", "judgment", "peak"]) {
+  test(`accepts a neutral profile with semantic effort "${effort}"`, () => {
+    const member = { stage: "implement", provider: "x", source: "builtin",
+                     model: { tier: "prime", effort }, rationale: "r", evidence: "e", fallback: "inline" };
+    assert.deepEqual(validateManifest({ ...valid, crew: [member] }), { ok: true, errors: [] });
+  });
+}
+
+test("rejects a neutral profile with an unknown tier", () => {
+  const member = { stage: "implement", provider: "x", source: "builtin", model: { tier: "gpt-4" },
+                   rationale: "r", evidence: "e", fallback: "inline" };
+  const r = validateManifest({ ...valid, crew: [member] });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /crew\[0\]\.model\.tier/.test(e) && /scout/.test(e)),
+    `expected a tier-naming error, got ${JSON.stringify(r.errors)}`);
+});
+
+test("rejects a neutral profile carrying a harness effort string (not a semantic effort)", () => {
+  const member = { stage: "implement", provider: "x", source: "builtin",
+                   model: { tier: "prime", effort: "high" }, rationale: "r", evidence: "e", fallback: "inline" };
+  const r = validateManifest({ ...valid, crew: [member] });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /crew\[0\]\.model\.effort/.test(e) && /workhorse/.test(e)),
+    `expected an effort-naming error, got ${JSON.stringify(r.errors)}`);
+});
+
+test("rejects a neutral profile with extra keys", () => {
+  const member = { stage: "implement", provider: "x", source: "builtin",
+                   model: { tier: "prime", reasoning: "high" }, rationale: "r", evidence: "e", fallback: "inline" };
+  const r = validateManifest({ ...valid, crew: [member] });
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => /crew\[0\]\.model: unknown keys reasoning/.test(e)),
+    `expected an unknown-keys error, got ${JSON.stringify(r.errors)}`);
+});
+
 test("inline crew member is exempt from the model requirement", () => {
   const inlineMember = { stage: "x", provider: "inline", source: "inline",
                          rationale: "r", evidence: "e", fallback: "inline" };

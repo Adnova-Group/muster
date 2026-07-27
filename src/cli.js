@@ -103,7 +103,7 @@ import {
   runDesignWorkflow,
   scanDesign,
 } from "./design.js";
-import { createCodexFixLoopBinding, planCodexFixContinuation } from "./codex-fix-loop.js";
+import { createCodexFixLoopBinding, planCodexFixContinuation, resolveCodexRoleProfile } from "./codex-fix-loop.js";
 
 const CODEX_WAVE_FILE_MAX_BYTES = 1024 * 1024;
 const CODEX_THREAD_CONFIG_MAX_BYTES = 128 * 1024;
@@ -456,7 +456,10 @@ async function main() {
     } else if (cmd === "fix-loop-bind") {
       const dispatchFile = requireArg(rest, 0, "fix-loop-bind <dispatch.json> <receipt.json>: missing dispatch file", fail);
       const receiptFile = requireArg(rest, 1, "fix-loop-bind <dispatch.json> <receipt.json>: missing receipt file", fail);
-      const binding = createCodexFixLoopBinding(JSON.parse(await readFile(dispatchFile, "utf8")));
+      const dispatch = JSON.parse(await readFile(dispatchFile, "utf8"));
+      const roleProfilePath = resolve(requireArg([dispatch.roleProfilePath], 0, "fix-loop-bind: dispatch roleProfilePath is required", fail));
+      const roleProfile = resolveCodexRoleProfile(await readFile(roleProfilePath, "utf8"));
+      const binding = createCodexFixLoopBinding({ ...dispatch, roleProfilePath, roleProfile });
       await mkdir(dirname(resolve(receiptFile)), { recursive: true });
       await writeFile(receiptFile, JSON.stringify(binding, null, 2) + "\n", { flag: "wx" });
       out({ ok: true, receiptFile, binding });
@@ -464,9 +467,14 @@ async function main() {
       const receiptFile = requireArg(rest, 0, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing receipt file", fail);
       const currentFile = requireArg(rest, 1, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing current context file", fail);
       const reviewFile = requireArg(rest, 2, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing review state file", fail);
+      const binding = JSON.parse(await readFile(receiptFile, "utf8"));
+      const current = JSON.parse(await readFile(currentFile, "utf8"));
+      const roleProfilePath = resolve(requireArg([current.roleProfilePath], 0, "fix-loop-continue: current roleProfilePath is required", fail));
+      if (roleProfilePath !== binding.roleProfilePath) fail("fix-loop-continue: roleProfilePath mismatch; refuse cross-context continuation");
+      const roleProfile = resolveCodexRoleProfile(await readFile(roleProfilePath, "utf8"));
       out(planCodexFixContinuation({
-        binding: JSON.parse(await readFile(receiptFile, "utf8")),
-        current: JSON.parse(await readFile(currentFile, "utf8")),
+        binding,
+        current: { ...current, roleProfilePath, roleProfile },
         reviewState: JSON.parse(await readFile(reviewFile, "utf8"))
       }));
     } else if (cmd === "fast-path") {

@@ -6,13 +6,15 @@
     "cwd": "/worktrees/auth",
     "baseSha": "1111111111111111111111111111111111111111",
     "codexVersion": "0.145.0",
-    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
+    "roleProfilePath": "/profiles/muster-builder.toml",
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoningEffort": "medium", "sandboxMode": "workspace-write", "developerInstructions": "Implement the assigned slice and verify it." }
   },
   "current": {
     "cwd": "/worktrees/auth",
     "baseSha": "1111111111111111111111111111111111111111",
     "codexVersion": "0.145.0",
-    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
+    "roleProfilePath": "/profiles/muster-builder.toml",
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoningEffort": "medium", "sandboxMode": "workspace-write", "developerInstructions": "Implement the assigned slice and verify it." }
   },
   "reviewState": { "sentBlockers": [], "currentBlockers": ["src/auth.js:42 rejects a valid refresh token"] },
   "expectedMechanism": "followup_task",

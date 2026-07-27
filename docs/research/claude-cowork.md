@@ -142,7 +142,7 @@ Native primitives that are **absent** (the gap muster's port exists to fill)
 
 - No dependency-ordered task graph, no wave barrier, no review gate, no tournament or
   fusion machinery — the plan is prose in the agent's head; the entire deterministic
-  gate/wave layer is what the 21-tool server imports [src: readme-11] [INFERRED].
+  gate/wave layer is what the 28-tool MCP server imports [src: readme-11] [INFERRED].
 - No enforcement hooks an integrator can register: muster's wave-guard, scale-gate, and
   action-class fence have "no Cowork equivalent — this session's own discipline is the
   only enforcement there is" [src: sprint-14].
@@ -184,15 +184,15 @@ The documentation is now **internally inconsistent** about this surface:
   desktop app only" [src: cw-start], and the architecture overview adds "Local MCP
   servers don't run in remote sessions" [src: cw-arch] [DOCUMENTED-WEB].
 
-Muster's own ground truth is that Route A worked — the README's verification step ("You
-should see all twenty-one tools") and the "Dispatch is confirmed working" claim were
-validated against a live desktop Cowork [src: readme-7] [src: readme-11]
-[CODE-VERIFIED]. The reconciled reading: config-file local servers loaded in
-desktop-era local sessions (where muster verified), plugin-bundled/MCPB servers are the
-documented desktop path going forward, and **no local-server route reaches a remote
-session's sandbox** — the surface muster's whole port stands on is session-mode-dependent
-and drifting toward plugin/extension packaging [INFERRED from the three sources above].
-Re-running `scripts/cowork-probe.mjs` inside a current build — exactly what the probe
+Muster's repository verifies Route A's 28-tool local MCP server and the sequential
+`muster_next` execution path [src: readme-7] [src: readme-11] [CODE-VERIFIED]. An older
+README claimed a live desktop probe had also confirmed parallel dispatch and per-call
+model override, but no phase-3 receipt is retained, so that claim is not current
+evidence. The reconciled reading: config-file local servers loaded in desktop-era local
+sessions, while **no local-server route reaches a remote session's sandbox** — the
+surface muster's whole port stands on is session-mode-dependent [INFERRED from the three
+sources above]. Re-running `scripts/cowork-probe.mjs` inside a current build — exactly
+what the probe
 was built for [src: probe-8] — is the only way to settle it empirically.
 
 ### 3b. MCPB desktop extensions
@@ -206,14 +206,15 @@ extensions as the enterprise deployment path for local servers on Team/Enterpris
 [src: mcpb-docs] [DOCUMENTED-WEB]; the dedicated MDM kill switch is
 `isDesktopExtensionEnabled` [src: cw-arch].
 
-Muster ships Route B as a first-class MCPB descriptor: `manifest.json` with
-`manifest_version` 0.3, a node entry point at `${__dirname}/cowork/mcp-server.mjs`, and
-`user_config` fields (Fable toggle, max tier, declared connectors) mapped to
-`MUSTER_ENABLE_FABLE`, `MUSTER_MAX_TIER`, `MUSTER_COWORK_CONNECTORS` env vars
-[src: manifest-10] [CODE-VERIFIED]. Known sharp edge: on Windows MSIX installs the
-extension's `${__dirname}` is virtualized and the server's child-process spawn of the
-muster CLI can fail — documented with a fallback to Route A [src: readme-105]
-[CODE-VERIFIED].
+Muster carries a development Route B descriptor: `manifest.json` with
+`manifest_version` 0.3, a node entry point at `${__dirname}/mcp-server.mjs`, and
+`user_config` fields (Apex toggle, max tier, declared connectors) mapped to
+`MUSTER_ENABLE_APEX`, `MUSTER_MAX_TIER`, and `MUSTER_COWORK_CONNECTORS`
+[src: manifest-10] [CODE-VERIFIED]. It is **not currently a distribution**: the packed
+`cowork/` directory omits the repository CLI runtime and shared guidance/package files,
+so an extracted archive cannot initialize. Route A is the supported path until Route B
+has a bundled runtime and an unpack-and-initialize test; Windows MSIX virtualized paths
+remain an additional packaging risk [src: readme-105] [CODE-VERIFIED].
 
 ### 3c. Remote connectors
 
@@ -260,13 +261,11 @@ The two capabilities muster's full orchestration lifecycle is gated on
   Cowork. The only evidence is muster's own probe: phase 3 emits a three-task spec that
   the runtime executes — parallel batch dispatch plus one task carrying
   `modelOverride`, graded on whether "task c's modelReported reflects the override"
-  [src: probe-137] [CODE-VERIFIED as an instrument]. The repo records the result:
-  "Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-call
-  model override, so the full orchestration lifecycle ... runs here, not just the
-  router" [src: readme-7] [CODE-VERIFIED]. The server's older header text still carries
-  the pre-verification hedge ("gated on Cowork supporting subagent dispatch + per-call
-  model override, which its docs do not disclose") [src: mcps-head] — the docs still
-  don't disclose it; the claim rests entirely on the probe run.
+  [src: probe-137] [CODE-VERIFIED as an instrument]. No retained phase-3 receipt proves
+  that an active Cowork build honored the override. The supported protocol therefore
+  defaults to sequential `muster_next`; parallel fan-out and per-call model selection
+  require a fresh successful phase-3 receipt from that build [src: readme-7]
+  [CODE-VERIFIED].
 
 There is no dispatch *API*: an MCP server cannot spawn Cowork sub-agents. Dispatch
 belongs to the agent, so muster steers it by prompt — the `COWORK_PROTOCOL` instructs
@@ -355,8 +354,8 @@ What actually ships [CODE-VERIFIED]:
 
 | Native primitive | What it's for | How muster rides it today | Advisory vs enforcement | Gap vs Claude Code |
 |---|---|---|---|---|
-| Local MCP server (`claude_desktop_config.json`) | Register host-local tools with the agent loop [src: cw-arch] | Route A: the whole 21-tool deterministic brain [src: readme-11] [src: harness-17] | Tool *results* are advisory to the agent; the server enforces its own contracts (required `dir` on audit, overload rejection, cancellation) [src: mcps-106] | Claude Code loads the full plugin (hooks, commands, agents); and this surface is contradicted for current Cowork / absent in remote sessions [src: cw-connectors] |
-| MCPB desktop extension + `user_config` | One-click packaged local server with a settings UI [src: mcpb-spec] | Route B: `manifest.json` maps Fable/tier/connector settings to env vars [src: manifest-10] | Config is a deterministic input; tier caps are enforced inside muster's CLI, not by Cowork | Claude Code has no equivalent packaging need (plugins carry servers); MSIX virtualized-spawn risk is Cowork-specific [src: readme-105] |
+| Local MCP server (`claude_desktop_config.json`) | Register host-local tools with the agent loop [src: cw-arch] | Route A: the whole 28-tool MCP server [src: readme-11] [src: harness-17] | Tool *results* are advisory to the agent; the server enforces its own contracts (required `dir` on audit, overload rejection, cancellation) [src: mcps-106] | Claude Code loads the full plugin (hooks, commands, agents); and this surface is contradicted for current Cowork / absent in remote sessions [src: cw-connectors] |
+| MCPB desktop extension + `user_config` | One-click packaged local server with a settings UI [src: mcpb-spec] | Development-only Route B descriptor; not self-contained or installable today [src: manifest-10] | Intended config mapping is deterministic, but no packaged runtime executes it yet | Claude Code has no equivalent packaging need (plugins carry servers); bundling and MSIX virtualized-spawn remain open Cowork work [src: readme-105] |
 | MCP `instructions` at initialize | Server-supplied session guidance [src: mcps-294] | Carries principles + routing policy + full per-mode execution protocol [src: readme-32] | Pure advisory — prompt text the model can ignore; nothing re-injects it per turn | Claude Code gets SessionStart/UserPromptSubmit hooks (guaranteed injection) plus PreToolUse denial [src: sprint-14] |
 | Sub-agent fan-out + per-call model override | Parallel workstreams on the right model tier [src: cw-start] | Wave dispatch + tournament/review crews per `COWORK_PROTOCOL`; model per role from `muster_capabilities` [src: mcps-56] [src: readme-7] | Entirely advisory — dispatch discipline is prompted; no hook can force crew dispatch over inline editing | Claude Code has a real Task tool contract, agent definitions, worktree isolation, wave-guard enforcement [src: sprint-24] |
 | Remote connectors (OAuth, cloud-brokered) | External SaaS tools, org-governed [src: cw-connectors] | Declared-only via `MUSTER_COWORK_CONNECTORS`; `connectorsDiscoverable:false` keeps the blindness visible [src: harness-46] | Declaration is trust-me config; muster cannot verify a connector exists or is enabled | Claude Code MCP configs are disk-discoverable; muster reads them directly there [src: caps-23] |

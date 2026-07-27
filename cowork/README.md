@@ -111,25 +111,22 @@ In Cowork, prompt:
 
 You should see all twenty-eight tools and a project profile (language, package manager, VCS, and so on). If nothing appears, see Troubleshooting.
 
-## Install (Route B): MCPB desktop extension
+## Route B status: MCPB descriptor, not installable
 
-For a packaged, one-click install instead of hand-edited config. `manifest.json` in this directory is the MCPB descriptor (`manifest_version` 0.3).
+`manifest.json` is a development MCPB descriptor (`manifest_version` 0.3), not a supported installation route. The current archive is not self-contained: `mcp-server.mjs` still needs the repository's CLI runtime, package metadata, shared guidance, and sprint protocol. `validate` checks the descriptor schema, and `pack` creates an archive, but neither proves that an extracted extension can initialize.
 
 ```bash
 npx -y @anthropic-ai/mcpb@2.1.2 validate cowork
 npx -y @anthropic-ai/mcpb@2.1.2 pack cowork muster.mcpb
-# optional: npx -y @anthropic-ai/mcpb@2.1.2 sign muster.mcpb
 ```
 
-These copy-paste commands were reviewed with MCPB CLI `@anthropic-ai/mcpb@2.1.2` against Muster package `@adnova-group/muster@0.5.0`. The extension itself runs the local checkout bundled into `muster.mcpb`; it does not fetch Muster from npm. The pinned `npx` versions make both tool provenance and reviewed behavior explicit.
+Those development checks were reviewed with MCPB CLI `@anthropic-ai/mcpb@2.1.2` against Muster package `@adnova-group/muster@0.5.0`; the pins make tool provenance explicit. They do not produce a runnable standalone extension.
 
-Then in Cowork: Settings → Extensions → install `muster.mcpb`. The extension's `user_config` (Apex toggle, max tier, declared connectors) appears as fields in the extension's settings and is passed to the server as environment variables.
-
-Caveat: on Windows MSIX installs, the extension's `${__dirname}` is virtualized, and the server spawns the muster CLI as a child process from that path. If the tools work via Route A but the packed extension cannot start, that is the virtualized-spawn issue; use Route A, or file it so the server can be switched to importing the CLI in-process. The probe (below) flags this.
+Do not install `muster.mcpb`. Use the verified Route A local MCP configuration above. Making Route B installable requires a bundled runtime plus an unpack-and-initialize test; Windows MSIX virtualized paths must also be covered before this status can change.
 
 ## Configuration
 
-All configuration is environment variables, set either in the Route A `env` block or via the Route B `user_config` fields.
+All supported configuration is environment variables set in the Route A `env` block. The Route B `user_config` fields document the intended future settings UI, but are not currently an install path.
 
 | Variable | user_config field | Effect |
 | --- | --- | --- |

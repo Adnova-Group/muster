@@ -169,7 +169,7 @@ Nine components appear, under different names, in all seven harnesses. Each subs
 
 - Claude Code CLI/Desktop — PreToolUse `deny` (+ `agent_id` crew signal, permission rules, sandbox) is HARD; wave-guard/scale-gate/action-class fence live here; everything else advisory. Strongest enforcement of the seven. [src: cc-hooks] [src: cc-augment]
 - Codex CLI/Desktop — only MCP governance (`required`/allow-deny/approval), `sandbox_mode`, and install-time `config.toml` writes are HARD; hooks are diagnostics; determinism lives in muster's dispatch, receipts, and `doctor --codex`. [src: cx-augment] [src: cx-mcp]
-- Cowork — NOTHING is hookable by an MCP integrator; muster's whole ride is the 21-tool MCP server + protocol injected via MCP `instructions`, with first-class degradation to inline execution. [src: cw-augment] [src: cw-port]
+- Cowork — NOTHING is hookable by an MCP integrator; muster's whole ride is the 28-tool MCP server + protocol injected via MCP `instructions`, with sequential `muster_next` as the verified default and phase-3-gated fan-out. [src: cw-augment] [src: cw-port]
 - Hermes — `pre_tool_call` block hooks + `approvals.deny` globs + managed-scope pins are HARD; default is permissive, so muster adds its fences as hooks. [src: hermes-approval] [src: hermes-hooks]
 - GPT Work / Agents SDK — default approval-free; `needs_approval` + guardrails + durable `RunState` are HARD once declared but nothing gates by default; ChatGPT Work inherits Codex governance. [src: gw-hitl] [src: gw-verdict]
 
@@ -177,7 +177,7 @@ Nine components appear, under different names, in all seven harnesses. Each subs
 
 - Claude Code CLI — `Agent` tool + worktree isolation, PreToolUse gates, skills-as-verbs, the task board, plan mode, plugin packaging, transcript mining. [src: cc-augment]
 - Claude Desktop/Web — repo `.claude/` as the portable plane, `SessionStart` hooks (`CLAUDE_CODE_REMOTE`), automatic worktrees, routines/scheduled tasks, Artifacts for run output. [src: ccd-augment]
-- Cowork — the 21-tool MCP server (Route A config-file / Route B MCPB), MCP `instructions` protocol injection, prompted parallel fan-out + per-call model override, the sprint-protocol degradation path. [src: cw-port]
+- Cowork — the 28-tool MCP server through verified Route A local config (Route B's MCPB descriptor is development-only and not self-contained), MCP `instructions` protocol injection, sequential `muster_next` by default, and phase-3-gated parallel/model-override dispatch. [src: cw-port]
 - Codex CLI — `codex exec` in ported workflows, 27 agent TOML profiles (model/effort/sandbox pinned), the bundled MCP server, install-time config writes; hooks as diagnostics only. [src: cx-augment]
 - Codex Desktop — the same plugin/marketplace + custom-agent TOML + shared `config.toml` reach all local clients from one generated artifact; `doctor` for split-state. [src: cxd-augment]
 - GPT Work — no separate lane; the Codex lane covers ChatGPT Work; the Agents SDK would be a build (needs_approval + RunState + Sandbox agents + custom Session backends), not an augmentation. [src: gw-verdict]
@@ -191,7 +191,7 @@ Nine components appear, under different names, in all seven harnesses. Each subs
 |---|---|---|---|---|
 | Claude Code CLI | Agent tool, hooks, skills, task board, plan mode, plugin [src: cc-augment] | PreToolUse deny, permission rules, sandbox [src: cc-hooks] | SessionStart context, task-board state [src: cc-augment] | native (reference impl) [src: cc-augment] |
 | Claude Desktop/Web | repo `.claude/`, worktrees, routines, Artifacts [src: ccd-augment] | permission modes + managed settings, org tool policy [src: ccd-augment] | session-URL trailers, diff-pane review [src: ccd-augment] | low — repo-commit everything [src: ccd-config] |
-| Cowork | 21-tool MCP server, MCP `instructions`, fan-out [src: cw-port] | none hookable; server enforces its own contracts [src: cw-augment] | crew dispatch, protocol, STATE (hand-written) [src: cw-augment] | medium — session-mode-dependent, contradictory local-MCP docs [src: cw-mcp] |
+| Cowork | 28-tool MCP server, MCP `instructions`, sequential `muster_next` [src: cw-port] | none hookable; server enforces its own contracts [src: cw-augment] | phase-3-gated fan-out, crew dispatch, protocol, STATE (hand-written) [src: cw-augment] | medium — session-mode-dependent, contradictory local-MCP docs [src: cw-mcp] |
 | Codex CLI | `codex exec`, 27 TOML profiles, MCP server [src: cx-augment] | MCP governance, `sandbox_mode`, install-time config [src: cx-mcp] | hook warnings, thread/step ceilings, receipts [src: cx-augment] | medium — advisory-by-design; determinism out-of-loop [src: dr-efficiency] |
 | Codex Desktop | plugin/marketplace, custom agents, shared config [src: cxd-augment] | shared `config.toml` writes reach all clients [src: cxd-config] | in-app count parity (documented, not re-counted) [src: cxd-augment] | shared with Codex CLI lane [src: cxd-config] |
 | GPT Work | Codex lane covers it; Agents SDK for a built lane [src: gw-verdict] | needs_approval + guardrails (opt-in) [src: gw-hitl] | Workspace-agents trigger (write-only today) [src: gw-verdict] | none new (Codex) / build (SDK) [src: gw-verdict] |
@@ -251,7 +251,7 @@ A minimal CLI+desktop harness is reconstructible from Part A: A1 gives the loop,
 - cw-mcp: docs/research/claude-cowork.md §3, §5 — MCP integration plane; local-server doc contradiction; remote connectors undiscoverable.
 - cw-plugins: docs/research/claude-cowork.md §3d — plugin system (skills/connectors/hooks/subagents); Claude Code plugin format.
 - cw-subagents: docs/research/claude-cowork.md §4 — parallel fan-out; per-call model override (probe-only); no dispatch API.
-- cw-port: docs/research/claude-cowork.md §6 — muster's ride; 21-tool MCP server; MCP instructions protocol injection; canonical shared source.
+- cw-port: docs/research/claude-cowork.md §6 — muster's ride; 28-tool MCP server; MCP instructions protocol injection; canonical shared source.
 - cw-augment: docs/research/claude-cowork.md §7–8 — augmentation table; sourcing gaps; existential risks.
 - cx-loop: docs/research/codex-cli.md §1 — Rust harness; Thread/Turn/Items via codex exec; shared config across surfaces.
 - cx-models: docs/research/codex-cli.md §2 — GPT-5.6 lanes; reasoning-effort ladder; luna-xhigh budget evidence.

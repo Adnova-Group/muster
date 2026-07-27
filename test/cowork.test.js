@@ -90,13 +90,15 @@ test("instructions carry a Cowork execution protocol with the sequential (no-fan
   assert.match(instr, /muster_detect/, "names the detect step");
   assert.match(instr, /muster_wave/, "names the wave step");
   assert.match(instr, /muster_manifest_validate/, "names the validate step");
-  assert.match(instr, /muster_next.*fan-out is unavailable|fan-out is unavailable/i, "spells out the no-fan-out fallback via muster_next");
+  assert.match(instr, /default[\s\S]{0,120}muster_next|muster_next[\s\S]{0,120}default/i, "defaults to the verified sequential driver");
+  assert.match(instr, /phase-?3[\s\S]{0,180}parallel/i, "requires phase-3 evidence before optional fan-out");
+  assert.doesNotMatch(instr, /parallel fan-out and per-call model override both work|confirmed to support parallel/i);
 });
 
 test("instructions cover the six-mode MCP protocol subset and sequential fallback", async () => {
   const r = await rpc([INIT]);
   const instr = r[1].result.instructions;
-  assert.match(instr, /parallel/i, "leads with parallel fan-out now that dispatch is confirmed");
+  assert.match(instr, /parallel/i, "documents the phase-3-gated optional fan-out");
   assert.match(instr, /branch/i, "autopilot branches first");
   assert.match(instr, /commit/i, "commits per wave");
   assert.match(instr, /merge/i, "presents the merge decision");
@@ -205,6 +207,10 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.equal(manifest.tools.length, 28, "MCPB manifest declares the complete deterministic tool surface");
   assert.match(manifest.long_description, /28 deterministic MCP tools/);
   assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit/);
+  assert.equal(manifest.server.entry_point, "mcp-server.mjs", "MCPB entry point is relative to the packed cowork/ root");
+  assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/mcp-server.mjs"]);
+  assert.match(manifest.long_description, /not self-contained/i);
+  assert.match(manifest.long_description, /Route A/i);
 
   assert.match(norm, /nine canonical product modes/i);
   assert.match(norm, /six-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit\)/);
@@ -231,6 +237,9 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.match(norm, /Phase 3[\s\S]{0,180}Require that receipt before enabling the parallel path/i);
   assert.match(norm, /@anthropic-ai\/mcpb@2\.1\.2/);
   assert.match(norm, /@adnova-group\/muster@0\.5\.0/);
+  assert.match(norm, /Route B[\s\S]{0,220}not installable/i);
+  assert.match(norm, /archive is not self-contained/i);
+  assert.match(norm, /Do not install `muster\.mcpb`/i);
 });
 
 // MCPB validators may reject a ${user_config.X} substitution for a key that is

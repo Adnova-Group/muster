@@ -122,3 +122,18 @@ test("current Codex research inventories match the generated plugin surface", as
     assert.match(text, /\$muster-init/, `${path} must include Init in the current public skill inventory`);
   }
 });
+
+test("current Cowork research uses the live MCP tool count and phase-3-gated dispatch contract", async () => {
+  const manifest = JSON.parse(await read("cowork/manifest.json"));
+  for (const path of [
+    "docs/research/claude-cowork.md",
+    "docs/research/reference-harness-design.md",
+    "docs/strategy/native-delegation.md",
+  ]) {
+    const text = await read(path);
+    assert.match(text, new RegExp(`${manifest.tools.length}-tool MCP server`), `${path} must state the live Cowork tool count`);
+    assert.doesNotMatch(text, /\b21-tool MCP server\b|all twenty-one tools/i, `${path} must not present the retired count as current`);
+    assert.doesNotMatch(text, /Dispatch is confirmed working/i, `${path} must not claim dispatch without a retained phase-3 receipt`);
+    assert.match(text, /phase-3/i, `${path} must identify the dispatch evidence gate`);
+  }
+});

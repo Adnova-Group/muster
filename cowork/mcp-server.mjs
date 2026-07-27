@@ -24,8 +24,9 @@
 // dispatch + per-call model override, which its docs do not disclose — run scripts/cowork-probe.mjs
 // phase 3 inside Cowork to settle that before relying on it.
 //
-// SELF-CONTAINED: node: builtins only, plus guidance.js (also node:-only). stdio JSON-RPC 2.0,
-// newline-delimited. No SDK dependency.
+// This source wrapper is intentionally zero-SDK, but it is not a self-contained MCPB payload:
+// it reads repository/bundled runtime files described below. The supported Cowork route starts
+// it from a local checkout; cowork/README.md marks the current MCPB descriptor development-only.
 
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -75,17 +76,18 @@ try {
   SPRINT_PROTOCOL_ERROR = `muster_sprint_protocol: missing or unreadable file ${SPRINT_PROTOCOL_PATH} (${e.code || e.message})`;
 }
 
-// Cowork has no muster orchestrator skill / slash commands — only these MCP tools plus your own
-// subagent dispatch (confirmed to support parallel fan-out and per-call model override). So the
-// server teaches the glass-box loop and the per-mode lifecycle itself.
+// Cowork has no muster orchestrator skill / slash commands — only these MCP tools plus the
+// host's declared dispatch surface. The repository verifies the sequential route; parallel
+// fan-out requires a phase-3 receipt from the active Cowork build. The server therefore teaches
+// the glass-box loop and the per-mode lifecycle itself, defaulting to muster_next.
 const COWORK_PROTOCOL = [
-  "Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.",
+  "Running muster here: you have these MCP tools. No skills or slash commands, so follow this protocol directly. The verified default is sequential dispatch through muster_next. Use parallel fan-out or a per-call model override only after a phase-3 probe receipt from this active Cowork build proves those capabilities.",
   "",
   "Core loop (every mode):",
   "1. muster_detect + muster_capabilities: learn the project and which provider+model resolves each role. Cowork capabilities advertise only registered MCP providers or inline execution; dispatch each role on the model muster_capabilities assigns it.",
   "2. muster_assess a thin outcome; muster_route / muster_domain to pick the pipeline.",
   "3. Assemble a crew manifest, muster_manifest_validate it, fix until ok.",
-  "4. muster_wave gives dependency-ordered waves. Dispatch each wave's members as PARALLEL subagents (fall back to muster_next, one task at a time, only if fan-out is unavailable). Cross-wave order is fixed; intra-wave order is free.",
+  "4. muster_wave gives dependency-ordered waves. By default, drive each wave through muster_next one task at a time. If this active Cowork build has a successful phase-3 probe receipt, dependency-free members within a wave may dispatch as parallel subagents. Cross-wave order is fixed; intra-wave order is free.",
   "5. The wave barrier is the gate. For a tournament -- a judge scores all candidates AND maps consensus/contradiction/partial-coverage/blind-spots into a debate map; call muster_fuse to decide fuse-vs-fallback (the agreement gate skips synthesis when candidates already agree; on mode fuse, a synthesizer grafts the top-K best; muster_pick is the fallback ranker when the gate declines fusion). For review -- dispatch adversarial reviewers and muster_tally their verdicts. Re-run the stated test signals before a wave counts as done. A failed gate re-scopes that wave, it does not stop the run.",
   "5a. Advisor escalate-up: a worker facing a hard decision returns a structured advice-request instead of guessing; call muster_advise to validate the request and resolve the advisor model (apex degrades to prime); dispatch the advisor on it and feed the advice back so the worker keeps the decision (advises, does not command). The consult budget is bounded -- log each consult and stop escalating once the limit is reached.",
   "6. Glass-box: state each routing decision and its evidence as you go.",
@@ -94,7 +96,7 @@ const COWORK_PROTOCOL = [
   "- plan (approve-first): do the core loop through the manifest and plan, then STOP for approval. Plan and show; do not execute.",
   "- go (hands-off): create a branch FIRST, run the core loop wave by wave, commit after each green wave, then STOP and present the merge decision. Only halt early for an escalation.",
   "- plan-backlog / go-backlog (batch): the backlog form of plan/go -- route every item up front (plan-backlog) or clear the whole backlog sequentially, one attended stop at the end (go-backlog); call muster_sprint_protocol for this session's Cowork-adapted batch playbook.",
-  "- audit: pass the connected project directory explicitly to muster_audit, fan out the six read-only review dimensions (architecture, tech-debt, coverage, simplification, readability, security) as parallel subagents, consolidate one ranked ledger, then fix with TDD and verify through the gate before presenting the merge.",
+  "- audit: pass the connected project directory explicitly to muster_audit, cover the six read-only review dimensions (architecture, tech-debt, coverage, simplification, readability, security) sequentially by default, or in parallel only with a successful phase-3 receipt from this active build; consolidate one ranked ledger, then fix with TDD and verify through the gate before presenting the merge.",
   "- diagnose (one bug): reproduce first, find the root cause, fix, add a regression test, verify. No symptom-patching.",
   "",
   "Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog.",

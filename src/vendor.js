@@ -1,12 +1,13 @@
 import { parse, stringify } from "yaml";
 import { mkdir, readdir, lstat, realpath, open, rename, unlink } from "node:fs/promises";
 import { constants } from "node:fs";
-import { join, dirname, sep, resolve, relative, isAbsolute, basename } from "node:path";
+import { join, dirname, sep, resolve, relative, basename } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
+import { isContainedLexical } from "./fs-safe.js";
 import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
 import { claudeModelForTier } from "./claude.js";
 import { matchFrontmatter } from "./frontmatter.js";
@@ -26,10 +27,10 @@ const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REF_RE = /^[A-Za-z0-9_.\/~^-]+$/;
 const NOFOLLOW = constants.O_NOFOLLOW || 0;
 
-function contained(root, candidate) {
-  const rel = relative(root, candidate);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
-}
+// Lexical containment, shared in fs-safe.js (audit S4): true when `candidate`
+// resolves to `root` itself or strictly inside it. The canonical-escape check
+// in readSourceRegular applies the same predicate to realpath()ed paths.
+const contained = isContainedLexical;
 
 async function lstatIfExists(path) {
   try { return await lstat(path); }

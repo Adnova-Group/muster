@@ -10,6 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
 import { musterHookTrustGaps, parseHookCommand, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
   codexThreadLimitConfigPath,
@@ -370,12 +371,13 @@ async function ordinaryDirectoryPath(path) {
   return true;
 }
 
-// Descriptor-pinned no-follow open + regular-file validation, factored so BOTH
-// the bounded reader below and the content-free validator (assertRegularFilePresent)
-// share ONE lstat + O_NOFOLLOW open + fstat dev/ino sequence -- no parallel copy.
-// Returns null for a benign absence, the held descriptor + its fstat size for a
-// present regular file, and throws a musterUnsafeRead for a symlink / non-regular
-// / TOCTOU-changed target. The caller owns closing the returned descriptor.
+// Descriptor-pinned no-follow open + regular-file validation WITHOUT reading:
+// the content-free validator (assertRegularFilePresent) needs the held
+// descriptor itself, so it keeps this lstat + O_NOFOLLOW open + fstat dev/ino
+// sequence rather than the shared reader (which always reads). Returns null
+// for a benign absence, the held descriptor + its fstat size for a present
+// regular file, and throws a musterUnsafeRead for a symlink / non-regular /
+// TOCTOU-changed target. The caller owns closing the returned descriptor.
 async function openRegularFile(path) {
   if (!(await ordinaryDirectoryPath(dirname(path)))) return null;
   let before;
@@ -396,18 +398,34 @@ async function openRegularFile(path) {
   }
 }
 
+// Bounded read over fs-safe.js's descriptor-pinned no-follow read (audit S4):
+// the ancestry walk + pre-open lstat stay here (they classify a benign absence
+// and an obvious symlink/non-file BEFORE opening), then the shared read pins
+// the descriptor, re-asserts dev/ino against that lstat, size-bounds on the
+// HELD descriptor before any read (a hostile oversized file is rejected without
+// ever allocating its contents), and re-checks identity after the read. The
+// shared read's tagged rejections are translated back into this module's exact
+// musterUnsafeRead messages; a raw system error (e.g. O_NOFOLLOW's ELOOP on a
+// symlink swapped in after the lstat) propagates, as before.
 async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES) {
-  const opened = await openRegularFile(path);
-  if (opened === null) return null;
-  const { handle, size } = opened;
-  try {
-    // Size-bound on the HELD descriptor before any read: a hostile oversized
-    // file is rejected without ever allocating its contents.
-    if (size > maxBytes) throw unsafeScopeRead(`Codex configuration target exceeds the ${maxBytes}-byte read cap (${size} bytes): ${path}`);
-    return handle.readFile(encoding);
-  } finally {
-    await handle.close().catch(() => {});
+  if (!(await ordinaryDirectoryPath(dirname(path)))) return null;
+  let before;
+  try { before = await lstat(path); }
+  catch (error) {
+    if (missingPath(error)) return null;
+    throw error;
   }
+  if (before.isSymbolicLink() || !before.isFile()) throw unsafeScopeRead(`Codex configuration target must be a regular file: ${path}`);
+  let opened;
+  try {
+    opened = await readNoFollowRegular(path, { maxBytes, label: path, expectedInfo: before });
+  } catch (error) {
+    if (error?.fsSafe?.reason === "not-regular") throw unsafeScopeRead(`Codex configuration target must be a regular file: ${path}`);
+    if (error?.fsSafe?.reason === "too-large") throw unsafeScopeRead(`Codex configuration target exceeds the ${maxBytes}-byte read cap (${error.fsSafe.size} bytes): ${path}`);
+    if (error?.fsSafe?.reason === "changed") throw unsafeScopeRead(`Codex configuration target changed while reading: ${path}`);
+    throw error;
+  }
+  return encoding ? opened.bytes.toString(encoding) : opened.bytes;
 }
 
 // Regular-file validation WITHOUT reading the file: reuses openRegularFile's

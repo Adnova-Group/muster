@@ -1,12 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
-  constants, lstat, mkdir, mkdtemp, open, readdir, readlink, realpath,
-  rename, rm, stat,
+  lstat, mkdir, mkdtemp, readdir, readlink, realpath,
+  rm, stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { atomicWrite as atomicWriteSafe, readNoFollowRegular, safeRelativePath } from "./fs-safe.js";
 
 const pexecFile = promisify(execFile);
 const PROFILE_FORMAT = "muster.project-profile";
@@ -156,14 +157,11 @@ async function validateRoot(dir) {
   return root;
 }
 
-function safeRelative(path) {
-  if (typeof path !== "string" || Buffer.byteLength(path) < 1 || Buffer.byteLength(path) > 256 ||
-      path.includes("\0") || path.includes("\\") || isAbsolute(path) || /^[A-Za-z]:/.test(path) ||
-      path.startsWith("//")) throw new Error(`unsafe relative path: ${path}`);
-  const parts = path.split("/");
-  if (parts.some((part) => !part || part === "." || part === "..")) throw new Error(`unsafe relative path: ${path}`);
-  return path;
-}
+// The lexical relative-path validator, the descriptor-pinned no-follow read,
+// and the staging rename below now live in src/fs-safe.js (audit S4) -- these
+// keep init.js's historical names/signatures so the call sites (and the tests
+// pinning their exact error messages) are untouched.
+const safeRelative = safeRelativePath;
 
 async function ensureSafeAncestors(root, rel) {
   const parts = safeRelative(rel).split("/");
@@ -176,43 +174,21 @@ async function ensureSafeAncestors(root, rel) {
   }
 }
 
-async function readNoFollowRegular(path, maxBytes, label, expectedInfo = null, requireSingleLink = false) {
-  let handle;
-  try {
-    handle = await open(
-      path,
-      constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0),
-    );
-    const info = await handle.stat();
-    if (!info.isFile() || (requireSingleLink && info.nlink !== 1) || info.size > maxBytes) {
-      throw new Error(`unsafe regular file: ${label}`);
-    }
-    if (expectedInfo && (info.ino !== expectedInfo.ino || info.dev !== expectedInfo.dev)) {
-      throw new Error(`file changed while reading: ${label}`);
-    }
-    const bytes = await handle.readFile();
-    const after = await handle.stat();
-    if (after.ino !== info.ino || after.dev !== info.dev || after.size !== info.size ||
-        after.nlink !== info.nlink || !after.isFile()) {
-      throw new Error(`file changed while reading: ${label}`);
-    }
-    return { bytes, info };
-  } finally {
-    await handle?.close();
-  }
-}
-
 async function readRegular(root, rel, maxBytes) {
   await ensureSafeAncestors(root, rel);
   const path = join(root, ...safeRelative(rel).split("/"));
   try {
-    return await readNoFollowRegular(path, maxBytes, rel, null, true);
+    return await readNoFollowRegular(path, { maxBytes, label: rel, requireSingleLink: true });
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
   }
 }
 
+// init.js's verify-unchanged variant of the shared atomic write: the current
+// owned target is read up front (a byte-identical target short-circuits to
+// false), and the beforeRename hook re-reads it after staging so a same-user
+// writer racing the publish aborts the rename instead of being clobbered.
 async function atomicWrite(root, rel, bytes) {
   await ensureSafeAncestors(root, rel);
   const target = join(root, ...rel.split("/"));
@@ -220,27 +196,18 @@ async function atomicWrite(root, rel, bytes) {
   const current = await readRegular(root, rel, Math.max(bytes.length, INIT_LIMITS.learnFileBytes));
   if (current && current.bytes.equals(bytes)) return false;
   if (current && (!current.info.isFile() || current.info.nlink !== 1)) throw new Error(`unsafe owned target: ${rel}`);
-  const token = randomBytes(8).toString("hex");
-  const temp = join(dirname(target), `.muster-init-tmp-${token}`);
-  let handle;
-  try {
-    handle = await open(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW || 0), 0o600);
-    await handle.writeFile(bytes);
-    await handle.sync();
-    await handle.close();
-    handle = null;
-    const recheck = await readRegular(root, rel, Math.max(bytes.length, INIT_LIMITS.learnFileBytes));
-    if (!!current !== !!recheck || (current && (current.info.ino !== recheck.info.ino || current.info.dev !== recheck.info.dev))) {
-      throw new Error(`owned target changed while writing: ${rel}`);
-    }
-    await rename(temp, target);
-    const parent = await open(dirname(target), constants.O_RDONLY);
-    try { await parent.sync(); } finally { await parent.close(); }
-    return true;
-  } finally {
-    await handle?.close();
-    await rm(temp, { force: true });
-  }
+  return atomicWriteSafe(target, bytes, {
+    fsyncDir: true,
+    // The `.muster-init-tmp-` prefix is load-bearing: repositoryFingerprint
+    // skips entries with this prefix.
+    tempName: (targetPath) => join(dirname(targetPath), `.muster-init-tmp-${randomBytes(8).toString("hex")}`),
+    beforeRename: async () => {
+      const recheck = await readRegular(root, rel, Math.max(bytes.length, INIT_LIMITS.learnFileBytes));
+      if (!!current !== !!recheck || (current && (current.info.ino !== recheck.info.ino || current.info.dev !== recheck.info.dev))) {
+        throw new Error(`owned target changed while writing: ${rel}`);
+      }
+    },
+  });
 }
 
 function gitEnvironment() {
@@ -326,7 +293,7 @@ async function repositoryFingerprint(root) {
         }
       } else if (info.isFile()) {
         const opened = await readNoFollowRegular(
-          path, INIT_LIMITS.fingerprintFileBytes, rel, info,
+          path, { maxBytes: INIT_LIMITS.fingerprintFileBytes, label: rel, expectedInfo: info },
         );
         total += opened.info.size;
         if (total > INIT_LIMITS.fingerprintTotalBytes) throw new Error("repository fingerprint total limit exceeded");
@@ -395,7 +362,7 @@ async function learnFacts(root) {
         if (dot >= 0) extensions.add(name.slice(dot).toLowerCase());
         if (++count > INIT_LIMITS.learnFiles) throw new Error("project learning limit exceeded");
         if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
-        const opened = await readNoFollowRegular(path, INIT_LIMITS.learnFileBytes, rel, info);
+        const opened = await readNoFollowRegular(path, { maxBytes: INIT_LIMITS.learnFileBytes, label: rel, expectedInfo: info });
         total += opened.info.size;
         if (total > INIT_LIMITS.learnTotalBytes) throw new Error("project learning limit exceeded");
         rows.push({

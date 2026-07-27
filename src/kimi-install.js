@@ -1,8 +1,9 @@
-import { copyFile, lstat, mkdir, readFile, readdir, rename, rmdir, unlink, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exists, readdirSafe, readJson } from "./fs-util.js";
+import { atomicWrite, isContainedLexical } from "./fs-safe.js";
 import { matchFrontmatter } from "./frontmatter.js";
 import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 
@@ -127,12 +128,14 @@ async function assertWritableDir(path) {
 // Every manifest-recorded relative path must resolve strictly inside dest -- a
 // defense-in-depth containment gate so a crafted manifest (uninstall) or a
 // traversing source name (install) can never read/write outside the kimi root.
+// The string-shape checks stay local; the resolved-path escape check delegates
+// to fs-safe.js's lexical containment (audit S4).
 function assertContained(relPaths, dest) {
   const base = resolve(dest);
   for (const rel of relPaths) {
     const target = resolve(base, rel);
     if (typeof rel !== "string" || rel === "" || rel.startsWith(sep) || rel.split("/").includes("..")
-      || (target !== base && !target.startsWith(base + sep))) {
+      || !isContainedLexical(base, target)) {
       throw new Error(`Refusing a Kimi path outside ${dest}: ${JSON.stringify(rel)}`);
     }
   }
@@ -612,8 +615,14 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
   return { dest, removed, fileCount: removed.length, ...(manifest.permissionRules ? { permissionRules: { stripped: true, configRemoved } } : {}) };
 }
 
+// Manifest publish: temp-write-then-rename via fs-safe.js's shared atomicWrite
+// (audit S4), keeping this site's historical contract -- its temp name and no
+// fsync (the manifest is small and a torn publish is self-healing on rerun;
+// the fence block's config.toml write is deliberately NOT this helper -- see
+// the "deliberately a plain writeFile" comment at the install merge).
 async function atomicWriteJson(path, value) {
-  const temp = join(dirname(path), `.${basename(path)}.tmp-${process.pid}`);
-  await writeFile(temp, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
-  await rename(temp, path);
+  await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", {
+    fsync: false,
+    tempName: (targetPath) => join(dirname(targetPath), `.${basename(targetPath)}.tmp-${process.pid}`),
+  });
 }

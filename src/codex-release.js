@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  closeSync, constants as fsConstants, cpSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync,
+  closeSync, cpSync, fsyncSync, lstatSync, mkdirSync, openSync,
   readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
-import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { join, parse, relative, resolve, sep } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
 import { CODEX_MODEL_POLICY, codexProfileForConfig } from "./codex.js";
+import { isContainedLexical, readNoFollowRegularSync } from "./fs-safe.js";
 import { normalizeTier } from "./model.js";
 
 // Wave 2 teardown: the Codex plugin used to be published as a committed,
@@ -113,42 +114,31 @@ function renameWithRetry(source, destination, { retries = 4, delayMs = 250 } = {
 // On win32, relative() returns `target` itself (still absolute, unchanged)
 // when `base` and `target` are on different drives -- there is no relative
 // path across drives -- which would otherwise slip past the ".." checks
-// above undetected. Unreachable via this module's sole call path today
-// (assertRegularTree below only ever passes a target built by joining
-// directory segments read from within `base`, never a foreign-drive path),
-// but restored anyway for defense-in-depth so a future caller of `contained`
-// can't have this guard silently miss a cross-drive escape on Windows.
+// undetected. fs-safe.js's isContainedLexical carries that isAbsolute(rel) arm,
+// so this guard stays correct for a future caller even on a cross-drive pair.
+// Unreachable via this module's sole call path today (assertRegularTree below
+// only ever passes a target built by joining directory segments read from
+// within `base`, never a foreign-drive path), but kept for defense-in-depth.
 function contained(base, target, label) {
-  const rel = relative(resolve(base), resolve(target));
-  if (!rel || rel === ".") return;
-  if (rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(rel)) {
+  if (!isContainedLexical(base, target)) {
     throw new Error(`${label} is not contained by ${base}: ${target}`);
   }
 }
 
-// Descriptor-pinned no-follow read (run-5 audit Med #6). O_NOFOLLOW makes the
-// open itself refuse to traverse a symlinked FINAL component (a same-user
-// writer swapping the file for a symlink after any prior lstat cannot redirect
-// the read to the link's target), and the size/type gate is asserted with
-// fstat on the RETURNED descriptor -- never a second lstat(path), which would
-// re-resolve the name and reopen the very TOCTOU the descriptor exists to pin.
-// O_NOFOLLOW guards only the final component; a symlinked ANCESTOR is still
-// followed (Node has no openat to hold each parent by descriptor), which is why
-// the tree-level ancestry walks and the staged-vs-copied digest below exist.
+// Descriptor-pinned no-follow read (run-5 audit Med #6). The implementation
+// now lives in fs-safe.js's readNoFollowRegularSync (audit S4) with this
+// module's exact message contract; the rationale is unchanged: O_NOFOLLOW
+// makes the open itself refuse to traverse a symlinked FINAL component (a
+// same-user writer swapping the file for a symlink after any prior lstat
+// cannot redirect the read to the link's target), and the size/type gate is
+// asserted with fstat on the RETURNED descriptor -- never a second lstat(path),
+// which would re-resolve the name and reopen the very TOCTOU the descriptor
+// exists to pin. O_NOFOLLOW guards only the final component; a symlinked
+// ANCESTOR is still followed (Node has no openat to hold each parent by
+// descriptor), which is why the tree-level ancestry walks and the
+// staged-vs-copied digest below exist.
 export function readRegularNoFollow(path, label, maxBytes = 32 * 1024 * 1024) {
-  let fd;
-  try { fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0)); }
-  catch (error) {
-    if (error.code === "ELOOP") throw new Error(`${label} must not be a symlink: ${path}`, { cause: error });
-    if (error.code === "ENOENT") throw new Error(`${label} is missing: ${path}`, { cause: error });
-    throw error;
-  }
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) throw new Error(`${label} must be a regular file: ${path}`);
-    if (stat.size > maxBytes) throw new Error(`${label} must be a bounded regular file: ${path}`);
-    return readFileSync(fd);
-  } finally { closeSync(fd); }
+  return readNoFollowRegularSync(path, { maxBytes, label });
 }
 
 function readRegular(path, label, maxBytes = 32 * 1024 * 1024) {

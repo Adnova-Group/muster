@@ -26,8 +26,9 @@
 // checklist items) — every signal that matched is returned so the mode's confirm question
 // can cite all of them, not just the first.
 import { readFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import { parseBacklogRef } from "./batch-plan.js";
+import { isUnsafePathToken, resolveContainedRealpath } from "./fs-safe.js";
 
 const UNCHECKED_ITEM_RE = /^- \[ \] /;
 
@@ -67,44 +68,33 @@ function countUncheckedItems(content) {
   return n;
 }
 
-// Windows drive-letter ("C:\x" or "C:/x") and backslash-rooted ("\x", including the
-// double-backslash UNC form "\\server\x") path shapes. node:path's isAbsolute is
-// platform-DYNAMIC: on a POSIX runtime it returns false for all of these (path.win32.isAbsolute
-// treats a single leading backslash as absolute too, not just the double-backslash UNC
-// form), so a Windows-absolute candidate would otherwise slip through isTraversalUnsafe as
-// merely "relative" and reach join()/readFile() below (mirrors src/batch-plan.js's
-// parseBacklogRef guard, which carries the identical pair for the same reason).
-const WINDOWS_DRIVE_RE = /^[A-Za-z]:[\\/]/;
-// A single leading backslash also matches the double-backslash UNC form, so this one
-// pattern covers both shapes.
-const WINDOWS_UNC_RE = /^\\/;
-
 // Traversal guard (mirrors src/memory.js's writeMemory/appendState/appendFollowup
 // slug/runId checks): rejects an absolute path (POSIX or Windows-shaped) or any ".."
 // substring before it ever reaches join()/readFile(). Without this, untrusted CLI/issue
 // text landed directly in a real filesystem read with no boundary check at all -- P0
 // arbitrary-file-read: a relative "../../etc/passwd" traversed outside cwd via path.join,
-// and an absolute candidate was passed straight through unmodified.
-function isTraversalUnsafe(rawSegment) {
-  return (
-    typeof rawSegment !== "string" ||
-    isAbsolute(rawSegment) ||
-    WINDOWS_DRIVE_RE.test(rawSegment) ||
-    WINDOWS_UNC_RE.test(rawSegment) ||
-    rawSegment.includes("..")
-  );
-}
+// and an absolute candidate was passed straight through unmodified. The implementation
+// (Windows drive-letter/UNC shapes included -- node:path's isAbsolute is platform-DYNAMIC
+// and would miss them on a POSIX host) is shared in src/fs-safe.js (audit S4);
+// src/batch-plan.js's parseBacklogRef guard uses the same primitive.
+const isTraversalUnsafe = isUnsafePathToken;
 
-// Reads `safeCwd`-joined `rawSegment` if it passes the traversal guard, exists, and is a
-// readable file; returns { readable, count } where count is its unchecked-item tally. An
-// unsafe segment, or any read failure (missing, a directory, EACCES, ...), degrades to
-// { readable: false, count: 0 } — existence/readability/safety is exactly what this
-// function is answering, so a "no" here is the answer, not an error to throw. This is the
-// only place src/scope.js calls readFile, so the guard applies before every read.
+// Reads `safeCwd`-joined `rawSegment` if it passes the traversal guard, resolves to a
+// canonical path CONTAINED under `safeCwd`, exists, and is a readable file; returns
+// { readable, count } where count is its unchecked-item tally. An unsafe segment, a
+// symlink escape (a repo-internal symlink whose target points outside cwd -- the
+// lexical guard above cannot see where a link POINTS, so the canonical containment
+// check from src/fs-safe.js runs before any read; audit S4 finding 5), or any read
+// failure (missing, a directory, EACCES, ...), degrades to { readable: false,
+// count: 0 } — existence/readability/safety is exactly what this function is
+// answering, so a "no" here is the answer, not an error to throw. This is the only
+// place src/scope.js calls readFile, so both guards apply before every read.
 async function readBacklogCandidate(safeCwd, rawSegment) {
   if (isTraversalUnsafe(rawSegment)) return { readable: false, count: 0 };
+  const canonical = await resolveContainedRealpath(safeCwd, join(safeCwd, rawSegment));
+  if (canonical === null) return { readable: false, count: 0 };
   try {
-    const content = await readFile(join(safeCwd, rawSegment), "utf8");
+    const content = await readFile(canonical, "utf8");
     return { readable: true, count: countUncheckedItems(content) };
   } catch {
     return { readable: false, count: 0 };

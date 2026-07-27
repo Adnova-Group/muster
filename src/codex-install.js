@@ -2,6 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, stat, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
+import { atomicWrite } from "./fs-safe.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -661,26 +662,22 @@ async function withScopeRegistryTransaction(home, action, lockOptions) {
   finally { await releaseScopeLock(held.path, held.token, lockOptions); }
 }
 
+// Temp-write-then-rename via fs-safe.js's shared atomicWrite (audit S4); the
+// ordinary-directory/regular-file re-assertions stay as the beforeRename hook
+// so a swap landing between staging and publish still aborts before the
+// rename. Temp naming is preserved verbatim.
 async function atomicWriteSafe(path, content) {
   const parent = dirname(path);
   await ordinaryDirectoryPath(parent, { create: true });
   await regularFileState(path);
-  const temporary = join(parent, `.${basename(path)}.muster-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
-  let handle;
-  try {
-    handle = await open(temporary, "wx", 0o600);
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-    await handle.close();
-    handle = null;
-    await regularFileState(temporary);
-    await ordinaryDirectoryPath(parent);
-    await regularFileState(path);
-    await rename(temporary, path);
-  } finally {
-    if (handle) await handle.close().catch(() => {});
-    try { await unlink(temporary); } catch (error) { if (error.code !== "ENOENT") throw error; }
-  }
+  await atomicWrite(path, content, {
+    tempName: (targetPath) => join(parent, `.${basename(targetPath)}.muster-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`),
+    beforeRename: async (temporary) => {
+      await regularFileState(temporary);
+      await ordinaryDirectoryPath(parent);
+      await regularFileState(path);
+    },
+  });
 }
 
 async function removeSafe(path) {

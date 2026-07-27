@@ -1,4 +1,5 @@
-import { isAbsolute } from "node:path";
+import { join } from "node:path";
+import { isAbsolutePathToken, resolveContainedRealpath } from "./fs-safe.js";
 
 // Batch-plan support for /muster:plan-backlog's backlog-ref form (plan-backlog.md's B1
 // step + its B4 "Render ONE batch plan" section; run.md/sprint.md are now dead alias
@@ -65,13 +66,9 @@ const FILE_TOKEN_RE = /\.[^\s./\\]+$/;
 // treats this as absolute too, not just the double-backslash UNC form), so a
 // Windows-absolute token would otherwise slip through this guard as merely "relative"
 // (kind:"file") when this code runs on a POSIX host -- even though the exact same ref
-// would be caught by isAbsolute on Windows. These two checks make the guard's verdict
-// platform-independent instead of platform-dynamic (mirrors src/scope.js's
-// isTraversalUnsafe, which carries the identical pair for the same reason).
-const WINDOWS_DRIVE_RE = /^[A-Za-z]:[\\/]/;
-// A single leading backslash also matches the double-backslash UNC form, so this one
-// pattern covers both shapes.
-const WINDOWS_UNC_RE = /^\\/;
+// would be caught by isAbsolute on Windows. fs-safe.js's isAbsolutePathToken (audit S4)
+// checks all of those shapes explicitly, making the verdict platform-independent instead
+// of platform-dynamic (the same primitive src/scope.js's traversal guard uses).
 
 export function parseBacklogRef(text) {
   if (typeof text !== "string") return { kind: "outcome" };
@@ -88,14 +85,14 @@ export function parseBacklogRef(text) {
     return { kind: "linear", key };
   }
   if (!/\s/.test(t) && FILE_TOKEN_RE.test(t)) {
-    // Absolute-path guard (mirrors src/scope.js's isTraversalUnsafe): an absolute path
-    // names an out-of-project file outright, no ".." traversal needed at all -- checked
-    // before the ".." substring check below so both shapes share one "invalid" outcome
-    // path rather than an absolute-and-traversal token silently short-circuiting on
-    // whichever check happened to run first. isAbsolute alone is platform-dynamic (see
-    // WINDOWS_DRIVE_RE/WINDOWS_UNC_RE above), so a Windows drive-letter or UNC path is
-    // rejected explicitly alongside it.
-    if (isAbsolute(t) || WINDOWS_DRIVE_RE.test(t) || WINDOWS_UNC_RE.test(t)) {
+    // Absolute-path guard (the fs-safe.js primitive src/scope.js's isTraversalUnsafe
+    // also uses): an absolute path names an out-of-project file outright, no ".."
+    // traversal needed at all -- checked before the ".." substring check below so both
+    // shapes share one "invalid" outcome path rather than an absolute-and-traversal
+    // token silently short-circuiting on whichever check happened to run first.
+    // isAbsolute alone is platform-dynamic (see above), so a Windows drive-letter or
+    // UNC path is rejected explicitly alongside it.
+    if (isAbsolutePathToken(t)) {
       return { kind: "invalid", reason: "file ref must not be an absolute path" };
     }
     // Traversal guard (mirrors src/memory.js's writeMemory/appendState/appendFollowup
@@ -109,6 +106,23 @@ export function parseBacklogRef(text) {
     return { kind: "file", path: t };
   }
   return { kind: "outcome" };
+}
+
+// Post-classification resolution for a kind:"file" ref (audit S4 finding 5).
+// parseBacklogRef's shape guard rejects absolute paths and ".." segments but is
+// deliberately pure/IO-free, so it CANNOT see the one remaining escape: a
+// repo-internal SYMLINK (e.g. `backlog.md -> ~/.ssh/id_rsa`) classifies as
+// kind:"file" and would otherwise be read verbatim downstream. Before any
+// read, the resolved path must be realpath()ed and required to remain under
+// the run root -- exactly fs-safe.js's canonical containment check. Returns the
+// canonical path to read for a contained file ref; null for a non-file ref
+// (nothing to resolve), a missing target, or a canonical escape (which a
+// caller must treat like any other unreadable backlog, never as a green light
+// to read the un-resolved path). src/scope.js's readBacklogCandidate applies
+// the same check to its raw file candidates.
+export async function resolveBacklogFileRef(root, ref) {
+  if (!ref || ref.kind !== "file") return null;
+  return resolveContainedRealpath(root, join(root, ref.path));
 }
 
 // Normalize a fence label to a comparable static path prefix: forward slashes, every

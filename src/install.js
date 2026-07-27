@@ -4,6 +4,7 @@ import { join, basename, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
+import { readNoFollowRegular } from "./fs-safe.js";
 
 async function readIfExists(p) {
   try { return await readFile(p, "utf8"); } catch { return null; }
@@ -39,23 +40,23 @@ async function safeLegacyAncestry(home) {
   return "safe";
 }
 
+// Kind-tagged wrapper over fs-safe.js's descriptor-pinned no-follow read
+// (audit S4): the lstat pre-check classifies a benign absence or an obvious
+// symlink/special file without opening; the shared read then pins the
+// descriptor, and any of its unsafe/changed rejections -- or O_NOFOLLOW's
+// ELOOP/EMLINK/EINVAL refusal -- degrades to the same "unsafe" kind.
 async function readRegularNoFollow(path) {
   const before = await statIfExists(path);
   if (before === null) return { kind: "absent" };
   if (before.isSymbolicLink() || !before.isFile()) return { kind: "unsafe" };
-  let handle;
+  let opened;
   try {
-    handle = await open(path, constants.O_RDONLY | NOFOLLOW);
-    const opened = await handle.stat();
-    if (!opened.isFile()) return { kind: "unsafe" };
-    const bytes = await handle.readFile();
-    return { kind: "regular", bytes, stat: opened };
+    opened = await readNoFollowRegular(path, { maxBytes: Number.MAX_SAFE_INTEGER, label: path });
   } catch (error) {
-    if (["ELOOP", "EMLINK", "EINVAL"].includes(error?.code)) return { kind: "unsafe" };
+    if (["ELOOP", "EMLINK", "EINVAL"].includes(error?.code) || error?.fsSafe) return { kind: "unsafe" };
     throw error;
-  } finally {
-    await handle?.close();
   }
+  return { kind: "regular", bytes: opened.bytes, stat: opened.info };
 }
 
 function sameFileIdentity(left, right) {

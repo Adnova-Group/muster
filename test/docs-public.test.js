@@ -81,6 +81,18 @@ test("newly changed README and modes prose remains humanizer-passing", async () 
   }
 });
 
+test("command reference never pairs artifact-delta with an evidence file", async () => {
+  const commands = await read("website/reference/commands.md");
+  assert.match(commands, /`init transition \[dir\] --to completed --evidence artifact-delta`/);
+  assert.match(commands, /`init transition \[dir\] --to completed --evidence preexisting-confirmed --evidence-file <path>`/);
+  assert.match(commands, /`init transition \[dir\] --to completed --evidence call-result --evidence-file <path>`/);
+  assert.doesNotMatch(
+    commands,
+    /`[^`]*--evidence(?:\s+|=)(?:artifact-delta|<[^>\n]*artifact-delta[^>]*>)[^`]*--evidence-file[^`]*`/,
+    "artifact-delta completion must not advertise an evidence file",
+  );
+});
+
 test("public prose carries no em-dashes (humanizer rule)", async () => {
   for (const f of ["README.md", "docs/architecture.md", "CONTRIBUTING.md", "docs/anti-patterns.md"]) {
     const text = await read(f);

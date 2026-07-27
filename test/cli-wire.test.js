@@ -356,6 +356,50 @@ test("cli wire: plan-checklist shows task ids and names from the fixture", async
 });
 
 // ---------------------------------------------------------------------------
+// tally <verdicts.json> -- schema boundary before tallyReview
+// ---------------------------------------------------------------------------
+
+// .muster/verdicts.json is a structured-output-binding contract
+// (plugin/skills/review-gate/verdict.schema.json, loaded via src/verdict-schema.js).
+// The schema is the STRICT boundary validator; src/review.js's tallyReview is only
+// the defensive floor (see test/verdict-schema.test.js's header). The CLI's tally
+// verb is the real consumer boundary, so a schema-violating file must fail loud
+// BEFORE tallying -- same fail() convention as the advise branch's validation --
+// never ride tallyReview's tolerance into a silently-miscounting gate.
+test("cli wire: tally on a schema-valid verdicts file exits 0 with the tally shape", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-cli-tally-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const file = join(tmp, "verdicts.json");
+  await writeFile(file, JSON.stringify([
+    { reviewer: "code-review", findings: [{ severity: "blocker", note: "real bug" }] },
+    { reviewer: "killed-worker", status: "exhausted" },
+  ]));
+  const { stdout } = await run(["tally", file]);
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.blocked, true, "an exhausted status entry forces blocked:true");
+  assert.deepEqual(parsed.counts, { blocker: 1, risk: 0, nit: 0 });
+});
+
+test("cli wire: tally on a schema-violating verdicts file exits 1 and names the violations", async (t) => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-cli-tally-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const file = join(tmp, "verdicts.json");
+  await writeFile(file, JSON.stringify([
+    { reviewer: "a", findings: [{ severity: "critical", note: "hallucinated severity" }] },
+    { reviewer: "b", status: "exhausted", findings: [{ severity: "blocker", note: "spoofed alongside exhaustion" }] },
+  ]));
+  try {
+    await run(["tally", file]);
+    assert.fail("should have exited non-zero on a schema-violating verdicts file");
+  } catch (err) {
+    assert.equal(err.code, 1, `expected exit 1, got ${err.code}`);
+    assert.match(err.stderr, /schema/i, "stderr must name the schema as the failing contract");
+    assert.match(err.stderr, /oneOf branch/, "stderr must list the actual schema violations");
+    assert.equal(err.stdout ?? "", "", "no tally JSON may be emitted for an invalid verdicts file");
+  }
+});
+
+// ---------------------------------------------------------------------------
 // negative-path: unknown command, bad wave inputs
 // ---------------------------------------------------------------------------
 

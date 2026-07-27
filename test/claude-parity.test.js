@@ -1107,5 +1107,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // `env: { ...process.env, MUSTER_RUNTIME: "cowork" }` spawn line the Codex
   // build transform rewrites FROM is byte-identical. Deliberate review-gate
   // remediation, not drift.
-  assert.equal(hash.digest("hex"), "cff6af4923c8ff86376b2d0e1f574a5804a99f73a20b647079d53083c2b995a2");
+  //
+  // 2026-07-27 re-pin #8 (documentation audit review gate: Cowork dispatch
+  // evidence): file COUNT unchanged (140) -- only cowork/mcp-server.mjs's
+  // protocol guidance/comments changed. Sequential muster_next is now the
+  // verified default; parallel fan-out and per-call model override require a
+  // successful phase-3 receipt from the active Cowork build. Deliberate
+  // shared-surface correctness remediation, not Codex-only drift.
+  assert.equal(hash.digest("hex"), "2d73811e62a0056c8975ec57a39d2f219f48520c88267b7b2b65bb79757d0289");
 });

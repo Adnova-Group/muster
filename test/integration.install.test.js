@@ -36,5 +36,9 @@ test("choice points are wired to the AskUserQuestion selection UI", async () => 
 
 test("README documents installing muster", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
-  assert.match(readme, /muster install/, "README quickstart must show the install command");
+  assert.match(
+    readme,
+    /@adnova-group\/muster(?:@[^\s]+)?\s+install/,
+    "README quickstart must show the scoped, optionally version-pinned install command",
+  );
 });

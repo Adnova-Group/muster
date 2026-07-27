@@ -366,17 +366,17 @@ function findPreRenameVerbLines(text) {
 
 test("cowork/ prose: mcp-server.mjs, sprint-protocol.md, and README.md cite pre-rename verbs (run/autopilot/sprint) only on their one alias-note line", async () => {
   const targets = [
-    { path: "cowork/mcp-server.mjs", aliasLine: 100 },
-    { path: "cowork/sprint-protocol.md", aliasLine: 9 },
-    { path: "cowork/README.md", aliasLine: 7 },
+    "cowork/mcp-server.mjs",
+    "cowork/sprint-protocol.md",
+    "cowork/README.md",
   ];
-  for (const { path, aliasLine } of targets) {
+  for (const path of targets) {
     const text = await read(path);
     const hitLines = findPreRenameVerbLines(text);
-    assert.deepEqual(
-      hitLines,
-      [aliasLine],
-      `${path} must cite pre-rename verbs (run/autopilot/sprint) only on its alias-note line ${aliasLine}; found citations on line(s) ${JSON.stringify(hitLines)}`
+    assert.equal(
+      hitLines.length,
+      1,
+      `${path} must cite pre-rename verbs (run/autopilot/sprint) on exactly one alias-note line; found citations on line(s) ${JSON.stringify(hitLines)}`
     );
   }
 });

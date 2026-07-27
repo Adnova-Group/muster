@@ -89,10 +89,10 @@ export const CODEX_COUNTS = Object.freeze({
   agents: 27,
   nativeSkills: 11,
   builtinSkills: 51,
-  publicSkills: 12,
+  publicSkills: 13,
   internalSkills: 62,
   pipelines: 20,
   mcpTools: 28,
-  primaryModes: 8,
+  primaryModes: 9,
   aliases: 3
 });

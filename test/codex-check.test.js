@@ -13,6 +13,14 @@ test("Codex validation accepts removal of the obsolete static profile files", as
   assert.match(stdout, /"ok": true/);
 });
 
+test("Codex validation carries an explicit positive-evidence completion guard", async () => {
+  const source = await readFile(join(repoRoot, "scripts", "check-codex.mjs"), "utf8");
+  assert.match(source, /--to completed --evidence artifact-delta/);
+  assert.match(source, /--to completed --evidence preexisting-confirmed/);
+  assert.match(source, /--to completed --evidence call-result --evidence-file/);
+  assert.match(source, /native-completion guard/);
+});
+
 // Both hooks.json tests below must tolerate hooks.json being ABSENT before
 // they run -- a fresh clone or CI checkout never has it (it is
 // install-generated and gitignored) -- and restore whatever the prior state

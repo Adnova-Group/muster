@@ -74,7 +74,7 @@ for (const [id, config] of Object.entries(mapping.agents)) {
 }
 const skills = new Set(await dirs(join(plugin, "skills")));
 const internalSkills = new Set(await dirs(join(plugin, "internal-skills")));
-const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture"];
+const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "muster-init"];
 const aliases = ["run", "autopilot", "sprint"];
 for (const name of [...modes, ...aliases]) if (!skills.has(name)) fail(`missing mode skill ${name}`);
 const native = await dirs(join(root, "plugin/skills"));
@@ -108,8 +108,21 @@ for (const name of await files(join(plugin, "commands"))) {
   if (!name.endsWith(".md")) continue;
   const text = await readFile(join(plugin, "commands", name), "utf8");
   if (text.includes("npx -y @adnova-group/muster")) fail(`${name} contacts npm instead of using the bundled CLI`);
-  if (/\/muster:(?:plan|go|plan-backlog|go-backlog|run|autopilot|sprint|diagnose|audit|runner|capture)\b/.test(text)) fail(`${name} retains a Claude-only command invocation`);
+  if (/\/muster:(?:plan|go|plan-backlog|go-backlog|run|autopilot|sprint|diagnose|audit|runner|capture|init)\b/.test(text)) fail(`${name} retains a Claude-only command invocation`);
   if (/\$muster-planner|Claude Code Routine|claude -p|plugin\/(?:hooks|commands|skills)\//.test(text)) fail(`${name} retains an invalid Codex command or source-tree path`);
+}
+const initCommand = await readFile(join(plugin, "commands", "init.md"), "utf8");
+for (const [label, pattern] of [
+  ["HUMAN-HOLD", /HUMAN-HOLD/],
+  ["handoff transition", /--to handoff/],
+  ["artifact-delta evidence", /--to completed --evidence artifact-delta/],
+  ["preexisting evidence", /--to completed --evidence preexisting-confirmed/],
+  ["call-result evidence", /--to completed --evidence call-result --evidence-file/],
+  ["invocation is not completion", /A request, suggestion, command invocation, refusal to\s+overwrite, or mere artifact existence is not completion/],
+  ["completed receipt state", /nativeInit\.state: "completed"/],
+  ["unavailable is not completion", /never as native\s+initialization completed/]
+]) {
+  if (!pattern.test(initCommand)) fail(`init.md is missing native-completion guard: ${label}`);
 }
 for (const name of ["plan.md", "go.md", "plan-backlog.md", "go-backlog.md", "runner.md"]) {
   const text = await readFile(join(plugin, "commands", name), "utf8");

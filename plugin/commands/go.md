@@ -174,6 +174,11 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**,
    unchanged. **Discard is interactive-only** — deliberately not a declarable `mergeDisposition` value.
 
+   On Kimi the finish also writes the run's token-accounting line to STATE next to the gate summary — the
+   same chain go-backlog's batch report uses: `captureSessionId` on the run's captured stream-json stdout at
+   dispatch, `resolveSessionForCwd({ cwd: <worktree path>, capturedSessionId })` before worktree teardown, the
+   `summarizeItemReceipts` line transcribed with UNKNOWN never blocking; non-Kimi harnesses omit the line.
+
    Unattended (Routine) mode: never auto-push to a base branch — `merge-local` and `merge-push` downgrade to
    `pr`, with a note added to the run report.
 

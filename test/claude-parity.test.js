@@ -1009,5 +1009,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // replacement losing HOME/PATH. src/kimi-dispatch.js's matching
   // comment/constant changes sit outside this surface. Deliberate surface
   // change, not drift.
+  //
+  // 2026-07-27 re-pin (kimi-batch-token-reporting): file COUNT unchanged (139) --
+  // content changed in plugin/commands/go-backlog.md (step 4's batch report table
+  // gained a "tokens (Kimi only)" column and the Kimi token-accounting clause:
+  // captureSessionId at dispatch on the leg's stream-json stdout,
+  // resolveSessionForCwd({ cwd: <item worktree path>, capturedSessionId }) before
+  // worktree teardown, summarizeItemReceipts lines transcribed into STATE next to
+  // each item's gate summary, UNKNOWN lines never blocking, non-Kimi harnesses
+  // omitting the line) and plugin/commands/go.md (step 8's finish gained the
+  // single-outcome equivalent clause). Both clauses are harness-conditional
+  // ("On Kimi ... non-Kimi harnesses omit the line"), the SAME shape as go.md's
+  // pre-existing "Kimi run loop" paragraph, which already ships verbatim into
+  // the Codex build -- so no guarded rewrite in scripts/build-codex.mjs was
+  // needed; verified the built .agents/plugins/plugin/commands/go.md still
+  // carries "kimiGoalInvocation" and both new clauses verbatim, and
+  // MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node
+  // scripts/check-codex.mjs re-ran clean. src/kimi-receipts.js (the named
+  // functions' home) sits outside this surface. docs/binding-interface.md's
+  // grep-audit worktree row re-derived 26 -> 28 mentions (file count unchanged).
+  // Deliberate surface change, not drift.
   assert.equal(hash.digest("hex"), "a4775efda3940954b0ac94519bceaea15471fb4ef574df88b9b62d6edfcfa3ba");
 });

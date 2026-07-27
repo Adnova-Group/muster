@@ -292,7 +292,7 @@ stale:
 AskUserQuestion    files=13  mentions=36
 dispatch (Agent/Task tool)  files=5  mentions=19
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
-worktree   files=5  mentions=26
+worktree   files=5  mentions=28
 ```
 
 Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave
@@ -355,7 +355,14 @@ the matching failure-retry paragraph (naming `subagent_type`'s mutual exclusion 
 -- two more dispatch mentions on their own lines (17 -> 19). File counts unchanged (still the
 same 5 files); AskUserQuestion, hook, and worktree counts are untouched by this item.
 
-Every one of those 109 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the kimi-batch-token-reporting item: `plugin/commands/go-backlog.md`'s
+step 4 batch report gained the Kimi token-accounting clause (session resolution runs "before the
+item's worktree teardown") and `plugin/commands/go.md`'s step 8 gained the single-outcome
+equivalent (resolution "before worktree teardown") -- two more `worktree` mentions on their own
+lines (26 -> 28). File counts unchanged (still the same 5 files); AskUserQuestion, dispatch, and
+hook counts are untouched by this item.
+
+Every one of those 111 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

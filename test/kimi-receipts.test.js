@@ -286,3 +286,32 @@ test("summarizeItemReceipts: one line per item, UNKNOWN resolutions become lines
   assert.equal(lines[1], "item-2: UNKNOWN (ambiguous-tie)");
   assert.equal(lines[2], "item-3: UNKNOWN (no-sessions-for-cwd)");
 });
+
+// --- Prose wiring: the batch/finish prose names the accounting line ---------
+
+test("go-backlog.md's batch report names the Kimi token-accounting line and its rules", async () => {
+  const text = await readFile(fileURLToPath(new URL("../plugin/commands/go-backlog.md", import.meta.url)), "utf8");
+  // the three kimi-receipts entry points, named exactly (src/kimi-receipts.js is canonical)
+  assert.match(text, /captureSessionId/, "go-backlog.md must name captureSessionId");
+  assert.match(text, /resolveSessionForCwd\(\{ cwd: <item worktree path>, capturedSessionId \}\)/, "go-backlog.md must name resolveSessionForCwd with its exact call shape");
+  assert.match(text, /summarizeItemReceipts/, "go-backlog.md must name summarizeItemReceipts");
+  // the mechanics: capture at dispatch, resolve before teardown, transcribe into STATE
+  assert.match(text, /at dispatch capture the leg's stream-json stdout/, "go-backlog.md must state the capture happens at dispatch on stream-json stdout");
+  assert.match(text, /before the item's worktree teardown/, "go-backlog.md must state resolution happens before worktree teardown");
+  assert.match(text, /next to each item's gate summary/, "go-backlog.md must state where the lines land in STATE");
+  // UNKNOWN lines are normal after retries and NEVER block the report
+  assert.match(text, /UNKNOWN \(<reason>\)` line is normal after retries and never blocks the report/, "go-backlog.md must state UNKNOWN lines never block the report");
+  // the batch report table carries the tokens note, scoped to Kimi
+  assert.match(text, /gate summary \| tokens \(Kimi only\) \| escalations/, "the batch report table must carry a tokens (Kimi only) column");
+  // non-Kimi harnesses omit the line (the harness-conditional shape that lets the clause ship verbatim)
+  assert.match(text, /non-Kimi harnesses omit the line/, "go-backlog.md must state non-Kimi harnesses omit the line");
+});
+
+test("go.md's finish (step 8) names the single-outcome accounting line", async () => {
+  const text = await readFile(fileURLToPath(new URL("../plugin/commands/go.md", import.meta.url)), "utf8");
+  assert.match(text, /captureSessionId/, "go.md must name captureSessionId");
+  assert.match(text, /resolveSessionForCwd\(\{ cwd: <worktree path>, capturedSessionId \}\)/, "go.md must name resolveSessionForCwd with its exact call shape");
+  assert.match(text, /summarizeItemReceipts/, "go.md must name summarizeItemReceipts");
+  assert.match(text, /UNKNOWN never blocking/, "go.md must state UNKNOWN lines never block");
+  assert.match(text, /non-Kimi harnesses omit the line/, "go.md must state non-Kimi harnesses omit the line");
+});

@@ -10,7 +10,7 @@ You are given: an `outcome` string, a `ProjectProfile` JSON, an `AvailableCapabi
 
 ## Iron rules
 - **Outcome-anchored.** Derive explicit, testable `successCriteria`. If you cannot, ask the user — do not invent. When asking the user to choose between options, use the **AskUserQuestion** selection UI.
-- **Glass Box.** Every crew member records `provider`, `source` (installed/builtin/dynamic/inline), `model` tier, one-line `rationale`, the `evidence` it rests on, and `fallback` if absent.
+- **Glass Box.** Every crew member records `provider`, `source` (installed/builtin/dynamic/inline), `model` (a conceptual tier scout|core|prime|apex, or a neutral `{tier, effort?}` profile), one-line `rationale`, the `evidence` it rests on, and `fallback` if absent.
 - **Respect the ladder.** Use `AvailableCapabilities.roles[role].chosen` as the provider, `.model` as its `model`; surface its `recommendations` verbatim.
   - **`model` is required for every non-inline crew member** (validator-enforced). Only `source: "inline"` omits it.
   - Every role's `chain` ends with an `inline` sentinel — the fallback, not a provider to prefer.
@@ -31,7 +31,7 @@ Emit ONLY the Crew Manifest JSON matching this shape (validated by `muster manif
 
 ```json
 { "outcome": "...", "successCriteria": ["..."],
-  "crew": [{ "stage": "...", "provider": "...", "source": "...", "model": "haiku|sonnet|opus|fable", "rationale": "...", "evidence": "...", "fallback": "..." }],
+  "crew": [{ "stage": "...", "provider": "...", "source": "...", "model": "scout|core|prime|apex — or a neutral profile object { \"tier\": \"prime\", \"effort\": \"peak\" } when a member needs a semantic effort; legacy haiku|sonnet|opus|fable still validate", "rationale": "...", "evidence": "...", "fallback": "..." }],
   "recommendations": ["..."], "degradations": ["skill-gap: <technique> — no installed/builtin skill covers this"], "mergeDisposition": "ask", "forbiddenActions": [],
   "plan": [
     { "id": "t1", "task": "...", "mode": "single", "deps": [], "owns": ["..."], "frozen": ["..."],

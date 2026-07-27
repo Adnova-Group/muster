@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { modelForRole } from "../src/model.js";
+import { claudeModelForTier } from "../src/claude.js";
 import { toAgent } from "../src/vendor.js";
 import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
@@ -59,7 +60,7 @@ test("each agent file's frontmatter model equals modelForRole(primaryRole)", asy
     const m = src.match(/^---\n([\s\S]*?)\n---/);
     assert.ok(m, `${id}.md missing YAML frontmatter`);
     const fm = parse(m[1]);
-    const expected = modelForRole(PRIMARY_ROLE[id]);
+    const expected = claudeModelForTier(modelForRole(PRIMARY_ROLE[id])).model;
     assert.equal(fm.model, expected, `${id} model should be ${expected}`);
     covered++;
   }

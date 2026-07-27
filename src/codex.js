@@ -1,4 +1,4 @@
-import { modelForRole } from "./model.js";
+import { modelForRole, normalizeTier } from "./model.js";
 import { agentProfiles } from "./agent-manifest.js";
 import { resolveNeutralProfile } from "./model-policy.js";
 
@@ -34,12 +34,12 @@ const CODEX_EFFORT = Object.freeze({ workhorse: "medium", judgment: "high", peak
 
 export const CODEX_MODEL_POLICY = Object.freeze({
   tiers: Object.freeze({
-    haiku: Object.freeze({ model: "gpt-5.6-terra", effort: "high" }),
-    sonnet: Object.freeze({ model: "gpt-5.6-luna", effort: "xhigh" }),
-    opus: Object.freeze({ model: "gpt-5.6-sol", effort: "high" }),
-    // Fable stays a conceptual peak tier; on Codex it adapts to Sol/high, never
-    // routine max (model.js still degrades fable -> opus when Fable is disabled).
-    fable: Object.freeze({ model: "gpt-5.6-sol", effort: "high" })
+    scout: Object.freeze({ model: "gpt-5.6-terra", effort: "high" }),
+    core: Object.freeze({ model: "gpt-5.6-luna", effort: "xhigh" }),
+    prime: Object.freeze({ model: "gpt-5.6-sol", effort: "high" }),
+    // apex stays a conceptual peak tier; on Codex it adapts to Sol/high, never
+    // routine max (model.js still degrades apex -> prime when apex is disabled).
+    apex: Object.freeze({ model: "gpt-5.6-sol", effort: "high" })
   }),
   // A semantic effort override dials the reasoning effort on the tier's model;
   // an unknown semantic (shouldn't reach here -- assertNeutralProfile guards it)
@@ -50,7 +50,7 @@ export const CODEX_MODEL_POLICY = Object.freeze({
 });
 
 export function codexModelForTier(tier) {
-  const resolved = CODEX_MODEL_POLICY.tiers[tier];
+  const resolved = CODEX_MODEL_POLICY.tiers[normalizeTier(tier)];
   if (!resolved) throw new Error(`unknown Muster model tier: ${tier}`);
   return { ...resolved };
 }

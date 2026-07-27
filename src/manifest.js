@@ -10,9 +10,35 @@ const MERGE_DISPOSITIONS = new Set(["merge-local", "merge-push", "pr", "keep", "
 function isValidLabelArray(v) {
   return Array.isArray(v) && v.every((s) => typeof s === "string" && s.trim().length > 0);
 }
-// Model tiers a crew member may dispatch on. `fable` is the top tier (above opus),
-// pre-accepted so a future fable-tier role validates without a schema change.
-const MODEL_TIERS = new Set(["haiku", "sonnet", "opus", "fable"]);
+// Model tiers a crew member may dispatch on: muster's canonical conceptual
+// ladder (model.js MODEL_TIER_ORDER) plus the legacy Claude-family aliases,
+// accepted so pre-rename manifests keep validating (LEGACY_TIER_ALIASES).
+const MODEL_TIERS = new Set(["scout", "core", "prime", "apex", "haiku", "sonnet", "opus", "fable"]);
+// Semantic efforts a neutral crew model profile may carry (model-policy.js
+// NEUTRAL_EFFORTS — duplicated as a literal because this validator is
+// deliberately dependency-light and shape-only).
+const MODEL_EFFORTS = new Set(["workhorse", "judgment", "peak"]);
+
+// crew[].model accepts EITHER a bare tier string (legacy shape, both
+// vocabularies) OR a neutral { tier, effort? } profile — the same shape
+// agents declare in catalog/agents.manifest.json, so a Crew Manifest can
+// finally express a per-member semantic effort (e.g. the security reviewer's
+// peak lane) instead of the tier alone. Returns an error string or null.
+function validateCrewModel(model, path) {
+  if (typeof model === "string") {
+    return MODEL_TIERS.has(model) ? null : `${path}: must be one of ${[...MODEL_TIERS].join("|")} or a { tier, effort? } profile`;
+  }
+  if (model && typeof model === "object" && !Array.isArray(model)) {
+    if (!MODEL_TIERS.has(model.tier)) return `${path}.tier: must be one of ${[...MODEL_TIERS].join("|")}`;
+    if (model.effort !== undefined && !MODEL_EFFORTS.has(model.effort)) {
+      return `${path}.effort: must be one of ${[...MODEL_EFFORTS].join("|")} or omitted`;
+    }
+    const extras = Object.keys(model).filter((k) => k !== "tier" && k !== "effort");
+    if (extras.length) return `${path}: unknown keys ${extras.join(", ")} (a neutral profile is { tier, effort? })`;
+    return null;
+  }
+  return `${path}: must be a tier string or a { tier, effort? } profile`;
+}
 
 // Fixed action-class vocabulary for the action-scoped fence (distinct from the
 // path-scoped owns/frozen fences). A crew brief's effective forbidden set is the
@@ -84,7 +110,10 @@ export function validateManifest(m) {
     // must travel with it (else dispatch inherits the orchestrator's model). Inline
     // members run in-context and are exempt. A present model must be a known tier.
     if (c.source !== "inline" && !c.model) errors.push(`crew[${i}].model: required for non-inline members`);
-    if (c.model && !MODEL_TIERS.has(c.model)) errors.push(`crew[${i}].model: must be one of ${[...MODEL_TIERS].join("|")}`);
+    if (c.model) {
+      const modelError = validateCrewModel(c.model, `crew[${i}].model`);
+      if (modelError) errors.push(modelError);
+    }
   });
   for (const f of ["recommendations", "degradations"])
     if (!Array.isArray(m[f])) errors.push(`${f}: must be an array`);

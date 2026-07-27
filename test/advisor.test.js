@@ -23,7 +23,7 @@ test("modelForRole('advisor'): degrades to opus by default (fable disabled)", ()
   const prev = process.env.MUSTER_ENABLE_FABLE;
   delete process.env.MUSTER_ENABLE_FABLE;
   try {
-    assert.equal(modelForRole("advisor"), "opus");
+    assert.equal(modelForRole("advisor"), "prime");
   } finally {
     if (prev !== undefined) process.env.MUSTER_ENABLE_FABLE = prev;
   }
@@ -33,7 +33,7 @@ test("modelForRole('advisor'): returns fable when MUSTER_ENABLE_FABLE='1'", () =
   const prev = process.env.MUSTER_ENABLE_FABLE;
   process.env.MUSTER_ENABLE_FABLE = "1";
   try {
-    assert.equal(modelForRole("advisor"), "fable");
+    assert.equal(modelForRole("advisor"), "apex");
   } finally {
     if (prev === undefined) delete process.env.MUSTER_ENABLE_FABLE;
     else process.env.MUSTER_ENABLE_FABLE = prev;
@@ -317,7 +317,7 @@ test("cli wire: muster advise advisorModel is 'opus' by default (fable degraded)
 
   const { stdout } = await cliRun(["advise", reqFile], { MUSTER_ENABLE_FABLE: "" });
   const result = JSON.parse(stdout);
-  assert.equal(result.advisorModel, "opus");
+  assert.equal(result.advisorModel, "prime");
 });
 
 test("cli wire: muster advise advisorModel is 'fable' when MUSTER_ENABLE_FABLE=1", async (t) => {
@@ -333,7 +333,7 @@ test("cli wire: muster advise advisorModel is 'fable' when MUSTER_ENABLE_FABLE=1
 
   const { stdout } = await cliRun(["advise", reqFile], { MUSTER_ENABLE_FABLE: "1" });
   const result = JSON.parse(stdout);
-  assert.equal(result.advisorModel, "fable");
+  assert.equal(result.advisorModel, "apex");
 });
 
 test("cli wire: muster advise exits non-zero and prints errors for invalid request", async (t) => {

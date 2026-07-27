@@ -1,4 +1,4 @@
-import { modelForRole } from "./model.js";
+import { modelForRole, normalizeTier } from "./model.js";
 import { resolveNeutralProfile } from "./model-policy.js";
 import { agentProfiles } from "./agent-manifest.js";
 
@@ -49,10 +49,10 @@ import { agentProfiles } from "./agent-manifest.js";
 // A tier entry carries EITHER `effort` (a K3 reasoning level) OR `thinking` (the
 // always-on toggle for the effort-less coding models).
 const KIMI_TIERS = Object.freeze({
-  haiku: Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }),
-  sonnet: Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }),
-  opus: Object.freeze({ model: "kimi-code/k3", effort: "high" }),
-  fable: Object.freeze({ model: "kimi-code/k3", effort: "max" }),
+  scout: Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }),
+  core: Object.freeze({ model: "kimi-code/kimi-for-coding", thinking: "enabled" }),
+  prime: Object.freeze({ model: "kimi-code/k3", effort: "high" }),
+  apex: Object.freeze({ model: "kimi-code/k3", effort: "max" }),
 });
 
 // Semantic effort -> Kimi K3 reasoning level. K3's native ladder is 3 rungs, so
@@ -76,7 +76,7 @@ export const KIMI_MODEL_POLICY = Object.freeze({
 });
 
 export function kimiModelForTier(tier) {
-  const resolved = KIMI_MODEL_POLICY.tiers[tier];
+  const resolved = KIMI_MODEL_POLICY.tiers[normalizeTier(tier)];
   if (!resolved) throw new Error(`unknown Muster model tier: ${tier}`);
   return { ...resolved };
 }
@@ -157,8 +157,8 @@ export function kimiPreferenceForAgentId(id) {
 // (src/kimi-dispatch.js) for the live `kimi -p` run loop, the install report
 // (src/kimi-install.js), and `muster doctor` (src/doctor.js).
 export function kimiLaneBinding() {
-  const primary = kimiModelForTier("opus").model;    // the K3 judgment family
-  const secondary = kimiModelForTier("sonnet").model; // the K2.7 Coding execution family
+  const primary = kimiModelForTier("prime").model;   // the K3 judgment family
+  const secondary = kimiModelForTier("core").model;   // the K2.7 Coding execution family
   if (KIMI_LANES.primary !== primary || KIMI_LANES.secondary !== secondary) {
     throw new Error(`KIMI_LANES drifted from KIMI_TIERS: lanes name ${KIMI_LANES.primary} / ${KIMI_LANES.secondary}, but the tiers resolve ${primary} / ${secondary}`);
   }

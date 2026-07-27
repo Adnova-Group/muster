@@ -6,6 +6,7 @@ import {
 import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
 import { CODEX_MODEL_POLICY, codexProfileForConfig } from "./codex.js";
+import { normalizeTier } from "./model.js";
 
 // Wave 2 teardown: the Codex plugin used to be published as a committed,
 // content-addressed generation (release.json + releases/<sha256>/, an
@@ -268,7 +269,7 @@ export function encodeTomlBasicString(value) {
 export function profileToml(id, source, config) {
   const body = source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
   const description = (source.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].match(/^description:\s*(.+)$/m)?.[1] || "").trim().replace(/^['"]|['"]$/g, "") || `${id} Muster specialist.`;
-  const defaultModel = CODEX_MODEL_POLICY.tiers[config.tier];
+  const defaultModel = CODEX_MODEL_POLICY.tiers[normalizeTier(config.tier)];
   if (!defaultModel) throw new Error(`unknown Codex profile tier for ${id}: ${config.tier}`);
   // Harness-neutral shape: an agent carries an optional SEMANTIC effort override
   // (workhorse|judgment|peak), never a concrete model/reasoning string. This

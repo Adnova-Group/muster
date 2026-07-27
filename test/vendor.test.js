@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateVendorManifest, toBuiltin, toAgent, generateNotice, runVendor, pickLatestVersion, splitFrontmatter, cloneCommandsFor } from "../src/vendor.js";
 import { modelForRole } from "../src/model.js";
+import { claudeModelForTier } from "../src/claude.js";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, lstat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -343,8 +344,9 @@ test("toAgent architecture-review role → modelForRole policy (fable→opus by 
   const item = { from: "ag/AGENT.md", id: "sp-arch", roles: ["architecture-review"] };
   const r = toAgent(agentSrc, item, agentSource);
   const { data } = splitFrontmatter(r.content);
-  // Expectation derived from policy, not hardcoded — follows modelForRole.
-  assert.equal(data.model, modelForRole("architecture-review"));
+  // Expectation derived from policy, not hardcoded — the conceptual tier from
+  // modelForRole resolves to frontmatter's Claude-concrete value via claude.js.
+  assert.equal(data.model, claudeModelForTier(modelForRole("architecture-review")).model);
 });
 
 test("toAgent default roles (implement) → sonnet", () => {

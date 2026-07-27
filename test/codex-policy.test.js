@@ -13,27 +13,29 @@ import { repoRoot, selectedPlugin } from "../test-support/codex-helpers.js";
 
 test("profileToml fails loud on a half-migrated legacy model/reasoning key", () => {
   const src = "---\ndescription: x\n---\nbody\n";
-  assert.doesNotThrow(() => profileToml("x", src, { tier: "opus", effort: "workhorse" }));
+  assert.doesNotThrow(() => profileToml("x", src, { tier: "prime", effort: "workhorse" }));
   // A leftover concrete model/reasoning key would be silently ignored by the
   // neutral resolver, so the generator must reject it rather than mis-emit.
-  assert.throws(() => profileToml("x", src, { tier: "opus", model: "gpt-5.6-luna" }), /legacy model\/reasoning/);
-  assert.throws(() => profileToml("x", src, { tier: "opus", reasoning: "high" }), /legacy model\/reasoning/);
-  assert.throws(() => profileToml("x", src, { tier: "opus", effort: "nonsense" }), /invalid Codex profile effort/);
+  assert.throws(() => profileToml("x", src, { tier: "prime", model: "gpt-5.6-luna" }), /legacy model\/reasoning/);
+  assert.throws(() => profileToml("x", src, { tier: "prime", reasoning: "high" }), /legacy model\/reasoning/);
+  assert.throws(() => profileToml("x", src, { tier: "prime", effort: "nonsense" }), /invalid Codex profile effort/);
 });
 
 test("Codex policy preserves the conceptual Fable fallback without routine max effort", () => {
   assert.deepEqual(CODEX_MODEL_POLICY.tiers, {
-    // 2026-07-18 retier: haiku (read-only locator lane) rides terra/high --
+    // 2026-07-18 retier: scout (read-only locator lane) rides terra/high --
     // long-context safe, +9.6pts over luna/high for +$0.35/task.
-    haiku: { model: "gpt-5.6-terra", effort: "high" },
-    sonnet: { model: "gpt-5.6-luna", effort: "xhigh" },
-    opus: { model: "gpt-5.6-sol", effort: "high" },
-    fable: { model: "gpt-5.6-sol", effort: "high" }
+    scout: { model: "gpt-5.6-terra", effort: "high" },
+    core: { model: "gpt-5.6-luna", effort: "xhigh" },
+    prime: { model: "gpt-5.6-sol", effort: "high" },
+    apex: { model: "gpt-5.6-sol", effort: "high" }
   });
   // The former "luna-xhigh" tier was byte-identical to sonnet and is removed.
   assert.equal(CODEX_MODEL_POLICY.tiers["luna-xhigh"], undefined);
-  assert.deepEqual(codexModelForTier("haiku"), CODEX_MODEL_POLICY.tiers.haiku);
-  assert.deepEqual(codexModelForTier("fable"), codexModelForTier("opus"), "Fable adapts to the user's Sol/high preference");
+  assert.deepEqual(codexModelForTier("scout"), CODEX_MODEL_POLICY.tiers.scout);
+  // legacy vocabulary keeps resolving through the alias layer
+  assert.deepEqual(codexModelForTier("haiku"), CODEX_MODEL_POLICY.tiers.scout);
+  assert.deepEqual(codexModelForTier("apex"), codexModelForTier("prime"), "apex adapts to the user's Sol/high preference");
   assert.ok(Object.values(CODEX_MODEL_POLICY.tiers).every(policy => policy.effort !== "max"), "no conceptual default uses max effort");
   assert.throws(() => codexModelForTier("unknown"), /unknown Muster model tier/);
   // The semantic effort dial: workhorse->medium, judgment->high, peak->xhigh.
@@ -51,33 +53,33 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
   // tier -> luna/xhigh budget lane (bounded work, separate luna quota allowance,
   // model diversity on verifier-adjacent work).
   const expected = {
-    "muster-investigator": { tier: "haiku", model: "gpt-5.6-terra", effort: "high", readOnly: true },
-    "muster-surgeon": { tier: "sonnet", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "wsh-api-documenter": { tier: "sonnet", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "wsh-tutorial-engineer": { tier: "sonnet", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "wsh-test-automator": { tier: "sonnet", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "muster-reviewer": { tier: "opus", model: "gpt-5.6-sol", effort: "high", readOnly: true },
-    "wsh-code-reviewer": { tier: "opus", model: "gpt-5.6-sol", effort: "high", readOnly: true },
-    "wsh-business-analyst": { tier: "sonnet", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "wsh-content-marketer": { tier: "sonnet", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "wsh-customer-support": { tier: "sonnet", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "wsh-data-scientist": { tier: "sonnet", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "muster-builder": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "muster-runner": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-debugger": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-devops-troubleshooter": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-frontend-developer": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-legacy-modernizer": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-data-engineer": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-database-optimizer": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-ml-engineer": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-prompt-engineer": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "wsh-docs-architect": { tier: "opus", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
-    "muster-improver": { tier: "fable", model: "gpt-5.6-sol", effort: "high", readOnly: true },
-    "muster-strategist": { tier: "fable", model: "gpt-5.6-sol", effort: "high", readOnly: true },
-    "wsh-backend-architect": { tier: "opus", model: "gpt-5.6-sol", effort: "high", readOnly: false },
-    "wsh-cloud-architect": { tier: "opus", model: "gpt-5.6-sol", effort: "high", readOnly: false },
-    "wsh-security-auditor": { tier: "opus", model: "gpt-5.6-sol", effort: "xhigh", readOnly: true }
+    "muster-investigator": { tier: "scout", model: "gpt-5.6-terra", effort: "high", readOnly: true },
+    "muster-surgeon": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
+    "wsh-api-documenter": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
+    "wsh-tutorial-engineer": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
+    "wsh-test-automator": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
+    "muster-reviewer": { tier: "prime", model: "gpt-5.6-sol", effort: "high", readOnly: true },
+    "wsh-code-reviewer": { tier: "prime", model: "gpt-5.6-sol", effort: "high", readOnly: true },
+    "wsh-business-analyst": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
+    "wsh-content-marketer": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
+    "wsh-customer-support": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
+    "wsh-data-scientist": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
+    "muster-builder": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "muster-runner": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-debugger": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-devops-troubleshooter": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-frontend-developer": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-legacy-modernizer": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-data-engineer": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-database-optimizer": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-ml-engineer": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-prompt-engineer": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "wsh-docs-architect": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "muster-improver": { tier: "apex", model: "gpt-5.6-sol", effort: "high", readOnly: true },
+    "muster-strategist": { tier: "apex", model: "gpt-5.6-sol", effort: "high", readOnly: true },
+    "wsh-backend-architect": { tier: "prime", model: "gpt-5.6-sol", effort: "high", readOnly: false },
+    "wsh-cloud-architect": { tier: "prime", model: "gpt-5.6-sol", effort: "high", readOnly: false },
+    "wsh-security-auditor": { tier: "prime", model: "gpt-5.6-sol", effort: "xhigh", readOnly: true }
   };
   assert.equal(Object.keys(mapping.agents).length, Object.keys(expected).length, "all 27 Codex roles are classified");
   for (const [id, policy] of Object.entries(expected)) {
@@ -131,11 +133,11 @@ test("Codex adapter preserves shared cap and Fable fallback resolution", () => {
   try {
     delete process.env.MUSTER_ENABLE_FABLE;
     delete process.env.MUSTER_MAX_TIER;
-    assert.deepEqual(codexModelForRole("architecture-review"), CODEX_MODEL_POLICY.tiers.opus);
+    assert.deepEqual(codexModelForRole("architecture-review"), CODEX_MODEL_POLICY.tiers.prime);
     process.env.MUSTER_ENABLE_FABLE = "true";
-    assert.deepEqual(codexModelForRole("architecture-review"), CODEX_MODEL_POLICY.tiers.fable);
+    assert.deepEqual(codexModelForRole("architecture-review"), CODEX_MODEL_POLICY.tiers.apex);
     process.env.MUSTER_MAX_TIER = "sonnet";
-    assert.deepEqual(codexModelForRole("architecture-review"), CODEX_MODEL_POLICY.tiers.sonnet);
+    assert.deepEqual(codexModelForRole("architecture-review"), CODEX_MODEL_POLICY.tiers.core);
   } finally {
     if (oldCap === undefined) delete process.env.MUSTER_MAX_TIER; else process.env.MUSTER_MAX_TIER = oldCap;
     if (oldFable === undefined) delete process.env.MUSTER_ENABLE_FABLE; else process.env.MUSTER_ENABLE_FABLE = oldFable;

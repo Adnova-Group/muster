@@ -45,7 +45,7 @@ test("kimiLaneBinding: both lanes derive from the tier map, every tier folds ont
   // judgment family -> primary; execution family -> secondary
   assert.equal(binding.lanes.primary, "kimi-code/k3");
   assert.equal(binding.lanes.secondary, "kimi-code/kimi-for-coding");
-  assert.deepEqual(binding.tiers, { haiku: "secondary", sonnet: "secondary", opus: "primary", fable: "primary" });
+  assert.deepEqual(binding.tiers, { scout: "secondary", core: "secondary", prime: "primary", apex: "primary" });
   // the derivation agrees with KIMI_LANES -- a drift between the two throws
   // instead of silently binding the wrong lane.
   assert.deepEqual(binding.lanes, { primary: KIMI_LANES.primary, secondary: KIMI_LANES.secondary });
@@ -143,10 +143,10 @@ test("resolveNeutralProfile fails loud on a malformed harness policy", () => {
 // here so this test proves the shape is shared without importing/mutating codex.js.
 const CODEX_STYLE_POLICY = {
   tiers: {
-    haiku: { model: "gpt-5.6-terra", reasoning: "high" },
-    sonnet: { model: "gpt-5.6-luna", reasoning: "xhigh" },
-    opus: { model: "gpt-5.6-sol", reasoning: "high" },
-    fable: { model: "gpt-5.6-sol", reasoning: "high" },
+    scout: { model: "gpt-5.6-terra", reasoning: "high" },
+    core: { model: "gpt-5.6-luna", reasoning: "xhigh" },
+    prime: { model: "gpt-5.6-sol", reasoning: "high" },
+    apex: { model: "gpt-5.6-sol", reasoning: "high" },
   },
   applyEffort(base, semantic) {
     const map = { workhorse: "medium", judgment: "high", peak: "xhigh" };
@@ -154,6 +154,8 @@ const CODEX_STYLE_POLICY = {
   },
 };
 
+// Inputs below deliberately use the LEGACY tier vocabulary: they double as the
+// alias-compat proof that pre-rename manifest entries resolve unchanged.
 test("the same neutral { tier, effort } resolves on both Kimi and Codex", () => {
   const builder = { tier: "opus", effort: "workhorse" }; // muster-builder / muster-runner
   assert.deepEqual(resolveNeutralProfile(builder, KIMI_MODEL_POLICY), { model: "kimi-code/k3", effort: "high" });

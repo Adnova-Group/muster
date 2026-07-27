@@ -86,9 +86,10 @@ test("every audit crew member carries the model resolved for its role", () => {
   for (const c of m.crew) {
     assert.equal(c.model, modelForRole(c.stage), `crew stage ${c.stage} model`);
   }
-  // architecture-review is heavy judgment -> top tier, which degrades fable->opus by
-  // default (fable disabled platform-wide); the rest default to sonnet.
-  assert.equal(m.crew.find(c => c.stage === "architecture-review").model, "opus");
+  // architecture-review is heavy judgment -> top tier, which degrades apex->prime
+  // by default (the apex/Fable mapping is disabled platform-wide); the rest
+  // default to core.
+  assert.equal(m.crew.find(c => c.stage === "architecture-review").model, "prime");
 });
 
 test("chosen provider for a role surfaces in crew", () => {

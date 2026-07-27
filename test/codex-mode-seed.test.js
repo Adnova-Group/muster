@@ -46,7 +46,7 @@ test("Codex audit and diagnose seeds use bundled agents when live external provi
     runMode(project, ["diagnose", "--codex", "button does not respond"], codex)
   ]);
   assert.deepEqual(crewMember(audit, "architecture-review"), {
-    stage: "architecture-review", provider: "muster-strategist", source: "builtin", model: "opus",
+    stage: "architecture-review", provider: "muster-strategist", source: "builtin", model: "prime",
     rationale: "audit: system architecture, boundaries, coupling", evidence: "whole-codebase review", fallback: "inline"
   });
   assert.equal(crewMember(diagnose.manifest, "debug").provider, "wsh-debugger");

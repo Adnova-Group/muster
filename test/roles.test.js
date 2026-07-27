@@ -50,9 +50,9 @@ test("the image and video roles resolve to their built-ins on a bare machine", a
 
   assert.equal(caps.roles["image"].chosen.id, "muster-image");
   assert.equal(caps.roles["image"].chosen.source, "builtin");
-  assert.equal(caps.roles["image"].model, "sonnet", "image is not haiku/fable-tier — default sonnet");
+  assert.equal(caps.roles["image"].model, "core", "image is not scout/apex-tier — default core");
 
   assert.equal(caps.roles["video"].chosen.id, "muster-video");
   assert.equal(caps.roles["video"].chosen.source, "builtin");
-  assert.equal(caps.roles["video"].model, "sonnet", "video is not haiku/fable-tier — default sonnet");
+  assert.equal(caps.roles["video"].model, "core", "video is not haiku/fable-tier — default sonnet");
 });

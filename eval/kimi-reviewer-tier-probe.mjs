@@ -13,6 +13,25 @@
 //     misattribution (model_preference binds only SPAWNED SUBAGENTS; the -p
 //     main agent's model comes ONLY from -m).
 //
+// PROTOCOL v2 -- BLINDED QUARANTINE. The v1 run (protocolVersion absent/1)
+// was CONTAMINATED: cells ran with cwd = the repo worktree, so the answer key
+// was tool-reachable (git history held the fix commit, eval/results held prior
+// cells' verdicts, the repo held the harness's pinned constants) -- and the
+// verdict texts show agents reading them. v2 closes that:
+//   1. QUARANTINE MODE: each cell runs with cwd = a fresh temp dir containing
+//      ONLY the probe material as a file (probe 1: probe.patch; probe 2:
+//      probe-manifest.json). The brief references that file by relative name
+//      and explicitly instructs: review ONLY this material, do not read other
+//      files, do not run git commands. Briefs stay pinned constants, extended
+//      with the quarantine instruction, identical across lanes.
+//   2. CONTAMINATION SCAN: after each cell its stream-json stdout is
+//      mechanically scanned for contamination indicators (file reads outside
+//      the quarantine dir, any git show/log/diff command, any path containing
+//      the repo name or eval/results). Contaminated cells are flagged in the
+//      results JSON (contaminated: true) and EXCLUDED from the quality
+//      comparison -- recorded, never hidden. Token totals are still recorded
+//      per the cost policy.
+//
 // RUBRIC: caught/missed is HUMAN JUDGMENT applied later by the orchestrator.
 // This harness does NOT keyword-score; it records each run's raw verdict text
 // verbatim into the results JSON for that step.
@@ -26,6 +45,8 @@
 import { execFileSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { kimiProcessDispatch, KIMI_PROCESS_MAX_BRIEF } from "../src/kimi-dispatch.js";
@@ -38,6 +59,10 @@ const REPO_ROOT = join(HERE, "..");
 // ───────────────────────────────────────────────────────────────────────────
 // Pinned constants (spec-gate-pinned; every element load-bearing)
 // ───────────────────────────────────────────────────────────────────────────
+
+// Protocol version: 2 = blinded quarantine (v1 results are contaminated and
+// were discarded -- see the header comment and docs/fast-path-token-gap.md).
+export const PROTOCOL_VERSION = 2;
 
 // Probe 1's subject commit -- parent of the env-merge fix 3cf6084.
 export const PROBE1_COMMIT = "9027136";
@@ -60,23 +85,31 @@ export const PROBE2_MANIFEST = Object.freeze({
   waves: [["reviewer"]]
 });
 
-// Briefs, pinned and IDENTICAL across lanes. Each states the return contract:
-// verdict first, then itemized findings.
-export const PROBE1_BRIEF = `You are the review gate for a muster wave. Review the diff below for correctness and completeness.
-Return contract: your FIRST word must be the verdict, PASS or FAIL, alone on the first line. Then itemized findings, one per line, each classified BLOCKER or MINOR with the file and the reason. The verdict is FAIL iff any BLOCKER finding exists.
-Diff (git show ${PROBE1_COMMIT}, parent of the follow-up fix):
-`;
+// Briefs, pinned and IDENTICAL across lanes. v2 quarantine: the brief no
+// longer inlines the artifact -- it names the quarantine file (relative, so
+// every cell's brief is byte-identical) and carries the quarantine
+// instruction verbatim. Each states the return contract: verdict first, then
+// itemized findings.
+const QUARANTINE_INSTRUCTION = "Review ONLY that file's material: do not read any other file, do not run git commands, and do not go looking for the repository -- the quarantine file is the complete review subject.";
 
-export const PROBE2_BRIEF = `You are the spec gate for a muster run. Apply a lazy/malicious probe to the Crew Manifest below: hunt for every way a lazy or malicious reading of this spec breaks the run, contradicts the harness's actual behavior, or misattributes a mechanism.
-Return contract: your FIRST word must be the verdict, PASS or FAIL, alone on the first line. Then itemized findings, one per line, each classified BLOCKER or MINOR, naming the misattributed or broken claim and the correct mechanism. The verdict is FAIL iff any BLOCKER finding exists.
-Crew Manifest:
-`;
+export const PROBE1_BRIEF = `You are the review gate for a muster wave. The diff under review is the file probe.patch in your current working directory (the full diff of commit ${PROBE1_COMMIT}, parent of the follow-up fix). ${QUARANTINE_INSTRUCTION} Review the diff for correctness and completeness.
+Return contract: your FIRST word must be the verdict, PASS or FAIL, alone on the first line. Then itemized findings, one per line, each classified BLOCKER or MINOR with the file and the reason. The verdict is FAIL iff any BLOCKER finding exists.`;
+
+export const PROBE2_BRIEF = `You are the spec gate for a muster run. The Crew Manifest under review is the file probe-manifest.json in your current working directory. ${QUARANTINE_INSTRUCTION} Apply a lazy/malicious probe to the manifest: hunt for every way a lazy or malicious reading of this spec breaks the run, contradicts the harness's actual behavior, or misattributes a mechanism.
+Return contract: your FIRST word must be the verdict, PASS or FAIL, alone on the first line. Then itemized findings, one per line, each classified BLOCKER or MINOR, naming the misattributed or broken claim and the correct mechanism. The verdict is FAIL iff any BLOCKER finding exists.`;
 
 export const PROBES = Object.freeze([
   { id: "review-gate-diff", gate: "review-gate" },
   { id: "spec-gate-manifest", gate: "spec-gate" }
 ]);
 export const LANES = Object.freeze(["primary", "secondary"]);
+
+// The quarantine material file per probe -- the ONLY file in each cell's
+// temp working dir.
+export const PROBE_MATERIAL_FILES = Object.freeze({
+  "review-gate-diff": "probe.patch",
+  "spec-gate-manifest": "probe-manifest.json"
+});
 
 // The installed agent both probes dispatch as (bare name -> the installed
 // agents dir, per kimiProcessDispatch's resolution rule).
@@ -95,9 +128,11 @@ export function probe1Diff(repoRoot = REPO_ROOT) {
 }
 
 // Briefs ride argv as the -p prompt, capped at KIMI_PROCESS_MAX_BRIEF
-// (src/kimi-dispatch.js). The full `git show` output can exceed that budget;
-// when it does, cut the artifact at the last newline that fits and say so in
-// the brief -- deterministic, and the truncation is disclosed to the reviewer.
+// (src/kimi-dispatch.js). v2 briefs are small constants that REFERENCE the
+// quarantine file rather than inlining it, so they sit far under the budget;
+// fitBrief remains for any caller that still inlines an artifact: when the
+// budget is exceeded, cut the artifact at the last newline that fits and say
+// so in the brief -- deterministic, and the truncation is disclosed.
 export function fitBrief(prefix, artifact) {
   if (prefix.length + artifact.length <= KIMI_PROCESS_MAX_BRIEF) return prefix + artifact;
   const note = "\n[artifact truncated to fit the -p brief budget]\n";
@@ -106,26 +141,52 @@ export function fitBrief(prefix, artifact) {
   return prefix + artifact.slice(0, cut > 0 ? cut : room) + note;
 }
 
-export function buildBriefs(repoRoot = REPO_ROOT) {
+export function buildBriefs() {
   return {
-    "review-gate-diff": fitBrief(PROBE1_BRIEF, probe1Diff(repoRoot)),
-    "spec-gate-manifest": fitBrief(PROBE2_BRIEF, JSON.stringify(PROBE2_MANIFEST, null, 2) + "\n")
+    "review-gate-diff": PROBE1_BRIEF,
+    "spec-gate-manifest": PROBE2_BRIEF
   };
 }
 
-// Build all probe x lane cells with their kimiProcessDispatch descriptors.
-// Pure construction -- spawns nothing (this is what --dry-run prints).
-export function buildCells({ repoRoot = REPO_ROOT, agentFile = AGENT_FILE } = {}) {
-  const briefs = buildBriefs(repoRoot);
+// The quarantine material for one probe: probe 1's diff retrieved live from
+// the repo (never hardcoded), probe 2's pinned synthetic manifest.
+export function probeMaterial(probeId, repoRoot = REPO_ROOT) {
+  const file = PROBE_MATERIAL_FILES[probeId];
+  if (!file) throw new Error(`probeMaterial: unknown probe ${JSON.stringify(probeId)}`);
+  if (probeId === "review-gate-diff") return probe1Diff(repoRoot);
+  return JSON.stringify(PROBE2_MANIFEST, null, 2) + "\n";
+}
+
+// QUARANTINE MODE (protocol v2): a fresh temp dir containing ONLY the probe
+// material file. The cell's cwd is this dir, so nothing else is in reach by
+// default -- no repo, no git history, no prior cells' results. (Dry-run
+// builds these too: descriptor construction IS the quarantine construction.)
+export function buildQuarantineDir({ probeId, repoRoot = REPO_ROOT, baseDir } = {}) {
+  const file = PROBE_MATERIAL_FILES[probeId];
+  if (!file) throw new Error(`buildQuarantineDir: unknown probe ${JSON.stringify(probeId)}`);
+  const dir = mkdtempSync(join(baseDir ?? tmpdir(), `kimi-tier-probe-${probeId}-`));
+  writeFileSync(join(dir, file), probeMaterial(probeId, repoRoot));
+  return { dir, file };
+}
+
+// Build all probe x lane cells with their kimiProcessDispatch descriptors,
+// each in its own quarantine dir. Pure construction -- spawns nothing (this
+// is what --dry-run prints).
+export function buildCells({ repoRoot = REPO_ROOT, agentFile = AGENT_FILE, baseDir } = {}) {
+  const briefs = buildBriefs();
   const cells = [];
   for (const probe of PROBES) {
+    const brief = briefs[probe.id];
     for (const lane of LANES) {
+      const quarantine = buildQuarantineDir({ probeId: probe.id, repoRoot, baseDir });
       cells.push({
         probe: probe.id,
         gate: probe.gate,
         lane,
-        brief: briefs[probe.id],
-        descriptor: kimiProcessDispatch({ brief: briefs[probe.id], agentFile, cwd: repoRoot, lane })
+        brief,
+        quarantineDir: quarantine.dir,
+        materialFile: quarantine.file,
+        descriptor: kimiProcessDispatch({ brief, agentFile, cwd: quarantine.dir, lane })
       });
     }
   }
@@ -169,6 +230,67 @@ export function extractVerdictText(stdout) {
   return parts.length ? parts.join("\n") : stdout;
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Contamination scan (protocol v2): mechanical, over the cell's stream-json
+// stdout. Three indicator classes, each recorded with its line number:
+//   git-command            a Bash tool call running `git show|log|diff`
+//   read-outside-quarantine  a Read/ReadMediaFile/Grep/Glob tool call whose
+//                          path argument is absolute and outside the cell's
+//                          quarantine dir
+//   forbidden-path         any line containing a path with the repo name
+//                          ("/muster/" or the repo root itself) or
+//                          "eval/results" -- the answer-key locations
+// The scan is deliberately mechanical (no judgment): a flagged cell is
+// EXCLUDED from the quality comparison, recorded, never hidden.
+// ───────────────────────────────────────────────────────────────────────────
+
+const GIT_FORBIDDEN_RE = /\bgit\s+(show|log|diff)\b/;
+const READ_PATH_TOOLS = new Set(["Read", "ReadMediaFile", "Grep", "Glob"]);
+const PATH_ARG_KEYS = ["path", "file_path", "filePath"];
+const REPO_NAME_PATH_RE = /\/muster(?:\/|$|["'\s)])/;
+
+export function scanContamination(stdout, { quarantineDir, repoRoot = REPO_ROOT } = {}) {
+  if (typeof stdout !== "string") throw new Error("scanContamination: stdout must be a string");
+  if (typeof quarantineDir !== "string" || !quarantineDir) throw new Error("scanContamination: quarantineDir is required");
+  const indicators = [];
+  for (const [index, line] of stdout.split("\n").entries()) {
+    if (!line.trim()) continue;
+    const lineNo = index + 1;
+    if (line.includes("eval/results")) {
+      indicators.push({ line: lineNo, kind: "forbidden-path", detail: "path containing eval/results" });
+    }
+    if (REPO_NAME_PATH_RE.test(line)) {
+      indicators.push({ line: lineNo, kind: "forbidden-path", detail: "path containing the repo name (muster)" });
+    } else if (repoRoot && line.includes(repoRoot)) {
+      indicators.push({ line: lineNo, kind: "forbidden-path", detail: `path containing the repo root ${repoRoot}` });
+    }
+    let obj;
+    try { obj = JSON.parse(line); } catch { continue; }
+    const calls = obj?.tool_calls;
+    if (!Array.isArray(calls)) continue;
+    for (const call of calls) {
+      const name = call?.function?.name;
+      let args = {};
+      try { args = JSON.parse(call?.function?.arguments ?? "{}"); } catch { args = {}; }
+      if (name === "Bash") {
+        const command = typeof args.command === "string" ? args.command : String(call?.function?.arguments ?? "");
+        if (GIT_FORBIDDEN_RE.test(command)) {
+          indicators.push({ line: lineNo, kind: "git-command", detail: command.slice(0, 160) });
+        }
+      }
+      if (READ_PATH_TOOLS.has(name)) {
+        for (const key of PATH_ARG_KEYS) {
+          const p = args[key];
+          if (typeof p === "string" && p.startsWith("/") && p !== quarantineDir && !p.startsWith(quarantineDir + "/")) {
+            indicators.push({ line: lineNo, kind: "read-outside-quarantine", detail: `${name} ${p}` });
+          }
+        }
+      }
+    }
+  }
+  return { contaminated: indicators.length > 0, indicators };
+}
+
 // One spawn attempt: the descriptor's argv with the env merge rule, stdout
 // captured to the results dir. Never throws on a nonzero exit -- the exit code
 // is data (the retry policy and the results file both need it).
@@ -194,8 +316,10 @@ async function spawnAttempt(cell, { resultsDir, attempt }) {
 
 // Run one cell: spawn, retry ONCE on nonzero exit/truncated output, then
 // attribute tokens via captureSessionId -> resolveSessionForCwd ->
-// readSessionUsage. Retried cells are marked so their token totals are
-// EXCLUDED from the cost comparison (quality is still recorded).
+// readSessionUsage, then contamination-scan the final attempt's stdout.
+// Retried cells are marked so their token totals are EXCLUDED from the cost
+// comparison; contaminated cells are marked so their verdicts are EXCLUDED
+// from the quality comparison. Both stay recorded in cells[] -- never hidden.
 export async function runCell(cell, { resultsDir }) {
   await mkdir(resultsDir, { recursive: true });
   let attempt = await spawnAttempt(cell, { resultsDir, attempt: 1 });
@@ -221,6 +345,7 @@ export async function runCell(cell, { resultsDir }) {
   } else {
     tokensNote = "no session.resume_hint in stdout";
   }
+  const scan = scanContamination(attempt.stdout, { quarantineDir: cell.descriptor.cwd });
   return {
     probe: cell.probe,
     gate: cell.gate,
@@ -232,6 +357,10 @@ export async function runCell(cell, { resultsDir }) {
     ...(tokensNote ? { tokensNote } : {}),
     retried,
     attempts: retried ? 2 : 1,
+    quarantineDir: cell.descriptor.cwd,
+    materialFile: cell.materialFile,
+    contaminated: scan.contaminated,
+    contaminationIndicators: scan.indicators,
     stdoutFile: attempt.stdoutFile
   };
 }
@@ -266,9 +395,24 @@ export function buildCostComparison(cells) {
   };
 }
 
+// Quality exclusion (protocol v2): contaminated cells are EXCLUDED from the
+// caught/missed quality comparison. Their records (verdict text, indicators,
+// tokens) stay in cells[] and their tokens still count in costComparison --
+// excluded from the judgment, never hidden.
+export function buildQualityComparison(cells) {
+  const included = cells.filter(c => !c.contaminated);
+  const excluded = cells.filter(c => c.contaminated);
+  return {
+    rule: "contaminated cells (contamination indicators found in the cell's stream-json stdout) are EXCLUDED from the quality comparison; they remain recorded in cells[] with their indicators, and their tokens still count in costComparison",
+    cellsIncluded: included.map(c => `${c.probe} x ${c.lane}`),
+    cellsExcluded: excluded.map(c => `${c.probe} x ${c.lane} (${c.contaminationIndicators.map(i => i.kind).join(", ")})`)
+  };
+}
+
 export function assembleResults({ cells, outFile }) {
   return {
     harness: "eval/kimi-reviewer-tier-probe.mjs",
+    protocolVersion: PROTOCOL_VERSION,
     generatedAt: new Date().toISOString(),
     caveat: CAVEAT,
     rubric: {
@@ -283,11 +427,13 @@ export function assembleResults({ cells, outFile }) {
     constants: {
       probe1Commit: PROBE1_COMMIT,
       probe2Manifest: PROBE2_MANIFEST,
+      probeMaterialFiles: { ...PROBE_MATERIAL_FILES },
       agentFile: AGENT_FILE,
       lanes: [...LANES]
     },
     cells,
     costComparison: buildCostComparison(cells),
+    qualityComparison: buildQualityComparison(cells),
     ...(outFile ? { outFile } : {})
   };
 }
@@ -320,9 +466,11 @@ async function main(argv) {
       brief: c.brief,
       argv: c.descriptor.argv,
       env: c.descriptor.env,
-      cwd: c.descriptor.cwd
+      cwd: c.descriptor.cwd,
+      quarantineDir: c.quarantineDir,
+      materialFile: c.materialFile
     }));
-    process.stdout.write(JSON.stringify({ mode: "dry-run", cells: view }, null, 2) + "\n");
+    process.stdout.write(JSON.stringify({ mode: "dry-run", protocolVersion: PROTOCOL_VERSION, cells: view }, null, 2) + "\n");
     return;
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");

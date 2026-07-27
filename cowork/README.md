@@ -28,7 +28,7 @@ Twenty-eight tools, plus an execution protocol that teaches the agent how to dri
 | `muster_score` / `muster_prioritize` | Score against a gate / rank a backlog |
 | `muster_pick` / `muster_tally` | Tournament winner / review-gate decision |
 | `muster_fuse` | Fusion decision engine -- apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to single best (mode fallback). Deterministic, no LLM. |
-| `muster_advise` | Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM. |
+| `muster_advise` | Validate an advice-request and resolve the advisor model (apex degrades to prime). Deterministic, no LLM. |
 | `muster_receipt_verify` | Verify a base-SHA is a real, resolvable git commit object in an explicit repo |
 | `muster_scope` | Deterministic backlog-vs-item scope detection for the plan/go verb family |
 | `muster_fast_path` | Score an outcome for the pre-router fast path; with `capabilities` (the `_roles` shape), also emits the minimal builder+one-reviewer manifest |
@@ -73,7 +73,7 @@ Merge this into `mcpServers` (keep any servers you already have). Use the absolu
       "args": ["C:\\Users\\you\\dev\\muster\\cowork\\mcp-server.mjs"],
       "env": {
         "MUSTER_COWORK_CONNECTORS": "",
-        "MUSTER_ENABLE_FABLE": "",
+        "MUSTER_ENABLE_APEX": "",
         "MUSTER_MAX_TIER": ""
       }
     }
@@ -105,7 +105,7 @@ npx @anthropic-ai/mcpb pack cowork muster.mcpb
 # optional: npx @anthropic-ai/mcpb sign muster.mcpb
 ```
 
-Then in Cowork: Settings → Extensions → install `muster.mcpb`. The extension's `user_config` (Fable toggle, max tier, declared connectors) appears as fields in the extension's settings and is passed to the server as environment variables.
+Then in Cowork: Settings → Extensions → install `muster.mcpb`. The extension's `user_config` (Apex toggle, max tier, declared connectors) appears as fields in the extension's settings and is passed to the server as environment variables.
 
 Caveat: on Windows MSIX installs, the extension's `${__dirname}` is virtualized, and the server spawns the muster CLI as a child process from that path. If the tools work via Route A but the packed extension cannot start, that is the virtualized-spawn issue; use Route A, or file it so the server can be switched to importing the CLI in-process. The probe (below) flags this.
 
@@ -115,8 +115,8 @@ All configuration is environment variables, set either in the Route A `env` bloc
 
 | Variable | user_config field | Effect |
 | --- | --- | --- |
-| `MUSTER_ENABLE_FABLE` | `enable_fable` | `1`/`true` routes peak-judgment roles to Fable. Empty or `false` degrades Fable to Opus (the default, since the tier can be disabled platform-wide). |
-| `MUSTER_MAX_TIER` | `max_tier` | `opus` or `sonnet` caps the dispatch tier for budget control. Empty means no cap. |
+| `MUSTER_ENABLE_APEX` | `enable_apex` | `1`/`true` routes peak-judgment roles to Apex. Empty or `false` degrades Apex to Prime (the default, since the tier can be disabled platform-wide). The retired `enable_fable` field / `MUSTER_ENABLE_FABLE` variable is still honored as a legacy alias (the new key is preferred; the server merges a legacy `true` so an upgrade never silently revokes an existing opt-in). |
+| `MUSTER_MAX_TIER` | `max_tier` | `prime` or `core` caps the dispatch tier for budget control (legacy `opus`/`sonnet` values still normalize). Empty means no cap. |
 | `MUSTER_COWORK_CONNECTORS` | `connectors` | Comma-separated remote-connector names to treat as available (see below). |
 | `MUSTER_COWORK_NATIVE_PLUGIN` | — | `1`/`true` DECLARES that Cowork's own plugin loader has natively loaded muster's `plugin/` tree (skills, hooks, sub-agents), so `muster_capabilities` resolves builtin skills/agents the same way it does on Claude Code instead of collapsing to MCP-only. Empty or `false` (the default) keeps the verified MCP-only ride. This is a DECLARED capability check, not a probe -- Cowork exposes no on-disk or protocol signal to auto-detect a native load, so only set this once you've confirmed one on your build (see "How capabilities resolve" below). |
 | `MUSTER_COWORK_MAX_INFLIGHT` | — | Maximum concurrent MCP tool executions (default `4`, hard ceiling `64`). Route A only. |
@@ -157,4 +157,4 @@ Phase 3 passing means parallel fan-out plus per-call model override work, so the
 - **No `muster_*` tools after restart.** Usually Node is not on the host PATH (Route A `command: node` cannot resolve), the path in `args` is wrong, or Cowork was not fully quit. Confirm `node -v` in a host terminal, check the absolute path, and quit from the tray/menu bar.
 - **Edits to the config seem ignored (Windows MSIX).** The app may be reading the `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\` copy. Edit that one instead of `%APPDATA%`.
 - **Packed extension will not start but Route A works.** The MSIX virtualized-spawn issue; use Route A.
-- **Peak-judgment roles route to Opus, not Fable.** That is the default (Fable degrades to Opus). Set `MUSTER_ENABLE_FABLE=1` to opt back in.
+- **Peak-judgment roles route to Prime, not Apex.** That is the default (Apex degrades to Prime). Set `MUSTER_ENABLE_APEX=1` to opt back in; a pre-rename `MUSTER_ENABLE_FABLE=1` (or a stored `enable_fable` extension setting) still works as a legacy alias.

@@ -1078,5 +1078,16 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // subsection: "muster's SONNET tier" -> "muster's core tier" (the semantic
   // tier rename; gpt-5.6-luna is muster's core tier). Comment/prose-only, no
   // behavior change. Deliberate change, not drift.
-  assert.equal(hash.digest("hex"), "a2a6ee8ebf3ee4168d09b9e7da73a538dff83de453d750925db9675cdb60bc89");
+  //
+  // 2026-07-27 re-pin #5 (audit S6, canonical tier vocabulary on the Cowork
+  // user surface): file COUNT unchanged (140) -- only cowork/mcp-server.mjs's
+  // content changed: the muster_advise tool/protocol descriptions now say
+  // "(apex degrades to prime)" instead of "(fable->opus)", and a startup
+  // env-merge honors a stored fable-era enable_fable/MUSTER_ENABLE_FABLE
+  // opt-in alongside the canonical MUSTER_ENABLE_APEX (new key preferred;
+  // the pinned `env: { ...process.env, MUSTER_RUNTIME: "cowork" }` spawn line
+  // the Codex build transform rewrites FROM is byte-identical, verified by
+  // test/codex-mcp-runtime-env.test.js). Tier aliasing stays owned by
+  // src/model.js. Deliberate change, not drift.
+  assert.equal(hash.digest("hex"), "818db26cd63ce9232f5156a6837d159cecb089ba681d1049107c648226093203");
 });

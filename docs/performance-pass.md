@@ -3,7 +3,7 @@
 Seed context: "muster has gotten out of control... a massive beast that can't get out of its own
 way and decimates LLM plan quotas." The codex-teardown run that surfaced this recorded three
 concrete symptoms: an `npx -y` cold start on every single muster CLI call (10+/run), a fixed
-orchestration pipeline depth regardless of task count, and 3 opus-tier gate dispatches for a
+orchestration pipeline depth regardless of task count, and 3 prime-tier gate dispatches for a
 3-task plan. This item cuts orchestration overhead on exactly those three axes, with the review
 and spec gates staying full-strength throughout — the levers are batching, deduplication, and a
 resolve-once CLI invocation, never a softer pass bar.
@@ -56,10 +56,11 @@ table below for exactly how much this removes.
 **Before.** `plugin/commands/go.md`'s step 4 spec gate was already a single whole-plan
 dispatch (skippable only for a single-task, no-parallel-wave plan) — so the literal "spec gate"
 step was never actually >1 round. The real fixed-depth cost the seed evidence's "3 opus
-spec-gate rounds for a 3-task plan" points at was the PER-WAVE review gate
+spec-gate rounds for a 3-task plan" (opus = the pre-rename name for the prime tier) points
+at was the PER-WAVE review gate
 (`plugin/skills/review-gate/SKILL.md`, invoked once per wave via
 `plugin/skills/orchestrator/SKILL.md` step 4c): a 3-task plan with no declared parallelism
-compiles to 3 sequential waves, so it paid 3 separate opus-tier review-gate dispatches even
+compiles to 3 sequential waves, so it paid 3 separate prime-tier review-gate dispatches even
 though the whole plan was small enough to review as one cumulative diff.
 
 **After.** `src/gate-cadence.js`'s `planGateCadence(waves)` is a pure, deterministic function
@@ -173,12 +174,12 @@ by a deterministic unit test (`test/perf-projection.test.js`) using these same i
 
 **Model-call (token) reduction — a documented projection, not a measured count.** This item does
 not run a live LLM-backed `/muster:go`, so no production token count is asserted. What IS
-grounded: the review-gate dispatch count for a 3-task plan drops from 3 opus-tier calls to 1.
+grounded: the review-gate dispatch count for a 3-task plan drops from 3 prime-tier calls to 1.
 Applying the Artificial Analysis 2026-07 crew-lane pricing below to that 3->1 reduction, holding
 the per-dispatch prompt/output size roughly constant (an approximation — a batched pass reviews
 a larger cumulative diff, so its OWN token count is somewhat larger than one wave's; the
 reduction is in call COUNT, not a claim that batched-call tokens equal single-wave-call tokens),
-projects a majority reduction in opus-tier review-gate spend for small plans. This is named as a
+projects a majority reduction in prime-tier review-gate spend for small plans. This is named as a
 projection, deliberately not dressed up as a measurement.
 
 ## Benchmark evidence recorded for crew model lanes
@@ -189,7 +190,7 @@ projection, deliberately not dressed up as a measurement.
   index; Opus 4.8 max — 56 intel @ $3753; Fable 5 max — 60 intel @ $5631.
 
 These anchor the crew model-tiering lanes `src/model.js`/`modelForRole` already resolves against
-(fable degrading to opus by default, per `plugin/skills/orchestrator/SKILL.md`'s Model bullet) —
+(apex degrading to prime by default, per `plugin/skills/orchestrator/SKILL.md`'s Model bullet) —
 recorded here per this item's evidence requirement, not modified by this item.
 
 ## Scope of this wave

@@ -19,24 +19,30 @@ import {
 // 1. modelForRole('advisor') — peak tier (mirrors 'judge' / 'architecture-review')
 // ---------------------------------------------------------------------------
 
-test("modelForRole('advisor'): degrades to opus by default (fable disabled)", () => {
-  const prev = process.env.MUSTER_ENABLE_FABLE;
+test("modelForRole('advisor'): degrades to prime by default (apex disabled)", () => {
+  const prev = process.env.MUSTER_ENABLE_APEX, prevLegacy = process.env.MUSTER_ENABLE_FABLE;
+  delete process.env.MUSTER_ENABLE_APEX;
   delete process.env.MUSTER_ENABLE_FABLE;
   try {
     assert.equal(modelForRole("advisor"), "prime");
   } finally {
-    if (prev !== undefined) process.env.MUSTER_ENABLE_FABLE = prev;
+    if (prev !== undefined) process.env.MUSTER_ENABLE_APEX = prev;
+    if (prevLegacy !== undefined) process.env.MUSTER_ENABLE_FABLE = prevLegacy;
   }
 });
 
-test("modelForRole('advisor'): returns fable when MUSTER_ENABLE_FABLE='1'", () => {
-  const prev = process.env.MUSTER_ENABLE_FABLE;
+// The one legacy-alias smoke case on the advisor path (model.test.js owns the
+// alias coverage for the judge/architecture-review roles).
+test("modelForRole('advisor'): legacy MUSTER_ENABLE_FABLE='1' still enables apex", () => {
+  const prev = process.env.MUSTER_ENABLE_APEX, prevLegacy = process.env.MUSTER_ENABLE_FABLE;
+  delete process.env.MUSTER_ENABLE_APEX;
   process.env.MUSTER_ENABLE_FABLE = "1";
   try {
     assert.equal(modelForRole("advisor"), "apex");
   } finally {
-    if (prev === undefined) delete process.env.MUSTER_ENABLE_FABLE;
-    else process.env.MUSTER_ENABLE_FABLE = prev;
+    if (prev !== undefined) process.env.MUSTER_ENABLE_APEX = prev;
+    if (prevLegacy === undefined) delete process.env.MUSTER_ENABLE_FABLE;
+    else process.env.MUSTER_ENABLE_FABLE = prevLegacy;
   }
 });
 
@@ -304,7 +310,7 @@ test("cli wire: muster advise exits 0 on valid request and returns JSON with adv
   assert.ok("request" in result, "result must include 'request'");
 });
 
-test("cli wire: muster advise advisorModel is 'opus' by default (fable degraded)", async (t) => {
+test("cli wire: muster advise advisorModel is 'prime' by default (apex degraded)", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-advise-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
 
@@ -315,14 +321,14 @@ test("cli wire: muster advise advisorModel is 'opus' by default (fable degraded)
     decisionType: "make-vs-buy",
   }));
 
-  const { stdout } = await cliRun(["advise", reqFile], { MUSTER_ENABLE_FABLE: "" });
+  const { stdout } = await cliRun(["advise", reqFile], { MUSTER_ENABLE_APEX: "", MUSTER_ENABLE_FABLE: "" });
   const result = JSON.parse(stdout);
   assert.equal(result.advisorModel, "prime");
   // the Claude-concrete dispatch value rides beside the conceptual tier
   assert.equal(result.advisorClaudeModel, "opus");
 });
 
-test("cli wire: muster advise advisorModel is 'fable' when MUSTER_ENABLE_FABLE=1", async (t) => {
+test("cli wire: muster advise advisorModel is 'apex' when MUSTER_ENABLE_APEX=1", async (t) => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-advise-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
 
@@ -333,7 +339,7 @@ test("cli wire: muster advise advisorModel is 'fable' when MUSTER_ENABLE_FABLE=1
     decisionType: "repository-strategy",
   }));
 
-  const { stdout } = await cliRun(["advise", reqFile], { MUSTER_ENABLE_FABLE: "1" });
+  const { stdout } = await cliRun(["advise", reqFile], { MUSTER_ENABLE_APEX: "1" });
   const result = JSON.parse(stdout);
   assert.equal(result.advisorModel, "apex");
   assert.equal(result.advisorClaudeModel, "fable");

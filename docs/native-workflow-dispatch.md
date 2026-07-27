@@ -26,7 +26,8 @@ behind this:
 - `agentTeams: true` (the orchestrator's own self-observation that `Workflow` is in its
   tool list this session) -> `mode: "native"`.
 - `agentTeams` omitted -> falls back to the declared `MUSTER_AGENT_TEAMS` env var
-  (MCPB-boolean-safe parse, mirroring `MUSTER_ENABLE_FABLE`/`MUSTER_COWORK_NATIVE_PLUGIN`) --
+  (MCPB-boolean-safe parse, mirroring `MUSTER_ENABLE_APEX`/`MUSTER_COWORK_NATIVE_PLUGIN`;
+  the legacy `MUSTER_ENABLE_FABLE` alias remains honored for the apex flag) --
   for a scripted/background-agent invocation ahead of any model self-inspection.
 - Neither declared -> `mode: "prose"`, the unconditional floor.
 

@@ -87,7 +87,7 @@ const COWORK_PROTOCOL = [
   "3. Assemble a crew manifest, muster_manifest_validate it, fix until ok.",
   "4. muster_wave gives dependency-ordered waves. Dispatch each wave's members as PARALLEL subagents (fall back to muster_next, one task at a time, only if fan-out is unavailable). Cross-wave order is fixed; intra-wave order is free.",
   "5. The wave barrier is the gate. For a tournament -- a judge scores all candidates AND maps consensus/contradiction/partial-coverage/blind-spots into a debate map; call muster_fuse to decide fuse-vs-fallback (the agreement gate skips synthesis when candidates already agree; on mode fuse, a synthesizer grafts the top-K best; muster_pick is the fallback ranker when the gate declines fusion). For review -- dispatch adversarial reviewers and muster_tally their verdicts. Re-run the stated test signals before a wave counts as done. A failed gate re-scopes that wave, it does not stop the run.",
-  "5a. Advisor escalate-up: a worker facing a hard decision returns a structured advice-request instead of guessing; call muster_advise to validate the request and resolve the advisor model (fable->opus); dispatch the advisor on it and feed the advice back so the worker keeps the decision (advises, does not command). The consult budget is bounded -- log each consult and stop escalating once the limit is reached.",
+  "5a. Advisor escalate-up: a worker facing a hard decision returns a structured advice-request instead of guessing; call muster_advise to validate the request and resolve the advisor model (apex degrades to prime); dispatch the advisor on it and feed the advice back so the worker keeps the decision (advises, does not command). The consult budget is bounded -- log each consult and stop escalating once the limit is reached.",
   "6. Glass-box: state each routing decision and its evidence as you go.",
   "",
   "By intent (the muster verbs, driven in prose since there are no slash commands):",
@@ -176,7 +176,7 @@ const TOOLS = {
   muster_prioritize: { argv: ["prioritize"], ...J2("Rank backlog items by RICE/ICE/WSJF/weighted.", { items: { type: "array" }, model: { type: "string", enum: ["rice", "ice", "wsjf", "weighted"] } }, ["items"]), picks: (a) => [{ items: a.items, model: a.model || "rice" }], flags: (a) => a.model ? ["--model", a.model] : [] },
   muster_pick: { argv: ["pick"], ...J2("Pick the tournament winner from scored candidates.", { candidates: { type: "array" } }, ["candidates"]), picks: (a) => [a.candidates] },
   muster_tally: { argv: ["tally"], ...J2("Tally adversarial review verdicts into a gate decision. A reviewer entry may carry status:\"exhausted\"|\"absent\" naming the WORKER's own failure to deliver a verdict (killed/ran out of budget, or never responded) instead of findings -- this always forces blocked:true with a named reason in blockedReasons, never a silent skip and never counted as a real PASS or FAIL.", { verdicts: { type: "array" } }, ["verdicts"]), picks: (a) => [a.verdicts] },
-  muster_advise: { argv: ["advise"], ...J2("Validate an advice-request and resolve the advisor model (fable->opus). Deterministic, no LLM.", { request: { type: "object" } }, ["request"]), picks: (a) => [a.request] },
+  muster_advise: { argv: ["advise"], ...J2("Validate an advice-request and resolve the advisor model (apex degrades to prime). Deterministic, no LLM.", { request: { type: "object" } }, ["request"]), picks: (a) => [a.request] },
   muster_fuse: { argv: ["fuse"], ...J2("Fusion decision engine: validate the debate map, apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to the single best (mode fallback). Deterministic, no LLM.", { candidates: { type: "array" }, fusionMap: { type: "object" } }, ["candidates", "fusionMap"]), picks: (a) => [a.candidates, a.fusionMap] },
 
   // codex-mcp-surface-gaps: 4 deterministic ops the 2026-07-19 Codex dogfood fell back to
@@ -220,6 +220,23 @@ const TOOLS = {
 };
 
 // ── CLI invocation ──────────────────────────────────────────────────────────
+// The canonical apex opt-in rides MUSTER_ENABLE_APEX (MCPB user_config key
+// enable_apex). Installs upgraded from the fable-era manifest may still carry a
+// stored enable_fable value, which the manifest keeps substituting into the
+// legacy MUSTER_ENABLE_FABLE; MCPB booleans substitute as the strings
+// "true"/"false", so a false-by-default enable_apex would otherwise shadow the
+// legacy opt-in via src/model.js's `APEX ?? FABLE` precedence. Honor either
+// here -- new key preferred, legacy key still able to opt in -- so an upgrade
+// never silently revokes it. Merged once into process.env at startup (every
+// runCli spawn below inherits it); tier aliasing itself stays owned by
+// src/model.js.
+{
+  const on = (v) => !!v && v !== "0" && String(v).toLowerCase() !== "false";
+  if (!on(process.env.MUSTER_ENABLE_APEX) && on(process.env.MUSTER_ENABLE_FABLE)) {
+    process.env.MUSTER_ENABLE_APEX = process.env.MUSTER_ENABLE_FABLE;
+  }
+}
+
 async function runCli(argv, { cwd = process.cwd(), signal } = {}) {
   try {
     // timeout: 60 s — generous for slow fuse/wave on large manifests; maxBuffer: 16 MB — large audit JSON

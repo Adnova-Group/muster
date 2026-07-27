@@ -191,6 +191,9 @@ tool-list-shaping *and* re-checked before execution). Critically: **`deny` rules
 gating survive `--yolo` and `-p`** — a deterministic hard-deny that does not depend on a hook
 firing. For muster's action-class fence this is a cleaner bind than a `PreToolUse` script:
 express the forbidden classes as `deny` patterns in config, no fail-open gap.
+**Implemented 2026-07-26** (`src/kimi-install.js`): `muster install kimi` emits exactly this — a
+marker-delimited `[[permission.rules]]` deny block covering send/sign/submit/publish/purchase/
+delete-remote over Bash globs + `mcp__*` name globs, merged non-destructively into `config.toml`.
 
 Permission **modes**: `manual` (prompt each side-effecting call), `yolo`/`-y` (auto-approve
 regular calls, still asks on sensitive files + plan-exit, agent may still ask questions), `auto`
@@ -583,14 +586,17 @@ Two deliberate design calls:
 - **Which lane is primary.** K3 primary / K2.7 secondary means an un-annotated agent fails
   *cheap*. Inverting it (K2.7 primary) would give better orchestrator quota but make an
   un-annotated third-party agent default to frontier K3. Fail-cheap wins.
-- **muster does not write `config.toml`.** It is a shared, user-owned file, and the
+- **muster does not write the MODEL half of `config.toml`.** It is a shared, user-owned file, and the
   hook-bombardment diagnosis is the standing lesson on muster mutating shared harness config. The
   install *reports* the required delta (`modelPreference.requiredConfig`) and leaves the edit to the
   user. Declining it is safe: with no secondary model configured, every agent inherits the caller's
   model and the stamps are inert. The **preferred** route is the per-process env pair
   `KIMI_CODE_EXPERIMENTAL_FLAG=1` + `KIMI_SECONDARY_MODEL=kimi-code/kimi-for-coding`, which binds
   the lanes for a muster-launched `kimi -p` while mutating nothing and leaving the user's
-  interactive sessions untouched. (`KIMI_SECONDARY_EFFORT` sets the lane's effort.)
+  interactive sessions untouched. (`KIMI_SECONDARY_EFFORT` sets the lane's effort.) The ONE
+  exception to "no config writes" (since 2026-07-26): `muster install kimi` merges a
+  marker-delimited `[[permission.rules]]` deny block (the action-class fence, §4.2) into
+  `config.toml` — a pure add/remove of muster's own block, never an edit of the user's settings.
 
 The gate is not optional: `model_preference` "applies only to newly spawned subagents when the
 secondary-model experiment is enabled", and **"The TUI currently ignores this field."** Lanes bind

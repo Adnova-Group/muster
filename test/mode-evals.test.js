@@ -687,8 +687,10 @@ const dataset = JSON.parse(await read("eval/modes/dataset.json"));
 // into two files) and go.md/go-backlog.md (autopilot's and sprint's hands-off behavior,
 // renamed), leaving run/autopilot/sprint as thin, minimal alias stubs (frontmatter + one
 // guidance line + a Read-and-execute directive) with NO behavior of their own left to
-// grade empirically. MODES therefore names the 8 real verb prompts (the 4 renamed ones
-// plus the 4 unchanged ones); ALIASES below documents run/autopilot/sprint's target and
+// grade empirically. MODES therefore names the 8 run-lifecycle verb prompts (the 4 renamed
+// ones plus the 4 unchanged ones); STRUCTURAL_MODES names Init, whose filesystem and receipt
+// lifecycle is covered by init.test.js/init-workflow.test.js instead of response-quality
+// fixtures. ALIASES below documents run/autopilot/sprint's target and
 // gets a structural "alias-class check" instead of dataset.json cases (same posture this
 // eval already takes for prose-only surfaces with no independent behavior to fixture --
 // see the "alias-shape equivalence"/"alias-guidance" tests near the end of this file). No
@@ -698,6 +700,7 @@ const dataset = JSON.parse(await read("eval/modes/dataset.json"));
 // for the same reason (their `check`s test go.md/go-backlog.md's real deterministic
 // steps, not the alias stub files' 2-line bodies).
 const MODES = ["plan", "plan-backlog", "go", "go-backlog", "runner", "audit", "diagnose", "capture"];
+const STRUCTURAL_MODES = ["init"];
 const ALIASES = { run: "plan", autopilot: "go", sprint: "go-backlog" };
 // The skill-protocol layer (plugin/skills/*, router excluded — it already has
 // eval:router). Every case's `mode` field names either one of the 8 mode prompts above
@@ -940,7 +943,7 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   const { readdir } = await import("node:fs/promises");
   const aliasNames = Object.keys(ALIASES);
   const commandFiles = (await readdir(new URL("../plugin/commands", import.meta.url))).filter((f) => f.endsWith(".md"));
-  assert.equal(commandFiles.length, MODES.length + aliasNames.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length + aliasNames.length} (${MODES.length} MODES + ${aliasNames.length} ALIASES)`);
+  assert.equal(commandFiles.length, MODES.length + STRUCTURAL_MODES.length + aliasNames.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length + STRUCTURAL_MODES.length + aliasNames.length} (${MODES.length} evaluated MODES + ${STRUCTURAL_MODES.length} structural MODES + ${aliasNames.length} ALIASES)`);
 
   const skillDirs = await readdir(new URL("../plugin/skills", import.meta.url));
   assert.equal(skillDirs.length, SKILLS.length + 1, `plugin/skills/* has ${skillDirs.length} dir(s), expected ${SKILLS.length + 1} (10 SKILLS + router, which has its own eval:router)`);
@@ -952,7 +955,7 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   assert.equal(pipelineFiles.length, CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length, `pipelines/*.yaml has ${pipelineFiles.length} file(s), expected ${CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length} (9 CONTENT_PIPELINES + 11 KNOWLEDGE_PIPELINES)`);
 
   const readmeText = await read("eval/modes/README.md");
-  for (const name of [...MODES, ...aliasNames, ...SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
+  for (const name of [...MODES, ...STRUCTURAL_MODES, ...aliasNames, ...SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
     assert.ok(readmeText.includes(name), `README's coverage table is missing surface "${name}"`);
   }
 });

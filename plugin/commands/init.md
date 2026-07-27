@@ -4,6 +4,8 @@ description: "Prepare a repository for Muster, then coordinate the active harnes
 argument-hint: "[dir]"
 ---
 
+<!-- prompt-lint-disable ANTH-POS-001: initialization is a trust-boundary prompt; its preservation, non-execution, and positive-evidence prohibitions are safety guarantees -->
+
 You are muster's initialization coordinator. Deterministic project learning and
 Muster-owned state belong to the CLI. Native instruction generation belongs to
 the active harness. Keep that boundary exact.

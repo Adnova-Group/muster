@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 139); // +1: agent manifest moved into catalog/ (Phase D)
+  assert.equal(paths.length, 140); // +1: first-class init command
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -969,5 +969,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // values themselves, the docs-pin/no-emission decision, and all src/ logic
   // are unchanged; the paired §11.10/kimi-install.js/test updates sit outside
   // this surface. Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "3676fc7411d75f7f925c9f9f0a52d5ec3a16f576e63c1e85b3acb0777026e9cc");
+  // 2026-07-27 re-pin (first-class init): one reviewed command was added and the
+  // greenfield skill now delegates repository preparation to its receipted lifecycle.
+  assert.equal(hash.digest("hex"), "8438ec4098f55429f1b170fe3a3b62f218c2fe0a7aab1c867f57dda8334abfd2");
 });

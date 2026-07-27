@@ -12,7 +12,7 @@ Model work uses the account or subscription of the active Claude Code session. M
 ## 1. Run the installer
 
 ```sh
-npx -y @adnova-group/muster install
+npx -y @adnova-group/muster@0.5.0 install
 ```
 
 `install` mutates nothing in your `~/.claude`. It only prints the steps it cannot do for you, because registering a plugin is a Claude Code action, not a shell command.
@@ -70,7 +70,7 @@ If the crew manifest does not appear, or `/muster:*` commands are missing, run `
 Because everything Muster adds lives **inside the plugin**, removal is mostly a matter of removing the plugin. Muster never writes to your `~/.claude/CLAUDE.md` or `settings.json`, so there is nothing tangled to unpick.
 
 ```sh
-npx -y @adnova-group/muster uninstall
+npx -y @adnova-group/muster@0.5.0 uninstall
 ```
 
 `uninstall` prints the steps it cannot do for you, because removing a plugin is a Claude Code action:

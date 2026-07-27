@@ -44,7 +44,7 @@ const sidebarGroups = [
 export default defineConfig({
   title: "Muster",
   description:
-    "Glass-box agentic orchestrator for Claude Code and Codex. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
+    "Glass-box agentic orchestrator for Claude Code, Codex, Kimi, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
   lang: "en-US",
   base: "/muster/",
   cleanUrls: true,
@@ -58,7 +58,7 @@ export default defineConfig({
       {
         property: "og:description",
         content:
-          "Glass-box agentic orchestrator for Claude Code and Codex. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
+          "Glass-box agentic orchestrator for Claude Code, Codex, Kimi, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
       },
     ],
   ],

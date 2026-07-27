@@ -42,8 +42,8 @@ A task that fails closed with a reinstall/new-session diagnostic means the runni
 Reinstall, then start a new session:
 
 ```sh
-npx -y @adnova-group/muster install     # Claude Code
-npx -y @adnova-group/muster install codex --scope project   # Codex
+npx -y @adnova-group/muster@0.5.0 install     # Claude Code
+npx -y @adnova-group/muster@0.5.0 install codex --scope project   # Codex
 ```
 
 `doctor`'s `install-integrity` check confirms the plugin cache copy actually landed — a missing cache directory, or one without `hooks/hooks.json`, means the copy silently failed even though the version string still looks healthy. No check enumerates individual agent profiles, so if `install-integrity` is green the profile is on disk and the problem is session binding: only a fresh session makes it dispatchable.
@@ -80,8 +80,8 @@ npm i -g @adnova-group/muster@latest
 All six reconcile the same way:
 
 ```sh
-npx -y @adnova-group/muster install codex --scope user      # canonical for hooks
-npx -y @adnova-group/muster install codex --scope project
+npx -y @adnova-group/muster@0.5.0 install codex --scope user      # canonical for hooks
+npx -y @adnova-group/muster@0.5.0 install codex --scope project
 ```
 
 Rerunning the project scope under a healthy user scope collapses to one firing scope — see [the canonical-scope hook collapse](/guides/codex#the-canonical-scope-hook-collapse).

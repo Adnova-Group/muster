@@ -1,6 +1,6 @@
 # Muster
 
-Glass-box, multi-domain agentic orchestrator for Claude Code and Codex. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.
+Glass-box, multi-domain agentic orchestrator for Claude Code, Codex, Kimi, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
@@ -13,7 +13,7 @@ Glass-box, multi-domain agentic orchestrator for Claude Code and Codex. Give it 
 
 Muster turns an outcome into finished work. It detects your project, discovers the capabilities you already have installed, picks the best tool for each piece of the job, and runs a crew of specialists toward your success criteria. Every decision is inspectable: which role resolved to which provider, on which model, and why.
 
-It runs on bare Claude Code or Codex with no separate model API, and it gets better as you install more tools. The work is not limited to code. Product, business, content, and operations are first-class.
+It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code and Codex expose the full native command surface, Kimi uses namespaced native skills, and Cowork's verified MCP lane has a six-mode protocol subset. The work is not limited to code. Product, business, content, and operations are first-class.
 
 ## Quickstart
 

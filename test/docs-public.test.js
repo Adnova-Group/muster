@@ -26,6 +26,9 @@ test("security policy documents the private reporting and disclosure contract", 
 
 test("README documents current install, lifecycle, and configuration boundaries", async () => {
   const readme = await read("README.md");
+  for (const harness of ["Claude Code", "Codex", "Kimi", "Cowork"]) {
+    assert.match(readme, new RegExp(harness), `README must name the ${harness} lane`);
+  }
   assert.match(readme, /@adnova-group\/muster@0\.5\.0/);
   assert.match(readme, /npm exec|npx[\s\S]{0,180}(?:registry|provenance|download)/i);
   assert.match(readme, /--scope project[\s\S]{0,900}config\.toml[\s\S]{0,300}max_threads[\s\S]{0,160}max_depth/i);
@@ -52,6 +55,7 @@ test("contributor and architecture docs describe the current build and dispatch 
   assert.match(architecture, /harness-neutral[\s\S]{0,220}(?:tier|effort|readOnly)/i);
   assert.match(architecture, /three nonredundant read-only briefs|three read-only briefs/i);
   assert.match(architecture, /system quality[\s\S]{0,220}coverage[\s\S]{0,180}security/i);
+  assert.match(architecture, /four boundaries[\s\S]{0,900}`install kimi --probe`/i);
   const voice = await read("docs/profiles/VOICE.md");
   assert.doesNotMatch(voice, /single runtime dependency/i);
   assert.match(voice, /two runtime dependencies/i);

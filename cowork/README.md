@@ -4,7 +4,7 @@ Muster's deterministic brain, packaged as a local MCP server for [Claude Cowork]
 
 Cowork extends through MCP and MCPB desktop extensions -- the port this directory targets -- and, as of ~May 2026, its own plugin system bundling skills, connectors, hooks, and sub-agents in the Claude Code plugin format (see `docs/research/claude-cowork.md` section 3d for the primary sources; this corrects an earlier version of this file that claimed Cowork "has no plugin, skill, slash-command, or hook primitives," which was true in January 2026 but is stale now). Whether muster's Claude Code plugin (`plugin/`) actually loads under Cowork's plugin loader is **unverified**: no live Cowork session was reachable to test it hands-on, and Cowork exposes no on-disk or protocol signal this MCP server (or the CLI it wraps) can inspect to auto-detect a native load. So `muster_capabilities` carries a DECLARED capability check instead of a probe -- `--native-plugin` / `MUSTER_COWORK_NATIVE_PLUGIN` (see Configuration below), the same declare-not-discover shape as remote connectors. Declare it true once a native load is confirmed on your Cowork build and muster's builtin skills/agents resolve exactly as they do on Claude Code, instead of collapsing to MCP-only; the default (false) keeps today's verified-working ride. Until a native load is confirmed, this MCP server is the whole ride: project detection, capability and domain routing, gate scoring, RICE prioritization, and wave planning, riding plain Node with no model calls. Cowork runs the local MCP server natively on the device (the agent loop), and its verbs are exposed here as MCP tools.
 
-Dispatch is confirmed working: Cowork can fan out parallel subagents with a per-call model override, so the six-mode MCP protocol subset (Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit) runs here, not just the router. Muster has nine canonical product modes overall; Runner, Capture, and Init have different support status on the MCP-only route, shown below. (Claude Code's legacy aliases -- `/muster:run`, `/muster:autopilot`, `/muster:sprint` -- still work there too, mapping to `/muster:plan`, `/muster:go`, `/muster:go-backlog` respectively; noted once since this file uses the new names throughout.)
+The six-mode MCP protocol subset (Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit) has a verified sequential path through `muster_next`. Parallel subagents and per-call model override require a successful phase-3 probe on the active Cowork build; this repository verifies only phases 1 and 2 and carries no live phase-3 receipt. Muster has nine canonical product modes overall; Runner, Capture, and Init have different support status on the MCP-only route, shown below. (Claude Code's legacy aliases -- `/muster:run`, `/muster:autopilot`, `/muster:sprint` -- still work there too, mapping to `/muster:plan`, `/muster:go`, `/muster:go-backlog` respectively; noted once since this file uses the new names throughout.)
 
 ## Mode support
 
@@ -158,7 +158,7 @@ Tool execution is bounded to four active calls and sixteen queued calls by defau
 
 ## Verifying dispatch on a new runtime
 
-Dispatch is already confirmed on Cowork. To re-check it on a different runtime or build, use the probe:
+Run the probe before relying on parallel dispatch for a Cowork runtime or build:
 
 ```bash
 # phases 1 and 2 self-verify the CLI and the dispatch contract; emits a phase-3 spec
@@ -168,7 +168,7 @@ node scripts/cowork-probe.mjs
 node scripts/cowork-probe.mjs --dispatch-results results.json
 ```
 
-Phase 3 passing means parallel fan-out plus per-call model override work, so the six-mode MCP protocol lifecycle can use parallel dispatch. If it fails, muster still runs as a router plus single-agent executor: the agent walks each wave one task at a time via `muster_next`, and every routing, scoring, and gate decision stays deterministic.
+Phase 3 passing means parallel fan-out plus per-call model override work, so the six-mode MCP protocol lifecycle can use parallel dispatch. Require that receipt before enabling the parallel path. If it fails or has not been run, Muster still runs as a router plus single-agent executor: the agent walks each wave one task at a time via `muster_next`, and every routing, scoring, and gate decision stays deterministic.
 
 ## Troubleshooting
 

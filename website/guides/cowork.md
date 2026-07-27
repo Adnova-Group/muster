@@ -8,7 +8,7 @@ Muster runs in Claude Cowork through a local MCP server. The server wraps the de
 | --- | --- |
 | Routing, manifests, waves, and gates | Native MCP tools |
 | Tool inventory | 27 CLI-wrapper tools plus `muster_sprint_protocol` |
-| Parallel subagents | Confirmed, with per-call model override |
+| Parallel subagents | Conditional; run probe phase 3 on the active build first |
 | Sequential execution | `muster_next` fallback |
 | Per-agent worktree isolation | No proven native primitive |
 | Hooks and action fence | MCP-only lane has none |
@@ -16,6 +16,8 @@ Muster runs in Claude Cowork through a local MCP server. The server wraps the de
 | Remote connectors | Declared through `MUSTER_COWORK_CONNECTORS` |
 
 The server exposes 28 tools in total: 27 wrappers around CLI operations, plus `muster_sprint_protocol`. The protocol returns the Cowork-adapted backlog playbook. It is a protocol tool, not a CLI wrapper.
+
+The repository tests verify probe phases 1 and 2: CLI portability and the dispatch contract. They do not contain a live phase-3 receipt. Run `node scripts/cowork-probe.mjs`, execute its phase-3 spec in the active Cowork build, and grade the returned results before relying on parallel dispatch or per-call model override. Until that passes, use the sequential `muster_next` path.
 
 ## Configure the local server
 

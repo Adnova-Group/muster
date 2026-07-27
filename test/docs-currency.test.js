@@ -96,13 +96,17 @@ const ownedCurrencyDocs = [
   "docs/fast-path-token-gap.md"
 ];
 
-test("current research docs do not reference the deleted Codex agent manifest", async () => {
-  for (const path of ownedCurrencyDocs) {
+test("current research docs identify the shared live agent manifest", async () => {
+  for (const path of [
+    "docs/research/codex-cli.md",
+    "docs/research/kimi-code-cli.md",
+    "docs/fast-path-token-gap.md",
+  ]) {
     const text = await read(path);
-    assert.doesNotMatch(
+    assert.match(
       text,
-      /codex\/agents\.manifest\.json/,
-      `${path} must reference the shared catalog/agents.manifest.json`
+      /catalog\/agents\.manifest\.json/,
+      `${path} must identify the shared live catalog/agents.manifest.json`
     );
   }
 });

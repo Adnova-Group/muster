@@ -124,19 +124,27 @@ test("public entry points consistently document nine modes including Init", asyn
 });
 
 test("harness documentation routes and support claims are explicit", async () => {
-  const [harnesses, kimi, cowork] = await Promise.all([
+  const [config, harnesses, kimi, cowork] = await Promise.all([
+    read("website/.vitepress/config.js"),
     read("website/guides/harnesses.md"),
     read("website/guides/kimi.md"),
     read("website/guides/cowork.md"),
   ]);
   for (const harness of ["Claude Code", "Codex", "Kimi", "Cowork"]) {
+    assert.match(config, new RegExp(harness));
     assert.match(harnesses, new RegExp(harness));
   }
   assert.match(kimi, /support matrix/i);
   assert.match(kimi, /hooks-free/i);
+  assert.match(kimi, /@adnova-group\/muster@0\.5\.0/);
+  assert.match(kimi, /symbolic[\s\S]{0,100}`primary`[\s\S]{0,80}`secondary`/i);
+  assert.match(kimi, /explicit[\s\S]{0,120}overrides[\s\S]{0,120}model_preference/i);
   assert.match(cowork, /support matrix/i);
   assert.match(cowork, /27 CLI-wrapper tools/i);
   assert.match(cowork, /`muster_sprint_protocol`/);
+  assert.match(cowork, /phase-?3[\s\S]{0,260}before relying on parallel/i);
+  assert.doesNotMatch(cowork, /Parallel subagents \| Confirmed/i);
+  assert.doesNotMatch(harnesses, /Confirmed subagent fan-out/i);
 });
 
 test("Codex guide documents current install, trust, audit, and safety limits", async () => {
@@ -182,6 +190,21 @@ test("website publishes security reporting and doctor redaction guidance", async
   assert.doesNotMatch(troubleshooting, /paste the full `doctor` output/);
 });
 
+test("website install and uninstall examples pin the reviewed release", async () => {
+  for (const file of [
+    "website/guides/install.md",
+    "website/guides/codex.md",
+    "website/guides/kimi.md",
+    "website/guides/troubleshooting.md",
+  ]) {
+    const page = await read(file);
+    assert.doesNotMatch(page, /npx -y @adnova-group\/muster (?:install|uninstall)/);
+    for (const line of page.split("\n").filter((value) => /npx -y @adnova-group\/muster.*(?:install|uninstall)/.test(value))) {
+      assert.match(line, /@adnova-group\/muster@0\.5\.0/, `${file} has an unpinned mutation example: ${line}`);
+    }
+  }
+});
+
 test("every hook event in hooks.json appears in website/reference/architecture.md", async () => {
   const [hooksJson, archMd] = await Promise.all([
     read("plugin/hooks/hooks.json"),
@@ -206,7 +229,10 @@ test("architecture docs name every network-capable CLI boundary and offline beha
   ]);
   for (const doc of docs) {
     assert.doesNotMatch(doc, /one carve-out is the `issue` verb/);
-    for (const command of ["`issue`", "`vendor`", "`doctor`"]) assert.match(doc, new RegExp(command));
+    assert.match(doc, /four boundaries/i);
+    for (const command of ["`issue`", "`vendor`", "`doctor`", "`install kimi --probe`"]) {
+      assert.match(doc, new RegExp(command));
+    }
     assert.match(doc, /offline/i);
   }
 });

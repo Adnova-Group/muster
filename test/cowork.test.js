@@ -93,7 +93,7 @@ test("instructions carry a Cowork execution protocol with the sequential (no-fan
   assert.match(instr, /muster_next.*fan-out is unavailable|fan-out is unavailable/i, "spells out the no-fan-out fallback via muster_next");
 });
 
-test("instructions cover the six-mode MCP protocol subset (dispatch confirmed on Cowork)", async () => {
+test("instructions cover the six-mode MCP protocol subset and sequential fallback", async () => {
   const r = await rpc([INIT]);
   const instr = r[1].result.instructions;
   assert.match(instr, /parallel/i, "leads with parallel fan-out now that dispatch is confirmed");
@@ -190,10 +190,18 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   const pkg = JSON.parse(await read("package.json"));
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const text = await read("cowork/README.md");
+  const [rootLicense, packedLicense, rootNotice, packedNotice] = await Promise.all([
+    read("LICENSE"),
+    read("cowork/LICENSE"),
+    read("NOTICE"),
+    read("cowork/NOTICE"),
+  ]);
   const norm = text.replace(/\s+/g, " ");
 
   assert.equal(pkg.license, "Apache-2.0");
   assert.equal(manifest.license, pkg.license, "MCPB license must match the package license");
+  assert.equal(packedLicense, rootLicense, "the packed cowork/ tree must carry the repository license");
+  assert.equal(packedNotice, rootNotice, "the packed cowork/ tree must carry repository attributions");
   assert.equal(manifest.tools.length, 28, "MCPB manifest declares the complete deterministic tool surface");
   assert.match(manifest.long_description, /28 deterministic MCP tools/);
   assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit/);
@@ -218,6 +226,9 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.match(norm, /`muster_sprint_protocol` is a protocol-content tool, not an MCP wrapper for a same-name CLI command/);
   assert.match(norm, /MCP-only route has no lifecycle-hook enforcement/i);
   assert.match(norm, /native plugin ride remains conditional and unverified/i);
+  assert.doesNotMatch(norm, /Dispatch is confirmed working|Dispatch is already confirmed on Cowork/i);
+  assert.match(norm, /phase-3 probe[\s\S]{0,180}no live phase-3 receipt/i);
+  assert.match(norm, /Phase 3[\s\S]{0,180}Require that receipt before enabling the parallel path/i);
   assert.match(norm, /@anthropic-ai\/mcpb@2\.1\.2/);
   assert.match(norm, /@adnova-group\/muster@0\.5\.0/);
 });

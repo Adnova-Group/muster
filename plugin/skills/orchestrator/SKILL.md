@@ -282,7 +282,10 @@ can never engage a lane. Lane-sensitive legs in an attended session therefore di
 headless `kimi -p` process per leg, spawned straight from the descriptor's `{ argv, env,
 cwd, lane }`: `argv` is `["-p", brief, "--agent-file", <absolute agent file>,
 "--output-format", "stream-json", "-m", KIMI_LANES[lane]]`, and `env` is the shared
-`kimiLaneEnv()` pair, carried for the v2 engine flag `--agent-file` needs. `-m` is ALWAYS
+`kimiLaneEnv()` OVERRIDE pair, carried for the v2 engine flag `--agent-file` needs (its
+`KIMI_SECONDARY_MODEL` half also binds lanes for any subagents the leg itself spawns) --
+merge it over the ambient process env at spawn (`{ ...process.env, ...d.env }`), never
+pass it as the whole env (a wholesale replacement loses HOME/PATH and the child breaks). `-m` is ALWAYS
 emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
 SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
 `-m` and omitting it silently falls to config `default_model`. The leg's receipt is the

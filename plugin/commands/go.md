@@ -124,7 +124,9 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    the objective", docs/research/kimi-code-cli.md §11.9), so the same enrichment that would land in
    a file muster re-reads goes into the harness's own loop instead. Its env pair
    (`KIMI_CODE_EXPERIMENTAL_FLAG=1` + `KIMI_SECONDARY_MODEL`, derived by `kimiLaneEnv()` in
-   `src/kimi.js`) is what binds the stamped `model_preference` lanes for the whole run —
+   `src/kimi.js` — an OVERRIDE pair merged over the ambient process env at spawn,
+   `{ ...process.env, ...inv.env }`, never passed as the whole env) is what binds the
+   stamped `model_preference` lanes for the whole run —
    the experiment gate is per-process and the TUI ignores the field, so a muster-launched
    `kimi -p` is exactly where the installed agents' lanes engage (docs/research/kimi-code-cli.md
    §11.8). Interpret the process exit code

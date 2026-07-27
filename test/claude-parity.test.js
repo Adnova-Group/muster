@@ -996,5 +996,18 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // counts re-scanned live -- unchanged (test/docs-binding-interface.test.js
   // green without a re-derivation). Deliberate surface change, not drift.
   // REBASE-NOTE: hash refreshed post-rebase onto the tier rename.
+  //
+  // 2026-07-27 re-pin (kimi-process-lane-dispatch review-gate round 1): file
+  // COUNT unchanged (139) -- content changed in plugin/skills/orchestrator/
+  // SKILL.md (the process-lane paragraph now states the descriptor's env is an
+  // OVERRIDE pair merged over the ambient process env at spawn,
+  // `{ ...process.env, ...d.env }`, never passed as the whole env, and names
+  // KIMI_SECONDARY_MODEL's subagent-lane binding) and plugin/commands/go.md
+  // (the kimiGoalInvocation env-pair sentence gained the same one-clause merge
+  // note, `{ ...process.env, ...inv.env }`). The review-gate BLOCKER: prose
+  // that invited spawn("kimi", d.argv, { env: d.env }) -- wholesale env
+  // replacement losing HOME/PATH. src/kimi-dispatch.js's matching
+  // comment/constant changes sit outside this surface. Deliberate surface
+  // change, not drift.
   assert.equal(hash.digest("hex"), "a4775efda3940954b0ac94519bceaea15471fb4ef574df88b9b62d6edfcfa3ba");
 });

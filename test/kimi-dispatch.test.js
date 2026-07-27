@@ -12,7 +12,7 @@ import { join } from "node:path";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, interpretKimiGoalExit, resolveKimiWaveDispatch,
   interpretKimiBackgroundCompletion,
-  KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_DISPATCH_MODES
+  KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_PROCESS_MAX_BRIEF, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
 
@@ -423,6 +423,9 @@ test("the runner prose (go.md + runner.md) routes the Kimi run loop through the 
   }
   // acceptance criteria compile INTO the objective string (no separate stop flag)
   assert.match(go, /acceptance criteria compiled\s*INTO the objective string/, "go.md must state that acceptance criteria compile into the /goal objective string");
+  // the env pair is an OVERRIDE merged over the ambient env, never the whole spawn env
+  assert.match(go, /\.\.\.process\.env, \.\.\.inv\.env/, "go.md must pin the env merge shape for the /goal invocation");
+  assert.match(go, /never passed as the whole env/, "go.md must forbid passing the env pair as the whole spawn env");
 });
 
 // --- Headless process dispatch (kimi -p --agent-file) -------------------------
@@ -510,6 +513,22 @@ test("kimiProcessDispatch: rejects an empty brief", () => {
   });
 });
 
+test("kimiProcessDispatch: enforces the brief cap -- briefs ride argv, the /goal objective's budget class", () => {
+  // Same budget class as KIMI_GOAL_MAX_OBJECTIVE: a brief IS the -p prompt, and
+  // a /goal objective is itself a `-p "/goal <objective>"` argument.
+  assert.equal(KIMI_PROCESS_MAX_BRIEF, KIMI_GOAL_MAX_OBJECTIVE);
+  withKimiHome(home => {
+    writeFileSync(join(home, "agents", "muster-builder.md"), "x");
+    assert.throws(
+      () => kimiProcessDispatch({ brief: "x".repeat(KIMI_PROCESS_MAX_BRIEF + 1), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
+      new RegExp(`kimiProcessDispatch: brief is ${KIMI_PROCESS_MAX_BRIEF + 1} chars; cap is ${KIMI_PROCESS_MAX_BRIEF}`)
+    );
+    assert.doesNotThrow(
+      () => kimiProcessDispatch({ brief: "x".repeat(KIMI_PROCESS_MAX_BRIEF), agentFile: "muster-builder.md", cwd: home, lane: "primary" })
+    );
+  });
+});
+
 test("kimiProcessDispatch: lane is REQUIRED and must be primary|secondary, never a model id", () => {
   withKimiHome(home => {
     writeFileSync(join(home, "agents", "muster-builder.md"), "x");
@@ -585,6 +604,10 @@ test("orchestrator/SKILL.md's Kimi subsection carries the attended-session proce
   assert.match(section, /`src\/kimi-dispatch\.js`/, "the rule must cite src/kimi-dispatch.js");
   assert.match(section, /\{ argv, env,\s*cwd, lane \}/, "the rule must name the descriptor keys { argv, env, cwd, lane }");
   assert.match(section, /kimiLaneEnv\(\)/, "the rule must name the shared kimiLaneEnv() env derivation");
+  // the env is an OVERRIDE pair merged over the ambient env, never the whole
+  // spawn env -- a wholesale replacement loses HOME/PATH and the child breaks
+  assert.match(section, /\{ \.\.\.process\.env, \.\.\.d\.env \}/, "the rule must pin the env merge shape ({ ...process.env, ...d.env })");
+  assert.match(section, /never\s+pass it as the whole env/, "the rule must forbid passing descriptor.env as the whole spawn env");
   // the always-emit -m rule and its rationale
   assert.match(section, /`-m` is ALWAYS\s*emitted/, "the rule must state -m is always emitted");
   assert.match(section, /binds only a process's SPAWNED\s*SUBAGENTS/, "the rule must state model_preference binds only spawned subagents");

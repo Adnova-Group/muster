@@ -199,6 +199,12 @@ export function interpretKimiBackgroundCompletion({ status, result, terminalReas
 export const KIMI_GOAL_EXIT_CODES = Object.freeze({ complete: 0, blocked: 3, paused: 6 });
 export const KIMI_GOAL_MAX_OBJECTIVE = 4000;
 
+// Briefs ride argv as the `-p` prompt -- the same budget class as a /goal
+// objective (which is itself a `-p "/goal <objective>"` argument). No separate
+// binary limit is documented for a bare -p prompt, so the objective cap is
+// adopted as the conservative bound.
+export const KIMI_PROCESS_MAX_BRIEF = KIMI_GOAL_MAX_OBJECTIVE;
+
 // Map a `kimi -p "/goal ..."` process exit code onto muster's run disposition.
 // This is the whole reason /goal is worth adopting: muster's escalation signal
 // arrives as an exit code instead of being parsed out of a STATE file.
@@ -246,6 +252,8 @@ export function kimiGoalInvocation({ objective, primaryModel = KIMI_LANES.primar
     env: {
       // Selects the v2 engine AND enables the secondary-model experiment; the
       // lane model follows the (rarely overridden) secondaryModel argument.
+      // An OVERRIDE pair: merge over the ambient env at spawn
+      // (`{ ...process.env, ...env }`), never pass as the whole env.
       ...kimiLaneEnv(),
       KIMI_SECONDARY_MODEL: secondaryModel
     },
@@ -263,12 +271,14 @@ const kimiAgentsDir = () => join(process.env.KIMI_CODE_HOME || join(homedir(), "
 // Build the argv + env for a headless `kimi -p <brief> --agent-file <path>`
 // process -- a wave leg dispatched as its OWN Kimi process rather than as an
 // in-session Agent/AgentSwarm call. `--agent-file` binds a custom MAIN agent
-// (docs/research/kimi-code-cli.md section 6, "How muster would actually drive
-// Kimi non-interactively"), which requires the v2 engine -- that, and ONLY
-// that, is why the kimiLaneEnv() pair rides along: KIMI_CODE_EXPERIMENTAL_FLAG=1
-// selects the engine --agent-file needs. The stamped model_preference does NOT
-// apply here: it binds only SPAWNED SUBAGENTS, never the -p process's own main
-// agent (sections 6 + 11.8) -- so the process's model comes ONLY from `-m`.
+// (docs/research/kimi-code-cli.md section 9, "How muster would actually drive
+// Kimi non-interactively"), which requires the v2 engine. The kimiLaneEnv()
+// pair rides for BOTH of its keys, not the flag alone: KIMI_CODE_EXPERIMENTAL_FLAG=1
+// selects the engine --agent-file needs, and KIMI_SECONDARY_MODEL binds the
+// lanes for any subagents the dispatched -p process itself spawns -- which is
+// exactly where the stamped model_preference bites. It never binds the -p
+// process's own MAIN agent (sections 6 + 11.8) -- so the process's model comes
+// ONLY from `-m`.
 //
 // LANE IS THEREFORE REQUIRED AND ALWAYS EMITTED as `-m KIMI_LANES[lane]`.
 // Omitting -m is not neutral: the process would silently fall to config.toml's
@@ -277,6 +287,9 @@ const kimiAgentsDir = () => join(process.env.KIMI_CODE_HOME || join(homedir(), "
 export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   if (typeof brief !== "string" || !brief.trim()) {
     throw new Error("kimiProcessDispatch: brief is required (the -p prompt the dispatched process runs)");
+  }
+  if (brief.length > KIMI_PROCESS_MAX_BRIEF) {
+    throw new Error(`kimiProcessDispatch: brief is ${brief.length} chars; cap is ${KIMI_PROCESS_MAX_BRIEF} -- briefs ride argv as the -p prompt, the same budget class as a /goal objective`);
   }
   if (!LANES.includes(lane)) {
     throw new Error(`kimiProcessDispatch: lane is required and must be one of ${LANES.join("|")} -- model_preference never binds the -p process's own main agent, so its model comes ONLY from -m; omitting it silently falls to config default_model; got ${JSON.stringify(lane)}`);
@@ -305,6 +318,9 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   }
   return {
     argv: ["-p", brief, "--agent-file", resolvedAgentFile, "--output-format", "stream-json", "-m", KIMI_LANES[lane]],
+    // An OVERRIDE pair: merge over the ambient env at spawn
+    // (`{ ...process.env, ...d.env }`), never pass as the whole env -- a
+    // wholesale replacement loses HOME/PATH and the child breaks.
     env: kimiLaneEnv(),
     cwd: resolvedCwd,
     lane

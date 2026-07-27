@@ -81,6 +81,73 @@ export function sumUsage(records) {
   };
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Thinking-effort receipts: the EFFECTIVE effort each LLM step ran at.
+//
+// PROBE EVIDENCE (2026-07-27, kimi v0.29.1, two tiny `kimi -p -m kimi-code/k3`
+// runs with KIMI_MODEL_THINKING_EFFORT=low|high):
+//   - Every agents/<agentId>/wire.jsonl llm.request record carries a top-level
+//     "thinkingEffort" field with the EFFECTIVE effort of that step -- the
+//     low run emitted exactly "low", the high run exactly "high" (lowercase;
+//     kimi-for-coding, which has no effort knob, emits "on").
+//   - The profile.bind record ALSO carries a "thinkingEffort" -- but that is
+//     the config DEFAULT ("high" in both runs, even the low one), never the
+//     effective effort. It is deliberately NOT read here.
+//   - The env override is conditional (it bypasses support_efforts), so the
+//     receipts are the only trustworthy proof of what a step actually ran.
+// ───────────────────────────────────────────────────────────────────────────
+
+// Parse one wire.jsonl's text into the thinkingEffort of each llm.request
+// record, in file order: one entry per LLM step -- the emitted string, or
+// null when the field is absent (an unverifiable step, NOT a pass). Only
+// llm.request records are read; profile.bind carries the config default, not
+// the effective effort (probe evidence above). Blank lines are skipped; a
+// malformed JSON line throws with its line number, mirroring parseWireUsage.
+export function parseWireThinkingEfforts(wireText) {
+  if (typeof wireText !== "string") throw new Error("parseWireThinkingEfforts: wireText must be a string");
+  const efforts = [];
+  const lines = wireText.split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (!line.trim()) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch (err) {
+      throw new Error(`parseWireThinkingEfforts: line ${index + 1} is not valid JSON: ${err.message}`);
+    }
+    if (obj?.type !== "llm.request") continue;
+    efforts.push(typeof obj.thinkingEffort === "string" && obj.thinkingEffort ? obj.thinkingEffort : null);
+  }
+  return efforts;
+}
+
+// Read every agents/<id>/wire.jsonl under a session dir into per-agent effort
+// lists: { agentId: [efforts...] }, agent dirs sorted. An agent dir without a
+// wire file (or with no llm.request records) contributes an empty list.
+export async function readSessionThinkingEfforts(sessionDir) {
+  if (typeof sessionDir !== "string" || !sessionDir) throw new Error("readSessionThinkingEfforts: sessionDir is required");
+  let agentDirs = [];
+  try {
+    agentDirs = (await readdir(path.join(sessionDir, "agents"), { withFileTypes: true }))
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort();
+  } catch (err) {
+    throw new Error(`readSessionThinkingEfforts: cannot read agents tree under ${sessionDir}: ${err.message}`);
+  }
+  const byAgent = {};
+  for (const agentId of agentDirs) {
+    let wireText = "";
+    try {
+      wireText = await readFile(path.join(sessionDir, "agents", agentId, "wire.jsonl"), "utf8");
+    } catch {
+      // an agent dir without a wire file contributed no steps
+    }
+    byAgent[agentId] = parseWireThinkingEfforts(wireText);
+  }
+  return byAgent;
+}
+
 // Attribute a whole session's token consumption per agent. Every
 // agents/<id>/wire.jsonl under the session dir is summed; state.json (when
 // present and parseable) supplies type + parentAgentId. `dispatches` is the

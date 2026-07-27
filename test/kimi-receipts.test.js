@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   parseWireUsage, sumUsage, readSessionUsage, KIMI_USAGE_FIELDS,
+  parseWireThinkingEfforts, readSessionThinkingEfforts,
   captureSessionId, resolveSessionForCwd, formatUsageLine, summarizeItemReceipts,
   UNKNOWN_REASONS
 } from "../src/kimi-receipts.js";
@@ -93,6 +94,60 @@ test("sumUsage: folds records into input/total conveniences", () => {
     inputOther: 0, output: 0, inputCacheRead: 0, inputCacheCreation: 0,
     input: 0, total: 0, records: 0, models: []
   });
+});
+
+// --- parseWireThinkingEfforts -------------------------------------------------
+// Canned llm.request shapes mirror the live probe (2026-07-27, kimi v0.29.1):
+// k3 emits "low"/"high", kimi-for-coding emits "on"; the profile.bind record
+// carries the config DEFAULT ("high" even in a low run) and must be ignored.
+
+test("parseWireThinkingEfforts: one entry per llm.request, in file order, from the top-level field", () => {
+  const wire = [
+    '{"type":"metadata","protocol_version":"1.4","created_at":1}',
+    '{"type":"profile.bind","modelAlias":"kimi-code/k3","thinkingEffort":"high"}', // config default -- NOT effective
+    '{"type":"llm.request","kind":"loop","model":"k3","thinkingEffort":"low","time":2}',
+    '{"type":"context.append_loop_event","event":{"type":"step.end"},"time":3}',
+    '{"type":"llm.request","kind":"loop","model":"k3","thinkingEffort":"low","time":4}'
+  ].join("\n");
+  assert.deepEqual(parseWireThinkingEfforts(wire), ["low", "low"]);
+});
+
+test("parseWireThinkingEfforts: reads the k3 rungs and the kimi-for-coding \"on\" verbatim", () => {
+  for (const effort of ["low", "high", "on"]) {
+    const wire = `{"type":"llm.request","thinkingEffort":${JSON.stringify(effort)}}`;
+    assert.deepEqual(parseWireThinkingEfforts(wire), [effort]);
+  }
+});
+
+test("parseWireThinkingEfforts: a missing or empty field is null (unverifiable, never a pass)", () => {
+  assert.deepEqual(parseWireThinkingEfforts('{"type":"llm.request","kind":"loop"}'), [null]);
+  assert.deepEqual(parseWireThinkingEfforts('{"type":"llm.request","thinkingEffort":""}'), [null]);
+  assert.deepEqual(parseWireThinkingEfforts('{"type":"llm.request","thinkingEffort":7}'), [null]);
+});
+
+test("parseWireThinkingEfforts: blank lines skipped, malformed JSON throws with its line number", () => {
+  assert.deepEqual(parseWireThinkingEfforts('\n{"type":"llm.request","thinkingEffort":"high"}\n\n'), ["high"]);
+  assert.throws(() => parseWireThinkingEfforts('{"type":"llm.request","thinkingEffort":"low"}\n{"type":"llm.req'), /line 2 is not valid JSON/);
+  assert.throws(() => parseWireThinkingEfforts(null), /must be a string/);
+});
+
+test("readSessionThinkingEfforts: per-agent effort lists over a session tree", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-effort-session-"));
+  await mkdir(path.join(dir, "agents", "main"), { recursive: true });
+  await mkdir(path.join(dir, "agents", "agent-0"), { recursive: true });
+  await mkdir(path.join(dir, "agents", "agent-1"), { recursive: true }); // no wire file
+  await writeFile(path.join(dir, "agents", "main", "wire.jsonl"),
+    '{"type":"llm.request","thinkingEffort":"low"}\n{"type":"llm.request","thinkingEffort":"low"}\n');
+  await writeFile(path.join(dir, "agents", "agent-0", "wire.jsonl"),
+    '{"type":"profile.bind","thinkingEffort":"high"}\n{"type":"llm.request","thinkingEffort":"low"}\n');
+  const byAgent = await readSessionThinkingEfforts(dir);
+  assert.deepEqual(byAgent, {
+    "agent-0": ["low"],
+    "agent-1": [],
+    main: ["low", "low"]
+  });
+  await assert.rejects(() => readSessionThinkingEfforts(""), /sessionDir is required/);
+  await assert.rejects(() => readSessionThinkingEfforts(path.join(dir, "nope")), /cannot read agents tree/);
 });
 
 // --- readSessionUsage --------------------------------------------------------

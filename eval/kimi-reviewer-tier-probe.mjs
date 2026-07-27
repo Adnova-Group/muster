@@ -37,11 +37,25 @@
 // verbatim into the results JSON for that step.
 //
 // Modes:
-//   node eval/kimi-reviewer-tier-probe.mjs --dry-run   build all descriptors and
+//   node eval/kimi-reviewer-tier-probe.mjs --dry-run [--mode tier|effort]
+//                                                      build all descriptors and
 //                                                      print them as JSON; spawn NOTHING
-//   node eval/kimi-reviewer-tier-probe.mjs [--out <path>] [--results-dir <dir>]
+//   node eval/kimi-reviewer-tier-probe.mjs [--mode tier|effort] [--out <path>] [--results-dir <dir>]
 //                                                      live mode: spawn every cell
 //                                                      (wave 2 runs this)
+//
+// EFFORT MODE (--mode effort): the SAME two pinned probes on lane=primary
+// (kimi-code/k3) ONLY, each run TWICE -- once at thinking effort low, once at
+// high. There is no per-invocation effort flag; KIMI_MODEL_THINKING_EFFORT is
+// read per-process from env and overrides config [thinking].effort, so each
+// cell sets it via the same spawnEnv merge rule ({...process.env, ...d.env}).
+// The override is conditional (it intentionally bypasses support_efforts and
+// can be silently ignored), so every effort-mode cell PROVES its effort from
+// receipts: the thinkingEffort field on the session wire.jsonl llm.request
+// records (src/kimi-receipts.js). A cell whose receipts show any effort other
+// than the intended one (or no verifiable receipts at all) is recorded
+// INVALID (effortValid: false) and excluded from the token sums exactly like
+// a retried cell -- recorded, never hidden.
 import { execFileSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -50,7 +64,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { kimiProcessDispatch, KIMI_PROCESS_MAX_BRIEF } from "../src/kimi-dispatch.js";
-import { captureSessionId, resolveSessionForCwd, readSessionUsage } from "../src/kimi-receipts.js";
+import { captureSessionId, resolveSessionForCwd, readSessionUsage, readSessionThinkingEfforts } from "../src/kimi-receipts.js";
 
 const pexecFile = promisify(execFile);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -103,6 +117,14 @@ export const PROBES = Object.freeze([
   { id: "spec-gate-manifest", gate: "spec-gate" }
 ]);
 export const LANES = Object.freeze(["primary", "secondary"]);
+
+// Effort mode: the K3 effort ladder rungs this probe compares (the third
+// rung, max, is muster's fable-only reserve -- docs/research/kimi-code-cli.md
+// section 11.2). There is no per-invocation effort flag; this env var is read
+// per-process and overrides config [thinking].effort.
+export const EFFORTS = Object.freeze(["low", "high"]);
+export const EFFORT_ENV_VAR = "KIMI_MODEL_THINKING_EFFORT";
+export const PROBE_MODES = Object.freeze(["tier", "effort"]);
 
 // The quarantine material file per probe -- the ONLY file in each cell's
 // temp working dir.
@@ -169,24 +191,40 @@ export function buildQuarantineDir({ probeId, repoRoot = REPO_ROOT, baseDir } = 
   return { dir, file };
 }
 
-// Build all probe x lane cells with their kimiProcessDispatch descriptors,
-// each in its own quarantine dir. Pure construction -- spawns nothing (this
-// is what --dry-run prints).
-export function buildCells({ repoRoot = REPO_ROOT, agentFile = AGENT_FILE, baseDir } = {}) {
+// Build all cells with their kimiProcessDispatch descriptors, each in its own
+// quarantine dir. Pure construction -- spawns nothing (this is what --dry-run
+// prints).
+//   mode "tier"   (default): both probes x both lanes.
+//   mode "effort": both probes on lane=primary ONLY, once per EFFORTS rung;
+//                  the cell's descriptor env carries EFFORT_ENV_VAR=effort as
+//                  an extra OVERRIDE key (merged over the ambient env by
+//                  spawnEnv exactly like the lane pair -- never wholesale).
+//                  Briefs stay the pinned constants, byte-identical across
+//                  efforts; the effort rides ONLY the env.
+export function buildCells({ repoRoot = REPO_ROOT, agentFile = AGENT_FILE, baseDir, mode = "tier" } = {}) {
+  if (!PROBE_MODES.includes(mode)) {
+    throw new Error(`buildCells: mode must be one of ${PROBE_MODES.join("|")}; got ${JSON.stringify(mode)}`);
+  }
   const briefs = buildBriefs();
   const cells = [];
   for (const probe of PROBES) {
     const brief = briefs[probe.id];
-    for (const lane of LANES) {
+    const variants = mode === "effort"
+      ? EFFORTS.map(effort => ({ lane: "primary", effort }))
+      : LANES.map(lane => ({ lane, effort: null }));
+    for (const { lane, effort } of variants) {
       const quarantine = buildQuarantineDir({ probeId: probe.id, repoRoot, baseDir });
+      const descriptor = kimiProcessDispatch({ brief, agentFile, cwd: quarantine.dir, lane });
+      if (effort) descriptor.env = { ...descriptor.env, [EFFORT_ENV_VAR]: effort };
       cells.push({
         probe: probe.id,
         gate: probe.gate,
         lane,
+        effort,
         brief,
         quarantineDir: quarantine.dir,
         materialFile: quarantine.file,
-        descriptor: kimiProcessDispatch({ brief, agentFile, cwd: quarantine.dir, lane })
+        descriptor
       });
     }
   }
@@ -198,8 +236,9 @@ export function buildCells({ repoRoot = REPO_ROOT, agentFile = AGENT_FILE, baseD
 // ───────────────────────────────────────────────────────────────────────────
 
 // THE MERGE RULE from the pinned blocker: the descriptor's env is an OVERRIDE
-// pair merged over the ambient env -- never passed as the whole env (a
-// wholesale replacement loses HOME/PATH and the child breaks). Do not regress.
+// set (the lane pair, plus EFFORT_ENV_VAR on effort-mode cells) merged over
+// the ambient env -- never passed as the whole env (a wholesale replacement
+// loses HOME/PATH and the child breaks). Do not regress.
 export function spawnEnv(descriptorEnv, baseEnv = process.env) {
   return { ...baseEnv, ...descriptorEnv };
 }
@@ -296,7 +335,8 @@ export function scanContamination(stdout, { quarantineDir, repoRoot = REPO_ROOT 
 // is data (the retry policy and the results file both need it).
 async function spawnAttempt(cell, { resultsDir, attempt }) {
   const { descriptor } = cell;
-  const stdoutFile = join(resultsDir, `${cell.probe}.${cell.lane}.attempt-${attempt}.stdout.jsonl`);
+  const effortTag = cell.effort ? `.${cell.effort}` : "";
+  const stdoutFile = join(resultsDir, `${cell.probe}.${cell.lane}${effortTag}.attempt-${attempt}.stdout.jsonl`);
   let exitCode = 0;
   let stdout = "";
   try {
@@ -314,12 +354,39 @@ async function spawnAttempt(cell, { resultsDir, attempt }) {
   return { exitCode, stdout, stdoutFile };
 }
 
+// Effort-mode receipt proof (mandatory): the env override is conditional and
+// can be silently ignored, so a cell is VALID only when its session receipts
+// show at least one llm.request step and EVERY step's thinkingEffort equals
+// the intended effort. observed is the flat list of per-step efforts from
+// readSessionThinkingEfforts (null entries = steps with the field absent --
+// unverifiable, never a pass). A null observed list means the session could
+// not be resolved/read at all -- also invalid: unproven is not proven.
+export function effortCellVerdict({ expected, observed }) {
+  if (typeof expected !== "string" || !expected) {
+    throw new Error("effortCellVerdict: expected effort is required");
+  }
+  if (!Array.isArray(observed) || observed.length === 0) {
+    return { effortValid: false, effortNote: "no verifiable llm.request receipts for the cell's session" };
+  }
+  const mismatches = observed.filter(e => e !== expected);
+  if (mismatches.length > 0) {
+    return {
+      effortValid: false,
+      effortNote: `${mismatches.length}/${observed.length} llm.request step(s) ran thinkingEffort ${mismatches.map(e => JSON.stringify(e)).join(", ")} instead of ${JSON.stringify(expected)}`
+    };
+  }
+  return { effortValid: true, effortNote: null };
+}
+
 // Run one cell: spawn, retry ONCE on nonzero exit/truncated output, then
 // attribute tokens via captureSessionId -> resolveSessionForCwd ->
 // readSessionUsage, then contamination-scan the final attempt's stdout.
-// Retried cells are marked so their token totals are EXCLUDED from the cost
-// comparison; contaminated cells are marked so their verdicts are EXCLUDED
-// from the quality comparison. Both stay recorded in cells[] -- never hidden.
+// Effort-mode cells additionally PROVE their effort from the session's
+// wire.jsonl llm.request receipts (effortCellVerdict). Retried cells are
+// marked so their token totals are EXCLUDED from the cost comparison;
+// effort-invalid cells are excluded the same way; contaminated cells are
+// marked so their verdicts are EXCLUDED from the quality comparison. All stay
+// recorded in cells[] -- never hidden.
 export async function runCell(cell, { resultsDir }) {
   await mkdir(resultsDir, { recursive: true });
   let attempt = await spawnAttempt(cell, { resultsDir, attempt: 1 });
@@ -331,11 +398,13 @@ export async function runCell(cell, { resultsDir }) {
   const sessionId = captureSessionId(attempt.stdout);
   let tokens = null;
   let tokensNote = null;
+  let sessionDir = null;
   if (sessionId) {
     try {
       const resolution = await resolveSessionForCwd({ cwd: cell.descriptor.cwd, capturedSessionId: sessionId });
       if (resolution.resolved) {
-        tokens = (await readSessionUsage(resolution.sessionDir)).total;
+        sessionDir = resolution.sessionDir;
+        tokens = (await readSessionUsage(sessionDir)).total;
       } else {
         tokensNote = `session unresolved: ${resolution.reason}`;
       }
@@ -345,11 +414,26 @@ export async function runCell(cell, { resultsDir }) {
   } else {
     tokensNote = "no session.resume_hint in stdout";
   }
+  let effortFields = {};
+  if (cell.effort) {
+    let observed = null;
+    if (sessionDir) {
+      try {
+        observed = Object.values(await readSessionThinkingEfforts(sessionDir)).flat();
+      } catch (err) {
+        observed = null;
+        tokensNote = [tokensNote, `effort receipts unreadable: ${err.message}`].filter(Boolean).join("; ");
+      }
+    }
+    const { effortValid, effortNote } = effortCellVerdict({ expected: cell.effort, observed });
+    effortFields = { effort: cell.effort, effortValid, observedEfforts: observed, ...(effortNote ? { effortNote } : {}) };
+  }
   const scan = scanContamination(attempt.stdout, { quarantineDir: cell.descriptor.cwd });
   return {
     probe: cell.probe,
     gate: cell.gate,
     lane: cell.lane,
+    ...effortFields,
     exitCode: attempt.exitCode,
     verdictText: extractVerdictText(attempt.stdout),
     sessionId,
@@ -371,12 +455,18 @@ export async function runCell(cell, { resultsDir }) {
 
 // Cost comparison per lane. RETRIED CELLS ARE EXCLUDED from the token sums --
 // a retried cell paid for two runs, so folding it in would compare unequal
-// work. Their verdicts still count for quality (they sit in cells[] verbatim).
+// work. EFFORT-INVALID CELLS (effortValid === false: receipts proved a
+// different effort than intended, or no verifiable receipts) are excluded
+// EXACTLY like retried cells -- their token totals did not buy the cell the
+// comparison thinks it is measuring. Both kinds of verdicts still count for
+// quality (they sit in cells[] verbatim).
 export function buildCostComparison(cells) {
   const byLane = {};
   for (const lane of LANES) {
-    const counted = cells.filter(c => c.lane === lane && !c.retried && c.tokens);
-    const excluded = cells.filter(c => c.lane === lane && (c.retried || !c.tokens));
+    const countable = c => c.lane === lane && !c.retried && c.effortValid !== false && c.tokens;
+    const counted = cells.filter(countable);
+    const excluded = cells.filter(c => c.lane === lane && !countable(c));
+    const excludedLabel = c => c.retried ? "retried" : c.effortValid === false ? "invalid effort" : "no tokens";
     const sum = { input: 0, output: 0, total: 0 };
     for (const c of counted) {
       sum.input += c.tokens.input;
@@ -384,13 +474,13 @@ export function buildCostComparison(cells) {
       sum.total += c.tokens.total;
     }
     byLane[lane] = {
-      cellsCounted: counted.map(c => c.probe),
-      cellsExcluded: excluded.map(c => `${c.probe} (${c.retried ? "retried" : "no tokens"})`),
+      cellsCounted: counted.map(c => c.effort ? `${c.probe} @ ${c.effort}` : c.probe),
+      cellsExcluded: excluded.map(c => `${c.effort ? `${c.probe} @ ${c.effort}` : c.probe} (${excludedLabel(c)})`),
       tokens: sum
     };
   }
   return {
-    rule: "retried cells (and cells without token attribution) are EXCLUDED from per-lane token sums; their verdicts remain in cells[] for the quality judgment",
+    rule: "retried cells, effort-invalid cells, and cells without token attribution are EXCLUDED from per-lane token sums; their verdicts remain in cells[] for the quality judgment",
     byLane
   };
 }
@@ -400,19 +490,41 @@ export function buildCostComparison(cells) {
 // tokens) stay in cells[] and their tokens still count in costComparison --
 // excluded from the judgment, never hidden.
 export function buildQualityComparison(cells) {
+  const label = c => `${c.probe} x ${c.lane}${c.effort ? ` @ ${c.effort}` : ""}`;
   const included = cells.filter(c => !c.contaminated);
   const excluded = cells.filter(c => c.contaminated);
   return {
     rule: "contaminated cells (contamination indicators found in the cell's stream-json stdout) are EXCLUDED from the quality comparison; they remain recorded in cells[] with their indicators, and their tokens still count in costComparison",
-    cellsIncluded: included.map(c => `${c.probe} x ${c.lane}`),
-    cellsExcluded: excluded.map(c => `${c.probe} x ${c.lane} (${c.contaminationIndicators.map(i => i.kind).join(", ")})`)
+    cellsIncluded: included.map(label),
+    cellsExcluded: excluded.map(c => `${label(c)} (${c.contaminationIndicators.map(i => i.kind).join(", ")})`)
   };
 }
 
-export function assembleResults({ cells, outFile }) {
+// Effort-mode summary: which cells PROVED their intended effort from receipts
+// and which were recorded invalid (effortValid === false). Invalid cells stay
+// in cells[] with their observedEfforts and effortNote -- excluded from the
+// token sums exactly like retried cells, never hidden.
+export function buildEffortComparison(cells) {
+  const byEffort = {};
+  for (const effort of EFFORTS) {
+    const group = cells.filter(c => c.effort === effort);
+    byEffort[effort] = {
+      cellsValid: group.filter(c => c.effortValid === true).map(c => c.probe),
+      cellsInvalid: group.filter(c => c.effortValid !== true).map(c => `${c.probe} (${c.effortNote ?? "no verdict"})`)
+    };
+  }
+  return {
+    rule: "an effort-mode cell is VALID only when every llm.request receipt in its session wire.jsonl shows the intended thinkingEffort (KIMI_MODEL_THINKING_EFFORT is conditional and can be silently ignored); invalid cells are excluded from costComparison token sums exactly like retried cells",
+    envVar: EFFORT_ENV_VAR,
+    byEffort
+  };
+}
+
+export function assembleResults({ cells, outFile, mode = "tier" }) {
   return {
     harness: "eval/kimi-reviewer-tier-probe.mjs",
     protocolVersion: PROTOCOL_VERSION,
+    probeMode: mode,
     generatedAt: new Date().toISOString(),
     caveat: CAVEAT,
     rubric: {
@@ -429,11 +541,14 @@ export function assembleResults({ cells, outFile }) {
       probe2Manifest: PROBE2_MANIFEST,
       probeMaterialFiles: { ...PROBE_MATERIAL_FILES },
       agentFile: AGENT_FILE,
-      lanes: [...LANES]
+      lanes: [...LANES],
+      efforts: [...EFFORTS],
+      effortEnvVar: EFFORT_ENV_VAR
     },
     cells,
     costComparison: buildCostComparison(cells),
     qualityComparison: buildQualityComparison(cells),
+    ...(mode === "effort" ? { effortComparison: buildEffortComparison(cells) } : {}),
     ...(outFile ? { outFile } : {})
   };
 }
@@ -443,11 +558,16 @@ export function assembleResults({ cells, outFile }) {
 // ───────────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const opts = { dryRun: false, out: null, resultsDir: null };
-  for (const [i, arg] of argv.entries()) {
+  const opts = { dryRun: false, mode: "tier", out: null, resultsDir: null };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
     if (arg === "--dry-run") opts.dryRun = true;
-    else if (arg === "--out") opts.out = argv[i + 1];
-    else if (arg === "--results-dir") opts.resultsDir = argv[i + 1];
+    else if (arg === "--mode") {
+      opts.mode = argv[++i];
+      if (!PROBE_MODES.includes(opts.mode)) throw new Error(`--mode must be one of ${PROBE_MODES.join("|")}; got ${JSON.stringify(opts.mode)}`);
+    }
+    else if (arg === "--out") opts.out = argv[++i];
+    else if (arg === "--results-dir") opts.resultsDir = argv[++i];
     else throw new Error(`unknown argument: ${arg}`);
   }
   return opts;
@@ -455,7 +575,7 @@ function parseArgs(argv) {
 
 async function main(argv) {
   const opts = parseArgs(argv);
-  const cells = buildCells({});
+  const cells = buildCells({ mode: opts.mode });
   if (opts.dryRun) {
     // Build every descriptor and print WITHOUT spawning -- tests and review
     // inspect exactly this.
@@ -463,6 +583,7 @@ async function main(argv) {
       probe: c.probe,
       gate: c.gate,
       lane: c.lane,
+      effort: c.effort,
       brief: c.brief,
       argv: c.descriptor.argv,
       env: c.descriptor.env,
@@ -470,18 +591,18 @@ async function main(argv) {
       quarantineDir: c.quarantineDir,
       materialFile: c.materialFile
     }));
-    process.stdout.write(JSON.stringify({ mode: "dry-run", protocolVersion: PROTOCOL_VERSION, cells: view }, null, 2) + "\n");
+    process.stdout.write(JSON.stringify({ mode: "dry-run", probeMode: opts.mode, protocolVersion: PROTOCOL_VERSION, cells: view }, null, 2) + "\n");
     return;
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const outFile = resolve(opts.out ?? join(REPO_ROOT, "eval", "results", `kimi-reviewer-tier-probe-${stamp}.json`));
-  const resultsDir = resolve(opts.resultsDir ?? join(dirname(outFile), `kimi-reviewer-tier-probe-${stamp}.stdout`));
+  const outFile = resolve(opts.out ?? join(REPO_ROOT, "eval", "results", `kimi-reviewer-tier-probe-${opts.mode}-${stamp}.json`));
+  const resultsDir = resolve(opts.resultsDir ?? join(dirname(outFile), `kimi-reviewer-tier-probe-${opts.mode}-${stamp}.stdout`));
   const records = [];
   for (const cell of cells) {
-    process.stderr.write(`running ${cell.probe} x ${cell.lane}...\n`);
+    process.stderr.write(`running ${cell.probe} x ${cell.lane}${cell.effort ? ` @ ${cell.effort}` : ""}...\n`);
     records.push(await runCell(cell, { resultsDir }));
   }
-  const results = assembleResults({ cells: records, outFile });
+  const results = assembleResults({ cells: records, outFile, mode: opts.mode });
   await mkdir(dirname(outFile), { recursive: true });
   await writeFile(outFile, JSON.stringify(results, null, 2) + "\n", "utf8");
   process.stdout.write(`${outFile}\n`);

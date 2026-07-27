@@ -16,9 +16,11 @@ import { fileURLToPath } from "node:url";
 import {
   KNOWN_BLOCKERS, PROBE1_COMMIT, PROBE2_MANIFEST, PROBE1_BRIEF, PROBE2_BRIEF,
   PROBES, LANES, AGENT_FILE, CAVEAT, PROTOCOL_VERSION, PROBE_MATERIAL_FILES,
+  EFFORTS, EFFORT_ENV_VAR, PROBE_MODES,
   buildCells, buildBriefs, buildQuarantineDir, probeMaterial, fitBrief,
   spawnEnv, cellNeedsRetry, extractVerdictText, scanContamination,
-  buildCostComparison, buildQualityComparison, assembleResults
+  effortCellVerdict, buildCostComparison, buildQualityComparison,
+  buildEffortComparison, assembleResults
 } from "../eval/kimi-reviewer-tier-probe.mjs";
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
 import { KIMI_PROCESS_MAX_BRIEF } from "../src/kimi-dispatch.js";
@@ -39,9 +41,9 @@ function fakeKimiHome() {
   return home;
 }
 
-async function dryRun() {
+async function dryRun(extraArgs = []) {
   const home = fakeKimiHome();
-  const { stdout } = await pexecFile(process.execPath, [SCRIPT, "--dry-run"], {
+  const { stdout } = await pexecFile(process.execPath, [SCRIPT, "--dry-run", ...extraArgs], {
     cwd: REPO_ROOT,
     env: { ...process.env, KIMI_CODE_HOME: home },
     maxBuffer: 16 * 1024 * 1024
@@ -335,4 +337,132 @@ test("cost comparison EXCLUDES retried cells' tokens but keeps their quality rec
   const perCell = cells[0].tokens.total;
   assert.equal(byLane.primary.tokens.total, perCell * 2);
   assert.equal(byLane.secondary.tokens.total, perCell);
+});
+
+// --- Effort mode (--mode effort): K3 effort dimension over the pinned probes -
+
+test("PROBE_MODES and EFFORTS are pinned: tier|effort, low|high, env var name", () => {
+  assert.deepEqual([...PROBE_MODES], ["tier", "effort"]);
+  assert.deepEqual([...EFFORTS], ["low", "high"]);
+  assert.equal(EFFORT_ENV_VAR, "KIMI_MODEL_THINKING_EFFORT");
+});
+
+test("--mode effort --dry-run builds 2 probes x 2 efforts on lane=primary ONLY, effort riding the env", async () => {
+  const out = await dryRun(["--mode", "effort"]);
+  assert.equal(out.probeMode, "effort");
+  assert.equal(out.cells.length, PROBES.length * EFFORTS.length);
+  for (const cell of out.cells) {
+    assert.equal(cell.lane, "primary", "effort mode runs the primary (k3) lane only");
+    assert.equal(cell.argv[7], "kimi-code/k3");
+    assert.ok(EFFORTS.includes(cell.effort), `cell effort must be a pinned rung, got ${cell.effort}`);
+    // the effort rides the descriptor env as an OVERRIDE key alongside the
+    // lane pair -- the spawnEnv merge rule applies it over the ambient env
+    assert.equal(cell.env[EFFORT_ENV_VAR], cell.effort);
+    assert.deepEqual(Object.keys(cell.env).sort(),
+      [EFFORT_ENV_VAR, "KIMI_CODE_EXPERIMENTAL_FLAG", "KIMI_SECONDARY_MODEL"].sort());
+    // quarantine protocol unchanged: own fresh dir with only the material file
+    assert.equal(cell.cwd, cell.quarantineDir);
+    assert.notEqual(cell.cwd, REPO_ROOT);
+    assert.deepEqual(readdirSync(cell.quarantineDir), [cell.materialFile]);
+  }
+  // both effort rungs present per probe, and briefs byte-identical across
+  // efforts (the SAME pinned briefs as tier mode -- effort rides ONLY the env)
+  for (const probe of ["review-gate-diff", "spec-gate-manifest"]) {
+    const group = out.cells.filter(c => c.probe === probe);
+    assert.deepEqual(group.map(c => c.effort).sort(), [...EFFORTS].sort());
+    assert.equal(group[0].brief, group[1].brief, "briefs must be identical across efforts");
+  }
+  const dirs = out.cells.map(c => c.quarantineDir);
+  assert.equal(new Set(dirs).size, dirs.length, "every effort cell gets its own quarantine dir");
+});
+
+test("tier-mode cells carry effort: null and the lane-pair env only (no effort var)", async () => {
+  const out = await dryRun();
+  for (const cell of out.cells) {
+    assert.equal(cell.effort, null);
+    assert.ok(!(EFFORT_ENV_VAR in cell.env), "tier mode must not set the effort override");
+  }
+});
+
+test("spawnEnv applies the effort override over the ambient env (never wholesale)", () => {
+  const base = { HOME: "/home/x", PATH: "/usr/bin" };
+  const merged = spawnEnv({ ...kimiLaneEnv(), [EFFORT_ENV_VAR]: "low" }, base);
+  assert.equal(merged.HOME, "/home/x");
+  assert.equal(merged.PATH, "/usr/bin");
+  assert.equal(merged[EFFORT_ENV_VAR], "low");
+});
+
+test("effortCellVerdict: valid only when every observed step ran the intended effort", () => {
+  assert.deepEqual(effortCellVerdict({ expected: "low", observed: ["low", "low"] }), { effortValid: true, effortNote: null });
+  assert.deepEqual(effortCellVerdict({ expected: "high", observed: ["high"] }), { effortValid: true, effortNote: null });
+  // any other effort (the override was silently ignored) invalidates the cell
+  const mixed = effortCellVerdict({ expected: "low", observed: ["low", "high"] });
+  assert.equal(mixed.effortValid, false);
+  assert.match(mixed.effortNote, /1\/2 llm\.request step/);
+  // a step with the field absent is unverifiable, never a pass
+  assert.equal(effortCellVerdict({ expected: "low", observed: ["low", null] }).effortValid, false);
+  // no receipts at all (unresolved session, empty wire) is unproven -> invalid
+  assert.equal(effortCellVerdict({ expected: "low", observed: null }).effortValid, false);
+  assert.equal(effortCellVerdict({ expected: "low", observed: [] }).effortValid, false);
+  assert.throws(() => effortCellVerdict({ expected: "", observed: ["low"] }), /expected effort is required/);
+});
+
+// --- Effort-invalid cell exclusion (exactly like a retried cell) ------------
+
+async function cannedEffortCells() {
+  const tokens = (await readSessionUsage(FIXTURE_SESSION)).total;
+  const stdout = readFileSync(FIXTURE_STDOUT, "utf8");
+  const base = {
+    lane: "primary", exitCode: 0, sessionId: "session_e", tokens,
+    retried: false, attempts: 1, stdoutFile: "x",
+    contaminated: false, contaminationIndicators: [],
+    materialFile: "probe.patch", quarantineDir: "/tmp/kimi-tier-probe-canned"
+  };
+  return [
+    { ...base, probe: "review-gate-diff", gate: "review-gate", effort: "low", effortValid: true, observedEfforts: ["low", "low"], verdictText: extractVerdictText(stdout) },
+    { ...base, probe: "review-gate-diff", gate: "review-gate", effort: "high", effortValid: true, observedEfforts: ["high"], verdictText: "FAIL\nBLOCKER: ..." },
+    // the override was silently ignored: receipts show high on a low cell
+    { ...base, probe: "spec-gate-manifest", gate: "spec-gate", effort: "low", effortValid: false, observedEfforts: ["high"], effortNote: "1/1 llm.request step(s) ran thinkingEffort \"high\" instead of \"low\"", verdictText: "FAIL\nBLOCKER: ..." },
+    { ...base, probe: "spec-gate-manifest", gate: "spec-gate", effort: "high", effortValid: true, observedEfforts: ["high"], verdictText: "FAIL\nBLOCKER: ..." }
+  ];
+}
+
+test("cost comparison EXCLUDES effort-invalid cells exactly like retried cells, recorded never hidden", async () => {
+  const cells = await cannedEffortCells();
+  const { byLane, rule } = buildCostComparison(cells);
+  assert.match(rule, /effort-invalid cells/);
+  // primary only in effort mode: 3 valid cells counted, the ignored-override
+  // cell excluded with an "invalid effort" label
+  assert.equal(byLane.primary.cellsCounted.length, 3);
+  assert.deepEqual(byLane.primary.cellsExcluded, ["spec-gate-manifest @ low (invalid effort)"]);
+  assert.deepEqual(byLane.secondary.cellsCounted, []);
+  const perCell = cells[0].tokens.total;
+  assert.equal(byLane.primary.tokens.total, perCell * 3, "the invalid cell's tokens stay out of the sum");
+  // the invalid cell itself is still recorded verbatim in cells[]
+  const invalid = cells.find(c => c.effortValid === false);
+  assert.deepEqual(invalid.observedEfforts, ["high"]);
+  assert.ok("verdictText" in invalid);
+});
+
+test("assembleResults in effort mode emits probeMode, the effort constants, and the per-effort valid/invalid split", async () => {
+  const results = assembleResults({ cells: await cannedEffortCells(), mode: "effort" });
+  assert.equal(results.probeMode, "effort");
+  assert.deepEqual(results.constants.efforts, ["low", "high"]);
+  assert.equal(results.constants.effortEnvVar, EFFORT_ENV_VAR);
+  const ec = results.effortComparison;
+  assert.match(ec.rule, /every llm\.request receipt/);
+  assert.equal(ec.envVar, EFFORT_ENV_VAR);
+  assert.deepEqual(ec.byEffort.low.cellsValid, ["review-gate-diff"]);
+  assert.equal(ec.byEffort.low.cellsInvalid.length, 1);
+  assert.match(ec.byEffort.low.cellsInvalid[0], /^spec-gate-manifest \(/);
+  assert.deepEqual(ec.byEffort.high.cellsValid.sort(), ["review-gate-diff", "spec-gate-manifest"]);
+  assert.deepEqual(ec.byEffort.high.cellsInvalid, []);
+  // quality comparison labels carry the effort so same-probe cells stay distinct
+  assert.ok(results.qualityComparison.cellsIncluded.includes("spec-gate-manifest x primary @ low"));
+  // every effort cell record carries the receipt-proof fields
+  for (const cell of results.cells) {
+    for (const key of ["effort", "effortValid", "observedEfforts"]) {
+      assert.ok(key in cell, `effort-mode cell must record ${key}`);
+    }
+  }
 });

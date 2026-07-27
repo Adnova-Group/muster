@@ -12,7 +12,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
+import { REQUIRED_CODEX_THREAD_LIMITS } from "../src/codex-thread-limits.js";
 import { ROLES } from "../src/roles.js";
+import { CODEX_MULTI_AGENT_VERSIONS } from "../src/wave-dispatch.js";
 
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
@@ -190,13 +192,15 @@ test("cross-harness research preserves current Codex hook, dispatch, thread, and
     ["docs/research/reference-harness-design.md", reference],
     ["docs/strategy/native-delegation.md", strategy],
   ]) {
-    assert.match(text, /multi_agent_v1[\s\S]{0,220}(?:collaboration|multi_agent_v2)|(?:collaboration|multi_agent_v2)[\s\S]{0,220}multi_agent_v1/i, `${path} must document both Codex dispatch packet versions`);
+    const v1 = CODEX_MULTI_AGENT_VERSIONS.V1;
+    const v2 = CODEX_MULTI_AGENT_VERSIONS.V2;
+    assert.match(text, new RegExp(`multi_agent_${v1}[\\s\\S]{0,220}(?:collaboration|multi_agent_${v2})|(?:collaboration|multi_agent_${v2})[\\s\\S]{0,220}multi_agent_${v1}`, "i"), `${path} must document both Codex dispatch packet versions`);
     assert.match(text, /resolveCodexMultiAgentVersion[\s\S]{0,220}(?:unknown|unrecognized)[\s\S]{0,80}(?:fail loud|reject)/i, `${path} must document fail-closed unknown-version handling`);
     assert.match(text, /plugin-bundled hooks[\s\S]{0,180}(?:execute|fire)[\s\S]{0,120}0\.144\.5/i, `${path} must retain verified plugin-hook execution`);
     assert.match(text, /Codex plugin[\s\S]{0,140}hooks-free[\s\S]{0,140}(?:double firing|double-inject)/i, `${path} must explain Muster's hooks-free plugin`);
     assert.doesNotMatch(text, /Codex 0\.144(?:\.0)? does not execute plugin-bundled hooks|plugin-bundled hooks not executed on 0\.144/i, `${path} must not repeat the falsified hook claim`);
     assert.match(text, /ensureCodexThreadLimits[\s\S]{0,220}restoreCodexThreadLimits/i, `${path} must document landed thread-limit ownership`);
-    assert.match(text, /max_threads[\s\S]{0,100}(?:>=|≥)\s*12[\s\S]{0,140}max_depth[\s\S]{0,100}(?:>=|≥)\s*2/i, `${path} must state the managed floors`);
+    assert.match(text, new RegExp(`max_threads[\\s\\S]{0,100}(?:>=|≥)\\s*${REQUIRED_CODEX_THREAD_LIMITS.max_threads}[\\s\\S]{0,140}max_depth[\\s\\S]{0,100}(?:>=|≥)\\s*${REQUIRED_CODEX_THREAD_LIMITS.max_depth}`, "i"), `${path} must state the managed floors`);
     assert.doesNotMatch(text, /thread-limits invalidated and re-opened|invalidated and re-opened[\s\S]{0,80}thread/i, `${path} must not present the landed thread-limit item as open`);
   }
 

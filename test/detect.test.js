@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { tmpProject } from "../test-support/helpers.js";
 import { detectProject, hasPromptingSignal } from "../src/detect.js";
@@ -102,6 +105,44 @@ test("populates vcs from a real git repo", async () => {
   assert.equal(typeof p.vcs.branch, "string");      // some branch name
   assert.equal(p.vcs.dirty, true);                   // untracked files present
   assert.equal(p.vcs.hasRemote, false);              // no remote added
+});
+
+// --- security: hostile repo config must not execute (audit S3) ---
+
+test("hostile .git/config core.fsmonitor is never executed during detect", async () => {
+  const dir = await tmpProject({ "package.json": { name: "x" }, "a.txt": "hi" });
+  await pexec("git", ["init", "-q"], { cwd: dir });
+  const marker = join(dir, "pwned-marker");
+  const script = join(dir, "fsmonitor-evil.sh");
+  await writeFile(script, `#!/bin/sh\ntouch "${marker}"\n`, { mode: 0o755 });
+  await pexec("git", ["config", "core.fsmonitor", script], { cwd: dir });
+  const p = await detectProject(dir);
+  assert.equal(p.vcs.isRepo, true);
+  assert.equal(existsSync(marker), false, "hostile core.fsmonitor command must not execute");
+});
+
+test("ambient GIT_CONFIG_COUNT env cannot inject config into detect's git calls", async () => {
+  const dir = await tmpProject({ "package.json": { name: "x" }, "a.txt": "hi" });
+  await pexec("git", ["init", "-q"], { cwd: dir });
+  const marker = join(dir, "pwned-env-marker");
+  const script = join(dir, "fsmonitor-env-evil.sh");
+  await writeFile(script, `#!/bin/sh\ntouch "${marker}"\n`, { mode: 0o755 });
+  const orig = {
+    count: process.env.GIT_CONFIG_COUNT,
+    key: process.env.GIT_CONFIG_KEY_0,
+    value: process.env.GIT_CONFIG_VALUE_0,
+  };
+  process.env.GIT_CONFIG_COUNT = "1";
+  process.env.GIT_CONFIG_KEY_0 = "core.fsmonitor";
+  process.env.GIT_CONFIG_VALUE_0 = script;
+  try {
+    await detectProject(dir);
+  } finally {
+    for (const [k, name] of [["count", "GIT_CONFIG_COUNT"], ["key", "GIT_CONFIG_KEY_0"], ["value", "GIT_CONFIG_VALUE_0"]]) {
+      if (orig[k] === undefined) delete process.env[name]; else process.env[name] = orig[k];
+    }
+  }
+  assert.equal(existsSync(marker), false, "env-injected core.fsmonitor must not execute");
 });
 
 // --- hasPromptingSignal (item 8) ---

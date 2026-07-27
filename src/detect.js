@@ -1,12 +1,44 @@
-import { readdir } from "node:fs/promises";
+import { readdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists, readJson } from "./fs-util.js";
 
 const pexec = promisify(execFile);
-async function git(cwd, args) {
-  try { const { stdout } = await pexec("git", args, { cwd }); return stdout.trim(); } catch { return null; }
+
+// Mirror of init.js's safeGit/gitEnvironment (audit S3): detect runs git inside an
+// arbitrary caller-supplied repo, so it must neutralize hostile repo config
+// (core.fsmonitor, core.hooksPath, ...) and scrub the environment. Keep in sync
+// with src/init.js; the fs-safety consolidation work owns the shared helper.
+function gitEnvironment() {
+  const env = {};
+  for (const key of ["PATH", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TMPDIR", "TMP", "TEMP"]) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  Object.assign(env, {
+    LC_ALL: "C", LANG: "C", GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat",
+  });
+  return env;
+}
+
+async function git(cwd, suffix) {
+  const sandbox = await mkdtemp(join(tmpdir(), "muster-git-"));
+  const args = [
+    "--no-optional-locks", "-c", `core.hooksPath=${sandbox}`, "-c", "core.fsmonitor=false",
+    "-c", "core.untrackedCache=false", "-c", "diff.external=", "-c", "pager.branch=false",
+    ...suffix,
+  ];
+  try {
+    const { stdout } = await pexec("git", args, { cwd, env: gitEnvironment(), encoding: "utf8" });
+    return stdout.trim();
+  } catch {
+    return null;
+  } finally {
+    await rm(sandbox, { recursive: true, force: true });
+  }
 }
 
 const FRAMEWORKS = ["next", "react-native", "expo", "react", "vue", "svelte", "angular",

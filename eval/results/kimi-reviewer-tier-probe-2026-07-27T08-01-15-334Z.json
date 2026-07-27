@@ -1,0 +1,165 @@
+{
+  "harness": "eval/kimi-reviewer-tier-probe.mjs",
+  "generatedAt": "2026-07-27T08:13:26.194Z",
+  "caveat": "n=1 per cell: each probe x lane cell ran exactly once (plus at most one retry on failure). No statistical power -- caught/missed and token deltas are directional signals for the orchestrator's human-judgment step, not measurements of a distribution.",
+  "rubric": {
+    "scoring": "human-judgment",
+    "note": "caught/missed is HUMAN JUDGMENT applied by the orchestrator against each cell's verbatim verdictText -- this harness deliberately does NOT keyword-score.",
+    "knownBlockers": [
+      "env merge semantics unstated: kimiLaneEnv() returns exactly two keys, and prose instructing spawn straight from the descriptor env replaces the child environment wholesale, losing HOME/PATH"
+    ],
+    "expected": {
+      "review-gate-diff": "FAIL with a BLOCKER finding matching the pinned known-blocker list",
+      "spec-gate-manifest": "FAIL with a finding naming the misattribution: model_preference applies only to spawned subagents; the -p main agent's model comes only from -m"
+    }
+  },
+  "constants": {
+    "probe1Commit": "9027136",
+    "probe2Manifest": {
+      "schema": "muster-crew-manifest/v1",
+      "item": "synthetic-reviewer-tier-probe",
+      "outcome": "Dispatch muster-reviewer as a headless kimi -p --agent-file leg: the stamped model_preference on the --agent-file agent engages the -p process's own model lanes, so the dispatch needs no -m flag.",
+      "crew": [
+        {
+          "role": "reviewer",
+          "agent": "muster-reviewer",
+          "dispatch": "kimi -p --agent-file muster-reviewer.md"
+        }
+      ],
+      "waves": [
+        [
+          "reviewer"
+        ]
+      ]
+    },
+    "agentFile": "muster-reviewer.md",
+    "lanes": [
+      "primary",
+      "secondary"
+    ]
+  },
+  "cells": [
+    {
+      "probe": "review-gate-diff",
+      "gate": "review-gate",
+      "lane": "primary",
+      "exitCode": 0,
+      "verdictText": "PASS\n\nMINOR commit 9027136 message — the commit also adds a 33-line prose-wiring test to test/kimi-dispatch.test.js, but the message names only the SKILL.md prose and the parity re-pin; harmless, but the message undersells the change's verification arm.\n\nVerification performed (no correctness findings):\n- test/kimi-dispatch.test.js + test/claude-parity.test.js at commit 9027136 (temp worktree): 42/42 pass — the re-pinned hash c7bcdb10… matches the surface as of that commit.\n- Full suite at HEAD (`npm test`): 2500 pass, 0 fail, 1 skipped.\n- SKILL.md prose claims cross-checked against src/kimi-dispatch.js: argv shape `[\"-p\", brief, \"--agent-file\", <abs>, \"--output-format\", \"stream-json\", \"-m\", KIMI_LANES[lane]]` matches line 320 exactly (agent file is always absolute after resolution); kimiLaneEnv() override pair, `{ argv, env, cwd, lane }` descriptor keys, always-emit `-m` rationale, and `readSessionUsage` (src/kimi-receipts.js line 89) all accurate.\n- \"TUI ignores model_preference\" backed by docs/research/kimi-code-cli.md line 623 (\"The TUI currently ignores this field\").\n- Re-pin comment's claims re-verified live: `MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node scripts/check-codex.mjs` clean; generated Codex orchestrator skill contains 0 occurrences of \"kimiProcessDispatch\"; test/docs-binding-interface.test.js green without re-derivation.\n- The new prose-wiring test asserts intent (attended-vs-unattended division, exact API shape, receipt path), not just presence of text — the regexes would fail on a watered-down paragraph.\n\nVERDICT: PASS",
+      "sessionId": "session_cc8a6a0e-a2a0-4061-b0c5-4f06970e2fae",
+      "tokens": {
+        "inputOther": 20500,
+        "output": 4034,
+        "inputCacheRead": 198144,
+        "inputCacheCreation": 0,
+        "input": 218644,
+        "total": 222678,
+        "records": 14,
+        "models": [
+          "kimi-code/k3"
+        ]
+      },
+      "retried": false,
+      "attempts": 1,
+      "stdoutFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-2026-07-27T08-01-15-334Z.stdout/review-gate-diff.primary.attempt-1.stdout.jsonl"
+    },
+    {
+      "probe": "review-gate-diff",
+      "gate": "review-gate",
+      "lane": "secondary",
+      "exitCode": 0,
+      "verdictText": "FAIL\nBLOCKER plugin/skills/orchestrator/SKILL.md: the attended-session process-lane prose names the descriptor's `env` as the shared `kimiLaneEnv()` pair but omits that it must be merged over the ambient process env (`{ ...process.env, ...d.env }`) rather than passed as the whole spawn env; a reader implementing `spawn(\"kimi\", d.argv, { env: d.env })` drops HOME/PATH and breaks the child. Add override-merge wording and forbid passing `d.env` as the whole env.\nMINOR plugin/skills/orchestrator/SKILL.md: the prose says the `kimiLaneEnv()` pair is carried only for the v2 engine flag `--agent-file` needs but omits that its `KIMI_SECONDARY_MODEL` half also binds lanes for any subagents the leg process itself spawns. Name that subagent-lane binding.\nMINOR src/kimi-dispatch.js: `kimiProcessDispatch` accepts an unbounded `brief` that rides argv as the `-p` prompt; the sibling `/goal` objective is capped at `KIMI_GOAL_MAX_OBJECTIVE`, so the brief should share that cap. Add `KIMI_PROCESS_MAX_BRIEF = KIMI_GOAL_MAX_OBJECTIVE` and enforce it.\nVERDICT: CHANGES_REQUESTED",
+      "sessionId": "session_660c8b69-a4be-4488-8ecb-f42d263a2647",
+      "tokens": {
+        "inputOther": 31313,
+        "output": 7631,
+        "inputCacheRead": 295168,
+        "inputCacheCreation": 0,
+        "input": 326481,
+        "total": 334112,
+        "records": 18,
+        "models": [
+          "kimi-code/kimi-for-coding"
+        ]
+      },
+      "retried": false,
+      "attempts": 1,
+      "stdoutFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-2026-07-27T08-01-15-334Z.stdout/review-gate-diff.secondary.attempt-1.stdout.jsonl"
+    },
+    {
+      "probe": "spec-gate-manifest",
+      "gate": "spec-gate",
+      "lane": "primary",
+      "exitCode": 0,
+      "verdictText": "FAIL\n\nLet me verify the manifest's claims against what the harness actually does before itemizing.\nThe harness source is unambiguous. Let me confirm with the dedicated test/eval for this exact scenario.\nFAIL\n\n- BLOCKER — Core misattribution: `outcome` claims the stamped `model_preference` on the `--agent-file` agent \"engages the -p process's own model lanes.\" False. Per src/kimi-dispatch.js:264-296 and docs/research/kimi-code-cli.md §6/§11.8, `model_preference` \"applies only to newly spawned subagents\" — it binds only subagents the dispatched `-p` process itself spawns, never that process's MAIN agent. The `-p` process's model comes ONLY from `-m`.\n- BLOCKER — \"so the dispatch needs no -m flag\": omitting `-m` is not neutral; the process silently falls to config.toml's `default_model` (k3), demoting an execution-lane leg onto the judgment model and its quota with no signal. The harness's own `kimiProcessDispatch` (src/kimi-dispatch.js:294-296) throws when `lane` is absent — \"There is no construction path without -m\" — and the argv it emits always ends `\"-m\", KIMI_LANES[lane]`.\n- BLOCKER — The dispatch string `kimi -p --agent-file muster-reviewer.md` carries no prompt: `-p/--prompt <prompt>` requires an argument, and the harness argv shape is `[\"-p\", brief, \"--agent-file\", path, ...]`. As written, the brief is missing entirely (and naively parsing, `-p` could swallow `--agent-file` as its value).\n- BLOCKER — Missing v2-engine env: `--agent-file` under `kimi -p` requires `KIMI_CODE_EXPERIMENTAL_FLAG=1` (with `KIMI_SECONDARY_MODEL` binding the lanes for any subagents it spawns). The manifest's bare command sets neither, so the custom main agent won't even bind as claimed.\n- MINOR — The harness emits `--output-format stream-json` for headless legs (machine-readable receipts); the manifest's dispatch omits it.\n- MINOR — Cross-check note: test/kimi-reviewer-tier-probe.test.js:57 pins this exact manifest as \"PROBE2_MANIFEST carries the model_preference misattribution the spec gate must catch\" — the outcome sentence is a planted error, confirmed against the harness's actual dispatch code.",
+      "sessionId": "session_d67a6942-db98-4425-8c07-47c289abb554",
+      "tokens": {
+        "inputOther": 15275,
+        "output": 1937,
+        "inputCacheRead": 25088,
+        "inputCacheCreation": 0,
+        "input": 40363,
+        "total": 42300,
+        "records": 4,
+        "models": [
+          "kimi-code/k3"
+        ]
+      },
+      "retried": false,
+      "attempts": 1,
+      "stdoutFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-2026-07-27T08-01-15-334Z.stdout/spec-gate-manifest.primary.attempt-1.stdout.jsonl"
+    },
+    {
+      "probe": "spec-gate-manifest",
+      "gate": "spec-gate",
+      "lane": "secondary",
+      "exitCode": 0,
+      "verdictText": "FAIL\nBLOCKER: The outcome claims the stamped `model_preference` on the `--agent-file` agent engages the `-p` process's own model lanes; `model_preference` only selects `primary`/`secondary` for subagents spawned by that agent when `KIMI_CODE_EXPERIMENTAL_FLAG=1` and `KIMI_SECONDARY_MODEL` are set, not for the main `-p` agent.\nBLOCKER: The outcome claims the dispatch \"needs no `-m` flag\"; the harness always emits `-m <lane>` because the `-p` main agent's model comes only from `-m`, and omitting it silently falls back to `config.toml`'s `default_model` (`kimi-code/k3`), demoting execution-lane work onto the judgment lane.\nBLOCKER: The `dispatch` string `\"kimi -p --agent-file muster-reviewer.md\"` omits the required `-p` prompt/brief, the mandatory `-m` lane flag, and the `--output-format stream-json` the harness uses; the actual descriptor is `[-p, brief, --agent-file, path, --output-format, stream-json, -m, KIMI_LANES[lane]]`.\nBLOCKER: The manifest omits the per-process env pair; the harness merges `KIMI_CODE_EXPERIMENTAL_FLAG=1` and `KIMI_SECONDARY_MODEL=kimi-code/kimi-for-coding` over the ambient env on every spawn, so without it the stamped lanes are inert.\nMINOR: \"the `-p` process's own model lanes\" implies plural lanes per process; a single `-p` process has one main model (`-m`) and only its spawned subagents get a lane via `model_preference`.\nMINOR: The manifest conflates the agent-file stamp with dispatch argv; the harness keeps install-time stamping (`kimiPreferenceForAgentId` → `model_preference`) separate from runtime lane enforcement (`-m` + env pair).",
+      "sessionId": "session_2134a203-2133-4023-b723-5670aa96b372",
+      "tokens": {
+        "inputOther": 32033,
+        "output": 5262,
+        "inputCacheRead": 185344,
+        "inputCacheCreation": 0,
+        "input": 217377,
+        "total": 222639,
+        "records": 11,
+        "models": [
+          "kimi-code/kimi-for-coding"
+        ]
+      },
+      "retried": false,
+      "attempts": 1,
+      "stdoutFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-2026-07-27T08-01-15-334Z.stdout/spec-gate-manifest.secondary.attempt-1.stdout.jsonl"
+    }
+  ],
+  "costComparison": {
+    "rule": "retried cells (and cells without token attribution) are EXCLUDED from per-lane token sums; their verdicts remain in cells[] for the quality judgment",
+    "byLane": {
+      "primary": {
+        "cellsCounted": [
+          "review-gate-diff",
+          "spec-gate-manifest"
+        ],
+        "cellsExcluded": [],
+        "tokens": {
+          "input": 259007,
+          "output": 5971,
+          "total": 264978
+        }
+      },
+      "secondary": {
+        "cellsCounted": [
+          "review-gate-diff",
+          "spec-gate-manifest"
+        ],
+        "cellsExcluded": [],
+        "tokens": {
+          "input": 543858,
+          "output": 12893,
+          "total": 556751
+        }
+      }
+    }
+  },
+  "outFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-2026-07-27T08-01-15-334Z.json"
+}

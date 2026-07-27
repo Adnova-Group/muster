@@ -117,6 +117,64 @@ honestly credited there once a run is measured through it. (The remaining gap on
 request side symmetric to Codex's: Kimi's per-call override is a two-lane `model` pick --
 `src/kimi-dispatch.js`'s `kimiAgentCall` -- not a reasoning-effort dial.)
 
+**Measured per-dispatch datapoint (2026-07-27, `node eval/kimi-reviewer-tier-probe.mjs`;
+results committed at `eval/results/kimi-reviewer-tier-probe-2026-07-27T08-01-15-334Z.json`):
+the "once a run is measured through it" above is now measured, and the cost hypothesis comes
+back NEGATIVE.** Protocol: 2 pinned probes x 2 lanes (primary `kimi-code/k3`, secondary
+`kimi-code/kimi-for-coding`), each cell one headless `kimi -p --agent-file muster-reviewer.md`
+process via `kimiProcessDispatch` (`src/kimi-dispatch.js`), briefs identical across lanes,
+verdicts read from stream-json stdout, tokens attributed per dispatch from the session's
+wire.jsonl via `readSessionUsage` (`src/kimi-receipts.js`). No cell needed the retry, so no
+cell is excluded from the token sums (the exclusion policy itself is recorded in the results
+JSON's `costComparison.rule`). Caught/missed below is HUMAN JUDGMENT applied to each cell's
+verbatim recorded verdictText against the pinned rubric, never keyword matching.
+
+| probe | lane | input | output | total | judgment |
+| --- | --- | --- | --- | --- | --- |
+| review-gate-diff | primary (k3) | 218,644 | 4,034 | 222,678 | MISSED |
+| review-gate-diff | secondary (kimi-for-coding) | 326,481 | 7,631 | 334,112 | CAUGHT |
+| spec-gate-manifest | primary (k3) | 40,363 | 1,937 | 42,300 | CAUGHT |
+| spec-gate-manifest | secondary (kimi-for-coding) | 217,377 | 5,262 | 222,639 | CAUGHT |
+| **lane sums** | primary | 259,007 | 5,971 | 264,978 | 1 of 2 |
+| **lane sums** | secondary | 543,858 | 12,893 | 556,751 | 2 of 2 |
+
+Quality, judged in substance against the pinned rubric (decisive quotes verbatim from each
+cell's recorded verdictText):
+
+- Probe 1 (review-gate pass over commit 9027136's diff; pinned known blocker: the env-merge
+  semantics). PRIMARY (k3) MISSED it: the verdict is "PASS" with "Verification performed (no
+  correctness findings)" -- it even re-checked the prose against `src/kimi-dispatch.js` and
+  called the `kimiLaneEnv()` claims "accurate" without noticing the
+  spawn-straight-from-the-descriptor-env reading. SECONDARY (kimi-for-coding) CAUGHT it, FAIL
+  with a BLOCKER: the prose "omits that it must be merged over the ambient process env
+  (`{ ...process.env, ...d.env }`) rather than passed as the whole spawn env; a reader
+  implementing `spawn("kimi", d.argv, { env: d.env })` drops HOME/PATH and breaks the child."
+- Probe 2 (spec-gate pass over the synthetic manifest; expected FAIL naming the
+  model_preference misattribution). BOTH lanes CAUGHT it. PRIMARY: "`model_preference` ...
+  binds only subagents the dispatched `-p` process itself spawns, never that process's MAIN
+  agent. The `-p` process's model comes ONLY from `-m`." SECONDARY: "`model_preference` only
+  selects `primary`/`secondary` for subagents spawned by that agent ... not for the main `-p`
+  agent", plus the companion blocker that omitting `-m` "silently falls back to
+  `config.toml`'s `default_model`".
+
+n=1 caveat, recorded verbatim in the results JSON: each probe x lane cell ran exactly once
+(plus at most one retry on failure, unused here). No statistical power; caught/missed and
+token deltas are directional signals, not measurements of a distribution.
+
+**ROUTING RECOMMENDATION: no gate legs move to the secondary lane -- a recorded negative
+result, not a forced adoption.** The execution lane was not cheaper on identical briefs:
+556,751 vs 264,978 total tokens (~2.1x), the delta driven mostly by input-side volume (more
+turns of context re-reading, visible in the wire.jsonl record counts). Quality at n=1 was a
+wash leaning the other way -- secondary caught both probes, primary caught only probe 2 --
+which cuts against demoting judgment work to the execution lane, not for it. Lever 2's
+cheaper-tier request therefore stays honestly uncredited on Kimi too: the per-dispatch
+measurement mechanism exists and demonstrably works (this datapoint IS that mechanism
+running end to end), but the tier it would route to showed no token advantage in this probe.
+Follow-ups, named not landed: (1) repeat the probe for statistical power before any
+retiering is reconsidered -- the harness is rerunnable by construction; (2) investigate
+primary's probe-1 miss, a prose-semantics blocker the judgment lane passed while
+re-verifying the very file the blocker lived in.
+
 This changes ONLY how much reasoning budget the SAME reviewer persona is asked to spend, never
 which checks it runs, nor which provider/model is dispatched (`src/codex.js` remains an
 adapter target, not a second tier resolver) -- criterion 2 is untouched by this lever by

@@ -67,7 +67,29 @@ import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
-const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
+// One array element per command group, each carrying its own "|" separators and
+// joined with "" so the rendered single-line usage stays byte-identical to the
+// pre-split string (website-docs.test.js reassembles this array from source).
+const USAGE = [
+  // routing: project detection, capability discovery, task→provider matching
+  "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|",
+  // manifest + waves: validate, order, and drive a plan
+  "manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|",
+  // performance pass + gate helpers
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  // sprint waves, review tally, tournament pick/fuse, advisor
+  "sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
+  // memory + vendor + init lifecycle
+  "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|",
+  // planning + routing artifacts
+  "plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|",
+  // prompt tooling
+  "prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|",
+  // diagnose/audit/issue/assess/steer/scope
+  "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|",
+  // doctor/conformance/scratchpad/profile/install/signals/hygiene/help
+  "doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
+].join("");
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
 function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
@@ -91,13 +113,24 @@ function readStdin() {
 const readText = async (arg) =>
   (!arg || arg === "-" || arg.startsWith("--")) ? await readStdin() : await readFile(arg, "utf8");
 
-async function resolveModeCapabilities(args) {
+// Single source for the codex-aware catalog+inventory pair every command branch
+// resolves against: --codex swaps the ~/.claude inventory for the live Codex
+// inventory AND adapts the catalog for Codex (enabled upstream-native skills win,
+// gsd-* ids get the muster- prefix); without it both stay untouched. Per-branch
+// consumers layer their own differences on top of this pair (e.g. manifest
+// validate's unresolved-skill warning filtering stays local to that branch).
+async function loadEffectiveCatalog(args) {
   const catalog = await loadCatalog(CATALOG_DIR);
   const codex = args.includes("--codex");
   const installed = codex
     ? await readCodexInventory({ cwd: process.cwd() })
     : await readInstalled(homedir());
-  return resolveCapabilities(codex ? adaptCatalogForCodex(catalog, installed) : catalog, installed);
+  return { catalog: codex ? adaptCatalogForCodex(catalog, installed) : catalog, installed };
+}
+
+async function resolveModeCapabilities(args) {
+  const { catalog, installed } = await loadEffectiveCatalog(args);
+  return resolveCapabilities(catalog, installed);
 }
 
 async function main() {
@@ -114,6 +147,10 @@ async function main() {
       out(await detectProject(rest[0] || process.cwd()));
     } else if (cmd === "capabilities") {
       const catalog = await loadCatalog(CATALOG_DIR);
+      // The optional positional home-dir override is found by elimination: take the
+      // first arg that neither looks like a flag nor is a value a flag consumed. In
+      // this branch only --role and --connectors take values; every other flag
+      // (--codex/--kimi/--cowork/--roles-only/--native-plugin) is a boolean switch.
       const role = flagValue(rest, "--role");
       const connectors = flagValue(rest, "--connectors");
       const consumedValues = new Set([role, connectors].filter(Boolean));
@@ -165,12 +202,7 @@ async function main() {
       // "<task>"` still surfaces stack-relevant skills without an extra flag.
       const task = flagValue(rest, "--skills");
       if (!task) fail("match --skills <task>: missing task");
-      const catalog = await loadCatalog(CATALOG_DIR);
-      const codex = rest.includes("--codex");
-      const installed = codex
-        ? await readCodexInventory({ cwd: process.cwd() })
-        : await readInstalled(homedir());
-      const effectiveCatalog = codex ? adaptCatalogForCodex(catalog, installed) : catalog;
+      const { catalog: effectiveCatalog, installed } = await loadEffectiveCatalog(rest);
       const { skills } = resolveCapabilities(effectiveCatalog, installed);
       const ranked = matchSkills(task, skills);
       const stackArg = flagValue(rest, "--stack");
@@ -183,12 +215,8 @@ async function main() {
     } else if (cmd === "match") {
       const args = rest.filter(arg => arg !== "--codex");
       if (!args[0]) fail("match <task>: missing task");
-      const catalog = await loadCatalog(CATALOG_DIR);
-      const codex = rest.includes("--codex");
-      const installed = codex
-        ? await readCodexInventory({ cwd: process.cwd() })
-        : await readInstalled(homedir());
-      out(matchProviders(args[0], codex ? adaptCatalogForCodex(catalog, installed) : catalog, installed));
+      const { catalog, installed } = await loadEffectiveCatalog(rest);
+      out(matchProviders(args[0], catalog, installed));
     // ── manifest + waves: validate, order, and drive a plan ──
     } else if (cmd === "manifest" && rest[0] === "validate") {
       const args = rest.filter(arg => arg !== "--codex");
@@ -199,14 +227,12 @@ async function main() {
       // `capabilities`/`match --skills` resolve (resolveCapabilities().skills), so a
       // hallucinated or uninstalled bound id is actually caught here, not just at the
       // manifestWarnings unit level.
-      const catalog = await loadCatalog(CATALOG_DIR);
       const codex = rest.includes("--codex");
-      const installed = codex
-        ? await readCodexInventory({ cwd: process.cwd() })
-        : await readInstalled(homedir());
-      const effectiveCatalog = codex ? adaptCatalogForCodex(catalog, installed) : catalog;
+      const { catalog: effectiveCatalog, installed } = await loadEffectiveCatalog(rest);
       const { skills } = resolveCapabilities(effectiveCatalog, installed);
       const warnings = manifestWarnings(obj, skills);
+      // Validate-only strictness (deliberately NOT shared with the other branches):
+      // under --codex an unresolved skill binding is promoted from warning to error.
       const unresolved = codex
         ? warnings.filter(warning => warning.includes("not found in resolveCapabilities().skills"))
         : [];

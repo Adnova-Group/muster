@@ -14,12 +14,22 @@ const read = (p) => readFile(new URL(p, root), "utf8");
 
 // --- helper: extract the usage line from cli.js and parse subcommand names ----
 
+// USAGE is a joined array of per-group strings (one line per command group);
+// reassemble the rendered single-line usage from the source before parsing.
+function extractUsage(cliSource) {
+  const decl = cliSource.match(/const USAGE = \[([\s\S]*?)\]\.join\(("(?:[^"\\]|\\.)*")\);/);
+  if (!decl) throw new Error("Could not locate usage string in cli.js");
+  const separator = JSON.parse(decl[2]);
+  const parts = [...decl[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(([, s]) => JSON.parse(`"${s}"`));
+  return parts.join(separator);
+}
+
 function extractSubcommands(cliSource) {
   // The usage string looks like:
   //   muster <detect|capabilities|match <task>|manifest validate <file>|...|steer <message>|...>
   // We want the first token after each | (or after <) before any space or <.
-  const usageMatch = cliSource.match(/Usage: muster <([^`]+)>/);
-  if (!usageMatch) throw new Error("Could not locate usage string in cli.js");
+  const usageMatch = extractUsage(cliSource).match(/Usage: muster <([^`]+)>/);
+  if (!usageMatch) throw new Error("Could not parse usage string in cli.js");
 
   const inner = usageMatch[1];
   // split on | and take first word of each segment, filtering out arg placeholders

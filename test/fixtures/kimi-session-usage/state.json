@@ -1,0 +1,21 @@
+{
+  "createdAt": "2026-07-27T02:21:05.265Z",
+  "updatedAt": "2026-07-27T02:21:05.308Z",
+  "title": "Use the Agent tool with subagent_type explore to answer: does the file hello.txt exist in this directory? Reply with yes or no only.",
+  "isCustomTitle": false,
+  "agents": {
+    "main": {
+      "homedir": "<sessionDir>/agents/main",
+      "type": "main",
+      "parentAgentId": null
+    },
+    "agent-0": {
+      "homedir": "<sessionDir>/agents/agent-0",
+      "type": "sub",
+      "parentAgentId": "main"
+    }
+  },
+  "custom": {},
+  "workDir": "/tmp/kimi-probe-usage",
+  "lastPrompt": "Use the Agent tool with subagent_type explore to answer: does the file hello.txt exist in this directory? Reply with yes or no only."
+}

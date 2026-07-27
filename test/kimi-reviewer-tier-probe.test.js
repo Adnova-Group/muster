@@ -434,7 +434,7 @@ test("cost comparison EXCLUDES effort-invalid cells exactly like retried cells, 
   // primary only in effort mode: 3 valid cells counted, the ignored-override
   // cell excluded with an "invalid effort" label
   assert.equal(byLane.primary.cellsCounted.length, 3);
-  assert.deepEqual(byLane.primary.cellsExcluded, ["spec-gate-manifest (invalid effort)"]);
+  assert.deepEqual(byLane.primary.cellsExcluded, ["spec-gate-manifest @ low (invalid effort)"]);
   assert.deepEqual(byLane.secondary.cellsCounted, []);
   const perCell = cells[0].tokens.total;
   assert.equal(byLane.primary.tokens.total, perCell * 3, "the invalid cell's tokens stay out of the sum");

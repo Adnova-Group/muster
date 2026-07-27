@@ -177,38 +177,38 @@ async function copyInto(srcFile, destFile) {
 // commands -- `/muster-go`, `/muster-diagnose`.
 export const KIMI_VERB_PREFIX = "muster-";
 
-const NAME_LINE = /^name[ \t]*:.*$/m;
-const MODEL_PREFERENCE_LINE = /^model_preference[ \t]*:.*$/m;
+// Stamp `<key>: <value>` into a file's YAML frontmatter, replacing an existing
+// line or appending one (audit S11: the one routine behind both stamps below).
+// Deliberately line-scoped rather than a parse/re-serialize round trip (the
+// same discipline codex-install.js applies to config.toml): every other byte
+// of the file passes through untouched, so a hand-authored file never gets
+// silently reformatted. Returns null when the file has no frontmatter at all
+// -- Kimi requires a `description`, so such a file is already malformed for
+// Kimi and the caller surfaces it rather than inventing a frontmatter block.
+// `key` is a fixed internal literal (name, model_preference), never user
+// input, so interpolating it into the line regex is safe.
+function stampFrontmatterField(text, key, value) {
+  const fm = matchFrontmatter(text);
+  if (!fm) return null;
+  const newline = fm.raw.includes("\r\n") ? "\r\n" : "\n";
+  const line = `${key}: ${value}`;
+  const keyLine = new RegExp(`^${key}[ \\t]*:.*$`, "m");
+  const body = keyLine.test(fm.body) ? fm.body.replace(keyLine, line) : `${fm.body}${newline}${line}`;
+  return `---${newline}${body}${newline}---${newline}${fm.rest}`;
+}
 
 // Kimi resolves a directory-form skill by its FRONTMATTER `name`, not its
 // directory, so the prefix has to be written into the file -- renaming only the
 // directory would still register the verb as bare `go`/`plan`.
 export function stampSkillName(text, name) {
-  const fm = matchFrontmatter(text);
-  if (!fm) return null;
-  const newline = fm.raw.includes("\r\n") ? "\r\n" : "\n";
-  const line = `name: ${name}`;
-  const body = NAME_LINE.test(fm.body) ? fm.body.replace(NAME_LINE, line) : `${fm.body}${newline}${line}`;
-  return `---${newline}${body}${newline}---${newline}${fm.rest}`;
+  return stampFrontmatterField(text, "name", name);
 }
 
-// Stamp `model_preference: <lane>` into an agent file's YAML frontmatter,
-// replacing an existing line or appending one. Deliberately line-scoped rather
-// than a parse/re-serialize round trip (the same discipline codex-install.js
-// applies to config.toml): every other byte of the file passes through
-// untouched, so a hand-authored agent never gets silently reformatted.
-// Returns null when the file has no frontmatter at all -- Kimi requires a
-// `description`, so such a file is already malformed for Kimi and the caller
-// surfaces it rather than inventing a frontmatter block.
+// Stamp `model_preference: <lane>` into an agent file's frontmatter (see the
+// header note -- an un-stamped agent would silently bind to the
+// secondary/cheap lane once a [secondary_model] is configured).
 export function stampModelPreference(text, lane) {
-  const fm = matchFrontmatter(text);
-  if (!fm) return null;
-  const newline = fm.raw.includes("\r\n") ? "\r\n" : "\n";
-  const line = `model_preference: ${lane}`;
-  const body = MODEL_PREFERENCE_LINE.test(fm.body)
-    ? fm.body.replace(MODEL_PREFERENCE_LINE, line)
-    : `${fm.body}${newline}${line}`;
-  return `---${newline}${body}${newline}---${newline}${fm.rest}`;
+  return stampFrontmatterField(text, "model_preference", lane);
 }
 
 // --- Declarative action-class fence: [[permission.rules]] deny ---------------

@@ -210,6 +210,17 @@ export async function checkPathShadow({ env = process.env, platform = process.pl
   }
 }
 
+// Sorted-keys canonical form for snapshot comparison (used by `same` below).
+// Deliberately NOT init.js's canonicalInitJson/canonicalValue (audit S11,
+// cross-reference): the two are independent on purpose. This one is LOOSE --
+// it must tolerate whatever JSON.parse of a user's hooks/config file produces,
+// including non-integer numbers, which init's digest serializer hard-rejects
+// (TypeError, "integers only") along with undefined values and non-plain
+// objects. init.js's strictness is a digest-stability contract this comparison
+// does not want; this one's tolerance would silently weaken init's. The key
+// sort order also differs (UTF-16 code units here vs UTF-8 bytes there) --
+// harmless here because both sides of `same` canonicalize identically, but a
+// third reason the serializers are not interchangeable.
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));

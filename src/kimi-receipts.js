@@ -121,11 +121,13 @@ export function parseWireThinkingEfforts(wireText) {
   return efforts;
 }
 
-// Read every agents/<id>/wire.jsonl under a session dir into per-agent effort
-// lists: { agentId: [efforts...] }, agent dirs sorted. An agent dir without a
-// wire file (or with no llm.request records) contributes an empty list.
-export async function readSessionThinkingEfforts(sessionDir) {
-  if (typeof sessionDir !== "string" || !sessionDir) throw new Error("readSessionThinkingEfforts: sessionDir is required");
+// Read every agents/<id>/wire.jsonl under a session dir into raw per-agent
+// wire texts: { agentId: wireText }, agent dirs sorted. An agent dir without a
+// wire file contributes an empty string (it recorded no steps). Shared by the
+// two session readers below (audit S11); a missing/unreadable agents tree
+// throws WITHOUT a caller prefix -- each caller re-throws with its own name so
+// its error contract is unchanged.
+async function readAgentWires(sessionDir) {
   let agentDirs = [];
   try {
     agentDirs = (await readdir(path.join(sessionDir, "agents"), { withFileTypes: true }))
@@ -133,16 +135,32 @@ export async function readSessionThinkingEfforts(sessionDir) {
       .map(entry => entry.name)
       .sort();
   } catch (err) {
-    throw new Error(`readSessionThinkingEfforts: cannot read agents tree under ${sessionDir}: ${err.message}`);
+    throw new Error(`cannot read agents tree under ${sessionDir}: ${err.message}`);
+  }
+  const wires = {};
+  for (const agentId of agentDirs) {
+    try {
+      wires[agentId] = await readFile(path.join(sessionDir, "agents", agentId, "wire.jsonl"), "utf8");
+    } catch {
+      wires[agentId] = ""; // an agent dir without a wire file contributed nothing measurable
+    }
+  }
+  return wires;
+}
+
+// Read every agents/<id>/wire.jsonl under a session dir into per-agent effort
+// lists: { agentId: [efforts...] }, agent dirs sorted. An agent dir without a
+// wire file (or with no llm.request records) contributes an empty list.
+export async function readSessionThinkingEfforts(sessionDir) {
+  if (typeof sessionDir !== "string" || !sessionDir) throw new Error("readSessionThinkingEfforts: sessionDir is required");
+  let wires;
+  try {
+    wires = await readAgentWires(sessionDir);
+  } catch (err) {
+    throw new Error(`readSessionThinkingEfforts: ${err.message}`);
   }
   const byAgent = {};
-  for (const agentId of agentDirs) {
-    let wireText = "";
-    try {
-      wireText = await readFile(path.join(sessionDir, "agents", agentId, "wire.jsonl"), "utf8");
-    } catch {
-      // an agent dir without a wire file contributed no steps
-    }
+  for (const [agentId, wireText] of Object.entries(wires)) {
     byAgent[agentId] = parseWireThinkingEfforts(wireText);
   }
   return byAgent;
@@ -161,23 +179,14 @@ export async function readSessionUsage(sessionDir) {
   } catch {
     state = null; // no state.json (or unreadable) -- fall back to the agents tree alone
   }
-  let agentDirs = [];
+  let wires;
   try {
-    agentDirs = (await readdir(path.join(sessionDir, "agents"), { withFileTypes: true }))
-      .filter(entry => entry.isDirectory())
-      .map(entry => entry.name)
-      .sort();
+    wires = await readAgentWires(sessionDir);
   } catch (err) {
-    throw new Error(`readSessionUsage: cannot read agents tree under ${sessionDir}: ${err.message}`);
+    throw new Error(`readSessionUsage: ${err.message}`);
   }
   const agents = {};
-  for (const agentId of agentDirs) {
-    let wireText = "";
-    try {
-      wireText = await readFile(path.join(sessionDir, "agents", agentId, "wire.jsonl"), "utf8");
-    } catch {
-      // an agent dir without a wire file contributed nothing measurable
-    }
+  for (const [agentId, wireText] of Object.entries(wires)) {
     const meta = state?.agents?.[agentId] ?? {};
     agents[agentId] = {
       type: meta.type ?? (agentId === "main" ? "main" : "sub"),

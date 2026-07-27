@@ -43,6 +43,12 @@ const utf8Sort = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const envelope = (receipt, observedNativeEvidence = null) => ({ receipt, observedNativeEvidence });
 
+// Digest-stability serializer: plain JSON only, safe integers only, keys in
+// UTF-8 byte order. Deliberately NOT shared with codex-doctor.js's looser
+// `canonical`/`same` snapshot comparator (audit S11, cross-reference) -- the
+// doctor's inputs are arbitrary JSON.parse output (non-integer numbers
+// included) that this serializer must reject, and its UTF-16 key order would
+// change every digest below. See the note at codex-doctor.js's `canonical`.
 function canonicalValue(value, seen = new Set()) {
   if (value === null || typeof value === "boolean" || typeof value === "string") return value;
   if (typeof value === "number") {

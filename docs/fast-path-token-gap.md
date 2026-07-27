@@ -100,6 +100,23 @@ real, tested, wired-through-CLI infrastructure -- a genuine request recorded for
 consumption path (or a human/Codex operator to apply today) -- not vaporware, just honestly
 scoped as not-yet-active on the measured metric.
 
+**Third-harness datapoint (2026-07-27, kimi v0.29.1): Kimi DOES have a verified per-call
+consumption mechanism -- the "either harness" claim above covers Claude Code and Codex only.**
+Probed with real, minimal `kimi -p` runs (commands and captured shapes in
+`docs/research/kimi-code-cli.md` sec 8's dated probe note): `kimi -p --output-format
+stream-json` stdout carries NO usage fields, but every `agents/<agentId>/wire.jsonl` in the
+session tree emits one `{"type":"usage.record","model":...,"usage":{"inputOther":N,"output":N,
+"inputCacheRead":N,"inputCacheCreation":N},"usageScope":"turn",...}` per LLM step, and each
+dispatched subagent gets its OWN wire file (state.json maps agent id -> type/parentAgentId),
+so a subagent's wire sum IS that dispatch's token consumption. `src/kimi-receipts.js`
+(`parseWireUsage`/`sumUsage`/`readSessionUsage`, fixture-tested in `test/kimi-receipts.test.js`
+against trimmed real captures) parses exactly this shape and attributes tokens per dispatch --
+so on Kimi the fast-path measurement is no longer model-only: a dispatched reviewer's actual
+consumption is readable from the session receipts, and lever 2's cheaper-tier request CAN be
+honestly credited there once a run is measured through it. (The remaining gap on Kimi is the
+request side symmetric to Codex's: Kimi's per-call override is a two-lane `model` pick --
+`src/kimi-dispatch.js`'s `kimiAgentCall` -- not a reasoning-effort dial.)
+
 This changes ONLY how much reasoning budget the SAME reviewer persona is asked to spend, never
 which checks it runs, nor which provider/model is dispatched (`src/codex.js` remains an
 adapter target, not a second tier resolver) -- criterion 2 is untouched by this lever by

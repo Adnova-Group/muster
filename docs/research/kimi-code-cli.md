@@ -333,6 +333,27 @@ one JSON object per stdout line (assistant → `tool_calls` → tool → assista
 progress go to stderr). `kimi export <sessionId>` → ZIP; `kimi web` serves `GET /openapi.json`
 + `/asyncapi.json`.
 
+**CONFIRMED 2026-07-27 (probe against the installed v0.29.1 binary — token usage lives in the
+wire files, NOT in stream-json).** Two real `kimi -p` runs from a scratch cwd (one trivial
+prompt, one dispatching an `explore` subagent via the Agent tool):
+- `kimi -p "Reply with exactly: ok" --output-format stream-json` stdout carried **no usage
+  fields** — only `{"role":"assistant",...}` and `{"role":"meta","type":"session.resume_hint",...}`
+  objects; stderr was empty.
+- `agents/main/wire.jsonl` (and the subagent's own `agents/agent-0/wire.jsonl`) carried, per
+  LLM step, both a `context.append_loop_event`/`step.end` event embedding `usage` and a
+  top-level record of the exact shape:
+  `{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":3157,"output":24,
+  "inputCacheRead":19200,"inputCacheCreation":0},"usageScope":"turn","time":1785118793157}`
+  (one `usage.record` per step; `step.end` adds `turnId`/`step`/latency fields).
+- Per-dispatch attribution is structural: `state.json`'s `agents` map records each agent's
+  `type` (`main`|`sub`) and `parentAgentId`, so summing one subagent's wire `usage.record`s IS
+  that dispatch's token consumption. Sample per-dispatch sums from the probe: the explore
+  dispatch cost `{inputOther:2403, output:443, inputCacheRead:26624, inputCacheCreation:0}`.
+  Parsed by `src/kimi-receipts.js`; trimmed real captures pinned in
+  `test/fixtures/kimi-session-usage/` + `test/kimi-receipts.test.js`. This is the verified
+  per-call consumption mechanism `docs/fast-path-token-gap.md` records as absent in Claude
+  Code and Codex — on Kimi the token-gap measurement is runnable.
+
 **Degradation:** STATE.md + git notes are harness-agnostic and unchanged; the native-todo receipt
 folds into STATE if absent — but it is present, so muster's task-board can bind to it, same as
 Claude Code.

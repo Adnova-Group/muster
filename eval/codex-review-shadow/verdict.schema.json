@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "findings"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "description": "BLOCKED when the commit introduces any correctness, security, or regression finding; PASS otherwise. Ignore style-only notes.",
+      "enum": ["PASS", "BLOCKED"]
+    },
+    "findings": {
+      "type": "array",
+      "description": "Actionable correctness, security, or regression findings only; omit style-only notes.",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "summary", "details", "path"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "risk", "nit"]
+          },
+          "summary": {
+            "type": "string",
+            "description": "Concise statement of the defect."
+          },
+          "details": {
+            "type": "string",
+            "description": "Why the changed code is incorrect and the concrete failure mode."
+          },
+          "path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

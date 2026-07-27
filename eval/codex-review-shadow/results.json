@@ -1,0 +1,432 @@
+{
+  "generatedAt": "2026-07-27T03:02:51.247Z",
+  "mode": "shadow-only",
+  "productionRoutingChanged": false,
+  "commandSurface": "codex exec review --json --output-schema",
+  "model": "gpt-5.6-terra",
+  "environment": {
+    "codexVersion": "codex-cli 0.145.0",
+    "harnessHead": "809a10e46b5f19e9ed737871cdcf45f974f9e4dc",
+    "harnessDirty": true,
+    "harnessSourceDigest": "sha256:23f7959998a98b0fad3d25e49d7b6c624fc17299f0985bfa4686c7fb96ed61c2",
+    "harnessSourceFiles": [
+      "src/codex-review-shadow.js",
+      "test/codex-review-shadow.test.js",
+      "eval/codex-review-shadow/run.mjs",
+      "eval/codex-review-shadow/verdict.schema.json",
+      "eval/codex-review-shadow/corpus.json"
+    ],
+    "diagnosticCapture": "This run predates the fail-closed diagnostic-event capture added by the reviewed harness revision; reruns persist raw agent-message and terminal usage events per case."
+  },
+  "currentReviewTokenBaseline": {
+    "kind": "modeled",
+    "unit": "one current Muster reviewer (conservative denominator when live cadence selects multiple reviewers)",
+    "formula": "1818 full review-gate skill tokens + min(diff chars / 4, 2000) + 300 output tokens",
+    "source": "docs/fast-path-token-gap.md"
+  },
+  "thresholdTokenMetric": "turn.completed usage.input_tokens + usage.output_tokens",
+  "summary": {
+    "corpusSize": 10,
+    "blockerHits": 0,
+    "blockerRecallPct": 0,
+    "schemaHits": 0,
+    "schemaValidPct": 0,
+    "usageHits": 0,
+    "usageValidPct": 0,
+    "nativeTokens": 0,
+    "currentReviewTokens": 41180,
+    "tokenConsumptionPct": 0,
+    "acceptancePassed": false,
+    "cases": [
+      {
+        "id": "pr-127-doctor-doc-claim",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "pr-125-unsafe-read-swallow",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "pr-119-config-read-cap",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "brief-lint-section-tail",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "fast-path-doctor-trigger",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "hook-stale-corroboration",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "codex-hook-env-parse",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "install-retriage-merge-claim",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "gate-cadence-duplicate",
+        "schemaValid": false,
+        "blockerHit": false
+      },
+      {
+        "id": "windows-rooted-path",
+        "schemaValid": false,
+        "blockerHit": false
+      }
+    ]
+  },
+  "corpus": [
+    {
+      "id": "pr-127-doctor-doc-claim",
+      "commit": "0e98ecdc6b5f4c7051550896f55c692d45ba4883",
+      "fixCommit": "2c2212e6f7c0188609e7b5019864f174ef2e0db5",
+      "knownBlocker": {
+        "paths": [
+          "website/guides/troubleshooting.md"
+        ],
+        "terms": [
+          "agent profile",
+          "builtins",
+          "install-integrity"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "pr-125-unsafe-read-swallow",
+      "commit": "9e2953f16c19a0668e91248fc7dfe48e5e0c30bd",
+      "fixCommit": "ad60bfd26186fd17b05f16e3773955a37e50f0ee",
+      "knownBlocker": {
+        "paths": [
+          "src/codex-doctor.js"
+        ],
+        "terms": [
+          "unsafe",
+          "swallow",
+          "musterunsaferead"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "pr-119-config-read-cap",
+      "commit": "60b8394e5ce135c23728ca75bd37a3af4d69a6a6",
+      "fixCommit": "9a1694faf6340240e7cf1c564bcc501515dc664a",
+      "knownBlocker": {
+        "paths": [
+          "src/codex-doctor.js"
+        ],
+        "terms": [
+          "config.toml",
+          "1 mib",
+          "read cap"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "brief-lint-section-tail",
+      "commit": "907abfad436d89657ad18991595573c272db4c35",
+      "fixCommit": "e001b5f588d0d8988fbc05f6b303b01069bcc353",
+      "knownBlocker": {
+        "paths": [
+          "src/brief-lint.js"
+        ],
+        "terms": [
+          "unmarked tail",
+          "whole section",
+          "repeated signal"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "fast-path-doctor-trigger",
+      "commit": "3d490559479ae52d01ed6d7bab265774434eb3da",
+      "fixCommit": "0c2bd93810678b5ed8be6293d8eae3248ee409ba",
+      "knownBlocker": {
+        "paths": [
+          "src/review-brief.js"
+        ],
+        "terms": [
+          "codex-doctor",
+          "doctor branch",
+          "exact match"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "hook-stale-corroboration",
+      "commit": "78e26481eaacbb8f169354e128383d5b51073d19",
+      "fixCommit": "4770a9756a74bec23f2d83ff25a36c0a6ba862f4",
+      "knownBlocker": {
+        "paths": [
+          "plugin/hooks/user-prompt-submit.js",
+          "plugin/hooks/inline-budget.js"
+        ],
+        "terms": [
+          "stale",
+          "prior crossing",
+          "corroborat"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "codex-hook-env-parse",
+      "commit": "428f709afe3c5930a6d9a0b5017106d0f03b612b",
+      "fixCommit": "31a44c3dcb8d35cfbdd7a20f3aa165fbe4258f55",
+      "knownBlocker": {
+        "paths": [
+          "codex/hooks/muster-hook.mjs",
+          ".codex/muster/hooks/muster-hook.mjs"
+        ],
+        "terms": [
+          "parseint",
+          "malformed",
+          "inline_scale"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "install-retriage-merge-claim",
+      "commit": "afa817fa889b4a4e5d526f64fd2f6a2034b89937",
+      "fixCommit": "dd396d5af7403018a16a367734f0b7128b4e60ae",
+      "knownBlocker": {
+        "paths": [
+          "docs/decisions/retriage-install-items.md"
+        ],
+        "terms": [
+          "merged",
+          "pretest",
+          "install-time"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "gate-cadence-duplicate",
+      "commit": "bbd7b5b02bdefe2056b0bf7ba3acd7dae9adcc4a",
+      "fixCommit": "14c8685c1fab8f0ad7bd88b8cf5dc6e3a7cd54b5",
+      "knownBlocker": {
+        "paths": [
+          "plugin/commands/go.md",
+          "plugin/skills/orchestrator/SKILL.md"
+        ],
+        "terms": [
+          "gate-cadence",
+          "twice",
+          "duplicate"
+        ]
+      },
+      "currentReviewTokens": 4118
+    },
+    {
+      "id": "windows-rooted-path",
+      "commit": "31fe0709bb270d874cf09bb93477b45537771b49",
+      "fixCommit": "a2bbbb34c05644145fdee558bf10360e9edd57fd",
+      "knownBlocker": {
+        "paths": [
+          "src/scope.js",
+          "src/batch-plan.js"
+        ],
+        "terms": [
+          "single-backslash",
+          "windows-rooted",
+          "absolute"
+        ]
+      },
+      "currentReviewTokens": 4118
+    }
+  ],
+  "runs": [
+    {
+      "id": "pr-127-doctor-doc-claim",
+      "commit": "0e98ecdc6b5f4c7051550896f55c692d45ba4883",
+      "fixCommit": "2c2212e6f7c0188609e7b5019864f174ef2e0db5",
+      "durationMs": 70167,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "pr-125-unsafe-read-swallow",
+      "commit": "9e2953f16c19a0668e91248fc7dfe48e5e0c30bd",
+      "fixCommit": "ad60bfd26186fd17b05f16e3773955a37e50f0ee",
+      "durationMs": 74994,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "pr-119-config-read-cap",
+      "commit": "60b8394e5ce135c23728ca75bd37a3af4d69a6a6",
+      "fixCommit": "9a1694faf6340240e7cf1c564bcc501515dc664a",
+      "durationMs": 72074,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "brief-lint-section-tail",
+      "commit": "907abfad436d89657ad18991595573c272db4c35",
+      "fixCommit": "e001b5f588d0d8988fbc05f6b303b01069bcc353",
+      "durationMs": 46048,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "fast-path-doctor-trigger",
+      "commit": "3d490559479ae52d01ed6d7bab265774434eb3da",
+      "fixCommit": "0c2bd93810678b5ed8be6293d8eae3248ee409ba",
+      "durationMs": 89571,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "hook-stale-corroboration",
+      "commit": "78e26481eaacbb8f169354e128383d5b51073d19",
+      "fixCommit": "4770a9756a74bec23f2d83ff25a36c0a6ba862f4",
+      "durationMs": 48231,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "codex-hook-env-parse",
+      "commit": "428f709afe3c5930a6d9a0b5017106d0f03b612b",
+      "fixCommit": "31a44c3dcb8d35cfbdd7a20f3aa165fbe4258f55",
+      "durationMs": 63087,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "install-retriage-merge-claim",
+      "commit": "afa817fa889b4a4e5d526f64fd2f6a2034b89937",
+      "fixCommit": "dd396d5af7403018a16a367734f0b7128b4e60ae",
+      "durationMs": 73415,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "gate-cadence-duplicate",
+      "commit": "bbd7b5b02bdefe2056b0bf7ba3acd7dae9adcc4a",
+      "fixCommit": "14c8685c1fab8f0ad7bd88b8cf5dc6e3a7cd54b5",
+      "durationMs": 52591,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    },
+    {
+      "id": "windows-rooted-path",
+      "commit": "31fe0709bb270d874cf09bb93477b45537771b49",
+      "fixCommit": "a2bbbb34c05644145fdee558bf10360e9edd57fd",
+      "durationMs": 68507,
+      "schemaValid": false,
+      "schemaErrors": [
+        "verdict must be an object"
+      ],
+      "usage": {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "uncachedTokens": 0
+      }
+    }
+  ],
+  "conclusion": "Shadow acceptance thresholds did not all pass; do not propose or make a production routing change."
+}

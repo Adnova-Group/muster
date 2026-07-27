@@ -45,6 +45,21 @@ const LANES = Object.keys(KIMI_LANES);
 //      docs; it is enforced in the binary. Duplicate wave items are exactly
 //      how muster would trip it (e.g. two crew members handed the same file).
 export function kimiSwarmCall({ promptTemplate, items = [], subagentType, model, resumeAgentIds } = {}) {
+  // resume_agent_ids maps a PRIOR subagent's agent id to the prompt used to
+  // resume it -- the orchestrator's re-dispatch-once failure rule rides this:
+  // a failed swarm member is resumed with only the error context appended,
+  // keeping its prior context instead of paying a fresh full prompt again.
+  if (resumeAgentIds !== undefined) {
+    if (typeof resumeAgentIds !== "object" || resumeAgentIds === null || Array.isArray(resumeAgentIds)) {
+      throw new Error("kimiSwarmCall: resumeAgentIds must be a map of prior agent id -> resume prompt");
+    }
+    for (const [id, prompt] of Object.entries(resumeAgentIds)) {
+      if (!id) throw new Error("kimiSwarmCall: resumeAgentIds keys must be prior agent ids (non-empty strings)");
+      if (typeof prompt !== "string" || !prompt) {
+        throw new Error(`kimiSwarmCall: resumeAgentIds[${JSON.stringify(id)}] must be the resume prompt (the appended error context), a non-empty string`);
+      }
+    }
+  }
   const resume = resumeAgentIds && Object.keys(resumeAgentIds).length ? resumeAgentIds : null;
   if (!Array.isArray(items)) throw new Error("kimiSwarmCall: items must be an array");
   if (!items.length && !resume) throw new Error("kimiSwarmCall: pass items or resumeAgentIds");
@@ -93,11 +108,34 @@ export function kimiSwarmCall({ promptTemplate, items = [], subagentType, model,
 // `agentId` is the crew member's resolved chosen.id; its lane is derived from
 // the shared manifest so a dispatch can never contradict the installed
 // agent file's stamped model_preference.
-export function kimiAgentCall({ agentId, prompt, description, background = false, model } = {}) {
-  if (typeof agentId !== "string" || !agentId) throw new Error("kimiAgentCall: agentId is required (the crew member's resolved chosen.id)");
-  if (typeof prompt !== "string" || !prompt) throw new Error(`kimiAgentCall: prompt is required for agent "${agentId}"`);
+//
+// `resume` is the failure-retry path (orchestrator step 4a's re-dispatch-once
+// rule on Kimi): Kimi's `resume` takes the FAILED subagent's agent id and is
+// mutually exclusive with `subagent_type`, and a resumed subagent keeps its
+// prior context AND its model (an explicit `model` is "ignored when
+// resuming") -- so the retry packet carries neither, only the error context
+// as the new prompt. That is the whole point: the retry never pays the full
+// prompt/context cost a fresh spawn would.
+export function kimiAgentCall({ agentId, prompt, description, background = false, model, resume } = {}) {
+  if (resume !== undefined && (typeof resume !== "string" || !resume)) {
+    throw new Error("kimiAgentCall: resume must be the failed subagent's agent id (a non-empty string)");
+  }
+  if (resume && agentId) {
+    throw new Error("kimiAgentCall: resume is mutually exclusive with agentId -- Kimi pairs resume with no subagent_type; the resumed subagent keeps its own type");
+  }
+  if (!resume && (typeof agentId !== "string" || !agentId)) throw new Error("kimiAgentCall: agentId is required (the crew member's resolved chosen.id)");
+  if (typeof prompt !== "string" || !prompt) throw new Error(`kimiAgentCall: prompt is required for agent "${agentId || resume}"`);
   if (model !== undefined && !LANES.includes(model)) {
     throw new Error(`kimiAgentCall: model must be one of ${LANES.join("|")}; got ${JSON.stringify(model)}`);
+  }
+  if (resume) {
+    return {
+      tool: "Agent",
+      resume,
+      prompt,
+      description: description || `retry ${resume}`,
+      ...(background ? { run_in_background: true } : {})
+    };
   }
   // An explicit tool-call model wins over the profile's model_preference; when
   // the caller does not force one, derive the agent's own lane so the dispatch

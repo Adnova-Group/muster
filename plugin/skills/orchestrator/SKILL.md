@@ -70,7 +70,13 @@ doing the work.
         dispatch that's still rejected retries once on opus and records the degradation -- never fail
         the task over a model tier, never drop the override.
       - **Subagent failure:** never a silent stop -- re-dispatch ONCE with the error appended as
-        context (`dispatchRetryState`, `src/loop.js`, max 2 attempts). A second failure records to
+        context (`dispatchRetryState`, `src/loop.js`, max 2 attempts). **On Kimi the re-dispatch is
+        a native RESUME, never a fresh spawn** -- the Agent tool's `resume` for a per-agent
+        dispatch, AgentSwarm's `resume_agent_ids` for a swarm dispatch (both modeled by
+        `kimiAgentCall`/`kimiSwarmCall` in `src/kimi-dispatch.js`): the failed subagent keeps its
+        prior context and only the error is appended, so the retry never pays the full
+        prompt/context cost a fresh agent would. Non-Kimi harnesses keep the fresh re-dispatch.
+        A second failure records to
         STATE and escalates like a review-gate escalation (step 4e); the wave's other tasks still
         complete. A reviewer dispatched inside the review gate (step 4c) that is killed, exhausted, or
         never starts before returning a verdict is not retried under this generic path -- see
@@ -277,6 +283,15 @@ reject the WHOLE swarm, and duplicate wave items (two crew members handed the sa
 are exactly how muster would trip it. On a validation error, FIX the packet (rename or
 merge the duplicate item, repair the template) and rebuild; a wave that cannot satisfy the
 distinct-prompts rule is not a uniform fan-out at all -- resolve it as agent-calls instead.
+
+**Failure retry rides the same native shapes.** Step 4a's re-dispatch-once rule RESUMES on
+Kimi instead of re-spawning (docs/research/kimi-code-cli.md sec 6): a failed per-agent call is
+retried as `kimiAgentCall({ resume: <failed agent id>, prompt: <error context> })` -- Kimi's
+`resume` is mutually exclusive with `subagent_type`, and a resumed subagent keeps its model, so
+the retry packet drops the lane override too; a failed swarm member is retried as
+`kimiSwarmCall({ resumeAgentIds: { <failed agent id>: <error context> } })` -- which is also why
+the >=2-item floor lifts when resuming. One retry, the same cap every harness gets; a second
+failure escalates exactly as step 4a says.
 
 ### Worktree isolation per harness + base-SHA receipts
 

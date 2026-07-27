@@ -90,6 +90,50 @@ test("kimiAgentCall: background flag and required args", () => {
   assert.throws(() => kimiAgentCall({ agentId: "muster-reviewer" }), /prompt is required/);
 });
 
+// --- Resume-after-failure (orchestrator step 4a's Kimi re-dispatch-once path) ---
+
+test("kimiAgentCall: resume models the failure retry -- prior context kept, only the error appended", () => {
+  // The FIRST dispatch is a normal typed call with the full brief...
+  const first = kimiAgentCall({ agentId: "muster-builder", prompt: "Implement the feature. OWNS: src/foo.js" });
+  assert.equal(first.subagent_type, "muster-builder");
+  assert.equal(first.resume, undefined);
+
+  // ...it fails; the retry RESUMES the failed subagent with the error as the
+  // only new context, instead of paying the full prompt/context cost again.
+  const retry = kimiAgentCall({ resume: "agent-7", prompt: "previous attempt failed: ReferenceError in src/foo.js" });
+  assert.equal(retry.tool, "Agent");
+  assert.equal(retry.resume, "agent-7");
+  assert.equal(retry.subagent_type, undefined); // Kimi: resume is mutually exclusive with subagent_type
+  assert.equal(retry.model, undefined);         // ignored when resuming -- resumed subagents keep their model
+  assert.match(retry.prompt, /previous attempt failed/);
+  assert.ok(!retry.prompt.includes("Implement the feature.")); // not a fresh full brief
+});
+
+test("kimiAgentCall: resume is mutually exclusive with agentId, and the error prompt is still required", () => {
+  assert.throws(() => kimiAgentCall({ resume: "agent-7", agentId: "muster-builder", prompt: "x" }), /mutually exclusive/);
+  assert.throws(() => kimiAgentCall({ resume: "agent-7" }), /prompt is required/);
+  assert.throws(() => kimiAgentCall({ resume: "", prompt: "x" }), /resume must be the failed subagent's agent id/);
+});
+
+test("kimiSwarmCall: resumeAgentIds retries failed swarm members with only the error context", () => {
+  // A uniform wave dispatched as a swarm loses members; the retry packet
+  // resumes THOSE members -- no items, no template, no fresh full prompts
+  // (which is also why the >=2-item floor lifts when resuming).
+  const retry = kimiSwarmCall({ resumeAgentIds: { "agent-3": "previous attempt failed: timeout running npm test" } });
+  assert.equal(retry.tool, "AgentSwarm");
+  assert.deepEqual(retry.resume_agent_ids, { "agent-3": "previous attempt failed: timeout running npm test" });
+  assert.equal(retry.items, undefined);
+  assert.equal(retry.prompt_template, undefined);
+  assert.equal(retry.soleToolCall, true); // still the sole-tool-call contract
+});
+
+test("kimiSwarmCall: resumeAgentIds must pair prior agent ids with their resume prompts", () => {
+  assert.throws(() => kimiSwarmCall({ resumeAgentIds: ["agent-3"] }), /must be a map of prior agent id/);
+  assert.throws(() => kimiSwarmCall({ resumeAgentIds: { "": "continue" } }), /keys must be prior agent ids/);
+  assert.throws(() => kimiSwarmCall({ resumeAgentIds: { "agent-3": "" } }), /must be the resume prompt/);
+  assert.throws(() => kimiSwarmCall({ resumeAgentIds: { "agent-3": 42 } }), /must be the resume prompt/);
+});
+
 // --- /goal ------------------------------------------------------------------
 
 test("interpretKimiGoalExit: maps the binary's exit codes onto run dispositions", () => {
@@ -244,6 +288,32 @@ test("orchestrator/SKILL.md's native-dispatch block has a Kimi subsection naming
   assert.match(section, /\{\{item\}\}/, "the Kimi subsection must name the exact placeholder");
   assert.match(section, /DISTINCT/i, "the Kimi subsection must state the distinct-prompts rejection rule");
   assert.match(section, /BEFORE dispatch/i, "the Kimi subsection must mandate pre-dispatch validation");
+});
+
+// --- Prose wiring: the failure rule names the Kimi resume path --------------
+
+test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resume path", async () => {
+  const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+  const start = text.indexOf("- **Subagent failure:**");
+  assert.ok(start >= 0, "orchestrator/SKILL.md step 4a must carry the 'Subagent failure' bullet");
+  const bullet = text.slice(start, text.indexOf("b. BARRIER", start));
+  // On Kimi the retry RESUMES the failed subagent instead of spawning fresh --
+  // naming both native shapes and the builders that model them.
+  assert.match(bullet, /On Kimi the re-dispatch is\s+a native RESUME/, "the failure bullet must state the Kimi retry is a native resume, not a fresh spawn");
+  assert.match(bullet, /`resume`/, "the failure bullet must name the Agent tool's resume parameter");
+  assert.match(bullet, /resume_agent_ids/, "the failure bullet must name AgentSwarm's resume_agent_ids");
+  assert.match(bullet, /kimiAgentCall`\/`kimiSwarmCall` in `src\/kimi-dispatch\.js`/, "the failure bullet must cite the shipped builders");
+  assert.match(bullet, /keeps its\s+prior context and only the error is appended/, "the failure bullet must state the resume keeps prior context and appends only the error");
+  assert.match(bullet, /Non-Kimi harnesses keep the fresh re-dispatch/, "the failure bullet must keep the fresh re-dispatch on non-Kimi harnesses");
+  assert.match(bullet, /max 2 attempts/, "the one-retry cap is unchanged");
+
+  // ...and the Kimi-native dispatch subsection carries the matching mechanics.
+  const kimi = text.match(/### Kimi-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
+  assert.ok(kimi, "the Kimi-native dispatch subsection must exist");
+  assert.match(kimi[1], /Failure retry rides the same native shapes/, "the Kimi subsection must carry the failure-retry resume paragraph");
+  assert.match(kimi[1], /kimiAgentCall\(\{ resume: /, "the Kimi subsection must show the per-agent resume retry shape");
+  assert.match(kimi[1], /kimiSwarmCall\(\{ resumeAgentIds: /, "the Kimi subsection must show the swarm resume retry shape");
+  assert.match(kimi[1], /mutually exclusive with `subagent_type`/, "the Kimi subsection must state resume's mutual exclusion with subagent_type");
 });
 
 // --- Prose wiring: the runner prose routes the Kimi run loop through /goal ----

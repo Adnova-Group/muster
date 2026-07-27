@@ -55,7 +55,7 @@ import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } fro
 import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
-import { createCodexFixLoopBinding, planCodexFixContinuation } from "./codex-fix-loop.js";
+import { createCodexFixLoopBinding, planCodexFixContinuation, resolveCodexRoleProfile } from "./codex-fix-loop.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 const USAGE = "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|receipt-verify <sha> --cwd <repo>|fix-loop-bind <dispatch.json> <receipt.json>|fix-loop-continue <receipt.json> <current.json> <review-state.json>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|memory read|write ...|vendor|setup [dir]|plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer <message>|scope [text]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <substr>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>";
@@ -282,7 +282,10 @@ async function main() {
     } else if (cmd === "fix-loop-bind") {
       const dispatchFile = requireArg(rest, 0, "fix-loop-bind <dispatch.json> <receipt.json>: missing dispatch file", fail);
       const receiptFile = requireArg(rest, 1, "fix-loop-bind <dispatch.json> <receipt.json>: missing receipt file", fail);
-      const binding = createCodexFixLoopBinding(JSON.parse(await readFile(dispatchFile, "utf8")));
+      const dispatch = JSON.parse(await readFile(dispatchFile, "utf8"));
+      const roleProfilePath = resolve(requireArg([dispatch.roleProfilePath], 0, "fix-loop-bind: dispatch roleProfilePath is required", fail));
+      const roleProfile = resolveCodexRoleProfile(await readFile(roleProfilePath, "utf8"));
+      const binding = createCodexFixLoopBinding({ ...dispatch, roleProfilePath, roleProfile });
       await mkdir(dirname(resolve(receiptFile)), { recursive: true });
       await writeFile(receiptFile, JSON.stringify(binding, null, 2) + "\n", { flag: "wx" });
       out({ ok: true, receiptFile, binding });
@@ -290,9 +293,14 @@ async function main() {
       const receiptFile = requireArg(rest, 0, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing receipt file", fail);
       const currentFile = requireArg(rest, 1, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing current context file", fail);
       const reviewFile = requireArg(rest, 2, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing review state file", fail);
+      const binding = JSON.parse(await readFile(receiptFile, "utf8"));
+      const current = JSON.parse(await readFile(currentFile, "utf8"));
+      const roleProfilePath = resolve(requireArg([current.roleProfilePath], 0, "fix-loop-continue: current roleProfilePath is required", fail));
+      if (roleProfilePath !== binding.roleProfilePath) fail("fix-loop-continue: roleProfilePath mismatch; refuse cross-context continuation");
+      const roleProfile = resolveCodexRoleProfile(await readFile(roleProfilePath, "utf8"));
       out(planCodexFixContinuation({
-        binding: JSON.parse(await readFile(receiptFile, "utf8")),
-        current: JSON.parse(await readFile(currentFile, "utf8")),
+        binding,
+        current: { ...current, roleProfilePath, roleProfile },
         reviewState: JSON.parse(await readFile(reviewFile, "utf8"))
       }));
     } else if (cmd === "fast-path") {

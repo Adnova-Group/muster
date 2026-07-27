@@ -6,13 +6,15 @@
     "cwd": "/worktrees/billing",
     "baseSha": "2222222222222222222222222222222222222222",
     "codexVersion": "0.145.0",
-    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
+    "roleProfilePath": "/profiles/muster-builder.toml",
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoningEffort": "medium", "sandboxMode": "workspace-write", "developerInstructions": "Implement the assigned slice and verify it." }
   },
   "current": {
     "cwd": "/worktrees/billing",
     "baseSha": "2222222222222222222222222222222222222222",
     "codexVersion": "0.145.0",
-    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoning": "medium", "sandbox": "workspace-write" }
+    "roleProfilePath": "/profiles/muster-builder.toml",
+    "roleProfile": { "id": "muster-builder", "model": "gpt-5.6-sol", "reasoningEffort": "medium", "sandboxMode": "workspace-write", "developerInstructions": "Implement the assigned slice and verify it." }
   },
   "reviewState": { "sentBlockers": [], "currentBlockers": ["test/billing.test.js:18 still permits a negative invoice"] },
   "expectedMechanism": "exec-resume",

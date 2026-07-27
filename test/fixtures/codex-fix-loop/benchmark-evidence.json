@@ -1,208 +1,520 @@
 {
-  "harness": "local-process fresh-dispatch vs retained-thread protocol benchmark",
-  "command": "node scripts/benchmark-codex-fix-loop.mjs --output test/fixtures/codex-fix-loop/benchmark-evidence.json",
-  "nodeVersion": "v26.0.0",
-  "generatedAt": "2026-07-26T23:01:34.500Z",
+  "harness": "real Codex fresh-dispatch vs exact-thread-id resume coding fix benchmark",
+  "command": "node scripts/benchmark-codex-fix-loop.mjs --cases 10 --output test/fixtures/codex-fix-loop/benchmark-evidence.json",
+  "codexVersion": "codex-cli 0.145.0",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "generatedAt": "2026-07-27T02:47:50.789Z",
+  "metric": "input tokens = native turn.completed.usage.input_tokens; time-to-fix = Codex invocation start through post-fix test pass; uncached input tokens are retained as supplemental evidence",
   "cases": [
     {
-      "case": "auth",
-      "payloadSha256": "a7cabc37511535e94a57926cb0cbcc4d9fa00f59e8d3bad49aba655f403bf507",
+      "case": "add_offset",
+      "fixtureSha256": "2d35f507ce8d97e7de87f2e7a0d33c05ddd48084b7ede1405916d785eef21e36",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa178-b832-7df3-bc73-c2dfd56e985e",
+        "usage": {
+          "input_tokens": 51306,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 191,
+          "reasoning_output_tokens": 0
+        },
+        "wallTimeMs": 12458.091278
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa178-e904-79c0-a3e5-cd08f68447b7",
         "usage": {
-          "input_tokens": 13187
+          "input_tokens": 723010,
+          "cached_input_tokens": 671488,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5057,
+          "reasoning_output_tokens": 1550
         },
-        "digest": "d86297a8cdffb1306c7ed6636e6ef6b9ebc529f331d4dc62074030acc8c6a9cb",
-        "wallTimeMs": 63.42844800000002
+        "wallTimeMs": 162732.351332,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ add_offset returns the required value (0.659068ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 74.600521\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa178-b832-7df3-bc73-c2dfd56e985e",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 129851,
+          "cached_input_tokens": 101376,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 446,
+          "reasoning_output_tokens": 38
         },
-        "digest": "93b9cd16c5e73a04cfa97513993e72dfceaccd9833b13cc5779c136bf3eb04c0",
-        "wallTimeMs": 0.4982479999999896
+        "wallTimeMs": 32615.027120000013,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ add_offset returns the required value (0.639023ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.145775\n"
+        }
       }
     },
     {
-      "case": "billing",
-      "payloadSha256": "ba8f354af8b93a3b308595d982c8768146fa571f691b479c2d4eca030d001e81",
+      "case": "subtract_offset",
+      "fixtureSha256": "f1fc33ab2c039219314c10a8bf30151b69de8d1582b0381d0dd8b59aceb46d58",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa17b-e4f4-7942-87f1-815000f3d346",
+        "usage": {
+          "input_tokens": 51310,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 191,
+          "reasoning_output_tokens": 41
+        },
+        "wallTimeMs": 11425.244548000017
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa17c-4bf0-73e1-af9b-6d686c60bb48",
         "usage": {
-          "input_tokens": 14151
+          "input_tokens": 651738,
+          "cached_input_tokens": 605440,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3848,
+          "reasoning_output_tokens": 1051
         },
-        "digest": "8ca6bcff96d87cfc2e889e53047ff2d6bc72d9b65a912702d5f83ef88dabf791",
-        "wallTimeMs": 59.17479399999999
+        "wallTimeMs": 186949.76159999997,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ subtract_offset returns the required value (0.619399ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 80.551871\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa17b-e4f4-7942-87f1-815000f3d346",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 142315,
+          "cached_input_tokens": 109568,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 493,
+          "reasoning_output_tokens": 111
         },
-        "digest": "229a1a6d060ba1e97ab03594c802250ad2720181adfdcb69af4d3cf79de5f57b",
-        "wallTimeMs": 0.4720630000000199
+        "wallTimeMs": 14809.44389200001,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ subtract_offset returns the required value (0.672985ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 77.008214\n"
+        }
       }
     },
     {
-      "case": "catalog",
-      "payloadSha256": "d6d4b748081188d29f727142c2ac227fd7d2e41dd0cebbb2c4dc69b7fdf904fd",
+      "case": "double_value",
+      "fixtureSha256": "0b1b24068665c0fc3076ebb4bfa5962a5d8d85ab3386980ba5ad865257cb8ac2",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa17f-26ab-7312-b427-f788cee9f119",
+        "usage": {
+          "input_tokens": 51295,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 182,
+          "reasoning_output_tokens": 0
+        },
+        "wallTimeMs": 11933.114777999988
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa17f-55a6-79d0-a6de-5c48f76d9694",
         "usage": {
-          "input_tokens": 14476
+          "input_tokens": 611380,
+          "cached_input_tokens": 563712,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3362,
+          "reasoning_output_tokens": 821
         },
-        "digest": "46433146e098853fb0c2c1120de92b335b8a63de80d431df32899d7a2e2e6fb7",
-        "wallTimeMs": 64.201325
+        "wallTimeMs": 161896.23959899996,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ double_value returns the required value (0.774239ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 91.611353\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa17f-26ab-7312-b427-f788cee9f119",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 142246,
+          "cached_input_tokens": 109568,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 484,
+          "reasoning_output_tokens": 66
         },
-        "digest": "2c616101f9c5802a956e1d8c4d51785fae2815a17646f6789a0fbc014d5f0df5",
-        "wallTimeMs": 0.5773550000000114
+        "wallTimeMs": 18899.367611999973,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ double_value returns the required value (0.672868ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 91.722875\n"
+        }
       }
     },
     {
-      "case": "cli",
-      "payloadSha256": "958cfbc5796d80bca103685983c598e2b187ccadb5bb38951935f0f9597c8a82",
+      "case": "triple_value",
+      "fixtureSha256": "ad31b960b9d33dd3809d47227cab4d7ec1ededd1265cd74177d7e0f1a423196f",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa182-192d-7501-add5-e27efafa58c2",
+        "usage": {
+          "input_tokens": 51709,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 160,
+          "reasoning_output_tokens": 0
+        },
+        "wallTimeMs": 12450.307677999954
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa182-c529-76a1-bfbf-a58f0984cd48",
         "usage": {
-          "input_tokens": 13889
+          "input_tokens": 233503,
+          "cached_input_tokens": 196864,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1435,
+          "reasoning_output_tokens": 541
         },
-        "digest": "ec48132a6c8fa253d02684c6348776d31d7d3d216c553f9dd5ee6e349b22ec59",
-        "wallTimeMs": 62.242898000000025
+        "wallTimeMs": 46709.298861999996,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ triple_value returns the required value (0.938491ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 92.853913\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa182-192d-7501-add5-e27efafa58c2",
         "usage": {
-          "input_tokens": 9
+          "input_tokens": 197530,
+          "cached_input_tokens": 162304,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 857,
+          "reasoning_output_tokens": 200
         },
-        "digest": "23527941bb2c118078dc4c2d4b3ab716e7ce47fc31a7f131694f5890e41debd0",
-        "wallTimeMs": 0.5355690000000095
+        "wallTimeMs": 31394.826876999927,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ triple_value returns the required value (0.641659ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 89.044171\n"
+        }
       }
     },
     {
-      "case": "config",
-      "payloadSha256": "3bc2565c93283be8d3334c14eb42f2ff6457685d9f96502d080d96f5648666e1",
+      "case": "square_value",
+      "fixtureSha256": "41173733217a4702bea9a334283a6bf4b6a4ac47ba2d6971223dabea6b5113a3",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa183-7c55-7072-a2fb-39ecaa721f4b",
+        "usage": {
+          "input_tokens": 51516,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 137,
+          "reasoning_output_tokens": 0
+        },
+        "wallTimeMs": 8965.202970999992
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa183-9f4c-7011-b3e8-4c2b0e495429",
         "usage": {
-          "input_tokens": 14893
+          "input_tokens": 337893,
+          "cached_input_tokens": 298496,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3017,
+          "reasoning_output_tokens": 744
         },
-        "digest": "b4dccc7d85d38bc8c958e8dc0a3943560f2260603ce729b860630d2643628c77",
-        "wallTimeMs": 65.087716
+        "wallTimeMs": 84738.74739699997,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ square_value returns the required value (0.877588ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 98.890529\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa183-7c55-7072-a2fb-39ecaa721f4b",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 911128,
+          "cached_input_tokens": 848640,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5304,
+          "reasoning_output_tokens": 1086
         },
-        "digest": "f835dac9ebc520e0ab3e968c8d84b5052f3daeca6d4437fbc85ceaae5dd3005f",
-        "wallTimeMs": 0.7191700000000196
+        "wallTimeMs": 175618.360445,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ square_value returns the required value (0.634512ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 88.00775\n"
+        }
       }
     },
     {
-      "case": "doctor",
-      "payloadSha256": "c3dc40b458797f210d27ae5fea08f7d6472ab4afe6966b28c8a18e116b4ea14a",
+      "case": "absolute_value",
+      "fixtureSha256": "a0e7147e3faae1158c0e2edf20e454810cc261c60e85237aaea7be77768f23e2",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa187-997d-7dc3-b525-1bbfcf4c16bd",
+        "usage": {
+          "input_tokens": 51590,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 207,
+          "reasoning_output_tokens": 70
+        },
+        "wallTimeMs": 13620.503233999945
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa189-2308-7de0-a356-74180ee8b774",
         "usage": {
-          "input_tokens": 15213
+          "input_tokens": 310066,
+          "cached_input_tokens": 290304,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3138,
+          "reasoning_output_tokens": 1047
         },
-        "digest": "f23fe5a9224da4d7a515aa92e76d66cd97de83d65b3c9b04876f3a0dcd09cfc1",
-        "wallTimeMs": 58.39611400000001
+        "wallTimeMs": 86745.81618299987,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ absolute_value returns the required value (0.656859ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 92.602569\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa187-997d-7dc3-b525-1bbfcf4c16bd",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 401348,
+          "cached_input_tokens": 359424,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2926,
+          "reasoning_output_tokens": 917
         },
-        "digest": "0836aa75c58c36ab3887a6f0743837ca64c1d02b1839b4895a9db0b040bf5212",
-        "wallTimeMs": 0.5441809999999805
+        "wallTimeMs": 86885.8381680001,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ absolute_value returns the required value (0.775787ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 98.440934\n"
+        }
       }
     },
     {
-      "case": "hooks",
-      "payloadSha256": "05bea6a0c6d8b0f30473ed9c7bb88311b0e79bc89110a29cc941441eccf12cf2",
+      "case": "floor_value",
+      "fixtureSha256": "826156ff407c922732f6f9889da9187519f5d3583d990be64cdef5cc3c7e641f",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa18a-76ac-7703-8a5c-cb4d357c04f7",
+        "usage": {
+          "input_tokens": 51546,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 160,
+          "reasoning_output_tokens": 0
+        },
+        "wallTimeMs": 8991.930052999873
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa18a-99a9-7d62-a916-b627d158bc4b",
         "usage": {
-          "input_tokens": 15290
+          "input_tokens": 991480,
+          "cached_input_tokens": 935936,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 6609,
+          "reasoning_output_tokens": 2372
         },
-        "digest": "a7f6f9677090f3313e7386326bc1d6f928196b8ac2b04ebfdafdc827c45f9a98",
-        "wallTimeMs": 63.38457699999998
+        "wallTimeMs": 297025.8314700001,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ floor_value returns the required value (0.673265ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 93.473641\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa18a-76ac-7703-8a5c-cb4d357c04f7",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 142266,
+          "cached_input_tokens": 109568,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 399,
+          "reasoning_output_tokens": 27
         },
-        "digest": "b6e6f8d59e256a22d863bc51b574214341787bd10113ab3a9860b057b69e1e64",
-        "wallTimeMs": 0.5447350000000597
+        "wallTimeMs": 14866.736339999828,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ floor_value returns the required value (1.440433ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 98.775984\n"
+        }
       }
     },
     {
-      "case": "install",
-      "payloadSha256": "49e3d21aa1c4920f5e383171607cff4b6536d1257d0032e33acd6deabb989eac",
+      "case": "ceil_value",
+      "fixtureSha256": "440eea1d7ebb3e48eabbe172977b66301bca16f645ebb04748bed82822d8a97a",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa18f-5d87-7df2-ac90-24aafa96c811",
+        "usage": {
+          "input_tokens": 51262,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 163,
+          "reasoning_output_tokens": 0
+        },
+        "wallTimeMs": 9428.641171999974
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa18f-bb63-7562-b7df-bbd420f0f624",
         "usage": {
-          "input_tokens": 16101
+          "input_tokens": 101625,
+          "cached_input_tokens": 73984,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 489,
+          "reasoning_output_tokens": 76
         },
-        "digest": "08691a6319cab2e4b8b2112e33b645e578ddabdf6e91b55fa81f3a191da9aba9",
-        "wallTimeMs": 63.10213600000009
+        "wallTimeMs": 21702.530183000024,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ ceil_value returns the required value (1.196225ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 97.127155\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa18f-5d87-7df2-ac90-24aafa96c811",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 142001,
+          "cached_input_tokens": 109568,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 425,
+          "reasoning_output_tokens": 24
         },
-        "digest": "04688fdf797b17c1c4e0e1256d0954c4087af0a5b9477c1f3ee31a80e5115b96",
-        "wallTimeMs": 0.7092720000000554
+        "wallTimeMs": 14423.337917000055,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ ceil_value returns the required value (2.151685ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 104.754771\n"
+        }
       }
     },
     {
-      "case": "router",
-      "payloadSha256": "f2def53f90c11cd84d2f5ad9a31c7793c362b865c3852b6783cc56ed1a919260",
+      "case": "bounded_value",
+      "fixtureSha256": "454502a2e9efd9a6f113087f0ed9df2e003798ee29617ff302851846fe454846",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa190-110a-7ca3-bea7-174b474959c3",
+        "usage": {
+          "input_tokens": 51609,
+          "cached_input_tokens": 25344,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 205,
+          "reasoning_output_tokens": 58
+        },
+        "wallTimeMs": 16518.561651000055
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa190-5155-75a1-b0f2-950f03ec4c0d",
         "usage": {
-          "input_tokens": 16173
+          "input_tokens": 369423,
+          "cached_input_tokens": 328960,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3113,
+          "reasoning_output_tokens": 822
         },
-        "digest": "470a75d56681583ececbfaa8905e4b05a8cdde4d8c1cbaf3f475f6bd3d724b02",
-        "wallTimeMs": 61.419850999999994
+        "wallTimeMs": 107125.59531300003,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ bounded_value returns the required value (1.081903ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 100.821583\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa190-110a-7ca3-bea7-174b474959c3",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 142626,
+          "cached_input_tokens": 109568,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 493,
+          "reasoning_output_tokens": 82
         },
-        "digest": "58fbf130a1daa63c03d52d7c04782a529f132315c20bc29318c2c4763109a5e2",
-        "wallTimeMs": 0.5416269999999486
+        "wallTimeMs": 16556.399575999938,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ bounded_value returns the required value (0.753649ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 106.851579\n"
+        }
       }
     },
     {
-      "case": "wave",
-      "payloadSha256": "bf78b3de04b050be241890874c4e4ca01a475d15c5fca3583d89e6cb88e4db6c",
+      "case": "negate_value",
+      "fixtureSha256": "0db6878880727a2ba67177e9112cbacf9959db0f65d4298f3864319fb2ccaa76",
+      "seed": {
+        "type": "turn.completed",
+        "threadId": "019fa192-3605-72a3-b646-ec3120d50a5c",
+        "usage": {
+          "input_tokens": 51409,
+          "cached_input_tokens": 42496,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 137,
+          "reasoning_output_tokens": 0
+        },
+        "wallTimeMs": 12678.768528999994
+      },
       "fresh": {
         "type": "turn.completed",
+        "threadId": "019fa192-a687-7b60-a1e5-b7a540bf5ccd",
         "usage": {
-          "input_tokens": 15977
+          "input_tokens": 201022,
+          "cached_input_tokens": 166400,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1360,
+          "reasoning_output_tokens": 427
         },
-        "digest": "9b6c74950fea7514d232fce9d12f3046aa569dbf2e2cfa26f5112c5f976d20d2",
-        "wallTimeMs": 63.12340700000004
+        "wallTimeMs": 44070.9056820001,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ negate_value returns the required value (1.4451ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 97.992731\n"
+        }
       },
       "continued": {
         "type": "turn.completed",
+        "threadId": "019fa192-3605-72a3-b646-ec3120d50a5c",
         "usage": {
-          "input_tokens": 10
+          "input_tokens": 142287,
+          "cached_input_tokens": 126720,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 384,
+          "reasoning_output_tokens": 32
         },
-        "digest": "597dd0e373dc3e2cf28ce24cf20e3d0abc53b5e45da5c4817af9a4dcf40f04bd",
-        "wallTimeMs": 0.4851260000000366
+        "wallTimeMs": 15903.79660100001,
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "output": "✔ negate_value returns the required value (0.901653ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 108.42195\n"
+        }
       }
     }
-  ]
+  ],
+  "totalUsage": {
+    "inputTokens": 7539290,
+    "cachedInputTokens": 6548480,
+    "outputTokens": 45372
+  },
+  "cost": {
+    "amountUsd": null,
+    "note": "Codex turn.completed.usage exposes tokens, not billed USD; use the account billing ledger for exact cost."
+  }
 }

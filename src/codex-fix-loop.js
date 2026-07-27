@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
+import { isAbsolute, normalize } from "node:path";
+import { parseAgentProfileToml } from "./codex-release.js";
 
 const LANES = new Set(["spawn_agent", "exec-process"]);
 const BASE_SHA_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
-const CONTEXT_FIELDS = ["cwd", "baseSha", "codexVersion"];
+const CONTEXT_FIELDS = ["cwd", "baseSha", "codexVersion", "roleProfilePath"];
+const PROFILE_FIELDS = ["id", "model", "reasoningEffort", "sandboxMode", "developerInstructions"];
+const PROFILE_FINGERPRINT_RE = /^[0-9a-f]{64}$/i;
 
 function requiredString(value, field) {
   if (typeof value !== "string" || !value.trim()) {
@@ -11,8 +15,45 @@ function requiredString(value, field) {
   return value;
 }
 
+function requiredAbsoluteNormalizedPath(value, field) {
+  const path = requiredString(value, field);
+  if (!isAbsolute(path) || normalize(path) !== path) {
+    throw new Error(`createCodexFixLoopBinding: ${field} must be an absolute normalized path`);
+  }
+  return path;
+}
+
+function validateCodexFixLoopBinding(binding) {
+  if (!binding || !LANES.has(binding.lane)) {
+    throw new Error("planCodexFixContinuation: a retained fix-loop binding is required");
+  }
+  const identityField = binding.lane === "spawn_agent" ? "workerId" : "threadId";
+  const otherIdentityField = binding.lane === "spawn_agent" ? "threadId" : "workerId";
+  requiredString(binding[identityField], identityField);
+  if (binding[otherIdentityField] !== undefined) {
+    throw new Error(`planCodexFixContinuation: ${otherIdentityField} is not valid for ${binding.lane}`);
+  }
+  requiredAbsoluteNormalizedPath(binding.cwd, "cwd");
+  requiredString(binding.baseSha, "baseSha");
+  requiredString(binding.codexVersion, "codexVersion");
+  requiredAbsoluteNormalizedPath(binding.roleProfilePath, "roleProfilePath");
+  if (!BASE_SHA_RE.test(binding.baseSha)) {
+    throw new Error("createCodexFixLoopBinding: baseSha must be an exact 40- or 64-character hex SHA");
+  }
+  if (
+    !binding.roleProfile ||
+    typeof binding.roleProfile !== "object" ||
+    Array.isArray(binding.roleProfile) ||
+    !binding.roleProfile.id?.trim() ||
+    !PROFILE_FINGERPRINT_RE.test(binding.roleProfile.fingerprint ?? "")
+  ) {
+    throw new Error("planCodexFixContinuation: retained roleProfile id and fingerprint are required");
+  }
+  return binding;
+}
+
 export function createCodexFixLoopBinding({
-  lane, workerId, threadId, cwd, baseSha, codexVersion, roleProfile
+  lane, workerId, threadId, cwd, baseSha, codexVersion, roleProfilePath, roleProfile
 } = {}) {
   if (!LANES.has(lane)) {
     throw new Error("createCodexFixLoopBinding: lane must be spawn_agent or exec-process");
@@ -23,15 +64,13 @@ export function createCodexFixLoopBinding({
   const binding = {
     lane,
     ...identity,
-    cwd: requiredString(cwd, "cwd"),
+    cwd: requiredAbsoluteNormalizedPath(cwd, "cwd"),
     baseSha: requiredString(baseSha, "baseSha"),
     codexVersion: requiredString(codexVersion, "codexVersion"),
+    roleProfilePath: requiredAbsoluteNormalizedPath(roleProfilePath, "roleProfilePath"),
     roleProfile: fingerprintCodexRoleProfile(roleProfile)
   };
-  if (!BASE_SHA_RE.test(binding.baseSha)) {
-    throw new Error("createCodexFixLoopBinding: baseSha must be an exact 40- or 64-character hex SHA");
-  }
-  return Object.freeze(binding);
+  return Object.freeze(validateCodexFixLoopBinding(binding));
 }
 
 function canonicalJson(value) {
@@ -46,12 +85,36 @@ export function fingerprintCodexRoleProfile(profile) {
   if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
     throw new Error("fingerprintCodexRoleProfile: resolved role profile object is required");
   }
-  const id = requiredString(profile.id, "roleProfile.id");
-  const resolved = Object.fromEntries(Object.entries(profile).filter(([key]) => key !== "fingerprint"));
+  const resolved = Object.fromEntries(PROFILE_FIELDS.map(field => [
+    field,
+    requiredString(profile[field], `roleProfile.${field}`)
+  ]));
   return Object.freeze({
-    id,
+    id: resolved.id,
     fingerprint: createHash("sha256").update(canonicalJson(resolved)).digest("hex")
   });
+}
+
+function decodeGeneratedTomlString(raw, field) {
+  if (typeof raw !== "string" || !raw.startsWith("\"")) {
+    throw new Error(`resolveCodexRoleProfile: ${field} must be a generated TOML basic string`);
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`resolveCodexRoleProfile: invalid ${field}`);
+  }
+}
+
+export function resolveCodexRoleProfile(text) {
+  const parsed = parseAgentProfileToml(text);
+  return {
+    id: decodeGeneratedTomlString(parsed.name, "name"),
+    model: decodeGeneratedTomlString(parsed.model, "model"),
+    reasoningEffort: decodeGeneratedTomlString(parsed.model_reasoning_effort, "model_reasoning_effort"),
+    sandboxMode: decodeGeneratedTomlString(parsed.sandbox_mode, "sandbox_mode"),
+    developerInstructions: decodeGeneratedTomlString(parsed.developer_instructions, "developer_instructions")
+  };
 }
 
 function normalizeBlockers(blockers, label) {
@@ -80,9 +143,7 @@ function blockerDelta(reviewState) {
 }
 
 export function planCodexFixContinuation({ binding, current, reviewState } = {}) {
-  if (!binding || !LANES.has(binding.lane)) {
-    throw new Error("planCodexFixContinuation: a retained fix-loop binding is required");
-  }
+  validateCodexFixLoopBinding(binding);
   if (!current || typeof current !== "object") {
     throw new Error("planCodexFixContinuation: current context is required");
   }
@@ -137,11 +198,16 @@ export function benchmarkCodexFixLoops(cases = []) {
     return {
       freshInputTokens: entry.fresh.usage?.input_tokens,
       continuedInputTokens: entry.continued.usage?.input_tokens,
+      freshUncachedInputTokens: entry.fresh.usage?.input_tokens - (entry.fresh.usage?.cached_input_tokens ?? 0),
+      continuedUncachedInputTokens: entry.continued.usage?.input_tokens - (entry.continued.usage?.cached_input_tokens ?? 0),
       freshTimeMs: entry.fresh.wallTimeMs,
       continuedTimeMs: entry.continued.wallTimeMs
     };
   });
-  const fields = ["freshInputTokens", "continuedInputTokens", "freshTimeMs", "continuedTimeMs"];
+  const fields = [
+    "freshInputTokens", "continuedInputTokens", "freshUncachedInputTokens",
+    "continuedUncachedInputTokens", "freshTimeMs", "continuedTimeMs"
+  ];
   for (const [index, entry] of measured.entries()) {
     for (const field of fields) {
       if (!Number.isFinite(entry[field]) || entry[field] < 0) {
@@ -158,6 +224,8 @@ export function benchmarkCodexFixLoops(cases = []) {
     medianFreshInputTokens,
     medianContinuedInputTokens,
     medianInputTokenReductionPct: reduction(medianFreshInputTokens, medianContinuedInputTokens),
+    medianFreshUncachedInputTokens: median(measured.map(entry => entry.freshUncachedInputTokens)),
+    medianContinuedUncachedInputTokens: median(measured.map(entry => entry.continuedUncachedInputTokens)),
     medianFreshTimeMs,
     medianContinuedTimeMs,
     medianTimeToFixReductionPct: reduction(medianFreshTimeMs, medianContinuedTimeMs)

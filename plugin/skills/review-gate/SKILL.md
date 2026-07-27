@@ -49,9 +49,7 @@ CLI call below.
 5. Write verdicts to `.muster/verdicts.json`, per `plugin/skills/review-gate/verdict.schema.json`'s
    emission contract (native constrained output here reaches only headless surfaces, not this
    call); run `$MUSTER_CLI tally .muster/verdicts.json`.
-6. If `blocked`: resume the exact original implementer with only the new blocker notes, then re-review.
-   On Codex, use the context-preserving fix-loop protocol in `codex/skill-adapter.md`; never select a
-   worker by recency or fresh re-dispatch when the retained identity is available. Cap at
+6. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review. Cap at
    **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3). If still blocked after the cap, ESCALATE to the human with the unresolved blockers.
 7. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking).
 

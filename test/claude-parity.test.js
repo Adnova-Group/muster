@@ -905,5 +905,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // scripts/check-codex.mjs (clean). docs/binding-interface.md's grep-audit
   // counts re-scanned live -- unchanged (test/docs-binding-interface.test.js
   // green without a re-derivation). Deliberate surface change, not drift.
-  assert.equal(hash.digest("hex"), "a613f5c5729c248f30d87c052213002d9ed32c369802a2f88ca80f0855180518");
+  // 2026-07-27 re-pin (sprint-parallel-5-10): file COUNT unchanged (139) -- only
+  // plugin/commands/go-backlog.md's content changed. The wave-mode
+  // MUSTER_SPRINT_PARALLEL cap prose moved default 3 -> 5, hard ceiling 8 -> 10
+  // (values above 10 clamp to 10; 0 invalid falls back to the default), a
+  // muster-wide prose-discipline change (the cap is read by go-backlog's
+  // orchestration protocol, not library code), pinned consistently across
+  // README/docs/website by test/sprint-parallel-cap.test.js. Deliberate surface
+  // change, not drift.
+  assert.equal(hash.digest("hex"), "0b417e1b1ba5b1c91bd5f81d76a4d7769f6a57f9b0efb23846b570c16f80b195");
 });

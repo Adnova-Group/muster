@@ -77,7 +77,7 @@ The batch counterpart to Go. It runs the full Go lifecycle sequentially over eve
 /muster:go-backlog issues:bug
 ```
 
-A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches go-backlog into **wave mode**: independent items in a wave dispatch as parallel worktree-isolated runners, capped by `MUSTER_SPRINT_PARALLEL` (hard ceiling 8), while items disposed to merge locally or push serialize at the wave barrier. Go-backlog also re-resolves after each item: as each disposition executes, it re-reads the backlog file, so items added mid-batch join the run instead of waiting for the next invocation.
+A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches go-backlog into **wave mode**: independent items in a wave dispatch as parallel worktree-isolated runners, capped by `MUSTER_SPRINT_PARALLEL` (hard ceiling 10), while items disposed to merge locally or push serialize at the wave barrier. Go-backlog also re-resolves after each item: as each disposition executes, it re-reads the backlog file, so items added mid-batch join the run instead of waiting for the next invocation.
 
 `/muster:sprint` still works: a one-line heads-up, then identical behavior under the new name. Deprecated as of 2026-07-17, retiring in muster 0.7.0.
 

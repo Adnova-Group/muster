@@ -1,4 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -80,6 +81,73 @@ export function sumUsage(records) {
   };
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Thinking-effort receipts: the EFFECTIVE effort each LLM step ran at.
+//
+// PROBE EVIDENCE (2026-07-27, kimi v0.29.1, two tiny `kimi -p -m kimi-code/k3`
+// runs with KIMI_MODEL_THINKING_EFFORT=low|high):
+//   - Every agents/<agentId>/wire.jsonl llm.request record carries a top-level
+//     "thinkingEffort" field with the EFFECTIVE effort of that step -- the
+//     low run emitted exactly "low", the high run exactly "high" (lowercase;
+//     kimi-for-coding, which has no effort knob, emits "on").
+//   - The profile.bind record ALSO carries a "thinkingEffort" -- but that is
+//     the config DEFAULT ("high" in both runs, even the low one), never the
+//     effective effort. It is deliberately NOT read here.
+//   - The env override is conditional (it bypasses support_efforts), so the
+//     receipts are the only trustworthy proof of what a step actually ran.
+// ───────────────────────────────────────────────────────────────────────────
+
+// Parse one wire.jsonl's text into the thinkingEffort of each llm.request
+// record, in file order: one entry per LLM step -- the emitted string, or
+// null when the field is absent (an unverifiable step, NOT a pass). Only
+// llm.request records are read; profile.bind carries the config default, not
+// the effective effort (probe evidence above). Blank lines are skipped; a
+// malformed JSON line throws with its line number, mirroring parseWireUsage.
+export function parseWireThinkingEfforts(wireText) {
+  if (typeof wireText !== "string") throw new Error("parseWireThinkingEfforts: wireText must be a string");
+  const efforts = [];
+  const lines = wireText.split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (!line.trim()) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch (err) {
+      throw new Error(`parseWireThinkingEfforts: line ${index + 1} is not valid JSON: ${err.message}`);
+    }
+    if (obj?.type !== "llm.request") continue;
+    efforts.push(typeof obj.thinkingEffort === "string" && obj.thinkingEffort ? obj.thinkingEffort : null);
+  }
+  return efforts;
+}
+
+// Read every agents/<id>/wire.jsonl under a session dir into per-agent effort
+// lists: { agentId: [efforts...] }, agent dirs sorted. An agent dir without a
+// wire file (or with no llm.request records) contributes an empty list.
+export async function readSessionThinkingEfforts(sessionDir) {
+  if (typeof sessionDir !== "string" || !sessionDir) throw new Error("readSessionThinkingEfforts: sessionDir is required");
+  let agentDirs = [];
+  try {
+    agentDirs = (await readdir(path.join(sessionDir, "agents"), { withFileTypes: true }))
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort();
+  } catch (err) {
+    throw new Error(`readSessionThinkingEfforts: cannot read agents tree under ${sessionDir}: ${err.message}`);
+  }
+  const byAgent = {};
+  for (const agentId of agentDirs) {
+    let wireText = "";
+    try {
+      wireText = await readFile(path.join(sessionDir, "agents", agentId, "wire.jsonl"), "utf8");
+    } catch {
+      // an agent dir without a wire file contributed no steps
+    }
+    byAgent[agentId] = parseWireThinkingEfforts(wireText);
+  }
+  return byAgent;
+}
+
 // Attribute a whole session's token consumption per agent. Every
 // agents/<id>/wire.jsonl under the session dir is summed; state.json (when
 // present and parseable) supplies type + parentAgentId. `dispatches` is the
@@ -138,4 +206,191 @@ export async function readSessionUsage(sessionDir) {
     dispatches,
     total: { ...total, input, total: input + total.output, records: recordCount, models: [...models] }
   };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Session attribution: which on-disk session belongs to a -p dispatch leg.
+//
+// PROBE EVIDENCE (2026-07-27, kimi v0.29.1):
+//   - `kimi -p --output-format stream-json` stdout ends with
+//       {"role":"meta","type":"session.resume_hint","session_id":"session_<uuid>",
+//        "command":"kimi -r session_<uuid>","content":"To resume this session: ..."}
+//     -- the session id, captured at dispatch time (PREFERRED path).
+//   - ~/.kimi-code/session_index.jsonl holds one
+//       {"sessionId":"session_<uuid>","sessionDir":"<abs>","workDir":"<abs>"}
+//     per line, NO timestamps and NO ordering guarantee -- recency comes ONLY
+//     from each sessionDir's state.json `updatedAt` (ISO string).
+//
+// Ambiguity is a VALUE, never a throw: resolution returns
+//   { resolved: true, sessionId, sessionDir, source }            or
+//   { resolved: false, reason, candidates }                      (UNKNOWN)
+// with reason one of "no-sessions-for-cwd" | "ambiguous-tie" |
+// "missing-updated-at". Only genuinely broken inputs throw: unreadable or
+// malformed index, and a captured id whose index entry/session dir is gone.
+// ───────────────────────────────────────────────────────────────────────────
+
+export const DEFAULT_SESSION_INDEX = path.join(os.homedir(), ".kimi-code", "session_index.jsonl");
+
+// Reasons a fallback resolution can come back UNKNOWN (resolution.reason).
+export const UNKNOWN_REASONS = Object.freeze(["no-sessions-for-cwd", "ambiguous-tie", "missing-updated-at"]);
+
+// Extract the session id from a -p run's stream-json stdout. Returns the id
+// from the first session.resume_hint meta record, or null when stdout has no
+// hint (older versions, crashed run). Non-JSON lines are skipped -- this is a
+// best-effort capture ahead of the fallback resolver, not a validator.
+export function captureSessionId(stdoutText) {
+  if (typeof stdoutText !== "string") throw new Error("captureSessionId: stdoutText must be a string");
+  for (const line of stdoutText.split("\n")) {
+    if (!line.trim()) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (obj?.role === "meta" && obj?.type === "session.resume_hint" && typeof obj.session_id === "string" && obj.session_id) {
+      return obj.session_id;
+    }
+  }
+  return null;
+}
+
+// Read + parse the session index. Malformed lines are broken input (the index
+// is machine-written; a torn line means something is wrong) and throw with
+// their line number, mirroring parseWireUsage.
+async function readSessionIndex(indexPath) {
+  let text;
+  try {
+    text = await readFile(indexPath, "utf8");
+  } catch (err) {
+    throw new Error(`resolveSessionForCwd: cannot read session index at ${indexPath}: ${err.message}`);
+  }
+  const entries = [];
+  const lines = text.split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (!line.trim()) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch (err) {
+      throw new Error(`resolveSessionForCwd: session index line ${index + 1} is not valid JSON: ${err.message}`);
+    }
+    if (typeof obj?.sessionId === "string" && typeof obj?.sessionDir === "string") entries.push(obj);
+  }
+  return entries;
+}
+
+// state.json's updatedAt as epoch ms; NaN when absent or unparseable.
+async function readUpdatedAt(sessionDir) {
+  try {
+    const state = JSON.parse(await readFile(path.join(sessionDir, "state.json"), "utf8"));
+    return Date.parse(state?.updatedAt);
+  } catch {
+    return NaN;
+  }
+}
+
+// Resolve the on-disk session for one -p leg.
+//   capturedSessionId: from captureSessionId (PREFERRED) -- authoritative, no
+//     cwd filtering; throws when the id is absent from the index or its
+//     sessionDir is unreadable (genuinely broken input).
+//   fallback: index entries filtered to workDir === cwd. One candidate
+//     resolves ("index-unique"); several resolve to the distinct newest by
+//     state.json updatedAt ("index-newest", NEVER index line order); a tie or
+//     any missing updatedAt across candidates is UNKNOWN-with-reason.
+export async function resolveSessionForCwd({ indexPath = DEFAULT_SESSION_INDEX, cwd, capturedSessionId = null } = {}) {
+  if (typeof cwd !== "string" || !cwd) throw new Error("resolveSessionForCwd: cwd is required");
+  const entries = await readSessionIndex(indexPath);
+  if (capturedSessionId) {
+    const entry = entries.find(e => e.sessionId === capturedSessionId);
+    if (!entry) throw new Error(`resolveSessionForCwd: captured session ${capturedSessionId} not found in session index at ${indexPath}`);
+    try {
+      await readdir(entry.sessionDir);
+    } catch (err) {
+      throw new Error(`resolveSessionForCwd: captured session ${capturedSessionId} has no readable session dir ${entry.sessionDir}: ${err.message}`);
+    }
+    return { resolved: true, sessionId: entry.sessionId, sessionDir: entry.sessionDir, source: "captured" };
+  }
+  const candidates = entries.filter(e => e.workDir === cwd);
+  if (candidates.length === 0) return { resolved: false, reason: "no-sessions-for-cwd", candidates: [] };
+  if (candidates.length === 1) {
+    return { resolved: true, sessionId: candidates[0].sessionId, sessionDir: candidates[0].sessionDir, source: "index-unique" };
+  }
+  const timed = [];
+  for (const entry of candidates) timed.push({ entry, updatedAt: await readUpdatedAt(entry.sessionDir) });
+  if (timed.some(t => !Number.isFinite(t.updatedAt))) {
+    return { resolved: false, reason: "missing-updated-at", candidates: candidates.map(e => e.sessionId) };
+  }
+  const newest = Math.max(...timed.map(t => t.updatedAt));
+  const winners = timed.filter(t => t.updatedAt === newest);
+  if (winners.length > 1) {
+    return { resolved: false, reason: "ambiguous-tie", candidates: winners.map(t => t.entry.sessionId) };
+  }
+  return { resolved: true, sessionId: winners[0].entry.sessionId, sessionDir: winners[0].entry.sessionDir, source: "index-newest" };
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Batch accounting summary: one compact line per backlog item, suitable for
+// transcription into STATE before worktree teardown.
+// ───────────────────────────────────────────────────────────────────────────
+
+// Format one item's session usage (a readSessionUsage result) as a single
+// compact line: session totals + per-dispatch token breakdown. `source` is the
+// resolution source that produced the session (captured | index-unique |
+// index-newest) -- surfaced on the line so a FALLBACK attribution reads as a
+// fallback, never as confidently as a captured one.
+export function formatUsageLine(itemId, sessionUsage, source = null) {
+  if (typeof itemId !== "string" || !itemId) throw new Error("formatUsageLine: itemId is required");
+  if (!sessionUsage?.total) throw new Error("formatUsageLine: sessionUsage (a readSessionUsage result) is required");
+  const t = sessionUsage.total;
+  const dispatches = Object.entries(sessionUsage.dispatches ?? {})
+    .map(([agentId, entry]) => `${agentId}=${entry.total}`)
+    .sort()
+    .join(" ");
+  const attribution = source ? ` source=${source}` : "";
+  return `${itemId}: session=${path.basename(sessionUsage.sessionDir)}${attribution} total=${t.total} in=${t.input} out=${t.output} cache-read=${t.inputCacheRead} cache-create=${t.inputCacheCreation} records=${t.records} dispatches: ${dispatches || "none"}`;
+}
+
+// Run readSessionUsage per resolved session and return one line per item, in
+// input order. `items` is [{ itemId, resolution }] or [{ itemId, resolutions }]
+// -- `resolutions` (plural) carries every leg of a retried/fix-looped item (one
+// resolveSessionForCwd result per leg) and the line SUMS across legs, labeled
+// per-leg with each leg's own resolution source, so a fallback attribution on
+// one leg is visible as such. A single UNKNOWN resolution formats as
+// "<itemId>: UNKNOWN (<reason>)"; in a multi-leg line an UNKNOWN leg is a
+// labeled gap excluded from the sum -- a line, never a throw.
+export async function summarizeItemReceipts(items) {
+  if (!Array.isArray(items)) throw new Error("summarizeItemReceipts: items must be an array");
+  const lines = [];
+  for (const item of items) {
+    const { itemId } = item;
+    const legs = item.resolutions ?? [item.resolution];
+    if (legs.length === 1) {
+      const [resolution] = legs;
+      if (!resolution?.resolved) {
+        lines.push(`${itemId}: UNKNOWN (${resolution?.reason ?? "no-resolution"})`);
+        continue;
+      }
+      lines.push(formatUsageLine(itemId, await readSessionUsage(resolution.sessionDir), resolution.source));
+      continue;
+    }
+    // Multi-leg item: sum every resolved leg, label each leg with its source.
+    const totals = Object.fromEntries(KIMI_USAGE_FIELDS.map(field => [field, 0]));
+    let recordCount = 0;
+    const labels = [];
+    for (const [index, resolution] of legs.entries()) {
+      const leg = `leg-${index + 1}`;
+      if (!resolution?.resolved) {
+        labels.push(`${leg}=UNKNOWN(${resolution?.reason ?? "no-resolution"})`);
+        continue;
+      }
+      const usage = await readSessionUsage(resolution.sessionDir);
+      for (const field of KIMI_USAGE_FIELDS) totals[field] += usage.total[field];
+      recordCount += usage.total.records;
+      labels.push(`${leg}[session=${path.basename(resolution.sessionDir)} source=${resolution.source ?? "unknown"} total=${usage.total.total}]`);
+    }
+    const input = totals.inputOther + totals.inputCacheRead + totals.inputCacheCreation;
+    lines.push(`${itemId}: legs=${legs.length} total=${input + totals.output} in=${input} out=${totals.output} cache-read=${totals.inputCacheRead} cache-create=${totals.inputCacheCreation} records=${recordCount} legs: ${labels.join(" ")}`);
+  }
+  return lines;
 }

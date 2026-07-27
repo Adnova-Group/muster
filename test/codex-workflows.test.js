@@ -202,7 +202,7 @@ test("Codex exposes a bounded public skill surface while packaging internal work
   assert.equal(publicSkills.length, CODEX_COUNTS.publicSkills);
   assert.deepEqual(publicSkills, [
     "autopilot", "muster", "muster-audit", "muster-capture", "muster-diagnose", "muster-go",
-    "muster-go-backlog", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
+    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
   ]);
 
   const internalRoot = join(selectedPluginRoot, "internal-skills");
@@ -219,6 +219,21 @@ test("Codex exposes a bounded public skill surface while packaging internal work
   assert.match(adapter, /source === "builtin"/);
   assert.match(adapter, /source === "installed"/);
   assert.doesNotMatch(adapter, /read `\$\{PLUGIN_ROOT\}\/internal-skills\/\$\{chosen\.id\}/);
+});
+
+test("generated Codex muster-init delegates to the guarded authoritative workflow", async () => {
+  const skill = await readFile(join(selectedPluginRoot, "skills", "muster-init", "SKILL.md"), "utf8");
+  const command = await readFile(join(selectedPluginRoot, "commands", "init.md"), "utf8");
+  const router = await readFile(join(selectedPluginRoot, "skills", "muster", "SKILL.md"), "utf8");
+
+  assert.match(skill, /^name: muster-init$/m);
+  assert.match(skill, /commands\/init\.md/);
+  assert.match(router, /\$muster-init/);
+  assert.match(command, /Usage: \$muster-init \[dir\]/);
+  assert.match(command, /--to completed --evidence artifact-delta/);
+  assert.match(command, /nativeInit\.state: "completed"/);
+  assert.match(command, /never as native\s+initialization completed/);
+  assert.doesNotMatch(command, /\/muster:init/);
 });
 
 test("all ported skills declare and load the Codex harness binding", async () => {

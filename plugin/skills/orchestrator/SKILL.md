@@ -64,11 +64,15 @@ doing the work.
         generic subagent with the provider's brief injected -- the model override still applies, note
         the fallback in STATE. Else (skill/mcp/inline) -> dispatch a generic subagent with the resolved
         provider injected into the BRIEF.
-      - **Model (authoritative):** always pass the crew member's `model` as the Agent tool's `model`
-        override (written by the router from `capabilities` output). Fable degrades to opus at the
-        emission layer by default (`modelForRole` in `src/model.js`); an opted-in (`MUSTER_ENABLE_FABLE=1`)
-        dispatch that's still rejected retries once on opus and records the degradation -- never fail
-        the task over a model tier, never drop the override.
+      - **Model (authoritative):** the crew member's `model` is a CONCEPTUAL tier (scout|core|prime|
+        apex, or a neutral `{tier, effort?}` profile; legacy haiku|sonnet|opus|fable normalize) --
+        NEVER pass it raw. Dispatch on the harness-concrete value `capabilities` already resolved:
+        on Claude Code, `roles[<role>].claudeModel` is the Agent tool's `model` override
+        (`src/claude.js` adapter output); on Codex/Kimi, `codexModel`/`kimiModel` carry the
+        role profile/lane the same way. Apex degrades to prime at the emission layer
+        by default (`modelForRole` in `src/model.js`); an opted-in (`MUSTER_ENABLE_APEX=1`, legacy
+        `MUSTER_ENABLE_FABLE`) dispatch that's still rejected retries once on prime's concrete model
+        and records the degradation -- never fail the task over a model tier, never drop the override.
       - **Subagent failure:** never a silent stop -- re-dispatch ONCE with the error appended as
         context (`dispatchRetryState`, `src/loop.js`, max 2 attempts). **On Kimi the re-dispatch is
         a native RESUME, never a fresh spawn** -- the Agent tool's `resume` for a per-agent
@@ -271,6 +275,30 @@ the flag is also what selects the v2 engine under `kimi -p`. The interactive TUI
 `model_preference` entirely, so lanes bind under a muster-launched `kimi -p`, never in the
 TUI (docs/research/kimi-code-cli.md sec 11.8). `muster doctor`'s `kimi-lane-binding` check
 reports the active binding.
+
+**Attended sessions dispatch lane-sensitive legs as headless `kimi -p` processes.** The
+AgentSwarm/agent-calls shapes above are the UNATTENDED in-session path -- lanes bind there
+only because `kimiGoalInvocation` (go.md step 6) already set the env pair for the whole run
+loop. An ATTENDED/interactive session (a human driving this skill in the TUI) has no such
+bind, and the TUI ignores `model_preference` entirely, so an in-session `Agent` call there
+can never engage a lane. Lane-sensitive legs in an attended session therefore dispatch via
+`kimiProcessDispatch({ brief, agentFile, cwd, lane })` (`src/kimi-dispatch.js`) -- one
+headless `kimi -p` process per leg, spawned straight from the descriptor's `{ argv, env,
+cwd, lane }`: `argv` is `["-p", brief, "--agent-file", <absolute agent file>,
+"--output-format", "stream-json", "-m", KIMI_LANES[lane]]`, and `env` is the shared
+`kimiLaneEnv()` OVERRIDE pair, carried for the v2 engine flag `--agent-file` needs (its
+`KIMI_SECONDARY_MODEL` half also binds lanes for any subagents the leg itself spawns) --
+merge it over the ambient process env at spawn (`{ ...process.env, ...d.env }`), never
+pass it as the whole env (a wholesale replacement loses HOME/PATH and the child breaks). `-m` is ALWAYS
+emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
+SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
+`-m` and omitting it silently falls to config `default_model`. The leg's receipt is the
+stream-json result on stdout plus the process exit code, with per-leg token accounting from
+`readSessionUsage` (`src/kimi-receipts.js`) over the fresh session dir the process writes
+(docs/research/kimi-code-cli.md sec 8). Reserve the attended session's native `Agent` tool
+for legs that genuinely need the parent's live context; the pre-validation, resume-retry,
+and background rules below keep governing the unattended in-session path, which a process
+lane never replaces mid-loop.
 
 **Pre-validate the four swarm rejection rules BEFORE dispatch -- never pay a whole-wave
 round trip to learn them.** Kimi rejects a malformed swarm before any subagent starts, so

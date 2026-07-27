@@ -1,0 +1,245 @@
+{
+  "harness": "eval/kimi-reviewer-tier-probe.mjs",
+  "protocolVersion": 2,
+  "probeMode": "effort",
+  "generatedAt": "2026-07-27T09:51:22.015Z",
+  "caveat": "n=1 per cell: each probe x lane cell ran exactly once (plus at most one retry on failure). No statistical power -- caught/missed and token deltas are directional signals for the orchestrator's human-judgment step, not measurements of a distribution.",
+  "rubric": {
+    "scoring": "human-judgment",
+    "note": "caught/missed is HUMAN JUDGMENT applied by the orchestrator against each cell's verbatim verdictText -- this harness deliberately does NOT keyword-score.",
+    "knownBlockers": [
+      "env merge semantics unstated: kimiLaneEnv() returns exactly two keys, and prose instructing spawn straight from the descriptor env replaces the child environment wholesale, losing HOME/PATH"
+    ],
+    "expected": {
+      "review-gate-diff": "FAIL with a BLOCKER finding matching the pinned known-blocker list",
+      "spec-gate-manifest": "FAIL with a finding naming the misattribution: model_preference applies only to spawned subagents; the -p main agent's model comes only from -m"
+    }
+  },
+  "constants": {
+    "probe1Commit": "9027136",
+    "probe2Manifest": {
+      "schema": "muster-crew-manifest/v1",
+      "item": "synthetic-reviewer-tier-probe",
+      "outcome": "Dispatch muster-reviewer as a headless kimi -p --agent-file leg: the stamped model_preference on the --agent-file agent engages the -p process's own model lanes, so the dispatch needs no -m flag.",
+      "crew": [
+        {
+          "role": "reviewer",
+          "agent": "muster-reviewer",
+          "dispatch": "kimi -p --agent-file muster-reviewer.md"
+        }
+      ],
+      "waves": [
+        [
+          "reviewer"
+        ]
+      ]
+    },
+    "probeMaterialFiles": {
+      "review-gate-diff": "probe.patch",
+      "spec-gate-manifest": "probe-manifest.json"
+    },
+    "agentFile": "muster-reviewer.md",
+    "lanes": [
+      "primary",
+      "secondary"
+    ],
+    "efforts": [
+      "low",
+      "high"
+    ],
+    "effortEnvVar": "KIMI_MODEL_THINKING_EFFORT"
+  },
+  "cells": [
+    {
+      "probe": "review-gate-diff",
+      "gate": "review-gate",
+      "lane": "primary",
+      "effort": "low",
+      "effortValid": true,
+      "observedEfforts": [
+        "low",
+        "low"
+      ],
+      "exitCode": 0,
+      "verdictText": "PASS\n\nMINOR test/claude-parity.test.js — the new pin hash `c7bcdb10…` cannot be verified from the patch alone (requires hashing the full orchestration surface); the re-pin comment is internally consistent (count 139 unchanged, only SKILL.md content changed) and claims live re-verification via build-codex.mjs/check-codex.mjs.\nMINOR test/kimi-dispatch.test.js — the prose-wiring test asserts wording, not behavior; it will pass even if `src/kimi-dispatch.js` diverges from the documented `kimiProcessDispatch({ brief, agentFile, cwd, lane })` shape. Acceptable for a prose-guard test, but it pins text, not semantics.\n\nChecked: every assertion regex in the new test matches the added SKILL.md paragraph verbatim (including the `\\s*` cross-line matches for `{ argv, env, cwd, lane }`, `-m is ALWAYS emitted`, and `SPAWNED SUBAGENTS`); the section-extraction regex terminates correctly at the next heading; the attended/unattended rationale, always-emit-`-m` rule, and receipt path (stream-json + exit code + readSessionUsage) are all stated and all asserted. No correctness defects found in the diff.\n\nVERDICT: PASS",
+      "sessionId": "session_2d358130-3d89-426b-af45-40235fb7574e",
+      "tokens": {
+        "inputOther": 5759,
+        "output": 1152,
+        "inputCacheRead": 5632,
+        "inputCacheCreation": 0,
+        "input": 11391,
+        "total": 12543,
+        "records": 2,
+        "models": [
+          "kimi-code/k3"
+        ]
+      },
+      "retried": false,
+      "attempts": 1,
+      "quarantineDir": "/tmp/kimi-tier-probe-review-gate-diff-zEvi3b",
+      "materialFile": "probe.patch",
+      "contaminated": false,
+      "contaminationIndicators": [],
+      "stdoutFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-effort-2026-07-27T09-47-01-703Z.stdout/review-gate-diff.primary.low.attempt-1.stdout.jsonl"
+    },
+    {
+      "probe": "review-gate-diff",
+      "gate": "review-gate",
+      "lane": "primary",
+      "effort": "high",
+      "effortValid": true,
+      "observedEfforts": [
+        "high",
+        "high"
+      ],
+      "exitCode": 0,
+      "verdictText": "PASS\n\n- MINOR test/kimi-dispatch.test.js: the appended prose-wiring test uses `readFile` but the diff adds no import; if the file does not already import `readFile` from `node:fs/promises`, the new test throws ReferenceError. Not verifiable from the quarantined diff — confirm the import exists.\n- MINOR test/claude-parity.test.js: the new pinned hash `c7bcdb10…` and the comment's claims (file count 139 unchanged, paragraph inside the build-codex.mjs `## Wave dispatch` → `## Scope fences` replacement span, zero `kimiProcessDispatch` occurrences in the generated Codex skill, clean `build-codex.mjs`/`check-codex.mjs` run) cannot be independently re-verified from the patch alone; a wrong re-pin would fail this test on first run. Run the parity test before merging.\n- MINOR plugin/skills/orchestrator/SKILL.md: the diff hunk does not show the enclosing `### Kimi-native dispatch` heading, so the new test's section-scoped regex (`/### Kimi-native dispatch…/`) matching the inserted paragraph is assumed, not proven; if the paragraph actually sits in a different subsection, the new test fails. Context lines (lane-binding/v2-engine prose) strongly suggest it is inside the right subsection.\n\nCross-checks performed within the diff itself: every `assert.match` regex in the new test was verified against the added SKILL.md paragraph text — all 16 assertions match, including the line-break-sensitive ones covered by `\\s*` (`{ argv, env,\\ncwd, lane }`, `` `-m` is ALWAYS\\nemitted ``, `SPAWNED\\nSUBAGENTS`). The parity re-pin updates only the hash and comment, consistent with a content-only change to one file. No correctness defects found in the diff material.",
+      "sessionId": "session_ae9aa466-dc69-417c-8dbb-32310b150567",
+      "tokens": {
+        "inputOther": 5760,
+        "output": 2445,
+        "inputCacheRead": 5632,
+        "inputCacheCreation": 0,
+        "input": 11392,
+        "total": 13837,
+        "records": 2,
+        "models": [
+          "kimi-code/k3"
+        ]
+      },
+      "retried": false,
+      "attempts": 1,
+      "quarantineDir": "/tmp/kimi-tier-probe-review-gate-diff-qtqmNQ",
+      "materialFile": "probe.patch",
+      "contaminated": false,
+      "contaminationIndicators": [],
+      "stdoutFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-effort-2026-07-27T09-47-01-703Z.stdout/review-gate-diff.primary.high.attempt-1.stdout.jsonl"
+    },
+    {
+      "probe": "spec-gate-manifest",
+      "gate": "spec-gate",
+      "lane": "primary",
+      "effort": "low",
+      "effortValid": true,
+      "observedEfforts": [
+        "low",
+        "low"
+      ],
+      "exitCode": 0,
+      "verdictText": "FAIL\n\nBLOCKER: outcome claim \"stamped model_preference on the --agent-file agent engages the -p process's own model lanes, so the dispatch needs no -m flag\" — misattributed mechanism: a model_preference stamped inside an agent file is advisory frontmatter for the agent definition, not a selector for the CLI process's model lane; a headless `-p` invocation without an explicit model flag falls back to the CLI's configured/default model, so the run silently executes on the wrong lane. Fix: pass the model explicitly on the dispatch command instead of relying on the agent file.\n\nBLOCKER: dispatch \"kimi -p --agent-file muster-reviewer.md\" uses a bare relative path with no path contract — nothing in the manifest guarantees the working directory the leg launches in, so a lazy harness resolving from the run root vs. the agent directory breaks the dispatch. Fix: anchor the path or state the cwd.\n\nBLOCKER: no output/verdict contract — the manifest defines no capture, parse rule, or success criterion for the reviewer's stdout, so a lazy harness has no defined way to read PASS/CHANGES_REQUESTED and the run result is undefined even if the leg succeeds.\n\nMINOR: \"model_preference\" is asserted to exist on the agent file but the manifest neither states its value nor ships the file, making the central claim of the outcome unverifiable from the spec itself.\n\nMINOR: schema \"muster-crew-manifest/v1\" is asserted with no validation reference; a lazy reader cannot distinguish a supported field set from tolerated extras.\n\nMINOR: single-role single-wave crew is fine structurally, but there is no failure/timeout policy for the leg, so a hanging headless process has no specified termination behavior.",
+      "sessionId": "session_a6cb30cd-fdd0-4290-bc27-75497ea81f1a",
+      "tokens": {
+        "inputOther": 3571,
+        "output": 655,
+        "inputCacheRead": 5632,
+        "inputCacheCreation": 0,
+        "input": 9203,
+        "total": 9858,
+        "records": 2,
+        "models": [
+          "kimi-code/k3"
+        ]
+      },
+      "retried": false,
+      "attempts": 1,
+      "quarantineDir": "/tmp/kimi-tier-probe-spec-gate-manifest-atjLng",
+      "materialFile": "probe-manifest.json",
+      "contaminated": false,
+      "contaminationIndicators": [],
+      "stdoutFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-effort-2026-07-27T09-47-01-703Z.stdout/spec-gate-manifest.primary.low.attempt-1.stdout.jsonl"
+    },
+    {
+      "probe": "spec-gate-manifest",
+      "gate": "spec-gate",
+      "lane": "primary",
+      "effort": "high",
+      "effortValid": true,
+      "observedEfforts": [
+        "high",
+        "high"
+      ],
+      "exitCode": 0,
+      "verdictText": "FAIL\n\n- BLOCKER — manifest claims the agent file's stamped `model_preference` \"engages the -p process's own model lanes\" so no `-m` flag is needed: in headless `kimi -p` mode the session model is selected by CLI config / the `-m/--model` flag, and agent-file frontmatter does not re-lane the running process; the correct mechanism is to pass `-m <model>` explicitly (or set the model env var). As written, the leg silently runs on the default lane and the \"no -m flag\" claim is false.\n- BLOCKER — attribution gap: the manifest specifies no verification step (no capture of the resolved model, no output check) that could distinguish \"preference honored\" from \"default lane silently used,\" so even if the run \"succeeds\" the probe cannot prove the mechanism it claims to be testing; a probe that cannot falsify its own hypothesis is broken as a spec.\n- MINOR — `--agent-file muster-reviewer.md` is a bare relative path with no pinned location or existence check; a lazy invocation from any other working directory fails to load the agent file, and the failure mode (missing agent file vs. model misselection) will be conflated with the probe's actual target.\n- MINOR — the field name is asserted as `model_preference` without stating the agent-file schema it belongs to; a lazy reading could stamp `model` or `model_preference` under the wrong frontmatter key and conclude the mechanism \"doesn't work\" (or \"works\") for the wrong reason.\n- MINOR — outcome wording \"engages the -p process's own model lanes\" is unfalsifiable jargon: it never states the observable success criterion (e.g., resolved model name in run metadata), leaving a malicious reviewer free to declare any completed run a pass.",
+      "sessionId": "session_9119136a-452c-4fe5-b819-966790bde7a2",
+      "tokens": {
+        "inputOther": 3572,
+        "output": 1094,
+        "inputCacheRead": 5632,
+        "inputCacheCreation": 0,
+        "input": 9204,
+        "total": 10298,
+        "records": 2,
+        "models": [
+          "kimi-code/k3"
+        ]
+      },
+      "retried": false,
+      "attempts": 1,
+      "quarantineDir": "/tmp/kimi-tier-probe-spec-gate-manifest-4Vr8gm",
+      "materialFile": "probe-manifest.json",
+      "contaminated": false,
+      "contaminationIndicators": [],
+      "stdoutFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-effort-2026-07-27T09-47-01-703Z.stdout/spec-gate-manifest.primary.high.attempt-1.stdout.jsonl"
+    }
+  ],
+  "costComparison": {
+    "rule": "retried cells, effort-invalid cells, and cells without token attribution are EXCLUDED from per-lane token sums; their verdicts remain in cells[] for the quality judgment",
+    "byLane": {
+      "primary": {
+        "cellsCounted": [
+          "review-gate-diff",
+          "review-gate-diff",
+          "spec-gate-manifest",
+          "spec-gate-manifest"
+        ],
+        "cellsExcluded": [],
+        "tokens": {
+          "input": 41190,
+          "output": 5346,
+          "total": 46536
+        }
+      },
+      "secondary": {
+        "cellsCounted": [],
+        "cellsExcluded": [],
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "total": 0
+        }
+      }
+    }
+  },
+  "qualityComparison": {
+    "rule": "contaminated cells (contamination indicators found in the cell's stream-json stdout) are EXCLUDED from the quality comparison; they remain recorded in cells[] with their indicators, and their tokens still count in costComparison",
+    "cellsIncluded": [
+      "review-gate-diff x primary @ low",
+      "review-gate-diff x primary @ high",
+      "spec-gate-manifest x primary @ low",
+      "spec-gate-manifest x primary @ high"
+    ],
+    "cellsExcluded": []
+  },
+  "effortComparison": {
+    "rule": "an effort-mode cell is VALID only when every llm.request receipt in its session wire.jsonl shows the intended thinkingEffort (KIMI_MODEL_THINKING_EFFORT is conditional and can be silently ignored); invalid cells are excluded from costComparison token sums exactly like retried cells",
+    "envVar": "KIMI_MODEL_THINKING_EFFORT",
+    "byEffort": {
+      "low": {
+        "cellsValid": [
+          "review-gate-diff",
+          "spec-gate-manifest"
+        ],
+        "cellsInvalid": []
+      },
+      "high": {
+        "cellsValid": [
+          "review-gate-diff",
+          "spec-gate-manifest"
+        ],
+        "cellsInvalid": []
+      }
+    }
+  },
+  "outFile": "/home/ryan/dev/muster/.worktrees/kimi-measured-efficiency/eval/results/kimi-reviewer-tier-probe-effort-2026-07-27T09-47-01-703Z.json"
+}

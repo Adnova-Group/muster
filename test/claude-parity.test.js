@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 139); // +1: agent manifest moved into catalog/ (Phase D)
+  assert.equal(paths.length, 140); // +1: first-class init command
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -978,5 +978,91 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // untouched (it is Claude-concrete by design, emitted via claude.js).
   // Deliberate surface change, not drift.
   // (Also covers the router skill's crew[].model vocabulary update.)
-  assert.equal(hash.digest("hex"), "a4775efda3940954b0ac94519bceaea15471fb4ef574df88b9b62d6edfcfa3ba");
+  // 2026-07-27 re-pin (kimi-process-lane-dispatch): file COUNT unchanged (139) --
+  // only plugin/skills/orchestrator/SKILL.md's content changed. Its Kimi-native
+  // dispatch subsection gained the attended-session process-lane paragraph:
+  // lane-sensitive legs in an attended/interactive Kimi session dispatch via
+  // kimiProcessDispatch (wave 1's headless `kimi -p --agent-file` descriptor
+  // builder, src/kimi-dispatch.js -- outside this surface) because the TUI
+  // ignores model_preference, with -m always emitted (it alone binds the -p
+  // process's own model; model_preference binds only spawned subagents) and the
+  // receipt path named (stream-json stdout + exit code + readSessionUsage per-leg
+  // token accounting). The paragraph sits INSIDE build-codex.mjs's wholesale
+  // "## Wave dispatch" -> "## Scope fences" replacement span, so it ships to no
+  // Codex build and needs no guarded rewrite -- verified the generated Codex
+  // orchestrator skill carries zero occurrences of "kimiProcessDispatch".
+  // Re-verified with MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node
+  // scripts/check-codex.mjs (clean). docs/binding-interface.md's grep-audit
+  // counts re-scanned live -- unchanged (test/docs-binding-interface.test.js
+  // green without a re-derivation). Deliberate surface change, not drift.
+  // REBASE-NOTE: hash refreshed post-rebase onto the tier rename.
+  //
+  // 2026-07-27 re-pin (kimi-process-lane-dispatch review-gate round 1): file
+  // COUNT unchanged (139) -- content changed in plugin/skills/orchestrator/
+  // SKILL.md (the process-lane paragraph now states the descriptor's env is an
+  // OVERRIDE pair merged over the ambient process env at spawn,
+  // `{ ...process.env, ...d.env }`, never passed as the whole env, and names
+  // KIMI_SECONDARY_MODEL's subagent-lane binding) and plugin/commands/go.md
+  // (the kimiGoalInvocation env-pair sentence gained the same one-clause merge
+  // note, `{ ...process.env, ...inv.env }`). The review-gate BLOCKER: prose
+  // that invited spawn("kimi", d.argv, { env: d.env }) -- wholesale env
+  // replacement losing HOME/PATH. src/kimi-dispatch.js's matching
+  // comment/constant changes sit outside this surface. Deliberate surface
+  // change, not drift.
+  //
+  // 2026-07-27 re-pin (kimi-batch-token-reporting): file COUNT unchanged (139) --
+  // content changed in plugin/commands/go-backlog.md (step 4's batch report table
+  // gained a "tokens (Kimi only)" column and the Kimi token-accounting clause:
+  // captureSessionId at dispatch on the leg's stream-json stdout,
+  // resolveSessionForCwd({ cwd: <item worktree path>, capturedSessionId }) before
+  // worktree teardown, summarizeItemReceipts lines transcribed into STATE next to
+  // each item's gate summary, UNKNOWN lines never blocking, non-Kimi harnesses
+  // omitting the line) and plugin/commands/go.md (step 8's finish gained the
+  // single-outcome equivalent clause). Both clauses are harness-conditional
+  // ("On Kimi ... non-Kimi harnesses omit the line"), the SAME shape as go.md's
+  // pre-existing "Kimi run loop" paragraph, which already ships verbatim into
+  // the Codex build -- so no guarded rewrite in scripts/build-codex.mjs was
+  // needed; verified the built .agents/plugins/plugin/commands/go.md still
+  // carries "kimiGoalInvocation" and both new clauses verbatim, and
+  // MUSTER_BUILD_FORCE=1 node scripts/build-codex.mjs && node
+  // scripts/check-codex.mjs re-ran clean. src/kimi-receipts.js (the named
+  // functions' home) sits outside this surface. docs/binding-interface.md's
+  // grep-audit worktree row re-derived 26 -> 28 mentions (file count unchanged).
+  // Deliberate surface change, not drift.
+  //
+  // 2026-07-27 re-pin (kimi-batch-token-reporting, review-gate round-1 fixes):
+  // file COUNT unchanged (139) -- content changed in plugin/commands/go-backlog.md
+  // and plugin/commands/go.md only. A review-gate BLOCKER found the accounting
+  // clause promised per-worktree session resolution for legs that can't produce
+  // it: wave-mode items dispatch as in-session muster-runner Agent-tool
+  // subagents whose tokens live in the PARENT session's agents tree (indexed
+  // under the parent's cwd), so resolveSessionForCwd({ cwd: <item worktree> })
+  // returns no-sessions-for-cwd for every such item. Both files now state the
+  // two arms explicitly: the captureSessionId + resolveSessionForCwd chain is
+  // scoped to PROCESS-LANE (kimi -p) legs only, and in-session Agent/AgentSwarm
+  // legs are accounted via the parent session's own readSessionUsage dispatches
+  // view or omitted with a STATE note -- never per-worktree resolution. Two
+  // minors landed in the same pass: go.md step 6 now names the streamJson:true
+  // opt-in (kimiGoalInvocation defaults streamJson:false, so step 8's captured
+  // stdout silently yielded null), and the summary line now surfaces each leg's
+  // resolution source (captured/index-unique/index-newest) with multi-leg
+  // (retried/fix-looped) items summed per-leg in summarizeItemReceipts
+  // (src/kimi-receipts.js, outside this surface). test/kimi-receipts.test.js's
+  // prose-consistency pins were extended to lock the scoping.
+  // Deliberate surface change, not drift.
+  // REBASE-NOTE (2026-07-27): hash refreshed after the mid-batch rebase onto the
+  // semantic-tier rename (main 6d565a3); covers the rename re-pin and this
+  // branch's process-lane/token-accounting re-pins above.
+  //
+  // 2026-07-27 re-pin (first-class init): one reviewed command was added and the
+  // greenfield skill now delegates repository preparation to its receipted lifecycle.
+  //
+  // 2026-07-27 re-pin #2 (tier-vocabulary-dispatch-rules): the five LIVE
+  // dispatch-rule prose sites (orchestrator Model bullet, advisor step 4,
+  // tournament judge, audit dimension sweep) moved off the legacy vocabulary
+  // and now dispatch on the harness-concrete adapter FIELDS capabilities
+  // attaches (claudeModel / advisorClaudeModel / codexModel / kimiModel) --
+  // a conceptual tier is never passed raw to an Agent tool again. Deliberate
+  // surface change, not drift.
+  assert.equal(hash.digest("hex"), "8bf50a2c40412b09b55b1fcb0e98f1de1b29480c5b5133d246e7c0aae8c6d2f6");
 });

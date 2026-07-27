@@ -117,6 +117,168 @@ honestly credited there once a run is measured through it. (The remaining gap on
 request side symmetric to Codex's: Kimi's per-call override is a two-lane `model` pick --
 `src/kimi-dispatch.js`'s `kimiAgentCall` -- not a reasoning-effort dial.)
 
+**Measured per-dispatch datapoint, v2 (2026-07-27, `node eval/kimi-reviewer-tier-probe.mjs`,
+protocolVersion 2; results committed at `eval/results/kimi-reviewer-tier-probe-2026-07-27T08-46-46-268Z.json`):
+the "once a run is measured through it" above is now measured on a BLINDED protocol, and the cost
+hypothesis comes back NEGATIVE again.**
+
+**v1 disclosure (why the first run was discarded).** The v1 run (same day,
+`eval/results/kimi-reviewer-tier-probe-2026-07-27T08-01-15-334Z.json`, kept in git history) ran every
+cell with cwd = the repo worktree, so the answer key was tool-reachable from inside the cell:
+`git log`/`git show` in the cell's own cwd surfaced the follow-up fix commit 3cf6084, the harness's
+pinned KNOWN_BLOCKERS sat readable in `eval/kimi-reviewer-tier-probe.mjs`, and prior cells' verdicts
+sat in `eval/results/`. The v1 verdict texts show agents reading exactly those before answering (the
+primary probe-1 cell opened with `git log --oneline -5 && git show --stat 9027136`; both spec-gate
+cells grepped the repo for `model_preference`). v1's caught/missed signals -- and plausibly its token
+sums, which include those exploration turns -- are therefore unusable as a measurement of review
+ability, and v1 is recorded here only as the reason v2 exists.
+
+**v2 protocol: blinded quarantine + mechanical contamination scan.** Same shape as v1 otherwise: 2
+pinned probes x 2 lanes (primary `kimi-code/k3`, secondary `kimi-code/kimi-for-coding`), each cell one
+headless `kimi -p --agent-file muster-reviewer.md` process via `kimiProcessDispatch`
+(`src/kimi-dispatch.js`), verdicts read from stream-json stdout, tokens attributed per dispatch from
+the session's wire.jsonl via `readSessionUsage` (`src/kimi-receipts.js`). What changed: each cell's
+cwd is a FRESH temp dir containing ONLY the probe material as a file (probe 1: the full 9027136 diff
+as `probe.patch`; probe 2: the synthetic manifest as `probe-manifest.json`), and the briefs -- pinned
+constants, byte-identical across lanes -- name that file by relative name and instruct: review ONLY
+this material, do not read other files, do not run git commands. After each cell its stream-json
+stdout is mechanically scanned for contamination indicators (file reads outside the quarantine dir,
+any git show/log/diff command, any path containing the repo name or `eval/results`); a contaminated
+cell would be flagged `contaminated: true` in the results JSON and excluded from the quality
+comparison (recorded, never hidden), with its tokens still recorded per the cost policy. **No
+contamination recurred: all four cells scanned clean (0 indicators), and no cell needed the retry.**
+Caught/missed below is HUMAN JUDGMENT applied to each cell's verbatim recorded verdictText against
+the pinned rubric, never keyword matching.
+
+| probe | lane | input | output | total | judgment |
+| --- | --- | --- | --- | --- | --- |
+| review-gate-diff | primary (k3) | 11,391 | 1,893 | 13,284 | MISSED |
+| review-gate-diff | secondary (kimi-for-coding) | 10,659 | 5,438 | 16,097 | MISSED |
+| spec-gate-manifest | primary (k3) | 9,203 | 1,217 | 10,420 | CAUGHT |
+| spec-gate-manifest | secondary (kimi-for-coding) | 8,477 | 6,495 | 14,972 | CAUGHT |
+| **lane sums** | primary | 20,594 | 3,110 | 23,704 | 1 of 2 |
+| **lane sums** | secondary | 19,136 | 11,933 | 31,069 | 1 of 2 |
+
+Quality, judged in substance against the pinned rubric (decisive quotes verbatim from each cell's
+recorded verdictText):
+
+- Probe 1 (review-gate pass over commit 9027136's diff; pinned known blocker: the env-merge
+  semantics). BOTH lanes MISSED it. PRIMARY (k3) returned PASS with four MINORs and an explicit
+  "All 17 regex assertions in the new test were cross-checked by hand against the exact paragraph
+  text added to SKILL.md ... every one matches; no BLOCKER found" -- a careful review that never
+  questioned the "spawned straight from the descriptor's `{ argv, env, cwd, lane }`" prose.
+  SECONDARY (kimi-for-coding) returned a bare "PASS". Honest caveat on this cell: the pinned blocker
+  is only partially verifiable from inside the quarantine -- the prose is flaggable as ambiguous on
+  its face (it never states the merge rule), but confirming the failure mode requires knowing
+  `kimiLaneEnv()` returns exactly two keys, which lives in `src/kimi.js`, deliberately out of reach.
+  A blinded catch was possible; it happened in neither lane.
+- Probe 2 (spec-gate pass over the synthetic manifest; expected FAIL naming the model_preference
+  misattribution). BOTH lanes CAUGHT it, blinded, from the manifest alone. PRIMARY:
+  "`model_preference` stamped on an `--agent-file` agent does NOT engage the `-p` process's model
+  lanes ... the headless leg's model is chosen by the dispatcher via the `-m` flag." SECONDARY:
+  "the model lane is selected by the `-m` flag, not by agent-file metadata; the dispatch must
+  include `-m <model>` to run on the intended model."
+
+Two MINOR disclosures, carried from this item's review and applying to every token comparison above:
+
+- **Not effort-matched, and token-count is not price.** The secondary lane (kimi-for-coding) is
+  always-thinking with no knob to reduce it, and primary (k3) ran at high -- the lanes are not
+  effort-matched. And in v1 ~90% of the input delta was `inputCacheRead` (cache reads are not
+  priced like fresh input), so v1's "~2.1x" was a token COUNT, never a price. The same applies to
+  v2's "~1.3x" -- and in v2 the delta is not even input-side: secondary's input is slightly LOWER
+  than primary's, and its extra ~7.4k total tokens are almost entirely OUTPUT (11,933 vs 3,110,
+  i.e. thinking tokens).
+- **Brief artifact possible on probe 1.** The probe brief is neutral ("review the diff for
+  correctness and completeness"); the original catching review of this very blocker ran under a
+  different, adversarial gate brief. Probe-1 catch/miss versus that original gate may therefore be
+  a brief artifact, not a lane-capability difference.
+
+n=1 caveat, recorded verbatim in the results JSON: each probe x lane cell ran exactly once (plus at
+most one retry on failure, unused here). No statistical power; caught/missed and token deltas are
+directional signals, not measurements of a distribution.
+
+**ROUTING RECOMMENDATION: no gate legs move to the secondary lane -- unchanged from v1, and now
+standing on uncontaminated data.** The execution lane was not cheaper on identical blinded briefs:
+31,069 vs 23,704 total tokens (~1.3x), the delta driven almost entirely by thinking-side output.
+Quality at n=1 was a dead wash: both lanes caught probe 2, both missed probe 1 blinded -- nothing
+here argues for demoting judgment work to the execution lane, and nothing excuses the cost premium.
+Lever 2's cheaper-tier request therefore stays honestly uncredited on Kimi too: the per-dispatch
+measurement mechanism exists and demonstrably works (this datapoint IS that mechanism running end to
+end), but the tier it would route to showed no token advantage in this probe. Follow-ups, named not
+landed: (1) repeat the probe for statistical power before any retiering is reconsidered -- the
+harness is rerunnable by construction; (2) probe 1's blinded miss in BOTH lanes says the pinned
+env-merge blocker is hard to see without repo context -- if that bug class matters, the gate brief
+should name the invariant to check rather than hope the reviewer infers it.
+
+**Measured effort-setting datapoint (2026-07-27, `node eval/kimi-reviewer-tier-probe.mjs --mode effort`,
+protocolVersion 2; results committed at `eval/results/kimi-reviewer-tier-probe-effort-2026-07-27T09-47-01-703Z.json`):
+K3's effort knob IS per-call consumable, receipt-proven -- and at n=1, low shows quality parity with high
+at ~7% fewer total tokens.** Same blinded quarantine protocol as the v2 tier datapoint above, but the two
+pinned probes run on lane=primary (kimi-code/k3) ONLY, each TWICE -- once at thinking effort low, once at
+high. Mechanism: there is no per-invocation effort flag; `KIMI_MODEL_THINKING_EFFORT` is read per-process
+from env and overrides config `[thinking].effort`, so each cell sets it via the same spawnEnv merge rule
+(`{...process.env, ...descriptor.env}` -- never wholesale). Because the override is conditional and can be
+silently ignored, every cell PROVES its effort from receipts: the `thinkingEffort` field on the session
+wire.jsonl `llm.request` records (`src/kimi-receipts.js`'s `readSessionThinkingEfforts`), and a cell is
+valid only when EVERY step's receipt shows the intended effort. **All four cells receipt-proved their
+intended effort (2/2 llm.request steps each: low/low on the low cells, high/high on the high cells), no
+cell was invalid (effortValid:false), no cell needed the retry, and the contamination scan came back clean
+on all four (0 indicators).** Caught/missed below is HUMAN JUDGMENT applied to each cell's verbatim
+recorded verdictText against the pinned rubric, never keyword matching.
+
+| probe | effort | input | output | total | effortValid | judgment |
+| --- | --- | --- | --- | --- | --- | --- |
+| review-gate-diff | low | 11,391 | 1,152 | 12,543 | valid (2/2 receipts low) | MISSED |
+| review-gate-diff | high | 11,392 | 2,445 | 13,837 | valid (2/2 receipts high) | MISSED |
+| spec-gate-manifest | low | 9,203 | 655 | 9,858 | valid (2/2 receipts low) | CAUGHT |
+| spec-gate-manifest | high | 9,204 | 1,094 | 10,298 | valid (2/2 receipts high) | CAUGHT |
+| **effort sums** | low | 20,594 | 1,807 | 22,401 | 2 of 2 | 1 of 2 |
+| **effort sums** | high | 20,596 | 3,539 | 24,135 | 2 of 2 | 1 of 2 |
+
+Quality, judged in substance against the pinned rubric (decisive quotes verbatim from each cell's
+recorded verdictText):
+
+- Probe 1 (review-gate pass over commit 9027136's diff; pinned known blocker: the env-merge semantics).
+  MISSED at BOTH efforts, blinded -- the same blinded miss the v2 tier probe recorded at high. LOW returned
+  PASS with two MINORs and an explicit "No correctness defects found in the diff" after hand-checking every
+  test regex against the SKILL.md paragraph; HIGH returned PASS with three MINORs (a genuinely sharper
+  surface read -- it flagged the new test's unshown `readFile` import and the unproven enclosing heading)
+  and the same closing "No correctness defects found in the diff material." Neither effort questioned the
+  "spawned straight from the descriptor's `{ argv, env, cwd, lane }`" prose -- consistent with the v2
+  caveat that this blocker is only partially verifiable from inside the quarantine.
+- Probe 2 (spec-gate pass over the synthetic manifest; expected FAIL naming the model_preference
+  misattribution). CAUGHT at BOTH efforts, blinded, from the manifest alone. LOW: "misattributed mechanism:
+  a model_preference stamped inside an agent file is advisory frontmatter for the agent definition, not a
+  selector for the CLI process's model lane; a headless `-p` invocation without an explicit model flag
+  falls back to the CLI's configured/default model." HIGH: "in headless `kimi -p` mode the session model is
+  selected by CLI config / the `-m/--model` flag, and agent-file frontmatter does not re-lane the running
+  process; the correct mechanism is to pass `-m <model>` explicitly." Both named the correct mechanism in
+  substance; HIGH's verdict was the more falsifiability-minded of the two (it added the "probe cannot
+  falsify its own hypothesis" BLOCKER), but the pinned rubric asks caught/missed, and both caught.
+
+Cost: low spent 22,401 total tokens against high's 24,135 -- 1,734 fewer (~7.2%), and the delta is
+ENTIRELY output-side (1,807 vs 3,539 output tokens, a ~49% cut in thinking-side output; input is a wash at
+20,594 vs 20,596, the same briefs and quarantine material producing the same cache profile). Token-count is
+not price, the same disclosure the tier datapoint carries -- ~5.6k of each cell's input is
+`inputCacheRead`.
+
+n=1 caveat, recorded verbatim in the results JSON: each probe x effort cell ran exactly once (no retry
+used). No statistical power; caught/missed and token deltas are directional signals, not measurements of a
+distribution.
+
+**KEEP-OR-CHANGE RECOMMENDATION: KEEP `high` as the prime-tier (judgment lane) effort in `src/kimi.js`'s
+KIMI_TIERS today -- not because low degraded (it did not), but because this probe contains no discriminating
+cell.** Quality at n=1 was a dead wash: both efforts caught probe 2 with the correct mechanism named, both
+missed probe 1 blinded -- so the data shows NO quality regression at low and a real ~7% token saving, which
+makes retiering prime to low a legitimate candidate. But the one cell that could have demonstrated a
+low-effort quality drop (probe 1, where a catch would discriminate) was missed at BOTH efforts, leaving no
+observation of low failing where high succeeds -- and at n=1 the parity result is a directional signal, not
+a measurement. The change itself, if a repeated probe confirms the parity, is a named FOLLOW-UP item (flip
+`KIMI_TIERS.prime.effort` from `"high"` to `"low"` in `src/kimi.js`), not this one: this item records the
+datapoint only. What this datapoint DOES settle: the effort knob is per-call consumable and receipt-provable
+end to end (env var in, per-step `thinkingEffort` receipts out), so lever 2's cheaper-tier request now has
+a verified consumption mechanism on the effort dimension, not just the two-lane model pick.
+
 This changes ONLY how much reasoning budget the SAME reviewer persona is asked to spend, never
 which checks it runs, nor which provider/model is dispatched (`src/codex.js` remains an
 adapter target, not a second tier resolver) -- criterion 2 is untouched by this lever by

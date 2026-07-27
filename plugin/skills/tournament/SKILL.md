@@ -15,11 +15,13 @@ Inputs: the task, the Crew Manifest (for `successCriteria`), and N (default 3).
 
 1. Dispatch N implementer agents **concurrently**, each instructed to take a DISTINCT approach to the
    task (vary the angle: e.g. minimal, robust, performance-first). Dispatch them on the task role's
-   model (`muster capabilities` -> `roles[<role>].model`; usually **sonnet**). Collect each agent's
+   model (`muster capabilities` -> `roles[<role>].model`; usually **core**, dispatched on the
+   harness-concrete value -- sonnet on Claude Code). Collect each agent's
    full response text as that candidate's solution.
 
-2. Dispatch a **judge agent on fable** (peak judgment; if fable is unavailable on this plan -- e.g.
-   it needs extra usage credits -- fall back to **opus** and note the degradation in STATE). The
+2. Dispatch a **judge agent on the apex tier** (peak judgment; concrete model fable on Claude Code;
+   if apex is unavailable on this plan -- e.g. it needs extra usage credits -- fall back to **prime**
+   (opus on Claude Code) and note the degradation in STATE). The
    judge receives the task and `successCriteria` from the manifest. Present the N candidate solutions
    to the judge **de-identified**: numbered [1], [2], ... [N] with no model names, agent ids, or
    approach labels visible -- this eliminates position bias and self-bias (LLM-Blender pairwise

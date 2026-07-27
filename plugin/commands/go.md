@@ -122,9 +122,13 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    `kimi -p "/goal <objective>"` invocation with the item's assessed acceptance criteria compiled
    INTO the objective string — `/goal` has no separate stop-limit flag ("write stop conditions into
    the objective", docs/research/kimi-code-cli.md §11.9), so the same enrichment that would land in
-   a file muster re-reads goes into the harness's own loop instead. Its env pair
+   a file muster re-reads goes into the harness's own loop instead. Build the invocation with
+   `streamJson: true` (the `kimiGoalInvocation` default is `false`): the goal run is a process-lane
+   leg, and step 8's token accounting needs the stream-json stdout this flag puts on the pipe. Its env pair
    (`KIMI_CODE_EXPERIMENTAL_FLAG=1` + `KIMI_SECONDARY_MODEL`, derived by `kimiLaneEnv()` in
-   `src/kimi.js`) is what binds the stamped `model_preference` lanes for the whole run —
+   `src/kimi.js` — an OVERRIDE pair merged over the ambient process env at spawn,
+   `{ ...process.env, ...inv.env }`, never passed as the whole env) is what binds the
+   stamped `model_preference` lanes for the whole run —
    the experiment gate is per-process and the TUI ignores the field, so a muster-launched
    `kimi -p` is exactly where the installed agents' lanes engage (docs/research/kimi-code-cli.md
    §11.8). Interpret the process exit code
@@ -171,6 +175,19 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    Each of the above executes **without asking**. `ask` or absent → present the merge decision via the
    **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**,
    unchanged. **Discard is interactive-only** — deliberately not a declarable `mergeDisposition` value.
+
+   On Kimi the finish also writes the run's token-accounting line to STATE next to the gate summary —
+   the same two-arm accounting go-backlog's batch report uses, scoped by dispatch lane. The step-6
+   goal run itself is a process-lane leg (`kimi -p`, built with `streamJson: true` above), so the
+   capture chain applies to it: `captureSessionId` on the run's captured stream-json stdout at
+   dispatch, `resolveSessionForCwd({ cwd: <worktree path>, capturedSessionId })` before worktree
+   teardown. Any in-session Agent/AgentSwarm legs take the other arm — their tokens live in the
+   parent session's agents tree, indexed under the parent's cwd, never the run worktree — so they are
+   accounted from the parent session's own `readSessionUsage` dispatches view against the parent
+   session dir, or omitted (with a STATE note) when that dir can't be resolved; per-worktree session
+   resolution never applies to them. The `summarizeItemReceipts` line surfaces each leg's resolution
+   source (`captured`/`index-unique`/`index-newest` — a fallback attribution reads as one) and
+   transcribes with UNKNOWN never blocking; non-Kimi harnesses omit the line.
 
    Unattended (Routine) mode: never auto-push to a base branch — `merge-local` and `merge-push` downgrade to
    `pr`, with a note added to the run report.

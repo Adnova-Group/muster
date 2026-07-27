@@ -318,6 +318,8 @@ test("cli wire: muster advise advisorModel is 'opus' by default (fable degraded)
   const { stdout } = await cliRun(["advise", reqFile], { MUSTER_ENABLE_FABLE: "" });
   const result = JSON.parse(stdout);
   assert.equal(result.advisorModel, "prime");
+  // the Claude-concrete dispatch value rides beside the conceptual tier
+  assert.equal(result.advisorClaudeModel, "opus");
 });
 
 test("cli wire: muster advise advisorModel is 'fable' when MUSTER_ENABLE_FABLE=1", async (t) => {
@@ -334,6 +336,7 @@ test("cli wire: muster advise advisorModel is 'fable' when MUSTER_ENABLE_FABLE=1
   const { stdout } = await cliRun(["advise", reqFile], { MUSTER_ENABLE_FABLE: "1" });
   const result = JSON.parse(stdout);
   assert.equal(result.advisorModel, "apex");
+  assert.equal(result.advisorClaudeModel, "fable");
 });
 
 test("cli wire: muster advise exits non-zero and prints errors for invalid request", async (t) => {

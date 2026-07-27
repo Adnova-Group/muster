@@ -187,6 +187,17 @@ test("resolveCapabilities tags every role with a model", async () => {
   assert.equal(caps.roles["author"].model, "core");
 });
 
+// The conceptual tier is NEVER dispatched raw on Claude Code — capabilities
+// attaches the Claude adapter's concrete value beside it, unconditionally
+// (pure tier function; codexModel/kimiModel need inventories, this does not).
+test("resolveCapabilities attaches claudeModel — the Agent tool's concrete override", async () => {
+  const { resolveCapabilities } = await import("../src/capabilities.js");
+  const caps = resolveCapabilities([], { plugins: [], skills: [], mcpServers: [] });
+  assert.equal(caps.roles["code-navigation"].claudeModel, "haiku");
+  assert.equal(caps.roles["implement"].claudeModel, "sonnet");
+  assert.equal(caps.roles["architecture-review"].claudeModel, "opus"); // apex degraded to prime -> opus
+});
+
 // --- capabilities-level MUSTER_MAX_TIER cap test ---------------------------
 // Uses the real catalog so the test exercises the full resolveCapabilities +
 // modelForRole + capTier pipeline with a live tier cap applied.

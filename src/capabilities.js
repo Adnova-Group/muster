@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { modelForRole } from "./model.js";
+import { claudeModelForTier } from "./claude.js";
 import { ROLES } from "./roles.js";
 import { isInstalled } from "./installed.js";
 import { installedSkillDescription } from "./plugin-inventory.js";
@@ -86,7 +87,13 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
         recommendations.push(`install ${e.id} for ${role} — better than the ${chosen.id} fallback`);
       }
     }
-    roles[role] = { chosen, chain, recommendations, model: modelForRole(role) };
+    const model = modelForRole(role);
+    // `model` is the CONCEPTUAL tier (scout|core|prime|apex). `claudeModel` is the
+    // Claude adapter's concrete value for it -- what the Agent tool's `model`
+    // override actually accepts on Claude Code. Attached unconditionally (pure
+    // tier function, no inventory read), mirroring codexModel/kimiModel for the
+    // other harnesses so NO dispatch path ever passes a conceptual tier raw.
+    roles[role] = { chosen, chain, recommendations, model, claudeModel: claudeModelForTier(model).model };
     if (codex && chosen.kind === "agent") {
       const codexModel = codexProfileForAgentId(chosen.id);
       if (codexModel) roles[role].codexModel = codexModel;

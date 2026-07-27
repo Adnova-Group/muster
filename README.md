@@ -95,7 +95,7 @@ The novel core is a capability and domain router. Muster names a fixed vocabular
 
 The role set is fixed but the provider set is not. When an outcome does not fit a named role, description-search bridges the gap: `muster match "<task>"` ranks every catalog provider by deterministic token overlap (no model call), so "audit this code for security vulnerabilities" surfaces the security specialist even though it never names a role.
 
-Each role also carries a model picked to fit the work: mechanical roles run on Haiku, the default is Sonnet, and heavy judgment runs on Fable (degrades to Opus when unavailable on the plan). Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
+Each role also carries a conceptual tier picked to fit the work. The ladder, from least to most capable, is `scout`, `core`, `prime`, and `apex`. Mechanical roles use scout, routine work defaults to core, and peak-judgment roles use apex with a deterministic fallback to prime. Harness adapters map those tiers to concrete models. Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
 
 ## Always-on guidance
 
@@ -139,13 +139,17 @@ Muster's runtime behavior can be tuned with environment variables:
 | Variable | Default | Semantics |
 | --- | --- | --- |
 | `MUSTER_INLINE_SCALE` | `3` | The border-invitation threshold: the Nth distinct file edited inline across turns, with no muster run active, crosses the border and warns once per crossing (never denies). |
-| `MUSTER_MAX_TIER` | _(unset)_ | Caps the model tier policy (e.g. `opus` disables Fable, `sonnet` for budget mode); unset = no cap. Note: static agent frontmatter pins (e.g. muster-strategist) are not affected on direct invocation; in muster runs the dispatch override honors the cap. |
-| `MUSTER_ENABLE_FABLE` | _(unset)_ | Opts back into the Fable tier for peak-judgment roles (the tournament judge, architecture-review, improve, advisor). Unset (or `0`/`false`) degrades Fable to Opus deterministically, since the tier can be disabled platform-wide; `1`/`true` re-enables it once the tier is available. |
+| `MUSTER_MAX_TIER` | _(unset)_ | Caps the conceptual model tier policy. For example, `MUSTER_MAX_TIER=prime` excludes apex and `MUSTER_MAX_TIER=core` enables budget mode; unset means no cap. Static agent frontmatter pins are not affected on direct invocation; in Muster runs the dispatch override honors the cap. |
+| `MUSTER_ENABLE_APEX` | _(unset)_ | Enables apex for peak-judgment roles such as the tournament judge, architecture review, improve, and advisor. Unset (or `0`/`false`) degrades apex to prime deterministically; `1`/`true` enables it when the harness can serve it. |
 | `MUSTER_ACTION_GUARD` | `deny` | Action-class fence on `PreToolUse` while `.muster/forbidden-actions` is present: `deny` blocks a matching send/sign/submit/publish/purchase/delete-remote tool call, `warn` allows with a reminder, `off` disables the fence. This is the only hard-deny surface left in muster's enforcement stack. |
 | `MUSTER_ADVISOR_MAX_CONSULTS` | `3` | Maximum advisor consults per run. Bounds the cost of workers escalating to the advisor role. Set to 0 to disable advisor consults. |
 | `MUSTER_FUSE_TOPK` | `3` | Maximum number of tournament candidates passed to the fusion synthesizer. Must be >= 1. |
 | `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis. Below this threshold `muster fuse` falls back to the single best candidate. Set to 0 to always fuse when >= 2 candidates pass. |
 | `MUSTER_SPRINT_PARALLEL` | `5` | Max concurrent item-runner subagents per wave in `/muster:go-backlog` wave mode; hard ceiling `10` (higher values clamp, `0` is invalid; concurrency is never unbounded). Read by go-backlog's orchestration protocol, not by library code. |
+
+<!-- legacy-tier-compat:start -->
+Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
+<!-- legacy-tier-compat:end -->
 
 ## Built on
 

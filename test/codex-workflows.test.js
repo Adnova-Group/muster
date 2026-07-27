@@ -72,6 +72,15 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   }
 });
 
+test("generated Codex init binds the bundled runtime without Claude resolver leakage", async () => {
+  const init = await readFile(join(selectedPluginRoot, "commands", "init.md"), "utf8");
+  assert.doesNotMatch(init, /\bCLAUDE_PLUGIN_ROOT\b/);
+  assert.match(init, /MUSTER_CLI="node \$\{PLUGIN_ROOT\}\/runtime\/muster\.mjs"/);
+  assert.match(init, /--to handoff --reason not-callable --expect AGENTS\.md/);
+  assert.match(init, /provider\/model-neutral|model-neutral|provider-neutral/i);
+  assert.doesNotMatch(init, /project-profile\.json[\s\S]{0,240}(?:scout|core|prime|apex|gpt-5)/i);
+});
+
 test("generated Codex package exposes the native-dispatch resolvers the orchestrator needs at runtime", async () => {
   // Runtime reachability: the codex-spawn-agent-dispatch item's follow-up asked for proof these
   // reach a CODEX-HOSTED muster running the BUNDLED plugin, not just the source repo -- exercise

@@ -56,10 +56,16 @@ Each resolved role carries a model picked to fit the work, so quota spend tracks
 
 | Tier | Roles | Why |
 | --- | --- | --- |
-| haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
-| sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| fable | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
-| opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
+| scout | `code-navigation`, `docs-research`, `research` | Mechanical locating, gathering, and scanning |
+| core | everything else (the default) | Implementation, review, authoring, and scoring |
+| prime | fallback for apex | Frontier judgment when apex is disabled |
+| apex | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Rare peak judgment |
+
+Harness adapters map the conceptual `scout`, `core`, `prime`, and `apex` ladder to concrete models.
+
+<!-- legacy-tier-compat:start -->
+Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
+<!-- legacy-tier-compat:end -->
 
 The orchestrator passes the chosen model as the dispatch override when it spawns each subagent.
 

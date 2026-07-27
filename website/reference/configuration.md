@@ -2,7 +2,7 @@
 
 Muster needs no config file. Every tunable is an environment variable, every one has a working default, and every one is read at the point of use — so exporting it in your shell, your `settings.json` `env` block, or a single command invocation all work the same way.
 
-Integer variables are parsed strictly: a non-numeric or out-of-range value falls back to the default rather than failing the run. Boolean-shaped declarations (`MUSTER_ENABLE_FABLE`, `MUSTER_AGENT_TEAMS`, `MUSTER_CODEX_MULTI_AGENT`, `MUSTER_COWORK_NATIVE_PLUGIN`) accept `1`/`true` to enable and `0`/`false` to disable; anything else fails closed to the documented default.
+Integer variables are parsed strictly: a non-numeric or out-of-range value falls back to the default rather than failing the run. Boolean-shaped declarations (`MUSTER_ENABLE_APEX`, `MUSTER_AGENT_TEAMS`, `MUSTER_CODEX_MULTI_AGENT`, `MUSTER_COWORK_NATIVE_PLUGIN`) accept `1`/`true` to enable and `0`/`false` to disable; anything else fails closed to the documented default.
 
 ## Variables
 
@@ -12,8 +12,8 @@ Integer variables are parsed strictly: a non-numeric or out-of-range value falls
 | `MUSTER_INVITE_COOLDOWN_MS` | `900000` (15 min) | Suppresses a repeat border invitation for this long after the last one actually fired, so a session is never nagged twice in quick succession. | `UserPromptSubmit` + `PreToolUse` hooks |
 | `MUSTER_ACTION_GUARD` | `deny` | The action-class fence, active only while a run is live and `.muster/forbidden-actions` lists a class: `deny` blocks a matching send/sign/submit/publish/purchase/delete-remote tool call, `warn` allows it with a reminder, `off` disables the fence. The only hard-deny surface in the stack. | `PreToolUse` hook (`plugin/hooks/pre-tool-use.js`) |
 | `MUSTER_TASK_GATE` | _(unset — gate on)_ | Ties a native task board "completed" tick to a recorded review-gate PASS for muster-tracked tasks; a `pending` or `escalated` entry is denied. `off` allows unconditionally. Fail-open for any task muster did not create. | `TaskCompleted` hook (`plugin/hooks/task-completed-gate.js`) |
-| `MUSTER_MAX_TIER` | _(unset)_ | Caps the model tier policy (`opus` disables Fable, `sonnet` for budget mode); unset means no cap. Static agent frontmatter pins are unaffected on direct invocation; in muster runs the dispatch override honors the cap. | CLI (`src/model.js`) |
-| `MUSTER_ENABLE_FABLE` | _(unset — off)_ | Opts back into the Fable tier for peak-judgment roles (tournament judge, `architecture-review`, `improve`, `advisor`). Unset degrades Fable to Opus deterministically, since the tier can be disabled platform-wide. | CLI (`src/model.js`) |
+| `MUSTER_MAX_TIER` | _(unset)_ | Caps the conceptual model tier policy (`prime` excludes apex, `core` enables budget mode); unset means no cap. Static agent frontmatter pins are unaffected on direct invocation; in Muster runs the dispatch override honors the cap. | CLI (`src/model.js`) |
+| `MUSTER_ENABLE_APEX` | _(unset; off)_ | Enables apex for peak-judgment roles (tournament judge, `architecture-review`, `improve`, `advisor`). Unset degrades apex to prime deterministically. | CLI (`src/model.js`) |
 | `MUSTER_ADVISOR_MAX_CONSULTS` | `3` | Maximum advisor consults per run — bounds the cost of workers escalating to the advisor role. `0` disables advisor consults. | CLI (`src/advisor.js`) |
 | `MUSTER_FUSE_TOPK` | `3` | Maximum tournament candidates passed to the fusion synthesizer. Minimum `1`. | CLI (`src/fusion.js`) |
 | `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis; below it, `muster fuse` falls back to the single best candidate. `0` always fuses when at least two candidates pass. | CLI (`src/fusion.js`) |
@@ -40,15 +40,21 @@ Every variable is read at the point of use, so all three of these work and none 
 
 ```sh
 # one invocation
-MUSTER_MAX_TIER=sonnet npx -y @adnova-group/muster capabilities
+MUSTER_MAX_TIER=core npx -y @adnova-group/muster capabilities
 
 # this shell, this session
-export MUSTER_ENABLE_FABLE=1
+export MUSTER_ENABLE_APEX=1
 ```
 
 For the hook-side variables (`MUSTER_INLINE_SCALE`, `MUSTER_INVITE_COOLDOWN_MS`, `MUSTER_ACTION_GUARD`, `MUSTER_TASK_GATE`), set them where the harness can see them when it spawns a hook — the `env` block of your Claude Code `settings.json`, or the environment Codex itself was launched from. A variable exported inside a session after the hook has already fired does not retroactively change that firing.
 
-To confirm a value is actually reaching the CLI, read it back off a command that reports it: `muster capabilities` shows the effective per-role model (proving `MUSTER_MAX_TIER` and `MUSTER_ENABLE_FABLE`), and `muster gate-cadence <manifest.json> --changed-lines N` shows the resolved `reviewerCount` (proving `MUSTER_REVIEW_DIFF_THRESHOLD`).
+To confirm a value is actually reaching the CLI, read it back off a command that reports it: `muster capabilities` shows the effective per-role model (proving `MUSTER_MAX_TIER` and `MUSTER_ENABLE_APEX`), and `muster gate-cadence <manifest.json> --changed-lines N` shows the resolved `reviewerCount` (proving `MUSTER_REVIEW_DIFF_THRESHOLD`).
+
+Muster's conceptual ladder is `scout`, `core`, `prime`, and `apex`; harness adapters map those tiers to concrete models.
+
+<!-- legacy-tier-compat:start -->
+Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
+<!-- legacy-tier-compat:end -->
 
 ## Not user knobs
 

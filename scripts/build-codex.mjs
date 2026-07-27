@@ -78,6 +78,26 @@ function adaptCommandForCodex(text, name) {
     .replace(/when the running session's registry doesn't carry that type[\s\S]*?note the degradation in STATE/, "call `collaboration.spawn_agent` with `agent_type: \"muster-runner\"`, `fork_turns: \"none\"`, and its other ordinary fields. Permit a positive context fork only when the user explicitly requests it; never use `\"all\"`. Codex rejects a named profile combined with a full-history fork. `agent_type` is a Codex runtime extension and may be absent from the simplified displayed signature; include it anyway. Only an actual rejected tool call proves the profile unavailable. If that call rejects the type, fail the item closed with a profile-registration diagnostic and remediation to reinstall/start a new session; do not silently use a generic agent because that loses the pinned role/model policy")
     .replace(/Runner cwd is its worktree; tool calls rely on[\s\S]*?instead of blocking\./, "Runner cwd is its recorded worktree. Codex hooks provide diagnostics but do not replace the worktree path/base-SHA proof or the post-wave ownership check.")
     .replace(/capture only ever writes[\s\S]*?deliberately omitted\./i, "Capture only writes the explicitly approved `.muster/backlog.md` bookkeeping artifact and dispatches no write-capable wave, so it deliberately has no run-active lifecycle.");
+  if (name === "init.md") {
+    const claudeResolver = [
+      'if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "${PLUGIN_ROOT}/runtime/muster.mjs" ]; then',
+      '  MUSTER_CLI="node ${PLUGIN_ROOT}/runtime/muster.mjs"',
+      'elif [ -n "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/runtime/muster.mjs" ]; then',
+      '  MUSTER_CLI="node $PLUGIN_ROOT/runtime/muster.mjs"'
+    ].join("\n");
+    const codexResolver = [
+      'if [ -n "$PLUGIN_ROOT" ] && [ -f "${PLUGIN_ROOT}/runtime/muster.mjs" ]; then',
+      '  MUSTER_CLI="node ${PLUGIN_ROOT}/runtime/muster.mjs"'
+    ].join("\n");
+    if (!result.includes(claudeResolver)) throw new Error("init CLI resolver section not found");
+    result = result.replace(claudeResolver, codexResolver);
+    const coordinatorBoundary = "You are muster's initialization coordinator. Deterministic project learning and";
+    if (!result.includes(coordinatorBoundary)) throw new Error("init coordinator boundary not found");
+    result = result.replace(
+      coordinatorBoundary,
+      "You are muster's initialization coordinator. The generated project profile is provider/model-neutral. Deterministic project learning and"
+    );
+  }
   if (["plan.md", "go.md", "plan-backlog.md"].includes(name)) {
     result = result.replaceAll("capabilities --codex", "capabilities --codex --roles-only");
   }

@@ -38,12 +38,16 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 
 | Tier | Roles | Why |
 | --- | --- | --- |
-| haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
-| sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| fable | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
-| opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
+| scout | `code-navigation`, `docs-research`, `research` | Mechanical locating, gathering, and scanning |
+| core | everything else (the default) | Implementation, review, authoring, and scoring |
+| prime | fallback for apex | Frontier judgment when apex is disabled |
+| apex | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Rare peak judgment |
 
-The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work. Set `MUSTER_MAX_TIER` to cap the highest tier Muster will use (e.g. `MUSTER_MAX_TIER=sonnet` keeps all work on sonnet and below). Fable is disabled by default because the tier can be disabled platform-wide -- `modelForRole` degrades it to opus deterministically unless `MUSTER_ENABLE_FABLE=1` is set.
+The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work. Set `MUSTER_MAX_TIER=core` for budget mode or `MUSTER_MAX_TIER=prime` to exclude apex. Apex is disabled by default; `modelForRole` degrades it to prime deterministically unless `MUSTER_ENABLE_APEX=1` is set.
+
+<!-- legacy-tier-compat:start -->
+Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
+<!-- legacy-tier-compat:end -->
 
 ## Provider kinds
 
@@ -86,7 +90,7 @@ After a run, the `improve` role (the read-only `muster-improver` agent) mines th
 
 Tournament synthesis is tunable via two env vars: `MUSTER_FUSE_TOPK` (default 3) caps the number of candidates passed to the synthesizer; `MUSTER_FUSE_MIN_DISAGREEMENT` (default 1) is the minimum disagreement score required to activate fusion -- below this threshold `muster fuse` falls back to the single best candidate.
 
-The `advisor` role lets a cheap-tier worker consult a stronger model (fable, degrading to opus) at a hard decision point. The worker returns a structured advice-request, a consult budget (`MUSTER_ADVISOR_MAX_CONSULTS`, default 3) bounds cost, the consult is logged to STATE (glass box), and the advice is fed back so the worker keeps the decision. The advisor informs; the worker decides. Native (Claude Code Agent-tool dispatch, no external server tools), autonomous-first (no human prompt).
+The `advisor` role lets a lower-tier worker consult the apex tier, degrading to prime, at a hard decision point. The worker returns a structured advice-request, a consult budget (`MUSTER_ADVISOR_MAX_CONSULTS`, default 3) bounds cost, the consult is logged to STATE (glass box), and the advice is fed back so the worker keeps the decision. The advisor informs; the worker decides. Native (Claude Code Agent-tool dispatch, no external server tools), autonomous-first (no human prompt).
 
 Driving Muster remotely uses Claude Code's own features, not a transport Muster ships. A Routine can fire `/muster:go` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session.
 

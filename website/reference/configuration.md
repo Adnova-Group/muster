@@ -19,7 +19,7 @@ Integer variables are parsed strictly: a non-numeric or out-of-range value falls
 | `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis; below it, `muster fuse` falls back to the single best candidate. `0` always fuses when at least two candidates pass. | CLI (`src/fusion.js`) |
 | `MUSTER_REVIEW_DIFF_THRESHOLD` | `200` | Changed-line threshold at which the review gate dispatches two reviewers instead of one. A batching lever only — the gate's pass bar and fix-loop cap are unchanged. | CLI (`gate-cadence`, `src/gate-cadence.js`) |
 | `MUSTER_AGENT_TEAMS` | _(unset — off)_ | Declares that this session's tool list carries the native `Workflow` fan-out/barrier surface, selecting `mode: "native"` wave dispatch. Nothing declared means the prose wave loop, the floor on every harness. An explicit `--agent-teams`/`--no-agent-teams` flag always wins over the env var. | CLI (`wave-dispatch`, `src/wave-dispatch.js`) |
-| `MUSTER_SPRINT_PARALLEL` | `3` | Max concurrent item-runner subagents per wave in `/muster:go-backlog` wave mode. Hard ceiling `8` (higher values clamp; `0` is invalid). Read by go-backlog's orchestration protocol, not by library code. | `plugin/commands/go-backlog.md` |
+| `MUSTER_SPRINT_PARALLEL` | `5` | Max concurrent item-runner subagents per wave in `/muster:go-backlog` wave mode. Hard ceiling `10` (higher values clamp; `0` is invalid). Read by go-backlog's orchestration protocol, not by library code. | `plugin/commands/go-backlog.md` |
 
 ## Harness-scoped variables
 

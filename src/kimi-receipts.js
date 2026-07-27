@@ -268,8 +268,11 @@ export async function resolveSessionForCwd({ indexPath = DEFAULT_SESSION_INDEX, 
 // ───────────────────────────────────────────────────────────────────────────
 
 // Format one item's session usage (a readSessionUsage result) as a single
-// compact line: session totals + per-dispatch token breakdown.
-export function formatUsageLine(itemId, sessionUsage) {
+// compact line: session totals + per-dispatch token breakdown. `source` is the
+// resolution source that produced the session (captured | index-unique |
+// index-newest) -- surfaced on the line so a FALLBACK attribution reads as a
+// fallback, never as confidently as a captured one.
+export function formatUsageLine(itemId, sessionUsage, source = null) {
   if (typeof itemId !== "string" || !itemId) throw new Error("formatUsageLine: itemId is required");
   if (!sessionUsage?.total) throw new Error("formatUsageLine: sessionUsage (a readSessionUsage result) is required");
   const t = sessionUsage.total;
@@ -277,22 +280,50 @@ export function formatUsageLine(itemId, sessionUsage) {
     .map(([agentId, entry]) => `${agentId}=${entry.total}`)
     .sort()
     .join(" ");
-  return `${itemId}: session=${path.basename(sessionUsage.sessionDir)} total=${t.total} in=${t.input} out=${t.output} cache-read=${t.inputCacheRead} cache-create=${t.inputCacheCreation} records=${t.records} dispatches: ${dispatches || "none"}`;
+  const attribution = source ? ` source=${source}` : "";
+  return `${itemId}: session=${path.basename(sessionUsage.sessionDir)}${attribution} total=${t.total} in=${t.input} out=${t.output} cache-read=${t.inputCacheRead} cache-create=${t.inputCacheCreation} records=${t.records} dispatches: ${dispatches || "none"}`;
 }
 
 // Run readSessionUsage per resolved session and return one line per item, in
-// input order. `items` is [{ itemId, resolution }] where resolution is a
-// resolveSessionForCwd result; UNKNOWN resolutions format as
-// "<itemId>: UNKNOWN (<reason>)" -- a line, not a throw.
+// input order. `items` is [{ itemId, resolution }] or [{ itemId, resolutions }]
+// -- `resolutions` (plural) carries every leg of a retried/fix-looped item (one
+// resolveSessionForCwd result per leg) and the line SUMS across legs, labeled
+// per-leg with each leg's own resolution source, so a fallback attribution on
+// one leg is visible as such. A single UNKNOWN resolution formats as
+// "<itemId>: UNKNOWN (<reason>)"; in a multi-leg line an UNKNOWN leg is a
+// labeled gap excluded from the sum -- a line, never a throw.
 export async function summarizeItemReceipts(items) {
   if (!Array.isArray(items)) throw new Error("summarizeItemReceipts: items must be an array");
   const lines = [];
-  for (const { itemId, resolution } of items) {
-    if (!resolution?.resolved) {
-      lines.push(`${itemId}: UNKNOWN (${resolution?.reason ?? "no-resolution"})`);
+  for (const item of items) {
+    const { itemId } = item;
+    const legs = item.resolutions ?? [item.resolution];
+    if (legs.length === 1) {
+      const [resolution] = legs;
+      if (!resolution?.resolved) {
+        lines.push(`${itemId}: UNKNOWN (${resolution?.reason ?? "no-resolution"})`);
+        continue;
+      }
+      lines.push(formatUsageLine(itemId, await readSessionUsage(resolution.sessionDir), resolution.source));
       continue;
     }
-    lines.push(formatUsageLine(itemId, await readSessionUsage(resolution.sessionDir)));
+    // Multi-leg item: sum every resolved leg, label each leg with its source.
+    const totals = Object.fromEntries(KIMI_USAGE_FIELDS.map(field => [field, 0]));
+    let recordCount = 0;
+    const labels = [];
+    for (const [index, resolution] of legs.entries()) {
+      const leg = `leg-${index + 1}`;
+      if (!resolution?.resolved) {
+        labels.push(`${leg}=UNKNOWN(${resolution?.reason ?? "no-resolution"})`);
+        continue;
+      }
+      const usage = await readSessionUsage(resolution.sessionDir);
+      for (const field of KIMI_USAGE_FIELDS) totals[field] += usage.total[field];
+      recordCount += usage.total.records;
+      labels.push(`${leg}[session=${path.basename(resolution.sessionDir)} source=${resolution.source ?? "unknown"} total=${usage.total.total}]`);
+    }
+    const input = totals.inputOther + totals.inputCacheRead + totals.inputCacheCreation;
+    lines.push(`${itemId}: legs=${legs.length} total=${input + totals.output} in=${input} out=${totals.output} cache-read=${totals.inputCacheRead} cache-create=${totals.inputCacheCreation} records=${recordCount} legs: ${labels.join(" ")}`);
   }
   return lines;
 }

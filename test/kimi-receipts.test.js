@@ -273,18 +273,76 @@ test("formatUsageLine: one compact line with session totals + per-dispatch break
     formatUsageLine("item-7", usage),
     "item-7: session=kimi-session-usage total=74952 in=74335 out=617 cache-read=68096 cache-create=0 records=5 dispatches: agent-0=29470"
   );
+  // the resolution source rides the line so a fallback attribution reads as one
+  assert.equal(
+    formatUsageLine("item-7", usage, "index-newest"),
+    "item-7: session=kimi-session-usage source=index-newest total=74952 in=74335 out=617 cache-read=68096 cache-create=0 records=5 dispatches: agent-0=29470"
+  );
 });
 
-test("summarizeItemReceipts: one line per item, UNKNOWN resolutions become lines (never throws)", async () => {
+test("summarizeItemReceipts: one line per item, source surfaced, UNKNOWN resolutions become lines (never throws)", async () => {
   const lines = await summarizeItemReceipts([
     { itemId: "item-1", resolution: { resolved: true, sessionId: "s", sessionDir: FIXTURE_SESSION, source: "captured" } },
     { itemId: "item-2", resolution: { resolved: false, reason: "ambiguous-tie", candidates: ["a", "b"] } },
     { itemId: "item-3", resolution: { resolved: false, reason: "no-sessions-for-cwd", candidates: [] } }
   ]);
   assert.equal(lines.length, 3); // input order preserved
-  assert.match(lines[0], /^item-1: session=kimi-session-usage total=74952 /);
+  assert.match(lines[0], /^item-1: session=kimi-session-usage source=captured total=74952 /);
   assert.equal(lines[1], "item-2: UNKNOWN (ambiguous-tie)");
   assert.equal(lines[2], "item-3: UNKNOWN (no-sessions-for-cwd)");
+});
+
+test("summarizeItemReceipts: a multi-leg item sums its legs, labeled per-leg with each leg's source", async () => {
+  const lines = await summarizeItemReceipts([
+    {
+      itemId: "item-4",
+      resolutions: [
+        { resolved: true, sessionId: "s1", sessionDir: FIXTURE_SESSION, source: "captured" },
+        { resolved: true, sessionId: "s2", sessionDir: FIXTURE_SESSION, source: "index-newest" },
+        { resolved: false, reason: "ambiguous-tie", candidates: ["a", "b"] }
+      ]
+    }
+  ]);
+  assert.equal(lines.length, 1);
+  assert.equal(
+    lines[0],
+    "item-4: legs=3 total=149904 in=148670 out=1234 cache-read=136192 cache-create=0 records=10 legs: " +
+    "leg-1[session=kimi-session-usage source=captured total=74952] " +
+    "leg-2[session=kimi-session-usage source=index-newest total=74952] " +
+    "leg-3=UNKNOWN(ambiguous-tie)"
+  );
+  // the fallback leg's index-newest label is on the line -- visible as a fallback,
+  // not summed in silence
+  assert.match(lines[0], /source=index-newest/);
+});
+
+// --- Live probe: the resume_hint shape, pinned against the installed binary --
+// Same opt-in pattern as test/kimi-install.test.js's `kimi doctor config`
+// probe: skipped when no kimi binary is on PATH; everything else in this file
+// stays hermetic. A tiny `kimi -p --output-format stream-json` run must end
+// with a session.resume_hint captureSessionId can parse -- this is the shape
+// the process-lane accounting chain (go.md step 8 / go-backlog.md step 4)
+// depends on.
+test("live probe: captureSessionId parses a session id from a real `kimi -p` stream-json stdout", async (t) => {
+  const { execFile: execFileCb } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFile = promisify(execFileCb);
+  let stdout;
+  try {
+    ({ stdout } = await execFile(
+      "kimi",
+      ["-p", "Reply with the single word: ok", "--output-format", "stream-json"],
+      { timeout: 180_000, maxBuffer: 16 * 1024 * 1024 }
+    ));
+  } catch (error) {
+    if (error.code === "ENOENT") { t.skip("kimi binary not on PATH"); return; }
+    throw error; // the binary ran and failed -- a real failure
+  }
+  assert.match(
+    captureSessionId(stdout) ?? "",
+    /^session_/,
+    "stream-json stdout must carry a session.resume_hint with a session id"
+  );
 });
 
 // --- Prose wiring: the batch/finish prose names the accounting line ---------
@@ -295,9 +353,23 @@ test("go-backlog.md's batch report names the Kimi token-accounting line and its 
   assert.match(text, /captureSessionId/, "go-backlog.md must name captureSessionId");
   assert.match(text, /resolveSessionForCwd\(\{ cwd: <item worktree path>, capturedSessionId \}\)/, "go-backlog.md must name resolveSessionForCwd with its exact call shape");
   assert.match(text, /summarizeItemReceipts/, "go-backlog.md must name summarizeItemReceipts");
-  // the mechanics: capture at dispatch, resolve before teardown, transcribe into STATE
+  // the two arms, stated explicitly: the capture/resolve chain is PROCESS-LANE ONLY
+  assert.match(text, /Process-lane legs.*headless `kimi -p`/s, "go-backlog.md must scope the capture/resolve chain to process-lane (kimi -p) legs");
   assert.match(text, /at dispatch capture the leg's stream-json stdout/, "go-backlog.md must state the capture happens at dispatch on stream-json stdout");
   assert.match(text, /before the item's worktree teardown/, "go-backlog.md must state resolution happens before worktree teardown");
+  // in-session Agent/AgentSwarm legs: parent-session dispatches view or omission,
+  // NEVER per-worktree session resolution (their tokens index under the parent's cwd)
+  assert.match(text, /In-session legs.*muster-runner` Agent-tool subagents/s, "go-backlog.md must name the in-session arm and its dispatch shape");
+  assert.match(text, /PARENT session's agents tree, indexed under the parent's cwd/, "go-backlog.md must state in-session tokens index under the parent's cwd");
+  assert.match(text, /no-sessions-for-cwd/, "go-backlog.md must state why per-worktree resolution can't work for in-session legs");
+  assert.match(text, /per-worktree session resolution is never the arm here/, "go-backlog.md must forbid per-worktree resolution for in-session legs");
+  assert.match(text, /readSessionUsage\(<parent session dir>\)`'s `dispatches` view/, "go-backlog.md must name the parent-session dispatches view as the in-session arm");
+  assert.match(text, /omit the item's line and note the omission in STATE/, "go-backlog.md must state the in-session arm's omission fallback");
+  // multi-leg items sum per-leg with each leg's resolution source surfaced
+  assert.match(text, /one resolution PER LEG/, "go-backlog.md must state retried/fix-looped items carry one resolution per leg");
+  assert.match(text, /labeled per-leg with each leg's resolution source/, "go-backlog.md must state the summary surfaces each leg's source");
+  assert.match(text, /`captured`\/`index-unique`\/`index-newest`/, "go-backlog.md must enumerate the resolution sources");
+  // the mechanics: transcribe into STATE
   assert.match(text, /next to each item's gate summary/, "go-backlog.md must state where the lines land in STATE");
   // UNKNOWN lines are normal after retries and NEVER block the report
   assert.match(text, /UNKNOWN \(<reason>\)` line is normal after retries and never blocks the report/, "go-backlog.md must state UNKNOWN lines never block the report");
@@ -312,6 +384,14 @@ test("go.md's finish (step 8) names the single-outcome accounting line", async (
   assert.match(text, /captureSessionId/, "go.md must name captureSessionId");
   assert.match(text, /resolveSessionForCwd\(\{ cwd: <worktree path>, capturedSessionId \}\)/, "go.md must name resolveSessionForCwd with its exact call shape");
   assert.match(text, /summarizeItemReceipts/, "go.md must name summarizeItemReceipts");
+  // the goal run is a process-lane leg, and step 6 opts INTO stream-json so the
+  // stdout step 8 captures exists at all (kimiGoalInvocation defaults streamJson: false)
+  assert.match(text, /streamJson: true/, "go.md must name the streamJson:true opt-in at the goal invocation");
+  assert.match(text, /process-lane leg/, "go.md must scope the capture chain to the process-lane leg");
+  // in-session legs take the parent-session arm, never per-worktree resolution
+  assert.match(text, /readSessionUsage` dispatches view/, "go.md must name the parent-session dispatches view for in-session legs");
+  assert.match(text, /per-worktree session\s+resolution never applies/, "go.md must forbid per-worktree resolution for in-session legs");
+  assert.match(text, /`captured`\/`index-unique`\/`index-newest`/, "go.md must state the summary surfaces each leg's resolution source");
   assert.match(text, /UNKNOWN never blocking/, "go.md must state UNKNOWN lines never block");
   assert.match(text, /non-Kimi harnesses omit the line/, "go.md must state non-Kimi harnesses omit the line");
 });

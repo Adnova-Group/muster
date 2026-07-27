@@ -1029,5 +1029,26 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // functions' home) sits outside this surface. docs/binding-interface.md's
   // grep-audit worktree row re-derived 26 -> 28 mentions (file count unchanged).
   // Deliberate surface change, not drift.
+  //
+  // 2026-07-27 re-pin (kimi-batch-token-reporting, review-gate round-1 fixes):
+  // file COUNT unchanged (139) -- content changed in plugin/commands/go-backlog.md
+  // and plugin/commands/go.md only. A review-gate BLOCKER found the accounting
+  // clause promised per-worktree session resolution for legs that can't produce
+  // it: wave-mode items dispatch as in-session muster-runner Agent-tool
+  // subagents whose tokens live in the PARENT session's agents tree (indexed
+  // under the parent's cwd), so resolveSessionForCwd({ cwd: <item worktree> })
+  // returns no-sessions-for-cwd for every such item. Both files now state the
+  // two arms explicitly: the captureSessionId + resolveSessionForCwd chain is
+  // scoped to PROCESS-LANE (kimi -p) legs only, and in-session Agent/AgentSwarm
+  // legs are accounted via the parent session's own readSessionUsage dispatches
+  // view or omitted with a STATE note -- never per-worktree resolution. Two
+  // minors landed in the same pass: go.md step 6 now names the streamJson:true
+  // opt-in (kimiGoalInvocation defaults streamJson:false, so step 8's captured
+  // stdout silently yielded null), and the summary line now surfaces each leg's
+  // resolution source (captured/index-unique/index-newest) with multi-leg
+  // (retried/fix-looped) items summed per-leg in summarizeItemReceipts
+  // (src/kimi-receipts.js, outside this surface). test/kimi-receipts.test.js's
+  // prose-consistency pins were extended to lock the scoping.
+  // Deliberate surface change, not drift.
   assert.equal(hash.digest("hex"), "a4775efda3940954b0ac94519bceaea15471fb4ef574df88b9b62d6edfcfa3ba");
 });

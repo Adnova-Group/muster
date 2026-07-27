@@ -1056,5 +1056,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   //
   // 2026-07-27 re-pin (first-class init): one reviewed command was added and the
   // greenfield skill now delegates repository preparation to its receipted lifecycle.
-  assert.equal(hash.digest("hex"), "aac0f3c1dbbbea2b51eff20fe6d06414b9b7ce2786d11e2533cae67c63b3bedf");
+  //
+  // 2026-07-27 re-pin #2 (tier-vocabulary-dispatch-rules): the five LIVE
+  // dispatch-rule prose sites (orchestrator Model bullet, advisor step 4,
+  // tournament judge, audit dimension sweep) moved off the legacy vocabulary
+  // and now dispatch on the harness-concrete adapter FIELDS capabilities
+  // attaches (claudeModel / advisorClaudeModel / codexModel / kimiModel) --
+  // a conceptual tier is never passed raw to an Agent tool again. Deliberate
+  // surface change, not drift.
+  assert.equal(hash.digest("hex"), "8bf50a2c40412b09b55b1fcb0e98f1de1b29480c5b5133d246e7c0aae8c6d2f6");
 });

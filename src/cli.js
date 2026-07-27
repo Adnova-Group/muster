@@ -54,6 +54,7 @@ import { scanRepoPrompts } from "./prompt-scan.js";
 import { fuse } from "./fusion.js";
 import { validateAdviceRequest } from "./advisor.js";
 import { modelForRole } from "./model.js";
+import { claudeModelForTier } from "./claude.js";
 import { detectScope } from "./scope.js";
 import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./hygiene.js";
 import { resolveMusterCli } from "./cli-resolve.js";
@@ -345,7 +346,9 @@ async function main() {
       const req = JSON.parse(await readFile(file, "utf8"));
       const v = validateAdviceRequest(req);
       if (!v.ok) fail(v.errors.join("\n"));
-      out({ advisorModel: modelForRole("advisor"), request: req });
+      // advisorModel is the conceptual tier; advisorClaudeModel is the Claude
+      // adapter's concrete dispatch value (apex degrades to prime -> opus first).
+      out({ advisorModel: modelForRole("advisor"), advisorClaudeModel: claudeModelForTier(modelForRole("advisor")).model, request: req });
     // ── memory + ops (cont.): vendored catalog data, project scaffolding ──
     } else if (cmd === "vendor") {
       const manifestUrl = new URL("../vendor/manifest.yaml", import.meta.url);

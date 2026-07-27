@@ -64,11 +64,15 @@ doing the work.
         generic subagent with the provider's brief injected -- the model override still applies, note
         the fallback in STATE. Else (skill/mcp/inline) -> dispatch a generic subagent with the resolved
         provider injected into the BRIEF.
-      - **Model (authoritative):** always pass the crew member's `model` as the Agent tool's `model`
-        override (written by the router from `capabilities` output). Fable degrades to opus at the
-        emission layer by default (`modelForRole` in `src/model.js`); an opted-in (`MUSTER_ENABLE_FABLE=1`)
-        dispatch that's still rejected retries once on opus and records the degradation -- never fail
-        the task over a model tier, never drop the override.
+      - **Model (authoritative):** the crew member's `model` is a CONCEPTUAL tier (scout|core|prime|
+        apex, or a neutral `{tier, effort?}` profile; legacy haiku|sonnet|opus|fable normalize) --
+        NEVER pass it raw. Dispatch on the harness-concrete value `capabilities` already resolved:
+        on Claude Code, `roles[<role>].claudeModel` is the Agent tool's `model` override
+        (`src/claude.js` adapter output); on Codex/Kimi, `codexModel`/`kimiModel` carry the
+        role profile/lane the same way. Apex degrades to prime at the emission layer
+        by default (`modelForRole` in `src/model.js`); an opted-in (`MUSTER_ENABLE_APEX=1`, legacy
+        `MUSTER_ENABLE_FABLE`) dispatch that's still rejected retries once on prime's concrete model
+        and records the degradation -- never fail the task over a model tier, never drop the override.
       - **Subagent failure:** never a silent stop -- re-dispatch ONCE with the error appended as
         context (`dispatchRetryState`, `src/loop.js`, max 2 attempts). **On Kimi the re-dispatch is
         a native RESUME, never a fresh spawn** -- the Agent tool's `resume` for a per-agent

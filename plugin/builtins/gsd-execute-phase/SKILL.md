@@ -86,7 +86,7 @@ AGENT_SKILLS=$(gsd_run query agent-skills gsd-executor)
 
 Parse JSON for: `executor_model`, `verifier_model`, `commit_docs`, `parallelization`, `branching_strategy`, `branch_name`, `phase_found`, `phase_dir`, `phase_number`, `phase_name`, `phase_slug`, `plans`, `incomplete_plans`, `plan_count`, `incomplete_count`, `state_exists`, `roadmap_exists`, `phase_req_ids`, `response_language`.
 
-**Model resolution:** If `executor_model` is `"inherit"`, omit the `model=` parameter from all `Agent()` calls — do NOT pass `model="inherit"` to Agent. Omitting the `model=` parameter causes Claude Code to inherit the current orchestrator model automatically. Only set `model=` when `executor_model` is an explicit model name or tier alias (e.g., `"sonnet"`, `"opus"`).
+**Model resolution:** If `executor_model` is `"inherit"`, omit the `model=` parameter from all `Agent()` calls — do NOT pass `model="inherit"` to Agent. Omitting the `model=` parameter causes Claude Code to inherit the current orchestrator model automatically. Only set `model=` when `executor_model` is an explicit model name or one of Claude Code's own model aliases (e.g., `"sonnet"`, `"opus"` — these are the harness's concrete values, not muster's conceptual tiers).
 
 **If `response_language` is set:** Include `response_language: {value}` in all spawned subagent prompts so any user-facing output stays in the configured language.
 
@@ -610,7 +610,7 @@ increases monotonically across waves. `{status}` is `complete` (success),
    Agent(
      subagent_type="gsd-executor",
      description="Execute plan {plan_number} of phase {phase_number}",
-     # Only include model= when executor_model is an explicit name or tier alias (e.g. "sonnet", "opus").
+     # Only include model= when executor_model is an explicit name or a Claude Code model alias (e.g. "sonnet", "opus" — harness-concrete, not muster tiers).
      # When executor_model is "inherit", omit this parameter entirely so
      # Claude Code inherits the orchestrator model automatically.
      model="{executor_model}",  # omit this line when executor_model == "inherit"

@@ -12,7 +12,7 @@ Integer variables are parsed strictly: a non-numeric or out-of-range value falls
 | `MUSTER_INVITE_COOLDOWN_MS` | `900000` (15 min) | Suppresses a repeat border invitation for this long after the last one actually fired, so a session is never nagged twice in quick succession. | `UserPromptSubmit` + `PreToolUse` hooks |
 | `MUSTER_ACTION_GUARD` | `deny` | The action-class fence, active only while a run is live and `.muster/forbidden-actions` lists a class: `deny` blocks a matching send/sign/submit/publish/purchase/delete-remote tool call, `warn` allows it with a reminder, `off` disables the fence. The only hard-deny surface in the stack. | `PreToolUse` hook (`plugin/hooks/pre-tool-use.js`) |
 | `MUSTER_TASK_GATE` | _(unset — gate on)_ | Ties a native task board "completed" tick to a recorded review-gate PASS for muster-tracked tasks; a `pending` or `escalated` entry is denied. `off` allows unconditionally. Fail-open for any task muster did not create. | `TaskCompleted` hook (`plugin/hooks/task-completed-gate.js`) |
-| `MUSTER_MAX_TIER` | _(unset)_ | Caps the model tier policy (`opus` disables Fable, `sonnet` for budget mode); unset means no cap. Static agent frontmatter pins are unaffected on direct invocation; in muster runs the dispatch override honors the cap. | CLI (`src/model.js`) |
+| `MUSTER_MAX_TIER` | _(unset)_ | Caps the model tier policy (`prime` disables apex, `core` for budget mode; legacy names accepted); unset means no cap. Static agent frontmatter pins are unaffected on direct invocation; in muster runs the dispatch override honors the cap. | CLI (`src/model.js`) |
 | `MUSTER_ENABLE_FABLE` | _(unset — off)_ | Opts back into the Fable tier for peak-judgment roles (tournament judge, `architecture-review`, `improve`, `advisor`). Unset degrades Fable to Opus deterministically, since the tier can be disabled platform-wide. | CLI (`src/model.js`) |
 | `MUSTER_ADVISOR_MAX_CONSULTS` | `3` | Maximum advisor consults per run — bounds the cost of workers escalating to the advisor role. `0` disables advisor consults. | CLI (`src/advisor.js`) |
 | `MUSTER_FUSE_TOPK` | `3` | Maximum tournament candidates passed to the fusion synthesizer. Minimum `1`. | CLI (`src/fusion.js`) |
@@ -40,7 +40,7 @@ Every variable is read at the point of use, so all three of these work and none 
 
 ```sh
 # one invocation
-MUSTER_MAX_TIER=sonnet npx -y @adnova-group/muster capabilities
+MUSTER_MAX_TIER=core npx -y @adnova-group/muster capabilities
 
 # this shell, this session
 export MUSTER_ENABLE_FABLE=1

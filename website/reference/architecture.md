@@ -38,12 +38,14 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 
 | Tier | Roles | Why |
 | --- | --- | --- |
-| haiku | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
-| sonnet | everything else (the default) | Implementation, review, authoring, scoring |
-| fable | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
-| opus | fallback only (fable -> opus via `fallbackModelFor`) | Used when fable is unavailable on the plan |
+| scout | `code-navigation`, `docs-research`, `research` | Mechanical: locating, gathering, scanning |
+| core | everything else (the default) | Implementation, review, authoring, scoring |
+| apex | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Heavy judgment |
+| prime | fallback only (apex -> prime via `fallbackModelFor`) | Used when apex is unavailable on the plan |
 
-The model comes back as `roles[<role>].model` from `muster capabilities`, and the orchestrator passes it as the dispatch model override when it spawns a subagent. So quota spend tracks the difficulty of the work. Set `MUSTER_MAX_TIER` to cap the highest tier Muster will use (e.g. `MUSTER_MAX_TIER=sonnet` keeps all work on sonnet and below). Fable is disabled by default because the tier can be disabled platform-wide -- `modelForRole` degrades it to opus deterministically unless `MUSTER_ENABLE_FABLE=1` is set.
+Tiers are muster's own conceptual ladder; each harness adapter resolves them to concrete models (Claude: haiku/sonnet/opus/fable via `src/claude.js`; Codex: gpt-5.6-terra/luna/sol; Kimi: kimi-for-coding/k3). The pre-rename names (haiku|sonnet|opus|fable) remain accepted everywhere as legacy aliases.
+
+The conceptual tier comes back as `roles[<role>].model` from `muster capabilities`, with the harness-concrete dispatch value beside it (`claudeModel` always; `codexModel`/`kimiModel` under their flags) -- the orchestrator dispatches on the concrete value, never the tier raw. So quota spend tracks the difficulty of the work. Set `MUSTER_MAX_TIER` to cap the highest tier Muster will use (e.g. `MUSTER_MAX_TIER=core` keeps all work on core and below; legacy values accepted). Apex is disabled by default because the tier can be disabled platform-wide -- `modelForRole` degrades it to prime deterministically unless `MUSTER_ENABLE_APEX=1` (legacy `MUSTER_ENABLE_FABLE`) is set.
 
 ## Provider kinds
 

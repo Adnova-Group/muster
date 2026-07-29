@@ -37,7 +37,8 @@ Inputs: the task, the Crew Manifest (for `successCriteria`), and N (default 3).
       disqualifies regardless of total score).
       -- When `.muster/rubric.md` exists in the run's repo, the judge receives its full content
       alongside `successCriteria`, and the scoring justification cites rubric dimensions by name
-      alongside the existing criteria. Absent `.muster/rubric.md`, scoring is unchanged.<!-- muster-return-template:end -->
+      alongside the existing criteria. Propose-not-invent: the judge never fabricates a rubric
+      dimension the file does not carry. Absent `.muster/rubric.md`, scoring is unchanged.<!-- muster-return-template:end -->
 
    b. **Compare** candidates against each other and produce a **fusion map** -- the five arrays that
       `muster fuse` validates:

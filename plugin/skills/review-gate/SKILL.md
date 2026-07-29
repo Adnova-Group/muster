@@ -40,7 +40,7 @@ CLI call below.
      directly in `.muster/verdicts.json`; step 5's `tally` (`src/review.js`) forces a deterministic block
      on any such entry, regardless of other findings.
 3. **Citation guard:** run `$MUSTER_CLI citation-check <file>` on each artifact BEFORE dispatching
-   reviewers, flags in hand for their briefs. A dangling anchor (`ok:false`, exit 2) is automatic
+   reviewers, flags in hand for their briefs. A dangling anchor (`ok:false`, exit 2) is an automatic
    FAIL. `uncited` paragraphs instead get a reviewer's judgment call (`pass`/`needs_review`/`fail`).
    Delivery stays blocked while any `fail` stands, including an ingestion-bearing artifact's
    untraceable facts.

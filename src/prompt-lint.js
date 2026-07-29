@@ -12,6 +12,7 @@ import { escapeRe } from "./keyword.js";
 const BP = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices";
 const GUARD = "https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails";
 const LINTLANG = "https://github.com/hermes-labs-ai/lintlang";
+const CTX5 = "https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models";
 
 // Treat the system string (if provided) as part of the searchable surface.
 const surface = (text, ctx) => `${ctx.system ? ctx.system + "\n" : ""}${text || ""}`;
@@ -206,6 +207,51 @@ export const RULES = [
     applies: (t, c) => hasInterpolation(t, c),
     pass: (t) => hasXmlBlock(t),
     fix: "Place injected/user content inside its own XML block, away from instructions.",
+  },
+  {
+    // Claude-5 context-engineering ratchet (the-new-rules article, 2026-07-29): "giving
+    // examples actually constrains them to a certain exploration space" — for SYSTEM
+    // prompts, prefer expressive interfaces over worked examples. Deliberately the
+    // inverse axis of ANTH-SHOT-001, which stays task-only: task prompts still want
+    // examples; system prompts drown in them. Threshold calibrated to the current
+    // corpus (every shipped prompt passes today) so this is a RATCHET against future
+    // example-densification, not a retroactive failure generator.
+    id: "CTX-EXAMPLE-001", severity: "info", dimension: "examples",
+    title: "Keep system prompts interface-led, not example-led (Claude-5 rule)", source: CTX5,
+    // Vendored pattern-library content (plugin/builtins/ wsh-*/gsd-*/sp-*, and their
+    // codex/fallback-skills ports) is EXCLUDED: a code-recipe skill's worked examples
+    // ARE its payload — the article's rule targets instruction prompts, not references.
+    applies: (t, c) => c.genre === "system" && (t || "").split("\n").length > 40 &&
+      !(c.file && /(^|\/)(plugin\/builtins|codex\/fallback-skills)\//.test(c.file)),
+    pass: (t) => {
+      const lines = (t || "").split("\n");
+      let fenced = 0, inFence = false;
+      for (const l of lines) {
+        if (/^\s*```/.test(l)) { inFence = !inFence; fenced += 1; continue; }
+        if (inFence || /<\/?example/i.test(l)) fenced += 1;
+      }
+      return fenced / lines.length <= 0.4;
+    },
+    fix: "Replace worked examples with a tighter interface/contract description; keep at most brief illustrative snippets (<40% of the prompt).",
+  },
+  {
+    // Claude-5 context-engineering ratchet (same source): "let Claude use judgement" —
+    // Anthropic removed >80% of Claude Code's system prompt with no measurable loss.
+    // Flags system prompts whose imperative-rule density (MUST/NEVER/ALWAYS/DO NOT and
+    // lowercase equivalents) keeps climbing. Threshold calibrated ABOVE the current
+    // corpus maximum (orchestration/safety prompts legitimately stack invariants —
+    // their existing scoped disables stay untouched): a ratchet against future
+    // rule-stacking, not a judgment on today's gates.
+    id: "CTX-RULE-001", severity: "info", dimension: "clarity",
+    title: "Watch imperative-rule density; prefer judgment over rules (Claude-5 rule)", source: CTX5,
+    applies: (t, c) => c.genre === "system" && (t || "").split("\n").length > 40,
+    pass: (t) => {
+      const s = stripCode(t || "");
+      const rules = (s.match(/\b(MUST|NEVER|ALWAYS|DO NOT|must|never|always|do not|don't)\b/g) || []).length;
+      const lines = s.split("\n").filter(l => l.trim().length > 0).length || 1;
+      return rules / lines <= 0.5;
+    },
+    fix: "Cut prescriptive micro-rules the model self-derives; keep gates, receipts, and safety invariants (see docs: >80% system-prompt cut with no eval loss).",
   },
 ];
 

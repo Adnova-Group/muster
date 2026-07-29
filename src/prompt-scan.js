@@ -44,7 +44,9 @@ export async function scanRepoPrompts(root) {
     // Discovered prompt docs and system/instruction code-prompts are the system genre;
     // dedicated prompt files (.prompt/.tmpl/templates) are task prompts.
     const genre = p.kind === "prompt-file" ? "task" : "system";
-    const { findings, total, passing, weakest } = lintPrompt(p.text, { genre });
+    // ctx.file lets path-scoped rules (CTX-EXAMPLE-001) distinguish muster-authored
+    // instruction prompts from vendored pattern-library content.
+    const { findings, total, passing, weakest } = lintPrompt(p.text, { genre, file: p.file });
     return {
       file: p.file, kind: p.kind, identifier: p.identifier, genre, passing, total,
       weakest: weakest?.criterion ?? null,

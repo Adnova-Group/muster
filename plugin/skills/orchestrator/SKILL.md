@@ -153,16 +153,12 @@ and escalations -- never a pending/in_progress/completed list the native board (
 board to be authoritative, so it relies on STATE alone (note it once) -- the one case where a
 per-item status line in STATE is not duplication, since nothing else exists to carry it.
 
-**Codex DOES have a counterpart: `update_plan`** (corrected 2026-07-25 against Codex 0.145.0 --
-the prior claim that Codex had none was wrong, and it is why muster runs on Codex showed no
-on-screen task list while Claude Code and Kimi runs did). It is registered UNCONDITIONALLY --
-not feature-gated -- and takes `{explanation?, plan: [{step, status: pending|in_progress|completed}]}`
-with the harness-enforced invariant *"At most one step can be in_progress at a time"*, which is the
-same one-in-flight rule this board already requires. It renders in the Codex TUI and streams out of
-`codex exec --json` as a `todo_list` item, so the tick becomes a machine-readable receipt rather
-than a STATE line nothing else can parse. Use it on Codex exactly as `TaskCreate`/`TaskUpdate` are
-used on Claude Code: emit the full plan at dispatch, re-emit on each status transition (the tool
-takes the whole list, so a transition is a re-emit, not a patch).
+**Codex's counterpart is `update_plan`** -- registered unconditionally, taking `{explanation?,
+plan: [{step, status: pending|in_progress|completed}]}` with the harness-enforced invariant
+*"At most one step can be in_progress at a time"* (the same one-in-flight rule this board already
+requires), rendering in the TUI and streaming from `codex exec --json` as a `todo_list` receipt.
+Use it exactly as `TaskCreate`/`TaskUpdate`: emit the full plan at dispatch, re-emit on each
+transition (the tool takes the whole list). (Correction history: docs/research/codex-cli.md.)
 
 Kimi Code CLI's counterpart is `TodoList` (`{todos: [{title, status}]}`, auto-allowed,
 session-scoped; omitting `todos` queries, `[]` clears) -- see docs/research/kimi-code-cli.md.

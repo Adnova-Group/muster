@@ -210,6 +210,14 @@ test("cellNeedsRetry: a quota/balance fault is NEVER retried (kimi 0.30.0 fail-f
   assert.equal(cellNeedsRetry({ exitCode: 1, stdout: rateLimited }), true, "rate limit stays retryable");
 });
 
+test("cellNeedsRetry: quota wording in ASSISTANT text does not suppress the retry (scoped match)", () => {
+  // Review-gate minor: the quota match is scoped to error-surface lines, so a
+  // run whose model output merely TALKS about billing still retries on a
+  // nonzero exit.
+  const billingTalk = '{"role":"assistant","content":"You should check your account balance regularly."}\n';
+  assert.equal(cellNeedsRetry({ exitCode: 1, stdout: billingTalk }), true);
+});
+
 // --- Verdict extraction (raw, verbatim; NO keyword scoring) ------------------
 
 test("extractVerdictText returns the assistant text verbatim from canned stream-json stdout", () => {

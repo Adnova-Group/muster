@@ -1161,5 +1161,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // background retrospective; propose-never-apply; agent fallback line) plus a
   // one-line pointer in plugin/agents/muster-improver.md. The runner's own pin
   // was computed against pre-#158 main; this recompute folds both histories.
+  // (Sibling fix, no plugin-surface change: #158's prose tightening had
+  // silently desynced scripts/build-codex.mjs's literal fix-cap replacement
+  // anchor -- String.replace no-ops on a miss -- dropping the generated
+  // bundle's "one fix-and-re-review iteration" clause. The anchor is now a
+  // wording-tolerant regex that throws on a miss.)
   assert.equal(hash.digest("hex"), "7d2f1d0069829f8ef81801e3c0b6dae5110a38a3783e4147b4599c60ad31c8d7");
 });

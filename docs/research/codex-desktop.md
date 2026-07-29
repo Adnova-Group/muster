@@ -119,10 +119,13 @@ This is precisely the topology muster's installer targets [LIVE-VERIFIED-DECISIO
 Marketplace edits are not hot-reloaded: "After you change the plugin, update the plugin
 directory that your marketplace entry points to and restart the ChatGPT desktop app so the
 local install picks up the new files" [DOCUMENTED] [src: build-plugins]. muster's build is
-idempotent-by-version (`buildCodexPlugin` skips regeneration when the published
-`packageVersion` matches; `MUSTER_BUILD_FORCE=1` overrides), so a source edit without a
-version bump does not refresh what the desktop cache will copy — a known, documented-in-code
-limitation (`scripts/build-codex.mjs:283-301`) [src: build-codex].
+idempotent-by-input-digest (`buildCodexPlugin` skips regeneration only when the published
+plugin's stored content digest over every generation input still matches the current source;
+`MUSTER_BUILD_FORCE=1` overrides unconditionally) — codex-bundle-cache-key incident fix:
+this used to compare only the published `packageVersion`, so a source edit without a version
+bump silently never refreshed what the desktop cache would copy; the digest now observes any
+such edit regardless of version (`src/codex-release.js`'s `computeCodexBuildInputDigest`)
+[src: build-codex].
 
 ## 4. The WSL-vs-Windows boundary (the documented split state)
 

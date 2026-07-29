@@ -6,7 +6,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertRegularTree, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
+import { assertRegularTree, CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
 
 // Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
 //
@@ -393,26 +393,30 @@ async function adaptPortedSkills(internalSkillDir, names) {
 // publish rename); it should rarely if ever fire.
 //
 // Idempotent: skips regeneration entirely when `outDir` already holds a
-// published plugin whose packageVersion matches the current package.json.
-// This is the one shared implementation both the CLI entry below and
+// published plugin whose stored input digest (computeCodexBuildInputDigest,
+// src/codex-release.js) matches a fresh digest of the current generation
+// inputs. This is the one shared implementation both the CLI entry below and
 // codex-install.js's install-time trigger use, so `npm run build:codex` /
 // `pretest` skip exactly like a `muster install codex` call does — neither
 // path had its own separate, possibly-diverging copy of this check before.
-// Known limitation: this compares only the package version, not file
-// content, so editing a source file without bumping the version will not by
-// itself trigger regeneration and this call is a silent no-op — delete
-// `outDir`, bump the version, or set `MUSTER_BUILD_FORCE=1` (honored here,
-// and therefore by `npm run build:codex` / the `pretest` hook that invokes
-// this same script's CLI entry below) to force a fresh build regardless of
-// the published version.
+// codex-bundle-cache-key incident fix: this used to compare only the package
+// version, so editing a generation input without bumping the version never
+// triggered regeneration and the call was a silent no-op -- a stale bundle
+// shipped for the rest of a pinned-version window. Keying the skip on the
+// input digest instead means any edit to any generation input (or a stored
+// digest from a plugin published before this fix, which carries none at all)
+// is observed regardless of whether the version changed. `outDir` deletion,
+// a version bump, and `MUSTER_BUILD_FORCE=1` (honored here, and therefore by
+// `npm run build:codex` / the `pretest` hook that invokes this same script's
+// CLI entry below) all still force a fresh build unconditionally.
 export async function buildCodexPlugin(options, retries = 1) {
   const { root, outDir } = options;
-  const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
   if (process.env.MUSTER_BUILD_FORCE !== "1") {
     try {
       const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
-      if (current.packageVersion === packageVersion) return current;
-    } catch { /* nothing published yet, or what's there is stale/invalid: generate below */ }
+      const inputDigest = await computeCodexBuildInputDigest(root);
+      if (current.inputDigest === inputDigest) return current;
+    } catch { /* nothing published yet, or what's there is stale/invalid, or a generation input is unreadable: generate below */ }
   }
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -437,7 +441,11 @@ async function buildCodexPluginOnce({ root, outDir }) {
     const runtime = join(plugin, "runtime");
     const modeDir = join(plugin, "skills");
     const internalSkillDir = join(plugin, "internal-skills");
-    for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"]) {
+    // Single-sourced with computeCodexBuildInputDigest's own declared input set
+    // (src/codex-release.js) so this validation loop and the skip-check's digest
+    // can never silently drift apart into hashing a different set than this
+    // actually validates.
+    for (const source of CODEX_BUILD_INPUT_DIRS) {
       await assertRegularTree(join(root, source));
     }
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
@@ -550,7 +558,11 @@ async function buildCodexPluginOnce({ root, outDir }) {
     if (!codexMcpSource.includes('argv: ["capabilities", "--codex", "--roles-only"]') || codexMcpSource.includes('argv: ["capabilities", "--cowork", "--roles-only"]')) throw new Error("Codex MCP capabilities-roles adapter was not applied");
     if (!codexMcpSource.includes('MUSTER_RUNTIME: "codex"') || codexMcpSource.includes('MUSTER_RUNTIME: "cowork"')) throw new Error("Codex MCP runtime-env adapter was not applied");
     await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
-    write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
+    // inputDigest is buildCodexPlugin's codex-bundle-cache-key skip key: stamped
+    // fresh on every real generation so the NEXT call's skip check compares
+    // against what was actually read this time, not merely this version string.
+    const inputDigest = await computeCodexBuildInputDigest(root);
+    write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version, inputDigest }, null, 2) + "\n");
 
     write(join(plugin, ".mcp.json"), JSON.stringify({
       mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }

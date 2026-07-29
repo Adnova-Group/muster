@@ -249,12 +249,16 @@ partial tree. `resolveCodexPlugin` absorbs the narrow ENOENT case with a small
 bounded retry; anything else is dev/CI tooling that simply reruns. This is
 documented, not a bug — see `publishCodexPlugin`'s docblock.
 
-**Version-only skip-if-current, and its force escape hatch:** `buildCodexPlugin`
+**Input-digest skip-if-current, and its force escape hatch:** `buildCodexPlugin`
 (and therefore `npm run build:codex` / the `pretest` hook) skips regeneration
-entirely when `outDir` already holds a published plugin whose `packageVersion`
-matches `package.json` — it does not compare file content, so editing a source
-file without bumping the version is a silent no-op. Set `MUSTER_BUILD_FORCE=1`
-to force a real rebuild regardless of the published version:
+entirely when `outDir` already holds a published plugin whose stored input
+digest (`computeCodexBuildInputDigest`, `src/codex-release.js` — a SHA-256
+content hash over every generation-input source directory plus package.json)
+matches a fresh digest of the current inputs. codex-bundle-cache-key incident
+fix: this used to compare only `packageVersion`, so editing a source file
+without bumping the version was a silent no-op that shipped a stale bundle —
+the digest now observes any such edit regardless of version. Set
+`MUSTER_BUILD_FORCE=1` to force a real rebuild unconditionally:
 
 ```
 node --test --test-name-pattern='MUSTER_BUILD_FORCE' test/codex-build-repro.test.js

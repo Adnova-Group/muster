@@ -706,7 +706,9 @@ const ALIASES = { run: "plan", autopilot: "go", sprint: "go-backlog" };
 // eval:router). Every case's `mode` field names either one of the 8 mode prompts above
 // OR one of these 10 skills — a single field, not a second "skill" key, because grade.mjs
 // (frozen: `${r.mode.padEnd(9)}`) reads `mode` unconditionally on every row and would
-// throw on a case that left it undefined.
+// throw on a case that left it undefined. STRUCTURAL_SKILLS (below) names a further skill
+// with no independent response-quality behavior to grade — same STRUCTURAL_MODES/Init
+// posture, one layer down.
 const SKILLS = [
   "orchestrator",
   "review-gate",
@@ -719,6 +721,15 @@ const SKILLS = [
   "prd-pipeline",
   "roadmap-prioritization",
 ];
+// improver-fork item: `improve` is a thin `context: fork` dispatcher onto muster-improver's
+// own retrospective judgment (plugin/agents/muster-improver.md) — an AGENT, and agents are
+// already outside this eval's graded universe (see the BUILTINS comment below, "muster-
+// improver.md is an agent under plugin/agents/, not a builtin SKILL.md, and outside this
+// eval's stated universe"). `improve` carries no independent response-quality behavior of
+// its own to grade with a dataset case; its coverage is the guard test that pins its own
+// contract instead (test/skill-improve.test.js), the same STRUCTURAL_MODES/Init posture one
+// layer down.
+const STRUCTURAL_SKILLS = ["improve"];
 // The content-pipeline layer (eval/modes extended to pipelines/*.yaml phase prompts) --
 // the "honest graded subset" of the content pipelines (knowledge/software pipelines like
 // prd already have gate-achievability coverage from the skill-protocol layer above, so
@@ -946,7 +957,7 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   assert.equal(commandFiles.length, MODES.length + STRUCTURAL_MODES.length + aliasNames.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length + STRUCTURAL_MODES.length + aliasNames.length} (${MODES.length} evaluated MODES + ${STRUCTURAL_MODES.length} structural MODES + ${aliasNames.length} ALIASES)`);
 
   const skillDirs = await readdir(new URL("../plugin/skills", import.meta.url));
-  assert.equal(skillDirs.length, SKILLS.length + 1, `plugin/skills/* has ${skillDirs.length} dir(s), expected ${SKILLS.length + 1} (10 SKILLS + router, which has its own eval:router)`);
+  assert.equal(skillDirs.length, SKILLS.length + 1 + STRUCTURAL_SKILLS.length, `plugin/skills/* has ${skillDirs.length} dir(s), expected ${SKILLS.length + 1 + STRUCTURAL_SKILLS.length} (10 SKILLS + router, which has its own eval:router, + ${STRUCTURAL_SKILLS.length} structural SKILLS)`);
 
   const builtinDirs = (await readdir(new URL("../plugin/builtins", import.meta.url))).filter((d) => d.startsWith("muster-"));
   assert.equal(builtinDirs.length, BUILTINS.length, `plugin/builtins/muster-*/ has ${builtinDirs.length} dir(s), expected ${BUILTINS.length} (BUILTINS)`);
@@ -955,7 +966,7 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   assert.equal(pipelineFiles.length, CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length, `pipelines/*.yaml has ${pipelineFiles.length} file(s), expected ${CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length} (9 CONTENT_PIPELINES + 11 KNOWLEDGE_PIPELINES)`);
 
   const readmeText = await read("eval/modes/README.md");
-  for (const name of [...MODES, ...STRUCTURAL_MODES, ...aliasNames, ...SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
+  for (const name of [...MODES, ...STRUCTURAL_MODES, ...aliasNames, ...SKILLS, ...STRUCTURAL_SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
     assert.ok(readmeText.includes(name), `README's coverage table is missing surface "${name}"`);
   }
 });

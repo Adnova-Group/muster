@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 142); // +1: first-class init command; +2 (2026-07-29, skill-split): orchestrator references/{codex,kimi}-dispatch.md progressive-disclosure files
+  assert.equal(paths.length, 143); // +1: first-class init command; +2 (2026-07-29, skill-split): orchestrator references/{codex,kimi}-dispatch.md; +1 (2026-07-29, improver-fork): plugin/skills/improve/SKILL.md
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1156,5 +1156,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the scoring justification, propose-not-invents exactly like the reviewers
   // do, and leaves scoring unchanged when the file is absent. Deliberate
   // additive change, not drift.
-  assert.equal(hash.digest("hex"), "4fbb51c1987899413373db5f0eaa431371b548b8d25d852b3fee113451c2706c");
+  // 2026-07-29 re-pin #12 (improver-fork, rebase-recompute by the driver):
+  // file count 142 -> 143 -- new plugin/skills/improve/SKILL.md (context: fork
+  // background retrospective; propose-never-apply; agent fallback line) plus a
+  // one-line pointer in plugin/agents/muster-improver.md. The runner's own pin
+  // was computed against pre-#158 main; this recompute folds both histories.
+  // (Sibling fix, no plugin-surface change: #158's prose tightening had
+  // silently desynced scripts/build-codex.mjs's literal fix-cap replacement
+  // anchor -- String.replace no-ops on a miss -- dropping the generated
+  // bundle's "one fix-and-re-review iteration" clause. The anchor is now a
+  // wording-tolerant regex that throws on a miss.)
+  assert.equal(hash.digest("hex"), "7d2f1d0069829f8ef81801e3c0b6dae5110a38a3783e4147b4599c60ad31c8d7");
 });

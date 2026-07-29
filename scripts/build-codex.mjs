@@ -342,10 +342,15 @@ function codexSkill(source, id) {
         /1\.\s+\*\*?Select reviewers[\s\S]*?(?=\n2\.\s+Dispatch)/,
         "1. Select one code reviewer for ordinary waves. Add the security reviewer only when the task is security-scoped or the diff touches authentication, authorization, secrets, cryptography, shell execution, network boundaries, installers, or lifecycle hooks. Add a surface reviewer only when its definition-of-done gate fires. Never dispatch two reviewers for the same quality dimension; always use at least one reviewer."
       )
-      .replace(
-        "Cap at\n   **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3). If still blocked after the cap, ESCALATE",
-        "Allow **one fix-and-re-review iteration**. If the same blocker remains, ESCALATE"
-      );
+      ;
+    // Anchored as a REGEX tolerant of Claude-side rewording between the cap
+    // sentence and its ESCALATE, and guarded fail-loud: the previous literal
+    // string here silently no-opped when #158's prose tightening dropped
+    // "after the cap" (String.replace misses are invisible), shipping a
+    // bundle without the one-iteration clause the codex-workflows guard pins.
+    const fixCapRe = /Cap at\n\s+\*\*3 fix iterations\*\* \(`REVIEW_GATE_MAX_ITERATIONS` = 3\)\. If still blocked[^\n]*?ESCALATE/;
+    if (!fixCapRe.test(body)) throw new Error("review-gate fix-cap anchor not found for Codex rewrite");
+    body = body.replace(fixCapRe, "Allow **one fix-and-re-review iteration**. If the same blocker remains, ESCALATE");
   }
   if (id === "interview") body = body.replace("Present both for approval via the **interactive user input** selection UI", "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");
   if (id === "wsh-sast-configuration") body = body.replace("# See references/semgrep-rules.md for detailed examples", "# Example custom rule; adapt it to the repository's threat model");

@@ -88,8 +88,8 @@ Codex native Init expects `AGENTS.md`. A request to run Init, an existing file, 
 | Pipelines | all of them |
 | MCP tools | 27 CLI wrappers plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
-| Skills | 75 total: 13 public + 62 internal |
-| Internal skill breakdown | 11 native orchestration + 51 capability |
+| Skills | 76 total: 13 public + 63 internal |
+| Internal skill breakdown | 12 native orchestration + 51 capability |
 
 ## Inspecting a Codex install
 

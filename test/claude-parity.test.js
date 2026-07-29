@@ -39,7 +39,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 140); // +1: first-class init command
+  assert.equal(paths.length, 142); // +1: first-class init command; +2 (2026-07-29, skill-split): orchestrator references/{codex,kimi}-dispatch.md progressive-disclosure files
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1121,5 +1121,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // confirmed (multi-file-writing-wave restriction lifted), Workflow-lane
   // effort ladder (src/claude.js workflowEffort), journal/schema receipts,
   // resumeFromRunId retry. Deliberate shared-surface change, one re-pin.
-  assert.equal(hash.digest("hex"), "b67bd9f5ea9e87a3a0876490bab976a44adebbd477b503f131312b4771bdda9d");
+  //
+  // 2026-07-29 re-pin #10 (skill-split): file count 140 -> 142 -- the
+  // orchestrator's Codex/Kimi dispatch sections moved to progressive-disclosure
+  // references/{codex,kimi}-dispatch.md (read on demand by that harness only);
+  // SKILL.md keeps the headings + on-<harness>-read-this pointers. Content
+  // preserved verbatim; kimi-dispatch prose guards repointed to the reference.
+  assert.equal(hash.digest("hex"), "fa3b4af4ce4417e76bdb2cc36fbc3fc83dfd7bac76dcf2e86166d1ff7d097fcb");
 });

@@ -208,143 +208,25 @@ One worked example of each path (the same 2-task wave, routed both ways): docs/n
 
 ### Codex-native dispatch: spawn_agent
 
-Codex has no `Workflow`-tool counterpart, so wave dispatch rides Codex's OWN native primitive,
-subagent collaboration itself, never a prose-loop substitute for the Claude-only `Workflow` tool.
-**The dispatch and barrier shapes are VERSION-DEPENDENT** (corrected 2026-07-25 against Codex
-0.145.0). Codex resolves its subagent API per MODEL from the catalog's `multi_agent_version`, and
-the live catalog puts `gpt-5.6-sol`/`terra` on v2 but `gpt-5.6-luna` -- muster's core tier -- on
-v1. Never hardcode one shape; build both through `codexSpawnAgentCall`/`codexWaitAgentCall`
-(`src/wave-dispatch.js`), which resolve the version and fail closed to v1 rather than guessing v2
-(docs/research/codex-cli.md sec 10.1).
-
-| | v2 (`sol`, `terra`) | v1 (`luna`) |
-|---|---|---|
-| dispatch | `collaboration.spawn_agent` (`task_name`, `message`, `fork_turns`, `agent_type`) | `multi_agent_v1.spawn_agent` (`message`, `fork_context: false`, `agent_type`) |
-| barrier | `collaboration.wait_agent(timeout_ms)` -- **no targets** | `multi_agent_v1.wait_agent(targets[], timeout_ms)` |
-| wake | a mailbox update from ANY live agent (also wakes early on steered input) | the FIRST of the named targets to finish |
-
-`wait_agent` BLOCKS until something happens, so there is no interval to tune and nothing to
-tight-poll -- call it in a loop until every dispatched member has settled (neither version is an
-all-barrier). Timeouts are bounded 10s..3600s, default 30s. **Take receipts from the mailbox, not
-from `list_agents`**: Codex 0.145.0 removed task messages from `list_agents` output (`#33030`), so
-it now reconciles liveness only.
-
-`fork_turns` (v2 only) is a **STRING**: Codex rejects the integer `3` and accepts `"3"`. Default
-`"none"`; `"all"` is refused before dispatch because Codex will not combine a full-history fork with
-a named `agent_type` (full-history agents inherit the parent's type/model/effort). A positive
-integer string is the useful middle -- it keeps that many turns of context AND still accepts
-`agent_type` plus model/effort overrides.
-
-`resolveCodexWaveDispatch({ multiAgent, env })` (`src/wave-dispatch.js`) selects between this and a
-sequential-inline floor purely on the session's own `features.multi_agent` signal -- same
-DECLARED-not-auto-probed shape as above, inverted: Codex ships `multi_agent` default-on, so only an
-explicit `multiAgent: false` (or `MUSTER_CODEX_MULTI_AGENT=0`) drops to `mode: "sequential-inline"`
-(one crew member at a time, never a partial/mixed fan-out).
-
-**Fail-closed on a rejected profile -- the whole point of this design.** `agent_type` names a
-custom-agent TOML profile (`.codex/agents/<id>.toml`) that pins that role's model, reasoning
-effort, and sandbox; losing that pin by silently falling back to a generic agent is the exact
-anti-pattern the codex burn taught muster to guard against. Only an ACTUALLY-rejected
-`spawn_agent` call proves a profile unavailable -- never infer unavailability from a simplified
-displayed tool signature. `assertCodexSpawnAgentAccepted` in `src/wave-dispatch.js` throws a
-registration diagnostic naming the `agent_type` and task on a rejection, and the run STOPS on that
-task rather than silently re-dispatching on a generic/default agent. Fix the registration
-(reinstall the profile, verify `.codex/agents/`), then re-dispatch that one task.
+**On Codex, read `references/codex-dispatch.md` (in this skill's directory) BEFORE dispatching
+wave 1** -- it carries the version-dependent spawn/barrier packet shapes (v1 `multi_agent_v1` vs
+v2 `collaboration`, resolved per MODEL and built via `codexSpawnAgentCall`/`codexWaitAgentCall` in
+`src/wave-dispatch.js`, fail-closed to v1), the mailbox-not-`list_agents` receipts rule, the
+`fork_turns`-is-a-STRING contract, the sequential-inline floor
+(`resolveCodexWaveDispatch`), and the fail-closed rejected-profile rule
+(`assertCodexSpawnAgentAccepted`). Progressive disclosure: a non-Codex session never pays that
+file's tokens.
 
 ### Kimi-native dispatch: AgentSwarm waves + per-agent calls
 
-Kimi ships BOTH halves of wave dispatch natively -- `AgentSwarm` (fan-out + barrier +
-aggregated report in ONE tool call) and the per-agent `Agent` call -- so on Kimi every wave
-resolves through `resolveKimiWaveDispatch({ items, uniformTask })` (`src/kimi-dispatch.js`),
-which picks the native shape straight from Kimi's own guidance: AgentSwarm is for "the same
-kind of task over different inputs"; "For a few differently-shaped tasks, make separate
-`Agent` calls in one message instead" (docs/research/kimi-code-cli.md sec 11.9). Step 4b's
-barrier and step 4c's review gate are UNCHANGED in both modes -- only the fan-out mechanism
-moves off the prose loop.
-
-- **`mode: "agent-swarm"`** (uniform fan-out: one task over N inputs -- audit N files,
-  review N modules) -- build ONE packet with `kimiSwarmCall({ promptTemplate, items,
-  subagentType, model })` and dispatch it as the `AgentSwarm` tool; the swarm fans out,
-  barriers, and returns the aggregated report itself. The `AgentSwarm` call MUST be the
-  sole tool call in its response (the binary enforces it; `soleToolCall: true` on the
-  packet is that contract). Swarm concurrency is the harness's own
-  `KIMI_CODE_AGENT_SWARM_MAX_CONCURRENCY`, not a muster knob.
-- **`mode: "agent-calls"`** (the default, and muster's usual case: a wave is N DISTINCT
-  roles, not one template over N inputs) -- one `kimiAgentCall({ agentId, prompt,
-  description, background })` per crew member, dispatched as separate `Agent` calls in one
-  message. `agentId` is the crew member's resolved `chosen.id`; the call derives its model
-  lane from the shared manifest, so a dispatch can never contradict the installed agent
-  file's stamped `model_preference` -- and Kimi takes a LANE (`primary`|`secondary`), never
-  a model id.
-
-**The lanes ENGAGE only because the run loop binds them per-process.** A stamped
-`model_preference` is inert until the secondary-model experiment is on for the process --
-`kimiGoalInvocation` (the go.md step-6 Kimi run loop) sets `KIMI_CODE_EXPERIMENTAL_FLAG=1`
-+ `KIMI_SECONDARY_MODEL` from the single derivation `kimiLaneEnv()` (`src/kimi.js`), and
-the flag is also what selects the v2 engine under `kimi -p`. The interactive TUI ignores
-`model_preference` entirely, so lanes bind under a muster-launched `kimi -p`, never in the
-TUI (docs/research/kimi-code-cli.md sec 11.8). `muster doctor`'s `kimi-lane-binding` check
-reports the active binding.
-
-**Attended sessions dispatch lane-sensitive legs as headless `kimi -p` processes.** The
-AgentSwarm/agent-calls shapes above are the UNATTENDED in-session path -- lanes bind there
-only because `kimiGoalInvocation` (go.md step 6) already set the env pair for the whole run
-loop. An ATTENDED/interactive session (a human driving this skill in the TUI) has no such
-bind, and the TUI ignores `model_preference` entirely, so an in-session `Agent` call there
-can never engage a lane. Lane-sensitive legs in an attended session therefore dispatch via
-`kimiProcessDispatch({ brief, agentFile, cwd, lane })` (`src/kimi-dispatch.js`) -- one
-headless `kimi -p` process per leg, spawned straight from the descriptor's `{ argv, env,
-cwd, lane }`: `argv` is `["-p", brief, "--agent-file", <absolute agent file>,
-"--output-format", "stream-json", "-m", KIMI_LANES[lane]]`, and `env` is the shared
-`kimiLaneEnv()` OVERRIDE pair, carried for the v2 engine flag `--agent-file` needs (its
-`KIMI_SECONDARY_MODEL` half also binds lanes for any subagents the leg itself spawns) --
-merge it over the ambient process env at spawn (`{ ...process.env, ...d.env }`), never
-pass it as the whole env (a wholesale replacement loses HOME/PATH and the child breaks). `-m` is ALWAYS
-emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
-SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
-`-m` and omitting it silently falls to config `default_model`. The leg's receipt is the
-stream-json result on stdout plus the process exit code, with per-leg token accounting from
-`readSessionUsage` (`src/kimi-receipts.js`) over the fresh session dir the process writes
-(docs/research/kimi-code-cli.md sec 8). Reserve the attended session's native `Agent` tool
-for legs that genuinely need the parent's live context; the pre-validation, resume-retry,
-and background rules below keep governing the unattended in-session path, which a process
-lane never replaces mid-loop.
-
-**Pre-validate the four swarm rejection rules BEFORE dispatch -- never pay a whole-wave
-round trip to learn them.** Kimi rejects a malformed swarm before any subagent starts, so
-a bad packet costs the wave's entire fan-out. `kimiSwarmCall` enforces all four up front
-and throws with the offending detail named: (1) at least 2 items unless resuming; (2)
-`prompt_template` required whenever items are present; (3) the template must contain the
-exact `{{item}}` placeholder; (4) -- absent from Kimi's published docs, enforced in the
-binary -- the FILLED prompts must be DISTINCT: two items expanding to the same prompt
-reject the WHOLE swarm, and duplicate wave items (two crew members handed the same file)
-are exactly how muster would trip it. On a validation error, FIX the packet (rename or
-merge the duplicate item, repair the template) and rebuild; a wave that cannot satisfy the
-distinct-prompts rule is not a uniform fan-out at all -- resolve it as agent-calls instead.
-
-**Failure retry rides the same native shapes.** Step 4a's re-dispatch-once rule RESUMES on
-Kimi instead of re-spawning (docs/research/kimi-code-cli.md sec 6): a failed per-agent call is
-retried as `kimiAgentCall({ resume: <failed agent id>, prompt: <error context> })` -- Kimi's
-`resume` is mutually exclusive with `subagent_type`, and a resumed subagent keeps its model, so
-the retry packet drops the lane override too; a failed swarm member is retried as
-`kimiSwarmCall({ resumeAgentIds: { <failed agent id>: <error context> } })` -- which is also why
-the >=2-item floor lifts when resuming. One retry, the same cap every harness gets; a second
-failure escalates exactly as step 4a says.
-
-**Background a leg only when the wave does not barrier on it.** An independent read-only
-leg -- a reviewer whose verdict does not gate the CURRENT wave, an investigator whose
-findings only a later wave (or the deferred fast-path review pass) needs -- dispatches as
-`kimiAgentCall({ ..., background: true })` (`run_in_background`): the call returns a task id
-immediately and the orchestrator keeps making progress, with the leg's result folding back
-from the background-completion receipt -- a synthetic user message carrying the subagent's
-final message (the whole handoff, same return contract as a foreground leg), backed by the
-on-disk `tasks/<task_id>.json` + `output.log` (docs/research/kimi-code-cli.md secs 6+8;
-`interpretKimiBackgroundCompletion` in `src/kimi-dispatch.js` maps the receipt onto the
-fold-back, and a failed backgrounded leg re-enters step 4a's re-dispatch-once rule
-unchanged). Anything step 4b's barrier or step 4c's review gate depends on dispatches
-FOREGROUND: a backgrounded leg is still in flight at the barrier, so backgrounding
-barrier-gated work would silently empty the barrier's "all wave tasks done" meaning.
-AgentSwarm needs no background mode -- the swarm IS the barrier.
+**On Kimi, read `references/kimi-dispatch.md` (in this skill's directory) BEFORE dispatching
+wave 1** -- it carries the AgentSwarm-vs-agent-calls selection (`resolveKimiWaveDispatch` in
+`src/kimi-dispatch.js`), the four pre-dispatch swarm validation rules (incl. the binary-enforced
+distinct-prompts rule), lane binding (`kimiLaneEnv`, TUI-vs-`kimi -p`), the attended-session
+process lane (`kimiProcessDispatch`), the native resume retry shapes, and the
+background-vs-barrier rule. Step 4b's barrier and step 4c's review gate are UNCHANGED in both of
+its modes -- only the fan-out mechanism moves off the prose loop. Progressive disclosure: a
+non-Kimi session never pays that file's tokens.
 
 ### Worktree isolation per harness + base-SHA receipts
 

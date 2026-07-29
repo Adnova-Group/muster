@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { writeMemory, readMemory, appendState, appendFollowup } from "../src/memory.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 // Pull the YAML frontmatter block (between the first two `---` fences) out of a
 // memory doc and parse it, so a test can assert on the *parsed* key set rather

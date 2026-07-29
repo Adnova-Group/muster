@@ -1127,5 +1127,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // references/{codex,kimi}-dispatch.md (read on demand by that harness only);
   // SKILL.md keeps the headings + on-<harness>-read-this pointers. Content
   // preserved verbatim; kimi-dispatch prose guards repointed to the reference.
-  assert.equal(hash.digest("hex"), "fa3b4af4ce4417e76bdb2cc36fbc3fc83dfd7bac76dcf2e86166d1ff7d097fcb");
+  //
+  // 2026-07-29 re-pin #11 (rubric-verifiers): file COUNT unchanged (142) --
+  // only plugin/skills/review-gate/SKILL.md and plugin/skills/tournament/
+  // SKILL.md's content changed. review-gate/SKILL.md gained a new "## Rubric-
+  // fed verifiers" section (an optional .muster/rubric.md, when present, rides
+  // along every reviewer brief verbatim as a RUBRIC: block; findings mapped to
+  // a rubric dimension cite it by name; propose-not-invent; absent file is a
+  // no-op) -- fitting it under the file's own <=2000-token brief-template
+  // budget (test/prompt-scan-brief-lint.test.js) required tightening existing
+  // prose elsewhere in the same marked span (steps 1-6, the three surface-type
+  // gates, the fast-path brief section) without touching any pinned substring
+  // (severity enum, REVIEW_GATE_MAX_ITERATIONS, capabilities.json Inputs line,
+  // the three surface/gate-name pairs, the eval/modes mutant-kill-rule-clean.md
+  // fixture -- all re-verified green) or exceeding the ANTH-POS-001 negative-
+  // framing cap (5 for a system-genre doc; landed at 4). tournament/SKILL.md's
+  // judge-scoring bullet (part a, its own <=1000-token return-template span,
+  // still within budget) gained one sentence: the same .muster/rubric.md, when
+  // present, is passed to the judge alongside successCriteria and cited by
+  // dimension name in the scoring justification; absent file leaves scoring
+  // unchanged. Deliberate additive change, not drift.
+  assert.equal(hash.digest("hex"), "6a3e58175c9cc631e5c0e65532e6c76274c656954fd258968e5bdc4eb025d79d");
 });

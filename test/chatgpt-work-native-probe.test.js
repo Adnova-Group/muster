@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -126,7 +126,7 @@ test("grader uses the schema's strict UUID expression and Windows cannot produce
   assert.match(gradeReceipt(receipt(), NONCE, attestation(), identity(), "win32").errors.join("\n"), /HUMAN-HOLD.*Windows/i);
 });
 
-test("cleanup finalization is bound to a successful retained grade and independently verifies exact path absence", async (t) => {
+test("cleanup finalization is bound to a successful retained grade and deletes the exact retained directories", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "muster-native-cleanup-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const retainedDir = join(root, "retained");
@@ -154,11 +154,11 @@ test("cleanup finalization is bound to a successful retained grade and independe
     inventory: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
     artifacts: { tunnel: "stopped", screenshotsRetained: 0, logsRetained: 0, attestationRetained: 0, probeDirsRetained: 0 },
   };
-  assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /must be absent/);
-  await Promise.all([rm(pluginPath, { recursive: true }), rm(tempPath, { recursive: true })]);
   assert.deepEqual(await finalizeCleanup(cleanup, snapshot), {
     ok: true, phase: "cleanup-finalized", nonce: NONCE, gradeDigest: retained.gradeDigest,
   });
+  await assert.rejects(lstat(pluginPath), { code: "ENOENT" });
+  await assert.rejects(lstat(tempPath), { code: "ENOENT" });
   cleanup.inventory.plugin = "present";
   assert.equal((await finalizeCleanup(cleanup, snapshot)).ok, false);
 });
@@ -192,9 +192,19 @@ test("cleanup rejects tampered grades, path mismatches, symlinks, and unowned-or
   assert.match((await finalizeCleanup(mismatch, snapshot)).errors.join("\n"), /path mismatch/i);
   const renamedPlugin = join(root, "renamed-plugin");
   await rename(pluginPath, renamedPlugin);
-  assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /renamed.*instead of removed/i);
+  assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /present.*identity-checked deletion.*moved/i);
   await rename(renamedPlugin, pluginPath);
-  await Promise.all([rm(pluginPath, { recursive: true }), rm(tempPath, { recursive: true })]);
+  const nestedUnderTemp = join(tempPath, "nested-plugin");
+  await rename(pluginPath, nestedUnderTemp);
+  assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /present.*identity-checked deletion.*moved/i);
+  await rename(nestedUnderTemp, pluginPath);
+  const sibling = join(root, "sibling");
+  const nestedPlugin = join(sibling, "nested-plugin");
+  await mkdir(sibling);
+  await rename(pluginPath, nestedPlugin);
+  assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /present.*identity-checked deletion.*moved/i);
+  await rename(nestedPlugin, pluginPath);
+  await rm(pluginPath, { recursive: true });
   await symlink(join(root, "missing-target"), pluginPath);
   assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /symlink/i);
 
@@ -269,7 +279,7 @@ test("grader binds identity hashes and rejects collisions, incomplete cleanup, r
   }
 });
 
-test("CLI retains phase-1 identity/evidence and finalizes from that snapshot after plugin and app deletion", async (t) => {
+test("CLI retains phase-1 identity/evidence and identity-checks deletion during finalization", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "muster-native-probe-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const receiptPath = join(dir, "receipt.json");
@@ -325,7 +335,6 @@ test("CLI retains phase-1 identity/evidence and finalizes from that snapshot aft
   const grade = JSON.parse(result.stdout);
   assert.equal(grade.ok, true);
   assert.equal(grade.snapshotPath, snapshotPath);
-  await Promise.all([rm(pluginPath, { recursive: true }), rm(tempPath, { recursive: true })]);
   await writeFile(cleanupPath, JSON.stringify({
     cleanupType: "muster-work-native-cleanup-finalization",
     timestamp: TIMESTAMP,

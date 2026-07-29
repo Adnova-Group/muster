@@ -117,7 +117,7 @@ node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> 
   --owned-temp-path /exact/owned/probe-temp-path
 ```
 
-The grade is phase 1 and must run before deleting the attestation or installed `.app.json`. The snapshot target must not exist, must be outside both owned trees, and is retained after cleanup. Do not invent an uninstall command: after `evidence-graded`, stop the tunnel, remove only the two exact snapshot-bound paths, and use `HUMAN-HOLD` for collisions or uncertain ownership. Write the cleanup record with the returned `gradeDigest` and the identical `ownedPaths`, then finalize phase 2 from the retained snapshot. No live identity input or deleted `.app.json` is used:
+The grade is phase 1 and must run before deleting the attestation or installed `.app.json`. The snapshot target must not exist, must be outside both owned trees, and is retained after cleanup. Do not invent an uninstall command: after `evidence-graded`, stop the tunnel, remove the connection/marketplace/cache/UI entries, leave the two exact snapshot-bound directories in place, and use `HUMAN-HOLD` for collisions or uncertain ownership. Write the cleanup record with the returned `gradeDigest` and the identical `ownedPaths`, then finalize phase 2 from the retained snapshot. The finalizer verifies each retained directory's UID/device/inode, deletes those exact directories itself, and checks their absence. No live identity input or deleted `.app.json` is used:
 
 ```sh
 node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \

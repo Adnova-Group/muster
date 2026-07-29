@@ -9,7 +9,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
+import { lstat, open, readFile, realpath, rm } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -129,7 +129,7 @@ export function buildProbe({
       "The server must emit a separate nonce/tool/request/result attestation with invocationCount=1 and a server timestamp. UI evidence is operator attestation, not cryptographic provenance.",
       "Bind the receipt to SHA-256(normalized connection ID), SHA-256(installed .app.json), plugin name/version, and the registered connection label; never store the raw ID, app file, tunnel ID, API key, or screenshots.",
       "Phase 1: while the independent server attestation and installed .app.json still exist, grade the operator receipt and write a private retained snapshot outside the owned plugin/temp trees. The snapshot binds the successful grade, exact owned paths, app identity/hash, nonce, and server attestation with an evidence-grade SHA-256 digest.",
-      "Phase 2 only after evidence grade succeeds: stop tunnel-client, delete only the exact snapshot-bound plugin/temp paths after ownership checks, re-run every inventory, and finalize from the retained snapshot. Phase 2 independently lstat-checks absence and rejects path mismatches, symlinks, and unowned replacements; it never depends on the deleted .app.json.",
+      "Phase 2 only after evidence grade succeeds: stop tunnel-client, remove the connection/marketplace/cache/UI entries, re-run those inventories, and pass the retained snapshot to the cleanup finalizer. The finalizer identity-checks and deletes the exact snapshot-bound plugin/temp directories itself, then lstat-checks absence; it rejects missing, moved, replaced, mismatched, symlinked, or unowned paths and never depends on the deleted .app.json.",
     ],
   };
 }
@@ -430,27 +430,41 @@ function validateSnapshot(snapshot, errors) {
   }
 }
 
-async function verifyAbsent(path, at, errors, retainedIdentity) {
+async function inspectRetainedDirectory(path, retainedIdentity, at, errors) {
+  let stat;
   try {
-    const stat = await lstat(path);
-    if (stat.isSymbolicLink()) errors.push(`${at} is a symlink, not verified absence`);
-    else if (typeof process.getuid === "function" && stat.uid !== process.getuid()) errors.push(`${at} is an unowned replacement`);
-    else errors.push(`${at} must be absent`);
+    stat = await lstat(path);
   } catch (error) {
-    if (error.code !== "ENOENT") errors.push(`${at} absence cannot be verified: ${error.message}`);
+    if (error.code === "ENOENT") errors.push(`${at} must be present for identity-checked deletion; the retained directory may have been moved`);
+    else errors.push(`${at} cannot be inspected before deletion: ${error.message}`);
+    return;
   }
-  if (!retainedIdentity?.parentPath) return;
+  if (stat.isSymbolicLink()) errors.push(`${at} is a symlink, not the retained real directory`);
+  else if (!stat.isDirectory()) errors.push(`${at} is not the retained real directory`);
+  if (typeof process.getuid === "function" && stat.uid !== process.getuid()) errors.push(`${at} is unowned`);
+  if (String(stat.dev) !== retainedIdentity?.dev || String(stat.ino) !== retainedIdentity?.ino
+    || (typeof stat.uid === "number" ? stat.uid : null) !== retainedIdentity?.uid) {
+    errors.push(`${at} identity changed after evidence grading`);
+  }
   try {
-    for (const entry of await readdir(retainedIdentity.parentPath)) {
-      const candidate = resolve(retainedIdentity.parentPath, entry);
-      const stat = await lstat(candidate);
-      if (stat.isDirectory()
-        && String(stat.dev) === retainedIdentity.dev && String(stat.ino) === retainedIdentity.ino) {
-        errors.push(`${at} retained directory was renamed to ${candidate} instead of removed`);
-      }
-    }
+    if (await realpath(path) !== path) errors.push(`${at} path now traverses a symlink`);
   } catch (error) {
-    errors.push(`${at} retained inode absence cannot be verified: ${error.message}`);
+    errors.push(`${at} cannot be canonically resolved before deletion: ${error.message}`);
+  }
+}
+
+async function deleteRetainedDirectory(path, at, errors) {
+  try {
+    await rm(path, { recursive: true });
+  } catch (error) {
+    errors.push(`${at} identity-checked deletion failed: ${error.message}`);
+    return;
+  }
+  try {
+    await lstat(path);
+    errors.push(`${at} remains after identity-checked deletion`);
+  } catch (error) {
+    if (error.code !== "ENOENT") errors.push(`${at} absence cannot be verified after deletion: ${error.message}`);
   }
 }
 
@@ -523,8 +537,12 @@ export async function finalizeCleanup(cleanup, snapshot) {
   if (snapshot?.ownedPaths) {
     await verifyOwnedParent(snapshot.ownership?.plugin, "snapshot.ownedPaths.plugin", errors);
     await verifyOwnedParent(snapshot.ownership?.temp, "snapshot.ownedPaths.temp", errors);
-    await verifyAbsent(snapshot.ownedPaths.plugin, "snapshot.ownedPaths.plugin", errors, snapshot.ownership?.plugin);
-    await verifyAbsent(snapshot.ownedPaths.temp, "snapshot.ownedPaths.temp", errors, snapshot.ownership?.temp);
+    await inspectRetainedDirectory(snapshot.ownedPaths.plugin, snapshot.ownership?.plugin, "snapshot.ownedPaths.plugin", errors);
+    await inspectRetainedDirectory(snapshot.ownedPaths.temp, snapshot.ownership?.temp, "snapshot.ownedPaths.temp", errors);
+  }
+  if (errors.length) return { ok: false, errors };
+  for (const key of ["plugin", "temp"]) {
+    await deleteRetainedDirectory(snapshot.ownedPaths[key], `snapshot.ownedPaths.${key}`, errors);
   }
   return errors.length ? { ok: false, errors } : {
     ok: true, phase: "cleanup-finalized", nonce: snapshot.nonce, gradeDigest: snapshot.gradeDigest,

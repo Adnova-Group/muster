@@ -136,7 +136,7 @@ node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> 
   --owned-temp-path /exact/owned/probe-temp-path
 ```
 
-Grading is two-phase. Phase 1 keeps the attestation and probe inventory present, writes a private retained grade snapshot outside the owned plugin and probe trees, and returns `evidence-graded`; do not delete the attestation before this command. After that result, stop the tunnel and remove only the exact snapshot-bound plugin and probe paths owned by this run. There is no invented uninstall command: if ownership or a path collides, stop and record `HUMAN-HOLD`. Write the cleanup record with the returned `gradeDigest` and identical `ownedPaths`; phase 2 independently verifies those paths are absent from the retained snapshot:
+Grading is two-phase. Phase 1 keeps the attestation and probe inventory present, writes a private retained grade snapshot outside the owned plugin and probe trees, and returns `evidence-graded`; do not delete the attestation before this command. After that result, stop the tunnel, remove the connection/marketplace/cache/UI entries, and leave the two exact snapshot-bound plugin and probe directories in place. There is no invented uninstall command: if ownership or a path collides, stop and record `HUMAN-HOLD`. Write the cleanup record with the returned `gradeDigest` and identical `ownedPaths`; phase 2 verifies each directory's retained identity, deletes those exact directories itself, and verifies their absence:
 
 ```sh
 node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \

@@ -3,10 +3,11 @@
 // reasoning accept-list parity) and the live-inventory manifest-validate gate.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 test("Codex validation accepts removal of the obsolete static profile files", async () => {
   const { stdout } = await execFile("node", ["scripts/check-codex.mjs"], { cwd: repoRoot });

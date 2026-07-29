@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { writeFile, mkdtemp } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const pexec = promisify(execFile);
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));

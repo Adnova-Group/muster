@@ -2,12 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cumFile, readCum, directiveFile } from "../plugin/hooks/inline-budget.js";
 import { uniqueSid } from "./test-support/hook-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

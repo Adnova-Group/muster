@@ -1,9 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initScratchpad } from "../src/scratchpad.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 async function fileExists(p) {
   try { await readFile(p, "utf8"); return true; } catch { return false; }

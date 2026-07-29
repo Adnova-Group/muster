@@ -9,12 +9,13 @@
 // pinned interpreter no longer exists as a regular file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatCodexWindowsPath, parseHookCommand, runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const absent = async () => { throw new Error("not found"); };
 

@@ -21,12 +21,12 @@
 //     tests protect.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCodexInstall } from "../src/codex-install.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 // Codex is treated as absent so the install skips the marketplace/plugin build
 // yet still runs its full write transaction (registry + profiles + hooks.json +

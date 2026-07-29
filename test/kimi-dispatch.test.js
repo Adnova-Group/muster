@@ -335,10 +335,15 @@ test("every swarm rejection is a NAMED up-front error, never a wave round trip",
 
 // --- Prose wiring: the orchestrator skill names the shipped helpers ----------
 
-test("orchestrator/SKILL.md's native-dispatch block has a Kimi subsection naming the shipped helpers", async () => {
-  const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+// skill-split (2026-07-29): the Kimi-native dispatch mechanics moved to the
+// orchestrator's progressive-disclosure reference file; SKILL.md keeps the
+// heading + an on-Kimi-read-this pointer. These guards follow the content.
+const KIMI_DISPATCH_REF = new URL("../plugin/skills/orchestrator/references/kimi-dispatch.md", import.meta.url);
+
+test("orchestrator references/kimi-dispatch.md has the Kimi subsection naming the shipped helpers", async () => {
+  const text = await readFile(KIMI_DISPATCH_REF, "utf8");
   const match = text.match(/### Kimi-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
-  assert.ok(match, "orchestrator/SKILL.md must carry a '### Kimi-native dispatch' subsection in the native-dispatch block");
+  assert.ok(match, "references/kimi-dispatch.md must carry the '### Kimi-native dispatch' section");
   const section = match[1];
   // names the tool and the builder exactly (src/kimi-dispatch.js is canonical)
   assert.match(section, /`AgentSwarm`/, "the Kimi subsection must name the AgentSwarm tool");
@@ -369,9 +374,10 @@ test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resum
   assert.match(bullet, /Non-Kimi harnesses keep the fresh re-dispatch/, "the failure bullet must keep the fresh re-dispatch on non-Kimi harnesses");
   assert.match(bullet, /max 2 attempts/, "the one-retry cap is unchanged");
 
-  // ...and the Kimi-native dispatch subsection carries the matching mechanics.
-  const kimi = text.match(/### Kimi-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
-  assert.ok(kimi, "the Kimi-native dispatch subsection must exist");
+  // ...and the Kimi-native dispatch reference carries the matching mechanics.
+  const ref = await readFile(KIMI_DISPATCH_REF, "utf8");
+  const kimi = ref.match(/### Kimi-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
+  assert.ok(kimi, "the Kimi-native dispatch reference section must exist");
   assert.match(kimi[1], /Failure retry rides the same native shapes/, "the Kimi subsection must carry the failure-retry resume paragraph");
   assert.match(kimi[1], /kimiAgentCall\(\{ resume: /, "the Kimi subsection must show the per-agent resume retry shape");
   assert.match(kimi[1], /kimiSwarmCall\(\{ resumeAgentIds: /, "the Kimi subsection must show the swarm resume retry shape");
@@ -380,10 +386,10 @@ test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resum
 
 // --- Prose wiring: the Kimi subsection names the background-vs-barrier rule --
 
-test("orchestrator/SKILL.md's Kimi subsection names when to background a leg versus barrier on it", async () => {
-  const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+test("references/kimi-dispatch.md names when to background a leg versus barrier on it", async () => {
+  const text = await readFile(KIMI_DISPATCH_REF, "utf8");
   const match = text.match(/### Kimi-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
-  assert.ok(match, "orchestrator/SKILL.md must carry a '### Kimi-native dispatch' subsection");
+  assert.ok(match, "references/kimi-dispatch.md must carry the '### Kimi-native dispatch' section");
   const section = match[1];
   // the rule itself: independent read-only legs background; barrier-gated work foreground
   assert.match(section, /Background a leg only when the wave does not barrier on it/, "the Kimi subsection must state the background-vs-barrier rule");
@@ -584,10 +590,10 @@ test("kimiProcessDispatch: cwd must be an existing directory", () => {
 
 // --- Prose wiring: the attended-session process lane ---------------------------
 
-test("orchestrator/SKILL.md's Kimi subsection carries the attended-session process-lane rule", async () => {
-  const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+test("references/kimi-dispatch.md carries the attended-session process-lane rule", async () => {
+  const text = await readFile(KIMI_DISPATCH_REF, "utf8");
   const match = text.match(/### Kimi-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
-  assert.ok(match, "orchestrator/SKILL.md must carry a '### Kimi-native dispatch' subsection");
+  assert.ok(match, "references/kimi-dispatch.md must carry the '### Kimi-native dispatch' section");
   const section = match[1];
   // the rule itself exists
   assert.match(section, /Attended sessions dispatch lane-sensitive legs as headless `kimi -p` processes/, "the Kimi subsection must state the attended-session process-lane rule");

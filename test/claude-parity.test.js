@@ -1170,5 +1170,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // local commits (kimi 0.30.0 re-probes, quota fail-fast billing escalation,
   // steer-route leak-guard) rebased onto the merged #158/#159 main; its own
   // pin-only commit dropped as empty and this recompute covers the fold.
-  assert.equal(hash.digest("hex"), "001b4d4c18674be77a12c2e48861cde6f6e874a60fc521644c295ef2484b44a4");
+  // 2026-07-29 re-pin #14 (prompt-diet): orchestrator Task board's Codex
+  // update_plan correction narrative compressed to a one-line research-doc
+  // cite; mechanics and the one-in-flight invariant kept verbatim.
+  // eval:modes 160/160 after the cut.
+  assert.equal(hash.digest("hex"), "2dcb2f7eb9de2a9fe2140578ea43ed52b1392b155e7b52da68dfb97f496b769a");
 });

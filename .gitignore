@@ -16,3 +16,4 @@ wave-*/
 # present and skips cleanly when absent (fresh clone, pre-install).
 .codex/hooks.json
 .codex/muster/.muster-managed.json
+.claude/worktrees/

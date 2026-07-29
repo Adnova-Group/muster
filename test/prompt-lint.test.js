@@ -367,3 +367,40 @@ test("lintChat detects role bleed inside content-block array shape", () => {
   ]);
   assert.ok(r.findings.some(f => f.id === "LINT-ROLE-013"), "role bleed in a content block must flag");
 });
+
+// --- Claude-5 context-engineering ratchets (CTX-EXAMPLE-001 / CTX-RULE-001) ---
+// Both are corpus-calibrated ratchets: zero findings on today's shipped prompts,
+// firing only on future example- or rule-densification of muster-authored system
+// prompts. Mutant-kill proven here with synthetic dense fixtures.
+
+const denseLines = (line, n) => Array.from({ length: n }, () => line).join("\n");
+
+test("CTX-EXAMPLE-001 flags an example-drowned system prompt and passes an interface-led one", () => {
+  const fenced = "```\nconst x = 1;\n```";
+  const drowned = `You are a helper.\n${denseLines(fenced, 20)}\n${denseLines("prose line", 5)}`;
+  const r = lintPrompt(drowned, { genre: "system", file: "plugin/skills/x/SKILL.md" });
+  assert.ok(r.findings.some(f => f.id === "CTX-EXAMPLE-001"), "a >40%-example system prompt must flag");
+  const led = `You are a helper.\n${denseLines("Describe the contract precisely.", 60)}\n${fenced}`;
+  const ok = lintPrompt(led, { genre: "system", file: "plugin/skills/x/SKILL.md" });
+  assert.ok(!ok.findings.some(f => f.id === "CTX-EXAMPLE-001"), "an interface-led prompt passes");
+});
+
+test("CTX-EXAMPLE-001 exempts vendored pattern-library content and task prompts", () => {
+  const fenced = "```\nconst x = 1;\n```";
+  const drowned = `You are a helper.\n${denseLines(fenced, 30)}`;
+  const vendored = lintPrompt(drowned, { genre: "system", file: "plugin/builtins/wsh-x/SKILL.md" });
+  assert.ok(!vendored.findings.some(f => f.id === "CTX-EXAMPLE-001"), "plugin/builtins content is a code recipe, not an instruction prompt");
+  const fallback = lintPrompt(drowned, { genre: "system", file: "codex/fallback-skills/y/SKILL.md" });
+  assert.ok(!fallback.findings.some(f => f.id === "CTX-EXAMPLE-001"), "codex fallback ports are the same vendored class");
+  const task = lintPrompt(drowned, { genre: "task", file: "plugin/skills/x/SKILL.md" });
+  assert.ok(!task.findings.some(f => f.id === "CTX-EXAMPLE-001"), "task prompts keep wanting examples (ANTH-SHOT-001's axis)");
+});
+
+test("CTX-RULE-001 flags imperative-rule stacking and passes judgment-led prose", () => {
+  const stacked = `You are a helper.\n${denseLines("You MUST do this and NEVER do that; ALWAYS check, do not skip.", 50)}`;
+  const r = lintPrompt(stacked, { genre: "system", file: "plugin/skills/x/SKILL.md" });
+  assert.ok(r.findings.some(f => f.id === "CTX-RULE-001"), "rule-stacked prose must flag");
+  const judgment = `You are a helper.\n${denseLines("Weigh the tradeoffs and pick the smallest correct change.", 50)}`;
+  const ok = lintPrompt(judgment, { genre: "system", file: "plugin/skills/x/SKILL.md" });
+  assert.ok(!ok.findings.some(f => f.id === "CTX-RULE-001"), "judgment-led prose passes");
+});

@@ -173,26 +173,36 @@ Only a harness with genuinely none of these falls back to the STATE-carried stat
 
 **Capability check (once, before wave 1):** run `$MUSTER_CLI wave-dispatch [--agent-teams|--no-agent-teams]`
 -> `{mode: "native"|"prose", agentTeams, reason}` (`src/wave-dispatch.js`). Pass `--agent-teams` when
-this session's own tool list carries this harness's agent-teams / background-agent surface (`Workflow`,
-`ListAgents`, `SendMessage` -- reached only through agent-teams mode, never the single-session loop:
-docs/research/claude-code-cli.md sec 1's binary-tools evidence, plus sec 11's `claude agents`
-subcommand); omit the flag to fall back to the declared `MUSTER_AGENT_TEAMS` env var. This is a
-DECLARED capability, never an auto-probe (same shape as Cowork's `nativePluginRide` --
-`src/harness.js`/`src/capabilities.js`); `mode` defaults to `"prose"` whenever nothing is declared.
+this session's own tool list carries the `Workflow` tool (present in PLAIN single-session tool lists
+on current Claude Code builds -- observed live 2.1.220, 2026-07-29, correcting the earlier
+"agent-teams mode only" record; older builds and `--tools`-restricted sessions still lack it:
+docs/research/claude-code-cli.md's dated correction); omit the flag to fall back to the declared
+`MUSTER_AGENT_TEAMS` env var. This is a DECLARED capability, never an auto-probe (same shape as
+Cowork's `nativePluginRide` -- `src/harness.js`/`src/capabilities.js`): only the session itself can
+see its own tool list, so `mode` defaults to `"prose"` whenever nothing is declared.
 Record the result to STATE once; it does not change mid-run.
 
 - **`mode: "native"`** -- step 4a's per-wave fan-out rides this harness's native `Workflow` tool
-  instead of individual `Agent` tool calls (same `subagent_type`/`model`/brief resolution as step 4a).
-  Step 4b's barrier and step 4c's review gate are UNCHANGED -- only the fan-out mechanism moves off
-  prose dispatch calls. **Parallel isolation is not relaxed:** a documented gap (unlike the Agent
-  tool's own `isolation` parameter -- docs/research/claude-code-cli.md's `observed-agent-tool`
-  citation) means a wave needing more than one file-writing task's worktree isolation stays on the
-  prose path even when `mode: "native"` is declared -- never silently drop the collision guarantee.
+  instead of individual `Agent` tool calls (same `subagent_type`/`model`/brief resolution as step 4a;
+  a muster skill instructing this call IS the harness's explicit Workflow opt-in path). Step 4b's
+  barrier and step 4c's review gate are UNCHANGED -- only the fan-out mechanism moves off prose
+  dispatch calls. Per-agent opts on each `agent()` call: `model` = the member's `claudeModel`;
+  `effort` = the member's `workflowEffort` when its profile declares a semantic effort
+  (src/claude.js's Workflow-lane ladder: workhorse->medium, judgment->high, peak->xhigh; omit
+  otherwise to inherit the session effort); `isolation: "worktree"` on every file-writing member
+  (CORRECTED 2026-07-29, lifting the prior "documented gap -- multi-file-writing waves stay on
+  prose" restriction: Workflow's `agent()` carries its own per-agent worktree isolation, observed
+  live on 2.1.220 -- the collision guarantee now rides the native lane too; auto-clean skips
+  changed worktrees, so cleanup of committing members stays muster's job); `schema` = the member's
+  return contract, so results come back validated -- those returns plus the run's
+  `<transcriptDir>/journal.jsonl` are the wave's receipts, recorded to STATE. A member that fails
+  after its retry re-dispatches via `resumeFromRunId` (unchanged calls return cached; only the
+  edited call re-runs) rather than re-running the whole wave.
 - **`mode: "prose"`** (the unconditional floor) -- step 4a's dispatch loop runs exactly as written.
-  This is the fallback for every harness/session without a declared agent-teams surface (Codex,
-  Cowork, a plain single-session Claude Code invocation). AUGMENT, NOT SUPERSEDE: none of the prose
-  loop's rules change when native is unavailable -- native is preferred when declared, prose is
-  always the floor.
+  This is the fallback for every harness/session whose tool list lacks `Workflow` (Codex, Cowork,
+  a `--tools`-restricted or pre-Workflow Claude Code session). AUGMENT, NOT SUPERSEDE: none of the
+  prose loop's rules change when native is unavailable -- native is preferred when declared, prose
+  is always the floor.
 
 One worked example of each path (the same 2-task wave, routed both ways): docs/native-workflow-dispatch.md.
 

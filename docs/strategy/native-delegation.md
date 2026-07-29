@@ -458,7 +458,7 @@ The next wave in this ledger, already shipped since Part B's tables were written
 - cc-skills: docs/research/claude-code-cli.md §7 — SKILL.md progressive disclosure; .claude/commands = same mechanism as skills.
 - cc-mcp: docs/research/claude-code-cli.md §8 — MCP client scopes; mcp__server__tool; ToolSearch schema deferral.
 - cc-config: docs/research/claude-code-cli.md §9 — config scopes; ~/.claude state root; subscription quota.
-- cc-augment: docs/research/claude-code-cli.md §10 — augmentation surface; agent-teams / Workflow reached via background-agent mode, not the single-session loop.
+- cc-augment: docs/research/claude-code-cli.md §10 — augmentation surface; agent-teams / Workflow reached via background-agent mode, not the single-session loop. (2026-07-29 correction: superseded for Workflow — observed in plain single-session tool lists on 2.1.220; see claude-code-cli.md §1's dated correction and §12. This strategy doc is a dated record; rows citing this source read per that correction.)
 - ccd-arch: docs/research/claude-code-desktop.md §1–4 — one engine many shells; identical loop; dynamic workflows vs agent teams; Projects/tasks.
 - ccd-web: docs/research/claude-code-desktop.md §3 — cloud VM per session; Claude-Session trailer; session URL.
 - ccd-config: docs/research/claude-code-desktop.md §9, §2.2 — repo `.claude/` is the only plane reaching cloud; automatic per-session worktrees under <root>/.claude/worktrees/.

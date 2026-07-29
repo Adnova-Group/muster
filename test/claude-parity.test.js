@@ -1114,5 +1114,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // verified default; parallel fan-out and per-call model override require a
   // successful phase-3 receipt from the active Cowork build. Deliberate
   // shared-surface correctness remediation, not Codex-only drift.
-  assert.equal(hash.digest("hex"), "2d73811e62a0056c8975ec57a39d2f219f48520c88267b7b2b65bb79757d0289");
+  //
+  // 2026-07-29 re-pin #9 (cc-workflow-lane): orchestrator SKILL.md's "Wave
+  // dispatch" section rewritten against a live 2.1.220 observation -- Workflow
+  // present in plain single-session tool lists, per-agent isolation:'worktree'
+  // confirmed (multi-file-writing-wave restriction lifted), Workflow-lane
+  // effort ladder (src/claude.js workflowEffort), journal/schema receipts,
+  // resumeFromRunId retry. Deliberate shared-surface change, one re-pin.
+  assert.equal(hash.digest("hex"), "b67bd9f5ea9e87a3a0876490bab976a44adebbd477b503f131312b4771bdda9d");
 });

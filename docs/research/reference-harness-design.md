@@ -68,7 +68,7 @@ Nine components appear, under different names, in all seven harnesses. Each subs
 
 | Harness | Dispatch | Isolation + limits |
 |---|---|---|
-| Claude Code CLI | `Agent` tool (`subagent_type`, `model`, `isolation: worktree`) [src: cc-subagents] | own context; nesting ≤5; worktree shell-lock (v2.1.203+) [src: cc-subagents] |
+| Claude Code CLI | `Agent` tool (`subagent_type`, `model`, `isolation: worktree`) [src: cc-subagents]; `Workflow` tool `agent()` in plain sessions (per-agent `model`/`effort`/`isolation`/`schema`) [src: cc-workflow-lane correction 2026-07-29, claude-code-cli.md §12] | own context; nesting depth 3 default (2.1.219, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), 20 concurrent / 200 per session caps; worktree shell-lock (v2.1.203+) [src: cc-subagents, superseded on depth — claude-code-cli.md §12] |
 | Codex CLI | Model-selected packets: v1 `multi_agent_v1`, or v2 `collaboration.spawn_agent`/`wait_agent`/`list_agents`; `resolveCodexMultiAgentVersion` emits the matching shape and rejects an unknown version fail loud [src: cx-subagents] | v1 `agents.max_threads` default 6; v2 concurrency default 4 minus the primary thread; NO cwd field on dispatch [src: cx-subagents] |
 | Hermes | `delegate_task(goal,context,toolsets,role)`; parallel batches [src: hermes-delegation] | fresh context; depth-1 default; `hermes -w` worktrees [src: hermes-worktree] |
 | Agents SDK | agents-as-tools + handoffs; per-agent `model`, `RunConfig.model` [src: gw-sdk] | Sandbox agents beta: `Manifest` + capabilities + resumable [src: gw-sandbox] |

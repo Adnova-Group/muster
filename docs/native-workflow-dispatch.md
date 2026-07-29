@@ -7,9 +7,13 @@ native-replacement target on Claude Code CLI -- the harness's agent-teams surfac
 `SendMessage`/`Monitor` (`docs/research/claude-code-cli.md` §1's binary-tools evidence +
 §11's `claude agents` subcommand), reached only through
 agent-teams / background-agent mode, never the single-session loop a plain `claude`
-invocation runs. This item wires the orchestrator to RIDE that tool when it's available,
-with the existing prose loop kept as the unconditional floor everywhere it isn't --
-AUGMENT, NOT SUPERSEDE.
+invocation runs. *(CORRECTED 2026-07-29, cc-workflow-lane item: that gating claim described
+the 2.1.211-era research pin. A live 2.1.220 session carries `Workflow` in a PLAIN
+single-session tool list — see the research doc's dated correction. The capability check
+below is unchanged and still required: older builds and `--tools`-restricted sessions lack
+the tool, and only the session itself can observe its own tool list.)* This item wires the
+orchestrator to RIDE that tool when it's available, with the existing prose loop kept as
+the unconditional floor everywhere it isn't -- AUGMENT, NOT SUPERSEDE.
 
 ## The capability check
 
@@ -71,16 +75,21 @@ brackets the call (write before dispatch, remove after the join) and STATE still
 4b's barrier and step 4c's review gate run unchanged once the `Workflow` call returns both
 results.
 
-**Isolation caveat on THIS specific example.** Both tasks here write disjoint files (`src/
-routes/health.js` and `docs/api-reference.md`) -- exactly the shape step 4a's "Parallel
-isolation" rule requires a per-task git worktree for. Whether the `Workflow` tool exposes a
-per-step isolation control equivalent to the Agent tool's `isolation: "worktree"` parameter
-is NOT confirmed by this item's research (a documented gap, per the orchestrator/SKILL.md
-section above) -- so, honestly, this exact 2-task wave would stay on the prose path (Path
-B) even with `mode: "native"` declared for the run, until that control is confirmed. The
-fan-out shape above illustrates the mechanism the native path WOULD use once isolation
-parity is confirmed; it is not, today, how this specific wave shape actually gets
-dispatched.
+**Isolation on THIS specific example (RESOLVED 2026-07-29, cc-workflow-lane item).** Both
+tasks here write disjoint files (`src/routes/health.js` and `docs/api-reference.md`) --
+exactly the shape step 4a's "Parallel isolation" rule requires a per-task git worktree for.
+The per-step isolation control this doc originally flagged as unconfirmed IS confirmed:
+`Workflow`'s `agent()` takes `isolation: "worktree"` per spawned agent (observed live in a
+2.1.220 session's tool schema -- "runs the agent in a fresh git worktree"; corroborated by
+the 2.1.161 changelog fix note for Workflow agents "spawned with `isolation: 'worktree'`").
+So this 2-task wave now rides Path A whenever `mode: "native"` is declared: each `agent()`
+call carries `isolation: "worktree"`, plus `model` (the member's `claudeModel`), `effort`
+(the member's `workflowEffort` when its profile declares a semantic effort -- src/claude.js's
+Workflow-lane ladder), and `schema` (the member's return contract, so the join returns
+validated results and the run's `journal.jsonl` doubles as the receipts trail). One caveat
+carried forward: Workflow's auto-clean removes only UNCHANGED worktrees, and a committing
+wave member always changes its worktree -- cleanup stays muster's job, same as the prose
+path.
 
 ### Path B -- prose fallback (no agent-teams declaration)
 
@@ -141,7 +150,10 @@ rather than reusing `go.md`'s `capabilities.json`/`gate-cadence.json` pre-captur
 deliberately, to keep this item's edit to `plugin/skills/orchestrator/SKILL.md` surgical
 given the stacked sibling items also touching that file); and confirming whether the
 `Workflow` tool exposes a per-step isolation control equivalent to the Agent tool's
-`isolation: "worktree"` parameter (the gap the "Isolation caveat" above names) -- until
-confirmed, any multi-file-writing wave stays on the prose path regardless of `mode`, by
-this item's own explicit rule, so no collision-prevention guarantee is weakened in the
-meantime.
+`isolation: "worktree"` parameter. **That second follow-up LANDED 2026-07-29 (the
+cc-workflow-lane item): the control is confirmed and the multi-file-writing-wave
+restriction is lifted** -- see the resolved isolation note in the worked example above and
+the rewritten native-mode bullet in `plugin/skills/orchestrator/SKILL.md`. The same item
+added the Workflow-lane effort ladder to `src/claude.js` (`workflowEffort`:
+workhorse->medium, judgment->high, peak->xhigh -- the first per-subagent effort surface on
+this harness, Workflow-lane only) and the `resumeFromRunId` retry rule for failed members.

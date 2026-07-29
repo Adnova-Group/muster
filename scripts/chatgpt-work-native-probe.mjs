@@ -9,7 +9,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, open, readFile, realpath } from "node:fs/promises";
+import { lstat, open, readFile, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -430,7 +430,7 @@ function validateSnapshot(snapshot, errors) {
   }
 }
 
-async function verifyAbsent(path, at, errors) {
+async function verifyAbsent(path, at, errors, retainedIdentity) {
   try {
     const stat = await lstat(path);
     if (stat.isSymbolicLink()) errors.push(`${at} is a symlink, not verified absence`);
@@ -438,6 +438,19 @@ async function verifyAbsent(path, at, errors) {
     else errors.push(`${at} must be absent`);
   } catch (error) {
     if (error.code !== "ENOENT") errors.push(`${at} absence cannot be verified: ${error.message}`);
+  }
+  if (!retainedIdentity?.parentPath) return;
+  try {
+    for (const entry of await readdir(retainedIdentity.parentPath)) {
+      const candidate = resolve(retainedIdentity.parentPath, entry);
+      const stat = await lstat(candidate);
+      if (stat.isDirectory()
+        && String(stat.dev) === retainedIdentity.dev && String(stat.ino) === retainedIdentity.ino) {
+        errors.push(`${at} retained directory was renamed to ${candidate} instead of removed`);
+      }
+    }
+  } catch (error) {
+    errors.push(`${at} retained inode absence cannot be verified: ${error.message}`);
   }
 }
 
@@ -510,8 +523,8 @@ export async function finalizeCleanup(cleanup, snapshot) {
   if (snapshot?.ownedPaths) {
     await verifyOwnedParent(snapshot.ownership?.plugin, "snapshot.ownedPaths.plugin", errors);
     await verifyOwnedParent(snapshot.ownership?.temp, "snapshot.ownedPaths.temp", errors);
-    await verifyAbsent(snapshot.ownedPaths.plugin, "snapshot.ownedPaths.plugin", errors);
-    await verifyAbsent(snapshot.ownedPaths.temp, "snapshot.ownedPaths.temp", errors);
+    await verifyAbsent(snapshot.ownedPaths.plugin, "snapshot.ownedPaths.plugin", errors, snapshot.ownership?.plugin);
+    await verifyAbsent(snapshot.ownedPaths.temp, "snapshot.ownedPaths.temp", errors, snapshot.ownership?.temp);
   }
   return errors.length ? { ok: false, errors } : {
     ok: true, phase: "cleanup-finalized", nonce: snapshot.nonce, gradeDigest: snapshot.gradeDigest,

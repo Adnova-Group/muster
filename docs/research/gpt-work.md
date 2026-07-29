@@ -102,7 +102,7 @@ tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work
 tunnel-client run --profile muster-chatgpt-work
 ```
 
-The probe directory is existing and private: POSIX requires current-user ownership and no group/world bits (for example `0700`), then creates a new `0600` attestation file. Windows native proof is HUMAN-HOLD until privacy and ownership can be established. Any attestation collision is HUMAN-HOLD.
+The probe directory is existing and private: POSIX requires current-user ownership and no group/world bits (for example `0700`), then creates a new `0600` attestation file. Windows native proof is always HUMAN-HOLD because the probe issues no usable Windows attestation claim. Any attestation collision is HUMAN-HOLD.
 
 The runtime Platform API key authenticates and bills the tunnel's control-plane/API usage; it is separate from ChatGPT Pro subscription access and must remain secret. Associate the tunnel with the personal Platform organization for personal testing, or with both the Platform organization and target ChatGPT workspace for workspace use. A personal association does not automatically surface a tunnel in an Enterprise/Edu workspace.
 

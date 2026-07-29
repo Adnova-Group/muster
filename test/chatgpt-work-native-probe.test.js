@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -190,6 +190,10 @@ test("cleanup rejects tampered grades, path mismatches, symlinks, and unowned-or
   const mismatch = structuredClone(cleanup);
   mismatch.ownedPaths.plugin = join(root, "other");
   assert.match((await finalizeCleanup(mismatch, snapshot)).errors.join("\n"), /path mismatch/i);
+  const renamedPlugin = join(root, "renamed-plugin");
+  await rename(pluginPath, renamedPlugin);
+  assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /renamed.*instead of removed/i);
+  await rename(renamedPlugin, pluginPath);
   await Promise.all([rm(pluginPath, { recursive: true }), rm(tempPath, { recursive: true })]);
   await symlink(join(root, "missing-target"), pluginPath);
   assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /symlink/i);

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  chmod, cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile,
+  cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
@@ -29,6 +29,7 @@ const ARTIFACT_PATHS = [
   ".codex-plugin/plugin.json",
   "runtime/chatgpt-work-server.mjs",
   "runtime/muster.mjs",
+  "runtime/sprint-protocol.md",
   ...CATALOG_ARTIFACTS,
   ...PIPELINE_ARTIFACTS,
 ];
@@ -288,11 +289,12 @@ async function prepareRuntimeAssets() {
   const bundled = {
     cli: join(moduleDir, "muster.mjs"),
     server: join(moduleDir, "chatgpt-work-server.mjs"),
+    sprintProtocol: join(moduleDir, "sprint-protocol.md"),
     catalog: join(moduleDir, "..", "catalog"),
     pipelines: join(moduleDir, "..", "pipelines"),
   };
   try {
-    for (const path of [bundled.cli, bundled.server]) {
+    for (const path of [bundled.cli, bundled.server, bundled.sprintProtocol]) {
       const info = await lstat(path);
       if (info.isSymbolicLink() || !info.isFile()) throw new Error(`runtime asset is not an ordinary file: ${path}`);
     }
@@ -326,6 +328,7 @@ async function prepareRuntimeAssets() {
   return {
     cli: join(dir, "muster.mjs"),
     server: join(dir, "chatgpt-work-server.mjs"),
+    sprintProtocol: join(root, "cowork", "sprint-protocol.md"),
     catalog: join(root, "catalog"),
     pipelines: join(root, "pipelines"),
     cleanup: () => rm(dir, { recursive: true, force: true }),
@@ -340,6 +343,7 @@ async function stageWorkPlugin(config, assets, { configPath, pluginPath }) {
   await mkdir(runtime, { recursive: true, mode: 0o700 });
   await cp(assets.cli, join(runtime, "muster.mjs"));
   await cp(assets.server, join(runtime, "chatgpt-work-server.mjs"));
+  await cp(assets.sprintProtocol, join(runtime, "sprint-protocol.md"));
   await cp(assets.catalog, join(plugin, "catalog"), { recursive: true });
   await cp(assets.pipelines, join(plugin, "pipelines"), { recursive: true });
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -393,7 +397,6 @@ async function atomicPrivateWrite(path, bytes) {
   await writeFile(temporary, bytes, { mode: 0o600, flag: "wx" });
   try {
     await rename(temporary, path);
-    await chmod(path, 0o600);
   } catch (error) {
     await rm(temporary, { force: true });
     throw error;
@@ -463,7 +466,7 @@ export async function runChatgptWorkInstall({
         const nextMarketplace = mergeWorkMarketplace(marketplace, pluginsRoot, { owned: Boolean(owned) });
         let backup = null;
         let published = false;
-        let marketplaceWritten = false;
+        let marketplaceWriteAttempted = false;
         if (await pathExists(pluginPath)) {
           backup = join(pluginsRoot, `.${WORK_PLUGIN_ID}.retired-${randomUUID()}`);
           await rename(pluginPath, backup);
@@ -471,8 +474,8 @@ export async function runChatgptWorkInstall({
         try {
           published = true;
           await cp(staged.plugin, pluginPath, { recursive: true, errorOnExist: true, force: false });
+          marketplaceWriteAttempted = true;
           await atomicPrivateWrite(marketplacePath, Buffer.from(JSON.stringify(nextMarketplace, null, 2) + "\n"));
-          marketplaceWritten = true;
           const receipt = validateConfig({
             format: 3,
             owner: "muster",
@@ -498,7 +501,7 @@ export async function runChatgptWorkInstall({
             try { await rename(backup, pluginPath); backup = null; }
             catch (rollback) { rollbackFailures.push(`prior plugin restore failed: ${rollback.message}`); }
           }
-          if (marketplaceWritten) {
+          if (marketplaceWriteAttempted) {
             try {
               if (marketplaceSnapshot === null) await rm(marketplacePath, { force: true });
               else await atomicPrivateWrite(marketplacePath, marketplaceSnapshot);

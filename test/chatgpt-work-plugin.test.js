@@ -242,6 +242,9 @@ test("installed full Work runtime executes with Work-only capability semantics",
     { jsonrpc: "2.0", id: 6, method: "tools/call", params: {
       name: "muster_audit", arguments: { dir: project },
     } },
+    { jsonrpc: "2.0", id: 7, method: "tools/call", params: {
+      name: "muster_sprint_protocol", arguments: {},
+    } },
   ];
   const result = await serverRpc({
     ...activation,
@@ -261,6 +264,10 @@ test("installed full Work runtime executes with Work-only capability semantics",
     assert.ok(manifest.crew.every(member => member.source === "inline"));
     assert.doesNotMatch(JSON.stringify(body), /muster-builder|wsh-|claude|sonnet|opus/i);
   }
+  assert.equal(
+    response(7).content[0].text,
+    (await readFile(join(root, "cowork", "sprint-protocol.md"), "utf8")).trim(),
+  );
 });
 
 test("probe startup fails before MCP output for invalid or pre-existing attestation targets", async t => {
@@ -346,9 +353,10 @@ test("receipt v3 binds every Work activation artifact and rejects tampering", as
   assert.equal(receipt.artifactFlavor, "chatgpt-work");
   assert.equal(receipt.appId, "asdk_app_Receipt3");
   assert.ok(Object.hasOwn(receipt.artifacts, "runtime/muster.mjs"));
+  assert.ok(Object.hasOwn(receipt.artifacts, "runtime/sprint-protocol.md"));
   assert.ok(Object.hasOwn(receipt.artifacts, "catalog/software.yaml"));
   assert.ok(Object.hasOwn(receipt.artifacts, "pipelines/prd.yaml"));
-  assert.equal(Object.keys(receipt.artifacts).length, 31);
+  assert.equal(Object.keys(receipt.artifacts).length, 32);
   for (const digest of Object.values(receipt.artifacts)) assert.match(digest, /^[a-f0-9]{64}$/);
   const mcp = JSON.parse(await readFile(join(installed.pluginPath, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.muster.env.MUSTER_CHATGPT_WORK_RECEIPT_PATH, installed.configPath);
@@ -360,6 +368,11 @@ test("receipt v3 binds every Work activation artifact and rejects tampering", as
     readChatgptWorkConfig({ scope: "project", cwd: project }),
     /artifact digest/i,
   );
+  const activation = mcp.mcpServers.muster.env;
+  const rejected = await serverExit(activation);
+  assert.notEqual(rejected.code, 0);
+  assert.equal(rejected.stdout, "");
+  assert.match(rejected.stderr, /installed activation receipt rejected.*digest mismatch/i);
   await writeFile(cliPath, cliBytes);
   await writeFile(join(installed.pluginPath, ".mcp.json"), "{}\n");
   await assert.rejects(

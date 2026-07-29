@@ -37,9 +37,11 @@ if (profile === "full" && (
   process.stderr.write("chatgpt-work-server: full requires installer and server allow-full-actions opt-ins\n");
   process.exit(1);
 }
-if (profile === "full") {
+const activationReceiptPath = process.env.MUSTER_CHATGPT_WORK_RECEIPT_PATH;
+const installedRuntime = existsSync(new URL("./muster.mjs", import.meta.url));
+if (profile === "full" || activationReceiptPath || installedRuntime) {
   try {
-    const receiptPath = process.env.MUSTER_CHATGPT_WORK_RECEIPT_PATH;
+    const receiptPath = activationReceiptPath;
     const pluginPath = process.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH;
     const connectionId = process.env.MUSTER_CHATGPT_WORK_CONNECTION_ID;
     const appPath = process.env.MUSTER_CHATGPT_WORK_APP_JSON_PATH;
@@ -57,14 +59,14 @@ if (profile === "full") {
     }
     const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
     if (receipt.format !== 3 || receipt.owner !== "muster" || receipt.artifactFlavor !== "chatgpt-work"
-      || receipt.profile !== "full" || receipt.allowFullActions !== true
+      || receipt.profile !== profile || receipt.allowFullActions !== (profile === "full")
       || receipt.connectionId !== connectionId || receipt.appId !== connectionId
       || path.resolve(receipt.pluginPath ?? "") !== path.resolve(pluginPath)) {
       throw new Error("receipt identity/profile mismatch");
     }
     const artifactPaths = [
       ".app.json", ".codex-plugin/plugin.json", ".mcp.json",
-      "runtime/chatgpt-work-server.mjs", "runtime/muster.mjs",
+      "runtime/chatgpt-work-server.mjs", "runtime/muster.mjs", "runtime/sprint-protocol.md",
       ...[
         "agents.generated.yaml", "agents.manifest.json", "agents.muster.yaml",
         "builtins.generated.yaml", "builtins.muster.yaml", "software.yaml",
@@ -90,11 +92,11 @@ if (profile === "full") {
     const app = JSON.parse(readFileSync(appPath, "utf8"));
     const manifest = JSON.parse(readFileSync(path.join(pluginPath, ".codex-plugin", "plugin.json"), "utf8"));
     if (JSON.stringify(app) !== JSON.stringify({ apps: { muster: { id: connectionId } } })
-      || manifest.version !== pluginVersion) {
+      || manifest.name !== "muster-chatgpt-work" || manifest.version !== pluginVersion) {
       throw new Error("installed app/plugin identity mismatch");
     }
   } catch (error) {
-    process.stderr.write(`chatgpt-work-server: full activation receipt rejected (${error.code || error.message})\n`);
+    process.stderr.write(`chatgpt-work-server: installed activation receipt rejected (${error.code || error.message})\n`);
     process.exit(1);
   }
 }

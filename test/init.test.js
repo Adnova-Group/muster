@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -16,6 +16,7 @@ import {
   readInitReceipt,
   transitionNativeInit,
 } from "../src/init.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const tmp = () => mkdtemp(join(tmpdir(), "muster-init-"));

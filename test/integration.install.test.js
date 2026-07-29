@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInstall } from "../src/install.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 

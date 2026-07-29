@@ -1,9 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, symlink, lstat, rm } from "node:fs/promises";
+import { mkdir, writeFile, readFile, symlink, lstat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runUninstall } from "../src/install.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const stylePath = (home) => join(home, ".claude", "output-styles", "muster.md");
 const exists = (p) => readFile(p, "utf8").then(() => true, () => false);

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -129,4 +129,30 @@ test("dedicated full server starts only with both opt-ins and lists all 28 tools
   assert.equal(result.code, 0);
   const messages = result.stdout.trim().split("\n").map(line => JSON.parse(line));
   assert.equal(messages.find(message => message.id === 2).result.tools.length, 28);
+});
+
+test("probe startup fails before MCP output for invalid or pre-existing attestation targets", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-probe-start-"));
+  await chmod(dir, 0o700);
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const attestation = join(dir, "server-attestation.json");
+  const base = {
+    MUSTER_CHATGPT_WORK_PROFILE: "pro-safe",
+    MUSTER_CHATGPT_WORK_PROBE_NONCE: "a".repeat(32),
+    MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestation,
+  };
+  for (const env of [
+    { ...base, MUSTER_CHATGPT_WORK_PROFILE: "full" },
+    { ...base, MUSTER_CHATGPT_WORK_PROBE_NONCE: "A".repeat(32) },
+    { ...base, MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: join(dir, "wrong.json") },
+    { ...base, MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: "server-attestation.json" },
+  ]) {
+    const result = await serverExit(env);
+    assert.notEqual(result.code, 0);
+    assert.equal(result.stdout, "");
+  }
+  await writeFile(attestation, "{}\n", { mode: 0o600 });
+  const existing = await serverExit(base);
+  assert.notEqual(existing.code, 0);
+  assert.equal(existing.stdout, "");
 });

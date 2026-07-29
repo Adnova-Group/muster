@@ -232,6 +232,97 @@ test("ChatGPT Work full profile preserves the deterministic 28-tool descriptor s
   assert.deepEqual(full[2].result, normal[2].result);
 });
 
+test("ChatGPT Work probe locks descriptor, exact call, one invocation, and server attestation", async t => {
+  const nonce = "b".repeat(32);
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-work-probe-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const attestationPath = path.join(dir, "server-attestation.json");
+  const request = {
+    items: [{
+      name: `WORK_WEB_PROBE_${nonce}`,
+      reach: 2, impact: 3, confidence: 1, effort: 2,
+    }],
+    model: "rice",
+  };
+  const env = {
+    MUSTER_CHATGPT_WORK_PROFILE: "pro-safe",
+    MUSTER_CHATGPT_WORK_PROBE_NONCE: nonce,
+    MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestationPath,
+  };
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_detect", arguments: {} } },
+    {
+      jsonrpc: "2.0", id: 4, method: "tools/call",
+      params: { name: "muster_prioritize", arguments: { ...request, model: "ice" } },
+    },
+    { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "muster_prioritize", arguments: request } },
+    { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "muster_prioritize", arguments: request } },
+  ], {
+    serverPath: path.join(rootDir, "cowork", "chatgpt-work-server.mjs"),
+    env,
+  });
+
+  const [descriptor] = r[2].result.tools;
+  assert.equal(descriptor.name, "muster_prioritize");
+  assert.equal(descriptor.title, "Prioritize backlog items");
+  assert.deepEqual(descriptor.annotations, {
+    readOnlyHint: true, destructiveHint: false, openWorldHint: false,
+  });
+  assert.equal(descriptor.inputSchema.additionalProperties, false);
+  assert.equal(descriptor.inputSchema.properties.model.const, "rice");
+  assert.equal(descriptor.inputSchema.properties.items.items.properties.name.const, `WORK_WEB_PROBE_${nonce}`);
+  assert.equal(r[3].result.isError, true, "wrong tool rejected");
+  assert.equal(r[4].result.isError, true, "wrong args rejected before dispatch");
+  assert.equal(r[5].result.isError, false, "one exact invocation succeeds");
+  assert.equal(r[6].result.isError, true, "second exact invocation rejected");
+
+  const attestation = JSON.parse(await readFile(attestationPath, "utf8"));
+  assert.deepEqual(attestation, {
+    attestationType: "muster-work-native-server-attestation",
+    source: "server",
+    nonce,
+    tool: "muster_prioritize",
+    request,
+    result: [{ ...request.items[0], score: 3, rank: 1 }],
+    invocationCount: 1,
+    timestamp: attestation.timestamp,
+  });
+  assert.equal(new Date(attestation.timestamp).toISOString(), attestation.timestamp);
+});
+
+test("ChatGPT Work probe rejects wrong arguments before CLI dispatch and creates no attestation", async t => {
+  const nonce = "c".repeat(32);
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-work-probe-wrong-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const attestationPath = path.join(dir, "server-attestation.json");
+  const r = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0", id: 2, method: "tools/call",
+      params: {
+        name: "muster_prioritize",
+        arguments: {
+          items: [{ name: `WORK_WEB_PROBE_${nonce}`, reach: 2, impact: 3, confidence: 1, effort: 2 }],
+          model: "ice",
+        },
+      },
+    },
+  ], {
+    env: {
+      MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-probe",
+      MUSTER_CHATGPT_WORK_PROBE_NONCE: nonce,
+      MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestationPath,
+      NODE_ENV: "test",
+      MUSTER_COWORK_TEST_CLI: path.join(rootDir, "definitely-missing-cli.mjs"),
+    },
+  });
+  assert.equal(r[2].result.isError, true);
+  assert.match(r[2].result.content[0].text, /arguments do not exactly match/);
+  await assert.rejects(readFile(attestationPath, "utf8"), /ENOENT/);
+});
+
 test("Cowork distribution metadata and README document the exact MCP-only support contract", async () => {
   const pkg = JSON.parse(await read("package.json"));
   const manifest = JSON.parse(await read("cowork/manifest.json"));

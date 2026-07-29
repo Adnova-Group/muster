@@ -30,11 +30,12 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, open, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import { PRINCIPLES, VERBS, ROUTING_POLICY } from "../plugin/hooks/guidance.js";
 
@@ -224,6 +225,7 @@ const TOOLS = {
 const TOOL_PROFILE = process.env.MUSTER_MCP_TOOL_PROFILE;
 let EXPOSED_TOOLS = TOOLS;
 let ACTIVE_INSTRUCTIONS = INSTRUCTIONS;
+let PROBE_STATE = null;
 if (TOOL_PROFILE === "chatgpt-work-pro-safe") {
   EXPOSED_TOOLS = {
     muster_prioritize: {
@@ -233,11 +235,99 @@ if (TOOL_PROFILE === "chatgpt-work-pro-safe") {
     },
   };
   ACTIVE_INSTRUCTIONS = "Use muster_prioritize to rank backlog items.";
+} else if (TOOL_PROFILE === "chatgpt-work-probe") {
+  const nonce = process.env.MUSTER_CHATGPT_WORK_PROBE_NONCE;
+  const attestationPath = process.env.MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH;
+  const request = {
+    items: [{
+      name: `WORK_WEB_PROBE_${nonce}`,
+      reach: 2,
+      impact: 3,
+      confidence: 1,
+      effort: 2,
+    }],
+    model: "rice",
+  };
+  const result = [{ ...request.items[0], score: 3, rank: 1 }];
+  const itemProperties = {
+    name: { type: "string", const: request.items[0].name },
+    reach: { type: "number", const: 2 },
+    impact: { type: "number", const: 3 },
+    confidence: { type: "number", const: 1 },
+    effort: { type: "number", const: 2 },
+  };
+  EXPOSED_TOOLS = {
+    muster_prioritize: {
+      ...TOOLS.muster_prioritize,
+      title: "Prioritize backlog items",
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          items: {
+            type: "array",
+            minItems: 1,
+            maxItems: 1,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: itemProperties,
+              required: ["name", "reach", "impact", "confidence", "effort"],
+            },
+          },
+          model: { type: "string", const: "rice" },
+        },
+        required: ["items", "model"],
+      },
+    },
+  };
+  ACTIVE_INSTRUCTIONS = "Call muster_prioritize exactly once with the exact nonce-bearing request.";
+  PROBE_STATE = { nonce, attestationPath, request, result, invoked: false };
 } else if (TOOL_PROFILE === "chatgpt-work-full") {
   // Dedicated entrypoint verifies both full-action opt-ins before selecting this surface.
 } else if (TOOL_PROFILE !== undefined && TOOL_PROFILE !== "") {
   process.stderr.write(`mcp-server: unknown MUSTER_MCP_TOOL_PROFILE ${JSON.stringify(TOOL_PROFILE)}\n`);
   process.exit(1);
+}
+
+async function callProbe(args, signal) {
+  if (!isDeepStrictEqual(args, PROBE_STATE.request)) {
+    return { ok: false, text: "ChatGPT Work probe arguments do not exactly match the nonce-bound request" };
+  }
+  if (PROBE_STATE.invoked) {
+    return { ok: false, text: "ChatGPT Work probe permits exactly one invocation" };
+  }
+  PROBE_STATE.invoked = true;
+  const cliResult = await callTool("muster_prioritize", args, signal);
+  if (!cliResult.ok) return cliResult;
+  let parsed;
+  try { parsed = JSON.parse(cliResult.text); }
+  catch { return { ok: false, text: "ChatGPT Work probe CLI result was not valid JSON" }; }
+  if (!isDeepStrictEqual(parsed, PROBE_STATE.result)) {
+    return { ok: false, text: "ChatGPT Work probe CLI result did not exactly match the deterministic result" };
+  }
+  const attestation = {
+    attestationType: "muster-work-native-server-attestation",
+    source: "server",
+    nonce: PROBE_STATE.nonce,
+    tool: "muster_prioritize",
+    request: PROBE_STATE.request,
+    result: PROBE_STATE.result,
+    invocationCount: 1,
+    timestamp: new Date().toISOString(),
+  };
+  let file;
+  try {
+    file = await open(PROBE_STATE.attestationPath, "wx", 0o600);
+    await file.writeFile(JSON.stringify(attestation, null, 2) + "\n", "utf8");
+    await file.sync();
+  } catch (error) {
+    return { ok: false, text: `ChatGPT Work probe attestation creation failed: ${error.code || error.message}` };
+  } finally {
+    await file?.close();
+  }
+  return cliResult;
 }
 
 // ── CLI invocation ──────────────────────────────────────────────────────────
@@ -505,6 +595,10 @@ async function handle(msg) {
           }],
           isError: true,
         });
+      }
+      if (PROBE_STATE) {
+        const r = await limiter.run(id, (signal) => callProbe(params?.arguments || {}, signal));
+        return ok(id, { content: [{ type: "text", text: r.text }], isError: !r.ok });
       }
       const r = await limiter.run(id, (signal) => callTool(params?.name, params?.arguments || {}, signal));
       return ok(id, { content: [{ type: "text", text: r.text }], isError: !r.ok });

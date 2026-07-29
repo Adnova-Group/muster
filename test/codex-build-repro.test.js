@@ -48,6 +48,10 @@ test("configured build adds only minimal app wiring while retaining MCP metadata
     assert.deepEqual(JSON.parse(await readFile(join(result.pluginRoot, ".app.json"), "utf8")), {
       apps: { muster: { id: "asdk_app_Test123" } },
     });
+    const workServer = await readFile(join(result.pluginRoot, "runtime", "chatgpt-work-server.mjs"), "utf8");
+    assert.match(workServer, /MUSTER_CHATGPT_WORK_PROBE_NONCE/);
+    assert.match(workServer, /MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH/);
+    assert.match(workServer, /import\("\.\/muster-mcp\.mjs"\)/);
     delete process.env.MUSTER_BUILD_FORCE;
     const rebuilt = await buildCodexPlugin({ root: repoRoot, outDir, chatgptWorkConfig: persisted });
     assert.deepEqual(JSON.parse(await readFile(join(rebuilt.pluginRoot, ".app.json"), "utf8")), {

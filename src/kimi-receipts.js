@@ -5,7 +5,8 @@ import path from "node:path";
 // ───────────────────────────────────────────────────────────────────────────
 // Kimi-native token receipts: per-dispatch usage attribution from wire.jsonl
 //
-// PROBE EVIDENCE (2026-07-27, kimi v0.29.1, real `kimi -p` runs):
+// PROBE EVIDENCE (2026-07-27, kimi v0.29.1, real `kimi -p` runs; re-confirmed
+// 2026-07-29 on kimi v0.30.0 -- same shapes throughout):
 //   - `kimi -p --output-format stream-json` stdout carries NO usage fields --
 //     only assistant/tool/meta objects (verified on a trivial prompt).
 //   - The session tree DOES: every agents/<agentId>/wire.jsonl emits one
@@ -23,7 +24,8 @@ import path from "node:path";
 // or rebuilds the token-gap pipeline -- it makes the measurement runnable.
 // ───────────────────────────────────────────────────────────────────────────
 
-// Verbatim field names from the captured usage.record objects (v0.29.1).
+// Verbatim field names from the captured usage.record objects (v0.29.1 captures,
+// re-confirmed on v0.30.0, 2026-07-29).
 // inputOther = non-cached input; the cache pair splits prompt-cache hits from
 // creations. Total input = inputOther + inputCacheRead + inputCacheCreation.
 export const KIMI_USAGE_FIELDS = Object.freeze(["inputOther", "output", "inputCacheRead", "inputCacheCreation"]);
@@ -85,7 +87,8 @@ export function sumUsage(records) {
 // Thinking-effort receipts: the EFFECTIVE effort each LLM step ran at.
 //
 // PROBE EVIDENCE (2026-07-27, kimi v0.29.1, two tiny `kimi -p -m kimi-code/k3`
-// runs with KIMI_MODEL_THINKING_EFFORT=low|high):
+// runs with KIMI_MODEL_THINKING_EFFORT=low|high; re-confirmed 2026-07-29 on
+// kimi v0.30.0 -- same effective-effort field and values):
 //   - Every agents/<agentId>/wire.jsonl llm.request record carries a top-level
 //     "thinkingEffort" field with the EFFECTIVE effort of that step -- the
 //     low run emitted exactly "low", the high run exactly "high" (lowercase;
@@ -220,7 +223,7 @@ export async function readSessionUsage(sessionDir) {
 // ───────────────────────────────────────────────────────────────────────────
 // Session attribution: which on-disk session belongs to a -p dispatch leg.
 //
-// PROBE EVIDENCE (2026-07-27, kimi v0.29.1):
+// PROBE EVIDENCE (2026-07-27, kimi v0.29.1; re-confirmed 2026-07-29 on v0.30.0):
 //   - `kimi -p --output-format stream-json` stdout ends with
 //       {"role":"meta","type":"session.resume_hint","session_id":"session_<uuid>",
 //        "command":"kimi -r session_<uuid>","content":"To resume this session: ..."}

@@ -146,7 +146,8 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
 
    **Kimi loop/background profile — binary defaults, pinned not emitted.** The run leaves
    `[loop_control]`/`[background]` (docs/research/kimi-code-cli.md §3, lines 129-130) at the
-   v0.29.1 binary defaults, verified by probe in §11.10 — the defaults apply unless the user's
+   v0.30.0 binary defaults (re-probed 2026-07-29, unchanged from the v0.29.1 probe), verified by
+   probe in §11.10 — the defaults apply unless the user's
    config.toml already sets those keys. A user-set `max_steps_per_turn` cap no longer aborts the
    goal (the v0.29.1 `LOOP_MAX_STEPS_EXCEEDED` abort was fixed in 0.29.2; re-probed on 0.30.0,
    2026-07-29): a tripped cap now pauses the goal resumably — but in `-p` mode the run still

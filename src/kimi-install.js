@@ -86,7 +86,8 @@ const KIMI_SECONDARY_MODEL_CONFIG = Object.freeze({
 // Why there is NO [loop_control]/[background] emission alongside the fence:
 // muster's chosen values for long unattended `/goal` runs (pinned in
 // plugin/commands/go.md step 6, rationale + binary-probed defaults in
-// docs/research/kimi-code-cli.md 11.10) are the v0.29.1 binary defaults in
+// docs/research/kimi-code-cli.md 11.10) are the v0.30.0 binary defaults (re-probed
+// 2026-07-29, unchanged from v0.29.1) in
 // all five cases (the four-of-five count in earlier drafts owed solely to the
 // legacy keep_alive_on_exit conditional, which can downgrade an unset
 // print_background_mode to drain) -- emitting them would write no-op overrides
@@ -225,7 +226,8 @@ export function stampModelPreference(text, lane) {
 // npm publish, gh release create, gh pr merge, curl -X POST) and mcp__* tool
 // names carrying a class keyword.
 //
-// Pattern semantics verified against kimi 0.29.1's bundled matcher
+// Pattern semantics verified against kimi 0.29.1's bundled matcher (a dated
+// historical claim, 2026-07-27 -- not re-verified on 0.30.0)
 // (packages/agent-core*/.../matches-rule.ts + rule-match.ts): the tool-name
 // part of a pattern is picomatch-globbed, and a Bash(...) arg pattern is
 // picomatch-globbed against the RAW command string with default options, so

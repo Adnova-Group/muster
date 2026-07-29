@@ -1,6 +1,6 @@
 // Kimi-native dispatch: AgentSwarm waves + /goal run loop.
 // Constants here are pinned to the shipped kimi binary's own tool schema
-// (v0.29.0, unstripped) -- notably {{item}}, the >=2-item floor, the 128 cap,
+// (v0.29.0, unstripped; re-verified on v0.30.0, 2026-07-29) -- notably {{item}}, the >=2-item floor, the 128 cap,
 // the DISTINCT-prompts rule (absent from published docs), and
 // GOAL_EXIT_CODES {complete:0, blocked:3, paused:6}.
 import { test } from "node:test";

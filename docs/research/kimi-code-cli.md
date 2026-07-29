@@ -333,8 +333,8 @@ one JSON object per stdout line (assistant → `tool_calls` → tool → assista
 progress go to stderr). `kimi export <sessionId>` → ZIP; `kimi web` serves `GET /openapi.json`
 + `/asyncapi.json`.
 
-**CONFIRMED 2026-07-27 (probe against the installed v0.29.1 binary — token usage lives in the
-wire files, NOT in stream-json).** Two real `kimi -p` runs from a scratch cwd (one trivial
+**CONFIRMED 2026-07-27 (probe against the installed v0.29.1 binary; re-confirmed 2026-07-29
+against the installed v0.30.0 binary — token usage lives in the wire files, NOT in stream-json).** Two real `kimi -p` runs from a scratch cwd (one trivial
 prompt, one dispatching an `explore` subagent via the Agent tool):
 - `kimi -p "Reply with exactly: ok" --output-format stream-json` stdout carried **no usage
   fields** — only `{"role":"assistant",...}` and `{"role":"meta","type":"session.resume_hint",...}`
@@ -350,7 +350,11 @@ prompt, one dispatching an `explore` subagent via the Agent tool):
   that dispatch's token consumption. Sample per-dispatch sums from the probe: the explore
   dispatch cost `{inputOther:2403, output:443, inputCacheRead:26624, inputCacheCreation:0}`.
   Parsed by `src/kimi-receipts.js`; trimmed real captures pinned in
-  `test/fixtures/kimi-session-usage/` + `test/kimi-receipts.test.js`. This is the verified
+  `test/fixtures/kimi-session-usage/` + `test/kimi-receipts.test.js`. Re-probed 2026-07-29 on
+  v0.30.0 (one trivial run, one explore-dispatch run, two thinking-effort runs): all shapes
+  unchanged — stream-json stdout still carries no usage fields, `usage.record` keeps the same
+  four-field `usage` object, `state.json`'s agents map still records `type` + `parentAgentId`,
+  and `llm.request` still carries the effective `thinkingEffort`. This is the verified
   per-call consumption mechanism `docs/fast-path-token-gap.md` records as absent in Claude
   Code and Codex — on Kimi the token-gap measurement is runnable.
 
@@ -649,7 +653,7 @@ Where Codex offers only per-agent spawn (muster supplies fan-out, barrier, aggre
 | wave fan-out + barrier + result aggregation | **`AgentSwarm`** — one call, ≤128 subagents, waits for all, returns an aggregated report |
 | run-until-done loop + escalation signal | **`/goal`** — auto-continuing turns, and `kimi -p` exits **0 complete / 3 blocked / 6 paused** |
 
-**Constants are read from the shipped binary, not the prose.** `~/.kimi-code/bin/kimi` (v0.29.0) is
+**Constants are read from the shipped binary, not the prose.** `~/.kimi-code/bin/kimi` (v0.29.0; the constants below re-verified on v0.30.0, 2026-07-29) is
 unstripped, so its own tool schema is readable — which matters, because the published docs say the
 `prompt_template` placeholder exists *without ever naming it*, and omit one rule entirely:
 
@@ -682,12 +686,13 @@ it, `readInstalledKimi()`, the `capabilities --kimi` lane + `kimiProfileForAgent
 `catalog/agents.manifest.json` path (`src/agent-manifest.js`), and `muster install/uninstall kimi`
 are all shipped. Nothing here touches 0.5.0.
 
-### 11.10 Loop/background tuning for long unattended `/goal` runs — binary-probed defaults (2026-07-27; step-cap failure mode re-probed on 0.30.0, 2026-07-29)
+### 11.10 Loop/background tuning for long unattended `/goal` runs — binary-probed defaults (2026-07-27; all five defaults and the step-cap failure mode re-probed on 0.30.0, 2026-07-29)
 
 The §3 schema (lines 129–130) names the `[loop_control]` and `[background]` knobs but documents
 **no default and almost no semantics** for any of them. Probed against the installed v0.29.1 binary
 (`~/.kimi-code/bin/kimi`, unstripped — same evidence style as §11.9 and the §8 usage probe), with
-the `max_steps_per_turn` failure mode re-probed live on the 0.30.0 CLI (2026-07-29, below):
+all five defaults **re-probed on v0.30.0 (2026-07-29) — unchanged** (per-value evidence below the
+list) and the `max_steps_per_turn` failure mode re-probed live on the 0.30.0 CLI (2026-07-29, below):
 
 - **`loop_control.max_steps_per_turn`** — unset or `0` means **no cap** (the step-budget check
   returns true whenever the cap is undefined or ≤0). Per-process env override:
@@ -729,6 +734,15 @@ the `max_steps_per_turn` failure mode re-probed live on the 0.30.0 CLI (2026-07-
   effective mode to `drain` when `print_background_mode` itself is unset. No direct env override
   (only `KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT` for the legacy boolean).
 
+**0.30.0 re-probe evidence (2026-07-29, binary strings on the installed v0.30.0 binary):** all five
+defaults unchanged — `hasStepBudgetRemaining(maxSteps, currentStep)` still returns true whenever
+`maxSteps` is `undefined` or ≤0 (unset/0 = no cap); the retry wrapper still falls back
+`Math.max(config?.maxRetriesPerStep ?? 10, 1)`; `DEFAULT_COMPACTION_CONFIG.reservedContextSize` is
+still `5e4` alongside `triggerRatio: 0.85`; the background admission gate still returns early when
+`maxRunningTasks` is `undefined` and still throws `"Too many background tasks are already running."`
+on a configured cap; and `resolvePrintBackgroundMode` still returns the configured mode, else
+`keepAliveOnExit === true ? "drain" : "steer"`.
+
 **Chosen values for muster's unattended `kimi -p "/goal …"` runs — all left at the binary
 defaults, pinned in runner prose (`plugin/commands/go.md` step 6), NOT emitted into config.toml:**
 `max_steps_per_turn` unset (no cap — a cap is a second stop rule the objective already covers,
@@ -736,7 +750,7 @@ defaults, pinned in runner prose (`plugin/commands/go.md` step 6), NOT emitted i
 mode the run still exits 1 as a harness fault rather than auto-continuing — re-probed on 0.30.0,
 2026-07-29, above — so unattended runs still leave it unset; and the uncapped-steps concern is
 bounded by the binary's own backstops — `handlePrintMainTurnCompleted` finishes a `-p` print run
-once quiescent or when `print_wait_ceiling_s`/`print_max_turns` is reached, binary-probed v0.29.1);
+once quiescent or when `print_wait_ceiling_s`/`print_max_turns` is reached, binary-probed v0.29.1, re-verified on v0.30.0 2026-07-29);
 `max_retries_per_step` unset (10 — generous transient-failure absorption on the shared 5-hour rate
 window, §0 lines 42–45; raising it further burns shared quota on persistent failures instead of
 failing the step so the run can re-plan); `reserved_context_size` unset (50000 — on K3's 1M window,

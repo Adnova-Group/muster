@@ -18,7 +18,8 @@ import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 // and hands the mechanics to the harness -- the harness-native-first posture.
 //
 // EVIDENCE NOTE. The constants below are read from the shipped kimi binary's
-// own tool schema (`~/.kimi-code/bin/kimi`, v0.29.0, unstripped), not inferred
+// own tool schema (`~/.kimi-code/bin/kimi`, v0.29.0, unstripped; re-verified
+// on v0.30.0, 2026-07-29), not inferred
 // from prose. That matters because the published docs state the placeholder
 // exists without ever naming it, and omit the distinct-prompts rule entirely.
 // Where the binary and the docs disagree, the binary is what actually runs.

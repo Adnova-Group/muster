@@ -1,6 +1,6 @@
 // Kimi-native token receipts: per-dispatch usage attribution from wire.jsonl.
 // Fixtures under test/fixtures/kimi-session-usage/ are TRIMMED captures of a
-// real `kimi -p` run (kimi v0.29.1, 2026-07-27) that dispatched one explore
+// real `kimi -p` run (kimi v0.29.1, 2026-07-27; shapes re-confirmed on v0.30.0, 2026-07-29) that dispatched one explore
 // subagent -- the usage.record shapes are verbatim, only prompt/systemPrompt
 // text was cut. See docs/research/kimi-code-cli.md sec 8's dated probe note.
 import { test } from "node:test";
@@ -97,7 +97,8 @@ test("sumUsage: folds records into input/total conveniences", () => {
 });
 
 // --- parseWireThinkingEfforts -------------------------------------------------
-// Canned llm.request shapes mirror the live probe (2026-07-27, kimi v0.29.1):
+// Canned llm.request shapes mirror the live probe (2026-07-27, kimi v0.29.1;
+// re-confirmed on v0.30.0, 2026-07-29):
 // k3 emits "low"/"high", kimi-for-coding emits "on"; the profile.bind record
 // carries the config DEFAULT ("high" even in a low run) and must be ignored.
 

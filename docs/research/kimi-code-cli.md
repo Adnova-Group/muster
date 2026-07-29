@@ -761,6 +761,40 @@ has a per-process env override for the one run that wants a non-default. The `[[
 fence is different in kind: it adds a declarative deny that does not exist by default (a safety
 requirement), not a restatement of tuning defaults.
 
+### 11.11 Steer during goal pursuit — live `kimi web` probe (2026-07-29, 0.30.0)
+
+The 0.29.2 changelog entry *"fix messages sent during goal pursuit being rejected"* (same source as
+the §11.10 attribution) was verified live on the installed 0.30.0 CLI. Probe setup:
+`kimi web --no-open --port 58731` (bearer token from startup output; the server serves its OpenAPI
+at `/openapi.json` and mounts the API under `/api/v1`), a session created via
+`POST /api/v1/sessions`, a `/goal …` objective submitted via
+`POST /api/v1/sessions/{id}/prompts` (HTTP 200, `"status":"running"`), then — mid-pursuit, session
+`busy:true` — the two-request steer delivery `src/kimi-steer.js` constructs:
+
+- **Submit** `POST /api/v1/sessions/{id}/prompts` `{"content":[{"type":"text","text":"STEER: skip
+  step-c entirely; after step-b go straight to step-d, then report done."}]}` → **HTTP 200**,
+  `{"code":0,"data":{"prompt_id":"msg_01KYQJA2XTW806EF7QJXY4HJ2Z","status":"queued",…}}` — the
+  message is **accepted and queued, not rejected** (the 0.29.2 fix, confirmed).
+- **Steer** `POST /api/v1/sessions/{id}/prompts:steer` `{"prompt_ids":["msg_01KYQJA2XTW806EF7QJXY4HJ2Z"]}`
+  → **HTTP 200**, `{"code":0,"data":{"steered":true,"prompt_ids":["msg_01KYQJA2XTW806EF7QJXY4HJ2Z"]}}`.
+- **Incorporation:** the goal transcript shows the steer user message injected between steps; the
+  run executed `echo step-a`, `echo step-b`, `echo step-d` (step-c skipped) and completed
+  (`UpdateGoal status:complete`), the final assistant text reading *"Ran the commands sequentially
+  as directed by your steer: echo step-a → echo step-b → echo step-d (step-c skipped)."* Verdict:
+  **accepted-and-steered** — a live `/goal` run is steerable over `kimi web`'s HTTP API on 0.30.0.
+
+Two route-shape corrections fall out of the live probe, both now pinned in `src/kimi-steer.js` and
+the orchestrator skill prose: the steer route is **`prompts:steer` (single colon)** — the
+double-colon form the v0.29.x binary strings suggested is rejected by the live server
+(`{"code":40001,"msg":"unsupported action: prompts::steer"}`) — and the API is mounted under
+**`/api/v1`** (the module's constants stay mount-relative route templates). Probe-environment
+notes, not muster-relevant: an API-created session ignored `agent_config.permission_mode:"yolo"`
+(the goal's `CreateGoal` call sat pending until approved via
+`POST /api/v1/sessions/{id}/approvals/{approval_id}`), and turns failed silently
+(`last_turn_reason:"failed"`) until a model was set via `POST …/profile`. Nothing here changes
+muster's run loop: `kimi -p` still holds no live session handle, so `kimiSteerDelivery` remains a
+constructor for the driver that does.
+
 ## Sources
 
 Moonshot docs: `www.kimi.com/code/docs/en/kimi-code-cli/{customization/{hooks,agents,skills,

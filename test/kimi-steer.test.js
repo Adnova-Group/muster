@@ -2,11 +2,16 @@
 // The Kimi arm of `muster steer` constructs the native steer delivery --
 // queued injection between steps without ending the turn (docs/research/
 // kimi-code-cli.md sec 1 "Steer") -- while every non-Kimi steer path stays
-// byte-identical to today. Route shapes are pinned to the shipped kimi
-// binary's own route definitions (v0.29.x): submitRoute
-// POST /sessions/{session_id}/prompts and steerManyRoute
-// POST /sessions/{session_id}/prompts::steer ("Steer queued prompts into the
-// active turn").
+// byte-identical to today. Route shapes were originally read from the shipped
+// kimi binary's route definitions (v0.29.x) and are now pinned to the LIVE
+// `kimi web` API verified on 0.30.0 (2026-07-29, docs/research/
+// kimi-code-cli.md sec 11.11): POST /sessions/{session_id}/prompts and
+// POST /sessions/{session_id}/prompts:steer ("Steer queued prompts into the
+// active turn"; SINGLE colon -- the ::steer binary-string form is rejected by
+// the live server, and the API mounts under /api/v1). That probe also
+// verified a `/goal` run is steerable over this route: a mid-pursuit message
+// is queued (not rejected -- the 0.29.2 fix), steers into the active turn,
+// and injects at the next step boundary.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -30,7 +35,7 @@ const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 test("the seam constant names the documented mechanism exactly", () => {
   assert.equal(KIMI_STEER_SEAM, "Kimi's steer queue: queued injection between steps without ending the turn");
   assert.equal(KIMI_STEER_SUBMIT_PATH, "/sessions/{session_id}/prompts");
-  assert.equal(KIMI_STEER_STEER_PATH, "/sessions/{session_id}/prompts::steer");
+  assert.equal(KIMI_STEER_STEER_PATH, "/sessions/{session_id}/prompts:steer");
 });
 
 // --- delivery construction ----------------------------------------------------
@@ -51,7 +56,7 @@ test("kimiSteerDelivery: builds the two-request native delivery (submit, then st
   assert.deepEqual(steer, {
     step: "steer",
     method: "POST",
-    path: "/sessions/{session_id}/prompts::steer",
+    path: "/sessions/{session_id}/prompts:steer",
     body: { prompt_ids: [KIMI_STEER_PROMPT_ID_PLACEHOLDER] }
   });
 });
@@ -59,7 +64,7 @@ test("kimiSteerDelivery: builds the two-request native delivery (submit, then st
 test("kimiSteerDelivery: a known session/prompt id produces concrete paths and body", () => {
   const d = kimiSteerDelivery({ message: "stop", sessionId: "sess-123", promptId: "p-9" });
   assert.equal(d.requests[0].path, "/sessions/sess-123/prompts");
-  assert.equal(d.requests[1].path, "/sessions/sess-123/prompts::steer");
+  assert.equal(d.requests[1].path, "/sessions/sess-123/prompts:steer");
   assert.deepEqual(d.requests[1].body, { prompt_ids: ["p-9"] });
 });
 
@@ -68,7 +73,7 @@ test("kimiSteerDelivery: names every documented surface into the steer queue", (
   assert.match(surfaces.tui, /Ctrl-S/);
   assert.match(surfaces.wire, /Wire `steer`.*gen1/);
   assert.match(surfaces.acp, /ACP mid-turn/);
-  assert.match(surfaces.kimiWeb, /kimi web.*POST \/sessions\/\{session_id\}\/prompts::steer/s);
+  assert.match(surfaces.kimiWeb, /kimi web.*POST \/sessions\/\{session_id\}\/prompts:steer/s);
 });
 
 test("kimiSteerDelivery: validates its inputs loud, before any delivery is built", () => {
@@ -100,7 +105,7 @@ test("kimiSteerDelivery: a real-shaped session id (session_<uuid>) is accepted a
   const id = "session_13b9e00a-2b2f-42c7-a31d-88704b739cc5";
   const d = kimiSteerDelivery({ message: "hold", sessionId: id });
   assert.equal(d.requests[0].path, `/sessions/${id}/prompts`);
-  assert.equal(d.requests[1].path, `/sessions/${id}/prompts::steer`);
+  assert.equal(d.requests[1].path, `/sessions/${id}/prompts:steer`);
 });
 
 test("muster steer --harness kimi: a path-reshaping --session value fails loud", async () => {
@@ -121,7 +126,7 @@ test("muster steer --harness kimi: classification composes with the native deliv
   assert.equal(result.action, "stop");
   assert.equal(result.harness, "kimi");
   assert.equal(result.delivery.seam, KIMI_STEER_SEAM);
-  assert.equal(result.delivery.requests[1].path, "/sessions/{session_id}/prompts::steer");
+  assert.equal(result.delivery.requests[1].path, "/sessions/{session_id}/prompts:steer");
   assert.deepEqual(result.delivery.requests[0].body, { content: [{ type: "text", text: "please stop the run" }] });
 });
 
@@ -189,7 +194,7 @@ test("orchestrator/SKILL.md's Channel steering section carries the Kimi steer-se
   assert.match(paragraph, /Ctrl-S/, "the paragraph must name the TUI Ctrl-S surface");
   assert.match(paragraph, /Wire `steer`/, "the paragraph must name the Wire steer surface");
   assert.match(paragraph, /ACP mid-turn/, "the paragraph must name the ACP mid-turn surface");
-  assert.match(paragraph, /POST \/sessions\/\{session_id\}\/prompts::steer/, "the paragraph must name the exact kimi web steer route");
+  assert.match(paragraph, /POST \/sessions\/\{session_id\}\/prompts:steer/, "the paragraph must name the exact kimi web steer route");
   // the shipped constructor and the honest limit
   assert.match(paragraph, /muster steer --harness kimi/, "the paragraph must name the Kimi arm of the steer command");
   assert.match(paragraph, /kimiSteerDelivery` in `src\/kimi-steer\.js/, "the paragraph must cite the shipped constructor");

@@ -338,8 +338,9 @@ injected user message at a step boundary, not a `<channel>` event. Classify it w
 `muster steer "<msg>"` exactly as above; the action mapping is unchanged. The surfaces into that
 queue: TUI `Ctrl-S` (interactive only), Wire `steer` (gen1 kimi-cli only), ACP mid-turn (gen2),
 and `kimi web`'s HTTP API -- `POST /sessions/{session_id}/prompts` then
-`POST /sessions/{session_id}/prompts::steer` ("Steer queued prompts into the active turn"; route
-shapes read from the shipped binary). `muster steer --harness kimi "<msg>"` constructs that
+`POST /sessions/{session_id}/prompts:steer` ("Steer queued prompts into the active turn"; single
+colon, verified live against `kimi web` on 0.30.0, mounted under `/api/v1` -- and a `/goal` run is
+steerable over this route: a mid-pursuit message is queued, not rejected, sec 11.11). `muster steer --harness kimi "<msg>"` constructs that
 native delivery (`kimiSteerDelivery` in `src/kimi-steer.js`) for the driver holding the live
 session; muster's own `kimi -p` run loop holds no session handle, so the CLI builds the delivery
 and names the seam -- it does not open the connection itself.

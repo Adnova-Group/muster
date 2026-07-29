@@ -703,8 +703,11 @@ the `max_steps_per_turn` failure mode re-probed live on the 0.30.0 CLI (2026-07-
   exceeded maxSteps=2. …`. The pause is genuinely resumable: `kimi -p "continue" -S <session>`
   ran the remaining step and completed the goal, exit 0. Operational consequence for muster: a
   capped `-p` run surfaces to `interpretKimiGoalExit` as exit 1 (harness FAULT), not the 6-paused
-  code, even though the persisted goal state is paused/resumable — recovery is a `kimi -r`
-  resume, not a restart, but an unattended wave still stops. *Historical (v0.29.1 binary probe,
+  code, even though the persisted goal state is paused/resumable — recovery is a resume
+  (`kimi -p "continue" -S <session>` as probed; `kimi -r` is the hidden shortcut, sec 8), not a
+  restart, but an unattended wave still stops. (The 0.29.2 "goal pursuit pausing" attribution
+  cites the official changelog, kimi.com/code/docs/en/kimi-code-cli/release-notes/changelog.html;
+  in-repo probes cover v0.29.1 and v0.30.0, not 0.29.2 itself.) *Historical (v0.29.1 binary probe,
   2026-07-27): a tripped cap aborted the turn with `LOOP_MAX_STEPS_EXCEEDED`; that error string no
   longer exists in 0.30.0 — the turn-level error is now `loop.max_steps_exceeded`.*
 - **`loop_control.max_retries_per_step`** — built-in default **10** when unset (the step's tenacity

@@ -146,8 +146,9 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    goal (the v0.29.1 `LOOP_MAX_STEPS_EXCEEDED` abort was fixed in 0.29.2; re-probed on 0.30.0,
    2026-07-29): a tripped cap now pauses the goal resumably — but in `-p` mode the run still
    exits 1 (a harness FAULT to `interpretKimiGoalExit`, not the 6-paused code), stopping the
-   unattended wave until someone resumes it with `kimi -r`, so leaving it unset remains the
-   recommendation rather than a hard requirement:
+   unattended wave until someone resumes it (`kimi -p "continue" -S <session>` as probed; `kimi -r`
+   is the hidden shortcut), so leaving it unset remains the recommendation rather than a hard
+   requirement:
    `max_steps_per_turn` unset (no cap — a
    tripped cap pauses the goal resumably (0.30.0) instead of aborting it, but the `-p` run exits 1
    as a harness fault rather than auto-continuing; the objective already carries the

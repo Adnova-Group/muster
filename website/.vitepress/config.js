@@ -17,6 +17,7 @@ const guideItems = [
   { text: "Codex", link: "/guides/codex" },
   { text: "Kimi", link: "/guides/kimi" },
   { text: "Cowork", link: "/guides/cowork" },
+  { text: "ChatGPT Work", link: "/guides/chatgpt-work" },
   { text: "Security", link: "/guides/security" },
   { text: "Troubleshooting", link: "/guides/troubleshooting" },
 ];

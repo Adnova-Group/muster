@@ -167,6 +167,12 @@ node scripts/cowork-probe.mjs --dispatch-results results.json
 
 Phase 3 passing means parallel fan-out plus per-call model override work, so the six-mode MCP protocol lifecycle can use parallel dispatch. Require that receipt before enabling the parallel path. If it fails or has not been run, Muster still runs as a router plus single-agent executor: the agent walks each wave one task at a time via `muster_next`, and every routing, scoring, and gate decision stays deterministic.
 
+## ChatGPT Work is a separate lane
+
+This directory is the Claude Cowork MCP package; it is not ChatGPT Work's plugin. ChatGPT Work is available on the web and in the ChatGPT desktop app with Work selected, and uses the universal Plugins Directory plus a registered MCP connection. Work does not inherit this Cowork package or Codex Desktop configuration. Follow [`website/guides/chatgpt-work.md`](../website/guides/chatgpt-work.md) for the private/local Work lane.
+
+The Work default (`pro-safe`) is exactly one titled, read-only `muster_prioritize` tool after a successful native Scan Tools gate. Its `full` profile is the existing 28-tool deterministic surface, not write support, and requires a full-MCP workspace entitlement and both installer/server opt-ins. Secure MCP Tunnel is outbound-only private transport and is not a public plugin-submission path.
+
 ## Troubleshooting
 
 - **No `muster_*` tools after restart.** Usually Node is not on the host PATH (Route A `command: node` cannot resolve), the path in `args` is wrong, or Cowork was not fully quit. Confirm `node -v` in a host terminal, check the absolute path, and quit from the tray/menu bar.

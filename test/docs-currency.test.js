@@ -162,6 +162,68 @@ test("ChatGPT Work compatibility is explicitly unverified rather than inherited 
   }
 });
 
+test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and billing boundaries", async () => {
+  const docs = await Promise.all([
+    read("README.md"),
+    read("website/guides/chatgpt-work.md"),
+    read("docs/research/gpt-work.md"),
+    read("cowork/README.md"),
+  ]);
+  const text = docs.join("\n");
+  for (const marker of [
+    "https://learn.chatgpt.com/docs/plugins",
+    "https://developers.openai.com/plugins/build/plugins",
+    "https://developers.openai.com/api/docs/guides/secure-mcp-tunnels",
+    "https://help.openai.com/en/articles/12584461-developer-mode-apps-and-full-mcp-connectors-in-chatgpt-beta.svgz",
+    "muster install chatgpt-work --connection-id",
+    "--profile pro-safe",
+    "--profile full --allow-full-actions",
+    "--scope project",
+    "--scope user",
+    ".app.json",
+    "asdk_app_<normalized",
+    "runtime/chatgpt-work-server.mjs",
+    "CONTROL_PLANE_API_KEY",
+    "MUSTER_CHATGPT_WORK_PROBE_NONCE",
+    "MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH",
+    "0700",
+    "0600",
+    "server-attestation.json",
+    "inherited by the `--mcp-command` child",
+    "Platform API",
+    "ChatGPT Pro",
+    "Scan Tools",
+    "readOnlyHint=true",
+    "destructiveHint=false",
+    "openWorldHint=false",
+    "28-tool",
+    "full-MCP",
+    "Refresh",
+    "recreate",
+    "public submission",
+    "outbound-only",
+    "operator",
+    "cryptographic provenance",
+  ]) assert.match(text, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing ChatGPT Work currency marker: ${marker}`);
+  assert.match(text, /connection ID[^.]+(?:not|non-secret|identifier)/i);
+  assert.match(text, /tunnel[^.]+(?:cannot|not)[^.]+public/i);
+  assert.match(text, /does not inherit Codex|not inherit Codex/i);
+});
+
+test("native Work proof schema stays paired with its probe", async () => {
+  const [probe, schema] = await Promise.all([
+    read("scripts/chatgpt-work-native-probe.mjs"),
+    read("docs/research/evidence/chatgpt-work-native-probe.schema.json"),
+  ]);
+  const parsed = JSON.parse(schema);
+  assert.equal(parsed.additionalProperties, false);
+  assert.deepEqual(parsed.required, ["receiptType", "nonce", "timestamp", "identity", "operatorEvidence", "serverEvidence", "inventory", "artifacts"]);
+  for (const marker of ["invocationCount", "connectionIdSha256", "pluginAppSha256", "verified-absent", "operator-observed-ui", "muster-work-native-server-attestation"]) {
+    assert.match(probe, new RegExp(marker), `probe is missing ${marker}`);
+    assert.match(schema, new RegExp(marker), `schema is missing ${marker}`);
+  }
+});
+
 test("current Cowork research uses the live MCP tool count and phase-3-gated dispatch contract", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   for (const path of [

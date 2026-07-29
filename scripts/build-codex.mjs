@@ -214,7 +214,7 @@ function adaptOrchestratorForCodex(text) {
   const kimiSteerParagraph = /\*\*On Kimi the same message arrives through the harness's native steer seam\.\*\*[\s\S]*?it does not open the connection itself\.\n/;
   if (!kimiSteerParagraph.test(result)) throw new Error("orchestrator Kimi steer paragraph not found for Codex rewrite");
   result = result.replace(kimiSteerParagraph, "**On this harness there is no native between-steps steer seam:** a steering message arrives as ordinary user input -- classify it with the bundled runtime's `steer` verb and apply the mapping above unchanged.\n");
-  if (result.includes("prompts::steer")) throw new Error("orchestrator Kimi steer paragraph leaked into the Codex build");
+  if (result.includes("prompts::steer") || result.includes("prompts:steer")) throw new Error("orchestrator Kimi steer paragraph leaked into the Codex build");
   const providerStart = result.indexOf("      - **Provider kind:**");
   const failureStart = result.indexOf("      - **Subagent failure", providerStart);
   if (providerStart < 0 || failureStart < 0) throw new Error("orchestrator provider/model section not found");

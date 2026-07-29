@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, writeFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -230,6 +231,8 @@ test("ChatGPT Work full profile preserves the deterministic 28-tool descriptor s
     }),
   ]);
   assert.deepEqual(full[2].result, normal[2].result);
+  assert.match(full[1].result.instructions, /tool-only surface for ChatGPT Work/);
+  assert.doesNotMatch(full[1].result.instructions, /Codex|Cowork|skills/i);
 });
 
 test("ChatGPT Work probe locks descriptor, exact call, one invocation, and server attestation", async t => {
@@ -237,6 +240,10 @@ test("ChatGPT Work probe locks descriptor, exact call, one invocation, and serve
   const dir = mkdtempSync(path.join(tmpdir(), "muster-work-probe-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const attestationPath = path.join(dir, "server-attestation.json");
+  const appPath = path.join(dir, ".app.json");
+  const connectionId = "asdk_app_ProbeIdentity1";
+  const appBytes = JSON.stringify({ apps: { muster: { id: connectionId } } }, null, 2) + "\n";
+  writeFileSync(appPath, appBytes, { mode: 0o600 });
   const request = {
     items: [{
       name: `WORK_WEB_PROBE_${nonce}`,
@@ -248,6 +255,10 @@ test("ChatGPT Work probe locks descriptor, exact call, one invocation, and serve
     MUSTER_CHATGPT_WORK_PROFILE: "pro-safe",
     MUSTER_CHATGPT_WORK_PROBE_NONCE: nonce,
     MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestationPath,
+    MUSTER_CHATGPT_WORK_CONNECTION_ID: connectionId,
+    MUSTER_CHATGPT_WORK_APP_JSON_PATH: appPath,
+    MUSTER_CHATGPT_WORK_PLUGIN_VERSION: "0.5.0",
+    MUSTER_CHATGPT_WORK_CONNECTION_LABEL: "Muster Probe",
   };
   const r = await rpc([
     INIT,
@@ -286,6 +297,14 @@ test("ChatGPT Work probe locks descriptor, exact call, one invocation, and serve
     tool: "muster_prioritize",
     request,
     result: [{ ...request.items[0], score: 3, rank: 1 }],
+    identity: {
+      connectionIdSha256: createHash("sha256").update(connectionId).digest("hex"),
+      pluginAppSha256: createHash("sha256").update(appBytes).digest("hex"),
+      pluginName: "muster",
+      pluginVersion: "0.5.0",
+      connectionLabel: "Muster Probe",
+    },
+    serverInstanceId: attestation.serverInstanceId,
     invocationCount: 1,
     timestamp: attestation.timestamp,
   });
@@ -314,6 +333,14 @@ test("ChatGPT Work probe rejects wrong arguments before CLI dispatch and creates
       MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-probe",
       MUSTER_CHATGPT_WORK_PROBE_NONCE: nonce,
       MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestationPath,
+      MUSTER_CHATGPT_WORK_PROBE_IDENTITY: JSON.stringify({
+        connectionIdSha256: "a".repeat(64),
+        pluginAppSha256: "b".repeat(64),
+        pluginName: "muster",
+        pluginVersion: "0.5.0",
+        connectionLabel: "Muster Probe",
+      }),
+      MUSTER_CHATGPT_WORK_PROBE_SERVER_INSTANCE_ID: "00000000-0000-4000-8000-000000000000",
       NODE_ENV: "test",
       MUSTER_COWORK_TEST_CLI: path.join(rootDir, "definitely-missing-cli.mjs"),
     },

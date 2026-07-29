@@ -67,6 +67,11 @@ export function buildIdentity({ connectionId, appJson, pluginVersion, connection
   const normalizedId = normalizedConnectionId(connectionId);
   if (!PLUGIN_VERSION_PATTERN.test(pluginVersion ?? "")) throw new Error("pluginVersion must be semver-like");
   if (typeof connectionLabel !== "string" || connectionLabel.length === 0) throw new Error("connectionLabel is required");
+  let app;
+  try { app = JSON.parse(appJson); } catch { throw new Error("appJson must be valid JSON"); }
+  if (JSON.stringify(app) !== JSON.stringify({ apps: { muster: { id: normalizedId } } })) {
+    throw new Error("appJson must have the exact apps.muster.id shape and match the connection id");
+  }
   return {
     connectionIdSha256: sha256(normalizedId),
     pluginAppSha256: sha256(appJson),
@@ -98,29 +103,16 @@ export function expectedResult(nonce) {
 }
 
 export function buildProbe({
-  connectionId = "asdk_app_probe_placeholder",
-  appJson = "",
-  pluginVersion = "0.5.0",
-  connectionLabel = "Muster ChatGPT Work",
+  connectionId, appJson, pluginVersion, connectionLabel,
 } = {}) {
-  const normalizedId = normalizedConnectionId(connectionId);
-  if (!PLUGIN_VERSION_PATTERN.test(pluginVersion)) throw new Error("pluginVersion must be semver-like");
-  if (typeof connectionLabel !== "string" || connectionLabel.length === 0) {
-    throw new Error("connectionLabel is required");
-  }
+  const identity = buildIdentity({ connectionId, appJson, pluginVersion, connectionLabel });
   const nonce = randomBytes(16).toString("hex");
   return {
     schemaVersion: 2,
     nonce,
     request: expectedRequest(nonce),
     expectedResult: expectedResult(nonce),
-    identity: {
-      connectionIdSha256: sha256(normalizedId),
-      pluginAppSha256: sha256(appJson),
-      pluginName: PLUGIN_NAME,
-      pluginVersion,
-      connectionLabel,
-    },
+    identity,
     instructions: [
       "Run only in ChatGPT Work (web or the ChatGPT desktop app with Work selected); Codex Desktop is a separate surface.",
       "Complete the native Pro Scan Tools gate first. If it does not pass, record HUMAN-HOLD and do not claim Pro support.",
@@ -131,8 +123,8 @@ export function buildProbe({
       "Call muster_prioritize exactly once with the exact nonce-bearing request. Operator evidence must be a completed native Work tool card, not assistant prose, skill discovery, tools/list, or tunnel health.",
       "The server must emit a separate nonce/tool/request/result attestation with invocationCount=1 and a server timestamp. UI evidence is operator attestation, not cryptographic provenance.",
       "Bind the receipt to SHA-256(normalized connection ID), SHA-256(installed .app.json), plugin name/version, and the registered connection label; never store the raw ID, app file, tunnel ID, API key, or screenshots.",
-      "Stop tunnel-client, delete only probe-owned resources after ownership checks, re-run every inventory and require absent/absent/absent before grading.",
-      "Grade the operator receipt against the separate server attestation, then delete the attestation and empty probe directories. Never fabricate native proof or publish it.",
+      "Phase 1: while the independent server attestation still exists, grade the operator receipt against it and retain the evidence-grade result.",
+      "Phase 2 only after evidence grade succeeds: stop tunnel-client, delete only probe-owned resources after ownership checks, re-run every inventory, and finalize cleanup with verified absence. Never claim deletion before phase 1 or fabricate native proof.",
     ],
   };
 }
@@ -175,6 +167,7 @@ function validateIdentity(value, expected, errors) {
   exactValue(value.pluginAppSha256, expected.pluginAppSha256, "receipt.identity.pluginAppSha256", errors);
   exactValue(value.pluginName, PLUGIN_NAME, "receipt.identity.pluginName", errors);
   if (!PLUGIN_VERSION_PATTERN.test(value.pluginVersion ?? "")) errors.push("receipt.identity.pluginVersion must be semver-like");
+  exactValue(value.pluginVersion, expected.pluginVersion, "receipt.identity.pluginVersion", errors);
   exactValue(value.connectionLabel, expected.connectionLabel, "receipt.identity.connectionLabel", errors);
 }
 
@@ -188,8 +181,8 @@ function validateModeEvidence(value, errors) {
   exactValue(value.status, "completed", "receipt.operatorEvidence.status", errors);
 }
 
-function validateAttestation(value, nonce, at, errors) {
-  if (!exactKeys(value, ["attestationType", "source", "nonce", "tool", "request", "result", "invocationCount", "timestamp"], at, errors)) return;
+function validateAttestation(value, nonce, at, errors, expectedIdentity) {
+  if (!exactKeys(value, ["attestationType", "source", "nonce", "tool", "request", "result", "identity", "serverInstanceId", "invocationCount", "timestamp"], at, errors)) return;
   exactValue(value.attestationType, ATTESTATION_TYPE, `${at}.attestationType`, errors);
   exactValue(value.source, "server", `${at}.source`, errors);
   exactValue(value.nonce, nonce, `${at}.nonce`, errors);
@@ -197,6 +190,8 @@ function validateAttestation(value, nonce, at, errors) {
   exactValue(value.tool, TOOL, `${at}.tool`, errors);
   validateRequest(value.request, nonce, `${at}.request`, errors);
   validateResult(value.result, nonce, `${at}.result`, errors);
+  validateIdentity(value.identity, expectedIdentity, errors);
+  if (!/^[0-9a-f-]{36}$/.test(value.serverInstanceId ?? "")) errors.push(`${at}.serverInstanceId must be a UUID`);
   exactValue(value.invocationCount, 1, `${at}.invocationCount`, errors);
   validateTimestamp(value.timestamp, `${at}.timestamp`, errors);
 }
@@ -215,23 +210,27 @@ function expectedInventory(phase) {
 
 function validateInventory(value, errors) {
   if (!exactKeys(value, ["before", "during", "after", "ownership", "cleanup"], "receipt.inventory", errors)) return;
-  for (const phase of ["before", "during", "after"]) {
+  for (const phase of ["before", "during"]) {
     const at = `receipt.inventory.${phase}`;
     if (!exactKeys(value[phase], Object.keys(expectedInventory(phase)), at, errors)) continue;
     for (const [key, expected] of Object.entries(expectedInventory(phase))) exactValue(value[phase][key], expected, `${at}.${key}`, errors);
   }
   exactValue(value.ownership, "probe-owned-only", "receipt.inventory.ownership", errors);
-  exactValue(value.cleanup, "verified-absent", "receipt.inventory.cleanup", errors);
+  for (const [key, expected] of Object.entries(expectedInventory("during"))) exactValue(value.after[key], expected, `receipt.inventory.after.${key}`, errors);
+  exactValue(value.cleanup, "pending-after-evidence-grade", "receipt.inventory.cleanup", errors);
 }
 
 function validateArtifacts(value, errors) {
   if (!exactKeys(value, ["tunnel", "screenshotsRetained", "logsRetained", "attestationRetained", "probeDirsRetained"], "receipt.artifacts", errors)) return;
   exactValue(value.tunnel, "stopped", "receipt.artifacts.tunnel", errors);
-  for (const key of ["screenshotsRetained", "logsRetained", "attestationRetained", "probeDirsRetained"]) exactValue(value[key], 0, `receipt.artifacts.${key}`, errors);
+  for (const key of ["screenshotsRetained", "logsRetained"]) exactValue(value[key], 0, `receipt.artifacts.${key}`, errors);
+  exactValue(value.attestationRetained, 1, "receipt.artifacts.attestationRetained", errors);
+  exactValue(value.probeDirsRetained, 1, "receipt.artifacts.probeDirsRetained", errors);
 }
 
 export function gradeReceipt(receipt, nonce, serverAttestation, expectedIdentity = null) {
   if (!NONCE_PATTERN.test(nonce ?? "")) return { ok: false, errors: ["expected nonce must be 32 lowercase hexadecimal characters"] };
+  if (!expectedIdentity) return { ok: false, errors: ["expected identity is required"] };
   const errors = [];
   const keys = ["receiptType", "nonce", "timestamp", "identity", "operatorEvidence", "serverEvidence", "inventory", "artifacts"];
   if (!exactKeys(receipt, keys, "receipt", errors)) return { ok: false, errors };
@@ -242,36 +241,88 @@ export function gradeReceipt(receipt, nonce, serverAttestation, expectedIdentity
   validateModeEvidence(receipt.operatorEvidence, errors);
   validateRequest(receipt.operatorEvidence?.request, nonce, "receipt.operatorEvidence.request", errors);
   validateResult(receipt.operatorEvidence?.result, nonce, "receipt.operatorEvidence.result", errors);
-  validateAttestation(receipt.serverEvidence, nonce, "receipt.serverEvidence", errors);
+  validateAttestation(receipt.serverEvidence, nonce, "receipt.serverEvidence", errors, expectedIdentity);
   if (!serverAttestation) errors.push("a separate server attestation is required");
   else {
-    validateAttestation(serverAttestation, nonce, "serverAttestation", errors);
+    validateAttestation(serverAttestation, nonce, "serverAttestation", errors, expectedIdentity);
     if (JSON.stringify(receipt.serverEvidence) !== JSON.stringify(serverAttestation)) errors.push("serverEvidence must exactly match the separate server attestation");
   }
   if (JSON.stringify(receipt.operatorEvidence?.request) !== JSON.stringify(receipt.serverEvidence?.request)) errors.push("operator and server requests must match exactly");
   if (JSON.stringify(receipt.operatorEvidence?.result) !== JSON.stringify(receipt.serverEvidence?.result)) errors.push("operator and server results must match exactly");
   validateInventory(receipt.inventory, errors);
   validateArtifacts(receipt.artifacts, errors);
-  return errors.length ? { ok: false, errors } : { ok: true, nonce, receiptType: RECEIPT_TYPE };
+  return errors.length ? { ok: false, errors } : { ok: true, phase: "evidence-graded", cleanupRequired: true, nonce, receiptType: RECEIPT_TYPE };
+}
+
+export function finalizeCleanup(cleanup, nonce, expectedIdentity = null) {
+  if (!NONCE_PATTERN.test(nonce ?? "")) return { ok: false, errors: ["expected nonce must be 32 lowercase hexadecimal characters"] };
+  if (!expectedIdentity) return { ok: false, errors: ["expected identity is required"] };
+  const errors = [];
+  if (!exactKeys(cleanup, ["cleanupType", "nonce", "timestamp", "identity", "inventory", "artifacts"], "cleanup", errors)) {
+    return { ok: false, errors };
+  }
+  exactValue(cleanup.cleanupType, "muster-work-native-cleanup-finalization", "cleanup.cleanupType", errors);
+  exactValue(cleanup.nonce, nonce, "cleanup.nonce", errors);
+  validateTimestamp(cleanup.timestamp, "cleanup.timestamp", errors);
+  validateIdentity(cleanup.identity, expectedIdentity, errors);
+  const inventoryKeys = Object.keys(expectedInventory("after"));
+  if (exactKeys(cleanup.inventory, inventoryKeys, "cleanup.inventory", errors)) {
+    for (const key of inventoryKeys) exactValue(cleanup.inventory[key], "absent", `cleanup.inventory.${key}`, errors);
+  }
+  if (exactKeys(cleanup.artifacts, ["tunnel", "screenshotsRetained", "logsRetained", "attestationRetained", "probeDirsRetained"], "cleanup.artifacts", errors)) {
+    exactValue(cleanup.artifacts.tunnel, "stopped", "cleanup.artifacts.tunnel", errors);
+    for (const key of ["screenshotsRetained", "logsRetained", "attestationRetained", "probeDirsRetained"]) {
+      exactValue(cleanup.artifacts[key], 0, `cleanup.artifacts.${key}`, errors);
+    }
+  }
+  return errors.length ? { ok: false, errors } : { ok: true, phase: "cleanup-finalized", nonce };
 }
 
 const HELP = `Usage:
-  node scripts/chatgpt-work-native-probe.mjs
+  node scripts/chatgpt-work-native-probe.mjs --connection-id <id> --app-json <file> --plugin-version <semver> --connection-label <label>
   node scripts/chatgpt-work-native-probe.mjs --grade <receipt.json> --nonce <nonce> --server-attestation <attestation.json> --connection-id <id> --app-json <file> --plugin-version <semver> --connection-label <label>
+  node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup <cleanup.json> --nonce <nonce> --connection-id <id> --app-json <file> --plugin-version <semver> --connection-label <label>
 `;
 
 async function main() {
   let values;
   try {
     ({ values } = parseArgs({ options: {
-      grade: { type: "string" }, nonce: { type: "string" }, "server-attestation": { type: "string" },
+      grade: { type: "string" }, "finalize-cleanup": { type: "string" }, nonce: { type: "string" }, "server-attestation": { type: "string" },
       "connection-id": { type: "string" }, "app-json": { type: "string" }, "plugin-version": { type: "string" }, "connection-label": { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     }, allowPositionals: false }));
   } catch (error) { process.stderr.write(`${error.message}\n${HELP}`); return 2; }
   if (values.help) { process.stdout.write(HELP); return 0; }
+  if (values["finalize-cleanup"]) {
+    if (!values.nonce || !values["connection-id"] || !values["app-json"] || !values["plugin-version"] || !values["connection-label"]) {
+      process.stderr.write(`cleanup finalization requires --nonce and real identity inputs\n${HELP}`); return 2;
+    }
+    try {
+      const cleanup = JSON.parse(await readFile(values["finalize-cleanup"], "utf8"));
+      const expectedIdentity = buildIdentity({
+        connectionId: values["connection-id"], appJson: await readFile(values["app-json"], "utf8"),
+        pluginVersion: values["plugin-version"], connectionLabel: values["connection-label"],
+      });
+      const result = finalizeCleanup(cleanup, values.nonce, expectedIdentity);
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+      return result.ok ? 0 : 1;
+    } catch (error) {
+      process.stdout.write(`${JSON.stringify({ ok: false, errors: [`cannot finalize cleanup: ${error.message}`] })}\n`); return 1;
+    }
+  }
   if (!values.grade && !values.nonce && !values["server-attestation"]) {
-    process.stdout.write(`${JSON.stringify(buildProbe(), null, 2)}\n`); return 0;
+    if (!values["connection-id"] || !values["app-json"] || !values["plugin-version"] || !values["connection-label"]) {
+      process.stderr.write(`run-sheet generation requires real --connection-id, --app-json, --plugin-version, and --connection-label inputs\n${HELP}`); return 2;
+    }
+    try {
+      process.stdout.write(`${JSON.stringify(buildProbe({
+        connectionId: values["connection-id"],
+        appJson: await readFile(values["app-json"], "utf8"),
+        pluginVersion: values["plugin-version"],
+        connectionLabel: values["connection-label"],
+      }), null, 2)}\n`); return 0;
+    } catch (error) { process.stderr.write(`${error.message}\n`); return 2; }
   }
   if (!values.grade || !values.nonce || !values["server-attestation"]) {
     process.stderr.write(`--grade, --nonce, and --server-attestation must be used together\n${HELP}`); return 2;

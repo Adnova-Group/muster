@@ -10,6 +10,7 @@ import {
   expectedRequest,
   expectedResult,
   buildIdentity,
+  finalizeCleanup,
   gradeReceipt,
   sha256,
 } from "../scripts/chatgpt-work-native-probe.mjs";
@@ -39,6 +40,8 @@ function attestation(nonce = NONCE) {
     tool: "muster_prioritize",
     request: expectedRequest(nonce),
     result: expectedResult(nonce),
+    identity: identity(),
+    serverInstanceId: "00000000-0000-4000-8000-000000000000",
     invocationCount: 1,
     timestamp: TIMESTAMP,
   };
@@ -65,23 +68,25 @@ function receipt(nonce = NONCE) {
     inventory: {
       before: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
       during: { connection: "present", tunnelProfile: "present", plugin: "present", marketplace: "present", cache: "present", ui: "present" },
-      after: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
+      after: { connection: "present", tunnelProfile: "present", plugin: "present", marketplace: "present", cache: "present", ui: "present" },
       ownership: "probe-owned-only",
-      cleanup: "verified-absent",
+      cleanup: "pending-after-evidence-grade",
     },
     artifacts: {
       tunnel: "stopped",
       screenshotsRetained: 0,
       logsRetained: 0,
-      attestationRetained: 0,
-      probeDirsRetained: 0,
+      attestationRetained: 1,
+      probeDirsRetained: 1,
     },
   };
 }
 
 test("buildProbe emits a nonce-bearing exact request and the required safety run sheet", () => {
-  const first = buildProbe({ connectionId: CONNECTION_ID });
-  const second = buildProbe({ connectionId: CONNECTION_ID });
+  const appJson = JSON.stringify({ apps: { muster: { id: CONNECTION_ID } } }) + "\n";
+  const args = { connectionId: CONNECTION_ID, appJson, pluginVersion: "0.5.0", connectionLabel: "Muster ChatGPT Work" };
+  const first = buildProbe(args);
+  const second = buildProbe(args);
   assert.match(first.nonce, /^[a-f0-9]{32}$/);
   assert.notEqual(first.nonce, second.nonce);
   assert.deepEqual(first.request, expectedRequest(first.nonce));
@@ -97,14 +102,32 @@ test("buildProbe emits a nonce-bearing exact request and the required safety run
   assert.match(first.instructions.join("\n"), /exact.*nonce.*request/i);
   assert.match(first.instructions.join("\n"), /invocationCount=1/);
   assert.match(first.instructions.join("\n"), /operator attestation, not cryptographic provenance/i);
-  assert.match(first.instructions.join("\n"), /absent\/absent\/absent/);
+  assert.match(first.instructions.join("\n"), /Phase 1/);
+  assert.match(first.instructions.join("\n"), /Phase 2/);
 });
 
 test("grader accepts only two independent matching sources and a clean lifecycle", () => {
   const r = receipt();
   assert.deepEqual(gradeReceipt(r, NONCE, attestation(NONCE), identity()), {
-    ok: true, nonce: NONCE, receiptType: "operator-attested-native-tool-completed",
+    ok: true, phase: "evidence-graded", cleanupRequired: true,
+    nonce: NONCE, receiptType: "operator-attested-native-tool-completed",
   });
+});
+
+test("cleanup finalization is a separate second phase requiring verified absence", () => {
+  const cleanup = {
+    cleanupType: "muster-work-native-cleanup-finalization",
+    nonce: NONCE,
+    timestamp: TIMESTAMP,
+    identity: identity(),
+    inventory: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
+    artifacts: { tunnel: "stopped", screenshotsRetained: 0, logsRetained: 0, attestationRetained: 0, probeDirsRetained: 0 },
+  };
+  assert.deepEqual(finalizeCleanup(cleanup, NONCE, identity()), {
+    ok: true, phase: "cleanup-finalized", nonce: NONCE,
+  });
+  cleanup.inventory.plugin = "present";
+  assert.equal(finalizeCleanup(cleanup, NONCE, identity()).ok, false);
 });
 
 test("identity binding hashes the normalized connection ID and exact installed app bytes", () => {
@@ -112,6 +135,12 @@ test("identity binding hashes the normalized connection ID and exact installed a
   const bound = buildIdentity({ connectionId: "plugin_asdk_app_0123456789abcdef", appJson, pluginVersion: "0.5.0", connectionLabel: "Muster ChatGPT Work" });
   assert.equal(bound.connectionIdSha256, sha256(CONNECTION_ID));
   assert.equal(bound.pluginAppSha256, sha256(appJson));
+  assert.throws(() => buildIdentity({
+    connectionId: CONNECTION_ID,
+    appJson: '{"apps":{"muster":{"id":"asdk_app_wrong"}}}',
+    pluginVersion: "0.5.0",
+    connectionLabel: "Muster ChatGPT Work",
+  }), /shape.*match/i);
 });
 
 test("grader rejects missing separate attestation, prose, wrong tool, or mismatched request/result", () => {
@@ -139,10 +168,10 @@ test("grader binds identity hashes and rejects collisions, incomplete cleanup, r
     ["version", (r) => { r.identity.pluginVersion = ""; }],
     ["before", (r) => { r.inventory.before.connection = "present"; }],
     ["during", (r) => { r.inventory.during.plugin = "absent"; }],
-    ["after", (r) => { r.inventory.after.cache = "present"; }],
+    ["after", (r) => { r.inventory.after.cache = "absent"; }],
     ["collision", (r) => { r.inventory.cleanup = "collision"; }],
     ["tunnel", (r) => { r.artifacts.tunnel = "running"; }],
-    ["attestation", (r) => { r.artifacts.attestationRetained = 1; }],
+    ["attestation", (r) => { r.artifacts.attestationRetained = 0; }],
     ["tunnel id", (r) => { r.tunnelId = "tunnel_secret"; }],
     ["api key", (r) => { r.apiKey = "sk-secret"; }],
     ["screenshot", (r) => { r.operatorEvidence.screenshotPath = "/tmp/proof.png"; }],
@@ -156,17 +185,28 @@ test("grader binds identity hashes and rejects collisions, incomplete cleanup, r
 test("CLI emits a run sheet and grades a receipt only with its separate attestation", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "muster-native-probe-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const generated = JSON.parse((await execFileP(process.execPath, [script], { cwd: dir })).stdout);
-  assert.equal(generated.schemaVersion, 2);
   const receiptPath = join(dir, "receipt.json");
   const attestationPath = join(dir, "attestation.json");
   const appPath = join(dir, ".app.json");
   const appJson = '{"apps":{"muster":{"id":"asdk_app_0123456789abcdef"}}}\n';
   const proofReceipt = receipt();
   proofReceipt.identity.pluginAppSha256 = sha256(appJson);
+  proofReceipt.serverEvidence.identity.pluginAppSha256 = sha256(appJson);
+  const proofAttestation = attestation();
+  proofAttestation.identity.pluginAppSha256 = sha256(appJson);
   await writeFile(receiptPath, JSON.stringify(proofReceipt));
-  await writeFile(attestationPath, JSON.stringify(attestation()));
+  await writeFile(attestationPath, JSON.stringify(proofAttestation));
   await writeFile(appPath, appJson);
+  await assert.rejects(execFileP(process.execPath, [script], { cwd: dir }), error => {
+    assert.equal(error.code, 2);
+    assert.match(error.stderr, /requires real/);
+    return true;
+  });
+  const generated = JSON.parse((await execFileP(process.execPath, [
+    script, "--connection-id", CONNECTION_ID, "--app-json", appPath,
+    "--plugin-version", "0.5.0", "--connection-label", "Muster ChatGPT Work",
+  ], { cwd: dir })).stdout);
+  assert.equal(generated.schemaVersion, 2);
   await assert.rejects(
     execFileP(process.execPath, [script, "--grade", receiptPath, "--nonce", NONCE, "--server-attestation", attestationPath]),
     (error) => {

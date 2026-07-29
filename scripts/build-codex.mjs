@@ -403,7 +403,7 @@ async function adaptPortedSkills(internalSkillDir, names) {
 export async function buildCodexPlugin(options, retries = 1) {
   const { root, outDir, chatgptWorkConfig = null } = options;
   if (chatgptWorkConfig && (
-    chatgptWorkConfig?.format !== 1
+    ![1, 2].includes(chatgptWorkConfig?.format)
     || chatgptWorkConfig?.owner !== "muster"
     || !/^asdk_app_[A-Za-z0-9][A-Za-z0-9_-]*$/.test(chatgptWorkConfig?.connectionId)
     || !["pro-safe", "full"].includes(chatgptWorkConfig?.profile)
@@ -564,17 +564,15 @@ async function buildCodexPluginOnce({ root, outDir, chatgptWorkConfig = null }) 
     if (!codexMcpSource.includes('argv: ["capabilities", "--codex", "--roles-only"]') || codexMcpSource.includes('argv: ["capabilities", "--cowork", "--roles-only"]')) throw new Error("Codex MCP capabilities-roles adapter was not applied");
     if (!codexMcpSource.includes('MUSTER_RUNTIME: "codex"') || codexMcpSource.includes('MUSTER_RUNTIME: "cowork"')) throw new Error("Codex MCP runtime-env adapter was not applied");
     await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
-    if (chatgptWorkConfig) {
-      let workServerSource = readFileSync(join(root, "cowork", "chatgpt-work-server.mjs"), "utf8")
-        .replace('await import("./mcp-server.mjs");', 'await import("./muster-mcp.mjs");');
-      if (chatgptWorkConfig.profile === "full" && chatgptWorkConfig.allowFullActions) {
-        workServerSource = workServerSource.replace(
-          "const profile = process.env.MUSTER_CHATGPT_WORK_PROFILE;",
-          'process.env.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS = "1";\nconst profile = process.env.MUSTER_CHATGPT_WORK_PROFILE;'
-        );
-      }
-      write(join(runtime, "chatgpt-work-server.mjs"), workServerSource);
-    }
+    const workMcpSource = sharedMcpSource
+      .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster Work MCP server — exposes muster's deterministic tool-only surface.")
+      .replace('env: { ...process.env, MUSTER_RUNTIME: "cowork" }', 'env: { ...process.env, MUSTER_RUNTIME: "work" }');
+    await build({ ...bundleOptions, stdin: { contents: workMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.work.mjs" }, outfile: join(runtime, "work-mcp.mjs") });
+    write(
+      join(runtime, "chatgpt-work-server.mjs"),
+      readFileSync(join(root, "cowork", "chatgpt-work-server.mjs"), "utf8")
+        .replace('await import("./mcp-server.mjs");', 'await import("./work-mcp.mjs");')
+    );
     write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
 
     write(join(plugin, ".mcp.json"), JSON.stringify({

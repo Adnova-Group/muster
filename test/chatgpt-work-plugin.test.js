@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -42,10 +42,16 @@ test("installer supports project/user scopes, dry-run, persistence, and full opt
     connectionId: "asdk_app_Project1", profile: "pro-safe",
     scope: "project", cwd: project, home,
   });
-  assert.deepEqual(await readChatgptWorkConfig({ scope: "project", cwd: project, home }), {
-    format: 1, owner: "muster", connectionId: "asdk_app_Project1",
+  const projectReceipt = await readChatgptWorkConfig({ scope: "project", cwd: project, home });
+  assert.deepEqual({
+    format: projectReceipt.format, owner: projectReceipt.owner,
+    connectionId: projectReceipt.connectionId, profile: projectReceipt.profile,
+    allowFullActions: projectReceipt.allowFullActions,
+  }, {
+    format: 2, owner: "muster", connectionId: "asdk_app_Project1",
     profile: "pro-safe", allowFullActions: false,
   });
+  assert.match(projectReceipt.cacheKey, /^[a-f0-9]{64}$/);
   assert.match(projectResult.configPath, /[\/\\]\.git[\/\\]muster[\/\\]chatgpt-work\.json$/);
 
   await assert.rejects(
@@ -56,7 +62,9 @@ test("installer supports project/user scopes, dry-run, persistence, and full opt
     connectionId: "asdk_app_User1", profile: "full", allowFullActions: true,
     scope: "user", cwd: project, home,
   });
-  assert.match(userResult.configPath, /[\/\\]\.codex[\/\\]muster[\/\\]chatgpt-work\.json$/);
+  assert.match(userResult.configPath, /[\/\\]\.muster[\/\\]chatgpt-work\.json$/);
+  assert.equal(projectResult.pluginPath, join(project, ".agents", "plugins", "plugin"));
+  assert.equal(userResult.pluginPath, join(home, ".agents", "plugins", "plugin"));
 });
 
 test("CLI install chatgpt-work validates flags and dry-run emits no receipt", async t => {
@@ -155,4 +163,78 @@ test("probe startup fails before MCP output for invalid or pre-existing attestat
   const existing = await serverExit(base);
   assert.notEqual(existing.code, 0);
   assert.equal(existing.stdout, "");
+});
+
+test("bundled runtime installs a scope-correct neutral Work plugin without source build scripts", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-bundled-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const cli = join(root, ".agents", "plugins", "plugin", "runtime", "muster.mjs");
+  const { stdout } = await execFile(process.execPath, [
+    cli, "install", "chatgpt-work", "--connection-id", "asdk_app_Bundled1",
+    "--profile", "pro-safe", "--scope", "project",
+  ], { cwd: project, env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR || tmpdir() } });
+  const result = JSON.parse(stdout);
+  assert.equal(result.pluginPath, join(project, ".agents", "plugins", "plugin"));
+  const manifest = JSON.parse(await readFile(join(result.pluginPath, ".codex-plugin", "plugin.json"), "utf8"));
+  assert.equal(manifest.apps, "./.app.json");
+  assert.equal(manifest.mcpServers, "./.mcp.json");
+  assert.equal(manifest.skills, undefined);
+  assert.equal(manifest.interface.defaultPrompt, "Use the available Muster tools.");
+  assert.deepEqual(manifest.interface.capabilities, ["Tools"]);
+  assert.doesNotMatch(JSON.stringify(manifest.interface), /Codex|Read|Write/);
+  assert.match(manifest.interface.longDescription, /tool-only.*ChatGPT Work/i);
+  const server = await readFile(join(result.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8");
+  assert.match(server, /work-mcp\.mjs/);
+  assert.doesNotMatch(server, /muster-mcp\.mjs/);
+});
+
+test("installer cache identity revokes full opt-in on full to pro-safe transition", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-transition-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const common = { connectionId: "asdk_app_Transition1", scope: "project", cwd: project, home: join(dir, "home") };
+  const full = await runChatgptWorkInstall({ ...common, profile: "full", allowFullActions: true });
+  assert.match(await readFile(join(full.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8"), /INSTALL_ALLOW_FULL_ACTIONS = "1"/);
+  const safe = await runChatgptWorkInstall({ ...common, profile: "pro-safe" });
+  assert.doesNotMatch(await readFile(join(safe.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8"), /INSTALL_ALLOW_FULL_ACTIONS = "1"/);
+  assert.equal((await readChatgptWorkConfig({ scope: "project", cwd: project })).profile, "pro-safe");
+});
+
+test("symlinked marketplace ancestry fails before receipt mutation", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-symlink-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  await mkdir(join(dir, "redirect"), { recursive: true });
+  await symlink(join(dir, "redirect"), join(project, ".agents"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await assert.rejects(runChatgptWorkInstall({
+    connectionId: "asdk_app_Symlink1", profile: "pro-safe", scope: "project", cwd: project,
+  }), /ordinary directories/);
+  assert.equal(await readChatgptWorkConfig({ scope: "project", cwd: project }), null);
+});
+
+test("probe identity validates installed app bytes and consumes nonce durably across restarts", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-probe-restart-"));
+  await chmod(dir, 0o700);
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const connectionId = "asdk_app_Restart1";
+  const appPath = join(dir, ".app.json");
+  await writeFile(appPath, JSON.stringify({ apps: { muster: { id: connectionId } } }) + "\n", { mode: 0o600 });
+  const env = {
+    MUSTER_CHATGPT_WORK_PROFILE: "pro-safe",
+    MUSTER_CHATGPT_WORK_PROBE_NONCE: "d".repeat(32),
+    MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: join(dir, "server-attestation.json"),
+    MUSTER_CHATGPT_WORK_CONNECTION_ID: connectionId,
+    MUSTER_CHATGPT_WORK_APP_JSON_PATH: appPath,
+    MUSTER_CHATGPT_WORK_PLUGIN_VERSION: "0.5.0",
+    MUSTER_CHATGPT_WORK_CONNECTION_LABEL: "Muster Restart Probe",
+  };
+  assert.equal((await serverExit(env)).code, 0);
+  const replay = await serverExit(env);
+  assert.notEqual(replay.code, 0);
+  assert.equal(replay.stdout, "");
+  assert.match(replay.stderr, /nonce\/instance state rejected/);
 });

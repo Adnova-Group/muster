@@ -10,7 +10,6 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { codexAvailable } from "./codex-inventory.js";
 import { generateCodexProfiles } from "./codex-release.js";
-import { readOptionalChatgptWorkConfig } from "./chatgpt-work-install.js";
 import { processAlive, processStartIdentity } from "./codex-lock.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -1322,8 +1321,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
       // tests whose actual subject is unrelated registry/hook transaction
       // behavior, not plugin generation.
       const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
-      const chatgptWorkConfig = await readOptionalChatgptWorkConfig({ scope, cwd, home });
-      await buildCodexPlugin({ root, outDir: join(distributionRoot, ".agents", "plugins"), chatgptWorkConfig });
+      await buildCodexPlugin({ root, outDir: join(distributionRoot, ".agents", "plugins") });
     }
   }
   const planned = [

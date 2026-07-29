@@ -34,7 +34,7 @@ import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { buildAuditManifest } from "./audit.js";
 import { runInstall, runUninstall } from "./install.js";
 import { runCodexInstall, runCodexUninstall } from "./codex-install.js";
-import { readChatgptWorkConfig, runChatgptWorkInstall } from "./chatgpt-work-install.js";
+import { runChatgptWorkInstall } from "./chatgpt-work-install.js";
 import { runKimiInstall, runKimiUninstall } from "./kimi-install.js";
 import { runCodexDoctor } from "./codex-doctor.js";
 import { readCodexInventory } from "./codex-inventory.js";
@@ -671,17 +671,7 @@ async function main() {
           allowFullActions: rest.includes("--allow-full-actions"),
           dryRun: rest.includes("--dry-run"),
         };
-        const result = await runChatgptWorkInstall(installOptions);
-        if (!installOptions.dryRun) {
-          const root = dirFromImportMeta(import.meta.url, "../");
-          const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
-          await buildCodexPlugin({
-            root,
-            outDir: join(root, ".agents", "plugins"),
-            chatgptWorkConfig: await readChatgptWorkConfig({ scope: installOptions.scope }),
-          });
-        }
-        out(result);
+        out(await runChatgptWorkInstall(installOptions));
       } else if (rest[0] === "kimi") {
         out(await runKimiInstall({ dryRun: rest.includes("--dry-run"), probe: rest.includes("--probe") }));
       } else out(await runInstall({ home: rest[0] || homedir() }));

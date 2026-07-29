@@ -29,7 +29,7 @@
 // it from a local checkout; cowork/README.md marks the current MCPB descriptor development-only.
 
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, lstatSync } from "node:fs";
 import { mkdtemp, open, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -238,6 +238,21 @@ if (TOOL_PROFILE === "chatgpt-work-pro-safe") {
 } else if (TOOL_PROFILE === "chatgpt-work-probe") {
   const nonce = process.env.MUSTER_CHATGPT_WORK_PROBE_NONCE;
   const attestationPath = process.env.MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH;
+  let identity;
+  try { identity = JSON.parse(process.env.MUSTER_CHATGPT_WORK_PROBE_IDENTITY); } catch { identity = null; }
+  const serverInstanceId = process.env.MUSTER_CHATGPT_WORK_PROBE_SERVER_INSTANCE_ID;
+  if (
+    !identity
+    || !/^[a-f0-9]{64}$/.test(identity.connectionIdSha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(identity.pluginAppSha256 ?? "")
+    || identity.pluginName !== "muster"
+    || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(identity.pluginVersion ?? "")
+    || typeof identity.connectionLabel !== "string"
+    || !/^[0-9a-f-]{36}$/.test(serverInstanceId ?? "")
+  ) {
+    process.stderr.write("mcp-server: ChatGPT Work probe identity/instance is invalid\n");
+    process.exit(1);
+  }
   const request = {
     items: [{
       name: `WORK_WEB_PROBE_${nonce}`,
@@ -283,9 +298,10 @@ if (TOOL_PROFILE === "chatgpt-work-pro-safe") {
     },
   };
   ACTIVE_INSTRUCTIONS = "Call muster_prioritize exactly once with the exact nonce-bearing request.";
-  PROBE_STATE = { nonce, attestationPath, request, result, invoked: false };
+  PROBE_STATE = { nonce, attestationPath, request, result, identity, serverInstanceId, invoked: false };
 } else if (TOOL_PROFILE === "chatgpt-work-full") {
   // Dedicated entrypoint verifies both full-action opt-ins before selecting this surface.
+  ACTIVE_INSTRUCTIONS = "Muster deterministic tool-only surface for ChatGPT Work. Tool metadata is authoritative; no host workflow or configuration is implied.";
 } else if (TOOL_PROFILE !== undefined && TOOL_PROFILE !== "") {
   process.stderr.write(`mcp-server: unknown MUSTER_MCP_TOOL_PROFILE ${JSON.stringify(TOOL_PROFILE)}\n`);
   process.exit(1);
@@ -314,11 +330,17 @@ async function callProbe(args, signal) {
     tool: "muster_prioritize",
     request: PROBE_STATE.request,
     result: PROBE_STATE.result,
+    identity: PROBE_STATE.identity,
+    serverInstanceId: PROBE_STATE.serverInstanceId,
     invocationCount: 1,
     timestamp: new Date().toISOString(),
   };
   let file;
   try {
+    const parent = lstatSync(path.dirname(PROBE_STATE.attestationPath));
+    if (parent.isSymbolicLink() || `${parent.dev}:${parent.ino}` !== process.env.MUSTER_CHATGPT_WORK_PROBE_PARENT_ID) {
+      throw new Error("probe attestation parent changed after startup");
+    }
     file = await open(PROBE_STATE.attestationPath, "wx", 0o600);
     await file.writeFile(JSON.stringify(attestation, null, 2) + "\n", "utf8");
     await file.sync();

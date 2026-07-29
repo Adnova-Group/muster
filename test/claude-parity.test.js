@@ -1114,5 +1114,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // verified default; parallel fan-out and per-call model override require a
   // successful phase-3 receipt from the active Cowork build. Deliberate
   // shared-surface correctness remediation, not Codex-only drift.
-  assert.equal(hash.digest("hex"), "2d73811e62a0056c8975ec57a39d2f219f48520c88267b7b2b65bb79757d0289");
+  //
+  // 2026-07-29 re-pin #9 (ChatGPT Work tool-only runtime): file COUNT
+  // unchanged (140) -- cowork/mcp-server.mjs now contains the shared
+  // pre-dispatch profile selector and nonce-bound one-call handler used by the
+  // separately bundled Work MCP runtime. Empty/unset profile behavior remains
+  // response-identical (pinned in test/cowork.test.js); the shared change is
+  // unavoidable because Codex, Cowork, and Work must dispatch the same
+  // deterministic CLI tool definitions rather than fork their implementations.
+  assert.equal(hash.digest("hex"), "b0316a90be923513a8f031badec695743ba067ae42b99d2225bddacc654e819c");
 });

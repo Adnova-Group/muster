@@ -218,6 +218,30 @@ test("Codex exposes a bounded public skill surface while packaging internal work
   assert.doesNotMatch(adapter, /read `\$\{PLUGIN_ROOT\}\/internal-skills\/\$\{chosen\.id\}/);
 });
 
+test("generated Codex public skill metadata stays within Muster's discovery budget", async () => {
+  const expectedSkills = [
+    "autopilot", "muster", "muster-audit", "muster-capture", "muster-diagnose", "muster-go",
+    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
+  ];
+  const metadata = [];
+  for (const name of expectedSkills) {
+    const text = await readFile(join(selectedPluginRoot, "skills", name, "SKILL.md"), "utf8");
+    const frontmatter = parseYaml(text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || "");
+    metadata.push({ name: frontmatter.name, description: frontmatter.description });
+  }
+
+  assert.deepEqual(metadata.map(skill => skill.name).sort(), expectedSkills);
+  assert.ok(metadata.every(skill => typeof skill.description === "string" && skill.description.length > 0));
+  const advertisedCharacters = metadata.reduce(
+    (total, skill) => total + skill.name.length + skill.description.length,
+    0
+  );
+  assert.ok(
+    advertisedCharacters <= 850,
+    `generated Muster skills advertise ${advertisedCharacters} name/description characters; expected at most 850`
+  );
+});
+
 test("generated Codex muster-init delegates to the guarded authoritative workflow", async () => {
   const skill = await readFile(join(selectedPluginRoot, "skills", "muster-init", "SKILL.md"), "utf8");
   const command = await readFile(join(selectedPluginRoot, "commands", "init.md"), "utf8");

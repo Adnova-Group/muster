@@ -14,6 +14,8 @@ Muster keeps routing, scoring, manifests, waves, and gates in one deterministic 
 
 The matrix separates verified behavior from declared capability. A file present on disk does not prove that a harness loaded it. Codex and Kimi installers can inspect their owned files; Cowork's native plugin lane remains opt-in through `MUSTER_COWORK_NATIVE_PLUGIN` because the local MCP server cannot probe the host's plugin loader.
 
+For ChatGPT Work, the local/repo Plugins Directory source is documented for the desktop proof lane: restart or refresh ChatGPT Desktop, select the source, and install the plugin. Do not infer that the same local source is ingested by Work web; use web only with an independently supported source. Work remains separate from Codex configuration and inheritance.
+
 ## Choose a guide
 
 - [Codex](/guides/codex) covers scoped profiles, hooks, trust, and receipts.

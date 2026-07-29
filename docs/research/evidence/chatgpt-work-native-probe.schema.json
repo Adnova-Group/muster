@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Adnova-Group/muster/docs/research/evidence/chatgpt-work-native-probe.schema.json",
   "title": "Muster ChatGPT Work native invocation proof",
-  "description": "Closed structural prefilter. scripts/chatgpt-work-native-probe.mjs is authoritative for nonce correlation, independent operator/server evidence, identity hashes, and cleanup.",
+  "description": "Closed structural prefilter for the evidence-grade phase of scripts/chatgpt-work-native-probe.mjs. The server attestation is identity-bound and must remain present while phase 1 is graded; phase 2 is a separate cleanup-finalization document that proves verified absence and zero retained probe artifacts.",
   "type": "object",
   "additionalProperties": false,
   "required": ["receiptType", "nonce", "timestamp", "identity", "operatorEvidence", "serverEvidence", "inventory", "artifacts"],
@@ -10,6 +10,46 @@
     "receiptType": { "const": "operator-attested-native-tool-completed" },
     "nonce": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
     "timestamp": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" },
+    "identity": { "$ref": "#/$defs/identity" },
+    "operatorEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "mode", "surface", "scanTools", "tool", "status", "request", "result"],
+      "properties": {
+        "source": { "const": "operator-observed-ui" },
+        "mode": { "const": "Work" },
+        "surface": { "enum": ["web", "desktop"] },
+        "scanTools": { "const": "passed" },
+        "tool": { "const": "muster_prioritize" },
+        "status": { "const": "completed" },
+        "request": { "$ref": "#/$defs/request" },
+        "result": { "$ref": "#/$defs/result" }
+      }
+    },
+    "serverEvidence": { "$ref": "#/$defs/attestation" },
+    "inventory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["before", "during", "after", "ownership", "cleanup"],
+      "properties": {
+        "before": { "$ref": "#/$defs/absentInventory" },
+        "during": { "$ref": "#/$defs/presentInventory" },
+        "after": { "$ref": "#/$defs/presentInventory" },
+        "ownership": { "const": "probe-owned-only" },
+        "cleanup": { "const": "pending-after-evidence-grade" }
+      }
+    },
+    "artifacts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tunnel", "screenshotsRetained", "logsRetained", "attestationRetained", "probeDirsRetained"],
+      "properties": {
+        "tunnel": { "const": "stopped" },
+        "screenshotsRetained": { "const": 0 },
+        "logsRetained": { "const": 0 },
+        "attestationRetained": { "const": 1 },
+        "probeDirsRetained": { "const": 1 }
+      }
+    }
+  },
+  "$defs": {
     "identity": {
       "type": "object", "additionalProperties": false,
       "required": ["connectionIdSha256", "pluginAppSha256", "pluginName", "pluginVersion", "connectionLabel"],
@@ -21,40 +61,22 @@
         "connectionLabel": { "type": "string", "minLength": 1 }
       }
     },
-    "operatorEvidence": {
-      "type": "object", "additionalProperties": false,
-      "required": ["source", "mode", "surface", "scanTools", "tool", "status", "request", "result"],
-      "properties": {
-        "source": { "const": "operator-observed-ui" }, "mode": { "const": "Work" },
-        "surface": { "enum": ["web", "desktop"] }, "scanTools": { "const": "passed" }, "tool": { "const": "muster_prioritize" }, "status": { "const": "completed" },
-        "request": { "$ref": "#/$defs/request" }, "result": { "$ref": "#/$defs/result" }
-      }
-    },
-    "serverEvidence": { "$ref": "#/$defs/attestation" },
-    "inventory": {
-      "type": "object", "additionalProperties": false, "required": ["before", "during", "after", "ownership", "cleanup"],
-      "properties": {
-        "before": { "$ref": "#/$defs/absentInventory" }, "during": { "$ref": "#/$defs/presentInventory" },
-        "after": { "$ref": "#/$defs/absentInventory" }, "ownership": { "const": "probe-owned-only" }, "cleanup": { "const": "verified-absent" }
-      }
-    },
-    "artifacts": {
-      "type": "object", "additionalProperties": false,
-      "required": ["tunnel", "screenshotsRetained", "logsRetained", "attestationRetained", "probeDirsRetained"],
-      "properties": {
-        "tunnel": { "const": "stopped" }, "screenshotsRetained": { "const": 0 }, "logsRetained": { "const": 0 },
-        "attestationRetained": { "const": 0 }, "probeDirsRetained": { "const": 0 }
-      }
-    }
-  },
-  "$defs": {
     "item": {
-      "type": "object", "additionalProperties": false, "required": ["name", "reach", "impact", "confidence", "effort"],
-      "properties": { "name": { "type": "string", "pattern": "^WORK_WEB_PROBE_[a-f0-9]{32}$" }, "reach": { "const": 2 }, "impact": { "const": 3 }, "confidence": { "const": 1 }, "effort": { "const": 2 } }
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "reach", "impact", "confidence", "effort"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^WORK_WEB_PROBE_[a-f0-9]{32}$" },
+        "reach": { "const": 2 }, "impact": { "const": 3 },
+        "confidence": { "const": 1 }, "effort": { "const": 2 }
+      }
     },
     "request": {
-      "type": "object", "additionalProperties": false, "required": ["items", "model"],
-      "properties": { "items": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/item" } }, "model": { "const": "rice" } }
+      "type": "object", "additionalProperties": false,
+      "required": ["items", "model"],
+      "properties": {
+        "items": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/item" } },
+        "model": { "const": "rice" }
+      }
     },
     "result": {
       "type": "array", "minItems": 1, "maxItems": 1,
@@ -62,14 +84,67 @@
     },
     "attestation": {
       "type": "object", "additionalProperties": false,
-      "required": ["attestationType", "source", "nonce", "tool", "request", "result", "invocationCount", "timestamp"],
-      "properties": { "attestationType": { "const": "muster-work-native-server-attestation" }, "source": { "const": "server" }, "nonce": { "type": "string", "pattern": "^[a-f0-9]{32}$" }, "tool": { "const": "muster_prioritize" }, "request": { "$ref": "#/$defs/request" }, "result": { "$ref": "#/$defs/result" }, "invocationCount": { "const": 1 }, "timestamp": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" } }
+      "required": ["attestationType", "source", "nonce", "tool", "request", "result", "identity", "serverInstanceId", "invocationCount", "timestamp"],
+      "properties": {
+        "attestationType": { "const": "muster-work-native-server-attestation" },
+        "source": { "const": "server" },
+        "nonce": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "tool": { "const": "muster_prioritize" },
+        "request": { "$ref": "#/$defs/request" },
+        "result": { "$ref": "#/$defs/result" },
+        "identity": { "$ref": "#/$defs/identity" },
+        "serverInstanceId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+        "invocationCount": { "const": 1 },
+        "timestamp": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" }
+      }
     },
     "resultItem": {
-      "type": "object", "additionalProperties": false, "required": ["name", "reach", "impact", "confidence", "effort", "score", "rank"],
-      "properties": { "name": { "type": "string", "pattern": "^WORK_WEB_PROBE_[a-f0-9]{32}$" }, "reach": { "const": 2 }, "impact": { "const": 3 }, "confidence": { "const": 1 }, "effort": { "const": 2 }, "score": { "const": 3 }, "rank": { "const": 1 } }
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "reach", "impact", "confidence", "effort", "score", "rank"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^WORK_WEB_PROBE_[a-f0-9]{32}$" },
+        "reach": { "const": 2 }, "impact": { "const": 3 },
+        "confidence": { "const": 1 }, "effort": { "const": 2 },
+        "score": { "const": 3 }, "rank": { "const": 1 }
+      }
     },
-    "absentInventory": { "type": "object", "additionalProperties": false, "required": ["connection", "tunnelProfile", "plugin", "marketplace", "cache", "ui"], "properties": { "connection": { "const": "absent" }, "tunnelProfile": { "const": "absent" }, "plugin": { "const": "absent" }, "marketplace": { "const": "absent" }, "cache": { "const": "absent" }, "ui": { "const": "absent" } } },
-    "presentInventory": { "type": "object", "additionalProperties": false, "required": ["connection", "tunnelProfile", "plugin", "marketplace", "cache", "ui"], "properties": { "connection": { "const": "present" }, "tunnelProfile": { "const": "present" }, "plugin": { "const": "present" }, "marketplace": { "const": "present" }, "cache": { "const": "present" }, "ui": { "const": "present" } } }
+    "absentInventory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["connection", "tunnelProfile", "plugin", "marketplace", "cache", "ui"],
+      "properties": {
+        "connection": { "const": "absent" }, "tunnelProfile": { "const": "absent" },
+        "plugin": { "const": "absent" }, "marketplace": { "const": "absent" },
+        "cache": { "const": "absent" }, "ui": { "const": "absent" }
+      }
+    },
+    "presentInventory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["connection", "tunnelProfile", "plugin", "marketplace", "cache", "ui"],
+      "properties": {
+        "connection": { "const": "present" }, "tunnelProfile": { "const": "present" },
+        "plugin": { "const": "present" }, "marketplace": { "const": "present" },
+        "cache": { "const": "present" }, "ui": { "const": "present" }
+      }
+    },
+    "cleanupFinalization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cleanupType", "nonce", "timestamp", "identity", "inventory", "artifacts"],
+      "properties": {
+        "cleanupType": { "const": "muster-work-native-cleanup-finalization" },
+        "nonce": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "timestamp": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$" },
+        "identity": { "$ref": "#/$defs/identity" },
+        "inventory": { "$ref": "#/$defs/absentInventory" },
+        "artifacts": {
+          "type": "object", "additionalProperties": false,
+          "required": ["tunnel", "screenshotsRetained", "logsRetained", "attestationRetained", "probeDirsRetained"],
+          "properties": {
+            "tunnel": { "const": "stopped" }, "screenshotsRetained": { "const": 0 },
+            "logsRetained": { "const": 0 }, "attestationRetained": { "const": 0 },
+            "probeDirsRetained": { "const": 0 }
+          }
+        }
+      }
+    }
   }
 }

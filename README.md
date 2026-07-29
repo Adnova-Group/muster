@@ -67,7 +67,7 @@ The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 
 
 ### ChatGPT Work (private/local plugin lane)
 
-ChatGPT Work supports plugins on the web and in the ChatGPT desktop app (select ChatGPT → Work). Codex Desktop is a separate surface: Work does not inherit Codex `AGENTS.md`, skills, hooks, MCP, or `config.toml` configuration. Muster's Work lane is a private/local development path through the universal Plugins Directory format and a registered MCP connection; it is not a public plugin submission. Secure MCP Tunnel is explicitly a private transport and cannot make a tunnel-backed plugin eligible for public distribution.
+ChatGPT Work supports plugins on the web and in the ChatGPT desktop app (select ChatGPT → Work). Codex Desktop is a separate surface: Work does not inherit Codex `AGENTS.md`, skills, hooks, MCP, or `config.toml` configuration. Muster's Work lane is a private/local development path through the universal Plugins Directory format and a registered MCP connection; it is not a public plugin submission. Secure MCP Tunnel is explicitly a private transport and cannot make a tunnel-backed plugin eligible for public distribution. The local/repo Plugins Directory source is the documented desktop proof lane: restart or refresh ChatGPT Desktop, select the local/repo marketplace source, and install the plugin there. Do not generalize that local source to Work web; use Work web only when an independently supported source is available.
 
 Install the connection mapping into the project or user scope with the exact command below. The technical ID copied from ChatGPT may begin with `plugin_`; Muster strips only that initial prefix and persists the canonical, non-secret `asdk_app_...` ID. The dry run writes nothing:
 
@@ -78,7 +78,9 @@ muster install chatgpt-work --connection-id plugin_asdk_app_... --profile pro-sa
 # full deterministic surface: --profile full --allow-full-actions
 ```
 
-The generated plugin keeps the ordinary Codex `.mcp.json` and adds this minimal `.app.json` only when a Work receipt exists; the plugin manifest points `apps` at `./.app.json`:
+`--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/plugin` for project scope or `<home>/.agents/plugins/plugin` for user scope. Its receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect those returned/receipt paths rather than assuming a different plugin copy.
+
+The generated Work plugin contains minimal `.mcp.json` wiring and this `.app.json` mapping; it does not inherit Codex configuration. The plugin manifest points `apps` at `./.app.json`:
 
 ```json
 {"apps":{"muster":{"id":"asdk_app_<normalized-id>"}}}
@@ -100,26 +102,41 @@ For the nonce-bound proof server, use an existing private probe directory and a 
 export MUSTER_CHATGPT_WORK_PROFILE=pro-safe
 export MUSTER_CHATGPT_WORK_PROBE_NONCE=<32-lowercase-hex-nonce>
 export MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH=/absolute/private/probe-dir/server-attestation.json
+export MUSTER_CHATGPT_WORK_CONNECTION_ID=asdk_app_...
+export MUSTER_CHATGPT_WORK_APP_JSON_PATH=/absolute/path/to/installed/.app.json
+export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.5.0
+export MUSTER_CHATGPT_WORK_CONNECTION_LABEL="Muster ChatGPT Work"
 tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work \
   --tunnel-id tunnel_... --mcp-command "node runtime/chatgpt-work-server.mjs"
 tunnel-client run --profile muster-chatgpt-work
 ```
 
-On POSIX, the probe directory must already exist, be owned by the current user, and have no group/world permissions (for example `0700`); the attestation file must be a new `0600` file. On Windows, the runtime enforces an absolute path, an existing directory, the exact basename `server-attestation.json`, and that the target does not already exist. A collision is `HUMAN-HOLD`, never an overwrite.
+On POSIX, the probe directory must already exist, be owned by the current user, and have no group/world permissions (for example `0700`); the attestation file must be a new `0600` file. Windows native proof is `HUMAN-HOLD` until privacy and ownership can be established. On every platform, an attestation collision is `HUMAN-HOLD`, never an overwrite.
 
 For `pro-safe`, set `MUSTER_CHATGPT_WORK_PROFILE=pro-safe`; exactly one tool (`muster_prioritize`) is exposed with title **Prioritize backlog items**, `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. Pro's custom MCP path is read/fetch; claim Pro support only after a successful native **Scan Tools** gate in Work. Full MCP (including write/modify actions) is a Business/Enterprise/Edu rollout, not a Pro entitlement. Muster's `full` profile is the existing 28-tool deterministic surface, not a write-action surface: it requires both `--profile full --allow-full-actions` at install and `MUSTER_CHATGPT_WORK_SERVER_ALLOW_FULL_ACTIONS=1` at server startup, plus the ChatGPT workspace's full-MCP entitlement. Treat those as a deliberate double opt-in.
 
 The tunnel's `CONTROL_PLANE_API_KEY` is an OpenAI Platform runtime credential and is billed under Platform API usage; it is not supplied by, or interchangeable with, a ChatGPT Pro subscription. Associate the tunnel with the personal Platform organization for a personal test, or with both the Platform organization and target ChatGPT workspace for workspace use. A connection ID is an identifier, not a secret; never record the runtime key, tunnel ID, screenshots, or raw app contents in a receipt.
 
-ChatGPT can cache a frozen tool snapshot. After changing tool titles, annotations, schemas, or profile metadata, use **Refresh** where the workspace UI offers it; otherwise recreate the developer connection/app and install a fresh local plugin copy, then start a new Work chat. The nonce-bound native proof in [`scripts/chatgpt-work-native-probe.mjs`](scripts/chatgpt-work-native-probe.mjs) requires the operator-observed completed Work `muster_prioritize` card *and* a separate server attestation with the exact nonce request/result and `invocationCount=1`; UI evidence alone is not cryptographic provenance. Stop the tunnel and verify before/during/after inventories before grading, and remove only provably probe-owned artifacts.
+ChatGPT can cache a frozen tool snapshot. After changing tool titles, annotations, schemas, or profile metadata, use **Refresh** where the workspace UI offers it; otherwise recreate the developer connection/app and install a fresh local plugin copy, then start a new Work chat. The nonce-bound native proof in [`scripts/chatgpt-work-native-probe.mjs`](scripts/chatgpt-work-native-probe.mjs) requires the operator-observed completed Work `muster_prioritize` card *and* a separate server attestation with the exact nonce request/result, identity, `serverInstanceId`, and `invocationCount=1`; UI evidence alone is not cryptographic provenance. Windows native proof is `HUMAN-HOLD` until privacy and ownership checks are established. Stop the tunnel and verify before/during/after inventories before grading, and remove only provably probe-owned artifacts.
 
-When grading, supply the normalized connection and the exact installed `.app.json` bytes so the grader can recompute both identity hashes (the plugin version and connection label are non-secret metadata):
+For the identity-bound native proof, supply the normalized connection and exact installed `.app.json` bytes so the run sheet and grader can recompute both identity hashes (the plugin version and connection label are non-secret metadata):
 
 ```sh
+node scripts/chatgpt-work-native-probe.mjs \
+  --connection-id asdk_app_... --app-json /path/to/installed/.app.json \
+  --plugin-version 0.5.0 --connection-label "Muster ChatGPT Work"
 node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
   --server-attestation attestation.json --connection-id asdk_app_... \
   --app-json /path/to/installed/.app.json --plugin-version 0.5.0 \
   --connection-label "Muster ChatGPT Work"
+```
+
+Grading is two-phase. Phase 1 keeps the attestation and probe inventory present and returns `evidence-graded`; do not delete the attestation before this command. After that result, stop the tunnel and remove only the exact plugin/marketplace/receipt/probe artifacts owned by this run. There is no invented uninstall command: if ownership or a path collides, stop and record `HUMAN-HOLD`. Re-inventory and write a cleanup record with verified absence and zero retained artifacts, then finalize it:
+
+```sh
+node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json --nonce <nonce> \
+  --connection-id asdk_app_... --app-json /path/to/installed/.app.json \
+  --plugin-version 0.5.0 --connection-label "Muster ChatGPT Work"
 ```
 
 ## The nine modes

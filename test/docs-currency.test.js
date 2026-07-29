@@ -174,7 +174,7 @@ test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and b
     "https://learn.chatgpt.com/docs/plugins",
     "https://developers.openai.com/plugins/build/plugins",
     "https://developers.openai.com/api/docs/guides/secure-mcp-tunnels",
-    "https://help.openai.com/en/articles/12584461-developer-mode-apps-and-full-mcp-connectors-in-chatgpt-beta.svgz",
+    "https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt-beta",
     "muster install chatgpt-work --connection-id",
     "--profile pro-safe",
     "--profile full --allow-full-actions",
@@ -186,6 +186,10 @@ test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and b
     "CONTROL_PLANE_API_KEY",
     "MUSTER_CHATGPT_WORK_PROBE_NONCE",
     "MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH",
+    "MUSTER_CHATGPT_WORK_CONNECTION_ID",
+    "MUSTER_CHATGPT_WORK_APP_JSON_PATH",
+    "MUSTER_CHATGPT_WORK_PLUGIN_VERSION",
+    "MUSTER_CHATGPT_WORK_CONNECTION_LABEL",
     "0700",
     "0600",
     "server-attestation.json",
@@ -204,6 +208,13 @@ test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and b
     "outbound-only",
     "operator",
     "cryptographic provenance",
+    ".agents/plugins/plugin",
+    "pluginPath",
+    "restart or refresh ChatGPT Desktop",
+    "local/repo marketplace",
+    "HUMAN-HOLD",
+    "evidence-graded",
+    "finalize-cleanup",
   ]) assert.match(text, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing ChatGPT Work currency marker: ${marker}`);
   assert.match(text, /connection ID[^.]+(?:not|non-secret|identifier)/i);
   assert.match(text, /tunnel[^.]+(?:cannot|not)[^.]+public/i);
@@ -218,10 +229,11 @@ test("native Work proof schema stays paired with its probe", async () => {
   const parsed = JSON.parse(schema);
   assert.equal(parsed.additionalProperties, false);
   assert.deepEqual(parsed.required, ["receiptType", "nonce", "timestamp", "identity", "operatorEvidence", "serverEvidence", "inventory", "artifacts"]);
-  for (const marker of ["invocationCount", "connectionIdSha256", "pluginAppSha256", "verified-absent", "operator-observed-ui", "muster-work-native-server-attestation"]) {
+  for (const marker of ["invocationCount", "connectionIdSha256", "pluginAppSha256", "serverInstanceId", "pending-after-evidence-grade", "operator-observed-ui", "muster-work-native-server-attestation", "muster-work-native-cleanup-finalization"]) {
     assert.match(probe, new RegExp(marker), `probe is missing ${marker}`);
     assert.match(schema, new RegExp(marker), `schema is missing ${marker}`);
   }
+  assert.doesNotMatch(schema, /verified-absent/);
 });
 
 test("current Cowork research uses the live MCP tool count and phase-3-gated dispatch contract", async () => {

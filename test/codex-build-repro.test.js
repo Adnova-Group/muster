@@ -237,6 +237,44 @@ test("buildCodexPlugin never treats a stale bundle as fresh: a published plugin 
   );
 });
 
+test("buildCodexPlugin regenerates (never crashes or false-skips) a plugin published before this fix, which stored no input digest at all", async t => {
+  const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-no-digest-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const root = join(tmp, "root"), outDir = join(tmp, "plugins");
+  await mkdir(root, { recursive: true });
+  await Promise.all(CODEX_BUILD_INPUT_DIRS.map(dir => mkdir(join(root, dir), { recursive: true })));
+  const packageVersion = "9.9.9-no-digest-test";
+  await writeFile(join(root, "package.json"), JSON.stringify({ version: packageVersion }));
+
+  // Every plugin published before this fix shipped has a package.json with
+  // ONLY `version` -- no `inputDigest` key at all. resolveCodexPluginOnce's
+  // pass-through must surface that as `inputDigest: undefined`, which must
+  // never equal a freshly computed digest string and so must never false-skip.
+  const staged = join(tmp, "staged");
+  await mkdir(join(staged, "skills"), { recursive: true });
+  await mkdir(join(staged, ".codex-plugin"), { recursive: true });
+  await writeFile(join(staged, "package.json"), JSON.stringify({ version: packageVersion }));
+  await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: packageVersion }));
+  await publishCodexPlugin({
+    pluginsRoot: outDir,
+    stagedPlugin: staged,
+    packageVersion,
+    marketplaceTemplate: {
+      name: "muster",
+      interface: { displayName: "Muster" },
+      plugins: [{ name: "muster", source: { source: "local", path: "./plugin" }, category: "Productivity" }]
+    }
+  });
+
+  delete process.env.MUSTER_BUILD_FORCE;
+  await assert.rejects(
+    buildCodexPlugin({ root, outDir }),
+    /ENOENT/i,
+    "a pre-fix plugin with no stored input digest must trigger regeneration, not a crash or a false skip"
+  );
+});
+
 test("buildCodexPlugin regenerates (does not same-version-skip) when the published plugin's identity is mislabeled", async t => {
   const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mislabel-"));

@@ -6,7 +6,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertRegularTree, computeCodexBuildInputDigest, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
+import { assertRegularTree, CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
 
 // Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
 //
@@ -411,7 +411,6 @@ async function adaptPortedSkills(internalSkillDir, names) {
 // CLI entry below) all still force a fresh build unconditionally.
 export async function buildCodexPlugin(options, retries = 1) {
   const { root, outDir } = options;
-  const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
   if (process.env.MUSTER_BUILD_FORCE !== "1") {
     try {
       const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
@@ -442,7 +441,11 @@ async function buildCodexPluginOnce({ root, outDir }) {
     const runtime = join(plugin, "runtime");
     const modeDir = join(plugin, "skills");
     const internalSkillDir = join(plugin, "internal-skills");
-    for (const source of ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"]) {
+    // Single-sourced with computeCodexBuildInputDigest's own declared input set
+    // (src/codex-release.js) so this validation loop and the skip-check's digest
+    // can never silently drift apart into hashing a different set than this
+    // actually validates.
+    for (const source of CODEX_BUILD_INPUT_DIRS) {
       await assertRegularTree(join(root, source));
     }
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));

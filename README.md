@@ -67,6 +67,8 @@ The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 
 
 ### ChatGPT Work (private/local plugin lane)
 
+Muster's MCP surface has one neutral implementation in `mcp/server.mjs` with explicit host adapters in `mcp/codex-server.mjs` and `mcp/chatgpt-work-server.mjs`. The legacy `cowork/mcp-server.mjs` and `cowork/chatgpt-work-server.mjs` paths remain compatibility shims for existing host configurations. Codex and Work bundles build their explicit adapters directly; they do not string-rewrite Cowork source. The public Work runtime command remains `node runtime/chatgpt-work-server.mjs`.
+
 ChatGPT Work supports plugins on the web and in the ChatGPT desktop app (select ChatGPT → Work). Codex Desktop is a separate surface: Work does not inherit Codex `AGENTS.md`, skills, hooks, MCP, or `config.toml` configuration. Muster's Work lane is a private/local development path through the universal Plugins Directory format and a registered MCP connection; it is not a public plugin submission. Secure MCP Tunnel is explicitly a private transport and cannot make a tunnel-backed plugin eligible for public distribution. The local/repo Plugins Directory source is the documented desktop proof lane: restart or refresh ChatGPT Desktop, select the local/repo marketplace source, and install the plugin there. Do not generalize that local source to Work web; use Work web only when an independently supported source is available.
 
 Install the connection mapping into the project or user scope with the exact command below. The technical ID copied from ChatGPT may begin with `plugin_`; Muster strips only that initial prefix and persists the canonical, non-secret `asdk_app_...` ID. The dry run writes nothing:

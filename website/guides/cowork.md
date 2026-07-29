@@ -1,13 +1,13 @@
 # Cowork
 
-Muster runs in Claude Cowork through a local MCP server. The server wraps the deterministic CLI and supplies execution instructions to the active Cowork agent. Model work uses the active Cowork account or subscription.
+Muster runs in Claude Cowork through a local MCP server. The neutral core is `mcp/server.mjs`; `mcp/codex-server.mjs` and `mcp/chatgpt-work-server.mjs` are explicit host adapters. The public Cowork path below uses `cowork/mcp-server.mjs`, a compatibility shim retained for existing configurations. Model work uses the active Cowork account or subscription.
 
 ## Support matrix
 
 | Capability | Cowork support |
 | --- | --- |
 | Routing, manifests, waves, and gates | Native MCP tools |
-| Tool inventory | 27 CLI-wrapper tools plus `muster_sprint_protocol` |
+| Tool inventory | 28 tools: 27 CLI wrappers plus `muster_sprint_protocol` |
 | Parallel subagents | Conditional; run probe phase 3 on the active build first |
 | Sequential execution | `muster_next` fallback |
 | Per-agent worktree isolation | No proven native primitive |
@@ -21,7 +21,7 @@ The repository tests verify probe phases 1 and 2: CLI portability and the dispat
 
 ## Configure the local server
 
-Add a `muster` entry to Cowork's MCP configuration and point it at the checkout's `cowork/mcp-server.mjs`:
+Add a `muster` entry to Cowork's MCP configuration and point it at the compatibility entrypoint `cowork/mcp-server.mjs` (the canonical core is `mcp/server.mjs`):
 
 ```json
 {

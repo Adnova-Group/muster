@@ -221,6 +221,53 @@ test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and b
   assert.match(text, /does not inherit Codex|not inherit Codex/i);
 });
 
+test("MCP docs and adapters name the neutral core, explicit hosts, and compatibility shims", async () => {
+  const [core, codex, work, coworkShim, coworkWorkShim, build, install, readme, coworkReadme, coworkGuide, architecture, coworkResearch, codexResearch, commands, configuration] = await Promise.all([
+    read("mcp/server.mjs"),
+    read("mcp/codex-server.mjs"),
+    read("mcp/chatgpt-work-server.mjs"),
+    read("cowork/mcp-server.mjs"),
+    read("cowork/chatgpt-work-server.mjs"),
+    read("scripts/build-codex.mjs"),
+    read("src/chatgpt-work-install.js"),
+    read("README.md"),
+    read("cowork/README.md"),
+    read("website/guides/cowork.md"),
+    read("website/reference/architecture.md"),
+    read("docs/research/claude-cowork.md"),
+    read("docs/research/codex-cli.md"),
+    read("website/reference/commands.md"),
+    read("website/reference/configuration.md"),
+  ]);
+  assert.match(core, /MUSTER_MCP_HOST/);
+  assert.match(codex, /MUSTER_MCP_HOST = "codex"/);
+  assert.match(work, /MUSTER_MCP_HOST = "work"/);
+  assert.match(coworkShim, /compatibility entrypoint/i);
+  assert.match(coworkShim, /\.\.\/mcp\/server\.mjs/);
+  assert.match(coworkWorkShim, /compatibility entrypoint/i);
+  assert.match(coworkWorkShim, /\.\.\/mcp\/chatgpt-work-server\.mjs/);
+  assert.match(build, /join\(root, "mcp", "codex-server\.mjs"\)/);
+  assert.match(build, /join\(root, "mcp", "chatgpt-work-server\.mjs"\)/);
+  assert.doesNotMatch(build, /readFileSync\(join\(root, "cowork", "mcp-server\.mjs"\)/);
+  assert.doesNotMatch(install, /readFile\(join\(root, "cowork", "mcp-server\.mjs"\)/);
+  for (const [path, text] of [
+    ["README.md", readme],
+    ["cowork/README.md", coworkReadme],
+    ["website/guides/cowork.md", coworkGuide],
+    ["website/reference/architecture.md", architecture],
+    ["docs/research/claude-cowork.md", coworkResearch],
+    ["docs/research/codex-cli.md", codexResearch],
+    ["website/reference/commands.md", commands],
+    ["website/reference/configuration.md", configuration],
+  ]) {
+    assert.match(text, /mcp\/server\.mjs/, `${path} must name the neutral MCP core`);
+    assert.match(text, /compatibility (?:entrypoint|shim)/i, `${path} must label the Cowork compatibility path`);
+  }
+  assert.match(readme, /runtime\/chatgpt-work-server\.mjs/);
+  assert.match(coworkResearch, /no longer\s+string-rewrites\s+`?cowork\/mcp-server\.mjs`?/i);
+  assert.match(codexResearch, /mcp\/codex-server\.mjs[\s\S]{0,180}neutral `?mcp\/server\.mjs`?/i);
+});
+
 test("native Work proof schema stays paired with its probe", async () => {
   const [probe, schema] = await Promise.all([
     read("scripts/chatgpt-work-native-probe.mjs"),

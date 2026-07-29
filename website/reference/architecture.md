@@ -15,6 +15,10 @@ The **CLI layer** is ordinary Node. The published package has two runtime depend
 
 The **model-facing layer** is what the harness loads as a plugin — Claude Code's plugin format, and a built Codex plugin (skills and custom-agent profiles) generated from the same sources. It is markdown: slash commands, skills, and agents. These files instruct the model how to drive a run. They call the CLI for every deterministic decision, then use the harness's built-in subagent dispatch to do the judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
 
+## Portable MCP surface
+
+The MCP implementation has one neutral core in `mcp/server.mjs` and explicit host adapters: `mcp/codex-server.mjs` for the generated Codex bundle and `mcp/chatgpt-work-server.mjs` for the generated Work bundle. `cowork/mcp-server.mjs` and `cowork/chatgpt-work-server.mjs` are compatibility shims retained for existing Cowork/source-checkout callers. Build/install no longer string-rewrite Cowork source to produce Codex or Work runtimes; each bundle is built from its adapter directly. The public Work plugin still exposes `runtime/chatgpt-work-server.mjs` as its server command.
+
 ## The capability and domain router
 
 The router is the novel core. The problem it solves: you have an outcome and a pile of tools (some you installed, some Muster ships), and you need to pick the right tool for each piece of work, predictably.

@@ -2,6 +2,8 @@
 
 This is Muster's private/local ChatGPT Work integration lane. Plugins are available in ChatGPT Work on the web and in the ChatGPT desktop app when ChatGPT → Work is selected. Codex Desktop is a separate product surface; Work does not inherit Codex configuration, skills, hooks, MCP servers, or `config.toml`.
 
+The MCP implementation is neutral and adapter-based: `mcp/server.mjs` is the shared core, `mcp/chatgpt-work-server.mjs` is the Work adapter, and `cowork/chatgpt-work-server.mjs` is only a compatibility shim for source-checkout callers. Generated Work plugins still expose the public `runtime/chatgpt-work-server.mjs` command.
+
 ## Support boundary
 
 OpenAI's universal plugin format lets the same plugin directory serve supported ChatGPT and Codex surfaces. For local development, use a repo or personal Plugins Directory marketplace. The documented local/repo source is the desktop proof lane: restart or refresh ChatGPT Desktop, select the local/repo marketplace source, and install the plugin. Do not generalize local marketplace ingestion to Work web; use Work web only when an independently supported source is available. A tunnel-backed local plugin is not eligible for public submission: Secure MCP Tunnel is private transport, while public distribution requires a stable public HTTPS MCP endpoint.

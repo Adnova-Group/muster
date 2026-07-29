@@ -129,7 +129,7 @@ export function buildProbe({
       "The server must emit a separate nonce/tool/request/result attestation with invocationCount=1 and a server timestamp. UI evidence is operator attestation, not cryptographic provenance.",
       "Bind the receipt to SHA-256(normalized connection ID), SHA-256(installed .app.json), plugin name/version, and the registered connection label; never store the raw ID, app file, tunnel ID, API key, or screenshots.",
       "Phase 1: while the independent server attestation and installed .app.json still exist, grade the operator receipt and write a private retained snapshot outside the owned plugin/temp trees. The snapshot binds the successful grade, exact owned paths, app identity/hash, nonce, and server attestation with an evidence-grade SHA-256 digest.",
-      "Phase 2 only after evidence grade succeeds: stop tunnel-client, remove the connection/marketplace/cache/UI entries, re-run those inventories, and pass the retained snapshot to the cleanup finalizer. The finalizer identity-checks each exact snapshot-bound plugin/temp directory, atomically moves both into a new private quarantine, rechecks their retained identities there, deletes the quarantine, then lstat-checks absence; it rejects missing, moved, concurrently replaced, mismatched, symlinked, or unowned paths and never depends on the deleted .app.json.",
+      "Phase 2 only after evidence grade succeeds: stop tunnel-client, remove the connection/marketplace/cache/UI entries, re-run those inventories, and pass the retained snapshot to the cleanup finalizer. The finalizer identity-checks each exact snapshot-bound plugin/temp directory, atomically moves each into a new private quarantine beside its retained parent (reusing one when the parents match), rechecks the retained identities there, deletes every quarantine, then lstat-checks absence; it supports different filesystems and rejects missing, moved, concurrently replaced, mismatched, symlinked, or unowned paths without depending on the deleted .app.json.",
     ],
   };
 }
@@ -463,7 +463,7 @@ function retainedIdentityMatches(stat, retainedIdentity) {
     && (typeof stat.uid === "number" ? stat.uid : null) === retainedIdentity?.uid;
 }
 
-async function rollbackQuarantine(moved, quarantineRoot, errors) {
+async function rollbackQuarantine(moved, quarantineRoots, errors, renameDirectory) {
   for (const entry of [...moved].reverse()) {
     try {
       await lstat(entry.source);
@@ -476,25 +476,39 @@ async function rollbackQuarantine(moved, quarantineRoot, errors) {
       }
     }
     try {
-      await rename(entry.destination, entry.source);
+      await renameDirectory(entry.destination, entry.source);
     } catch (error) {
       errors.push(`${entry.at} cannot be restored from private quarantine: ${error.message}`);
     }
   }
-  try {
-    await rmdir(quarantineRoot);
-  } catch (error) {
-    if (error.code !== "ENOENT") errors.push(`private cleanup quarantine requires manual recovery at ${quarantineRoot}: ${error.message}`);
+  for (const quarantineRoot of [...quarantineRoots].reverse()) {
+    try {
+      await rmdir(quarantineRoot);
+    } catch (error) {
+      if (error.code !== "ENOENT") errors.push(`private cleanup quarantine requires manual recovery at ${quarantineRoot}: ${error.message}`);
+    }
   }
 }
 
-async function quarantineAndDelete(snapshot, errors, { beforeQuarantine } = {}) {
-  const quarantineRoot = resolve(dirname(snapshot.snapshotPath), `.muster-cleanup-${randomBytes(16).toString("hex")}`);
-  try {
-    await mkdir(quarantineRoot, { mode: 0o700 });
-  } catch (error) {
-    errors.push(`private cleanup quarantine cannot be created: ${error.message}`);
-    return;
+async function quarantineAndDelete(snapshot, errors, {
+  beforeQuarantine,
+  renameDirectory = rename,
+} = {}) {
+  const quarantineByParent = new Map();
+  const quarantineRoots = [];
+  for (const key of ["plugin", "temp"]) {
+    const parentPath = snapshot.ownership[key].parentPath;
+    if (quarantineByParent.has(parentPath)) continue;
+    const quarantineRoot = resolve(parentPath, `.muster-cleanup-${randomBytes(16).toString("hex")}`);
+    try {
+      await mkdir(quarantineRoot, { mode: 0o700 });
+      quarantineByParent.set(parentPath, quarantineRoot);
+      quarantineRoots.push(quarantineRoot);
+    } catch (error) {
+      errors.push(`private cleanup quarantine cannot be created beside snapshot.ownedPaths.${key}: ${error.message}`);
+      await rollbackQuarantine([], quarantineRoots, errors, renameDirectory);
+      return;
+    }
   }
   const moved = [];
   try {
@@ -503,15 +517,16 @@ async function quarantineAndDelete(snapshot, errors, { beforeQuarantine } = {}) 
     errors.push(`cleanup pre-quarantine hook failed: ${error.message}`);
   }
   if (errors.length) {
-    await rollbackQuarantine(moved, quarantineRoot, errors);
+    await rollbackQuarantine(moved, quarantineRoots, errors, renameDirectory);
     return;
   }
   for (const key of ["plugin", "temp"]) {
     const source = snapshot.ownedPaths[key];
+    const quarantineRoot = quarantineByParent.get(snapshot.ownership[key].parentPath);
     const destination = resolve(quarantineRoot, key);
     const at = `snapshot.ownedPaths.${key}`;
     try {
-      await rename(source, destination);
+      await renameDirectory(source, destination);
       moved.push({ source, destination, at });
       const stat = await lstat(destination);
       if (!retainedIdentityMatches(stat, snapshot.ownership[key])) {
@@ -524,15 +539,17 @@ async function quarantineAndDelete(snapshot, errors, { beforeQuarantine } = {}) 
     }
   }
   if (errors.length) {
-    await rollbackQuarantine(moved, quarantineRoot, errors);
+    await rollbackQuarantine(moved, quarantineRoots, errors, renameDirectory);
     return;
   }
-  try {
-    await rm(quarantineRoot, { recursive: true });
-  } catch (error) {
-    errors.push(`private cleanup quarantine deletion failed: ${error.message}`);
-    return;
+  for (const quarantineRoot of quarantineRoots) {
+    try {
+      await rm(quarantineRoot, { recursive: true });
+    } catch (error) {
+      errors.push(`private cleanup quarantine deletion failed at ${quarantineRoot}: ${error.message}`);
+    }
   }
+  if (errors.length) return;
   for (const key of ["plugin", "temp"]) {
     const path = snapshot.ownedPaths[key];
     const at = `snapshot.ownedPaths.${key}`;
@@ -543,11 +560,13 @@ async function quarantineAndDelete(snapshot, errors, { beforeQuarantine } = {}) 
       if (error.code !== "ENOENT") errors.push(`${at} absence cannot be verified after deletion: ${error.message}`);
     }
   }
-  try {
-    await lstat(quarantineRoot);
-    errors.push(`private cleanup quarantine remains after deletion: ${quarantineRoot}`);
-  } catch (error) {
-    if (error.code !== "ENOENT") errors.push(`private cleanup quarantine absence cannot be verified: ${error.message}`);
+  for (const quarantineRoot of quarantineRoots) {
+    try {
+      await lstat(quarantineRoot);
+      errors.push(`private cleanup quarantine remains after deletion: ${quarantineRoot}`);
+    } catch (error) {
+      if (error.code !== "ENOENT") errors.push(`private cleanup quarantine absence cannot be verified: ${error.message}`);
+    }
   }
 }
 

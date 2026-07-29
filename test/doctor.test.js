@@ -1,10 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, cp } from "node:fs/promises";
+import { mkdir, writeFile, cp } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDoctor } from "../src/doctor.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 // [vl-t6] Verified while closing the verb-lexicon red set: src/doctor.js has NO
 // command-file wording dependency — none of its checks (catalog, pipelines, builtins,

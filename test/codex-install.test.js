@@ -5,12 +5,13 @@
 // mapping, and plugin marketplace registration/rollback.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { assertContainedProfiles, formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { canonicalMusterMarketplace, localMusterMarketplace, repoRoot, runCodexHook, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 test("Codex project install declares every shipped agent and removes only Muster declarations on uninstall", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-agent-declarations-"));

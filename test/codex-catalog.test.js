@@ -3,7 +3,7 @@
 // packaged (install-time-generated, not committed) distribution surface.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -11,6 +11,7 @@ import { CODEX_COUNTS } from "../src/codex.js";
 import { readCodexInventory } from "../src/codex-inventory.js";
 import { adaptCatalogForCodex, codexFallbackSkillId } from "../src/codex-catalog.js";
 import { execFile, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 function packagedMcpTools() {
   return new Promise((resolve, reject) => {

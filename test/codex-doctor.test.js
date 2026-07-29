@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,7 @@ import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP, DOCTOR_READ_MAX_BYTES, DOCTOR_CONFIG_READ_MAX_BYTES } from "../src/codex-doctor.js";
 import { repoRoot, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 function fakeMcpChild() {
   const child = new EventEmitter();

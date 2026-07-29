@@ -5,7 +5,7 @@
 // text was cut. See docs/research/kimi-code-cli.md sec 8's dated probe note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,7 @@ import {
   captureSessionId, resolveSessionForCwd, formatUsageLine, summarizeItemReceipts,
   UNKNOWN_REASONS
 } from "../src/kimi-receipts.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const FIXTURE_SESSION = fileURLToPath(new URL("./fixtures/kimi-session-usage", import.meta.url));
 const FIXTURE_STDOUT = fileURLToPath(new URL("./fixtures/kimi-stream-stdout.jsonl", import.meta.url));

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const pexecFile = promisify(execFile);
 const childScript = fileURLToPath(new URL("../test-support/tmp-leak-guard-child.mjs", import.meta.url));
+const syncChildScript = fileURLToPath(new URL("../test-support/tmp-leak-guard-sync-child.mjs", import.meta.url));
 
 // Mutant-kill proof (manual, not committed): comment out the
 // `process.on("exit", ...)` registration (or the rmSync call inside it) in
@@ -20,6 +21,25 @@ test("trackedMkdtemp: a fixture created via the shared helper is removed once it
   assert.ok(
     existedRightAfterCreate,
     "fixture must actually have existed right after trackedMkdtemp resolved, proving creation succeeded (not just absent)",
+  );
+  assert.ok(
+    !existsSync(dir),
+    `fixture ${dir} must be gone now that the creating process has exited (process-exit sweep)`,
+  );
+});
+
+// Same mutant-kill proof as above, for the sync variant: comment out the
+// shared registerExitSweep's process.on("exit", ...) registration (or the
+// rmSync call inside it) in test-support/helpers.js, rerun this test alone --
+// it fails because the child's fixture dir is still present. Restore the
+// code and this test passes again. See PR body for the transcript.
+test("trackedMkdtempSync: a fixture created via the shared sync helper is removed once its own process exits, never left behind in /tmp", async () => {
+  const { stdout } = await pexecFile(process.execPath, [syncChildScript]);
+  const { dir, existedRightAfterCreate } = JSON.parse(stdout);
+
+  assert.ok(
+    existedRightAfterCreate,
+    "fixture must actually have existed right after trackedMkdtempSync returned, proving creation succeeded (not just absent)",
   );
   assert.ok(
     !existsSync(dir),

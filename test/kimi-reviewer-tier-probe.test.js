@@ -9,10 +9,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import {
   KNOWN_BLOCKERS, PROBE1_COMMIT, PROBE2_MANIFEST, PROBE1_BRIEF, PROBE2_BRIEF,
   PROBES, LANES, AGENT_FILE, CAVEAT, PROTOCOL_VERSION, PROBE_MATERIAL_FILES,

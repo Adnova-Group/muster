@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendState, appendFollowup } from "../src/memory.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 async function dir() { return mkdtemp(join(tmpdir(), "muster-rr-")); }
 

@@ -4,11 +4,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { repoRoot, runCodexHook, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 // Shared per-run session-id isolator (test/test-support/hook-helpers.js, a
 // different test-support dir than codex-helpers above): the Codex border marker
 // `muster-codex-border-<sid>` is HOST-GLOBAL, keyed by session id alone, so the

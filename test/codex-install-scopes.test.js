@@ -5,11 +5,12 @@
 // quarantine dance (see test/codex-lock.test.js for withCodexFileLock itself).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { reconcileScopeRegistryEntries, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { localMusterMarketplace, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 test("Codex user install declares shipped agents in CODEX_HOME config.toml and preserves unrelated TOML", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-user-agent-declarations-"));

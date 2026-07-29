@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadCatalog } from "../src/catalog.js";
@@ -10,6 +9,7 @@ import { resolveCapabilities } from "../src/capabilities.js";
 import { validateManifest } from "../src/manifest.js";
 import { computeWaves } from "../src/wave.js";
 import { buildAuditManifest, AUDIT_DIMENSIONS } from "../src/audit.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const CATALOG = new URL("../catalog/", import.meta.url);
 

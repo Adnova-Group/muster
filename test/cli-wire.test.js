@@ -16,8 +16,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
-import { mkdtemp, writeFile, readFile, readdir, rm } from "node:fs/promises";
+import { writeFile, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const pexecFile = promisify(execFile);
 

@@ -1,5 +1,5 @@
 import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
-import { rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -35,6 +35,16 @@ function registerExitSweep() {
 export async function trackedMkdtemp(prefix) {
   registerExitSweep();
   const dir = await mkdtemp(prefix);
+  trackedDirs.add(dir);
+  return dir;
+}
+
+// Sync counterpart of trackedMkdtemp above: same drop-in signature and return
+// value as fs.mkdtempSync, plus the same process-exit tracking so a fixture
+// made through the sync form never outlives its creating test process either.
+export function trackedMkdtempSync(prefix) {
+  registerExitSweep();
+  const dir = mkdtempSync(prefix);
   trackedDirs.add(dir);
   return dir;
 }

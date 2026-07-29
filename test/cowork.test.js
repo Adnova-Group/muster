@@ -188,6 +188,50 @@ test("tools/list exposes exactly the 28 brain verbs, matching the MCPB manifest"
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
 
+test("empty ChatGPT profile preserves default initialize, list, and call responses exactly", async () => {
+  const requests = [
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    {
+      jsonrpc: "2.0", id: 3, method: "tools/call",
+      params: { name: "muster_prioritize", arguments: { items: [{ name: "a", reach: 1, impact: 1, confidence: 1, effort: 1 }] } },
+    },
+  ];
+  const [baseline, empty] = await Promise.all([
+    rpc(requests),
+    rpc(requests, { env: { MUSTER_MCP_TOOL_PROFILE: "" } }),
+  ]);
+  assert.deepEqual(empty, baseline);
+});
+
+test("ChatGPT Work pro-safe profile exposes exact titled annotated prioritize descriptor and rejects all other calls", async () => {
+  const env = { MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-pro-safe" };
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_detect", arguments: {} } },
+  ], { env });
+  assert.deepEqual(r[2].result.tools, [{
+    name: "muster_prioritize",
+    title: "Prioritize backlog items",
+    description: r[2].result.tools[0].description,
+    inputSchema: r[2].result.tools[0].inputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }]);
+  assert.equal(r[3].result.isError, true);
+  assert.match(r[3].result.content[0].text, /not available/);
+});
+
+test("ChatGPT Work full profile preserves the deterministic 28-tool descriptor surface", async () => {
+  const [normal, full] = await Promise.all([
+    rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]),
+    rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }], {
+      env: { MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-full" },
+    }),
+  ]);
+  assert.deepEqual(full[2].result, normal[2].result);
+});
+
 test("Cowork distribution metadata and README document the exact MCP-only support contract", async () => {
   const pkg = JSON.parse(await read("package.json"));
   const manifest = JSON.parse(await read("cowork/manifest.json"));

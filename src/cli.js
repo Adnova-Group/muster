@@ -34,6 +34,7 @@ import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { buildAuditManifest } from "./audit.js";
 import { runInstall, runUninstall } from "./install.js";
 import { runCodexInstall, runCodexUninstall } from "./codex-install.js";
+import { readChatgptWorkConfig, runChatgptWorkInstall } from "./chatgpt-work-install.js";
 import { runKimiInstall, runKimiUninstall } from "./kimi-install.js";
 import { runCodexDoctor } from "./codex-doctor.js";
 import { readCodexInventory } from "./codex-inventory.js";
@@ -88,7 +89,7 @@ const USAGE = [
   // diagnose/audit/issue/assess/steer/scope
   "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|",
   // doctor/conformance/scratchpad/profile/install/signals/hygiene/help
-  "doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
+  "doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
 ].join("");
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
@@ -662,6 +663,25 @@ async function main() {
     } else if (cmd === "install") {
       if (rest[0] === "codex") {
         out(await runCodexInstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));
+      } else if (rest[0] === "chatgpt-work") {
+        const installOptions = {
+          connectionId: flagValue(rest, "--connection-id"),
+          profile: flagValue(rest, "--profile"),
+          scope: flagValue(rest, "--scope") || "project",
+          allowFullActions: rest.includes("--allow-full-actions"),
+          dryRun: rest.includes("--dry-run"),
+        };
+        const result = await runChatgptWorkInstall(installOptions);
+        if (!installOptions.dryRun) {
+          const root = dirFromImportMeta(import.meta.url, "../");
+          const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
+          await buildCodexPlugin({
+            root,
+            outDir: join(root, ".agents", "plugins"),
+            chatgptWorkConfig: await readChatgptWorkConfig({ scope: installOptions.scope }),
+          });
+        }
+        out(result);
       } else if (rest[0] === "kimi") {
         out(await runKimiInstall({ dryRun: rest.includes("--dry-run"), probe: rest.includes("--probe") }));
       } else out(await runInstall({ home: rest[0] || homedir() }));

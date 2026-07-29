@@ -221,6 +221,25 @@ const TOOLS = {
   muster_plan_checklist: { argv: ["plan-checklist"], ...J2("Render a crew manifest's `plan` array as a markdown checklist (renderPlanChecklist): `- [ ]`/`- [x]`, a tournament marker, and owns/frozen fence suffixes. Optional `done` (array of task ids) marks matching tasks complete.", { manifest: { type: "object" }, done: { type: "array", items: { type: "string" } } }, ["manifest"]), picks: (a) => [a.manifest], flags: (a) => a.done?.length ? ["--done", a.done.join(",")] : [] },
 };
 
+const TOOL_PROFILE = process.env.MUSTER_MCP_TOOL_PROFILE;
+let EXPOSED_TOOLS = TOOLS;
+let ACTIVE_INSTRUCTIONS = INSTRUCTIONS;
+if (TOOL_PROFILE === "chatgpt-work-pro-safe") {
+  EXPOSED_TOOLS = {
+    muster_prioritize: {
+      ...TOOLS.muster_prioritize,
+      title: "Prioritize backlog items",
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    },
+  };
+  ACTIVE_INSTRUCTIONS = "Use muster_prioritize to rank backlog items.";
+} else if (TOOL_PROFILE === "chatgpt-work-full") {
+  // Dedicated entrypoint verifies both full-action opt-ins before selecting this surface.
+} else if (TOOL_PROFILE !== undefined && TOOL_PROFILE !== "") {
+  process.stderr.write(`mcp-server: unknown MUSTER_MCP_TOOL_PROFILE ${JSON.stringify(TOOL_PROFILE)}\n`);
+  process.exit(1);
+}
+
 // ── CLI invocation ──────────────────────────────────────────────────────────
 // The canonical apex opt-in rides MUSTER_ENABLE_APEX (MCPB user_config key
 // enable_apex, declared with NO default: a false-by-default boolean substitutes
@@ -458,7 +477,7 @@ async function handle(msg) {
         protocolVersion: params?.protocolVersion || PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: SERVER_INFO,
-        instructions: INSTRUCTIONS,
+        instructions: ACTIVE_INSTRUCTIONS,
       });
     case "notifications/initialized":
       return; // no response to notifications
@@ -469,9 +488,24 @@ async function handle(msg) {
       return ok(id, {});
     case "tools/list":
       return ok(id, {
-        tools: Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, inputSchema: t.inputSchema })),
+        tools: Object.entries(EXPOSED_TOOLS).map(([name, t]) => ({
+          name, ...(t.title ? { title: t.title } : {}),
+          description: t.description, inputSchema: t.inputSchema,
+          ...(t.annotations ? { annotations: t.annotations } : {}),
+        })),
       });
     case "tools/call": {
+      if (!Object.hasOwn(EXPOSED_TOOLS, params?.name)) {
+        return ok(id, {
+          content: [{
+            type: "text",
+            text: TOOL_PROFILE
+              ? `tool ${JSON.stringify(params?.name)} is not available in MCP tool profile ${JSON.stringify(TOOL_PROFILE)}`
+              : `unknown tool: ${params?.name}`,
+          }],
+          isError: true,
+        });
+      }
       const r = await limiter.run(id, (signal) => callTool(params?.name, params?.arguments || {}, signal));
       return ok(id, { content: [{ type: "text", text: r.text }], isError: !r.ok });
     }

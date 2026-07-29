@@ -6,11 +6,58 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
+import { readOptionalChatgptWorkConfig, runChatgptWorkInstall } from "../src/chatgpt-work-install.js";
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
 const fixtureEntries = ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor", "package.json"];
 const bundles = ["runtime/muster.mjs", "runtime/muster-mcp.mjs"];
+
+test("default generated plugin has no ChatGPT app metadata", async () => {
+  const { pluginRoot } = await resolveCodexPlugin(repoRoot);
+  const manifest = JSON.parse(await readFile(join(pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+  assert.equal(manifest.apps, undefined);
+  await assert.rejects(readFile(join(pluginRoot, ".app.json"), "utf8"), /ENOENT/);
+  assert.equal(manifest.mcpServers, "./.mcp.json");
+});
+
+test("configured build adds only minimal app wiring while retaining MCP metadata", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-work-build-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const outDir = join(tmp, "plugins");
+  const project = join(tmp, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  await runChatgptWorkInstall({
+    connectionId: "asdk_app_Test123", profile: "pro-safe",
+    scope: "project", cwd: project, home: join(tmp, "home"),
+  });
+  const persisted = await readOptionalChatgptWorkConfig({
+    scope: "project", cwd: project, home: join(tmp, "home"),
+  });
+  const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
+  const prior = process.env.MUSTER_BUILD_FORCE;
+  process.env.MUSTER_BUILD_FORCE = "1";
+  try {
+    const result = await buildCodexPlugin({
+      root: repoRoot, outDir,
+      chatgptWorkConfig: persisted,
+    });
+    const manifest = JSON.parse(await readFile(join(result.pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+    assert.equal(manifest.mcpServers, "./.mcp.json");
+    assert.equal(manifest.apps, "./.app.json");
+    assert.deepEqual(JSON.parse(await readFile(join(result.pluginRoot, ".app.json"), "utf8")), {
+      apps: { muster: { id: "asdk_app_Test123" } },
+    });
+    delete process.env.MUSTER_BUILD_FORCE;
+    const rebuilt = await buildCodexPlugin({ root: repoRoot, outDir, chatgptWorkConfig: persisted });
+    assert.deepEqual(JSON.parse(await readFile(join(rebuilt.pluginRoot, ".app.json"), "utf8")), {
+      apps: { muster: { id: "asdk_app_Test123" } },
+    }, "a later same-version Codex rebuild preserves the installer-owned mapping");
+  } finally {
+    if (prior === undefined) delete process.env.MUSTER_BUILD_FORCE;
+    else process.env.MUSTER_BUILD_FORCE = prior;
+  }
+});
 
 async function buildCheckout(checkout, sharedNodeModules) {
   await mkdir(checkout, { recursive: true });

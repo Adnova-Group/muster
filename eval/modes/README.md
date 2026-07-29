@@ -10,6 +10,10 @@ the 10 skill-protocol skills the modes delegate to (`plugin/skills/*` —
 `orchestrator`, `review-gate`, `coordination`,
 `interview`, `tournament`, `domain-router`, `advisor`, `greenfield`, `prd-pipeline`,
 `roadmap-prioritization`; `router` is excluded, it already has its own `eval:router`),
+plus `improve`, graded structurally like `init` above — a `context: fork` background
+dispatcher onto `muster-improver`'s own retrospective judgment (an agent, already outside
+this eval's graded universe), with no independent response-quality behavior of its own to
+fixture; its coverage is `test/skill-improve.test.js`'s contract guard,
 the 7 native-builtin pipeline-role providers (`plugin/builtins/muster-*/SKILL.md` —
 `muster-research`, `muster-image`, `muster-video`, `muster-humanizer`, `muster-scorer`,
 `muster-prompt-smith`, `muster-author`; the vendored `gsd-*`/`sp-*`/`wsh-*` builtins are
@@ -288,7 +292,7 @@ heads-up line names the correct replacement command).
 | autopilot.md -> go.md | structural (alias-class check) | 0 — same alias-class check |
 | sprint.md -> go-backlog.md | structural (alias-class check) | 0 — same alias-class check |
 
-### Skill-protocol skills (`plugin/skills/*/SKILL.md`, 11: the 10 below + router)
+### Skill-protocol skills (`plugin/skills/*/SKILL.md`, 12: the 10 below + router + improve)
 
 | surface | tier | cases |
 |---|---|---|
@@ -303,6 +307,7 @@ heads-up line names the correct replacement command).
 | prd-pipeline | empirical | 4 |
 | roadmap-prioritization | empirical | 3 |
 | router | empirical (separate suite) | see `eval/router` — not duplicated here |
+| improve | structural | 0 — a `context: fork` background dispatcher onto muster-improver's agent-owned judgment, no independent behavior of its own; see `test/skill-improve.test.js` |
 
 ### Native-builtin providers (`plugin/builtins/muster-*/SKILL.md`, 7)
 

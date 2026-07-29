@@ -263,9 +263,9 @@ for (const relativePath of trackedCodexFiles) {
 const mcp = await json(join(plugin, ".mcp.json"));
 if (mcp.mcpServers?.muster?.command !== "node" || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not Codex-native");
 const bundledMcp = await readFile(join(plugin, "runtime", "muster-mcp.mjs"), "utf8");
-if (!bundledMcp.includes('"capabilities", "--codex"') || bundledMcp.includes('"capabilities", "--cowork"')) fail("MCP capability tool is not bound to live Codex inventory");
+if (!bundledMcp.includes('MUSTER_MCP_HOST = "codex"') || !bundledMcp.includes('"capabilities", "--codex"')) fail("MCP capability tool is not bound to live Codex inventory");
 if (!bundledMcp.includes('"assess", "--codex"')) fail("MCP assess tool is not bound to Codex-aware criteria parsing");
-const mcpSource = await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8");
+const mcpSource = await readFile(join(root, "mcp", "server.mjs"), "utf8");
 if ((mcpSource.match(/^  muster_[a-z_]+:/gm) || []).length !== CODEX_COUNTS.mcpTools) fail("MCP tool count drift");
 if (modes.length - 1 !== CODEX_COUNTS.primaryModes || aliases.length !== CODEX_COUNTS.aliases) fail("mode count drift");
 process.stdout.write(JSON.stringify({ ok: true, counts: CODEX_COUNTS, notes }, null, 2) + "\n");

@@ -366,7 +366,7 @@ function findPreRenameVerbLines(text) {
 
 test("cowork/ prose: mcp-server.mjs, sprint-protocol.md, and README.md cite pre-rename verbs (run/autopilot/sprint) only on their one alias-note line", async () => {
   const targets = [
-    "cowork/mcp-server.mjs",
+    "mcp/server.mjs",
     "cowork/sprint-protocol.md",
     "cowork/README.md",
   ];

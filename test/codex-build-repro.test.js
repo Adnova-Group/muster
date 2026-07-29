@@ -10,7 +10,7 @@ import { readOptionalChatgptWorkConfig, runChatgptWorkInstall } from "../src/cha
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
-const fixtureEntries = ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor", "package.json"];
+const fixtureEntries = ["catalog", "codex", "cowork", "mcp", "pipelines", "plugin", "scripts", "src", "vendor", "package.json"];
 const bundles = ["runtime/muster.mjs", "runtime/muster-mcp.mjs"];
 
 test("default generated plugin has no ChatGPT app metadata", async () => {
@@ -19,6 +19,13 @@ test("default generated plugin has no ChatGPT app metadata", async () => {
   assert.equal(manifest.apps, undefined);
   await assert.rejects(readFile(join(pluginRoot, ".app.json"), "utf8"), /ENOENT/);
   assert.equal(manifest.mcpServers, "./.mcp.json");
+});
+
+test("Codex and Work builds use explicit adapters without rewriting the shared server source", async () => {
+  const buildSource = await readFile(join(repoRoot, "scripts", "build-codex.mjs"), "utf8");
+  assert.doesNotMatch(buildSource, /sharedMcpSource[\s\S]{0,2000}\.replace\(/);
+  assert.match(buildSource, /join\(root, "mcp", "codex-server\.mjs"\)/);
+  assert.match(buildSource, /join\(root, "mcp", "chatgpt-work-server\.mjs"\)/);
 });
 
 test("configured build adds only minimal app wiring while retaining MCP metadata", async t => {
@@ -51,7 +58,8 @@ test("configured build adds only minimal app wiring while retaining MCP metadata
     const workServer = await readFile(join(result.pluginRoot, "runtime", "chatgpt-work-server.mjs"), "utf8");
     assert.match(workServer, /MUSTER_CHATGPT_WORK_PROBE_NONCE/);
     assert.match(workServer, /MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH/);
-    assert.match(workServer, /import\("\.\/work-mcp\.mjs"\)/);
+    assert.match(workServer, /MUSTER_MCP_HOST/);
+    assert.doesNotMatch(workServer, /work-mcp\.mjs/);
     delete process.env.MUSTER_BUILD_FORCE;
     const rebuilt = await buildCodexPlugin({ root: repoRoot, outDir, chatgptWorkConfig: persisted });
     assert.deepEqual(JSON.parse(await readFile(join(rebuilt.pluginRoot, ".app.json"), "utf8")), {

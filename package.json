@@ -39,6 +39,7 @@
     "pipelines",
     "vendor",
     "cowork",
+    "mcp",
     "README.md",
     "SECURITY.md",
     "CHANGELOG.md",

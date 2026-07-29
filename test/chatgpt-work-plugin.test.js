@@ -186,7 +186,8 @@ test("bundled runtime installs a scope-correct neutral Work plugin without sourc
   assert.doesNotMatch(JSON.stringify(manifest.interface), /Codex|Read|Write/);
   assert.match(manifest.interface.longDescription, /tool-only.*ChatGPT Work/i);
   const server = await readFile(join(result.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8");
-  assert.match(server, /work-mcp\.mjs/);
+  assert.match(server, /MUSTER_MCP_HOST/);
+  assert.doesNotMatch(server, /work-mcp\.mjs/);
   assert.doesNotMatch(server, /muster-mcp\.mjs/);
 });
 
@@ -197,9 +198,9 @@ test("installer cache identity revokes full opt-in on full to pro-safe transitio
   t.after(() => rm(dir, { recursive: true, force: true }));
   const common = { connectionId: "asdk_app_Transition1", scope: "project", cwd: project, home: join(dir, "home") };
   const full = await runChatgptWorkInstall({ ...common, profile: "full", allowFullActions: true });
-  assert.match(await readFile(join(full.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8"), /INSTALL_ALLOW_FULL_ACTIONS = "1"/);
+  assert.equal(JSON.parse(await readFile(join(full.pluginPath, ".mcp.json"), "utf8")).mcpServers.muster.env.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS, "1");
   const safe = await runChatgptWorkInstall({ ...common, profile: "pro-safe" });
-  assert.doesNotMatch(await readFile(join(safe.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8"), /INSTALL_ALLOW_FULL_ACTIONS = "1"/);
+  assert.equal(JSON.parse(await readFile(join(safe.pluginPath, ".mcp.json"), "utf8")).mcpServers.muster.env, undefined);
   assert.equal((await readChatgptWorkConfig({ scope: "project", cwd: project })).profile, "pro-safe");
 });
 

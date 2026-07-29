@@ -136,17 +136,10 @@ export async function readOptionalChatgptWorkConfig(options = {}) {
   catch (error) { if (error.code === "MUSTER_NO_GIT_WORKTREE") return null; throw error; }
 }
 
-const neutralizeWorkMcp = source => source
-  .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.",
-    "muster Work MCP server — exposes muster's deterministic tool-only surface.")
-  .replace('env: { ...process.env, MUSTER_RUNTIME: "cowork" }',
-    'env: { ...process.env, MUSTER_RUNTIME: "work" }');
-
 async function prepareRuntimeAssets() {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const bundled = {
     cli: join(moduleDir, "muster.mjs"),
-    mcp: join(moduleDir, "work-mcp.mjs"),
     server: join(moduleDir, "chatgpt-work-server.mjs"),
   };
   try {
@@ -167,15 +160,11 @@ async function prepareRuntimeAssets() {
   await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(dir, "muster.mjs"), banner: { js: requireBanner } });
   await build({
     ...bundleOptions,
-    stdin: { contents: neutralizeWorkMcp(await readFile(join(root, "cowork", "mcp-server.mjs"), "utf8")), resolveDir: join(root, "cowork"), sourcefile: "mcp-server.work.mjs" },
-    outfile: join(dir, "work-mcp.mjs"),
+    entryPoints: [join(root, "mcp", "chatgpt-work-server.mjs")],
+    outfile: join(dir, "chatgpt-work-server.mjs"),
   });
-  const server = (await readFile(join(root, "cowork", "chatgpt-work-server.mjs"), "utf8"))
-    .replace('await import("./mcp-server.mjs");', 'await import("./work-mcp.mjs");');
-  await writeFile(join(dir, "chatgpt-work-server.mjs"), server, { mode: 0o700 });
   return {
-    cli: join(dir, "muster.mjs"), mcp: join(dir, "work-mcp.mjs"),
-    server: join(dir, "chatgpt-work-server.mjs"),
+    cli: join(dir, "muster.mjs"), server: join(dir, "chatgpt-work-server.mjs"),
     cleanup: () => rm(dir, { recursive: true, force: true }),
   };
 }
@@ -186,23 +175,21 @@ async function stageWorkPlugin(config, assets) {
   const runtime = join(plugin, "runtime");
   await mkdir(join(plugin, ".codex-plugin"), { recursive: true, mode: 0o700 });
   await mkdir(runtime, { recursive: true, mode: 0o700 });
-  await Promise.all([
-    cp(assets.cli, join(runtime, "muster.mjs")),
-    cp(assets.mcp, join(runtime, "work-mcp.mjs")),
-  ]);
-  let serverSource = await readFile(assets.server, "utf8");
-  if (config.profile === "full" && config.allowFullActions) {
-    serverSource = serverSource.replace(
-      "const profile = process.env.MUSTER_CHATGPT_WORK_PROFILE;",
-      'process.env.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS = "1";\nconst profile = process.env.MUSTER_CHATGPT_WORK_PROFILE;'
-    );
-  }
-  await writeFile(join(runtime, "chatgpt-work-server.mjs"), serverSource, { mode: 0o700 });
+  await cp(assets.cli, join(runtime, "muster.mjs"));
+  await cp(assets.server, join(runtime, "chatgpt-work-server.mjs"));
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const app = { apps: { muster: { id: config.connectionId } } };
   await writeFile(join(plugin, ".app.json"), JSON.stringify(app, null, 2) + "\n");
+  const serverEnv = config.profile === "full" && config.allowFullActions
+    ? { MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS: "1" }
+    : undefined;
   await writeFile(join(plugin, ".mcp.json"), JSON.stringify({
-    mcpServers: { muster: { command: "node", args: ["./runtime/chatgpt-work-server.mjs"], cwd: "." } },
+    mcpServers: {
+      muster: {
+        command: "node", args: ["./runtime/chatgpt-work-server.mjs"], cwd: ".",
+        ...(serverEnv ? { env: serverEnv } : {}),
+      },
+    },
   }, null, 2) + "\n");
   await writeFile(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
   await writeFile(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({

@@ -17,6 +17,7 @@ const claudeSurface = [
   "plugin/hooks",
   "plugin/skills",
   "cowork/mcp-server.mjs",
+  "mcp/server.mjs",
   "catalog",
   "pipelines"
 ];
@@ -39,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 140); // +1: first-class init command
+  assert.equal(paths.length, 141); // +1: neutral MCP core now explicitly pinned
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1122,5 +1123,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // response-identical (pinned in test/cowork.test.js); the shared change is
   // unavoidable because Codex, Cowork, and Work must dispatch the same
   // deterministic CLI tool definitions rather than fork their implementations.
-  assert.equal(hash.digest("hex"), "b0316a90be923513a8f031badec695743ba067ae42b99d2225bddacc654e819c");
+  //
+  // 2026-07-29 re-pin #10 (neutral MCP architecture): file COUNT 140 -> 141.
+  // The shared implementation moved from cowork/mcp-server.mjs to
+  // mcp/server.mjs; the Cowork path is now a compatibility adapter, while
+  // Codex and Work select their host contracts explicitly without rewriting
+  // the shared source during builds.
+  assert.equal(hash.digest("hex"), "5deec3c9f698fb2586c0a9e42f7064d05cf72dfcef0e3cf9889e0b431439d3d5");
 });

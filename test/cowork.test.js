@@ -47,6 +47,26 @@ function rpc(requests, { timeout = 30_000, env = {}, serverPath, cwd } = {}) {
 
 const INIT = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } };
 
+test("MCP architecture uses one neutral core and thin explicit host adapters", async () => {
+  const [core, coworkShim, workShim, codexAdapter, workAdapter] = await Promise.all([
+    read("mcp/server.mjs"),
+    read("cowork/mcp-server.mjs"),
+    read("cowork/chatgpt-work-server.mjs"),
+    read("mcp/codex-server.mjs"),
+    read("mcp/chatgpt-work-server.mjs"),
+  ]);
+  assert.match(core, /MUSTER_MCP_HOST/);
+  assert.match(core, /const TOOLS =/);
+  assert.doesNotMatch(core, /MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH/, "Work startup policy stays in its adapter");
+  for (const [name, source] of [["cowork shim", coworkShim], ["work shim", workShim], ["codex adapter", codexAdapter]]) {
+    assert.ok(source.split("\n").length <= 12, `${name} remains thin`);
+    assert.doesNotMatch(source, /const TOOLS =|class WorkLimiter/, `${name} does not fork the core`);
+  }
+  assert.match(coworkShim, /MUSTER_MCP_HOST.*cowork/);
+  assert.match(codexAdapter, /MUSTER_MCP_HOST.*codex/);
+  assert.match(workAdapter, /MUSTER_MCP_HOST.*work/);
+});
+
 test("initialize: serverInfo.version matches package.json, instructions carry muster principles", async () => {
   const pkg = JSON.parse(await read("package.json"));
   const r = await rpc([INIT]);
@@ -66,7 +86,7 @@ test("initialize: serverInfo.version matches package.json, instructions carry mu
 // then check every named import is really exported by guidance.js — a hook
 // refactor that drops/renames one of these fails this test loudly, by name.
 test("contract pin: mcp-server.mjs's guidance.js imports all exist in guidance.js's export surface", async () => {
-  const serverSrc = await read("cowork/mcp-server.mjs");
+  const serverSrc = await read("mcp/server.mjs");
   const importLine = serverSrc.match(/import\s*\{([^}]+)\}\s*from\s*["']\.\.\/plugin\/hooks\/guidance\.js["'];/);
   assert.ok(importLine, "mcp-server.mjs must import named bindings from plugin/hooks/guidance.js");
   const names = importLine[1].split(",").map((s) => s.trim()).filter(Boolean);
@@ -331,16 +351,16 @@ test("ChatGPT Work probe rejects wrong arguments before CLI dispatch and creates
   ], {
     env: {
       MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-probe",
-      MUSTER_CHATGPT_WORK_PROBE_NONCE: nonce,
-      MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestationPath,
-      MUSTER_CHATGPT_WORK_PROBE_IDENTITY: JSON.stringify({
+      MUSTER_MCP_PROBE_NONCE: nonce,
+      MUSTER_MCP_PROBE_ATTESTATION_PATH: attestationPath,
+      MUSTER_MCP_PROBE_IDENTITY: JSON.stringify({
         connectionIdSha256: "a".repeat(64),
         pluginAppSha256: "b".repeat(64),
         pluginName: "muster",
         pluginVersion: "0.5.0",
         connectionLabel: "Muster Probe",
       }),
-      MUSTER_CHATGPT_WORK_PROBE_SERVER_INSTANCE_ID: "00000000-0000-4000-8000-000000000000",
+      MUSTER_MCP_PROBE_SERVER_INSTANCE_ID: "00000000-0000-4000-8000-000000000000",
       NODE_ENV: "test",
       MUSTER_COWORK_TEST_CLI: path.join(rootDir, "definitely-missing-cli.mjs"),
     },
@@ -657,8 +677,10 @@ test("F3: missing cowork/sprint-protocol.md at module load does not crash the se
   const tmp = mkdtempSync(path.join(tmpdir(), "muster-cowork-f3-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   mkdirSync(path.join(tmp, "cowork"), { recursive: true });
+  mkdirSync(path.join(tmp, "mcp"), { recursive: true });
   mkdirSync(path.join(tmp, "plugin", "hooks"), { recursive: true });
   copyFileSync(path.join(rootDir, "cowork", "mcp-server.mjs"), path.join(tmp, "cowork", "mcp-server.mjs"));
+  copyFileSync(path.join(rootDir, "mcp", "server.mjs"), path.join(tmp, "mcp", "server.mjs"));
   copyFileSync(path.join(rootDir, "plugin", "hooks", "guidance.js"), path.join(tmp, "plugin", "hooks", "guidance.js"));
   writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ version: "0.0.0-test", type: "module" }));
   // Deliberately no cowork/sprint-protocol.md written into the temp copy -- this omission IS

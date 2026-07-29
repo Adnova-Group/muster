@@ -158,32 +158,44 @@ for (const marker of ["Quota-bounded dimension sweep", "three nonredundant read-
   if (!auditCommand.includes(marker)) fail(`Codex audit lacks quota policy marker ${marker}`);
 }
 if (auditCommand.includes("requested=6") || auditCommand.includes("six core dimensions remain independent")) fail("Codex audit retains redundant six-worker fan-out");
-// codex-agent-watch-review-budget item (2026-07-19 dogfood): liveness-aware watch plus
-// per-class extension ceilings replaced the flat 3-heartbeat kill -- see codex/skill-adapter.md's
-// "## Agent watch invariant" section and scripts/build-codex.mjs's agentWatchProtocol const.
-const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "14 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "sol/XHIGH", "DeepSWE sol/high", "liveness checkpoint"];
-// Bounded text-proximity check: a marker pair must sit within MAX_BINDING_DISTANCE chars of
-// each other, not merely both appear somewhere in the surface -- an unbounded indexOf-order
-// check (the review finding this closes) would still pass if the two phrases drifted apart
-// into unrelated paragraphs. Mirrors the ~200-char bound test/codex-workflows.test.js already
-// uses via its `[\s\S]{0,200}?` regexes for these same bindings.
-const MAX_BINDING_DISTANCE = 200;
-const assertBoundBinding = (text, name, start, end, label) => {
-  const s = text.indexOf(start);
-  const e = text.indexOf(end, s);
-  if (s < 0 || e < 0 || e - s > MAX_BINDING_DISTANCE) fail(`${name} does not bind ${label}`);
-};
-for (const [name, path] of [
+// State-based agent watch: provider-reported running is authoritative liveness, fixed
+// silent-heartbeat counts cannot kill it, and every generated orchestration surface carries
+// the same deterministic handling for non-running states and explicit stop conditions.
+const watchSurfaces = [
   ["adapter", join(plugin, "runtime", "codex-skill-adapter.md")],
   ["orchestrator", join(plugin, "internal-skills", "orchestrator", "SKILL.md")],
   ...[...modes, ...aliases].map(name => [name, join(plugin, "skills", name, "SKILL.md")])
-]) {
+];
+if (watchSurfaces.length !== 15) fail(`agent watch coverage drifted to ${watchSurfaces.length} surfaces instead of 15`);
+const assertWatchPattern = (text, name, pattern, label) => {
+  if (!pattern.test(text)) fail(`${name} ${label}`);
+};
+for (const [name, path] of watchSurfaces) {
   const text = await readFile(path, "utf8");
-  for (const marker of watchMarkers) if (!text.includes(marker)) fail(`${name} lacks agent watch invariant marker ${marker}`);
+  assertWatchPattern(text, name, /collaboration\.list_agents/, "does not reconcile worker state");
+  assertWatchPattern(text, name, /collaboration\.wait_agent/, "does not wait for worker updates");
+  assertWatchPattern(text, name, /mailbox receipts first/, "does not process receipts before reconciliation");
+  assertWatchPattern(text, name, /mailbox receipts first[\s\S]{0,80}call `collaboration\.list_agents` exactly once/i, "does not require exactly one reconciliation after each wake");
+  assertWatchPattern(text, name, /running/, "does not identify an actively-running worker");
+  assertWatchPattern(text, name, /actively? in (?:a )?turn/, "does not inspect whether a worker is actively in a turn");
+  assertWatchPattern(text, name, /authoritative positive liveness/, "does not treat running as authoritative positive liveness");
+  assertWatchPattern(text, name, /must not be interrupted solely because any fixed silent-heartbeat count elapsed/i, "can kill running work on a fixed heartbeat count");
+  assertWatchPattern(text, name, /each heartbeat[\s\S]{0,160}reconcil(?:e|iation)/i, "does not reconcile state on every heartbeat");
+  for (const status of ["idle", "failed", "completed", "unreachable"]) {
+    assertWatchPattern(text, name, new RegExp(`\\b${status}\\b`), `does not handle ${status} workers`);
+  }
+  assertWatchPattern(text, name, /non-running[\s\S]{0,220}(?:exhaust|handle)/i, "does not deterministically exhaust or handle non-running workers");
+  assertWatchPattern(text, name, /explicit (?:user )?cancellation/i, "does not preserve explicit user cancellation");
+  assertWatchPattern(text, name, /explicit task step violation/i, "does not stop explicit task step violations");
+  assertWatchPattern(text, name, /explicit task budget violation/i, "does not stop explicit task budget violations");
+  assertWatchPattern(text, name, /long-running active work/i, "does not name long-running active work");
+  assertWatchPattern(text, name, /periodic advisory progress/i, "does not surface periodic advisory progress");
+  assertWatchPattern(text, name, /advisory escalation[\s\S]{0,80}without killing or interrupting/i, "does not escalate advisory status without killing active work");
+  if (/\b(?:6|10|14) consecutive silent heartbeats\b/i.test(text)) fail(`${name} retains fixed 6/10/14-heartbeat ceilings`);
+  if (/\bhard ceiling\b/i.test(text)) fail(`${name} retains hard heartbeat-ceiling language`);
+  if (/(?:Three|three) consecutive heartbeats|live after three(?: 60-second)? heartbeats/i.test(text)) fail(`${name} retains generic live-after-three interruption language`);
   if (text.indexOf("collaboration.wait_agent") > text.indexOf("collaboration.list_agents")) fail(`${name} polls agent state before its first event-driven wait`);
-  if (!text.includes("`muster-reviewer`, `wsh-code-reviewer`, `muster-strategist`) get a hard ceiling of 10 consecutive silent heartbeats")) fail(`${name} does not bind the 10-heartbeat ceiling to review/strategy-class workers`);
-  assertBoundBinding(text, name, "`wsh-security-auditor` is pinned to sol/XHIGH", "14 consecutive silent heartbeats", "the 14-heartbeat ceiling to wsh-security-auditor");
-  assertBoundBinding(text, name, "Mechanical/implementation workers", "6 consecutive silent heartbeats", "the 6-heartbeat ceiling to mechanical/implementation workers");
+  if (text.indexOf("mailbox receipts first") > text.indexOf("collaboration.list_agents")) fail(`${name} reconciles before processing its wake receipt`);
 }
 if (native.length !== CODEX_COUNTS.nativeSkills || builtins.length !== CODEX_COUNTS.builtinSkills) fail("source skill count drift");
 if (skills.size !== CODEX_COUNTS.publicSkills || internalSkills.size !== CODEX_COUNTS.internalSkills) fail("Codex public/internal skill surface count drift");

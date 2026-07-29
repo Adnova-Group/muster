@@ -121,52 +121,40 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
   assert.match(runtimeSource, /makeGitShaVerifier/);
 });
 
-test("generated Codex orchestration surfaces enforce the bounded, liveness-aware agent watch invariant", async () => {
+test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {
   const surfaces = new Map([
     ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
     ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
-    ...["muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
+    ...["muster", "muster-init", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
       .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
   ]);
-  // Pin re-derived for the codex-agent-watch-review-budget item (2026-07-19 dogfood: a healthy
-  // gpt-5.6-sol/high muster-reviewer was interrupted mid-review by the flat 3-heartbeat kill --
-  // review-class reasoning routinely exceeds 3 silent minutes with zero mailbox receipts). The
-  // watch is now liveness-aware (a `list_agents`-confirmed in-turn worker is extended, not killed)
-  // with per-class ceilings bounding the extension: 10 silent heartbeats for review/strategy-class
-  // workers, 6 for mechanical/implementation lanes. Genuinely idle/completed/failed workers still
-  // die at 3 heartbeats exactly as before.
-  //
-  // Pin re-derived again for the exhaustion-status-producer item: `wsh-security-auditor` is pinned
-  // to sol/XHIGH (DeepSWE mean ~13.3min/task) -- slower than the sol/high figure the 10-heartbeat
-  // ceiling above was sized to -- so it now carries its own explicit 14-heartbeat ceiling instead
-  // of sharing the review/strategy-class group's 10. The liveness re-check is also now explicit:
-  // re-run at EVERY silent heartbeat between 3 and the ceiling, not once at heartbeat 3. On
-  // exhaustion, the watch now also records `{reviewer: <name>, status: "exhausted"}` in the tally
-  // input for the interrupted worker (src/review.js's WORKER_ABSENCE_STATUSES contract) instead of
-  // leaving the tally with no vocabulary for the kill.
-  const watchMarkers = ["collaboration.list_agents", "collaboration.wait_agent", "60 seconds", "message or completion receipt", "mailbox receipts first", "exactly once", "newly ready work", "Three consecutive heartbeats", "Never tight-poll", "Respect the configured `agents.max_threads`", "fork_turns: \"none\"", "25-step ceiling", "one follow-up", "worker budget exhaustion", "THINKING, not hung", "10 consecutive silent heartbeats", "14 consecutive silent heartbeats", "6 consecutive silent heartbeats", "muster-reviewer", "wsh-code-reviewer", "muster-strategist", "wsh-security-auditor", "sol/XHIGH", "DeepSWE sol/high", "liveness checkpoint"];
+  assert.equal(surfaces.size, 15, "every generated Codex watch-invariant surface must be covered");
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
-    for (const marker of watchMarkers) {
-      assert.match(text, new RegExp(marker.replaceAll(".", "\\.")), `${name} must carry watch marker ${marker}`);
+    assert.match(text, /collaboration\.list_agents/, `${name} must reconcile worker state`);
+    assert.match(text, /collaboration\.wait_agent/, `${name} must wait for worker updates`);
+    assert.match(text, /mailbox receipts first/, `${name} must process receipts before reconciliation`);
+    assert.match(text, /mailbox receipts first[\s\S]{0,80}call `collaboration\.list_agents` exactly once/i, `${name} must require exactly one reconciliation after each wake`);
+    assert.match(text, /running/, `${name} must identify an actively-running worker`);
+    assert.match(text, /actively? in (?:a )?turn/, `${name} must inspect whether a worker is actively in a turn`);
+    assert.match(text, /authoritative positive liveness/, `${name} must treat running as authoritative positive liveness`);
+    assert.match(text, /must not be interrupted solely because any fixed silent-heartbeat count elapsed/i, `${name} must not kill running work on a fixed heartbeat count`);
+    assert.match(text, /each heartbeat[\s\S]{0,160}reconcil(?:e|iation)/i, `${name} must reconcile state on every heartbeat`);
+    for (const status of ["idle", "failed", "completed", "unreachable"]) {
+      assert.match(text, new RegExp(`\\b${status}\\b`), `${name} must handle ${status} workers`);
     }
+    assert.match(text, /non-running[\s\S]{0,220}(?:exhaust|handle)/i, `${name} must deterministically exhaust or handle non-running workers`);
+    assert.match(text, /explicit (?:user )?cancellation/i, `${name} must preserve explicit user cancellation as a stop condition`);
+    assert.match(text, /explicit task step violation/i, `${name} must stop explicit task step violations`);
+    assert.match(text, /explicit task budget violation/i, `${name} must stop explicit task budget violations`);
+    assert.match(text, /long-running active work/i, `${name} must name long-running active work`);
+    assert.match(text, /periodic advisory progress/i, `${name} must surface periodic advisory progress`);
+    assert.match(text, /advisory escalation[\s\S]{0,80}without killing or interrupting/i, `${name} must escalate advisory status without killing active work`);
+    assert.doesNotMatch(text, /\b(?:6|10|14) consecutive silent heartbeats\b/i, `${name} must not carry fixed 6/10/14-heartbeat ceilings`);
+    assert.doesNotMatch(text, /\bhard ceiling\b/i, `${name} must not carry hard heartbeat-ceiling language`);
+    assert.doesNotMatch(text, /(?:Three|three) consecutive heartbeats|live after three(?: 60-second)? heartbeats/i, `${name} must not carry generic live-after-three interruption language`);
     assert.ok(text.indexOf("collaboration.wait_agent") < text.indexOf("collaboration.list_agents"), `${name} must wait before its first reconciliation poll`);
     assert.ok(text.indexOf("mailbox receipts first") < text.indexOf("collaboration.list_agents"), `${name} must process the wake receipt before reconciling`);
-    assert.match(
-      text,
-      /muster-reviewer`, `wsh-code-reviewer`, `muster-strategist`\) get a hard ceiling of 10 consecutive silent heartbeats/,
-      `${name} must bind the 10-heartbeat ceiling to the named review\\/strategy-class workers`
-    );
-    assert.match(
-      text,
-      /wsh-security-auditor` is pinned to sol\/XHIGH[\s\S]{0,200}?14 consecutive silent heartbeats/,
-      `${name} must bind the 14-heartbeat ceiling to wsh-security-auditor`
-    );
-    assert.match(
-      text,
-      /Mechanical\/implementation workers[\s\S]{0,200}?6 consecutive silent heartbeats/,
-      `${name} must bind the 6-heartbeat ceiling to mechanical\\/implementation workers`
-    );
   }
 });
 

@@ -69,15 +69,45 @@ function translatePluginPaths(text) {
     .replaceAll("plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
     .replaceAll("plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`);
 }
+// build-anchor-audit item: each name-set below is the known, grepped set of command
+// files whose "Run-active lifecycle" boilerplate actually carries the matching literal.
+// adaptCommandForCodex runs unconditionally over EVERY plugin/commands/*.md file, so a
+// blanket throw-on-miss would false-positive on files that never had the phrase (e.g.
+// capture.md has no scale-gate marker at all); scoping the check to the known carriers
+// (same `name`-array convention already used below for the --roles-only/manifest-validate
+// rewrites) keeps the guard from firing on files it was never meant to touch, while still
+// failing loud if one of the CARRIER files' own copy of the sentence is reworded.
+const SCALE_GATE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md"];
+const BATCH_SCALE_GATE_FILES = ["go-backlog.md"];
+const PLAN_BACKLOG_SCALE_GATE_FILES = ["plan-backlog.md"];
+const SESSION_START_CLEAR_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md", "go-backlog.md", "plan-backlog.md"];
+const registryFallbackRe = /when the running session's registry doesn't carry that type[\s\S]*?note the degradation in STATE/;
+// build-anchor-audit item: this previously anchored on a literal ending "instead of
+// blocking." that go-backlog.md's own source no longer carries at all (the sentence was
+// reworded to describe the `agent_id` subagent exemption and the worktree's empty
+// `.muster/` fence instead) -- a pre-existing silent no-op this audit's throw-on-miss
+// caught live. Anchored on the stable "Runner cwd..."/"`PreToolUse` hook" prefix through
+// the sentence's current "regardless." close, tolerant of further rewording in between,
+// and scoped to leave the FOLLOWING worktree-removal/node_modules-bootstrap sentences
+// (harness-neutral, no PreToolUse/hook content) untouched.
+const runnerCwdRe = /Runner cwd is its worktree; tool calls rely on the `PreToolUse` hook[\s\S]*?regardless\./;
+const captureWritesRe = /capture only ever writes[\s\S]*?deliberately omitted\./i;
 function adaptCommandForCodex(text, name) {
+  if (SCALE_GATE_MARKER_FILES.includes(name) && !text.includes("the `PreToolUse` hook uses to scope the scale-gate")) throw new Error(`${name}: run-active scale-gate anchor not found for Codex rewrite`);
+  if (BATCH_SCALE_GATE_FILES.includes(name) && !text.includes("the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping")) throw new Error(`${name}: batch scale-gate anchor not found for Codex rewrite`);
+  if (PLAN_BACKLOG_SCALE_GATE_FILES.includes(name) && !text.includes("the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping")) throw new Error(`${name}: plan-backlog scale-gate anchor not found for Codex rewrite`);
+  if (SESSION_START_CLEAR_FILES.includes(name) && !text.includes("`SessionStart` on a fresh session clears a stale marker automatically.")) throw new Error(`${name}: SessionStart stale-marker anchor not found for Codex rewrite`);
+  if (name === "go-backlog.md" && !registryFallbackRe.test(text)) throw new Error(`${name}: registry-fallback anchor not found for Codex rewrite`);
+  if (name === "go-backlog.md" && !runnerCwdRe.test(text)) throw new Error(`${name}: runner-cwd anchor not found for Codex rewrite`);
+  if (name === "capture.md" && !captureWritesRe.test(text)) throw new Error(`${name}: capture-writes anchor not found for Codex rewrite`);
   let result = translatePluginPaths(translateCodexProse(text))
     .replaceAll("the `PreToolUse` hook uses to scope the scale-gate", "Muster's Codex lifecycle hooks use for state diagnostics")
     .replaceAll("the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping", "the whole batch counts as ONE run for Muster's Codex lifecycle diagnostics")
     .replaceAll("the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping", "the whole plan-backlog invocation counts as ONE run for Muster's Codex lifecycle diagnostics")
     .replaceAll("`SessionStart` on a fresh session clears a stale marker automatically.", "Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.")
-    .replace(/when the running session's registry doesn't carry that type[\s\S]*?note the degradation in STATE/, "call `collaboration.spawn_agent` with `agent_type: \"muster-runner\"`, `fork_turns: \"none\"`, and its other ordinary fields. Permit a positive context fork only when the user explicitly requests it; never use `\"all\"`. Codex rejects a named profile combined with a full-history fork. `agent_type` is a Codex runtime extension and may be absent from the simplified displayed signature; include it anyway. Only an actual rejected tool call proves the profile unavailable. If that call rejects the type, fail the item closed with a profile-registration diagnostic and remediation to reinstall/start a new session; do not silently use a generic agent because that loses the pinned role/model policy")
-    .replace(/Runner cwd is its worktree; tool calls rely on[\s\S]*?instead of blocking\./, "Runner cwd is its recorded worktree. Codex hooks provide diagnostics but do not replace the worktree path/base-SHA proof or the post-wave ownership check.")
-    .replace(/capture only ever writes[\s\S]*?deliberately omitted\./i, "Capture only writes the explicitly approved `.muster/backlog.md` bookkeeping artifact and dispatches no write-capable wave, so it deliberately has no run-active lifecycle.");
+    .replace(registryFallbackRe, "call `collaboration.spawn_agent` with `agent_type: \"muster-runner\"`, `fork_turns: \"none\"`, and its other ordinary fields. Permit a positive context fork only when the user explicitly requests it; never use `\"all\"`. Codex rejects a named profile combined with a full-history fork. `agent_type` is a Codex runtime extension and may be absent from the simplified displayed signature; include it anyway. Only an actual rejected tool call proves the profile unavailable. If that call rejects the type, fail the item closed with a profile-registration diagnostic and remediation to reinstall/start a new session; do not silently use a generic agent because that loses the pinned role/model policy")
+    .replace(runnerCwdRe, "Runner cwd is its recorded worktree. Codex hooks provide diagnostics but do not replace the worktree path/base-SHA proof or the post-wave ownership check.")
+    .replace(captureWritesRe, "Capture only writes the explicitly approved `.muster/backlog.md` bookkeeping artifact and dispatches no write-capable wave, so it deliberately has no run-active lifecycle.");
   if (name === "init.md") {
     const claudeResolver = [
       'if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "${PLUGIN_ROOT}/runtime/muster.mjs" ]; then',
@@ -99,21 +129,28 @@ function adaptCommandForCodex(text, name) {
     );
   }
   if (["plan.md", "go.md", "plan-backlog.md"].includes(name)) {
+    if (!result.includes("capabilities --codex")) throw new Error(`${name}: capabilities --codex anchor not found for Codex roles-only rewrite`);
     result = result.replaceAll("capabilities --codex", "capabilities --codex --roles-only");
   }
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
   if (["go.md", "diagnose.md", "audit.md"].includes(name)) {
+    if (!result.includes(`${cli} manifest validate --codex`)) throw new Error(`${name}: manifest validate --codex anchor not found for Codex rewrite`);
     result = result.replaceAll(
       `${cli} manifest validate --codex`,
       `${cli} manifest validate .muster/manifest.json --codex`
     );
   }
   if (name === "diagnose.md") {
+    if (!result.includes("-> `{mode, manifest}`.")) throw new Error("diagnose.md seed-output anchor not found for Codex rewrite");
+    if (!result.includes("Write the manifest to `.muster/manifest.json`")) throw new Error("diagnose.md manifest-write anchor not found for Codex rewrite");
     result = result
       .replace("-> `{mode, manifest}`.", "prints `{mode, manifest}` JSON to stdout.")
       .replace("Write the manifest to `.muster/manifest.json`", "Extract the emitted `manifest` object and write that object to `.muster/manifest.json`");
   }
   if (name === "audit.md") {
+    if (!result.includes("` -> Crew Manifest at `.muster/manifest.json`")) throw new Error("audit.md seed-output anchor not found for Codex rewrite");
+    if (!result.includes("in parallel via the best available provider per dimension")) throw new Error("audit.md parallel-sweep anchor not found for Codex rewrite");
+    if (!result.includes("running parallel dimension sweeps")) throw new Error("audit.md running-parallel-sweeps anchor not found for Codex rewrite");
     result = result
       .replace(
         "` -> Crew Manifest at `.muster/manifest.json`",
@@ -176,17 +213,52 @@ function adaptCoordinationForCodex(text) {
 // positive liveness, while terminal/non-running states and explicit stop conditions are
 // handled deterministically.
 const agentWatchProtocol = `## Agent watch invariant\n\n<!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->\n\nAfter every dispatch, retain every canonical agent id returned by \`collaboration.spawn_agent\` and immediately call \`collaboration.wait_agent\` with a timeout of at most 60 seconds. A message, completion receipt, or silent heartbeat wakes the watch. After each wake, process mailbox receipts first, then call \`collaboration.list_agents\` exactly once and dispatch any newly ready work. Each heartbeat reconciles current state; never tight-poll or reuse a stale reconciliation.\n\nA worker actively in a turn (\`running\`) is authoritative positive liveness. It must not be interrupted solely because any fixed silent-heartbeat count elapsed. Continue the event-driven watch while the provider reports \`running\`. Long-running active work emits periodic advisory progress and, when warranted, advisory escalation without killing or interrupting the worker. In attended mode the user may explicitly cancel it; unattended mode continues while the provider reports \`running\`.\n\nFor non-running workers, deterministically exhaust or handle the reconciled state immediately rather than waiting for a heartbeat count: accept a \`completed\` worker's receipt and advance; for an \`idle\` worker with an outstanding assignment and no completion receipt, interrupt it and record the incomplete task in STATE; for a \`failed\` or \`unreachable\` worker, record the incomplete task and escalate, re-dispatch, or continue locally only when safe. When an interrupted worker is a reviewer, record \`{reviewer: <name>, status: "exhausted"}\` in the tally input. Explicit user cancellation, an explicit task step violation, and an explicit task budget violation remain valid stop conditions even when the worker is \`running\`.\n\nRespect the configured \`agents.max_threads\`; Muster must neither lower nor raise it. Spawn with \`fork_turns: "none"\` unless the user explicitly requests a context fork. Every brief sets a 25-step ceiling, permits at most one follow-up, and defers broad suites to final verification. Do not send the final answer or clear state while executable work remains, but worker budget exhaustion is a terminal escalation condition rather than permission to wait forever. Hooks are advisory and never replace this watch cycle.\n`;
+// build-anchor-audit item: this previously anchored on the orchestrator's OLD "**Hard
+// gate:**" bullet, describing a real hook-enforced wave-guard deny. Commit 424fcb1
+// (refactor(hooks): enforcement follows the run) removed that deny mechanism entirely
+// and renamed the bullet to "**SKILL discipline, not a hook block:**" months before this
+// audit -- the regex has been silently no-opping ever since, shipping the Claude-only
+// "field-proven wave-guard deny was removed (... see CHANGELOG)" historical narrative
+// unrewritten into the Codex bundle. Retargeted to the current bullet, tolerant of
+// further wording drift between the heading and its closing cross-reference.
+const orchestratorHardGateRe = /- \*\*SKILL discipline, not a hook block:\*\*[\s\S]*?"Enforcement model", below\.\)\n/;
 function adaptOrchestratorForCodex(text) {
-  let result = text.replace(/- \*\*Hard gate:\*\*[\s\S]*?false positive\.\n/, "- **Codex hook support:** Muster's trusted `PreToolUse` hook surfaces a policy warning for a run-forbidden action class, plus a one-time border-invitation reminder once inline edits with no muster run active cross a threshold. Codex cannot reliably deny every subagent or unified-shell action, so the orchestrator must still enforce dispatch, ownership, and worktree isolation explicitly.\n");
+  // Every literal/regex anchor in this function has exactly one possible source
+  // (plugin/skills/orchestrator/SKILL.md — the only body ever passed here), so each
+  // throw-on-miss check below needs no name-based scoping, unlike adaptCommandForCodex's
+  // multi-file anchors above.
+  if (!orchestratorHardGateRe.test(text)) throw new Error("orchestrator Hard gate section not found for Codex rewrite");
+  let result = text.replace(orchestratorHardGateRe, "- **SKILL discipline, not a hook block:** Codex hooks cannot reliably deny a main-loop Edit/Write during a wave either -- there was never a hard wave-guard deny to remove here, unlike Claude Code's field-tested and since-removed version (unscopable false positives; see CHANGELOG). This rule lives here, plus the review gate diffing what changed against what was dispatched after the fact -- a caught violation is a review-gate finding, not a blocked tool call. (Codex's `PreToolUse` hook still surfaces exactly one policy warning, unrelated to this rule -- see \"Codex enforcement model\", below.)\n");
+  const implementerAnchor = "one implementer agent, given the task + the Crew Manifest as BRIEF.";
+  if (!result.includes(implementerAnchor)) throw new Error("orchestrator implementer-agent anchor not found for Codex rewrite");
   result = result.replace(
-    "one implementer agent, given the task + the Crew Manifest as BRIEF.",
+    implementerAnchor,
     "one implementer leaf agent, given a minimal dispatch packet: task id/text, relevant success criteria, absolute worktree/manifest/STATE paths, owned and frozen paths, dependency receipts, required provider or skill brief, and the return contract. Never attach unrelated plan items, capability inventories, or prior transcripts."
   );
-  result = result.replace("give each its own git worktree (`isolation: \"worktree\"` on the Codex subagent dispatcher)", "create a separate git worktree for each task, start the dispatched Codex subagent in that worktree, and record the path/base SHA in its brief");
-  result = result.replaceAll("after a Claude Code restart", "after starting a new Codex session");
-  result = result.replace("the `PreToolUse` hook reads this marker to enforce the iron rule", "the trusted Codex `PreToolUse` hook uses this marker to diagnose likely policy violations; the orchestrator still enforces the iron rule through dispatch and repository evidence");
-  result = result.replace("the `PreToolUse` hook treats it as stale and applies the scale-gate rather than the full wave-guard", "the Codex hook reports it as potentially stale; verify ownership and state before continuing");
-  result = result.replaceAll("the `PreToolUse` hook reads this\nfile to deny matching tool calls", "the trusted Codex `PreToolUse` hook reads this\nfile to surface supported policy warnings for matching tool calls");
+  const worktreeIsolationAnchor = "give each its own git worktree (`isolation: \"worktree\"` on the Codex subagent dispatcher)";
+  if (!result.includes(worktreeIsolationAnchor)) throw new Error("orchestrator worktree-isolation anchor not found for Codex rewrite");
+  result = result.replace(worktreeIsolationAnchor, "create a separate git worktree for each task, start the dispatched Codex subagent in that worktree, and record the path/base SHA in its brief");
+  // build-anchor-audit item: this .replaceAll's target ("after a Claude Code restart") lived in
+  // step 4a's old, verbose "Generic-subagent fallback (degraded path)" bullet. The prose-cutting
+  // pass (commit 3b0b4d7, "cut prose 48.3%, no rule dropped") condensed that whole bullet down to
+  // "the type isn't dispatchable yet in this session (plugin installed mid-session)" -- already
+  // harness-neutral, with no "Claude Code"/"restart" wording left anywhere in the file to translate.
+  // The transform has had nothing to match since that commit; a throw-on-miss here would only ever
+  // fire (the condensed concept is legitimately gone, not merely reworded), so it is removed rather
+  // than forced against unrelated text -- verified via `grep -n restart plugin/skills/orchestrator/SKILL.md`
+  // finding no remaining occurrence anywhere in the file.
+  //
+  // build-anchor-audit item: these two `.replace` targets described the wave-active marker as
+  // something "the `PreToolUse` hook reads ... to enforce the iron rule" / "treats ... as stale
+  // and applies the scale-gate" -- both claims commit 424fcb1 (refactor(hooks): enforcement
+  // follows the run) made FALSE and removed from the source: step 4a's wave-active bullet now
+  // explicitly says the marker is "glass-box bookkeeping only, not hook-enforced" with no
+  // stale/scale-gate framing left anywhere in the file (verified by grep). Nothing remains here
+  // to translate for Codex -- both transforms are removed rather than forced against unrelated
+  // text, same reasoning as the "after a Claude Code restart" removal just above.
+  const denyMatchingAnchor = "the `PreToolUse` hook reads this\nfile to deny matching tool calls";
+  if (!result.includes(denyMatchingAnchor)) throw new Error("orchestrator deny-matching anchor not found for Codex rewrite");
+  result = result.replaceAll(denyMatchingAnchor, "the trusted Codex `PreToolUse` hook reads this\nfile to surface supported policy warnings for matching tool calls");
   // kimi-subagent-resume-retry item: the step-4a "Subagent failure" bullet's Kimi
   // native-resume branch ships verbatim into this build (it sits below the
   // `      - **Subagent failure` anchor, outside every wholesale-replace span),
@@ -224,7 +296,11 @@ function adaptOrchestratorForCodex(text) {
     "look up only the needed role with `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex --role <role>`; do not reprint the full skills inventory during task dispatch."
   );
   result = result.slice(0, providerStart) + compactProvider + result.slice(failureStart);
-  result = result.replace("Iron-rule reminder: the `PreToolUse` wave-guard hook enforces dispatch-not-inline; see the opening section.", "Iron-rule reminder: Codex hooks diagnose likely violations, while the orchestrator, named profiles, ownership receipts, and isolated worktrees enforce dispatch-not-inline.");
+  // build-anchor-audit item: this closing "Iron-rule reminder: ..." sentence (right after the
+  // Channel steering section's "unknown" bullet) was reworded once already by 424fcb1 and has
+  // since been cut ENTIRELY -- no "Iron-rule reminder" line remains anywhere in the file (grep
+  // verified). Same dead-transform reasoning as the three removals above: nothing left to
+  // translate for Codex, so the transform is removed rather than forced against unrelated text.
   // workflow-tool-delegation item: the "Wave dispatch: native Workflow vs prose fallback"
   // section describes a Claude Code CLI-only capability (the agent-teams `Workflow` tool)
   // that Codex has no equivalent of. The generic translateCodexProse/"Agent tool"->"Codex
@@ -309,18 +385,34 @@ function codexSkill(source, id) {
     .replaceAll("Agent tool", "Codex subagent dispatcher")
     .replaceAll("Task tool", "Codex subagent dispatcher");
   if (id === "sp-brainstorm") {
+    const visualCompanionAnchor = "skills/brainstorming/visual-companion.md";
+    if (!body.includes(visualCompanionAnchor)) throw new Error("sp-brainstorm visual-companion anchor not found for Codex rewrite");
     body = body.replaceAll(
-      "skills/brainstorming/visual-companion.md",
+      visualCompanionAnchor,
       `node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md`
     );
   }
   if (id === "coordination") body = adaptCoordinationForCodex(body);
   if (id === "orchestrator") body = adaptOrchestratorForCodex(body);
-  if (id === "router") body = body.replace(
-    "For EVERY plan task, consult `AvailableCapabilities.skills` and run",
-    "The compact Codex capability snapshot intentionally omits the global skill inventory. For EVERY plan task, run"
-  );
+  if (id === "router") {
+    const routerSkillsAnchor = "For EVERY plan task, consult `AvailableCapabilities.skills` and run";
+    if (!body.includes(routerSkillsAnchor)) throw new Error("router skills-inventory anchor not found for Codex rewrite");
+    body = body.replace(
+      routerSkillsAnchor,
+      "The compact Codex capability snapshot intentionally omits the global skill inventory. For EVERY plan task, run"
+    );
+  }
   if (id === "review-gate") {
+    // Both regexes below sit in the SAME function/skill as fixCapRe just below (the
+    // build-anchor-audit item's own reference fix, PR #159): each needs the identical
+    // wording-tolerant-regex + throw-on-miss posture, guarded the same way, so a future
+    // reword of step 1's capability-source sentence or its reviewer-selection list
+    // silently ships stale Claude-side prose into the Codex bundle exactly like the
+    // pre-#159 fix-cap anchor did.
+    const capabilitySourceRe = /`AvailableCapabilities` read from the run's already-captured `\.muster\/capabilities\.json` \(written once at[\s\S]*?serves every wave\)\./;
+    if (!capabilitySourceRe.test(body)) throw new Error("review-gate capability-source anchor not found for Codex rewrite");
+    const selectReviewersRe = /1\.\s+\*\*?Select reviewers[\s\S]*?(?=\n2\.\s+Dispatch)/;
+    if (!selectReviewersRe.test(body)) throw new Error("review-gate select-reviewers anchor not found for Codex rewrite");
     body = body
       .replace(
         // The Claude-side performance pass reuses the run's cached
@@ -329,7 +421,7 @@ function codexSkill(source, id) {
         // carry the full skills inventory. Keep the fast-path cumulative-diff
         // clause (it is harness-neutral) and swap only the capability-source
         // phrasing.
-        /`AvailableCapabilities` read from the run's already-captured `\.muster\/capabilities\.json` \(written once at[\s\S]*?serves every wave\)\./,
+        capabilitySourceRe,
         "compact role lookups from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex --role <role>`; never attach the full skills inventory to a reviewer brief."
       )
       .replace(
@@ -339,7 +431,7 @@ function codexSkill(source, id) {
         // reviewer-count rewrite before it) cannot silently desync this replacement from
         // its anchor the way the pre-speed-tuning literal "Select reviewers: ... Always at
         // least one." match did (broke silently when weight-reduction reworded step 1).
-        /1\.\s+\*\*?Select reviewers[\s\S]*?(?=\n2\.\s+Dispatch)/,
+        selectReviewersRe,
         "1. Select one code reviewer for ordinary waves. Add the security reviewer only when the task is security-scoped or the diff touches authentication, authorization, secrets, cryptography, shell execution, network boundaries, installers, or lifecycle hooks. Add a surface reviewer only when its definition-of-done gate fires. Never dispatch two reviewers for the same quality dimension; always use at least one reviewer."
       )
       ;
@@ -352,8 +444,16 @@ function codexSkill(source, id) {
     if (!fixCapRe.test(body)) throw new Error("review-gate fix-cap anchor not found for Codex rewrite");
     body = body.replace(fixCapRe, "Allow **one fix-and-re-review iteration**. If the same blocker remains, ESCALATE");
   }
-  if (id === "interview") body = body.replace("Present both for approval via the **interactive user input** selection UI", "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");
-  if (id === "wsh-sast-configuration") body = body.replace("# See references/semgrep-rules.md for detailed examples", "# Example custom rule; adapt it to the repository's threat model");
+  if (id === "interview") {
+    const presentApprovalAnchor = "Present both for approval via the **interactive user input** selection UI";
+    if (!body.includes(presentApprovalAnchor)) throw new Error("interview present-approval anchor not found for Codex rewrite");
+    body = body.replace(presentApprovalAnchor, "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");
+  }
+  if (id === "wsh-sast-configuration") {
+    const semgrepRulesAnchor = "# See references/semgrep-rules.md for detailed examples";
+    if (!body.includes(semgrepRulesAnchor)) throw new Error("wsh-sast-configuration semgrep-rules anchor not found for Codex rewrite");
+    body = body.replace(semgrepRulesAnchor, "# Example custom rule; adapt it to the repository's threat model");
+  }
   const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative. Load any relative bundled asset named by this workflow through \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin ${id} <relative-asset>\`; never read the internal tree directly.\n`;
   return header + binding + body.replace(/^\r?\n*/, "\n");
 }
@@ -362,8 +462,15 @@ async function writeInternalRuntime(root, destination) {
   const tree = await assertRegularTree(join(destination, "internal-skills"));
   const metadata = JSON.stringify({ format: 1, files: tree.files }, null, 2) + "\n";
   const digest = createHash("sha256").update(metadata).digest("hex");
-  const loader = readFileSync(join(root, "codex", "internal-asset-loader.mjs"), "utf8")
-    .replace("__MUSTER_INTERNAL_METADATA_DIGEST__", digest);
+  const loaderSource = readFileSync(join(root, "codex", "internal-asset-loader.mjs"), "utf8");
+  // Checking the OUTPUT for a leftover placeholder (the previous form of this check) misses
+  // the case where the placeholder was renamed/removed from the source entirely: .replace
+  // would then silently no-op on a text that never contained it, and the post-check --
+  // finding nothing to complain about -- would pass anyway, shipping a loader whose digest
+  // was never actually bound. Check the INPUT carries the anchor before relying on the
+  // substitution to have done anything.
+  if (!loaderSource.includes("__MUSTER_INTERNAL_METADATA_DIGEST__")) throw new Error("internal asset loader digest placeholder not found for Codex rewrite");
+  const loader = loaderSource.replace("__MUSTER_INTERNAL_METADATA_DIGEST__", digest);
   if (loader.includes("__MUSTER_INTERNAL_METADATA_DIGEST__")) throw new Error("internal asset loader digest was not bound");
   write(join(destination, "runtime", "internal-assets.json"), metadata);
   write(join(destination, "runtime", "internal-asset-loader.mjs"), loader);
@@ -467,12 +574,12 @@ async function buildCodexPluginOnce({ root, outDir }) {
     rmAndCopy(join(root, "codex", "hooks"), join(runtime, "install-hooks"));
     write(join(runtime, "sprint-protocol.md"), readFileSync(join(root, "cowork", "sprint-protocol.md"), "utf8"));
     const codexCatalogPath = join(plugin, "catalog", "builtins.muster.yaml");
+    const codexCatalogSource = readFileSync(codexCatalogPath, "utf8");
+    const humanizerCreditAnchor = "blader/humanizer + StealthHumanizer (AI-tell removal)";
+    if (!codexCatalogSource.includes(humanizerCreditAnchor)) throw new Error("builtins.muster.yaml humanizer-credit anchor not found for Codex rewrite");
     write(
       codexCatalogPath,
-      readFileSync(codexCatalogPath, "utf8").replace(
-        "blader/humanizer + StealthHumanizer (AI-tell removal)",
-        "blader/humanizer + rudra496/StealthHumanizer (AI-tell removal)"
-      )
+      codexCatalogSource.replace(humanizerCreditAnchor, "blader/humanizer + rudra496/StealthHumanizer (AI-tell removal)")
     );
     for (const entry of readdirSync(join(plugin, "commands"), { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
@@ -486,12 +593,12 @@ async function buildCodexPluginOnce({ root, outDir }) {
       rmAndCopy(join(root, "codex", "skill-assets", entry.name), join(internalSkillDir, entry.name), { merge: true });
     }
     const implementerPromptPath = join(internalSkillDir, "sp-subagents", "implementer-prompt.md");
+    const implementerPromptSource = readFileSync(implementerPromptPath, "utf8");
+    const fullSuiteAnchor = "full suite once before committing, not after every edit.";
+    if (!implementerPromptSource.includes(fullSuiteAnchor)) throw new Error("implementer-prompt.md full-suite anchor not found for Codex rewrite");
     write(
       implementerPromptPath,
-      readFileSync(implementerPromptPath, "utf8").replace(
-        "full suite once before committing, not after every edit.",
-        "focused tests before committing; the parent runs the broad suite once at final verification."
-      )
+      implementerPromptSource.replace(fullSuiteAnchor, "focused tests before committing; the parent runs the broad suite once at final verification.")
     );
     const portedSkillNames = [...new Set([
       ...readdirSync(join(root, "plugin", "skills"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name),
@@ -529,9 +636,27 @@ async function buildCodexPluginOnce({ root, outDir }) {
     const bundleOptions = { bundle: true, platform: "node", format: "esm", target: "node20", preserveSymlinks: true, external: ["esbuild", "../scripts/build-codex.mjs"] };
     await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), banner: { js: requireBanner } });
     const sharedMcpSource = readFileSync(join(root, "cowork", "mcp-server.mjs"), "utf8");
+    const mcpServerDescriptionAnchor = "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.";
+    if (!sharedMcpSource.includes(mcpServerDescriptionAnchor)) throw new Error("cowork/mcp-server.mjs description anchor not found for Codex rewrite");
+    // build-anchor-audit item: this literal previously anchored on the exact opening
+    // sentence of COWORK_PROTOCOL[0] in cowork/mcp-server.mjs. That whole paragraph has SINCE
+    // grown a second half (muster_next's sequential-default framing and the phase-3
+    // probe-receipt condition for parallel fan-out) and the literal silently stopped matching --
+    // the entire Cowork-specific instructional paragraph (mentioning "Cowork build" and
+    // "muster_next", neither of which exist on Codex) was shipping into the Codex bundle's MCP
+    // server unrewritten, exactly the review-gate fix-cap bug class this whole item exists to
+    // sweep. First caught (below) with an anchor covering only the paragraph's first sentence,
+    // which left the Cowork-specific SECOND half (the phase-3-probe/muster_next sequential
+    // default) dangling unrewritten in an otherwise-Codex-rewritten paragraph -- widened to cover
+    // the full paragraph through its actual close, still anchored on the stable opening prefix,
+    // tolerant of further rewording in between, and guarded fail-loud so a future rewording that
+    // drops even the prefix/close stops the build instead of shipping stale Cowork-specific prose
+    // again.
+    const cowworkProtocolIntroRe = /Running muster here: you have these MCP tools[\s\S]*?proves those capabilities\./;
+    if (!cowworkProtocolIntroRe.test(sharedMcpSource)) throw new Error("cowork/mcp-server.mjs protocol-intro anchor not found for Codex rewrite");
     const codexMcpSource = sharedMcpSource
-      .replace("muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.", "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")
-      .replace("Running muster here: you have these MCP tools plus your own subagent dispatch (parallel fan-out and per-call model override both work). No skills or slash commands, so follow this protocol directly.", "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation.")
+      .replace(mcpServerDescriptionAnchor, "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")
+      .replace(cowworkProtocolIntroRe, "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation. Parallel fan-out and per-call model overrides are available natively -- no phase-3 probe receipt gate applies here.")
       .replace('{ argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork\'s MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS). Resolution is MCP-only unless MUSTER_COWORK_NATIVE_PLUGIN declares that Cowork\'s own plugin loader accepted muster\'s plugin/ tree (unverified without a live session -- a declared capability check, not a probe).", "home", false) }', '{ argv: ["capabilities", "--codex"], ...S("Resolve every Muster role against enabled Codex plugins, skills, MCP servers, and custom-agent profiles. Each agent-backed role also carries codexModel {model, effort} -- the exact gpt-5.6 profile (model + reasoning effort) it dispatches on, resolved from the same committed .codex/agents mapping, so no post-run codex-conformance audit is needed to see the pre-dispatch profile.", "home", false) }')
       .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]')
       // codex-mcp-surface-gaps: muster_capabilities_roles resolves through the SAME

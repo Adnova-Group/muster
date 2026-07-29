@@ -341,3 +341,36 @@ test("overlapping Codex builders serialize and both leave a fully coherent plugi
   await readFile(join(selected.pluginRoot, "runtime", "muster.mjs"), "utf8");
   assert.deepEqual((await readdir(join(checkout, ".agents", "plugins"))).filter(name => name.startsWith(".muster-build-") || name.startsWith(".muster-retired-")), []);
 });
+
+test("build-anchor-audit: rewording review-gate/SKILL.md's reviewer-selection prose past what the wording-tolerant anchor tolerates fails the Codex build loud instead of silently shipping the stale Claude-side prose", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-anchor-reword-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const checkout = join(tmp, "checkout");
+  await mkdir(checkout, { recursive: true });
+  await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
+  await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
+
+  // The mutation: reword review-gate/SKILL.md's step-1 reviewer-selection opening -- in this
+  // fixture checkout only, never the real repo file -- past what the anchor's wording-tolerant
+  // regex (scripts/build-codex.mjs's selectReviewersRe) tolerates. This is the SAME anchor class
+  // as the review-gate fix-cap bug (PR #158 reworded the source, PR #159 added the fail-loud
+  // regex this audit item's OTHER review-gate anchors were given the identical posture for) --
+  // proving one of those siblings actually catches an equivalent rewording, not just that it
+  // compiles.
+  const reviewGateSkillPath = join(checkout, "plugin", "skills", "review-gate", "SKILL.md");
+  const original = await readFile(reviewGateSkillPath, "utf8");
+  const anchorOpening = "1. **Select reviewers, scaled by diff size.**";
+  assert.ok(original.includes(anchorOpening), "sanity: the fixture carries the pre-reword anchor text");
+  const reworded = original.replace(anchorOpening, "1. **Pick your reviewer crew based on how big the diff is.**");
+  assert.notEqual(reworded, original, "sanity: the rewording actually changed the file");
+  await writeFile(reviewGateSkillPath, reworded);
+
+  // The kill: the reworded input-digest differs from anything ever published for this fixture, so
+  // this call always attempts real regeneration (never a skip) and must fail loud, not silently
+  // ship the pre-reword (now-stale) Claude-side prose into the Codex bundle.
+  await assert.rejects(
+    execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 }),
+    /review-gate select-reviewers anchor not found for Codex rewrite/,
+    "a reviewer-selection rewording past the tolerant regex must throw the named error, not silently ship stale prose"
+  );
+});

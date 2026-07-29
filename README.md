@@ -80,7 +80,7 @@ muster install chatgpt-work --connection-id plugin_asdk_app_... --profile pro-sa
 # full deterministic surface: --profile full --allow-full-actions
 ```
 
-`--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/muster-chatgpt-work` for project scope or `<home>/.agents/plugins/muster-chatgpt-work` for user scope. Its receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect those returned/receipt paths rather than assuming a different plugin copy.
+`--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/muster-chatgpt-work` for project scope or `<home>/.agents/plugins/muster-chatgpt-work` for user scope. It atomically merges a distinct `muster-chatgpt-work` entry into the scope's `.agents/plugins/marketplace.json`, preserving the Codex `muster` entry. Its receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect those returned/receipt paths rather than assuming a different plugin copy.
 
 The generated Work plugin contains minimal `.mcp.json` wiring and this `.app.json` mapping; it does not inherit Codex configuration. The plugin manifest points `apps` at `./.app.json`:
 
@@ -130,7 +130,10 @@ node scripts/chatgpt-work-native-probe.mjs \
 node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
   --server-attestation attestation.json --connection-id asdk_app_... \
   --app-json /path/to/installed/.app.json --plugin-version 0.5.0 \
-  --connection-label "Muster ChatGPT Work"
+  --connection-label "Muster ChatGPT Work" \
+  --snapshot-out /private/retained/grade-snapshot.json \
+  --owned-plugin-path /exact/owned/plugin-path \
+  --owned-temp-path /exact/owned/probe-temp-path
 ```
 
 Grading is two-phase. Phase 1 keeps the attestation and probe inventory present, writes a private retained grade snapshot outside the owned plugin and probe trees, and returns `evidence-graded`; do not delete the attestation before this command. After that result, stop the tunnel and remove only the exact snapshot-bound plugin and probe paths owned by this run. There is no invented uninstall command: if ownership or a path collides, stop and record `HUMAN-HOLD`. Write the cleanup record with the returned `gradeDigest` and identical `ownedPaths`; phase 2 independently verifies those paths are absent from the retained snapshot:

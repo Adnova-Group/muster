@@ -31,8 +31,10 @@ const json = async (path) => JSON.parse(await readFile(path, "utf8"));
 const [pkg, marketplace, manifest, mapping, upstreams, assetManifest] = await Promise.all([
   json(join(root, "package.json")), json(join(root, ".agents/plugins/marketplace.json")), json(join(plugin, ".codex-plugin/plugin.json")), json(join(root, "catalog/agents.manifest.json")), json(join(root, "codex/upstreams.json")), json(join(root, "codex/skill-assets/manifest.json"))
 ]);
-if (marketplace.name !== "muster" || marketplace.plugins?.[0]?.name !== "muster"
-  || marketplace.plugins?.[0]?.source?.path !== "./.agents/plugins/plugin") fail("marketplace does not point at the generated Muster plugin");
+const codexMarketplaceEntry = marketplace.plugins?.find(plugin => plugin?.name === "muster");
+if (marketplace.name !== "muster" || codexMarketplaceEntry?.source?.path !== "./.agents/plugins/plugin") {
+  fail("marketplace does not point at the generated Muster plugin");
+}
 if (manifest.name !== "muster" || manifest.version !== pkg.version) fail("plugin manifest version is not package version");
 if (manifest.version !== selected.packageVersion) fail("resolved Codex plugin package version does not match package.json");
 if (!manifest.skills || !manifest.mcpServers || manifest.hooks !== undefined) fail("plugin manifest must expose skills and MCP without advertising inert plugin-bundled hooks");

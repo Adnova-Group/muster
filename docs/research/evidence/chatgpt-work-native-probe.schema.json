@@ -136,12 +136,16 @@
     },
     "ownershipRecord": {
       "type": "object", "additionalProperties": false,
-      "required": ["uid", "dev", "ino", "type"],
+      "required": ["uid", "dev", "ino", "type", "parentPath", "parentUid", "parentDev", "parentIno"],
       "properties": {
         "uid": { "type": ["integer", "null"], "minimum": 0 },
         "dev": { "type": "string", "pattern": "^\\d+$" },
         "ino": { "type": "string", "pattern": "^\\d+$" },
-        "type": { "const": "directory" }
+        "type": { "const": "directory" },
+        "parentPath": { "type": "string", "pattern": "^/" },
+        "parentUid": { "type": ["integer", "null"], "minimum": 0 },
+        "parentDev": { "type": "string", "pattern": "^\\d+$" },
+        "parentIno": { "type": "string", "pattern": "^\\d+$" }
       }
     },
     "successfulGrade": {

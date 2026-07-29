@@ -28,7 +28,7 @@ muster install chatgpt-work --connection-id asdk_app_... \
   --profile full --allow-full-actions --scope user
 ```
 
-`--dry-run` performs validation and prints the target without writing. Muster keeps this mapping in its own receipt (`.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope) and carries it into later generated Codex builds; it never commits a workspace-specific ID to the repository.
+`--dry-run` performs validation and prints the target without writing. Muster keeps this mapping in its own receipt (`.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope) and a distinct `muster-chatgpt-work` marketplace entry. Codex builds preserve that entry but ignore the Work receipt and never copy its app mapping into the Codex plugin. Muster never commits a workspace-specific ID to the repository.
 
 `--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/muster-chatgpt-work` for project scope or `<home>/.agents/plugins/muster-chatgpt-work` for user scope. The receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect the returned path and receipt rather than assuming another plugin copy.
 

@@ -193,6 +193,24 @@ test("cleanup rejects tampered grades, path mismatches, symlinks, and unowned-or
   await Promise.all([rm(pluginPath, { recursive: true }), rm(tempPath, { recursive: true })]);
   await symlink(join(root, "missing-target"), pluginPath);
   assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /symlink/i);
+
+  const realOwned = join(root, "real-owned");
+  const alias = join(root, "owned-alias");
+  await Promise.all([
+    mkdir(join(realOwned, "plugin"), { recursive: true }),
+    mkdir(join(realOwned, "temp"), { recursive: true }),
+  ]);
+  await symlink(realOwned, alias);
+  const aliased = await retainGradeSnapshot({
+    grade: gradeReceipt(receipt(), NONCE, attestation(), identity()),
+    nonce: NONCE,
+    identity: identity(),
+    serverAttestation: attestation(),
+    ownedPaths: { plugin: join(alias, "plugin"), temp: join(alias, "temp") },
+    snapshotPath: join(retainedDir, "aliased-snapshot.json"),
+  });
+  assert.equal(aliased.ok, false);
+  assert.match(aliased.errors.join("\n"), /traverse a symlink/i);
 });
 
 test("identity binding hashes the normalized connection ID and exact installed app bytes", () => {

@@ -13,6 +13,23 @@ if (!["pro-safe", "full"].includes(profile)) {
   process.stderr.write("chatgpt-work-server: MUSTER_CHATGPT_WORK_PROFILE must be pro-safe or full\n");
   process.exit(1);
 }
+if (process.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH || process.env.MUSTER_CHATGPT_WORK_RECEIPT_PATH) {
+  try {
+    const pluginPath = process.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH;
+    if (!pluginPath || !path.isAbsolute(pluginPath)) throw new Error("installed plugin path is required");
+    for (const candidate of [path.dirname(pluginPath), pluginPath]) {
+      const info = lstatSync(candidate);
+      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`${candidate} is not an ordinary directory`);
+      if (process.platform !== "win32" && typeof process.getuid === "function"
+        && (info.uid !== process.getuid() || (info.mode & 0o022) !== 0)) {
+        throw new Error(`${candidate} must be current-user-owned and not group/world-writable`);
+      }
+    }
+  } catch (error) {
+    process.stderr.write(`chatgpt-work-server: installed plugin publication path rejected (${error.code || error.message})\n`);
+    process.exit(1);
+  }
+}
 if (profile === "full" && (
   process.env.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS !== "1"
   || process.env.MUSTER_CHATGPT_WORK_SERVER_ALLOW_FULL_ACTIONS !== "1"
@@ -46,7 +63,19 @@ if (profile === "full") {
       throw new Error("receipt identity/profile mismatch");
     }
     const artifactPaths = [
-      ".app.json", ".codex-plugin/plugin.json", ".mcp.json", "runtime/chatgpt-work-server.mjs",
+      ".app.json", ".codex-plugin/plugin.json", ".mcp.json",
+      "runtime/chatgpt-work-server.mjs", "runtime/muster.mjs",
+      ...[
+        "agents.generated.yaml", "agents.manifest.json", "agents.muster.yaml",
+        "builtins.generated.yaml", "builtins.muster.yaml", "software.yaml",
+      ].map(relative => `catalog/${relative}`),
+      ...[
+        "ai-implementation-spec.yaml", "ai-test-plan.yaml", "blog-post.yaml", "book.yaml",
+        "business-case.yaml", "case-study.yaml", "competitive-battlecard.yaml", "epic.yaml",
+        "executive-summary.yaml", "launch-plan.yaml", "lead-magnet.yaml", "newsletter.yaml",
+        "okrs.yaml", "prd.yaml", "release-notes.yaml", "roadmap.yaml", "runbook.yaml",
+        "social-post.yaml", "user-story.yaml", "video-content.yaml",
+      ].map(relative => `pipelines/${relative}`),
     ];
     if (Object.keys(receipt.artifacts ?? {}).sort().join("\0") !== artifactPaths.slice().sort().join("\0")) {
       throw new Error("receipt artifact set mismatch");
@@ -312,6 +341,27 @@ const authorizeTools = (catalog) => {
   };
 };
 
+const mapWorkArgv = (name, argv) => {
+  switch (name) {
+    case "muster_capabilities":
+      return ["capabilities", "--work"];
+    case "muster_capabilities_roles":
+      return ["capabilities", "--roles-only", "--work"];
+    case "muster_match":
+      return ["match", "--work"];
+    case "muster_match_skills":
+      return ["match", "--work", "--skills"];
+    case "muster_manifest_validate":
+      return ["manifest", "validate", "--work"];
+    case "muster_diagnose":
+      return ["diagnose", "--work"];
+    case "muster_audit":
+      return ["audit", "--work"];
+    default:
+      return argv;
+  }
+};
+
 startMusterMcpServer({
   protocol: "Running Muster in ChatGPT Work. Treat the selected tool profile as the complete capability boundary.",
   runtimeIdentity: "work",
@@ -322,10 +372,6 @@ startMusterMcpServer({
   maxInflight: 4,
   maxQueue: 16,
   staticTools: { muster_sprint_protocol: sprintProtocol || { error: "muster_sprint_protocol: bundled playbook unavailable" } },
-  mapArgv: (name, argv) => name === "muster_capabilities"
-    ? ["capabilities", "--work"]
-    : name === "muster_capabilities_roles"
-      ? ["capabilities", "--roles-only", "--work"]
-      : argv,
+  mapArgv: mapWorkArgv,
   authorizeTools: authorizeTools,
 });

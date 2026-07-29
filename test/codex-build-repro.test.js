@@ -31,10 +31,10 @@ test("Codex build keeps Work as an unregistered installer payload and never fold
 test("Codex build ignores a project Work receipt and emits the full Codex artifact contract", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-work-build-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
-  const outDir = join(tmp, "plugins");
   const project = join(tmp, "project");
+  const outDir = join(project, ".agents", "plugins");
   await mkdir(join(project, ".git"), { recursive: true });
-  await runChatgptWorkInstall({
+  const work = await runChatgptWorkInstall({
     connectionId: "asdk_app_Test123", profile: "pro-safe",
     scope: "project", cwd: project, home: join(tmp, "home"),
   });
@@ -53,6 +53,13 @@ test("Codex build ignores a project Work receipt and emits the full Codex artifa
     await readFile(join(result.pluginRoot, "runtime", "muster-mcp.mjs"), "utf8");
     await readFile(join(result.pluginRoot, "skills", "muster", "SKILL.md"), "utf8");
     await readFile(join(result.pluginRoot, "agents", "muster-builder.toml"), "utf8");
+    await readFile(join(work.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8");
+    const marketplace = JSON.parse(await readFile(join(outDir, "marketplace.json"), "utf8"));
+    assert.equal(marketplace.plugins.find(plugin => plugin.name === "muster")?.source?.path, "./.agents/plugins/plugin");
+    assert.equal(
+      marketplace.plugins.find(plugin => plugin.name === "muster-chatgpt-work")?.source?.path,
+      "./.agents/plugins/muster-chatgpt-work",
+    );
     delete process.env.MUSTER_BUILD_FORCE;
     const rebuilt = await buildCodexPlugin({ root: repoRoot, outDir });
     assert.equal(rebuilt.pluginRoot, result.pluginRoot);

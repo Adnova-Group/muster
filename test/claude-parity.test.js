@@ -1126,8 +1126,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   //
   // 2026-07-29 re-pin #10 (neutral MCP architecture): file COUNT 140 -> 141.
   // The shared implementation moved from cowork/mcp-server.mjs to
-  // mcp/server.mjs; the Cowork path is now a compatibility adapter, while
+  // mcp/server.mjs; the Cowork path is now an explicit host adapter, while
   // Codex and Work select their host contracts explicitly without rewriting
   // the shared source during builds.
-  assert.equal(hash.digest("hex"), "5deec3c9f698fb2586c0a9e42f7064d05cf72dfcef0e3cf9889e0b431439d3d5");
+  // Re-pin #11: the app-neutral factory owns only the shared catalog/protocol
+  // engine; Cowork-specific protocol and alias prose live in its adapter.
+  assert.equal(hash.digest("hex"), "7082d50ccf2f967d6bb8d4e36b9882c13df4d69bb62a7c181b077bb319a005d0");
 });

@@ -216,7 +216,7 @@ async function main() {
         ? { frameworks: stackArg.split(",").map(s => s.trim().toLowerCase()).filter(Boolean),
             languages: [], keywords: stackArg.split(",").map(s => s.trim().toLowerCase()).filter(Boolean) }
         : signalsFromTask(task);
-      const suggested = suggestSkillsForStack(signals, skills);
+      const suggested = rest.includes("--work") ? [] : suggestSkillsForStack(signals, skills);
       out({ ranked, suggested });
     } else if (cmd === "match") {
       const work = rest.includes("--work");
@@ -569,7 +569,7 @@ async function main() {
       const p = routePipeline(ps, outcome, domain);
       out({ domain, pipeline: p ? p.id : null });
     } else if (cmd === "diagnose") {
-      const args = rest.filter(arg => arg !== "--codex");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
       const ci = args.includes("--ci");
       let input;
       if (ci) {
@@ -585,7 +585,7 @@ async function main() {
       // --backlog: read-only sweep -> ranked capture, no fix/verify (the $muster-audit
       // skill's backlog mode). Remaining positionals are optional path scopes.
       const backlog = rest.includes("--backlog");
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--backlog");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--backlog");
       // Remaining positionals are path scopes; a "-"-leading token is an unrecognized flag,
       // not a path (path scopes never start with "-"). Fail cleanly rather than silently
       // scoping to a bogus path -- mirrors the muster_audit MCP boundary's own guard.

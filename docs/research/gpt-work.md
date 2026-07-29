@@ -75,7 +75,7 @@ For private/local development, OpenAI's [plugin packaging guide](https://develop
 
 The technical ID copied from developer mode may have an initial `plugin_` prefix; Muster normalizes only that prefix. A connection ID is not a credential. Local/repo marketplaces are authoring and private-distribution sources; this lane does not claim public submission. The documented local/repo source is the desktop proof lane: restart or refresh ChatGPT Desktop, select that marketplace source, and install the plugin. Do not generalize local marketplace ingestion to Work web; use Work web only when an independently supported source is available.
 
-`muster install chatgpt-work` requires an explicit `--profile`; `pro-safe` is the recommended Pro-compatible choice. The installer returns `<cwd>/.agents/plugins/muster-chatgpt-work` for `--scope project` or `<home>/.agents/plugins/muster-chatgpt-work` for `--scope user`, and writes `.git/muster/chatgpt-work.json` or `<home>/.muster/chatgpt-work.json` respectively. Treat the returned `pluginPath` and receipt as authoritative.
+`muster install chatgpt-work` requires an explicit `--profile`; `pro-safe` is the recommended Pro-compatible choice. The installer returns `<cwd>/.agents/plugins/muster-chatgpt-work` for `--scope project` or `<home>/.agents/plugins/muster-chatgpt-work` for `--scope user`, atomically merges its distinct entry into `.agents/plugins/marketplace.json` without replacing the Codex `muster` entry, and writes `.git/muster/chatgpt-work.json` or `<home>/.muster/chatgpt-work.json` respectively. Treat the returned `pluginPath` and receipt as authoritative.
 
 OpenAI's [Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) describes an outbound-only `tunnel-client` path for private STDIO servers and explicitly excludes tunnel-backed servers from public plugin submission. Against the generated plugin runtime, the supported startup is:
 
@@ -117,7 +117,10 @@ node scripts/chatgpt-work-native-probe.mjs \
 node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
   --server-attestation attestation.json --connection-id asdk_app_... \
   --app-json /absolute/path/to/installed/.app.json --plugin-version 0.5.0 \
-  --connection-label "Muster ChatGPT Work"
+  --connection-label "Muster ChatGPT Work" \
+  --snapshot-out /private/retained/grade-snapshot.json \
+  --owned-plugin-path /exact/owned/plugin-path \
+  --owned-temp-path /exact/owned/probe-temp-path
 node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
   --grade-snapshot /private/retained/grade-snapshot.json
 ```

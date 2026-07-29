@@ -694,10 +694,20 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
         if (!marketplaceTemplate) throw new Error(`Codex marketplace pointer is missing and no template was provided: ${pointerPath}`);
       }
       pointer = priorPointer !== null ? JSON.parse(priorPointer.toString("utf8")) : structuredClone(marketplaceTemplate);
-      if (pointer?.name !== "muster" || !Array.isArray(pointer.plugins) || !pointer.plugins.some(item => item?.name === "muster")) {
-        throw new Error(`Codex marketplace does not describe the Muster plugin: ${pointerPath}`);
+      if (pointer?.name !== "muster" || !Array.isArray(pointer.plugins)) {
+        throw new Error(`Codex marketplace has an unrecognized contract: ${pointerPath}`);
       }
-      const plugin = pointer.plugins.find(item => item.name === "muster");
+      const codexEntries = pointer.plugins.filter(item => item?.name === "muster");
+      if (codexEntries.length > 1) {
+        throw new Error(`Codex marketplace describes the Muster plugin more than once: ${pointerPath}`);
+      }
+      let plugin = codexEntries[0];
+      if (!plugin) {
+        const templatePlugin = marketplaceTemplate?.plugins?.find(item => item?.name === "muster");
+        if (!templatePlugin) throw new Error(`Codex marketplace does not describe the Muster plugin and no trusted template entry is available: ${pointerPath}`);
+        plugin = structuredClone(templatePlugin);
+        pointer.plugins.push(plugin);
+      }
       plugin.source = { ...plugin.source, source: "local", path: codexMarketplacePluginPath(pluginsRoot) };
       // Final mutation: the durable pointer commit. Re-assert canonical
       // resolution so the narrow window after the destination re-validation

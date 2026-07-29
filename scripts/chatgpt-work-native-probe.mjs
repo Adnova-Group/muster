@@ -123,8 +123,8 @@ export function buildProbe({
       "Preflight independent inventories for the connection, tunnel profile, plugin, marketplace, cache, and UI artifacts. A collision with any existing name is HUMAN-HOLD; do not modify it.",
       "Use Secure MCP Tunnel with an outbound-only tunnel-client and the local STDIO command: node runtime/chatgpt-work-server.mjs.",
       "For the proof server, set MUSTER_CHATGPT_WORK_PROFILE=pro-safe, MUSTER_CHATGPT_WORK_PROBE_NONCE=<nonce>, and MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH=<absolute existing private probe-dir>/server-attestation.json; the target must not already exist.",
-      "The probe directory must be current-user-owned and mode 0700 (POSIX) or an existing directory with an absolute exact-basename server-attestation.json target on Windows; the new attestation is 0600, and any collision is HUMAN-HOLD.",
-      "Windows native proof is always HUMAN-HOLD: there is no usable Windows attestation claim, even when the target path exists.",
+      "The probe directory must be current-user-owned and mode 0700 on POSIX; the new attestation is 0600, and any collision is HUMAN-HOLD.",
+      "Windows native proof is always HUMAN-HOLD: there is no usable Windows attestation claim.",
       "Call muster_prioritize exactly once with the exact nonce-bearing request. Operator evidence must be a completed native Work tool card, not assistant prose, skill discovery, tools/list, or tunnel health.",
       "The server must emit a separate nonce/tool/request/result attestation with invocationCount=1 and a server timestamp. UI evidence is operator attestation, not cryptographic provenance.",
       "Bind the receipt to SHA-256(normalized connection ID), SHA-256(installed .app.json), plugin name/version, and the registered connection label; never store the raw ID, app file, tunnel ID, API key, or screenshots.",
@@ -283,11 +283,33 @@ async function inspectOwnedDirectory(path, at, errors) {
   if (stat.isSymbolicLink()) errors.push(`${at} must not be a symlink`);
   if (!stat.isDirectory()) errors.push(`${at} must be a directory`);
   if (typeof process.getuid === "function" && stat.uid !== process.getuid()) errors.push(`${at} is unowned by the current user`);
+  try {
+    if (await realpath(path) !== path) errors.push(`${at} path must not traverse a symlink`);
+  } catch (error) {
+    errors.push(`${at} cannot be canonically resolved: ${error.message}`);
+  }
+  const parentPath = dirname(path);
+  let parentStat;
+  try { parentStat = await lstat(parentPath); }
+  catch (error) {
+    errors.push(`${at} parent cannot be inspected: ${error.message}`);
+    return null;
+  }
+  if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) errors.push(`${at} parent must be a real directory`);
+  try {
+    if (await realpath(parentPath) !== parentPath) errors.push(`${at} parent path must not traverse a symlink`);
+  } catch (error) {
+    errors.push(`${at} parent cannot be canonically resolved: ${error.message}`);
+  }
   return {
     uid: typeof stat.uid === "number" ? stat.uid : null,
     dev: String(stat.dev),
     ino: String(stat.ino),
     type: "directory",
+    parentPath,
+    parentUid: typeof parentStat.uid === "number" ? parentStat.uid : null,
+    parentDev: String(parentStat.dev),
+    parentIno: String(parentStat.ino),
   };
 }
 
@@ -397,8 +419,11 @@ function validateSnapshot(snapshot, errors) {
   if (!exactKeys(snapshot.ownership, ["plugin", "temp"], "snapshot.ownership", errors)) return;
   for (const key of ["plugin", "temp"]) {
     const at = `snapshot.ownership.${key}`;
-    if (!exactKeys(snapshot.ownership[key], ["uid", "dev", "ino", "type"], at, errors)) continue;
+    if (!exactKeys(snapshot.ownership[key], [
+      "uid", "dev", "ino", "type", "parentPath", "parentUid", "parentDev", "parentIno",
+    ], at, errors)) continue;
     exactValue(snapshot.ownership[key].type, "directory", `${at}.type`, errors);
+    exactAbsolutePath(snapshot.ownership[key].parentPath, `${at}.parentPath`, errors);
   }
   if (!SHA256_PATTERN.test(snapshot.gradeDigest ?? "") || snapshot.gradeDigest !== snapshotDigest(snapshot)) {
     errors.push("snapshot.gradeDigest does not cryptographically bind the successful phase 1 evidence");
@@ -413,6 +438,31 @@ async function verifyAbsent(path, at, errors) {
     else errors.push(`${at} must be absent`);
   } catch (error) {
     if (error.code !== "ENOENT") errors.push(`${at} absence cannot be verified: ${error.message}`);
+  }
+}
+
+async function verifyOwnedParent(record, at, errors) {
+  if (!record?.parentPath) return;
+  let stat;
+  try { stat = await lstat(record.parentPath); }
+  catch (error) {
+    errors.push(`${at} parent identity cannot be verified: ${error.message}`);
+    return;
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    errors.push(`${at} parent is not the retained real directory`);
+    return;
+  }
+  try {
+    if (await realpath(record.parentPath) !== record.parentPath) {
+      errors.push(`${at} parent path now traverses a symlink`);
+    }
+  } catch (error) {
+    errors.push(`${at} parent cannot be canonically resolved: ${error.message}`);
+  }
+  if (String(stat.dev) !== record.parentDev || String(stat.ino) !== record.parentIno
+    || (typeof stat.uid === "number" ? stat.uid : null) !== record.parentUid) {
+    errors.push(`${at} parent identity changed after evidence grading`);
   }
 }
 
@@ -458,6 +508,8 @@ export async function finalizeCleanup(cleanup, snapshot) {
     }
   }
   if (snapshot?.ownedPaths) {
+    await verifyOwnedParent(snapshot.ownership?.plugin, "snapshot.ownedPaths.plugin", errors);
+    await verifyOwnedParent(snapshot.ownership?.temp, "snapshot.ownedPaths.temp", errors);
     await verifyAbsent(snapshot.ownedPaths.plugin, "snapshot.ownedPaths.plugin", errors);
     await verifyAbsent(snapshot.ownedPaths.temp, "snapshot.ownedPaths.temp", errors);
   }

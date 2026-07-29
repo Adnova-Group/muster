@@ -11,11 +11,26 @@ const CONNECTION_ID = /^asdk_app_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const PROFILES = new Set(["pro-safe", "full"]);
 const RECEIPT_NAME = "chatgpt-work.json";
 const WORK_PLUGIN_ID = "muster-chatgpt-work";
+const MARKETPLACE_NAME = "muster";
+const CATALOG_ARTIFACTS = [
+  "agents.generated.yaml", "agents.manifest.json", "agents.muster.yaml",
+  "builtins.generated.yaml", "builtins.muster.yaml", "software.yaml",
+].map(path => `catalog/${path}`);
+const PIPELINE_ARTIFACTS = [
+  "ai-implementation-spec.yaml", "ai-test-plan.yaml", "blog-post.yaml", "book.yaml",
+  "business-case.yaml", "case-study.yaml", "competitive-battlecard.yaml", "epic.yaml",
+  "executive-summary.yaml", "launch-plan.yaml", "lead-magnet.yaml", "newsletter.yaml",
+  "okrs.yaml", "prd.yaml", "release-notes.yaml", "roadmap.yaml", "runbook.yaml",
+  "social-post.yaml", "user-story.yaml", "video-content.yaml",
+].map(path => `pipelines/${path}`);
 const ARTIFACT_PATHS = [
   ".app.json",
   ".mcp.json",
   ".codex-plugin/plugin.json",
   "runtime/chatgpt-work-server.mjs",
+  "runtime/muster.mjs",
+  ...CATALOG_ARTIFACTS,
+  ...PIPELINE_ARTIFACTS,
 ];
 const HEX64 = /^[a-f0-9]{64}$/;
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -59,6 +74,17 @@ async function privateManagedDirectory(path) {
   }
 }
 
+async function securePublicationDirectory(path) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink() || !info.isDirectory()) {
+    throw new Error(`HUMAN-HOLD: ChatGPT Work publication path must be an ordinary directory: ${path}`);
+  }
+  if (process.platform !== "win32" && typeof process.getuid === "function"
+    && (info.uid !== process.getuid() || (info.mode & 0o022) !== 0)) {
+    throw new Error(`HUMAN-HOLD: ChatGPT Work publication directory must be current-user-owned and not group/world-writable: ${path}`);
+  }
+}
+
 async function projectGitDir(cwd) {
   const marker = join(resolve(cwd), ".git");
   let info;
@@ -91,6 +117,70 @@ export function chatgptWorkPluginsRoot({ scope = "project", cwd = process.cwd(),
   if (scope === "project") return join(resolve(cwd), ".agents", "plugins");
   if (scope === "user") return join(resolve(home), ".agents", "plugins");
   throw new Error("ChatGPT Work install scope must be project or user");
+}
+
+function workMarketplaceSourcePath(pluginsRoot) {
+  const addedRoot = resolve(pluginsRoot, "..", "..");
+  return "./" + relative(addedRoot, join(pluginsRoot, WORK_PLUGIN_ID)).replaceAll("\\", "/");
+}
+
+async function readWorkMarketplace(pluginsRoot, { allowMissing = false } = {}) {
+  const marketplacePath = join(pluginsRoot, "marketplace.json");
+  let info;
+  try { info = await lstat(marketplacePath); }
+  catch (error) {
+    if (allowMissing && error.code === "ENOENT") {
+      return {
+        marketplacePath,
+        bytes: null,
+        value: { name: MARKETPLACE_NAME, interface: { displayName: "Muster" }, plugins: [] },
+      };
+    }
+    throw error;
+  }
+  if (info.isSymbolicLink() || !info.isFile()) {
+    throw new Error(`HUMAN-HOLD: ChatGPT Work marketplace must be an ordinary file: ${marketplacePath}`);
+  }
+  const bytes = await readFile(marketplacePath);
+  let value;
+  try { value = JSON.parse(bytes); }
+  catch { throw new Error(`HUMAN-HOLD: ChatGPT Work marketplace is not valid JSON: ${marketplacePath}`); }
+  if (value?.name !== MARKETPLACE_NAME || !Array.isArray(value.plugins)) {
+    throw new Error(`HUMAN-HOLD: ChatGPT Work marketplace has an unrecognized contract: ${marketplacePath}`);
+  }
+  return { marketplacePath, bytes, value };
+}
+
+function workMarketplaceEntries(marketplace) {
+  return marketplace.plugins.filter(plugin => plugin?.name === WORK_PLUGIN_ID);
+}
+
+function assertWorkMarketplaceEntry(marketplace, pluginsRoot) {
+  const entries = workMarketplaceEntries(marketplace);
+  const expectedPath = workMarketplaceSourcePath(pluginsRoot);
+  if (entries.length !== 1
+    || entries[0]?.source?.source !== "local"
+    || entries[0]?.source?.path !== expectedPath) {
+    throw new Error(`HUMAN-HOLD: ChatGPT Work marketplace entry is missing or unowned (expected ${expectedPath})`);
+  }
+  return entries[0];
+}
+
+function mergeWorkMarketplace(marketplace, pluginsRoot, { owned }) {
+  const entries = workMarketplaceEntries(marketplace);
+  if (!owned && entries.length) {
+    throw new Error("HUMAN-HOLD: ChatGPT Work marketplace entry already exists without a valid Muster receipt");
+  }
+  if (owned) assertWorkMarketplaceEntry(marketplace, pluginsRoot);
+  const next = structuredClone(marketplace);
+  next.plugins = next.plugins.filter(plugin => plugin?.name !== WORK_PLUGIN_ID);
+  next.plugins.push({
+    name: WORK_PLUGIN_ID,
+    source: { source: "local", path: workMarketplaceSourcePath(pluginsRoot) },
+    policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+    category: "Productivity",
+  });
+  return next;
 }
 
 function validateConfig(config) {
@@ -163,6 +253,9 @@ async function validateInstalledConfig(config, expectedPluginPath, expectedConfi
     || (env?.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS === "1") !== config.allowFullActions) {
     throw new Error("ChatGPT Work installed MCP activation metadata is inconsistent");
   }
+  const pluginsRoot = dirname(config.pluginPath);
+  const { value: marketplace } = await readWorkMarketplace(pluginsRoot);
+  assertWorkMarketplaceEntry(marketplace, pluginsRoot);
   return config;
 }
 
@@ -195,11 +288,17 @@ async function prepareRuntimeAssets() {
   const bundled = {
     cli: join(moduleDir, "muster.mjs"),
     server: join(moduleDir, "chatgpt-work-server.mjs"),
+    catalog: join(moduleDir, "..", "catalog"),
+    pipelines: join(moduleDir, "..", "pipelines"),
   };
   try {
-    for (const path of Object.values(bundled)) {
+    for (const path of [bundled.cli, bundled.server]) {
       const info = await lstat(path);
       if (info.isSymbolicLink() || !info.isFile()) throw new Error(`runtime asset is not an ordinary file: ${path}`);
+    }
+    for (const path of [bundled.catalog, bundled.pipelines]) {
+      const info = await lstat(path);
+      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`runtime asset is not an ordinary directory: ${path}`);
     }
     return { ...bundled, cleanup: async () => {} };
   } catch (error) {
@@ -210,7 +309,14 @@ async function prepareRuntimeAssets() {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-runtime-"));
   const { build } = await import("esbuild");
   const requireBanner = 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);';
-  const bundleOptions = { bundle: true, platform: "node", format: "esm", target: "node20", preserveSymlinks: true, external: ["esbuild"] };
+  const bundleOptions = {
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    preserveSymlinks: true,
+    external: ["esbuild", "../scripts/build-codex.mjs"],
+  };
   await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(dir, "muster.mjs"), banner: { js: requireBanner } });
   await build({
     ...bundleOptions,
@@ -218,7 +324,10 @@ async function prepareRuntimeAssets() {
     outfile: join(dir, "chatgpt-work-server.mjs"),
   });
   return {
-    cli: join(dir, "muster.mjs"), server: join(dir, "chatgpt-work-server.mjs"),
+    cli: join(dir, "muster.mjs"),
+    server: join(dir, "chatgpt-work-server.mjs"),
+    catalog: join(root, "catalog"),
+    pipelines: join(root, "pipelines"),
     cleanup: () => rm(dir, { recursive: true, force: true }),
   };
 }
@@ -231,6 +340,8 @@ async function stageWorkPlugin(config, assets, { configPath, pluginPath }) {
   await mkdir(runtime, { recursive: true, mode: 0o700 });
   await cp(assets.cli, join(runtime, "muster.mjs"));
   await cp(assets.server, join(runtime, "chatgpt-work-server.mjs"));
+  await cp(assets.catalog, join(plugin, "catalog"), { recursive: true });
+  await cp(assets.pipelines, join(plugin, "pipelines"), { recursive: true });
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const app = { apps: { muster: { id: config.connectionId } } };
   await writeFile(join(plugin, ".app.json"), JSON.stringify(app, null, 2) + "\n");
@@ -317,8 +428,12 @@ export async function runChatgptWorkInstall({
   await ordinaryDirectory(dirname(configPath));
   await ordinaryDirectory(dirname(pluginsRoot));
   if (dryRun) {
+    if (await pathExists(dirname(pluginsRoot))) await securePublicationDirectory(dirname(pluginsRoot));
+    if (await pathExists(pluginsRoot)) await securePublicationDirectory(pluginsRoot);
     const owned = await readChatgptWorkConfig({ scope, cwd, home });
     if (!owned && await pathExists(pluginPath)) throw new Error(`HUMAN-HOLD: ChatGPT Work destination is unowned: ${pluginPath}`);
+    const { value: marketplace } = await readWorkMarketplace(pluginsRoot, { allowMissing: true });
+    mergeWorkMarketplace(marketplace, pluginsRoot, { owned: Boolean(owned) });
     return { ok: true, scope, dryRun, configPath, pluginPath, connectionId: canonicalId, profile, allowFullActions: config.allowFullActions };
   }
 
@@ -329,63 +444,81 @@ export async function runChatgptWorkInstall({
     if (!owned && await pathExists(pluginPath)) {
       throw new Error(`HUMAN-HOLD: ChatGPT Work destination is unowned: ${pluginPath}`);
     }
-    const receiptSnapshot = await snapshotFile(configPath);
     const assets = await prepareRuntimeAssets();
     let staged;
-    let backup = null;
-    let published = false;
     try {
       // The exclusive receipt-adjacent lock intentionally spans staging,
-      // destination publication, validation, and the final receipt commit.
+      // destination/marketplace publication, validation, and the final receipt commit.
       staged = await stageWorkPlugin(config, assets, { configPath, pluginPath });
       await ordinaryDirectory(dirname(pluginsRoot), { create: true });
       await ordinaryDirectory(pluginsRoot, { create: true });
-      if (await pathExists(pluginPath)) {
-        backup = join(pluginsRoot, `.${WORK_PLUGIN_ID}.retired-${randomUUID()}`);
-        await rename(pluginPath, backup);
-      }
-      try {
-        published = true;
-        await cp(staged.plugin, pluginPath, { recursive: true, errorOnExist: true, force: false });
-        const receipt = validateConfig({
-          format: 3,
-          owner: "muster",
-          artifactFlavor: "chatgpt-work",
-          appId: canonicalId,
-          ...config,
-          cacheKey: sha256(JSON.stringify(["chatgpt-work", canonicalId, profile, config.allowFullActions])),
-          pluginPath,
-          artifacts: await artifactDigests(pluginPath),
-        });
-        await validateInstalledConfig(receipt, pluginPath, configPath);
-        if (__testBeforeReceiptCommit) await __testBeforeReceiptCommit();
-        await atomicPrivateWrite(configPath, Buffer.from(JSON.stringify(receipt, null, 2) + "\n"));
-        // Re-read the committed pair before reporting success.
-        await readChatgptWorkConfig({ scope, cwd, home });
-      } catch (error) {
-        const rollbackFailures = [];
-        if (published) {
-          try { await rm(pluginPath, { recursive: true, force: true }); }
-          catch (rollback) { rollbackFailures.push(`new plugin removal failed: ${rollback.message}`); }
-        }
-        if (backup) {
-          try { await rename(backup, pluginPath); backup = null; }
-          catch (rollback) { rollbackFailures.push(`prior plugin restore failed: ${rollback.message}`); }
+      await securePublicationDirectory(dirname(pluginsRoot));
+      await securePublicationDirectory(pluginsRoot);
+      return await withCodexFileLock(join(pluginsRoot, ".build.lock"), async () => {
+        await securePublicationDirectory(dirname(pluginsRoot));
+        await securePublicationDirectory(pluginsRoot);
+        const receiptSnapshot = await snapshotFile(configPath);
+        const { marketplacePath, bytes: marketplaceSnapshot, value: marketplace } =
+          await readWorkMarketplace(pluginsRoot, { allowMissing: true });
+        const nextMarketplace = mergeWorkMarketplace(marketplace, pluginsRoot, { owned: Boolean(owned) });
+        let backup = null;
+        let published = false;
+        let marketplaceWritten = false;
+        if (await pathExists(pluginPath)) {
+          backup = join(pluginsRoot, `.${WORK_PLUGIN_ID}.retired-${randomUUID()}`);
+          await rename(pluginPath, backup);
         }
         try {
-          if (receiptSnapshot === null) await rm(configPath, { force: true });
-          else await atomicPrivateWrite(configPath, receiptSnapshot);
-        } catch (rollback) { rollbackFailures.push(`prior receipt restore failed: ${rollback.message}`); }
-        if (rollbackFailures.length) {
-          throw new Error(`HUMAN-HOLD: ChatGPT Work install failed and rollback was incomplete: ${rollbackFailures.join("; ")} (original failure: ${error.message})`, { cause: error });
+          published = true;
+          await cp(staged.plugin, pluginPath, { recursive: true, errorOnExist: true, force: false });
+          await atomicPrivateWrite(marketplacePath, Buffer.from(JSON.stringify(nextMarketplace, null, 2) + "\n"));
+          marketplaceWritten = true;
+          const receipt = validateConfig({
+            format: 3,
+            owner: "muster",
+            artifactFlavor: "chatgpt-work",
+            appId: canonicalId,
+            ...config,
+            cacheKey: sha256(JSON.stringify(["chatgpt-work", canonicalId, profile, config.allowFullActions])),
+            pluginPath,
+            artifacts: await artifactDigests(pluginPath),
+          });
+          await validateInstalledConfig(receipt, pluginPath, configPath);
+          if (__testBeforeReceiptCommit) await __testBeforeReceiptCommit();
+          await atomicPrivateWrite(configPath, Buffer.from(JSON.stringify(receipt, null, 2) + "\n"));
+          // Re-read the committed plugin, marketplace entry, and receipt before reporting success.
+          await readChatgptWorkConfig({ scope, cwd, home });
+        } catch (error) {
+          const rollbackFailures = [];
+          if (published) {
+            try { await rm(pluginPath, { recursive: true, force: true }); }
+            catch (rollback) { rollbackFailures.push(`new plugin removal failed: ${rollback.message}`); }
+          }
+          if (backup) {
+            try { await rename(backup, pluginPath); backup = null; }
+            catch (rollback) { rollbackFailures.push(`prior plugin restore failed: ${rollback.message}`); }
+          }
+          if (marketplaceWritten) {
+            try {
+              if (marketplaceSnapshot === null) await rm(marketplacePath, { force: true });
+              else await atomicPrivateWrite(marketplacePath, marketplaceSnapshot);
+            } catch (rollback) { rollbackFailures.push(`prior marketplace restore failed: ${rollback.message}`); }
+          }
+          try {
+            if (receiptSnapshot === null) await rm(configPath, { force: true });
+            else await atomicPrivateWrite(configPath, receiptSnapshot);
+          } catch (rollback) { rollbackFailures.push(`prior receipt restore failed: ${rollback.message}`); }
+          if (rollbackFailures.length) {
+            throw new Error(`HUMAN-HOLD: ChatGPT Work install failed and rollback was incomplete: ${rollbackFailures.join("; ")} (original failure: ${error.message})`, { cause: error });
+          }
+          throw error;
         }
-        throw error;
-      }
-      if (backup) await rm(backup, { recursive: true, force: true });
-      return {
-        ok: true, scope, dryRun, configPath, pluginPath,
-        connectionId: canonicalId, profile, allowFullActions: config.allowFullActions,
-      };
+        if (backup) await rm(backup, { recursive: true, force: true });
+        return {
+          ok: true, scope, dryRun, configPath, pluginPath,
+          connectionId: canonicalId, profile, allowFullActions: config.allowFullActions,
+        };
+      });
     } finally {
       await assets.cleanup();
       if (staged) await rm(staged.stagingRoot, { recursive: true, force: true });

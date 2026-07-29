@@ -1166,5 +1166,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // anchor -- String.replace no-ops on a miss -- dropping the generated
   // bundle's "one fix-and-re-review iteration" clause. The anchor is now a
   // wording-tolerant regex that throws on a miss.)
-  assert.equal(hash.digest("hex"), "7d2f1d0069829f8ef81801e3c0b6dae5110a38a3783e4147b4599c60ad31c8d7");
+  // 2026-07-29 re-pin #13 (driver fold): the concurrent Kimi workstream's 7
+  // local commits (kimi 0.30.0 re-probes, quota fail-fast billing escalation,
+  // steer-route leak-guard) rebased onto the merged #158/#159 main; its own
+  // pin-only commit dropped as empty and this recompute covers the fold.
+  assert.equal(hash.digest("hex"), "001b4d4c18674be77a12c2e48861cde6f6e874a60fc521644c295ef2484b44a4");
 });

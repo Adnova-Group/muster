@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Adnova-Group/muster/docs/research/evidence/chatgpt-work-native-probe.schema.json",
   "title": "Muster ChatGPT Work native invocation proof",
-  "description": "Closed structural prefilter for scripts/chatgpt-work-native-probe.mjs. Phase 1 grades the live identity-bound server attestation and writes a private retained-grade snapshot outside the exact owned plugin/temp paths. Phase 2 consumes that snapshot, verifies its evidence-grade digest, atomically renames each identity-checked directory to a random direct-sibling quarantine path, rechecks the identities, deletes each quarantined directory, then lstat-checks absence before finalization. Direct siblings avoid an intermediate symlink target and support different filesystems.",
+  "description": "Closed structural prefilter for scripts/chatgpt-work-native-probe.mjs. Phase 1 grades the live identity-bound server attestation, requires current-user-owned non-group/world-writable parent namespaces, and writes a private retained-grade snapshot outside the exact owned plugin/temp paths. Phase 2 consumes that snapshot, verifies its evidence-grade digest and parent boundaries, atomically renames each identity-checked directory to a random direct-sibling quarantine path, rechecks the identities, deletes each quarantined directory, then lstat-checks absence before finalization. Direct siblings avoid an intermediate symlink target and support different filesystems.",
   "type": "object",
   "additionalProperties": false,
   "required": ["receiptType", "nonce", "timestamp", "identity", "operatorEvidence", "serverEvidence", "inventory", "artifacts"],

@@ -129,7 +129,7 @@ export function buildProbe({
       "The server must emit a separate nonce/tool/request/result attestation with invocationCount=1 and a server timestamp. UI evidence is operator attestation, not cryptographic provenance.",
       "Bind the receipt to SHA-256(normalized connection ID), SHA-256(installed .app.json), plugin name/version, and the registered connection label; never store the raw ID, app file, tunnel ID, API key, or screenshots.",
       "Phase 1: while the independent server attestation and installed .app.json still exist, grade the operator receipt and write a private retained snapshot outside the owned plugin/temp trees. The snapshot binds the successful grade, exact owned paths, app identity/hash, nonce, and server attestation with an evidence-grade SHA-256 digest.",
-      "Phase 2 only after evidence grade succeeds: stop tunnel-client, remove the connection/marketplace/cache/UI entries, re-run those inventories, and pass the retained snapshot to the cleanup finalizer. The finalizer identity-checks each exact snapshot-bound plugin/temp directory, atomically renames each to a random direct-sibling quarantine path, rechecks the retained identity there, deletes each quarantined directory, then lstat-checks absence. Direct siblings avoid an attacker-replaceable intermediate path and support different filesystems; missing, moved, concurrently replaced, mismatched, symlinked, or unowned paths fail without depending on the deleted .app.json.",
+      "Phase 2 only after evidence grade succeeds: stop tunnel-client, remove the connection/marketplace/cache/UI entries, re-run those inventories, and pass the retained snapshot to the cleanup finalizer. Each owned directory must have a current-user-owned parent namespace with no group/world write bits. The finalizer rechecks that boundary and each exact snapshot-bound directory, atomically renames each to a random direct-sibling quarantine path, rechecks the retained identity there, deletes each quarantined directory, then lstat-checks absence. Direct siblings avoid an intermediate path and support different filesystems; missing, moved, concurrently replaced, mismatched, symlinked, or unowned paths fail without depending on the deleted .app.json.",
     ],
   };
 }
@@ -296,6 +296,12 @@ async function inspectOwnedDirectory(path, at, errors) {
     return null;
   }
   if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) errors.push(`${at} parent must be a real directory`);
+  if (typeof process.getuid === "function" && parentStat.uid !== process.getuid()) {
+    errors.push(`${at} parent is unowned by the current user`);
+  }
+  if ((parentStat.mode & 0o022) !== 0) {
+    errors.push(`${at} parent namespace is group/world-writable`);
+  }
   try {
     if (await realpath(parentPath) !== parentPath) errors.push(`${at} parent path must not traverse a symlink`);
   } catch (error) {
@@ -560,6 +566,12 @@ async function verifyOwnedParent(record, at, errors) {
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     errors.push(`${at} parent is not the retained real directory`);
     return;
+  }
+  if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
+    errors.push(`${at} parent is unowned by the current user`);
+  }
+  if ((stat.mode & 0o022) !== 0) {
+    errors.push(`${at} parent namespace is group/world-writable`);
   }
   try {
     if (await realpath(record.parentPath) !== record.parentPath) {

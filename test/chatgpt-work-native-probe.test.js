@@ -340,6 +340,29 @@ test("cleanup cannot report success after an intermediate quarantine root is rep
   assert.equal(result.ok, false);
 });
 
+test("phase 1 rejects group/world-writable retained parent namespaces", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "muster-native-cleanup-writable-parent-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const retainedDir = join(root, "retained");
+  const pluginPath = join(root, "plugin");
+  const tempPath = join(root, "probe-temp");
+  await Promise.all([
+    mkdir(retainedDir, { mode: 0o700 }),
+    mkdir(pluginPath),
+    mkdir(tempPath),
+  ]);
+  await chmod(retainedDir, 0o700);
+  await chmod(root, 0o777);
+  const retained = await retainGradeSnapshot({
+    grade: gradeReceipt(receipt(), NONCE, attestation(), identity()),
+    nonce: NONCE, identity: identity(), serverAttestation: attestation(),
+    ownedPaths: { plugin: pluginPath, temp: tempPath },
+    snapshotPath: join(retainedDir, "grade-snapshot.json"),
+  });
+  assert.equal(retained.ok, false);
+  assert.match(retained.errors.join("\n"), /parent.*group\/world-writable/i);
+});
+
 test("identity binding hashes the normalized connection ID and exact installed app bytes", () => {
   const appJson = '{"apps":{"muster":{"id":"asdk_app_0123456789abcdef"}}}\n';
   const bound = buildIdentity({ connectionId: "plugin_asdk_app_0123456789abcdef", appJson, pluginVersion: "0.5.0", connectionLabel: "Muster ChatGPT Work" });

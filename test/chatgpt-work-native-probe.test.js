@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -292,12 +292,52 @@ test("cleanup quarantines each retained directory on its own parent filesystem",
   const result = await finalizeCleanup(cleanup, snapshot, {
     renameDirectory: async (source, destination) => {
       renameCount += 1;
-      assert.equal(dirname(dirname(destination)), dirname(source), "quarantine move must stay within the retained parent filesystem");
+      assert.equal(dirname(destination), dirname(source), "quarantine move must stay within the retained parent filesystem");
       await rename(source, destination);
     },
   });
   assert.equal(result.ok, true);
   assert.equal(renameCount, 2);
+});
+
+test("cleanup cannot report success after an intermediate quarantine root is replaced by a symlink", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "muster-native-cleanup-root-swap-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const retainedDir = join(root, "retained");
+  const pluginPath = join(root, "plugin");
+  const tempPath = join(root, "probe-temp");
+  const redirectTarget = join(root, "redirect-target");
+  const movedQuarantine = join(root, "moved-quarantine");
+  const snapshotPath = join(retainedDir, "grade-snapshot.json");
+  await Promise.all([
+    mkdir(retainedDir, { mode: 0o700 }),
+    mkdir(pluginPath),
+    mkdir(tempPath),
+    mkdir(redirectTarget),
+  ]);
+  await chmod(retainedDir, 0o700);
+  const retained = await retainGradeSnapshot({
+    grade: gradeReceipt(receipt(), NONCE, attestation(), identity()),
+    nonce: NONCE, identity: identity(), serverAttestation: attestation(),
+    ownedPaths: { plugin: pluginPath, temp: tempPath }, snapshotPath,
+  });
+  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+  const cleanup = {
+    cleanupType: "muster-work-native-cleanup-finalization", timestamp: TIMESTAMP,
+    gradeDigest: retained.gradeDigest, ownedPaths: { plugin: pluginPath, temp: tempPath },
+    inventory: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
+    artifacts: { tunnel: "stopped", screenshotsRetained: 0, logsRetained: 0, attestationRetained: 0, probeDirsRetained: 0 },
+  };
+  const result = await finalizeCleanup(cleanup, snapshot, {
+    beforeQuarantine: async () => {
+      const roots = (await readdir(root)).filter(name => name.startsWith(".muster-cleanup-"));
+      assert.equal(roots.length, 1);
+      const quarantineRoot = join(root, roots[0]);
+      await rename(quarantineRoot, movedQuarantine);
+      await symlink(redirectTarget, quarantineRoot);
+    },
+  });
+  assert.equal(result.ok, false);
 });
 
 test("identity binding hashes the normalized connection ID and exact installed app bytes", () => {

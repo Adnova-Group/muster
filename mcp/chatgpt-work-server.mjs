@@ -17,9 +17,14 @@ if (process.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH || process.env.MUSTER_CHATGPT_WO
   try {
     const pluginPath = process.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH;
     if (!pluginPath || !path.isAbsolute(pluginPath)) throw new Error("installed plugin path is required");
-    for (const candidate of [path.dirname(pluginPath), pluginPath]) {
+    let current = path.parse(pluginPath).root;
+    for (const part of path.relative(current, pluginPath).split(path.sep).filter(Boolean)) {
+      current = path.join(current, part);
+      const info = lstatSync(current);
+      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`${current} is not an ordinary directory`);
+    }
+    for (const candidate of [path.dirname(path.dirname(pluginPath)), path.dirname(pluginPath), pluginPath]) {
       const info = lstatSync(candidate);
-      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`${candidate} is not an ordinary directory`);
       if (process.platform !== "win32" && typeof process.getuid === "function"
         && (info.uid !== process.getuid() || (info.mode & 0o022) !== 0)) {
         throw new Error(`${candidate} must be current-user-owned and not group/world-writable`);
@@ -67,6 +72,7 @@ if (profile === "full" || activationReceiptPath || installedRuntime) {
     const artifactPaths = [
       ".app.json", ".codex-plugin/plugin.json", ".mcp.json",
       "runtime/chatgpt-work-server.mjs", "runtime/muster.mjs", "runtime/sprint-protocol.md",
+      "package.json",
       ...[
         "agents.generated.yaml", "agents.manifest.json", "agents.muster.yaml",
         "builtins.generated.yaml", "builtins.muster.yaml", "software.yaml",

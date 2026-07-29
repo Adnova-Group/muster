@@ -30,6 +30,7 @@ const ARTIFACT_PATHS = [
   "runtime/chatgpt-work-server.mjs",
   "runtime/muster.mjs",
   "runtime/sprint-protocol.md",
+  "package.json",
   ...CATALOG_ARTIFACTS,
   ...PIPELINE_ARTIFACTS,
 ];

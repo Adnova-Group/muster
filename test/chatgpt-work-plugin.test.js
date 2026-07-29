@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -354,13 +354,22 @@ test("receipt v3 binds every Work activation artifact and rejects tampering", as
   assert.equal(receipt.appId, "asdk_app_Receipt3");
   assert.ok(Object.hasOwn(receipt.artifacts, "runtime/muster.mjs"));
   assert.ok(Object.hasOwn(receipt.artifacts, "runtime/sprint-protocol.md"));
+  assert.ok(Object.hasOwn(receipt.artifacts, "package.json"));
   assert.ok(Object.hasOwn(receipt.artifacts, "catalog/software.yaml"));
   assert.ok(Object.hasOwn(receipt.artifacts, "pipelines/prd.yaml"));
-  assert.equal(Object.keys(receipt.artifacts).length, 32);
+  assert.equal(Object.keys(receipt.artifacts).length, 33);
   for (const digest of Object.values(receipt.artifacts)) assert.match(digest, /^[a-f0-9]{64}$/);
   const mcp = JSON.parse(await readFile(join(installed.pluginPath, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.muster.env.MUSTER_CHATGPT_WORK_RECEIPT_PATH, installed.configPath);
   assert.equal(mcp.mcpServers.muster.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH, installed.pluginPath);
+  const packagePath = join(installed.pluginPath, "package.json");
+  const packageBytes = await readFile(packagePath);
+  await writeFile(packagePath, JSON.stringify({ version: "9.9.9" }));
+  await assert.rejects(
+    readChatgptWorkConfig({ scope: "project", cwd: project }),
+    /artifact digest/i,
+  );
+  await writeFile(packagePath, packageBytes);
   const cliPath = join(installed.pluginPath, "runtime", "muster.mjs");
   const cliBytes = await readFile(cliPath);
   await writeFile(cliPath, "");
@@ -514,6 +523,26 @@ test("group/world-writable Work publication directories fail closed", async t =>
     connectionId: "asdk_app_Writable1", profile: "pro-safe", scope: "project", cwd: project,
   }), /HUMAN-HOLD.*group\/world-writable/i);
   await assert.rejects(stat(join(plugins, "muster-chatgpt-work")), /ENOENT/);
+});
+
+test("installed Work startup rejects a symlink introduced anywhere in managed ancestry", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-startup-symlink-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const installed = await runChatgptWorkInstall({
+    connectionId: "asdk_app_StartupSymlink1", profile: "pro-safe", scope: "project", cwd: project,
+  });
+  const activation = JSON.parse(await readFile(join(installed.pluginPath, ".mcp.json"), "utf8"))
+    .mcpServers.muster.env;
+  const agents = join(project, ".agents");
+  const retired = join(project, ".agents-real");
+  await rename(agents, retired);
+  await symlink(retired, agents);
+  const result = await serverExit(activation);
+  assert.notEqual(result.code, 0);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /publication path rejected.*not an ordinary directory/i);
 });
 
 test("probe identity validates installed app bytes and consumes nonce durably across restarts", async t => {

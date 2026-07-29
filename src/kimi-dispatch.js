@@ -205,6 +205,43 @@ export const KIMI_GOAL_MAX_OBJECTIVE = 4000;
 // adopted as the conservative bound.
 export const KIMI_PROCESS_MAX_BRIEF = KIMI_GOAL_MAX_OBJECTIVE;
 
+// --- Quota/balance fail-fast (kimi 0.30.0) ------------------------------------
+
+// EVIDENCE NOTE. The 0.30.0 changelog: "Fail fast when account quota or balance
+// is exhausted instead of silently retrying for ~3 minutes." The account quota
+// cannot be exhausted on demand to probe the live stream shape, so the
+// signature below is read VERBATIM from the installed 0.30.0 binary's own quota
+// classifier (packages/kosong/src/providers/kimi-errors.ts, via strings on
+// ~/.kimi-code/bin/kimi; full evidence in docs/research/kimi-code-cli.md
+// §11.12): the binary maps a 429 carrying these codes/wordings onto
+// APIProviderQuotaExhaustedError, serializes it with retryable: false, and its
+// own retry policy refuses to retry it. muster matches exactly what the binary
+// itself classifies on -- nothing more, nothing invented.
+export const KIMI_QUOTA_ERROR_NAME = "APIProviderQuotaExhaustedError";
+export const KIMI_QUOTA_ERROR_CODES = Object.freeze(["exceeded_current_quota_error", "insufficient_quota"]);
+export const KIMI_QUOTA_MESSAGE_PATTERNS = Object.freeze([
+  /exceeded your current (?:token )?quota/i,
+  /check your account balance/i,
+  /insufficient balance/i,
+  /recharge your account|please recharge/i,
+  /account (?:is )?in arrears/i
+]);
+
+// Detect the quota/balance fail-fast signature in a kimi process's captured
+// output (stream-json stdout or stderr text). Returns the matched signal --
+// the error class name, a structured provider code, or the wording pattern's
+// source -- or null. The error-name hit covers the stream-json `error` event,
+// whose wire payload carries `name: "APIProviderQuotaExhaustedError"` (the
+// binary's toKimiErrorPayload keeps the name field).
+export function detectKimiQuotaFault(text) {
+  if (typeof text !== "string" || !text) return null;
+  if (text.includes(KIMI_QUOTA_ERROR_NAME)) return KIMI_QUOTA_ERROR_NAME;
+  const code = KIMI_QUOTA_ERROR_CODES.find(candidate => text.includes(candidate));
+  if (code) return code;
+  const pattern = KIMI_QUOTA_MESSAGE_PATTERNS.find(candidate => candidate.test(text));
+  return pattern ? pattern.source : null;
+}
+
 // Map a `kimi -p "/goal ..."` process exit code onto muster's run disposition.
 // This is the whole reason /goal is worth adopting: muster's escalation signal
 // arrives as an exit code instead of being parsed out of a STATE file.
@@ -214,15 +251,39 @@ export const KIMI_PROCESS_MAX_BRIEF = KIMI_GOAL_MAX_OBJECTIVE;
 //   paused   -> interrupted / resumed / model-or-runtime error; resumable
 // Any other code is a harness fault, not a goal outcome -- never silently
 // treated as an escalation (that would report a crash as a clean stop).
-export function interpretKimiGoalExit(code) {
+//
+// `output` (optional) is the process's captured stdout/stderr text. When it
+// carries the 0.30.0 quota/balance fail-fast signature (detectKimiQuotaFault),
+// a non-complete exit is reclassified as a BILLING escalation -- kind:
+// "billing", escalate: true, resumable: false: the binary itself marks the
+// fault retryable: false, so an unattended resume/retry loop only re-pays a
+// guaranteed-fail round trip until a human recharges the account. Only after
+// the recharge does the paused goal's resume path apply. A complete exit is
+// never reclassified (the goal's own evidence was satisfied; a quota string in
+// its output is incidental).
+export function interpretKimiGoalExit(code, output) {
   const status = Object.keys(KIMI_GOAL_EXIT_CODES).find(name => KIMI_GOAL_EXIT_CODES[name] === code);
-  if (!status) return { status: "failed", terminal: true, escalate: true, reason: `kimi exited ${code} -- not a /goal terminal state` };
+  const quotaSignal = status !== "complete" ? detectKimiQuotaFault(output) : null;
+  if (!status) {
+    return {
+      status: "failed",
+      terminal: true,
+      escalate: true,
+      ...(quotaSignal ? { kind: "billing" } : {}),
+      reason: quotaSignal
+        ? `kimi exited ${code} on a quota/balance fault (matched ${JSON.stringify(quotaSignal)}) -- BILLING escalation: recharge the account, then re-run; never an unattended retry (kimi 0.30.0 marks it retryable: false)`
+        : `kimi exited ${code} -- not a /goal terminal state`
+    };
+  }
   return {
     status,
     terminal: status === "complete",
-    escalate: status === "blocked",
-    resumable: status === "paused",
-    reason: { complete: "goal satisfied", blocked: "goal blocked -- needs input or hit a limit", paused: "goal paused -- resumable" }[status]
+    escalate: status === "blocked" || quotaSignal !== null,
+    resumable: status === "paused" && !quotaSignal,
+    ...(quotaSignal ? { kind: "billing" } : {}),
+    reason: quotaSignal
+      ? `goal ${status} on a quota/balance fault (matched ${JSON.stringify(quotaSignal)}) -- BILLING escalation: recharge the account, THEN resume the goal; never an unattended retry (kimi 0.30.0 marks it retryable: false)`
+      : { complete: "goal satisfied", blocked: "goal blocked -- needs input or hit a limit", paused: "goal paused -- resumable" }[status]
   };
 }
 

@@ -197,6 +197,19 @@ test("cellNeedsRetry: nonzero exit or truncated stdout triggers the single retry
     "no session.resume_hint means the stream-json run was truncated");
 });
 
+test("cellNeedsRetry: a quota/balance fault is NEVER retried (kimi 0.30.0 fail-fast)", () => {
+  // The binary marks the quota fault retryable: false -- retrying a billing
+  // fault burns wall-clock time, not just quota. The cell keeps its recorded
+  // exitCode/verdict for the human-judgment step either way.
+  const quotaStream = '{"role":"meta","type":"system.version","version":"0.30.0"}\n' +
+    '{"type":"error","code":"api_error","name":"APIProviderQuotaExhaustedError","message":"Exceeded your current quota, please check your account balance","retryable":false}\n';
+  assert.equal(cellNeedsRetry({ exitCode: 1, stdout: quotaStream }), false, "quota fault: no retry despite nonzero exit");
+  assert.equal(cellNeedsRetry({ exitCode: 0, stdout: quotaStream }), false, "quota fault: no retry despite truncated stream");
+  // An ordinary rate-limit 429 is NOT a billing fault and still retries.
+  const rateLimited = '{"type":"error","code":"rate_limit","message":"429 too many requests"}\n';
+  assert.equal(cellNeedsRetry({ exitCode: 1, stdout: rateLimited }), true, "rate limit stays retryable");
+});
+
 // --- Verdict extraction (raw, verbatim; NO keyword scoring) ------------------
 
 test("extractVerdictText returns the assistant text verbatim from canned stream-json stdout", () => {

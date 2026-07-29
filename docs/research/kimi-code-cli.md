@@ -795,6 +795,43 @@ notes, not muster-relevant: an API-created session ignored `agent_config.permiss
 muster's run loop: `kimi -p` still holds no live session handle, so `kimiSteerDelivery` remains a
 constructor for the driver that does.
 
+### 11.12 Quota/balance fail-fast — 0.30.0 changelog classification (2026-07-29, binary-strings evidence)
+
+The 0.30.0 changelog (same source as the §11.10 attribution): *"Fail fast when account quota or
+balance is exhausted instead of silently retrying for ~3 minutes."* Unattended batches no longer pay
+dead-retry time — but the failure signature changed, so muster's run interpretation needed a
+billing-vs-model distinction. The account quota cannot be exhausted on demand to probe the live
+stream shape, so the evidence is the installed 0.30.0 binary itself
+(`strings ~/.kimi-code/bin/kimi`, unstripped — same evidence style as §11.9/§11.10):
+
+- **The binary's own quota classifier** (`packages/kosong/src/providers/kimi-errors.ts`,
+  `classifyKimiQuotaError`, passed to `convertOpenAIError` as the vendor hook) maps a **429** whose
+  body carries a structured code in `KIMI_QUOTA_EXHAUSTED_ERROR_CODES =
+  {"exceeded_current_quota_error"}` or whose lowercased message matches one of five verbatim
+  patterns — `/exceeded your current (?:token )?quota/`, `/check your account balance/`,
+  `/insufficient balance/`, `/recharge your account|please recharge/`, `/account (?:is )?in arrears/`
+  — onto a distinct error class, **`APIProviderQuotaExhaustedError`** (a second copy of the chain
+  additionally recognizes the OpenAI-style code `insufficient_quota`).
+- **Retryable: false, by construction.** Both retry-policy sites read
+  `if (error instanceof APIProviderQuotaExhaustedError) return false;`, and the wire serializer
+  (`agent-core/src/errors/serialize.ts`) maps the class to `code: "api_error"` (NOT `rate_limit`)
+  with `retryable: false` — the in-binary comment: *"the rate_limit code would re-mint a rate-limit
+  error across the wire boundary and drive the swarm requeue/suspend loop, which cannot help until
+  the account is recharged."* The payload keeps `name: "APIProviderQuotaExhaustedError"`, and the
+  stream-json event schema has an `error` event (`kimiErrorPayloadObjectSchema.extend({type:
+  "error"})`), so the class name and the provider wording are both matchable on a `-p
+  --output-format stream-json` stdout.
+
+**What muster does with it.** `detectKimiQuotaFault(text)` (`src/kimi-dispatch.js`) matches exactly
+this evidence — the error class name, the two structured codes, the five wording patterns — and
+nothing more. `interpretKimiGoalExit(code, output)` reclassifies any non-complete exit carrying the
+signature as `kind: "billing"`, `escalate: true`, `resumable: false` (a BILLING escalation: recharge
+first, THEN resume; never an unattended retry); `eval/kimi-reviewer-tier-probe.mjs`'s
+`cellNeedsRetry` refuses to spend its single retry on a quota fault. An ordinary 429 rate-limit
+stays on the retryable path in both. What is deliberately NOT implemented: any parser for the exact
+stream shape of a live quota fault (unobservable without exhausting the account) — the classifier
+matches on the binary's own classification inputs, which is the honest subset.
+
 ## Sources
 
 Moonshot docs: `www.kimi.com/code/docs/en/kimi-code-cli/{customization/{hooks,agents,skills,

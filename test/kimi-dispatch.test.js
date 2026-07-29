@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, interpretKimiGoalExit, resolveKimiWaveDispatch,
-  interpretKimiBackgroundCompletion,
+  interpretKimiBackgroundCompletion, detectKimiQuotaFault,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_PROCESS_MAX_BRIEF, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
@@ -220,6 +220,66 @@ test("interpretKimiGoalExit: a non-goal exit code is a FAULT, never a clean stop
   assert.equal(crashed.status, "failed");
   assert.equal(crashed.escalate, true);
   assert.match(crashed.reason, /not a \/goal terminal state/);
+});
+
+// --- Quota/balance fail-fast (kimi 0.30.0) -----------------------------------
+
+test("detectKimiQuotaFault: matches exactly the signature the 0.30.0 binary classifies on", () => {
+  // The stream-json error event's wire payload keeps the error class name.
+  assert.equal(detectKimiQuotaFault('{"type":"error","code":"api_error","name":"APIProviderQuotaExhaustedError","retryable":false}'), "APIProviderQuotaExhaustedError");
+  // The structured provider codes (binary: KIMI_QUOTA_EXHAUSTED_ERROR_CODES +
+  // isOpenAIInsufficientQuotaCode).
+  assert.equal(detectKimiQuotaFault('{"error":{"type":"exceeded_current_quota_error"}}'), "exceeded_current_quota_error");
+  assert.equal(detectKimiQuotaFault("Error: insufficient_quota"), "insufficient_quota");
+  // The binary's five verbatim wording patterns (it lowercases before testing).
+  assert.equal(detectKimiQuotaFault("Exceeded your current quota, please check your account balance."), "exceeded your current (?:token )?quota");
+  assert.equal(detectKimiQuotaFault("exceeded your current token quota"), "exceeded your current (?:token )?quota");
+  assert.equal(detectKimiQuotaFault("please check your account balance"), "check your account balance");
+  assert.equal(detectKimiQuotaFault("insufficient balance"), "insufficient balance");
+  assert.equal(detectKimiQuotaFault("recharge your account"), "recharge your account|please recharge");
+  assert.equal(detectKimiQuotaFault("Please recharge to continue."), "recharge your account|please recharge");
+  assert.equal(detectKimiQuotaFault("account is in arrears"), "account (?:is )?in arrears");
+  assert.equal(detectKimiQuotaFault("your account in arrears"), "account (?:is )?in arrears");
+  // Negative: an ordinary rate-limit 429 is NOT a billing fault -- the binary
+  // keeps it on the retryable rate_limit path, and so does muster.
+  assert.equal(detectKimiQuotaFault('{"type":"error","code":"rate_limit","message":"429 too many requests"}'), null);
+  assert.equal(detectKimiQuotaFault(""), null);
+  assert.equal(detectKimiQuotaFault(null), null);
+  assert.equal(detectKimiQuotaFault(undefined), null);
+});
+
+test("interpretKimiGoalExit: a quota/balance fault is a BILLING escalation, never a retry", () => {
+  const quotaStream = '{"type":"error","code":"api_error","name":"APIProviderQuotaExhaustedError","message":"Exceeded your current quota, please check your account balance","retryable":false}\n';
+
+  // 6 paused carrying the signature: NOT treated as a resumable model/runtime
+  // pause -- the binary marks the fault retryable: false, so an unattended
+  // resume only re-pays a guaranteed-fail round trip until a human recharges.
+  const paused = interpretKimiGoalExit(6, quotaStream);
+  assert.equal(paused.status, "paused");
+  assert.equal(paused.kind, "billing");
+  assert.equal(paused.escalate, true);
+  assert.equal(paused.resumable, false);
+  assert.match(paused.reason, /BILLING escalation/);
+  assert.match(paused.reason, /recharge/);
+
+  // A non-goal exit code carrying the signature: billing, not a generic fault.
+  const crashed = interpretKimiGoalExit(1, quotaStream);
+  assert.equal(crashed.status, "failed");
+  assert.equal(crashed.kind, "billing");
+  assert.equal(crashed.escalate, true);
+  assert.match(crashed.reason, /BILLING escalation/);
+
+  // The same exits WITHOUT the signature keep the pre-0.30.0 dispositions.
+  assert.equal(interpretKimiGoalExit(6, '{"type":"error","code":"rate_limit"}').resumable, true);
+  assert.equal(interpretKimiGoalExit(6, '{"type":"error","code":"rate_limit"}').kind, undefined);
+  assert.equal(interpretKimiGoalExit(1, "some unrelated crash").kind, undefined);
+
+  // A complete exit is never reclassified: the goal's own evidence was
+  // satisfied; a quota string in its output is incidental.
+  const complete = interpretKimiGoalExit(0, quotaStream);
+  assert.equal(complete.status, "complete");
+  assert.equal(complete.kind, undefined);
+  assert.equal(complete.escalate, false);
 });
 
 test("kimiGoalInvocation: builds argv + the per-process lane env", () => {

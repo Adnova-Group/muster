@@ -136,7 +136,12 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    satisfied, proceed to the wave commit/finish; **3 blocked** → muster's escalation, arriving as an
    exit code instead of being parsed out of a STATE file — STOP and report per step 7; **6 paused**
    → interrupted/resumable — resume the goal, never restart from scratch. Any other nonzero exit is
-   a harness FAULT, never a clean stop (it escalates as a fault, not as a goal outcome). On non-Kimi
+   a harness FAULT, never a clean stop (it escalates as a fault, not as a goal outcome). One fault is
+   classified apart from a retryable model failure: a 0.30.0 quota/balance fail-fast
+   (`interpretKimiGoalExit(code, output)` matches the binary's own signature via `detectKimiQuotaFault`
+   and reports `kind: "billing"`, `resumable: false`) is a BILLING escalation — the account needs a
+   recharge BEFORE the paused goal's resume path applies, and an unattended run must never burn retry
+   round trips on it (the binary itself marks the fault retryable: false). On non-Kimi
    harnesses nothing here changes: the Ralph loop above keeps re-reading STATE each turn.
 
    **Kimi loop/background profile — binary defaults, pinned not emitted.** The run leaves

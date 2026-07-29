@@ -63,7 +63,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { kimiProcessDispatch, KIMI_PROCESS_MAX_BRIEF } from "../src/kimi-dispatch.js";
+import { kimiProcessDispatch, KIMI_PROCESS_MAX_BRIEF, detectKimiQuotaFault } from "../src/kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, readSessionThinkingEfforts } from "../src/kimi-receipts.js";
 
 const pexecFile = promisify(execFile);
@@ -245,7 +245,16 @@ export function spawnEnv(descriptorEnv, baseEnv = process.env) {
 
 // Retry trigger: nonzero exit, or truncated stdout (empty, or missing the
 // session.resume_hint a complete stream-json run always ends with).
+// EXCEPTION (kimi 0.30.0 fail-fast): a quota/balance fault is NEVER retried.
+// The binary itself classifies it retryable: false (detectKimiQuotaFault,
+// src/kimi-dispatch.js), so a retry re-pays a guaranteed-fail round trip --
+// it burns wall-clock time, not just quota, and the cell's recorded
+// exitCode/verdict text still carry the fault for the human-judgment step.
+// The signature lives on stdout: the stream-json `error` event keeps
+// `name: "APIProviderQuotaExhaustedError"`, and the provider's quota wording
+// is emitted there too (spawnAttempt does not capture stderr).
 export function cellNeedsRetry({ exitCode, stdout }) {
+  if (detectKimiQuotaFault(stdout)) return false;
   if (exitCode !== 0) return true;
   if (typeof stdout !== "string" || !stdout.trim()) return true;
   return captureSessionId(stdout) === null;

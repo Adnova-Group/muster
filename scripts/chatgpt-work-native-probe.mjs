@@ -9,7 +9,8 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, open, readFile, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +22,9 @@ const PLUGIN_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const TOOL = "muster_prioritize";
 const RECEIPT_TYPE = "operator-attested-native-tool-completed";
 const ATTESTATION_TYPE = "muster-work-native-server-attestation";
+const SNAPSHOT_TYPE = "muster-work-native-retained-grade";
+const CLEANUP_TYPE = "muster-work-native-cleanup-finalization";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const REQUEST_KEYS = ["items", "model"];
 const ITEM_KEYS = ["name", "reach", "impact", "confidence", "effort"];
@@ -120,11 +124,12 @@ export function buildProbe({
       "Use Secure MCP Tunnel with an outbound-only tunnel-client and the local STDIO command: node runtime/chatgpt-work-server.mjs.",
       "For the proof server, set MUSTER_CHATGPT_WORK_PROFILE=pro-safe, MUSTER_CHATGPT_WORK_PROBE_NONCE=<nonce>, and MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH=<absolute existing private probe-dir>/server-attestation.json; the target must not already exist.",
       "The probe directory must be current-user-owned and mode 0700 (POSIX) or an existing directory with an absolute exact-basename server-attestation.json target on Windows; the new attestation is 0600, and any collision is HUMAN-HOLD.",
+      "Windows native proof is always HUMAN-HOLD: there is no usable Windows attestation claim, even when the target path exists.",
       "Call muster_prioritize exactly once with the exact nonce-bearing request. Operator evidence must be a completed native Work tool card, not assistant prose, skill discovery, tools/list, or tunnel health.",
       "The server must emit a separate nonce/tool/request/result attestation with invocationCount=1 and a server timestamp. UI evidence is operator attestation, not cryptographic provenance.",
       "Bind the receipt to SHA-256(normalized connection ID), SHA-256(installed .app.json), plugin name/version, and the registered connection label; never store the raw ID, app file, tunnel ID, API key, or screenshots.",
-      "Phase 1: while the independent server attestation still exists, grade the operator receipt against it and retain the evidence-grade result.",
-      "Phase 2 only after evidence grade succeeds: stop tunnel-client, delete only probe-owned resources after ownership checks, re-run every inventory, and finalize cleanup with verified absence. Never claim deletion before phase 1 or fabricate native proof.",
+      "Phase 1: while the independent server attestation and installed .app.json still exist, grade the operator receipt and write a private retained snapshot outside the owned plugin/temp trees. The snapshot binds the successful grade, exact owned paths, app identity/hash, nonce, and server attestation with an evidence-grade SHA-256 digest.",
+      "Phase 2 only after evidence grade succeeds: stop tunnel-client, delete only the exact snapshot-bound plugin/temp paths after ownership checks, re-run every inventory, and finalize from the retained snapshot. Phase 2 independently lstat-checks absence and rejects path mismatches, symlinks, and unowned replacements; it never depends on the deleted .app.json.",
     ],
   };
 }
@@ -191,7 +196,7 @@ function validateAttestation(value, nonce, at, errors, expectedIdentity) {
   validateRequest(value.request, nonce, `${at}.request`, errors);
   validateResult(value.result, nonce, `${at}.result`, errors);
   validateIdentity(value.identity, expectedIdentity, errors);
-  if (!/^[0-9a-f-]{36}$/.test(value.serverInstanceId ?? "")) errors.push(`${at}.serverInstanceId must be a UUID`);
+  if (!UUID_PATTERN.test(value.serverInstanceId ?? "")) errors.push(`${at}.serverInstanceId must be a UUID`);
   exactValue(value.invocationCount, 1, `${at}.invocationCount`, errors);
   validateTimestamp(value.timestamp, `${at}.timestamp`, errors);
 }
@@ -228,7 +233,8 @@ function validateArtifacts(value, errors) {
   exactValue(value.probeDirsRetained, 1, "receipt.artifacts.probeDirsRetained", errors);
 }
 
-export function gradeReceipt(receipt, nonce, serverAttestation, expectedIdentity = null) {
+export function gradeReceipt(receipt, nonce, serverAttestation, expectedIdentity = null, platform = process.platform) {
+  if (platform === "win32") return { ok: false, errors: ["HUMAN-HOLD: Windows native proof has no usable attestation claim"] };
   if (!NONCE_PATTERN.test(nonce ?? "")) return { ok: false, errors: ["expected nonce must be 32 lowercase hexadecimal characters"] };
   if (!expectedIdentity) return { ok: false, errors: ["expected identity is required"] };
   const errors = [];
@@ -254,17 +260,193 @@ export function gradeReceipt(receipt, nonce, serverAttestation, expectedIdentity
   return errors.length ? { ok: false, errors } : { ok: true, phase: "evidence-graded", cleanupRequired: true, nonce, receiptType: RECEIPT_TYPE };
 }
 
-export function finalizeCleanup(cleanup, nonce, expectedIdentity = null) {
-  if (!NONCE_PATTERN.test(nonce ?? "")) return { ok: false, errors: ["expected nonce must be 32 lowercase hexadecimal characters"] };
-  if (!expectedIdentity) return { ok: false, errors: ["expected identity is required"] };
+function exactAbsolutePath(value, at, errors) {
+  if (typeof value !== "string" || !isAbsolute(value) || resolve(value) !== value) {
+    errors.push(`${at} must be an exact normalized absolute path`);
+    return false;
+  }
+  return true;
+}
+
+function pathContains(parent, candidate) {
+  const rel = relative(parent, candidate);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+async function inspectOwnedDirectory(path, at, errors) {
+  if (!exactAbsolutePath(path, at, errors)) return null;
+  let stat;
+  try { stat = await lstat(path); } catch (error) {
+    errors.push(`${at} cannot be inspected: ${error.code === "ENOENT" ? "path is absent" : error.message}`);
+    return null;
+  }
+  if (stat.isSymbolicLink()) errors.push(`${at} must not be a symlink`);
+  if (!stat.isDirectory()) errors.push(`${at} must be a directory`);
+  if (typeof process.getuid === "function" && stat.uid !== process.getuid()) errors.push(`${at} is unowned by the current user`);
+  return {
+    uid: typeof stat.uid === "number" ? stat.uid : null,
+    dev: String(stat.dev),
+    ino: String(stat.ino),
+    type: "directory",
+  };
+}
+
+function gradeDigestMaterial(snapshot) {
+  return {
+    grade: snapshot.grade,
+    nonce: snapshot.nonce,
+    identity: snapshot.identity,
+    serverAttestation: snapshot.serverAttestation,
+    ownedPaths: snapshot.ownedPaths,
+    ownership: snapshot.ownership,
+  };
+}
+
+function snapshotDigest(snapshot) {
+  return sha256(JSON.stringify(gradeDigestMaterial(snapshot)));
+}
+
+async function validatePrivateSnapshotTarget(snapshotPath, errors) {
+  if (!exactAbsolutePath(snapshotPath, "snapshotPath", errors)) return;
+  const parent = dirname(snapshotPath);
+  let parentStat;
+  try { parentStat = await lstat(parent); } catch (error) {
+    errors.push(`snapshot parent cannot be inspected: ${error.message}`);
+    return;
+  }
+  if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) errors.push("snapshot parent must be a real directory");
+  if (typeof process.getuid === "function" && parentStat.uid !== process.getuid()) errors.push("snapshot parent is unowned by the current user");
+  if ((parentStat.mode & 0o777) !== 0o700) errors.push("snapshot parent must be private mode 0700");
+  try {
+    if (await realpath(parent) !== parent) errors.push("snapshot parent path must not traverse a symlink");
+  } catch (error) {
+    errors.push(`snapshot parent cannot be resolved: ${error.message}`);
+  }
+}
+
+export async function retainGradeSnapshot({
+  grade, nonce, identity, serverAttestation, ownedPaths, snapshotPath,
+} = {}) {
   const errors = [];
-  if (!exactKeys(cleanup, ["cleanupType", "nonce", "timestamp", "identity", "inventory", "artifacts"], "cleanup", errors)) {
+  if (process.platform === "win32") return { ok: false, errors: ["HUMAN-HOLD: Windows native proof has no usable attestation claim"] };
+  if (JSON.stringify(grade) !== JSON.stringify({
+    ok: true, phase: "evidence-graded", cleanupRequired: true, nonce, receiptType: RECEIPT_TYPE,
+  })) errors.push("snapshot requires the exact successful phase 1 grade");
+  if (!NONCE_PATTERN.test(nonce ?? "")) errors.push("snapshot nonce must be 32 lowercase hexadecimal characters");
+  validateIdentity(identity, identity, errors);
+  validateAttestation(serverAttestation, nonce, "snapshot.serverAttestation", errors, identity);
+  if (!exactKeys(ownedPaths, ["plugin", "temp"], "snapshot.ownedPaths", errors)) return { ok: false, errors };
+  const ownership = {
+    plugin: await inspectOwnedDirectory(ownedPaths.plugin, "snapshot.ownedPaths.plugin", errors),
+    temp: await inspectOwnedDirectory(ownedPaths.temp, "snapshot.ownedPaths.temp", errors),
+  };
+  await validatePrivateSnapshotTarget(snapshotPath, errors);
+  for (const [key, path] of Object.entries(ownedPaths)) {
+    if (exactAbsolutePath(path, `snapshot.ownedPaths.${key}`, errors) && pathContains(path, snapshotPath)) {
+      errors.push(`snapshotPath must be outside the owned ${key} path`);
+    }
+  }
+  if (typeof ownedPaths.plugin === "string" && typeof ownedPaths.temp === "string"
+    && (ownedPaths.plugin === ownedPaths.temp || pathContains(ownedPaths.plugin, ownedPaths.temp) || pathContains(ownedPaths.temp, ownedPaths.plugin))) {
+    errors.push("owned plugin and temp paths must be distinct and non-nested");
+  }
+  if (errors.length) return { ok: false, errors };
+  const snapshot = {
+    snapshotType: SNAPSHOT_TYPE,
+    schemaVersion: 1,
+    grade,
+    nonce,
+    identity,
+    serverAttestation,
+    ownedPaths,
+    ownership,
+  };
+  snapshot.gradeDigest = snapshotDigest(snapshot);
+  let handle;
+  try {
+    handle = await open(snapshotPath, "wx", 0o600);
+    await handle.writeFile(`${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  } catch (error) {
+    return { ok: false, errors: [`cannot retain private grade snapshot: ${error.message}`] };
+  } finally {
+    await handle?.close();
+  }
+  return {
+    ...grade,
+    gradeDigest: snapshot.gradeDigest,
+    snapshotPath,
+  };
+}
+
+function validateSnapshot(snapshot, errors) {
+  const keys = ["snapshotType", "schemaVersion", "grade", "nonce", "identity", "serverAttestation", "ownedPaths", "ownership", "gradeDigest"];
+  if (!exactKeys(snapshot, keys, "snapshot", errors)) return;
+  exactValue(snapshot.snapshotType, SNAPSHOT_TYPE, "snapshot.snapshotType", errors);
+  exactValue(snapshot.schemaVersion, 1, "snapshot.schemaVersion", errors);
+  if (!NONCE_PATTERN.test(snapshot.nonce ?? "")) errors.push("snapshot.nonce must be 32 lowercase hexadecimal characters");
+  if (!isRecord(snapshot.grade) || snapshot.grade.ok !== true || snapshot.grade.phase !== "evidence-graded"
+    || snapshot.grade.cleanupRequired !== true || snapshot.grade.nonce !== snapshot.nonce
+    || snapshot.grade.receiptType !== RECEIPT_TYPE) {
+    errors.push("snapshot must contain a successful phase 1 grade");
+  }
+  validateIdentity(snapshot.identity, snapshot.identity, errors);
+  validateAttestation(snapshot.serverAttestation, snapshot.nonce, "snapshot.serverAttestation", errors, snapshot.identity);
+  if (exactKeys(snapshot.ownedPaths, ["plugin", "temp"], "snapshot.ownedPaths", errors)) {
+    for (const key of ["plugin", "temp"]) exactAbsolutePath(snapshot.ownedPaths[key], `snapshot.ownedPaths.${key}`, errors);
+  }
+  if (!exactKeys(snapshot.ownership, ["plugin", "temp"], "snapshot.ownership", errors)) return;
+  for (const key of ["plugin", "temp"]) {
+    const at = `snapshot.ownership.${key}`;
+    if (!exactKeys(snapshot.ownership[key], ["uid", "dev", "ino", "type"], at, errors)) continue;
+    exactValue(snapshot.ownership[key].type, "directory", `${at}.type`, errors);
+  }
+  if (!SHA256_PATTERN.test(snapshot.gradeDigest ?? "") || snapshot.gradeDigest !== snapshotDigest(snapshot)) {
+    errors.push("snapshot.gradeDigest does not cryptographically bind the successful phase 1 evidence");
+  }
+}
+
+async function verifyAbsent(path, at, errors) {
+  try {
+    const stat = await lstat(path);
+    if (stat.isSymbolicLink()) errors.push(`${at} is a symlink, not verified absence`);
+    else if (typeof process.getuid === "function" && stat.uid !== process.getuid()) errors.push(`${at} is an unowned replacement`);
+    else errors.push(`${at} must be absent`);
+  } catch (error) {
+    if (error.code !== "ENOENT") errors.push(`${at} absence cannot be verified: ${error.message}`);
+  }
+}
+
+async function readPrivateGradeSnapshot(snapshotPath) {
+  const errors = [];
+  await validatePrivateSnapshotTarget(snapshotPath, errors);
+  let stat;
+  try { stat = await lstat(snapshotPath); } catch (error) {
+    errors.push(`grade snapshot cannot be inspected: ${error.message}`);
+  }
+  if (stat) {
+    if (stat.isSymbolicLink() || !stat.isFile()) errors.push("grade snapshot must be a regular file, not a symlink");
+    if (typeof process.getuid === "function" && stat.uid !== process.getuid()) errors.push("grade snapshot is unowned");
+    if ((stat.mode & 0o777) !== 0o600) errors.push("grade snapshot must be private mode 0600");
+  }
+  if (errors.length) throw new Error(errors.join("; "));
+  return JSON.parse(await readFile(snapshotPath, "utf8"));
+}
+
+export async function finalizeCleanup(cleanup, snapshot) {
+  if (process.platform === "win32") return { ok: false, errors: ["HUMAN-HOLD: Windows native proof has no usable attestation claim"] };
+  const errors = [];
+  validateSnapshot(snapshot, errors);
+  if (!exactKeys(cleanup, ["cleanupType", "timestamp", "gradeDigest", "ownedPaths", "inventory", "artifacts"], "cleanup", errors)) {
     return { ok: false, errors };
   }
-  exactValue(cleanup.cleanupType, "muster-work-native-cleanup-finalization", "cleanup.cleanupType", errors);
-  exactValue(cleanup.nonce, nonce, "cleanup.nonce", errors);
+  exactValue(cleanup.cleanupType, CLEANUP_TYPE, "cleanup.cleanupType", errors);
   validateTimestamp(cleanup.timestamp, "cleanup.timestamp", errors);
-  validateIdentity(cleanup.identity, expectedIdentity, errors);
+  exactValue(cleanup.gradeDigest, snapshot?.gradeDigest, "cleanup.gradeDigest", errors);
+  if (exactKeys(cleanup.ownedPaths, ["plugin", "temp"], "cleanup.ownedPaths", errors)) {
+    for (const key of ["plugin", "temp"]) {
+      if (cleanup.ownedPaths[key] !== snapshot?.ownedPaths?.[key]) errors.push(`cleanup.ownedPaths.${key} path mismatch`);
+    }
+  }
   const inventoryKeys = Object.keys(expectedInventory("after"));
   if (exactKeys(cleanup.inventory, inventoryKeys, "cleanup.inventory", errors)) {
     for (const key of inventoryKeys) exactValue(cleanup.inventory[key], "absent", `cleanup.inventory.${key}`, errors);
@@ -275,13 +457,19 @@ export function finalizeCleanup(cleanup, nonce, expectedIdentity = null) {
       exactValue(cleanup.artifacts[key], 0, `cleanup.artifacts.${key}`, errors);
     }
   }
-  return errors.length ? { ok: false, errors } : { ok: true, phase: "cleanup-finalized", nonce };
+  if (snapshot?.ownedPaths) {
+    await verifyAbsent(snapshot.ownedPaths.plugin, "snapshot.ownedPaths.plugin", errors);
+    await verifyAbsent(snapshot.ownedPaths.temp, "snapshot.ownedPaths.temp", errors);
+  }
+  return errors.length ? { ok: false, errors } : {
+    ok: true, phase: "cleanup-finalized", nonce: snapshot.nonce, gradeDigest: snapshot.gradeDigest,
+  };
 }
 
 const HELP = `Usage:
   node scripts/chatgpt-work-native-probe.mjs --connection-id <id> --app-json <file> --plugin-version <semver> --connection-label <label>
-  node scripts/chatgpt-work-native-probe.mjs --grade <receipt.json> --nonce <nonce> --server-attestation <attestation.json> --connection-id <id> --app-json <file> --plugin-version <semver> --connection-label <label>
-  node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup <cleanup.json> --nonce <nonce> --connection-id <id> --app-json <file> --plugin-version <semver> --connection-label <label>
+  node scripts/chatgpt-work-native-probe.mjs --grade <receipt.json> --nonce <nonce> --server-attestation <attestation.json> --connection-id <id> --app-json <file> --plugin-version <semver> --connection-label <label> --snapshot-out <private-retained.json> --owned-plugin-path <absolute-path> --owned-temp-path <absolute-path>
+  node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup <cleanup.json> --grade-snapshot <private-retained.json>
 `;
 
 async function main() {
@@ -290,21 +478,22 @@ async function main() {
     ({ values } = parseArgs({ options: {
       grade: { type: "string" }, "finalize-cleanup": { type: "string" }, nonce: { type: "string" }, "server-attestation": { type: "string" },
       "connection-id": { type: "string" }, "app-json": { type: "string" }, "plugin-version": { type: "string" }, "connection-label": { type: "string" },
+      "snapshot-out": { type: "string" }, "grade-snapshot": { type: "string" },
+      "owned-plugin-path": { type: "string" }, "owned-temp-path": { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     }, allowPositionals: false }));
   } catch (error) { process.stderr.write(`${error.message}\n${HELP}`); return 2; }
   if (values.help) { process.stdout.write(HELP); return 0; }
   if (values["finalize-cleanup"]) {
-    if (!values.nonce || !values["connection-id"] || !values["app-json"] || !values["plugin-version"] || !values["connection-label"]) {
-      process.stderr.write(`cleanup finalization requires --nonce and real identity inputs\n${HELP}`); return 2;
+    if (!values["grade-snapshot"]) {
+      process.stderr.write(`cleanup finalization requires --grade-snapshot; deleted identity inputs are not used\n${HELP}`); return 2;
     }
     try {
-      const cleanup = JSON.parse(await readFile(values["finalize-cleanup"], "utf8"));
-      const expectedIdentity = buildIdentity({
-        connectionId: values["connection-id"], appJson: await readFile(values["app-json"], "utf8"),
-        pluginVersion: values["plugin-version"], connectionLabel: values["connection-label"],
-      });
-      const result = finalizeCleanup(cleanup, values.nonce, expectedIdentity);
+      const [cleanup, snapshot] = await Promise.all([
+        readFile(values["finalize-cleanup"], "utf8").then(JSON.parse),
+        readPrivateGradeSnapshot(values["grade-snapshot"]),
+      ]);
+      const result = await finalizeCleanup(cleanup, snapshot);
       process.stdout.write(`${JSON.stringify(result)}\n`);
       return result.ok ? 0 : 1;
     } catch (error) {
@@ -330,6 +519,9 @@ async function main() {
   if (!values["connection-id"] || !values["app-json"] || !values["plugin-version"] || !values["connection-label"]) {
     process.stderr.write(`--connection-id, --app-json, --plugin-version, and --connection-label identity inputs must be used together when grading\n${HELP}`); return 2;
   }
+  if (!values["snapshot-out"] || !values["owned-plugin-path"] || !values["owned-temp-path"]) {
+    process.stderr.write(`--snapshot-out, --owned-plugin-path, and --owned-temp-path are required when grading\n${HELP}`); return 2;
+  }
   try {
     const [receipt, attestation] = await Promise.all([
       readFile(values.grade, "utf8").then(JSON.parse),
@@ -342,8 +534,20 @@ async function main() {
       connectionLabel: values["connection-label"],
     });
     const result = gradeReceipt(receipt, values.nonce, attestation, expectedIdentity);
-    process.stdout.write(`${JSON.stringify(result)}\n`);
-    return result.ok ? 0 : 1;
+    if (!result.ok) {
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+      return 1;
+    }
+    const retained = await retainGradeSnapshot({
+      grade: result,
+      nonce: values.nonce,
+      identity: expectedIdentity,
+      serverAttestation: attestation,
+      ownedPaths: { plugin: values["owned-plugin-path"], temp: values["owned-temp-path"] },
+      snapshotPath: values["snapshot-out"],
+    });
+    process.stdout.write(`${JSON.stringify(retained)}\n`);
+    return retained.ok ? 0 : 1;
   } catch (error) {
     process.stdout.write(`${JSON.stringify({ ok: false, errors: [`cannot read proof: ${error.message}`] })}\n`); return 1;
   }

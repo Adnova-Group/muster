@@ -75,7 +75,7 @@ For private/local development, OpenAI's [plugin packaging guide](https://develop
 
 The technical ID copied from developer mode may have an initial `plugin_` prefix; Muster normalizes only that prefix. A connection ID is not a credential. Local/repo marketplaces are authoring and private-distribution sources; this lane does not claim public submission. The documented local/repo source is the desktop proof lane: restart or refresh ChatGPT Desktop, select that marketplace source, and install the plugin. Do not generalize local marketplace ingestion to Work web; use Work web only when an independently supported source is available.
 
-`muster install chatgpt-work` requires an explicit `--profile`; `pro-safe` is the recommended Pro-compatible choice. The installer returns `<cwd>/.agents/plugins/plugin` for `--scope project` or `<home>/.agents/plugins/plugin` for `--scope user`, and writes `.git/muster/chatgpt-work.json` or `<home>/.muster/chatgpt-work.json` respectively. Treat the returned `pluginPath` and receipt as authoritative.
+`muster install chatgpt-work` requires an explicit `--profile`; `pro-safe` is the recommended Pro-compatible choice. The installer returns `<cwd>/.agents/plugins/muster-chatgpt-work` for `--scope project` or `<home>/.agents/plugins/muster-chatgpt-work` for `--scope user`, and writes `.git/muster/chatgpt-work.json` or `<home>/.muster/chatgpt-work.json` respectively. Treat the returned `pluginPath` and receipt as authoritative.
 
 OpenAI's [Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) describes an outbound-only `tunnel-client` path for private STDIO servers and explicitly excludes tunnel-backed servers from public plugin submission. Against the generated plugin runtime, the supported startup is:
 
@@ -108,7 +108,7 @@ The runtime Platform API key authenticates and bills the tunnel's control-plane/
 
 The [developer-mode and MCP-apps policy](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt-beta) puts full MCP (including write/modify actions) in the Business/Enterprise/Edu rollout; Pro's custom MCP path is read/fetch. The recommended `pro-safe` profile exposes only `muster_prioritize`, titled **Prioritize backlog items**, with `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. Muster claims Pro compatibility only after a successful native **Scan Tools** gate. The `full` profile is the existing 28-tool deterministic surface, not write support; it requires the installer's `--profile full --allow-full-actions`, the server's `MUSTER_CHATGPT_WORK_SERVER_ALLOW_FULL_ACTIONS=1`, and a workspace entitlement for full MCP. Treat this as a double opt-in. ChatGPT can use a frozen tool snapshot; after metadata changes, use Refresh or recreate the developer connection/app and start a new Work chat.
 
-Native proof is two-phase. Grade the operator receipt while the identity-bound server attestation and probe inventory are still present; the result is `evidence-graded`. Only then stop the tunnel, verify ownership, remove this run's exact plugin/marketplace/receipt/probe artifacts, re-inventory absence, and run `--finalize-cleanup` with zero retained artifacts. There is no invented uninstall command; collisions or uncertain ownership are HUMAN-HOLD. UI evidence is observational, while `identity` and `serverInstanceId` bind the server evidence.
+Native proof is two-phase. Grade the operator receipt while the identity-bound server attestation and probe inventory are still present; this writes a private retained snapshot outside the owned trees and returns `evidence-graded`. Only then stop the tunnel and remove the exact snapshot-bound plugin and probe paths. Phase 2 reads the retained snapshot and independently verifies both paths are absent. There is no invented uninstall command; collisions or uncertain ownership are HUMAN-HOLD. UI evidence is observational, while `identity` and `serverInstanceId` bind the server evidence.
 
 ```sh
 node scripts/chatgpt-work-native-probe.mjs \
@@ -118,9 +118,8 @@ node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> 
   --server-attestation attestation.json --connection-id asdk_app_... \
   --app-json /absolute/path/to/installed/.app.json --plugin-version 0.5.0 \
   --connection-label "Muster ChatGPT Work"
-node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json --nonce <nonce> \
-  --connection-id asdk_app_... --app-json /absolute/path/to/installed/.app.json \
-  --plugin-version 0.5.0 --connection-label "Muster ChatGPT Work"
+node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
+  --grade-snapshot /private/retained/grade-snapshot.json
 ```
 
 ### 1.2 Workspace agents — the team-shared cloud lane

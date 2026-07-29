@@ -1,15 +1,24 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  chmod, cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, writeFile,
+  chmod, cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { publishCodexPlugin } from "./codex-release.js";
+import { withCodexFileLock } from "./codex-lock.js";
 
 const CONNECTION_ID = /^asdk_app_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const PROFILES = new Set(["pro-safe", "full"]);
 const RECEIPT_NAME = "chatgpt-work.json";
+const WORK_PLUGIN_ID = "muster-chatgpt-work";
+const ARTIFACT_PATHS = [
+  ".app.json",
+  ".mcp.json",
+  ".codex-plugin/plugin.json",
+  "runtime/chatgpt-work-server.mjs",
+];
+const HEX64 = /^[a-f0-9]{64}$/;
+const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 
 export function normalizeChatgptWorkConnectionId(value) {
   if (typeof value !== "string") throw new Error("ChatGPT Work connection id is required");
@@ -30,7 +39,8 @@ async function ordinaryDirectory(path, { create = false } = {}) {
     catch (error) {
       if (error.code !== "ENOENT") throw error;
       if (!create) return false;
-      await mkdir(current, { mode: 0o700 });
+      try { await mkdir(current, { mode: 0o700 }); }
+      catch (createError) { if (createError.code !== "EEXIST") throw createError; }
       info = await lstat(current);
     }
     if (info.isSymbolicLink() || !info.isDirectory()) {
@@ -84,22 +94,76 @@ export function chatgptWorkPluginsRoot({ scope = "project", cwd = process.cwd(),
 }
 
 function validateConfig(config) {
-  if (config?.format !== 2 || config?.owner !== "muster" || !PROFILES.has(config.profile)
+  const receiptKeys = [
+    "allowFullActions", "appId", "artifactFlavor", "artifacts", "cacheKey",
+    "connectionId", "format", "owner", "pluginPath", "profile",
+  ];
+  if (!config || Object.keys(config).sort().join("\0") !== receiptKeys.sort().join("\0")) {
+    throw new Error("ChatGPT Work installer receipt is invalid");
+  }
+  if (config?.format !== 3 || config?.owner !== "muster" || config?.artifactFlavor !== "chatgpt-work"
+    || !PROFILES.has(config.profile)
     || typeof config.allowFullActions !== "boolean") throw new Error("ChatGPT Work installer receipt is invalid");
   const connectionId = normalizeChatgptWorkConnectionId(config.connectionId);
-  if (connectionId !== config.connectionId) throw new Error("ChatGPT Work installer receipt connection id is not canonical");
+  if (connectionId !== config.connectionId || config.appId !== connectionId) {
+    throw new Error("ChatGPT Work installer receipt app id is not canonical");
+  }
   if ((config.profile === "full") !== config.allowFullActions) {
     throw new Error("ChatGPT Work installer receipt profile/action opt-in is inconsistent");
   }
-  const cacheKey = createHash("sha256").update(JSON.stringify([connectionId, config.profile, config.allowFullActions])).digest("hex");
-  if (config.cacheKey !== cacheKey || !/^[a-f0-9]{64}$/.test(config.appSha256 ?? "") || !isAbsolute(config.pluginPath ?? "")) {
+  const cacheKey = sha256(JSON.stringify(["chatgpt-work", connectionId, config.profile, config.allowFullActions]));
+  if (config.cacheKey !== cacheKey || !isAbsolute(config.pluginPath ?? "")
+    || !config.artifacts || Object.keys(config.artifacts).sort().join("\0") !== [...ARTIFACT_PATHS].sort().join("\0")
+    || Object.values(config.artifacts).some(digest => !HEX64.test(digest))) {
     throw new Error("ChatGPT Work installer receipt cache identity is invalid");
   }
   return {
-    format: 2, owner: "muster", connectionId, profile: config.profile,
+    format: 3, owner: "muster", artifactFlavor: "chatgpt-work", appId: connectionId,
+    connectionId, profile: config.profile,
     allowFullActions: config.allowFullActions, cacheKey,
-    appSha256: config.appSha256, pluginPath: config.pluginPath,
+    pluginPath: config.pluginPath, artifacts: { ...config.artifacts },
   };
+}
+
+async function readArtifact(path, label) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink() || !info.isFile()) throw new Error(`ChatGPT Work ${label} must be an ordinary file`);
+  return readFile(path);
+}
+
+async function validateInstalledConfig(config, expectedPluginPath, expectedConfigPath) {
+  if (resolve(config.pluginPath) !== resolve(expectedPluginPath)) {
+    throw new Error("ChatGPT Work installer receipt plugin path is outside its scope");
+  }
+  for (const path of ARTIFACT_PATHS) {
+    const bytes = await readArtifact(join(config.pluginPath, ...path.split("/")), `installed artifact ${path}`);
+    if (sha256(bytes) !== config.artifacts[path]) {
+      throw new Error(`ChatGPT Work installer receipt artifact digest does not match ${path}`);
+    }
+  }
+  const app = JSON.parse(await readFile(join(config.pluginPath, ".app.json"), "utf8"));
+  if (JSON.stringify(app) !== JSON.stringify({ apps: { muster: { id: config.appId } } })) {
+    throw new Error("ChatGPT Work installer receipt does not match installed app metadata");
+  }
+  const manifest = JSON.parse(await readFile(join(config.pluginPath, ".codex-plugin", "plugin.json"), "utf8"));
+  if (manifest?.name !== WORK_PLUGIN_ID || manifest?.apps !== "./.app.json" || manifest?.mcpServers !== "./.mcp.json") {
+    throw new Error("ChatGPT Work installed plugin manifest is inconsistent");
+  }
+  const mcp = JSON.parse(await readFile(join(config.pluginPath, ".mcp.json"), "utf8"));
+  const env = mcp?.mcpServers?.muster?.env;
+  if (mcp?.mcpServers?.muster?.command !== "node"
+    || JSON.stringify(mcp?.mcpServers?.muster?.args) !== JSON.stringify(["./runtime/chatgpt-work-server.mjs"])
+    || mcp?.mcpServers?.muster?.cwd !== "."
+    || env?.MUSTER_CHATGPT_WORK_PROFILE !== config.profile
+    || env?.MUSTER_CHATGPT_WORK_CONNECTION_ID !== config.connectionId
+    || resolve(env?.MUSTER_CHATGPT_WORK_APP_JSON_PATH ?? "") !== resolve(config.pluginPath, ".app.json")
+    || resolve(env?.MUSTER_CHATGPT_WORK_PLUGIN_PATH ?? "") !== resolve(config.pluginPath)
+    || resolve(env?.MUSTER_CHATGPT_WORK_RECEIPT_PATH ?? "") !== resolve(expectedConfigPath)
+    || env?.MUSTER_CHATGPT_WORK_PLUGIN_VERSION !== manifest.version
+    || (env?.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS === "1") !== config.allowFullActions) {
+    throw new Error("ChatGPT Work installed MCP activation metadata is inconsistent");
+  }
+  return config;
 }
 
 export async function readChatgptWorkConfig(options = {}) {
@@ -113,17 +177,7 @@ export async function readChatgptWorkConfig(options = {}) {
   }
   try {
     const config = validateConfig(JSON.parse(await readFile(path, "utf8")));
-    const expectedPluginPath = join(chatgptWorkPluginsRoot(options), "plugin");
-    if (resolve(config.pluginPath) !== resolve(expectedPluginPath)) throw new Error("ChatGPT Work installer receipt plugin path is outside its scope");
-    const appPath = join(config.pluginPath, ".app.json");
-    const appInfo = await lstat(appPath);
-    if (appInfo.isSymbolicLink() || !appInfo.isFile()) throw new Error("ChatGPT Work installed app metadata must be an ordinary file");
-    const appBytes = await readFile(appPath, "utf8");
-    if (createHash("sha256").update(appBytes).digest("hex") !== config.appSha256
-      || JSON.stringify(JSON.parse(appBytes)) !== JSON.stringify({ apps: { muster: { id: config.connectionId } } })) {
-      throw new Error("ChatGPT Work installer receipt does not match installed app metadata");
-    }
-    return config;
+    return await validateInstalledConfig(config, join(chatgptWorkPluginsRoot(options), WORK_PLUGIN_ID), path);
   }
   catch (error) {
     if (error instanceof SyntaxError) throw new Error(`ChatGPT Work installer receipt is not valid JSON: ${path}`);
@@ -169,7 +223,7 @@ async function prepareRuntimeAssets() {
   };
 }
 
-async function stageWorkPlugin(config, assets) {
+async function stageWorkPlugin(config, assets, { configPath, pluginPath }) {
   const stagingRoot = await mkdtemp(join(tmpdir(), "muster-work-plugin-"));
   const plugin = join(stagingRoot, "plugin");
   const runtime = join(plugin, "runtime");
@@ -180,20 +234,28 @@ async function stageWorkPlugin(config, assets) {
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const app = { apps: { muster: { id: config.connectionId } } };
   await writeFile(join(plugin, ".app.json"), JSON.stringify(app, null, 2) + "\n");
-  const serverEnv = config.profile === "full" && config.allowFullActions
-    ? { MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS: "1" }
-    : undefined;
+  const serverEnv = {
+    MUSTER_CHATGPT_WORK_PROFILE: config.profile,
+    MUSTER_CHATGPT_WORK_CONNECTION_ID: config.connectionId,
+    MUSTER_CHATGPT_WORK_APP_JSON_PATH: join(pluginPath, ".app.json"),
+    MUSTER_CHATGPT_WORK_PLUGIN_PATH: pluginPath,
+    MUSTER_CHATGPT_WORK_RECEIPT_PATH: configPath,
+    MUSTER_CHATGPT_WORK_PLUGIN_VERSION: pkg.version,
+    ...(config.profile === "full" && config.allowFullActions
+      ? { MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS: "1" }
+      : {}),
+  };
   await writeFile(join(plugin, ".mcp.json"), JSON.stringify({
     mcpServers: {
       muster: {
         command: "node", args: ["./runtime/chatgpt-work-server.mjs"], cwd: ".",
-        ...(serverEnv ? { env: serverEnv } : {}),
+        env: serverEnv,
       },
     },
   }, null, 2) + "\n");
   await writeFile(join(plugin, "package.json"), JSON.stringify({ version: pkg.version }, null, 2) + "\n");
   await writeFile(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({
-    name: "muster", version: pkg.version,
+    name: WORK_PLUGIN_ID, version: pkg.version,
     description: "Muster deterministic tools for ChatGPT Work.",
     author: { name: "Adnova Group" }, license: "Apache-2.0",
     mcpServers: "./.mcp.json", apps: "./.app.json",
@@ -210,9 +272,39 @@ async function stageWorkPlugin(config, assets) {
   return { stagingRoot, plugin, version: pkg.version };
 }
 
+async function snapshotFile(path) {
+  try { return await readFile(path); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+}
+
+async function atomicPrivateWrite(path, bytes) {
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temporary, bytes, { mode: 0o600, flag: "wx" });
+  try {
+    await rename(temporary, path);
+    await chmod(path, 0o600);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+}
+
+async function pathExists(path) {
+  try { await lstat(path); return true; }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+}
+
+async function artifactDigests(pluginPath) {
+  return Object.fromEntries(await Promise.all(ARTIFACT_PATHS.map(async path => [
+    path,
+    sha256(await readArtifact(join(pluginPath, ...path.split("/")), `installed artifact ${path}`)),
+  ])));
+}
+
 export async function runChatgptWorkInstall({
   connectionId, profile, scope = "project", allowFullActions = false,
   dryRun = false, cwd = process.cwd(), home = homedir(),
+  __testBeforeReceiptCommit,
 } = {}) {
   const canonicalId = normalizeChatgptWorkConnectionId(connectionId);
   if (!PROFILES.has(profile)) throw new Error("ChatGPT Work profile must be pro-safe or full");
@@ -221,52 +313,82 @@ export async function runChatgptWorkInstall({
   const config = { connectionId: canonicalId, profile, allowFullActions: profile === "full" };
   const configPath = await chatgptWorkConfigPath({ scope, cwd, home });
   const pluginsRoot = chatgptWorkPluginsRoot({ scope, cwd, home });
+  const pluginPath = join(pluginsRoot, WORK_PLUGIN_ID);
   await ordinaryDirectory(dirname(configPath));
   await ordinaryDirectory(dirname(pluginsRoot));
-  await readChatgptWorkConfig({ scope, cwd, home }); // validates any installer-owned receipt before mutation
-  let receiptSnapshot = null;
-  try { receiptSnapshot = await readFile(configPath, "utf8"); } catch (error) { if (error.code !== "ENOENT") throw error; }
   if (dryRun) {
-    return { ok: true, scope, dryRun, configPath, pluginPath: join(pluginsRoot, "plugin"), connectionId: canonicalId, profile, allowFullActions: config.allowFullActions };
+    const owned = await readChatgptWorkConfig({ scope, cwd, home });
+    if (!owned && await pathExists(pluginPath)) throw new Error(`HUMAN-HOLD: ChatGPT Work destination is unowned: ${pluginPath}`);
+    return { ok: true, scope, dryRun, configPath, pluginPath, connectionId: canonicalId, profile, allowFullActions: config.allowFullActions };
   }
 
-  const assets = await prepareRuntimeAssets();
-  let staged;
-  try {
-    staged = await stageWorkPlugin(config, assets);
-    await ordinaryDirectory(dirname(configPath), { create: true });
-    await ordinaryDirectory(dirname(pluginsRoot), { create: true });
-    await ordinaryDirectory(pluginsRoot, { create: true });
-    await privateManagedDirectory(dirname(configPath));
-    await privateManagedDirectory(pluginsRoot);
-    const published = await publishCodexPlugin({
-      pluginsRoot, stagedPlugin: staged.plugin, packageVersion: staged.version,
-      marketplaceTemplate: {
-        name: "muster", interface: { displayName: "Muster" },
-        plugins: [{ name: "muster", source: { source: "local", path: "./plugin" }, category: "Productivity" }],
-      },
-    });
-    await privateManagedDirectory(dirname(configPath));
-    let currentSnapshot = null;
-    try { currentSnapshot = await readFile(configPath, "utf8"); } catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (currentSnapshot !== receiptSnapshot) throw new Error("ChatGPT Work installer receipt changed concurrently");
-    const appBytes = await readFile(join(published.pluginRoot, ".app.json"), "utf8");
-    const receipt = {
-      format: 2, owner: "muster", ...config,
-      cacheKey: createHash("sha256").update(JSON.stringify([canonicalId, profile, config.allowFullActions])).digest("hex"),
-      appSha256: createHash("sha256").update(appBytes).digest("hex"),
-      pluginPath: published.pluginRoot,
-    };
-    const temporary = `${configPath}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600, flag: "wx" });
-    await rename(temporary, configPath);
-    await chmod(configPath, 0o600);
-    return {
-      ok: true, scope, dryRun, configPath, pluginPath: published.pluginRoot,
-      connectionId: canonicalId, profile, allowFullActions: config.allowFullActions,
-    };
-  } finally {
-    await assets.cleanup();
-    if (staged) await rm(staged.stagingRoot, { recursive: true, force: true });
-  }
+  await ordinaryDirectory(dirname(configPath), { create: true });
+  await privateManagedDirectory(dirname(configPath));
+  return withCodexFileLock(`${configPath}.lock`, async () => {
+    const owned = await readChatgptWorkConfig({ scope, cwd, home });
+    if (!owned && await pathExists(pluginPath)) {
+      throw new Error(`HUMAN-HOLD: ChatGPT Work destination is unowned: ${pluginPath}`);
+    }
+    const receiptSnapshot = await snapshotFile(configPath);
+    const assets = await prepareRuntimeAssets();
+    let staged;
+    let backup = null;
+    let published = false;
+    try {
+      // The exclusive receipt-adjacent lock intentionally spans staging,
+      // destination publication, validation, and the final receipt commit.
+      staged = await stageWorkPlugin(config, assets, { configPath, pluginPath });
+      await ordinaryDirectory(dirname(pluginsRoot), { create: true });
+      await ordinaryDirectory(pluginsRoot, { create: true });
+      if (await pathExists(pluginPath)) {
+        backup = join(pluginsRoot, `.${WORK_PLUGIN_ID}.retired-${randomUUID()}`);
+        await rename(pluginPath, backup);
+      }
+      try {
+        published = true;
+        await cp(staged.plugin, pluginPath, { recursive: true, errorOnExist: true, force: false });
+        const receipt = validateConfig({
+          format: 3,
+          owner: "muster",
+          artifactFlavor: "chatgpt-work",
+          appId: canonicalId,
+          ...config,
+          cacheKey: sha256(JSON.stringify(["chatgpt-work", canonicalId, profile, config.allowFullActions])),
+          pluginPath,
+          artifacts: await artifactDigests(pluginPath),
+        });
+        await validateInstalledConfig(receipt, pluginPath, configPath);
+        if (__testBeforeReceiptCommit) await __testBeforeReceiptCommit();
+        await atomicPrivateWrite(configPath, Buffer.from(JSON.stringify(receipt, null, 2) + "\n"));
+        // Re-read the committed pair before reporting success.
+        await readChatgptWorkConfig({ scope, cwd, home });
+      } catch (error) {
+        const rollbackFailures = [];
+        if (published) {
+          try { await rm(pluginPath, { recursive: true, force: true }); }
+          catch (rollback) { rollbackFailures.push(`new plugin removal failed: ${rollback.message}`); }
+        }
+        if (backup) {
+          try { await rename(backup, pluginPath); backup = null; }
+          catch (rollback) { rollbackFailures.push(`prior plugin restore failed: ${rollback.message}`); }
+        }
+        try {
+          if (receiptSnapshot === null) await rm(configPath, { force: true });
+          else await atomicPrivateWrite(configPath, receiptSnapshot);
+        } catch (rollback) { rollbackFailures.push(`prior receipt restore failed: ${rollback.message}`); }
+        if (rollbackFailures.length) {
+          throw new Error(`HUMAN-HOLD: ChatGPT Work install failed and rollback was incomplete: ${rollbackFailures.join("; ")} (original failure: ${error.message})`, { cause: error });
+        }
+        throw error;
+      }
+      if (backup) await rm(backup, { recursive: true, force: true });
+      return {
+        ok: true, scope, dryRun, configPath, pluginPath,
+        connectionId: canonicalId, profile, allowFullActions: config.allowFullActions,
+      };
+    } finally {
+      await assets.cleanup();
+      if (staged) await rm(staged.stagingRoot, { recursive: true, force: true });
+    }
+  });
 }

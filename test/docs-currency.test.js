@@ -208,7 +208,7 @@ test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and b
     "outbound-only",
     "operator",
     "cryptographic provenance",
-    ".agents/plugins/plugin",
+    ".agents/plugins/muster-chatgpt-work",
     "pluginPath",
     "restart or refresh ChatGPT Desktop",
     "local/repo marketplace",
@@ -239,10 +239,11 @@ test("MCP docs and adapters name the neutral core, explicit hosts, and compatibi
     read("website/reference/commands.md"),
     read("website/reference/configuration.md"),
   ]);
-  assert.match(core, /MUSTER_MCP_HOST/);
-  assert.match(codex, /MUSTER_MCP_HOST = "codex"/);
-  assert.match(work, /MUSTER_MCP_HOST = "work"/);
-  assert.match(coworkShim, /compatibility entrypoint/i);
+  assert.match(core, /startMusterMcpServer/);
+  assert.doesNotMatch(core, /MUSTER_MCP_HOST/);
+  assert.match(codex, /runtimeIdentity:\s*"codex"/);
+  assert.match(work, /runtimeIdentity:\s*"work"/);
+  assert.match(coworkShim, /runtimeIdentity:\s*"cowork"/);
   assert.match(coworkShim, /\.\.\/mcp\/server\.mjs/);
   assert.match(coworkWorkShim, /compatibility entrypoint/i);
   assert.match(coworkWorkShim, /\.\.\/mcp\/chatgpt-work-server\.mjs/);
@@ -261,7 +262,7 @@ test("MCP docs and adapters name the neutral core, explicit hosts, and compatibi
     ["website/reference/configuration.md", configuration],
   ]) {
     assert.match(text, /mcp\/server\.mjs/, `${path} must name the neutral MCP core`);
-    assert.match(text, /compatibility (?:entrypoint|shim)/i, `${path} must label the Cowork compatibility path`);
+    assert.match(text, /Cowork adapter|compatibility (?:entrypoint|shim)/i, `${path} must name the Cowork adapter or compatibility path`);
   }
   assert.match(readme, /runtime\/chatgpt-work-server\.mjs/);
   assert.match(coworkResearch, /no longer\s+string-rewrites\s+`?cowork\/mcp-server\.mjs`?/i);
@@ -276,10 +277,14 @@ test("native Work proof schema stays paired with its probe", async () => {
   const parsed = JSON.parse(schema);
   assert.equal(parsed.additionalProperties, false);
   assert.deepEqual(parsed.required, ["receiptType", "nonce", "timestamp", "identity", "operatorEvidence", "serverEvidence", "inventory", "artifacts"]);
-  for (const marker of ["invocationCount", "connectionIdSha256", "pluginAppSha256", "serverInstanceId", "pending-after-evidence-grade", "operator-observed-ui", "muster-work-native-server-attestation", "muster-work-native-cleanup-finalization"]) {
+  for (const marker of ["invocationCount", "connectionIdSha256", "pluginAppSha256", "serverInstanceId", "pending-after-evidence-grade", "operator-observed-ui", "muster-work-native-server-attestation", "muster-work-native-retained-grade", "gradeDigest", "ownedPaths", "muster-work-native-cleanup-finalization"]) {
     assert.match(probe, new RegExp(marker), `probe is missing ${marker}`);
     assert.match(schema, new RegExp(marker), `schema is missing ${marker}`);
   }
+  assert.match(probe, /grade-snapshot/);
+  assert.match(probe, /lstat/);
+  assert.match(probe, /Windows native proof is always HUMAN-HOLD/);
+  assert.equal(parsed.$defs.attestation.properties.serverInstanceId.pattern, "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
   assert.doesNotMatch(schema, /verified-absent/);
 });
 

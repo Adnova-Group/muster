@@ -114,11 +114,13 @@ test("muster_route's domain:unknown/pipeline:null symptom from the dogfood is NO
   assert.equal(withoutEnv.domain, "unknown", "documents the actual (still-open, non-env) cause: no project detectable from a bare cwd and no outcome-text keyword match");
 });
 
-test("Cowork adapter selects cowork while the neutral core passes the explicit host to CLI children", async () => {
+test("Cowork adapter supplies its runtime identity while the neutral core passes it to CLI children", async () => {
   const [adapter, core] = await Promise.all([
     readFile(join(repoRoot, "cowork", "mcp-server.mjs"), "utf8"),
     readFile(join(repoRoot, "mcp", "server.mjs"), "utf8"),
   ]);
-  assert.match(adapter, /MUSTER_MCP_HOST\s*=\s*"cowork"/);
-  assert.match(core, /MUSTER_RUNTIME:\s*MUSTER_MCP_HOST/);
+  assert.match(adapter, /runtimeIdentity:\s*"cowork"/);
+  assert.doesNotMatch(adapter, /MUSTER_MCP_HOST/);
+  assert.match(core, /MUSTER_RUNTIME:\s*config\.runtimeIdentity/);
+  assert.doesNotMatch(core, /MUSTER_MCP_HOST/);
 });

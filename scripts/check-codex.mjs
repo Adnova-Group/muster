@@ -263,7 +263,8 @@ for (const relativePath of trackedCodexFiles) {
 const mcp = await json(join(plugin, ".mcp.json"));
 if (mcp.mcpServers?.muster?.command !== "node" || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not Codex-native");
 const bundledMcp = await readFile(join(plugin, "runtime", "muster-mcp.mjs"), "utf8");
-if (!bundledMcp.includes('MUSTER_MCP_HOST = "codex"') || !bundledMcp.includes('"capabilities", "--codex"')) fail("MCP capability tool is not bound to live Codex inventory");
+if (!bundledMcp.includes('runtimeIdentity: "codex"') || !bundledMcp.includes('"capabilities", "--codex"')) fail("MCP capability tool is not bound to live Codex inventory");
+if (bundledMcp.includes("MUSTER_MCP_HOST")) fail("MCP runtime must use the explicit adapter contract, not the retired environment host selector");
 if (!bundledMcp.includes('"assess", "--codex"')) fail("MCP assess tool is not bound to Codex-aware criteria parsing");
 const mcpSource = await readFile(join(root, "mcp", "server.mjs"), "utf8");
 if ((mcpSource.match(/^  muster_[a-z_]+:/gm) || []).length !== CODEX_COUNTS.mcpTools) fail("MCP tool count drift");

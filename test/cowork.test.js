@@ -55,16 +55,35 @@ test("MCP architecture uses one neutral core and thin explicit host adapters", a
     read("mcp/codex-server.mjs"),
     read("mcp/chatgpt-work-server.mjs"),
   ]);
-  assert.match(core, /MUSTER_MCP_HOST/);
+  assert.match(core, /export\s+(?:async\s+)?function startMusterMcpServer/);
   assert.match(core, /const TOOLS =/);
+  assert.doesNotMatch(core, /MUSTER_MCP_HOST|MUSTER_MCP_TOOL_PROFILE/, "core does not infer host or profile from env");
   assert.doesNotMatch(core, /MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH/, "Work startup policy stays in its adapter");
   for (const [name, source] of [["cowork shim", coworkShim], ["work shim", workShim], ["codex adapter", codexAdapter]]) {
-    assert.ok(source.split("\n").length <= 12, `${name} remains thin`);
     assert.doesNotMatch(source, /const TOOLS =|class WorkLimiter/, `${name} does not fork the core`);
   }
-  assert.match(coworkShim, /MUSTER_MCP_HOST.*cowork/);
-  assert.match(codexAdapter, /MUSTER_MCP_HOST.*codex/);
-  assert.match(workAdapter, /MUSTER_MCP_HOST.*work/);
+  for (const [name, source] of [["cowork adapter", coworkShim], ["codex adapter", codexAdapter], ["work adapter", workAdapter]]) {
+    assert.match(source, /startMusterMcpServer\s*\(\s*\{/, `${name} explicitly starts the factory`);
+    assert.match(source, /protocol\s*:/, `${name} supplies its protocol`);
+    assert.match(source, /mapArgv\s*:/, `${name} supplies argv mapping`);
+    assert.match(source, /authorizeTools\s*:/, `${name} supplies tool authorization`);
+    assert.match(source, /runtimeIdentity\s*:/, `${name} supplies runtime identity`);
+  }
+  assert.match(workShim, /\.\.\/mcp\/chatgpt-work-server\.mjs/, "legacy Work entrypoint remains a thin compatibility shim");
+
+  const direct = await execFileP(process.execPath, [path.join(rootDir, "mcp", "server.mjs")]);
+  assert.equal(direct.stdout, "", "direct core execution is inert");
+  assert.equal(direct.stderr, "", "direct core execution emits no startup diagnostic");
+});
+
+test("Codex adapter output is byte-isolated from Cowork argv and Work probe machinery", async () => {
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+  ], { serverPath: path.join(rootDir, "mcp", "codex-server.mjs") });
+  const bytes = JSON.stringify(r);
+  assert.doesNotMatch(bytes, /Cowork|--cowork|WORK_WEB_PROBE|probe attestation/i);
+  assert.match(bytes, /Codex/);
 });
 
 test("initialize: serverInfo.version matches package.json, instructions carry muster principles", async () => {
@@ -226,12 +245,12 @@ test("empty ChatGPT profile preserves default initialize, list, and call respons
 });
 
 test("ChatGPT Work pro-safe profile exposes exact titled annotated prioritize descriptor and rejects all other calls", async () => {
-  const env = { MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-pro-safe" };
+  const env = { MUSTER_CHATGPT_WORK_PROFILE: "pro-safe" };
   const r = await rpc([
     INIT,
     { jsonrpc: "2.0", id: 2, method: "tools/list" },
     { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_detect", arguments: {} } },
-  ], { env });
+  ], { env, serverPath: path.join(rootDir, "cowork", "chatgpt-work-server.mjs") });
   assert.deepEqual(r[2].result.tools, [{
     name: "muster_prioritize",
     title: "Prioritize backlog items",
@@ -243,16 +262,17 @@ test("ChatGPT Work pro-safe profile exposes exact titled annotated prioritize de
   assert.match(r[3].result.content[0].text, /not available/);
 });
 
-test("ChatGPT Work full profile preserves the deterministic 28-tool descriptor surface", async () => {
-  const [normal, full] = await Promise.all([
+test("host environment cannot reconfigure the Cowork adapter's authorized tool surface", async () => {
+  const [normal, unchanged] = await Promise.all([
     rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]),
     rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }], {
-      env: { MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-full" },
+      env: {
+        MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-full",
+        MUSTER_CHATGPT_WORK_PROFILE: "full",
+      },
     }),
   ]);
-  assert.deepEqual(full[2].result, normal[2].result);
-  assert.match(full[1].result.instructions, /tool-only surface for ChatGPT Work/);
-  assert.doesNotMatch(full[1].result.instructions, /Codex|Cowork|skills/i);
+  assert.deepEqual(unchanged, normal);
 });
 
 test("ChatGPT Work probe locks descriptor, exact call, one invocation, and server attestation", async t => {
@@ -336,6 +356,9 @@ test("ChatGPT Work probe rejects wrong arguments before CLI dispatch and creates
   const dir = mkdtempSync(path.join(tmpdir(), "muster-work-probe-wrong-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const attestationPath = path.join(dir, "server-attestation.json");
+  const appPath = path.join(dir, ".app.json");
+  const connectionId = "asdk_app_ProbeWrong1";
+  writeFileSync(appPath, JSON.stringify({ apps: { muster: { id: connectionId } } }) + "\n", { mode: 0o600 });
   const r = await rpc([
     INIT,
     {
@@ -349,18 +372,15 @@ test("ChatGPT Work probe rejects wrong arguments before CLI dispatch and creates
       },
     },
   ], {
+    serverPath: path.join(rootDir, "cowork", "chatgpt-work-server.mjs"),
     env: {
-      MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-probe",
-      MUSTER_MCP_PROBE_NONCE: nonce,
-      MUSTER_MCP_PROBE_ATTESTATION_PATH: attestationPath,
-      MUSTER_MCP_PROBE_IDENTITY: JSON.stringify({
-        connectionIdSha256: "a".repeat(64),
-        pluginAppSha256: "b".repeat(64),
-        pluginName: "muster",
-        pluginVersion: "0.5.0",
-        connectionLabel: "Muster Probe",
-      }),
-      MUSTER_MCP_PROBE_SERVER_INSTANCE_ID: "00000000-0000-4000-8000-000000000000",
+      MUSTER_CHATGPT_WORK_PROFILE: "pro-safe",
+      MUSTER_CHATGPT_WORK_PROBE_NONCE: nonce,
+      MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestationPath,
+      MUSTER_CHATGPT_WORK_CONNECTION_ID: connectionId,
+      MUSTER_CHATGPT_WORK_APP_JSON_PATH: appPath,
+      MUSTER_CHATGPT_WORK_PLUGIN_VERSION: "0.5.0",
+      MUSTER_CHATGPT_WORK_CONNECTION_LABEL: "Muster Probe",
       NODE_ENV: "test",
       MUSTER_COWORK_TEST_CLI: path.join(rootDir, "definitely-missing-cli.mjs"),
     },

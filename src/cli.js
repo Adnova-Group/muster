@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { detectProject, hasPromptingSignal } from "./detect.js";
 import { loadCatalog } from "./catalog.js";
-import { readInstalled, readInstalledCowork, readInstalledKimi } from "./harness.js";
+import { readInstalled, readInstalledCowork, readInstalledKimi, readInstalledWork } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
@@ -73,9 +73,9 @@ const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // pre-split string (website-docs.test.js reassembles this array from source).
 const USAGE = [
   // routing: project detection, capability discovery, task→provider matching
-  "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>]|",
+  "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--work] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
   // manifest + waves: validate, order, and drive a plan
-  "manifest validate <file>|wave <file>|next <manifest.json> [--done a,b]|",
+  "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
@@ -123,8 +123,11 @@ const readText = async (arg) =>
 async function loadEffectiveCatalog(args) {
   const catalog = await loadCatalog(CATALOG_DIR);
   const codex = args.includes("--codex");
+  const work = args.includes("--work");
   const installed = codex
     ? await readCodexInventory({ cwd: process.cwd() })
+    : work
+    ? readInstalledWork()
     : await readInstalled(homedir());
   return { catalog: codex ? adaptCatalogForCodex(catalog, installed) : catalog, installed };
 }
@@ -151,7 +154,7 @@ async function main() {
       // The optional positional home-dir override is found by elimination: take the
       // first arg that neither looks like a flag nor is a value a flag consumed. In
       // this branch only --role and --connectors take values; every other flag
-      // (--codex/--kimi/--cowork/--roles-only/--native-plugin) is a boolean switch.
+      // (--codex/--kimi/--cowork/--work/--roles-only/--native-plugin) is a boolean switch.
       const role = flagValue(rest, "--role");
       const connectors = flagValue(rest, "--connectors");
       const consumedValues = new Set([role, connectors].filter(Boolean));
@@ -163,6 +166,8 @@ async function main() {
         installed = await readCodexInventory({ cwd: process.cwd() });
       } else if (rest.includes("--kimi")) {
         installed = await readInstalledKimi(home);
+      } else if (rest.includes("--work")) {
+        installed = readInstalledWork();
       } else if (rest.includes("--cowork")) {
         const declared = (flagValue(rest, "--connectors") || process.env.MUSTER_COWORK_CONNECTORS || "")
           .split(",").map(s => s.trim()).filter(Boolean);
@@ -214,13 +219,14 @@ async function main() {
       const suggested = suggestSkillsForStack(signals, skills);
       out({ ranked, suggested });
     } else if (cmd === "match") {
-      const args = rest.filter(arg => arg !== "--codex");
+      const work = rest.includes("--work");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
       if (!args[0]) fail("match <task>: missing task");
       const { catalog, installed } = await loadEffectiveCatalog(rest);
-      out(matchProviders(args[0], catalog, installed));
+      out(matchProviders(args[0], catalog, installed, { callableOnly: work }));
     // ── manifest + waves: validate, order, and drive a plan ──
     } else if (cmd === "manifest" && rest[0] === "validate") {
-      const args = rest.filter(arg => arg !== "--codex");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
       const file = requireArg(args, 1, "manifest validate <file>: missing file path", fail);
       const obj = JSON.parse(await readFile(file, "utf8"));
       const r = validateManifest(obj);
@@ -229,17 +235,38 @@ async function main() {
       // hallucinated or uninstalled bound id is actually caught here, not just at the
       // manifestWarnings unit level.
       const codex = rest.includes("--codex");
+      const work = rest.includes("--work");
       const { catalog: effectiveCatalog, installed } = await loadEffectiveCatalog(rest);
-      const { skills } = resolveCapabilities(effectiveCatalog, installed);
-      const warnings = manifestWarnings(obj, skills);
+      const capabilities = resolveCapabilities(effectiveCatalog, installed);
+      const { skills } = capabilities;
+      const manifestAdvisories = manifestWarnings(obj, skills);
+      // An all-inline crew is the expected safe Work fallback, not evidence that
+      // capability resolution was skipped. Keep every other manifest advisory.
+      const warnings = work
+        ? manifestAdvisories.filter((warning) => !warning.startsWith("crew: every member is source:inline"))
+        : manifestAdvisories;
       // Validate-only strictness (deliberately NOT shared with the other branches):
-      // under --codex an unresolved skill binding is promoted from warning to error.
-      const unresolved = codex
+      // under --codex/--work an unresolved skill binding is promoted from warning
+      // to error because those lanes dispatch only against their explicit inventory.
+      const unresolved = (codex || work)
         ? warnings.filter(warning => warning.includes("not found in resolveCapabilities().skills"))
         : [];
       const remainingWarnings = warnings.filter(warning => !unresolved.includes(warning));
-      const result = unresolved.length
-        ? { ok: false, errors: [...r.errors, ...unresolved], ...(remainingWarnings.length ? { warnings: remainingWarnings } : {}) }
+      const callableProviderIds = work
+        ? new Set(Object.values(capabilities.roles).flatMap(({ chosen, chain }) =>
+            [chosen, ...(chain || [])]
+              .filter((provider) => provider?.kind !== "inline")
+              .map((provider) => provider.id)))
+        : null;
+      const unavailableProviders = work
+        ? (Array.isArray(obj.crew) ? obj.crew : []).flatMap((member, index) =>
+            member?.source !== "inline" && !callableProviderIds.has(member?.provider)
+              ? [`crew[${index}].provider "${member?.provider}": not callable in capabilities --work`]
+              : [])
+        : [];
+      const strictErrors = [...unresolved, ...unavailableProviders];
+      const result = strictErrors.length
+        ? { ok: false, errors: [...r.errors, ...strictErrors], ...(remainingWarnings.length ? { warnings: remainingWarnings } : {}) }
         : (warnings.length ? { ...r, warnings } : r);
       out(result);
       if (!result.ok) process.exit(2);

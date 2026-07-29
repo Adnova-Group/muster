@@ -321,9 +321,9 @@ What actually ships [CODE-VERIFIED]:
   deterministic CLI (`src/cli.js`) — detection, capability/domain routing, gate scoring,
   RICE prioritization, wave planning, tournament pick/fuse, review tally, advisor
   validation [src: readme-11] [src: mcps-106].
-- **Explicit host adapters:** `mcp/codex-server.mjs` and `mcp/chatgpt-work-server.mjs`
-  select Codex and Work host behavior over the neutral core. `cowork/mcp-server.mjs` and
-  `cowork/chatgpt-work-server.mjs` remain compatibility shims for existing Cowork and
+- **Explicit host adapters:** `mcp/codex-server.mjs`, `mcp/chatgpt-work-server.mjs`, and
+  `cowork/mcp-server.mjs` select Codex, Work, and Cowork behavior over the neutral core.
+  `cowork/chatgpt-work-server.mjs` remains a compatibility shim for older Work
   source-checkout callers; the public Work plugin still exposes
   `runtime/chatgpt-work-server.mjs`.
 - **Protocol injection via `instructions`:** the initialize response carries

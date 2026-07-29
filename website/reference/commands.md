@@ -135,7 +135,7 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 
 ## MCP tools
 
-The same deterministic core is also exposed as a local MCP server. The canonical implementation is `mcp/server.mjs`; `cowork/mcp-server.mjs` is the compatibility entrypoint declared in `cowork/manifest.json`, so existing Cowork configurations remain valid. There are **28 tools: 27 CLI-wrapper MCP tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
+The same deterministic core is also exposed as a local MCP server. The canonical implementation is `mcp/server.mjs`; `cowork/mcp-server.mjs` is the explicit Cowork adapter declared in `cowork/manifest.json`, while `cowork/chatgpt-work-server.mjs` remains a compatibility entrypoint for older Work configurations. There are **28 tools: 27 CLI-wrapper MCP tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
 
 | Tool | Wraps | What it does |
 | --- | --- | --- |

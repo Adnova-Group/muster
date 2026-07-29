@@ -20,6 +20,16 @@ export function matchProviders(task, catalog, installed = {}, opts = {}) {
 
   const results = [];
   for (const entry of catalog) {
+    // Host-restricted lanes (currently ChatGPT Work) may only advertise a
+    // provider that is both installed in that lane's explicit inventory and
+    // callable through MCP. Builtins, agents, skills, and absent externals are
+    // not dispatch targets on that host.
+    if (opts.callableOnly && !(
+      entry.kind === "external"
+      && entry.detect?.kind === "mcp_server"
+      && isInstalled(entry, installed)
+    )) continue;
+
     // Weighted searchable bag: token -> max weight seen for it.
     const bag = new Map();
     const add = (token, weight) => {

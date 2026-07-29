@@ -17,7 +17,7 @@ The **model-facing layer** is what the harness loads as a plugin — Claude Code
 
 ## Portable MCP surface
 
-The MCP implementation has one neutral core in `mcp/server.mjs` and explicit host adapters: `mcp/codex-server.mjs` for the generated Codex bundle and `mcp/chatgpt-work-server.mjs` for the generated Work bundle. `cowork/mcp-server.mjs` and `cowork/chatgpt-work-server.mjs` are compatibility shims retained for existing Cowork/source-checkout callers. Build/install no longer string-rewrite Cowork source to produce Codex or Work runtimes; each bundle is built from its adapter directly. The public Work plugin still exposes `runtime/chatgpt-work-server.mjs` as its server command.
+The MCP implementation has one neutral core in `mcp/server.mjs` and explicit host adapters: `mcp/codex-server.mjs` for the generated Codex bundle, `mcp/chatgpt-work-server.mjs` for the generated Work bundle, and `cowork/mcp-server.mjs` for Claude Cowork. `cowork/chatgpt-work-server.mjs` is the compatibility shim retained for older Work/source-checkout callers. Build/install no longer string-rewrite Cowork source to produce Codex or Work runtimes; each bundle is built from its adapter directly. The public Work plugin still exposes `runtime/chatgpt-work-server.mjs` as its server command.
 
 ## The capability and domain router
 

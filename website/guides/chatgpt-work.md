@@ -30,7 +30,7 @@ muster install chatgpt-work --connection-id asdk_app_... \
 
 `--dry-run` performs validation and prints the target without writing. Muster keeps this mapping in its own receipt (`.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope) and carries it into later generated Codex builds; it never commits a workspace-specific ID to the repository.
 
-`--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/plugin` for project scope or `<home>/.agents/plugins/plugin` for user scope. The receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect the returned path and receipt rather than assuming another plugin copy.
+`--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/muster-chatgpt-work` for project scope or `<home>/.agents/plugins/muster-chatgpt-work` for user scope. The receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect the returned path and receipt rather than assuming another plugin copy.
 
 The generated plugin's minimal app wiring is:
 
@@ -76,7 +76,7 @@ tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work
 tunnel-client run --profile muster-chatgpt-work
 ```
 
-On POSIX, the probe directory must already exist, be owned by the current user, and have no group/world permissions (for example `0700`); the attestation file is created as a new `0600` file. Windows native proof is `HUMAN-HOLD` until privacy and ownership can be established. On every platform, an attestation collision is `HUMAN-HOLD`, not an overwrite.
+On POSIX, the probe directory must already exist, be owned by the current user, and have no group/world permissions (for example `0700`); the attestation file is created as a new `0600` file. Windows native proof is always `HUMAN-HOLD`: there is no usable Windows attestation claim. On every platform, an attestation collision is `HUMAN-HOLD`, not an overwrite.
 
 The runtime key authenticates the OpenAI Platform tunnel control plane and incurs Platform API billing. It is separate from a ChatGPT Pro subscription and must never be placed in a plugin, receipt, screenshot, or documentation example beyond the redacted placeholder. A tunnel ID is also treated as sensitive operational data; retain only a digest in proof records.
 
@@ -100,7 +100,8 @@ node scripts/chatgpt-work-native-probe.mjs \
 - the local server writes a separate attestation naming the same nonce/tool/request/result, `invocationCount: 1`, and a normalized timestamp;
 - the record binds SHA-256(normalized connection ID), SHA-256(installed `.app.json`), plugin name/version, and connection label;
 - independent before/during inventories show probe-owned connection/profile/plugin/marketplace/cache/UI artifacts as absent/present, and phase-1 `after` remains present while the attestation is retained; collisions are `HUMAN-HOLD`;
-- the tunnel is stopped and only provably probe-owned artifacts are deleted after the evidence grade; re-inventory must verify absence and zero retained artifacts before cleanup finalization.
+- phase 1 writes a new `0600` retained-grade snapshot in a current-user-owned `0700` directory outside the exact owned plugin and temporary probe paths. Its evidence-grade digest binds the successful grade, exact paths, app identity/hash, nonce, server attestation, and ownership observations;
+- the tunnel is stopped and only the exact snapshot-bound plugin/temp paths are deleted after the evidence grade; phase 2 independently uses `lstat` to verify absence and rejects a path mismatch, symlink, or unowned replacement.
 
 Operator UI evidence is an observation, not cryptographic provenance. Skill discovery, `tools/list`, assistant prose, tunnel health, screenshots, logs, and a Codex invocation do not satisfy the gate. Never fabricate native proof, retain secrets, or publish it.
 
@@ -110,13 +111,15 @@ For an identity-bound grade, provide the normalized ID and exact installed `.app
 node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
   --server-attestation attestation.json --connection-id asdk_app_... \
   --app-json /path/to/installed/.app.json --plugin-version 0.5.0 \
-  --connection-label "Muster ChatGPT Work"
+  --connection-label "Muster ChatGPT Work" \
+  --snapshot-out /private/retained/grade-snapshot.json \
+  --owned-plugin-path /exact/owned/plugin-path \
+  --owned-temp-path /exact/owned/probe-temp-path
 ```
 
-The grade is phase 1 and must run before deleting the attestation. Do not invent an uninstall command: after `evidence-graded`, stop the tunnel, verify ownership of the exact plugin/marketplace/receipt/probe paths, remove only this run's artifacts, and use `HUMAN-HOLD` for collisions or uncertain ownership. Write the verified-absence cleanup record and finalize phase 2:
+The grade is phase 1 and must run before deleting the attestation or installed `.app.json`. The snapshot target must not exist, must be outside both owned trees, and is retained after cleanup. Do not invent an uninstall command: after `evidence-graded`, stop the tunnel, remove only the two exact snapshot-bound paths, and use `HUMAN-HOLD` for collisions or uncertain ownership. Write the cleanup record with the returned `gradeDigest` and the identical `ownedPaths`, then finalize phase 2 from the retained snapshot. No live identity input or deleted `.app.json` is used:
 
 ```sh
-node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json --nonce <nonce> \
-  --connection-id asdk_app_... --app-json /path/to/installed/.app.json \
-  --plugin-version 0.5.0 --connection-label "Muster ChatGPT Work"
+node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
+  --grade-snapshot /private/retained/grade-snapshot.json
 ```

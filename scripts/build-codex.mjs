@@ -401,31 +401,27 @@ async function adaptPortedSkills(internalSkillDir, names) {
 // this same script's CLI entry below) to force a fresh build regardless of
 // the published version.
 export async function buildCodexPlugin(options, retries = 1) {
-  const { root, outDir, chatgptWorkConfig = null } = options;
-  if (chatgptWorkConfig && (
-    ![1, 2].includes(chatgptWorkConfig?.format)
-    || chatgptWorkConfig?.owner !== "muster"
-    || !/^asdk_app_[A-Za-z0-9][A-Za-z0-9_-]*$/.test(chatgptWorkConfig?.connectionId)
-    || !["pro-safe", "full"].includes(chatgptWorkConfig?.profile)
-    || typeof chatgptWorkConfig?.allowFullActions !== "boolean"
-    || (chatgptWorkConfig.profile === "full" && !chatgptWorkConfig.allowFullActions)
-    || (chatgptWorkConfig.profile === "pro-safe" && chatgptWorkConfig.allowFullActions)
-  )) {
-    throw new Error("ChatGPT Work build configuration is invalid");
-  }
+  const { root, outDir } = options;
   const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
   if (process.env.MUSTER_BUILD_FORCE !== "1") {
     try {
       const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
       const manifest = JSON.parse(readFileSync(join(current.pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
-      const appPath = join(current.pluginRoot, ".app.json");
-      const appMatches = chatgptWorkConfig
-        ? manifest.apps === "./.app.json"
-          && existsSync(appPath)
-          && JSON.stringify(JSON.parse(readFileSync(appPath, "utf8")))
-            === JSON.stringify({ apps: { muster: { id: chatgptWorkConfig.connectionId } } })
-        : manifest.apps === undefined && !existsSync(appPath);
-      if (current.packageVersion === packageVersion && appMatches) return current;
+      const mcp = JSON.parse(readFileSync(join(current.pluginRoot, ".mcp.json"), "utf8"));
+      const completeCodexContract = manifest.apps === undefined
+        && !existsSync(join(current.pluginRoot, ".app.json"))
+        && manifest.name === "muster"
+        && manifest.version === packageVersion
+        && manifest.skills === "./skills/"
+        && manifest.mcpServers === "./.mcp.json"
+        && JSON.stringify(mcp) === JSON.stringify({
+          mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
+        })
+        && readFileSync(join(current.pluginRoot, "runtime", "muster.mjs")).length > 0
+        && readFileSync(join(current.pluginRoot, "runtime", "muster-mcp.mjs")).length > 0
+        && readFileSync(join(current.pluginRoot, "skills", "muster", "SKILL.md")).length > 0
+        && readFileSync(join(current.pluginRoot, "agents", "muster-builder.toml")).length > 0;
+      if (current.packageVersion === packageVersion && completeCodexContract) return current;
     } catch { /* nothing published yet, or what's there is stale/invalid: generate below */ }
   }
   let lastError;
@@ -439,7 +435,7 @@ export async function buildCodexPlugin(options, retries = 1) {
   throw new Error(`Codex plugin generation did not succeed after ${retries + 1} attempts: ${lastError.message}`, { cause: lastError });
 }
 
-async function buildCodexPluginOnce({ root, outDir, chatgptWorkConfig = null }) {
+async function buildCodexPluginOnce({ root, outDir }) {
   ensure(outDir);
   // Stage on the native filesystem, not under outDir — see the top-of-file
   // comment. outDir itself may still be on drvfs (it usually is: the
@@ -539,6 +535,8 @@ async function buildCodexPluginOnce({ root, outDir, chatgptWorkConfig = null }) 
       entryPoints: [join(root, "mcp", "codex-server.mjs")],
       outfile: join(runtime, "muster-mcp.mjs"),
     });
+    // Installer payload only: Codex never registers this adapter in its own
+    // manifest/MCP config and never reads a Work receipt or app mapping.
     await build({
       ...bundleOptions,
       entryPoints: [join(root, "mcp", "chatgpt-work-server.mjs")],
@@ -557,12 +555,6 @@ async function buildCodexPluginOnce({ root, outDir, chatgptWorkConfig = null }) 
       keywords: ["orchestration", "agents", "pipelines", "mcp", "codex"], skills: "./skills/", mcpServers: "./.mcp.json",
       interface: { displayName: "Muster", shortDescription: "Glass-box agentic orchestration for Codex.", longDescription: "Muster provides deterministic routing, custom-agent profiles, pipeline workflows, and the complete MCP toolset.", developerName: "Adnova Group", category: "Productivity", capabilities: ["Read", "Write"], websiteURL: "https://adnova-group.github.io/muster/", defaultPrompt: ["Plan this feature with Muster.", "Run a Muster audit of this repository.", "Use Muster to clear this backlog."] }
     };
-    if (chatgptWorkConfig) {
-      pluginManifest.apps = "./.app.json";
-      write(join(plugin, ".app.json"), JSON.stringify({
-        apps: { muster: { id: chatgptWorkConfig.connectionId } }
-      }, null, 2) + "\n");
-    }
     write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify(pluginManifest, null, 2) + "\n");
 
     // Awaited (not just returned) so the `finally` below — which deletes
@@ -606,8 +598,6 @@ function modeSkill(name, mode) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL("../", import.meta.url));
   const outDir = join(root, ".agents", "plugins");
-  const { readOptionalChatgptWorkConfig } = await import("../src/chatgpt-work-install.js");
-  const chatgptWorkConfig = await readOptionalChatgptWorkConfig({ scope: "project", cwd: root });
-  const result = await buildCodexPlugin({ root, outDir, chatgptWorkConfig });
+  const result = await buildCodexPlugin({ root, outDir });
   process.stdout.write(`Codex plugin v${result.packageVersion} generated at ${result.pluginRoot}\n`);
 }

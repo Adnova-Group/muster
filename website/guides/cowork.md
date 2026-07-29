@@ -1,13 +1,13 @@
 # Cowork
 
-Muster runs in Claude Cowork through a local MCP server. The neutral core is `mcp/server.mjs`; `mcp/codex-server.mjs` and `mcp/chatgpt-work-server.mjs` are explicit host adapters. The public Cowork path below uses `cowork/mcp-server.mjs`, a compatibility shim retained for existing configurations. Model work uses the active Cowork account or subscription.
+Muster runs in Claude Cowork through a local MCP server. The neutral core is `mcp/server.mjs`; `mcp/codex-server.mjs`, `mcp/chatgpt-work-server.mjs`, and `cowork/mcp-server.mjs` are explicit host adapters. The old `cowork/chatgpt-work-server.mjs` path remains a compatibility shim. Model work uses the active Cowork account or subscription.
 
 ## Support matrix
 
 | Capability | Cowork support |
 | --- | --- |
 | Routing, manifests, waves, and gates | Native MCP tools |
-| Tool inventory | 28 tools: 27 CLI wrappers plus `muster_sprint_protocol` |
+| Tool inventory | 28 tools: 27 CLI-wrapper tools plus `muster_sprint_protocol` |
 | Parallel subagents | Conditional; run probe phase 3 on the active build first |
 | Sequential execution | `muster_next` fallback |
 | Per-agent worktree isolation | No proven native primitive |
@@ -15,13 +15,13 @@ Muster runs in Claude Cowork through a local MCP server. The neutral core is `mc
 | Native Muster plugin | Unverified; declared through `MUSTER_COWORK_NATIVE_PLUGIN` |
 | Remote connectors | Declared through `MUSTER_COWORK_CONNECTORS` |
 
-The server exposes 28 tools in total: 27 wrappers around CLI operations, plus `muster_sprint_protocol`. The protocol returns the Cowork-adapted backlog playbook. It is a protocol tool, not a CLI wrapper.
+The server exposes 28 tools in total: 27 CLI-wrapper tools plus `muster_sprint_protocol`. The protocol returns the Cowork-adapted backlog playbook. It is a protocol tool, not a CLI wrapper.
 
 The repository tests verify probe phases 1 and 2: CLI portability and the dispatch contract. They do not contain a live phase-3 receipt. Run `node scripts/cowork-probe.mjs`, execute its phase-3 spec in the active Cowork build, and grade the returned results before relying on parallel dispatch or per-call model override. Until that passes, use the sequential `muster_next` path.
 
 ## Configure the local server
 
-Add a `muster` entry to Cowork's MCP configuration and point it at the compatibility entrypoint `cowork/mcp-server.mjs` (the canonical core is `mcp/server.mjs`):
+Add a `muster` entry to Cowork's MCP configuration and point it at the Cowork adapter `cowork/mcp-server.mjs` (the canonical core is `mcp/server.mjs`):
 
 ```json
 {

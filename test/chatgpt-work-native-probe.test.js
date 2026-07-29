@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -12,6 +12,7 @@ import {
   buildIdentity,
   finalizeCleanup,
   gradeReceipt,
+  retainGradeSnapshot,
   sha256,
 } from "../scripts/chatgpt-work-native-probe.mjs";
 
@@ -99,6 +100,8 @@ test("buildProbe emits a nonce-bearing exact request and the required safety run
   assert.match(first.instructions.join("\n"), /MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH/);
   assert.match(first.instructions.join("\n"), /0700/);
   assert.match(first.instructions.join("\n"), /Windows/);
+  assert.match(first.instructions.join("\n"), /Windows[\s\S]*always HUMAN-HOLD/i);
+  assert.match(first.instructions.join("\n"), /no usable Windows attestation claim/i);
   assert.match(first.instructions.join("\n"), /exact.*nonce.*request/i);
   assert.match(first.instructions.join("\n"), /invocationCount=1/);
   assert.match(first.instructions.join("\n"), /operator attestation, not cryptographic provenance/i);
@@ -114,20 +117,82 @@ test("grader accepts only two independent matching sources and a clean lifecycle
   });
 });
 
-test("cleanup finalization is a separate second phase requiring verified absence", () => {
+test("grader uses the schema's strict UUID expression and Windows cannot produce a usable claim", () => {
+  const malformed = attestation();
+  malformed.serverInstanceId = "00000000-0000-0000-0000-000000000000";
+  const withMalformed = receipt();
+  withMalformed.serverEvidence = malformed;
+  assert.equal(gradeReceipt(withMalformed, NONCE, malformed, identity()).ok, false);
+  assert.match(gradeReceipt(receipt(), NONCE, attestation(), identity(), "win32").errors.join("\n"), /HUMAN-HOLD.*Windows/i);
+});
+
+test("cleanup finalization is bound to a successful retained grade and independently verifies exact path absence", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "muster-native-cleanup-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const retainedDir = join(root, "retained");
+  const pluginPath = join(root, "plugin");
+  const tempPath = join(root, "probe-temp");
+  const snapshotPath = join(retainedDir, "grade-snapshot.json");
+  await Promise.all([mkdir(retainedDir, { mode: 0o700 }), mkdir(pluginPath), mkdir(tempPath)]);
+  await chmod(retainedDir, 0o700);
+  const grade = gradeReceipt(receipt(), NONCE, attestation(), identity());
+  const retained = await retainGradeSnapshot({
+    grade, nonce: NONCE, identity: identity(), serverAttestation: attestation(),
+    ownedPaths: { plugin: pluginPath, temp: tempPath }, snapshotPath,
+  });
+  assert.equal(retained.ok, true);
+  assert.match(retained.gradeDigest, /^[a-f0-9]{64}$/);
+  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+  assert.equal(snapshot.ownedPaths.plugin, pluginPath);
+  assert.equal(snapshot.serverAttestation.serverInstanceId, attestation().serverInstanceId);
+
   const cleanup = {
     cleanupType: "muster-work-native-cleanup-finalization",
-    nonce: NONCE,
     timestamp: TIMESTAMP,
-    identity: identity(),
+    gradeDigest: retained.gradeDigest,
+    ownedPaths: { plugin: pluginPath, temp: tempPath },
     inventory: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
     artifacts: { tunnel: "stopped", screenshotsRetained: 0, logsRetained: 0, attestationRetained: 0, probeDirsRetained: 0 },
   };
-  assert.deepEqual(finalizeCleanup(cleanup, NONCE, identity()), {
-    ok: true, phase: "cleanup-finalized", nonce: NONCE,
+  assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /must be absent/);
+  await Promise.all([rm(pluginPath, { recursive: true }), rm(tempPath, { recursive: true })]);
+  assert.deepEqual(await finalizeCleanup(cleanup, snapshot), {
+    ok: true, phase: "cleanup-finalized", nonce: NONCE, gradeDigest: retained.gradeDigest,
   });
   cleanup.inventory.plugin = "present";
-  assert.equal(finalizeCleanup(cleanup, NONCE, identity()).ok, false);
+  assert.equal((await finalizeCleanup(cleanup, snapshot)).ok, false);
+});
+
+test("cleanup rejects tampered grades, path mismatches, symlinks, and unowned-or-present replacements", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "muster-native-cleanup-reject-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const retainedDir = join(root, "retained");
+  const pluginPath = join(root, "plugin");
+  const tempPath = join(root, "probe-temp");
+  const snapshotPath = join(retainedDir, "grade-snapshot.json");
+  await Promise.all([mkdir(retainedDir, { mode: 0o700 }), mkdir(pluginPath), mkdir(tempPath)]);
+  await chmod(retainedDir, 0o700);
+  const retained = await retainGradeSnapshot({
+    grade: gradeReceipt(receipt(), NONCE, attestation(), identity()),
+    nonce: NONCE, identity: identity(), serverAttestation: attestation(),
+    ownedPaths: { plugin: pluginPath, temp: tempPath }, snapshotPath,
+  });
+  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+  const cleanup = {
+    cleanupType: "muster-work-native-cleanup-finalization", timestamp: TIMESTAMP,
+    gradeDigest: retained.gradeDigest, ownedPaths: { plugin: pluginPath, temp: tempPath },
+    inventory: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
+    artifacts: { tunnel: "stopped", screenshotsRetained: 0, logsRetained: 0, attestationRetained: 0, probeDirsRetained: 0 },
+  };
+  const tampered = structuredClone(snapshot);
+  tampered.grade.ok = false;
+  assert.match((await finalizeCleanup(cleanup, tampered)).errors.join("\n"), /digest|successful phase 1/i);
+  const mismatch = structuredClone(cleanup);
+  mismatch.ownedPaths.plugin = join(root, "other");
+  assert.match((await finalizeCleanup(mismatch, snapshot)).errors.join("\n"), /path mismatch/i);
+  await Promise.all([rm(pluginPath, { recursive: true }), rm(tempPath, { recursive: true })]);
+  await symlink(join(root, "missing-target"), pluginPath);
+  assert.match((await finalizeCleanup(cleanup, snapshot)).errors.join("\n"), /symlink/i);
 });
 
 test("identity binding hashes the normalized connection ID and exact installed app bytes", () => {
@@ -182,12 +247,19 @@ test("grader binds identity hashes and rejects collisions, incomplete cleanup, r
   }
 });
 
-test("CLI emits a run sheet and grades a receipt only with its separate attestation", async (t) => {
+test("CLI retains phase-1 identity/evidence and finalizes from that snapshot after plugin and app deletion", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "muster-native-probe-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const receiptPath = join(dir, "receipt.json");
-  const attestationPath = join(dir, "attestation.json");
-  const appPath = join(dir, ".app.json");
+  const pluginPath = join(dir, "owned-plugin");
+  const tempPath = join(dir, "owned-temp");
+  const retainedDir = join(dir, "retained");
+  const attestationPath = join(tempPath, "server-attestation.json");
+  const appPath = join(pluginPath, ".app.json");
+  const snapshotPath = join(retainedDir, "grade-snapshot.json");
+  const cleanupPath = join(dir, "cleanup.json");
+  await Promise.all([mkdir(pluginPath), mkdir(tempPath), mkdir(retainedDir, { mode: 0o700 })]);
+  await chmod(retainedDir, 0o700);
   const appJson = '{"apps":{"muster":{"id":"asdk_app_0123456789abcdef"}}}\n';
   const proofReceipt = receipt();
   proofReceipt.identity.pluginAppSha256 = sha256(appJson);
@@ -224,6 +296,24 @@ test("CLI emits a run sheet and grades a receipt only with its separate attestat
     "--app-json", appPath,
     "--plugin-version", "0.5.0",
     "--connection-label", "Muster ChatGPT Work",
+    "--snapshot-out", snapshotPath,
+    "--owned-plugin-path", pluginPath,
+    "--owned-temp-path", tempPath,
   ]);
-  assert.equal(JSON.parse(result.stdout).ok, true);
+  const grade = JSON.parse(result.stdout);
+  assert.equal(grade.ok, true);
+  assert.equal(grade.snapshotPath, snapshotPath);
+  await Promise.all([rm(pluginPath, { recursive: true }), rm(tempPath, { recursive: true })]);
+  await writeFile(cleanupPath, JSON.stringify({
+    cleanupType: "muster-work-native-cleanup-finalization",
+    timestamp: TIMESTAMP,
+    gradeDigest: grade.gradeDigest,
+    ownedPaths: { plugin: pluginPath, temp: tempPath },
+    inventory: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
+    artifacts: { tunnel: "stopped", screenshotsRetained: 0, logsRetained: 0, attestationRetained: 0, probeDirsRetained: 0 },
+  }));
+  const finalized = await execFileP(process.execPath, [
+    script, "--finalize-cleanup", cleanupPath, "--grade-snapshot", snapshotPath,
+  ]);
+  assert.equal(JSON.parse(finalized.stdout).ok, true);
 });

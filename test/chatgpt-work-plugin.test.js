@@ -48,7 +48,7 @@ test("installer supports project/user scopes, dry-run, persistence, and full opt
     connectionId: projectReceipt.connectionId, profile: projectReceipt.profile,
     allowFullActions: projectReceipt.allowFullActions,
   }, {
-    format: 2, owner: "muster", connectionId: "asdk_app_Project1",
+    format: 3, owner: "muster", connectionId: "asdk_app_Project1",
     profile: "pro-safe", allowFullActions: false,
   });
   assert.match(projectReceipt.cacheKey, /^[a-f0-9]{64}$/);
@@ -63,8 +63,8 @@ test("installer supports project/user scopes, dry-run, persistence, and full opt
     scope: "user", cwd: project, home,
   });
   assert.match(userResult.configPath, /[\/\\]\.muster[\/\\]chatgpt-work\.json$/);
-  assert.equal(projectResult.pluginPath, join(project, ".agents", "plugins", "plugin"));
-  assert.equal(userResult.pluginPath, join(home, ".agents", "plugins", "plugin"));
+  assert.equal(projectResult.pluginPath, join(project, ".agents", "plugins", "muster-chatgpt-work"));
+  assert.equal(userResult.pluginPath, join(home, ".agents", "plugins", "muster-chatgpt-work"));
 });
 
 test("CLI install chatgpt-work validates flags and dry-run emits no receipt", async t => {
@@ -124,14 +124,26 @@ test("dedicated server fails before MCP output without known profile and full do
   }
 });
 
-test("dedicated full server starts only with both opt-ins and lists all 28 tools", async () => {
+test("dedicated full server starts only with receipted activation and both opt-ins", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-full-server-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const installed = await runChatgptWorkInstall({
+    connectionId: "asdk_app_FullServer1",
+    profile: "full",
+    allowFullActions: true,
+    scope: "project",
+    cwd: project,
+  });
+  const activation = JSON.parse(await readFile(join(installed.pluginPath, ".mcp.json"), "utf8"))
+    .mcpServers.muster.env;
   const input = [
     JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
     JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
   ].join("\n") + "\n";
   const result = await serverExit({
-    MUSTER_CHATGPT_WORK_PROFILE: "full",
-    MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS: "1",
+    ...activation,
     MUSTER_CHATGPT_WORK_SERVER_ALLOW_FULL_ACTIONS: "1",
   }, input);
   assert.equal(result.code, 0);
@@ -176,7 +188,7 @@ test("bundled runtime installs a scope-correct neutral Work plugin without sourc
     "--profile", "pro-safe", "--scope", "project",
   ], { cwd: project, env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR || tmpdir() } });
   const result = JSON.parse(stdout);
-  assert.equal(result.pluginPath, join(project, ".agents", "plugins", "plugin"));
+  assert.equal(result.pluginPath, join(project, ".agents", "plugins", "muster-chatgpt-work"));
   const manifest = JSON.parse(await readFile(join(result.pluginPath, ".codex-plugin", "plugin.json"), "utf8"));
   assert.equal(manifest.apps, "./.app.json");
   assert.equal(manifest.mcpServers, "./.mcp.json");
@@ -186,7 +198,8 @@ test("bundled runtime installs a scope-correct neutral Work plugin without sourc
   assert.doesNotMatch(JSON.stringify(manifest.interface), /Codex|Read|Write/);
   assert.match(manifest.interface.longDescription, /tool-only.*ChatGPT Work/i);
   const server = await readFile(join(result.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8");
-  assert.match(server, /MUSTER_MCP_HOST/);
+  assert.match(server, /runtimeIdentity:\s*"work"/);
+  assert.doesNotMatch(server, /MUSTER_MCP_HOST/);
   assert.doesNotMatch(server, /work-mcp\.mjs/);
   assert.doesNotMatch(server, /muster-mcp\.mjs/);
 });
@@ -200,7 +213,94 @@ test("installer cache identity revokes full opt-in on full to pro-safe transitio
   const full = await runChatgptWorkInstall({ ...common, profile: "full", allowFullActions: true });
   assert.equal(JSON.parse(await readFile(join(full.pluginPath, ".mcp.json"), "utf8")).mcpServers.muster.env.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS, "1");
   const safe = await runChatgptWorkInstall({ ...common, profile: "pro-safe" });
-  assert.equal(JSON.parse(await readFile(join(safe.pluginPath, ".mcp.json"), "utf8")).mcpServers.muster.env, undefined);
+  assert.equal(
+    JSON.parse(await readFile(join(safe.pluginPath, ".mcp.json"), "utf8"))
+      .mcpServers.muster.env.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS,
+    undefined,
+  );
+  assert.equal((await readChatgptWorkConfig({ scope: "project", cwd: project })).profile, "pro-safe");
+});
+
+test("receipt v3 binds every Work activation artifact and rejects tampering", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-receipt-v3-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const installed = await runChatgptWorkInstall({
+    connectionId: "asdk_app_Receipt3", profile: "pro-safe", scope: "project", cwd: project,
+  });
+  const receipt = JSON.parse(await readFile(installed.configPath, "utf8"));
+  assert.equal(receipt.format, 3);
+  assert.equal(receipt.artifactFlavor, "chatgpt-work");
+  assert.equal(receipt.appId, "asdk_app_Receipt3");
+  assert.deepEqual(Object.keys(receipt.artifacts).sort(), [
+    ".app.json", ".codex-plugin/plugin.json", ".mcp.json", "runtime/chatgpt-work-server.mjs",
+  ]);
+  for (const digest of Object.values(receipt.artifacts)) assert.match(digest, /^[a-f0-9]{64}$/);
+  const mcp = JSON.parse(await readFile(join(installed.pluginPath, ".mcp.json"), "utf8"));
+  assert.equal(mcp.mcpServers.muster.env.MUSTER_CHATGPT_WORK_RECEIPT_PATH, installed.configPath);
+  assert.equal(mcp.mcpServers.muster.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH, installed.pluginPath);
+  await writeFile(join(installed.pluginPath, ".mcp.json"), "{}\n");
+  await assert.rejects(
+    readChatgptWorkConfig({ scope: "project", cwd: project }),
+    /artifact digest/i,
+  );
+});
+
+test("an existing unowned Work destination fails closed without mutation", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-unowned-"));
+  const project = join(dir, "project");
+  const destination = join(project, ".agents", "plugins", "muster-chatgpt-work");
+  await mkdir(join(project, ".git"), { recursive: true });
+  await mkdir(destination, { recursive: true });
+  await writeFile(join(destination, "foreign.txt"), "leave me\n");
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await assert.rejects(runChatgptWorkInstall({
+    connectionId: "asdk_app_Unowned1", profile: "pro-safe", scope: "project", cwd: project,
+  }), /HUMAN-HOLD.*unowned/i);
+  assert.equal(await readFile(join(destination, "foreign.txt"), "utf8"), "leave me\n");
+});
+
+test("overlapping full and pro-safe installs serialize into one coherent receipted state", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-overlap-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const common = { connectionId: "asdk_app_Overlap1", scope: "project", cwd: project };
+  await Promise.all([
+    runChatgptWorkInstall({ ...common, profile: "full", allowFullActions: true }),
+    runChatgptWorkInstall({ ...common, profile: "pro-safe" }),
+  ]);
+  const receipt = await readChatgptWorkConfig({ scope: "project", cwd: project });
+  const mcp = JSON.parse(await readFile(join(receipt.pluginPath, ".mcp.json"), "utf8"));
+  assert.equal(receipt.profile, receipt.allowFullActions ? "full" : "pro-safe");
+  assert.equal(
+    mcp.mcpServers.muster.env.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS === "1",
+    receipt.allowFullActions,
+  );
+  await assert.doesNotReject(readChatgptWorkConfig({ scope: "project", cwd: project }));
+});
+
+test("a late receipt failure restores the prior plugin and receipt as one pair", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-rollback-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const common = { connectionId: "asdk_app_Rollback1", scope: "project", cwd: project };
+  const first = await runChatgptWorkInstall({ ...common, profile: "pro-safe" });
+  const receiptBefore = await readFile(first.configPath);
+  const mcpBefore = await readFile(join(first.pluginPath, ".mcp.json"));
+  await assert.rejects(
+    runChatgptWorkInstall({
+      ...common,
+      profile: "full",
+      allowFullActions: true,
+      __testBeforeReceiptCommit: () => { throw new Error("injected receipt failure"); },
+    }),
+    /injected receipt failure/,
+  );
+  assert.deepEqual(await readFile(first.configPath), receiptBefore);
+  assert.deepEqual(await readFile(join(first.pluginPath, ".mcp.json")), mcpBefore);
   assert.equal((await readChatgptWorkConfig({ scope: "project", cwd: project })).profile, "pro-safe");
 });
 
@@ -238,4 +338,15 @@ test("probe identity validates installed app bytes and consumes nonce durably ac
   assert.notEqual(replay.code, 0);
   assert.equal(replay.stdout, "");
   assert.match(replay.stderr, /nonce\/instance state rejected/);
+
+  await writeFile(join(dir, "server-instance.json"), JSON.stringify({
+    serverInstanceId: "00000000-0000-0000-0000-000000000000",
+  }) + "\n", { mode: 0o600 });
+  const malformed = await serverExit({
+    ...env,
+    MUSTER_CHATGPT_WORK_PROBE_NONCE: "e".repeat(32),
+  });
+  assert.notEqual(malformed.code, 0);
+  assert.equal(malformed.stdout, "");
+  assert.match(malformed.stderr, /invalid instance id/);
 });

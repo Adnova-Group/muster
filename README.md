@@ -67,7 +67,7 @@ The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 
 
 ### ChatGPT Work (private/local plugin lane)
 
-Muster's MCP surface has one neutral implementation in `mcp/server.mjs` with explicit host adapters in `mcp/codex-server.mjs` and `mcp/chatgpt-work-server.mjs`. The legacy `cowork/mcp-server.mjs` and `cowork/chatgpt-work-server.mjs` paths remain compatibility shims for existing host configurations. Codex and Work bundles build their explicit adapters directly; they do not string-rewrite Cowork source. The public Work runtime command remains `node runtime/chatgpt-work-server.mjs`.
+Muster's MCP surface has one neutral implementation in `mcp/server.mjs` with explicit host adapters in `mcp/codex-server.mjs`, `mcp/chatgpt-work-server.mjs`, and `cowork/mcp-server.mjs`. The legacy `cowork/chatgpt-work-server.mjs` path remains a compatibility shim for existing Work configurations. Codex and Work bundles build their explicit adapters directly; they do not string-rewrite Cowork source. The public Work runtime command remains `node runtime/chatgpt-work-server.mjs`.
 
 ChatGPT Work supports plugins on the web and in the ChatGPT desktop app (select ChatGPT → Work). Codex Desktop is a separate surface: Work does not inherit Codex `AGENTS.md`, skills, hooks, MCP, or `config.toml` configuration. Muster's Work lane is a private/local development path through the universal Plugins Directory format and a registered MCP connection; it is not a public plugin submission. Secure MCP Tunnel is explicitly a private transport and cannot make a tunnel-backed plugin eligible for public distribution. The local/repo Plugins Directory source is the documented desktop proof lane: restart or refresh ChatGPT Desktop, select the local/repo marketplace source, and install the plugin there. Do not generalize that local source to Work web; use Work web only when an independently supported source is available.
 
@@ -80,7 +80,7 @@ muster install chatgpt-work --connection-id plugin_asdk_app_... --profile pro-sa
 # full deterministic surface: --profile full --allow-full-actions
 ```
 
-`--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/plugin` for project scope or `<home>/.agents/plugins/plugin` for user scope. Its receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect those returned/receipt paths rather than assuming a different plugin copy.
+`--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/muster-chatgpt-work` for project scope or `<home>/.agents/plugins/muster-chatgpt-work` for user scope. Its receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect those returned/receipt paths rather than assuming a different plugin copy.
 
 The generated Work plugin contains minimal `.mcp.json` wiring and this `.app.json` mapping; it does not inherit Codex configuration. The plugin manifest points `apps` at `./.app.json`:
 
@@ -133,12 +133,11 @@ node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> 
   --connection-label "Muster ChatGPT Work"
 ```
 
-Grading is two-phase. Phase 1 keeps the attestation and probe inventory present and returns `evidence-graded`; do not delete the attestation before this command. After that result, stop the tunnel and remove only the exact plugin/marketplace/receipt/probe artifacts owned by this run. There is no invented uninstall command: if ownership or a path collides, stop and record `HUMAN-HOLD`. Re-inventory and write a cleanup record with verified absence and zero retained artifacts, then finalize it:
+Grading is two-phase. Phase 1 keeps the attestation and probe inventory present, writes a private retained grade snapshot outside the owned plugin and probe trees, and returns `evidence-graded`; do not delete the attestation before this command. After that result, stop the tunnel and remove only the exact snapshot-bound plugin and probe paths owned by this run. There is no invented uninstall command: if ownership or a path collides, stop and record `HUMAN-HOLD`. Write the cleanup record with the returned `gradeDigest` and identical `ownedPaths`; phase 2 independently verifies those paths are absent from the retained snapshot:
 
 ```sh
-node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json --nonce <nonce> \
-  --connection-id asdk_app_... --app-json /path/to/installed/.app.json \
-  --plugin-version 0.5.0 --connection-label "Muster ChatGPT Work"
+node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
+  --grade-snapshot /private/retained/grade-snapshot.json
 ```
 
 ## The nine modes

@@ -1,15 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
+import { CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
-const fixtureEntries = ["catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor", "package.json"];
+// Single-sourced with computeCodexBuildInputDigest's own declared input set
+// (src/codex-release.js) plus package.json, so this fixture list can never
+// silently drift from what the skip-if-current check actually hashes.
+const fixtureEntries = [...CODEX_BUILD_INPUT_DIRS, "package.json"];
 const bundles = ["runtime/muster.mjs", "runtime/muster-mcp.mjs"];
 
 async function buildCheckout(checkout, sharedNodeModules) {
@@ -45,17 +48,59 @@ test("repeated Codex build produces byte-identical bundles from unchanged source
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
   const first = await resolveCodexPlugin(checkout);
   const firstBundle = await readFile(join(first.pluginRoot, "runtime", "muster.mjs"), "utf8");
-  // buildCodexPlugin is idempotent (skips regeneration when already current),
-  // so a second build call is expected to be a fast no-op here — the point of
-  // this test is that its result is unchanged, whether or not it regenerated.
+  const markerPath = join(first.pluginRoot, "package.json");
+  const mtimeBeforeSecondCall = (await stat(markerPath)).mtimeMs;
+  // buildCodexPlugin is idempotent (skips regeneration entirely when the
+  // published plugin's stored input digest already matches the current
+  // inputs -- codex-bundle-cache-key fix), so a second build call is expected
+  // to be a genuine skip here, not merely a regeneration that happens to
+  // reproduce the same bytes. Proven two ways: the bundle content is
+  // unchanged (below) AND the published package.json marker's mtime is
+  // untouched (immediately below) -- a real regeneration always rewrites that
+  // file via publishCodexPlugin's retire-then-copy, so an unchanged mtime is
+  // only possible if the build was skipped outright.
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
+  assert.equal((await stat(markerPath)).mtimeMs, mtimeBeforeSecondCall, "an unchanged-input second build call must skip regeneration outright, not just reproduce identical bytes");
   const second = await resolveCodexPlugin(checkout);
   assert.equal(await readFile(join(second.pluginRoot, "runtime", "muster.mjs"), "utf8"), firstBundle);
+  assert.ok(second.inputDigest, "the published plugin must carry a stored input digest");
+  assert.equal(second.inputDigest, first.inputDigest);
   // The staging directory used during the build must never survive it.
   assert.deepEqual((await readdir(join(checkout, ".agents", "plugins"))).filter(name => name.startsWith(".muster-build-")), []);
 });
 
-test("Codex build rejects source symlinks and leaves the already-published plugin unchanged", async t => {
+test("editing one plugin skill file -- with the version left unbumped -- triggers regeneration on the next build (the codex-bundle-cache-key incident scenario)", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-edit-regen-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const checkout = join(tmp, "checkout");
+  await mkdir(checkout, { recursive: true });
+  await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
+  await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
+  const first = await resolveCodexPlugin(checkout);
+  const generatedAdvisorPath = join(first.pluginRoot, "internal-skills", "advisor", "SKILL.md");
+  const marker = "MUSTER-TEST-MARKER-codex-bundle-cache-key";
+  assert.ok(!(await readFile(generatedAdvisorPath, "utf8")).includes(marker), "sanity: the marker must not already be present in the first build");
+
+  // Edit a real generation-input source file -- a fixture-copy plugin skill,
+  // per the incident's own reproduction -- WITHOUT bumping package.json's
+  // version. This is the exact bug: the old version-only skip check would
+  // never observe this edit and would keep serving the stale first build.
+  const sourceSkillPath = join(checkout, "plugin", "skills", "advisor", "SKILL.md");
+  await writeFile(sourceSkillPath, `${await readFile(sourceSkillPath, "utf8")}\n${marker}\n`);
+  const versionBefore = JSON.parse(await readFile(join(checkout, "package.json"), "utf8")).version;
+
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
+  const second = await resolveCodexPlugin(checkout);
+  assert.equal(JSON.parse(await readFile(join(checkout, "package.json"), "utf8")).version, versionBefore, "sanity: this test must never bump the version -- that is the whole point");
+  assert.notEqual(second.inputDigest, first.inputDigest, "the stored input digest must change when a generation input is edited");
+  assert.ok(
+    (await readFile(join(second.pluginRoot, "internal-skills", "advisor", "SKILL.md"), "utf8")).includes(marker),
+    "the edited source content must reach the regenerated bundle -- the second build must not have been skipped"
+  );
+});
+
+test("Codex build rejects source symlinks -- even with an unbumped version, via the input-content digest -- and leaves the already-published plugin unchanged", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-symlink-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const checkout = join(tmp, "checkout");
@@ -65,16 +110,14 @@ test("Codex build rejects source symlinks and leaves the already-published plugi
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
   const before = await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8");
   await symlink(join(tmp, "external"), join(checkout, "plugin", "skills", "advisor", "escape"));
-  // buildCodexPlugin's idempotent skip-if-current check only compares
-  // package.json's version against the already-published plugin (a known,
-  // documented limitation — see its docblock), so an unmodified version
-  // would make this second call a no-op that never re-walks the (now
-  // symlink-tainted) source tree at all, and never reject anything. Bump
-  // the version to force a genuine rebuild attempt, which is what actually
-  // exercises assertRegularTree's symlink rejection.
-  const pkgPath = join(checkout, "package.json");
-  const pkg = JSON.parse(await readFile(pkgPath, "utf8"));
-  await writeFile(pkgPath, JSON.stringify({ ...pkg, version: `${pkg.version}-symlink-test` }));
+  // codex-bundle-cache-key incident fix, proven directly: buildCodexPlugin's
+  // skip-if-current check now computes a fresh input digest (which walks
+  // every generation-input tree, including plugin/) BEFORE deciding to skip,
+  // so this second call -- with package.json's version deliberately left
+  // UNCHANGED -- still re-walks the now symlink-tainted plugin/ tree and
+  // rejects, rather than silently no-op-skipping on a version match the way
+  // the pre-fix version-only check would have (which never re-walked source
+  // at all and never rejected anything here).
   await assert.rejects(execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 }), /symlink|regular file/i);
   assert.equal(await readFile(join(checkout, ".agents", "plugins", "marketplace.json"), "utf8"), before);
   assert.deepEqual((await readdir(join(checkout, ".agents", "plugins"))).filter(name => name.startsWith(".muster-build-")), []);
@@ -94,24 +137,29 @@ test("Codex build writes nothing outside its gitignored staging directory that g
   assert.deepEqual(after, before, "the build must only ever create the gitignored .agents/ staging directory");
 });
 
-test("buildCodexPlugin's version-only skip-if-current check can be bypassed with MUSTER_BUILD_FORCE=1", async t => {
+test("buildCodexPlugin's input-digest skip-if-current check can be bypassed with MUSTER_BUILD_FORCE=1", async t => {
   const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-force-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const root = join(tmp, "root"), outDir = join(tmp, "plugins");
   await mkdir(root, { recursive: true });
+  // A minimal but GENUINE input tree -- one empty directory per declared
+  // generation-input entry, which is all computeCodexBuildInputDigest needs
+  // to walk and hash -- rather than the expensive real esbuild generation
+  // this synthetic root cannot support anyway. It deliberately carries none
+  // of buildCodexPluginOnce's actual file content, which is exactly what
+  // proves whether the force flag attempted a real rebuild below.
+  await Promise.all(CODEX_BUILD_INPUT_DIRS.map(dir => mkdir(join(root, dir), { recursive: true })));
   const packageVersion = "9.9.9-force-test";
   await writeFile(join(root, "package.json"), JSON.stringify({ version: packageVersion }));
-  // Fabricate an already-published plugin whose version matches root's
-  // package.json directly via publishCodexPlugin, rather than running the
-  // real (slow) esbuild generation this synthetic root cannot support
-  // anyway — it deliberately has none of the real source directories
-  // buildCodexPluginOnce needs, which is exactly what proves whether the
-  // force flag actually attempted a real rebuild below.
+  const inputDigest = await computeCodexBuildInputDigest(root);
+  // Fabricate an already-published plugin whose version AND input digest
+  // match root directly via publishCodexPlugin, rather than running the
+  // real (slow) esbuild generation.
   const staged = join(tmp, "staged");
   await mkdir(join(staged, "skills"), { recursive: true });
   await mkdir(join(staged, ".codex-plugin"), { recursive: true });
-  await writeFile(join(staged, "package.json"), JSON.stringify({ version: packageVersion }));
+  await writeFile(join(staged, "package.json"), JSON.stringify({ version: packageVersion, inputDigest }));
   // publishCodexPlugin's pre-publication contract check reads the staged
   // manifest, so this synthetic staged tree must carry a coherent one (the
   // real build always writes it — scripts/build-codex.mjs).
@@ -131,17 +179,62 @@ test("buildCodexPlugin's version-only skip-if-current check can be bypassed with
   try {
     delete process.env.MUSTER_BUILD_FORCE;
     const cached = await buildCodexPlugin({ root, outDir });
-    assert.equal(cached.packageVersion, packageVersion, "an unforced call with a matching version must return the cached publish without attempting real generation");
+    assert.equal(cached.packageVersion, packageVersion, "an unforced call with a matching input digest must return the cached publish without attempting real generation");
+    assert.equal(cached.inputDigest, inputDigest);
 
     process.env.MUSTER_BUILD_FORCE = "1";
     await assert.rejects(
       buildCodexPlugin({ root, outDir }),
-      /tree root is missing/i,
-      "MUSTER_BUILD_FORCE=1 must bypass the version-only skip and attempt a real rebuild, which fails fast against this synthetic root's missing source directories"
+      /ENOENT/i,
+      "MUSTER_BUILD_FORCE=1 must bypass the input-digest skip and attempt a real rebuild, which fails fast against this synthetic root's empty source directories"
     );
   } finally {
     delete process.env.MUSTER_BUILD_FORCE;
   }
+});
+
+test("buildCodexPlugin never treats a stale bundle as fresh: a published plugin whose stored input digest disagrees with current inputs is not selected, even with a matching version", async t => {
+  const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-stale-digest-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const root = join(tmp, "root"), outDir = join(tmp, "plugins");
+  await mkdir(root, { recursive: true });
+  await Promise.all(CODEX_BUILD_INPUT_DIRS.map(dir => mkdir(join(root, dir), { recursive: true })));
+  const packageVersion = "9.9.9-stale-digest-test";
+  await writeFile(join(root, "package.json"), JSON.stringify({ version: packageVersion }));
+  const currentInputDigest = await computeCodexBuildInputDigest(root);
+
+  // Publish a plugin at the SAME version but stamped with a digest that does
+  // NOT match root's actual current inputs -- this is exactly the incident
+  // scenario replayed mechanically: a bundle generated from different source
+  // content than what is on disk right now, at an unchanged version. This is
+  // the mutant-kill for the codex-bundle-cache-key regression: a reverted,
+  // version-only comparison would happily return this stale publish (version
+  // matches); the input-digest comparison must not.
+  const staged = join(tmp, "staged");
+  await mkdir(join(staged, "skills"), { recursive: true });
+  await mkdir(join(staged, ".codex-plugin"), { recursive: true });
+  const staleInputDigest = `stale-${currentInputDigest.slice(8)}`;
+  assert.notEqual(staleInputDigest, currentInputDigest);
+  await writeFile(join(staged, "package.json"), JSON.stringify({ version: packageVersion, inputDigest: staleInputDigest }));
+  await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: packageVersion }));
+  await publishCodexPlugin({
+    pluginsRoot: outDir,
+    stagedPlugin: staged,
+    packageVersion,
+    marketplaceTemplate: {
+      name: "muster",
+      interface: { displayName: "Muster" },
+      plugins: [{ name: "muster", source: { source: "local", path: "./plugin" }, category: "Productivity" }]
+    }
+  });
+
+  delete process.env.MUSTER_BUILD_FORCE;
+  await assert.rejects(
+    buildCodexPlugin({ root, outDir }),
+    /ENOENT/i,
+    "a digest-mismatched published plugin must never be selected as fresh -- an unforced call must attempt real regeneration despite the matching version"
+  );
 });
 
 test("buildCodexPlugin regenerates (does not same-version-skip) when the published plugin's identity is mislabeled", async t => {
@@ -155,9 +248,10 @@ test("buildCodexPlugin regenerates (does not same-version-skip) when the publish
 
   // Publish a coherent plugin at the matching version (as the force-flag test
   // above does), then MISLABEL its published .codex-plugin/plugin.json. Each
-  // mismatch (name, then version) must make buildCodexPlugin's version-only
-  // same-version skip treat the published plugin as needing REGENERATION
-  // rather than up-to-date. Regeneration is proven the same way the force-flag
+  // mismatch (name, then version) must make buildCodexPlugin's skip-if-current
+  // check treat the published plugin as needing REGENERATION rather than
+  // up-to-date -- resolution itself rejects a mislabeled identity before the
+  // input-digest comparison is ever reached. Regeneration is proven the same way the force-flag
   // test proves a real rebuild was attempted: this synthetic root has none of
   // the real source directories, so a genuine rebuild fails fast with "tree
   // root is missing". A same-version SKIP would instead return the cached

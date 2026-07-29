@@ -211,6 +211,40 @@ function treeDigest(tree) {
   return hash.digest("hex");
 }
 
+// codex-bundle-cache-key incident fix: the Codex build's skip-if-current check
+// (scripts/build-codex.mjs's buildCodexPlugin) used to compare only the
+// published plugin's packageVersion against the current package.json, so
+// editing any generation input WITHOUT bumping the version silently never
+// triggered regeneration -- a stale bundle shipped for an entire pinned-version
+// window. This is the reused-hashing replacement: a single content digest over
+// every declared generation-input source, computed the same way treeDigest
+// above compares a staged tree against its copy.
+//
+// The input set is not a guess: scripts/build-codex.mjs's OWN pre-generation
+// assertRegularTree validation loop already enumerates exactly these eight
+// top-level directories as the trees the generator reads from before staging
+// anything, and test/codex-build-repro.test.js's fixtureEntries names the
+// identical set plus package.json (whose bytes the generator also reads, for
+// its own version and for the plugin/package.json + .codex-plugin/plugin.json
+// it stamps). Order-independent per directory (treeDigest sorts within each);
+// the nine are then combined over their own fixed, literal order so directory
+// ordering never perturbs the digest. package.json's raw bytes are folded in
+// directly (not just its parsed version) so a dependency bump or any other
+// package.json edit is observed too, not only a version bump.
+export const CODEX_BUILD_INPUT_DIRS = Object.freeze([
+  "catalog", "codex", "cowork", "pipelines", "plugin", "scripts", "src", "vendor"
+]);
+export async function computeCodexBuildInputDigest(root) {
+  const hash = createHash("sha256");
+  for (const dir of CODEX_BUILD_INPUT_DIRS) {
+    const tree = await assertRegularTree(join(root, dir));
+    hash.update(`t\0${dir}\0${treeDigest(tree)}\0`);
+  }
+  const pkg = readRegular(join(root, "package.json"), "Codex build input package descriptor");
+  hash.update(`f\0package.json\0${pkg.length}\0${sha256(pkg)}\0`);
+  return hash.digest("hex");
+}
+
 export async function assertRegularFile(path) {
   ordinary(path, "file", "source file");
   return path;
@@ -796,7 +830,7 @@ async function resolveCodexPluginOnce(pluginsRoot) {
   // dogfood audit of this resolution path). A plugin whose package.json version
   // matches but whose .codex-plugin/plugin.json name or version disagrees is a
   // mislabeled or swapped manifest: version-only validation would resolve it as
-  // valid and let buildCodexPlugin's same-version skip treat it as up-to-date,
+  // valid and let buildCodexPlugin's skip-if-current check treat it as up-to-date,
   // never regenerating an internally inconsistent plugin. Re-assert the same
   // name + both-versions contract assertStagedPublishContract enforces at
   // publish time, now on the RESOLVED tree: the manifest name must equal
@@ -814,7 +848,13 @@ async function resolveCodexPluginOnce(pluginsRoot) {
   if (manifest?.version !== pkg.version) {
     throw new Error(`Codex plugin manifest version ${JSON.stringify(manifest?.version)} does not match package version ${JSON.stringify(pkg.version)}: ${pluginRoot}`);
   }
-  return { pluginRoot, profilesRoot: join(pluginRoot, "agents"), packageVersion: pkg.version };
+  // inputDigest is the codex-bundle-cache-key skip key (see computeCodexBuildInputDigest
+  // above). Passed through as-is, whatever its type: a plugin published before this
+  // fix shipped carries no such field at all (undefined), which simply never equals
+  // a freshly computed digest string -- buildCodexPlugin's comparison then falls
+  // through to regeneration exactly like any other genuine mismatch, rather than
+  // this reader needing its own bespoke "is it present and well-formed" gate.
+  return { pluginRoot, profilesRoot: join(pluginRoot, "agents"), packageVersion: pkg.version, inputDigest: pkg.inputDigest };
 }
 
 // Resolves an already-published Codex plugin under `pluginsRoot` (defaulting

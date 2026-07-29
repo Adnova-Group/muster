@@ -695,7 +695,7 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
       }
       pointer = priorPointer !== null ? JSON.parse(priorPointer.toString("utf8")) : structuredClone(marketplaceTemplate);
       if (pointer?.name !== "muster" || !Array.isArray(pointer.plugins)) {
-        throw new Error(`Codex marketplace has an unrecognized contract: ${pointerPath}`);
+        throw new Error(`Codex marketplace does not describe the Muster plugin with a recognized contract: ${pointerPath}`);
       }
       const codexEntries = pointer.plugins.filter(item => item?.name === "muster");
       if (codexEntries.length > 1) {

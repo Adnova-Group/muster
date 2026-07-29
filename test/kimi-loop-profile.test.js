@@ -19,7 +19,13 @@ test("§11.10 exists and names each chosen loop/background value with its citati
   const section = match[1];
   // each knob, with the binary-probed default/semantics it was pinned to
   assert.match(section, /loop_control\.max_steps_per_turn/, "§11.10 must name max_steps_per_turn");
-  assert.match(section, /LOOP_MAX_STEPS_EXCEEDED/, "§11.10 must cite the max-steps abort error");
+  assert.match(section, /LOOP_MAX_STEPS_EXCEEDED/, "§11.10 must keep the v0.29.1 max-steps abort error as a dated historical note");
+  // the 0.30.0 re-probe (2026-07-29) of the step-cap failure mode
+  assert.match(section, /re-probed on 0\.30\.0 \(2026-07-29\)/, "§11.10 must date the 0.30.0 step-cap re-probe");
+  assert.match(section, /loop\.max_steps_exceeded/, "§11.10 must cite the 0.30.0 turn-level max-steps error");
+  assert.match(section, /status:"paused"[\s\S]*?Paused after interruption/, "§11.10 must record the goal's persisted paused state");
+  assert.match(section, /exits \*\*1\*\* \(not 6\)/, "§11.10 must pin the exit-1-not-6 print-mode outcome");
+  assert.match(section, /genuinely resumable/, "§11.10 must record that the paused goal resumes to completion");
   assert.match(section, /KIMI_LOOP_MAX_STEPS_PER_TURN/, "§11.10 must cite the max-steps env override");
   assert.match(section, /loop_control\.max_retries_per_step/, "§11.10 must name max_retries_per_step");
   assert.match(section, /\?\? 10/, "§11.10 must cite the built-in 10 retry default");
@@ -53,7 +59,8 @@ test("go.md's Kimi run-loop block names the chosen loop/background profile value
   assert.match(block, /§11\.10/, "go.md must point at the §11.10 probe evidence");
   assert.match(block, /KIMI_LOOP_MAX_STEPS_PER_TURN/, "go.md must name the per-process env overrides for non-default runs");
   assert.match(block, /keep_alive_on_exit = true[\s\S]*?drain/, "go.md must warn about the legacy drain downgrade");
-  assert.match(block, /defaults apply unless the user's\s*\n\s*config\.toml already sets those keys[\s\S]*?user-set `max_steps_per_turn` cap would abort a\s*\n\s*healthy long run/, "go.md must caveat that user-set keys override the defaults, with the max_steps_per_turn abort advisory");
+  assert.match(block, /defaults apply unless the user's\s*\n\s*config\.toml already sets those keys[\s\S]*?user-set `max_steps_per_turn` cap no longer aborts the\s*\n\s*goal/, "go.md must caveat that user-set keys override the defaults, with the corrected 0.30.0 max_steps_per_turn advisory");
+  assert.match(block, /pauses the goal resumably[\s\S]*?exits 1[\s\S]*?harness FAULT/, "go.md must state the capped run now pauses resumably but exits 1 as a harness fault");
 });
 
 // --- (c) src/kimi-install.js's non-emission rationale comment --------------

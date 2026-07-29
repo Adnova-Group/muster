@@ -682,15 +682,31 @@ it, `readInstalledKimi()`, the `capabilities --kimi` lane + `kimiProfileForAgent
 `catalog/agents.manifest.json` path (`src/agent-manifest.js`), and `muster install/uninstall kimi`
 are all shipped. Nothing here touches 0.5.0.
 
-### 11.10 Loop/background tuning for long unattended `/goal` runs — binary-probed defaults (2026-07-27)
+### 11.10 Loop/background tuning for long unattended `/goal` runs — binary-probed defaults (2026-07-27; step-cap failure mode re-probed on 0.30.0, 2026-07-29)
 
 The §3 schema (lines 129–130) names the `[loop_control]` and `[background]` knobs but documents
 **no default and almost no semantics** for any of them. Probed against the installed v0.29.1 binary
-(`~/.kimi-code/bin/kimi`, unstripped — same evidence style as §11.9 and the §8 usage probe):
+(`~/.kimi-code/bin/kimi`, unstripped — same evidence style as §11.9 and the §8 usage probe), with
+the `max_steps_per_turn` failure mode re-probed live on the 0.30.0 CLI (2026-07-29, below):
 
 - **`loop_control.max_steps_per_turn`** — unset or `0` means **no cap** (the step-budget check
-  returns true whenever the cap is undefined or ≤0); a tripped cap aborts the turn with
-  `LOOP_MAX_STEPS_EXCEEDED`. Per-process env override: `KIMI_LOOP_MAX_STEPS_PER_TURN`.
+  returns true whenever the cap is undefined or ≤0). Per-process env override:
+  `KIMI_LOOP_MAX_STEPS_PER_TURN`. **Failure mode, re-probed on 0.30.0 (2026-07-29):** a tripped
+  cap **no longer aborts the goal**. Live probe (`KIMI_LOOP_MAX_STEPS_PER_TURN=2 kimi -p "/goal …"
+  -m kimi-code/k3 --output-format stream-json`, ambient config carrying no `[loop_control]` keys,
+  objective forcing 3 separate Bash steps): the capped turn ends with a WARN (`turn hit max steps
+  turnId=0 steps=2 limit=2`), the goal rolls into a **fresh turn** (wire: `goal.update
+  turnsUsed:2`, then `step.begin turnId=1 step=1` — the 0.29.2 "goal pursuit pausing" fix), the
+  `-p` print driver then cancels that continuation turn (`turn.cancel`), the goal is persisted
+  **`paused`** (`goal.update status:"paused", reason:"Paused after interruption"`), and the process
+  exits **1** (not 6) with stderr `error: failed to run prompt: loop.max_steps_exceeded: Turn
+  exceeded maxSteps=2. …`. The pause is genuinely resumable: `kimi -p "continue" -S <session>`
+  ran the remaining step and completed the goal, exit 0. Operational consequence for muster: a
+  capped `-p` run surfaces to `interpretKimiGoalExit` as exit 1 (harness FAULT), not the 6-paused
+  code, even though the persisted goal state is paused/resumable — recovery is a `kimi -r`
+  resume, not a restart, but an unattended wave still stops. *Historical (v0.29.1 binary probe,
+  2026-07-27): a tripped cap aborted the turn with `LOOP_MAX_STEPS_EXCEEDED`; that error string no
+  longer exists in 0.30.0 — the turn-level error is now `loop.max_steps_exceeded`.*
 - **`loop_control.max_retries_per_step`** — built-in default **10** when unset (the step's tenacity
   wrapper falls back with `?? 10`); backoff on connection/status/timeout per §1 (line 55). Env:
   `KIMI_LOOP_MAX_RETRIES_PER_STEP`.
@@ -712,11 +728,12 @@ The §3 schema (lines 129–130) names the `[loop_control]` and `[background]` k
 
 **Chosen values for muster's unattended `kimi -p "/goal …"` runs — all left at the binary
 defaults, pinned in runner prose (`plugin/commands/go.md` step 6), NOT emitted into config.toml:**
-`max_steps_per_turn` unset (no cap — a cap is a second, harsher stop rule that would abort a
-healthy long run mid-wave; `/goal`'s stop conditions already live in the objective, §11.9; and the
-uncapped-steps concern is bounded by the binary's own backstops — `handlePrintMainTurnCompleted`
-finishes a `-p` print run once quiescent or when `print_wait_ceiling_s`/`print_max_turns` is
-reached, binary-probed v0.29.1);
+`max_steps_per_turn` unset (no cap — a cap is a second stop rule the objective already covers,
+§11.9; since 0.29.2 a tripped cap pauses the goal resumably instead of aborting it, but in `-p`
+mode the run still exits 1 as a harness fault rather than auto-continuing — re-probed on 0.30.0,
+2026-07-29, above — so unattended runs still leave it unset; and the uncapped-steps concern is
+bounded by the binary's own backstops — `handlePrintMainTurnCompleted` finishes a `-p` print run
+once quiescent or when `print_wait_ceiling_s`/`print_max_turns` is reached, binary-probed v0.29.1);
 `max_retries_per_step` unset (10 — generous transient-failure absorption on the shared 5-hour rate
 window, §0 lines 42–45; raising it further burns shared quota on persistent failures instead of
 failing the step so the run can re-plan); `reserved_context_size` unset (50000 — on K3's 1M window,

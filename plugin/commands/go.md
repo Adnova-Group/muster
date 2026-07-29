@@ -142,10 +142,15 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    **Kimi loop/background profile — binary defaults, pinned not emitted.** The run leaves
    `[loop_control]`/`[background]` (docs/research/kimi-code-cli.md §3, lines 129-130) at the
    v0.29.1 binary defaults, verified by probe in §11.10 — the defaults apply unless the user's
-   config.toml already sets those keys, and a user-set `max_steps_per_turn` cap would abort a
-   healthy long run mid-wave with `LOOP_MAX_STEPS_EXCEEDED` and must be removed or raised:
+   config.toml already sets those keys. A user-set `max_steps_per_turn` cap no longer aborts the
+   goal (the v0.29.1 `LOOP_MAX_STEPS_EXCEEDED` abort was fixed in 0.29.2; re-probed on 0.30.0,
+   2026-07-29): a tripped cap now pauses the goal resumably — but in `-p` mode the run still
+   exits 1 (a harness FAULT to `interpretKimiGoalExit`, not the 6-paused code), stopping the
+   unattended wave until someone resumes it with `kimi -r`, so leaving it unset remains the
+   recommendation rather than a hard requirement:
    `max_steps_per_turn` unset (no cap — a
-   cap aborts a healthy long turn with `LOOP_MAX_STEPS_EXCEEDED`; the objective already carries the
+   tripped cap pauses the goal resumably (0.30.0) instead of aborting it, but the `-p` run exits 1
+   as a harness fault rather than auto-continuing; the objective already carries the
    stop conditions), `max_retries_per_step` unset (built-in 10 with backoff, §1 line 55 — generous
    transient-failure absorption on the shared quota window), `reserved_context_size` unset
    (built-in 50000 — the `reserved` in §1's compaction trigger, lines 62-63),

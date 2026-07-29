@@ -9,7 +9,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, open, readFile, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, rename, rm, rmdir } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -129,7 +129,7 @@ export function buildProbe({
       "The server must emit a separate nonce/tool/request/result attestation with invocationCount=1 and a server timestamp. UI evidence is operator attestation, not cryptographic provenance.",
       "Bind the receipt to SHA-256(normalized connection ID), SHA-256(installed .app.json), plugin name/version, and the registered connection label; never store the raw ID, app file, tunnel ID, API key, or screenshots.",
       "Phase 1: while the independent server attestation and installed .app.json still exist, grade the operator receipt and write a private retained snapshot outside the owned plugin/temp trees. The snapshot binds the successful grade, exact owned paths, app identity/hash, nonce, and server attestation with an evidence-grade SHA-256 digest.",
-      "Phase 2 only after evidence grade succeeds: stop tunnel-client, remove the connection/marketplace/cache/UI entries, re-run those inventories, and pass the retained snapshot to the cleanup finalizer. The finalizer identity-checks and deletes the exact snapshot-bound plugin/temp directories itself, then lstat-checks absence; it rejects missing, moved, replaced, mismatched, symlinked, or unowned paths and never depends on the deleted .app.json.",
+      "Phase 2 only after evidence grade succeeds: stop tunnel-client, remove the connection/marketplace/cache/UI entries, re-run those inventories, and pass the retained snapshot to the cleanup finalizer. The finalizer identity-checks each exact snapshot-bound plugin/temp directory, atomically moves both into a new private quarantine, rechecks their retained identities there, deletes the quarantine, then lstat-checks absence; it rejects missing, moved, concurrently replaced, mismatched, symlinked, or unowned paths and never depends on the deleted .app.json.",
     ],
   };
 }
@@ -321,6 +321,7 @@ function gradeDigestMaterial(snapshot) {
     serverAttestation: snapshot.serverAttestation,
     ownedPaths: snapshot.ownedPaths,
     ownership: snapshot.ownership,
+    snapshotPath: snapshot.snapshotPath,
   };
 }
 
@@ -375,13 +376,14 @@ export async function retainGradeSnapshot({
   if (errors.length) return { ok: false, errors };
   const snapshot = {
     snapshotType: SNAPSHOT_TYPE,
-    schemaVersion: 1,
+    schemaVersion: 2,
     grade,
     nonce,
     identity,
     serverAttestation,
     ownedPaths,
     ownership,
+    snapshotPath,
   };
   snapshot.gradeDigest = snapshotDigest(snapshot);
   let handle;
@@ -401,10 +403,10 @@ export async function retainGradeSnapshot({
 }
 
 function validateSnapshot(snapshot, errors) {
-  const keys = ["snapshotType", "schemaVersion", "grade", "nonce", "identity", "serverAttestation", "ownedPaths", "ownership", "gradeDigest"];
+  const keys = ["snapshotType", "schemaVersion", "grade", "nonce", "identity", "serverAttestation", "ownedPaths", "ownership", "snapshotPath", "gradeDigest"];
   if (!exactKeys(snapshot, keys, "snapshot", errors)) return;
   exactValue(snapshot.snapshotType, SNAPSHOT_TYPE, "snapshot.snapshotType", errors);
-  exactValue(snapshot.schemaVersion, 1, "snapshot.schemaVersion", errors);
+  exactValue(snapshot.schemaVersion, 2, "snapshot.schemaVersion", errors);
   if (!NONCE_PATTERN.test(snapshot.nonce ?? "")) errors.push("snapshot.nonce must be 32 lowercase hexadecimal characters");
   if (!isRecord(snapshot.grade) || snapshot.grade.ok !== true || snapshot.grade.phase !== "evidence-graded"
     || snapshot.grade.cleanupRequired !== true || snapshot.grade.nonce !== snapshot.nonce
@@ -425,6 +427,7 @@ function validateSnapshot(snapshot, errors) {
     exactValue(snapshot.ownership[key].type, "directory", `${at}.type`, errors);
     exactAbsolutePath(snapshot.ownership[key].parentPath, `${at}.parentPath`, errors);
   }
+  exactAbsolutePath(snapshot.snapshotPath, "snapshot.snapshotPath", errors);
   if (!SHA256_PATTERN.test(snapshot.gradeDigest ?? "") || snapshot.gradeDigest !== snapshotDigest(snapshot)) {
     errors.push("snapshot.gradeDigest does not cryptographically bind the successful phase 1 evidence");
   }
@@ -453,18 +456,98 @@ async function inspectRetainedDirectory(path, retainedIdentity, at, errors) {
   }
 }
 
-async function deleteRetainedDirectory(path, at, errors) {
+function retainedIdentityMatches(stat, retainedIdentity) {
+  return stat.isDirectory() && !stat.isSymbolicLink()
+    && String(stat.dev) === retainedIdentity?.dev
+    && String(stat.ino) === retainedIdentity?.ino
+    && (typeof stat.uid === "number" ? stat.uid : null) === retainedIdentity?.uid;
+}
+
+async function rollbackQuarantine(moved, quarantineRoot, errors) {
+  for (const entry of [...moved].reverse()) {
+    try {
+      await lstat(entry.source);
+      errors.push(`${entry.at} cannot be restored from private quarantine because its original path was replaced`);
+      continue;
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        errors.push(`${entry.at} original path cannot be checked during quarantine rollback: ${error.message}`);
+        continue;
+      }
+    }
+    try {
+      await rename(entry.destination, entry.source);
+    } catch (error) {
+      errors.push(`${entry.at} cannot be restored from private quarantine: ${error.message}`);
+    }
+  }
   try {
-    await rm(path, { recursive: true });
+    await rmdir(quarantineRoot);
   } catch (error) {
-    errors.push(`${at} identity-checked deletion failed: ${error.message}`);
+    if (error.code !== "ENOENT") errors.push(`private cleanup quarantine requires manual recovery at ${quarantineRoot}: ${error.message}`);
+  }
+}
+
+async function quarantineAndDelete(snapshot, errors, { beforeQuarantine } = {}) {
+  const quarantineRoot = resolve(dirname(snapshot.snapshotPath), `.muster-cleanup-${randomBytes(16).toString("hex")}`);
+  try {
+    await mkdir(quarantineRoot, { mode: 0o700 });
+  } catch (error) {
+    errors.push(`private cleanup quarantine cannot be created: ${error.message}`);
+    return;
+  }
+  const moved = [];
+  try {
+    await beforeQuarantine?.();
+  } catch (error) {
+    errors.push(`cleanup pre-quarantine hook failed: ${error.message}`);
+  }
+  if (errors.length) {
+    await rollbackQuarantine(moved, quarantineRoot, errors);
+    return;
+  }
+  for (const key of ["plugin", "temp"]) {
+    const source = snapshot.ownedPaths[key];
+    const destination = resolve(quarantineRoot, key);
+    const at = `snapshot.ownedPaths.${key}`;
+    try {
+      await rename(source, destination);
+      moved.push({ source, destination, at });
+      const stat = await lstat(destination);
+      if (!retainedIdentityMatches(stat, snapshot.ownership[key])) {
+        errors.push(`${at} identity changed before private quarantine; cleanup is not proven`);
+        break;
+      }
+    } catch (error) {
+      errors.push(`${at} cannot enter private cleanup quarantine: ${error.message}`);
+      break;
+    }
+  }
+  if (errors.length) {
+    await rollbackQuarantine(moved, quarantineRoot, errors);
     return;
   }
   try {
-    await lstat(path);
-    errors.push(`${at} remains after identity-checked deletion`);
+    await rm(quarantineRoot, { recursive: true });
   } catch (error) {
-    if (error.code !== "ENOENT") errors.push(`${at} absence cannot be verified after deletion: ${error.message}`);
+    errors.push(`private cleanup quarantine deletion failed: ${error.message}`);
+    return;
+  }
+  for (const key of ["plugin", "temp"]) {
+    const path = snapshot.ownedPaths[key];
+    const at = `snapshot.ownedPaths.${key}`;
+    try {
+      await lstat(path);
+      errors.push(`${at} remains after private-quarantine deletion`);
+    } catch (error) {
+      if (error.code !== "ENOENT") errors.push(`${at} absence cannot be verified after deletion: ${error.message}`);
+    }
+  }
+  try {
+    await lstat(quarantineRoot);
+    errors.push(`private cleanup quarantine remains after deletion: ${quarantineRoot}`);
+  } catch (error) {
+    if (error.code !== "ENOENT") errors.push(`private cleanup quarantine absence cannot be verified: ${error.message}`);
   }
 }
 
@@ -506,13 +589,16 @@ async function readPrivateGradeSnapshot(snapshotPath) {
     if ((stat.mode & 0o777) !== 0o600) errors.push("grade snapshot must be private mode 0600");
   }
   if (errors.length) throw new Error(errors.join("; "));
-  return JSON.parse(await readFile(snapshotPath, "utf8"));
+  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+  if (snapshot.snapshotPath !== snapshotPath) throw new Error("grade snapshot path does not match its retained identity");
+  return snapshot;
 }
 
-export async function finalizeCleanup(cleanup, snapshot) {
+export async function finalizeCleanup(cleanup, snapshot, options = {}) {
   if (process.platform === "win32") return { ok: false, errors: ["HUMAN-HOLD: Windows native proof has no usable attestation claim"] };
   const errors = [];
   validateSnapshot(snapshot, errors);
+  if (snapshot?.snapshotPath) await validatePrivateSnapshotTarget(snapshot.snapshotPath, errors);
   if (!exactKeys(cleanup, ["cleanupType", "timestamp", "gradeDigest", "ownedPaths", "inventory", "artifacts"], "cleanup", errors)) {
     return { ok: false, errors };
   }
@@ -541,9 +627,7 @@ export async function finalizeCleanup(cleanup, snapshot) {
     await inspectRetainedDirectory(snapshot.ownedPaths.temp, snapshot.ownership?.temp, "snapshot.ownedPaths.temp", errors);
   }
   if (errors.length) return { ok: false, errors };
-  for (const key of ["plugin", "temp"]) {
-    await deleteRetainedDirectory(snapshot.ownedPaths[key], `snapshot.ownedPaths.${key}`, errors);
-  }
+  await quarantineAndDelete(snapshot, errors, options);
   return errors.length ? { ok: false, errors } : {
     ok: true, phase: "cleanup-finalized", nonce: snapshot.nonce, gradeDigest: snapshot.gradeDigest,
   };

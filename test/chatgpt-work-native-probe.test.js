@@ -227,6 +227,40 @@ test("cleanup rejects tampered grades, path mismatches, symlinks, and unowned-or
   assert.match(aliased.errors.join("\n"), /traverse a symlink/i);
 });
 
+test("cleanup rejects a pathname swap between inspection and quarantine without deleting either retained inode", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "muster-native-cleanup-race-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const retainedDir = join(root, "retained");
+  const pluginPath = join(root, "plugin");
+  const tempPath = join(root, "probe-temp");
+  const movedTemp = join(root, "moved-temp");
+  const snapshotPath = join(retainedDir, "grade-snapshot.json");
+  await Promise.all([mkdir(retainedDir, { mode: 0o700 }), mkdir(pluginPath), mkdir(tempPath)]);
+  await chmod(retainedDir, 0o700);
+  const retained = await retainGradeSnapshot({
+    grade: gradeReceipt(receipt(), NONCE, attestation(), identity()),
+    nonce: NONCE, identity: identity(), serverAttestation: attestation(),
+    ownedPaths: { plugin: pluginPath, temp: tempPath }, snapshotPath,
+  });
+  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+  const cleanup = {
+    cleanupType: "muster-work-native-cleanup-finalization", timestamp: TIMESTAMP,
+    gradeDigest: retained.gradeDigest, ownedPaths: { plugin: pluginPath, temp: tempPath },
+    inventory: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
+    artifacts: { tunnel: "stopped", screenshotsRetained: 0, logsRetained: 0, attestationRetained: 0, probeDirsRetained: 0 },
+  };
+  const result = await finalizeCleanup(cleanup, snapshot, {
+    beforeQuarantine: async () => {
+      await rename(tempPath, movedTemp);
+      await mkdir(tempPath);
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /identity changed.*quarantine/i);
+  assert.equal((await lstat(pluginPath)).ino, Number(snapshot.ownership.plugin.ino));
+  assert.equal((await lstat(movedTemp)).ino, Number(snapshot.ownership.temp.ino));
+});
+
 test("identity binding hashes the normalized connection ID and exact installed app bytes", () => {
   const appJson = '{"apps":{"muster":{"id":"asdk_app_0123456789abcdef"}}}\n';
   const bound = buildIdentity({ connectionId: "plugin_asdk_app_0123456789abcdef", appJson, pluginVersion: "0.5.0", connectionLabel: "Muster ChatGPT Work" });

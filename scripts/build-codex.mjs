@@ -1,7 +1,7 @@
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import {
-  cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -26,18 +26,66 @@ import { assertRegularTree, CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest
 // rename).
 
 const modes = {
-  "muster-plan": { command: "plan", purpose: "plan one outcome, assemble and validate a crew manifest, then stop for approval" },
-  "muster-go": { command: "go", purpose: "execute one outcome through an isolated worktree, dependency waves, gates, and a final merge decision" },
-  "muster-plan-backlog": { command: "plan-backlog", purpose: "plan every backlog item before any execution" },
-  "muster-go-backlog": { command: "go-backlog", purpose: "clear a backlog with isolated item worktrees and review gates" },
-  "muster-diagnose": { command: "diagnose", purpose: "reproduce, identify root cause, fix, and add a regression test" },
-  "muster-audit": { command: "audit", purpose: "run the whole-codebase audit workflow and consolidate actionable findings" },
-  "muster-runner": { command: "runner", purpose: "drive one claimed backlog item end-to-end in its own worktree" },
-  "muster-capture": { command: "capture", purpose: "turn conversation decisions into an approval-gated backlog" },
-  "muster-init": { command: "init", purpose: "prepare a repository and coordinate receipted native harness initialization" },
-  run: { command: "run", purpose: "legacy alias of muster-plan" },
-  autopilot: { command: "autopilot", purpose: "legacy alias of muster-go" },
-  sprint: { command: "sprint", purpose: "legacy alias of muster-go-backlog" }
+  "muster-plan": {
+    command: "plan",
+    purpose: "plan one outcome, assemble and validate a crew manifest, then stop for approval",
+    description: "Plan one outcome with Muster, then stop for approval."
+  },
+  "muster-go": {
+    command: "go",
+    purpose: "execute one outcome through an isolated worktree, dependency waves, gates, and a final merge decision",
+    description: "Execute one Muster outcome through isolated waves and gates."
+  },
+  "muster-plan-backlog": {
+    command: "plan-backlog",
+    purpose: "plan every backlog item before any execution",
+    description: "Plan a backlog with Muster before execution."
+  },
+  "muster-go-backlog": {
+    command: "go-backlog",
+    purpose: "clear a backlog with isolated item worktrees and review gates",
+    description: "Clear a backlog with Muster in isolated, reviewed worktrees."
+  },
+  "muster-diagnose": {
+    command: "diagnose",
+    purpose: "reproduce, identify root cause, fix, and add a regression test",
+    description: "Reproduce and fix one bug with Muster, including a regression test."
+  },
+  "muster-audit": {
+    command: "audit",
+    purpose: "run the whole-codebase audit workflow and consolidate actionable findings",
+    description: "Audit a codebase with Muster and consolidate actionable findings."
+  },
+  "muster-runner": {
+    command: "runner",
+    purpose: "drive one claimed backlog item end-to-end in its own worktree",
+    description: "Run one backlog item end to end with Muster in its own worktree."
+  },
+  "muster-capture": {
+    command: "capture",
+    purpose: "turn conversation decisions into an approval-gated backlog",
+    description: "Capture decisions into an approval-gated Muster backlog."
+  },
+  "muster-init": {
+    command: "init",
+    purpose: "prepare a repository and coordinate receipted native harness initialization",
+    description: "Initialize a repository for Muster's native Codex workflow."
+  },
+  run: {
+    command: "run",
+    purpose: "legacy alias of muster-plan",
+    description: "Legacy alias for $muster-plan."
+  },
+  autopilot: {
+    command: "autopilot",
+    purpose: "legacy alias of muster-go",
+    description: "Legacy alias for $muster-go."
+  },
+  sprint: {
+    command: "sprint",
+    purpose: "legacy alias of muster-go-backlog",
+    description: "Legacy alias for $muster-go-backlog."
+  }
 };
 
 function ensure(dir) { mkdirSync(dir, { recursive: true }); }
@@ -522,7 +570,25 @@ export async function buildCodexPlugin(options, retries = 1) {
     try {
       const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
       const inputDigest = await computeCodexBuildInputDigest(root);
-      if (current.inputDigest === inputDigest) return current;
+      const packageVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+      const manifest = JSON.parse(readFileSync(join(current.pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+      const mcp = JSON.parse(readFileSync(join(current.pluginRoot, ".mcp.json"), "utf8"));
+      const completeCodexContract = manifest.apps === undefined
+        && !existsSync(join(current.pluginRoot, ".app.json"))
+        && manifest.name === "muster"
+        && manifest.version === packageVersion
+        && manifest.skills === "./skills/"
+        && manifest.mcpServers === "./.mcp.json"
+        && JSON.stringify(mcp) === JSON.stringify({
+          mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
+        })
+        && readFileSync(join(current.pluginRoot, "runtime", "muster.mjs")).length > 0
+        && readFileSync(join(current.pluginRoot, "runtime", "muster-mcp.mjs")).length > 0
+        && readFileSync(join(current.pluginRoot, "skills", "muster", "SKILL.md")).length > 0
+        && readFileSync(join(current.pluginRoot, "agents", "muster-builder.toml")).length > 0;
+      if (current.inputDigest === inputDigest
+        && current.packageVersion === packageVersion
+        && completeCodexContract) return current;
     } catch { /* nothing published yet, or what's there is stale/invalid, or a generation input is unreadable: generate below */ }
   }
   let lastError;
@@ -615,7 +681,7 @@ async function buildCodexPluginOnce({ root, outDir }) {
     await writeInternalRuntime(root, plugin);
 
     for (const [name, mode] of Object.entries(modes)) write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode));
-    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Use for any glass-box Muster orchestration request: init, plan, implement, backlog, diagnose, audit, runner, capture, pipeline, crew, or wave workflow.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-init, $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${agentWatchProtocol}`);
+    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Route orchestration requests across Muster modes and pipelines.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-init, $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${agentWatchProtocol}`);
 
     const profiles = await generateCodexProfiles(root);
     for (const [name, content] of profiles) write(join(plugin, "agents", name), content);
@@ -635,54 +701,18 @@ async function buildCodexPluginOnce({ root, outDir }) {
     // itself — into the runtime it produces.
     const bundleOptions = { bundle: true, platform: "node", format: "esm", target: "node20", preserveSymlinks: true, external: ["esbuild", "../scripts/build-codex.mjs"] };
     await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), banner: { js: requireBanner } });
-    const sharedMcpSource = readFileSync(join(root, "cowork", "mcp-server.mjs"), "utf8");
-    const mcpServerDescriptionAnchor = "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Claude Cowork.";
-    if (!sharedMcpSource.includes(mcpServerDescriptionAnchor)) throw new Error("cowork/mcp-server.mjs description anchor not found for Codex rewrite");
-    // build-anchor-audit item: this literal previously anchored on the exact opening
-    // sentence of COWORK_PROTOCOL[0] in cowork/mcp-server.mjs. That whole paragraph has SINCE
-    // grown a second half (muster_next's sequential-default framing and the phase-3
-    // probe-receipt condition for parallel fan-out) and the literal silently stopped matching --
-    // the entire Cowork-specific instructional paragraph (mentioning "Cowork build" and
-    // "muster_next", neither of which exist on Codex) was shipping into the Codex bundle's MCP
-    // server unrewritten, exactly the review-gate fix-cap bug class this whole item exists to
-    // sweep. First caught (below) with an anchor covering only the paragraph's first sentence,
-    // which left the Cowork-specific SECOND half (the phase-3-probe/muster_next sequential
-    // default) dangling unrewritten in an otherwise-Codex-rewritten paragraph -- widened to cover
-    // the full paragraph through its actual close, still anchored on the stable opening prefix,
-    // tolerant of further rewording in between, and guarded fail-loud so a future rewording that
-    // drops even the prefix/close stops the build instead of shipping stale Cowork-specific prose
-    // again.
-    const cowworkProtocolIntroRe = /Running muster here: you have these MCP tools[\s\S]*?proves those capabilities\./;
-    if (!cowworkProtocolIntroRe.test(sharedMcpSource)) throw new Error("cowork/mcp-server.mjs protocol-intro anchor not found for Codex rewrite");
-    const codexMcpSource = sharedMcpSource
-      .replace(mcpServerDescriptionAnchor, "muster MCP server — exposes muster's deterministic CLI brain as MCP tools for Codex.")
-      .replace(cowworkProtocolIntroRe, "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation. Parallel fan-out and per-call model overrides are available natively -- no phase-3 probe receipt gate applies here.")
-      .replace('{ argv: ["capabilities", "--cowork"], ...S("Resolve every muster role to its best-available provider, fallback chain, and model tier, against Cowork\'s MCP registry (local servers + extensions; declare remote connectors via MUSTER_COWORK_CONNECTORS). Resolution is MCP-only unless MUSTER_COWORK_NATIVE_PLUGIN declares that Cowork\'s own plugin loader accepted muster\'s plugin/ tree (unverified without a live session -- a declared capability check, not a probe).", "home", false) }', '{ argv: ["capabilities", "--codex"], ...S("Resolve every Muster role against enabled Codex plugins, skills, MCP servers, and custom-agent profiles. Each agent-backed role also carries codexModel {model, effort} -- the exact gpt-5.6 profile (model + reasoning effort) it dispatches on, resolved from the same committed .codex/agents mapping, so no post-run codex-conformance audit is needed to see the pre-dispatch profile.", "home", false) }')
-      .replace('muster_assess: { argv: ["assess"]', 'muster_assess: { argv: ["assess", "--codex"]')
-      // codex-mcp-surface-gaps: muster_capabilities_roles resolves through the SAME
-      // capabilities.js catalog-selection code path as muster_capabilities above, so it
-      // needs the identical --cowork -> --codex swap or it would reintroduce the exact
-      // 2026-07-18 dogfood regression (MUSTER_RUNTIME/--cowork resolving against the wrong
-      // registry) through this new sibling tool instead.
-      .replace('argv: ["capabilities", "--cowork", "--roles-only"]', 'argv: ["capabilities", "--codex", "--roles-only"]')
-      // Regression (2026-07-18 Codex dogfood): the shared source spawns every
-      // CLI child with MUSTER_RUNTIME: "cowork" (correct for the Cowork
-      // bundle -- src/capabilities.js's `cowork` OR-clause is the declared
-      // signal a nested CLI child otherwise has no other way to observe). But
-      // that same OR-clause honors the env over the `--codex` flag this
-      // bundle's tools/list adapters above already switched to, so the
-      // Codex-bundled server poisoned every role's resolution to inline. Only
-      // "cowork" trips that check (src/capabilities.js:39 is a strict `===
-      // "cowork"`) -- verified no other branch anywhere reads
-      // MUSTER_RUNTIME, so rewriting the value (rather than deleting the
-      // line) is safe and keeps the env var self-documenting for the Codex
-      // bundle's own nested CLI children (notably `audit`).
-      .replace('env: { ...process.env, MUSTER_RUNTIME: "cowork" }', 'env: { ...process.env, MUSTER_RUNTIME: "codex" }');
-    if (!codexMcpSource.includes('["capabilities", "--codex"]') || codexMcpSource.includes('["capabilities", "--cowork"]')) throw new Error("Codex MCP capability adapter was not applied");
-    if (!codexMcpSource.includes('muster_assess: { argv: ["assess", "--codex"]')) throw new Error("Codex MCP assess adapter was not applied");
-    if (!codexMcpSource.includes('argv: ["capabilities", "--codex", "--roles-only"]') || codexMcpSource.includes('argv: ["capabilities", "--cowork", "--roles-only"]')) throw new Error("Codex MCP capabilities-roles adapter was not applied");
-    if (!codexMcpSource.includes('MUSTER_RUNTIME: "codex"') || codexMcpSource.includes('MUSTER_RUNTIME: "cowork"')) throw new Error("Codex MCP runtime-env adapter was not applied");
-    await build({ ...bundleOptions, stdin: { contents: codexMcpSource, resolveDir: join(root, "cowork"), sourcefile: "mcp-server.codex.mjs" }, outfile: join(runtime, "muster-mcp.mjs") });
+    await build({
+      ...bundleOptions,
+      entryPoints: [join(root, "mcp", "codex-server.mjs")],
+      outfile: join(runtime, "muster-mcp.mjs"),
+    });
+    // Installer payload only: Codex never registers this adapter in its own
+    // manifest/MCP config and never reads a Work receipt or app mapping.
+    await build({
+      ...bundleOptions,
+      entryPoints: [join(root, "mcp", "chatgpt-work-server.mjs")],
+      outfile: join(runtime, "chatgpt-work-server.mjs"),
+    });
     // inputDigest is buildCodexPlugin's codex-bundle-cache-key skip key: stamped
     // fresh on every real generation so the NEXT call's skip check compares
     // against what was actually read this time, not merely this version string.
@@ -692,14 +722,15 @@ async function buildCodexPluginOnce({ root, outDir }) {
     write(join(plugin, ".mcp.json"), JSON.stringify({
       mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
     }, null, 2) + "\n");
-    write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({
+    const pluginManifest = {
       name: "muster", version: pkg.version,
       description: "Glass-box agentic orchestration for Codex: deterministic routing, skills, agents, pipelines, hooks, and MCP tools.",
       author: { name: "Adnova Group", email: "rnbennett@gmail.com", url: "https://github.com/Adnova-Group" },
       homepage: "https://adnova-group.github.io/muster/", repository: "https://github.com/Adnova-Group/muster", license: "Apache-2.0",
       keywords: ["orchestration", "agents", "pipelines", "mcp", "codex"], skills: "./skills/", mcpServers: "./.mcp.json",
       interface: { displayName: "Muster", shortDescription: "Glass-box agentic orchestration for Codex.", longDescription: "Muster provides deterministic routing, custom-agent profiles, pipeline workflows, and the complete MCP toolset.", developerName: "Adnova Group", category: "Productivity", capabilities: ["Read", "Write"], websiteURL: "https://adnova-group.github.io/muster/", defaultPrompt: ["Plan this feature with Muster.", "Run a Muster audit of this repository.", "Use Muster to clear this backlog."] }
-    }, null, 2) + "\n");
+    };
+    write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify(pluginManifest, null, 2) + "\n");
 
     // Awaited (not just returned) so the `finally` below — which deletes
     // this whole staging tree — cannot run until the copy-publish below
@@ -736,7 +767,7 @@ function rmAndCopy(source, destination, { merge = false } = {}) {
 }
 
 function modeSkill(name, mode) {
-  return `---\nname: ${name}\ndescription: ${JSON.stringify(`Use for Muster orchestration when the user asks to ${mode.purpose}. Explicitly invoke with $${name}.`)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n\n${agentWatchProtocol}`;
+  return `---\nname: ${name}\ndescription: ${JSON.stringify(mode.description)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n\n${agentWatchProtocol}`;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

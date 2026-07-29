@@ -3,6 +3,24 @@ import { readJson, readdirSafe } from "./fs-util.js";
 import { readPluginInventory } from "./plugin-inventory.js";
 export { readCodexInventory } from "./codex-inventory.js";
 
+// --- ChatGPT Work adapter ----------------------------------------------------
+// A ChatGPT Work connection can invoke the tools exposed by this MCP server,
+// but it cannot dispatch Claude Code plugins/skills/agents or Codex custom
+// agents. The MCP tools are orchestration operations, not role providers in the
+// provider catalog, so the deterministic CLI inventory is intentionally empty.
+// The full profile can safely resolve every role to inline from this inventory;
+// pro-safe exposes only muster_prioritize at the MCP adapter layer and therefore
+// must not gain invented providers here either.
+export function readInstalledWork() {
+  return {
+    runtime: "work",
+    plugins: [],
+    skills: [],
+    agents: [],
+    mcpServers: [],
+  };
+}
+
 // --- Claude Cowork adapter ----------------------------------------------------
 // Cowork's own registry extends through MCP: local MCP servers
 // (claude_desktop_config.json), MCPB/DXT desktop extensions (a Claude

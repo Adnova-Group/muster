@@ -1,6 +1,6 @@
 # Muster on Claude Cowork
 
-Muster's deterministic brain, packaged as a local MCP server for [Claude Cowork](https://support.claude.com/en/articles/14479288-claude-cowork-desktop-architecture-overview).
+Muster's deterministic brain, packaged as a local MCP server for [Claude Cowork](https://support.claude.com/en/articles/14479288-claude-cowork-desktop-architecture-overview). The canonical implementation is `mcp/server.mjs`, with explicit adapters in `mcp/codex-server.mjs`, `mcp/chatgpt-work-server.mjs`, and `cowork/mcp-server.mjs`. The public Cowork setup path below uses the Cowork adapter; `cowork/chatgpt-work-server.mjs` remains a compatibility shim for existing Work/source-checkout configurations.
 
 Cowork extends through MCP and MCPB desktop extensions -- the port this directory targets -- and, as of ~May 2026, its own plugin system bundling skills, connectors, hooks, and sub-agents in the Claude Code plugin format (see `docs/research/claude-cowork.md` section 3d for the primary sources; this corrects an earlier version of this file that claimed Cowork "has no plugin, skill, slash-command, or hook primitives," which was true in January 2026 but is stale now). Whether muster's Claude Code plugin (`plugin/`) actually loads under Cowork's plugin loader is **unverified**: no live Cowork session was reachable to test it hands-on, and Cowork exposes no on-disk or protocol signal this MCP server (or the CLI it wraps) can inspect to auto-detect a native load. So `muster_capabilities` carries a DECLARED capability check instead of a probe -- `--native-plugin` / `MUSTER_COWORK_NATIVE_PLUGIN` (see Configuration below), the same declare-not-discover shape as remote connectors. Declare it true once a native load is confirmed on your Cowork build and muster's builtin skills/agents resolve exactly as they do on Claude Code, instead of collapsing to MCP-only; the default (false) keeps today's verified-working ride. Until a native load is confirmed, this MCP server is the whole ride: project detection, capability and domain routing, gate scoring, RICE prioritization, and wave planning, riding plain Node with no model calls. Cowork runs the local MCP server natively on the device (the agent loop), and its verbs are exposed here as MCP tools.
 
@@ -79,7 +79,7 @@ Create the file if it does not exist. On Windows MSIX (Microsoft Store) installs
 
 ### 2. Add the muster server
 
-Merge this into `mcpServers` (keep any servers you already have). Use the absolute path to your checkout, with doubled backslashes on Windows:
+Merge this into `mcpServers` (keep any servers you already have). Use the absolute path to the compatibility entrypoint in your checkout, with doubled backslashes on Windows:
 
 ```json
 {
@@ -97,7 +97,7 @@ Merge this into `mcpServers` (keep any servers you already have). Use the absolu
 }
 ```
 
-macOS/Linux use a normal path, for example `"/Users/you/dev/muster/cowork/mcp-server.mjs"`. The `env` block is optional; see Configuration below.
+macOS/Linux use a normal path, for example `"/Users/you/dev/muster/cowork/mcp-server.mjs"`. This Cowork adapter imports the canonical `mcp/server.mjs`; the `env` block is optional. See Configuration below.
 
 ### 3. Restart Cowork fully
 
@@ -134,8 +134,8 @@ All supported configuration is environment variables set in the Route A `env` bl
 | `MUSTER_MAX_TIER` | `max_tier` | `prime` or `core` caps the dispatch tier for budget control (legacy `opus`/`sonnet` values still normalize). Empty means no cap. |
 | `MUSTER_COWORK_CONNECTORS` | `connectors` | Comma-separated remote-connector names to treat as available (see below). |
 | `MUSTER_COWORK_NATIVE_PLUGIN` | — | `1`/`true` DECLARES that Cowork's own plugin loader has natively loaded muster's `plugin/` tree (skills, hooks, sub-agents), so `muster_capabilities` resolves builtin skills/agents the same way it does on Claude Code instead of collapsing to MCP-only. Empty or `false` (the default) keeps the verified MCP-only ride. This is a DECLARED capability check, not a probe -- Cowork exposes no on-disk or protocol signal to auto-detect a native load, so only set this once you've confirmed one on your build (see "How capabilities resolve" below). |
-| `MUSTER_COWORK_MAX_INFLIGHT` | — | Maximum concurrent MCP tool executions (default `4`, hard ceiling `64`). Route A only. |
-| `MUSTER_COWORK_MAX_QUEUE` | — | Maximum queued MCP tool executions before overload rejection (default `16`, hard ceiling `1024`). Route A only. |
+| `MUSTER_COWORK_MAX_INFLIGHT` | — | Maximum concurrent MCP tool executions (default `4`, hard ceiling `64`). Route A only; implemented by the neutral core through the Cowork adapter. |
+| `MUSTER_COWORK_MAX_QUEUE` | — | Maximum queued MCP tool executions before overload rejection (default `16`, hard ceiling `1024`). Route A only; implemented by the neutral core through the Cowork adapter. |
 
 ### How capabilities resolve
 
@@ -166,6 +166,12 @@ node scripts/cowork-probe.mjs --dispatch-results results.json
 ```
 
 Phase 3 passing means parallel fan-out plus per-call model override work, so the six-mode MCP protocol lifecycle can use parallel dispatch. Require that receipt before enabling the parallel path. If it fails or has not been run, Muster still runs as a router plus single-agent executor: the agent walks each wave one task at a time via `muster_next`, and every routing, scoring, and gate decision stays deterministic.
+
+## ChatGPT Work is a separate lane
+
+This directory is the Claude Cowork MCP package; it is not ChatGPT Work's plugin. ChatGPT Work is available on the web and in the ChatGPT desktop app with Work selected, and uses the universal Plugins Directory plus a registered MCP connection. Work does not inherit this Cowork package or Codex Desktop configuration. Follow [`website/guides/chatgpt-work.md`](../website/guides/chatgpt-work.md) for the private/local Work lane.
+
+The recommended Work profile (`pro-safe`) is exactly one titled, read-only `muster_prioritize` tool after a successful native Scan Tools gate; the installer requires an explicit `--profile`. Its `full` profile is the existing 28-tool deterministic surface, not write support, and requires a full-MCP workspace entitlement and both installer/server opt-ins. Secure MCP Tunnel is outbound-only private transport and is not a public plugin-submission path.
 
 ## Troubleshooting
 

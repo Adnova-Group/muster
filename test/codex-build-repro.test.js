@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
+import { runChatgptWorkInstall } from "../src/chatgpt-work-install.js";
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -14,6 +15,91 @@ const repoRoot = new URL("../", import.meta.url).pathname;
 // silently drift from what the skip-if-current check actually hashes.
 const fixtureEntries = [...CODEX_BUILD_INPUT_DIRS, "package.json"];
 const bundles = ["runtime/muster.mjs", "runtime/muster-mcp.mjs"];
+
+test("default generated plugin has no ChatGPT app metadata", async () => {
+  const { pluginRoot } = await resolveCodexPlugin(repoRoot);
+  const manifest = JSON.parse(await readFile(join(pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+  assert.equal(manifest.apps, undefined);
+  await assert.rejects(readFile(join(pluginRoot, ".app.json"), "utf8"), /ENOENT/);
+  assert.equal(manifest.mcpServers, "./.mcp.json");
+});
+
+test("Codex build keeps Work as an unregistered installer payload and never folds it into the Codex contract", async () => {
+  const buildSource = await readFile(join(repoRoot, "scripts", "build-codex.mjs"), "utf8");
+  assert.doesNotMatch(buildSource, /sharedMcpSource[\s\S]{0,2000}\.replace\(/);
+  assert.match(buildSource, /join\(root, "mcp", "codex-server\.mjs"\)/);
+  assert.match(buildSource, /join\(root, "mcp", "chatgpt-work-server\.mjs"\)/);
+});
+
+test("Codex build ignores a project Work receipt and emits the full Codex artifact contract", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-work-build-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const project = join(tmp, "project");
+  const outDir = join(project, ".agents", "plugins");
+  await mkdir(join(project, ".git"), { recursive: true });
+  const work = await runChatgptWorkInstall({
+    connectionId: "asdk_app_Test123", profile: "pro-safe",
+    scope: "project", cwd: project, home: join(tmp, "home"),
+  });
+  const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
+  const prior = process.env.MUSTER_BUILD_FORCE;
+  process.env.MUSTER_BUILD_FORCE = "1";
+  try {
+    const result = await buildCodexPlugin({
+      root: repoRoot, outDir,
+    });
+    const manifest = JSON.parse(await readFile(join(result.pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+    assert.equal(manifest.mcpServers, "./.mcp.json");
+    assert.equal(manifest.apps, undefined);
+    await assert.rejects(readFile(join(result.pluginRoot, ".app.json"), "utf8"), /ENOENT/);
+    await readFile(join(result.pluginRoot, "runtime", "muster.mjs"), "utf8");
+    await readFile(join(result.pluginRoot, "runtime", "muster-mcp.mjs"), "utf8");
+    await readFile(join(result.pluginRoot, "skills", "muster", "SKILL.md"), "utf8");
+    await readFile(join(result.pluginRoot, "agents", "muster-builder.toml"), "utf8");
+    await readFile(join(work.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8");
+    const marketplace = JSON.parse(await readFile(join(outDir, "marketplace.json"), "utf8"));
+    assert.equal(marketplace.plugins.find(plugin => plugin.name === "muster")?.source?.path, "./.agents/plugins/plugin");
+    assert.equal(
+      marketplace.plugins.find(plugin => plugin.name === "muster-chatgpt-work")?.source?.path,
+      "./.agents/plugins/muster-chatgpt-work",
+    );
+    delete process.env.MUSTER_BUILD_FORCE;
+    const rebuilt = await buildCodexPlugin({ root: repoRoot, outDir });
+    assert.equal(rebuilt.pluginRoot, result.pluginRoot);
+  } finally {
+    if (prior === undefined) delete process.env.MUSTER_BUILD_FORCE;
+    else process.env.MUSTER_BUILD_FORCE = prior;
+  }
+});
+
+test("a cross-host Codex cache with Work app metadata or a truncated runtime is regenerated", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-cross-host-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const outDir = join(tmp, "plugins");
+  const { buildCodexPlugin } = await import("../scripts/build-codex.mjs");
+  const prior = process.env.MUSTER_BUILD_FORCE;
+  try {
+    process.env.MUSTER_BUILD_FORCE = "1";
+    const first = await buildCodexPlugin({ root: repoRoot, outDir });
+    const manifestPath = join(first.pluginRoot, ".codex-plugin", "plugin.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.apps = "./.app.json";
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    await writeFile(join(first.pluginRoot, ".app.json"), JSON.stringify({
+      apps: { muster: { id: "asdk_app_OtherHost" } },
+    }));
+    await writeFile(join(first.pluginRoot, "runtime", "muster-mcp.mjs"), "");
+    delete process.env.MUSTER_BUILD_FORCE;
+    const rebuilt = await buildCodexPlugin({ root: repoRoot, outDir });
+    const rebuiltManifest = JSON.parse(await readFile(join(rebuilt.pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+    assert.equal(rebuiltManifest.apps, undefined);
+    await assert.rejects(readFile(join(rebuilt.pluginRoot, ".app.json"), "utf8"), /ENOENT/);
+    assert.ok((await readFile(join(rebuilt.pluginRoot, "runtime", "muster-mcp.mjs"))).length > 0);
+  } finally {
+    if (prior === undefined) delete process.env.MUSTER_BUILD_FORCE;
+    else process.env.MUSTER_BUILD_FORCE = prior;
+  }
+});
 
 async function buildCheckout(checkout, sharedNodeModules) {
   await mkdir(checkout, { recursive: true });
@@ -157,13 +243,27 @@ test("buildCodexPlugin's input-digest skip-if-current check can be bypassed with
   // match root directly via publishCodexPlugin, rather than running the
   // real (slow) esbuild generation.
   const staged = join(tmp, "staged");
-  await mkdir(join(staged, "skills"), { recursive: true });
+  await mkdir(join(staged, "runtime"), { recursive: true });
+  await mkdir(join(staged, "skills", "muster"), { recursive: true });
+  await mkdir(join(staged, "agents"), { recursive: true });
   await mkdir(join(staged, ".codex-plugin"), { recursive: true });
   await writeFile(join(staged, "package.json"), JSON.stringify({ version: packageVersion, inputDigest }));
   // publishCodexPlugin's pre-publication contract check reads the staged
   // manifest, so this synthetic staged tree must carry a coherent one (the
   // real build always writes it — scripts/build-codex.mjs).
-  await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: packageVersion }));
+  await writeFile(join(staged, ".codex-plugin", "plugin.json"), JSON.stringify({
+    name: "muster",
+    version: packageVersion,
+    skills: "./skills/",
+    mcpServers: "./.mcp.json",
+  }));
+  await writeFile(join(staged, ".mcp.json"), JSON.stringify({
+    mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } },
+  }));
+  await writeFile(join(staged, "runtime", "muster.mjs"), "export {};\n");
+  await writeFile(join(staged, "runtime", "muster-mcp.mjs"), "export {};\n");
+  await writeFile(join(staged, "skills", "muster", "SKILL.md"), "# Muster\n");
+  await writeFile(join(staged, "agents", "muster-builder.toml"), "name = \"muster-builder\"\n");
   await publishCodexPlugin({
     pluginsRoot: outDir,
     stagedPlugin: staged,

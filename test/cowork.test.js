@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, writeFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -46,6 +47,45 @@ function rpc(requests, { timeout = 30_000, env = {}, serverPath, cwd } = {}) {
 
 const INIT = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } };
 
+test("MCP architecture uses one neutral core and thin explicit host adapters", async () => {
+  const [core, coworkShim, workShim, codexAdapter, workAdapter] = await Promise.all([
+    read("mcp/server.mjs"),
+    read("cowork/mcp-server.mjs"),
+    read("cowork/chatgpt-work-server.mjs"),
+    read("mcp/codex-server.mjs"),
+    read("mcp/chatgpt-work-server.mjs"),
+  ]);
+  assert.match(core, /export\s+(?:async\s+)?function startMusterMcpServer/);
+  assert.match(core, /const TOOLS =/);
+  assert.doesNotMatch(core, /MUSTER_MCP_HOST|MUSTER_MCP_TOOL_PROFILE/, "core does not infer host or profile from env");
+  assert.doesNotMatch(core, /MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH/, "Work startup policy stays in its adapter");
+  for (const [name, source] of [["cowork shim", coworkShim], ["work shim", workShim], ["codex adapter", codexAdapter]]) {
+    assert.doesNotMatch(source, /const TOOLS =|class WorkLimiter/, `${name} does not fork the core`);
+  }
+  for (const [name, source] of [["cowork adapter", coworkShim], ["codex adapter", codexAdapter], ["work adapter", workAdapter]]) {
+    assert.match(source, /startMusterMcpServer\s*\(\s*\{/, `${name} explicitly starts the factory`);
+    assert.match(source, /protocol\s*:/, `${name} supplies its protocol`);
+    assert.match(source, /mapArgv\s*:/, `${name} supplies argv mapping`);
+    assert.match(source, /authorizeTools\s*:/, `${name} supplies tool authorization`);
+    assert.match(source, /runtimeIdentity\s*:/, `${name} supplies runtime identity`);
+  }
+  assert.match(workShim, /\.\.\/mcp\/chatgpt-work-server\.mjs/, "legacy Work entrypoint remains a thin compatibility shim");
+
+  const direct = await execFileP(process.execPath, [path.join(rootDir, "mcp", "server.mjs")]);
+  assert.equal(direct.stdout, "", "direct core execution is inert");
+  assert.equal(direct.stderr, "", "direct core execution emits no startup diagnostic");
+});
+
+test("Codex adapter output is byte-isolated from Cowork argv and Work probe machinery", async () => {
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+  ], { serverPath: path.join(rootDir, "mcp", "codex-server.mjs") });
+  const bytes = JSON.stringify(r);
+  assert.doesNotMatch(bytes, /Cowork|--cowork|WORK_WEB_PROBE|probe attestation/i);
+  assert.match(bytes, /Codex/);
+});
+
 test("initialize: serverInfo.version matches package.json, instructions carry muster principles", async () => {
   const pkg = JSON.parse(await read("package.json"));
   const r = await rpc([INIT]);
@@ -65,7 +105,7 @@ test("initialize: serverInfo.version matches package.json, instructions carry mu
 // then check every named import is really exported by guidance.js — a hook
 // refactor that drops/renames one of these fails this test loudly, by name.
 test("contract pin: mcp-server.mjs's guidance.js imports all exist in guidance.js's export surface", async () => {
-  const serverSrc = await read("cowork/mcp-server.mjs");
+  const serverSrc = await read("mcp/server.mjs");
   const importLine = serverSrc.match(/import\s*\{([^}]+)\}\s*from\s*["']\.\.\/plugin\/hooks\/guidance\.js["'];/);
   assert.ok(importLine, "mcp-server.mjs must import named bindings from plugin/hooks/guidance.js");
   const names = importLine[1].split(",").map((s) => s.trim()).filter(Boolean);
@@ -186,6 +226,168 @@ test("tools/list exposes exactly the 28 brain verbs, matching the MCPB manifest"
   assert.equal(served.length, 28, "28 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
+});
+
+test("empty ChatGPT profile preserves default initialize, list, and call responses exactly", async () => {
+  const requests = [
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    {
+      jsonrpc: "2.0", id: 3, method: "tools/call",
+      params: { name: "muster_prioritize", arguments: { items: [{ name: "a", reach: 1, impact: 1, confidence: 1, effort: 1 }] } },
+    },
+  ];
+  const [baseline, empty] = await Promise.all([
+    rpc(requests),
+    rpc(requests, { env: { MUSTER_MCP_TOOL_PROFILE: "" } }),
+  ]);
+  assert.deepEqual(empty, baseline);
+});
+
+test("ChatGPT Work pro-safe profile exposes exact titled annotated prioritize descriptor and rejects all other calls", async () => {
+  const env = { MUSTER_CHATGPT_WORK_PROFILE: "pro-safe" };
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_detect", arguments: {} } },
+  ], { env, serverPath: path.join(rootDir, "cowork", "chatgpt-work-server.mjs") });
+  assert.deepEqual(r[2].result.tools, [{
+    name: "muster_prioritize",
+    title: "Prioritize backlog items",
+    description: r[2].result.tools[0].description,
+    inputSchema: r[2].result.tools[0].inputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }]);
+  assert.equal(r[3].result.isError, true);
+  assert.match(r[3].result.content[0].text, /not available/);
+});
+
+test("host environment cannot reconfigure the Cowork adapter's authorized tool surface", async () => {
+  const [normal, unchanged] = await Promise.all([
+    rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]),
+    rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }], {
+      env: {
+        MUSTER_MCP_TOOL_PROFILE: "chatgpt-work-full",
+        MUSTER_CHATGPT_WORK_PROFILE: "full",
+      },
+    }),
+  ]);
+  assert.deepEqual(unchanged, normal);
+});
+
+test("ChatGPT Work probe locks descriptor, exact call, one invocation, and server attestation", async t => {
+  const nonce = "b".repeat(32);
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-work-probe-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const attestationPath = path.join(dir, "server-attestation.json");
+  const appPath = path.join(dir, ".app.json");
+  const connectionId = "asdk_app_ProbeIdentity1";
+  const appBytes = JSON.stringify({ apps: { muster: { id: connectionId } } }, null, 2) + "\n";
+  writeFileSync(appPath, appBytes, { mode: 0o600 });
+  const request = {
+    items: [{
+      name: `WORK_WEB_PROBE_${nonce}`,
+      reach: 2, impact: 3, confidence: 1, effort: 2,
+    }],
+    model: "rice",
+  };
+  const env = {
+    MUSTER_CHATGPT_WORK_PROFILE: "pro-safe",
+    MUSTER_CHATGPT_WORK_PROBE_NONCE: nonce,
+    MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestationPath,
+    MUSTER_CHATGPT_WORK_CONNECTION_ID: connectionId,
+    MUSTER_CHATGPT_WORK_APP_JSON_PATH: appPath,
+    MUSTER_CHATGPT_WORK_PLUGIN_VERSION: "0.5.0",
+    MUSTER_CHATGPT_WORK_CONNECTION_LABEL: "Muster Probe",
+  };
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_detect", arguments: {} } },
+    {
+      jsonrpc: "2.0", id: 4, method: "tools/call",
+      params: { name: "muster_prioritize", arguments: { ...request, model: "ice" } },
+    },
+    { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "muster_prioritize", arguments: request } },
+    { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "muster_prioritize", arguments: request } },
+  ], {
+    serverPath: path.join(rootDir, "cowork", "chatgpt-work-server.mjs"),
+    env,
+  });
+
+  const [descriptor] = r[2].result.tools;
+  assert.equal(descriptor.name, "muster_prioritize");
+  assert.equal(descriptor.title, "Prioritize backlog items");
+  assert.deepEqual(descriptor.annotations, {
+    readOnlyHint: true, destructiveHint: false, openWorldHint: false,
+  });
+  assert.equal(descriptor.inputSchema.additionalProperties, false);
+  assert.equal(descriptor.inputSchema.properties.model.const, "rice");
+  assert.equal(descriptor.inputSchema.properties.items.items.properties.name.const, `WORK_WEB_PROBE_${nonce}`);
+  assert.equal(r[3].result.isError, true, "wrong tool rejected");
+  assert.equal(r[4].result.isError, true, "wrong args rejected before dispatch");
+  assert.equal(r[5].result.isError, false, "one exact invocation succeeds");
+  assert.equal(r[6].result.isError, true, "second exact invocation rejected");
+
+  const attestation = JSON.parse(await readFile(attestationPath, "utf8"));
+  assert.deepEqual(attestation, {
+    attestationType: "muster-work-native-server-attestation",
+    source: "server",
+    nonce,
+    tool: "muster_prioritize",
+    request,
+    result: [{ ...request.items[0], score: 3, rank: 1 }],
+    identity: {
+      connectionIdSha256: createHash("sha256").update(connectionId).digest("hex"),
+      pluginAppSha256: createHash("sha256").update(appBytes).digest("hex"),
+      pluginName: "muster",
+      pluginVersion: "0.5.0",
+      connectionLabel: "Muster Probe",
+    },
+    serverInstanceId: attestation.serverInstanceId,
+    invocationCount: 1,
+    timestamp: attestation.timestamp,
+  });
+  assert.equal(new Date(attestation.timestamp).toISOString(), attestation.timestamp);
+});
+
+test("ChatGPT Work probe rejects wrong arguments before CLI dispatch and creates no attestation", async t => {
+  const nonce = "c".repeat(32);
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-work-probe-wrong-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const attestationPath = path.join(dir, "server-attestation.json");
+  const appPath = path.join(dir, ".app.json");
+  const connectionId = "asdk_app_ProbeWrong1";
+  writeFileSync(appPath, JSON.stringify({ apps: { muster: { id: connectionId } } }) + "\n", { mode: 0o600 });
+  const r = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0", id: 2, method: "tools/call",
+      params: {
+        name: "muster_prioritize",
+        arguments: {
+          items: [{ name: `WORK_WEB_PROBE_${nonce}`, reach: 2, impact: 3, confidence: 1, effort: 2 }],
+          model: "ice",
+        },
+      },
+    },
+  ], {
+    serverPath: path.join(rootDir, "cowork", "chatgpt-work-server.mjs"),
+    env: {
+      MUSTER_CHATGPT_WORK_PROFILE: "pro-safe",
+      MUSTER_CHATGPT_WORK_PROBE_NONCE: nonce,
+      MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH: attestationPath,
+      MUSTER_CHATGPT_WORK_CONNECTION_ID: connectionId,
+      MUSTER_CHATGPT_WORK_APP_JSON_PATH: appPath,
+      MUSTER_CHATGPT_WORK_PLUGIN_VERSION: "0.5.0",
+      MUSTER_CHATGPT_WORK_CONNECTION_LABEL: "Muster Probe",
+      NODE_ENV: "test",
+      MUSTER_COWORK_TEST_CLI: path.join(rootDir, "definitely-missing-cli.mjs"),
+    },
+  });
+  assert.equal(r[2].result.isError, true);
+  assert.match(r[2].result.content[0].text, /arguments do not exactly match/);
+  await assert.rejects(readFile(attestationPath, "utf8"), /ENOENT/);
 });
 
 test("Cowork distribution metadata and README document the exact MCP-only support contract", async () => {
@@ -495,8 +697,10 @@ test("F3: missing cowork/sprint-protocol.md at module load does not crash the se
   const tmp = mkdtempSync(path.join(tmpdir(), "muster-cowork-f3-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   mkdirSync(path.join(tmp, "cowork"), { recursive: true });
+  mkdirSync(path.join(tmp, "mcp"), { recursive: true });
   mkdirSync(path.join(tmp, "plugin", "hooks"), { recursive: true });
   copyFileSync(path.join(rootDir, "cowork", "mcp-server.mjs"), path.join(tmp, "cowork", "mcp-server.mjs"));
+  copyFileSync(path.join(rootDir, "mcp", "server.mjs"), path.join(tmp, "mcp", "server.mjs"));
   copyFileSync(path.join(rootDir, "plugin", "hooks", "guidance.js"), path.join(tmp, "plugin", "hooks", "guidance.js"));
   writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ version: "0.0.0-test", type: "module" }));
   // Deliberately no cowork/sprint-protocol.md written into the temp copy -- this omission IS

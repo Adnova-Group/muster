@@ -63,6 +63,68 @@ interesting programmable execution model under the banner is the OpenAI Agents S
   or `config.toml`. Muster must treat those capabilities as unverified until a Work-mode
   load probe observes them directly.
 
+### 1.1a Current plugin and MCP boundary (2026-07-29)
+
+OpenAI's current [Plugins guide](https://learn.chatgpt.com/docs/plugins) says plugins are available with ChatGPT Work on the web and with ChatGPT Work or Codex in the ChatGPT desktop app. The universal plugin format is shared, but that does not make the host runtimes interchangeable: a Work-mode load probe is still required before claiming a Work-native skill, hook, or config surface. This repository therefore documents ChatGPT Work as a separate, conditional integration lane rather than as Codex-config inheritance.
+
+For private/local development, OpenAI's [plugin packaging guide](https://developers.openai.com/plugins/build/plugins) defines `.codex-plugin/plugin.json`, an optional `.app.json` for a registered MCP connection, and `apps: "./.app.json"` wiring. The minimal app mapping is:
+
+```json
+{"apps":{"muster":{"id":"asdk_app_<normalized-connection-id>"}}}
+```
+
+The technical ID copied from developer mode may have an initial `plugin_` prefix; Muster normalizes only that prefix. A connection ID is not a credential. Local/repo marketplaces are authoring and private-distribution sources; this lane does not claim public submission. The documented local/repo source is the desktop proof lane: restart or refresh ChatGPT Desktop, select that marketplace source, and install the plugin. Do not generalize local marketplace ingestion to Work web; use Work web only when an independently supported source is available.
+
+`muster install chatgpt-work` requires an explicit `--profile`; `pro-safe` is the recommended Pro-compatible choice. The installer returns `<cwd>/.agents/plugins/muster-chatgpt-work` for `--scope project` or `<home>/.agents/plugins/muster-chatgpt-work` for `--scope user`, atomically merges its distinct entry into `.agents/plugins/marketplace.json` without replacing the Codex `muster` entry, and writes `.git/muster/chatgpt-work.json` or `<home>/.muster/chatgpt-work.json` respectively. Treat the returned `pluginPath` and receipt as authoritative.
+
+OpenAI's [Secure MCP Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) describes an outbound-only `tunnel-client` path for private STDIO servers and explicitly excludes tunnel-backed servers from public plugin submission. Against the generated plugin runtime, the supported startup is:
+
+```sh
+export CONTROL_PLANE_API_KEY="sk-..."
+tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work \
+  --tunnel-id tunnel_... --mcp-command "node runtime/chatgpt-work-server.mjs"
+tunnel-client doctor --profile muster-chatgpt-work --explain
+tunnel-client run --profile muster-chatgpt-work
+```
+
+The nonce-bound proof run uses the generated runtime's dedicated probe mode. Export the values before `tunnel-client init` so the `--mcp-command` child inherits them (the server strips unrelated API/tunnel credentials):
+
+```sh
+export MUSTER_CHATGPT_WORK_PROFILE=pro-safe
+export MUSTER_CHATGPT_WORK_PROBE_NONCE=<32-lowercase-hex-nonce>
+export MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH=/absolute/private/probe-dir/server-attestation.json
+export MUSTER_CHATGPT_WORK_CONNECTION_ID=asdk_app_...
+export MUSTER_CHATGPT_WORK_APP_JSON_PATH=/absolute/path/to/installed/.app.json
+export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.5.0
+export MUSTER_CHATGPT_WORK_CONNECTION_LABEL="Muster ChatGPT Work"
+tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work \
+  --tunnel-id tunnel_... --mcp-command "node runtime/chatgpt-work-server.mjs"
+tunnel-client run --profile muster-chatgpt-work
+```
+
+The probe directory is existing and private: POSIX requires current-user ownership and no group/world bits (for example `0700`), then creates a new `0600` attestation file. Windows native proof is always HUMAN-HOLD because the probe issues no usable Windows attestation claim. Any attestation collision is HUMAN-HOLD.
+
+The runtime Platform API key authenticates and bills the tunnel's control-plane/API usage; it is separate from ChatGPT Pro subscription access and must remain secret. Associate the tunnel with the personal Platform organization for personal testing, or with both the Platform organization and target ChatGPT workspace for workspace use. A personal association does not automatically surface a tunnel in an Enterprise/Edu workspace.
+
+The [developer-mode and MCP-apps policy](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt-beta) puts full MCP (including write/modify actions) in the Business/Enterprise/Edu rollout; Pro's custom MCP path is read/fetch. The recommended `pro-safe` profile exposes only `muster_prioritize`, titled **Prioritize backlog items**, with `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. Muster claims Pro compatibility only after a successful native **Scan Tools** gate. The `full` profile is the existing 28-tool deterministic surface, not write support; it requires the installer's `--profile full --allow-full-actions`, the server's `MUSTER_CHATGPT_WORK_SERVER_ALLOW_FULL_ACTIONS=1`, and a workspace entitlement for full MCP. Treat this as a double opt-in. ChatGPT can use a frozen tool snapshot; after metadata changes, use Refresh or recreate the developer connection/app and start a new Work chat.
+
+Native proof is two-phase. Grade the operator receipt while the identity-bound server attestation and probe inventory are still present; this writes a private retained snapshot outside the owned trees and returns `evidence-graded`. Each owned directory's parent must be current-user-owned with no group/world write bits. Only then stop the tunnel and remove the connection/marketplace/cache/UI entries, leaving the exact snapshot-bound plugin and probe directories for the finalizer. Phase 2 rechecks the parent boundary, atomically renames each UID/device/inode-checked directory to a random direct-sibling quarantine path, rechecks the identity there, deletes each quarantined directory, and verifies all paths are absent. Direct siblings avoid an intermediate symlink target and support different filesystems. A missing, moved, concurrently replaced, symlinked, unowned, or writable-parent path is HUMAN-HOLD because post-hoc absence cannot prove deletion of the retained inode. UI evidence is observational, while `identity` and `serverInstanceId` bind the server evidence.
+
+```sh
+node scripts/chatgpt-work-native-probe.mjs \
+  --connection-id asdk_app_... --app-json /absolute/path/to/installed/.app.json \
+  --plugin-version 0.5.0 --connection-label "Muster ChatGPT Work"
+node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
+  --server-attestation attestation.json --connection-id asdk_app_... \
+  --app-json /absolute/path/to/installed/.app.json --plugin-version 0.5.0 \
+  --connection-label "Muster ChatGPT Work" \
+  --snapshot-out /private/retained/grade-snapshot.json \
+  --owned-plugin-path /exact/owned/plugin-path \
+  --owned-temp-path /exact/owned/probe-temp-path
+node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
+  --grade-snapshot /private/retained/grade-snapshot.json
+```
+
 ### 1.2 Workspace agents — the team-shared cloud lane
 
 - Workspace agents (2026-04-22, research preview for Business/Enterprise/Edu/Teachers) are
@@ -340,9 +402,11 @@ On the ChatGPT product side the permission model is different and admin-shaped:
 - Tracing has its own key surface: `RunConfig.tracing` accepts a per-run tracing API key,
   and serialized `RunState` can optionally embed it (`include_tracing_api_key=True`)
   [src: sdk-running].
-- ChatGPT Work: ChatGPT-account plans, not API keys. "Usage varies with the amount of work
-  required"; it "follows the same usage structure as Codex" (plan-included usage plus
-  flexible credits) [src: chatgpt-work] [src: work-codex-help].
+- ChatGPT Work UI usage follows ChatGPT-account plans, not API keys: "Usage varies with the
+  amount of work required" and it follows Codex's plan-included usage plus flexible credits
+  [src: chatgpt-work] [src: work-codex-help]. A private MCP connection adds a separate
+  OpenAI Platform runtime API key for Secure MCP Tunnel control-plane traffic; that key is
+  billed as Platform API usage and is not supplied by a ChatGPT subscription.
 - Enterprise metering for Work: admins set spend controls in the Admin Console —
   workspace-level defaults, group limits, individual overrides, and a request/rationale
   flow for extra credits [src: chatgpt-work].
@@ -377,13 +441,14 @@ today; product rows are constrained by what OpenAI exposes.)
 
 Per-candidate, explicitly:
 
-- **ChatGPT Work — UNVERIFIED.** Work and Codex share agentic usage, but the current help
-  article keeps them as distinct experiences with separate history and separate Work versus
-  Codex Local access controls [src: work-codex-help]. No official source establishes that
-  Work loads the Codex extension plane. Action: run a Work-mode load probe covering
-  `AGENTS.md`, skills, plugins, hooks, MCP, project/global config, and local versus cloud
-  sessions before deciding whether the Codex lane can be reused or a separate adapter is
-  needed.
+- **ChatGPT Work — conditional plugin support; Codex extension inheritance UNVERIFIED.** Work
+  and Codex share agentic usage, but the current help article keeps them as distinct
+  experiences with separate history and separate Work versus Codex Local access controls
+  [src: work-codex-help]. The universal Plugins Directory and registered MCP app path are
+  documented for Work web/desktop, while no official source establishes that Work loads the
+  Codex extension plane. Muster therefore supports the private/local plugin connection only
+  after the native Scan Tools gate; run the native proof contract in
+  `scripts/chatgpt-work-native-probe.mjs` before claiming a successful host loop.
 - **OpenAI Agents SDK — YES, with a category caveat.** It is the real, documented,
   loop-level execution model under the banner, and sandbox agents make it a genuine
   repo/workspace execution surface [src: sdk-sandbox]. But it is a framework, not an

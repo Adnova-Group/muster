@@ -24,15 +24,16 @@ Integer variables are parsed strictly: a non-numeric or out-of-range value falls
 ## Harness-scoped variables
 
 These are read only on the harness they name, and mostly by its host rather than by you.
+The Cowork adapter is `cowork/mcp-server.mjs`; the neutral core receives its runtime identity explicitly rather than from a user-set host selector.
 
 | Variable | Default | Semantics | Read by |
 | --- | --- | --- | --- |
 | `MUSTER_CODEX_MULTI_AGENT` | _(unset — on)_ | Declares whether Codex's `features.multi_agent` is enabled this session. Codex ships it on, so the default is on; only an explicit off drops wave dispatch to the `sequential-inline` floor. | CLI (`src/wave-dispatch.js`) |
-| `MUSTER_RUNTIME` | _(unset)_ | `cowork` marks a nested CLI invocation as running under Cowork, so capability resolution uses the Cowork lane. Set by the Cowork MCP server on the CLI spawns it makes. | CLI (`src/capabilities.js`) |
+| `MUSTER_RUNTIME` | _(unset)_ | The neutral MCP core marks nested CLI invocations with the active host (`cowork`, `codex`, or `work`), so capability resolution uses that lane. Set on child CLI spawns by `mcp/server.mjs`. | CLI (`src/capabilities.js`) |
 | `MUSTER_COWORK_NATIVE_PLUGIN` | _(unset — off)_ | Declares that Cowork's own plugin loader accepted muster's `plugin/` tree. A declared capability check, never a probe: unset keeps resolution MCP-only. | CLI (`src/cli.js`, `src/capabilities.js`) |
 | `MUSTER_COWORK_CONNECTORS` | _(unset)_ | Comma-separated remote-connector names (e.g. `slack,drive`) to treat as available. Remote connectors live in your cloud account, not on disk, so they cannot be auto-discovered. | CLI (`src/cli.js`) |
-| `MUSTER_COWORK_MAX_INFLIGHT` | `4` | Max concurrent MCP tool executions in the Cowork server. Hard ceiling `64`. | `cowork/mcp-server.mjs` |
-| `MUSTER_COWORK_MAX_QUEUE` | `16` | Max queued MCP tool executions before overload rejection. Hard ceiling `1024`. | `cowork/mcp-server.mjs` |
+| `MUSTER_COWORK_MAX_INFLIGHT` | `4` | Max concurrent MCP tool executions in the Cowork server. Hard ceiling `64`. | `mcp/server.mjs` (via `cowork/mcp-server.mjs` adapter) |
+| `MUSTER_COWORK_MAX_QUEUE` | `16` | Max queued MCP tool executions before overload rejection. Hard ceiling `1024`. | `mcp/server.mjs` (via `cowork/mcp-server.mjs` adapter) |
 
 Kimi also reads host-owned settings rather than `MUSTER_*` settings. `KIMI_CODE_HOME` selects the Kimi data root. `KIMI_SECONDARY_MODEL` and `KIMI_CODE_EXPERIMENTAL_FLAG` enable the per-process secondary model lane used by Muster-launched Kimi processes. Kimi's own loop and background concurrency variables remain Kimi runtime controls, not Muster configuration. See the [Kimi guide](/guides/kimi) before changing them.
 

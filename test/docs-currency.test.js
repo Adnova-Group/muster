@@ -162,6 +162,132 @@ test("ChatGPT Work compatibility is explicitly unverified rather than inherited 
   }
 });
 
+test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and billing boundaries", async () => {
+  const docs = await Promise.all([
+    read("README.md"),
+    read("website/guides/chatgpt-work.md"),
+    read("docs/research/gpt-work.md"),
+    read("cowork/README.md"),
+  ]);
+  const text = docs.join("\n");
+  for (const marker of [
+    "https://learn.chatgpt.com/docs/plugins",
+    "https://developers.openai.com/plugins/build/plugins",
+    "https://developers.openai.com/api/docs/guides/secure-mcp-tunnels",
+    "https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt-beta",
+    "muster install chatgpt-work --connection-id",
+    "--profile pro-safe",
+    "--profile full --allow-full-actions",
+    "--scope project",
+    "--scope user",
+    ".app.json",
+    "asdk_app_<normalized",
+    "runtime/chatgpt-work-server.mjs",
+    "CONTROL_PLANE_API_KEY",
+    "MUSTER_CHATGPT_WORK_PROBE_NONCE",
+    "MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH",
+    "MUSTER_CHATGPT_WORK_CONNECTION_ID",
+    "MUSTER_CHATGPT_WORK_APP_JSON_PATH",
+    "MUSTER_CHATGPT_WORK_PLUGIN_VERSION",
+    "MUSTER_CHATGPT_WORK_CONNECTION_LABEL",
+    "0700",
+    "0600",
+    "server-attestation.json",
+    "inherited by the `--mcp-command` child",
+    "Platform API",
+    "ChatGPT Pro",
+    "Scan Tools",
+    "readOnlyHint=true",
+    "destructiveHint=false",
+    "openWorldHint=false",
+    "28-tool",
+    "full-MCP",
+    "Refresh",
+    "recreate",
+    "public submission",
+    "outbound-only",
+    "operator",
+    "cryptographic provenance",
+    ".agents/plugins/muster-chatgpt-work",
+    "pluginPath",
+    "restart or refresh ChatGPT Desktop",
+    "local/repo marketplace",
+    "HUMAN-HOLD",
+    "evidence-graded",
+    "finalize-cleanup",
+  ]) assert.match(text, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `missing ChatGPT Work currency marker: ${marker}`);
+  assert.match(text, /connection ID[^.]+(?:not|non-secret|identifier)/i);
+  assert.match(text, /tunnel[^.]+(?:cannot|not)[^.]+public/i);
+  assert.match(text, /does not inherit Codex|not inherit Codex/i);
+});
+
+test("MCP docs and adapters name the neutral core, explicit hosts, and compatibility shims", async () => {
+  const [core, codex, work, coworkShim, coworkWorkShim, build, install, readme, coworkReadme, coworkGuide, architecture, coworkResearch, codexResearch, commands, configuration] = await Promise.all([
+    read("mcp/server.mjs"),
+    read("mcp/codex-server.mjs"),
+    read("mcp/chatgpt-work-server.mjs"),
+    read("cowork/mcp-server.mjs"),
+    read("cowork/chatgpt-work-server.mjs"),
+    read("scripts/build-codex.mjs"),
+    read("src/chatgpt-work-install.js"),
+    read("README.md"),
+    read("cowork/README.md"),
+    read("website/guides/cowork.md"),
+    read("website/reference/architecture.md"),
+    read("docs/research/claude-cowork.md"),
+    read("docs/research/codex-cli.md"),
+    read("website/reference/commands.md"),
+    read("website/reference/configuration.md"),
+  ]);
+  assert.match(core, /startMusterMcpServer/);
+  assert.doesNotMatch(core, /MUSTER_MCP_HOST/);
+  assert.match(codex, /runtimeIdentity:\s*"codex"/);
+  assert.match(work, /runtimeIdentity:\s*"work"/);
+  assert.match(coworkShim, /runtimeIdentity:\s*"cowork"/);
+  assert.match(coworkShim, /\.\.\/mcp\/server\.mjs/);
+  assert.match(coworkWorkShim, /compatibility entrypoint/i);
+  assert.match(coworkWorkShim, /\.\.\/mcp\/chatgpt-work-server\.mjs/);
+  assert.match(build, /join\(root, "mcp", "codex-server\.mjs"\)/);
+  assert.match(build, /join\(root, "mcp", "chatgpt-work-server\.mjs"\)/);
+  assert.doesNotMatch(build, /readFileSync\(join\(root, "cowork", "mcp-server\.mjs"\)/);
+  assert.doesNotMatch(install, /readFile\(join\(root, "cowork", "mcp-server\.mjs"\)/);
+  for (const [path, text] of [
+    ["README.md", readme],
+    ["cowork/README.md", coworkReadme],
+    ["website/guides/cowork.md", coworkGuide],
+    ["website/reference/architecture.md", architecture],
+    ["docs/research/claude-cowork.md", coworkResearch],
+    ["docs/research/codex-cli.md", codexResearch],
+    ["website/reference/commands.md", commands],
+    ["website/reference/configuration.md", configuration],
+  ]) {
+    assert.match(text, /mcp\/server\.mjs/, `${path} must name the neutral MCP core`);
+    assert.match(text, /Cowork adapter|compatibility (?:entrypoint|shim)/i, `${path} must name the Cowork adapter or compatibility path`);
+  }
+  assert.match(readme, /runtime\/chatgpt-work-server\.mjs/);
+  assert.match(coworkResearch, /no longer\s+string-rewrites\s+`?cowork\/mcp-server\.mjs`?/i);
+  assert.match(codexResearch, /mcp\/codex-server\.mjs[\s\S]{0,180}neutral `?mcp\/server\.mjs`?/i);
+});
+
+test("native Work proof schema stays paired with its probe", async () => {
+  const [probe, schema] = await Promise.all([
+    read("scripts/chatgpt-work-native-probe.mjs"),
+    read("docs/research/evidence/chatgpt-work-native-probe.schema.json"),
+  ]);
+  const parsed = JSON.parse(schema);
+  assert.equal(parsed.additionalProperties, false);
+  assert.deepEqual(parsed.required, ["receiptType", "nonce", "timestamp", "identity", "operatorEvidence", "serverEvidence", "inventory", "artifacts"]);
+  for (const marker of ["invocationCount", "connectionIdSha256", "pluginAppSha256", "serverInstanceId", "pending-after-evidence-grade", "operator-observed-ui", "muster-work-native-server-attestation", "muster-work-native-retained-grade", "gradeDigest", "ownedPaths", "muster-work-native-cleanup-finalization"]) {
+    assert.match(probe, new RegExp(marker), `probe is missing ${marker}`);
+    assert.match(schema, new RegExp(marker), `schema is missing ${marker}`);
+  }
+  assert.match(probe, /grade-snapshot/);
+  assert.match(probe, /lstat/);
+  assert.match(probe, /Windows native proof is always HUMAN-HOLD/);
+  assert.equal(parsed.$defs.attestation.properties.serverInstanceId.pattern, "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
+  assert.doesNotMatch(schema, /verified-absent/);
+});
+
 test("current Cowork research uses the live MCP tool count and phase-3-gated dispatch contract", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   for (const path of [

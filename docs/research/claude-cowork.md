@@ -2,7 +2,7 @@
 
 Input for harness-internals work: what Claude Cowork natively provides, how its naked base
 loop runs, which extension surfaces exist, and — reconciled line-by-line against muster's
-shipping Cowork port (`cowork/`) — what muster rides today, where the port's assumptions
+shipping Cowork compatibility route (`cowork/`) plus the canonical neutral MCP core (`mcp/`) — what muster rides today, where the port's assumptions
 have gone stale, and what is still unexploited.
 
 Evidence tags used throughout: **[DOCUMENTED-WEB]** = stated in a primary web source;
@@ -207,7 +207,8 @@ extensions as the enterprise deployment path for local servers on Team/Enterpris
 `isDesktopExtensionEnabled` [src: cw-arch].
 
 Muster carries a development Route B descriptor: `manifest.json` with
-`manifest_version` 0.3, a node entry point at `${__dirname}/mcp-server.mjs`, and
+  `manifest_version` 0.3, a node entry point at `${__dirname}/mcp-server.mjs` (the
+  compatibility shim for canonical `mcp/server.mjs`), and
 `user_config` fields (Apex toggle, max tier, declared connectors) mapped to
 `MUSTER_ENABLE_APEX`, `MUSTER_MAX_TIER`, and `MUSTER_COWORK_CONNECTORS`
 [src: manifest-10] [CODE-VERIFIED]. It is **not currently a distribution**: the packed
@@ -314,12 +315,17 @@ Auth model for remote connectors [DOCUMENTED-WEB]:
 
 What actually ships [CODE-VERIFIED]:
 
-- **One self-contained server, no SDK:** `cowork/mcp-server.mjs` speaks newline-delimited
-  JSON-RPC 2.0 over stdio, node builtins only, MCP protocol version pinned to
-  `2025-06-18` [src: mcps-head] [src: mcps-294]. Twenty-one `muster_*` tools wrap the
+- **One neutral MCP core, no SDK:** `mcp/server.mjs` speaks newline-delimited JSON-RPC 2.0
+  over stdio, node builtins only, MCP protocol version pinned to `2025-06-18`
+  [src: mcps-head] [src: mcps-294]. It exposes 28 `muster_*` tools wrapping the
   deterministic CLI (`src/cli.js`) — detection, capability/domain routing, gate scoring,
   RICE prioritization, wave planning, tournament pick/fuse, review tally, advisor
   validation [src: readme-11] [src: mcps-106].
+- **Explicit host adapters:** `mcp/codex-server.mjs`, `mcp/chatgpt-work-server.mjs`, and
+  `cowork/mcp-server.mjs` select Codex, Work, and Cowork behavior over the neutral core.
+  `cowork/chatgpt-work-server.mjs` remains a compatibility shim for older Work
+  source-checkout callers; the public Work plugin still exposes
+  `runtime/chatgpt-work-server.mjs`.
 - **Protocol injection via `instructions`:** the initialize response carries
   `PRINCIPLES + VERBS + ROUTING_POLICY + COWORK_PROTOCOL` — "That replaces the
   SessionStart and UserPromptSubmit hooks the Claude Code plugin uses" [src: readme-32]
@@ -329,8 +335,9 @@ What actually ships [CODE-VERIFIED]:
   Cowork's registry via `readInstalledCowork`; in cowork mode every non-MCP provider is
   filtered out — `if (cowork && entry?.kind !== "mcp") entry = null;` — and
   recommendations are likewise MCP-only, so muster never advertises a provider Cowork
-  cannot invoke [src: caps-23] [src: cli-106]. The MCP wrapper exports
-  `MUSTER_RUNTIME=cowork` so nested CLI children (notably `audit`) resolve the same way
+  cannot invoke [src: caps-23] [src: cli-106]. The neutral core exports
+  `MUSTER_RUNTIME=cowork` on Cowork child CLI calls (the Codex and Work adapters select
+  their own host values), so nested CLI children (notably `audit`) resolve the same way
   [src: mcps-142].
 - **Execution hygiene:** child CLI calls carry a 60 s timeout and 16 MB buffer; a
   WorkLimiter bounds concurrency (4 in-flight / 16 queued by default, env-tunable with
@@ -343,12 +350,11 @@ What actually ships [CODE-VERIFIED]:
   by hand, HUMAN-HOLD resolved by asking the live human in-chat because there is no
   AskUserQuestion tool, merge-local/merge-push executing "with zero structural safety
   net") [src: mcps-127] [src: sprint-14] [src: sprint-118] [src: sprint-131].
-- **The Cowork server is the canonical shared source:** `build-codex.mjs` produces the
-  Codex MCP server by string-rewriting `cowork/mcp-server.mjs` — swapping the protocol
-  line, `capabilities --cowork` → `--codex`, and `assess` → `assess --codex` — and
-  bundling with esbuild; it also reuses `cowork/sprint-protocol.md` verbatim in the
-  Codex runtime [src: build-codex-390] [CODE-VERIFIED]. Cowork is not a side port; it is
-  the reference implementation of muster's harness-portable MCP surface.
+- **Adapters are built explicitly:** `build-codex.mjs` builds `mcp/codex-server.mjs`
+  and `mcp/chatgpt-work-server.mjs` directly over `mcp/server.mjs`; it no longer
+  string-rewrites `cowork/mcp-server.mjs`. `cowork/mcp-server.mjs` is the retained
+  compatibility entrypoint for Route A, while `cowork/sprint-protocol.md` remains the
+  Cowork backlog playbook [src: build-codex-390] [CODE-VERIFIED].
 
 ## 7. Augmentation-surface table
 
@@ -445,11 +451,11 @@ false` — section 3c), not an auto-probe, because there is no signal to auto-pr
 - `src/cli.js`'s `capabilities --cowork` reads `--native-plugin` or `MUSTER_COWORK_NATIVE_PLUGIN`
   (parsed MCPB-boolean-safe, mirroring `MUSTER_ENABLE_FABLE` in `src/model.js`) and passes it
   through.
-- `cowork/mcp-server.mjs` needs no new wiring for the env var to reach the CLI child — it
-  already spawns with `env: {...process.env, MUSTER_RUNTIME: "cowork"}`, so
+- `mcp/server.mjs` needs no new wiring for the env var to reach the CLI child — its Cowork
+  adapter path spawns with `env: {...process.env, MUSTER_RUNTIME: "cowork"}`, so
   `MUSTER_COWORK_NATIVE_PLUGIN` set in the Cowork host's MCP server config (the Route A
-  `env` block) passes straight through; only the tool description and the header comment
-  were updated to document it.
+  `env` block) passes straight through; only the compatibility entrypoint remains under
+  `cowork/`.
 - Branch logic is fixture-driven, TDD'd, and green: `test/harness-cowork.test.js` (the flag
   default and echo), `test/capabilities.test.js` (`resolveCapabilities` resolving a builtin
   agent/skill role under `nativePluginRide: true` vs staying MCP-only under `false`),
@@ -493,13 +499,13 @@ pinned by regression tests in the four files above.
 - readme-123: cowork/README.md:123-126
 - readme-130: cowork/README.md:130-132
 - readme-146: cowork/README.md:146
-- mcps-head: cowork/mcp-server.mjs:2-16
-- mcps-56: cowork/mcp-server.mjs:53-78
-- mcps-106: cowork/mcp-server.mjs:106-139
-- mcps-127: cowork/mcp-server.mjs:127-131
-- mcps-142: cowork/mcp-server.mjs:142-166
-- mcps-225: cowork/mcp-server.mjs:221-292
-- mcps-294: cowork/mcp-server.mjs:294-331
+- mcps-head: mcp/server.mjs:2-16
+- mcps-56: mcp/server.mjs:53-78
+- mcps-106: mcp/server.mjs:106-139
+- mcps-127: mcp/server.mjs:127-131
+- mcps-142: mcp/server.mjs:142-166
+- mcps-225: mcp/server.mjs:221-292
+- mcps-294: mcp/server.mjs:294-331
 - sprint-14: cowork/sprint-protocol.md:12-33
 - sprint-24: cowork/sprint-protocol.md:24-31
 - sprint-118: cowork/sprint-protocol.md:113-125

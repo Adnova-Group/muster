@@ -53,6 +53,11 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   // installed inventory is resolved inside the child process.
   const cowork = installed.runtime === "cowork" || process.env.MUSTER_RUNTIME === "cowork";
   const coworkMcpOnly = cowork && !installed.nativePluginRide;
+  // Work has no native agent/skill dispatch lane. Its deterministic MCP
+  // inventory is supplied by readInstalledWork; even if a caller passes a
+  // contaminated inventory, fail closed to installed MCP entries + inline.
+  const work = installed.runtime === "work" || process.env.MUSTER_RUNTIME === "work";
+  const mcpOnly = coworkMcpOnly || work;
   const roles = {};
   for (const role of ROLES) {
     const forRole = catalog.filter(e => e.roles.includes(role)).sort((a, b) => b.rank - a.rank);
@@ -66,7 +71,7 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
       } else if (e.kind === "builtin" || e.kind === "agent") {
         entry = { id: e.id, source: "builtin", kind: providerType(e) };
       }
-      if (coworkMcpOnly && entry?.kind !== "mcp") entry = null;
+      if (mcpOnly && entry?.kind !== "mcp") entry = null;
       if (!entry) continue;
       chain.push(entry);
       if (!chosen) {
@@ -83,17 +88,21 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     const recommendations = [];
     for (const e of forRole) {
       if (e.kind === "external" && e.recommended && !isInstalled(e, installed) && e.rank > chosenRank
-          && (!coworkMcpOnly || providerType(e) === "mcp")) {
+          && !work && (!coworkMcpOnly || providerType(e) === "mcp")) {
         recommendations.push(`install ${e.id} for ${role} — better than the ${chosen.id} fallback`);
       }
     }
     const model = modelForRole(role);
     // `model` is the CONCEPTUAL tier (scout|core|prime|apex). `claudeModel` is the
     // Claude adapter's concrete value for it -- what the Agent tool's `model`
-    // override actually accepts on Claude Code. Attached unconditionally (pure
-    // tier function, no inventory read), mirroring codexModel/kimiModel for the
-    // other harnesses so NO dispatch path ever passes a conceptual tier raw.
-    roles[role] = { chosen, chain, recommendations, model, claudeModel: claudeModelForTier(model).model };
+    // override actually accepts on Claude Code. Attached on every dispatch lane
+    // except Work, whose host has no Claude model override and remains on the
+    // harness-neutral conceptual tier.
+    roles[role] = { chosen, chain, recommendations, model };
+    // Work stays harness-neutral: its host does not dispatch Claude models, so
+    // only the conceptual tier is meaningful. Every pre-existing lane retains
+    // the Claude adapter mapping for backward compatibility.
+    if (!work) roles[role].claudeModel = claudeModelForTier(model).model;
     if (codex && chosen.kind === "agent") {
       const codexModel = codexProfileForAgentId(chosen.id);
       if (codexModel) roles[role].codexModel = codexModel;
@@ -110,7 +119,7 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   // same id — installed wins on a name collision, matching the roles ladder's
   // installed-beats-builtin precedence.
   const skills = [];
-  if (coworkMcpOnly) return { roles, installedRaw: installed, skills };
+  if (mcpOnly) return { roles, installedRaw: installed, skills };
   const seen = new Set();
   // One shared cache for this call's whole installed-skills loop (see
   // installedSkillDescription / findSkillMdSync in plugin-inventory.js) —

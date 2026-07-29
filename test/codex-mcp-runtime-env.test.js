@@ -114,12 +114,13 @@ test("muster_route's domain:unknown/pipeline:null symptom from the dogfood is NO
   assert.equal(withoutEnv.domain, "unknown", "documents the actual (still-open, non-env) cause: no project detectable from a bare cwd and no outcome-text keyword match");
 });
 
-test("cowork bundle path is unchanged: cowork/mcp-server.mjs still launches CLI children with MUSTER_RUNTIME: \"cowork\"", async () => {
-  // The fix lives ONLY in the Codex build transform (scripts/build-codex.mjs).
-  // cowork/mcp-server.mjs's own cowork semantics are correct for the Cowork
-  // bundle and must stay untouched -- it also sits inside the Claude-surface
-  // parity hash (test/claude-parity.test.js), so editing it would churn that
-  // pin for no reason.
-  const source = await readFile(join(repoRoot, "cowork", "mcp-server.mjs"), "utf8");
-  assert.match(source, /env:\s*\{\s*\.\.\.process\.env,\s*MUSTER_RUNTIME:\s*"cowork"\s*\}/, "cowork/mcp-server.mjs must still pin MUSTER_RUNTIME to \"cowork\" for the Cowork bundle -- this file is the shared source the Codex build transform rewrites FROM, not a file this fix touches");
+test("Cowork adapter supplies its runtime identity while the neutral core passes it to CLI children", async () => {
+  const [adapter, core] = await Promise.all([
+    readFile(join(repoRoot, "cowork", "mcp-server.mjs"), "utf8"),
+    readFile(join(repoRoot, "mcp", "server.mjs"), "utf8"),
+  ]);
+  assert.match(adapter, /runtimeIdentity:\s*"cowork"/);
+  assert.doesNotMatch(adapter, /MUSTER_MCP_HOST/);
+  assert.match(core, /MUSTER_RUNTIME:\s*config\.runtimeIdentity/);
+  assert.doesNotMatch(core, /MUSTER_MCP_HOST/);
 });

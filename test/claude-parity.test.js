@@ -17,6 +17,7 @@ const claudeSurface = [
   "plugin/hooks",
   "plugin/skills",
   "cowork/mcp-server.mjs",
+  "mcp/server.mjs",
   "catalog",
   "pipelines"
 ];
@@ -39,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 143); // +1: first-class init command; +2 (2026-07-29, skill-split): orchestrator references/{codex,kimi}-dispatch.md; +1 (2026-07-29, improver-fork): plugin/skills/improve/SKILL.md
+  assert.equal(paths.length, 144); // main's 143-file surface +1: neutral MCP core now explicitly pinned
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1174,5 +1175,21 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // update_plan correction narrative compressed to a one-line research-doc
   // cite; mechanics and the one-in-flight invariant kept verbatim.
   // eval:modes 160/160 after the cut.
-  assert.equal(hash.digest("hex"), "2dcb2f7eb9de2a9fe2140578ea43ed52b1392b155e7b52da68dfb97f496b769a");
+  //
+  // 2026-07-29 re-pin #15 (ChatGPT Work tool-only runtime): file COUNT
+  // unchanged -- cowork/mcp-server.mjs gained the
+  // pre-dispatch profile selector and nonce-bound one-call handler used by the
+  // separately bundled Work MCP runtime. Empty/unset profile behavior remains
+  // response-identical (pinned in test/cowork.test.js); the shared change is
+  // unavoidable because Codex, Cowork, and Work must dispatch the same
+  // deterministic CLI tool definitions rather than fork their implementations.
+  //
+  // 2026-07-29 re-pin #16 (neutral MCP architecture): file COUNT 143 -> 144.
+  // The shared implementation moved from cowork/mcp-server.mjs to
+  // mcp/server.mjs; the Cowork path is now an explicit host adapter, while
+  // Codex and Work select their host contracts explicitly without rewriting
+  // the shared source during builds.
+  // Re-pin #17: the app-neutral factory owns only the shared catalog/protocol
+  // engine; Cowork-specific protocol and alias prose live in its adapter.
+  assert.equal(hash.digest("hex"), "eac732f83199384bf9743bd21a4c1e9e9d4983b89331e53a08a0e5d437f81cf2");
 });

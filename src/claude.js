@@ -12,11 +12,22 @@ import { agentProfiles } from "./agent-manifest.js";
 // model aliases. They are harness words now, exactly like "gpt-5.6-sol" and
 // "kimi-code/k3".
 //
-// Claude Code exposes no per-subagent reasoning-effort knob, so a semantic
-// effort override (workhorse|judgment|peak) is a documented no-op here — the
-// same posture as Kimi's always-thinking coding models. Effort still travels
-// through the shared manifest untouched: Codex dials reasoning_effort with it
-// and Kimi dials K3's effort ladder; Claude simply has no knob to turn.
+// Claude Code's per-subagent reasoning-effort knob exists on exactly ONE
+// surface: the Workflow tool's agent() takes `effort:
+// 'low'|'medium'|'high'|'xhigh'|'max'` per spawned agent (observed live against
+// a 2.1.220 session, 2026-07-29 — the cc-workflow-lane correction; through
+// 2026-07-28 this adapter documented "no per-subagent effort surface", which
+// was true of the Agent tool and still is: the Agent tool carries no effort
+// parameter). A semantic effort therefore resolves to a lane-scoped
+// `workflowEffort` field — consumed only by Workflow-lane dispatch
+// (orchestrator SKILL.md's native lane), never emitted into agent frontmatter
+// or Agent-tool calls. Ladder mirrors the Codex lanes (codex.js CODEX_EFFORT):
+// workhorse=medium (the cost/quality default), judgment=high (output gates
+// other work), peak=xhigh (rare high-consequence; max never routine). No
+// declared effort -> no workflowEffort key: Workflow agent() omits effort to
+// inherit the session effort, so an absent key is the correct default.
+const CLAUDE_WORKFLOW_EFFORT = Object.freeze({ workhorse: "medium", judgment: "high", peak: "xhigh" });
+
 export const CLAUDE_MODEL_POLICY = Object.freeze({
   tiers: Object.freeze({
     scout: Object.freeze({ model: "haiku" }),
@@ -28,8 +39,12 @@ export const CLAUDE_MODEL_POLICY = Object.freeze({
     // dispatch resolves rather than throwing.
     apex: Object.freeze({ model: "fable" }),
   }),
-  applyEffort(base) {
-    return base; // no per-subagent effort surface on Claude Code
+  // A semantic effort dials the Workflow-lane effort on the tier's model; an
+  // unknown semantic (shouldn't reach here -- assertNeutralProfile guards it)
+  // leaves the profile untouched, same fall-through as codex.js.
+  applyEffort(base, semantic) {
+    const workflowEffort = CLAUDE_WORKFLOW_EFFORT[semantic];
+    return workflowEffort ? { ...base, workflowEffort } : { ...base };
   },
 });
 

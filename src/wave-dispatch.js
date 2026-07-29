@@ -1,13 +1,16 @@
 // wave-dispatch.js — capability check + fallback-selection for the orchestrator's wave
 // dispatch mechanism (workflow-tool-delegation item).
 //
-// Claude Code CLI's agent-teams surface exposes a native, deterministic Workflow tool
-// (fan-out + barrier as code) alongside ListAgents/SendMessage/Monitor -- reached ONLY
-// through agent-teams / background-agent mode, never the single-session loop a plain
-// `claude` invocation runs (docs/research/claude-code-cli.md sec 1's binary-tools
-// evidence + sec 11's `claude agents` subcommand;
-// docs/strategy/native-delegation.md Part B item 1: "Workflow reached only via
-// agent-teams mode, not the single-session loop -- capability-gated").
+// Claude Code CLI exposes a native, deterministic Workflow tool (fan-out + barrier as
+// code) alongside ListAgents/SendMessage/Monitor. CORRECTED 2026-07-29 (cc-workflow-lane):
+// through 2.1.211 the research recorded this surface as "reached ONLY through
+// agent-teams / background-agent mode, never the single-session loop" -- a live 2.1.220
+// session disproves that for current builds: Workflow (plus the task-board and
+// scheduling tools) sits in a PLAIN single-session tool list. The DECLARED-not-probed
+// shape below is unchanged and still necessary: older builds, `--tools`-restricted
+// sessions, and other harnesses lack the tool, and only the session itself can see its
+// own tool list (docs/research/claude-code-cli.md sec 1's dated correction;
+// docs/native-workflow-dispatch.md).
 //
 // execFileSync backs makeGitShaVerifier's git-backed default verifier below (the ONLY
 // place in this file that shells out, and only when that verifier is actually invoked --
@@ -22,8 +25,8 @@
 // pre-declare it via MUSTER_AGENT_TEAMS / --agent-teams for a scripted/background-agent
 // invocation ahead of any model self-inspection. AUGMENT, NOT SUPERSEDE: the prose wave
 // loop (orchestrator/SKILL.md step 4) is the unconditional floor for every harness/
-// session that doesn't declare native agent-teams support (Codex, Cowork, plain Claude
-// Code CLI/Desktop single-session) -- prose is the default whenever nothing is declared.
+// session whose tool list lacks Workflow (Codex, Cowork, `--tools`-restricted or
+// pre-Workflow Claude Code builds) -- prose is the default whenever nothing is declared.
 
 import { execFileSync } from "node:child_process";
 

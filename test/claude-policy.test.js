@@ -3,8 +3,10 @@
 // test/codex-policy.test.js's neutral-profile cases: the Claude adapter is the
 // same public surface as the Codex/Kimi adapters (claudeModelForRole /
 // claudeProfileForConfig / claudeProfileForAgentId), with one documented
-// difference -- Claude Code exposes no per-subagent reasoning-effort knob, so
-// the semantic effort override is a no-op here.
+// difference -- Claude Code's per-subagent effort surface exists ONLY on the
+// Workflow tool's agent() (observed live 2.1.220, 2026-07-29), not the Agent
+// tool, so a semantic effort resolves to a lane-scoped `workflowEffort` field
+// rather than an unconditional `effort` like Codex's.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -35,25 +37,33 @@ test("unknown tier fails loud", () => {
   assert.throws(() => claudeModelForTier("unknown"), /unknown Muster model tier/);
 });
 
-test("applyEffort is a no-op -- Claude Code has no per-subagent effort knob", () => {
+test("applyEffort maps semantic efforts to Workflow-lane efforts without mutating the base", () => {
   const base = { model: "opus" };
-  assert.equal(CLAUDE_MODEL_POLICY.applyEffort(base, "peak"), base);
-  assert.deepEqual(base, { model: "opus" }, "the no-op must not annotate the profile");
+  // Same lane semantics as Codex's CODEX_EFFORT (workhorse=medium, judgment=high,
+  // peak=xhigh; max never routine), but scoped to `workflowEffort`: only the
+  // Workflow tool's agent() takes an effort -- the Agent tool has no such param.
+  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "workhorse"), { model: "opus", workflowEffort: "medium" });
+  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "judgment"), { model: "opus", workflowEffort: "high" });
+  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "peak"), { model: "opus", workflowEffort: "xhigh" });
+  // An unknown semantic leaves the profile untouched (assertNeutralProfile
+  // guards upstream; this is the same fall-through codex.js takes).
+  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "nonsense"), { model: "opus" });
+  assert.deepEqual(base, { model: "opus" }, "applyEffort must not annotate the caller's base profile");
 });
 
-test("claudeProfileForConfig resolves a neutral profile, effort override ignored", () => {
+test("claudeProfileForConfig resolves a neutral profile; effort becomes workflowEffort", () => {
+  // No declared effort -> no workflowEffort key at all: Workflow agent() omits
+  // effort to inherit the session effort, so an absent key IS the contract.
   assert.deepEqual(claudeProfileForConfig({ tier: "prime" }), { model: "opus" });
-  // The semantic effort still travels the manifest untouched -- Claude simply
-  // has no knob to turn (same posture as Kimi's thinking-toggle tiers).
-  assert.deepEqual(claudeProfileForConfig({ tier: "prime", effort: "peak" }), { model: "opus" });
-  assert.deepEqual(claudeProfileForConfig({ tier: "scout", effort: "workhorse" }), { model: "haiku" });
+  assert.deepEqual(claudeProfileForConfig({ tier: "prime", effort: "peak" }), { model: "opus", workflowEffort: "xhigh" });
+  assert.deepEqual(claudeProfileForConfig({ tier: "scout", effort: "workhorse" }), { model: "haiku", workflowEffort: "medium" });
 });
 
 test("claudeProfileForAgentId resolves manifest agents and returns null for non-agents", () => {
-  // catalog/agents.manifest.json: muster-reviewer is prime/judgment,
-  // muster-investigator is scout -- the effort is a no-op on Claude, so only
-  // the tier's concrete family model resolves.
-  assert.deepEqual(claudeProfileForAgentId("muster-reviewer"), { model: "opus" });
+  // catalog/agents.manifest.json: muster-reviewer is prime/judgment (so it
+  // carries the Workflow-lane judgment effort); muster-investigator is scout
+  // with no declared effort (so no workflowEffort key -- inherit at dispatch).
+  assert.deepEqual(claudeProfileForAgentId("muster-reviewer"), { model: "opus", workflowEffort: "high" });
   assert.deepEqual(claudeProfileForAgentId("muster-investigator"), { model: "haiku" });
   // A skill/mcp/inline provider has no manifest entry -> null, not a throw.
   assert.equal(claudeProfileForAgentId("grep"), null);

@@ -720,8 +720,10 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.match(section, /kimiGoalInvocation/, "the rule must name kimiGoalInvocation as the unattended path's env binder");
   assert.match(section, /TUI ignores `model_preference` entirely/, "the rule must state WHY attended sessions cannot bind lanes in-session");
   assert.match(section, /genuinely need the parent's live context/, "the rule must reserve the native Agent tool for live-context legs");
-  // names the builder and the descriptor keys exactly (src/kimi-dispatch.js is canonical)
-  assert.match(section, /kimiProcessDispatch\(\{ brief, agentFile, cwd, lane \}\)/, "the rule must name kimiProcessDispatch with its exact argument shape");
+  // names the builder and the descriptor keys exactly (src/kimi-dispatch.js is canonical);
+  // the model reaches the builder through the CLI verb (the two-layer boundary), never a
+  // direct call
+  assert.match(section, /`kimiProcessDispatch` -- build the descriptor with `\$MUSTER_CLI kimi-process-dispatch\s+--brief <text> --agent-file <name\|path> --cwd <dir> --lane <primary\|secondary>`/, "the rule must name the kimi-process-dispatch verb with its exact argument shape");
   assert.match(section, /`src\/kimi-dispatch\.js`/, "the rule must cite src/kimi-dispatch.js");
   assert.match(section, /\{ argv, env,\s*cwd, lane \}/, "the rule must name the descriptor keys { argv, env, cwd, lane }");
   assert.match(section, /kimiLaneEnv\(\)/, "the rule must name the shared kimiLaneEnv() env derivation");
@@ -733,9 +735,10 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.match(section, /`-m` is ALWAYS\s*emitted/, "the rule must state -m is always emitted");
   assert.match(section, /binds only a process's SPAWNED\s*SUBAGENTS/, "the rule must state model_preference binds only spawned subagents");
   assert.match(section, /silently falls to config `default_model`/, "the rule must state that omitting -m falls to config default_model");
-  // the receipt path: stream-json stdout + exit code + readSessionUsage
+  // the receipt path: stream-json stdout + exit code + the session-usage verb
   assert.match(section, /stream-json result on stdout/, "the rule must name the stream-json stdout receipt");
   assert.match(section, /process exit code/, "the rule must name the process exit code receipt");
-  assert.match(section, /readSessionUsage` \(`src\/kimi-receipts\.js`\)/, "the rule must name readSessionUsage (src/kimi-receipts.js) for per-leg token accounting");
+  assert.match(section, /`\$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>`/, "the rule must name the kimi-session-usage verb for per-leg token accounting");
+  assert.match(section, /src\/kimi-receipts\.js's\s+`readSessionUsage`, reached through `captureSessionId`\/`resolveSessionForCwd`/, "the rule must name readSessionUsage (src/kimi-receipts.js) and its resolution chain");
   assert.match(section, /docs\/research\/kimi-code-cli\.md sec 8/, "the rule must cite the receipts research section");
 });

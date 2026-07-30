@@ -51,8 +51,10 @@ only because `kimiGoalInvocation` (go.md step 6) already set the env pair for th
 loop. An ATTENDED/interactive session (a human driving this skill in the TUI) has no such
 bind, and the TUI ignores `model_preference` entirely, so an in-session `Agent` call there
 can never engage a lane. Lane-sensitive legs in an attended session therefore dispatch via
-`kimiProcessDispatch({ brief, agentFile, cwd, lane })` (`src/kimi-dispatch.js`) -- one
-headless `kimi -p` process per leg, spawned straight from the descriptor's `{ argv, env,
+`kimiProcessDispatch` -- build the descriptor with `$MUSTER_CLI kimi-process-dispatch
+--brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>`
+(`src/kimi-dispatch.js`) -- one
+headless `kimi -p` process per leg, spawned straight from the printed descriptor's `{ argv, env,
 cwd, lane }`: `argv` is `["-p", brief, "--agent-file", <absolute agent file>,
 "--output-format", "stream-json", "-m", KIMI_LANES[lane]]`, and `env` is the shared
 `kimiLaneEnv()` OVERRIDE pair, carried for the v2 engine flag `--agent-file` needs (its
@@ -63,7 +65,8 @@ emitted, for the primary lane too: `model_preference` binds only a process's SPA
 SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
 `-m` and omitting it silently falls to config `default_model`. The leg's receipt is the
 stream-json result on stdout plus the process exit code, with per-leg token accounting from
-`readSessionUsage` (`src/kimi-receipts.js`) over the fresh session dir the process writes
+`$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>` (src/kimi-receipts.js's
+`readSessionUsage`, reached through `captureSessionId`/`resolveSessionForCwd`) over the fresh session dir the process writes
 (docs/research/kimi-code-cli.md sec 8). Reserve the attended session's native `Agent` tool
 for legs that genuinely need the parent's live context; the pre-validation, resume-retry,
 and background rules below keep governing the unattended in-session path, which a process

@@ -21,9 +21,13 @@ subagent collaboration itself, never a prose-loop substitute for the Claude-only
 **The dispatch and barrier shapes are VERSION-DEPENDENT** (corrected 2026-07-25 against Codex
 0.145.0). Codex resolves its subagent API per MODEL from the catalog's `multi_agent_version`, and
 the live catalog puts `gpt-5.6-sol`/`terra` on v2 but `gpt-5.6-luna` -- muster's core tier -- on
-v1. Never hardcode one shape; build both through `codexSpawnAgentCall`/`codexWaitAgentCall`
-(`src/wave-dispatch.js`), which resolve the version and fail closed to v1 rather than guessing v2
-(docs/research/codex-cli.md sec 10.1).
+v1. Never hardcode one shape; build both packets through `$MUSTER_CLI codex-spawn-packet` /
+`codex-wait-packet` (src/wave-dispatch.js's `codexSpawnAgentCall`/`codexWaitAgentCall`),
+which resolve the version and fail closed to v1 rather than guessing v2
+(docs/research/codex-cli.md sec 10.1): `codex-spawn-packet --task-id <task id> --agent-type
+<chosen.id> [--message-file <brief file>] [--version v1|v2] [--fork-turns <none|N>]` prints the
+exact spawn_agent call JSON for the resolved version, and `codex-wait-packet [--version v1|v2]
+[--targets <csv>] [--timeout-ms N]` the barrier call.
 
 | | v2 (`sol`, `terra`) | v1 (`luna`) |
 |---|---|---|

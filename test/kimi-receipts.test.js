@@ -422,9 +422,12 @@ test("live probe: captureSessionId parses a session id from a real `kimi -p` str
 
 test("go-backlog.md's batch report names the Kimi token-accounting line and its rules", async () => {
   const text = await readFile(fileURLToPath(new URL("../plugin/commands/go-backlog.md", import.meta.url)), "utf8");
-  // the three kimi-receipts entry points, named exactly (src/kimi-receipts.js is canonical)
+  // the three kimi-receipts entry points, named exactly (src/kimi-receipts.js is canonical);
+  // the model reaches them through the CLI verbs (the two-layer boundary), never a direct call
   assert.match(text, /captureSessionId/, "go-backlog.md must name captureSessionId");
-  assert.match(text, /resolveSessionForCwd\(\{ cwd: <item worktree path>, capturedSessionId \}\)/, "go-backlog.md must name resolveSessionForCwd with its exact call shape");
+  assert.match(text, /`\$MUSTER_CLI kimi-session-usage --cwd <item worktree path> --stdout-file <captured stdout file>`/, "go-backlog.md must name the kimi-session-usage resolve arm with its exact arg shape");
+  assert.match(text, /resolveSessionForCwd/, "go-backlog.md must name resolveSessionForCwd (the verb's resolution chain)");
+  assert.match(text, /`\$MUSTER_CLI kimi-summarize-receipts <items.json>`/, "go-backlog.md must name the kimi-summarize-receipts verb");
   assert.match(text, /summarizeItemReceipts/, "go-backlog.md must name summarizeItemReceipts");
   // the two arms, stated explicitly: the capture/resolve chain is PROCESS-LANE ONLY
   assert.match(text, /Process-lane legs.*headless `kimi -p`/s, "go-backlog.md must scope the capture/resolve chain to process-lane (kimi -p) legs");
@@ -436,7 +439,7 @@ test("go-backlog.md's batch report names the Kimi token-accounting line and its 
   assert.match(text, /PARENT session's agents tree, indexed under the parent's cwd/, "go-backlog.md must state in-session tokens index under the parent's cwd");
   assert.match(text, /no-sessions-for-cwd/, "go-backlog.md must state why per-worktree resolution can't work for in-session legs");
   assert.match(text, /per-worktree session resolution is never the arm here/, "go-backlog.md must forbid per-worktree resolution for in-session legs");
-  assert.match(text, /readSessionUsage\(<parent session dir>\)`'s `dispatches` view/, "go-backlog.md must name the parent-session dispatches view as the in-session arm");
+  assert.match(text, /`\$MUSTER_CLI kimi-session-usage --session-dir <parent session dir>`'s `dispatches` view/, "go-backlog.md must name the parent-session dispatches view as the in-session arm");
   assert.match(text, /omit the item's line and note the omission in STATE/, "go-backlog.md must state the in-session arm's omission fallback");
   // multi-leg items sum per-leg with each leg's resolution source surfaced
   assert.match(text, /one resolution PER LEG/, "go-backlog.md must state retried/fix-looped items carry one resolution per leg");
@@ -455,14 +458,14 @@ test("go-backlog.md's batch report names the Kimi token-accounting line and its 
 test("go.md's finish (step 8) names the single-outcome accounting line", async () => {
   const text = await readFile(fileURLToPath(new URL("../plugin/commands/go.md", import.meta.url)), "utf8");
   assert.match(text, /captureSessionId/, "go.md must name captureSessionId");
-  assert.match(text, /resolveSessionForCwd\(\{ cwd: <worktree path>, capturedSessionId \}\)/, "go.md must name resolveSessionForCwd with its exact call shape");
+  assert.match(text, /`\$MUSTER_CLI kimi-session-usage --cwd <worktree path> --stdout-file <captured stdout file>`/, "go.md must name the kimi-session-usage resolve arm with its exact arg shape");
   assert.match(text, /summarizeItemReceipts/, "go.md must name summarizeItemReceipts");
   // the goal run is a process-lane leg, and step 6 opts INTO stream-json so the
   // stdout step 8 captures exists at all (kimiGoalInvocation defaults streamJson: false)
   assert.match(text, /streamJson: true/, "go.md must name the streamJson:true opt-in at the goal invocation");
   assert.match(text, /process-lane leg/, "go.md must scope the capture chain to the process-lane leg");
   // in-session legs take the parent-session arm, never per-worktree resolution
-  assert.match(text, /readSessionUsage` dispatches view/, "go.md must name the parent-session dispatches view for in-session legs");
+  assert.match(text, /kimi-session-usage --session-dir <parent session dir>`\s+dispatches view/, "go.md must name the parent-session dispatches view for in-session legs");
   assert.match(text, /per-worktree session\s+resolution never applies/, "go.md must forbid per-worktree resolution for in-session legs");
   assert.match(text, /`captured`\/`index-unique`\/`index-newest`/, "go.md must state the summary surfaces each leg's resolution source");
   assert.match(text, /UNKNOWN never blocking/, "go.md must state UNKNOWN lines never block");

@@ -1256,5 +1256,30 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // unchanged (the trimmed/kept pointer prose matches none of the four tracked
   // term patterns, re-verified green). scripts/build-codex.mjs itself is
   // outside this hashed surface.
-  assert.equal(hash.digest("hex"), "ed04ed4d174516919bc6d12f7d8f7be211cc7b84bd6381f99aa8130fc8e96c02");
+  // 2026-07-30 re-pin #21 (audit 2026-07-29 slice E, architecture P1:
+  // model-facing helpers wired to CLI verbs + claudeProfile emission): file
+  // COUNT unchanged (144) -- plugin/commands/go.md, go-backlog.md, runner.md,
+  // plugin/skills/orchestrator/SKILL.md, and
+  // plugin/skills/orchestrator/references/{kimi,codex}-dispatch.md changed
+  // content. The prose's "call X" language for the kimi-dispatch/kimi-receipts
+  // helpers and the Codex packet builders became `$MUSTER_CLI` verb
+  // invocations (kimi-goal-invocation / kimi-process-dispatch /
+  // kimi-session-usage / kimi-summarize-receipts / codex-spawn-packet /
+  // codex-wait-packet, new in src/cli.js -- outside this hashed surface), so
+  // the model layer reaches the builders only through the CLI; the pinned
+  // rules (env-merge shape, -m always, receipt paths, UNKNOWN handling, the
+  // two-arm accounting split) are preserved verbatim and their prose pins in
+  // test/kimi-receipts.test.js + test/kimi-dispatch.test.js were re-pointed at
+  // the verb shapes. codex-dispatch.md's fork_turns paragraph and v1/v2 shapes
+  // table (the two blocks scripts/build-codex.mjs extracts verbatim) are
+  // untouched -- only the intro paragraph's builder sentence changed, so the
+  // build anchors hold (build + check-codex re-verified clean). orchestrator
+  // SKILL.md's Workflow-lane effort line now points at
+  // `roles[<role>].claudeProfile.workflowEffort`, the field src/capabilities.js
+  // (outside this surface) newly emits via claudeProfileForAgentId -- the same
+  // manifest-driven profile shape the codex/kimi lanes already emitted; that
+  // edit sits inside build-codex.mjs's wholesale-replaced wave-dispatch span,
+  // so no build anchor is affected. docs/binding-interface.md's grep-audit
+  // counts are unchanged (re-verified green).
+  assert.equal(hash.digest("hex"), "3699d225d2fe8e62a29f97909d92a2f4ae76f2cc8fac2fd8a639769cb88bfbd6");
 });

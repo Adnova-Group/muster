@@ -117,13 +117,14 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    skill's task-board discipline per plan task (create at dispatch, in_progress at launch, completed at merge).
 
    **Kimi run loop — the native `/goal` runner, not the prose Ralph loop.** On Kimi, step 6's
-   continue-until-criteria loop moves off the prose iteration entirely: drive it through
-   `kimiGoalInvocation({ objective })` (`src/kimi-dispatch.js`), which builds the unattended
-   `kimi -p "/goal <objective>"` invocation with the item's assessed acceptance criteria compiled
+   continue-until-criteria loop moves off the prose iteration entirely: build the invocation with
+   `$MUSTER_CLI kimi-goal-invocation <objective> --stream-json` (`src/kimi-dispatch.js`'s
+   `kimiGoalInvocation`), which prints the unattended
+   `kimi -p "/goal <objective>"` argv + env descriptor with the item's assessed acceptance criteria compiled
    INTO the objective string — `/goal` has no separate stop-limit flag ("write stop conditions into
    the objective", docs/research/kimi-code-cli.md §11.9), so the same enrichment that would land in
-   a file muster re-reads goes into the harness's own loop instead. Build the invocation with
-   `streamJson: true` (the `kimiGoalInvocation` default is `false`): the goal run is a process-lane
+   a file muster re-reads goes into the harness's own loop instead. The `--stream-json` flag is
+   required here (the `streamJson: true` opt-in; the `kimiGoalInvocation` default is `false`): the goal run is a process-lane
    leg, and step 8's token accounting needs the stream-json stdout this flag puts on the pipe. Its env pair
    (`KIMI_CODE_EXPERIMENTAL_FLAG=1` + `KIMI_SECONDARY_MODEL`, derived by `kimiLaneEnv()` in
    `src/kimi.js` — an OVERRIDE pair merged over the ambient process env at spawn,
@@ -190,14 +191,16 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
 
    On Kimi the finish also writes the run's token-accounting line to STATE next to the gate summary —
    the same two-arm accounting go-backlog's batch report uses, scoped by dispatch lane. The step-6
-   goal run itself is a process-lane leg (`kimi -p`, built with `streamJson: true` above), so the
-   capture chain applies to it: `captureSessionId` on the run's captured stream-json stdout at
-   dispatch, `resolveSessionForCwd({ cwd: <worktree path>, capturedSessionId })` before worktree
-   teardown. Any in-session Agent/AgentSwarm legs take the other arm — their tokens live in the
+   goal run itself is a process-lane leg (`kimi -p`, built with `--stream-json` above), so the
+   capture chain applies to it: capture the run's stream-json stdout to a file at
+   dispatch, then run `$MUSTER_CLI kimi-session-usage --cwd <worktree path> --stdout-file <captured stdout file>` before worktree
+   teardown (captureSessionId on the stdout, then resolveSessionForCwd under the hood — it prints
+   `{ resolution, usage }`, or `{ resolution: { resolved: false, reason } }` for an UNKNOWN). Any in-session Agent/AgentSwarm legs take the other arm — their tokens live in the
    parent session's agents tree, indexed under the parent's cwd, never the run worktree — so they are
-   accounted from the parent session's own `readSessionUsage` dispatches view against the parent
-   session dir, or omitted (with a STATE note) when that dir can't be resolved; per-worktree session
-   resolution never applies to them. The `summarizeItemReceipts` line surfaces each leg's resolution
+   accounted from the parent session's own `$MUSTER_CLI kimi-session-usage --session-dir <parent session dir>`
+   dispatches view (`readSessionUsage`'s per-dispatch attribution), or omitted (with a STATE note) when that dir can't be resolved; per-worktree session
+   resolution never applies to them. The `$MUSTER_CLI kimi-summarize-receipts <items.json>` line (src/kimi-receipts.js's
+   `summarizeItemReceipts`) surfaces each leg's resolution
    source (`captured`/`index-unique`/`index-newest` — a fallback attribution reads as one) and
    transcribes with UNKNOWN never blocking; non-Kimi harnesses omit the line.
 

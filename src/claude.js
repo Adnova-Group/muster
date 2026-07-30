@@ -66,17 +66,12 @@ export function claudeModelForRole(role) {
 // codexProfileForConfig / kimiProfileForConfig.
 //
 // The declared tier goes through the shared emission layer (model.js
-// emissionTier: apex opt-in check + MUSTER_MAX_TIER) before it is resolved,
-// because on Claude the apex tier's model is PLATFORM-GATED -- Fable. The
-// Codex/Kimi apex entries (sol/high, k3/max) are always dispatchable, so those
-// adapters can resolve a manifest tier raw; a Claude dispatch on a disabled
-// apex is REJECTED, which is exactly what model.js's degradation exists to
-// prevent (and why the apex tier entry above documents "dispatch normally never
-// reaches it"). Since capabilities.js now treats this profile as the
-// authoritative dispatch pin (audit S3), resolving apex raw here would have put
-// `fable` in the field the orchestrator dispatches on, and a manifest-declared
-// prime agent would have escaped a MUSTER_MAX_TIER=core budget cap. The
-// semantic effort is a separate axis and is never touched by the cap.
+// emissionTier: apex opt-in check + MUSTER_MAX_TIER) before it is resolved.
+// Every harness adapter applies that governance to manifest profiles so an
+// agent-level tier cannot escape the same cap and apex opt-in used by role
+// resolution. This is especially load-bearing on Claude, where a disabled apex
+// would emit platform-gated Fable and be rejected. The semantic effort is a
+// separate axis and is never touched by the cap.
 export function claudeProfileForConfig(config) {
   // Asserted on the CALLER's config first so a malformed entry still fails loud
   // with its own message (a governed tier would mask which field was wrong).

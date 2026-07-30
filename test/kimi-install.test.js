@@ -442,7 +442,7 @@ test("runKimiUninstall: a final-window replacement target is not deleted", async
 });
 
 test("runKimiUninstall: a post-rename failure is reconciled on retry without deleting a user-recreated source", async () => {
-  const home = tmp(), repo = fixtureRepo();
+  const home = tmp();
   try {
     const root = join(home, ".kimi-code");
     const managedAgent = join(root, "agents", "owned.md");
@@ -472,10 +472,6 @@ test("runKimiUninstall: a post-rename failure is reconciled on retry without del
       readdirSync(join(root, "agents")).filter(name => name.startsWith(".muster-uninstall-")),
       [interruptedManifest.quarantines[0].directory]
     );
-    await assert.rejects(
-      runKimiInstall({ home, repoRoot: repo }),
-      /uninstall recovery is pending/
-    );
     write(managedAgent, "user recreated source");
 
     await runKimiUninstall({ home });
@@ -486,7 +482,80 @@ test("runKimiUninstall: a post-rename failure is reconciled on retry without del
       readdirSync(join(root, "agents")).filter(name => name.startsWith(".muster-uninstall-")),
       []
     );
-  } finally { [home, repo].forEach(path => rmSync(path, { recursive: true, force: true })); }
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: a crashed final manifest quarantine is discovered before reinstall and gone after uninstall", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    let interrupted = false;
+
+    await assert.rejects(runKimiUninstall({
+      home,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation !== "delete-quarantined" || path !== manifestPath || interrupted) return;
+        interrupted = true;
+        throw new Error("injected manifest post-rename crash");
+      }
+    }), /injected manifest post-rename crash/);
+
+    assert.equal(interrupted, true);
+    assert.ok(!existsSync(manifestPath), "the ownership manifest is already quarantined");
+    assert.equal(
+      readdirSync(join(root, "muster")).filter(name => name.startsWith(".muster-uninstall-")).length,
+      1,
+      "the interrupted manifest quarantine exists"
+    );
+
+    await runKimiInstall({ home, repoRoot: repo });
+    assert.ok(existsSync(manifestPath), "reinstall publishes a new ownership manifest");
+    assert.deepEqual(
+      readdirSync(join(root, "muster")).filter(name => name.startsWith(".muster-uninstall-")),
+      [],
+      "reinstall reconciles the discoverable final-manifest quarantine first"
+    );
+
+    await runKimiUninstall({ home });
+    assert.ok(!existsSync(join(root, "muster")), "the subsequent uninstall leaves no manifest quarantine");
+  } finally { [repo, home].forEach(path => rmSync(path, { recursive: true, force: true })); }
+});
+
+test("runKimiInstall: interrupted stale pruning is receipted before rename and reconciled before manifest replacement", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    const stalePath = join(root, "agents", "muster-investigator.md");
+    rmSync(join(repo, "plugin", "agents", "muster-investigator.md"));
+    let interrupted = false;
+
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation !== "delete-quarantined" || path !== stalePath || interrupted) return;
+        interrupted = true;
+        throw new Error("injected stale-prune post-rename crash");
+      }
+    }), /injected stale-prune post-rename crash/);
+
+    assert.equal(interrupted, true);
+    write(stalePath, "user recreated stale path");
+    const retried = await runKimiInstall({ home, repoRoot: repo });
+    assert.deepEqual(retried.removedStale, ["agents/muster-investigator.md"]);
+    assert.equal(readFileSync(stalePath, "utf8"), "user recreated stale path");
+    assert.deepEqual(
+      readdirSync(join(root, "agents")).filter(name => name.startsWith(".muster-uninstall-")),
+      []
+    );
+
+    await runKimiUninstall({ home });
+    assert.equal(readFileSync(stalePath, "utf8"), "user recreated stale path");
+    assert.ok(!existsSync(join(root, "muster")));
+  } finally { [repo, home].forEach(path => rmSync(path, { recursive: true, force: true })); }
 });
 
 test("runKimiUninstall: an EEXIST restore collision stays tracked and retry fails closed", async () => {

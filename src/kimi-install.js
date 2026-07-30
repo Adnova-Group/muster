@@ -41,6 +41,7 @@ import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 // lane, which would silently demote every judgment agent.
 
 export const KIMI_MANIFEST = ".muster-managed.json";
+const KIMI_MANIFEST_QUARANTINE = ".muster-uninstall-manifest";
 
 // Live-probed 2026-07-24 (GET https://api.kimi.com/coding/v1/models, HTTP 200):
 // the managed coding plan serves EXACTLY these four, all supports_thinking_type
@@ -727,10 +728,11 @@ export async function runKimiInstall({
 
   // Prune stale files a prior install owned but this one no longer ships.
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
+  await reconcileOrphanedManifestQuarantine(dest, manifestPath);
   const previous = await readManifest(manifestPath, dest);
-  if (previous?.quarantines?.length) {
-    throw new Error("Kimi uninstall recovery is pending. Rerun `muster uninstall kimi` before reinstalling.");
-  }
+  const reconciled = previous
+    ? await reconcileManifestQuarantines(dest, manifestPath, previous, process.platform)
+    : new Set();
   const ownedSet = new Set(ownedRel);
   const staleRel = (previous ? [...previous.agents, ...previous.skills, ...(previous.verbs || [])] : [])
     .filter(rel => !ownedSet.has(rel));
@@ -741,7 +743,28 @@ export async function runKimiInstall({
   ]);
   const removedStale = [];
   for (const rel of staleRel) {
-    try { await unlinkManaged(dest, join(dest, rel), _beforeManagedMutation); removedStale.push(rel); }
+    if (reconciled.has(rel)) {
+      removedStale.push(rel);
+      continue;
+    }
+    const path = join(dest, rel);
+    try {
+      const expected = await captureManagedDeleteIdentity(dest, path);
+      const record = {
+        rel,
+        directory: `.muster-uninstall-${randomBytes(12).toString("hex")}`,
+        dev: String(expected.target.dev),
+        ino: String(expected.target.ino)
+      };
+      await _beforeManagedMutation?.({ operation: "delete", path });
+      await assertSafeManagedFiles(dest, [path]);
+      previous.quarantines = [...(previous.quarantines || []), record];
+      await persistUninstallManifest(manifestPath, previous, dest);
+      await unlinkManaged(dest, path, _beforeManagedMutation, expected, process.platform, record, true);
+      previous.quarantines = previous.quarantines.filter(candidate => candidate !== record);
+      await persistUninstallManifest(manifestPath, previous, dest);
+      removedStale.push(rel);
+    }
     catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 
@@ -910,6 +933,42 @@ async function reconcileManifestQuarantines(dest, manifestPath, manifest, platfo
   return skip;
 }
 
+// The ownership manifest is the final managed file removed. Its quarantine
+// therefore cannot be receipted inside itself: after rename, a retry would have
+// no pathname from which to discover that receipt. Give this one quarantine a
+// fixed, validated name and reconcile it before either install or uninstall
+// reads/replaces the manifest. The quarantined manifest itself supplies the
+// inode identity; an empty fixed quarantine is also safe to retire (it means
+// the file unlink completed and interruption landed before rmdir).
+async function reconcileOrphanedManifestQuarantine(dest, manifestPath, platform = process.platform) {
+  const quarantinePath = join(dirname(manifestPath), KIMI_MANIFEST_QUARANTINE);
+  let quarantineInfo;
+  try { quarantineInfo = await lstat(quarantinePath); }
+  catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  if (!quarantineInfo.isDirectory() || quarantineInfo.isSymbolicLink()) {
+    throw new Error(`Kimi uninstall quarantine state is uncertain for ${manifestPath}`);
+  }
+
+  const quarantinedManifest = join(quarantinePath, basename(manifestPath));
+  let moved;
+  try { moved = await lstat(quarantinedManifest); }
+  catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (moved) await readManifest(quarantinedManifest, dest);
+
+  await reconcileQuarantine(dest, {
+    rel: relative(dest, manifestPath).split(sep).join("/"),
+    directory: KIMI_MANIFEST_QUARANTINE,
+    dev: String(moved?.dev ?? 0),
+    ino: String(moved?.ino ?? 0)
+  }, platform);
+  return true;
+}
+
 // Reverse runKimiInstall: remove exactly the manifest-owned files (never a
 // wholesale directory removal -- a user's own agents/skills sharing those dirs
 // are untouched), strip muster's marker-delimited permission-rules block from
@@ -923,8 +982,12 @@ export async function runKimiUninstall({
 } = {}) {
   const dest = kimiHome(home);
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
+  const recoveredManifestDeletion = await reconcileOrphanedManifestQuarantine(dest, manifestPath, _platform);
   const manifest = await readManifest(manifestPath, dest);
-  if (!manifest) return { dest, removed: [], note: "no muster install found" };
+  if (!manifest) {
+    if (recoveredManifestDeletion) await rmdirIfEmpty(dirname(manifestPath));
+    return { dest, removed: [], note: "no muster install found" };
+  }
 
   const owned = [...manifest.agents, ...manifest.skills, ...(manifest.verbs || [])];
   const configPath = join(dest, "config.toml");
@@ -996,7 +1059,13 @@ export async function runKimiUninstall({
     manifestPath,
     _beforeManagedMutation,
     undefined,
-    _platform
+    _platform,
+    {
+      rel: relative(dest, manifestPath).split(sep).join("/"),
+      directory: KIMI_MANIFEST_QUARANTINE,
+      dev: "0",
+      ino: "0"
+    }
   ).catch(error => { if (error.code !== "ENOENT") throw error; });
   await rmdirIfEmpty(join(dest, "muster"));
 

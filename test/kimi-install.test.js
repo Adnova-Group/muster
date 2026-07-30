@@ -17,6 +17,10 @@ import { matchFrontmatter } from "../src/frontmatter.js";
 
 function tmp() { return mkdtempSync(join(tmpdir(), "muster-kimi-install-")); }
 function write(p, s) { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); }
+function frontmatterName(path) {
+  const text = readFileSync(path, "utf8");
+  return matchFrontmatter(text)?.body.match(/^name[ \t]*:[ \t]*(.+)$/m)?.[1]?.trim();
+}
 
 // A minimal plugin/ tree: 2 agents + 2 skills (one with a sibling asset).
 function fixtureRepo() {
@@ -88,7 +92,14 @@ test("runKimiInstall: every builtin provider resolved by capabilities --kimi is 
 
     for (const [role, { chosen }] of Object.entries(caps.roles)) {
       if (chosen.source !== "builtin") continue;
-      if (chosen.kind === "agent" && !installedAgents.has(chosen.id)) unreachable.push(`${role}:agent:${chosen.id}`);
+      if (chosen.kind === "agent") {
+        if (!installedAgents.has(chosen.id)) {
+          unreachable.push(`${role}:agent:${chosen.id}`);
+        } else {
+          const name = frontmatterName(join(home, ".kimi-code", "agents", `${chosen.id}.md`));
+          if (name !== chosen.id) unreachable.push(`${role}:agent-name:${chosen.id}:${name || "<missing>"}`);
+        }
+      }
       if (chosen.kind === "skill" && !installedSkills.has(chosen.id)) unreachable.push(`${role}:skill:${chosen.id}`);
     }
     for (const skill of caps.skills) {
@@ -97,8 +108,7 @@ test("runKimiInstall: every builtin provider resolved by capabilities --kimi is 
         unreachable.push(`skill:${skill.id}`);
         continue;
       }
-      const text = readFileSync(join(home, ".kimi-code", "skills", skill.id, "SKILL.md"), "utf8");
-      const name = matchFrontmatter(text)?.body.match(/^name[ \t]*:[ \t]*(.+)$/m)?.[1]?.trim();
+      const name = frontmatterName(join(home, ".kimi-code", "skills", skill.id, "SKILL.md"));
       if (name !== skill.id) unreachable.push(`skill-name:${skill.id}:${name || "<missing>"}`);
     }
 

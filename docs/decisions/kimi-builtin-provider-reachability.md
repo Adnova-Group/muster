@@ -33,6 +33,6 @@ are pruned, and uninstall removes only manifest-owned paths.
 The Kimi install test builds `capabilities --kimi` from the real catalog,
 installs Muster into a temporary Kimi root, reads that root back through
 `readInstalledKimi`, and asserts that every builtin agent or skill exposed by
-capabilities is present in the corresponding dispatch inventory. For skills,
-the test also verifies that the installed frontmatter name equals the exposed
-capability ID.
+capabilities is present in the corresponding dispatch inventory. For both
+agents and skills, the test also verifies that the installed frontmatter name
+equals the exposed capability ID.

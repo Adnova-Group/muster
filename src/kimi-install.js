@@ -532,9 +532,10 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
 
   // Orchestration skills and skill assets copy byte-for-byte. Catalog builtins'
   // SKILL.md names are stamped to their catalog ids because Kimi dispatches by
-  // frontmatter name, not directory. Agents are stamped with their
-  // model_preference lane (see the header note -- an un-stamped agent would
-  // silently bind to the secondary/cheap lane once configured).
+  // frontmatter name, not directory. Known agents are likewise stamped to
+  // their manifest/file ids as well as their model_preference lane (see the
+  // header note -- an un-stamped agent would silently bind to the
+  // secondary/cheap lane once configured).
   for (const { rel, src, dispatchName } of skills) {
     const destFile = join(dest, rel);
     if (!dispatchName) {
@@ -549,7 +550,9 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   const lanes = { primary: [], secondary: [] }, unstamped = [];
   for (const { rel, src, id, lane } of agents) {
     const destFile = join(dest, rel);
-    const stamped = lane ? stampModelPreference(await readFile(src, "utf8"), lane) : null;
+    const sourceText = await readFile(src, "utf8");
+    const named = lane ? stampFrontmatterField(sourceText, "name", id) : null;
+    const stamped = named === null ? null : stampModelPreference(named, lane);
     if (stamped === null) {
       await copyInto(src, destFile);
       unstamped.push({ id, reason: lane ? "no frontmatter" : "no manifest entry" });

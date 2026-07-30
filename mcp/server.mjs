@@ -339,12 +339,17 @@ export function startMusterMcpServer(config) {
   // text: write the single string payload verbatim (no JSON.stringify) to one temp file,
   // then invoke the CLI with that file's path — mirrors json2's temp-file handoff for
   // verbs whose CLI arg is a file path but whose content is plain text (e.g. a backlog).
+  // The handoff runs with the temp dir AS the cwd: sprint-waves (audit 2 slice B)
+  // canonically contains its backlog read under the run root (process.cwd()) and refuses
+  // anything outside it, and this file is server-written into a fresh mkdtemp (the caller
+  // controls its CONTENT, never its path), so scoping the run root to the temp dir keeps
+  // the handoff inside containment by construction.
   if (tool.kind === "text") {
     const dir = await mkdtemp(path.join(tmpdir(), "muster-mcp-"));
     try {
       const f = path.join(dir, "input.txt");
       await writeFile(f, args[tool.prop] ?? "");
-      return await runCli([...tool.argv, f], { signal });
+      return await runCli([...tool.argv, f], { cwd: dir, signal });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

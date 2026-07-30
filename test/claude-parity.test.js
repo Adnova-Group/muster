@@ -1214,5 +1214,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // anchor, the three surface/gate-name pairs, the mutant-kill fixture -- all
   // re-verified green; Codex build anchors all still hold, so
   // scripts/build-codex.mjs is unchanged).
-  assert.equal(hash.digest("hex"), "1263f3480f21a05471a61351cb701c9e9bc0cd714c4fc8a5deb22bec4ce8d6e4");
+  // 2026-07-30 re-pin #19 (audit 2026-07-29 slice B, security P1: sprint-waves
+  // backlog canonical containment): file COUNT unchanged (144) --
+  // plugin/commands/plan-backlog.md and plugin/commands/go-backlog.md changed
+  // content, one clause each: the sprint-waves backlog read now states that
+  // the CLI realpath()s the file and reads only the resolved canonical path
+  // contained under the run root, refusing a symlink escape with a named
+  // containment error (src/fs-safe.js's resolveContainedRealpath, the same
+  // check src/scope.js's readBacklogCandidate applies). The code fix itself
+  // (src/cli.js's sprint-waves branch, outside this hashed surface) routes
+  // the read through that same check; test/fs-safe.test.js pins the CLI-level
+  // refusal. mcp/server.mjs (in this surface) also changed: its "text"-kind
+  // temp-file handoff (muster_sprint_waves) now runs the CLI with the fresh
+  // mkdtemp dir AS the cwd, so the server-written handoff file stays inside
+  // the new run-root containment by construction (the caller controls the
+  // file's content, never its path). No Codex-specific wording, so
+  // scripts/build-codex.mjs is unchanged (build + check-codex re-verified
+  // clean). NOTE: this hash is derived over a working tree that also carries
+  // the concurrent slice-H+I worker's IN-FLIGHT (then-uncommitted)
+  // plugin/skills/orchestrator/references/codex-dispatch.md edit -- if that
+  // lands with different content, re-derive on top of their commit.
+  assert.equal(hash.digest("hex"), "ed04ed4d174516919bc6d12f7d8f7be211cc7b84bd6381f99aa8130fc8e96c02");
 });

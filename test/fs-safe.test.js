@@ -12,9 +12,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   atomicWrite,
   isAbsolutePathToken,
@@ -374,5 +377,61 @@ test("detectScope: a real .muster/backlog.md inside cwd still counts as a live d
     const r = await detectScope({ cwd: dir, text: "" });
     assert.equal(r.scope, "backlog");
     assert.ok(r.signals.some((s) => s.includes(".muster/backlog.md")));
+  });
+});
+
+// --- audit 2 slice B: the sprint-waves CLI read path (TDD) --------------------
+// Finding-5's canonical containment covered only src/scope.js's
+// readBacklogCandidate; the backlog file the orchestrator actually reads and
+// passes to sprint-waves (src/cli.js's sprint-waves branch) was still read raw
+// via readFile(file), so a planted symlink backlog (.muster/backlog.md ->
+// ~/.ssh/id_rsa) was followed and its target's contents entered the run. The
+// branch now applies the same resolveContainedRealpath check against the run
+// root (process.cwd()) before reading: a canonical escape fails with a named
+// error, never a read.
+
+const pexecFile = promisify(execFile);
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.js");
+
+test("sprint-waves CLI: a symlink backlog escaping the run root is refused with a named error, never read", async () => {
+  await withTempDir(async (dir) => {
+    const outside = join(tmpdir(), `muster-fs-safe-sprint-${process.pid}.md`);
+    await writeFile(outside, "- [ ] TOPSECRET-target-contents\n");
+    try {
+      await mkdir(join(dir, ".muster"));
+      await symlink(outside, join(dir, ".muster", "backlog.md"));
+      await assert.rejects(
+        pexecFile(process.execPath, [CLI, "sprint-waves", ".muster/backlog.md"], { cwd: dir }),
+        (error) => {
+          assert.match(String(error.stderr), /contained under the run root/, error.stderr);
+          assert.ok(
+            !String(error.stdout).includes("TOPSECRET"),
+            "the symlink target's contents must never enter the run",
+          );
+          return true;
+        },
+      );
+    } finally {
+      await rm(outside, { force: true });
+    }
+  });
+});
+
+test("sprint-waves CLI: a real backlog inside the run root still computes waves", async () => {
+  await withTempDir(async (dir) => {
+    await writeFile(join(dir, "backlog.md"), "- [ ] Do first\n- [ ] Do second\n");
+    const { stdout } = await pexecFile(process.execPath, [CLI, "sprint-waves", "backlog.md"], { cwd: dir });
+    const r = JSON.parse(stdout);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.waves, [["item-1"], ["item-2"]]);
+  });
+});
+
+test("sprint-waves CLI: a symlink backlog whose target stays inside the run root is allowed", async () => {
+  await withTempDir(async (dir) => {
+    await writeFile(join(dir, "real.md"), "- [ ] Only item\n");
+    await symlink(join(dir, "real.md"), join(dir, "alias.md"));
+    const { stdout } = await pexecFile(process.execPath, [CLI, "sprint-waves", "alias.md"], { cwd: dir });
+    assert.equal(JSON.parse(stdout).ok, true);
   });
 });

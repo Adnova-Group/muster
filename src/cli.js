@@ -66,6 +66,7 @@ import { resolvePlanSurface } from "./plan-surface.js";
 import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
+import { resolveContainedRealpath } from "./fs-safe.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // One array element per command group, each carrying its own "|" separators and
@@ -387,7 +388,23 @@ async function main() {
       });
     } else if (cmd === "sprint-waves") {
       const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
-      const content = await readFile(file, "utf8");
+      // Canonical containment before the read (audit S4 finding 5, extended to
+      // this path by audit 2 slice B): finding 5 hardened only src/scope.js's
+      // readBacklogCandidate, but THIS branch is the read the orchestrator
+      // actually runs -- and it used to readFile(file) raw, so a planted
+      // symlink backlog (.muster/backlog.md -> ~/.ssh/id_rsa) resolved inside
+      // cwd lexically while its target's contents entered the run. The token
+      // is realpath()ed and the canonical path must stay under the run root
+      // (process.cwd()); a canonical escape, a missing file, or a dangling
+      // link all fail with the named error below, never a read. Same
+      // resolveContainedRealpath discipline the scope.js sibling applies --
+      // silent degradation there (a probe answering "is this readable?"),
+      // loud failure here (the run itself was told to read THIS file).
+      const canonical = await resolveContainedRealpath(process.cwd(), file);
+      if (canonical === null) {
+        fail(`sprint-waves <backlog.md>: ${file} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
+      }
+      const content = await readFile(canonical, "utf8");
       const r = computeSprintWaves(content);
       out(r);
       if (!r.ok) process.exit(2);

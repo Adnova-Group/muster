@@ -17,28 +17,35 @@
       "text": "Add retry to the fetch client with backoff",
       "disposition": "pr",
       "escalated": false,
-      "claimed": null
+      "claimed": null,
+      "deps": []
     },
     "logging": {
       "line": 2,
       "text": "Add structured logging to the fetch client",
       "disposition": "pr",
       "escalated": false,
-      "claimed": null
+      "claimed": null,
+      "deps": []
     },
     "docs": {
       "line": 3,
       "text": "Document the new retry and logging behavior",
       "disposition": "pr",
       "escalated": false,
-      "claimed": null
+      "claimed": null,
+      "deps": [
+        "retry",
+        "logging"
+      ]
     },
     "metrics": {
       "line": 4,
       "text": "Add a dashboard metric for retry counts",
       "disposition": "keep",
       "escalated": false,
-      "claimed": null
+      "claimed": null,
+      "deps": []
     }
   },
   "annotated": true,

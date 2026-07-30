@@ -36,7 +36,7 @@ test("Codex build ignores a project Work receipt and emits the full Codex artifa
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const project = join(tmp, "project");
   const outDir = join(project, ".agents", "plugins");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await execFile("git", ["init", project]);
   const work = await runChatgptWorkInstall({
     connectionId: "asdk_app_Test123", profile: "pro-safe",
     scope: "project", cwd: project, home: join(tmp, "home"),

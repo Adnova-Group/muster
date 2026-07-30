@@ -11,8 +11,9 @@ import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 // The write side of the Kimi harness leg (docs/research/kimi-code-cli.md). Kimi
 // loads Claude-Code-format agent .md files and SKILL.md skills natively (the
 // research's "closest structural clone" finding), so `muster install kimi`
-// simply places muster's 27 agents and 12 builtin skills into the gen2 data
-// root (`$KIMI_CODE_HOME`, or ~/.kimi-code) where a Kimi session discovers them.
+// places muster's agents, orchestration skills, and catalog-backed builtin
+// skills into the gen2 data root (`$KIMI_CODE_HOME`, or ~/.kimi-code) where a
+// Kimi session discovers them.
 //
 // Why this is a lean file copy, NOT the codex-install.js fortress: Kimi is
 // hooks-free by muster's design (see memory codex-plugin-hooks-free -- Codex's
@@ -424,11 +425,11 @@ export async function probeKimiModels({
 }
 
 // Enumerate the source agents/skills without writing -- shared by install and
-// its --dry-run. Agent files are agents/*.md; a skill is any skills/<name>/ that
-// carries a SKILL.md, copied whole (SKILL.md plus any sibling assets, e.g.
-// review-gate/verdict.schema.json).
+// its --dry-run. Agent files are agents/*.md; a skill is any
+// skills/<name>/ or builtins/<name>/ that carries a SKILL.md, copied whole
+// (SKILL.md plus any sibling assets, e.g. review-gate/verdict.schema.json).
 async function collectSource(pluginRoot) {
-  const agentsSrc = join(pluginRoot, "agents"), skillsSrc = join(pluginRoot, "skills");
+  const agentsSrc = join(pluginRoot, "agents");
   const agentFiles = (await readdirSafe(agentsSrc)).filter(f => f.endsWith(".md")).sort();
   // Each agent carries the Kimi lane its manifest tier resolves to; a file with
   // no manifest entry gets lane null and is copied through unstamped (surfaced
@@ -438,11 +439,22 @@ async function collectSource(pluginRoot) {
     return { rel: `agents/${f}`, src: join(agentsSrc, f), id, lane: kimiPreferenceForAgentId(id) };
   });
   const skills = [];
-  for (const name of (await readdirSafe(skillsSrc)).sort()) {
-    const skillDir = join(skillsSrc, name);
-    if (!(await exists(join(skillDir, "SKILL.md")))) continue;
-    for (const rel of (await walkFiles(skillDir)).sort()) {
-      skills.push({ rel: `skills/${name}/${rel}`, src: join(skillDir, rel), skill: name });
+  const seenSkillNames = new Set();
+  // Kimi natively loads the same Agent-Skills directory format used by both
+  // trees. Catalog builtins are dispatch payloads, so omitting builtins/ while
+  // capabilities --kimi advertised them made the resolver's output
+  // unreachable. Materialize them instead of silently weakening the catalog.
+  for (const skillsSrc of [join(pluginRoot, "skills"), join(pluginRoot, "builtins")]) {
+    for (const name of (await readdirSafe(skillsSrc)).sort()) {
+      const skillDir = join(skillsSrc, name);
+      if (!(await exists(join(skillDir, "SKILL.md")))) continue;
+      if (seenSkillNames.has(name)) {
+        throw new Error(`Duplicate Kimi skill source: ${name}`);
+      }
+      seenSkillNames.add(name);
+      for (const rel of (await walkFiles(skillDir)).sort()) {
+        skills.push({ rel: `skills/${name}/${rel}`, src: join(skillDir, rel), skill: name });
+      }
     }
   }
 

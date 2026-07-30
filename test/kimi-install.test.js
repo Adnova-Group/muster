@@ -7,9 +7,12 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { runKimiInstall, runKimiUninstall, probeKimiModels, stampModelPreference, stampSkillName, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS, KIMI_PERMISSION_RULES, KIMI_RULES_MARKER_BEGIN, KIMI_RULES_MARKER_END, renderPermissionRulesBlock, mergePermissionRules, stripPermissionRules } from "../src/kimi-install.js";
 import { readInstalledKimi } from "../src/harness.js";
 import { KIMI_LANES, kimiLaneEnv, kimiModelPreferenceForTier, kimiPreferenceForAgentId } from "../src/kimi.js";
+import { loadCatalog } from "../src/catalog.js";
+import { resolveCapabilities } from "../src/capabilities.js";
 
 function tmp() { return mkdtempSync(join(tmpdir(), "muster-kimi-install-")); }
 function write(p, s) { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); }
@@ -67,6 +70,32 @@ test("runKimiInstall: the installed root reads back through readInstalledKimi", 
     assert.deepEqual(inv.agents.sort(), ["muster-builder", "muster-investigator"]);
     assert.deepEqual(inv.skills.sort(), ["orchestrator", "review-gate"]);
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: every builtin provider resolved by capabilities --kimi is dispatchable", async () => {
+  const repo = fileURLToPath(new URL("../", import.meta.url)), home = tmp();
+  try {
+    const catalog = await loadCatalog(join(repo, "catalog"));
+    const empty = { runtime: "kimi", agents: [], skills: [], plugins: [], mcpServers: [] };
+    const caps = resolveCapabilities(catalog, empty, home, { kimi: true });
+
+    await runKimiInstall({ home, repoRoot: repo });
+    const installed = await readInstalledKimi(home, { dir: join(home, ".kimi-code") });
+    const installedAgents = new Set(installed.agents);
+    const installedSkills = new Set(installed.skills);
+    const unreachable = [];
+
+    for (const [role, { chosen }] of Object.entries(caps.roles)) {
+      if (chosen.source !== "builtin") continue;
+      if (chosen.kind === "agent" && !installedAgents.has(chosen.id)) unreachable.push(`${role}:agent:${chosen.id}`);
+      if (chosen.kind === "skill" && !installedSkills.has(chosen.id)) unreachable.push(`${role}:skill:${chosen.id}`);
+    }
+    for (const skill of caps.skills) {
+      if (skill.source === "builtin" && !installedSkills.has(skill.id)) unreachable.push(`skill:${skill.id}`);
+    }
+
+    assert.deepEqual(unreachable, []);
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 test("runKimiInstall: reinstall is idempotent and prunes stale owned files", async () => {

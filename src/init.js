@@ -1,3 +1,25 @@
+// src/init.js -- deterministic, provider/model-neutral project initialization.
+//
+// Lifecycle, mapped to the exported entry points:
+//   prepare:   initializeProject learns the profile (learnProjectProfile) and
+//              writes the owned pair under .muster/ with a `not-requested`
+//              native state; rerunning an initialized root reroutes to
+//              observeNativeInit. readInitReceipt re-reads and fully
+//              revalidates the owned pair.
+//   handoff / attempted: transitionNativeInit moves `not-requested` to
+//              `handoff` (the runtime must run its own native init) or
+//              `attempted` (a proven callable adapter took the attempt),
+//              pinning an immutable expected-artifact baseline and attempt id.
+//   completed: transitionNativeInit with positive evidence (artifact-delta,
+//              preexisting confirmation, or attempt-bound call-result);
+//              `completed` is absorbing. acknowledgeNativeInitHandoff is the
+//              escape hatch for an unavailable-runtime handoff.
+//   finalize:  finalizeInitialization seeds greenfield files and flips the
+//              receipt to `finalized` once native init is completed or an
+//              unavailable handoff is acknowledged.
+// observeNativeInit reports deterministic artifact-delta observations without
+// mutating state. canonicalInitJson is the digest-stable serializer every
+// profile/receipt hash depends on.
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
@@ -78,6 +100,15 @@ function prettyInitJson(value) {
   return JSON.stringify(canonicalValue(value), null, 2) + "\n";
 }
 
+// Strict JSON parsing beyond JSON.parse. Every document this parses (owned
+// profile/receipt, evidence files) is sha256-hashed through canonicalInitJson,
+// so three strictness rules keep digests stable and unambiguous:
+// 1. duplicate object keys are rejected -- JSON.parse silently keeps the last
+//    value, so two different byte streams would canonicalize to one digest;
+// 2. numbers must be safe integers -- canonicalInitJson rejects non-integers,
+//    so anything looser would parse here but fail hashing downstream;
+// 3. byte input must survive a UTF-8 decode/re-encode round trip -- digests
+//    are computed over UTF-8 text, so undecodable bytes must not validate.
 function parseStrictJson(bytes, label) {
   const text = Buffer.isBuffer(bytes) ? bytes.toString("utf8") : bytes;
   if (Buffer.isBuffer(bytes) && !Buffer.from(text, "utf8").equals(bytes)) {
@@ -638,7 +669,7 @@ function validateReceipt(receipt) {
       fail("nativeInit.evidence.artifacts", "must be sorted by UTF-8 path order");
     }
     for (const row of evidence.artifacts) {
-      safeRelative(row.path);
+      try { safeRelative(row.path); } catch { fail("nativeInit.evidence.artifacts", "row path must be a safe relative path"); }
       if (evidence.kind === "artifact-delta") {
         if (!exactKeys(row, ["after", "before", "path"])) {
           fail("nativeInit.evidence.artifacts", "artifact-delta rows must have exactly the keys after, before, path");
@@ -676,26 +707,44 @@ function validateReceipt(receipt) {
     if (evidence.kind === "preexisting-artifact-confirmed") return baseline.sha256 !== null;
     return true;
   });
-  const stateIsValid =
-    (native.state === "not-requested" &&
-      native.reason === null && native.expectedArtifacts.length === 0 &&
-      native.baseline.length === 0 && native.attemptId === null &&
-      native.handoffAcknowledged === false && evidence === null) ||
-    (native.state === "handoff" &&
-      native.reason !== null && native.attemptId === computedAttemptId &&
-      evidence === null &&
-      (!native.handoffAcknowledged || native.reason === "unavailable")) ||
-    (native.state === "attempted" &&
-      native.reason === null && native.attemptId === computedAttemptId &&
-      native.handoffAcknowledged === false && evidence === null) ||
-    (native.state === "completed" &&
-      native.attemptId === computedAttemptId &&
-      native.handoffAcknowledged === false && evidence !== null);
+  // Per-state invariants of the native-init state machine, one named
+  // predicate per state so a rejected receipt can name the arm it broke.
+  // not-requested: native init was never asked for -- no reason, no expected
+  // artifacts or baseline, no attempt id, no acknowledgement, no evidence.
+  const validNotRequested = () =>
+    native.reason === null && native.expectedArtifacts.length === 0 &&
+    native.baseline.length === 0 && native.attemptId === null &&
+    native.handoffAcknowledged === false && evidence === null;
+  // handoff: the runtime owns native init -- a reason is required and the
+  // attempt id binds the handoff to the profile; an acknowledgement is only
+  // meaningful when the runtime is unavailable.
+  const validHandoff = () =>
+    native.reason !== null && native.attemptId === computedAttemptId &&
+    evidence === null &&
+    (!native.handoffAcknowledged || native.reason === "unavailable");
+  // attempted: a callable adapter took the attempt -- no handoff reason or
+  // acknowledgement, and completion evidence is not attached yet.
+  const validAttempted = () =>
+    native.reason === null && native.attemptId === computedAttemptId &&
+    native.handoffAcknowledged === false && evidence === null;
+  // completed: the attempt id still binds and positive evidence is attached;
+  // handoffAcknowledged stays false (it only gates handoff finalization).
+  const validCompleted = () =>
+    native.attemptId === computedAttemptId &&
+    native.handoffAcknowledged === false && evidence !== null;
+  const statePredicates = {
+    "not-requested": validNotRequested,
+    handoff: validHandoff,
+    attempted: validAttempted,
+    completed: validCompleted,
+  };
+  // native.state is already validated as one of the four states above.
+  const stateIsValid = statePredicates[native.state]();
   const phaseIsValid = receipt.phase === "prepared" ||
     native.state === "completed" ||
     (native.state === "handoff" && native.reason === "unavailable" && native.handoffAcknowledged);
   if (!stateIsValid) {
-    fail("nativeInit", "state is inconsistent with reason, expectedArtifacts, baseline, attemptId, handoffAcknowledged, and evidence");
+    fail("nativeInit", `state is inconsistent for "${native.state}" with reason, expectedArtifacts, baseline, attemptId, handoffAcknowledged, and evidence`);
   }
   if (!phaseIsValid) {
     fail("phase", "finalized requires a completed native init or an acknowledged unavailable handoff");
@@ -843,6 +892,12 @@ async function completionEvidence(root, receipt, kind, evidenceFile) {
   const { value } = await readEvidence(root, evidenceFile);
   const current = await artifactSnapshot(root, expected);
   if (kind === "preexisting-confirmed") {
+    // Deliberate spelling alias: the transition API (and the CLI `--evidence`
+    // surface, pinned by docs and workflow tests) accepts the short kind
+    // "preexisting-confirmed", while the persisted receipt schema names the
+    // same evidence "preexisting-artifact-confirmed" (see validateReceipt and
+    // the return below). Do not unify the spellings without a receipt schema
+    // migration.
     if (!exactKeys(value, ["format", "schemaVersion", "confirmation", "artifacts"]) ||
         value.format !== "muster.native-init-confirmation" || value.schemaVersion !== 1 ||
         value.confirmation !== "already-initialized") throw new Error("invalid pre-existing confirmation");

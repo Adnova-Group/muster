@@ -70,6 +70,24 @@ const receiptCases = [
   ["inconsistent completed state", (r) => {
     r.nativeInit.state = "completed";
   }, /invalid init receipt: nativeInit \(state is inconsistent/],
+  ["inconsistent not-requested state names the arm", (r) => {
+    r.nativeInit.reason = "unavailable";
+  }, /invalid init receipt: nativeInit \(state is inconsistent for "not-requested"/],
+  ["inconsistent handoff state names the arm", (r) => {
+    r.nativeInit.state = "handoff";
+  }, /invalid init receipt: nativeInit \(state is inconsistent for "handoff"/],
+  ["inconsistent attempted state names the arm", (r) => {
+    r.nativeInit.state = "attempted";
+  }, /invalid init receipt: nativeInit \(state is inconsistent for "attempted"/],
+  ["inconsistent completed state names the arm", (r) => {
+    r.nativeInit.state = "completed";
+  }, /invalid init receipt: nativeInit \(state is inconsistent for "completed"/],
+  ["evidence artifact path failure names the field", (r) => {
+    r.nativeInit.evidence = {
+      artifacts: [{ path: "../escape", sha256: "0".repeat(64) }],
+      kind: "call-result",
+    };
+  }, /invalid init receipt: nativeInit\.evidence\.artifacts \(row path must be a safe relative path\)/],
 ];
 
 for (const [name, mutate, pattern] of receiptCases) {

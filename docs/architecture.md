@@ -182,7 +182,7 @@ Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-re
 
 **`TaskCompleted`** (`task-completed-gate.js`) gates the native task board's own completion tick, not a tool call: `plugin/skills/orchestrator/SKILL.md`'s "Task board" section writes `.muster/task-board.json` (one entry per muster-created native task, `{manifestTaskId, reviewGate}`) at `TaskCreate` time and flips `reviewGate` to `"pass"` only once review-gate returns PASS for that task, before ever calling `TaskUpdate` to mark it completed. This hook denies (exit 2) a completion attempt on any tracked entry whose `reviewGate` isn't `"pass"` -- an escalated task included -- and fails open (allow) for anything the map doesn't track at all, including every harness-native task muster itself didn't create. `MUSTER_TASK_GATE=off` disables it.
 
-## Enforcement model: gates vs conventions
+## Claude Code adapter: enforcement model
 
 Muster's `PreToolUse` hook enforces exactly one deterministic GATE on tool calls and leaves everything else about tool-call permission -- including what used to be three more mechanical gates -- to named conventions or a warn-only invitation. A second, narrower GATE lives on a different event (`TaskCompleted`, below) and gates a task-board tick, not a tool call. Principle: enforce where mechanically sound; a gameable gate that fails open, or one trained to be disabled by its own false positives, is worse than an honest, named convention.
 

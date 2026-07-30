@@ -863,6 +863,16 @@ function coversInstructionPair(paths) {
   return paths.includes("AGENTS.md") && paths.includes("CLAUDE.md");
 }
 
+function importsClaudeInstruction(markdown, sourcePath, targetPath) {
+  const importPattern = /(?:^|[\s([{"'`<])@([^\s<>"'`]+)/gu;
+  for (const match of markdown.matchAll(importPattern)) {
+    const specifier = match[1].replace(/[),.;:!?\]}>]+$/u, "");
+    if (!specifier || specifier.startsWith("~")) continue;
+    if (resolve(dirname(sourcePath), specifier) === targetPath) return true;
+  }
+  return false;
+}
+
 async function validateCanonicalInstructionPair(root, expected) {
   if (!expected.includes("AGENTS.md") || !expected.includes("CLAUDE.md")) return;
   const [agents, claude] = await Promise.all([
@@ -870,7 +880,11 @@ async function validateCanonicalInstructionPair(root, expected) {
     readRegular(root, "CLAUDE.md", INIT_LIMITS.learnFileBytes),
   ]);
   const agentsImportsClaude = agents &&
-    /^[ \t]*@(?:\.\/)?CLAUDE\.md\s*$/m.test(agents.bytes.toString("utf8"));
+    importsClaudeInstruction(
+      agents.bytes.toString("utf8"),
+      join(root, "AGENTS.md"),
+      join(root, "CLAUDE.md"),
+    );
   if (!agents || agents.bytes.length === 0 || agentsImportsClaude ||
       !claude || !claude.bytes.equals(CLAUDE_AUTHORITY_POINTER)) {
     throw new Error("native completion requires the canonical instruction authority pair");

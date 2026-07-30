@@ -32,6 +32,8 @@ test("documentation index declares the public precedence order", async () => {
 test("shared architecture is harness-neutral and adapters are explicitly scoped", async () => {
   const architecture = await read("docs/architecture.md");
   const lines = architecture.split("\n");
+  const claudeOnlyMaterial =
+    /\b(?:PreToolUse|TaskCompleted|SessionStart|UserPromptSubmit|TaskCreate|TaskUpdate)\b|(?:plugin\/hooks|task-completed-gate|action-guard|inline-budget|guidance)\.(?:js|json)/;
   let h2 = "";
   let h3 = "";
   for (const [index, line] of lines.entries()) {
@@ -46,6 +48,13 @@ test("shared architecture is harness-neutral and adapters are explicitly scoped"
         `${h2} ${h3}`,
         /(?:Harness-specific bindings|adapter)/i,
         `line ${index + 1} contains harness-specific prose outside an adapter scope`,
+      );
+    }
+    if (claudeOnlyMaterial.test(line)) {
+      assert.match(
+        h2,
+        /^## Claude Code adapter:/,
+        `line ${index + 1} contains Claude hook material outside a Claude adapter scope`,
       );
     }
   }

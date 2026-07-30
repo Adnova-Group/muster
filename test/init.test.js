@@ -97,6 +97,14 @@ test("paired instruction artifact-delta requires the canonical authority pair", 
     { name: "conflicting CLAUDE", agents: "# Policy\n", claude: "# Independent\n", ok: false },
     { name: "policy then reverse import", agents: "# Policy\n\n  @CLAUDE.md\n", claude: CLAUDE_POINTER, ok: false },
     { name: "reverse import then policy", agents: "@./CLAUDE.md\n\n# Policy\n", claude: CLAUDE_POINTER, ok: false },
+    { name: "inline reverse import", agents: "Use @CLAUDE.md for the rest.\n", claude: CLAUDE_POINTER, ok: false },
+    { name: "normalized relative reverse import", agents: "Use @docs/../CLAUDE.md for the rest.\n", claude: CLAUDE_POINTER, ok: false },
+    {
+      name: "normalized absolute reverse import",
+      agents: (dir) => `Use @${join(dir, "docs", "..", "CLAUDE.md")} for the rest.\n`,
+      claude: CLAUDE_POINTER,
+      ok: false,
+    },
     { name: "canonical pair", agents: "# Policy\n", claude: CLAUDE_POINTER, ok: true },
   ];
 
@@ -106,7 +114,10 @@ test("paired instruction artifact-delta requires the canonical authority pair", 
     await transitionNativeInit(dir, {
       to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
     });
-    if (fixture.agents !== null) await writeFile(join(dir, "AGENTS.md"), fixture.agents);
+    if (fixture.agents !== null) {
+      const agents = typeof fixture.agents === "function" ? fixture.agents(dir) : fixture.agents;
+      await writeFile(join(dir, "AGENTS.md"), agents);
+    }
     if (fixture.claude !== null) await writeFile(join(dir, "CLAUDE.md"), fixture.claude);
     const completion = transitionNativeInit(dir, { to: "completed", evidenceKind: "artifact-delta" });
     if (fixture.ok) {

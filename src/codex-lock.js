@@ -90,16 +90,19 @@ async function removeRetirement(retirement) {
 async function restoreRetiredLock(path, retirement, expected) {
   await assertPrivateRetirementDirectory(retirement.dir);
   let current;
-  try { current = await readLock(retirement.path); }
+  try { current = await lstat(retirement.path); }
   catch (error) { if (error.code === "ENOENT") return false; throw error; }
-  if (!sameLock(current, expected)) return false;
+  // Restoration is non-destructive: bind it to the stable quarantined inode,
+  // not mutable record bytes. A legitimate replacement owner can still be
+  // finishing its initial write while a stale reclaimer moves that inode.
+  if (!sameInode(current, expected.stat)) return false;
   try { await link(retirement.path, path); }
   catch (error) {
     if (error.code === "EEXIST") return false;
     throw error;
   }
-  const restored = await readLock(path);
-  if (!sameLock(restored, expected)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
+  const restored = await lstat(path);
+  if (!sameInode(restored, expected.stat)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
   await removeRetirement(retirement);
   return true;
 }
@@ -131,7 +134,8 @@ async function lockIsStale(current, { staleMs, maxStaleMs }) {
 async function retireLock(path, expected, {
   restorePath = path,
   stale,
-  afterValidation
+  afterValidation,
+  beforeRestore
 } = {}) {
   const retirement = await privateRetirement(path);
   try { await rename(path, retirement.path); }
@@ -144,6 +148,7 @@ async function retireLock(path, expected, {
   await assertPrivateRetirementDirectory(retirement.dir);
   const retired = await readLock(retirement.path);
   if (!sameLock(retired, expected) || (stale && !await stale(retired))) {
+    if (beforeRestore) await beforeRestore({ path: restorePath, retirementPath: retirement.path });
     await restoreOrRequireReplacement(restorePath, retirement, retired);
     return { removed: false, missing: false };
   }
@@ -156,6 +161,7 @@ async function retireLock(path, expected, {
   await assertPrivateRetirementDirectory(retirement.dir);
   const final = await readLock(retirement.path);
   if (!sameLock(final, retired) || (stale && !await stale(final))) {
+    if (beforeRestore) await beforeRestore({ path: restorePath, retirementPath: retirement.path });
     await restoreOrRequireReplacement(restorePath, retirement, final);
     return { removed: false, missing: false };
   }
@@ -163,7 +169,7 @@ async function retireLock(path, expected, {
   return { removed: true, missing: false };
 }
 
-async function reclaimIfStale(path, options, onReclaimRaceWindow, afterValidation) {
+async function reclaimIfStale(path, options, onReclaimRaceWindow, afterValidation, beforeRestore) {
   let current;
   try { current = await readLock(path); }
   catch (error) { if (error.code === "ENOENT") return true; throw error; }
@@ -172,7 +178,8 @@ async function reclaimIfStale(path, options, onReclaimRaceWindow, afterValidatio
   const result = await retireLock(path, current, {
     stale: state => lockIsStale(state, options),
     restorePath: path,
-    afterValidation
+    afterValidation,
+    beforeRestore
   });
   return result.removed || result.missing;
 }
@@ -187,7 +194,8 @@ export async function withCodexFileLock(path, callback, {
   // callers never pass them.
   __reclaimRaceHook,
   __afterReclaimValidationHook,
-  __afterReleaseValidationHook
+  __afterReleaseValidationHook,
+  __beforeRestoreHook
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
@@ -210,7 +218,7 @@ export async function withCodexFileLock(path, callback, {
     } catch (error) {
       if (handle) await handle.close().catch(() => {});
       if (error.code !== "EEXIST") throw error;
-      if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook, __afterReclaimValidationHook)) continue;
+      if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook, __afterReclaimValidationHook, __beforeRestoreHook)) continue;
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
       await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
     }

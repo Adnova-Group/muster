@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, open, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { withCodexFileLock } from "../src/codex-lock.js";
@@ -161,6 +161,51 @@ test("withCodexFileLock never unlinks a replacement owner's lock reclaimed with 
   await driveReplacementOwnerRace(t, "reused-inode", async (lock, content) => {
     await writeFile(lock, content);           // B's fresh identity lands on the SAME inode; only identity re-check catches it.
   });
+});
+
+test("withCodexFileLock restores a quarantined replacement whose paused writer completes its record", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-paused-writer-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "paused.lock");
+  await writeFile(lock, JSON.stringify({ format: 1, pid: 2_147_483_647, createdAt: 0, token: "dead" }) + "\n");
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(lock, old, old);
+
+  const replacement = { format: 1, pid: process.pid, processIdentity: null, createdAt: Date.now(), token: "paused-owner" };
+  let writer;
+  let replacementInode;
+  let replacementRunning = false;
+  let reclaimerRan = false;
+  let thirdRan = false;
+  try {
+    await assert.rejects(withCodexFileLock(lock, async () => { reclaimerRan = true; }, {
+      staleMs: 1_000,
+      maxStaleMs: 5_000,
+      timeoutMs: 50,
+      __reclaimRaceHook: async () => {
+        await rm(lock, { force: true });
+        writer = await open(lock, "wx", 0o600);
+        await writer.write('{"format":1', 0, "utf8");
+        replacementRunning = true;
+      },
+      __beforeRestoreHook: async ({ retirementPath }) => {
+        replacementInode = (await lstat(retirementPath)).ino;
+        await writer.truncate(0);
+        await writer.write(JSON.stringify(replacement) + "\n", 0, "utf8");
+        await writer.sync();
+      }
+    }), /timed out waiting for Codex transaction lock/);
+
+    assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), replacement, "the completed replacement must be restored at the public lock path");
+    assert.equal((await lstat(lock)).ino, replacementInode, "restoration must preserve the quarantined writer's stable inode");
+    await assert.rejects(withCodexFileLock(lock, async () => { thirdRan = true; }, { timeoutMs: 25 }), /timed out waiting/);
+  } finally {
+    await writer?.close();
+  }
+
+  assert.equal(replacementRunning, true, "the replacement publisher must be active during restoration");
+  assert.equal(reclaimerRan, false, "the reclaimer must not overlap the paused replacement publisher");
+  assert.equal(thirdRan, false, "a third holder must not enter through a stranded public-path gap");
 });
 
 test("withCodexFileLock stale reclaim cannot unlink a replacement injected after final owner validation", async t => {

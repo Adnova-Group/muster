@@ -92,7 +92,24 @@ const registryFallbackRe = /when the running session's registry doesn't carry th
 // (harness-neutral, no PreToolUse/hook content) untouched.
 const runnerCwdRe = /Runner cwd is its worktree; tool calls rely on the `PreToolUse` hook[\s\S]*?regardless\./;
 const captureWritesRe = /capture only ever writes[\s\S]*?deliberately omitted\./i;
+// adapt-command-file-arrays item (PR #163 reviewer nit): the four arrays above
+// are hand-maintained -- a NEW command file adopting the same boilerplate would
+// silently miss their fail-loud anchor protection (the replaceAll would still
+// translate it, but a later rewording of ITS copy could no-op unguarded).
+// Inverse coverage check: a command file CARRYING a marker must be LISTED for
+// it, or the build stops and names the array to update.
+const COMMAND_MARKER_COVERAGE = [
+  ["the `PreToolUse` hook uses to scope the scale-gate", SCALE_GATE_MARKER_FILES, "SCALE_GATE_MARKER_FILES"],
+  ["the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping", BATCH_SCALE_GATE_FILES, "BATCH_SCALE_GATE_FILES"],
+  ["the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping", PLAN_BACKLOG_SCALE_GATE_FILES, "PLAN_BACKLOG_SCALE_GATE_FILES"],
+  ["`SessionStart` on a fresh session clears a stale marker automatically.", SESSION_START_CLEAR_FILES, "SESSION_START_CLEAR_FILES"],
+];
 function adaptCommandForCodex(text, name) {
+  for (const [marker, files, arrayName] of COMMAND_MARKER_COVERAGE) {
+    if (text.includes(marker) && !files.includes(name)) {
+      throw new Error(`${name}: carries the ${arrayName} boilerplate but is not listed in ${arrayName} -- add it so its anchor stays fail-loud`);
+    }
+  }
   if (SCALE_GATE_MARKER_FILES.includes(name) && !text.includes("the `PreToolUse` hook uses to scope the scale-gate")) throw new Error(`${name}: run-active scale-gate anchor not found for Codex rewrite`);
   if (BATCH_SCALE_GATE_FILES.includes(name) && !text.includes("the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping")) throw new Error(`${name}: batch scale-gate anchor not found for Codex rewrite`);
   if (PLAN_BACKLOG_SCALE_GATE_FILES.includes(name) && !text.includes("the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping")) throw new Error(`${name}: plan-backlog scale-gate anchor not found for Codex rewrite`);

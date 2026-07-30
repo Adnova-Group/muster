@@ -117,6 +117,11 @@ test("cli wire: kimi-process-dispatch fails loud on missing/invalid args", async
   await fails(["kimi-process-dispatch", "--brief", "b", "--agent-file", agentFile, "--cwd", join(cwd, "nope"), "--lane", "primary"], /cwd must be an existing directory/);
 });
 
+test("cli wire: kimi-process-run exposes no arbitrary command or receipt-path controls", async () => {
+  await fails(["kimi-process-run", "--command", "sh"], /unknown or valueless option "--command"/);
+  await fails(["kimi-process-run", "--receipt-path", "/tmp/public.json"], /unknown or valueless option "--receipt-path"/);
+});
+
 // ---------------------------------------------------------------------------
 // kimi-session-usage
 // ---------------------------------------------------------------------------
@@ -380,10 +385,10 @@ test("cli wire: codex-wait-packet fails loud on a version/targets mismatch or a 
 // usage string
 // ---------------------------------------------------------------------------
 
-test("cli wire: the usage string names all six dispatch packet/receipt verbs", async () => {
+test("cli wire: the usage string names all dispatch packet/receipt/supervisor verbs", async () => {
   const { stdout } = await run(["help"]);
   for (const verb of [
-    "kimi-goal-invocation", "kimi-process-dispatch", "kimi-session-usage",
+    "kimi-goal-invocation", "kimi-process-dispatch", "kimi-process-run", "kimi-session-usage",
     "kimi-summarize-receipts", "codex-spawn-packet", "codex-wait-packet",
   ]) {
     assert.ok(stdout.includes(verb), `usage must name ${verb}`);

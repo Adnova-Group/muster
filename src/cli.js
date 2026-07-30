@@ -70,6 +70,7 @@ import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import { atomicWrite, readNoFollowRegular, resolveContainedRealpath } from "./fs-safe.js";
+import { readDispatchReceipts, runKimiProcess } from "./dispatch-receipts.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // One array element per command group, each carrying its own "|" separators and
@@ -85,7 +86,7 @@ const USAGE = [
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md>|sprint-reconcile <progress.json>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
-  "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
+  "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
   "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|",
   // planning + routing artifacts
@@ -421,6 +422,25 @@ async function main() {
       const lane = flagValue(rest, "--lane");
       if (!lane) fail(`${usage}: missing --lane`);
       out(kimiProcessDispatch({ brief, agentFile, cwd, lane }));
+    } else if (cmd === "kimi-process-run") {
+      const usage = "kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>";
+      const allowed = new Set(["--brief", "--agent-file", "--cwd", "--lane"]);
+      for (let index = 0; index < rest.length; index += 2) {
+        if (!allowed.has(rest[index]) || index + 1 >= rest.length || rest[index + 1].startsWith("--")) {
+          fail(`${usage}: unknown or valueless option ${JSON.stringify(rest[index] ?? "")}`);
+        }
+      }
+      const brief = flagValue(rest, "--brief");
+      if (!brief) fail(`${usage}: missing --brief`);
+      const agentFile = flagValue(rest, "--agent-file");
+      if (!agentFile) fail(`${usage}: missing --agent-file`);
+      const cwd = flagValue(rest, "--cwd");
+      if (!cwd) fail(`${usage}: missing --cwd`);
+      const lane = flagValue(rest, "--lane");
+      if (!lane) fail(`${usage}: missing --lane`);
+      const terminal = await runKimiProcess({ brief, agentFile, cwd, lane });
+      if (terminal.signal) process.kill(process.pid, terminal.signal);
+      else process.exitCode = Number.isInteger(terminal.code) ? terminal.code : 1;
     } else if (cmd === "kimi-session-usage") {
       // Two arms, mirroring the prose's two accounting arms: --session-dir reads
       // a KNOWN session dir (the in-session arm's parent session); --cwd RESOLVES
@@ -985,6 +1005,8 @@ async function main() {
         zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
         worktreeOptions: { threshold: worktreeThreshold },
         claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
+        dispatchReceiptStore: ({ processes, reap: shouldClean }) =>
+          readDispatchReceipts({ processes, reap: shouldClean }),
       });
       if (reap && result.claims.content != null && result.claims.releases.length > 0) {
         await atomicWrite(absoluteBacklogPath, result.claims.content, {

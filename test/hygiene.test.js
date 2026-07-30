@@ -25,7 +25,7 @@ import {
 // Guard 1 -- zombie provider CLI process: detect + reap
 // ---------------------------------------------------------------------------
 
-test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned provider CLI process fixture with a dispatch receipt", () => {
+test("findZombieProcesses + reapZombieProcesses: filesystem receipt remains diagnostic and cannot authorize reap", () => {
   const processes = [
     // The zombie fixture: a codex CLI process reparented to init after its
     // supervisor died -- exactly the burn incident's "2 zombie codex CLI
@@ -56,17 +56,17 @@ test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned p
   // start predates the run marker past the default threshold) -- the
   // reapable gate below is what actually matters, not which reason(s) fired.
   assert.deepEqual(zombies[0].reasons, ["orphaned-parent", "stale-start"]);
-  assert.equal(zombies[0].provenance, "dispatch-receipt");
-  assert.equal(zombies[0].reapable, true);
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].reapable, false);
 
   const killed = [];
   const { reaped, skipped } = reapZombieProcesses(zombies, {
     getProcessIdentity: () => "linux-proc-stat:1000",
     kill: (pid) => killed.push(pid),
   });
-  assert.deepEqual(reaped, [100]);
-  assert.deepEqual(skipped, []);
-  assert.deepEqual(killed, [100]);
+  assert.deepEqual(reaped, []);
+  assert.equal(skipped.length, 1);
+  assert.deepEqual(killed, []);
 });
 
 // Audit S10 (security): orphanage alone is NOT sufficient to SIGTERM a host
@@ -97,7 +97,7 @@ test("findZombieProcesses + reapZombieProcesses (adversarial): an orphaned provi
   assert.deepEqual(reaped, []);
   assert.equal(skipped.length, 1);
   assert.equal(skipped[0].pid, 150);
-  assert.match(skipped[0].reason, /no muster provenance/);
+  assert.match(skipped[0].reason, /no live broker authority/);
 });
 
 test("findZombieProcesses + reapZombieProcesses (adversarial): a manually-created `.worktrees/` cwd without a dispatch receipt is report-only", () => {
@@ -126,10 +126,10 @@ test("findZombieProcesses + reapZombieProcesses (adversarial): a manually-create
   });
   assert.deepEqual(reaped, []);
   assert.equal(skipped[0].pid, 151);
-  assert.match(skipped[0].reason, /no muster provenance/);
+  assert.match(skipped[0].reason, /no live broker authority/);
 });
 
-test("findZombieProcesses + reapZombieProcesses: a recorded dispatch receipt corroborates reap eligibility without a cwd", () => {
+test("findZombieProcesses + reapZombieProcesses: a recorded dispatch receipt is report-only without the live broker", () => {
   const processes = [
     {
       pid: 4242,
@@ -144,16 +144,16 @@ test("findZombieProcesses + reapZombieProcesses: a recorded dispatch receipt cor
     dispatchReceipts: [{ pid: 4242, startIdentity: "linux-proc-stat:777" }],
   });
   assert.equal(zombies.length, 1);
-  assert.equal(zombies[0].provenance, "dispatch-receipt");
-  assert.equal(zombies[0].reapable, true);
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].reapable, false);
 
   const killed = [];
   const { reaped } = reapZombieProcesses(zombies, {
     getProcessIdentity: () => "linux-proc-stat:777",
     kill: (pid) => killed.push(pid),
   });
-  assert.deepEqual(reaped, [4242]);
-  assert.deepEqual(killed, [4242]);
+  assert.deepEqual(reaped, []);
+  assert.deepEqual(killed, []);
 });
 
 test("findZombieProcesses + reapZombieProcesses: a process without stable start identity cannot match its receipt and remains report-only", () => {
@@ -175,7 +175,7 @@ test("findZombieProcesses + reapZombieProcesses: a process without stable start 
   assert.match(skipped[0].reason, /stable process-start identity unavailable/);
 });
 
-test("reapZombieProcesses (adversarial): PID reuse between classification and reap is detected before signaling", () => {
+test("reapZombieProcesses (adversarial): matching receipt identity still cannot reach signaling", () => {
   const { zombies } = findZombieProcesses([
     {
       pid: 4343,
@@ -188,7 +188,7 @@ test("reapZombieProcesses (adversarial): PID reuse between classification and re
     newestRunMarkerAt: "2026-07-16T00:00:00Z",
     dispatchReceipts: [{ pid: 4343, startIdentity: "linux-proc-stat:100" }],
   });
-  assert.equal(zombies[0].reapable, true, "classification sees both receipt and stable identity");
+  assert.equal(zombies[0].reapable, false, "filesystem state is never signaling authority");
 
   const { reaped, skipped } = reapZombieProcesses(zombies, {
     getProcessIdentity: () => "linux-proc-stat:200",
@@ -196,7 +196,7 @@ test("reapZombieProcesses (adversarial): PID reuse between classification and re
   });
   assert.deepEqual(reaped, []);
   assert.equal(skipped[0].pid, 4343);
-  assert.match(skipped[0].reason, /process identity changed/);
+  assert.match(skipped[0].reason, /no live broker authority/);
 });
 
 test("findZombieProcesses (adversarial): a stale OLD receipt cannot authorize a NEW process already using the same pid", () => {
@@ -254,7 +254,7 @@ test("deriveMusterWorktreeRoots: only `.worktrees/` entries are muster-owned roo
   assert.deepEqual(roots.sort(), ["/repo/.worktrees/item-1", "/repo/.worktrees/item-2"]);
 });
 
-test("runHygiene: cwd remains diagnostic but only a dispatch receipt authorizes reap", async () => {
+test("runHygiene: cwd and dispatch receipts are diagnostic; only the live broker may signal", async () => {
   const killed = [];
   const result = await runHygiene({
     processes: [
@@ -275,15 +275,15 @@ test("runHygiene: cwd remains diagnostic but only a dispatch receipt authorizes 
     getProcessIdentity: () => "linux-proc-stat:100",
     kill: (pid) => killed.push(pid),
   });
-  assert.deepEqual(killed, [100], "only the muster-provenanced orphan is reaped");
-  assert.deepEqual(result.reapedProcesses.reaped, [100]);
-  assert.equal(result.reapedProcesses.skipped.length, 1);
-  assert.equal(result.reapedProcesses.skipped[0].pid, 200);
-  assert.match(result.reapedProcesses.skipped[0].reason, /no muster provenance/);
+  assert.deepEqual(killed, []);
+  assert.deepEqual(result.reapedProcesses.reaped, []);
+  assert.equal(result.reapedProcesses.skipped.length, 2);
+  assert.equal(result.reapedProcesses.skipped[0].pid, 100);
+  assert.match(result.reapedProcesses.skipped[0].reason, /no live broker authority/);
 });
 
-// Ownership surfacing: the CLI currently wires no dispatch receipt store, so
-// --reap can never fire and the report must say that explicitly.
+// Ownership surfacing: a composition with no receipt-store provider remains
+// report-only and must say that explicitly.
 test("runHygiene + renderHygieneReport: ownership receipts unavailable is surfaced, not silent", async () => {
   const result = await runHygiene({
     processes: [
@@ -302,8 +302,8 @@ test("runHygiene + renderHygieneReport: ownership receipts unavailable is surfac
   assert.equal(result.provenance.dispatchReceipts, 0);
   assert.deepEqual(result.reapedProcesses.reaped, []);
   const report = renderHygieneReport(result);
-  assert.match(report, /identity-bound ownership receipts unavailable: reap disabled for 2 candidates/);
-  assert.match(report, /report-only \(no identity-bound dispatch receipt\)/);
+  assert.match(report, /live dispatch-broker authority unavailable: reap disabled for 2 candidates/);
+  assert.match(report, /report-only \(no live dispatch-broker authority\)/);
 });
 
 test("runHygiene: cwd alone remains blind; injected dispatch receipts provide ownership evidence", async () => {
@@ -317,7 +317,7 @@ test("runHygiene: cwd alone remains blind; injected dispatch receipts provide ow
     processes: [{ pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: "/somewhere" }],
   });
   assert.equal(withCwd.provenance.blind, true, "a readable cwd is diagnostic, not ownership evidence");
-  assert.match(renderHygieneReport(withCwd), /identity-bound ownership receipts unavailable/);
+  assert.match(renderHygieneReport(withCwd), /live dispatch-broker authority unavailable/);
 
   const withReceipts = await runHygiene({
     ...base,
@@ -326,7 +326,7 @@ test("runHygiene: cwd alone remains blind; injected dispatch receipts provide ow
       dispatchReceipts: [{ pid: 999, startIdentity: "linux-proc-stat:999" }],
     },
   });
-  assert.equal(withReceipts.provenance.blind, false, "injected receipts mean provenance was evaluated");
+  assert.equal(withReceipts.provenance.blind, true, "receipts are diagnostic and do not provide live broker authority");
 
   const empty = await runHygiene({ ...base, processes: [] });
   assert.equal(empty.provenance.blind, false, "no process list captured at all is a degraded provider, not a blind one");

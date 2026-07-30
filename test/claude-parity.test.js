@@ -1300,5 +1300,28 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 2026-07-30 re-pin #26 (wave escalation semantics): go-backlog now omits escalated/failed
   // build-review legs from disposition/integration without reordering survivors, and fails
   // dependent items closed before worktree creation or dispatch. The runner profile is unchanged.
-  assert.equal(hash.digest("hex"), "4a19bcc995d8f5bf519047ac102a6e203b5a7396fc56ce61e75bd2a63b468a97");
+  // 2026-07-30 re-pin #27 (production dispatch receipts): only the executable
+  // Kimi process-lane prose changed. references/kimi-dispatch.md now requires
+  // the PID-owning `kimi-process-run` supervisor and leaves
+  // `kimi-process-dispatch` descriptor-only; go-backlog.md names that same
+  // supervised lane for its token-accounting arm. File count is unchanged.
+  // 2026-07-30 re-pin #28 (receipt authority remediation): the same two Kimi
+  // process-lane prose files now pin the live Linux broker/group boundary,
+  // diagnostic-only filesystem receipts, fail-closed unsupported platforms,
+  // canonical executable/path binding, and the unavoidable secret-free argv
+  // brief rule. File count remains unchanged.
+  // 2026-07-30 re-pin #29 (receipt broker review remediation): the Kimi
+  // process-lane paragraph now names inherited /proc/self/fd bindings,
+  // immutable agent snapshots, bounded signal cleanup, launcher lifetime, and
+  // globally bounded diagnostic-receipt enumeration. File count is unchanged.
+  // 2026-07-30 re-pin #30 (kernel containment fix loop): that paragraph now
+  // pins immutable executable/interpreter snapshots, delegated cgroup-v2 plus
+  // bubblewrap containment, setsid-proof cgroup.kill, and bounded receipt
+  // compaction. File count remains unchanged.
+  // 2026-07-30 re-pin #31 (trusted-broker decision): the same two Kimi
+  // process-lane prose files now make process dispatch report-only on every
+  // platform, escalate attended lane-sensitive legs, and retain the
+  // descriptor-only plus unattended in-session contracts. File count remains
+  // unchanged.
+  assert.equal(hash.digest("hex"), "80f50c33a34a1f0d4b581b9ff73c683b302d84f0dbf4a2e076e106c9b05ec35a");
 });

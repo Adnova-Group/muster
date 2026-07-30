@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
@@ -374,10 +374,11 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   if (typeof cwd !== "string" || !cwd) {
     throw new Error("kimiProcessDispatch: cwd is required (the directory the process runs in)");
   }
-  const resolvedCwd = resolve(cwd);
+  let resolvedCwd = resolve(cwd);
   if (!existsSync(resolvedCwd) || !statSync(resolvedCwd).isDirectory()) {
     throw new Error(`kimiProcessDispatch: cwd must be an existing directory; got ${JSON.stringify(cwd)}`);
   }
+  resolvedCwd = realpathSync(resolvedCwd);
   if (typeof agentFile !== "string" || !agentFile) {
     throw new Error("kimiProcessDispatch: agentFile is required (a name under the installed agents dir, or an explicit path)");
   }
@@ -396,6 +397,9 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   if (!existsSync(resolvedAgentFile) || !statSync(resolvedAgentFile).isFile()) {
     throw new Error(`kimiProcessDispatch: agentFile ${JSON.stringify(agentFile)} resolved to ${resolvedAgentFile}, which does not exist (bare names resolve under the installed agents dir ${kimiAgentsDir()}; explicit paths resolve against cwd)`);
   }
+  resolvedAgentFile = realpathSync(resolvedAgentFile);
+  const cwdInfo = statSync(resolvedCwd);
+  const agentFileInfo = statSync(resolvedAgentFile);
   return {
     argv: ["-p", brief, "--agent-file", resolvedAgentFile, "--output-format", "stream-json", "-m", KIMI_LANES[lane]],
     // An OVERRIDE pair: merge over the ambient env at spawn
@@ -403,6 +407,10 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
     // wholesale replacement loses HOME/PATH and the child breaks.
     env: kimiLaneEnv(),
     cwd: resolvedCwd,
+    pathBindings: {
+      cwd: { dev: cwdInfo.dev, ino: cwdInfo.ino },
+      agentFile: { path: resolvedAgentFile, dev: agentFileInfo.dev, ino: agentFileInfo.ino },
+    },
     lane
   };
 }

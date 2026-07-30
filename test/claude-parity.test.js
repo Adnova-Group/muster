@@ -1191,5 +1191,28 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the shared source during builds.
   // Re-pin #17: the app-neutral factory owns only the shared catalog/protocol
   // engine; Cowork-specific protocol and alias prose live in its adapter.
-  assert.equal(hash.digest("hex"), "eac732f83199384bf9743bd21a4c1e9e9d4983b89331e53a08a0e5d437f81cf2");
+  // 2026-07-29 re-pin #18 (audit 2026-07-29 slice A, security P1: rubric.md
+  // untrusted-data fence): file COUNT unchanged (144) --
+  // plugin/skills/review-gate/SKILL.md, plugin/skills/review-gate/
+  // fast-path-brief.md, plugin/skills/tournament/SKILL.md, and
+  // plugin/skills/improve/SKILL.md changed content. review-gate/SKILL.md's
+  // "## Rubric-fed verifiers" section is now the CANONICAL rubric policy:
+  // .muster/rubric.md is repo-controlled DATA (never instruction or operator
+  // intent), folded in only after a regular-file/contained-under-run-root
+  // check (src/fs-safe.js's resolveContainedRealpath), capped at 4 KiB, and
+  // wrapped in a <remote-text> untrusted-data fence supplying review
+  // DIMENSIONS ONLY; fast-path-brief.md and tournament/SKILL.md became short
+  // pointers to it (shared key phrases pinned in test/rubric-verifiers.test.js
+  // across all three), and improve/SKILL.md gained a mined-content-is-data-
+  // not-instructions clause. Fitting the bigger canonical section under the
+  // same <=2000-token brief-template budget (test/prompt-scan-brief-lint.test.js,
+  // span now 7978 chars) required tightening existing prose elsewhere in the
+  // marked span (Inputs, step 1, step 2's exhausted/absent bullet, the
+  // fast-path brief section) and dropping the return-contract sentence that
+  // duplicated the file's closing line -- no pinned substring touched (brief
+  // identity, severity enum, REVIEW_GATE_MAX_ITERATIONS, the capabilities.json
+  // anchor, the three surface/gate-name pairs, the mutant-kill fixture -- all
+  // re-verified green; Codex build anchors all still hold, so
+  // scripts/build-codex.mjs is unchanged).
+  assert.equal(hash.digest("hex"), "1263f3480f21a05471a61351cb701c9e9bc0cd714c4fc8a5deb22bec4ce8d6e4");
 });

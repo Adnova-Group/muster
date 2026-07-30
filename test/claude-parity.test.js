@@ -1288,5 +1288,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the PID-owning `kimi-process-run` supervisor and leaves
   // `kimi-process-dispatch` descriptor-only; go-backlog.md names that same
   // supervised lane for its token-accounting arm. File count is unchanged.
-  assert.equal(hash.digest("hex"), "395d57b9fc3da1af8d9bb206821660609e04fc590c8c0c7f682814bc954dbb4e");
+  // 2026-07-30 re-pin #24 (receipt authority remediation): the same two Kimi
+  // process-lane prose files now pin the live Linux broker/group boundary,
+  // diagnostic-only filesystem receipts, fail-closed unsupported platforms,
+  // canonical executable/path binding, and the unavoidable secret-free argv
+  // brief rule. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "9d74e047c15e6fde89e4a97115842369c68582dfdce49f8a324c7764a99e80e6");
 });

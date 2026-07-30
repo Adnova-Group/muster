@@ -53,10 +53,15 @@ bind, and the TUI ignores `model_preference` entirely, so an in-session `Agent` 
 can never engage a lane. Lane-sensitive legs in an attended session therefore dispatch via
 the Muster-owned supervisor: `$MUSTER_CLI kimi-process-run
 --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>`
-(`src/dispatch-receipts.js`) -- one headless `kimi -p` process per leg. The supervisor reuses
-`kimiProcessDispatch` validation internally, spawns only `kimi`, retains the child PID plus stable
-kernel start identity in a private Muster dispatch receipt, forwards stdio/signals/exit, and removes
-only its token-bound receipt on normal completion. `$MUSTER_CLI kimi-process-dispatch ...` remains
+(`src/dispatch-receipts.js`) -- one headless `kimi -p` process per leg. On Linux the supervisor
+resolves and pins the canonical absolute Kimi executable, revalidates the canonical cwd/agent-file
+identities at final spawn, and launches a trusted per-leg broker plus detached trusted launcher.
+The launcher establishes the process group before untrusted Kimi work starts; the broker alone
+retains its live kernel identity, revalidates it before signaling, and performs bounded group
+TERM then KILL plus direct-child wait on failure or supervisor disconnect. Filesystem receipts are
+diagnostic only and never authorize hygiene signaling, including valid same-UID fabrications.
+Platforms without this containment fail closed/report-only (Windows Job Objects are not available
+to this Node implementation). `$MUSTER_CLI kimi-process-dispatch ...` remains
 descriptor-only compatibility/debug output and MUST NOT be manually spawned for a production leg,
 because a caller outside the supervisor cannot retain authoritative process provenance. The validated
 `argv` is `["-p", brief, "--agent-file", <absolute agent file>,
@@ -66,7 +71,9 @@ because a caller outside the supervisor cannot retain authoritative process prov
 the supervisor merges it over the ambient process env. `-m` is ALWAYS
 emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
 SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
-`-m` and omitting it silently falls to config `default_model`. The leg's receipt is the
+`-m` and omitting it silently falls to config `default_model`. Briefs MUST be secret-free:
+Kimi requires the prompt in argv via `-p`, and Muster does not invent a misleading insecure
+transport. The leg's execution receipt is the
 stream-json result on stdout plus the process exit code, with per-leg token accounting from
 `$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>` (src/kimi-receipts.js's
 `readSessionUsage`, reached through `captureSessionId`/`resolveSessionForCwd`) over the fresh session dir the process writes

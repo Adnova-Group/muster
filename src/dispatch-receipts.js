@@ -3,20 +3,21 @@ import { spawn } from "node:child_process";
 import {
   closeSync,
   constants as fsConstants,
+  existsSync,
   fstatSync,
   openSync,
+  realpathSync,
   readFileSync,
+  statSync,
 } from "node:fs";
 import {
   lstat,
   mkdir,
-  readFile,
   readdir,
-  stat,
-  unlink,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { atomicWrite, readNoFollowRegular } from "./fs-safe.js";
 import { kimiProcessDispatch } from "./kimi-dispatch.js";
 
@@ -132,21 +133,18 @@ async function writeDispatchReceipt(pid, startIdentity, { receiptRoot, now = () 
 }
 
 async function removeExactReceipt(handle) {
-  if (!handle) return false;
-  try {
-    const current = await readReceiptFile(handle.path, handle.token);
-    if (current.pid !== handle.receipt.pid || current.startIdentity !== handle.receipt.startIdentity) return false;
-    await unlink(handle.path);
-    return true;
-  } catch (error) {
-    if (error?.code === "ENOENT") return false;
-    return false; // unsafe replacements are retained for report-only inspection
-  }
+  // Node does not expose unlinkat(2) against an already-open O_NOFOLLOW file
+  // descriptor. A pathname revalidation followed by unlink would retain a
+  // same-UID swap window, so diagnostic receipts are deliberately retained
+  // for bounded enumeration instead of risking deletion of a replacement.
+  void handle;
+  return false;
 }
 
 export async function readDispatchReceipts({
   receiptRoot = dispatchReceiptDirectory(),
   processes = [],
+  processSnapshotComplete = false,
   reap = false,
 } = {}) {
   try {
@@ -155,11 +153,14 @@ export async function readDispatchReceipts({
     if (error?.code === "ENOENT") return { receipts: [], rejected: [], cleaned: [], truncated: false };
     throw error;
   }
-  const entries = (await readdir(receiptRoot)).sort().slice(0, MAX_DISPATCH_RECEIPTS);
+  const allEntries = (await readdir(receiptRoot)).sort();
+  const invalidNames = allEntries.filter((name) => !RECEIPT_NAME.test(name));
+  const validNames = allEntries.filter((name) => RECEIPT_NAME.test(name));
+  const entries = validNames.slice(0, MAX_DISPATCH_RECEIPTS);
   const processRows = Array.isArray(processes) ? processes : [];
   const byPid = new Map(processRows.map((row) => [Number(row?.pid), row]));
   const receipts = [];
-  const rejected = [];
+  const rejected = invalidNames.map((name) => ({ name, reason: "unexpected-name" }));
   const cleaned = [];
   for (const name of entries) {
     const match = RECEIPT_NAME.exec(name);
@@ -178,11 +179,11 @@ export async function readDispatchReceipts({
       continue;
     }
     const observed = byPid.get(receipt.pid);
-    // An empty snapshot can mean `ps` was unavailable, not that the host has
-    // no processes. Absence proves death only in a non-empty snapshot.
-    const staleReason = processRows.length > 0 && !observed
+    // Absence proves death only when the provider explicitly declares a
+    // complete snapshot. A non-empty partial snapshot is still partial.
+    const staleReason = processSnapshotComplete === true && !observed
       ? "process-dead"
-      : (typeof observed.startIdentity === "string" && observed.startIdentity &&
+      : (observed && typeof observed.startIdentity === "string" && observed.startIdentity &&
           observed.startIdentity !== receipt.startIdentity)
         ? "process-identity-mismatch"
         : null;
@@ -198,7 +199,10 @@ export async function readDispatchReceipts({
     receipts,
     rejected,
     cleaned,
-    truncated: (await readdir(receiptRoot)).length > MAX_DISPATCH_RECEIPTS,
+    truncated: validNames.length > MAX_DISPATCH_RECEIPTS,
+    incompleteProvenance: processSnapshotComplete !== true ||
+      validNames.length > MAX_DISPATCH_RECEIPTS ||
+      rejected.length > 0,
   };
 }
 
@@ -215,79 +219,317 @@ function terminalPromise(child) {
   });
 }
 
+function sameIdentity(path, expected, kind, label = kind) {
+  try {
+    const current = statSync(path);
+    const canonical = realpathSync(path);
+    if (canonical !== path || current.dev !== expected.dev || current.ino !== expected.ino ||
+        (kind === "directory" ? !current.isDirectory() : !current.isFile())) {
+      throw new Error(`${label} identity changed before final spawn: ${path}`);
+    }
+  } catch (error) {
+    if (/identity changed/.test(error.message)) throw error;
+    throw new Error(`${label} identity changed before final spawn: ${path}`);
+  }
+}
+
+function validateDescriptorBindings(descriptor) {
+  sameIdentity(descriptor.cwd, descriptor.pathBindings.cwd, "directory", "cwd");
+  sameIdentity(
+    descriptor.pathBindings.agentFile.path,
+    descriptor.pathBindings.agentFile,
+    "agent file",
+  );
+}
+
+export function resolveKimiExecutable({
+  env = process.env,
+  executable = "kimi",
+} = {}) {
+  if (isAbsolute(executable)) {
+    const canonical = realpathSync(executable);
+    const info = statSync(canonical);
+    if (!info.isFile() || (info.mode & 0o111) === 0) throw new Error(`Kimi executable is not executable: ${canonical}`);
+    return { path: canonical, dev: info.dev, ino: info.ino };
+  }
+  for (const directory of String(env.PATH || "").split(delimiter)) {
+    if (!directory) continue;
+    const candidate = resolve(directory, executable);
+    if (!existsSync(candidate)) continue;
+    try {
+      const canonical = realpathSync(candidate);
+      const info = statSync(canonical);
+      if (info.isFile() && (info.mode & 0o111) !== 0) {
+        return { path: canonical, dev: info.dev, ino: info.ino };
+      }
+    } catch {
+      // Continue to the next PATH entry; final spawn never uses the basename.
+    }
+  }
+  throw new Error("unable to resolve an executable Kimi binary from PATH");
+}
+
+function validateExecutable(binding) {
+  sameIdentity(binding.path, binding, "Kimi executable");
+}
+
+function createMessageQueue(child) {
+  const queued = [];
+  const waiters = [];
+  let terminalError = null;
+  child.on("message", (message) => {
+    if (!message?.type) return;
+    const index = waiters.findIndex((waiter) => waiter.accepted.includes(message.type));
+    if (index >= 0) {
+      const [waiter] = waiters.splice(index, 1);
+      waiter.resolve(message);
+    } else {
+      queued.push(message);
+    }
+  });
+  const fail = (error) => {
+    terminalError = error;
+    for (const waiter of waiters.splice(0)) waiter.reject(error);
+  };
+  child.once("error", fail);
+  child.once("exit", (code, signal) =>
+    fail(new Error(`dispatch process exited before its expected message (code=${code}, signal=${signal})`)));
+  return {
+    next(accepted) {
+      const index = queued.findIndex((message) => accepted.includes(message.type));
+      if (index >= 0) return Promise.resolve(queued.splice(index, 1)[0]);
+      if (terminalError) return Promise.reject(terminalError);
+      return new Promise((resolveMessage, reject) => {
+        waiters.push({ accepted, resolve: resolveMessage, reject });
+      });
+    },
+  };
+}
+
+const MODULE_PATH = fileURLToPath(import.meta.url);
+
+function sendIpc(message) {
+  return new Promise((resolveSend, reject) => {
+    if (typeof process.send !== "function" || !process.connected) return resolveSend(false);
+    process.send(message, (error) => error ? reject(error) : resolveSend(true));
+  });
+}
+
 export async function runKimiProcess(request, {
   receiptRoot = dispatchReceiptDirectory(),
   spawnProcess = spawn,
-  readIdentity = readKernelStartIdentity,
   signalSource = process,
   onReceiptEstablished = async () => {},
+  beforeFinalSpawn = async () => {},
+  executable,
+  env = process.env,
+  killTimeoutMs = 1_000,
   now,
   token,
 } = {}) {
-  const descriptor = kimiProcessDispatch(request);
-  let child;
-  try {
-    child = spawnProcess("kimi", descriptor.argv, {
-      cwd: descriptor.cwd,
-      env: { ...process.env, ...descriptor.env },
-      stdio: "inherit",
-    });
-  } catch (error) {
-    throw error;
+  if (process.platform !== "linux") {
+    throw new Error("safe Kimi process containment is unavailable on this platform; dispatch is report-only");
   }
+  const descriptor = kimiProcessDispatch(request);
+  const executableBinding = resolveKimiExecutable({ env, executable });
+  await beforeFinalSpawn();
+  validateDescriptorBindings(descriptor);
+  validateExecutable(executableBinding);
+  const child = spawnProcess(process.execPath, [MODULE_PATH, "--broker"], {
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+    env,
+  });
+  const brokerMessages = createMessageQueue(child);
   const terminal = terminalPromise(child);
-  // The child can fail while the durable receipt write is still in flight.
-  // Mark the rejection observed immediately; awaiting `terminal` below still
-  // propagates the same error after receipt establishment/cleanup finishes.
   terminal.catch(() => {});
   const forwarders = new Map(SIGNALS.map((signal) => [
     signal,
     () => {
-      try { child.kill(signal); } catch { /* child already exited */ }
+      try { child.send({ type: "SIGNAL", signal }); } catch { /* broker already exited */ }
     },
   ]));
   for (const [signal, listener] of forwarders) signalSource.on(signal, listener);
 
   let handle = null;
-  let terminatedForSetupFailure = false;
-  let established = false;
   try {
-    if (!Number.isSafeInteger(child?.pid) || child.pid < 1) {
-      try { child?.kill("SIGTERM"); } catch { /* no usable child */ }
-      terminatedForSetupFailure = true;
-      throw new Error("kimi child did not expose a valid PID");
-    }
-    const startIdentity = readIdentity(child.pid);
-    if (typeof startIdentity !== "string" || !startIdentity) {
-      try { child.kill("SIGTERM"); } catch { /* child already exited */ }
-      terminatedForSetupFailure = true;
-      throw new Error("stable kernel process-start identity is unavailable; refusing an unreceipted kimi process");
-    }
-    // Node has no spawn-suspended primitive. Stop the freshly identified child
-    // before yielding or publishing it as established, then release it only
-    // after the receipt file and parent-directory rename are fsynced.
-    if (child.kill("SIGSTOP") === false) {
-      throw new Error("kimi child exited before its dispatch receipt could be established");
-    }
-    handle = await writeDispatchReceipt(child.pid, startIdentity, {
+    child.send({
+      type: "CONFIGURE",
+      descriptor,
+      executableBinding,
+      env: { ...env, ...descriptor.env },
+      killTimeoutMs,
+    });
+    const established = await brokerMessages.next(["ESTABLISHED", "FAILURE"]);
+    if (established.type === "FAILURE") throw new Error(established.error);
+    handle = await writeDispatchReceipt(established.pid, established.startIdentity, {
       receiptRoot,
       ...(now ? { now } : {}),
       ...(token ? { token } : {}),
     });
     await onReceiptEstablished({ ...handle.receipt });
-    if (child.kill("SIGCONT") === false) {
-      throw new Error("kimi child could not be released after dispatch receipt establishment");
-    }
-    established = true;
-    return await terminal;
+    const outcome = await brokerMessages.next(["RESULT", "FAILURE"]);
+    await terminal;
+    if (outcome.type === "FAILURE") throw new Error(outcome.error);
+    return { code: outcome.code, signal: outcome.signal };
   } catch (error) {
-    if (handle) await removeExactReceipt(handle);
-    if (!established && !terminatedForSetupFailure) {
-      try { child.kill("SIGKILL"); } catch { /* child already exited */ }
+    if (child.connected) {
+      try { child.send({ type: "SHUTDOWN" }); } catch { /* broker already exited */ }
     }
+    try { await terminal; } catch { /* original setup/runtime error wins */ }
     throw error;
   } finally {
     for (const [signal, listener] of forwarders) signalSource.off(signal, listener);
     if (handle) await removeExactReceipt(handle);
   }
 }
+
+function readLinuxProcessGroup(pid) {
+  try {
+    const raw = readFileSyncBounded(`/proc/${Number(pid)}/stat`);
+    const close = raw.lastIndexOf(")");
+    const fields = raw.slice(close + 1).trim().split(/\s+/);
+    return Number(fields[2]); // field 5 (pgrp), relative to field 3 (state)
+  } catch {
+    return null;
+  }
+}
+
+export function signalContainedGroup({ pid, startIdentity, signal }, {
+  readIdentity = readKernelStartIdentity,
+  readGroup = readLinuxProcessGroup,
+  kill = process.kill,
+} = {}) {
+  const current = readIdentity(pid);
+  const group = readGroup(pid);
+  if (current !== startIdentity || group !== pid) {
+    throw new Error("contained process-group identity/state changed before signal; refusing PID-addressed signaling");
+  }
+  return kill(-pid, signal);
+}
+
+async function terminateContainedGroup(child, identity, timeoutMs, childTerminal = null) {
+  if (!child || !identity) return;
+  try {
+    signalContainedGroup({ pid: child.pid, startIdentity: identity, signal: "SIGTERM" });
+  } catch (error) {
+    if (error?.code !== "ESRCH") throw error;
+  }
+  const exited = (childTerminal || terminalPromise(child)).then(() => true, () => true);
+  const timedOut = await Promise.race([
+    exited.then(() => false),
+    new Promise((resolveTimeout) => setTimeout(() => resolveTimeout(true), timeoutMs)),
+  ]);
+  if (timedOut) {
+    try {
+      signalContainedGroup({ pid: child.pid, startIdentity: identity, signal: "SIGKILL" });
+    } catch (error) {
+      if (error?.code !== "ESRCH" && !/identity\/state changed/.test(error.message)) throw error;
+    }
+    await exited;
+  }
+}
+
+async function brokerMain() {
+  let launcher = null;
+  let launcherTerminal = null;
+  let launcherIdentity = null;
+  let killTimeoutMs = 1_000;
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try { await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal); }
+    finally { process.exit(); }
+  };
+  process.on("disconnect", shutdown);
+  process.on("message", async (message) => {
+    try {
+      if (message?.type === "SHUTDOWN") return void shutdown();
+      if (message?.type === "SIGNAL") {
+        if (!launcher) throw new Error("contained process group is unavailable");
+        signalContainedGroup({
+          pid: launcher.pid,
+          startIdentity: launcherIdentity,
+          signal: message.signal,
+        });
+        return;
+      }
+      if (message?.type !== "CONFIGURE" || launcher) return;
+      killTimeoutMs = message.killTimeoutMs;
+      launcher = spawn(process.execPath, [MODULE_PATH, "--launcher"], {
+        detached: true,
+        stdio: ["ignore", "inherit", "inherit", "ipc"],
+        env: process.env,
+      });
+      launcherTerminal = terminalPromise(launcher);
+      launcherTerminal.catch(() => {});
+      const launcherMessages = createMessageQueue(launcher);
+      const ready = await launcherMessages.next(["READY", "FAILURE"]);
+      if (ready.type === "FAILURE") throw new Error(ready.error);
+      launcherIdentity = readKernelStartIdentity(launcher.pid);
+      if (!launcherIdentity || readLinuxProcessGroup(launcher.pid) !== launcher.pid) {
+        throw new Error("trusted launcher did not establish a stable process group");
+      }
+      launcher.send({ ...message, type: "START" });
+      const established = await launcherMessages.next(["ESTABLISHED", "FAILURE"]);
+      if (established.type === "FAILURE") throw new Error(established.error);
+      await sendIpc(established);
+      const result = await launcherMessages.next(["RESULT", "FAILURE"]);
+      await sendIpc(result);
+      await launcherTerminal;
+      process.exit();
+    } catch (error) {
+      try {
+        await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal);
+      } catch { /* fail closed */ }
+      await sendIpc({ type: "FAILURE", error: error.message }).catch(() => {});
+      process.exitCode = 1;
+    }
+  });
+}
+
+async function launcherMain() {
+  let child = null;
+  let disconnecting = false;
+  process.on("SIGTERM", () => {}); // broker owns the bounded TERM→KILL interval
+  const disconnectCleanup = () => {
+    if (disconnecting) return;
+    disconnecting = true;
+    try { process.kill(-process.pid, "SIGTERM"); } catch { /* group already gone */ }
+    setTimeout(() => {
+      try { process.kill(-process.pid, "SIGKILL"); } catch { /* group already gone */ }
+    }, 1_000).unref();
+  };
+  process.on("disconnect", disconnectCleanup);
+  await sendIpc({ type: "READY" });
+  process.on("message", async (message) => {
+    if (message?.type !== "START" || child) return;
+    try {
+      validateDescriptorBindings(message.descriptor);
+      validateExecutable(message.executableBinding);
+      child = spawn(message.executableBinding.path, message.descriptor.argv, {
+        cwd: message.descriptor.cwd,
+        env: message.env,
+        stdio: "inherit",
+      });
+      const childTerminal = terminalPromise(child);
+      childTerminal.catch(() => {});
+      const identity = readKernelStartIdentity(child.pid);
+      if (!identity) {
+        try { await childTerminal; } catch (error) { throw error; }
+        throw new Error("stable Kimi process identity unavailable");
+      }
+      await sendIpc({ type: "ESTABLISHED", pid: child.pid, startIdentity: identity });
+      const result = await childTerminal;
+      await sendIpc({ type: "RESULT", ...result });
+      process.disconnect();
+      process.exit();
+    } catch (error) {
+      await sendIpc({ type: "FAILURE", error: error.message }).catch(() => {});
+      disconnectCleanup();
+    }
+  });
+}
+
+if (process.argv[1] === MODULE_PATH && process.argv[2] === "--broker") await brokerMain();
+if (process.argv[1] === MODULE_PATH && process.argv[2] === "--launcher") await launcherMain();

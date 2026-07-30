@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
-import { execFile as execFileCb } from "node:child_process";
+import { execFile as execFileCb, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { access, chmod, mkdir, mkdtemp, readFile, readdir, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,17 +10,9 @@ import {
   readDispatchReceipts,
   readKernelStartIdentity,
   runKimiProcess,
+  signalContainedGroup,
 } from "../src/dispatch-receipts.js";
 import { findZombieProcesses, runHygiene } from "../src/hygiene.js";
-
-class FakeChild extends EventEmitter {
-  constructor(pid = 4321) {
-    super();
-    this.pid = pid;
-    this.kills = [];
-  }
-  kill(signal) { this.kills.push(signal); return true; }
-}
 
 const tempStore = async () => join(await mkdtemp(join(tmpdir(), "muster-dispatch-receipts-")), "receipts");
 const request = { brief: "do the bounded task", agentFile: "agent.md", cwd: null, lane: "primary" };
@@ -35,228 +26,215 @@ async function fixtureRequest() {
   return { ...request, agentFile, cwd: root };
 }
 
-test("runKimiProcess spawns only fixed kimi from the validated descriptor and establishes a private secret-free receipt before reporting ready", async () => {
-  const receiptRoot = await tempStore();
-  const child = new FakeChild();
-  const calls = [];
-  let receiptAtReady;
-  const running = runKimiProcess(await fixtureRequest(), {
-    receiptRoot,
-    spawnProcess(command, argv, options) {
-      calls.push({ command, argv, options });
-      return child;
-    },
-    readIdentity: () => "linux-proc-stat:888",
-    onReceiptEstablished: async () => {
-      const names = await readdir(receiptRoot);
-      receiptAtReady = JSON.parse(await readFile(join(receiptRoot, names[0]), "utf8"));
-    },
-  });
-  await new Promise((resolve) => setImmediate(resolve));
-  child.emit("exit", 0, null);
-  assert.deepEqual(await running, { code: 0, signal: null });
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].command, "kimi");
-  assert.deepEqual(calls[0].argv.slice(0, 2), ["-p", "do the bounded task"]);
-  assert.equal(calls[0].options.stdio, "inherit");
-  assert.equal(receiptAtReady.pid, 4321);
-  assert.equal(receiptAtReady.startIdentity, "linux-proc-stat:888");
-  assert.equal(receiptAtReady.provider, "kimi");
-  assert.equal(receiptAtReady.brief, undefined);
-  assert.equal(receiptAtReady.argv, undefined);
-  assert.equal(receiptAtReady.env, undefined);
-  assert.deepEqual(child.kills, ["SIGSTOP", "SIGCONT"], "the child is released only after the durable receipt is established");
-  assert.equal((await stat(receiptRoot)).mode & 0o777, 0o700);
-  assert.equal((await readdir(receiptRoot)).length, 0, "normal completion removes only the owned receipt");
-});
-
-test("runKimiProcess forwards signals and transparently returns child exit state", async () => {
-  const child = new FakeChild();
-  const signals = new EventEmitter();
-  let readyResolve;
-  const ready = new Promise((resolve) => { readyResolve = resolve; });
-  const running = runKimiProcess(await fixtureRequest(), {
-    receiptRoot: await tempStore(),
-    spawnProcess: () => child,
-    readIdentity: () => "linux-proc-stat:999",
-    signalSource: signals,
-    onReceiptEstablished: readyResolve,
-  });
-  await ready;
-  await new Promise((resolve) => setImmediate(resolve));
-  signals.emit("SIGTERM");
-  assert.deepEqual(child.kills, ["SIGSTOP", "SIGCONT", "SIGTERM"]);
-  child.emit("exit", 17, null);
-  assert.deepEqual(await running, { code: 17, signal: null });
-  assert.equal(signals.listenerCount("SIGTERM"), 0);
-});
-
-test("runKimiProcess fails closed and cleans up when stable identity is unsupported", async () => {
-  const receiptRoot = await tempStore();
-  const child = new FakeChild();
-  await assert.rejects(
-    runKimiProcess(await fixtureRequest(), {
-      receiptRoot,
-      spawnProcess: () => child,
-      readIdentity: () => null,
-    }),
-    /stable kernel process-start identity is unavailable/
-  );
-  assert.deepEqual(child.kills, ["SIGTERM"]);
-  await assert.rejects(access(receiptRoot), { code: "ENOENT" });
-});
-
-test("runKimiProcess cleans the exact token-bound receipt after a child failure", async () => {
-  const receiptRoot = await tempStore();
-  const child = new FakeChild();
-  let readyResolve;
-  const ready = new Promise((resolve) => { readyResolve = resolve; });
-  const running = runKimiProcess(await fixtureRequest(), {
-    receiptRoot,
-    spawnProcess: () => child,
-    readIdentity: () => "linux-proc-stat:1000",
-    onReceiptEstablished: readyResolve,
-  });
-  await ready;
-  child.emit("error", new Error("provider failed"));
-  await assert.rejects(running, /provider failed/);
-  assert.deepEqual(await readdir(receiptRoot), []);
-});
-
-test("normal completion never removes a receipt replaced with a different valid identity", async () => {
-  const receiptRoot = await tempStore();
-  const child = new FakeChild(4999);
-  let readyResolve;
-  const ready = new Promise((resolve) => { readyResolve = resolve; });
-  const running = runKimiProcess(await fixtureRequest(), {
-    receiptRoot,
-    spawnProcess: () => child,
-    readIdentity: () => "linux-proc-stat:49990",
-    onReceiptEstablished: readyResolve,
-  });
-  await ready;
-  const [name] = await readdir(receiptRoot);
-  const path = join(receiptRoot, name);
-  const replacement = JSON.parse(await readFile(path, "utf8"));
-  replacement.pid = 4998;
-  replacement.startIdentity = "linux-proc-stat:49980";
-  await writeFile(path, `${JSON.stringify(replacement)}\n`, { mode: 0o600 });
-  child.emit("exit", 0, null);
-  await running;
-  assert.deepEqual(await readdir(receiptRoot), [name]);
-});
-
-test("receipt reader authorizes matching rows, cleans dead/PID-reuse rows on reap, and never follows unsafe rows", async () => {
-  const receiptRoot = await tempStore();
-  const child = new FakeChild(5001);
-  let readyResolve;
-  const ready = new Promise((resolve) => { readyResolve = resolve; });
-  const running = runKimiProcess(await fixtureRequest(), {
-    receiptRoot,
-    spawnProcess: () => child,
-    readIdentity: () => "linux-proc-stat:50010",
-    onReceiptEstablished: readyResolve,
-  });
-  await ready;
-  const [liveName] = await readdir(receiptRoot);
-  const live = await readDispatchReceipts({
-    receiptRoot,
-    processes: [{ pid: 5001, startIdentity: "linux-proc-stat:50010" }],
-  });
-  assert.deepEqual(live.receipts, [{ pid: 5001, startIdentity: "linux-proc-stat:50010" }]);
-
-  const legacy = join(receiptRoot, "receipt-11111111-1111-4111-8111-111111111111.json");
-  const malformed = join(receiptRoot, "receipt-22222222-2222-4222-8222-222222222222.json");
-  const linked = join(receiptRoot, "receipt-33333333-3333-4333-8333-333333333333.json");
-  await writeFile(legacy, JSON.stringify({ pid: 77 }), { mode: 0o600 });
-  await writeFile(malformed, "{not json", { mode: 0o600 });
-  await symlink(liveName, linked);
-  const reused = await readDispatchReceipts({
-    receiptRoot,
-    processes: [{ pid: 5001, startIdentity: "linux-proc-stat:50011" }],
-    reap: true,
-  });
-  assert.deepEqual(reused.receipts, []);
-  assert.deepEqual(reused.cleaned.map((row) => row.reason), ["process-identity-mismatch"]);
-  assert.equal(reused.rejected.length, 3);
-  assert.deepEqual((await readdir(receiptRoot)).sort(), [linked, legacy, malformed].map((p) => p.split("/").pop()).sort());
-
-  const { zombies } = findZombieProcesses(
-    [{ pid: 5001, ppid: 1, command: "kimi -p task", startIdentity: "linux-proc-stat:50011" }],
-    { dispatchReceipts: reused.receipts }
-  );
-  assert.equal(zombies[0].reapable, false, "a stale PID-reuse receipt cannot authorize the new process");
-  child.emit("exit", 0, null);
-  await running;
-});
-
-test("receipt reader performs bounded crash-orphan cleanup without signaling", async () => {
-  const receiptRoot = await tempStore();
-  const child = new FakeChild(6001);
-  let readyResolve;
-  const ready = new Promise((resolve) => { readyResolve = resolve; });
-  const running = runKimiProcess(await fixtureRequest(), {
-    receiptRoot,
-    spawnProcess: () => child,
-    readIdentity: () => "linux-proc-stat:60010",
-    onReceiptEstablished: readyResolve,
-  });
-  await ready;
-  const result = await readDispatchReceipts({
-    receiptRoot,
-    processes: [{ pid: 1, startIdentity: "linux-proc-stat:1" }],
-    reap: true,
-  });
-  assert.deepEqual(result.receipts, []);
-  assert.deepEqual(result.cleaned.map((row) => row.reason), ["process-dead"]);
-  assert.deepEqual(await readdir(receiptRoot), []);
-  child.emit("exit", 0, null);
-  await running;
-});
-
-test("runHygiene consumes production receipts and preserves immediate pre-signal identity revalidation", async () => {
-  const receiptRoot = await tempStore();
-  const child = new FakeChild(7001);
-  let readyResolve;
-  const ready = new Promise((resolve) => { readyResolve = resolve; });
-  const running = runKimiProcess(await fixtureRequest(), {
-    receiptRoot,
-    spawnProcess: () => child,
-    readIdentity: () => "linux-proc-stat:70010",
-    onReceiptEstablished: readyResolve,
-  });
-  await ready;
-  const processes = [{
-    pid: 7001,
-    ppid: 1,
-    command: "kimi -p bounded",
-    startedAt: 1,
-    startIdentity: "linux-proc-stat:70010",
-  }];
-  const killed = [];
-  const result = await runHygiene({
-    processes,
-    worktrees: [],
-    reap: true,
-    dispatchReceiptStore: ({ processes: snapshot, reap }) =>
-      readDispatchReceipts({ receiptRoot, processes: snapshot, reap }),
-    getProcessIdentity: () => "linux-proc-stat:70010",
-    kill: (pid) => killed.push(pid),
-  });
-  assert.deepEqual(result.reapedProcesses.reaped, [7001]);
-  assert.deepEqual(killed, [7001]);
-  assert.equal(result.provenance.dispatchReceipts, 1);
-  child.emit("exit", 0, null);
-  await running;
-});
-
 test("readKernelStartIdentity exposes the current Linux process identity when supported", () => {
   const identity = readKernelStartIdentity(process.pid);
   if (process.platform === "linux") assert.match(identity, /^linux-proc-stat:\d+$/);
   else assert.equal(identity, null);
 });
 
-test("production CLI kimi-process-run supervises fixed kimi stdio/exit and removes its receipt", async () => {
+test("PID-addressed group signaling revalidates both identity and group state", () => {
+  for (const fixture of [
+    { identity: "linux-proc-stat:changed", group: 9001 },
+    { identity: "linux-proc-stat:bound", group: 9002 },
+  ]) {
+    let signaled = false;
+    assert.throws(() => signalContainedGroup({
+      pid: 9001,
+      startIdentity: "linux-proc-stat:bound",
+      signal: "SIGTERM",
+    }, {
+      readIdentity: () => fixture.identity,
+      readGroup: () => fixture.group,
+      kill: () => { signaled = true; },
+    }), /identity\/state changed/);
+    assert.equal(signaled, false);
+  }
+  const calls = [];
+  signalContainedGroup({
+    pid: 9001,
+    startIdentity: "linux-proc-stat:bound",
+    signal: "SIGTERM",
+  }, {
+    readIdentity: () => "linux-proc-stat:bound",
+    readGroup: () => 9001,
+    kill: (...args) => calls.push(args),
+  });
+  assert.deepEqual(calls, [[-9001, "SIGTERM"]]);
+});
+
+test("forged valid receipts are diagnostic only and never authorize hygiene signaling", async () => {
+  const receiptRoot = await tempStore();
+  await mkdir(receiptRoot, { recursive: true, mode: 0o700 });
+  const token = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  await writeFile(join(receiptRoot, `receipt-${token}.json`), JSON.stringify({
+    format: "muster.dispatch-process",
+    schemaVersion: 1,
+    provider: "kimi",
+    token,
+    pid: 8123,
+    startIdentity: "linux-proc-stat:81230",
+    createdAt: new Date().toISOString(),
+  }), { mode: 0o600 });
+  const diagnostic = await readDispatchReceipts({
+    receiptRoot,
+    processes: [{ pid: 8123, startIdentity: "linux-proc-stat:81230" }],
+    processSnapshotComplete: true,
+  });
+  const { zombies } = findZombieProcesses([
+    { pid: 8123, ppid: 1, command: "kimi -p forged", startIdentity: "linux-proc-stat:81230" },
+  ], { dispatchReceipts: diagnostic.receipts });
+  let signaled = false;
+  const result = await runHygiene({
+    processes: [{ pid: 8123, ppid: 1, command: "kimi -p forged", startIdentity: "linux-proc-stat:81230" }],
+    worktrees: [],
+    reap: true,
+    zombieOptions: { dispatchReceipts: diagnostic.receipts },
+    kill: () => { signaled = true; },
+  });
+  assert.equal(zombies[0].reapable, false);
+  assert.equal(signaled, false);
+  assert.deepEqual(result.reapedProcesses.reaped, []);
+});
+
+test("receipt enumeration filters malformed names before the cap and reports incomplete provenance", async () => {
+  const receiptRoot = await tempStore();
+  await mkdir(receiptRoot, { recursive: true, mode: 0o700 });
+  for (let i = 0; i < 300; i += 1) {
+    await writeFile(join(receiptRoot, `000-malformed-${String(i).padStart(3, "0")}`), "x", { mode: 0o600 });
+  }
+  const token = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  await writeFile(join(receiptRoot, `receipt-${token}.json`), JSON.stringify({
+    format: "muster.dispatch-process", schemaVersion: 1, provider: "kimi", token,
+    pid: 8223, startIdentity: "linux-proc-stat:82230", createdAt: new Date().toISOString(),
+  }), { mode: 0o600 });
+  const result = await readDispatchReceipts({ receiptRoot, processes: [] });
+  assert.deepEqual(result.receipts, [{ pid: 8223, startIdentity: "linux-proc-stat:82230" }]);
+  assert.equal(result.rejected.length, 300);
+  assert.equal(result.incompleteProvenance, true);
+  assert.equal(result.truncated, false, "invalid names do not consume the valid-receipt cap");
+});
+
+test("partial process snapshots never prove death or delete a diagnostic receipt", async () => {
+  const receiptRoot = await tempStore();
+  await mkdir(receiptRoot, { recursive: true, mode: 0o700 });
+  const token = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  await writeFile(join(receiptRoot, `receipt-${token}.json`), JSON.stringify({
+    format: "muster.dispatch-process", schemaVersion: 1, provider: "kimi", token,
+    pid: 8323, startIdentity: "linux-proc-stat:83230", createdAt: new Date().toISOString(),
+  }), { mode: 0o600 });
+  const before = await readdir(receiptRoot);
+  const result = await readDispatchReceipts({
+    receiptRoot,
+    processes: [{ pid: 1, startIdentity: "linux-proc-stat:1" }],
+    processSnapshotComplete: false,
+    reap: true,
+  });
+  assert.deepEqual(result.cleaned, []);
+  assert.deepEqual(await readdir(receiptRoot), before);
+  assert.equal(result.incompleteProvenance, true);
+});
+
+test("validated cwd and agent file identities are rechecked before final spawn", async () => {
+  const fixture = await fixtureRequest();
+  const receiptRoot = await tempStore();
+  const moved = `${fixture.agentFile}.old`;
+  let spawned = false;
+  await assert.rejects(runKimiProcess(fixture, {
+    receiptRoot,
+    executable: process.execPath,
+    beforeFinalSpawn: async () => {
+      await rename(fixture.agentFile, moved);
+      await writeFile(fixture.agentFile, "---\nname: substituted\n---\n");
+    },
+    spawnProcess: () => { spawned = true; throw new Error("must not spawn"); },
+  }), /agent file identity changed|agentFile identity changed/);
+  assert.equal(spawned, false);
+});
+
+test("final spawn uses the pinned absolute executable after PATH substitution", async () => {
+  if (process.platform !== "linux") return;
+  const fixture = await fixtureRequest();
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-path-pin-"));
+  const first = join(root, "first");
+  const second = join(root, "second");
+  await Promise.all([mkdir(first), mkdir(second)]);
+  await writeFile(join(first, "kimi"), "#!/usr/bin/env node\nprocess.exit(11);\n");
+  await writeFile(join(second, "kimi"), "#!/usr/bin/env node\nprocess.exit(12);\n");
+  await Promise.all([chmod(join(first, "kimi"), 0o755), chmod(join(second, "kimi"), 0o755)]);
+  const dispatchEnv = { ...process.env, PATH: `${first}:${process.env.PATH}` };
+  const result = await runKimiProcess(fixture, {
+    receiptRoot: await tempStore(),
+    env: dispatchEnv,
+    beforeFinalSpawn: async () => { dispatchEnv.PATH = `${second}:${process.env.PATH}`; },
+  });
+  assert.deepEqual(result, { code: 11, signal: null });
+});
+
+test("broker setup failure is terminal only after the trusted launcher has been decisively awaited", async () => {
+  if (process.platform !== "linux") return;
+  const fixture = await fixtureRequest();
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-bad-exec-"));
+  const bad = join(root, "kimi");
+  await writeFile(bad, "#!/definitely/missing/interpreter\n");
+  await chmod(bad, 0o755);
+  const started = Date.now();
+  await assert.rejects(runKimiProcess(fixture, {
+    receiptRoot: await tempStore(),
+    executable: bad,
+    killTimeoutMs: 100,
+  }), /ENOENT|spawn/);
+  assert.ok(Date.now() - started < 5_000, "setup cleanup and direct-child wait are bounded");
+});
+
+test("supervisor crash triggers descendant process-group cleanup", async () => {
+  if (process.platform !== "linux") return;
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-crash-cleanup-"));
+  const bin = join(root, "bin");
+  const home = join(root, "home");
+  const cwd = join(root, "work");
+  const pidFile = join(root, "descendant.pid");
+  await Promise.all([mkdir(bin), mkdir(home), mkdir(cwd)]);
+  const fakeKimi = join(bin, "kimi");
+  await writeFile(fakeKimi,
+    "#!/usr/bin/env node\n" +
+    "const {spawn}=require('node:child_process');const fs=require('node:fs');" +
+    "process.on('SIGTERM',()=>{});" +
+    "const c=spawn(process.execPath,['-e',\"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)\"],{stdio:'ignore'});" +
+    `fs.writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setInterval(()=>{},1000);\n`);
+  await chmod(fakeKimi, 0o755);
+  const agentFile = join(cwd, "agent.md");
+  await writeFile(agentFile, "---\nname: fixture\n---\n");
+  const supervisor = spawn(process.execPath, [
+    CLI, "kimi-process-run", "--brief", "crash cleanup", "--agent-file", agentFile,
+    "--cwd", cwd, "--lane", "primary",
+  ], { env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` }, stdio: "ignore" });
+  let descendantPid = null;
+  for (let i = 0; i < 100 && descendantPid === null; i += 1) {
+    try {
+      const bytes = await import("node:fs/promises").then(({ readFile }) => readFile(pidFile, "utf8"));
+      descendantPid = Number(bytes);
+    } catch {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    }
+  }
+  assert.ok(descendantPid > 0, "fixture descendant started inside the contained group");
+  supervisor.kill("SIGKILL");
+  await new Promise((resolveExit) => supervisor.once("exit", resolveExit));
+  let terminal = false;
+  for (let i = 0; i < 150 && !terminal; i += 1) {
+    try {
+      const statText = await import("node:fs/promises").then(({ readFile }) =>
+        readFile(`/proc/${descendantPid}/stat`, "utf8"));
+      terminal = statText.slice(statText.lastIndexOf(")") + 1).trim().startsWith("Z ");
+    } catch {
+      terminal = true;
+    }
+    if (!terminal) await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+  }
+  assert.equal(terminal, true, "broker/launcher disconnect cleanup terminated the descendant group");
+});
+
+test("production CLI kimi-process-run supervises fixed kimi stdio/exit and retains only a diagnostic receipt", async () => {
   if (process.platform !== "linux") return;
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-cli-run-"));
   const bin = join(root, "bin");
@@ -284,5 +262,5 @@ test("production CLI kimi-process-run supervises fixed kimi stdio/exit and remov
   }
   assert.equal(failure?.code, 7);
   assert.equal(failure?.stdout, "transparent-child-output\n");
-  assert.deepEqual(await readdir(join(home, ".muster", "dispatch-receipts")), []);
+  assert.equal((await readdir(join(home, ".muster", "dispatch-receipts"))).length, 1);
 });

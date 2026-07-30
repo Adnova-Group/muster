@@ -1,3 +1,29 @@
+// ChatGPT Work installer -- publishes the muster-chatgpt-work plugin into a
+// ChatGPT plugins root and binds the published tree to a private install
+// receipt (chatgpt-work.json under .git/muster for project scope, ~/.muster
+// for user scope). The receipt is the OWNERSHIP model: a destination plugin
+// directory or marketplace entry is mutated only when a valid receipt proves
+// a prior Muster install owns it; anything else is left byte-for-byte
+// untouched. The receipt is also the trust anchor the installed server
+// re-verifies on every startup (mcp/chatgpt-work-server.mjs), which is why
+// validateConfig is fail-closed and names the offending field per clause.
+//
+// HUMAN-HOLD is the vocabulary for "a person must look before Muster
+// proceeds": an unowned destination, a foreign marketplace entry, insecure
+// publication-directory ownership/permissions, or an install whose rollback
+// itself failed. These paths never auto-correct -- they stop and report.
+//
+// The install is staged, double-locked, and snapshot-rollbacked on purpose:
+// - The plugin is built completely in a temp staging dir, so the destination
+//   only ever appears as one cp of a finished tree, never a half-built one.
+// - The receipt-adjacent lock serializes the whole install against other
+//   installers; the plugins-root .build.lock serializes the destination swap
+//   against concurrent plugin builds sharing the same root.
+// - Before mutating, the prior receipt and marketplace bytes are snapshotted
+//   and any existing plugin is renamed aside, so any failure restores the
+//   exact prior plugin/marketplace/receipt trio; if restoration itself fails
+//   the error escalates to HUMAN-HOLD instead of leaving mixed state.
+
 import { createHash, randomUUID } from "node:crypto";
 import {
   cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile,
@@ -23,6 +49,9 @@ const PIPELINE_ARTIFACTS = [
   "okrs.yaml", "prd.yaml", "release-notes.yaml", "roadmap.yaml", "runbook.yaml",
   "social-post.yaml", "user-story.yaml", "video-content.yaml",
 ].map(path => `pipelines/${path}`);
+// The installed server duplicates this list verbatim (artifactPaths in
+// mcp/chatgpt-work-server.mjs) and hard-fails startup on any mismatch;
+// test/chatgpt-work-artifact-parity.test.js pins the two lists identical.
 const ARTIFACT_PATHS = [
   ".app.json",
   ".mcp.json",
@@ -121,6 +150,11 @@ export function chatgptWorkPluginsRoot({ scope = "project", cwd = process.cwd(),
   throw new Error("ChatGPT Work install scope must be project or user");
 }
 
+// ChatGPT Work's marketplace source.path grammar is a "./"-prefixed POSIX
+// path relative to the marketplace root -- the directory two levels above the
+// plugins root -- so the owned entry always has the form
+// "./<root-rel>/muster-chatgpt-work" (e.g. "./.agents/plugins/muster-chatgpt-work").
+// Backslashes are rewritten so the pinned form holds on Windows too.
 function workMarketplaceSourcePath(pluginsRoot) {
   const addedRoot = resolve(pluginsRoot, "..", "..");
   return "./" + relative(addedRoot, join(pluginsRoot, WORK_PLUGIN_ID)).replaceAll("\\", "/");
@@ -190,12 +224,22 @@ function validateConfig(config) {
     "allowFullActions", "appId", "artifactFlavor", "artifacts", "cacheKey",
     "connectionId", "format", "owner", "pluginPath", "profile",
   ];
-  if (!config || Object.keys(config).sort().join("\0") !== receiptKeys.sort().join("\0")) {
-    throw new Error("ChatGPT Work installer receipt is invalid");
+  // Per-clause failures: every rejection names the field and its expectation,
+  // so a tampered or stale receipt is diagnosable from the error alone.
+  if (!config || Object.keys(config).sort().join("\0") !== [...receiptKeys].sort().join("\0")) {
+    throw new Error(`ChatGPT Work installer receipt keys must be exactly: ${receiptKeys.join(", ")}`);
   }
-  if (config?.format !== 3 || config?.owner !== "muster" || config?.artifactFlavor !== "chatgpt-work"
-    || !PROFILES.has(config.profile)
-    || typeof config.allowFullActions !== "boolean") throw new Error("ChatGPT Work installer receipt is invalid");
+  if (config.format !== 3) throw new Error("ChatGPT Work installer receipt format must be 3");
+  if (config.owner !== "muster") throw new Error("ChatGPT Work installer receipt owner must be \"muster\"");
+  if (config.artifactFlavor !== "chatgpt-work") {
+    throw new Error("ChatGPT Work installer receipt artifactFlavor must be \"chatgpt-work\"");
+  }
+  if (!PROFILES.has(config.profile)) {
+    throw new Error("ChatGPT Work installer receipt profile must be pro-safe or full");
+  }
+  if (typeof config.allowFullActions !== "boolean") {
+    throw new Error("ChatGPT Work installer receipt allowFullActions must be a boolean");
+  }
   const connectionId = normalizeChatgptWorkConnectionId(config.connectionId);
   if (connectionId !== config.connectionId || config.appId !== connectionId) {
     throw new Error("ChatGPT Work installer receipt app id is not canonical");
@@ -204,10 +248,17 @@ function validateConfig(config) {
     throw new Error("ChatGPT Work installer receipt profile/action opt-in is inconsistent");
   }
   const cacheKey = sha256(JSON.stringify(["chatgpt-work", connectionId, config.profile, config.allowFullActions]));
-  if (config.cacheKey !== cacheKey || !isAbsolute(config.pluginPath ?? "")
-    || !config.artifacts || Object.keys(config.artifacts).sort().join("\0") !== [...ARTIFACT_PATHS].sort().join("\0")
-    || Object.values(config.artifacts).some(digest => !HEX64.test(digest))) {
-    throw new Error("ChatGPT Work installer receipt cache identity is invalid");
+  if (config.cacheKey !== cacheKey) {
+    throw new Error("ChatGPT Work installer receipt cacheKey must be the install identity digest");
+  }
+  if (!isAbsolute(config.pluginPath ?? "")) {
+    throw new Error("ChatGPT Work installer receipt pluginPath must be an absolute path");
+  }
+  if (!config.artifacts || Object.keys(config.artifacts).sort().join("\0") !== [...ARTIFACT_PATHS].sort().join("\0")) {
+    throw new Error("ChatGPT Work installer receipt artifacts must cover exactly the published artifact set");
+  }
+  if (Object.values(config.artifacts).some(digest => !HEX64.test(digest))) {
+    throw new Error("ChatGPT Work installer receipt artifact digests must be 64-character lowercase hex sha256 values");
   }
   return {
     format: 3, owner: "muster", artifactFlavor: "chatgpt-work", appId: connectionId,
@@ -278,11 +329,6 @@ export async function readChatgptWorkConfig(options = {}) {
     if (error instanceof SyntaxError) throw new Error(`ChatGPT Work installer receipt is not valid JSON: ${path}`);
     throw error;
   }
-}
-
-export async function readOptionalChatgptWorkConfig(options = {}) {
-  try { return await readChatgptWorkConfig(options); }
-  catch (error) { if (error.code === "MUSTER_NO_GIT_WORKTREE") return null; throw error; }
 }
 
 async function prepareRuntimeAssets() {
@@ -473,8 +519,13 @@ export async function runChatgptWorkInstall({
           await rename(pluginPath, backup);
         }
         try {
+          // Pessimistic: the flag is set BEFORE the fallible publish so a
+          // partial copy still rolls back (cp can fail mid-tree, leaving a
+          // half-written pluginPath the catch below must remove).
           published = true;
           await cp(staged.plugin, pluginPath, { recursive: true, errorOnExist: true, force: false });
+          // Same rationale: a failed marketplace write must still restore the
+          // snapshot, so the attempt flag goes up before the write.
           marketplaceWriteAttempted = true;
           await atomicPrivateWrite(marketplacePath, Buffer.from(JSON.stringify(nextMarketplace, null, 2) + "\n"));
           const receipt = validateConfig({

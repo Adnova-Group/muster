@@ -69,6 +69,10 @@ if (profile === "full" || activationReceiptPath || installedRuntime) {
       || path.resolve(receipt.pluginPath ?? "") !== path.resolve(pluginPath)) {
       throw new Error("receipt identity/profile mismatch");
     }
+    // Must stay identical to ARTIFACT_PATHS in src/chatgpt-work-install.js --
+    // the receipt artifact set is pinned by
+    // test/chatgpt-work-artifact-parity.test.js, and any drift hard-fails
+    // server startup here on "receipt artifact set mismatch".
     const artifactPaths = [
       ".app.json", ".codex-plugin/plugin.json", ".mcp.json",
       "runtime/chatgpt-work-server.mjs", "runtime/muster.mjs", "runtime/sprint-protocol.md",

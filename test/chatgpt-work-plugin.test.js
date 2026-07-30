@@ -9,7 +9,6 @@ import {
   normalizeChatgptWorkConnectionId,
   runChatgptWorkInstall,
   readChatgptWorkConfig,
-  readOptionalChatgptWorkConfig,
 } from "../src/chatgpt-work-install.js";
 
 const execFile = promisify(execFileCb);
@@ -89,10 +88,14 @@ test("CLI install chatgpt-work validates flags and dry-run emits no receipt", as
 test("ordinary Codex preservation lookup is optional outside Git while explicit project install still fails", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-non-git-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  assert.equal(
-    await readOptionalChatgptWorkConfig({ scope: "project", cwd: dir, home: join(dir, "home") }),
-    null,
-  );
+  let optional;
+  try {
+    optional = await readChatgptWorkConfig({ scope: "project", cwd: dir, home: join(dir, "home") });
+  } catch (error) {
+    if (error.code !== "MUSTER_NO_GIT_WORKTREE") throw error;
+    optional = null;
+  }
+  assert.equal(optional, null);
   await assert.rejects(
     runChatgptWorkInstall({
       connectionId: "asdk_app_Explicit1", profile: "pro-safe",
@@ -388,6 +391,47 @@ test("receipt v3 binds every Work activation artifact and rejects tampering", as
     readChatgptWorkConfig({ scope: "project", cwd: project }),
     /artifact digest/i,
   );
+});
+
+test("receipt validation names the offending field for each invalid shape", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-receipt-fields-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const installed = await runChatgptWorkInstall({
+    connectionId: "asdk_app_Fields1", profile: "pro-safe", scope: "project", cwd: project,
+  });
+  const valid = JSON.parse(await readFile(installed.configPath, "utf8"));
+  const readReceipt = () => readChatgptWorkConfig({ scope: "project", cwd: project });
+  const reject = async (mutated, pattern) => {
+    await writeFile(installed.configPath, JSON.stringify(mutated, null, 2) + "\n");
+    await assert.rejects(readReceipt(), pattern);
+  };
+
+  const { format: _dropped, ...missingKey } = valid;
+  await reject(missingKey, /receipt keys must be exactly/);
+  await reject({ ...valid, extra: 1 }, /receipt keys must be exactly/);
+  await reject({ ...valid, format: 2 }, /receipt format must be 3/);
+  await reject({ ...valid, owner: "other" }, /receipt owner must be "muster"/);
+  await reject({ ...valid, artifactFlavor: "other" }, /receipt artifactFlavor must be "chatgpt-work"/);
+  await reject({ ...valid, profile: "admin" }, /receipt profile must be pro-safe or full/);
+  await reject({ ...valid, allowFullActions: "yes" }, /receipt allowFullActions must be a boolean/);
+  await reject({ ...valid, appId: "asdk_app_Other" }, /app id is not canonical/);
+  await reject({ ...valid, connectionId: "plugin_asdk_app_Fields1" }, /app id is not canonical/);
+  await reject({ ...valid, allowFullActions: true }, /profile\/action opt-in is inconsistent/);
+  await reject({ ...valid, cacheKey: "0".repeat(64) }, /receipt cacheKey must be the install identity digest/);
+  await reject({ ...valid, pluginPath: "relative/plugin" }, /receipt pluginPath must be an absolute path/);
+  await reject(
+    { ...valid, artifacts: { ...valid.artifacts, "extra.txt": "0".repeat(64) } },
+    /receipt artifacts must cover exactly the published artifact set/,
+  );
+  await reject(
+    { ...valid, artifacts: { ...valid.artifacts, "package.json": "not-hex" } },
+    /receipt artifact digests must be 64-character lowercase hex sha256 values/,
+  );
+
+  await writeFile(installed.configPath, JSON.stringify(valid, null, 2) + "\n");
+  assert.equal((await readReceipt()).connectionId, "asdk_app_Fields1");
 });
 
 test("an existing unowned Work destination fails closed without mutation", async t => {

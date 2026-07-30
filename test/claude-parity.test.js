@@ -1283,5 +1283,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // counts are unchanged (re-verified green).
   // 2026-07-30 re-pin #22 (audit S6): runner.md gains the $MUSTER_CLI resolution block its
   // siblings carry; both hardcoded node src/cli.js call sites switched.
-  assert.equal(hash.digest("hex"), "9d967a7f9a2d897e48f4f70a30566b4070437cf80069007779b79d358e05ca45");
+  // 2026-07-30 re-pin #23 (docs-authority remediation): file COUNT unchanged
+  // (144) -- plugin/commands/init.md now makes AGENTS.md the single native
+  // instruction authority for both Claude Code and Codex handoffs, requires
+  // CLAUDE.md to be the thin @AGENTS.md pointer, and records both files in the
+  // expected-artifact baseline. This is the reviewed shared-surface remediation
+  // for the one-authority contract, not accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "354943aa0f044de89aab7675ea0a1203b7cdc7b29b31e3c383db384aa638a211");
 });

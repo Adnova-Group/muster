@@ -21,8 +21,14 @@ export async function scaffoldProject(dir) {
     catch { skipped.push(".git (git unavailable)"); }
   } else skipped.push(".git");
 
+  const preserveClaudeOnly = await exists(join(dir, "CLAUDE.md")) &&
+    !(await exists(join(dir, "AGENTS.md")));
   for (const [rel, content] of Object.entries(SEEDS)) {
     const abs = join(dir, rel);
+    if (rel === "AGENTS.md" && preserveClaudeOnly) {
+      skipped.push(rel);
+      continue;
+    }
     if (await exists(abs)) { skipped.push(rel); continue; }
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, content);

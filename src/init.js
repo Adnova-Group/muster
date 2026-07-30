@@ -37,6 +37,7 @@ const RECEIPT_FORMAT = "muster.init-receipt";
 const FINGERPRINT_BASIS = "muster.repository-state.v1";
 const HEX64 = /^[0-9a-f]{64}$/;
 const GIT_HEAD = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const CLAUDE_AUTHORITY_POINTER = Buffer.from("# Claude Code\n\n@AGENTS.md\n");
 const NATIVE_ARTIFACTS = new Set([
   "AGENTS.md", "CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md",
 ]);
@@ -707,6 +708,12 @@ function validateReceipt(receipt) {
     if (evidence.kind === "preexisting-artifact-confirmed") return baseline.sha256 !== null;
     return true;
   });
+  const canonicalPairExpected =
+    native.expectedArtifacts.includes("AGENTS.md") &&
+    native.expectedArtifacts.includes("CLAUDE.md");
+  const fullPairEvidence = !canonicalPairExpected || evidence === null ||
+    evidence.kind === "artifact-delta" ||
+    coversInstructionPair(evidence.artifacts.map((row) => row.path));
   // Per-state invariants of the native-init state machine, one named
   // predicate per state so a rejected receipt can name the arm it broke.
   // not-requested: native init was never asked for -- no reason, no expected
@@ -750,6 +757,9 @@ function validateReceipt(receipt) {
     fail("phase", "finalized requires a completed native init or an acknowledged unavailable handoff");
   }
   if (!evidenceMatchesBaseline) fail("nativeInit.evidence", "artifacts must match the handoff baseline");
+  if (!fullPairEvidence) {
+    fail("nativeInit.evidence", "confirmation and call-result must cover the canonical instruction authority pair");
+  }
   return receipt;
 }
 
@@ -770,6 +780,7 @@ async function readOwned(root) {
   if (profile.classification !== receipt.classification ||
       sha256(canonicalInitJson(profile)) !== receipt.profileDigest) throw new Error("owned init state does not match");
   if (receipt.nativeInit.state === "completed") {
+    await validateCanonicalInstructionPair(root, receipt.nativeInit.expectedArtifacts);
     const current = await artifactSnapshot(
       root, receipt.nativeInit.evidence.artifacts.map((row) => row.path),
     );
@@ -848,6 +859,24 @@ function expectedArtifacts(paths) {
   return result;
 }
 
+function coversInstructionPair(paths) {
+  return paths.includes("AGENTS.md") && paths.includes("CLAUDE.md");
+}
+
+async function validateCanonicalInstructionPair(root, expected) {
+  if (!expected.includes("AGENTS.md") || !expected.includes("CLAUDE.md")) return;
+  const [agents, claude] = await Promise.all([
+    readRegular(root, "AGENTS.md", INIT_LIMITS.learnFileBytes),
+    readRegular(root, "CLAUDE.md", INIT_LIMITS.learnFileBytes),
+  ]);
+  const agentsIsClaudePointer = agents &&
+    /^(?:# [^\n]+\n\n)?@(?:\.\/)?CLAUDE\.md\s*$/.test(agents.bytes.toString("utf8"));
+  if (!agents || agents.bytes.length === 0 || agentsIsClaudePointer ||
+      !claude || !claude.bytes.equals(CLAUDE_AUTHORITY_POINTER)) {
+    throw new Error("native completion requires the canonical instruction authority pair");
+  }
+}
+
 export async function observeNativeInit(dir) {
   const root = await validateRoot(dir);
   const owned = await readOwned(root);
@@ -884,6 +913,7 @@ async function completionEvidence(root, receipt, kind, evidenceFile) {
       throw new Error("call-result evidence file must not be an expected artifact");
     }
   }
+  await validateCanonicalInstructionPair(root, expected);
   if (kind === "artifact-delta") {
     const observed = await observeNativeInit(root);
     if (!observed.observedNativeEvidence) throw new Error("artifact delta evidence is not present");
@@ -902,6 +932,10 @@ async function completionEvidence(root, receipt, kind, evidenceFile) {
         value.format !== "muster.native-init-confirmation" || value.schemaVersion !== 1 ||
         value.confirmation !== "already-initialized") throw new Error("invalid pre-existing confirmation");
     const artifacts = expectedArtifacts(value.artifacts);
+    if (expected.includes("AGENTS.md") && expected.includes("CLAUDE.md") &&
+        !coversInstructionPair(artifacts)) {
+      throw new Error("pre-existing confirmation must cover the canonical instruction authority pair");
+    }
     const rows = [];
     for (const path of artifacts) {
       const index = expected.indexOf(path);
@@ -920,6 +954,10 @@ async function completionEvidence(root, receipt, kind, evidenceFile) {
       throw new Error("native init call result attempt id does not match");
     }
     const artifacts = expectedArtifacts(value.artifacts);
+    if (expected.includes("AGENTS.md") && expected.includes("CLAUDE.md") &&
+        !coversInstructionPair(artifacts)) {
+      throw new Error("call result must cover the canonical instruction authority pair");
+    }
     if (!artifacts.length) throw new Error("call result requires artifacts");
     const rows = artifacts.map((path) => {
       const index = expected.indexOf(path);

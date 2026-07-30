@@ -78,6 +78,11 @@ review and strategy to `gpt-5.6-sol`/high, and security to
 below describe shared orchestration behavior unless their headings name an
 adapter.
 
+### Kimi adapter: optional network probe
+
+`install kimi --probe` performs the fourth network-capable CLI operation: an
+authenticated models request. Omit `--probe` to keep Kimi installation offline.
+
 ## Provider kinds
 
 A provider resolves to one of four kinds, which decides how the orchestrator dispatches it:

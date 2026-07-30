@@ -458,6 +458,24 @@ async function readRegularJson(path) {
   return content === null ? null : JSON.parse(content);
 }
 
+async function compareModeProtocols(contractRoot, activeRoot) {
+  const contractDir = join(contractRoot, "commands");
+  if (!(await ordinaryDirectoryPath(contractDir))) throw new Error(`mode protocol directory is missing: ${contractDir}`);
+  const names = (await readdir(contractDir, { withFileTypes: true }))
+    .filter(entry => entry.name.endsWith(".md"))
+    .map(entry => entry.name)
+    .sort();
+  const stale = [];
+  for (const name of names) {
+    const [expected, installed] = await Promise.all([
+      readRegularFile(join(contractRoot, "commands", name), "utf8"),
+      readRegularFile(join(activeRoot, "commands", name), "utf8")
+    ]);
+    if (expected === null || installed === null || expected !== installed) stale.push(`commands/${name}`);
+  }
+  return stale;
+}
+
 async function registeredManagedScopes(home) {
   const registryPath = join(home, "muster", "install-scopes.json");
   let registry;
@@ -1136,9 +1154,27 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   }
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
-    const inventory = await readCodexInventory({ cwd, codexHome, execFile });
+    const inventory = await readCodexInventory({ cwd, codexHome, execFile, includePluginSources: true });
     const installed = inventory.plugins.includes("muster");
     checks.push({ name: "codex-plugin-installed", ok: installed, detail: installed ? "muster plugin is enabled in live Codex state" : "muster plugin is not installed; run muster install codex" });
+    if (installed && !selectionFailed) {
+      const activePlugin = inventory.pluginSources.find(item => item.name === "muster");
+      try {
+        if (typeof activePlugin?.path !== "string" || !activePlugin.path) throw new Error("live Codex state did not report its active plugin path");
+        if (typeof activePlugin.version !== "string" || !/^[A-Za-z0-9._+-]+$/.test(activePlugin.version)) {
+          throw new Error(`live Codex state did not report a safe Muster plugin version: ${JSON.stringify(activePlugin.version)}`);
+        }
+        let activeProtocolRoot = activePlugin.path;
+        const cacheRoot = join(userCodexHome, "plugins", "cache", "muster", "muster", activePlugin.version);
+        if (await ordinaryDirectoryPath(cacheRoot)) activeProtocolRoot = cacheRoot;
+        const stale = await compareModeProtocols(plugin, activeProtocolRoot);
+        checks.push({ name: "codex-mode-protocol", ok: stale.length === 0, detail: stale.length
+          ? `active Muster plugin mode protocol differs from the selected package contract for: ${stale.join(", ")}; rerun \`muster install codex\` and start a new Codex session`
+          : "active Muster mode protocols match the selected package contract" });
+      } catch (error) {
+        checks.push({ name: "codex-mode-protocol", ok: false, detail: `could not compare the active Muster plugin mode protocol with the selected package contract: ${error.message}; rerun \`muster install codex\` and start a new Codex session` });
+      }
+    }
     checks.push({ name: "codex-inventory", ok: true, detail: `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state` });
   }
   return { ok: checks.every(check => check.ok), target: "codex", checks };

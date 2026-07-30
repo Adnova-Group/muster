@@ -57,7 +57,7 @@ function mcpNames(result) {
 
 // Codex's live CLI output is authoritative. Never walk its plugin cache: it
 // can contain stale or disabled copies that Codex is not currently using.
-export async function readCodexInventory({ cwd = process.cwd(), codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"), execFile = execFileDefault } = {}) {
+export async function readCodexInventory({ cwd = process.cwd(), codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"), execFile = execFileDefault, includePluginSources = false } = {}) {
   const [pluginsJson, mcpJson] = await Promise.all([
     jsonCommand(execFile, ["plugin", "list", "--available", "--json"]),
     jsonCommand(execFile, ["mcp", "list", "--json"])
@@ -75,6 +75,11 @@ export async function readCodexInventory({ cwd = process.cwd(), codexHome = proc
   ]);
   return {
     plugins: active.map(plugin => plugin.name || plugin.pluginId.split("@")[0]),
+    ...(includePluginSources ? { pluginSources: active.map(plugin => ({
+      name: plugin.name || plugin.pluginId.split("@")[0],
+      path: plugin.source?.path,
+      version: plugin.version
+    })) } : {}),
     skills: [...new Set([...pluginSkills, ...projectSkills, ...userSkills])],
     mcpServers: [...new Set(mcpNames(mcpJson))],
     agents: [...new Set([...pluginAgents, ...projectAgents, ...userAgents])]

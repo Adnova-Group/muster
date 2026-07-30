@@ -580,15 +580,17 @@ async function inventoryDoctor(execFile) {
 test("Codex doctor live-inventory: INSTALLED -- well-formed plugin/MCP JSON is reported present and healthy", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-inventory-installed-"));
   const pluginPath = join(tmp, "live-plugin");
+  const codexHome = join(tmp, "home", ".codex");
   await mkdir(join(pluginPath, "skills", "live-skill"), { recursive: true });
   await mkdir(join(pluginPath, "agents"), { recursive: true });
+  await cp(join(selectedPluginRoot, "commands"), join(codexHome, "plugins", "cache", "muster", "muster", selectedPlugin.packageVersion, "commands"), { recursive: true });
   await writeFile(join(pluginPath, "skills", "live-skill", "SKILL.md"), "---\nname: live-skill\n---\n");
   await writeFile(join(pluginPath, "agents", "live-agent.toml"), "name = 'live-agent'\n");
   const execFile = liveCodexExec({
-    plugins: JSON.stringify({ installed: [{ name: "muster", installed: true, enabled: true, source: { path: pluginPath } }], available: [] }),
+    plugins: JSON.stringify({ installed: [{ name: "muster", version: selectedPlugin.packageVersion, installed: true, enabled: true, source: { path: pluginPath } }], available: [] }),
     mcp: JSON.stringify([{ name: "muster", enabled: true }])
   });
-  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile, mcpRunner: liveMcpRunner });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome, execFile, mcpRunner: liveMcpRunner });
   const installed = report.checks.find(check => check.name === "codex-plugin-installed");
   const inventory = report.checks.find(check => check.name === "codex-inventory");
   assert.equal(installed?.ok, true, installed?.detail);
@@ -596,6 +598,48 @@ test("Codex doctor live-inventory: INSTALLED -- well-formed plugin/MCP JSON is r
   assert.equal(inventory?.ok, true, inventory?.detail);
   // Plugin source skills/agents thread through to the reported counts.
   assert.match(inventory?.detail || "", /1 plugins, 1 skills, 1 MCP servers, 1 agents from live Codex state/);
+});
+
+async function activeMusterProtocolFixture(tmp, codexHome) {
+  const pluginPath = join(tmp, "registered-muster");
+  const cachePath = join(codexHome, "plugins", "cache", "muster", "muster", selectedPlugin.packageVersion);
+  await mkdir(pluginPath, { recursive: true });
+  await mkdir(cachePath, { recursive: true });
+  await cp(join(selectedPluginRoot, "commands"), join(cachePath, "commands"), { recursive: true });
+  return { pluginPath, cachePath };
+}
+
+test("Codex doctor live-inventory: active Muster mode protocols match the selected package contract", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mode-protocol-current-"));
+  const codexHome = join(tmp, "home", ".codex");
+  const { pluginPath } = await activeMusterProtocolFixture(tmp, codexHome);
+  const execFile = liveCodexExec({
+    plugins: JSON.stringify({ installed: [{ name: "muster", version: selectedPlugin.packageVersion, installed: true, enabled: true, source: { path: pluginPath } }] }),
+    mcp: "[]"
+  });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome, execFile, mcpRunner: liveMcpRunner });
+  const protocol = report.checks.find(check => check.name === "codex-mode-protocol");
+  assert.equal(protocol?.ok, true, protocol?.detail);
+  assert.match(protocol?.detail || "", /active Muster mode protocols match the selected package contract/i);
+});
+
+test("Codex doctor live-inventory: stale active Muster mode protocol names the drift and reinstall/new-session remediation", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mode-protocol-stale-"));
+  const codexHome = join(tmp, "home", ".codex");
+  const { pluginPath, cachePath } = await activeMusterProtocolFixture(tmp, codexHome);
+  const staleText = "# stale default 3 / ceiling 8\n";
+  const stalePath = join(cachePath, "commands", "go-backlog.md");
+  await writeFile(stalePath, staleText);
+  const execFile = liveCodexExec({
+    plugins: JSON.stringify({ installed: [{ name: "muster", version: selectedPlugin.packageVersion, installed: true, enabled: true, source: { path: pluginPath } }] }),
+    mcp: "[]"
+  });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome, execFile, mcpRunner: liveMcpRunner });
+  const protocol = report.checks.find(check => check.name === "codex-mode-protocol");
+  assert.equal(protocol?.ok, false);
+  assert.match(protocol?.detail || "", /commands\/go-backlog\.md/);
+  assert.match(protocol?.detail || "", /rerun `muster install codex` and start a new Codex session/i);
+  assert.equal(await readFile(stalePath, "utf8"), staleText, "doctor must report cache drift without mutating the installed plugin");
 });
 
 test("Codex doctor live-inventory: ABSENT -- empty live state reports the plugin missing with a zeroed inventory, no error", async () => {

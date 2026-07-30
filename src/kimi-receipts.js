@@ -1,6 +1,7 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { resolveContainedRealpath } from "./fs-safe.js";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Kimi-native token receipts: per-dispatch usage attribution from wire.jsonl
@@ -124,16 +125,52 @@ export function parseWireThinkingEfforts(wireText) {
   return efforts;
 }
 
+// --- sessionDir containment (audit S2) ---------------------------------------
+//
+// A sessionDir is a path FROM DATA, never a trusted constant: the session
+// index's `sessionDir` field (any string -- readSessionIndex validates the TYPE,
+// not the location), an items.json resolution object, a prose CLI arg. The CLI
+// arms gate the roots they can know (src/cli.js: the run root for flag args, the
+// session index's own root for an index-resolved dir), but containment that
+// lives ONLY in whichever caller remembers is a gap every future caller
+// inherits -- so the shared readers refuse on their own here too.
+//
+// Root: the session dir's OWN parent, canonicalized. That is the only root a
+// reader can know without being told, and it catches the escape a lexical check
+// cannot see -- an in-root NAME whose symlink target is a tree elsewhere.
+// resolveContainedRealpath realpath()s the base first, so a legitimate session
+// under a symlinked ANCESTOR (macOS /tmp -> /private/tmp) is not a false
+// refusal. A sessionDir that cannot be canonicalized at ALL is not a refusal:
+// it is simply missing, and the read below must report it with this reader's own
+// historical error, never a security message.
+//
+// resolveSessionForCwd stays a pure resolver (it returns index data as a value,
+// including UNKNOWNs); the gate sits at every point that READS a session tree.
+async function containedSessionDir(sessionDir) {
+  const lexical = path.resolve(sessionDir);
+  try {
+    await realpath(lexical);
+  } catch {
+    return sessionDir; // missing/dangling -- let the caller's own read name it
+  }
+  const canonical = await resolveContainedRealpath(path.dirname(lexical), lexical);
+  if (canonical === null) {
+    throw new Error(`session dir ${sessionDir} does not resolve to a path contained under its own parent directory (a symlink escape) -- refusing to read`);
+  }
+  return canonical;
+}
+
 // Read every agents/<id>/wire.jsonl under a session dir into raw per-agent
 // wire texts: { agentId: wireText }, agent dirs sorted. An agent dir without a
 // wire file contributes an empty string (it recorded no steps). Shared by the
-// two session readers below (audit S11); a missing/unreadable agents tree
-// throws WITHOUT a caller prefix -- each caller re-throws with its own name so
-// its error contract is unchanged.
+// two session readers below (audit S11); the containment refusal and a
+// missing/unreadable agents tree both throw WITHOUT a caller prefix -- each
+// caller re-throws with its own name so its error contract is unchanged.
 async function readAgentWires(sessionDir) {
+  const root = await containedSessionDir(sessionDir);
   let agentDirs = [];
   try {
-    agentDirs = (await readdir(path.join(sessionDir, "agents"), { withFileTypes: true }))
+    agentDirs = (await readdir(path.join(root, "agents"), { withFileTypes: true }))
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name)
       .sort();
@@ -143,7 +180,7 @@ async function readAgentWires(sessionDir) {
   const wires = {};
   for (const agentId of agentDirs) {
     try {
-      wires[agentId] = await readFile(path.join(sessionDir, "agents", agentId, "wire.jsonl"), "utf8");
+      wires[agentId] = await readFile(path.join(root, "agents", agentId, "wire.jsonl"), "utf8");
     } catch {
       wires[agentId] = ""; // an agent dir without a wire file contributed nothing measurable
     }
@@ -176,15 +213,26 @@ export async function readSessionThinkingEfforts(sessionDir) {
 // (state.json type "sub", or any non-main agent when state.json is absent).
 export async function readSessionUsage(sessionDir) {
   if (typeof sessionDir !== "string" || !sessionDir) throw new Error("readSessionUsage: sessionDir is required");
+  // Containment BEFORE the first read: state.json is read here, outside
+  // readAgentWires, so this reader gates the dir itself (the refusal wears this
+  // reader's name; a missing dir still falls through to "cannot read agents
+  // tree"). `root` is the canonical dir every read below uses; the returned
+  // `sessionDir` stays the caller's own label.
+  let root;
+  try {
+    root = await containedSessionDir(sessionDir);
+  } catch (err) {
+    throw new Error(`readSessionUsage: ${err.message}`);
+  }
   let state = null;
   try {
-    state = JSON.parse(await readFile(path.join(sessionDir, "state.json"), "utf8"));
+    state = JSON.parse(await readFile(path.join(root, "state.json"), "utf8"));
   } catch {
     state = null; // no state.json (or unreadable) -- fall back to the agents tree alone
   }
   let wires;
   try {
-    wires = await readAgentWires(sessionDir);
+    wires = await readAgentWires(root);
   } catch (err) {
     throw new Error(`readSessionUsage: ${err.message}`);
   }

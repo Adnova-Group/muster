@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRegularTree, CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
+import { escapeRe } from "../src/keyword.js";
 
 // Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
 //
@@ -100,8 +101,7 @@ const codexModeNames = new Map([
 function translateModeNames(text) {
   let result = text;
   for (const [legacy, current] of codexModeNames) {
-    const escaped = legacy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    result = result.replace(new RegExp(`/muster:${escaped}(?![a-z-])`, "g"), `$${current}`);
+    result = result.replace(new RegExp(`/muster:${escapeRe(legacy)}(?![a-z-])`, "g"), `$${current}`);
   }
   return result;
 }
@@ -181,7 +181,69 @@ function loadCodexDispatchContract(root) {
   if (!shapesTable.includes("multi_agent_v1.spawn_agent")) {
     throw new Error("codex-dispatch reference v1/v2 shapes table lost the v1 shape");
   }
-  return { forkTurns, shapesTable };
+  const contract = { forkTurns, shapesTable };
+  return { ...contract, watchProtocol: buildAgentWatchProtocol(root, contract) };
+}
+// codex-watch-protocol-v1 item (audit 2026-07-30, slice S1): slice D above threaded the
+// v1/v2 contract into the orchestrator's wave-dispatch span and the go-backlog registry
+// fallback ONLY. The agent watch protocol -- injected into all 13 mode skills, the root
+// router, the orchestrator's enforcement section, and shipped as the copied
+// runtime/codex-skill-adapter.md -- kept hardcoding v2-only `collaboration.spawn_agent`/
+// `wait_agent`/`list_agents`, so a Codex session on muster's CORE tier (gpt-5.6-luna, which
+// the catalog puts on v1) was taught tool names its own model rejects, plus `fork_turns`
+// where v1 takes a `fork_context` bool and a targets-less wait where v1 requires `targets[]`.
+//
+// Two copies collapse into one here. codex/skill-adapter.md's own "## Agent watch invariant"
+// section is now the SINGLE source of the watch prose (it used to be hand-mirrored by a
+// literal const in this file -- byte-identical by convention only), and the reference's
+// v1/v2 shapes table is embedded into it VERBATIM, exactly as slice D does for the
+// orchestrator. Every anchor is throw-on-miss: edit the prose in codex/skill-adapter.md and
+// the shapes in references/codex-dispatch.md; never re-paraphrase either here. Both files
+// sit under CODEX_BUILD_INPUT_DIRS entries, so the skip-if-current input digest observes
+// every edit to them.
+const WATCH_HEADING = "## Agent watch invariant";
+function buildAgentWatchProtocol(root, contract) {
+  const adapter = readFileSync(join(root, "codex", "skill-adapter.md"), "utf8");
+  const start = adapter.indexOf(WATCH_HEADING);
+  if (start < 0) throw new Error("codex/skill-adapter.md agent-watch section not found");
+  const next = adapter.indexOf("\n## ", start + WATCH_HEADING.length);
+  const source = (next < 0 ? adapter.slice(start) : adapter.slice(start, next)).trimEnd() + "\n";
+  const lintDirective = source.match(/^<!-- prompt-lint-disable GUARD-IDK-001:[\s\S]*?-->\n/m);
+  if (!lintDirective) throw new Error("codex/skill-adapter.md agent-watch lint directive not found");
+  const versionPreamble = `\n**The dispatch and barrier shapes are VERSION-DEPENDENT**: Codex resolves its subagent API per MODEL from the catalog's \`multi_agent_version\`, so never hardcode one shape -- resolve the version from each dispatched role's model and fail closed to v1 rather than guessing v2. The v2 names below are shorthand for the resolved call: on a v1 model every \`collaboration.*\` call is its \`multi_agent_v1.*\` counterpart, and \`multi_agent_v1.wait_agent\` requires the \`targets[]\` of the ids being waited on.\n\n${contract.shapesTable}\n`;
+  let result = source.replace(lintDirective[0], `${lintDirective[0]}${versionPreamble}`);
+  const retainAnchor = "retain every canonical agent id returned by `collaboration.spawn_agent` and immediately call `collaboration.wait_agent` with a timeout of at most 60 seconds.";
+  if (!result.includes(retainAnchor)) throw new Error("codex/skill-adapter.md agent-watch dispatch/barrier anchor not found");
+  result = result.replace(
+    retainAnchor,
+    "retain every canonical agent id returned by the version-resolved spawn -- `collaboration.spawn_agent` on v2, `multi_agent_v1.spawn_agent` on v1 -- and immediately call `collaboration.wait_agent` with a timeout of at most 60 seconds (`multi_agent_v1.wait_agent(targets[], timeout_ms)` on v1, naming every outstanding id)."
+  );
+  const spawnDefaultAnchor = "Spawn with `fork_turns: \"none\"` unless the user explicitly requests a context fork.";
+  if (!result.includes(spawnDefaultAnchor)) throw new Error("codex/skill-adapter.md agent-watch spawn-default anchor not found");
+  result = result.replace(
+    spawnDefaultAnchor,
+    "Spawn with `fork_turns: \"none\"` on v2 (`fork_context: false` on v1) unless the user explicitly requests a context fork."
+  );
+  return result;
+}
+// codex-watch-protocol-v1 item (audit 2026-07-30, slice S1): the adapter used to be copied
+// byte-for-byte into the bundle, shipping a v2-only `collaboration.spawn_agent` dispatch
+// bullet and a v2-only watch section to every ported workflow that reads it. Its dispatch
+// bullet now carries the reference's fork_turns contract verbatim (same block go-backlog and
+// the orchestrator get) and its watch section is replaced by the single-sourced protocol
+// above, so all 15 watch surfaces ship one identical, version-resolved contract.
+function adaptSkillAdapterForCodex(text, contract) {
+  const dispatchAnchor = "call `collaboration.spawn_agent` with the ordinary `task_name`, `message`, `fork_turns: \"none\"`, and `agent_type: \"<exact chosen.id>\"`. A positive context fork is allowed only when the user explicitly requests one; never use `\"all\"`.";
+  if (!text.includes(dispatchAnchor)) throw new Error("codex/skill-adapter.md named-profile dispatch anchor not found");
+  const result = text.replace(
+    dispatchAnchor,
+    "call the model-version-resolved spawn -- `collaboration.spawn_agent` on v2 models, `multi_agent_v1.spawn_agent` on v1, resolved per the role's model from the catalog's `multi_agent_version`, never hardcoded to one shape (the dispatch/barrier shapes table is in the watch invariant below) -- with the ordinary `task_name`, `message`, `fork_turns: \"none\"` on v2 (v1 takes `fork_context: false`), and `agent_type: \"<exact chosen.id>\"`. " + contract.forkTurns
+  );
+  const start = result.indexOf(WATCH_HEADING);
+  if (start < 0) throw new Error("codex/skill-adapter.md agent-watch section not found");
+  const next = result.indexOf("\n## ", start + WATCH_HEADING.length);
+  if (next >= 0) throw new Error("codex/skill-adapter.md agent-watch section is no longer the final section -- retarget this replacement");
+  return result.slice(0, start) + contract.watchProtocol;
 }
 function adaptCommandForCodex(text, name, contract) {
   for (const [marker, files, arrayName] of COMMAND_MARKER_COVERAGE) {
@@ -302,13 +364,13 @@ function adaptCoordinationForCodex(text) {
   const section = `## Standing-context preflight\n\nThe installed Codex plugin cache is not a Git checkout, so do not run \`git log\` against plugin paths. At the first read in a runner cycle, record the plugin version from \`${"${PLUGIN_ROOT}"}/package.json\` and a SHA-256 fingerprint over these installed behavior paths: \`internal-skills/coordination/SKILL.md\`, \`commands/go-backlog.md\`, \`commands/go.md\`, and \`commands/runner.md\`. Compute the fingerprint with the host's available SHA-256 tool, sorting paths before hashing. Muster's Codex hooks are installed outside the plugin cache: also locate the selected managed runtime at the git root's \`.codex/muster/hooks/\` or \`$CODEX_HOME/muster/hooks/\` and fingerprint its files plus the sibling Muster ownership manifest. If neither managed hook runtime can be proven, say "I don't know whether the standing context is unchanged," leave a HUMAN-HOLD receipt, and stop.\n\nBefore a later claim or resume in the same cycle, recompute both fingerprints. Unchanged version and fingerprints proceed. Any change means the installed standing context changed or was tampered with during the cycle: leave a HUMAN-HOLD receipt naming the old/new version and hashes, preserve the claim state, and stop. A packaged plugin cannot safely classify such an in-place mutation as confined because there is no authoritative Git history in the cache. A newly started cycle reads the newly installed immutable version and managed hook runtime as its fresh baseline.\n\n`;
   return text.slice(0, start) + section + text.slice(end);
 }
-// Kept byte-identical in prose to codex/skill-adapter.md's own "## Agent watch invariant"
-// section (which is copied VERBATIM into the generated adapter file below) -- there is no
-// single source of truth here, so a prose change to either copy must be mirrored into the
-// other by hand. The watch is state-based: provider-reported `running` is authoritative
-// positive liveness, while terminal/non-running states and explicit stop conditions are
-// handled deterministically.
-const agentWatchProtocol = `## Agent watch invariant\n\n<!-- prompt-lint-disable GUARD-IDK-001: Explicit terminal conditions prevent abandoned live agents while preserving approval, HUMAN-HOLD, blocker, and merge-decision stops. -->\n\nAfter every dispatch, retain every canonical agent id returned by \`collaboration.spawn_agent\` and immediately call \`collaboration.wait_agent\` with a timeout of at most 60 seconds. A message, completion receipt, or silent heartbeat wakes the watch. After each wake, process mailbox receipts first, then call \`collaboration.list_agents\` exactly once and dispatch any newly ready work. Each heartbeat reconciles current state; never tight-poll or reuse a stale reconciliation.\n\nA worker actively in a turn (\`running\`) is authoritative positive liveness. It must not be interrupted solely because any fixed silent-heartbeat count elapsed. Continue the event-driven watch while the provider reports \`running\`. Long-running active work emits periodic advisory progress and, when warranted, advisory escalation without killing or interrupting the worker. In attended mode the user may explicitly cancel it; unattended mode continues while the provider reports \`running\`.\n\nFor non-running workers, deterministically exhaust or handle the reconciled state immediately rather than waiting for a heartbeat count: accept a \`completed\` worker's receipt and advance; for an \`idle\` worker with an outstanding assignment and no completion receipt, interrupt it and record the incomplete task in STATE; for a \`failed\` or \`unreachable\` worker, record the incomplete task and escalate, re-dispatch, or continue locally only when safe. When an interrupted worker is a reviewer, record \`{reviewer: <name>, status: "exhausted"}\` in the tally input. Explicit user cancellation, an explicit task step violation, and an explicit task budget violation remain valid stop conditions even when the worker is \`running\`.\n\nRespect the configured \`agents.max_threads\`; Muster must neither lower nor raise it. Spawn with \`fork_turns: "none"\` unless the user explicitly requests a context fork. Every brief sets a 25-step ceiling, permits at most one follow-up, and defers broad suites to final verification. Do not send the final answer or clear state while executable work remains, but worker budget exhaustion is a terminal escalation condition rather than permission to wait forever. Hooks are advisory and never replace this watch cycle.\n`;
+// The agent watch protocol is single-sourced from codex/skill-adapter.md's own
+// "## Agent watch invariant" section and version-threaded by buildAgentWatchProtocol above
+// (audit 2026-07-30, slice S1) -- it used to live here as a literal const kept
+// byte-identical to that section by hand, with no single source of truth and a v2-only
+// dispatch/barrier shape. The watch itself is state-based: provider-reported `running` is
+// authoritative positive liveness, while terminal/non-running states and explicit stop
+// conditions are handled deterministically.
 // build-anchor-audit item: this previously anchored on the orchestrator's OLD "**Hard
 // gate:**" bullet, describing a real hook-enforced wave-guard deny. Commit 424fcb1
 // (refactor(hooks): enforcement follows the run) removed that deny mechanism entirely
@@ -435,11 +497,17 @@ function adaptOrchestratorForCodex(text, contract) {
     + result.slice(waveDispatchEnd);
   const enforcement = result.indexOf("## Enforcement model: gates vs conventions");
   if (enforcement < 0) throw new Error("orchestrator enforcement section not found");
-  return result.slice(0, enforcement) + `## Codex enforcement model\n\n- **Mechanically validated:** manifest schema, dependency waves, capability resolution, worktree/base-SHA receipts, file ownership checks, tests, reviews, commits, and terminal receipts.\n- **Hook diagnostics:** session/prompt context, supported action-class warnings, a warn-only border-invitation drift reminder, stale-marker diagnostics, and subagent start/stop context after one-time hook trust.\n- **Advisory:** todo-before-spawn and universal dispatch-not-inline blocking. Current Codex hooks cannot reliably intercept every subagent or unified-shell action, so do not claim these are hard gates.\n- **Required invariant:** every write-capable wave runs in explicitly created isolated worktrees and is verified from repository state after the barrier.\n\n${agentWatchProtocol}`;
+  return result.slice(0, enforcement) + `## Codex enforcement model\n\n- **Mechanically validated:** manifest schema, dependency waves, capability resolution, worktree/base-SHA receipts, file ownership checks, tests, reviews, commits, and terminal receipts.\n- **Hook diagnostics:** session/prompt context, supported action-class warnings, a warn-only border-invitation drift reminder, stale-marker diagnostics, and subagent start/stop context after one-time hook trust.\n- **Advisory:** todo-before-spawn and universal dispatch-not-inline blocking. Current Codex hooks cannot reliably intercept every subagent or unified-shell action, so do not claim these are hard gates.\n- **Required invariant:** every write-capable wave runs in explicitly created isolated worktrees and is verified from repository state after the barrier.\n\n${contract.watchProtocol}`;
 }
+// Every muster CLI verb whose Codex-side invocation must carry --codex (the
+// Codex-adapted catalog/capability surface). One list, one rewrite loop below:
+// the six chains this replaced were byte-identical except for the verb, so a
+// seventh verb is now a one-word edit instead of a copied `.replace` line.
+const CODEX_ADAPTED_VERBS = ["capabilities", "match", "assess", "diagnose", "audit", "manifest validate"];
 function bindBundledCodexCli(text) {
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
-  return text
+  const escapedCli = escapeRe(cli);
+  let result = text
     // The Claude-side performance pass resolves `$MUSTER_CLI` once per run
     // (plugin/commands/go.md step -2) because a raw `npx` call pays a cold
     // start on every invocation. The Codex package has no such ambiguity:
@@ -448,13 +516,11 @@ function bindBundledCodexCli(text) {
     // the bundled entrypoint before the per-verb --codex rewrites below.
     .replaceAll("$MUSTER_CLI", cli)
     .replaceAll("$CLAUDE_PLUGIN_ROOT/", "${PLUGIN_ROOT}/")
-    .replaceAll("npx -y @adnova-group/muster", cli)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} capabilities(?! --codex)`, "g"), `${cli} capabilities --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} match(?! --codex)`, "g"), `${cli} match --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} assess(?! --codex)`, "g"), `${cli} assess --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} diagnose(?! --codex)`, "g"), `${cli} diagnose --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} audit(?! --codex)`, "g"), `${cli} audit --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} manifest validate(?! --codex)`, "g"), `${cli} manifest validate --codex`);
+    .replaceAll("npx -y @adnova-group/muster", cli);
+  for (const verb of CODEX_ADAPTED_VERBS) {
+    result = result.replace(new RegExp(`${escapedCli} ${verb}(?! --codex)`, "g"), `${cli} ${verb} --codex`);
+  }
+  return result;
 }
 // skill-frontmatter-capabilities item: Claude Code skill frontmatter supports capability
 // keys (disallowed-tools, argument-hint, disable-model-invocation, etc. --
@@ -690,7 +756,8 @@ async function buildCodexPluginOnce({ root, outDir }) {
     // catalog/ copy above (rmAndCopy catalog -> plugin/catalog), so no separate
     // staging step is needed — the runtime stays self-contained without a Node
     // experimental-JSON-modules import warning on the Node 20/22 source lane.
-    write(join(runtime, "codex-skill-adapter.md"), readFileSync(join(root, "codex", "skill-adapter.md"), "utf8"));
+    const contract = loadCodexDispatchContract(root);
+    write(join(runtime, "codex-skill-adapter.md"), adaptSkillAdapterForCodex(readFileSync(join(root, "codex", "skill-adapter.md"), "utf8"), contract));
     rmAndCopy(join(root, "codex", "hooks"), join(runtime, "install-hooks"));
     write(join(runtime, "sprint-protocol.md"), readFileSync(join(root, "cowork", "sprint-protocol.md"), "utf8"));
     const codexCatalogPath = join(plugin, "catalog", "builtins.muster.yaml");
@@ -701,7 +768,6 @@ async function buildCodexPluginOnce({ root, outDir }) {
       codexCatalogPath,
       codexCatalogSource.replace(humanizerCreditAnchor, "blader/humanizer + rudra496/StealthHumanizer (AI-tell removal)")
     );
-    const contract = loadCodexDispatchContract(root);
     for (const entry of readdirSync(join(plugin, "commands"), { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
       const path = join(plugin, "commands", entry.name);
@@ -735,8 +801,8 @@ async function buildCodexPluginOnce({ root, outDir }) {
     await adaptPortedSkills(internalSkillDir, portedSkillNames.filter(name => !name.startsWith("gsd-") && name !== "wsh-signed-audit-trails-recipe"), contract);
     await writeInternalRuntime(root, plugin);
 
-    for (const [name, mode] of Object.entries(modes)) write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode));
-    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Route orchestration requests across Muster modes and pipelines.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-init, $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${agentWatchProtocol}`);
+    for (const [name, mode] of Object.entries(modes)) write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode, contract));
+    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Route orchestration requests across Muster modes and pipelines.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-init, $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${contract.watchProtocol}`);
 
     const profiles = await generateCodexProfiles(root);
     for (const [name, content] of profiles) write(join(plugin, "agents", name), content);
@@ -821,8 +887,8 @@ function rmAndCopy(source, destination, { merge = false } = {}) {
   cpSync(source, destination, { recursive: true });
 }
 
-function modeSkill(name, mode) {
-  return `---\nname: ${name}\ndescription: ${JSON.stringify(mode.description)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n\n${agentWatchProtocol}`;
+function modeSkill(name, mode, contract) {
+  return `---\nname: ${name}\ndescription: ${JSON.stringify(mode.description)}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Mode dispatcher delegates to the authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster ${mode.command}\n\nUse this skill when the request needs to ${mode.purpose}. Treat the user's remaining prompt as the outcome or backlog reference.\n\n1. Read \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` and apply its Codex tool, named-profile dispatch, bounded-context-fork, and plugin-root bindings.\n2. Read \`${"${PLUGIN_ROOT}"}/commands/${mode.command}.md\` for the authoritative workflow and preserve its approval, isolation, escalation, and receipt gates.\n3. Use the bundled Muster MCP tools for deterministic routing, manifests, waves, scoring, and pipelines. The bundled CLI is \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs\` when a tool is not available.\n4. Keep the shared pipeline files authoritative. Do not duplicate pipeline routing in this skill.\n\n${contract.watchProtocol}`;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

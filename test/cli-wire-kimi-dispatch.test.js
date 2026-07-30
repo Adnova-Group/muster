@@ -22,7 +22,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
-import { writeFile, mkdir, readFile, rm, symlink } from "node:fs/promises";
+import { writeFile, mkdir, readFile, rm, symlink, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
@@ -129,27 +129,38 @@ test("cli wire: kimi-session-usage --session-dir reads a known session's usage",
   assert.equal(typeof usage.total.total, "number");
 });
 
+// One temp root laid out the way kimi lays out its home: session_index.jsonl at
+// the root, the session tree under it (a copy of the real capture, so the usage
+// numbers stay real). A resolved sessionDir is contained against THIS root, so a
+// test that parked the session tree in an unrelated part of the filesystem would
+// be exercising the planted-entry shape, not a legitimate flow.
+async function indexRoot(prefix) {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  const sessionDir = join(dir, "sessions", "wd_repo_leg", "session_leg");
+  await mkdir(dirname(sessionDir), { recursive: true });
+  await cp(FIXTURE_SESSION, sessionDir, { recursive: true });
+  return { dir, indexPath: join(dir, "session_index.jsonl"), sessionDir };
+}
+
 test("cli wire: kimi-session-usage --cwd resolves via the captured stdout id, then reads usage", async () => {
   // The run root is process.cwd() and every file arg must resolve inside it
   // (the slice-B containment), so the leg's files live in one temp run root.
-  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-cwd-"));
+  const { dir, indexPath, sessionDir } = await indexRoot("muster-kimi-wire-cwd-");
   const stdoutFile = join(dir, "stdout.jsonl");
   await writeFile(stdoutFile, await readFile(FIXTURE_STDOUT, "utf8"));
-  const indexPath = join(dir, "session_index.jsonl");
-  await writeFile(indexPath, JSON.stringify({ sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, workDir: "/repo/other" }) + "\n");
+  await writeFile(indexPath, JSON.stringify({ sessionId: CAPTURED_ID, sessionDir, workDir: "/repo/other" }) + "\n");
   const result = JSON.parse((await run([
     "kimi-session-usage", "--cwd", "/repo/leg", "--stdout-file", stdoutFile, "--index", indexPath,
   ], { cwd: dir })).stdout);
   assert.deepEqual(result.resolution, {
-    resolved: true, sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, source: "captured",
+    resolved: true, sessionId: CAPTURED_ID, sessionDir, source: "captured",
   });
   assert.ok(result.usage.total.total > 0, "usage rides the resolved session dir");
 });
 
 test("cli wire: kimi-session-usage --cwd falls back to the index, and UNKNOWN exits 0", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-index-arm-"));
-  const indexPath = join(dir, "session_index.jsonl");
-  await writeFile(indexPath, JSON.stringify({ sessionId: "session_leg", sessionDir: FIXTURE_SESSION, workDir: "/repo/leg" }) + "\n");
+  const { dir, indexPath, sessionDir } = await indexRoot("muster-kimi-wire-index-arm-");
+  await writeFile(indexPath, JSON.stringify({ sessionId: "session_leg", sessionDir, workDir: "/repo/leg" }) + "\n");
   const resolved = JSON.parse((await run(["kimi-session-usage", "--cwd", "/repo/leg", "--index", indexPath], { cwd: dir })).stdout);
   assert.equal(resolved.resolution.source, "index-unique");
   assert.equal(resolved.resolution.sessionId, "session_leg");
@@ -298,6 +309,41 @@ test("cli wire: kimi-session-usage refuses symlink-escaping --session-dir, --std
   } finally {
     await rm(outsideStdout, { force: true });
     await rm(outsideIndex, { force: true });
+  }
+});
+
+// Plant a REAL session tree (one usage record, a distinctive model name so a
+// leaked read shows up verbatim in stdout) at `dir`.
+async function plantSessionTree(dir, model = "TOPSECRET-model") {
+  await mkdir(join(dir, "agents", "main"), { recursive: true });
+  await writeFile(
+    join(dir, "agents", "main", "wire.jsonl"),
+    `{"type":"usage.record","model":"${model}","usage":{"inputOther":1,"output":2,"inputCacheRead":3,"inputCacheCreation":4},"usageScope":"turn","time":1}\n`
+  );
+  return dir;
+}
+
+test("cli wire: kimi-session-usage --cwd refuses an index-planted session dir escaping the session index root", async () => {
+  // The resolved sessionDir is DATA, not a flag: it comes back from the session
+  // index, which kimi writes at the kimi-home root with every sessionDir under
+  // it (src/kimi-receipts.js's probe evidence). So the index's own directory is
+  // the root, and an entry pointing outside it -- relative traversal, an
+  // absolute tree elsewhere, or an in-root name symlinked out -- is planted,
+  // never a session: the named refusal, never a read (audit S2 P1).
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-index-root-"));
+  const outside = await plantSessionTree(await mkdtemp(join(tmpdir(), "muster-kimi-outside-session-")));
+  const indexPath = join(root, "session_index.jsonl");
+  await symlink(outside, join(root, "linked-session"));
+  for (const sessionDir of ["../../etc", outside, join(root, "linked-session")]) {
+    await writeFile(indexPath, JSON.stringify({ sessionId: "session_planted", sessionDir, workDir: "/repo/leg" }) + "\n");
+    await assert.rejects(
+      run(["kimi-session-usage", "--cwd", "/repo/leg", "--index", "session_index.jsonl"], { cwd: root }),
+      (err) => {
+        assert.match(err.stderr, /contained under the session index root/, `planted sessionDir ${sessionDir} must hit the named refusal`);
+        assert.ok(!String(err.stdout).includes("TOPSECRET"), "the planted tree's usage must never be echoed into the CLI JSON");
+        return true;
+      }
+    );
   }
 });
 

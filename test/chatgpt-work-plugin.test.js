@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +10,7 @@ import {
   runChatgptWorkInstall,
   readChatgptWorkConfig,
 } from "../src/chatgpt-work-install.js";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const execFile = promisify(execFileCb);
 const root = new URL("../", import.meta.url).pathname;
@@ -17,7 +18,8 @@ const root = new URL("../", import.meta.url).pathname;
 test("connection IDs normalize only an initial plugin_ and otherwise fail closed", () => {
   assert.equal(normalizeChatgptWorkConnectionId("asdk_app_Abc-123_x"), "asdk_app_Abc-123_x");
   assert.equal(normalizeChatgptWorkConnectionId("plugin_asdk_app_Abc-123_x"), "asdk_app_Abc-123_x");
-  for (const invalid of ["", "plugin_plugin_asdk_app_a", "xasdk_app_a", "ASDK_APP_a", "asdk_app_", "asdk_app_a b"]) {
+  for (const invalid of ["", "plugin_plugin_asdk_app_a", "xasdk_app_a", "ASDK_APP_a", "asdk_app_", "asdk_app_a b",
+    123, null, undefined, { id: "asdk_app_a" }]) {
     assert.throws(() => normalizeChatgptWorkConnectionId(invalid), /connection id/i);
   }
 });
@@ -391,6 +393,41 @@ test("receipt v3 binds every Work activation artifact and rejects tampering", as
     readChatgptWorkConfig({ scope: "project", cwd: project }),
     /artifact digest/i,
   );
+});
+
+test("installed server startup rejects a receipt whose profile or artifact set no longer matches", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-receipt-mutation-"));
+  const project = join(dir, "project");
+  await mkdir(join(project, ".git"), { recursive: true });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const installed = await runChatgptWorkInstall({
+    connectionId: "asdk_app_Mutation1", profile: "pro-safe", scope: "project", cwd: project,
+  });
+  const activation = JSON.parse(await readFile(join(installed.pluginPath, ".mcp.json"), "utf8"))
+    .mcpServers.muster.env;
+  const valid = JSON.parse(await readFile(installed.configPath, "utf8"));
+  const publish = receipt => writeFile(installed.configPath, JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600 });
+
+  // The receipt claims full while the activation env says pro-safe: the server
+  // must refuse before any MCP output rather than serve the weaker profile.
+  await publish({ ...valid, profile: "full" });
+  const profileMismatch = await serverExit(activation);
+  assert.notEqual(profileMismatch.code, 0);
+  assert.equal(profileMismatch.stdout, "");
+  assert.match(profileMismatch.stderr, /installed activation receipt rejected \(receipt identity\/profile mismatch\)/);
+
+  // One artifact silently dropped from the receipt would leave that published
+  // file unbound by any digest, so the whole set must fail closed.
+  const { "package.json": _dropped, ...artifacts } = valid.artifacts;
+  await publish({ ...valid, artifacts });
+  const artifactMismatch = await serverExit(activation);
+  assert.notEqual(artifactMismatch.code, 0);
+  assert.equal(artifactMismatch.stdout, "");
+  assert.match(artifactMismatch.stderr, /installed activation receipt rejected \(receipt artifact set mismatch\)/);
+
+  await publish(valid);
+  const restored = await serverExit(activation);
+  assert.equal(restored.code, 0, restored.stderr);
 });
 
 test("receipt validation names the offending field for each invalid shape", async t => {

@@ -12,7 +12,7 @@ import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
@@ -63,9 +63,9 @@ import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, codexSpawnAgentCall, codexWaitAgentCall } from "./wave-dispatch.js";
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
-import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts } from "./kimi-receipts.js";
+import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
-import { envInt } from "./env-util.js";
+import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import { resolveContainedRealpath } from "./fs-safe.js";
@@ -181,22 +181,26 @@ async function main() {
         // plugin/ tree is unverified and has no on-disk/protocol detection signal,
         // so it is DECLARED the same way remote connectors are -- --native-plugin
         // or MUSTER_COWORK_NATIVE_PLUGIN (MCPB-boolean-safe: only "1"/"true"-ish
-        // values enable, mirroring MUSTER_ENABLE_FABLE's parse in src/model.js).
-        const nativeFlag = process.env.MUSTER_COWORK_NATIVE_PLUGIN;
+        // values enable -- isTruthyFlag in src/env-util.js, the same parse
+        // MUSTER_ENABLE_APEX uses in src/model.js).
         const nativePluginRide = rest.includes("--native-plugin")
-          || (!!nativeFlag && nativeFlag !== "0" && nativeFlag.toLowerCase() !== "false");
+          || isTruthyFlag(process.env.MUSTER_COWORK_NATIVE_PLUGIN);
         installed = await readInstalledCowork(home, { declaredConnectors: declared, nativePluginRide });
       } else {
         installed = await readInstalled(home);
       }
       // --codex lane resolves through the codex-adapted catalog AND augments each
       // agent-backed role with its resolved codexModel {model, effort} (opts.codex).
-      // The non-codex/cowork call is left byte-identical to preserve output shape.
+      // EVERY lane threads `home` (audit S3): the inventory readers above all honor
+      // the positional home override, so dropping it on the default/--cowork/--work
+      // arm made resolveCapabilities resolve installed-skill DESCRIPTIONS against
+      // the real homedir while reporting skill NAMES from the override home --
+      // every description came back empty.
       const capabilities = rest.includes("--codex")
         ? resolveCapabilities(adaptCatalogForCodex(catalog, installed), installed, home, { codex: true })
         : rest.includes("--kimi")
         ? resolveCapabilities(catalog, installed, home, { kimi: true })
-        : resolveCapabilities(catalog, installed);
+        : resolveCapabilities(catalog, installed, home);
       if (role) {
         if (!capabilities.roles[role]) fail(`capabilities --role ${role}: unknown role`);
         out({ role, ...capabilities.roles[role] });
@@ -432,10 +436,10 @@ async function main() {
       // resolveContainedRealpath discipline the sprint-waves branch applies
       // below): these paths come from prose/model output, so a planted symlink
       // must fail with the named refusal, never be read.
-      const contained = async (flag, value) => {
-        const canonical = await resolveContainedRealpath(process.cwd(), value);
+      const contained = async (label, value, { root = process.cwd(), rootName = "the run root" } = {}) => {
+        const canonical = await resolveContainedRealpath(root, value);
         if (canonical === null) {
-          fail(`${usage}: ${flag} ${value} does not resolve to a path contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
+          fail(`${usage}: ${label} ${value} does not resolve to a path contained under ${rootName} (missing, dangling, or a symlink escape) -- refusing to read`);
         }
         return canonical;
       };
@@ -445,13 +449,24 @@ async function main() {
         const stdoutFile = flagValue(rest, "--stdout-file");
         const capturedSessionId = stdoutFile ? captureSessionId(await readFile(await contained("--stdout-file", stdoutFile), "utf8")) : null;
         const index = flagValue(rest, "--index");
-        const resolution = await resolveSessionForCwd({
-          ...(index ? { indexPath: await contained("--index", index) } : {}),
-          cwd,
-          capturedSessionId
-        });
+        const indexPath = index ? await contained("--index", index) : DEFAULT_SESSION_INDEX;
+        const resolution = await resolveSessionForCwd({ indexPath, cwd, capturedSessionId });
+        // The RESOLVED session dir needs the same gate as the flags above: it is
+        // data (a session_index.jsonl `sessionDir` field, which readSessionIndex
+        // accepts as any string), and its usage is echoed into this JSON. Root:
+        // the index's OWN directory -- kimi writes session_index.jsonl at the
+        // kimi-home root and every sessionDir under it
+        // (<home>/sessions/wd_<slug>/session_<uuid>, probe evidence in
+        // src/kimi-receipts.js), so an entry resolving anywhere else is planted,
+        // never a session. src/kimi-receipts.js's readers re-check on their own.
         out(resolution.resolved
-          ? { resolution, usage: await readSessionUsage(resolution.sessionDir) }
+          ? {
+            resolution,
+            usage: await readSessionUsage(await contained("resolved session dir", resolution.sessionDir, {
+              root: dirname(indexPath),
+              rootName: "the session index root"
+            }))
+          }
           : { resolution });
       }
     } else if (cmd === "kimi-summarize-receipts") {

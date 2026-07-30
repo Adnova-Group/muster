@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
 import { writeFile, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
+import { trackedMkdtemp as mkdtemp, tmpProject } from "../test-support/helpers.js";
 
 const pexecFile = promisify(execFile);
 
@@ -196,6 +196,25 @@ test("cli wire: capabilities --role returns one compact role without the skill i
   // providers are installed), so assert the structure directly instead.
   assert.ok(!("skills" in compact), "compact role output omits the skills inventory");
   assert.ok(!("roles" in compact), "compact role output omits the full roles map");
+});
+
+// audit S3 (2026-07-30, architecture P1): `capabilities [home]` documents a
+// positional home-dir override, and readInstalled(home) honored it -- but the
+// default/--cowork/--work lanes then called resolveCapabilities WITHOUT it (only
+// --codex/--kimi threaded it through), so the skills inventory reported names
+// from the override home while resolving their descriptions against the REAL
+// homedir: every description came back "". Pinned end to end through the CLI.
+test("cli wire: capabilities resolves installed skill descriptions from the positional home override", async () => {
+  const home = await tmpProject({
+    ".claude/skills/audit-s3-home-override/SKILL.md":
+      "---\nname: audit-s3-home-override\ndescription: fixture skill proving the home override reaches skill descriptions\n---\n\n# body\n",
+  });
+  const { skills } = JSON.parse((await run(["capabilities", home])).stdout);
+  const skill = skills.find((s) => s.id === "audit-s3-home-override");
+  assert.ok(skill, "the override home's installed skill must appear in the inventory");
+  assert.equal(skill.source, "installed");
+  assert.equal(skill.description, "fixture skill proving the home override reaches skill descriptions",
+    "the description must be read from the override home, not the real homedir");
 });
 
 test("cli wire: capabilities --roles-only omits skills and installed inventory", async () => {

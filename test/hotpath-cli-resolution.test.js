@@ -12,10 +12,15 @@
 // weight-reduction item, criterion 4: audit.md/diagnose.md/capture.md/plan.md/
 // plan-backlog.md were the remaining standalone entry points still on raw `npx -y` (named
 // as follow-up candidates in docs/performance-pass.md's "Scope of this wave" section) —
-// they now get the identical binding go.md/go-backlog.md already carry. runner.md,
-// autopilot.md, sprint.md, and run.md were checked too: none shell a raw npx call
-// themselves (they delegate to go.md/go-backlog.md's own instructions), so they need no
-// snippet of their own and are deliberately not in this list.
+// they now get the identical binding go.md/go-backlog.md already carry. autopilot.md,
+// sprint.md, and run.md were checked too: none shell a raw npx call themselves (they
+// delegate to go.md/go-backlog.md's own instructions), so they need no snippet of their
+// own and are deliberately not in this list.
+//
+// audit S6: runner.md hardcoded two `node src/cli.js ...` call sites (hygiene --reap,
+// kimi-goal-invocation) with no resolution step of its own, unlike every sibling entry
+// point above — it now carries the identical binding and joins this list so the guard
+// covers it too.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -35,6 +40,7 @@ const ENTRY_POINT_FILES = [
   "plugin/commands/capture.md",
   "plugin/commands/plan.md",
   "plugin/commands/plan-backlog.md",
+  "plugin/commands/runner.md",
 ];
 
 // Markdown nests the ```bash fence under a numbered list item, so every line in the doc

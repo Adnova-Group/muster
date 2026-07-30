@@ -1281,5 +1281,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // edit sits inside build-codex.mjs's wholesale-replaced wave-dispatch span,
   // so no build anchor is affected. docs/binding-interface.md's grep-audit
   // counts are unchanged (re-verified green).
-  assert.equal(hash.digest("hex"), "3699d225d2fe8e62a29f97909d92a2f4ae76f2cc8fac2fd8a639769cb88bfbd6");
+  // 2026-07-30 re-pin #22 (audit S6): runner.md gains the $MUSTER_CLI resolution block its
+  // siblings carry; both hardcoded node src/cli.js call sites switched.
+  assert.equal(hash.digest("hex"), "9d967a7f9a2d897e48f4f70a30566b4070437cf80069007779b79d358e05ca45");
 });

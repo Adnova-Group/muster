@@ -17,6 +17,8 @@
 // enters (manifests, MUSTER_MAX_TIER, adapter lookups) via LEGACY_TIER_ALIASES,
 // and live on as the CLAUDE adapter's concrete values — a Claude word now, not a
 // muster word, exactly like "gpt-5.6-terra" is a Codex word.
+import { isTruthyFlag } from "./env-util.js";
+
 const SCOUT = new Set(["code-navigation", "docs-research", "research"]);
 // "judge" is an intentional conceptual role OUTSIDE the resolved ROLES enum
 // (roles.js): the tournament skill (plugin/skills/tournament/SKILL.md) dispatches
@@ -79,15 +81,28 @@ export function capTier(tier, cap = process.env.MUSTER_MAX_TIER) {
 // tier is available again.
 function apexEnabled() {
   // Robust against MCPB boolean user_config, which substitutes as the string
-  // "false"/"true": only "1"/"true"-ish values enable; "0"/"false"/"" do not.
-  const v = process.env.MUSTER_ENABLE_APEX ?? process.env.MUSTER_ENABLE_FABLE;
-  return !!v && v !== "0" && v.toLowerCase() !== "false";
+  // "false"/"true": only "1"/"true"-ish values enable; "0"/"false"/"" do not
+  // (isTruthyFlag in src/env-util.js -- shared with the --native-plugin ride's
+  // parse in src/cli.js).
+  return isTruthyFlag(process.env.MUSTER_ENABLE_APEX ?? process.env.MUSTER_ENABLE_FABLE);
+}
+
+// The emission layer in one function: a DECLARED tier (a role's tier, or an
+// agent's tier from catalog/agents.manifest.json) → the tier that may actually
+// be emitted for dispatch, after the apex opt-in check and MUSTER_MAX_TIER.
+// modelForRole is this applied to a role's declared tier; the harness adapters
+// apply it to a manifest-declared agent tier (see claudeProfileForConfig), so a
+// per-agent override cannot smuggle a platform-disabled or over-cap tier into a
+// dispatch pin that the role path would have degraded.
+export function emissionTier(tier) {
+  const canonical = normalizeTier(tier);
+  return capTier(canonical === "apex" && !apexEnabled() ? fallbackModelFor("apex") : canonical);
 }
 
 export function modelForRole(role) {
-  if (SCOUT.has(role)) return capTier("scout");
-  if (APEX.has(role)) return capTier(apexEnabled() ? "apex" : fallbackModelFor("apex"));
-  return capTier("core");
+  if (SCOUT.has(role)) return emissionTier("scout");
+  if (APEX.has(role)) return emissionTier("apex");
+  return emissionTier("core");
 }
 
 // Apex degrades per this map — never fail the task over a model tier, and never

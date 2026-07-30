@@ -84,7 +84,7 @@ const TOOLS = {
   // gate/math verbs — JSON in, written to a temp file
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_wave: { argv: ["wave"], ...J2("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
-  muster_sprint_waves: { argv: ["sprint-waves"], ...T("Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations (returns waves JSON; annotated:false means the backlog is unannotated/sequential).", "backlog") },
+  muster_sprint_waves: { argv: ["sprint-waves"], ...T("Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations. Returns waves/items plus an explicit schedule: cap-bounded isolated build/review batches, the barrier, ordered merge integration, and sequential-degradation metadata; annotated:false means the backlog is unannotated/sequential.", "backlog") },
   muster_sprint_protocol: {
     kind: "static", text: null, error: "muster_sprint_protocol: adapter did not supply static content",
     description: "Returns the bundled sprint orchestration playbook: backlog resolution, sprint-waves, sequential wave execution, claim/receipt discipline, and honest disposition defaults.",

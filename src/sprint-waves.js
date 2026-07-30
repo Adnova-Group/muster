@@ -35,6 +35,9 @@
 // try/catch of its own.
 import { computeWaves } from "./wave.js";
 
+export const SPRINT_PARALLEL_DEFAULT = 5;
+export const SPRINT_PARALLEL_MAX = 10;
+
 const CHECKBOX_RE = /^- \[ \] (.*)$/;
 const CHECKED_CHECKBOX_RE = /^- \[[xX]\] (.*)$/;
 
@@ -75,7 +78,60 @@ function stripAnnotations(text) {
   return { anns, text: stripped };
 }
 
-export function computeSprintWaves(content) {
+function resolveParallelLimit(value) {
+  if (value === undefined || value === null || value === "") return SPRINT_PARALLEL_DEFAULT;
+  const normalized = typeof value === "number" ? String(value) : String(value).trim();
+  if (!/^\d+$/.test(normalized)) return SPRINT_PARALLEL_DEFAULT;
+  const parsed = Number.parseInt(normalized, 10);
+  if (parsed < 1) return SPRINT_PARALLEL_DEFAULT;
+  return Math.min(parsed, SPRINT_PARALLEL_MAX);
+}
+
+function chunk(ids, size) {
+  const batches = [];
+  for (let i = 0; i < ids.length; i += size) batches.push(ids.slice(i, i + size));
+  return batches;
+}
+
+export function buildSprintSchedule(waves, items, { parallelLimit } = {}) {
+  const maxConcurrency = resolveParallelLimit(parallelLimit);
+  return {
+    version: 1,
+    buildReview: {
+      eligibility: "all-ready-wave-items-regardless-of-disposition",
+      isolation: "per-item-worktree",
+      maxConcurrency,
+      defaultMaxConcurrency: SPRINT_PARALLEL_DEFAULT,
+      hardMaxConcurrency: SPRINT_PARALLEL_MAX,
+    },
+    barrier: "all-build-review-complete",
+    integration: {
+      mode: "sequential-backlog-order",
+      dispositions: ["pr", "keep", "merge-local", "merge-push"],
+    },
+    degradation: {
+      when: "parallel-dispatch-unavailable",
+      buildReviewMode: "sequential-isolated",
+      dependencyOrder: "preserved",
+      integrationOrder: "preserved",
+    },
+    waves: waves.map((itemIds, index) => ({
+      wave: index + 1,
+      buildReview: {
+        mode: "concurrent-isolated",
+        itemIds: [...itemIds],
+        batches: chunk(itemIds, maxConcurrency),
+      },
+      barrier: "all-build-review-complete",
+      integration: {
+        mode: "sequential-backlog-order",
+        itemIds: [...itemIds],
+      },
+    })),
+  };
+}
+
+export function computeSprintWaves(content, options = {}) {
   if (typeof content !== "string") {
     return { ok: false, errors: ["missing content: expected backlog text"], waves: [], items: {}, annotated: false };
   }
@@ -160,13 +216,22 @@ export function computeSprintWaves(content) {
   });
 
   const items = {};
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
   for (const r of raw) {
-    items[r.id] = { line: r.lineNo, text: r.text, disposition: r.disposition, escalated: r.escalated, claimed: r.claimed };
+    items[r.id] = {
+      line: r.lineNo,
+      text: r.text,
+      deps: [...taskById.get(r.id).deps],
+      disposition: r.disposition,
+      escalated: r.escalated,
+      claimed: r.claimed,
+    };
   }
 
   try {
     const computed = computeWaves(tasks);
-    return { ok: true, errors: [], waves: computed.map((w) => w.map((t) => t.id)), items, annotated };
+    const waves = computed.map((w) => w.map((t) => t.id));
+    return { ok: true, errors: [], waves, items, annotated, schedule: buildSprintSchedule(waves, items, options) };
   } catch (e) {
     return { ok: false, errors: [e.message], waves: [], items, annotated };
   }

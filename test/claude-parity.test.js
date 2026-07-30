@@ -1293,5 +1293,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // (144) -- plugin/commands/init.md's confirmation and call-result examples
   // now attest both canonical instruction artifacts rather than showing an
   // AGENTS.md-only proof that the validator correctly rejects.
-  assert.equal(hash.digest("hex"), "74a35b1b309ce208079865019a02e5fdf27c61fb2038ff711975da92b289c2cc");
+  // 2026-07-30 re-pin #25 (wave-dispatch review fix): muster-runner gains the explicit
+  // build-review-only mode; go-backlog selects it for scheduled legs and defers all
+  // dispositions until the emitted post-barrier phase. The ordinary runner command remains
+  // full-lifecycle. Cowork mirrors the same no-push/no-PR/no-integration leg boundary.
+  // 2026-07-30 re-pin #26 (wave escalation semantics): go-backlog now omits escalated/failed
+  // build-review legs from disposition/integration without reordering survivors, and fails
+  // dependent items closed before worktree creation or dispatch. The runner profile is unchanged.
+  assert.equal(hash.digest("hex"), "4a19bcc995d8f5bf519047ac102a6e203b5a7396fc56ce61e75bd2a63b468a97");
 });

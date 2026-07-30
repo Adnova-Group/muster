@@ -44,7 +44,7 @@ test("init command binds confirmation and callable-result evidence files exactly
   assert.match(text, /CONFIRMATION_FILE="\.muster\/native-init-confirmation\.json"/);
   assert.match(
     text,
-    /\{"format":"muster\.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":\["AGENTS\.md"\]\}/,
+    /\{"format":"muster\.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":\["AGENTS\.md","CLAUDE\.md"\]\}/,
   );
   assert.match(
     text,
@@ -52,7 +52,7 @@ test("init command binds confirmation and callable-result evidence files exactly
   );
   assert.match(
     text,
-    /\{"format":"muster\.native-init-result","schemaVersion":1,"ok":true,"operation":"native-init","attemptId":"<receipt\.nativeInit\.attemptId>","artifacts":\["AGENTS\.md"\]\}/,
+    /\{"format":"muster\.native-init-result","schemaVersion":1,"ok":true,"operation":"native-init","attemptId":"<receipt\.nativeInit\.attemptId>","artifacts":\["AGENTS\.md","CLAUDE\.md"\]\}/,
   );
   assert.match(text, /call-result is valid only from `attempted`/);
   assert.match(text, /evidence-file path must not\s+appear in `nativeInit\.expectedArtifacts`/);

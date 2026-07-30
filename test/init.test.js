@@ -22,6 +22,7 @@ import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const tmp = () => mkdtemp(join(tmpdir(), "muster-init-"));
 const pexecFile = promisify(execFile);
+const CLAUDE_POINTER = "# Claude Code\n\n@AGENTS.md\n";
 
 test("canonicalInitJson recursively sorts keys and rejects non-JSON values", () => {
   assert.equal(canonicalInitJson({ z: 1, a: { d: true, c: null } }), '{"a":{"c":null,"d":true},"z":1}');
@@ -86,6 +87,107 @@ test("handoff baseline is immutable and completion requires artifact delta evide
     () => transitionNativeInit(dir, { to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md"] }),
     /absorbing/,
   );
+});
+
+test("paired instruction artifact-delta requires the canonical authority pair", async () => {
+  const cases = [
+    { name: "neither", agents: null, claude: null, ok: false },
+    { name: "AGENTS only", agents: "# Policy\n", claude: null, ok: false },
+    { name: "CLAUDE only", agents: null, claude: CLAUDE_POINTER, ok: false },
+    { name: "conflicting CLAUDE", agents: "# Policy\n", claude: "# Independent\n", ok: false },
+    { name: "policy then reverse import", agents: "# Policy\n\n  @CLAUDE.md\n", claude: CLAUDE_POINTER, ok: false },
+    { name: "reverse import then policy", agents: "@./CLAUDE.md\n\n# Policy\n", claude: CLAUDE_POINTER, ok: false },
+    { name: "inline reverse import", agents: "Use @CLAUDE.md for the rest.\n", claude: CLAUDE_POINTER, ok: false },
+    { name: "normalized relative reverse import", agents: "Use @docs/../CLAUDE.md for the rest.\n", claude: CLAUDE_POINTER, ok: false },
+    {
+      name: "normalized absolute reverse import",
+      agents: (dir) => `Use @${join(dir, "docs", "..", "CLAUDE.md")} for the rest.\n`,
+      claude: CLAUDE_POINTER,
+      ok: false,
+    },
+    { name: "canonical pair", agents: "# Policy\n", claude: CLAUDE_POINTER, ok: true },
+  ];
+
+  for (const fixture of cases) {
+    const dir = await tmp();
+    await initializeProject(dir);
+    await transitionNativeInit(dir, {
+      to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+    });
+    if (fixture.agents !== null) {
+      const agents = typeof fixture.agents === "function" ? fixture.agents(dir) : fixture.agents;
+      await writeFile(join(dir, "AGENTS.md"), agents);
+    }
+    if (fixture.claude !== null) await writeFile(join(dir, "CLAUDE.md"), fixture.claude);
+    const completion = transitionNativeInit(dir, { to: "completed", evidenceKind: "artifact-delta" });
+    if (fixture.ok) {
+      await completion;
+      await writeFile(join(dir, "CLAUDE.md"), "# Independent\n");
+      await assert.rejects(() => readInitReceipt(dir), /canonical instruction authority pair/);
+    } else {
+      await assert.rejects(completion, /canonical instruction authority pair/, fixture.name);
+    }
+  }
+});
+
+test("paired pre-existing confirmation requires both canonical instruction artifacts", async () => {
+  const cases = [
+    { name: "partial", agents: "# Policy\n", claude: null, artifacts: ["AGENTS.md"], ok: false },
+    { name: "conflict", agents: "# Policy\n", claude: "# Independent\n", artifacts: ["AGENTS.md", "CLAUDE.md"], ok: false },
+    { name: "canonical", agents: "# Policy\n", claude: CLAUDE_POINTER, artifacts: ["AGENTS.md", "CLAUDE.md"], ok: true },
+  ];
+
+  for (const fixture of cases) {
+    const dir = await tmp();
+    await writeFile(join(dir, "AGENTS.md"), fixture.agents);
+    if (fixture.claude !== null) await writeFile(join(dir, "CLAUDE.md"), fixture.claude);
+    await initializeProject(dir);
+    await transitionNativeInit(dir, {
+      to: "handoff", reason: "instruction-present", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+    });
+    await writeFile(join(dir, "confirmation.json"), canonicalInitJson({
+      artifacts: fixture.artifacts,
+      confirmation: "already-initialized",
+      format: "muster.native-init-confirmation",
+      schemaVersion: 1,
+    }) + "\n");
+    const completion = transitionNativeInit(dir, {
+      to: "completed", evidenceKind: "preexisting-confirmed", evidenceFile: "confirmation.json",
+    });
+    if (fixture.ok) await completion;
+    else await assert.rejects(completion, /canonical instruction authority pair/, fixture.name);
+  }
+});
+
+test("paired call-result requires both canonical instruction artifacts", async () => {
+  const cases = [
+    { name: "partial", agents: "# Policy\n", claude: null, artifacts: ["AGENTS.md"], ok: false },
+    { name: "conflict", agents: "# Policy\n", claude: "# Independent\n", artifacts: ["AGENTS.md", "CLAUDE.md"], ok: false },
+    { name: "canonical", agents: "# Policy\n", claude: CLAUDE_POINTER, artifacts: ["AGENTS.md", "CLAUDE.md"], ok: true },
+  ];
+
+  for (const fixture of cases) {
+    const dir = await tmp();
+    await initializeProject(dir);
+    const attempted = await transitionNativeInit(dir, {
+      to: "attempted", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+    });
+    await writeFile(join(dir, "AGENTS.md"), fixture.agents);
+    if (fixture.claude !== null) await writeFile(join(dir, "CLAUDE.md"), fixture.claude);
+    await writeFile(join(dir, "result.json"), canonicalInitJson({
+      artifacts: fixture.artifacts,
+      attemptId: attempted.receipt.nativeInit.attemptId,
+      format: "muster.native-init-result",
+      ok: true,
+      operation: "native-init",
+      schemaVersion: 1,
+    }) + "\n");
+    const completion = transitionNativeInit(dir, {
+      to: "completed", evidenceKind: "call-result", evidenceFile: "result.json",
+    });
+    if (fixture.ok) await completion;
+    else await assert.rejects(completion, /canonical instruction authority pair/, fixture.name);
+  }
 });
 
 test("pre-existing confirmation and call-result evidence validate exact external shapes", async () => {

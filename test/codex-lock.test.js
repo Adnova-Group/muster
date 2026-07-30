@@ -177,6 +177,7 @@ test("withCodexFileLock restores a quarantined replacement whose paused writer c
   let replacementRunning = false;
   let reclaimerRan = false;
   let thirdRan = false;
+  let thirdOutcome;
   try {
     await assert.rejects(withCodexFileLock(lock, async () => { reclaimerRan = true; }, {
       staleMs: 1_000,
@@ -193,12 +194,16 @@ test("withCodexFileLock restores a quarantined replacement whose paused writer c
         await writer.truncate(0);
         await writer.write(JSON.stringify(replacement) + "\n", 0, "utf8");
         await writer.sync();
+        thirdOutcome = withCodexFileLock(lock, async () => { thirdRan = true; }, { timeoutMs: 25 })
+          .then(() => null, error => error);
+        await pause(35);
+        assert.equal(thirdRan, false, "a third holder must remain gated while the live replacement is quarantined");
       }
     }), /timed out waiting for Codex transaction lock/);
 
     assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), replacement, "the completed replacement must be restored at the public lock path");
     assert.equal((await lstat(lock)).ino, replacementInode, "restoration must preserve the quarantined writer's stable inode");
-    await assert.rejects(withCodexFileLock(lock, async () => { thirdRan = true; }, { timeoutMs: 25 }), /timed out waiting/);
+    assert.match((await thirdOutcome)?.message || "", /timed out waiting/, "the gated third holder must time out against the restored replacement");
   } finally {
     await writer?.close();
   }

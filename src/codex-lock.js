@@ -52,6 +52,7 @@ function lockIdentity(record) {
 }
 
 const sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const transitionPath = path => `${path}.muster-transition`;
 
 function sameLock(current, expected) {
   if (!sameInode(current.stat, expected.stat)) return false;
@@ -67,6 +68,36 @@ async function assertPrivateRetirementDirectory(path) {
   const unsafeMode = process.platform !== "win32" && ((stat.mode & 0o700) !== 0o700 || (stat.mode & 0o077) !== 0);
   if (stat.isSymbolicLink() || !stat.isDirectory() || ownerMismatch || unsafeMode) {
     throw new Error(`unsafe Codex transaction retirement directory: ${path}`);
+  }
+}
+
+async function transitionIsActive(path) {
+  const gate = transitionPath(path);
+  try {
+    await assertPrivateRetirementDirectory(gate);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function beginTransition(path) {
+  const gate = transitionPath(path);
+  const started = Date.now();
+  for (;;) {
+    try {
+      await mkdir(gate, { mode: 0o700 });
+      await assertPrivateRetirementDirectory(gate);
+      return gate;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      await assertPrivateRetirementDirectory(gate);
+      if (Date.now() - started >= 30_000) {
+        throw new Error(`timed out waiting for Codex transaction lock transition: ${path}`);
+      }
+      await pause(5);
+    }
   }
 }
 
@@ -96,10 +127,17 @@ async function restoreRetiredLock(path, retirement, expected) {
   // not mutable record bytes. A legitimate replacement owner can still be
   // finishing its initial write while a stale reclaimer moves that inode.
   if (!sameInode(current, expected.stat)) return false;
-  try { await link(retirement.path, path); }
-  catch (error) {
-    if (error.code === "EEXIST") return false;
-    throw error;
+  for (let attempt = 0; ; attempt++) {
+    try { await link(retirement.path, path); break; }
+    catch (error) {
+      // An acquirer that passed its pre-open gate check just before this
+      // transition began can briefly own the public pathname. Its post-open
+      // check removes that uncommitted lock; keep the transition closed until
+      // the quarantined inode is back in place.
+      if (error.code === "EEXIST" && attempt < 100) { await pause(1); continue; }
+      if (error.code === "EEXIST") return false;
+      throw error;
+    }
   }
   const restored = await lstat(path);
   if (!sameInode(restored, expected.stat)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
@@ -131,7 +169,7 @@ async function lockIsStale(current, { staleMs, maxStaleMs }) {
   return true;
 }
 
-async function retireLock(path, expected, {
+async function retireLockUnderTransition(path, expected, {
   restorePath = path,
   stale,
   afterValidation,
@@ -169,6 +207,12 @@ async function retireLock(path, expected, {
   return { removed: true, missing: false };
 }
 
+async function retireLock(path, expected, options = {}) {
+  const gate = await beginTransition(path);
+  try { return await retireLockUnderTransition(path, expected, options); }
+  finally { await rmdir(gate); }
+}
+
 async function reclaimIfStale(path, options, onReclaimRaceWindow, afterValidation, beforeRestore) {
   let current;
   try { current = await readLock(path); }
@@ -201,6 +245,11 @@ export async function withCodexFileLock(path, callback, {
   const processIdentity = await processStartIdentity();
   const started = Date.now();
   for (;;) {
+    if (await transitionIsActive(path)) {
+      if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
+      await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
+      continue;
+    }
     // Optional caller guard fired synchronously before EACH create attempt (a
     // contended lock retries, and the guarded condition — e.g. a symlinked
     // ancestor swapped under `path` — can change between attempts). A throw
@@ -214,6 +263,18 @@ export async function withCodexFileLock(path, callback, {
       await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
       await handle.sync();
       await handle.close();
+      handle = null;
+      if (await transitionIsActive(path)) {
+        // The transition marker appeared after our pre-open check. Withdraw
+        // this not-yet-published owner through the same quarantine + identity
+        // validation used by ordinary release; the transition holder keeps
+        // its marker until the quarantined replacement is restored.
+        const current = await readLock(path);
+        if (current.record?.token !== token) throw new Error(`Codex transaction lock ownership changed: ${path}`);
+        const result = await retireLockUnderTransition(path, current);
+        if (!result.removed && !result.missing) throw new Error(`Codex transaction lock ownership changed: ${path}`);
+        continue;
+      }
       break;
     } catch (error) {
       if (handle) await handle.close().catch(() => {});

@@ -256,6 +256,11 @@ function sameFileIdentity(left, right) {
 // chain one component at a time with O_NOFOLLOW and compares each descriptor,
 // so an ancestor rename/symlink swap cannot redirect the mutation.
 async function captureManagedDeleteIdentity(dest, path) {
+  const parent = await captureManagedParentIdentity(dest, path);
+  return { ...parent, target: await lstat(path) };
+}
+
+async function captureManagedParentIdentity(dest, path) {
   const base = resolve(dest);
   const parentRel = relative(base, dirname(resolve(path)));
   const directories = [];
@@ -265,7 +270,7 @@ async function captureManagedDeleteIdentity(dest, path) {
     current = join(current, name);
     directories.push({ name, info: await lstat(current) });
   }
-  return { base, directories, target: await lstat(path) };
+  return { base, directories };
 }
 
 function changedDuringSafeDeletion(path) {
@@ -288,7 +293,7 @@ async function openPinnedDirectory(path, managedPath) {
 // final unlink is under private owned ancestry and can only name the exact
 // inode captured before the mutation boundary. Other platforms fail closed;
 // a pathname-only fallback would recreate the race this helper exists to close.
-async function unlinkPinnedManaged(path, expected, platform = process.platform) {
+async function unlinkPinnedManaged(path, expected, quarantineRecord, beforeManagedMutation, platform = process.platform) {
   if (platform !== "linux" || !fsConstants.O_DIRECTORY || !fsConstants.O_NOFOLLOW) {
     throw new Error(`Safe Kimi uninstall is unavailable on ${platform}: directory-relative deletion is required`);
   }
@@ -317,14 +322,14 @@ async function unlinkPinnedManaged(path, expected, platform = process.platform) 
 
     const parentFdPath = join("/proc/self/fd", String(directory.fd));
     const sourcePath = join(parentFdPath, basename(path));
-    const quarantineName = `.muster-uninstall-${process.pid}-${randomBytes(12).toString("hex")}`;
-    quarantinePath = join(parentFdPath, quarantineName);
+    quarantinePath = join(parentFdPath, quarantineRecord.directory);
     await mkdir(quarantinePath, { mode: 0o700 });
     const quarantine = await openPinnedDirectory(quarantinePath, path);
     handles.push(quarantine);
     const quarantinedPath = join("/proc/self/fd", String(quarantine.fd), basename(path));
 
     await rename(sourcePath, quarantinedPath);
+    await beforeManagedMutation?.({ operation: "delete-quarantined", path, quarantine: quarantineRecord.directory });
     const moved = await lstat(quarantinedPath);
     if (!sameFileIdentity(moved, expected.target) || !moved.isFile()) {
       // Restore without overwrite: link() is exclusive at the destination.
@@ -351,18 +356,32 @@ async function unlinkPinnedManaged(path, expected, platform = process.platform) 
   }
 }
 
-async function unlinkManaged(dest, path, beforeManagedMutation, expectedIdentity = undefined, platform = process.platform) {
+async function unlinkManaged(
+  dest,
+  path,
+  beforeManagedMutation,
+  expectedIdentity = undefined,
+  platform = process.platform,
+  quarantineRecord = null,
+  skipDeleteHook = false
+) {
   await assertSafeManagedFiles(dest, [path]);
   if (expectedIdentity === null) {
     const error = new Error(`Kimi managed path was absent at uninstall preflight: ${path}`);
     error.code = "ENOENT";
     throw error;
   }
-  await beforeManagedMutation?.({ operation: "delete", path });
+  if (!skipDeleteHook) await beforeManagedMutation?.({ operation: "delete", path });
   await assertSafeManagedFiles(dest, [path]);
   const expected = expectedIdentity ?? await captureManagedDeleteIdentity(dest, path);
   await beforeManagedMutation?.({ operation: "delete-ready", path });
-  await unlinkPinnedManaged(path, expected, platform);
+  await unlinkPinnedManaged(
+    path,
+    expected,
+    quarantineRecord || { directory: `.muster-uninstall-${randomBytes(12).toString("hex")}` },
+    beforeManagedMutation,
+    platform
+  );
 }
 
 // muster's VERBS (plugin/commands/*.md) are the entry points -- without them
@@ -557,7 +576,17 @@ async function readManifest(manifestPath, dest) {
       || typeof raw.permissionRules.created !== "boolean")) {
     throw new Error(`Kimi installation manifest conflict: ${manifestPath}. Move or remove it, then rerun.`);
   }
-  assertContained([...raw.agents, ...raw.skills, ...(raw.verbs || [])], dest);
+  const owned = [...raw.agents, ...raw.skills, ...(raw.verbs || [])];
+  if (raw.quarantines !== undefined && (!Array.isArray(raw.quarantines)
+    || raw.quarantines.some(record =>
+      typeof record !== "object" || record === null
+      || !owned.includes(record.rel)
+      || !/^\.muster-uninstall-[0-9a-f]{24}$/.test(record.directory)
+      || !/^\d+$/.test(record.dev)
+      || !/^\d+$/.test(record.ino)))) {
+    throw new Error(`Kimi installation manifest conflict: ${manifestPath}. Move or remove it, then rerun.`);
+  }
+  assertContained(owned, dest);
   return raw;
 }
 
@@ -699,6 +728,9 @@ export async function runKimiInstall({
   // Prune stale files a prior install owned but this one no longer ships.
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
   const previous = await readManifest(manifestPath, dest);
+  if (previous?.quarantines?.length) {
+    throw new Error("Kimi uninstall recovery is pending. Rerun `muster uninstall kimi` before reinstalling.");
+  }
   const ownedSet = new Set(ownedRel);
   const staleRel = (previous ? [...previous.agents, ...previous.skills, ...(previous.verbs || [])] : [])
     .filter(rel => !ownedSet.has(rel));
@@ -779,6 +811,105 @@ export async function runKimiInstall({
   };
 }
 
+function quarantineIdentityMatches(info, record) {
+  return info.isFile() && String(info.dev) === record.dev && String(info.ino) === record.ino;
+}
+
+async function persistUninstallManifest(manifestPath, manifest, dest) {
+  await atomicWriteJson(manifestPath, manifest, dest);
+}
+
+async function reconcileQuarantine(dest, record, platform = process.platform) {
+  if (platform !== "linux" || !fsConstants.O_DIRECTORY || !fsConstants.O_NOFOLLOW) {
+    throw new Error(`Safe Kimi uninstall is unavailable on ${platform}: directory-relative deletion is required`);
+  }
+
+  const path = join(dest, record.rel);
+  await assertSafeManagedFiles(dest, [path]);
+  const expectedParent = await captureManagedParentIdentity(dest, path);
+  const handles = [];
+  try {
+    let directory = await openPinnedDirectory(expectedParent.base, path);
+    handles.push(directory);
+    let info = await directory.stat();
+    if (!sameFileIdentity(info, expectedParent.directories[0].info) || !info.isDirectory()) {
+      throw changedDuringSafeDeletion(path);
+    }
+    for (const expectedDirectory of expectedParent.directories.slice(1)) {
+      directory = await openPinnedDirectory(
+        join("/proc/self/fd", String(directory.fd), expectedDirectory.name),
+        path
+      );
+      handles.push(directory);
+      info = await directory.stat();
+      if (!sameFileIdentity(info, expectedDirectory.info) || !info.isDirectory()) {
+        throw changedDuringSafeDeletion(path);
+      }
+    }
+
+    const parentFdPath = join("/proc/self/fd", String(directory.fd));
+    const quarantinePath = join(parentFdPath, record.directory);
+    let quarantine;
+    try {
+      quarantine = await open(quarantinePath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw changedDuringSafeDeletion(path);
+    }
+
+    if (!quarantine) {
+      let source;
+      try { source = await lstat(join(parentFdPath, basename(path))); }
+      catch (error) {
+        if (error.code === "ENOENT") return { skipSource: true };
+        throw error;
+      }
+      if (quarantineIdentityMatches(source, record)) return { skipSource: false };
+      throw new Error(`Kimi uninstall quarantine state is uncertain for ${path}`);
+    }
+
+    handles.push(quarantine);
+    const quarantineInfo = await quarantine.stat();
+    const quarantinedPath = join("/proc/self/fd", String(quarantine.fd), basename(path));
+    let moved;
+    try { moved = await lstat(quarantinedPath); }
+    catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (moved && !quarantineIdentityMatches(moved, record)) {
+      throw new Error(`Kimi uninstall quarantine identity changed for ${path}`);
+    }
+    if (moved) await unlink(quarantinedPath);
+
+    const namedQuarantine = await lstat(quarantinePath).catch(error => {
+      if (error.code === "ENOENT") throw changedDuringSafeDeletion(path);
+      throw error;
+    });
+    if (!sameFileIdentity(namedQuarantine, quarantineInfo)) throw changedDuringSafeDeletion(path);
+    try { await rmdir(quarantinePath); }
+    catch (error) {
+      if (["EEXIST", "ENOTEMPTY"].includes(error.code)) {
+        throw new Error(`Kimi uninstall quarantine contains unexpected entries for ${path}`);
+      }
+      throw error;
+    }
+    return { skipSource: Boolean(moved) };
+  } finally {
+    for (const handle of handles.reverse()) await handle.close().catch(() => {});
+  }
+}
+
+async function reconcileManifestQuarantines(dest, manifestPath, manifest, platform) {
+  const skip = new Set();
+  while (manifest.quarantines?.length) {
+    const record = manifest.quarantines[0];
+    const result = await reconcileQuarantine(dest, record, platform);
+    if (result.skipSource) skip.add(record.rel);
+    manifest.quarantines.shift();
+    await persistUninstallManifest(manifestPath, manifest, dest);
+  }
+  return skip;
+}
+
 // Reverse runKimiInstall: remove exactly the manifest-owned files (never a
 // wholesale directory removal -- a user's own agents/skills sharing those dirs
 // are untouched), strip muster's marker-delimited permission-rules block from
@@ -804,6 +935,7 @@ export async function runKimiUninstall({
     };
   }
 
+  const reconciled = await reconcileManifestQuarantines(dest, manifestPath, manifest, _platform);
   const managedPaths = [...owned.map(rel => join(dest, rel)), manifestPath];
   await assertSafeManagedFiles(dest, managedPaths);
   const deleteIdentities = new Map();
@@ -817,9 +949,27 @@ export async function runKimiUninstall({
 
   const removed = [];
   for (const rel of owned) {
+    if (reconciled.has(rel)) {
+      removed.push(rel);
+      continue;
+    }
     const path = join(dest, rel);
     try {
-      await unlinkManaged(dest, path, _beforeManagedMutation, deleteIdentities.get(path), _platform);
+      const expected = deleteIdentities.get(path);
+      if (expected === null) continue;
+      const record = {
+        rel,
+        directory: `.muster-uninstall-${randomBytes(12).toString("hex")}`,
+        dev: String(expected.target.dev),
+        ino: String(expected.target.ino)
+      };
+      await _beforeManagedMutation?.({ operation: "delete", path });
+      await assertSafeManagedFiles(dest, [path]);
+      manifest.quarantines = [...(manifest.quarantines || []), record];
+      await persistUninstallManifest(manifestPath, manifest, dest);
+      await unlinkManaged(dest, path, _beforeManagedMutation, expected, _platform, record, true);
+      manifest.quarantines = manifest.quarantines.filter(candidate => candidate !== record);
+      await persistUninstallManifest(manifestPath, manifest, dest);
       removed.push(rel);
     }
     catch (error) { if (error.code !== "ENOENT") throw error; }
@@ -845,7 +995,7 @@ export async function runKimiUninstall({
     dest,
     manifestPath,
     _beforeManagedMutation,
-    deleteIdentities.get(manifestPath),
+    undefined,
     _platform
   ).catch(error => { if (error.code !== "ENOENT") throw error; });
   await rmdirIfEmpty(join(dest, "muster"));

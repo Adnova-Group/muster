@@ -25,13 +25,20 @@ import {
 // Guard 1 -- zombie provider CLI process: detect + reap
 // ---------------------------------------------------------------------------
 
-test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned provider CLI process fixture with muster provenance", () => {
+test("findZombieProcesses + reapZombieProcesses: filesystem receipt remains diagnostic and cannot authorize reap", () => {
   const processes = [
     // The zombie fixture: a codex CLI process reparented to init after its
     // supervisor died -- exactly the burn incident's "2 zombie codex CLI
-    // processes running for a day" shape. Its cwd sits under a known muster
-    // run worktree, which is the provenance that makes it reap-eligible.
-    { pid: 100, ppid: 1, command: "codex --profile default", startedAt: "2026-07-14T00:00:00Z", cwd: "/repo/.worktrees/burn-fix" },
+    // processes running for a day" shape. Its dispatch receipt establishes
+    // ownership and its stable start identity closes PID-reuse races.
+    {
+      pid: 100,
+      ppid: 1,
+      command: "codex --profile default",
+      startedAt: "2026-07-14T00:00:00Z",
+      startIdentity: "linux-proc-stat:1000",
+      cwd: "/repo/.worktrees/burn-fix",
+    },
     // A live provider process whose parent is still running -- must be left alone.
     { pid: 200, ppid: 50, command: "claude --print", startedAt: "2026-07-15T23:50:00Z", cwd: "/repo/.worktrees/burn-fix" },
     { pid: 50, ppid: 10, command: "bash orchestrator.sh", startedAt: "2026-07-15T23:00:00Z" },
@@ -40,6 +47,7 @@ test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned p
   const { ok, zombies } = findZombieProcesses(processes, {
     newestRunMarkerAt: "2026-07-16T00:00:00Z",
     musterRoots: ["/repo/.worktrees/burn-fix"],
+    dispatchReceipts: [{ pid: 100, startIdentity: "linux-proc-stat:1000" }],
   });
   assert.equal(ok, true);
   assert.equal(zombies.length, 1);
@@ -48,14 +56,17 @@ test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned p
   // start predates the run marker past the default threshold) -- the
   // reapable gate below is what actually matters, not which reason(s) fired.
   assert.deepEqual(zombies[0].reasons, ["orphaned-parent", "stale-start"]);
-  assert.equal(zombies[0].provenance, "muster-worktree-cwd");
-  assert.equal(zombies[0].reapable, true);
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].reapable, false);
 
   const killed = [];
-  const { reaped, skipped } = reapZombieProcesses(zombies, { kill: (pid) => killed.push(pid) });
-  assert.deepEqual(reaped, [100]);
-  assert.deepEqual(skipped, []);
-  assert.deepEqual(killed, [100]);
+  const { reaped, skipped } = reapZombieProcesses(zombies, {
+    getProcessIdentity: () => "linux-proc-stat:1000",
+    kill: (pid) => killed.push(pid),
+  });
+  assert.deepEqual(reaped, []);
+  assert.equal(skipped.length, 1);
+  assert.deepEqual(killed, []);
 });
 
 // Audit S10 (security): orphanage alone is NOT sufficient to SIGTERM a host
@@ -86,25 +97,150 @@ test("findZombieProcesses + reapZombieProcesses (adversarial): an orphaned provi
   assert.deepEqual(reaped, []);
   assert.equal(skipped.length, 1);
   assert.equal(skipped[0].pid, 150);
-  assert.match(skipped[0].reason, /no muster provenance/);
+  assert.match(skipped[0].reason, /no live broker authority/);
 });
 
-test("findZombieProcesses + reapZombieProcesses: a recorded dispatch receipt corroborates reap eligibility without a cwd", () => {
+test("findZombieProcesses + reapZombieProcesses (adversarial): a manually-created `.worktrees/` cwd without a dispatch receipt is report-only", () => {
   const processes = [
-    { pid: 4242, ppid: 1, command: "claude --print", startedAt: "2026-07-14T00:00:00Z" },
+    {
+      pid: 151,
+      ppid: 1,
+      command: "codex --profile default",
+      startedAt: "2026-07-14T00:00:00Z",
+      startIdentity: "linux-proc-stat:12345",
+      cwd: "/repo/.worktrees/manually-created",
+    },
+  ];
+
+  const { zombies } = findZombieProcesses(processes, {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    musterRoots: ["/repo/.worktrees/manually-created"],
+  });
+  assert.equal(zombies.length, 1, "candidate remains diagnostically visible");
+  assert.equal(zombies[0].provenance, null, "a cwd naming convention is not ownership evidence");
+  assert.equal(zombies[0].reapable, false);
+
+  const { reaped, skipped } = reapZombieProcesses(zombies, {
+    getProcessIdentity: () => "linux-proc-stat:12345",
+    kill: () => assert.fail("an unreceipted worktree process must not be signaled"),
+  });
+  assert.deepEqual(reaped, []);
+  assert.equal(skipped[0].pid, 151);
+  assert.match(skipped[0].reason, /no live broker authority/);
+});
+
+test("findZombieProcesses + reapZombieProcesses: a recorded dispatch receipt is report-only without the live broker", () => {
+  const processes = [
+    {
+      pid: 4242,
+      ppid: 1,
+      command: "claude --print",
+      startedAt: "2026-07-14T00:00:00Z",
+      startIdentity: "linux-proc-stat:777",
+    },
   ];
   const { zombies } = findZombieProcesses(processes, {
     newestRunMarkerAt: "2026-07-16T00:00:00Z",
-    dispatchPids: [4242],
+    dispatchReceipts: [{ pid: 4242, startIdentity: "linux-proc-stat:777" }],
   });
   assert.equal(zombies.length, 1);
-  assert.equal(zombies[0].provenance, "dispatch-receipt");
-  assert.equal(zombies[0].reapable, true);
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].reapable, false);
 
   const killed = [];
-  const { reaped } = reapZombieProcesses(zombies, { kill: (pid) => killed.push(pid) });
-  assert.deepEqual(reaped, [4242]);
-  assert.deepEqual(killed, [4242]);
+  const { reaped } = reapZombieProcesses(zombies, {
+    getProcessIdentity: () => "linux-proc-stat:777",
+    kill: (pid) => killed.push(pid),
+  });
+  assert.deepEqual(reaped, []);
+  assert.deepEqual(killed, []);
+});
+
+test("findZombieProcesses + reapZombieProcesses: a process without stable start identity cannot match its receipt and remains report-only", () => {
+  const { zombies } = findZombieProcesses([
+    { pid: 4243, ppid: 1, command: "claude --print", startedAt: "2026-07-14T00:00:00Z" },
+  ], {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    dispatchReceipts: [{ pid: 4243, startIdentity: "linux-proc-stat:4243" }],
+  });
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].receiptIdentityMatch, null);
+  assert.equal(zombies[0].startIdentity, null);
+  assert.equal(zombies[0].reapable, false, "unsupported identity platforms fail closed");
+
+  const { reaped, skipped } = reapZombieProcesses(zombies, {
+    kill: () => assert.fail("a process without stable identity must not be signaled"),
+  });
+  assert.deepEqual(reaped, []);
+  assert.match(skipped[0].reason, /stable process-start identity unavailable/);
+});
+
+test("reapZombieProcesses (adversarial): matching receipt identity still cannot reach signaling", () => {
+  const { zombies } = findZombieProcesses([
+    {
+      pid: 4343,
+      ppid: 1,
+      command: "codex exec",
+      startedAt: "2026-07-14T00:00:00Z",
+      startIdentity: "linux-proc-stat:100",
+    },
+  ], {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    dispatchReceipts: [{ pid: 4343, startIdentity: "linux-proc-stat:100" }],
+  });
+  assert.equal(zombies[0].reapable, false, "filesystem state is never signaling authority");
+
+  const { reaped, skipped } = reapZombieProcesses(zombies, {
+    getProcessIdentity: () => "linux-proc-stat:200",
+    kill: () => assert.fail("a reused PID must never be signaled"),
+  });
+  assert.deepEqual(reaped, []);
+  assert.equal(skipped[0].pid, 4343);
+  assert.match(skipped[0].reason, /no live broker authority/);
+});
+
+test("findZombieProcesses (adversarial): a stale OLD receipt cannot authorize a NEW process already using the same pid", () => {
+  const { zombies } = findZombieProcesses([
+    {
+      pid: 4444,
+      ppid: 1,
+      command: "codex exec",
+      startedAt: "2026-07-14T00:00:00Z",
+      startIdentity: "linux-proc-stat:new-process",
+    },
+  ], {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    dispatchReceipts: [{ pid: 4444, startIdentity: "linux-proc-stat:old-process" }],
+  });
+
+  assert.equal(zombies.length, 1, "the candidate remains diagnostically visible");
+  assert.equal(zombies[0].provenance, null, "a receipt for an earlier occupant of the pid is not ownership proof");
+  assert.equal(zombies[0].reapable, false);
+  assert.equal(zombies[0].receiptIdentityMatch, false);
+
+  const { reaped } = reapZombieProcesses(zombies, {
+    getProcessIdentity: () => "linux-proc-stat:new-process",
+    kill: () => assert.fail("a stale receipt must never authorize the new process"),
+  });
+  assert.deepEqual(reaped, []);
+});
+
+test("findZombieProcesses: legacy PID-only dispatch receipts are rejected and remain report-only", () => {
+  const { zombies } = findZombieProcesses([
+    {
+      pid: 4555,
+      ppid: 1,
+      command: "claude --print",
+      startedAt: "2026-07-14T00:00:00Z",
+      startIdentity: "linux-proc-stat:4555",
+    },
+  ], {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    dispatchPids: [4555],
+  });
+
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].reapable, false);
 });
 
 test("deriveMusterWorktreeRoots: only `.worktrees/` entries are muster-owned roots", () => {
@@ -118,12 +254,12 @@ test("deriveMusterWorktreeRoots: only `.worktrees/` entries are muster-owned roo
   assert.deepEqual(roots.sort(), ["/repo/.worktrees/item-1", "/repo/.worktrees/item-2"]);
 });
 
-test("runHygiene: reap corroborates via the repo's own muster worktrees by default -- a foreign orphan survives --reap", async () => {
+test("runHygiene: cwd and dispatch receipts are diagnostic; only the live broker may signal", async () => {
   const killed = [];
   const result = await runHygiene({
     processes: [
-      // muster-owned orphan: cwd inside the repo's .worktrees entry -> reaped
-      { pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: "/repo/.worktrees/burn-fix/sub" },
+      // Receipted orphan: cwd is useful context, but the receipt is authority.
+      { pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", startIdentity: "linux-proc-stat:100", cwd: "/repo/.worktrees/burn-fix/sub" },
       // foreign orphan: same shape, cwd elsewhere -> reported, never killed
       { pid: 200, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: "/opt/other-tool" },
     ],
@@ -133,21 +269,22 @@ test("runHygiene: reap corroborates via the repo's own muster worktrees by defau
     ],
     now: Date.parse("2026-07-16T00:00:00Z"),
     reap: true,
+    zombieOptions: {
+      dispatchReceipts: [{ pid: 100, startIdentity: "linux-proc-stat:100" }],
+    },
+    getProcessIdentity: () => "linux-proc-stat:100",
     kill: (pid) => killed.push(pid),
   });
-  assert.deepEqual(killed, [100], "only the muster-provenanced orphan is reaped");
-  assert.deepEqual(result.reapedProcesses.reaped, [100]);
-  assert.equal(result.reapedProcesses.skipped.length, 1);
-  assert.equal(result.reapedProcesses.skipped[0].pid, 200);
-  assert.match(result.reapedProcesses.skipped[0].reason, /no muster provenance/);
+  assert.deepEqual(killed, []);
+  assert.deepEqual(result.reapedProcesses.reaped, []);
+  assert.equal(result.reapedProcesses.skipped.length, 2);
+  assert.equal(result.reapedProcesses.skipped[0].pid, 100);
+  assert.match(result.reapedProcesses.skipped[0].reason, /no live broker authority/);
 });
 
-// Provenance surfacing (review-gate round 1): on non-Linux the provider's
-// /proc readlink always fails so NO process carries a cwd, and the CLI wires
-// no dispatch receipts (no receipt store exists) -- --reap can never fire,
-// and the report must SAY that instead of silently listing orphans as if
-// provenance had been evaluated.
-test("runHygiene + renderHygieneReport: provenance unavailable is surfaced, not silent", async () => {
+// Ownership surfacing: a composition with no receipt-store provider remains
+// report-only and must say that explicitly.
+test("runHygiene + renderHygieneReport: ownership receipts unavailable is surfaced, not silent", async () => {
   const result = await runHygiene({
     processes: [
       // the non-Linux shape: provider captured the process but cwd is null
@@ -165,13 +302,11 @@ test("runHygiene + renderHygieneReport: provenance unavailable is surfaced, not 
   assert.equal(result.provenance.dispatchReceipts, 0);
   assert.deepEqual(result.reapedProcesses.reaped, []);
   const report = renderHygieneReport(result);
-  assert.match(report, /provenance unavailable: reap disabled for 2 candidates/);
-  assert.match(report, /report-only \(provenance unavailable\)/);
-  assert.doesNotMatch(report, /report-only \(no muster provenance\)/,
-    "a blind report must not read as if provenance had been checked");
+  assert.match(report, /live dispatch-broker authority unavailable: reap disabled for 2 candidates/);
+  assert.match(report, /report-only \(no live dispatch-broker authority\)/);
 });
 
-test("runHygiene: cwd provenance from ANY process (or injected receipts) means NOT blind", async () => {
+test("runHygiene: cwd alone remains blind; injected dispatch receipts provide ownership evidence", async () => {
   const base = {
     worktrees: [],
     now: Date.parse("2026-07-16T00:00:00Z"),
@@ -181,15 +316,17 @@ test("runHygiene: cwd provenance from ANY process (or injected receipts) means N
     ...base,
     processes: [{ pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: "/somewhere" }],
   });
-  assert.equal(withCwd.provenance.blind, false, "a readable cwd means provenance was evaluated");
-  assert.doesNotMatch(renderHygieneReport(withCwd), /provenance unavailable/);
+  assert.equal(withCwd.provenance.blind, true, "a readable cwd is diagnostic, not ownership evidence");
+  assert.match(renderHygieneReport(withCwd), /live dispatch-broker authority unavailable/);
 
   const withReceipts = await runHygiene({
     ...base,
     processes: [{ pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: null }],
-    zombieOptions: { dispatchPids: [999] },
+    zombieOptions: {
+      dispatchReceipts: [{ pid: 999, startIdentity: "linux-proc-stat:999" }],
+    },
   });
-  assert.equal(withReceipts.provenance.blind, false, "injected receipts mean provenance was evaluated");
+  assert.equal(withReceipts.provenance.blind, true, "receipts are diagnostic and do not provide live broker authority");
 
   const empty = await runHygiene({ ...base, processes: [] });
   assert.equal(empty.provenance.blind, false, "no process list captured at all is a degraded provider, not a blind one");

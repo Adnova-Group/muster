@@ -54,11 +54,11 @@ instruction seeds.
    Capture the expected-artifact baseline through the matching first transition:
 
    - **Claude Code** — run
-     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason not-callable --expect CLAUDE.md`.
+     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason not-callable --expect AGENTS.md,CLAUDE.md`.
      Leave a **HUMAN-HOLD** instructing the user to run the harness-native
      `/init`, then resume this workflow with positive evidence.
    - **Codex** — run
-     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason not-callable --expect AGENTS.md`.
+     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason not-callable --expect AGENTS.md,CLAUDE.md`.
      Leave a **HUMAN-HOLD** instructing the user to run the harness-native
      `/init`, then resume this workflow with positive evidence. A refusal to
      overwrite an existing AGENTS.md is not completion.
@@ -78,7 +78,25 @@ instruction seeds.
    command in-session. A request, suggestion, command invocation, refusal to
    overwrite, or mere artifact existence is not completion.
 
-3. **Resume only from evidence or acknowledgement.**
+3. **Normalize native instructions to one authority.** `AGENTS.md` is the
+   authoritative root instruction file. `CLAUDE.md` contains exactly:
+
+   ```markdown
+   # Claude Code
+
+   @AGENTS.md
+   ```
+
+   Never keep independent policy text in both files. When both files were absent
+   at the baseline and Claude Code creates `CLAUDE.md`, move that generated
+   policy text intact to `AGENTS.md`, then replace the newly created
+   `CLAUDE.md` with the pointer above. When Codex creates `AGENTS.md`, add the
+   pointer as the missing `CLAUDE.md`. If either file existed at the baseline
+   and prevents this pattern, do not overwrite it: leave a HUMAN-HOLD asking the
+   user to consolidate the files. Normalization is part of native initialization
+   and must happen before completion evidence is submitted.
+
+4. **Resume only from evidence or acknowledgement.**
 
    - A changed or newly created expected artifact relative to the stored
      baseline uses
@@ -91,7 +109,7 @@ instruction seeds.
      expected-artifact subset the user explicitly confirmed):
 
      ```json
-     {"format":"muster.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":["AGENTS.md"]}
+     {"format":"muster.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":["AGENTS.md","CLAUDE.md"]}
      ```
 
      Then run
@@ -104,7 +122,7 @@ instruction seeds.
      or omitting it. For example:
 
      ```json
-     {"format":"muster.native-init-result","schemaVersion":1,"ok":true,"operation":"native-init","attemptId":"<receipt.nativeInit.attemptId>","artifacts":["AGENTS.md"]}
+     {"format":"muster.native-init-result","schemaVersion":1,"ok":true,"operation":"native-init","attemptId":"<receipt.nativeInit.attemptId>","artifacts":["AGENTS.md","CLAUDE.md"]}
      ```
 
      Set `EVIDENCE_FILE=".muster/native-init-result.json"` and run
@@ -117,7 +135,7 @@ instruction seeds.
      `$MUSTER_CLI init acknowledge "$TARGET" --reason unavailable`. The native
      state remains `handoff`; acknowledgement never rewrites it to `completed`.
 
-4. **Finalize only after the receipt permits it.** Run:
+5. **Finalize only after the receipt permits it.** Run:
 
    ```bash
    $MUSTER_CLI init finalize "$TARGET"

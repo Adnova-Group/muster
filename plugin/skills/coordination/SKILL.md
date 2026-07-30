@@ -229,6 +229,13 @@ gh issue comment <ledgerNum> --body-file <bodyfile>                             
 Extends `{key: value}` (`src/sprint-waves.js`) -- unknown keys pass through harmlessly:
 `{claimed:}`/`{blocked:}`/`{human-hold:}` parse and strip cleanly, wave computation unaffected.
 
+**Every backlog mutation uses the shared CAS publisher** — read the complete file, record its lowercase
+SHA-256 (or `absent`), apply exactly one claim/heartbeat/status mutation to a staged file, then pass
+the staged bytes on stdin to `$MUSTER_CLI backlog-publish <backlog.md> --expect <sha256|absent>`.
+Never edit/rename `backlog.md` directly. A changed-before-publication failure means another writer
+won: reread the complete file, reapply the still-valid mutation, and retry. This command and
+`hygiene --reap` hold the same sibling lock across read/validate/atomic publication.
+
 **Coordination is orchestrator-level** — only the top-level `/muster:sprint` driver reads/writes the
 `{claimed:}`/`{blocked:}`/`{human-hold:}`/`{attempts:}` annotations and STATE's `## Coordination`
 section; per-item worktree runners touch neither. The driver writes `{claimed:}` before dispatching

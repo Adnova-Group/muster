@@ -98,6 +98,15 @@ test("AGENTS.md adapter is recorded as a parked follow-up, not built", async () 
   assert.match(text, /not built/i, "must say the adapter is not built");
 });
 
+test("legacy scaffold and greenfield fixture describe the canonical instruction pair", async () => {
+  const [text, fixture] = await Promise.all([
+    read(DOC),
+    read("eval/modes/fixtures/skills/greenfield/plan-annotated-parallel.md"),
+  ]);
+  assert.match(text, /scaffoldProject\(\)[\s\S]{0,320}AGENTS\.md[\s\S]{0,160}CLAUDE\.md[\s\S]{0,160}@AGENTS\.md/);
+  assert.match(fixture, /Seed the README, AGENTS\.md, and CLAUDE\.md/);
+});
+
 test("doc-only: no em-dash (humanizer rule, same discipline as GATED_PROSE)", async () => {
   const text = await read(DOC);
   assert.ok(!text.includes("—"), "docs/binding-interface.md must be em-dash free");

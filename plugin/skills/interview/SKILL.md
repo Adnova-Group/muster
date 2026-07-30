@@ -43,6 +43,7 @@ If the outcome spans multiple independent subsystems, surface it via the **AskUs
 offer to split into independent parts rather than route one over-broad outcome.
 
 An **ACCEPTED** split writes the backlog:
+- Publish the complete staged create/append on stdin with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo duplicate detection and the append, then retry. Never write or rename the backlog directly.
 - **Write each part** as an unchecked item to `.muster/backlog.md` — create the file if absent, append if
   present. NEVER remove, reorder, or rewrite existing lines.
 - **Item format** (must match `/muster:sprint`'s parser exactly): exactly one line per item —

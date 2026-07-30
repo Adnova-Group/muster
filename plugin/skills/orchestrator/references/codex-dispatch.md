@@ -36,10 +36,14 @@ exact spawn_agent call JSON for the resolved version, and `codex-wait-packet [--
 | wake | a mailbox update from ANY live agent (also wakes early on steered input) | the FIRST of the named targets to finish |
 
 `wait_agent` BLOCKS until something happens, so there is no interval to tune and nothing to
-tight-poll -- call it in a loop until every dispatched member has settled (neither version is an
-all-barrier). Timeouts are bounded 10s..3600s, default 30s. **Take receipts from the mailbox, not
-from `list_agents`**: Codex 0.145.0 removed task messages from `list_agents` output (`#33030`), so
-it now reconciles liveness only.
+tight-poll. Before every wait, drain all available mailbox receipts, reconcile, dispatch all newly
+eligible work, and reconcile again; only an eligible idle state may wait. After each wake, repeat
+that **reconcile → dispatch → wait** loop until every dispatched member has settled (neither version
+is an all-barrier), without waiting for a user prompt to notice a completion. Timeouts are bounded
+10s..3600s, default 30s. **Take receipts from the mailbox, not from `list_agents`**: Codex 0.145.0
+removed task messages from `list_agents` output (`#33030`), so it now reconciles liveness only. For
+backlog schedules, the machine transition is `$MUSTER_CLI sprint-reconcile <progress.json>`;
+`next:dispatch` forbids another wait and only `wait.eligible:true` permits one.
 
 `fork_turns` (v2 only) is a **STRING**: Codex rejects the integer `3` and accepts `"3"`. Default
 `"none"`; `"all"` is refused before dispatch because Codex will not combine a full-history fork with

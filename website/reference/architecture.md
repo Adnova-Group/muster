@@ -50,7 +50,7 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 The conceptual tier comes back as `roles[<role>].model` from `muster capabilities`, with the harness-concrete dispatch value for that lane beside it: `claudeModel` (plus `claudeProfile` for an agent-backed role) on the Claude Code and Cowork lanes, `codexModel` or `kimiModel` under their flags. Where a role's chosen agent has a profile in `catalog/agents.manifest.json`, that profile is the authoritative pin and `claudeModel` equals its `claudeProfile.model`; the role's own tier is the fallback for roles with no agent-backed profile. The orchestrator dispatches on the concrete value, never the raw tier. Set `MUSTER_MAX_TIER=core` for budget mode or `MUSTER_MAX_TIER=prime` to exclude apex. Apex is disabled by default; `modelForRole` degrades it to prime deterministically unless `MUSTER_ENABLE_APEX=1` is set.
 
 <!-- legacy-tier-compat:start -->
-Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
+Compatibility only: legacy input aliases `haiku`, `sonnet`, `opus`, and `fable` normalize to `scout`, `core`, `prime`, and `apex`; they are not a second conceptual ladder. `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
 <!-- legacy-tier-compat:end -->
 
 ## Provider kinds

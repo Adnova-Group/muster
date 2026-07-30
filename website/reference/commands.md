@@ -141,7 +141,7 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 
 ## MCP tools
 
-The same deterministic core is also exposed as a local MCP server. The canonical implementation is `mcp/server.mjs`; `cowork/mcp-server.mjs` is the explicit Cowork adapter declared in `cowork/manifest.json`, while `cowork/chatgpt-work-server.mjs` remains a compatibility entrypoint for older Work configurations. There are **28 tools: 27 CLI-wrapper MCP tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
+The same deterministic core is also exposed as a local MCP server. The canonical implementation is `mcp/server.mjs`; `cowork/mcp-server.mjs` is the explicit Cowork adapter declared in `cowork/manifest.json`, while `cowork/chatgpt-work-server.mjs` remains a compatibility entrypoint for older Work configurations. There are **29 tools: 28 CLI-wrapper MCP tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
 
 | Tool | Wraps | What it does |
 | --- | --- | --- |
@@ -164,6 +164,7 @@ The same deterministic core is also exposed as a local MCP server. The canonical
 | `muster_wave` | `wave` | Compute dependency-ordered execution waves. |
 | `muster_next` | `next` | Single-agent driver: next runnable task given completed ids. |
 | `muster_sprint_waves` | `sprint-waves` | Compute waves from a backlog file's `{id}`/`{deps}` annotations (`annotated: false` means the backlog is un-annotated). |
+| `muster_sprint_reconcile` | `sprint-reconcile` | Reconcile completion receipts and in-flight phases into item states plus newly eligible implementation/review/integration actions. |
 | `muster_sprint_protocol` | — | Return the Cowork-adapted sprint orchestration playbook: backlog resolution, wave execution, claim/receipt discipline. |
 | `muster_gate_cadence` | `gate-cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves. |
 | `muster_score` | `score` | Score an artifact against a gate (floor principle). |

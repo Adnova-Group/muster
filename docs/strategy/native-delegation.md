@@ -156,7 +156,7 @@ phase-3 receipt.
 
 | muster construct | native replacement | win | risk | effort |
 |---|---|---|---|---|
-| the whole ride (28-tool MCP server + `instructions` protocol injection, sequential by default) | **possibly** native plugins — Cowork now bundles skills/hooks/subagents in the Claude Code plugin format [src: cw-plugins] | if `plugin/` loads under Cowork's loader, muster rides skills-as-`/`-menu natively instead of MCP-only [src: cw-plugins] | **unverified** — the single highest-value open question; adapter's "no plugin/skill/hook primitives" claim is stale; parallel/model override also requires a fresh phase-3 receipt [src: cw-plugins] | **probe (L)** |
+| the whole ride (29-tool MCP server + `instructions` protocol injection, sequential by default) | **possibly** native plugins — Cowork now bundles skills/hooks/subagents in the Claude Code plugin format [src: cw-plugins] | if `plugin/` loads under Cowork's loader, muster rides skills-as-`/`-menu natively instead of MCP-only [src: cw-plugins] | **unverified** — the single highest-value open question; adapter's "no plugin/skill/hook primitives" claim is stale; parallel/model override also requires a fresh phase-3 receipt [src: cw-plugins] | **probe (L)** |
 | orchestrator wave loop | prompt-steered parallel fan-out (no dispatch API) [src: cw-subagents] | native fan-out exists; muster steers by prompt | no task-graph, no wave gate, per-call model override probe-only [src: cw-subagents] | keep |
 | action fence (DENY) | **none hookable** by an MCP integrator [src: cw-augment] | — | muster's fence has no Cowork equivalent — session discipline is the only enforcement [src: cw-augment] | keep (advisory) |
 | coordination / STATE | none — plan is free-form prose, STATE hand-written [src: cw-loop] | — | no dependency-ordered graph, no isolation model for concurrent items [src: cw-loop] | keep |
@@ -276,7 +276,7 @@ the amount of native-mechanic narration they carry. **[JUDGMENT]**
 Assess-ready one-liners with measurable success criteria, tagged `[harness | thins/retires]`.
 Items already captured in `.muster/backlog.md` are marked (existing #line); the rest are new.
 
-1. **cowork-plugin-loader-probe** `[Cowork | thins: 28-tool MCP-only adapter]` — Hands-on phase-3 probe
+1. **cowork-plugin-loader-probe** `[Cowork | thins: 29-tool MCP-only adapter]` — Hands-on phase-3 probe
    whether muster's `plugin/` (skills+hooks+subagents, Claude Code plugin format) loads under
    Cowork's native plugin loader; if it loads, add a capability check that prefers the native
    plugin ride over MCP-only, MCP server kept as fallback. Success: a documented probe result

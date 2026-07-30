@@ -204,6 +204,14 @@ Record the result to STATE once; it does not change mid-run.
 
 One worked example of each path (the same 2-task wave, routed both ways): docs/native-workflow-dispatch.md.
 
+For backlog schedules, dispatch completion is never inferred from conversation turns. Persist the
+successful `sprint-waves` result and call `sprint-reconcile` with ALL available receipts plus current
+`inFlight` phases after every wake. Drain receipts, dispatch every returned action, update `inFlight`,
+and reconcile again before waiting. Only `wait.eligible:true` permits a native idle wait;
+`next:dispatch` must advance the surfaced implementation/review/integration action immediately,
+without a user prompt. Continue this deterministic **reconcile → dispatch → wait** loop until
+`next:terminal` or `next:escalated`. The harness adapter still owns actual dispatch and waiting.
+
 ### Codex-native dispatch: spawn_agent
 
 **On Codex, read `references/codex-dispatch.md` (in this skill's directory) BEFORE dispatching

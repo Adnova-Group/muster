@@ -96,7 +96,7 @@ export const CODEX_COUNTS = Object.freeze({
   // 62 -> 63: nativeSkills (12) + builtinSkills (51).
   internalSkills: 63,
   pipelines: 20,
-  mcpTools: 28,
+  mcpTools: 29,
   primaryModes: 9,
   aliases: 3
 });

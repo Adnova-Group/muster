@@ -132,6 +132,11 @@ async function projectGitDir(cwd) {
   const match = text.trim().match(/^gitdir:\s*(.+)$/);
   if (!match) throw new Error("project scope .git file has an invalid gitdir pointer");
   const gitDir = isAbsolute(match[1]) ? resolve(match[1]) : resolve(dirname(marker), match[1]);
+  try {
+    if (!(await ordinaryDirectory(gitDir))) throw new Error("gitdir is missing");
+  } catch (cause) {
+    throw new Error("project gitdir ancestry must contain only ordinary directories", { cause });
+  }
   const resolved = await realpath(gitDir);
   const gitInfo = await lstat(resolved);
   if (gitInfo.isSymbolicLink() || !gitInfo.isDirectory()) throw new Error("project gitdir must resolve to an ordinary directory");

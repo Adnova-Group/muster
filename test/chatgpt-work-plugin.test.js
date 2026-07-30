@@ -107,6 +107,48 @@ test("ordinary Codex preservation lookup is optional outside Git while explicit 
   );
 });
 
+test("project-scope install accepts an ordinary relative gitdir and rejects unsafe pointers before mutation", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-gitdir-file-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+
+  const ordinaryProject = join(dir, "ordinary-project");
+  const ordinaryGitDir = join(dir, "ordinary-gitdir");
+  await mkdir(ordinaryProject, { recursive: true });
+  await mkdir(ordinaryGitDir, { recursive: true });
+  await writeFile(join(ordinaryProject, ".git"), "gitdir: ../ordinary-gitdir\n");
+
+  const installed = await runChatgptWorkInstall({
+    connectionId: "asdk_app_RelativeGitdir", profile: "pro-safe",
+    scope: "project", cwd: ordinaryProject, home: join(dir, "home"),
+  });
+  assert.equal(installed.configPath, join(ordinaryGitDir, "muster", "chatgpt-work.json"));
+
+  const malformedProject = join(dir, "malformed-project");
+  await mkdir(malformedProject, { recursive: true });
+  await writeFile(join(malformedProject, ".git"), "not-a-gitdir-pointer\n");
+  const malformedError = await runChatgptWorkInstall({
+    connectionId: "asdk_app_MalformedGitdir", profile: "pro-safe",
+    scope: "project", cwd: malformedProject, home: join(dir, "home"),
+  }).then(() => null, error => error);
+  await assert.rejects(stat(join(malformedProject, ".agents")), /ENOENT/);
+  assert.match(malformedError?.message ?? "", /invalid gitdir pointer/i);
+
+  const symlinkProject = join(dir, "symlink-project");
+  const symlinkTarget = join(dir, "symlink-target");
+  const symlinkGitDir = join(dir, "symlink-gitdir");
+  await mkdir(symlinkProject, { recursive: true });
+  await mkdir(symlinkTarget, { recursive: true });
+  await symlink(symlinkTarget, symlinkGitDir);
+  await writeFile(join(symlinkProject, ".git"), "gitdir: ../symlink-gitdir\n");
+  const symlinkError = await runChatgptWorkInstall({
+    connectionId: "asdk_app_SymlinkGitdir", profile: "pro-safe",
+    scope: "project", cwd: symlinkProject, home: join(dir, "home"),
+  }).then(() => null, error => error);
+  await assert.rejects(stat(join(symlinkProject, ".agents")), /ENOENT/);
+  await assert.rejects(stat(join(symlinkTarget, "muster")), /ENOENT/);
+  assert.match(symlinkError?.message ?? "", /gitdir.*ordinary|symlink/i);
+});
+
 function serverExit(env, input = "", serverPath = join(root, "cowork", "chatgpt-work-server.mjs")) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [serverPath], {

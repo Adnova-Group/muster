@@ -163,6 +163,52 @@ test("runKimiInstall: refuses to write through a symlinked agents dir", async ()
   } finally { [repo, home, elsewhere].forEach(d => rmSync(d, { recursive: true, force: true })); }
 });
 
+test("runKimiInstall: refuses a nested skill symlink before mutating any managed file", async () => {
+  const repo = fixtureRepo(), home = tmp(), elsewhere = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const existingAgent = join(root, "agents", "muster-builder.md");
+    write(existingAgent, "existing agent bytes");
+    write(join(elsewhere, "SKILL.md"), "outside skill sentinel");
+    mkdirSync(join(root, "skills"), { recursive: true });
+    symlinkSync(elsewhere, join(root, "skills", "orchestrator"));
+
+    const agentBefore = readFileSync(existingAgent);
+    const outsideBefore = readFileSync(join(elsewhere, "SKILL.md"));
+    await assert.rejects(runKimiInstall({ home, repoRoot: repo }), /non-ordinary Kimi directory/);
+    assert.deepEqual(readFileSync(existingAgent), agentBefore);
+    assert.deepEqual(readFileSync(join(elsewhere, "SKILL.md")), outsideBefore);
+    assert.ok(!existsSync(join(root, "muster", KIMI_MANIFEST)));
+  } finally { [repo, home, elsewhere].forEach(d => rmSync(d, { recursive: true, force: true })); }
+});
+
+test("runKimiUninstall: refuses a nested agent symlink before deleting any managed file", async () => {
+  const home = tmp(), elsewhere = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const ordinaryAgent = join(root, "agents", "muster-builder.md");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    write(ordinaryAgent, "ordinary managed agent");
+    write(join(elsewhere, "owned.md"), "outside agent sentinel");
+    mkdirSync(join(root, "agents"), { recursive: true });
+    symlinkSync(elsewhere, join(root, "agents", "nested"));
+    write(manifestPath, JSON.stringify({
+      owner: "muster",
+      format: 1,
+      agents: ["agents/muster-builder.md", "agents/nested/owned.md"],
+      skills: []
+    }));
+
+    const agentBefore = readFileSync(ordinaryAgent);
+    const outsideBefore = readFileSync(join(elsewhere, "owned.md"));
+    const manifestBefore = readFileSync(manifestPath);
+    await assert.rejects(runKimiUninstall({ home }), /non-ordinary Kimi directory/);
+    assert.deepEqual(readFileSync(ordinaryAgent), agentBefore);
+    assert.deepEqual(readFileSync(join(elsewhere, "owned.md")), outsideBefore);
+    assert.deepEqual(readFileSync(manifestPath), manifestBefore);
+  } finally { [home, elsewhere].forEach(d => rmSync(d, { recursive: true, force: true })); }
+});
+
 test("runKimiInstall: a stale manifest temp from a crashed install (pid recycled) never blocks the publish", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {

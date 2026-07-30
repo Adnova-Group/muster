@@ -411,6 +411,7 @@ export function startMusterMcpServer(config) {
       });
     case "tools/call": {
       if (!Object.hasOwn(exposedTools, params?.name)) {
+        if (isNotification) return;
         return ok(id, {
           content: [{
             type: "text",
@@ -421,8 +422,10 @@ export function startMusterMcpServer(config) {
           isError: true,
         });
       }
-      const r = await limiter.run(id, (signal) => invoke(params?.name, params?.arguments || {}, signal));
-      return ok(id, { content: [{ type: "text", text: r.text }], isError: !r.ok });
+      const workId = isNotification ? Symbol("tools/call notification") : id;
+      const r = await limiter.run(workId, (signal) => invoke(params?.name, params?.arguments || {}, signal));
+      if (!isNotification) return ok(id, { content: [{ type: "text", text: r.text }], isError: !r.ok });
+      return;
     }
     default:
       if (!isNotification) err(id, -32601, `method not found: ${method}`);

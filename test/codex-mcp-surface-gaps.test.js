@@ -76,6 +76,29 @@ test("built Codex plugin's MCP server: muster_scope returns real scope JSON for 
   assert.ok(Array.isArray(body.signals) && body.signals.length > 0, "signals cite the deciding evidence");
 });
 
+test("built Codex plugin's MCP server: muster_assess uses Codex word-quantified success criteria", async () => {
+  // "under three" is intentionally recognized only by assess --codex. The
+  // neutral/Cowork argv reports no-success-criteria for this otherwise-clear
+  // outcome, so this call binds the built adapter's actual argv mapping rather
+  // than merely proving that muster_assess exists in tools/list.
+  const outcome = "Keep retry failures under three across every deployment verification run";
+  const neutral = JSON.parse((await execFile(
+    process.execPath,
+    [join(selectedPluginRoot, "runtime", "muster.mjs"), "assess", outcome],
+    { cwd: repoRoot },
+  )).stdout);
+  assert.equal(neutral.clear, false, "fixture must remain unclear without the Codex argv mapping");
+  assert.ok(neutral.signals.includes("no-success-criteria"), `neutral assess must expose the differentiating missing-criteria signal: ${JSON.stringify(neutral)}`);
+
+  const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_assess", arguments: { outcome } } }]);
+  const res = r[2].result;
+  assert.ok(res, "tools/call returned no result");
+  assert.equal(res.isError, false, `muster_assess errored: ${JSON.stringify(res?.content)}`);
+  const body = JSON.parse(res.content[0].text);
+  assert.equal(body.clear, true, `Codex word-quantified outcome must be clear: ${JSON.stringify(body)}`);
+  assert.deepEqual(body.signals, [], "must not fabricate missing success criteria under the Codex argv mapping");
+});
+
 test("built Codex plugin's MCP server: muster_plan_checklist round-trips a minimal manifest", async () => {
   const manifest = { plan: [{ id: "a", task: "Add X", deps: [] }] };
   const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_plan_checklist", arguments: { manifest } } }]);

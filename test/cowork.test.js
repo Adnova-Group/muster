@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { mkdtempSync, writeFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, execFile } from "node:child_process";
@@ -1060,6 +1060,98 @@ test("notifications/initialized produces no spurious reply", async () => {
   ]);
   assert.deepEqual(Object.keys(r).sort(), ["1", "2"], "server must not emit a reply to the notification");
   assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after notification");
+});
+
+test("tools/call notifications execute without replies, undefined-id collisions, or cancellation", async () => {
+  const fixture = mkdtempSync(path.join(tmpdir(), "cowork-tool-notifications-"));
+  const fakeCli = path.join(fixture, "recording-cli.mjs");
+  const marker = path.join(fixture, "calls.log");
+  writeFileSync(fakeCli, [
+    'import { appendFileSync } from "node:fs";',
+    'appendFileSync(process.env.MUSTER_TEST_MARKER, "started\\n");',
+    'await new Promise((resolve) => setTimeout(resolve, 100));',
+    'appendFileSync(process.env.MUSTER_TEST_MARKER, "completed\\n");',
+    'process.stdout.write("ok");',
+  ].join("\n"));
+
+  try {
+    const messages = await new Promise((resolve, reject) => {
+      const srv = spawn(process.execPath, [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          NODE_ENV: "test",
+          MUSTER_COWORK_TEST_CLI: fakeCli,
+          MUSTER_TEST_MARKER: marker,
+        },
+        stdio: ["pipe", "pipe", "inherit"],
+      });
+      const got = [];
+      let buf = "";
+      let settled = false;
+      let completionScheduled = false;
+      const timer = setTimeout(() => {
+        settled = true;
+        srv.kill("SIGKILL");
+        reject(new Error(`tools/call notification timeout; replies=${JSON.stringify(got)}`));
+      }, 3_000);
+      const finishWhenComplete = () => {
+        if (settled) return;
+        let completed = 0;
+        try {
+          completed = readFileSync(marker, "utf8").split("\n").filter((line) => line === "completed").length;
+        } catch {}
+        if (completed < 2 || !got.some((msg) => msg.id === 2)) {
+          setTimeout(finishWhenComplete, 10);
+          return;
+        }
+        if (!completionScheduled) {
+          completionScheduled = true;
+          setTimeout(() => {
+            settled = true;
+            clearTimeout(timer);
+            srv.stdin.end();
+            resolve(got);
+          }, 50);
+        }
+      };
+      srv.stdout.setEncoding("utf8");
+      srv.stdout.on("data", (data) => {
+        buf += data;
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (line) got.push(JSON.parse(line));
+        }
+      });
+      srv.on("error", reject);
+      srv.stdin.write(JSON.stringify(INIT) + "\n");
+      srv.stdin.write(JSON.stringify({
+        jsonrpc: "2.0", method: "tools/call",
+        params: { name: "muster_detect", arguments: {} },
+      }) + "\n");
+      srv.stdin.write(JSON.stringify({
+        jsonrpc: "2.0", method: "notifications/cancelled", params: {},
+      }) + "\n");
+      srv.stdin.write(JSON.stringify({
+        jsonrpc: "2.0", method: "tools/call",
+        params: { name: "muster_detect", arguments: {} },
+      }) + "\n");
+      srv.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping" }) + "\n");
+      finishWhenComplete();
+    });
+
+    assert.deepEqual(messages.map((msg) => msg.id).sort(), [1, 2], "tools/call notifications must emit no response");
+    assert.deepEqual(messages.find((msg) => msg.id === 2)?.result, {}, "a subsequent ping request stays healthy");
+    assert.equal(
+      readFileSync(marker, "utf8").split("\n").filter((line) => line === "completed").length,
+      2,
+      "both notifications execute without colliding or being cancelled via an undefined id",
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 // ── A-SEC6: stdin buffer overflow guard ─────────────────────────────────────

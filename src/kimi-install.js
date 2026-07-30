@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, readFile, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir, realpath, rmdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,6 +126,66 @@ async function assertWritableDir(path) {
   }
 }
 
+// Preflight every managed-file target before the first mutation. Lexical
+// containment alone cannot see `skills/foo -> /outside`; walk each existing
+// ancestor with lstat (never following links), require ordinary directories,
+// then compare its canonical location with the canonical Kimi root. Final
+// components must be ordinary files or absent so writeFile/copyFile cannot
+// follow a file symlink either. Missing ancestry is safe to create beneath the
+// already-validated ordinary prefix.
+async function assertSafeManagedFiles(dest, targets) {
+  const base = resolve(dest);
+  let baseStat;
+  try { baseStat = await lstat(base); }
+  catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  if (baseStat.isSymbolicLink() || !baseStat.isDirectory()) {
+    throw new Error(`Refusing to mutate through a non-ordinary Kimi directory: ${base}`);
+  }
+  const canonicalBase = await realpath(base);
+
+  for (const target of targets) {
+    const absolute = resolve(target);
+    if (!isContainedLexical(base, absolute) || absolute === base) {
+      throw new Error(`Refusing a Kimi path outside ${dest}: ${JSON.stringify(target)}`);
+    }
+
+    const parentRel = relative(base, dirname(absolute));
+    let current = base;
+    let parentMissing = false;
+    for (const part of parentRel.split(sep).filter(Boolean)) {
+      current = join(current, part);
+      let stat;
+      try { stat = await lstat(current); }
+      catch (error) {
+        if (error.code === "ENOENT") { parentMissing = true; break; }
+        throw error;
+      }
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new Error(`Refusing to mutate through a non-ordinary Kimi directory: ${current}`);
+      }
+      const canonical = await realpath(current);
+      if (!isContainedLexical(canonicalBase, canonical)) {
+        throw new Error(`Refusing a canonical Kimi path outside ${dest}: ${current}`);
+      }
+    }
+    if (parentMissing) continue;
+
+    let stat;
+    try { stat = await lstat(absolute); }
+    catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`Refusing to mutate a non-ordinary Kimi file: ${absolute}`);
+    }
+    const canonical = await realpath(absolute);
+    if (!isContainedLexical(canonicalBase, canonical)) {
+      throw new Error(`Refusing a canonical Kimi path outside ${dest}: ${absolute}`);
+    }
+  }
+}
+
 // Every manifest-recorded relative path must resolve strictly inside dest -- a
 // defense-in-depth containment gate so a crafted manifest (uninstall) or a
 // traversing source name (install) can never read/write outside the kimi root.
@@ -163,9 +223,21 @@ async function readPackageVersion(root) {
   return typeof pkg?.version === "string" ? pkg.version : "0.5.0";
 }
 
-async function copyInto(srcFile, destFile) {
+async function copyInto(srcFile, destFile, dest) {
   await mkdir(dirname(destFile), { recursive: true });
+  await assertSafeManagedFiles(dest, [destFile]);
   await copyFile(srcFile, destFile);
+}
+
+async function writeManaged(dest, path, bytes) {
+  await mkdir(dirname(path), { recursive: true });
+  await assertSafeManagedFiles(dest, [path]);
+  await writeFile(path, bytes);
+}
+
+async function unlinkManaged(dest, path) {
+  await assertSafeManagedFiles(dest, [path]);
+  await unlink(path);
 }
 
 // muster's VERBS (plugin/commands/*.md) are the entry points -- without them
@@ -500,28 +572,33 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
   const previous = await readManifest(manifestPath, dest);
   const ownedSet = new Set(ownedRel);
+  const staleRel = (previous ? [...previous.agents, ...previous.skills, ...(previous.verbs || [])] : [])
+    .filter(rel => !ownedSet.has(rel));
+  await assertSafeManagedFiles(dest, [
+    ...ownedRel.map(rel => join(dest, rel)),
+    ...staleRel.map(rel => join(dest, rel)),
+    manifestPath
+  ]);
   const removedStale = [];
-  for (const rel of previous ? [...previous.agents, ...previous.skills, ...(previous.verbs || [])] : []) {
-    if (ownedSet.has(rel)) continue;
-    try { await unlink(join(dest, rel)); removedStale.push(rel); }
+  for (const rel of staleRel) {
+    try { await unlinkManaged(dest, join(dest, rel)); removedStale.push(rel); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 
   // Skills copy byte-for-byte; agents are stamped with their model_preference
   // lane (see the header note -- an un-stamped agent would silently bind to the
   // secondary/cheap lane once a [secondary_model] is configured).
-  for (const { rel, src } of skills) await copyInto(src, join(dest, rel));
+  for (const { rel, src } of skills) await copyInto(src, join(dest, rel), dest);
   const lanes = { primary: [], secondary: [] }, unstamped = [];
   for (const { rel, src, id, lane } of agents) {
     const destFile = join(dest, rel);
     const stamped = lane ? stampModelPreference(await readFile(src, "utf8"), lane) : null;
     if (stamped === null) {
-      await copyInto(src, destFile);
+      await copyInto(src, destFile, dest);
       unstamped.push({ id, reason: lane ? "no frontmatter" : "no manifest entry" });
       continue;
     }
-    await mkdir(dirname(destFile), { recursive: true });
-    await writeFile(destFile, stamped);
+    await writeManaged(dest, destFile, stamped);
     lanes[lane].push(id);
   }
 
@@ -532,8 +609,7 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   for (const { rel, src, name } of verbs) {
     const destFile = join(dest, rel);
     const stamped = stampSkillName(await readFile(src, "utf8"), name);
-    await mkdir(dirname(destFile), { recursive: true });
-    await writeFile(destFile, stamped ?? await readFile(src, "utf8"));
+    await writeManaged(dest, destFile, stamped ?? await readFile(src, "utf8"));
     installedVerbs.push(name);
   }
 
@@ -554,11 +630,12 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   await writeFile(configPath, mergedConfig.text, "utf8");
 
   await mkdir(dirname(manifestPath), { recursive: true });
+  await assertSafeManagedFiles(dest, [manifestPath]);
   await atomicWriteJson(manifestPath, {
     format: 1, owner: "muster", packageVersion,
     agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
     permissionRules: { created: configCreated }
-  });
+  }, dest);
 
   return {
     dest, packageVersion, agents: agents.map(a => basename(a.rel)), skills: skillNames,
@@ -594,9 +671,11 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
     };
   }
 
+  await assertSafeManagedFiles(dest, [...owned.map(rel => join(dest, rel)), manifestPath]);
+
   const removed = [];
   for (const rel of owned) {
-    try { await unlink(join(dest, rel)); removed.push(rel); }
+    try { await unlinkManaged(dest, join(dest, rel)); removed.push(rel); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 
@@ -616,7 +695,7 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
   for (const rel of skillDirs) await rmdirIfEmpty(join(dest, rel));
   await rmdirIfEmpty(join(dest, "skills"));
   await rmdirIfEmpty(join(dest, "agents"));
-  await unlink(manifestPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+  await unlinkManaged(dest, manifestPath).catch(error => { if (error.code !== "ENOENT") throw error; });
   await rmdirIfEmpty(join(dest, "muster"));
 
   return { dest, removed, fileCount: removed.length, ...(manifest.permissionRules ? { permissionRules: { stripped: true, configRemoved } } : {}) };
@@ -631,6 +710,9 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
 // and a torn publish is self-healing on rerun; the fence block's config.toml
 // write is deliberately NOT this helper -- see the "deliberately a plain
 // writeFile" comment at the install merge).
-async function atomicWriteJson(path, value) {
-  await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", { fsync: false });
+async function atomicWriteJson(path, value, dest) {
+  await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", {
+    fsync: false,
+    beforeRename: () => assertSafeManagedFiles(dest, [path])
+  });
 }

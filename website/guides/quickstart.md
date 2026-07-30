@@ -72,14 +72,14 @@ Given a raw intent instead of an existing backlog ref, it first decomposes the i
 
 ## Clear a backlog: `/muster:go-backlog`
 
-The batch counterpart to Go. It runs the full Go lifecycle sequentially over every item in a backlog (`.muster/backlog.md` by default), ticking each one off as it completes. An escalated item never aborts the batch -- it stays unchecked and go-backlog moves on. There is exactly one attended stop, at the end, for the batch report -- headlined "cleared N, escalated M."
+The batch counterpart to Go. Plain backlogs run sequentially; annotated file backlogs run dependency waves. An escalated item never aborts the batch -- it stays unchecked and go-backlog moves on. There is exactly one attended stop, at the end, for the batch report -- headlined "cleared N, escalated M."
 
 ```sh
 /muster:go-backlog
 /muster:go-backlog issues:bug
 ```
 
-A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches go-backlog into **wave mode**: independent items in a wave dispatch as parallel worktree-isolated runners, capped by `MUSTER_SPRINT_PARALLEL` (hard ceiling 10), while items disposed to merge locally or push serialize at the wave barrier. Go-backlog also re-resolves after each item: as each disposition executes, it re-reads the backlog file, so items added mid-batch join the run instead of waiting for the next invocation.
+A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches go-backlog into **wave mode**. Every ready item builds and reviews in its own worktree, concurrently up to `MUSTER_SPRINT_PARALLEL` (default 5, hard ceiling 10) when the harness supports it. After every completion wake, Muster reconciles all available receipts and dispatches every newly eligible action before waiting again. Disposition/integration remains backlog-ordered after the entire wave's build/review barrier; the next dependency wave waits for that lane. There is no fixed three-runner cap. Go-backlog re-resolves the file after the barrier and ordered lane so items added mid-batch can join the run instead of waiting for the next invocation.
 
 `/muster:sprint` still works: a one-line heads-up, then identical behavior under the new name. Deprecated as of 2026-07-17, retiring in muster 0.7.0.
 

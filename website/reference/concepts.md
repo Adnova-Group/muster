@@ -64,7 +64,7 @@ Each resolved role carries a model picked to fit the work, so quota spend tracks
 Harness adapters map the conceptual `scout`, `core`, `prime`, and `apex` ladder to concrete models.
 
 <!-- legacy-tier-compat:start -->
-Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
+Compatibility only: legacy input aliases `haiku`, `sonnet`, `opus`, and `fable` normalize to `scout`, `core`, `prime`, and `apex`; they are not a second conceptual ladder. `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
 <!-- legacy-tier-compat:end -->
 
 The conceptual tier is reported as `roles[<role>].model`; the orchestrator passes the adjacent harness-concrete model as the dispatch override when it spawns each subagent.

@@ -25,6 +25,12 @@ npx -y @adnova-group/muster@0.5.0 install codex --scope project
 
 `--scope user` writes the same owned material under `$CODEX_HOME` (or `~/.codex` when that is unset). The thread-limit floor is shared in the Codex home config. Existing higher values survive. Muster records the previous values so the last managed-scope uninstall can restore keys it raised, while preserving a later user increase.
 
+### Native Windows and WSL are separate installs
+
+Run the installer in the same host that launches Codex. Native Windows normally uses `%USERPROFILE%\.codex`; WSL normally uses its Linux `~/.codex`. They also have separate Node installations, executable search paths, and plugin caches. Installing Muster in WSL therefore does not configure native Codex Desktop, even when the repository itself is reachable through `/mnt/c/...`.
+
+If you move from WSL Codex to native Windows Codex, rerun the desired project/user installs from PowerShell, review the native definitions with `/hooks`, and run `muster doctor --codex` there. Treat the old WSL scope as a separate installation and uninstall it from WSL if it is no longer used. `commandWindows` path mapping lets a hook definition represent a Windows path; it does not merge the two user homes or make a Linux-only Node executable callable by native Desktop.
+
 With Codex on `PATH`, the installer also registers the `Adnova-Group/muster` marketplace and adds `muster@muster`, idempotently. Without Codex on `PATH` it still installs the profiles and hooks, then prints the exact registration follow-up for you to run.
 
 ```sh
@@ -80,13 +86,15 @@ All nine modes have a skill: the five above plus `$muster-plan-backlog`, `$muste
 
 Codex native Init expects `AGENTS.md`. A request to run Init, an existing file, or a refusal to overwrite does not prove completion. Muster finalizes only from an artifact delta, an explicit pre-existing confirmation, or an attempt-bound call-result receipt.
 
+For annotated go-backlog files, Codex dispatches every ready implementation/review leg in the dependency wave up to the emitted concurrency bound. Completion notifications are not a reason to wait for a user turn: after each wake, the orchestrator drains all available receipts, runs `sprint-reconcile`, dispatches every returned action, and reconciles again before waiting. Integration remains backlog-ordered after the full wave build/review barrier. There is no special three-runner ceiling; the current backlog control defaults to 5 and clamps at 10, while the shared Codex thread floor remains 12.
+
 ## What the Codex plugin bundles
 
 | Component | Count |
 | --- | --- |
 | Deterministic CLI | the full `muster` verb surface |
 | Pipelines | all of them |
-| MCP tools | 29 tools (28 CLI wrappers plus `muster_sprint_protocol`) |
+| MCP tools | 30 tools (29 CLI wrappers plus `muster_sprint_protocol`) |
 | Custom-agent profiles | 27 |
 | Skills | 76 total: 13 public + 63 internal |
 | Internal skill breakdown | 12 native orchestration + 51 capability |

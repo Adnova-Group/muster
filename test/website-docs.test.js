@@ -141,7 +141,7 @@ test("harness documentation routes and support claims are explicit", async () =>
   assert.match(kimi, /symbolic[\s\S]{0,100}`primary`[\s\S]{0,80}`secondary`/i);
   assert.match(kimi, /explicit[\s\S]{0,120}overrides[\s\S]{0,120}model_preference/i);
   assert.match(cowork, /support matrix/i);
-  assert.match(cowork, /27 CLI-wrapper tools/i);
+  assert.match(cowork, /29 CLI-wrapper tools/i);
   assert.match(cowork, /`muster_sprint_protocol`/);
   assert.match(cowork, /phase-?3[\s\S]{0,260}before relying on parallel/i);
   assert.doesNotMatch(cowork, /Parallel subagents \| Confirmed/i);

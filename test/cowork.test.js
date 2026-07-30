@@ -805,7 +805,7 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
         name: "muster_sprint_reconcile",
         arguments: {
           plan,
-          inFlight: [{ itemId: "a", phase: "implementation" }],
+          inFlight: [{ itemId: "a", phase: "implementation", attempt: 1 }],
           receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed" }],
         },
       },
@@ -817,6 +817,34 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
   assert.equal(res.next, "dispatch");
   assert.deepEqual(res.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1 }]);
   assert.equal(res.wait.eligible, false);
+});
+
+test("json verb: muster_sprint_reconcile returns isError with structured validation errors for a forged plan", async () => {
+  const backlog = "- [ ] Open PR {id: a} {deps: none} {disposition: pr}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  plan.schedule.buildReview.maxConcurrency = 999;
+  const reconciled = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_sprint_reconcile",
+        arguments: { plan, receipts: [], inFlight: [] },
+      },
+    },
+  ]);
+  const res = JSON.parse(reconciled[2].result.content[0].text);
+
+  assert.equal(reconciled[2].result.isError, true);
+  assert.equal(res.ok, false);
+  assert.match(res.errors.join(" | "), /maxConcurrency/);
+  assert.notEqual(res.wait?.eligible, true);
 });
 
 test("file verb: muster_sprint_waves on an unannotated backlog returns annotated:false, sequential waves", async () => {

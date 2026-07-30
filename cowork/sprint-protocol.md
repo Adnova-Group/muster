@@ -62,7 +62,7 @@ run, report it plainly.
 
 Persist that successful result as `plan`. During execution, call **`muster_sprint_reconcile`** with
 `plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`), and
-the adapter-observed `inFlight` phase list. Drive a strict **reconcile → dispatch → wait** loop:
+the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`). Drive a strict **reconcile → dispatch → wait** loop:
 drain all completions after every wake, reconcile once, execute every returned action, update
 `inFlight`, then reconcile again before waiting. `next:dispatch` forbids an idle wait;
 `next:terminal|escalated` ends the loop; only `wait.eligible:true` permits waiting. Duplicate or

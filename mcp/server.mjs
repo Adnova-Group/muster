@@ -57,11 +57,11 @@ const T = (description, prop, required = true) => ({
 const SPRINT_RECEIPT_SCHEMA = {
   type: "object",
   properties: {
-    id: { type: "string", minLength: 1 },
-    itemId: { type: "string", minLength: 1 },
+    id: { type: "string", minLength: 1, maxLength: 256 },
+    itemId: { type: "string", minLength: 1, maxLength: 128 },
     phase: { type: "string", enum: ["implementation", "review", "integration"] },
     status: { type: "string", enum: ["completed", "failed", "cancelled"] },
-    attempt: { type: "integer", minimum: 1 },
+    attempt: { type: "integer", minimum: 1, maximum: 1000000 },
   },
   required: ["id", "itemId", "phase", "status"],
   additionalProperties: false,
@@ -69,10 +69,11 @@ const SPRINT_RECEIPT_SCHEMA = {
 const SPRINT_IN_FLIGHT_SCHEMA = {
   type: "object",
   properties: {
-    itemId: { type: "string", minLength: 1 },
+    itemId: { type: "string", minLength: 1, maxLength: 128 },
     phase: { type: "string", enum: ["implementation", "review", "integration"] },
+    attempt: { type: "integer", minimum: 1, maximum: 1000000 },
   },
-  required: ["itemId", "phase"],
+  required: ["itemId", "phase", "attempt"],
   additionalProperties: false,
 };
 
@@ -112,8 +113,8 @@ const TOOLS = {
       "Reconciles all available sprint completion receipts with the emitted schedule. Returns canonical item states and newly eligible implementation/review/integration dispatch actions; call after every wake before waiting again.",
       {
         plan: { type: "object" },
-        receipts: { type: "array", items: SPRINT_RECEIPT_SCHEMA },
-        inFlight: { type: "array", items: SPRINT_IN_FLIGHT_SCHEMA },
+        receipts: { type: "array", maxItems: 10000, items: SPRINT_RECEIPT_SCHEMA },
+        inFlight: { type: "array", maxItems: 1000, items: SPRINT_IN_FLIGHT_SCHEMA },
       },
       ["plan", "receipts", "inFlight"],
     ),

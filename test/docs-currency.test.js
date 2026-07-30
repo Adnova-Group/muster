@@ -307,6 +307,10 @@ test("current Cowork research uses the live MCP tool count and phase-3-gated dis
     assert.match(text, /fresh\s+successful\s+phase-3\s+receipt|phase-3\s+receipt[\s\S]{0,100}(?:required|require)/i, `${path} must require active-build phase-3 evidence`);
     assert.match(text, /phase-3/i, `${path} must identify the dispatch evidence gate`);
   }
+  for (const path of ["docs/research/claude-cowork.md", "docs/research/codex-cli.md"]) {
+    const text = await read(path);
+    assert.doesNotMatch(text, /\bexpos(?:es|ing)\s+28\b/i, `${path} must not retain the stale 28-tool current inventory`);
+  }
 });
 
 test("cross-harness research preserves current Codex hook, dispatch, thread, and canonical-scope contracts", async () => {

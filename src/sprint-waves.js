@@ -134,11 +134,221 @@ export function buildSprintSchedule(waves, items, { parallelLimit } = {}) {
 const SPRINT_PHASES = ["implementation", "review", "integration"];
 const SPRINT_RECEIPT_STATUSES = ["completed", "failed", "cancelled"];
 const FAILURE_STATES = new Set(["failed", "cancelled", "blocked"]);
+const SPRINT_DISPOSITIONS = [null, "merge-local", "merge-push", "pr", "keep", "ask"];
+const SPRINT_RECONCILE_LIMITS = Object.freeze({
+  items: 1_000,
+  waves: 1_000,
+  receipts: 10_000,
+  inFlight: 1_000,
+  idLength: 256,
+  itemIdLength: 128,
+  textLength: 100_000,
+  attempt: 1_000_000,
+});
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function invalidReconciliation(errors) {
+  return {
+    ok: false,
+    version: 1,
+    errors,
+    items: {},
+    receipts: [],
+    inFlight: [],
+    actions: [],
+    next: "escalated",
+    wait: { eligible: false, inFlight: [] },
+    terminal: false,
+    escalated: true,
+  };
+}
+
+function sameIds(actual, expected) {
+  return Array.isArray(actual)
+    && actual.length === expected.length
+    && actual.every((id, index) => id === expected[index]);
+}
+
+function validateSprintPlan(plan) {
+  const errors = [];
+  if (!isRecord(plan) || plan.ok !== true) return { errors: ["plan must be a successful computeSprintWaves result"] };
+  if (!Array.isArray(plan.waves)) errors.push("plan.waves must be an array");
+  if (!isRecord(plan.items)) errors.push("plan.items must be an object");
+  if (!isRecord(plan.schedule)) errors.push("plan.schedule must be an object");
+  if (errors.length > 0) return { errors };
+  if (plan.waves.length > SPRINT_RECONCILE_LIMITS.waves) {
+    errors.push(`plan.waves exceeds limit ${SPRINT_RECONCILE_LIMITS.waves}`);
+    return { errors };
+  }
+
+  const orderedIds = [];
+  const itemIds = new Set();
+  const waveById = new Map();
+  for (let waveIndex = 0; waveIndex < plan.waves.length; waveIndex += 1) {
+    const wave = plan.waves[waveIndex];
+    if (!Array.isArray(wave)) {
+      errors.push(`plan.waves[${waveIndex}] must be an array`);
+      continue;
+    }
+    if (orderedIds.length + wave.length > SPRINT_RECONCILE_LIMITS.items) {
+      errors.push(`plan contains more than ${SPRINT_RECONCILE_LIMITS.items} items`);
+      break;
+    }
+    for (const id of wave) {
+      if (typeof id !== "string" || !id || id.length > SPRINT_RECONCILE_LIMITS.itemIdLength) {
+        errors.push(`plan item id must be a non-empty string at most ${SPRINT_RECONCILE_LIMITS.itemIdLength} characters`);
+        continue;
+      }
+      if (itemIds.has(id)) {
+        errors.push(`duplicate plan item id '${id}'`);
+        continue;
+      }
+      itemIds.add(id);
+      orderedIds.push(id);
+      waveById.set(id, waveIndex + 1);
+    }
+  }
+  if (errors.length > 0) return { errors };
+
+  const itemKeys = Object.keys(plan.items);
+  if (itemKeys.length > SPRINT_RECONCILE_LIMITS.items) {
+    errors.push(`plan.items exceeds limit ${SPRINT_RECONCILE_LIMITS.items}`);
+  }
+  if (itemKeys.length !== itemIds.size || itemKeys.some((id) => !itemIds.has(id))) {
+    errors.push("plan.items keys must exactly match the unique ids in plan.waves");
+  }
+  for (const id of orderedIds) {
+    const item = plan.items[id];
+    if (!isRecord(item)) {
+      errors.push(`plan.items['${id}'] must be an object`);
+      continue;
+    }
+    if (!Array.isArray(item.deps)) {
+      errors.push(`plan.items['${id}'].deps must be an array`);
+      continue;
+    }
+    if (item.deps.length > SPRINT_RECONCILE_LIMITS.items) {
+      errors.push(`plan.items['${id}'].deps exceeds limit ${SPRINT_RECONCILE_LIMITS.items}`);
+      continue;
+    }
+    const seenDeps = new Set();
+    for (const dep of item.deps) {
+      if (typeof dep !== "string" || !itemIds.has(dep)) errors.push(`plan item '${id}' names unknown dependency '${dep}'`);
+      else if (seenDeps.has(dep)) errors.push(`plan item '${id}' repeats dependency '${dep}'`);
+      else if (waveById.get(dep) >= waveById.get(id)) errors.push(`plan dependency '${dep}' must precede item '${id}'`);
+      seenDeps.add(dep);
+    }
+    if (!SPRINT_DISPOSITIONS.includes(item.disposition)) {
+      errors.push(`plan item '${id}' has invalid disposition '${item.disposition}'`);
+    }
+    if (!Number.isInteger(item.line) || item.line < 1) errors.push(`plan item '${id}' has invalid line`);
+    if (typeof item.text !== "string" || item.text.length > SPRINT_RECONCILE_LIMITS.textLength) {
+      errors.push(`plan item '${id}' text must be at most ${SPRINT_RECONCILE_LIMITS.textLength} characters`);
+    }
+    if (typeof item.escalated !== "boolean") errors.push(`plan item '${id}' escalated must be boolean`);
+    if (item.claimed !== null && (typeof item.claimed !== "string" || item.claimed.length > SPRINT_RECONCILE_LIMITS.idLength)) {
+      errors.push(`plan item '${id}' claimed must be null or a bounded string`);
+    }
+  }
+
+  const schedule = plan.schedule;
+  if (schedule.version !== 1) errors.push("plan.schedule.version must be 1");
+  if (!isRecord(schedule.buildReview)) errors.push("plan.schedule.buildReview must be an object");
+  if (!isRecord(schedule.integration)) errors.push("plan.schedule.integration must be an object");
+  if (!isRecord(schedule.degradation)) errors.push("plan.schedule.degradation must be an object");
+  if (schedule.barrier !== "all-build-review-complete") errors.push("plan.schedule.barrier is invalid");
+  if (!Array.isArray(schedule.waves)) errors.push("plan.schedule.waves must be an array");
+  const cap = schedule.buildReview?.maxConcurrency;
+  if (!Number.isInteger(cap) || cap < 1 || cap > SPRINT_PARALLEL_MAX) {
+    errors.push(`plan.schedule.buildReview.maxConcurrency must be an integer from 1 to ${SPRINT_PARALLEL_MAX}`);
+  }
+  if (isRecord(schedule.buildReview)) {
+    if (schedule.buildReview.eligibility !== "all-ready-wave-items-regardless-of-disposition") errors.push("plan.schedule.buildReview.eligibility is invalid");
+    if (schedule.buildReview.isolation !== "per-item-worktree") errors.push("plan.schedule.buildReview.isolation is invalid");
+    if (schedule.buildReview.defaultMaxConcurrency !== SPRINT_PARALLEL_DEFAULT) errors.push("plan.schedule.buildReview.defaultMaxConcurrency is invalid");
+    if (schedule.buildReview.hardMaxConcurrency !== SPRINT_PARALLEL_MAX) errors.push("plan.schedule.buildReview.hardMaxConcurrency is invalid");
+  }
+  if (isRecord(schedule.integration)) {
+    if (schedule.integration.mode !== "sequential-backlog-order") errors.push("plan.schedule.integration.mode is invalid");
+    if (!sameIds(schedule.integration.dispositions, ["merge-local", "merge-push"])) errors.push("plan.schedule.integration.dispositions is invalid");
+  }
+  if (isRecord(schedule.degradation)) {
+    const expected = {
+      when: "parallel-dispatch-unavailable",
+      buildReviewMode: "sequential-isolated",
+      dependencyOrder: "preserved",
+      integrationOrder: "preserved",
+    };
+    for (const [key, value] of Object.entries(expected)) {
+      if (schedule.degradation[key] !== value) errors.push(`plan.schedule.degradation.${key} is invalid`);
+    }
+  }
+  if (errors.length > 0) return { errors };
+  if (schedule.waves.length !== plan.waves.length) errors.push("plan.schedule.waves must match plan.waves length");
+
+  for (let waveIndex = 0; waveIndex < plan.waves.length; waveIndex += 1) {
+    const expectedIds = plan.waves[waveIndex];
+    const scheduled = schedule.waves[waveIndex];
+    if (!isRecord(scheduled)) {
+      errors.push(`plan.schedule.waves[${waveIndex}] must be an object`);
+      continue;
+    }
+    if (scheduled.wave !== waveIndex + 1) errors.push(`plan.schedule.waves[${waveIndex}].wave must be ${waveIndex + 1}`);
+    if (!isRecord(scheduled.buildReview)) errors.push(`plan.schedule.waves[${waveIndex}].buildReview must be an object`);
+    if (!isRecord(scheduled.integration)) errors.push(`plan.schedule.waves[${waveIndex}].integration must be an object`);
+    if (!isRecord(scheduled.buildReview) || !isRecord(scheduled.integration)) continue;
+    if (scheduled.buildReview.mode !== "concurrent-isolated") errors.push(`plan.schedule.waves[${waveIndex}].buildReview.mode is invalid`);
+    if (scheduled.barrier !== "all-build-review-complete") errors.push(`plan.schedule.waves[${waveIndex}].barrier is invalid`);
+    if (scheduled.integration.mode !== "sequential-backlog-order") errors.push(`plan.schedule.waves[${waveIndex}].integration.mode is invalid`);
+    if (!sameIds(scheduled.buildReview.itemIds, expectedIds)) {
+      errors.push(`plan.schedule.waves[${waveIndex}].buildReview.itemIds must match plan wave order`);
+    }
+    if (!Array.isArray(scheduled.buildReview.batches)) {
+      errors.push(`plan.schedule.waves[${waveIndex}].buildReview.batches must be an array`);
+    } else if (scheduled.buildReview.batches.length > SPRINT_RECONCILE_LIMITS.items) {
+      errors.push(`plan.schedule.waves[${waveIndex}].buildReview.batches exceeds limit ${SPRINT_RECONCILE_LIMITS.items}`);
+    } else {
+      const flat = [];
+      for (const batch of scheduled.buildReview.batches) {
+        if (!Array.isArray(batch) || batch.length < 1 || batch.length > cap) {
+          errors.push(`plan.schedule.waves[${waveIndex}] contains an invalid cap-bounded batch`);
+          continue;
+        }
+        flat.push(...batch);
+      }
+      if (!sameIds(flat, expectedIds)) errors.push(`plan.schedule.waves[${waveIndex}].buildReview.batches must cover the wave exactly once`);
+    }
+    const expectedIntegration = expectedIds.filter((id) =>
+      ["merge-local", "merge-push"].includes(plan.items[id]?.disposition));
+    if (!sameIds(scheduled.integration.itemIds, expectedIntegration)) {
+      errors.push(`plan.schedule.waves[${waveIndex}].integration.itemIds must match merge dispositions in backlog order`);
+    }
+  }
+  return { errors, orderedIds, itemIds, waveById };
+}
+
+function phaseKey(itemId, phase) {
+  return `${itemId}\0${phase}`;
+}
+
+function strongerReceipt(current, candidate) {
+  if (!current || candidate.attempt > current.attempt) return candidate;
+  if (candidate.attempt < current.attempt) return current;
+  const precedence = { completed: 1, cancelled: 2, failed: 3 };
+  return precedence[candidate.status] > precedence[current.status] ? candidate : current;
+}
 
 function canonicalReceipts(receipts, itemIds) {
   if (!Array.isArray(receipts)) return { errors: ["receipts must be an array"], receipts: [] };
+  if (receipts.length > SPRINT_RECONCILE_LIMITS.receipts) {
+    return { errors: [`receipts exceeds limit ${SPRINT_RECONCILE_LIMITS.receipts}`], receipts: [] };
+  }
   const errors = [];
   const byId = new Map();
+  const latestByPhase = new Map();
   for (const raw of receipts) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       errors.push("each receipt must be an object");
@@ -152,11 +362,11 @@ function canonicalReceipts(receipts, itemIds) {
       attempt: raw.attempt === undefined ? 1 : raw.attempt,
     };
     let valid = true;
-    if (typeof receipt.id !== "string" || !receipt.id.trim()) {
-      errors.push("receipt id must be a non-empty string");
+    if (typeof receipt.id !== "string" || !receipt.id.trim() || receipt.id.length > SPRINT_RECONCILE_LIMITS.idLength) {
+      errors.push(`receipt id must be a non-empty string at most ${SPRINT_RECONCILE_LIMITS.idLength} characters`);
       valid = false;
     }
-    if (!itemIds.has(receipt.itemId)) {
+    if (typeof receipt.itemId !== "string" || receipt.itemId.length > SPRINT_RECONCILE_LIMITS.itemIdLength || !itemIds.has(receipt.itemId)) {
       errors.push(`receipt '${receipt.id}' names unknown item '${receipt.itemId}'`);
       valid = false;
     }
@@ -168,8 +378,8 @@ function canonicalReceipts(receipts, itemIds) {
       errors.push(`receipt '${receipt.id}' has invalid status '${receipt.status}'`);
       valid = false;
     }
-    if (!Number.isInteger(receipt.attempt) || receipt.attempt < 1) {
-      errors.push(`receipt '${receipt.id}' attempt must be a positive integer`);
+    if (!Number.isInteger(receipt.attempt) || receipt.attempt < 1 || receipt.attempt > SPRINT_RECONCILE_LIMITS.attempt) {
+      errors.push(`receipt '${receipt.id}' attempt must be an integer from 1 to ${SPRINT_RECONCILE_LIMITS.attempt}`);
       valid = false;
     }
     if (!valid) continue;
@@ -180,6 +390,8 @@ function canonicalReceipts(receipts, itemIds) {
       continue;
     }
     byId.set(normalized.id, normalized);
+    latestByPhase.set(phaseKey(normalized.itemId, normalized.phase),
+      strongerReceipt(latestByPhase.get(phaseKey(normalized.itemId, normalized.phase)), normalized));
   }
   return {
     errors,
@@ -188,20 +400,24 @@ function canonicalReceipts(receipts, itemIds) {
       || SPRINT_PHASES.indexOf(a.phase) - SPRINT_PHASES.indexOf(b.phase)
       || a.attempt - b.attempt
       || a.id.localeCompare(b.id)),
+    latestByPhase,
   };
 }
 
 function canonicalInFlight(inFlight, itemIds) {
   if (!Array.isArray(inFlight)) return { errors: ["inFlight must be an array"], inFlight: [] };
+  if (inFlight.length > SPRINT_RECONCILE_LIMITS.inFlight) {
+    return { errors: [`inFlight exceeds limit ${SPRINT_RECONCILE_LIMITS.inFlight}`], inFlight: [] };
+  }
   const errors = [];
-  const seen = new Set();
+  const byPhase = new Map();
   const normalized = [];
   for (const entry of inFlight) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       errors.push("each inFlight entry must be an object");
       continue;
     }
-    if (!itemIds.has(entry.itemId)) {
+    if (typeof entry.itemId !== "string" || entry.itemId.length > SPRINT_RECONCILE_LIMITS.itemIdLength || !itemIds.has(entry.itemId)) {
       errors.push(`inFlight entry names unknown item '${entry.itemId}'`);
       continue;
     }
@@ -209,27 +425,23 @@ function canonicalInFlight(inFlight, itemIds) {
       errors.push(`inFlight entry for '${entry.itemId}' has invalid phase '${entry.phase}'`);
       continue;
     }
-    const key = `${entry.itemId}\0${entry.phase}`;
-    if (!seen.has(key)) normalized.push({ itemId: entry.itemId, phase: entry.phase });
-    seen.add(key);
+    if (!Number.isInteger(entry.attempt) || entry.attempt < 1 || entry.attempt > SPRINT_RECONCILE_LIMITS.attempt) {
+      errors.push(`inFlight entry for '${entry.itemId}' attempt must be an integer from 1 to ${SPRINT_RECONCILE_LIMITS.attempt}`);
+      continue;
+    }
+    const key = phaseKey(entry.itemId, entry.phase);
+    const prior = byPhase.get(key);
+    if (prior && prior.attempt !== entry.attempt) {
+      errors.push(`inFlight entry for '${entry.itemId}' phase '${entry.phase}' has conflicting attempts`);
+      continue;
+    }
+    if (!prior) {
+      const value = { itemId: entry.itemId, phase: entry.phase, attempt: entry.attempt };
+      normalized.push(value);
+      byPhase.set(key, value);
+    }
   }
-  return { errors, inFlight: normalized };
-}
-
-function latestPhaseReceipt(receipts, itemId, phase) {
-  const matches = receipts.filter((receipt) => receipt.itemId === itemId && receipt.phase === phase);
-  if (matches.length === 0) return null;
-  const highestAttempt = Math.max(...matches.map((receipt) => receipt.attempt));
-  const latest = matches.filter((receipt) => receipt.attempt === highestAttempt);
-  // A contradictory same-attempt failure must fail closed. A later attempt can
-  // still supersede it, which is how an adapter represents an explicit retry.
-  return latest.find((receipt) => receipt.status === "failed")
-    || latest.find((receipt) => receipt.status === "cancelled")
-    || latest.find((receipt) => receipt.status === "completed");
-}
-
-function waveForItem(plan, itemId) {
-  return plan.waves.findIndex((wave) => wave.includes(itemId)) + 1;
+  return { errors, inFlight: normalized, byPhase };
 }
 
 // Pure completion-awareness transition. Adapters own dispatch and mailbox I/O;
@@ -237,19 +449,23 @@ function waveForItem(plan, itemId) {
 // wait, terminal, or escalated. Callers pass the complete receipts currently
 // available on every wake, then dispatch every returned action before waiting again.
 export function reconcileSprintProgress(plan, progress = {}) {
-  if (!plan?.ok || !Array.isArray(plan.waves) || !plan.items || !plan.schedule) {
-    return { ok: false, errors: ["plan must be a successful computeSprintWaves result"] };
-  }
-  const orderedIds = plan.waves.flat();
-  const itemIds = new Set(orderedIds);
+  const planResult = validateSprintPlan(plan);
+  if (planResult.errors.length > 0) return invalidReconciliation(planResult.errors);
+  if (!isRecord(progress)) return invalidReconciliation(["progress must be an object"]);
+  const { orderedIds, itemIds, waveById } = planResult;
   const receiptResult = canonicalReceipts(progress.receipts ?? [], itemIds);
   const inFlightResult = canonicalInFlight(progress.inFlight ?? [], itemIds);
   const errors = [...receiptResult.errors, ...inFlightResult.errors];
-  if (errors.length > 0) return { ok: false, errors };
+  if (errors.length > 0) return invalidReconciliation(errors);
 
   const receipts = receiptResult.receipts;
   const inFlight = inFlightResult.inFlight;
-  const isInFlight = (itemId, phase) => inFlight.some((entry) => entry.itemId === itemId && entry.phase === phase);
+  const phaseState = (itemId, phase) => {
+    const receipt = receiptResult.latestByPhase.get(phaseKey(itemId, phase));
+    const flight = inFlightResult.byPhase.get(phaseKey(itemId, phase));
+    if (flight && (!receipt || flight.attempt > receipt.attempt)) return { status: "in_flight", attempt: flight.attempt };
+    return receipt ? { status: receipt.status, attempt: receipt.attempt } : null;
+  };
   const items = {};
 
   for (const itemId of orderedIds) {
@@ -266,27 +482,27 @@ export function reconcileSprintProgress(plan, progress = {}) {
     } else if (waitingDependency) {
       state = "pending";
     } else {
-      const implementation = latestPhaseReceipt(receipts, itemId, "implementation");
+      const implementation = phaseState(itemId, "implementation");
       if (implementation?.status === "failed" || implementation?.status === "cancelled") {
         state = implementation.status;
       } else if (implementation?.status !== "completed") {
-        state = isInFlight(itemId, "implementation") ? "implementation_in_flight" : "implementation_ready";
+        state = implementation?.status === "in_flight" ? "implementation_in_flight" : "implementation_ready";
       } else {
-        const review = latestPhaseReceipt(receipts, itemId, "review");
+        const review = phaseState(itemId, "review");
         if (review?.status === "failed" || review?.status === "cancelled") {
           state = review.status;
         } else if (review?.status !== "completed") {
-          state = isInFlight(itemId, "review") ? "review_in_flight" : "review_ready";
+          state = review?.status === "in_flight" ? "review_in_flight" : "review_ready";
         } else if (!["merge-local", "merge-push"].includes(source.disposition)) {
           state = "completed";
         } else {
-          const integration = latestPhaseReceipt(receipts, itemId, "integration");
+          const integration = phaseState(itemId, "integration");
           if (integration?.status === "failed" || integration?.status === "cancelled") {
             state = integration.status;
           } else if (integration?.status === "completed") {
             state = "completed";
           } else {
-            state = isInFlight(itemId, "integration") ? "integration_in_flight" : "integration_ready";
+            state = integration?.status === "in_flight" ? "integration_in_flight" : "integration_ready";
           }
         }
       }
@@ -294,7 +510,7 @@ export function reconcileSprintProgress(plan, progress = {}) {
 
     items[itemId] = {
       state,
-      wave: waveForItem(plan, itemId),
+      wave: waveById.get(itemId),
       deps: [...deps],
       disposition: source.disposition,
       blockedBy,
@@ -307,6 +523,41 @@ export function reconcileSprintProgress(plan, progress = {}) {
     .slice(0, waveNumber - 1)
     .flat()
     .every((itemId) => items[itemId].state === "completed");
+
+  const causalErrors = [];
+  for (const flight of inFlight) {
+    const item = items[flight.itemId];
+    const latestReceipt = receiptResult.latestByPhase.get(phaseKey(flight.itemId, flight.phase));
+    // A receipt for this attempt (or a newer one) settles the adapter's stale
+    // in-flight marker; it is drained rather than treated as a causal violation.
+    if (latestReceipt && flight.attempt <= latestReceipt.attempt) continue;
+    if (latestReceipt?.status === "completed" && flight.attempt > latestReceipt.attempt) {
+      causalErrors.push(`inFlight ${flight.phase} for '${flight.itemId}' retries an already completed phase`);
+      continue;
+    }
+    if (item.state !== `${flight.phase}_in_flight`) {
+      const prerequisite = flight.phase === "review" ? "completed implementation"
+        : flight.phase === "integration" ? "completed review and eligible integration barrier"
+        : "completed dependencies and prior waves";
+      causalErrors.push(`inFlight ${flight.phase} for '${flight.itemId}' lacks ${prerequisite}`);
+      continue;
+    }
+    if (!priorWavesComplete(item.wave)) causalErrors.push(`inFlight ${flight.phase} for '${flight.itemId}' started before prior waves completed`);
+    if (flight.phase === "integration") {
+      const waveSchedule = plan.schedule.waves[item.wave - 1];
+      const barrierPassed = waveSchedule.buildReview.itemIds.every((id) =>
+        items[id].state === "completed"
+        || items[id].state === "integration_ready"
+        || items[id].state === "integration_in_flight");
+      const integrationIndex = waveSchedule.integration.itemIds.indexOf(flight.itemId);
+      const predecessorsComplete = integrationIndex >= 0
+        && waveSchedule.integration.itemIds.slice(0, integrationIndex).every((id) => items[id].state === "completed");
+      if (!barrierPassed || !predecessorsComplete) {
+        causalErrors.push(`inFlight integration for '${flight.itemId}' started before its review barrier or integration predecessors completed`);
+      }
+    }
+  }
+  if (causalErrors.length > 0) return invalidReconciliation(causalErrors);
   for (const itemId of orderedIds) {
     const item = items[itemId];
     if (!priorWavesComplete(item.wave)) continue;
@@ -338,12 +589,10 @@ export function reconcileSprintProgress(plan, progress = {}) {
 
   const terminal = orderedIds.every((itemId) => items[itemId].state === "completed");
   const hasInFlight = activeInFlight.length > 0;
-  const hasFailure = orderedIds.some((itemId) => FAILURE_STATES.has(items[itemId].state));
   const next = actions.length > 0 ? "dispatch"
     : terminal ? "terminal"
     : hasInFlight ? "wait"
-    : hasFailure ? "escalated"
-    : "wait";
+    : "escalated";
 
   return {
     ok: true,

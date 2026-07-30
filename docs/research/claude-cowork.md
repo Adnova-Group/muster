@@ -317,7 +317,7 @@ What actually ships [CODE-VERIFIED]:
 
 - **One neutral MCP core, no SDK:** `mcp/server.mjs` speaks newline-delimited JSON-RPC 2.0
   over stdio, node builtins only, MCP protocol version pinned to `2025-06-18`
-  [src: mcps-head] [src: mcps-294]. It exposes 28 `muster_*` tools wrapping the
+  [src: mcps-head] [src: mcps-294]. It exposes 29 `muster_*` tools wrapping the
   deterministic CLI (`src/cli.js`) — detection, capability/domain routing, gate scoring,
   RICE prioritization, wave planning, tournament pick/fuse, review tally, advisor
   validation [src: readme-11] [src: mcps-106].

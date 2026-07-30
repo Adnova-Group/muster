@@ -15,14 +15,18 @@ function plan(lines) {
   return computeSprintWaves(lines.join("\n"));
 }
 
-function receipt(id, itemId, phase, status = "completed") {
-  return { id, itemId, phase, status };
+function receipt(id, itemId, phase, status = "completed", attempt = 1) {
+  return { id, itemId, phase, status, attempt };
+}
+
+function flight(itemId, phase, attempt = 1) {
+  return { itemId, phase, attempt };
 }
 
 test("a completion wake immediately exposes review instead of returning to idle", () => {
   const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
   const result = reconcileSprintProgress(sprint, {
-    inFlight: [{ itemId: "a", phase: "implementation" }],
+    inFlight: [flight("a", "implementation")],
     receipts: [receipt("impl-a", "a", "implementation")],
   });
 
@@ -41,8 +45,8 @@ test("one wake drains multiple simultaneous implementation completions", () => {
   ]);
   const result = reconcileSprintProgress(sprint, {
     inFlight: [
-      { itemId: "a", phase: "implementation" },
-      { itemId: "b", phase: "implementation" },
+      flight("a", "implementation"),
+      flight("b", "implementation"),
     ],
     receipts: [
       receipt("impl-b", "b", "implementation"),
@@ -96,8 +100,8 @@ test("failed, cancelled, and missing receipts never unlock dependencies", () => 
   ]);
   const result = reconcileSprintProgress(sprint, {
     inFlight: [
-      { itemId: "a", phase: "implementation" },
-      { itemId: "c", phase: "implementation" },
+      flight("a", "implementation"),
+      flight("c", "implementation"),
     ],
     receipts: [receipt("impl-a-failed", "a", "implementation", "failed")],
   });
@@ -166,7 +170,7 @@ test("sprint-reconcile CLI consumes the machine-checkable receipt envelope", asy
     const input = join(dir, "progress.json");
     await writeFile(input, JSON.stringify({
       plan: plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]),
-      inFlight: [{ itemId: "a", phase: "implementation" }],
+      inFlight: [flight("a", "implementation")],
       receipts: [receipt("impl-a", "a", "implementation")],
     }));
     const { stdout } = await pexecFile(process.execPath, [cli, "sprint-reconcile", input], { cwd: repoRoot });
@@ -174,6 +178,84 @@ test("sprint-reconcile CLI consumes the machine-checkable receipt envelope", asy
 
     assert.equal(result.next, "dispatch");
     assert.deepEqual(result.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1 }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("malformed or forged plans fail deterministically and never become wait-eligible", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const mutations = [
+    (value) => { value.schedule.waves = null; },
+    (value) => { value.waves = [["a", "a"]]; },
+    (value) => { value.items.a.deps = ["ghost"]; },
+    (value) => { value.schedule.buildReview.maxConcurrency = 999; },
+    (value) => { value.schedule.waves[0].buildReview.itemIds = ["forged"]; },
+  ];
+
+  for (const mutate of mutations) {
+    const forged = structuredClone(sprint);
+    mutate(forged);
+    const result = reconcileSprintProgress(forged);
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.length > 0);
+    assert.notEqual(result.wait?.eligible, true);
+  }
+});
+
+test("in-flight attempts are causal and a newer retry outranks a stale failure", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const retry = reconcileSprintProgress(sprint, {
+    receipts: [receipt("impl-a-1", "a", "implementation", "failed", 1)],
+    inFlight: [flight("a", "implementation", 2)],
+  });
+  assert.equal(retry.ok, true);
+  assert.equal(retry.items.a.state, "implementation_in_flight");
+  assert.deepEqual(retry.inFlight, [flight("a", "implementation", 2)]);
+  assert.equal(retry.wait.eligible, true);
+
+  const impossible = reconcileSprintProgress(sprint, {
+    receipts: [],
+    inFlight: [flight("a", "review", 1)],
+  });
+  assert.equal(impossible.ok, false);
+  assert.match(impossible.errors.join(" | "), /review.*implementation/i);
+  assert.notEqual(impossible.wait?.eligible, true);
+});
+
+test("reconciliation rejects oversized collections and identifiers before indexing", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const tooMany = reconcileSprintProgress(sprint, {
+    receipts: Array.from({ length: 10_001 }, (_, index) =>
+      receipt(`r-${index}`, "a", "implementation", "failed", index + 1)),
+  });
+  assert.equal(tooMany.ok, false);
+  assert.match(tooMany.errors.join(" | "), /receipts.*limit/i);
+
+  const longId = reconcileSprintProgress(sprint, {
+    receipts: [receipt("r".repeat(257), "a", "implementation")],
+  });
+  assert.equal(longId.ok, false);
+  assert.match(longId.errors.join(" | "), /id.*256/i);
+});
+
+test("sprint-reconcile CLI returns structured ok:false for a malformed plan", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-sprint-reconcile-bad-"));
+  try {
+    const input = join(dir, "progress.json");
+    const forged = plan(["- [ ] A {id: a} {deps: none}"]);
+    forged.schedule.waves = null;
+    await writeFile(input, JSON.stringify({ plan: forged, receipts: [], inFlight: [] }));
+    await assert.rejects(
+      pexecFile(process.execPath, [cli, "sprint-reconcile", input], { cwd: repoRoot }),
+      (error) => {
+        const result = JSON.parse(error.stdout);
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.length > 0);
+        assert.notEqual(result.wait?.eligible, true);
+        return true;
+      },
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

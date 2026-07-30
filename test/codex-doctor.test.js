@@ -4,11 +4,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { cp, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { cp, link, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP, DOCTOR_READ_MAX_BYTES, DOCTOR_CONFIG_READ_MAX_BYTES } from "../src/codex-doctor.js";
@@ -1140,4 +1141,58 @@ test("Codex doctor: codex-hooks names a HASH-MISMATCHED hook runtime with the sp
   assert.doesNotMatch(hooks?.detail || "", /malformed|managed hook file missing/i);
   assert.doesNotMatch(hooks?.detail || "", new RegExp(reEscape(join(scopeA, ".codex"))));
   await rm(tmp, { recursive: true, force: true });
+});
+
+// --- TOCTOU translation arm (audit 2 slice J) ------------------------------
+// readRegularFile's `fsSafe.reason === "changed" -> musterUnsafeRead
+// ("Codex configuration target changed while reading")` translation
+// (src/codex-doctor.js:436) was pinned only at the fs-safe primitive, never at
+// this call site. A same-user writer replacing the target mid-read trips the
+// shared reader's post-read identity recheck (nlink flip on the HELD
+// descriptor, fs-safe.js:159-161 -- the same "changed" reason the expectedInfo
+// arm throws for a lstat->open swap), which must surface translated, not raw.
+test("Codex doctor: a config.toml swapped mid-read surfaces the translated changed-while-reading diagnostic", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-toctou-"));
+  const cwd = join(tmp, "project"), codexHome = join(tmp, "home", ".codex");
+  await mkdir(cwd, { recursive: true });
+  await mkdir(codexHome, { recursive: true });
+  const configPath = join(codexHome, "config.toml");
+  // Big (valid-TOML) content so the guarded read spans many swap cycles; the
+  // doctor config read cap (DOCTOR_CONFIG_READ_MAX_BYTES) is 16 MiB.
+  const big = "# muster doctor toctou filler\n".repeat(200_000); // ~5.6 MB
+  const stagingA = join(tmp, "staging-a.toml"), stagingB = join(tmp, "staging-b.toml");
+  await writeFile(stagingA, big);
+  await writeFile(stagingB, big);
+  await link(stagingA, configPath);
+  const absent = async () => { throw new Error("not found"); };
+  // Continuously replace the target between the lstat and the guarded read:
+  // unlink drops the held inode's nlink mid-read and the alternating relink
+  // swaps which inode the name resolves to. The 1ms dwell keeps the name
+  // resolving (a read spanning several dwells is nearly always swapped
+  // mid-flight); without it the target is absent at open too often.
+  let stop = false;
+  const swapper = (async () => {
+    const stagings = [stagingA, stagingB];
+    for (let i = 0; !stop; i++) {
+      await unlink(configPath).catch(() => {});
+      await link(stagings[i % 2], configPath).catch(() => {});
+      await sleep(1);
+    }
+  })();
+  try {
+    let detail = null;
+    for (let attempt = 0; attempt < 12 && detail === null; attempt++) {
+      const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, mcpRunner: liveMcpRunner });
+      const check = report.checks.find(c => c.name === "codex-thread-limits");
+      // A miss reads clean (or hits a benign ENOENT/parse detail) -- retry; a
+      // hit carries the translated diagnostic naming the swapped target.
+      if (/changed while reading/.test(check?.detail || "")) detail = check.detail;
+    }
+    assert.ok(detail, "the changed-while-reading translation must surface within 12 attempts");
+    assert.match(detail, new RegExp(`Codex configuration target changed while reading: ${reEscape(configPath)}`));
+  } finally {
+    stop = true;
+    await swapper;
+    await rm(tmp, { recursive: true, force: true });
+  }
 });

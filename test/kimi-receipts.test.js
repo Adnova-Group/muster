@@ -18,6 +18,7 @@ import {
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const FIXTURE_SESSION = fileURLToPath(new URL("./fixtures/kimi-session-usage", import.meta.url));
+const FIXTURE_SESSION_030 = fileURLToPath(new URL("./fixtures/kimi-session-usage-030", import.meta.url));
 const FIXTURE_STDOUT = fileURLToPath(new URL("./fixtures/kimi-stream-stdout.jsonl", import.meta.url));
 // Committed session dirs for the fallback resolver: sess-old/sess-new share
 // one cwd (sess-new has the later state.json updatedAt); sess-other is a
@@ -150,6 +151,21 @@ test("readSessionThinkingEfforts: per-agent effort lists over a session tree", a
   });
   await assert.rejects(() => readSessionThinkingEfforts(""), /sessionDir is required/);
   await assert.rejects(() => readSessionThinkingEfforts(path.join(dir, "nope")), /cannot read agents tree/);
+});
+
+test("readSessionThinkingEfforts: a REAL 0.30.0 wire capture yields the llm.request effort, not the config.update default", async () => {
+  // test/fixtures/kimi-session-usage-030/agents/main/wire.jsonl is a trimmed
+  // VERBATIM capture (no reshaped fields, whole lines kept or dropped) of the
+  // kimi v0.30.0 usage probe, 2026-07-29:
+  // ~/.kimi-code/sessions/wd_kimi-030-usage-probe_b87663673b9b/session_7a873ee4-ef5f-49fb-bbd7-8fbf0e9b0c4e
+  // (workDir /tmp/kimi-030-usage-probe). The v0.29.1 fixture carries zero
+  // thinkingEffort fields; this one proves the parser against the real 0.30.0
+  // llm.request shape (thinkingEffort + thinkingKeep + hashes), and that the
+  // config.update record's thinkingEffort (the config DEFAULT) is ignored.
+  const wire = await readFile(path.join(FIXTURE_SESSION_030, "agents/main/wire.jsonl"), "utf8");
+  assert.ok(wire.includes('"thinkingEffort"'), "the fixture must actually carry thinkingEffort fields");
+  assert.deepEqual(parseWireThinkingEfforts(wire), ["low"]);
+  assert.deepEqual(await readSessionThinkingEfforts(FIXTURE_SESSION_030), { main: ["low"] });
 });
 
 // --- readSessionUsage --------------------------------------------------------

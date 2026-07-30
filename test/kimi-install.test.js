@@ -83,6 +83,37 @@ test("runKimiInstall: reinstall is idempotent and prunes stale owned files", asy
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: nested skill-asset subdirectories (references/) are walked, manifested, and stale-pruned", async () => {
+  // walkFiles's isDirectory() recursion branch: every OTHER fixture asset is a
+  // flat file, but the orchestrator's progressive-disclosure split ships
+  // skills/orchestrator/references/*.md -- a nested subdirectory the install
+  // copy, the ownership manifest, and the stale-prune path must all reach.
+  const repo = tmp(), home = tmp();
+  try {
+    write(join(repo, "package.json"), JSON.stringify({ version: "9.9.9" }));
+    write(join(repo, "plugin", "agents", "muster-builder.md"), "---\nname: muster-builder\nmodel: opus\n---\nbody");
+    write(join(repo, "plugin", "skills", "orchestrator", "SKILL.md"), "---\nname: orchestrator\n---\nbody");
+    write(join(repo, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md"), "# codex dispatch\n");
+
+    const r = await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    // the nested file is copied, recreating its subdirectory
+    assert.equal(readFileSync(join(root, "skills", "orchestrator", "references", "codex-dispatch.md"), "utf8"), "# codex dispatch\n");
+    // ...and recorded in the ownership manifest with a POSIX-joined nested rel
+    const manifest = JSON.parse(readFileSync(join(root, "muster", KIMI_MANIFEST), "utf8"));
+    assert.ok(manifest.skills.includes("skills/orchestrator/references/codex-dispatch.md"));
+    assert.equal(r.fileCount, 3); // 1 agent + SKILL.md + the nested reference
+
+    // drop the nested file from the source, reinstall, and the stale-prune
+    // path removes exactly it (the now-empty references/ dir goes with it)
+    rmSync(join(repo, "plugin", "skills", "orchestrator", "references"), { recursive: true });
+    const r2 = await runKimiInstall({ home, repoRoot: repo });
+    assert.deepEqual(r2.removedStale, ["skills/orchestrator/references/codex-dispatch.md"]);
+    assert.ok(!existsSync(join(root, "skills", "orchestrator", "references", "codex-dispatch.md")));
+    assert.ok(existsSync(join(root, "skills", "orchestrator", "SKILL.md")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiUninstall: removes exactly the owned files and leaves a user's own file", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {

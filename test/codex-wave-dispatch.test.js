@@ -17,6 +17,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   CODEX_MULTI_AGENT_ENV,
   CODEX_DISPATCH_MODES,
@@ -166,4 +167,40 @@ test("assertCodexSpawnAgentAccepted: only an explicit rejected:false status with
   ]) {
     assert.throws(() => assertCodexSpawnAgentAccepted(outcome), /spawn_agent|taskId|agentType|malformed/i);
   }
+});
+
+// ── prose guards: orchestrator references/codex-dispatch.md ───────────────
+// The Kimi sibling reference carries guards like these (test/kimi-dispatch.test.js);
+// this reference had none, so the contracts the wave-dispatch mechanics depend on
+// could rot silently. Pin NAMES, never sentences, so prose edits stay free.
+const CODEX_DISPATCH_REF = new URL("../plugin/skills/orchestrator/references/codex-dispatch.md", import.meta.url);
+
+async function codexDispatchSection() {
+  const text = await readFile(CODEX_DISPATCH_REF, "utf8");
+  const match = text.match(/### Codex-native dispatch[^\n]*\n([\s\S]*?)(?=\n### |\n## |$)/);
+  assert.ok(match, "references/codex-dispatch.md must carry the '### Codex-native dispatch' section");
+  return match[1];
+}
+
+test("references/codex-dispatch.md names the version-resolving packet builders (src/wave-dispatch.js is canonical)", async () => {
+  const section = await codexDispatchSection();
+  assert.match(section, /`codexSpawnAgentCall`/, "the Codex subsection must name codexSpawnAgentCall");
+  assert.match(section, /`codexWaitAgentCall`/, "the Codex subsection must name codexWaitAgentCall");
+});
+
+test("references/codex-dispatch.md pins the fork_turns-is-a-string contract", async () => {
+  const section = await codexDispatchSection();
+  assert.match(section, /`fork_turns`/, "the Codex subsection must name fork_turns");
+  assert.match(section, /STRING/, "the Codex subsection must state fork_turns is a STRING, not an integer");
+});
+
+test("references/codex-dispatch.md pins the mailbox-not-list_agents receipts rule", async () => {
+  const section = await codexDispatchSection();
+  assert.match(section, /mailbox/, "the Codex subsection must source receipts from the mailbox");
+  assert.match(section, /`list_agents`/, "the Codex subsection must name list_agents as the thing NOT to receipt from");
+});
+
+test("references/codex-dispatch.md names assertCodexSpawnAgentAccepted for the fail-closed rejection path", async () => {
+  const section = await codexDispatchSection();
+  assert.match(section, /`assertCodexSpawnAgentAccepted`/, "the Codex subsection must name assertCodexSpawnAgentAccepted");
 });

@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import {
   acknowledgeNativeInitHandoff,
@@ -273,4 +274,57 @@ test("learning cap counts all encountered regular files, not only manifests", as
   }
   await writeFile(join(dir, "package.json"), "{}");
   await assert.rejects(() => learnProjectProfile(dir), /project learning limit exceeded/);
+});
+
+// --- TOCTOU translation arm (audit 2 slice J) ------------------------------
+// learnFacts's readNoFollowRegular call passes the walk's own lstat as
+// expectedInfo (src/init.js:402); a same-user writer replacing the target
+// mid-read trips the shared reader's "changed" reason (post-read identity
+// recheck on the HELD descriptor, fs-safe.js:159-161 -- the same reason the
+// expectedInfo arm throws for a lstat->open swap). init.js deliberately lets
+// that diagnostic propagate untranslated, so the rejection must surface with
+// the exact `file changed while reading: <rel>` message, tagged.
+test("learnProjectProfile: a manifest swapped mid-read rejects with the changed-while-reading diagnostic", async () => {
+  const dir = await tmp();
+  // Stagings live OUTSIDE the walked root (same tmp filesystem, so the
+  // hardlinks work): repositoryFingerprint (init.js:332) walks EVERY root
+  // entry, so in-root stagings would be raced too and could throw first.
+  const stagingDir = await tmp();
+  // Big (valid-JSON) manifest so the guarded read spans many swap cycles; the
+  // learning read cap (INIT_LIMITS.learnFileBytes) is 1 MiB.
+  const big = `{"scripts":{"test":"node --test"},"_filler":"${"a".repeat(800_000)}"}`;
+  const stagingA = join(stagingDir, "staging-a.json"), stagingB = join(stagingDir, "staging-b.json");
+  await writeFile(stagingA, big);
+  await writeFile(stagingB, big);
+  const target = join(dir, "package.json");
+  await link(stagingA, target);
+  // Continuously replace the target between the walk's lstat and the guarded
+  // read: unlink drops the held inode's nlink mid-read, the alternating relink
+  // swaps which inode the name resolves to, and the 1ms dwell keeps the name
+  // resolving (without it the target is absent at open too often).
+  let stop = false;
+  const swapper = (async () => {
+    const stagings = [stagingA, stagingB];
+    for (let i = 0; !stop; i++) {
+      await unlink(target).catch(() => {});
+      await link(stagings[i % 2], target).catch(() => {});
+      await sleep(1);
+    }
+  })();
+  try {
+    let changed = null;
+    for (let attempt = 0; attempt < 12 && changed === null; attempt++) {
+      try {
+        await learnProjectProfile(dir); // a miss reads clean -- retry
+      } catch (error) {
+        // A benign ENOENT (open landing in the unlinked gap) is a miss too.
+        if (error?.fsSafe?.reason === "changed") changed = error;
+      }
+    }
+    assert.ok(changed, "the changed-while-reading rejection must surface within 12 attempts");
+    assert.equal(changed.message, "file changed while reading: package.json");
+  } finally {
+    stop = true;
+    await swapper;
+  }
 });

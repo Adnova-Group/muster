@@ -20,11 +20,11 @@ This matrix describes the verified MCP-only distribution in this directory. It d
 | Audit | MCP protocol | Drive the whole-codebase lifecycle from the server instructions and deterministic tools. |
 | Runner | Not provided | There is no Runner-mode MCP protocol or tool in this distribution. |
 | Capture | Not provided | There is no Capture-mode MCP protocol or tool in this distribution. |
-| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 29 MCP tools. |
+| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 30 MCP tools. |
 
 ## What you get
 
-Twenty-nine deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, scheduling, and receipt-reconciliation operations without model calls; the Cowork agent still performs the judgment and execution work.
+Thirty deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, scheduling, receipt reconciliation, and bounded backlog publication without model calls; the Cowork agent still performs the judgment and execution work.
 
 | Tool | Does |
 | --- | --- |
@@ -39,6 +39,7 @@ Twenty-nine deterministic tools, plus an execution protocol that teaches the age
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
 | `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
 | `muster_sprint_reconcile` | Drain completion receipts into deterministic sprint states and the next eligible implementation/review/integration actions |
+| `muster_backlog_publish` | Bounded CAS publication for complete backlog content under an explicit project root |
 | `muster_sprint_protocol` | Return the Cowork-adapted sprint playbook (no args) -- see below |
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_gate_cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves |
@@ -172,7 +173,7 @@ Phase 3 passing means parallel fan-out plus per-call model override work, so the
 
 This directory is the Claude Cowork MCP package; it is not ChatGPT Work's plugin. ChatGPT Work is available on the web and in the ChatGPT desktop app with Work selected, and uses the universal Plugins Directory plus a registered MCP connection. Work does not inherit this Cowork package or Codex Desktop configuration. Follow [`website/guides/chatgpt-work.md`](../website/guides/chatgpt-work.md) for the private/local Work lane.
 
-The recommended Work profile (`pro-safe`) is exactly one titled, read-only `muster_prioritize` tool after a successful native Scan Tools gate; the installer requires an explicit `--profile`. Its `full` profile is the existing 29-tool deterministic surface, not write support, and requires a full-MCP workspace entitlement and both installer/server opt-ins. Secure MCP Tunnel is outbound-only private transport and is not a public plugin-submission path.
+The recommended Work profile (`pro-safe`) is exactly one titled, read-only `muster_prioritize` tool after a successful native Scan Tools gate; the installer requires an explicit `--profile`. Its `full` profile is the existing 30-tool deterministic surface, not write support, and requires a full-MCP workspace entitlement and both installer/server opt-ins. Secure MCP Tunnel is outbound-only private transport and is not a public plugin-submission path.
 
 ## Troubleshooting
 

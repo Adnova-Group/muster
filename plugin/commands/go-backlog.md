@@ -56,6 +56,7 @@ Unlike outcome-anchored modes, an empty `$ARGUMENTS` is not a stop — it defaul
    (note the fallback once). Mirror onto `backlog.md` after the item's disposition executes: check
    the box (`- [x]`) only for done items; an escalated item stays unchecked with a `{escalated:
    <runId or date>}` annotation appended instead, so a future go-backlog run can resurface it.
+   Every FILE-backlog tick, claim, heartbeat, completion, and escalation annotation is published through `$MUSTER_CLI backlog-publish <backlog.md> --expect <sha256>` with the complete staged file on stdin. On a changed-before-publication failure, reread, reapply the still-valid mutation, and retry; never edit or rename the backlog directly.
 3. **Per item, SEQUENTIALLY** — run go steps 1-8 (branch, detect, route, spec gate, plan, orchestrate waves, escalation check, finish/disposition) using the item text as the outcome and the item's disposition as `manifest.mergeDisposition` — default `pr` when unannotated. Each item is already a known single item — go's own step -1 scope check does not run per item. Each item's board
    task (step 2) flips to in_progress at claim; completed only once its disposition executes AND its
    review gate has recorded PASS — the orchestrator's `TaskCompleted` gating hook (`.muster/task-board.json`)

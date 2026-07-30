@@ -293,7 +293,7 @@ test("dedicated full server starts only with receipted activation and both opt-i
   }, input);
   assert.equal(result.code, 0);
   const messages = result.stdout.trim().split("\n").map(line => JSON.parse(line));
-  assert.equal(messages.find(message => message.id === 2).result.tools.length, 29);
+  assert.equal(messages.find(message => message.id === 2).result.tools.length, 30);
 
   if (process.platform !== "win32") {
     await chmod(join(installed.pluginPath, ".."), 0o777);

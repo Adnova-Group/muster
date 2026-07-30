@@ -252,3 +252,12 @@ test("command reference documents safe help, install style ownership, and signal
   assert.match(commands, /\[dir\]\/\.muster\/signals\.json/);
   assert.doesNotMatch(commands, /Run any verb with no arguments to see its usage/);
 });
+
+test("command reference documents backlog-publish CAS, locking, containment, and retry contract", async () => {
+  const commands = await readFile(new URL("../website/reference/commands.md", import.meta.url), "utf8");
+  assert.match(commands, /backlog-publish <backlog\.md> --expect <sha256\\?\|absent>/);
+  assert.match(commands, /compare-and-swap|CAS/i);
+  assert.match(commands, /lock/i);
+  assert.match(commands, /run root|contained/i);
+  assert.match(commands, /reread.*retry|retry.*reread/i);
+});

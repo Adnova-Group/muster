@@ -24,7 +24,7 @@ This matrix describes the verified MCP-only distribution in this directory. It d
 
 ## What you get
 
-Twenty-nine deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, scheduling, and receipt-reconciliation operations without model calls; the Cowork agent still performs the judgment and execution work.
+Thirty deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, scheduling, receipt reconciliation, and bounded backlog publication without model calls; the Cowork agent still performs the judgment and execution work.
 
 | Tool | Does |
 | --- | --- |
@@ -39,7 +39,7 @@ Twenty-nine deterministic tools, plus an execution protocol that teaches the age
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
 | `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
 | `muster_sprint_reconcile` | Drain completion receipts into deterministic sprint states and the next eligible implementation/review/integration actions |
-| `muster_backlog_publish` | Compare-and-swap publish a complete, contained backlog using its expected prior SHA-256; concurrent writers must reread and reapply |
+| `muster_backlog_publish` | Bounded compare-and-swap publication for complete, contained backlog content; concurrent writers must reread and reapply |
 | `muster_sprint_protocol` | Return the Cowork-adapted sprint playbook (no args) -- see below |
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_gate_cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves |

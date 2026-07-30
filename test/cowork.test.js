@@ -234,12 +234,12 @@ test("verb-rename: zero pre-rename verb-name citations remain in the 3 cowork su
   }
 });
 
-test("tools/list exposes exactly the 29 brain verbs, matching the MCPB manifest", async () => {
+test("tools/list exposes exactly the 30 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 29, "29 tools served");
+  assert.equal(served.length, 30, "30 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -422,8 +422,8 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.equal(manifest.license, pkg.license, "MCPB license must match the package license");
   assert.equal(packedLicense, rootLicense, "the packed cowork/ tree must carry the repository license");
   assert.equal(packedNotice, rootNotice, "the packed cowork/ tree must carry repository attributions");
-  assert.equal(manifest.tools.length, 29, "MCPB manifest declares the complete deterministic tool surface");
-  assert.match(manifest.long_description, /29 deterministic MCP tools/);
+  assert.equal(manifest.tools.length, 30, "MCPB manifest declares the complete deterministic tool surface");
+  assert.match(manifest.long_description, /30 deterministic MCP tools/);
   assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit/);
   assert.equal(manifest.server.entry_point, "mcp-server.mjs", "MCPB entry point is relative to the packed cowork/ root");
   assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/mcp-server.mjs"]);
@@ -861,6 +861,52 @@ test("json verb: muster_sprint_reconcile returns isError with structured validat
   assert.equal(res.ok, false);
   assert.match(res.errors.join(" | "), /maxConcurrency/);
   assert.notEqual(res.wait?.eligible, true);
+});
+
+test("MCP backlog publisher performs a bounded CAS write inside an explicit project root", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-mcp-backlog-publish-"));
+  const backlog = path.join(dir, "backlog.md");
+  writeFileSync(backlog, "original\n");
+  const expectedSha256 = createHash("sha256").update("original\n").digest("hex");
+  const r = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_backlog_publish",
+        arguments: { dir, path: "backlog.md", expectedSha256, content: "updated\n" },
+      },
+    },
+  ]);
+  const res = JSON.parse(r[2].result.content[0].text);
+  assert.equal(r[2].result.isError, false);
+  assert.equal(res.ok, true);
+  assert.equal(readFileSync(backlog, "utf8"), "updated\n");
+});
+
+test("MCP backlog publisher rejects content above its one-megabyte boundary before CLI dispatch", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-mcp-backlog-bound-"));
+  const r = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_backlog_publish",
+        arguments: {
+          dir,
+          path: "backlog.md",
+          expectedSha256: "absent",
+          content: "x".repeat(1_048_577),
+        },
+      },
+    },
+  ]);
+  assert.equal(r[2].result.isError, true);
+  assert.match(r[2].result.content[0].text, /exceeds 1048576 byte limit/);
 });
 
 test("file verb: muster_sprint_waves on an unannotated backlog returns annotated:false, sequential waves", async () => {

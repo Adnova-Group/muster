@@ -760,6 +760,12 @@ export async function runKimiInstall({
       await assertSafeManagedFiles(dest, [path]);
       previous.quarantines = [...(previous.quarantines || []), record];
       await persistUninstallManifest(manifestPath, previous, dest);
+      await _beforeManagedMutation?.({
+        operation: "receipt-durable",
+        path,
+        manifestPath,
+        quarantine: record.directory
+      });
       await unlinkManaged(dest, path, _beforeManagedMutation, expected, process.platform, record, true);
       previous.quarantines = previous.quarantines.filter(candidate => candidate !== record);
       await persistUninstallManifest(manifestPath, previous, dest);
@@ -839,7 +845,7 @@ function quarantineIdentityMatches(info, record) {
 }
 
 async function persistUninstallManifest(manifestPath, manifest, dest) {
-  await atomicWriteJson(manifestPath, manifest, dest);
+  await atomicWriteJson(manifestPath, manifest, dest, null, { fsync: true, fsyncDir: true });
 }
 
 async function reconcileQuarantine(dest, record, platform = process.platform) {
@@ -902,6 +908,18 @@ async function reconcileQuarantine(dest, record, platform = process.platform) {
       throw new Error(`Kimi uninstall quarantine identity changed for ${path}`);
     }
     if (moved) await unlink(quarantinedPath);
+    let skipSource = Boolean(moved);
+    if (!moved) {
+      let source;
+      try { source = await lstat(join(parentFdPath, basename(path))); }
+      catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      // An empty receipted quarantine can mean either interruption after
+      // mkdir but before rename (the matching source is still ours), or after
+      // the quarantined file was unlinked (any different source is recreated).
+      skipSource = !source || !quarantineIdentityMatches(source, record);
+    }
 
     const namedQuarantine = await lstat(quarantinePath).catch(error => {
       if (error.code === "ENOENT") throw changedDuringSafeDeletion(path);
@@ -915,7 +933,7 @@ async function reconcileQuarantine(dest, record, platform = process.platform) {
       }
       throw error;
     }
-    return { skipSource: Boolean(moved) };
+    return { skipSource };
   } finally {
     for (const handle of handles.reverse()) await handle.close().catch(() => {});
   }
@@ -1030,6 +1048,12 @@ export async function runKimiUninstall({
       await assertSafeManagedFiles(dest, [path]);
       manifest.quarantines = [...(manifest.quarantines || []), record];
       await persistUninstallManifest(manifestPath, manifest, dest);
+      await _beforeManagedMutation?.({
+        operation: "receipt-durable",
+        path,
+        manifestPath,
+        quarantine: record.directory
+      });
       await unlinkManaged(dest, path, _beforeManagedMutation, expected, _platform, record, true);
       manifest.quarantines = manifest.quarantines.filter(candidate => candidate !== record);
       await persistUninstallManifest(manifestPath, manifest, dest);
@@ -1054,11 +1078,12 @@ export async function runKimiUninstall({
   for (const rel of skillDirs) await rmdirIfEmpty(join(dest, rel));
   await rmdirIfEmpty(join(dest, "skills"));
   await rmdirIfEmpty(join(dest, "agents"));
+  const finalManifestIdentity = await captureManagedDeleteIdentity(dest, manifestPath);
   await unlinkManaged(
     dest,
     manifestPath,
     _beforeManagedMutation,
-    undefined,
+    finalManifestIdentity,
     _platform,
     {
       rel: relative(dest, manifestPath).split(sep).join("/"),
@@ -1077,13 +1102,21 @@ export async function runKimiUninstall({
 // collision handling: this site's historical pid-only temp name
 // (`.tmp-<pid>`, no random) could hit EEXIST under atomicWrite's O_EXCL open
 // when a stale temp from a crashed install met a recycled pid, where the old
-// plain writeFile simply overwrote. fsync stays off (the manifest is small
-// and a torn publish is self-healing on rerun; the fence block's config.toml
-// write is deliberately NOT this helper -- see the "deliberately a plain
-// writeFile" comment at the install merge).
-async function atomicWriteJson(path, value, dest, beforeManagedMutation) {
+// plain writeFile simply overwrote. Ordinary install publication keeps fsync
+// off (a torn publish is self-healing on rerun); uninstall receipt publication
+// opts into both file and parent-directory fsync before destructive rename.
+// The fence block's config.toml write is deliberately NOT this helper -- see
+// the "deliberately a plain writeFile" comment at the install merge.
+async function atomicWriteJson(
+  path,
+  value,
+  dest,
+  beforeManagedMutation,
+  { fsync = false, fsyncDir = false } = {}
+) {
   await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", {
-    fsync: false,
+    fsync,
+    fsyncDir,
     beforeRename: async temporary => {
       await beforeManagedMutation?.({ operation: "publish", path, temporary });
       await assertSafeManagedFiles(dest, [path]);

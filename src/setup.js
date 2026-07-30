@@ -10,7 +10,8 @@ const SEEDS = {
   "docs/design/.gitkeep": "",
   "docs/plan/.gitkeep": "",
   "README.md": "# Project\n\nScaffolded by muster.\n",
-  "AGENTS.md": "# Agents\n\nThis repository is managed with muster.\n"
+  "AGENTS.md": "# Agents\n\nThis repository is managed with muster.\n",
+  "CLAUDE.md": "# Claude Code\n\n@AGENTS.md\n"
 };
 
 export async function scaffoldProject(dir) {

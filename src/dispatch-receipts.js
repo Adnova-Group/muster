@@ -47,8 +47,56 @@ const BINDING_FDS = Object.freeze({
   agentFile: 22,
   interpreter: 23,
   ipc: 24,
+  sandboxInfo: 25,
 });
 const CGROUP2_SUPER_MAGIC = 0x63677270;
+const HELPER_ENV_KEYS = Object.freeze([
+  "DBUS_SESSION_BUS_ADDRESS",
+  "LANG",
+  "LC_ALL",
+  "XDG_RUNTIME_DIR",
+]);
+
+export function sanitizeDispatchHelperEnv(env = process.env) {
+  const sanitized = {};
+  for (const key of HELPER_ENV_KEYS) {
+    if (typeof env?.[key] === "string" && env[key]) sanitized[key] = env[key];
+  }
+  return sanitized;
+}
+
+const UNSAFE_PROVIDER_ENV = /^(?:LD_|DYLD_|NODE_OPTIONS$|NODE_PATH$|BASH_ENV$|ENV$|PYTHONPATH$|RUBYOPT$|PERL5OPT$)/;
+
+export function sanitizeContainedProviderEnv(env = process.env) {
+  const sanitized = {};
+  for (const [key, value] of Object.entries(env || {})) {
+    if (UNSAFE_PROVIDER_ENV.test(key)) {
+      throw new Error(`unsafe provider environment key ${key} could alter the pinned executable/dependency chain`);
+    }
+    if (typeof value === "string") sanitized[key] = value;
+  }
+  return sanitized;
+}
+
+export function validateTrustedExecutable(path, { requiredUid = 0 } = {}) {
+  const canonical = realpathSync(path);
+  const parts = canonical.split("/").filter(Boolean);
+  let component = "/";
+  for (const part of parts) {
+    component = join(component, part);
+    const info = lstatSync(component);
+    const currentUserWritable = typeof process.getuid === "function" &&
+      info.uid === process.getuid() && (info.mode & 0o200) !== 0;
+    if (info.isSymbolicLink() || (info.mode & 0o022) !== 0 || currentUserWritable) {
+      throw new Error(`writable trusted executable path component: ${component}`);
+    }
+  }
+  const info = statSync(canonical);
+  if (!info.isFile() || info.uid !== requiredUid || (info.mode & 0o111) === 0) {
+    throw new Error(`trusted executable must be a uid-${requiredUid} executable regular file: ${canonical}`);
+  }
+  return canonical;
+}
 
 export function dispatchReceiptDirectory() {
   return join(homedir(), ".muster", "dispatch-receipts");
@@ -511,8 +559,8 @@ function descriptorForInheritedBindings(descriptor, bindings) {
   };
 }
 
-function bindingStdio({ executable, cwd, agentFile, interpreter, ipc = false }) {
-  const stdio = Array(BINDING_FDS.ipc + 1).fill("ignore");
+function bindingStdio({ executable, cwd, agentFile, interpreter, ipc = false, sandboxInfo = false }) {
+  const stdio = Array(BINDING_FDS.sandboxInfo + 1).fill("ignore");
   stdio[1] = "inherit";
   stdio[2] = "inherit";
   if (executable !== undefined) stdio[BINDING_FDS.executable] = executable;
@@ -520,7 +568,47 @@ function bindingStdio({ executable, cwd, agentFile, interpreter, ipc = false }) 
   if (agentFile !== undefined) stdio[BINDING_FDS.agentFile] = agentFile;
   stdio[BINDING_FDS.interpreter] = interpreter ?? "ignore";
   if (ipc) stdio[BINDING_FDS.ipc] = "ipc";
+  if (sandboxInfo) stdio[BINDING_FDS.sandboxInfo] = "pipe";
   return stdio;
+}
+
+function bubblewrapChildPid(child) {
+  const stream = child.stdio?.[BINDING_FDS.sandboxInfo];
+  if (!stream) return Promise.reject(new Error("bubblewrap did not expose its descriptor-bound info pipe"));
+  return new Promise((resolvePid, reject) => {
+    let bytes = "";
+    let settled = false;
+    const parse = (terminal = false) => {
+      if (settled) return;
+      try {
+        const value = JSON.parse(bytes);
+        const pid = value?.["child-pid"];
+        if (!Number.isSafeInteger(pid) || pid <= 0) {
+          throw new Error("bubblewrap info did not identify the sandboxed child host PID");
+        }
+        settled = true;
+        resolvePid(pid);
+      } catch (error) {
+        if (terminal) {
+          settled = true;
+          reject(error);
+        }
+      }
+    };
+    stream.setEncoding("utf8");
+    stream.on("data", (chunk) => {
+      bytes += chunk;
+      if (bytes.length > MAX_DISPATCH_RECEIPT_BYTES) {
+        settled = true;
+        stream.destroy();
+        reject(new Error("bubblewrap info exceeded its bounded size"));
+        return;
+      }
+      parse(false);
+    });
+    stream.once("error", reject);
+    stream.once("end", () => parse(true));
+  });
 }
 
 function bindingSource(bindings) {
@@ -626,6 +714,7 @@ export async function runKimiProcess(request, {
     throw new Error("safe Kimi process containment is unavailable on this platform; dispatch is report-only");
   }
   const descriptor = kimiProcessDispatch(request);
+  const providerEnv = sanitizeContainedProviderEnv({ ...env, ...descriptor.env });
   const executableBinding = resolveKimiExecutable({ env, executable });
   const bindings = openLaunchBindings(descriptor, executableBinding);
   const inheritedDescriptor = descriptorForInheritedBindings(descriptor, bindings);
@@ -651,7 +740,7 @@ export async function runKimiProcess(request, {
       "--broker",
     ], {
       stdio: bindingStdio({ ipc: true }),
-      env,
+      env: sanitizeDispatchHelperEnv(env),
     });
   } catch (error) {
     closeSourceBindings();
@@ -674,7 +763,7 @@ export async function runKimiProcess(request, {
       type: "CONFIGURE",
       descriptor: inheritedDescriptor,
       bindingSource: sourceBindings,
-      env: { ...env, ...descriptor.env },
+      env: providerEnv,
       killTimeoutMs,
     });
     const established = await brokerMessages.next(["ESTABLISHED", "FAILURE"]);
@@ -744,21 +833,11 @@ function resolveDelegatedCgroupRoot() {
 }
 
 function resolveBubblewrap() {
-  const path = realpathSync("/usr/bin/bwrap");
-  const info = statSync(path);
-  if (!info.isFile() || info.uid !== 0 || (info.mode & 0o111) === 0) {
-    throw new Error("safe Kimi containment requires the root-owned bubblewrap executable");
-  }
-  return path;
+  return validateTrustedExecutable("/usr/bin/bwrap");
 }
 
 function resolveSystemdRun() {
-  const path = realpathSync("/usr/bin/systemd-run");
-  const info = statSync(path);
-  if (!info.isFile() || info.uid !== 0 || (info.mode & 0o111) === 0) {
-    throw new Error("safe Kimi containment requires the root-owned systemd-run executable");
-  }
-  return path;
+  return validateTrustedExecutable("/usr/bin/systemd-run");
 }
 
 function createDispatchCgroup(pid) {
@@ -792,11 +871,30 @@ function createDispatchCgroup(pid) {
   }
 }
 
-function destroyDispatchCgroup(containment) {
+async function destroyDispatchCgroup(containment, timeoutMs = 1_000) {
   if (!containment) return;
   closeSync(containment.fd);
-  try { rmdirSync(`/proc/self/fd/${containment.parentFd}/${containment.name}`); } catch {}
-  closeSync(containment.parentFd);
+  const path = `/proc/self/fd/${containment.parentFd}/${containment.name}`;
+  const deadline = Date.now() + Math.max(100, timeoutMs);
+  let lastError;
+  try {
+    do {
+      try {
+        rmdirSync(path);
+        if (lstatSync(path, { throwIfNoEntry: false })) {
+          throw new Error("removed cgroup remained visible");
+        }
+        return;
+      } catch (error) {
+        if (error?.code === "ENOENT") return;
+        lastError = error;
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+    } while (Date.now() < deadline);
+    throw new Error(`dispatch cgroup removal failed: ${lastError?.message || "still present"}`);
+  } finally {
+    closeSync(containment.parentFd);
+  }
 }
 
 async function killDispatchCgroup(containment, timeoutMs) {
@@ -835,19 +933,18 @@ async function terminateContainedGroup(
   if (!child || !identity || !containment) {
     throw new Error("refusing contained cleanup without launcher identity and delegated cgroup");
   }
+  void target;
+  let gracefulError = null;
   try {
     signalContainedGroup({ pid: child.pid, startIdentity: identity, signal: "SIGTERM" });
+    await new Promise((resolveTimeout) => setTimeout(resolveTimeout, timeoutMs));
   } catch (error) {
-    if (error?.code !== "ESRCH") throw error;
+    if (error?.code !== "ESRCH") gracefulError = error;
+  } finally {
+    await killDispatchCgroup(containment, timeoutMs);
   }
-  if (target && readKernelStartIdentity(target.pid) === target.startIdentity) {
-    try { process.kill(target.pid, "SIGTERM"); } catch (error) {
-      if (error?.code !== "ESRCH") throw error;
-    }
-  }
-  await new Promise((resolveTimeout) => setTimeout(resolveTimeout, timeoutMs));
-  await killDispatchCgroup(containment, timeoutMs);
   await (childTerminal || terminalPromise(child)).then(() => {}, () => {});
+  if (gracefulError) throw gracefulError;
 }
 
 async function killTrustedDirectChild(child, terminal) {
@@ -877,7 +974,7 @@ async function brokerMain() {
       }
       await sendIpc({ type: "FAILURE", error: reason }).catch(() => {});
     } finally {
-      destroyDispatchCgroup(containment);
+      await destroyDispatchCgroup(containment, killTimeoutMs);
       containment = null;
       process.exitCode = 1;
       if (process.connected) process.disconnect();
@@ -903,7 +1000,7 @@ async function brokerMain() {
             interpreter: launchBindings.interpreterFd,
             ipc: true,
           }),
-          env: process.env,
+          env: sanitizeDispatchHelperEnv(process.env),
         });
       } finally {
         closeLaunchBindings(launchBindings);
@@ -929,7 +1026,7 @@ async function brokerMain() {
       await terminateContainedGroup(
         launcher, launcherIdentity, killTimeoutMs, launcherTerminal, containment, containedTarget,
       );
-      destroyDispatchCgroup(containment);
+      await destroyDispatchCgroup(containment, killTimeoutMs);
       containment = null;
       shuttingDown = true;
       await sendIpc({ type: "RESULT", code: result.code, signal: result.signal });
@@ -945,8 +1042,14 @@ async function brokerMain() {
         } else {
           await killTrustedDirectChild(launcher, launcherTerminal);
         }
-      } catch { /* fail closed */ }
-      destroyDispatchCgroup(containment);
+      } catch (cleanupError) {
+        error = new Error(`${error.message}; containment cleanup failed: ${cleanupError.message}`);
+      }
+      try {
+        await destroyDispatchCgroup(containment, killTimeoutMs);
+      } catch (cleanupError) {
+        error = new Error(`${error.message}; cgroup removal failed: ${cleanupError.message}`);
+      }
       containment = null;
       await sendIpc({ type: "FAILURE", error: error.message }).catch(() => {});
       process.exitCode = 1;
@@ -998,14 +1101,16 @@ async function launcherMain() {
       const sandboxArgv = [
         "--unshare-user",
         "--unshare-pid",
+        "--as-pid-1",
         "--unshare-cgroup",
         "--unshare-ipc",
         "--unshare-uts",
         "--die-with-parent",
         "--new-session",
-        "--bind", "/", "/",
+        "--ro-bind", "/", "/",
         "--proc", "/proc",
         "--ro-bind", "/sys/fs/cgroup", "/sys/fs/cgroup",
+        "--tmpfs", "/tmp",
         "--tmpfs", sandboxRoot,
       ];
       const runtimeDirectory = typeof process.getuid === "function" ? `/run/user/${process.getuid()}` : null;
@@ -1030,7 +1135,10 @@ async function launcherMain() {
         if (argument === "/muster-agent") return sandboxPath("agent");
         return argument;
       });
-      sandboxArgv.push("--chdir", sandboxPath("cwd"), "--", executable, ...argv);
+      sandboxArgv.push(
+        "--info-fd", String(BINDING_FDS.sandboxInfo),
+        "--chdir", sandboxPath("cwd"), "--", executable, ...argv,
+      );
       child = spawn(message.sandboxExecutable, sandboxArgv, {
         env: message.env,
         stdio: bindingStdio({
@@ -1038,11 +1146,13 @@ async function launcherMain() {
           cwd: BINDING_FDS.cwd,
           agentFile: BINDING_FDS.agentFile,
           interpreter: BINDING_FDS.interpreter,
+          sandboxInfo: true,
         }),
       });
       const childTerminal = terminalPromise(child);
       childTerminal.catch(() => {});
-      const identity = readKernelStartIdentity(child.pid);
+      const sandboxedPid = await bubblewrapChildPid(child);
+      const identity = readKernelStartIdentity(sandboxedPid);
       if (!identity) {
         try { process.kill(-process.pid, "SIGTERM"); } catch {}
         setTimeout(() => {
@@ -1050,7 +1160,7 @@ async function launcherMain() {
         }, 1_000);
         throw new Error("stable Kimi process identity unavailable");
       }
-      await sendIpc({ type: "ESTABLISHED", pid: child.pid, startIdentity: identity });
+      await sendIpc({ type: "ESTABLISHED", pid: sandboxedPid, startIdentity: identity });
       const result = await childTerminal;
       try { rmdirSync(sandboxRoot); } catch {}
       sandboxRoot = null;

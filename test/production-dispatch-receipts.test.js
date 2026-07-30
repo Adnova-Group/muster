@@ -11,8 +11,11 @@ import {
   readDispatchReceipts,
   compactDispatchReceipts,
   readKernelStartIdentity,
+  sanitizeDispatchHelperEnv,
+  sanitizeContainedProviderEnv,
   runKimiProcess,
   signalContainedGroup,
+  validateTrustedExecutable,
 } from "../src/dispatch-receipts.js";
 import { findZombieProcesses, runHygiene } from "../src/hygiene.js";
 
@@ -98,6 +101,50 @@ test("PID-addressed group signaling revalidates both identity and group state", 
     kill: (...args) => calls.push(args),
   });
   assert.deepEqual(calls, [[-9001, "SIGTERM"]]);
+});
+
+test("dispatch helpers receive only the fixed containment bootstrap environment", () => {
+  assert.deepEqual(sanitizeDispatchHelperEnv({
+    HOME: "/attacker/home",
+    PATH: "/attacker/bin",
+    NODE_OPTIONS: "--require=/attacker/hook.js",
+    LD_PRELOAD: "/attacker/lib.so",
+    KIMI_API_KEY: "secret",
+    XDG_RUNTIME_DIR: "/run/user/1000",
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+    LANG: "C.UTF-8",
+  }), {
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+    LANG: "C.UTF-8",
+    XDG_RUNTIME_DIR: "/run/user/1000",
+  });
+});
+
+test("contained provider environment rejects loader and runtime injection", () => {
+  assert.throws(() => sanitizeContainedProviderEnv({
+    HOME: "/safe/provider-home",
+    KIMI_API_KEY: "secret",
+    LD_PRELOAD: "/work/evil.so",
+  }), /unsafe provider environment key LD_PRELOAD/);
+  assert.deepEqual(sanitizeContainedProviderEnv({
+    HOME: "/safe/provider-home",
+    KIMI_API_KEY: "secret",
+  }), {
+    HOME: "/safe/provider-home",
+    KIMI_API_KEY: "secret",
+  });
+});
+
+test("trusted helper resolution rejects writable path components", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-writable-trust-"));
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  const executable = join(bin, "kimi");
+  await writeFile(executable, "#!/bin/false\n");
+  await chmod(executable, 0o755);
+  await chmod(bin, 0o777);
+  assert.throws(() => validateTrustedExecutable(executable, { requiredUid: process.getuid?.() }),
+    /writable trusted executable path component/);
 });
 
 test("forged valid receipts are diagnostic only and never authorize hygiene signaling", async () => {
@@ -201,7 +248,7 @@ test("agent-file launch is bound to the opened descriptor across same-UID replac
   await writeFile(executable,
     `#!${process.execPath}\n` +
     "const fs=require('node:fs');const i=process.argv.indexOf('--agent-file');" +
-    "process.exit(fs.readFileSync(process.argv[i+1],'utf8').includes('fixture')?31:32);\n");
+    "setTimeout(()=>process.exit(fs.readFileSync(process.argv[i+1],'utf8').includes('fixture')?31:32),50);\n");
   await chmod(executable, 0o755);
   const moved = `${fixture.agentFile}.old`;
   const result = await runKimiProcess(fixture, {
@@ -224,7 +271,7 @@ test("agent-file descriptor is an immutable snapshot across same-inode mutation"
   const executable = join(executableRoot, "kimi");
   await writeFile(executable,
     `#!${process.execPath}\nconst fs=require('node:fs');const i=process.argv.indexOf('--agent-file');` +
-    "process.exit(fs.readFileSync(process.argv[i+1],'utf8').includes('fixture')?33:34);\n");
+    "setTimeout(()=>process.exit(fs.readFileSync(process.argv[i+1],'utf8').includes('fixture')?33:34),50);\n");
   await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
     receiptRoot: await tempStore(),
@@ -242,14 +289,14 @@ test("executable launch is bound to the opened descriptor across same-UID replac
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-exec-binding-"));
   const executable = join(root, "kimi");
   const original = join(root, "kimi.original");
-  await writeFile(executable, `#!${process.execPath}\nprocess.exit(11);\n`);
+  await writeFile(executable, `#!${process.execPath}\nsetTimeout(()=>process.exit(11),50);\n`);
   await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
     receiptRoot: await tempStore(),
     executable,
     beforeFinalSpawn: async () => {
       await rename(executable, original);
-      await writeFile(executable, `#!${process.execPath}\nprocess.exit(12);\n`);
+      await writeFile(executable, `#!${process.execPath}\nsetTimeout(()=>process.exit(12),50);\n`);
       await chmod(executable, 0o755);
     },
   });
@@ -261,13 +308,13 @@ test("executable launch uses an immutable snapshot across same-inode mutation", 
   const fixture = await fixtureRequest();
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-exec-snapshot-"));
   const executable = join(root, "kimi");
-  await writeFile(executable, `#!${process.execPath}\nprocess.exit(13);\n`);
+  await writeFile(executable, `#!${process.execPath}\nsetTimeout(()=>process.exit(13),50);\n`);
   await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
     receiptRoot: await tempStore(),
     executable,
     beforeFinalSpawn: async () => {
-      await writeFile(executable, `#!${process.execPath}\nprocess.exit(14);\n`);
+      await writeFile(executable, `#!${process.execPath}\nsetTimeout(()=>process.exit(14),50);\n`);
       await chmod(executable, 0o755);
     },
   });
@@ -283,7 +330,7 @@ test("script launch pins and snapshots its absolute native shebang interpreter",
   const executable = join(root, "kimi");
   await copyFile(process.execPath, interpreter);
   await chmod(interpreter, 0o755);
-  await writeFile(executable, `#!${interpreter}\nprocess.exit(15);\n`);
+  await writeFile(executable, `#!${interpreter}\nsetTimeout(()=>process.exit(15),50);\n`);
   await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
     receiptRoot: await tempStore(),
@@ -306,7 +353,7 @@ test("cwd launch is bound to the opened directory across same-UID replacement", 
   await writeFile(join(fixture.cwd, "identity"), "original");
   await writeFile(executable,
     `#!${process.execPath}\nconst fs=require('node:fs');` +
-    "process.exit(fs.readFileSync('identity','utf8')==='original'?21:22);\n");
+    "setTimeout(()=>process.exit(fs.readFileSync('identity','utf8')==='original'?21:22),50);\n");
   await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
     receiptRoot: await tempStore(),
@@ -326,11 +373,11 @@ test("SIGINT, SIGTERM, and SIGHUP cancellation use bounded broker TERM-to-KILL c
     const fixture = await fixtureRequest();
     const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-cancel-"));
     const executable = join(executableRoot, "kimi");
-    const pidFile = join(executableRoot, "target.pid");
+    const pidFile = join(fixture.cwd, "target.pid");
     const signalSource = new EventEmitter();
     await writeFile(executable,
       `#!${process.execPath}\nconst fs=require('node:fs');` +
-      `fs.writeFileSync(${JSON.stringify(pidFile)},fs.readFileSync('/proc/self/status','utf8').match(/^NSpid:\\s*(\\d+)/m)[1]);` +
+      "fs.writeFileSync('target.pid',fs.readFileSync('/proc/self/status','utf8').match(/^NSpid:\\s*(\\d+)/m)[1]);" +
       "process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});" +
       "process.on('SIGHUP',()=>{});setInterval(()=>{},1000);\n");
     await chmod(executable, 0o755);
@@ -341,8 +388,10 @@ test("SIGINT, SIGTERM, and SIGHUP cancellation use bounded broker TERM-to-KILL c
       executable,
       signalSource,
       killTimeoutMs: 100,
-      onReceiptEstablished: async () => {
+      onReceiptEstablished: async (receipt) => {
         await waitForFile(pidFile);
+        assert.doesNotMatch(await readFile(`/proc/${receipt.pid}/comm`, "utf8"), /^bwrap\s*$/,
+          "receipt identifies the sandboxed Kimi host PID, not outer bubblewrap");
         containedPids = await currentDispatchCgroupPids();
         assert.ok(containedPids.length > 0, `target entered cgroup before ${signal} cancellation`);
         signalSource.emit(signal);
@@ -368,7 +417,7 @@ test("cgroup cleanup kills a setsid descendant that escapes the launcher's proce
   const fixture = await fixtureRequest();
   const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-descendant-"));
   const executable = join(executableRoot, "kimi");
-  const pidFile = join(executableRoot, "descendant.pid");
+  const pidFile = join(fixture.cwd, "descendant.pid");
   const source = join(executableRoot, "fixture.c");
   await writeFile(source, `
 #include <fcntl.h>
@@ -380,10 +429,14 @@ test("cgroup cleanup kills a setsid descendant that escapes the launcher's proce
 int main(void) {
   pid_t child = fork();
   if (child < 0) return 90;
-  if (child > 0) return 0;
+  if (child > 0) {
+    for (int i = 0; i < 100 && access("descendant.pid", F_OK) != 0; i++) usleep(10000);
+    sleep(1);
+    return 0;
+  }
   if (setsid() < 0) return 91;
   signal(SIGTERM, SIG_IGN);
-  FILE *file = fopen(${JSON.stringify(pidFile)}, "w");
+  FILE *file = fopen("descendant.pid", "w");
   if (!file) return 92;
   fprintf(file, "%d", getpid());
   fclose(file);
@@ -455,7 +508,7 @@ test("supervisor crash triggers detached-descendant cgroup cleanup", async () =>
   const bin = join(root, "bin");
   const home = join(root, "home");
   const cwd = join(root, "work");
-  const pidFile = join(root, "descendant.pid");
+  const pidFile = join(cwd, "descendant.pid");
   await Promise.all([mkdir(bin), mkdir(home), mkdir(cwd)]);
   const fakeKimi = join(bin, "kimi");
   const source = join(root, "fixture.c");
@@ -470,7 +523,7 @@ int main(void) {
   if (child == 0) {
     if (setsid() < 0) return 91;
     signal(SIGTERM, SIG_IGN);
-    FILE *file = fopen(${JSON.stringify(pidFile)}, "w");
+    FILE *file = fopen("descendant.pid", "w");
     if (!file) return 92;
     fprintf(file, "%d", getpid());
     fclose(file);

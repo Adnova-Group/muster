@@ -6,14 +6,19 @@ import {
   existsSync,
   fstatSync,
   fchmodSync,
+  lstatSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
+  readSync,
   realpathSync,
   readFileSync,
   rmdirSync,
+  statfsSync,
   statSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import {
   lstat,
@@ -31,10 +36,19 @@ export const DISPATCH_RECEIPT_SCHEMA = 1;
 export const MAX_DISPATCH_RECEIPTS = 256;
 export const MAX_DISPATCH_RECEIPT_BYTES = 4096;
 const MAX_BOUND_AGENT_BYTES = 1024 * 1024;
+const MAX_BOUND_EXECUTABLE_BYTES = 512 * 1024 * 1024;
+const MAX_RETAINED_DISPATCH_RECEIPTS = 128;
 const RECEIPT_NAME = /^receipt-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.json$/;
 const RECEIPT_KEYS = ["createdAt", "format", "pid", "provider", "schemaVersion", "startIdentity", "token"];
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
-const BINDING_FDS = Object.freeze({ executable: 3, cwd: 4, agentFile: 5 });
+const BINDING_FDS = Object.freeze({
+  executable: 20,
+  cwd: 21,
+  agentFile: 22,
+  interpreter: 23,
+  ipc: 24,
+});
+const CGROUP2_SUPER_MAGIC = 0x63677270;
 
 export function dispatchReceiptDirectory() {
   return join(homedir(), ".muster", "dispatch-receipts");
@@ -88,6 +102,60 @@ async function ensurePrivateStore(root) {
   await validatePrivateStore(root);
 }
 
+function removeDiagnosticEntry(rootFd, name) {
+  if (typeof name !== "string" || !name || name === "." || name === ".." ||
+      name.includes("/") || name.includes("\0")) return false;
+  const path = `/proc/self/fd/${rootFd}/${name}`;
+  try {
+    const info = lstatSync(path, { throwIfNoEntry: false });
+    if (!info) return false;
+    if (info.isDirectory()) rmdirSync(path);
+    else unlinkSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function compactDispatchReceipts({
+  receiptRoot = dispatchReceiptDirectory(),
+  protectedName = null,
+} = {}) {
+  await validatePrivateStore(receiptRoot);
+  const rootFd = openSync(
+    receiptRoot,
+    fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY || 0) | fsConstants.O_NOFOLLOW,
+  );
+  const scanned = [];
+  let truncated = false;
+  try {
+    const directory = await opendir(`/proc/self/fd/${rootFd}`);
+    for await (const entry of directory) {
+      if (scanned.length === MAX_DISPATCH_RECEIPTS) {
+        truncated = true;
+        break;
+      }
+      const path = `/proc/self/fd/${rootFd}/${entry.name}`;
+      let mtimeMs = 0;
+      try { mtimeMs = lstatSync(path).mtimeMs; } catch {}
+      scanned.push({ name: entry.name, mtimeMs });
+    }
+    const valid = scanned
+      .filter(({ name }) => RECEIPT_NAME.test(name))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name));
+    const keep = new Set(valid.slice(0, MAX_RETAINED_DISPATCH_RECEIPTS).map(({ name }) => name));
+    if (protectedName) keep.add(protectedName);
+    const removed = [];
+    for (const { name } of scanned) {
+      if (keep.has(name)) continue;
+      if (removeDiagnosticEntry(rootFd, name)) removed.push(name);
+    }
+    return { removed, truncated, retained: keep.size };
+  } finally {
+    closeSync(rootFd);
+  }
+}
+
 function validReceipt(value, token) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   if (Object.keys(value).sort().join(",") !== RECEIPT_KEYS.slice().sort().join(",")) return false;
@@ -136,6 +204,7 @@ async function writeDispatchReceipt(pid, startIdentity, { receiptRoot, now = () 
   if (persisted.pid !== pid || persisted.startIdentity !== startIdentity) {
     throw new Error("dispatch receipt publication verification failed");
   }
+  await compactDispatchReceipts({ receiptRoot, protectedName: `receipt-${token}.json` });
   return { path, token, receipt };
 }
 
@@ -280,17 +349,112 @@ function openBoundPath(path, expected, flags, predicate, label) {
   }
 }
 
+function immutableSnapshot(sourceFd, { label, maxBytes, mode }) {
+  const before = fstatSync(sourceFd);
+  if (before.size > maxBytes) throw new Error(`${label} exceeds immutable snapshot cap of ${maxBytes} bytes`);
+  const snapshotRoot = mkdtempSync(join(tmpdir(), "muster-binding-"));
+  const snapshotPath = join(snapshotRoot, "object");
+  let snapshotWriteFd;
+  let snapshotReadFd;
+  try {
+    snapshotWriteFd = openSync(
+      snapshotPath,
+      fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_RDWR | fsConstants.O_NOFOLLOW,
+      0o600,
+    );
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let offset = 0;
+    while (offset < before.size) {
+      const bytesRead = readSync(sourceFd, buffer, 0, Math.min(buffer.length, before.size - offset), offset);
+      if (bytesRead <= 0) throw new Error(`${label} changed while its immutable snapshot was created`);
+      let written = 0;
+      while (written < bytesRead) {
+        written += writeSync(snapshotWriteFd, buffer, written, bytesRead - written);
+      }
+      offset += bytesRead;
+    }
+    const after = fstatSync(sourceFd);
+    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
+      throw new Error(`${label} changed while its immutable snapshot was created`);
+    }
+    fchmodSync(snapshotWriteFd, mode);
+    snapshotReadFd = openSync(snapshotPath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    closeSync(snapshotWriteFd);
+    snapshotWriteFd = undefined;
+    unlinkSync(snapshotPath);
+    rmdirSync(snapshotRoot);
+    return snapshotReadFd;
+  } catch (error) {
+    if (snapshotWriteFd !== undefined) closeSync(snapshotWriteFd);
+    if (snapshotReadFd !== undefined) closeSync(snapshotReadFd);
+    try { unlinkSync(snapshotPath); } catch {}
+    try { rmdirSync(snapshotRoot); } catch {}
+    throw error;
+  }
+}
+
+function executableFormat(fd) {
+  const header = Buffer.alloc(512);
+  const length = readSync(fd, header, 0, header.length, 0);
+  if (length >= 4 && header[0] === 0x7f && header.subarray(1, 4).toString("ascii") === "ELF") {
+    return { kind: "elf" };
+  }
+  if (length >= 3 && header.subarray(0, 2).toString("ascii") === "#!") {
+    const line = header.subarray(2, length).toString("utf8").split(/\r?\n/, 1)[0].trim();
+    if (!isAbsolute(line) || /\s/.test(line)) {
+      throw new Error("Kimi script executable must use one absolute shebang interpreter with no arguments");
+    }
+    return { kind: "script", interpreterPath: realpathSync(line) };
+  }
+  throw new Error("Kimi executable must be a native ELF binary or use a pinned absolute native shebang interpreter");
+}
+
 function openLaunchBindings(descriptor, executableBinding) {
   const opened = [];
   try {
-    const executableFd = openBoundPath(
+    const sourceExecutableFd = openBoundPath(
       executableBinding.path,
       executableBinding,
       fsConstants.O_RDONLY,
       (info) => info.isFile() && (info.mode & 0o111) !== 0,
       "Kimi executable",
     );
+    opened.push(sourceExecutableFd);
+    const executableFd = immutableSnapshot(sourceExecutableFd, {
+      label: "Kimi executable",
+      maxBytes: MAX_BOUND_EXECUTABLE_BYTES,
+      mode: 0o500,
+    });
+    closeSync(sourceExecutableFd);
+    opened.pop();
     opened.push(executableFd);
+    const format = executableFormat(executableFd);
+    let interpreterFd = null;
+    if (format.kind === "script") {
+      const interpreterInfo = statSync(format.interpreterPath);
+      if (!interpreterInfo.isFile() || (interpreterInfo.mode & 0o111) === 0) {
+        throw new Error(`Kimi shebang interpreter is not executable: ${format.interpreterPath}`);
+      }
+      const sourceInterpreterFd = openBoundPath(
+        format.interpreterPath,
+        { dev: interpreterInfo.dev, ino: interpreterInfo.ino },
+        fsConstants.O_RDONLY,
+        (info) => info.isFile() && (info.mode & 0o111) !== 0,
+        "Kimi shebang interpreter",
+      );
+      opened.push(sourceInterpreterFd);
+      interpreterFd = immutableSnapshot(sourceInterpreterFd, {
+        label: "Kimi shebang interpreter",
+        maxBytes: MAX_BOUND_EXECUTABLE_BYTES,
+        mode: 0o500,
+      });
+      opened.push(interpreterFd);
+      if (executableFormat(interpreterFd).kind !== "elf") {
+        throw new Error("Kimi shebang interpreter must resolve directly to a native ELF binary");
+      }
+      closeSync(sourceInterpreterFd);
+      opened.splice(opened.indexOf(sourceInterpreterFd), 1);
+    }
     const cwdFd = openBoundPath(
       descriptor.cwd,
       descriptor.pathBindings.cwd,
@@ -307,39 +471,15 @@ function openLaunchBindings(descriptor, executableBinding) {
       "agent file",
     );
     opened.push(sourceAgentFileFd);
-    const sourceInfo = fstatSync(sourceAgentFileFd);
-    if (sourceInfo.size > MAX_BOUND_AGENT_BYTES) {
-      throw new Error(`agent file exceeds descriptor snapshot cap of ${MAX_BOUND_AGENT_BYTES} bytes`);
-    }
-    const agentBytes = readFileSync(sourceAgentFileFd);
-    const snapshotRoot = mkdtempSync(join(tmpdir(), "muster-agent-binding-"));
-    const snapshotPath = join(snapshotRoot, "agent");
-    let snapshotWriteFd;
-    let agentFileFd;
-    try {
-      snapshotWriteFd = openSync(
-        snapshotPath,
-        fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_RDWR | fsConstants.O_NOFOLLOW,
-        0o600,
-      );
-      writeFileSync(snapshotWriteFd, agentBytes);
-      fchmodSync(snapshotWriteFd, 0o400);
-      agentFileFd = openSync(snapshotPath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      closeSync(snapshotWriteFd);
-      snapshotWriteFd = undefined;
-      unlinkSync(snapshotPath);
-      rmdirSync(snapshotRoot);
-    } catch (error) {
-      if (snapshotWriteFd !== undefined) closeSync(snapshotWriteFd);
-      if (agentFileFd !== undefined) closeSync(agentFileFd);
-      try { unlinkSync(snapshotPath); } catch {}
-      try { rmdirSync(snapshotRoot); } catch {}
-      throw error;
-    }
+    const agentFileFd = immutableSnapshot(sourceAgentFileFd, {
+      label: "agent file",
+      maxBytes: MAX_BOUND_AGENT_BYTES,
+      mode: 0o400,
+    });
     closeSync(sourceAgentFileFd);
     opened.pop();
     opened.push(agentFileFd);
-    return { executableFd, cwdFd, agentFileFd };
+    return { executableFd, cwdFd, agentFileFd, interpreterFd, executableKind: format.kind };
   } catch (error) {
     for (const fd of opened) closeSync(fd);
     throw error;
@@ -348,25 +488,84 @@ function openLaunchBindings(descriptor, executableBinding) {
 
 function closeLaunchBindings(bindings) {
   if (!bindings) return;
-  for (const fd of [bindings.executableFd, bindings.cwdFd, bindings.agentFileFd]) {
+  for (const fd of [bindings.executableFd, bindings.cwdFd, bindings.agentFileFd, bindings.interpreterFd]) {
+    if (fd === null || fd === undefined) continue;
     try { closeSync(fd); } catch {}
   }
 }
 
-function descriptorForInheritedBindings(descriptor) {
+function descriptorForInheritedBindings(descriptor, bindings) {
   const argv = [...descriptor.argv];
   const agentIndex = argv.indexOf("--agent-file");
   if (agentIndex < 0 || agentIndex + 1 >= argv.length) {
     throw new Error("validated Kimi argv has no agent-file slot");
   }
-  argv[agentIndex + 1] = `/proc/self/fd/${BINDING_FDS.agentFile}`;
+  argv[agentIndex + 1] = "/muster-agent";
+  if (bindings.executableKind === "script") argv.unshift("/muster-executable");
   return {
     argv,
-    cwd: `/proc/self/fd/${BINDING_FDS.cwd}`,
-    executable: `/proc/self/fd/${BINDING_FDS.executable}`,
+    cwd: "/muster-cwd",
+    executable: bindings.executableKind === "script" ? "/muster-interpreter" : "/muster-executable",
     env: descriptor.env,
     lane: descriptor.lane,
   };
+}
+
+function bindingStdio({ executable, cwd, agentFile, interpreter, ipc = false }) {
+  const stdio = Array(BINDING_FDS.ipc + 1).fill("ignore");
+  stdio[1] = "inherit";
+  stdio[2] = "inherit";
+  if (executable !== undefined) stdio[BINDING_FDS.executable] = executable;
+  if (cwd !== undefined) stdio[BINDING_FDS.cwd] = cwd;
+  if (agentFile !== undefined) stdio[BINDING_FDS.agentFile] = agentFile;
+  stdio[BINDING_FDS.interpreter] = interpreter ?? "ignore";
+  if (ipc) stdio[BINDING_FDS.ipc] = "ipc";
+  return stdio;
+}
+
+function bindingSource(bindings) {
+  const describe = (fd) => {
+    if (fd === null || fd === undefined) return null;
+    const info = fstatSync(fd);
+    return { fd, dev: info.dev, ino: info.ino };
+  };
+  return {
+    pid: process.pid,
+    executable: describe(bindings.executableFd),
+    cwd: describe(bindings.cwdFd),
+    agentFile: describe(bindings.agentFileFd),
+    interpreter: describe(bindings.interpreterFd),
+  };
+}
+
+function adoptBindingSource(source) {
+  const adopted = [];
+  const openOne = (binding, label, directory = false) => {
+    if (!binding) return null;
+    const fd = openSync(
+      `/proc/${source.pid}/fd/${binding.fd}`,
+      fsConstants.O_RDONLY | (directory ? (fsConstants.O_DIRECTORY || 0) : 0),
+    );
+    const info = fstatSync(fd);
+    if (info.dev !== binding.dev || info.ino !== binding.ino ||
+        (directory ? !info.isDirectory() : !info.isFile())) {
+      closeSync(fd);
+      throw new Error(`${label} descriptor transfer identity mismatch`);
+    }
+    adopted.push(fd);
+    return fd;
+  };
+  try {
+    return {
+      executableFd: openOne(source.executable, "executable"),
+      cwdFd: openOne(source.cwd, "cwd", true),
+      agentFileFd: openOne(source.agentFile, "agent file"),
+      interpreterFd: openOne(source.interpreter, "interpreter"),
+    };
+  } catch (error) {
+    for (const fd of adopted) closeSync(fd);
+    throw error;
+  }
 }
 
 function createMessageQueue(child) {
@@ -429,23 +628,34 @@ export async function runKimiProcess(request, {
   const descriptor = kimiProcessDispatch(request);
   const executableBinding = resolveKimiExecutable({ env, executable });
   const bindings = openLaunchBindings(descriptor, executableBinding);
+  const inheritedDescriptor = descriptorForInheritedBindings(descriptor, bindings);
+  const sourceBindings = bindingSource(bindings);
+  const brokerUnit = `muster-dispatch-broker-${randomUUID()}`;
+  let bindingsOpen = true;
+  const closeSourceBindings = () => {
+    if (!bindingsOpen) return;
+    bindingsOpen = false;
+    closeLaunchBindings(bindings);
+  };
   let child;
   try {
     await beforeFinalSpawn();
-    child = spawnProcess(process.execPath, [MODULE_PATH, "--broker"], {
-      stdio: [
-        "ignore",
-        "inherit",
-        "inherit",
-        bindings.executableFd,
-        bindings.cwdFd,
-        bindings.agentFileFd,
-        "ipc",
-      ],
+    child = spawnProcess(resolveSystemdRun(), [
+      "--user",
+      "--scope",
+      "--quiet",
+      `--unit=${brokerUnit}`,
+      "--property=Delegate=yes",
+      process.execPath,
+      MODULE_PATH,
+      "--broker",
+    ], {
+      stdio: bindingStdio({ ipc: true }),
       env,
     });
-  } finally {
-    closeLaunchBindings(bindings);
+  } catch (error) {
+    closeSourceBindings();
+    throw error;
   }
   const brokerMessages = createMessageQueue(child);
   const terminal = terminalPromise(child);
@@ -462,12 +672,14 @@ export async function runKimiProcess(request, {
   try {
     child.send({
       type: "CONFIGURE",
-      descriptor: descriptorForInheritedBindings(descriptor),
+      descriptor: inheritedDescriptor,
+      bindingSource: sourceBindings,
       env: { ...env, ...descriptor.env },
       killTimeoutMs,
     });
     const established = await brokerMessages.next(["ESTABLISHED", "FAILURE"]);
     if (established.type === "FAILURE") throw new Error(established.error);
+    closeSourceBindings();
     handle = await writeDispatchReceipt(established.pid, established.startIdentity, {
       receiptRoot,
       ...(now ? { now } : {}),
@@ -485,6 +697,7 @@ export async function runKimiProcess(request, {
     try { await terminal; } catch { /* original setup/runtime error wins */ }
     throw error;
   } finally {
+    closeSourceBindings();
     for (const [signal, listener] of forwarders) signalSource.off(signal, listener);
     if (handle) await removeExactReceipt(handle);
   }
@@ -501,6 +714,103 @@ function readLinuxProcessGroup(pid) {
   }
 }
 
+function cgroupPathForPid(pid) {
+  try {
+    const line = readFileSyncBounded(`/proc/${Number(pid)}/cgroup`).trim();
+    const match = /^0::(.+)$/.exec(line);
+    return match?.[1] || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveDelegatedCgroupRoot() {
+  if (typeof process.getuid !== "function") throw new Error("cgroup containment requires a numeric uid");
+  if (statfsSync("/sys/fs/cgroup").type !== CGROUP2_SUPER_MAGIC) {
+    throw new Error("safe Kimi containment requires cgroup v2");
+  }
+  const uid = process.getuid();
+  const relative = cgroupPathForPid(process.pid);
+  if (!relative || !/\/muster-dispatch-broker-[0-9a-f-]+\.scope$/.test(relative)) {
+    throw new Error("safe Kimi containment requires a dedicated delegated broker scope");
+  }
+  const path = `/sys/fs/cgroup${relative}`;
+  const canonical = realpathSync(path);
+  const info = statSync(canonical);
+  if (canonical !== path || !info.isDirectory() || info.uid !== uid) {
+    throw new Error("safe Kimi containment requires a current-user delegated cgroup-v2 subtree");
+  }
+  return path;
+}
+
+function resolveBubblewrap() {
+  const path = realpathSync("/usr/bin/bwrap");
+  const info = statSync(path);
+  if (!info.isFile() || info.uid !== 0 || (info.mode & 0o111) === 0) {
+    throw new Error("safe Kimi containment requires the root-owned bubblewrap executable");
+  }
+  return path;
+}
+
+function resolveSystemdRun() {
+  const path = realpathSync("/usr/bin/systemd-run");
+  const info = statSync(path);
+  if (!info.isFile() || info.uid !== 0 || (info.mode & 0o111) === 0) {
+    throw new Error("safe Kimi containment requires the root-owned systemd-run executable");
+  }
+  return path;
+}
+
+function createDispatchCgroup(pid) {
+  const parentPath = resolveDelegatedCgroupRoot();
+  const parentFd = openSync(
+    parentPath,
+    fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY || 0) | fsConstants.O_NOFOLLOW,
+  );
+  const name = `muster-dispatch-${pid}-${randomUUID()}`;
+  const path = join(parentPath, name);
+  let fd;
+  try {
+    mkdirSync(path, { mode: 0o700 });
+    fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY || 0) | fsConstants.O_NOFOLLOW);
+    const info = fstatSync(fd);
+    if (!info.isDirectory() || statfsSync(`/proc/self/fd/${fd}`).type !== CGROUP2_SUPER_MAGIC) {
+      throw new Error("dispatch containment directory is not a descriptor-bound cgroup-v2 node");
+    }
+    writeFileSync(`/proc/self/fd/${fd}/cgroup.procs`, `${pid}\n`);
+    const expected = cgroupPathForPid(pid);
+    if (!expected || !expected.endsWith(`/${name}`)) {
+      throw new Error("trusted launcher did not enter the delegated dispatch cgroup");
+    }
+    closeSync(openSync(`/proc/self/fd/${fd}/cgroup.kill`, fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW));
+    return { fd, parentFd, name };
+  } catch (error) {
+    if (fd !== undefined) closeSync(fd);
+    try { rmdirSync(`/proc/self/fd/${parentFd}/${name}`); } catch {}
+    closeSync(parentFd);
+    throw new Error(`safe Kimi cgroup containment unavailable: ${error.message}`);
+  }
+}
+
+function destroyDispatchCgroup(containment) {
+  if (!containment) return;
+  closeSync(containment.fd);
+  try { rmdirSync(`/proc/self/fd/${containment.parentFd}/${containment.name}`); } catch {}
+  closeSync(containment.parentFd);
+}
+
+async function killDispatchCgroup(containment, timeoutMs) {
+  if (!containment) throw new Error("refusing cleanup without a descriptor-bound dispatch cgroup");
+  writeFileSync(`/proc/self/fd/${containment.fd}/cgroup.kill`, "1\n");
+  const deadline = Date.now() + Math.max(100, timeoutMs);
+  while (Date.now() < deadline) {
+    const members = readFileSync(`/proc/self/fd/${containment.fd}/cgroup.procs`, "utf8").trim();
+    if (!members) return;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+  }
+  throw new Error("dispatch cgroup remained populated after cgroup.kill");
+}
+
 export function signalContainedGroup({ pid, startIdentity, signal }, {
   readIdentity = readKernelStartIdentity,
   readGroup = readLinuxProcessGroup,
@@ -514,19 +824,29 @@ export function signalContainedGroup({ pid, startIdentity, signal }, {
   return kill(-pid, signal);
 }
 
-async function terminateContainedGroup(child, identity, timeoutMs, childTerminal = null) {
-  if (!child || !identity) return;
+async function terminateContainedGroup(
+  child,
+  identity,
+  timeoutMs,
+  childTerminal = null,
+  containment = null,
+  target = null,
+) {
+  if (!child || !identity || !containment) {
+    throw new Error("refusing contained cleanup without launcher identity and delegated cgroup");
+  }
   try {
     signalContainedGroup({ pid: child.pid, startIdentity: identity, signal: "SIGTERM" });
   } catch (error) {
     if (error?.code !== "ESRCH") throw error;
   }
-  await new Promise((resolveTimeout) => setTimeout(resolveTimeout, timeoutMs));
-  try {
-    signalContainedGroup({ pid: child.pid, startIdentity: identity, signal: "SIGKILL" });
-  } catch (error) {
-    if (error?.code !== "ESRCH" && !/identity\/state changed/.test(error.message)) throw error;
+  if (target && readKernelStartIdentity(target.pid) === target.startIdentity) {
+    try { process.kill(target.pid, "SIGTERM"); } catch (error) {
+      if (error?.code !== "ESRCH") throw error;
+    }
   }
+  await new Promise((resolveTimeout) => setTimeout(resolveTimeout, timeoutMs));
+  await killDispatchCgroup(containment, timeoutMs);
   await (childTerminal || terminalPromise(child)).then(() => {}, () => {});
 }
 
@@ -540,19 +860,25 @@ async function brokerMain() {
   let launcher = null;
   let launcherTerminal = null;
   let launcherIdentity = null;
+  let containment = null;
+  let containedTarget = null;
   let killTimeoutMs = 1_000;
   let shuttingDown = false;
   const shutdown = async (reason = "dispatch cancelled") => {
     if (shuttingDown) return;
     shuttingDown = true;
     try {
-      if (launcherIdentity) {
-        await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal);
+      if (launcherIdentity && containment) {
+        await terminateContainedGroup(
+          launcher, launcherIdentity, killTimeoutMs, launcherTerminal, containment, containedTarget,
+        );
       } else {
         await killTrustedDirectChild(launcher, launcherTerminal);
       }
       await sendIpc({ type: "FAILURE", error: reason }).catch(() => {});
     } finally {
+      destroyDispatchCgroup(containment);
+      containment = null;
       process.exitCode = 1;
       if (process.connected) process.disconnect();
     }
@@ -566,19 +892,22 @@ async function brokerMain() {
       }
       if (message?.type !== "CONFIGURE" || launcher) return;
       killTimeoutMs = message.killTimeoutMs;
-      launcher = spawn(process.execPath, [MODULE_PATH, "--launcher"], {
-        detached: true,
-        stdio: [
-          "ignore",
-          "inherit",
-          "inherit",
-          BINDING_FDS.executable,
-          BINDING_FDS.cwd,
-          BINDING_FDS.agentFile,
-          "ipc",
-        ],
-        env: process.env,
-      });
+      const launchBindings = adoptBindingSource(message.bindingSource);
+      try {
+        launcher = spawn(process.execPath, [MODULE_PATH, "--launcher"], {
+          detached: true,
+          stdio: bindingStdio({
+            executable: launchBindings.executableFd,
+            cwd: launchBindings.cwdFd,
+            agentFile: launchBindings.agentFileFd,
+            interpreter: launchBindings.interpreterFd,
+            ipc: true,
+          }),
+          env: process.env,
+        });
+      } finally {
+        closeLaunchBindings(launchBindings);
+      }
       launcherTerminal = terminalPromise(launcher);
       launcherTerminal.catch(() => {});
       const launcherMessages = createMessageQueue(launcher);
@@ -588,25 +917,37 @@ async function brokerMain() {
       if (!launcherIdentity || readLinuxProcessGroup(launcher.pid) !== launcher.pid) {
         throw new Error("trusted launcher did not establish a stable process group");
       }
-      launcher.send({ ...message, type: "START" });
+      containment = createDispatchCgroup(launcher.pid);
+      launcher.send({ ...message, type: "START", sandboxExecutable: resolveBubblewrap() });
       const established = await launcherMessages.next(["ESTABLISHED", "FAILURE"]);
       if (established.type === "FAILURE") throw new Error(established.error);
+      containedTarget = { pid: established.pid, startIdentity: established.startIdentity };
       await sendIpc(established);
       const result = await launcherMessages.next(["CHILD_RESULT", "FAILURE"]);
+      if (shuttingDown) return;
       if (result.type === "FAILURE") throw new Error(result.error);
-      await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal);
+      await terminateContainedGroup(
+        launcher, launcherIdentity, killTimeoutMs, launcherTerminal, containment, containedTarget,
+      );
+      destroyDispatchCgroup(containment);
+      containment = null;
       shuttingDown = true;
       await sendIpc({ type: "RESULT", code: result.code, signal: result.signal });
       if (process.connected) process.disconnect();
     } catch (error) {
+      if (shuttingDown) return;
       shuttingDown = true;
       try {
-        if (launcherIdentity) {
-          await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal);
+        if (launcherIdentity && containment) {
+          await terminateContainedGroup(
+            launcher, launcherIdentity, killTimeoutMs, launcherTerminal, containment, containedTarget,
+          );
         } else {
           await killTrustedDirectChild(launcher, launcherTerminal);
         }
       } catch { /* fail closed */ }
+      destroyDispatchCgroup(containment);
+      containment = null;
       await sendIpc({ type: "FAILURE", error: error.message }).catch(() => {});
       process.exitCode = 1;
       if (process.connected) process.disconnect();
@@ -616,6 +957,8 @@ async function brokerMain() {
 
 async function launcherMain() {
   let child = null;
+  let sandboxRoot = null;
+  let launcherContainmentFd = null;
   let disconnecting = false;
   process.on("SIGTERM", () => {}); // broker owns the bounded TERM→KILL interval
   const disconnectCleanup = () => {
@@ -623,7 +966,11 @@ async function launcherMain() {
     disconnecting = true;
     try { process.kill(-process.pid, "SIGTERM"); } catch { /* group already gone */ }
     setTimeout(() => {
-      try { process.kill(-process.pid, "SIGKILL"); } catch { /* group already gone */ }
+      if (launcherContainmentFd !== null) {
+        try { writeFileSync(`/proc/self/fd/${launcherContainmentFd}/cgroup.kill`, "1\n"); } catch {}
+      } else {
+        try { process.kill(-process.pid, "SIGKILL"); } catch { /* group already gone */ }
+      }
     }, 1_000);
   };
   process.on("disconnect", disconnectCleanup);
@@ -631,17 +978,67 @@ async function launcherMain() {
   process.on("message", async (message) => {
     if (message?.type !== "START" || child) return;
     try {
-      child = spawn(message.descriptor.executable, message.descriptor.argv, {
-        cwd: message.descriptor.cwd,
+      const ownCgroup = cgroupPathForPid(process.pid);
+      if (!ownCgroup || !/\/muster-dispatch-[^/]+$/.test(ownCgroup)) {
+        throw new Error("trusted launcher did not receive a dedicated dispatch cgroup");
+      }
+      launcherContainmentFd = openSync(
+        `/sys/fs/cgroup${ownCgroup}`,
+        fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY || 0) | fsConstants.O_NOFOLLOW,
+      );
+      if (statfsSync(`/proc/self/fd/${launcherContainmentFd}`).type !== CGROUP2_SUPER_MAGIC) {
+        throw new Error("trusted launcher cleanup descriptor is not cgroup v2");
+      }
+      closeSync(openSync(
+        `/proc/self/fd/${launcherContainmentFd}/cgroup.kill`,
+        fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW,
+      ));
+      sandboxRoot = mkdtempSync(join(tmpdir(), "muster-sandbox-"));
+      const sandboxPath = (name) => join(sandboxRoot, name);
+      const sandboxArgv = [
+        "--unshare-user",
+        "--unshare-pid",
+        "--unshare-cgroup",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--die-with-parent",
+        "--new-session",
+        "--bind", "/", "/",
+        "--proc", "/proc",
+        "--ro-bind", "/sys/fs/cgroup", "/sys/fs/cgroup",
+        "--tmpfs", sandboxRoot,
+      ];
+      const runtimeDirectory = typeof process.getuid === "function" ? `/run/user/${process.getuid()}` : null;
+      if (runtimeDirectory && existsSync(runtimeDirectory)) {
+        sandboxArgv.push("--tmpfs", runtimeDirectory);
+      }
+      sandboxArgv.push(
+        "--perms", "0500", "--ro-bind-data", String(BINDING_FDS.executable), sandboxPath("executable"),
+        "--bind-fd", String(BINDING_FDS.cwd), sandboxPath("cwd"),
+        "--perms", "0400", "--ro-bind-data", String(BINDING_FDS.agentFile), sandboxPath("agent"),
+      );
+      if (message.descriptor.executable === "/muster-interpreter") {
+        sandboxArgv.push(
+          "--perms", "0500", "--ro-bind-data", String(BINDING_FDS.interpreter), sandboxPath("interpreter"),
+        );
+      }
+      const executable = message.descriptor.executable === "/muster-interpreter"
+        ? sandboxPath("interpreter")
+        : sandboxPath("executable");
+      const argv = message.descriptor.argv.map((argument) => {
+        if (argument === "/muster-executable") return sandboxPath("executable");
+        if (argument === "/muster-agent") return sandboxPath("agent");
+        return argument;
+      });
+      sandboxArgv.push("--chdir", sandboxPath("cwd"), "--", executable, ...argv);
+      child = spawn(message.sandboxExecutable, sandboxArgv, {
         env: message.env,
-        stdio: [
-          "inherit",
-          "inherit",
-          "inherit",
-          BINDING_FDS.executable,
-          BINDING_FDS.cwd,
-          BINDING_FDS.agentFile,
-        ],
+        stdio: bindingStdio({
+          executable: BINDING_FDS.executable,
+          cwd: BINDING_FDS.cwd,
+          agentFile: BINDING_FDS.agentFile,
+          interpreter: BINDING_FDS.interpreter,
+        }),
       });
       const childTerminal = terminalPromise(child);
       childTerminal.catch(() => {});
@@ -655,8 +1052,14 @@ async function launcherMain() {
       }
       await sendIpc({ type: "ESTABLISHED", pid: child.pid, startIdentity: identity });
       const result = await childTerminal;
+      try { rmdirSync(sandboxRoot); } catch {}
+      sandboxRoot = null;
       await sendIpc({ type: "CHILD_RESULT", ...result });
     } catch (error) {
+      if (sandboxRoot) {
+        try { rmdirSync(sandboxRoot); } catch {}
+        sandboxRoot = null;
+      }
       await sendIpc({ type: "FAILURE", error: error.message }).catch(() => {});
       disconnectCleanup();
     }

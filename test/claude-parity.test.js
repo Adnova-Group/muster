@@ -1297,5 +1297,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // process-lane paragraph now names inherited /proc/self/fd bindings,
   // immutable agent snapshots, bounded signal cleanup, launcher lifetime, and
   // globally bounded diagnostic-receipt enumeration. File count is unchanged.
-  assert.equal(hash.digest("hex"), "d3dca76065eb0d4844dd45f89e32dd6a0956796aad58cd663b4b283a5b440b0b");
+  // 2026-07-30 re-pin #26 (kernel containment fix loop): that paragraph now
+  // pins immutable executable/interpreter snapshots, delegated cgroup-v2 plus
+  // bubblewrap containment, setsid-proof cgroup.kill, and bounded receipt
+  // compaction. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "0129cafd750111b834ea5cdbeda472cc0b728091dface3c1753c325291c558d5");
 });

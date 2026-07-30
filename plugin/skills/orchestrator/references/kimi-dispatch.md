@@ -55,19 +55,26 @@ the Muster-owned supervisor: `$MUSTER_CLI kimi-process-run
 --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>`
 (`src/dispatch-receipts.js`) -- one headless `kimi -p` process per leg. On Linux the supervisor
 opens the resolved executable/cwd/agent objects with `O_NOFOLLOW`, verifies their descriptor
-identities, snapshots the agent file into an unlinked read-only descriptor, and explicitly inherits
-those descriptors through the trusted per-leg broker and detached launcher. The final process uses
-only `/proc/self/fd/*` for executable, cwd, and agent-file access, so same-UID pathname replacement
-after binding cannot change what is launched or opened. The launcher establishes the process group
-before untrusted Kimi work starts and stays alive after the direct child exits; the broker retains
-the launcher's live kernel identity and routes completion, SIGINT/SIGTERM/SIGHUP, setup failure, and
-supervisor disconnect through bounded group TERM then KILL, awaiting the trusted launcher only after
-decisive cleanup. The launcher's own broker-disconnect fallback uses a referenced KILL timer.
+identities, and snapshots the executable and agent file into unlinked read-only descriptors. A script
+executable is accepted only with one absolute no-argument shebang whose interpreter resolves directly
+to a native ELF binary; that interpreter is independently pinned and snapshotted. The supervisor
+transfers those kernel objects to a broker in a dedicated delegated systemd user scope; the launcher
+binds the immutable bytes and cwd descriptor into a bubblewrap mount/PID/cgroup namespace before
+untrusted work starts, with cgroup state read-only and the user-manager runtime hidden. Thus same-UID
+pathname replacement or in-place writes after binding cannot change what launches or opens, and the
+provider cannot move itself out of containment. The launcher enters a per-dispatch cgroup-v2 node
+before starting Kimi and stays alive after the direct child exits; the broker retains the launcher's
+live kernel identity and routes completion, SIGINT/SIGTERM/SIGHUP, setup failure, and supervisor
+disconnect through bounded TERM then descriptor-bound `cgroup.kill`, awaiting the trusted launcher
+only after the cgroup is empty. A descendant using `setsid`/`setpgid` therefore cannot escape cleanup.
+The launcher retains its own cgroup descriptor, and its broker-disconnect fallback uses a referenced
+timer that writes the same `cgroup.kill`.
 Filesystem receipts are diagnostic only and never authorize hygiene signaling, including valid
-same-UID fabrications; receipt directory enumeration is globally capped even under malformed-name
-flooding.
-Platforms without this containment fail closed/report-only (Windows Job Objects are not available
-to this Node implementation). `$MUSTER_CLI kimi-process-dispatch ...` remains
+same-UID fabrications; receipt directory enumeration and each compaction pass are globally capped even
+under malformed-name flooding, retention converges to 128 receipts, and compaction unlinks only
+non-followed entries beneath an open receipt-directory descriptor. Platforms without delegated
+cgroup v2, a working user systemd manager, and root-owned bubblewrap fail closed/report-only (Windows
+Job Objects are not available to this Node implementation). `$MUSTER_CLI kimi-process-dispatch ...` remains
 descriptor-only compatibility/debug output and MUST NOT be manually spawned for a production leg,
 because a caller outside the supervisor cannot retain authoritative process provenance. The validated
 `argv` is `["-p", brief, "--agent-file", <absolute agent file>,

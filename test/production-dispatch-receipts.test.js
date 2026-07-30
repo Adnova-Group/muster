@@ -2,13 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, symlink, writeFile } from "node:fs/promises";
 import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   readDispatchReceipts,
+  compactDispatchReceipts,
   readKernelStartIdentity,
   runKimiProcess,
   signalContainedGroup,
@@ -25,6 +26,42 @@ async function fixtureRequest() {
   const agentFile = join(root, "agent.md");
   await writeFile(agentFile, "---\nname: fixture\n---\n");
   return { ...request, agentFile, cwd: root };
+}
+
+async function waitForFile(path) {
+  for (let i = 0; i < 100; i += 1) {
+    try {
+      await readFile(path);
+      return;
+    } catch {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+    }
+  }
+  assert.fail(`fixture did not create ${path}`);
+}
+
+async function currentDispatchCgroupPids() {
+  if (typeof process.getuid !== "function") return [];
+  const root = `/sys/fs/cgroup/user.slice/user-${process.getuid()}.slice/user@${process.getuid()}.service`;
+  const found = [];
+  const visit = async (directory, depth) => {
+    if (depth > 4) return;
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const path = join(directory, entry.name);
+      if (entry.name.startsWith("muster-dispatch-")) {
+        try {
+          const rows = (await readFile(join(path, "cgroup.procs"), "utf8")).trim().split(/\s+/);
+          found.push(...rows.filter(Boolean).map(Number));
+        } catch {}
+      }
+      await visit(path, depth + 1);
+    }
+  };
+  await visit(root, 0);
+  return [...new Set(found)];
 }
 
 test("readKernelStartIdentity exposes the current Linux process identity when supported", () => {
@@ -114,6 +151,27 @@ test("receipt enumeration filters malformed names before the cap and reports inc
   assert.equal(result.truncated, true, "malformed-name flooding is reported as truncation");
 });
 
+test("diagnostic receipt compaction is bounded and cannot follow substituted entries", async () => {
+  const receiptRoot = await tempStore();
+  await mkdir(receiptRoot, { recursive: true, mode: 0o700 });
+  for (let i = 0; i < 200; i += 1) {
+    const token = `${String(i).padStart(8, "0")}-0000-4000-8000-000000000000`;
+    await writeFile(join(receiptRoot, `receipt-${token}.json`), "diagnostic", { mode: 0o600 });
+  }
+  for (let i = 0; i < 100; i += 1) {
+    await writeFile(join(receiptRoot, `malformed-${i}`), "x", { mode: 0o600 });
+  }
+  const outside = join(dirname(receiptRoot), "outside");
+  await writeFile(outside, "must survive");
+  await symlink(outside, join(receiptRoot, "malformed-substitution"));
+  const first = await compactDispatchReceipts({ receiptRoot });
+  assert.ok(first.removed.length <= 256, "each compaction pass has bounded work");
+  assert.equal(first.truncated, true);
+  await compactDispatchReceipts({ receiptRoot });
+  assert.ok((await readdir(receiptRoot)).length <= 128, "repeated bounded passes converge to the retention cap");
+  assert.equal(await readFile(outside, "utf8"), "must survive", "compaction never follows a substituted symlink");
+});
+
 test("partial process snapshots never prove death or delete a diagnostic receipt", async () => {
   const receiptRoot = await tempStore();
   await mkdir(receiptRoot, { recursive: true, mode: 0o700 });
@@ -141,7 +199,7 @@ test("agent-file launch is bound to the opened descriptor across same-UID replac
   const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-agent-binding-"));
   const executable = join(executableRoot, "kimi");
   await writeFile(executable,
-    "#!/usr/bin/env node\n" +
+    `#!${process.execPath}\n` +
     "const fs=require('node:fs');const i=process.argv.indexOf('--agent-file');" +
     "process.exit(fs.readFileSync(process.argv[i+1],'utf8').includes('fixture')?31:32);\n");
   await chmod(executable, 0o755);
@@ -165,7 +223,7 @@ test("agent-file descriptor is an immutable snapshot across same-inode mutation"
   const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-agent-snapshot-"));
   const executable = join(executableRoot, "kimi");
   await writeFile(executable,
-    "#!/usr/bin/env node\nconst fs=require('node:fs');const i=process.argv.indexOf('--agent-file');" +
+    `#!${process.execPath}\nconst fs=require('node:fs');const i=process.argv.indexOf('--agent-file');` +
     "process.exit(fs.readFileSync(process.argv[i+1],'utf8').includes('fixture')?33:34);\n");
   await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
@@ -184,18 +242,59 @@ test("executable launch is bound to the opened descriptor across same-UID replac
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-exec-binding-"));
   const executable = join(root, "kimi");
   const original = join(root, "kimi.original");
-  await writeFile(executable, "#!/usr/bin/env node\nprocess.exit(11);\n");
+  await writeFile(executable, `#!${process.execPath}\nprocess.exit(11);\n`);
   await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
     receiptRoot: await tempStore(),
     executable,
     beforeFinalSpawn: async () => {
       await rename(executable, original);
-      await writeFile(executable, "#!/usr/bin/env node\nprocess.exit(12);\n");
+      await writeFile(executable, `#!${process.execPath}\nprocess.exit(12);\n`);
       await chmod(executable, 0o755);
     },
   });
   assert.deepEqual(result, { code: 11, signal: null });
+});
+
+test("executable launch uses an immutable snapshot across same-inode mutation", async () => {
+  if (process.platform !== "linux") return;
+  const fixture = await fixtureRequest();
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-exec-snapshot-"));
+  const executable = join(root, "kimi");
+  await writeFile(executable, `#!${process.execPath}\nprocess.exit(13);\n`);
+  await chmod(executable, 0o755);
+  const result = await runKimiProcess(fixture, {
+    receiptRoot: await tempStore(),
+    executable,
+    beforeFinalSpawn: async () => {
+      await writeFile(executable, `#!${process.execPath}\nprocess.exit(14);\n`);
+      await chmod(executable, 0o755);
+    },
+  });
+  assert.deepEqual(result, { code: 13, signal: null });
+});
+
+test("script launch pins and snapshots its absolute native shebang interpreter", async () => {
+  if (process.platform !== "linux") return;
+  const fixture = await fixtureRequest();
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-interpreter-binding-"));
+  const interpreter = join(root, "node");
+  const originalInterpreter = join(root, "node.original");
+  const executable = join(root, "kimi");
+  await copyFile(process.execPath, interpreter);
+  await chmod(interpreter, 0o755);
+  await writeFile(executable, `#!${interpreter}\nprocess.exit(15);\n`);
+  await chmod(executable, 0o755);
+  const result = await runKimiProcess(fixture, {
+    receiptRoot: await tempStore(),
+    executable,
+    beforeFinalSpawn: async () => {
+      await rename(interpreter, originalInterpreter);
+      await writeFile(interpreter, "replacement");
+      await chmod(interpreter, 0o755);
+    },
+  });
+  assert.deepEqual(result, { code: 15, signal: null });
 });
 
 test("cwd launch is bound to the opened directory across same-UID replacement", async () => {
@@ -206,7 +305,7 @@ test("cwd launch is bound to the opened directory across same-UID replacement", 
   const executable = join(executableRoot, "kimi");
   await writeFile(join(fixture.cwd, "identity"), "original");
   await writeFile(executable,
-    "#!/usr/bin/env node\nconst fs=require('node:fs');" +
+    `#!${process.execPath}\nconst fs=require('node:fs');` +
     "process.exit(fs.readFileSync('identity','utf8')==='original'?21:22);\n");
   await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
@@ -230,70 +329,93 @@ test("SIGINT, SIGTERM, and SIGHUP cancellation use bounded broker TERM-to-KILL c
     const pidFile = join(executableRoot, "target.pid");
     const signalSource = new EventEmitter();
     await writeFile(executable,
-      "#!/usr/bin/env node\nrequire('node:fs').writeFileSync(" + JSON.stringify(pidFile) + ",String(process.pid));" +
+      `#!${process.execPath}\nconst fs=require('node:fs');` +
+      `fs.writeFileSync(${JSON.stringify(pidFile)},fs.readFileSync('/proc/self/status','utf8').match(/^NSpid:\\s*(\\d+)/m)[1]);` +
       "process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});" +
       "process.on('SIGHUP',()=>{});setInterval(()=>{},1000);\n");
     await chmod(executable, 0o755);
     const started = Date.now();
-    let targetPid;
+    let containedPids = [];
     const running = runKimiProcess(fixture, {
       receiptRoot: await tempStore(),
       executable,
       signalSource,
       killTimeoutMs: 100,
       onReceiptEstablished: async () => {
-        for (let i = 0; i < 50 && !targetPid; i += 1) {
-          try { targetPid = Number(await readFile(pidFile, "utf8")); } catch {
-            await new Promise((resolveWait) => setTimeout(resolveWait, 10));
-          }
-        }
-        assert.ok(targetPid > 0, `target started before ${signal} cancellation`);
+        await waitForFile(pidFile);
+        containedPids = await currentDispatchCgroupPids();
+        assert.ok(containedPids.length > 0, `target entered cgroup before ${signal} cancellation`);
         signalSource.emit(signal);
       },
     });
     try {
       await assert.rejects(running, new RegExp(`cancel|${signal}|exited`, "i"));
       assert.ok(Date.now() - started < 3_000, `${signal} cancellation is bounded`);
-      assert.throws(() => process.kill(targetPid, 0), /ESRCH/,
-        `broker KILLs a TERM-resistant target after ${signal}`);
+      for (const pid of containedPids) {
+        assert.throws(() => process.kill(pid, 0), /ESRCH/,
+          `broker KILLs cgroup member ${pid} after ${signal}`);
+      }
     } finally {
-      if (targetPid) {
-        try { process.kill(targetPid, "SIGKILL"); } catch {}
+      for (const pid of containedPids) {
+        try { process.kill(pid, "SIGKILL"); } catch {}
       }
     }
   }
 });
 
-test("successful direct-child exit still cleans surviving descendants before return", async () => {
+test("cgroup cleanup kills a setsid descendant that escapes the launcher's process group", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-descendant-"));
   const executable = join(executableRoot, "kimi");
   const pidFile = join(executableRoot, "descendant.pid");
-  await writeFile(executable,
-    "#!/usr/bin/env node\nconst {spawn}=require('node:child_process');const fs=require('node:fs');" +
-    "const c=spawn(process.execPath,['-e',\"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)\"],{stdio:'ignore'});" +
-    `fs.writeFileSync(${JSON.stringify(pidFile)},String(c.pid));process.exit(0);\n`);
-  await chmod(executable, 0o755);
-  let descendantPid;
+  const source = join(executableRoot, "fixture.c");
+  await writeFile(source, `
+#include <fcntl.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+int main(void) {
+  pid_t child = fork();
+  if (child < 0) return 90;
+  if (child > 0) return 0;
+  if (setsid() < 0) return 91;
+  signal(SIGTERM, SIG_IGN);
+  FILE *file = fopen(${JSON.stringify(pidFile)}, "w");
+  if (!file) return 92;
+  fprintf(file, "%d", getpid());
+  fclose(file);
+  for (;;) pause();
+}
+`);
+  await execFile("cc", ["-O2", "-o", executable, source]);
+  let containedPids = [];
   try {
     const result = await runKimiProcess(fixture, {
       receiptRoot: await tempStore(),
       executable,
       killTimeoutMs: 100,
+      onReceiptEstablished: async () => {
+        await waitForFile(pidFile);
+        containedPids = await currentDispatchCgroupPids();
+      },
     });
-    descendantPid = Number(await readFile(pidFile, "utf8"));
     assert.deepEqual(result, { code: 0, signal: null });
-    assert.throws(() => process.kill(descendantPid, 0), /ESRCH/,
-      "run completion is not reported while a group descendant remains alive");
+    assert.ok(containedPids.length > 1, "fixture populated the cgroup with a detached descendant");
+    for (const pid of containedPids) {
+      assert.throws(() => process.kill(pid, 0), /ESRCH/,
+        `run completion waited for detached cgroup member ${pid}`);
+    }
   } finally {
-    if (descendantPid) {
-      try { process.kill(descendantPid, "SIGKILL"); } catch {}
+    for (const pid of containedPids) {
+      try { process.kill(pid, "SIGKILL"); } catch {}
     }
   }
 });
 
-test("unreadable spawned identity fails immediately and decisively cleans the trusted group", async () => {
+test("an unsupported/unpinnable shebang fails closed before untrusted launch", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-bad-exec-"));
@@ -315,7 +437,7 @@ test("receipt/setup failure never waits for a TERM-resistant target's natural ex
   const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-setup-failure-"));
   const executable = join(executableRoot, "kimi");
   await writeFile(executable,
-    "#!/usr/bin/env node\nprocess.on('SIGTERM',()=>{});setInterval(()=>{},1000);\n");
+    `#!${process.execPath}\nprocess.on('SIGTERM',()=>{});setInterval(()=>{},1000);\n`);
   await chmod(executable, 0o755);
   const started = Date.now();
   await assert.rejects(runKimiProcess(fixture, {
@@ -327,7 +449,7 @@ test("receipt/setup failure never waits for a TERM-resistant target's natural ex
   assert.ok(Date.now() - started < 3_000, "setup failure cleanup is bounded");
 });
 
-test("supervisor crash triggers descendant process-group cleanup", async () => {
+test("supervisor crash triggers detached-descendant cgroup cleanup", async () => {
   if (process.platform !== "linux") return;
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-crash-cleanup-"));
   const bin = join(root, "bin");
@@ -336,43 +458,53 @@ test("supervisor crash triggers descendant process-group cleanup", async () => {
   const pidFile = join(root, "descendant.pid");
   await Promise.all([mkdir(bin), mkdir(home), mkdir(cwd)]);
   const fakeKimi = join(bin, "kimi");
-  await writeFile(fakeKimi,
-    "#!/usr/bin/env node\n" +
-    "const {spawn}=require('node:child_process');const fs=require('node:fs');" +
-    "process.on('SIGTERM',()=>{});" +
-    "const c=spawn(process.execPath,['-e',\"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)\"],{stdio:'ignore'});" +
-    `fs.writeFileSync(${JSON.stringify(pidFile)},String(c.pid));setInterval(()=>{},1000);\n`);
-  await chmod(fakeKimi, 0o755);
+  const source = join(root, "fixture.c");
+  await writeFile(source, `
+#include <signal.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <unistd.h>
+int main(void) {
+  pid_t child = fork();
+  if (child < 0) return 90;
+  if (child == 0) {
+    if (setsid() < 0) return 91;
+    signal(SIGTERM, SIG_IGN);
+    FILE *file = fopen(${JSON.stringify(pidFile)}, "w");
+    if (!file) return 92;
+    fprintf(file, "%d", getpid());
+    fclose(file);
+    for (;;) pause();
+  }
+  signal(SIGTERM, SIG_IGN);
+  for (;;) pause();
+}
+`);
+  await execFile("cc", ["-O2", "-o", fakeKimi, source]);
   const agentFile = join(cwd, "agent.md");
   await writeFile(agentFile, "---\nname: fixture\n---\n");
   const supervisor = spawn(process.execPath, [
     CLI, "kimi-process-run", "--brief", "crash cleanup", "--agent-file", agentFile,
     "--cwd", cwd, "--lane", "primary",
   ], { env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` }, stdio: "ignore" });
-  let descendantPid = null;
-  for (let i = 0; i < 100 && descendantPid === null; i += 1) {
-    try {
-      const bytes = await import("node:fs/promises").then(({ readFile }) => readFile(pidFile, "utf8"));
-      descendantPid = Number(bytes);
-    } catch {
-      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
-    }
-  }
-  assert.ok(descendantPid > 0, "fixture descendant started inside the contained group");
+  await waitForFile(pidFile);
+  const containedPids = await currentDispatchCgroupPids();
+  assert.ok(containedPids.length > 1, "fixture descendant started inside the contained cgroup");
   supervisor.kill("SIGKILL");
   await new Promise((resolveExit) => supervisor.once("exit", resolveExit));
-  let terminal = false;
-  for (let i = 0; i < 150 && !terminal; i += 1) {
-    try {
-      const statText = await import("node:fs/promises").then(({ readFile }) =>
-        readFile(`/proc/${descendantPid}/stat`, "utf8"));
-      terminal = statText.slice(statText.lastIndexOf(")") + 1).trim().startsWith("Z ");
-    } catch {
-      terminal = true;
+  for (const pid of containedPids) {
+    let terminal = false;
+    for (let i = 0; i < 150 && !terminal; i += 1) {
+      try {
+        const statText = await readFile(`/proc/${pid}/stat`, "utf8");
+        terminal = statText.slice(statText.lastIndexOf(")") + 1).trim().startsWith("Z ");
+      } catch {
+        terminal = true;
+      }
+      if (!terminal) await new Promise((resolveWait) => setTimeout(resolveWait, 20));
     }
-    if (!terminal) await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    assert.equal(terminal, true, `broker disconnect cleanup terminated cgroup member ${pid}`);
   }
-  assert.equal(terminal, true, "broker/launcher disconnect cleanup terminated the descendant group");
 });
 
 test("production CLI kimi-process-run supervises fixed kimi stdio/exit and retains only a diagnostic receipt", async () => {
@@ -383,7 +515,7 @@ test("production CLI kimi-process-run supervises fixed kimi stdio/exit and retai
   const cwd = join(root, "work");
   await Promise.all([mkdir(bin), mkdir(home), mkdir(cwd)]);
   const fakeKimi = join(bin, "kimi");
-  await writeFile(fakeKimi, "#!/usr/bin/env node\nsetTimeout(() => { process.stdout.write('transparent-child-output\\n'); process.exit(7); }, 50);\n");
+  await writeFile(fakeKimi, `#!${process.execPath}\nsetTimeout(() => { process.stdout.write('transparent-child-output\\n'); process.exit(7); }, 50);\n`);
   await chmod(fakeKimi, 0o755);
   const agentFile = join(cwd, "agent.md");
   await writeFile(agentFile, "---\nname: fixture\n---\n");

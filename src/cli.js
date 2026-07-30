@@ -12,6 +12,7 @@ import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { constants as fsConstants } from "node:fs";
+import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
@@ -69,7 +70,7 @@ import { resolvePlanSurface } from "./plan-surface.js";
 import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
-import { atomicWrite, readNoFollowRegular, resolveContainedRealpath } from "./fs-safe.js";
+import { atomicWrite, readNoFollowRegular, resolveContainedRealpath, withFileMutationLock } from "./fs-safe.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // One array element per command group, each carrying its own "|" separators and
@@ -83,7 +84,7 @@ const USAGE = [
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
-  "sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
+  "sprint-waves <backlog.md>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
@@ -105,12 +106,12 @@ function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); 
 // untrusted caller can't pump unbounded input into a linter/scorer (used by `prompt` and `humanize-score`).
 const MAX_STDIN_BYTES = 1_048_576; // 1 MB — far above any realistic prompt
 const MAX_HYGIENE_BACKLOG_BYTES = 16 * 1_048_576;
-function readStdin() {
+function readStdin(maxBytes = MAX_STDIN_BYTES) {
   return new Promise((resolve, reject) => {
     let d = "", bytes = 0; process.stdin.setEncoding("utf8");
     process.stdin.on("data", c => {
       bytes += Buffer.byteLength(c, "utf8");
-      if (bytes > MAX_STDIN_BYTES) { process.stdin.destroy(); reject(new Error(`stdin exceeds ${MAX_STDIN_BYTES} byte limit`)); return; }
+      if (bytes > maxBytes) { process.stdin.destroy(); reject(new Error(`stdin exceeds ${maxBytes} byte limit`)); return; }
       d += c;
     });
     process.stdin.on("end", () => resolve(d));
@@ -552,6 +553,55 @@ async function main() {
       const r = computeSprintWaves(content);
       out(r);
       if (!r.ok) process.exit(2);
+    } else if (cmd === "backlog-publish") {
+      const file = requireArg(rest, 0, "backlog-publish <backlog.md> --expect <sha256|absent>: missing file path", fail);
+      const expected = flagValue(rest, "--expect");
+      if (expected !== "absent" && !/^[a-f0-9]{64}$/.test(expected || "")) {
+        fail("backlog-publish --expect must be a lowercase sha256 digest or absent");
+      }
+      const target = resolve(file);
+      const nextBytes = Buffer.from(await readStdin(MAX_HYGIENE_BACKLOG_BYTES));
+      const result = await withFileMutationLock(target, async () => {
+        let prior = null;
+        try {
+          prior = await readNoFollowRegular(target, {
+            maxBytes: MAX_HYGIENE_BACKLOG_BYTES,
+            label: `backlog publish ${file}`,
+          });
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        const actual = prior === null
+          ? "absent"
+          : createHash("sha256").update(prior.bytes).digest("hex");
+        if (actual !== expected) {
+          throw new Error(`backlog changed before publication: ${file}; reread, reapply the mutation, and retry`);
+        }
+        await atomicWrite(target, nextBytes, {
+          mode: prior === null ? 0o600 : prior.info.mode & 0o777,
+          beforeRename: async () => {
+            if (prior === null) {
+              try {
+                await lstat(target);
+              } catch (error) {
+                if (error.code === "ENOENT") return;
+                throw error;
+              }
+              throw new Error(`backlog changed before publication: ${file}; reread, reapply the mutation, and retry`);
+            }
+            const current = await readNoFollowRegular(target, {
+              maxBytes: MAX_HYGIENE_BACKLOG_BYTES,
+              label: `backlog publish ${file}`,
+              expectedInfo: prior.info,
+            });
+            if (!current.bytes.equals(prior.bytes)) {
+              throw new Error(`backlog changed before publication: ${file}; reread, reapply the mutation, and retry`);
+            }
+          },
+        });
+        return { ok: true, sha256: createHash("sha256").update(nextBytes).digest("hex") };
+      });
+      out(result);
     } else if (cmd === "tally") {
       const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
       const verdicts = JSON.parse(await readFile(file, "utf8"));
@@ -970,24 +1020,43 @@ async function main() {
           throw error;
         }
       };
-      const result = await runHygiene({
-        backlogContent: readBacklog,
-        reap,
-        zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
-        worktreeOptions: { threshold: worktreeThreshold },
-        claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
-      });
-      if (reap && result.claims.content != null && result.claims.releases.length > 0) {
-        await atomicWrite(absoluteBacklogPath, result.claims.content, {
-          mode: backlogIdentity.mode & 0o777,
-          beforeRename: async () => {
-            const current = await readPinnedBacklog(backlogIdentity);
-            if (!current.bytes.equals(backlogBytes)) {
-              throw new Error(`hygiene backlog content changed before publication: ${backlogPath}`);
-            }
-          },
+      const executeHygiene = async () => {
+        const result = await runHygiene({
+          backlogContent: readBacklog,
+          reap,
+          zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
+          worktreeOptions: { threshold: worktreeThreshold },
+          claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
         });
+        if (reap && result.claims.content != null && result.claims.releases.length > 0) {
+          await atomicWrite(absoluteBacklogPath, result.claims.content, {
+            mode: backlogIdentity.mode & 0o777,
+            beforeRename: async () => {
+              const current = await readPinnedBacklog(backlogIdentity);
+              if (!current.bytes.equals(backlogBytes)) {
+                throw new Error(`hygiene backlog content changed before publication: ${backlogPath}`);
+              }
+            },
+          });
+        }
+        return result;
+      };
+      // Mutation-capable hygiene holds the SAME cooperative lock required of
+      // claim/heartbeat/completion writers for its entire read-transform-
+      // validate-publish transaction. Report-only hygiene remains lock-free.
+      // If the parent itself is absent, no lock can be created and there is no
+      // backlog to mutate; preserve hygiene's established missing-backlog
+      // no-op instead of manufacturing .muster solely for a lock file.
+      let backlogParentExists = true;
+      try {
+        await lstat(dirname(absoluteBacklogPath));
+      } catch (error) {
+        if (error.code === "ENOENT") backlogParentExists = false;
+        else throw error;
       }
+      const result = reap && backlogParentExists
+        ? await withFileMutationLock(absoluteBacklogPath, executeHygiene)
+        : await executeHygiene();
       if (json) out(result);
       else process.stdout.write(renderHygieneReport(result) + "\n");
     } else {

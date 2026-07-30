@@ -128,7 +128,7 @@ BS4. **The capture-style human gate** — before writing anything, show the cand
 BS5. **Write** — create `.muster/backlog.md` if absent, else append below the existing content, always preserving
    every existing line exactly as written (no removes, reorders, or rewrites). One line per approved item: `- [ ] <item text>` followed by its
    `{id}`/`{deps}`/(optional) `{disposition}` annotations — exactly the format `/muster:go-backlog` (and
-   `/muster:sprint`) parse. Record the written items and the skips in STATE.
+   `/muster:sprint`) parse. Publish the complete staged result on stdin with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo dedupe/append, and retry — never write or rename the backlog directly. Record the written items and the skips in STATE.
 
    Once BS5 lands, `.muster/backlog.md` exists and is non-empty — continue at B1's file-ref form over that path,
    into B2 and onward above.

@@ -12,7 +12,7 @@
 // from the original implementations -- read them before changing anything.
 
 import { closeSync, constants as fsConstants, fstatSync, openSync, readFileSync } from "node:fs";
-import { open, realpath, rename, rm } from "node:fs/promises";
+import { lstat, open, realpath, rename, rm, unlink } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -163,6 +163,86 @@ export async function readNoFollowRegular(path, { maxBytes, label, expectedInfo 
     return { bytes, info };
   } finally {
     await handle?.close();
+  }
+}
+
+// --- Cooperative mutation locks ---------------------------------------------
+
+// Serialize a complete read-transform-publish transaction for one file. The
+// sibling lock is itself opened O_EXCL|O_NOFOLLOW, so a planted symlink can
+// neither win acquisition nor redirect lock bytes. Every existing ancestor is
+// checked before lock creation because O_NOFOLLOW protects only the final
+// component. Contention is bounded: a crashed writer leaves a stale lock that
+// makes later writers fail after timeoutMs rather than guessing that it is safe
+// to steal a lock from a merely slow writer.
+//
+// The callback MUST perform the read and validation after acquisition and keep
+// the lock until publication completes. Locking only atomicWrite's rename would
+// leave the validation-to-publication race open.
+export async function withFileMutationLock(path, callback, {
+  timeoutMs = 5_000,
+  retryMs = 10,
+} = {}) {
+  if (typeof callback !== "function") throw new TypeError("file mutation lock callback must be a function");
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) throw new TypeError("file mutation lock timeoutMs must be non-negative");
+  if (!Number.isFinite(retryMs) || retryMs < 1) throw new TypeError("file mutation lock retryMs must be positive");
+  if (!fsConstants.O_NOFOLLOW) throw new Error("file mutation lock requires O_NOFOLLOW");
+
+  const target = resolve(path);
+  const parent = dirname(target);
+  let component = parent;
+  while (true) {
+    const info = await lstat(component);
+    if (info.isSymbolicLink()) throw new Error(`file mutation lock path must not contain symlinks: ${path}`);
+    const next = dirname(component);
+    if (next === component) break;
+    component = next;
+  }
+
+  const lockPath = `${target}.muster-lock`;
+  const started = Date.now();
+  let handle;
+  let lockIdentity;
+  while (!handle) {
+    let candidate;
+    try {
+      candidate = await open(
+        lockPath,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+        0o600,
+      );
+      await candidate.writeFile(`${process.pid} ${Date.now()}\n`);
+      lockIdentity = await candidate.stat();
+      handle = candidate;
+    } catch (error) {
+      if (candidate) {
+        await candidate.close().catch(() => {});
+        await unlink(lockPath).catch(() => {});
+      }
+      if (error.code !== "EEXIST") throw error;
+      if (Date.now() - started >= timeoutMs) {
+        const timeout = new Error(`timed out waiting for file mutation lock: ${path}`);
+        timeout.code = "ELOCKTIMEOUT";
+        throw timeout;
+      }
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(retryMs, timeoutMs)));
+    }
+  }
+
+  try {
+    return await callback();
+  } finally {
+    await handle.close();
+    let current;
+    try {
+      current = await lstat(lockPath);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (current && (current.dev !== lockIdentity.dev || current.ino !== lockIdentity.ino)) {
+      throw new Error(`file mutation lock ownership changed before release: ${path}`);
+    }
+    if (current) await unlink(lockPath);
   }
 }
 

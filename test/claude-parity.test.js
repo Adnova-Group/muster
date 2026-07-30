@@ -1283,5 +1283,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // counts are unchanged (re-verified green).
   // 2026-07-30 re-pin #22 (audit S6): runner.md gains the $MUSTER_CLI resolution block its
   // siblings carry; both hardcoded node src/cli.js call sites switched.
-  assert.equal(hash.digest("hex"), "9d967a7f9a2d897e48f4f70a30566b4070437cf80069007779b79d358e05ca45");
+  // 2026-07-30 re-pin #23 (backlog writer serialization): every file-backed backlog
+  // producer now routes publication through the shared backlog-publish CAS command.
+  assert.equal(hash.digest("hex"), "78641dc3f761eeda612d3e767940f6d02480f56eeb348c17108332300d809ae1");
 });

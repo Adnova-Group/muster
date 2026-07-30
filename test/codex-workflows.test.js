@@ -121,13 +121,18 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
   assert.match(runtimeSource, /makeGitShaVerifier/);
 });
 
+// Every generated surface that carries the agent watch protocol (adapter + orchestrator +
+// the root router and 13 mode skills), shared by the watch-invariant and dispatch-shape
+// guards below and mirroring scripts/check-codex.mjs's own `watchSurfaces` list.
+const watchInvariantSurfaces = new Map([
+  ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
+  ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
+  ...["muster", "muster-init", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
+    .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
+]);
+
 test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {
-  const surfaces = new Map([
-    ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
-    ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
-    ...["muster", "muster-init", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
-      .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
-  ]);
+  const surfaces = watchInvariantSurfaces;
   assert.equal(surfaces.size, 15, "every generated Codex watch-invariant surface must be covered");
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
@@ -156,6 +161,76 @@ test("generated Codex orchestration surfaces enforce the state-based agent watch
     assert.ok(text.indexOf("collaboration.wait_agent") < text.indexOf("collaboration.list_agents"), `${name} must wait before its first reconciliation poll`);
     assert.ok(text.indexOf("mailbox receipts first") < text.indexOf("collaboration.list_agents"), `${name} must process the wake receipt before reconciling`);
   }
+});
+
+// codex-watch-protocol-v1 item (audit 2026-07-30, slice S1): the watch protocol injected
+// into all 13 mode skills, the root router, the orchestrator, and the copied
+// runtime/codex-skill-adapter.md hardcoded v2-only `collaboration.spawn_agent`/`wait_agent`/
+// `list_agents` phrasing -- but Codex resolves its subagent API PER MODEL, and muster's core
+// tier (gpt-5.6-luna) speaks v1: `multi_agent_v1.*`, a `fork_context` bool instead of
+// `fork_turns`, and a wait that REQUIRES `targets[]`. The 2026-07-29 slice D (ed54355)
+// single-sourced the v1/v2 contract out of plugin/skills/orchestrator/references/
+// codex-dispatch.md into the orchestrator's wave-dispatch span and go-backlog only; the watch
+// protocol and the skill adapter never got threaded, so every one of those 15 surfaces still
+// taught a Codex-luna session a dispatch shape its model rejects. These guards pin the
+// reference's shapes table into each surface's watch section byte-for-byte and fail on a
+// return to v2-only phrasing.
+const DISPATCH_REFERENCE = join(repoRoot, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md");
+// Mirrors loadCodexDispatchContract's extraction in scripts/build-codex.mjs exactly.
+async function dispatchContractBlock(startMarker) {
+  const reference = await readFile(DISPATCH_REFERENCE, "utf8");
+  const start = reference.indexOf(startMarker);
+  const end = start < 0 ? -1 : reference.indexOf("\n\n", start);
+  assert.ok(start >= 0 && end >= 0, `reference block starting at ${JSON.stringify(startMarker)} must exist`);
+  return reference.slice(start, end);
+}
+
+test("generated Codex watch protocols teach BOTH multi-agent API shapes, not v2-only", async () => {
+  const shapesTable = await dispatchContractBlock("| | v2 (`sol`, `terra`)");
+  assert.match(shapesTable, /multi_agent_v1\.wait_agent/, "the reference table must still carry the v1 barrier shape");
+  for (const [name, path] of watchInvariantSurfaces) {
+    const text = await readFile(path, "utf8");
+    const watch = text.slice(text.indexOf("## Agent watch invariant"));
+    assert.ok(watch.length > 0, `${name} must carry an agent watch section`);
+    assert.ok(
+      watch.includes(shapesTable),
+      `${name}'s watch protocol must carry the reference's v1/v2 shapes table byte-for-byte (single source: references/codex-dispatch.md)`
+    );
+    assert.match(watch, /VERSION-DEPENDENT/, `${name} must warn that the dispatch and barrier shapes are version-dependent`);
+    assert.match(watch, /never hardcode one shape/, `${name} must forbid hardcoding one dispatch shape`);
+    assert.match(watch, /multi_agent_v1\.spawn_agent/, `${name} teaches collaboration.* dispatch, so it must name the v1 spawn namespace (gpt-5.6-luna, muster's core tier, is v1)`);
+    assert.match(watch, /multi_agent_v1\.wait_agent/, `${name} must name the v1 barrier, whose wait requires targets[]`);
+    assert.match(watch, /fork_context: false/, `${name} must name v1's fork_context bool alongside v2's fork_turns`);
+    assert.match(
+      watch,
+      /retain every canonical agent id returned by[\s\S]{0,160}multi_agent_v1\.spawn_agent/,
+      `${name} must resolve the dispatch namespace per model version at the retain step`
+    );
+    assert.doesNotMatch(
+      watch,
+      /returned by `collaboration\.spawn_agent` and immediately call `collaboration\.wait_agent`/,
+      `${name} must not carry the v2-only dispatch/barrier phrasing (a luna session rejects those tool names)`
+    );
+    // The v2 names stay -- both shapes ship, neither replaces the other.
+    assert.match(watch, /collaboration\.spawn_agent/, `${name} must keep the v2 spawn shape`);
+    assert.match(watch, /collaboration\.wait_agent/, `${name} must keep the v2 barrier shape`);
+  }
+});
+
+test("generated Codex skill adapter single-sources the v1/v2 dispatch contract", async () => {
+  const adapter = await readFile(join(selectedPluginRoot, "runtime", "codex-skill-adapter.md"), "utf8");
+  const forkTurns = await dispatchContractBlock("`fork_turns` (v2 only)");
+  assert.ok(
+    adapter.includes(forkTurns),
+    "the adapter's named-profile dispatch bullet must carry the reference's fork_turns paragraph byte-for-byte (single source: references/codex-dispatch.md)"
+  );
+  assert.match(adapter, /multi_agent_v1\.spawn_agent/, "the adapter must name the v1 spawn namespace");
+  assert.match(adapter, /fork_context: false/, "the adapter must name v1's fork_context bool");
+  assert.doesNotMatch(
+    adapter,
+    /call `collaboration\.spawn_agent` with the ordinary `task_name`/,
+    "the adapter's dispatch bullet must not hardcode v2-only spawn for every resolved kind:agent provider"
+  );
 });
 
 test("generated Codex review gates use compact, risk-based review dispatch", async () => {

@@ -159,6 +159,10 @@ test("ordinaryDirectoryPath: one return contract covers existing, missing, and c
     assert.equal(await ordinaryDirectoryPath(missing, { create: true }), resolve(missing));
     assert.equal((await stat(join(dir, "missing"))).isDirectory(), true);
     assert.equal((await stat(missing)).isDirectory(), true);
+    if (process.platform !== "win32") {
+      assert.equal((await stat(join(dir, "missing"))).mode & 0o777, 0o700);
+      assert.equal((await stat(missing)).mode & 0o777, 0o700);
+    }
   });
 });
 

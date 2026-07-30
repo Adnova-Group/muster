@@ -159,14 +159,21 @@ test("Codex CLI research carries the 0.146 performance decision matrix and exper
   for (const status of ["ADOPT", "AUTOMATIC", "PILOT", "REJECT"]) {
     assert.match(cli, new RegExp(`\\| \\*\\*${status}\\*\\* \\|`), `0.146 decision matrix must include ${status}`);
   }
-  for (const source of [
-    "https://github.com/openai/codex/releases/tag/rust-v0.146.0",
-    "https://github.com/openai/codex/pull/34761",
-    "https://github.com/openai/codex/pull/34825",
-    "https://github.com/openai/codex/pull/34952",
-    "https://github.com/openai/codex/pull/35144",
-  ]) {
-    assert.match(cli, new RegExp(source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `0.146 audit must link ${source}`);
+  assert.match(cli, /https:\/\/github\.com\/openai\/codex\/releases\/tag\/rust-v0\.146\.0/);
+  const decisions = {
+    AUTOMATIC: [34447, 34544, 34626, 34728, 34732, 34738, 34761, 34766, 34771, 34775, 34778, 34789, 34796, 34825, 34849, 34877, 34952, 34957, 34997, 35000, 35021, 35144, 35172, 35221, 35280, 35365, 35375, 35525],
+    ADOPT: [34835, 35015, 35048, 35363],
+    PILOT: [34547, 34581, 35065],
+    REJECT: [34852, 35078, 35098, 35364],
+  };
+  const matrix = cli.slice(cli.indexOf("### 11.1 Decision matrix"), cli.indexOf("### 11.2 Net decision"));
+  for (const [status, prs] of Object.entries(decisions)) {
+    for (const pr of prs) {
+      assert.match(cli, new RegExp(`https://github\\.com/openai/codex/pull/${pr}(?:\\s|$)`), `0.146 audit must link PR #${pr}`);
+      const row = matrix.split("\n").find((line) => line.includes(`[src: codex-pr-${pr}]`));
+      assert.ok(row, `0.146 matrix must cite PR #${pr} in a decision row`);
+      assert.match(row, new RegExp(`\\| \\*\\*${status}\\*\\* \\|`), `PR #${pr} must remain classified ${status}`);
+    }
   }
   assert.match(cli, /code_mode[\s\S]{0,100}under development[\s\S]{0,60}false/i);
   assert.match(cli, /code_mode_host[\s\S]{0,100}stable[\s\S]{0,60}true/i);

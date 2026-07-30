@@ -290,7 +290,9 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 - codex-pr-34957: https://github.com/openai/codex/pull/34957
 - codex-pr-34997: https://github.com/openai/codex/pull/34997
 - codex-pr-35000: https://github.com/openai/codex/pull/35000
+- codex-pr-35015: https://github.com/openai/codex/pull/35015
 - codex-pr-35021: https://github.com/openai/codex/pull/35021
+- codex-pr-35048: https://github.com/openai/codex/pull/35048
 - codex-pr-35065: https://github.com/openai/codex/pull/35065
 - codex-pr-35078: https://github.com/openai/codex/pull/35078
 - codex-pr-35098: https://github.com/openai/codex/pull/35098
@@ -298,6 +300,7 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 - codex-pr-35172: https://github.com/openai/codex/pull/35172
 - codex-pr-35221: https://github.com/openai/codex/pull/35221
 - codex-pr-35280: https://github.com/openai/codex/pull/35280
+- codex-pr-35363: https://github.com/openai/codex/pull/35363
 - codex-pr-35364: https://github.com/openai/codex/pull/35364
 - codex-pr-35365: https://github.com/openai/codex/pull/35365
 - codex-pr-35375: https://github.com/openai/codex/pull/35375
@@ -564,7 +567,7 @@ Decision vocabulary:
 | MCP refreshes reuse unchanged healthy connections, replace closed ones, and prewarm dirty runtime state in a coalescing background worker. | **AUTOMATIC** | This is the most material Muster-facing latency win because every run uses its MCP brain. Exact model-step refresh remains Codex's correctness path, so Muster adds no cache or reconnect layer [src: codex-pr-34952] [src: codex-pr-34957] [src: codex-pr-35144]. |
 | Startup/Guardian turns skip redundant Git enrichment, non-local hook transcripts avoid rollout persistence, and plugin MCP filtering is bypassed when no allowlist exists. | **AUTOMATIC** | These remove work from internal paths without weakening regular-turn freshness, local transcript materialization, or explicit deny-all semantics [src: codex-pr-34728] [src: codex-pr-35221] [src: codex-pr-35280]. |
 | TUI interrupts are nonblocking and coalesced; mention popups, narrow headers, wrapped hyperlinks, terminal-specific keyboard handling, refreshed mention results, narrow keymap menus, and inactive-thread scans are bounded or cached appropriately. | **AUTOMATIC** | This is the release's complete terminal responsiveness/rendering group. It improves attended sessions below Muster's boundary; no orchestration or interrupt-receipt rule changes [src: codex-pr-34771] [src: codex-pr-34775] [src: codex-pr-34778] [src: codex-pr-35000] [src: codex-pr-35021] [src: codex-pr-35365] [src: codex-pr-35375] [src: codex-pr-35525]. |
-| Turn profiles expose `compaction_ms` as an exclusive phase. | **ADOPT** | Future Codex performance pilots should record `compaction_ms` alongside total duration and tokens so context-management cost is measured rather than folded into idle time. This is a measurement adoption, not a new runtime dependency [src: codex-pr-34835]. |
+| Turn profiles expose `compaction_ms`; installed-app and `app/read` paths emit comparable success-latency metrics; completion events include optional `started_at_ms`. | **ADOPT** | Future Codex performance pilots should record compaction, app request duration, and item elapsed time alongside total turn duration and tokens. Failed app requests stay out of the success distribution, and older events without start times remain compatible. This is a measurement adoption, not a new runtime dependency [src: codex-pr-34835] [src: codex-pr-35015] [src: codex-pr-35048] [src: codex-pr-35363]. |
 | Reciprocal-rank-fusion and routing-card skill selectors run as shadow-selection experiments. | **PILOT** | The PRs explicitly say “shadow”; they do not establish active routing quality. Compare selection accuracy and prompt tokens on a representative Muster catalog before asking Codex to own any part of Muster's deterministic role routing [src: codex-pr-34547] [src: codex-pr-34581]. |
 | Deferred tool world state omits duplicate source listings from the `tool_search` description. | **PILOT** | This can save prompt tokens, but the installed binary reports `deferred_tool_world_state` as `under development / false`. Measure tool-discovery accuracy and token reduction in an isolated session before enablement [src: codex-pr-35065] [src: installed-codex-0146]. |
 | Remote Code Mode hosts share a WebSocket connection across app-server threads, and compatibility headers no longer duplicate unbounded tool-name maps. | **REJECT** | The transport and bound are real and `code_mode_host` reports `stable / true`, but the feature they serve, `code_mode`, still reports `under development / false`. The 0.145 decision therefore stands: do not enable Code Mode or build remote-host infrastructure until the inner-loop benchmark is green and Code Mode itself stabilizes [src: codex-pr-35078] [src: codex-pr-35098] [src: codex-pr-35364] [src: installed-codex-0146]. |

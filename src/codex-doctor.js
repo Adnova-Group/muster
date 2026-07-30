@@ -418,7 +418,7 @@ async function openRegularFile(path) {
 // shared read's tagged rejections are translated back into this module's exact
 // musterUnsafeRead messages; a raw system error (e.g. O_NOFOLLOW's ELOOP on a
 // symlink swapped in after the lstat) propagates, as before.
-async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES) {
+async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES, readNoFollow = readNoFollowRegular) {
   if (!(await ordinaryDirectoryPath(dirname(path)))) return null;
   let before;
   try { before = await lstat(path); }
@@ -429,7 +429,7 @@ async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES)
   if (before.isSymbolicLink() || !before.isFile()) throw unsafeScopeRead(`Codex configuration target must be a regular file: ${path}`);
   let opened;
   try {
-    opened = await readNoFollowRegular(path, { maxBytes, label: path, expectedInfo: before });
+    opened = await readNoFollow(path, { maxBytes, label: path, expectedInfo: before });
   } catch (error) {
     if (error?.fsSafe?.reason === "not-regular") throw unsafeScopeRead(`Codex configuration target must be a regular file: ${path}`);
     if (error?.fsSafe?.reason === "too-large") throw unsafeScopeRead(`Codex configuration target exceeds the ${maxBytes}-byte read cap (${error.fsSafe.size} bytes): ${path}`);
@@ -713,7 +713,17 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+export async function runCodexDoctor({
+  root,
+  cwd = process.cwd(),
+  codexHome,
+  execFile,
+  mcpRunner = runMcpHandshake,
+  env = process.env,
+  platform = process.platform,
+  readNoFollowRegularFile = readNoFollowRegular,
+  readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES, readNoFollowRegularFile)
+} = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.

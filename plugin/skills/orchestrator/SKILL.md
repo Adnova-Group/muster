@@ -183,9 +183,11 @@ Record the result to STATE once; it does not change mid-run.
   a muster skill instructing this call IS the harness's explicit Workflow opt-in path). Step 4b's
   barrier and step 4c's review gate are UNCHANGED -- only the fan-out mechanism moves off prose
   dispatch calls. Per-agent opts on each `agent()` call: `model` = the member's `claudeModel`;
-  `effort` = the member's `workflowEffort` when its profile declares a semantic effort
-  (src/claude.js's Workflow-lane ladder: workhorse->medium, judgment->high, peak->xhigh; omit
-  otherwise to inherit the session effort); `isolation: "worktree"` on every file-writing member
+  `effort` = the member's `claudeProfile.workflowEffort` (`roles[<role>].claudeProfile` in
+  capabilities.json, the same resolved adapter profile `claudeModel` comes from) when its profile
+  declares a semantic effort
+  (src/claude.js's Workflow-lane ladder: workhorse->medium, judgment->high, peak->xhigh; the key is
+  absent otherwise -- omit `effort` to inherit the session effort); `isolation: "worktree"` on every file-writing member
   (CORRECTED 2026-07-29, lifting the prior "documented gap -- multi-file-writing waves stay on
   prose" restriction: Workflow's `agent()` carries its own per-agent worktree isolation, observed
   live on 2.1.220 -- the collision guarantee now rides the native lane too; auto-clean skips

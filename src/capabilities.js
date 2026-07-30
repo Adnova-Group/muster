@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { modelForRole } from "./model.js";
-import { claudeModelForTier } from "./claude.js";
+import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
 import { ROLES } from "./roles.js";
 import { isInstalled } from "./installed.js";
 import { installedSkillDescription } from "./plugin-inventory.js";
@@ -103,6 +103,21 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     // only the conceptual tier is meaningful. Every pre-existing lane retains
     // the Claude adapter mapping for backward compatibility.
     if (!work) roles[role].claudeModel = claudeModelForTier(model).model;
+    // claudeProfile: the Claude lane's sibling of the codex/kimi profile
+    // emissions -- the SAME manifest-driven resolution (claudeProfileForAgentId),
+    // carrying {model} plus the Workflow-lane `workflowEffort` when the chosen
+    // agent's profile declares a semantic effort (src/claude.js). This is what
+    // makes orchestrator SKILL.md's native Workflow dispatch ("effort = the
+    // member's workflowEffort") read a field that EXISTS in capabilities.json
+    // instead of re-deriving it. Emitted on the default (Claude) lane, agent-
+    // backed roles only; the key is absent for inline/skill/mcp chosen exactly
+    // as codexModel/kimiModel are, and src/claude.js's lane scoping is honored:
+    // the field is a pre-dispatch resolution surface, never agent frontmatter
+    // or an Agent-tool call.
+    if (!work && chosen.kind === "agent") {
+      const claudeProfile = claudeProfileForAgentId(chosen.id);
+      if (claudeProfile) roles[role].claudeProfile = claudeProfile;
+    }
     if (codex && chosen.kind === "agent") {
       const codexModel = codexProfileForAgentId(chosen.id);
       if (codexModel) roles[role].codexModel = codexModel;

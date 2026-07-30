@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 import {
   buildProbe,
   expectedRequest,
@@ -259,6 +260,134 @@ test("cleanup rejects a pathname swap between inspection and quarantine without 
   assert.match(result.errors.join("\n"), /identity changed.*quarantine/i);
   assert.equal((await lstat(pluginPath)).ino, Number(snapshot.ownership.plugin.ino));
   assert.equal((await lstat(movedTemp)).ino, Number(snapshot.ownership.temp.ino));
+});
+
+// Shared setup for the quarantine-rollback branch tests below: a graded,
+// retained snapshot over two probe-owned directories plus the matching cleanup
+// claim, so each test only has to describe its own rename injection.
+// `pluginParentName` puts the plugin under its own intermediate parent, which
+// the ELOOP test needs in order to break the plugin's ancestry without
+// disturbing the temp directory's.
+async function retainedCleanupFixture(t, label, { pluginParentName = null } = {}) {
+  const root = await mkdtemp(join(tmpdir(), `muster-native-${label}-`));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const retainedDir = join(root, "retained");
+  const pluginParent = pluginParentName ? join(root, pluginParentName) : root;
+  const pluginPath = join(pluginParent, "plugin");
+  const tempPath = join(root, "probe-temp");
+  const snapshotPath = join(retainedDir, "grade-snapshot.json");
+  await Promise.all([
+    mkdir(retainedDir, { mode: 0o700 }),
+    mkdir(pluginPath, { recursive: true }),
+    mkdir(tempPath),
+  ]);
+  await chmod(retainedDir, 0o700);
+  const retained = await retainGradeSnapshot({
+    grade: gradeReceipt(receipt(), NONCE, attestation(), identity()),
+    nonce: NONCE, identity: identity(), serverAttestation: attestation(),
+    ownedPaths: { plugin: pluginPath, temp: tempPath }, snapshotPath,
+  });
+  assert.equal(retained.ok, true, retained.errors?.join("\n"));
+  const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+  const cleanup = {
+    cleanupType: "muster-work-native-cleanup-finalization", timestamp: TIMESTAMP,
+    gradeDigest: retained.gradeDigest, ownedPaths: { plugin: pluginPath, temp: tempPath },
+    inventory: { connection: "absent", tunnelProfile: "absent", plugin: "absent", marketplace: "absent", cache: "absent", ui: "absent" },
+    artifacts: { tunnel: "stopped", screenshotsRetained: 0, logsRetained: 0, attestationRetained: 0, probeDirsRetained: 0 },
+  };
+  return { root, pluginParent, pluginPath, tempPath, snapshot, cleanup };
+}
+
+test("a second retained directory that cannot be quarantined rolls the first one back to its original path", async (t) => {
+  const { pluginPath, tempPath, snapshot, cleanup } = await retainedCleanupFixture(t, "cleanup-rollback-restore");
+  let renames = 0;
+  const result = await finalizeCleanup(cleanup, snapshot, {
+    renameDirectory: async (source, destination) => {
+      renames += 1;
+      if (renames === 2) throw new Error("injected quarantine failure");
+      await rename(source, destination);
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /snapshot\.ownedPaths\.temp cannot enter private cleanup quarantine: injected quarantine failure/,
+  );
+  assert.doesNotMatch(result.errors.join("\n"), /cannot be restored from private quarantine/);
+  assert.equal(renames, 3, "the failed second move must be followed by exactly one rollback move");
+  assert.equal((await lstat(pluginPath)).ino, Number(snapshot.ownership.plugin.ino));
+  assert.equal((await lstat(tempPath)).ino, Number(snapshot.ownership.temp.ino));
+});
+
+test("quarantine rollback refuses to restore over an original path that was replaced", async (t) => {
+  const { pluginPath, snapshot, cleanup } = await retainedCleanupFixture(t, "cleanup-rollback-replaced");
+  let renames = 0;
+  let quarantined = null;
+  const result = await finalizeCleanup(cleanup, snapshot, {
+    renameDirectory: async (source, destination) => {
+      renames += 1;
+      if (renames === 2) {
+        // An impostor takes the vacated original path before rollback runs.
+        await mkdir(pluginPath);
+        throw new Error("injected quarantine failure");
+      }
+      quarantined = destination;
+      await rename(source, destination);
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /snapshot\.ownedPaths\.plugin cannot be restored from private quarantine because its original path was replaced/,
+  );
+  assert.equal(renames, 2, "rollback must not rename over the replacement");
+  assert.notEqual((await lstat(pluginPath)).ino, Number(snapshot.ownership.plugin.ino));
+  assert.equal((await lstat(quarantined)).ino, Number(snapshot.ownership.plugin.ino));
+});
+
+test("quarantine rollback reports an original path it cannot even check", async (t) => {
+  const { root, pluginParent, snapshot, cleanup } = await retainedCleanupFixture(
+    t, "cleanup-rollback-uncheckable", { pluginParentName: "plugin-parent" },
+  );
+  let renames = 0;
+  const result = await finalizeCleanup(cleanup, snapshot, {
+    renameDirectory: async (source, destination) => {
+      renames += 1;
+      if (renames === 2) {
+        // Move the quarantined plugin's whole parent aside and leave a
+        // self-referential symlink in its place, so the rollback lstat of the
+        // original path fails with ELOOP rather than a benign ENOENT.
+        await rename(pluginParent, join(root, "plugin-parent-real"));
+        await symlink("plugin-parent", pluginParent);
+        throw new Error("injected quarantine failure");
+      }
+      await rename(source, destination);
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /snapshot\.ownedPaths\.plugin original path cannot be checked during quarantine rollback: ELOOP/,
+  );
+  assert.equal(renames, 2, "an unverifiable original path must not be renamed over");
+});
+
+test("quarantine rollback reports a restore that itself fails", async (t) => {
+  const { snapshot, cleanup } = await retainedCleanupFixture(t, "cleanup-rollback-failed-restore");
+  let renames = 0;
+  const result = await finalizeCleanup(cleanup, snapshot, {
+    renameDirectory: async (source, destination) => {
+      renames += 1;
+      if (renames === 2) throw new Error("injected quarantine failure");
+      if (renames === 3) throw new Error("injected rollback failure");
+      await rename(source, destination);
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.match(
+    result.errors.join("\n"),
+    /snapshot\.ownedPaths\.plugin cannot be restored from private quarantine: injected rollback failure/,
+  );
 });
 
 test("cleanup quarantines each retained directory on its own parent filesystem", async (t) => {

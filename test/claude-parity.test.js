@@ -1330,6 +1330,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 2026-07-30 re-pin #33 (final integration verification): audit.md and runner.md
   // document narrowly scoped prompt-lint safety exceptions; go-backlog.md adds
   // the matching rule-density exception while preserving its remote-text and
-  // report-only Kimi process-lane contracts. File count remains unchanged.
+  // report-only Kimi process-lane contracts. Runner receipts now also require
+  // source-item or issue citations for factual claims. File count remains unchanged.
   assert.equal(hash.digest("hex"), "13da731131a968f1fbd1a0988914a7ffcdfce88625cdd12ab32556bc2b37f370");
 });

@@ -14,7 +14,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
 import { REQUIRED_CODEX_THREAD_LIMITS } from "../src/codex-thread-limits.js";
 import { ROLES } from "../src/roles.js";
-import { CODEX_MULTI_AGENT_VERSIONS } from "../src/wave-dispatch.js";
+import { CODEX_MULTI_AGENT_VERSIONS } from "../src/codex-dispatch.js";
 
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");

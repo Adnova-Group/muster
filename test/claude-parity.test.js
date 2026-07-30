@@ -181,7 +181,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bullets above it, nor any other named section. The new subsection documents that Codex rides
   // its OWN native primitive (`collaboration.spawn_agent`/`wait_agent`/`list_agents`,
   // `fork_turns: "none"`, `agent_type`) rather than a prose-loop substitute for the Claude-only
-  // `Workflow` tool, names `src/wave-dispatch.js`'s new `resolveCodexWaveDispatch` (spawn_agent
+  // `Workflow` tool, names `src/codex-dispatch.js`'s `resolveCodexWaveDispatch` (spawn_agent
   // vs sequential-inline, gated on Codex's own `features.multi_agent`, default-on -- inverse of
   // agent-teams' default-off) and `assertCodexSpawnAgentAccepted` (the fail-closed guard: a
   // rejected profile throws a registration diagnostic naming the `agent_type`/task rather than
@@ -1283,5 +1283,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // counts are unchanged (re-verified green).
   // 2026-07-30 re-pin #22 (audit S6): runner.md gains the $MUSTER_CLI resolution block its
   // siblings carry; both hardcoded node src/cli.js call sites switched.
-  assert.equal(hash.digest("hex"), "9d967a7f9a2d897e48f4f70a30566b4070437cf80069007779b79d358e05ca45");
+  // 2026-07-30 re-pin #23 (wave-dispatch-split): codex-dispatch.md points its
+  // implementation citations at the extracted src/codex-dispatch.js module.
+  assert.equal(hash.digest("hex"), "88c0907d86030c4fbf2e18ca8808f483577ba441c974f1bb6a458f2935fcec60");
 });

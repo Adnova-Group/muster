@@ -1,6 +1,6 @@
 // test/codex-wave-dispatch.test.js — Codex-native dispatch behind the
 // codex-spawn-agent-dispatch item (orchestrator/SKILL.md's "Codex-native
-// dispatch: spawn_agent" subsection, src/wave-dispatch.js's Codex section).
+// dispatch: spawn_agent" subsection, src/codex-dispatch.js).
 //
 // Codex has no `Workflow`-tool counterpart: its own native wave-dispatch
 // primitive is subagent collaboration itself -- `collaboration.spawn_agent`
@@ -25,7 +25,7 @@ import {
   resolveCodexWaveDispatch,
   codexSpawnAgentCall,
   assertCodexSpawnAgentAccepted,
-} from "../src/wave-dispatch.js";
+} from "../src/codex-dispatch.js";
 
 // ── criterion 3: sequential-inline fallback when multi_agent is off ───────
 
@@ -182,7 +182,7 @@ async function codexDispatchSection() {
   return match[1];
 }
 
-test("references/codex-dispatch.md names the version-resolving packet builders (src/wave-dispatch.js is canonical)", async () => {
+test("references/codex-dispatch.md names the version-resolving packet builders (src/codex-dispatch.js is canonical)", async () => {
   const section = await codexDispatchSection();
   assert.match(section, /`codexSpawnAgentCall`/, "the Codex subsection must name codexSpawnAgentCall");
   assert.match(section, /`codexWaitAgentCall`/, "the Codex subsection must name codexWaitAgentCall");

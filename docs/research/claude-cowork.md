@@ -142,14 +142,15 @@ Native primitives that are **absent** (the gap muster's port exists to fill)
 
 - No dependency-ordered task graph, no wave barrier, no review gate, no tournament or
   fusion machinery — the plan is prose in the agent's head; the entire deterministic
-  gate/wave layer is what the 29-tool MCP server imports [src: readme-11] [INFERRED].
+  gate/wave layer is what the 30-tool MCP server imports [src: readme-11] [INFERRED].
 - No enforcement hooks an integrator can register: muster's wave-guard, scale-gate, and
   action-class fence have "no Cowork equivalent — this session's own discipline is the
   only enforcement there is" [src: sprint-14].
-- No isolated per-item worktree runners; running multiple backlog items concurrently
-  "has no validated isolation model here," so muster's sprint degradation path
-  (sequential, one item at a time, in the main tree) "IS the path for Cowork sprints,
-  not a fallback" [src: sprint-24].
+- No native isolated per-item worktree runners. Without a proven native per-subagent
+  worktree primitive, the orchestrator creates a dedicated isolated Git worktree for
+  each write-capable item and executes those implementations sequentially in their
+  assigned worktrees. The main tree remains the coordination and ordered-integration
+  surface [src: sprint-24].
 - No session sharing, no compliance/audit capture [src: cw-start] [src: cw-arch].
 
 ## 3. Extension surfaces: MCP as the (formerly only) integration plane
@@ -184,7 +185,7 @@ The documentation is now **internally inconsistent** about this surface:
   desktop app only" [src: cw-start], and the architecture overview adds "Local MCP
   servers don't run in remote sessions" [src: cw-arch] [DOCUMENTED-WEB].
 
-Muster's repository verifies Route A's 29-tool local MCP server and the sequential
+Muster's repository verifies Route A's 30-tool local MCP server and the sequential
 `muster_next` execution path [src: readme-7] [src: readme-11] [CODE-VERIFIED]. An older
 README claimed a live desktop probe had also confirmed parallel dispatch and per-call
 model override, but no phase-3 receipt is retained, so that claim is not current
@@ -360,7 +361,7 @@ What actually ships [CODE-VERIFIED]:
 
 | Native primitive | What it's for | How muster rides it today | Advisory vs enforcement | Gap vs Claude Code |
 |---|---|---|---|---|
-| Local MCP server (`claude_desktop_config.json`) | Register host-local tools with the agent loop [src: cw-arch] | Route A: the whole 29-tool MCP server [src: readme-11] [src: harness-17] | Tool *results* are advisory to the agent; the server enforces its own contracts (required `dir` on audit, overload rejection, cancellation) [src: mcps-106] | Claude Code loads the full plugin (hooks, commands, agents); and this surface is contradicted for current Cowork / absent in remote sessions [src: cw-connectors] |
+| Local MCP server (`claude_desktop_config.json`) | Register host-local tools with the agent loop [src: cw-arch] | Route A: the whole 30-tool MCP server [src: readme-11] [src: harness-17] | Tool *results* are advisory to the agent; the server enforces its own contracts (required `dir` on audit, overload rejection, cancellation) [src: mcps-106] | Claude Code loads the full plugin (hooks, commands, agents); and this surface is contradicted for current Cowork / absent in remote sessions [src: cw-connectors] |
 | MCPB desktop extension + `user_config` | One-click packaged local server with a settings UI [src: mcpb-spec] | Development-only Route B descriptor; not self-contained or installable today [src: manifest-10] | Intended config mapping is deterministic, but no packaged runtime executes it yet | Claude Code has no equivalent packaging need (plugins carry servers); bundling and MSIX virtualized-spawn remain open Cowork work [src: readme-105] |
 | MCP `instructions` at initialize | Server-supplied session guidance [src: mcps-294] | Carries principles + routing policy + full per-mode execution protocol [src: readme-32] | Pure advisory — prompt text the model can ignore; nothing re-injects it per turn | Claude Code gets SessionStart/UserPromptSubmit hooks (guaranteed injection) plus PreToolUse denial [src: sprint-14] |
 | Sub-agent fan-out + per-call model override | Parallel workstreams on the right model tier [src: cw-start] | Sequential `muster_next` is the verified default; wave fan-out and per-role model selection are enabled only after a fresh successful phase-3 receipt from the active Cowork build [src: probe-137] [src: readme-7] | Unverified until that receipt; even after a pass, dispatch discipline is advisory prompt text and no hook can force crew dispatch over inline editing | Claude Code has a real Task tool contract, agent definitions, worktree isolation, wave-guard enforcement [src: sprint-24] |

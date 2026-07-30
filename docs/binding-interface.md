@@ -292,7 +292,7 @@ stale:
 AskUserQuestion    files=13  mentions=36
 dispatch (Agent/Task tool)  files=5  mentions=18
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
-worktree   files=5  mentions=33
+worktree   files=5  mentions=36
 ```
 
 Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave

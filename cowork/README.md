@@ -39,7 +39,7 @@ Thirty deterministic tools, plus an execution protocol that teaches the agent ho
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
 | `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
 | `muster_sprint_reconcile` | Drain completion receipts into deterministic sprint states and the next eligible implementation/review/integration actions |
-| `muster_backlog_publish` | Bounded CAS publication for complete backlog content under an explicit project root |
+| `muster_backlog_publish` | Bounded compare-and-swap publication for complete, contained backlog content; concurrent writers must reread and reapply |
 | `muster_sprint_protocol` | Return the Cowork-adapted sprint playbook (no args) -- see below |
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_gate_cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves |
@@ -58,7 +58,7 @@ muster's principles, routing policy, and a per-mode execution protocol (the core
 
 `muster_sprint_protocol` is a protocol-content tool, not an MCP wrapper for a same-name CLI command. With no arguments, it returns `cowork/sprint-protocol.md` verbatim -- a condensed, Cowork-native port of the Claude Code plugin's `/muster:go-backlog` lifecycle: backlog resolution against `.muster/backlog.md`, calling `muster_sprint_waves` for dependency order, the per-item go lifecycle, and claim/receipt discipline for shared backlogs. Call it at the start of a sprint the same way you'd load the slash command's protocol on Claude Code.
 
-Be honest about what does not port on the verified MCP-only route: it has no lifecycle hooks (no wave-guard, no scale-gate, no action-class fence), no slash verbs, and no isolated per-item worktree runners, so sprint's parallel wave-mode dispatch has no safe equivalent -- every wave runs sequentially, one item at a time, in the main tree; that degradation path *is* the path here, not a fallback. And with no wave-guard hook bounding a direct-to-base merge, a `merge-local`/`merge-push` disposition executes with no structural safety net beyond the session's own diligence -- prefer `pr`/`keep` when authoring a backlog for a Cowork sprint. The full caveats live in the protocol file itself. A declared native plugin load may change those capabilities, but it remains conditional and unverified until tested on the specific Cowork build.
+Be honest about what does not port on the verified MCP-only route: it has no lifecycle hooks (no wave-guard, no scale-gate, no action-class fence), no slash verbs, and no native isolated per-item worktree runner. Without a proven native per-subagent worktree primitive, the orchestrator creates a dedicated isolated Git worktree for each write-capable item and executes those implementations sequentially in their assigned worktrees. The main tree is only the coordination and ordered-integration surface. And with no wave-guard hook bounding a direct-to-base merge, a `merge-local`/`merge-push` disposition executes with no structural safety net beyond the session's own diligence -- prefer `pr`/`keep` when authoring a backlog for a Cowork sprint. The full caveats live in the protocol file itself. A declared native plugin load may change those capabilities, but it remains conditional and unverified until tested on the specific Cowork build.
 
 ## Prerequisites
 

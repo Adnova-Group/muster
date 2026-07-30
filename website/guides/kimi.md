@@ -20,7 +20,7 @@ Each installed agent gets a `model_preference` stamp derived from Muster's tier 
 | --- | --- |
 | Nine modes | Native `muster-`-namespaced skills |
 | Agents and builtin skills | Installed natively |
-| Parallel dispatch | Kimi process dispatch, with sequential fallback |
+| Parallel dispatch | In-session native subagents; the attended headless process lane is report-only |
 | Worktree isolation | Receipts-only harness floor; Muster creates worktrees before write-capable dispatch |
 | Action fence | Native marker-delimited `[[permission.rules]]` deny rules |
 | Hooks | Hooks-free install |
@@ -28,6 +28,17 @@ Each installed agent gets a `model_preference` stamp derived from Muster's tier 
 | Model policy | Primary/secondary lane, with optional live model probe |
 
 The native permission block covers the same external action classes as Muster's hook fence: send, sign, submit, publish, purchase, and delete-remote. It is a high-confidence rule set, not a general shell sandbox. Commands or tools outside those patterns still depend on the run brief and review gate.
+
+## Dispatch lanes
+
+Kimi has two distinct dispatch paths:
+
+- **In-session subagents** are the supported execution path for normal and wave-mode work. Their usage belongs to the parent session's `agents` tree, so token accounting uses `kimi-session-usage --session-dir <parent-session-dir>`. A worktree path is not a substitute for the parent session identity.
+- **Headless process descriptors** come from `kimi-process-dispatch`. The descriptor records the intended `argv`, environment overrides, working directory, and primary/secondary lane, but it is data only. Do not manually spawn it.
+
+The attended supervisor command `kimi-process-run` is currently **report-only on every platform**. It exits nonzero before process spawn or receipt setup because Muster has no trusted immutable, kernel-bound broker that could retain live process-group authority. Escalate that leg or use the in-session path; do not bypass the refusal.
+
+Files under the dispatch-receipt store are diagnostic observations. They can help explain a PID/start-identity match or mismatch, but they never authorize `SIGTERM`, cleanup, or any other signal. Worktree location is diagnostic too. Persisted same-user files cannot recreate the live authority that a trusted broker would need.
 
 ## Probe the model service
 

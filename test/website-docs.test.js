@@ -141,11 +141,21 @@ test("harness documentation routes and support claims are explicit", async () =>
   assert.match(kimi, /symbolic[\s\S]{0,100}`primary`[\s\S]{0,80}`secondary`/i);
   assert.match(kimi, /explicit[\s\S]{0,120}overrides[\s\S]{0,120}model_preference/i);
   assert.match(cowork, /support matrix/i);
-  assert.match(cowork, /28 CLI-wrapper tools/i);
+  assert.match(cowork, /29 CLI-wrapper tools/i);
   assert.match(cowork, /`muster_sprint_protocol`/);
   assert.match(cowork, /phase-?3[\s\S]{0,260}before relying on parallel/i);
+  assert.match(cowork, /orchestrator creates[\s\S]{0,120}dedicated isolated Git worktree[\s\S]{0,180}sequentially/i);
+  assert.doesNotMatch(cowork, /write-capable wave items must run sequentially in the connected project/i);
   assert.doesNotMatch(cowork, /Parallel subagents \| Confirmed/i);
   assert.doesNotMatch(harnesses, /Confirmed subagent fan-out/i);
+});
+
+test("Init documentation pins the canonical instruction authority pair and conflict hold", async () => {
+  const modes = await read("website/reference/modes.md");
+  assert.match(modes, /`AGENTS\.md` is authoritative/i);
+  assert.match(modes, /# Claude Code[\s\S]{0,40}@AGENTS\.md/);
+  assert.match(modes, /existed at the preparation baseline[\s\S]{0,180}HUMAN-HOLD/i);
+  assert.match(modes, /reverse `AGENTS\.md` reference to `CLAUDE\.md` cannot satisfy/i);
 });
 
 test("Codex guide documents current install, trust, audit, and safety limits", async () => {

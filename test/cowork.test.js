@@ -183,12 +183,28 @@ test("verb-rename: sprint-protocol.md cites go-backlog.md (not the sprint.md ali
   const norm = text.replace(/\s+/g, " ");
   assert.match(norm, /port of `\/muster:go-backlog`'s lifecycle \(`plugin\/commands\/go-backlog\.md`\)/, "citation repoints to go-backlog.md");
   assert.doesNotMatch(text, /plugin\/commands\/sprint\.md/, "no more citation of the alias-stub sprint.md");
-  assert.match(norm, /driving the full go lifecycle sequentially/, "'go lifecycle', not 'autopilot lifecycle'");
+  assert.match(norm, /driving every item through the full go lifecycle/, "'go lifecycle', not 'autopilot lifecycle'");
   assert.match(norm, /single go pass/, "'go pass', not 'autopilot pass'");
   assert.match(norm, /There is no `\/muster:go-backlog` grammar/, "no-slash-verbs bullet cites the current verb name");
   assert.match(norm, /the "Degradation" path in `go-backlog\.md`/, "Degradation citation repoints to go-backlog.md");
   assert.match(norm, /`\/muster:sprint` still works as the legacy alias of `\/muster:go-backlog`/, "alias noted once");
   assert.match(text, /## Sprint/, "the '## Sprint' STATE-heading cross-repo convention stays untouched");
+});
+
+test("Cowork sprint protocol consumes the emitted build/barrier/integration schedule", async () => {
+  const text = await read("cowork/sprint-protocol.md");
+  const norm = text.replace(/\s+/g, " ");
+  assert.match(norm, /schedule\.waves/, "annotated mode must consume the emitted per-wave schedule");
+  assert.match(norm, /buildReview\.batches/, "the emitted cap-sized build batches are authoritative");
+  assert.match(norm, /sequential-isolated/, "Cowork degradation must preserve isolated build/review legs");
+  assert.match(norm, /all-build-review-complete/, "integration must wait for the emitted build/review barrier");
+  assert.match(norm, /integration\.itemIds/, "only the emitted ordered integration ids may touch the base");
+  assert.match(norm, /annotated:false.*flat.*sequential/i, "plain backlogs must retain the flat sequential path");
+  assert.doesNotMatch(
+    norm,
+    /every wave executed sequentially, one item at a time, in the main tree/,
+    "Cowork must not collapse isolated build/review and integration into one main-tree loop",
+  );
 });
 
 test("verb-rename: README.md enumeration uses plan/go/plan-backlog/go-backlog and cites /muster:go-backlog", async () => {

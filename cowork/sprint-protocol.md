@@ -1,10 +1,11 @@
 # Sprint protocol (Cowork-adapted)
 
-You are the Cowork session driving this sprint: a condensed, Cowork-native port of `/muster:go-backlog`'s
-lifecycle (`plugin/commands/go-backlog.md`) — driving the full go lifecycle sequentially over every
-item in a backlog, one attended stop at the end, served through `muster_sprint_protocol` so a Cowork
-session can follow it without the plugin loaded. Same intent, same guarantees where they port; the gaps
-below are named, not papered over.
+You are the Cowork session driving this sprint: a condensed, Cowork-native port of
+`/muster:go-backlog`'s lifecycle (`plugin/commands/go-backlog.md`) — driving every item through the
+full go lifecycle, one attended stop at the end, served through `muster_sprint_protocol` so a Cowork
+session can follow it without the plugin loaded. Plain backlogs use the sequential queue; annotated
+backlogs consume the deterministic build/barrier/integration schedule. Same intent, same guarantees
+where they port; the gaps below are named, not papered over.
 
 `/muster:sprint` still works as the legacy alias of `/muster:go-backlog`, deprecated as of
 2026-07-17 and retiring in muster 0.7.0 (same schedule as the plugin-side aliases), behavior
@@ -27,18 +28,20 @@ unchanged until then.
 - **No auto-loaded coordination skill.** `plugin/skills/coordination/SKILL.md` isn't loaded for you.
   If more than one runner might touch this backlog at once, apply its mechanism yourself (Claim/receipt
   discipline, below) — orchestrator-level only, exactly as the skill specifies.
-- **No isolated parallel item-runners.** Wave mode's per-item isolation on Claude Code is a
+- **No native isolated parallel item-runners.** Wave mode's per-item isolation on Claude Code is a
   `muster-runner` subagent per item, dispatched with `isolation: "worktree"` into its own
   `.worktrees/<branch>`; its tool calls there rely on the `PreToolUse` hook's `agent_id` subagent
   exemption (decision order step 1, ahead of the action-class fence), not a wave-guard exemption —
   that hook has no wave-guard left to exempt from. That has no Cowork equivalent — there is no hook
   to exempt from in the first place, and no per-dispatch worktree parameter on this MCP surface
   either. Cowork's own subagent fan-out is confirmed to work in general (see this server's core-loop
-  instructions above), and it still applies
-  **inside** a single item's own crew/waves. But running MULTIPLE backlog items concurrently, each in its
-  own worktree, has no validated isolation model here. So: **the "Degradation" path in `go-backlog.md`
-  — every wave executed sequentially, one item at a time, in the main tree — IS the path for Cowork
-  sprints, not a fallback.** Say this plainly in STATE so nobody assumes parallel item throughput.
+  instructions above), and it still applies **inside** a single item's own crew/waves. But running
+  MULTIPLE backlog items concurrently, each in its own worktree, has no validated isolation model here.
+  Therefore Cowork selects the emitted `sequential-isolated` degradation: create a real worktree for
+  every annotated-wave item, execute the emitted build/review batches one leg at a time, wait at the
+  same barrier, and only then integrate the emitted merge ids in the main tree. This is the
+  `sequential-isolated` form of the "Degradation" path in `go-backlog.md`. Say this plainly in STATE so
+  nobody assumes parallel item throughput or main-tree build work.
 - **No `gh`-issue binding here.** This document covers the FILE backlog source only
   (`.muster/backlog.md`). `issues:<label>` is out of scope.
 
@@ -53,9 +56,12 @@ Call **`muster_sprint_waves`** with the raw backlog text. Its JSON is authoritat
 - `ok:false` — report the named `errors`, stop. Nothing runs.
 - `ok:true`, `annotated:false` — no `{id}`/`{deps}` grammar in use; proceed as a flat, in-file-order
   queue (steps 2-4, sequential regardless).
-- `ok:true`, `annotated:true` — **wave mode**: `waves` gives the dependency-ordered groups. Under this
-  session's degradation rule (above), still walk every wave's items ONE AT A TIME — cross-wave order is
-  fixed, intra-wave order is free, but nothing here dispatches two items concurrently.
+- `ok:true`, `annotated:true` — **wave mode**: consume `schedule.waves`, not a prose reconstruction
+  from `waves` or item dispositions. Each wave's `buildReview.batches` is the authoritative,
+  `MUSTER_SPRINT_PARALLEL`-capped build grouping; its barrier is `all-build-review-complete`; and its
+  `integration.itemIds` is the complete backlog-ordered list allowed to integrate into the main tree.
+  Cowork cannot safely fan out those worktrees in parallel, so traverse each emitted batch and its ids
+  sequentially while preserving the emitted per-item isolation. Never recompute or widen the cap.
 
 Missing backlog file, or a malformed annotation the tool reports as an error, stops the run — nothing to
 run, report it plainly.
@@ -77,15 +83,35 @@ disposition onto `backlog.md` once it executes: check the box (`- [x]`) only for
 `escalated` item stays unchecked with a `{escalated: <ts>}` annotation appended instead, so a later
 sprint can resurface it.
 
-## 3. Per item, sequentially
+## 3. Execute the selected queue or schedule
 
-For each item, in wave/queue order, run the same per-item lifecycle as a single go pass — ported
-through this server's core loop (`muster_detect`/`muster_capabilities`, `muster_route`/`muster_domain`,
-`muster_assess` as the spec gate, a crew manifest validated with `muster_manifest_validate`, waves from
-`muster_wave` dispatched — that item's OWN crew may still fan out in parallel, this constraint is only
-about not running two BACKLOG items at once — then the escalation check, then finish/disposition), using
-the item text as the outcome and its parsed disposition as `mergeDisposition` (default `pr` when
-unannotated).
+The per-item build/review lifecycle is the same as a single go pass, ported through this server's core
+loop (`muster_detect`/`muster_capabilities`, `muster_route`/`muster_domain`, `muster_assess` as the spec
+gate, a crew manifest validated with `muster_manifest_validate`, and that item's own `muster_wave`
+crew waves). An item's OWN crew may still fan out in parallel.
+
+- **Flat path (`annotated:false`).** Process the in-file-order queue sequentially in the main tree,
+  including finish/disposition after each item. This is the pre-existing flat-backlog behavior.
+- **Wave path (`annotated:true`).** For each object in `schedule.waves`, in emitted order:
+  1. Record the wave base SHA. For every id in each emitted `buildReview.batches` array, create a
+     dedicated `.worktrees/<validated-item-id>` worktree from that same wave base and run the complete
+     build + review lifecycle there. Cowork's unavailable parallel fan-out changes only dispatch mode:
+     execute these legs sequentially in their isolated worktrees (`sequential-isolated`). It does not
+     move them into the main tree, change batch membership, or let disposition select who builds.
+     Each successful leg stops at a reviewed commit/branch receipt; `merge-local` and `merge-push`
+     do not execute yet. A `pr`/`keep` leg may complete its non-integrating disposition from its
+     worktree, but never changes the main-tree base.
+  2. Enforce the emitted `all-build-review-complete` barrier. Do not begin integration until every
+     non-escalated build/review leg in this wave has a receipt and every escalation is recorded.
+  3. In the main tree, execute only `schedule.waves[].integration.itemIds`, sequentially in their
+     emitted order. Each id must have a reviewed branch receipt from step 1; apply its declared
+     `merge-local`/`merge-push` disposition now. No other item may touch the base during integration.
+     The next dependency wave starts only from this post-integration base. For dependencies on
+     unmerged `pr`/`keep` predecessors, preserve `go-backlog.md`'s stacked-fork visibility rules rather
+     than silently building without predecessor code.
+
+In either path, use the item text as the outcome and its parsed disposition as `mergeDisposition`
+(default `pr` when unannotated).
 
 - A malformed/unrecognized annotation is treated as unannotated (default `pr`) — record the malformed
   annotation in STATE and the batch report; never guess an escalation or a merge from junk. The same
@@ -104,13 +130,17 @@ unannotated).
   the backlog accordingly.
 - **Step 8's override, here too** — inside this sprint no AskUserQuestion merge prompt fires per item;
   the declared disposition executes directly, `ask`/absent coerces to `pr`, noted in the batch report.
-- **Backlog drain** — after each item's disposition lands and its tick/annotation is written, re-resolve
-  the backlog file (re-run `muster_sprint_waves`). New unchecked items not in the original snapshot are
-  admitted into the remainder; escalated/claimed items stay excluded from re-admission this sprint —
-  concretely, admitted items are exactly those whose `items[id].claimed` is `null` in the re-resolve's
-  JSON output; the tool's JSON is the authority, always deferred to rather than re-parsing the raw
-  `{claimed: ...}` annotation text yourself. An item removed mid-sprint: drop it if not started (note in
-  STATE), finish normally if already running.
+  In annotated mode, this never overrides the schedule barrier: merge dispositions execute only during
+  the emitted integration phase.
+- **Backlog drain** — on the flat path, re-resolve after each item's disposition lands. On the wave
+  path, re-resolve only after the current wave's build/review barrier and ordered integration complete;
+  never mutate the active schedule mid-barrier. New unchecked items not in the original snapshot are
+  admitted into the remainder; annotated backlogs use the newly emitted `schedule.waves` for the
+  remainder, while flat backlogs append them to the sequential queue. Escalated/claimed items stay
+  excluded from re-admission this sprint — concretely, admitted items are exactly those whose
+  `items[id].claimed` is `null` in the re-resolve's JSON output; the tool's JSON is the authority,
+  always deferred to rather than re-parsing the raw `{claimed: ...}` annotation text yourself. An item
+  removed mid-sprint: drop it if not started (note in STATE), finish normally if already running.
 
 ## 4. Finish — the single attended stop
 
@@ -122,8 +152,8 @@ escalated items now / review later / done.**
 
 If more than one runner (parallel sessions, human + agent) might touch this backlog, apply the
 coordination mechanism (Binding B, `plugin/skills/coordination/SKILL.md`) yourself, at the orchestrator
-level only — this session is the only "runner" of record here since there is no per-item worktree runner
-to keep out of it:
+level only — this outer Cowork session is the only coordination runner of record; annotated-wave
+worktree legs never claim items or write the main coordination ledger:
 - **CLAIM** — append `{claimed: <runner>@<ts>}` to an item's line before starting it; skip items already
   claimed by a different runner; claim-then-verify by re-reading the file.
 - **RECEIPTS** — one line per state change in STATE's `## Coordination` section: `CLAIMED` / `DONE` /

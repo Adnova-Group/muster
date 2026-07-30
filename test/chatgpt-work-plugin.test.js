@@ -171,6 +171,38 @@ test("project-scope install accepts an ordinary relative gitdir and rejects unsa
   assert.match(symlinkError?.message ?? "", /gitdir.*ordinary|symlink/i);
 });
 
+test("project gitdir verification ignores inherited repository override variables", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-git-env-"));
+  const project = join(dir, "project");
+  const redirect = join(dir, "redirect");
+  await initGit(project);
+  await initGit(redirect);
+  t.after(() => rm(dir, { recursive: true, force: true }));
+
+  const { stdout } = await execFile(process.execPath, [
+    join(root, "src", "cli.js"), "install", "chatgpt-work",
+    "--connection-id", "asdk_app_GitEnv1", "--profile", "pro-safe",
+    "--scope", "project", "--dry-run",
+  ], {
+    cwd: project,
+    env: {
+      ...process.env,
+      GIT_DIR: join(redirect, ".git"),
+      GIT_WORK_TREE: project,
+      GIT_COMMON_DIR: join(redirect, ".git"),
+      GIT_INDEX_FILE: join(redirect, ".git", "index"),
+      GIT_OBJECT_DIRECTORY: join(redirect, ".git", "objects"),
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: join(project, ".git", "objects"),
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.worktree",
+      GIT_CONFIG_VALUE_0: redirect,
+      GIT_NAMESPACE: "redirected",
+    },
+  });
+  const result = JSON.parse(stdout);
+  assert.equal(result.configPath, join(project, ".git", "muster", "chatgpt-work.json"));
+});
+
 function serverExit(env, input = "", serverPath = join(root, "cowork", "chatgpt-work-server.mjs")) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [serverPath], {

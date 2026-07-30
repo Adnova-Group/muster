@@ -17,3 +17,4 @@ wave-*/
 .codex/hooks.json
 .codex/muster/.muster-managed.json
 .claude/worktrees/
+.serena/project.local.yml

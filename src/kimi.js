@@ -1,5 +1,5 @@
-import { modelForRole, normalizeTier } from "./model.js";
-import { resolveNeutralProfile } from "./model-policy.js";
+import { emissionTier, modelForRole, normalizeTier } from "./model.js";
+import { assertNeutralProfile, resolveNeutralProfile } from "./model-policy.js";
 import { agentProfiles } from "./agent-manifest.js";
 
 // Kimi is an adapter target, not a second tier resolver -- same posture as codex.js.
@@ -192,9 +192,12 @@ export function kimiModelForRole(role) {
 // SINGLE SOURCE for the concrete Kimi profile a HARNESS-NEUTRAL agent config
 // resolves to. Consumes { tier, effort? } (model-policy.js) -- no concrete model
 // strings -- so the same manifest entry resolves on Codex, Kimi, and Claude alike.
-// Mirrors codexProfileForConfig's role in the Codex adapter.
+// Mirrors codexProfileForConfig's role in the Codex adapter: validate the
+// declaration first, then govern its normalized tier through the shared apex
+// opt-in + MUSTER_MAX_TIER emission layer. Semantic effort stays independent.
 export function kimiProfileForConfig(config) {
-  return resolveNeutralProfile(config, KIMI_MODEL_POLICY);
+  assertNeutralProfile(config);
+  return resolveNeutralProfile({ ...config, tier: emissionTier(config.tier) }, KIMI_MODEL_POLICY);
 }
 
 // Resolve an agent id (a `capabilities --kimi` chosen.id == a manifest agent key)

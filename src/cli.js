@@ -65,6 +65,7 @@ import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, code
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
+import { resolveDesktopHarness } from "./desktop-harness.js";
 import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
@@ -80,7 +81,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
@@ -154,6 +155,8 @@ async function main() {
     // ── routing: project detection, capability discovery, task→provider matching ──
     if (cmd === "detect") {
       out(await detectProject(rest[0] || process.cwd()));
+    } else if (cmd === "desktop-harness") {
+      out(resolveDesktopHarness(rest[0]));
     } else if (cmd === "capabilities") {
       const catalog = await loadCatalog(CATALOG_DIR);
       // The optional positional home-dir override is found by elimination: take the

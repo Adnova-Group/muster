@@ -16,6 +16,24 @@ The matrix separates verified behavior from declared capability. A file present 
 
 For ChatGPT Work, the local/repo Plugins Directory source is documented for the desktop proof lane: restart or refresh ChatGPT Desktop, select the source, and install the plugin. Do not infer that the same local source is ingested by Work web; use web only with an independently supported source. Work remains separate from Codex configuration and inheritance.
 
+## ChatGPT Desktop surface detection
+
+ChatGPT Desktop is a host shell, while Codex Desktop and ChatGPT Work (also
+called GPT Work) are selected experiences with different capabilities. A
+deterministic process cannot inspect the app's current mode, so Muster requires
+an explicit declaration and fails closed:
+
+- `muster desktop-harness chatgpt-desktop` reports that an experience must be
+  selected. It exposes no capability lane and no native init command.
+- `muster desktop-harness codex-desktop` selects `capabilities --codex`.
+  `muster init` uses a HUMAN-HOLD for Codex's native `/init`, expecting
+  `AGENTS.md`; the invocation alone is not completion evidence.
+- `muster desktop-harness gpt-work` selects `capabilities --work`, whose
+  dispatch floor is registered MCP tools or inline execution. Work has no
+  proven native instruction initializer and does not inherit Codex `/init` or
+  `AGENTS.md`, so `muster init` records an unavailable HUMAN-HOLD with no
+  expected artifact until the user explicitly acknowledges it.
+
 ## Choose a guide
 
 - [Codex](/guides/codex) covers scoped profiles, hooks, trust, and receipts.

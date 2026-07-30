@@ -191,6 +191,12 @@ tool-list-shaping *and* re-checked before execution). Critically: **`deny` rules
 gating survive `--yolo` and `-p`** — a deterministic hard-deny that does not depend on a hook
 firing. For muster's action-class fence this is a cleaner bind than a `PreToolUse` script:
 express the forbidden classes as `deny` patterns in config, no fail-open gap.
+**Re-probed 2026-07-30 on the installed 0.30.0 binary** (strings, no model calls): unchanged —
+`matches-rule.ts`/`rule-match.ts` still picomatch-glob the tool name and the `Bash(...)` arg
+against the raw command string with default options (`*` never crosses `/`), user rules stay
+ordered first-match-wins, and `UserConfiguredDenyPermissionPolicy` still evaluates ahead of
+`YoloModeApprovePermissionPolicy` in the first-non-undefined-wins policy chain, so `deny`
+still survives `--yolo`/`-p`.
 **Implemented 2026-07-26** (`src/kimi-install.js`): `muster install kimi` emits exactly this — a
 marker-delimited `[[permission.rules]]` deny block covering send/sign/submit/publish/purchase/
 delete-remote over Bash globs + `mcp__*` name globs, merged non-destructively into `config.toml`.
@@ -575,14 +581,14 @@ that is neither `kimi-for-coding*` nor `k3*`) if the plan ever gains one. The de
 hermetic — no network, no token dependency.
 
 **`muster install kimi` / `uninstall kimi`** (`src/kimi-install.js`) copy muster's 27 agents
-(`agents/*.md`, verbatim — the `model:` field is inert; Kimi has no per-subagent model) and 11
+(`agents/*.md`, verbatim — the `model:` field is inert; Kimi has no per-subagent model) and 12
 builtin skills (`skills/<name>/**`, whole tree incl. assets like `review-gate/verdict.schema.json`)
 into `$KIMI_CODE_HOME`/`~/.kimi-code`. Hooks-free (unlike the Codex install fortress — Kimi has no
 shared trust cache to reconcile). A `.muster-managed.json` manifest scopes uninstall to muster's
 own files (a user's co-located agents/skills are never touched); every path is containment-checked
 inside the root and a symlinked `agents/`/`skills/` dest is refused. Reinstall is idempotent and
-prunes files a prior manifest no longer ships. Verified live: 40 files written to a real
-`~/.kimi-code`, read back through `readInstalledKimi` (27 agents + 11 skills), and
+prunes files a prior manifest no longer ships. Verified live: the full fleet written to a real
+`~/.kimi-code`, read back through `readInstalledKimi`, and
 `capabilities --kimi` resolves the installed root to `kimi-code/k3`/high.
 
 ### 11.8 The two-lane bind — `model_preference` (2026-07-25)

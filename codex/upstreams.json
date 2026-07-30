@@ -72,7 +72,7 @@
       "repository": "https://github.com/Adnova-Group/muster",
       "version": "0.5.0",
       "ref": null,
-      "codex": "Eleven native orchestration skills and twenty shared deterministic pipeline definitions.",
+      "codex": "Twelve native orchestration skills and twenty shared deterministic pipeline definitions.",
       "musterStrategy": "The shared pipeline YAML remains authoritative; Codex wrappers call the bundled CLI and never duplicate routing logic."
     }
   ],

@@ -172,8 +172,7 @@ export function kimiAgentCall({ agentId, prompt, description, background = false
 //     a backgrounded leg is never a silent drop.
 //   anything else -> still in flight: pending. The wave's barrier does NOT
 //     cover a pending leg -- which is exactly why barrier-gated work never
-//     dispatches background (orchestrator/SKILL.md's Kimi-native dispatch
-//     subsection).
+//     dispatches background (orchestrator/references/kimi-dispatch.md).
 export function interpretKimiBackgroundCompletion({ status, result, terminalReason } = {}) {
   if (status === "completed") {
     return {

@@ -2,11 +2,14 @@
 // workflow-tool-delegation item (orchestrator/SKILL.md's "Wave dispatch: native Workflow
 // vs prose fallback" section).
 //
-// Claude Code CLI's agent-teams surface exposes a native, deterministic Workflow tool
-// (fan-out + barrier as code) -- reached ONLY through agent-teams/background-agent mode,
-// never the single-session loop a plain `claude` invocation runs (docs/research/
-// claude-code-cli.md sec 1's binary-tools evidence + sec 11's `claude agents` subcommand;
-// docs/strategy/native-delegation.md Part B item 1).
+// Claude Code CLI exposes a native, deterministic Workflow tool (fan-out + barrier as
+// code). CORRECTED 2026-07-29 (synced with src/wave-dispatch.js's header): through
+// 2.1.211 the research recorded this surface as reached ONLY through agent-teams/
+// background-agent mode, never the single-session loop -- a live 2.1.220 session
+// disproves that for current builds: Workflow sits in a PLAIN single-session tool list;
+// older builds and `--tools`-restricted sessions still lack it (docs/research/
+// claude-code-cli.md sec 1's dated correction; docs/strategy/native-delegation.md
+// Part B item 1).
 // There is no on-disk/protocol signal an outside process can probe to detect agent-teams
 // mode from inside a running session, so this is a DECLARED capability (same shape as
 // Cowork's nativePluginRide, src/harness.js/src/capabilities.js) -- never an auto-probe.

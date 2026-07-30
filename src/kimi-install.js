@@ -11,7 +11,7 @@ import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 // The write side of the Kimi harness leg (docs/research/kimi-code-cli.md). Kimi
 // loads Claude-Code-format agent .md files and SKILL.md skills natively (the
 // research's "closest structural clone" finding), so `muster install kimi`
-// simply places muster's 27 agents and 11 builtin skills into the gen2 data
+// simply places muster's 27 agents and 12 builtin skills into the gen2 data
 // root (`$KIMI_CODE_HOME`, or ~/.kimi-code) where a Kimi session discovers them.
 //
 // Why this is a lean file copy, NOT the codex-install.js fortress: Kimi is
@@ -226,9 +226,11 @@ export function stampModelPreference(text, lane) {
 // npm publish, gh release create, gh pr merge, curl -X POST) and mcp__* tool
 // names carrying a class keyword.
 //
-// Pattern semantics verified against kimi 0.29.1's bundled matcher (a dated
-// historical claim, 2026-07-27 -- not re-verified on 0.30.0)
-// (packages/agent-core*/.../matches-rule.ts + rule-match.ts): the tool-name
+// Pattern semantics first verified against kimi 0.29.1's bundled matcher
+// (2026-07-27), re-probed UNCHANGED on the installed 0.30.0 binary
+// (2026-07-30 strings probe: same packages/agent-core*/.../matches-rule.ts +
+// rule-match.ts, and the ordered policy chain still evaluates
+// user-configured-deny before yolo-mode-approve): the tool-name
 // part of a pattern is picomatch-globbed, and a Bash(...) arg pattern is
 // picomatch-globbed against the RAW command string with default options, so
 // `*` never crosses `/`. Two idioms follow from that:

@@ -94,7 +94,9 @@ crew waves). An item's OWN crew may still fan out in parallel.
 - **Flat path (`annotated:false`).** Process the in-file-order queue sequentially in the main tree,
   including finish/disposition after each item. This is the pre-existing flat-backlog behavior.
 - **Wave path (`annotated:true`).** For each object in `schedule.waves`, in emitted order:
-  1. Record the wave base SHA. For every id in each emitted `buildReview.batches` array, create a
+  1. Record the wave base SHA. For every id in each emitted `buildReview.batches` array, first inspect
+     its emitted `items[id].deps`; when any predecessor was escalated or its build/review failed,
+     escalate the dependent immediately and never create its worktree or build it. Otherwise create a
      dedicated `.worktrees/<validated-item-id>` worktree from that same wave base and run the runner's
      `build-review-only` lifecycle there. The declared disposition is metadata for the later phase;
      this leg must not push, open a PR, merge, or integrate. Cowork's unavailable parallel fan-out changes only dispatch mode:
@@ -104,8 +106,9 @@ crew waves). An item's OWN crew may still fan out in parallel.
      branch. No disposition executes yet.
   2. Enforce the emitted `all-build-review-complete` barrier. Do not begin integration until every
      non-escalated build/review leg in this wave has a receipt and every escalation is recorded.
-  3. Only after `all-build-review-complete`, execute `schedule.waves[].integration.itemIds`
-     sequentially in their emitted order. Each id must have a reviewed branch receipt from step 1;
+  3. Only after `all-build-review-complete`, traverse `schedule.waves[].integration.itemIds`
+     sequentially, preserving emitted order while omitting every escalated item or failed build/review
+     leg from disposition and integration. Each remaining id must have a reviewed branch receipt from step 1;
      apply its declared disposition now: `pr` pushes the item branch and opens its receipts-backed PR,
      `keep` preserves the local reviewed branch without a remote change, `merge-local` merges into the
      main-tree base without pushing, and `merge-push` merges then pushes the base. No other item may
@@ -130,8 +133,8 @@ In either path, use the item text as the outcome and its parsed disposition as `
   or any round-3 FAIL regardless of disjointness — fix-loop cap, a dispatch that still fails after its
   retry) — record it in STATE, leave that item's branch intact, mark it `escalated` in STATE and
   backlog.md, and continue to the next item. The sprint always continues through an escalated item. A
-  dependent of an escalated item builds without that work (items branch off the current base tip) — order
-  the backlog accordingly.
+  dependent of an escalated or failed predecessor escalates immediately and never builds; apply that
+  check transitively before any worktree creation or dispatch.
 - **Step 8's override, here too** — inside this sprint no AskUserQuestion merge prompt fires per item;
   the declared disposition executes directly, `ask`/absent coerces to `pr`, noted in the batch report.
   In annotated mode, this never overrides the schedule barrier: merge dispositions execute only during

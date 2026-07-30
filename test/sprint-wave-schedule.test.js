@@ -72,6 +72,18 @@ test("schedule preserves a named sequential degradation without changing depende
   assert.deepEqual(result.schedule.waves[0].integration.itemIds, ["pr-item", "local-item", "push-item", "keep-item"]);
 });
 
+test("schedule items expose resolved dependencies for fail-closed runtime dispatch", () => {
+  const result = computeSprintWaves([
+    "- [ ] Root {id: root} {deps: none} {disposition: pr}",
+    "- [ ] Sibling {id: sibling} {deps: none} {disposition: keep}",
+    "- [ ] Dependent {id: dependent} {deps: root} {disposition: merge-local}",
+  ].join("\n"));
+
+  assert.deepEqual(result.items.root.deps, []);
+  assert.deepEqual(result.items.sibling.deps, []);
+  assert.deepEqual(result.items.dependent.deps, ["root"]);
+});
+
 test("schedule applies the documented default and hard ceiling to build concurrency", () => {
   assert.equal(computeSprintWaves(backlog, { parallelLimit: 0 }).schedule.buildReview.maxConcurrency, 5);
   assert.equal(computeSprintWaves(backlog, { parallelLimit: "invalid" }).schedule.buildReview.maxConcurrency, 5);
@@ -88,5 +100,8 @@ test("go-backlog contract dispatches every ready disposition before the barrier 
   assert.match(waveMode, /`pr`\/`keep`\/`merge-local`\/`merge-push`.*integration/i);
   assert.doesNotMatch(waveMode, /\(a\) `pr`\/`keep` items/);
   assert.match(waveMode, /cannot dispatch parallel runners.*same build\/review schedule sequentially/i);
+  assert.match(waveMode, /failed.*omit.*disposition.*integration/i);
+  assert.match(waveMode, /preserv(?:e|ing).*emitted order/i);
+  assert.match(waveMode, /dependent.*escalat(?:e|es).*immediately.*never build/i);
   assert.doesNotMatch(text.slice(0, text.indexOf("**Wave mode**")), /full go lifecycle sequentially over every item/i);
 });

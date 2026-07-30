@@ -216,8 +216,16 @@ export function computeSprintWaves(content, options = {}) {
   });
 
   const items = {};
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
   for (const r of raw) {
-    items[r.id] = { line: r.lineNo, text: r.text, disposition: r.disposition, escalated: r.escalated, claimed: r.claimed };
+    items[r.id] = {
+      line: r.lineNo,
+      text: r.text,
+      deps: [...taskById.get(r.id).deps],
+      disposition: r.disposition,
+      escalated: r.escalated,
+      claimed: r.claimed,
+    };
   }
 
   try {

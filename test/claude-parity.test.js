@@ -1287,5 +1287,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // build-review-only mode; go-backlog selects it for scheduled legs and defers all
   // dispositions until the emitted post-barrier phase. The ordinary runner command remains
   // full-lifecycle. Cowork mirrors the same no-push/no-PR/no-integration leg boundary.
-  assert.equal(hash.digest("hex"), "9065bbab2b98c61b7a5a5f9b8058dfbd67c6412f5b790d15348b6463ab209421");
+  // 2026-07-30 re-pin #24 (wave escalation semantics): go-backlog now omits escalated/failed
+  // build-review legs from disposition/integration without reordering survivors, and fails
+  // dependent items closed before worktree creation or dispatch. The runner profile is unchanged.
+  assert.equal(hash.digest("hex"), "805f571b5cb97ead370c6ba32ac7330759c7fdd59a77ff9de04698092fe50c12");
 });

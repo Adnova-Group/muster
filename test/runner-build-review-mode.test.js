@@ -56,6 +56,10 @@ test("scheduled Claude and Cowork legs select build-review-only, then dispositio
     assert.match(wave, /build-review-only/, `${label} must select the side-effect-free runner mode`);
     assert.match(wave, /(?:after|only after).*all-build-review-complete/is,
       `${label} must defer disposition until the barrier`);
+    assert.match(wave, /failed.*omit.*disposition.*integration/is,
+      `${label} must omit failed build/review legs from disposition and integration`);
+    assert.match(wave, /dependent.*escalat(?:e|es).*immediately.*never build/is,
+      `${label} must fail dependent legs closed before build`);
     for (const disposition of ["pr", "keep", "merge-local", "merge-push"]) {
       assert.match(wave, new RegExp(`\\b${disposition}\\b`), `${label} must map ${disposition}`);
     }

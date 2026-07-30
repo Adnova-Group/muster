@@ -1,4 +1,4 @@
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, realpathSync } from "node:fs";
 import { lstat, opendir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -23,6 +23,15 @@ const RECEIPT_KEYS = [
 const KIMI_PROCESS_REPORT_ONLY_MESSAGE =
   "Kimi process dispatch is report-only: trusted broker bootstrap is unavailable";
 const MODULE_PATH = fileURLToPath(import.meta.url);
+
+function isDirectDispatchInvocation() {
+  if (process.argv[2] !== "--broker" && process.argv[2] !== "--launcher") return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(MODULE_PATH);
+  } catch {
+    return true;
+  }
+}
 
 function dispatchReceiptDirectory() {
   return join(homedir(), ".muster", "dispatch-receipts");
@@ -153,10 +162,7 @@ export async function runKimiProcess(_request, _options = {}) {
   throw new Error(KIMI_PROCESS_REPORT_ONLY_MESSAGE);
 }
 
-if (
-  process.argv[1] === MODULE_PATH &&
-  (process.argv[2] === "--broker" || process.argv[2] === "--launcher")
-) {
+if (isDirectDispatchInvocation()) {
   process.stderr.write(`${KIMI_PROCESS_REPORT_ONLY_MESSAGE}\n`);
   process.exitCode = 1;
 }

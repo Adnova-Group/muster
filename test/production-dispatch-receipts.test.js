@@ -210,6 +210,23 @@ test("internal broker and launcher modes cannot bypass report-only dispatch", as
   }
 });
 
+test("symlinked broker and launcher modes remain report-only", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-dispatch-module-link-"));
+  const linkedModule = join(root, "dispatch-receipts.js");
+  await symlink(DISPATCH_MODULE, linkedModule);
+
+  for (const mode of ["--broker", "--launcher"]) {
+    await assert.rejects(execFile(process.execPath, [linkedModule, mode]), (error) => {
+      assert.notEqual(error.code, 0);
+      assert.equal(
+        error.stderr,
+        "Kimi process dispatch is report-only: trusted broker bootstrap is unavailable\n",
+      );
+      return true;
+    });
+  }
+});
+
 test("CLI kimi-process-run creates no Kimi marker, receipt, or dispatch cgroup", async () => {
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-cli-report-only-"));
   const bin = join(root, "bin");

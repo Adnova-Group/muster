@@ -933,13 +933,6 @@ async function main() {
       let backlogIdentity = null;
       let backlogBytes = null;
       const readPinnedBacklog = async (expectedInfo = null) => {
-        // fs-safe's generic reader degrades to a zero flag on runtimes without
-        // O_NOFOLLOW. Hygiene is mutation-capable, so this call site instead
-        // fails closed. The env arm is a test fixture for otherwise-unavailable
-        // platforms; it can only make the command more restrictive.
-        if (!fsConstants.O_NOFOLLOW || process.env.MUSTER_TEST_FORCE_NO_NOFOLLOW === "1") {
-          throw new Error("hygiene backlog cannot be read safely: O_NOFOLLOW is unavailable");
-        }
         await assertNoSymlinkAncestors();
         const pathInfo = await lstat(absoluteBacklogPath);
         if (!pathInfo.isFile()) {
@@ -948,6 +941,15 @@ async function main() {
         if (expectedInfo &&
             (pathInfo.ino !== expectedInfo.ino || pathInfo.dev !== expectedInfo.dev)) {
           throw new Error(`file changed while reading: hygiene backlog ${backlogPath}`);
+        }
+        // fs-safe's generic reader degrades to a zero flag on runtimes without
+        // O_NOFOLLOW. Hygiene is mutation-capable, so a present regular backlog
+        // instead fails closed. Checking after lstat lets an absent backlog
+        // retain its established no-op behavior. The env arm is a test fixture
+        // for otherwise-unavailable platforms; it can only make the command
+        // more restrictive.
+        if (!fsConstants.O_NOFOLLOW || process.env.MUSTER_TEST_FORCE_NO_NOFOLLOW === "1") {
+          throw new Error("hygiene backlog cannot be read safely: O_NOFOLLOW is unavailable");
         }
         // expectedInfo pins the explicit final-component lstat to the descriptor
         // opened O_NOFOLLOW inside readNoFollowRegular.

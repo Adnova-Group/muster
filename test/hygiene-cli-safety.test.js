@@ -144,6 +144,19 @@ test("hygiene fails closed when the runtime cannot provide O_NOFOLLOW", async ()
   assert.equal(await readFile(backlog, "utf8"), STALE_BACKLOG);
 });
 
+test("hygiene treats an absent backlog as a no-op when O_NOFOLLOW is unavailable", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-hygiene-missing-no-nofollow-"));
+  const backlog = join(cwd, "missing-backlog.md");
+
+  const { stdout } = await runHygiene(cwd, ["--json", "--reap", "--backlog", backlog], {
+    env: { ...process.env, MUSTER_TEST_FORCE_NO_NOFOLLOW: "1" },
+  });
+
+  const result = JSON.parse(stdout);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.claims.releases, []);
+});
+
 test("hygiene detects a same-inode equal-length backlog refresh before publication", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "muster-hygiene-content-swap-"));
   const backlog = join(cwd, "backlog.md");

@@ -205,24 +205,20 @@ One worked example of each path (the same 2-task wave, routed both ways): docs/n
 ### Codex-native dispatch: spawn_agent
 
 **On Codex, read `references/codex-dispatch.md` (in this skill's directory) BEFORE dispatching
-wave 1** -- it carries the version-dependent spawn/barrier packet shapes (v1 `multi_agent_v1` vs
-v2 `collaboration`, resolved per MODEL and built via `codexSpawnAgentCall`/`codexWaitAgentCall` in
-`src/wave-dispatch.js`, fail-closed to v1), the mailbox-not-`list_agents` receipts rule, the
-`fork_turns`-is-a-STRING contract, the sequential-inline floor
-(`resolveCodexWaveDispatch`), and the fail-closed rejected-profile rule
-(`assertCodexSpawnAgentAccepted`). Progressive disclosure: a non-Codex session never pays that
-file's tokens.
+wave 1** -- it is the canonical, single-sourced statement of this harness's dispatch mechanics
+(the version-dependent spawn/barrier shapes, the fork contract, the receipts rule, the
+sequential-inline floor, and the fail-closed rejected-profile rule); the Codex build embeds its
+contract blocks verbatim rather than maintaining a second copy here. Progressive disclosure: a
+non-Codex session never pays that file's tokens.
 
 ### Kimi-native dispatch: AgentSwarm waves + per-agent calls
 
 **On Kimi, read `references/kimi-dispatch.md` (in this skill's directory) BEFORE dispatching
-wave 1** -- it carries the AgentSwarm-vs-agent-calls selection (`resolveKimiWaveDispatch` in
-`src/kimi-dispatch.js`), the four pre-dispatch swarm validation rules (incl. the binary-enforced
-distinct-prompts rule), lane binding (`kimiLaneEnv`, TUI-vs-`kimi -p`), the attended-session
-process lane (`kimiProcessDispatch`), the native resume retry shapes, and the
-background-vs-barrier rule. Step 4b's barrier and step 4c's review gate are UNCHANGED in both of
-its modes -- only the fan-out mechanism moves off the prose loop. Progressive disclosure: a
-non-Kimi session never pays that file's tokens.
+wave 1** -- it is the canonical statement of this harness's dispatch mechanics (the
+swarm-vs-calls selection, pre-dispatch validation, lane binding, the attended-session process
+lane, the resume retry shapes, and the background-vs-barrier rule). Step 4b's barrier and step
+4c's review gate are UNCHANGED in both of its modes -- only the fan-out mechanism moves off the
+prose loop. Progressive disclosure: a non-Kimi session never pays that file's tokens.
 
 ### Worktree isolation per harness + base-SHA receipts
 

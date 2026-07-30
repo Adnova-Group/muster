@@ -8,7 +8,11 @@ its pre-split home in SKILL.md so section-anchored guards and citations stay sta
 NOTE for the Codex build: scripts/build-codex.mjs wholesale-replaces SKILL.md's whole
 wave-dispatch span with fixed Codex-native text, so the SHIPPED Codex orchestrator does
 not read this file -- it exists for a Claude-hosted session orchestrating work that
-targets Codex, and as the canonical source prose for the mechanics below. -->
+targets Codex, and as the canonical source prose for the mechanics below. Since the
+2026-07-29 audit (slice D) that wholesale replacement no longer maintains its own copies
+of the `fork_turns` contract paragraph or the v1/v2 shapes table below: the build extracts
+BOTH blocks verbatim at build time (throw-on-miss) and embeds them into the shipped text,
+so this file is their single source. -->
 
 ### Codex-native dispatch: spawn_agent
 
@@ -37,7 +41,9 @@ it now reconciles liveness only.
 `"none"`; `"all"` is refused before dispatch because Codex will not combine a full-history fork with
 a named `agent_type` (full-history agents inherit the parent's type/model/effort). A positive
 integer string is the useful middle -- it keeps that many turns of context AND still accepts
-`agent_type` plus model/effort overrides.
+`agent_type` plus model/effort overrides -- but reach for it only when the user explicitly requests
+a context fork and never use `"all"`: a forked history is copied into every spawned agent, so the
+standing quota policy (the 2026-07-15 quota-amplification fix) keeps `"none"` the spawn default.
 
 `resolveCodexWaveDispatch({ multiAgent, env })` (`src/wave-dispatch.js`) selects between this and a
 sequential-inline floor purely on the session's own `features.multi_agent` signal -- same

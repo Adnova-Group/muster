@@ -1234,5 +1234,27 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the concurrent slice-H+I worker's IN-FLIGHT (then-uncommitted)
   // plugin/skills/orchestrator/references/codex-dispatch.md edit -- if that
   // lands with different content, re-derive on top of their commit.
+  // 2026-07-30 re-pin #20 (audit 2026-07-29 slice D, architecture/
+  // simplification P1: codex-dispatch contract single-sourcing): file COUNT
+  // unchanged (144), hash UNCHANGED from re-pin #19 -- #19's derivation already
+  // ran over a working tree carrying this slice's then-in-flight edits, and
+  // re-deriving over the finished tree reproduces the identical digest
+  // (verified, not assumed). The in-flight edits the #19 note could not name
+  // were THIS slice's, now landed: plugin/skills/orchestrator/
+  // references/codex-dispatch.md's fork_turns paragraph gained the standing
+  // quota-policy sentence (positive fork only on explicit user request, never
+  // "all" -- aligning the reference with the policy scripts/build-codex.mjs's
+  // replacement texts already carried), and its header NOTE now documents that
+  // the build embeds the paragraph and the v1/v2 shapes table VERBATIM
+  // (loadCodexDispatchContract, throw-on-miss) instead of maintaining a second
+  // copy; plugin/skills/orchestrator/SKILL.md's Codex-native and Kimi-native
+  // dispatch pointers were trimmed to pure read-the-reference pointers (they
+  // re-stated reference-owned facts with no sync guard; both sit inside
+  // build-codex.mjs's wholesale-replaced "## Wave dispatch" .. "## Scope fences"
+  // span, so the build anchors only on those two headings and no anchor needed
+  // the pointer bodies). docs/binding-interface.md's grep-audit counts are
+  // unchanged (the trimmed/kept pointer prose matches none of the four tracked
+  // term patterns, re-verified green). scripts/build-codex.mjs itself is
+  // outside this hashed surface.
   assert.equal(hash.digest("hex"), "ed04ed4d174516919bc6d12f7d8f7be211cc7b84bd6381f99aa8130fc8e96c02");
 });

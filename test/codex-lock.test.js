@@ -3,9 +3,16 @@ import assert from "node:assert/strict";
 import { lstat, mkdtemp, open, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { withCodexFileLock } from "../src/codex-lock.js";
+import { processStartIdentity, withCodexFileLock } from "../src/codex-lock.js";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const deadOwner = token => ({
+  format: 1,
+  pid: 2_147_483_647,
+  processIdentity: "linux-proc-start:dead",
+  createdAt: 1,
+  token
+});
 
 // codex-lock.js dropped its quarantine/retirement dance (rename a contested
 // lock into a private per-attempt directory, re-validate identity, then
@@ -35,7 +42,7 @@ test("withCodexFileLock reclaims a lock abandoned by a dead process", async t =>
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-dead-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const lock = join(tmp, "dead.lock");
-  await writeFile(lock, JSON.stringify({ format: 1, pid: 2_147_483_647, createdAt: 0, token: "dead" }) + "\n");
+  await writeFile(lock, JSON.stringify(deadOwner("dead")) + "\n");
   const old = new Date(Date.now() - 20 * 60 * 1000);
   await utimes(lock, old, old);
   let ran = false;
@@ -107,7 +114,7 @@ async function driveReplacementOwnerRace(t, label, replaceAsOwnerB) {
   const lock = join(tmp, "race.lock");
 
   // A stale lock abandoned by a dead process: reclaimer A will decide it is stale.
-  await writeFile(lock, JSON.stringify({ format: 1, pid: 2_147_483_647, processIdentity: null, createdAt: 0, token: "stale-A" }) + "\n");
+  await writeFile(lock, JSON.stringify(deadOwner("stale-A")) + "\n");
   const old = new Date(Date.now() - 20 * 60 * 1000);
   await utimes(lock, old, old);
 
@@ -167,7 +174,7 @@ test("withCodexFileLock restores a quarantined replacement whose paused writer c
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-paused-writer-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const lock = join(tmp, "paused.lock");
-  await writeFile(lock, JSON.stringify({ format: 1, pid: 2_147_483_647, createdAt: 0, token: "dead" }) + "\n");
+  await writeFile(lock, JSON.stringify(deadOwner("dead")) + "\n");
   const old = new Date(Date.now() - 20 * 60 * 1000);
   await utimes(lock, old, old);
 
@@ -217,7 +224,7 @@ test("withCodexFileLock keeps the restore gate closed while an exact pre-gate ac
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-long-restore-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const lock = join(tmp, "long-restore.lock");
-  await writeFile(lock, JSON.stringify({ format: 1, pid: 2_147_483_647, createdAt: 0, token: "dead" }) + "\n");
+  await writeFile(lock, JSON.stringify(deadOwner("dead")) + "\n");
   const old = new Date(Date.now() - 20 * 60 * 1000);
   await utimes(lock, old, old);
 
@@ -310,18 +317,161 @@ test("withCodexFileLock reclaims only a proven-dead transition gate", async t =>
   const gateInode = (await lstat(gate)).ino;
 
   let ran = false;
-  await withCodexFileLock(lock, async () => { ran = true; });
+  await withCodexFileLock(lock, async () => { ran = true; }, { timeoutMs: 40 });
 
   assert.equal(ran, true);
   await assert.rejects(lstat(gate), /ENOENT/);
   assert.ok(gateInode > 0, "the stale gate fixture must have a stable inode identity");
 });
 
+test("withCodexFileLock never treats a token-only transition record as dead", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-partial-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "partial-transition.lock");
+  const gate = `${lock}.muster-transition`;
+  const partial = { format: 1, token: "token-only" };
+  await writeFile(gate, JSON.stringify(partial) + "\n", { mode: 0o600 });
+
+  await assert.rejects(
+    withCodexFileLock(lock, async () => assert.fail("partial gate must remain closed"), { timeoutMs: 30 }),
+    /timed out waiting/
+  );
+  assert.deepEqual(JSON.parse(await readFile(gate, "utf8")), partial);
+});
+
+test("withCodexFileLock never treats a transition missing process identity as dead", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-partial-owner-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "partial-owner-transition.lock");
+  const gate = `${lock}.muster-transition`;
+  const partial = {
+    format: 1,
+    pid: 2_147_483_647,
+    createdAt: 1,
+    token: "missing-process-identity"
+  };
+  await writeFile(gate, JSON.stringify(partial) + "\n", { mode: 0o600 });
+
+  await assert.rejects(
+    withCodexFileLock(lock, async () => assert.fail("partial owner gate must remain closed"), { timeoutMs: 30 }),
+    /timed out waiting/
+  );
+  assert.deepEqual(JSON.parse(await readFile(gate, "utf8")), partial);
+});
+
+test("withCodexFileLock recovers malformed transition JSON through exact-instance retirement", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-malformed-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "malformed-transition.lock");
+  const gate = `${lock}.muster-transition`;
+  await writeFile(gate, '{"format":1,"pid":', { mode: 0o600 });
+  const malformedInode = (await lstat(gate)).ino;
+
+  let ran = false;
+  await withCodexFileLock(lock, async () => { ran = true; }, { timeoutMs: 40 });
+
+  assert.equal(ran, true);
+  await assert.rejects(lstat(gate), /ENOENT/);
+  assert.ok(malformedInode > 0);
+});
+
+test("withCodexFileLock keeps an exact live transition owner gated regardless of age", async t => {
+  const identity = await processStartIdentity();
+  if (!identity) return t.skip("requires process-start identity support");
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-live-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "live-transition.lock");
+  const gate = `${lock}.muster-transition`;
+  const owner = {
+    format: 1,
+    pid: process.pid,
+    processIdentity: identity,
+    createdAt: 1,
+    token: "exact-live-transition"
+  };
+  await writeFile(gate, JSON.stringify(owner) + "\n", { mode: 0o600 });
+  const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  await utimes(gate, old, old);
+
+  await assert.rejects(
+    withCodexFileLock(lock, async () => assert.fail("live transition must remain closed"), { timeoutMs: 30 }),
+    /timed out waiting/
+  );
+  assert.deepEqual(JSON.parse(await readFile(gate, "utf8")), owner);
+});
+
+async function driveRestoreBlockerRecovery(t, label, blockerRecord) {
+  const tmp = await mkdtemp(join(tmpdir(), `muster-codex-lock-restore-${label}-`));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "restore.lock");
+  await writeFile(lock, JSON.stringify(deadOwner("original-dead")) + "\n");
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(lock, old, old);
+
+  let releaseBeforeOpen;
+  const beforeOpenBlocked = new Promise(resolve => { releaseBeforeOpen = resolve; });
+  let beforeOpenReachedResolve;
+  const beforeOpenReached = new Promise(resolve => { beforeOpenReachedResolve = resolve; });
+  let blockerOutcome;
+  let blockerRan = false;
+  let raceInjected = false;
+
+  const reclaimer = withCodexFileLock(lock, async () => {}, {
+    staleMs: 0,
+    maxStaleMs: 5_000,
+    timeoutMs: 500,
+    __reclaimRaceHook: async () => {
+      if (raceInjected) return;
+      raceInjected = true;
+      await rm(lock, { force: true });
+      await writeFile(lock, '{"format":1');
+      blockerOutcome = withCodexFileLock(lock, async () => { blockerRan = true; }, {
+        timeoutMs: 200,
+        beforeOpen: async () => {
+          beforeOpenReachedResolve();
+          await beforeOpenBlocked;
+        },
+        __afterAcquireWriteHook: async () => {
+          await writeFile(lock, JSON.stringify(blockerRecord) + "\n");
+          throw new Error("simulated owner death after lock write");
+        }
+      }).then(() => null, error => error);
+      await beforeOpenReached;
+    },
+    __beforeRestoreHook: async ({ retirementPath }) => {
+      await writeFile(retirementPath, JSON.stringify(deadOwner("completed-original")) + "\n");
+      releaseBeforeOpen();
+      await pause(20);
+    }
+  });
+
+  await reclaimer;
+  assert.match((await blockerOutcome)?.message || "", /simulated owner death/);
+  assert.equal(blockerRan, false);
+  await assert.rejects(lstat(lock), /ENOENT/);
+}
+
+test("withCodexFileLock restore reclaims a pre-gate acquirer proven dead after writing", async t => {
+  await driveRestoreBlockerRecovery(t, "dead-after-write", deadOwner("dead-after-write"));
+});
+
+test("withCodexFileLock restore reclaims a pre-gate acquirer whose PID was reused", async t => {
+  const identity = await processStartIdentity();
+  if (!identity) return t.skip("requires process-start identity support");
+  await driveRestoreBlockerRecovery(t, "pid-reuse", {
+    format: 1,
+    pid: process.pid,
+    processIdentity: `${identity}-different-instance`,
+    createdAt: Date.now(),
+    token: "pid-reused-after-write"
+  });
+});
+
 test("withCodexFileLock stale reclaim cannot unlink a replacement injected after final owner validation", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-final-reclaim-race-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const lock = join(tmp, "reclaim.lock");
-  await writeFile(lock, JSON.stringify({ format: 1, pid: 2_147_483_647, createdAt: 0, token: "dead" }) + "\n");
+  await writeFile(lock, JSON.stringify(deadOwner("dead")) + "\n");
   const old = new Date(Date.now() - 20 * 60 * 1000);
   await utimes(lock, old, old);
 

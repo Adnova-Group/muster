@@ -45,9 +45,13 @@ async function readLock(path, maxBytes = 16 * 1024) {
 // A replacement owner that reclaimed after a prior reclaimer's staleness decision
 // always writes its own identity, so it can never byte-match the stale instance.
 function lockIdentity(record) {
-  if (!record || typeof record !== "object") return null;
+  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
   const { pid, token, createdAt, processIdentity } = record;
-  if (typeof token !== "string" || !token) return null;
+  if (record.format !== 1
+    || !Number.isInteger(pid) || pid < 1
+    || typeof token !== "string" || !token
+    || !Number.isFinite(createdAt) || createdAt < 0
+    || typeof processIdentity !== "string" || !processIdentity) return null;
   return JSON.stringify({ pid, token, createdAt, processIdentity });
 }
 
@@ -104,7 +108,26 @@ async function restoreRetiredLock(path, retirement, expected, waitForVacancy = f
       // transition began can briefly own the public pathname. Its post-open
       // check removes that uncommitted lock; keep the transition closed until
       // the quarantined inode is back in place.
-      if (error.code === "EEXIST" && waitForVacancy) { await pause(1); continue; }
+      if (error.code === "EEXIST" && waitForVacancy) {
+        // A pre-gate acquirer can die after publishing its complete record but
+        // before observing the transition marker. Reclaim only when that exact
+        // inode carries a complete owner identity whose process is proven gone
+        // (or whose PID now names a different process instance).
+        let blocker;
+        try { blocker = await readLock(path); }
+        catch (readError) {
+          if (readError.code === "ENOENT") continue;
+          throw readError;
+        }
+        if (await ownerInstanceIsGone(blocker)) {
+          const result = await retireLockUnderTransition(path, blocker, {
+            stale: ownerInstanceIsGone
+          });
+          if (result.removed || result.missing) continue;
+        }
+        await pause(1);
+        continue;
+      }
       if (error.code === "EEXIST") return false;
       throw error;
     }
@@ -178,19 +201,27 @@ async function retireLockUnderTransition(path, expected, {
   return { removed: true, missing: false };
 }
 
-async function transitionGateIsStale(current) {
+async function ownerInstanceIsGone(current) {
   if (!lockIdentity(current.record)) return false;
-  const pid = Number(current.record.pid);
+  const pid = current.record.pid;
   if (!processAlive(pid)) return true;
-  const recordedIdentity = typeof current.record.processIdentity === "string" ? current.record.processIdentity : null;
-  const actualIdentity = recordedIdentity ? await processStartIdentity(pid) : null;
-  return Boolean(recordedIdentity && actualIdentity && recordedIdentity !== actualIdentity);
+  const actualIdentity = await processStartIdentity(pid);
+  return Boolean(actualIdentity && current.record.processIdentity !== actualIdentity);
+}
+
+async function transitionGateIsRecoverable(current) {
+  // publishTransition exposes only a fully written staging inode. Invalid JSON
+  // therefore cannot be an in-progress gate from this implementation. Still
+  // quarantine and re-read that exact inode twice: an external paused writer
+  // that completes after the rename is restored instead of deleted.
+  if (current.record === null || typeof current.record !== "object" || Array.isArray(current.record)) return true;
+  return ownerInstanceIsGone(current);
 }
 
 async function clearStaleTransition(path, current) {
-  if (!await transitionGateIsStale(current)) return false;
+  if (!await transitionGateIsRecoverable(current)) return false;
   const result = await retireLockUnderTransition(transitionPath(path), current, {
-    stale: transitionGateIsStale
+    stale: transitionGateIsRecoverable
   });
   return result.removed || result.missing;
 }

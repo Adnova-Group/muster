@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
 import { isContainedLexical } from "./fs-safe.js";
 import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
-import { claudeModelForTier } from "./claude.js";
+import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
 import { matchFrontmatter } from "./frontmatter.js";
 
 // Allowlist of tools vendored agent frontmatter may reference.
@@ -224,14 +224,12 @@ export function modelForRoles(roles) {
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
   const adapted_from = `${source.repo} ${item.from}`;
-  // item.model is an explicit manifest pin; otherwise derive from roles via the
-  // single policy source (src/model.js), floored at core. Frontmatter `model:` is
-  // a CLAUDE CODE surface -- the harness itself consumes it as a concrete Claude
-  // model alias -- so the conceptual tier resolves through the Claude adapter
-  // (claude.js): scout->haiku, core->sonnet, prime->opus. A legacy pin passes
-  // through normalizeTier so pre-rename manifests emit identical bytes.
+  // Agent-backed entries take their concrete Claude model from the same
+  // manifest-driven, emission-layer profile that capabilities dispatches.
+  // Unknown/non-manifest agents preserve the vendor-manifest fallback: an
+  // explicit item.model pin, otherwise the role-derived tier floored at core.
   const tier = item.model ? normalizeTier(item.model) : modelForRoles(item.roles);
-  const model = claudeModelForTier(tier).model;
+  const model = claudeProfileForAgentId(item.id)?.model ?? claudeModelForTier(tier).model;
   const filteredTools = (() => {
     if (!data.tools) return DEFAULT_TOOLS;
     const allowed = data.tools.split(",").map(s => s.trim()).filter(t => ALLOWED_TOOLS.has(t));

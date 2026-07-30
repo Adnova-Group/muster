@@ -711,7 +711,7 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.ok(match, "references/kimi-dispatch.md must carry the '### Kimi-native dispatch' section");
   const section = match[1];
   // the rule itself exists
-  assert.match(section, /Attended sessions dispatch lane-sensitive legs as headless `kimi -p` processes/, "the Kimi subsection must state the attended-session process-lane rule");
+  assert.match(section, /Attended sessions cannot currently dispatch lane-sensitive legs as headless `kimi -p`\s+processes/, "the Kimi subsection must state the attended-session report-only rule");
   // the attended-vs-unattended division: process lane for attended sessions,
   // native Agent/AgentSwarm stays the unattended in-session path (the env bind
   // is already set by kimiGoalInvocation there)
@@ -720,21 +720,16 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.match(section, /kimiGoalInvocation/, "the rule must name kimiGoalInvocation as the unattended path's env binder");
   assert.match(section, /TUI ignores `model_preference` entirely/, "the rule must state WHY attended sessions cannot bind lanes in-session");
   assert.match(section, /genuinely need the parent's live context/, "the rule must reserve the native Agent tool for live-context legs");
-  // Production legs go through the PID-owning supervisor. The descriptor verb
-  // remains inspectable, but prose must never manually spawn from it because
-  // that loses authoritative process provenance.
+  // No trusted process broker is currently available. Attended lane-sensitive
+  // legs escalate instead of spawning; the descriptor remains inspection-only.
   assert.match(section, /`\$MUSTER_CLI kimi-process-run\s+--brief <text> --agent-file <name\|path> --cwd <dir> --lane <primary\|secondary>`/, "the rule must name the kimi-process-run supervisor with its exact argument shape");
   assert.match(section, /`src\/dispatch-receipts\.js`/, "the rule must cite the supervisor implementation");
-  assert.match(section, /opens the resolved executable\/cwd\/agent objects with `O_NOFOLLOW`/, "the supervisor must descriptor-bind all launch paths");
-  assert.match(section, /snapshots the executable and agent file into unlinked read-only descriptors/, "executable and agent contents must be immutable after validation");
-  assert.match(section, /interpreter is independently pinned and snapshotted/, "script interpreters must be descriptor-bound too");
-  assert.match(section, /per-dispatch cgroup-v2 node/, "the final spawn must be kernel-contained beyond process-group boundaries");
-  assert.match(section, /descendant using `setsid`\/`setpgid` therefore cannot escape cleanup/, "the rule must cover process-group escape");
-  assert.match(section, /`?\$MUSTER_CLI kimi-process-dispatch \.\.\.`? remains\s+descriptor-only compatibility\/debug output/, "the descriptor verb must remain explicitly non-production");
-  assert.match(section, /MUST NOT be manually spawned for a production leg/, "production prose must forbid unreceipted manual descriptor spawning");
-  assert.match(section, /broker retains the launcher's\s+live kernel identity/, "live broker state, not a receipt, must retain signaling authority");
+  assert.match(section, /always exits nonzero before spawn, receipt, cgroup, or\s+signal setup/, "the process-run verb must be pinned report-only before side effects");
+  assert.match(section, /trusted broker bootstrap is unavailable/, "the rule must state why process dispatch is unavailable");
+  assert.match(section, /escalate the leg/, "attended lane-sensitive work must escalate");
+  assert.match(section, /`\$MUSTER_CLI kimi-process-dispatch \.\.\.` remains descriptor-only/, "the descriptor verb must remain explicitly non-production");
+  assert.match(section, /MUST NOT be manually spawned/, "production prose must forbid manual descriptor spawning");
   assert.match(section, /Filesystem receipts are\s+diagnostic only and never authorize hygiene signaling/, "the rule must deny receipt-based signaling authority");
-  assert.match(section, /bounded TERM then descriptor-bound `cgroup\.kill`/, "the rule must state decisive cgroup cleanup");
   assert.match(section, /Briefs MUST be secret-free/, "the rule must state the argv prompt limitation");
   assert.match(section, /kimiLaneEnv\(\)/, "the rule must name the shared kimiLaneEnv() env derivation");
   // the always-emit -m rule and its rationale
@@ -745,6 +740,6 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.match(section, /stream-json result on stdout/, "the rule must name the stream-json stdout receipt");
   assert.match(section, /process exit code/, "the rule must name the process exit code receipt");
   assert.match(section, /`\$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>`/, "the rule must name the kimi-session-usage verb for per-leg token accounting");
-  assert.match(section, /src\/kimi-receipts\.js's\s+`readSessionUsage`, reached through `captureSessionId`\/`resolveSessionForCwd`/, "the rule must name readSessionUsage (src/kimi-receipts.js) and its resolution chain");
+  assert.match(section, /src\/kimi-receipts\.js's\s+`readSessionUsage`, reached through\s+`captureSessionId`\/`resolveSessionForCwd`/, "the rule must name readSessionUsage (src/kimi-receipts.js) and its resolution chain");
   assert.match(section, /docs\/research\/kimi-code-cli\.md sec 8/, "the rule must cite the receipts research section");
 });

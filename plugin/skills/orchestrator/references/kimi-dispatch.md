@@ -45,51 +45,38 @@ the flag is also what selects the v2 engine under `kimi -p`. The interactive TUI
 TUI (docs/research/kimi-code-cli.md sec 11.8). `muster doctor`'s `kimi-lane-binding` check
 reports the active binding.
 
-**Attended sessions dispatch lane-sensitive legs as headless `kimi -p` processes.** The
+**Attended sessions cannot currently dispatch lane-sensitive legs as headless `kimi -p`
+processes.** The
 AgentSwarm/agent-calls shapes above are the UNATTENDED in-session path -- lanes bind there
 only because `kimiGoalInvocation` (go.md step 6) already set the env pair for the whole run
 loop. An ATTENDED/interactive session (a human driving this skill in the TUI) has no such
 bind, and the TUI ignores `model_preference` entirely, so an in-session `Agent` call there
-can never engage a lane. Lane-sensitive legs in an attended session therefore dispatch via
-the Muster-owned supervisor: `$MUSTER_CLI kimi-process-run
+can never engage a lane. The intended Muster-owned supervisor interface remains
+`$MUSTER_CLI kimi-process-run
 --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>`
-(`src/dispatch-receipts.js`) -- one headless `kimi -p` process per leg. On Linux the supervisor
-opens the resolved executable/cwd/agent objects with `O_NOFOLLOW`, verifies their descriptor
-identities, and snapshots the executable and agent file into unlinked read-only descriptors. A script
-executable is accepted only with one absolute no-argument shebang whose interpreter resolves directly
-to a native ELF binary; that interpreter is independently pinned and snapshotted. The supervisor
-transfers those kernel objects to a broker in a dedicated delegated systemd user scope; the launcher
-binds the immutable bytes and cwd descriptor into a bubblewrap mount/PID/cgroup namespace before
-untrusted work starts, with cgroup state read-only and the user-manager runtime hidden. Thus same-UID
-pathname replacement or in-place writes after binding cannot change what launches or opens, and the
-provider cannot move itself out of containment. The launcher enters a per-dispatch cgroup-v2 node
-before starting Kimi and stays alive after the direct child exits; the broker retains the launcher's
-live kernel identity and routes completion, SIGINT/SIGTERM/SIGHUP, setup failure, and supervisor
-disconnect through bounded TERM then descriptor-bound `cgroup.kill`, awaiting the trusted launcher
-only after the cgroup is empty. A descendant using `setsid`/`setpgid` therefore cannot escape cleanup.
-The launcher retains its own cgroup descriptor, and its broker-disconnect fallback uses a referenced
-timer that writes the same `cgroup.kill`.
-Filesystem receipts are diagnostic only and never authorize hygiene signaling, including valid
-same-UID fabrications; receipt directory enumeration and each compaction pass are globally capped even
-under malformed-name flooding, retention converges to 128 receipts, and compaction unlinks only
-non-followed entries beneath an open receipt-directory descriptor. Platforms without delegated
-cgroup v2, a working user systemd manager, and root-owned bubblewrap fail closed/report-only (Windows
-Job Objects are not available to this Node implementation). `$MUSTER_CLI kimi-process-dispatch ...` remains
-descriptor-only compatibility/debug output and MUST NOT be manually spawned for a production leg,
-because a caller outside the supervisor cannot retain authoritative process provenance. The validated
+(`src/dispatch-receipts.js`), but it always exits nonzero before spawn, receipt, cgroup, or
+signal setup because trusted broker bootstrap is unavailable. Therefore an attended
+lane-sensitive leg is report-only: escalate the leg instead of running it. There is no
+platform or prerequisite bypass. `$MUSTER_CLI kimi-process-dispatch ...` remains descriptor-only
+compatibility/debug output and MUST NOT be manually spawned; it does not enable a production
+leg. Filesystem receipts are diagnostic only and never authorize hygiene signaling, including
+valid same-UID fabrications; receipt directory enumeration and each compaction pass are globally
+capped even under malformed-name flooding, retention converges to 128 receipts, and compaction
+unlinks only non-followed entries beneath an open receipt-directory descriptor. The descriptor's
 `argv` is `["-p", brief, "--agent-file", <absolute agent file>,
 "--output-format", "stream-json", "-m", KIMI_LANES[lane]]`, and `env` is the shared
 `kimiLaneEnv()` OVERRIDE pair, carried for the v2 engine flag `--agent-file` needs (its
 `KIMI_SECONDARY_MODEL` half also binds lanes for any subagents the leg itself spawns) --
-the supervisor merges it over the ambient process env. `-m` is ALWAYS
+`-m` is ALWAYS
 emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
 SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
 `-m` and omitting it silently falls to config `default_model`. Briefs MUST be secret-free:
 Kimi requires the prompt in argv via `-p`, and Muster does not invent a misleading insecure
-transport. The leg's execution receipt is the
-stream-json result on stdout plus the process exit code, with per-leg token accounting from
-`$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>` (src/kimi-receipts.js's
-`readSessionUsage`, reached through `captureSessionId`/`resolveSessionForCwd`) over the fresh session dir the process writes
+transport. If a future trusted broker enables this interface, its execution receipt must be
+the stream-json result on stdout plus the process exit code, with per-leg token accounting
+from `$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>`
+(src/kimi-receipts.js's `readSessionUsage`, reached through
+`captureSessionId`/`resolveSessionForCwd`) over the fresh session dir the process writes
 (docs/research/kimi-code-cli.md sec 8). Reserve the attended session's native `Agent` tool
 for legs that genuinely need the parent's live context; the pre-validation, resume-retry,
 and background rules below keep governing the unattended in-session path, which a process

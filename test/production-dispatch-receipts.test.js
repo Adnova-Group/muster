@@ -23,6 +23,7 @@ const tempStore = async () => join(await mkdtemp(join(tmpdir(), "muster-dispatch
 const request = { brief: "do the bounded task", agentFile: "agent.md", cwd: null, lane: "primary" };
 const execFile = promisify(execFileCb);
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.js");
+const DISPATCH_MODULE = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "dispatch-receipts.js");
 
 async function fixtureRequest() {
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-run-"));
@@ -239,7 +240,7 @@ test("partial process snapshots never prove death or delete a diagnostic receipt
   assert.equal(result.incompleteProvenance, true);
 });
 
-test("agent-file launch is bound to the opened descriptor across same-UID replacement", async () => {
+test.skip("obsolete broker: agent-file launch is bound across same-UID replacement", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const receiptRoot = await tempStore();
@@ -264,7 +265,7 @@ test("agent-file launch is bound to the opened descriptor across same-UID replac
   assert.match(await readFile(moved, "utf8"), /name: fixture/);
 });
 
-test("agent-file descriptor is an immutable snapshot across same-inode mutation", async () => {
+test.skip("obsolete broker: agent-file descriptor is an immutable snapshot", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-agent-snapshot-"));
@@ -283,7 +284,7 @@ test("agent-file descriptor is an immutable snapshot across same-inode mutation"
   assert.deepEqual(result, { code: 33, signal: null });
 });
 
-test("executable launch is bound to the opened descriptor across same-UID replacement", async () => {
+test.skip("obsolete broker: executable launch is bound across same-UID replacement", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-exec-binding-"));
@@ -303,7 +304,7 @@ test("executable launch is bound to the opened descriptor across same-UID replac
   assert.deepEqual(result, { code: 11, signal: null });
 });
 
-test("executable launch uses an immutable snapshot across same-inode mutation", async () => {
+test.skip("obsolete broker: executable launch uses an immutable snapshot", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-exec-snapshot-"));
@@ -321,7 +322,7 @@ test("executable launch uses an immutable snapshot across same-inode mutation", 
   assert.deepEqual(result, { code: 13, signal: null });
 });
 
-test("script launch pins and snapshots its absolute native shebang interpreter", async () => {
+test.skip("obsolete broker: script launch pins its shebang interpreter", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-interpreter-binding-"));
@@ -344,7 +345,7 @@ test("script launch pins and snapshots its absolute native shebang interpreter",
   assert.deepEqual(result, { code: 15, signal: null });
 });
 
-test("cwd launch is bound to the opened directory across same-UID replacement", async () => {
+test.skip("obsolete broker: cwd launch is bound across same-UID replacement", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const originalCwd = `${fixture.cwd}.original`;
@@ -367,7 +368,7 @@ test("cwd launch is bound to the opened directory across same-UID replacement", 
   assert.deepEqual(result, { code: 21, signal: null });
 });
 
-test("SIGINT, SIGTERM, and SIGHUP cancellation use bounded broker TERM-to-KILL cleanup", async () => {
+test.skip("obsolete broker: cancellation uses bounded TERM-to-KILL cleanup", async () => {
   if (process.platform !== "linux") return;
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     const fixture = await fixtureRequest();
@@ -412,7 +413,7 @@ test("SIGINT, SIGTERM, and SIGHUP cancellation use bounded broker TERM-to-KILL c
   }
 });
 
-test("cgroup cleanup kills a setsid descendant that escapes the launcher's process group", async () => {
+test.skip("obsolete broker: cgroup cleanup kills a setsid descendant", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-descendant-"));
@@ -468,7 +469,7 @@ int main(void) {
   }
 });
 
-test("an unsupported/unpinnable shebang fails closed before untrusted launch", async () => {
+test.skip("obsolete broker: unsupported shebang fails before launch", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-bad-exec-"));
@@ -484,7 +485,7 @@ test("an unsupported/unpinnable shebang fails closed before untrusted launch", a
   assert.ok(Date.now() - started < 5_000, "setup cleanup and direct-child wait are bounded");
 });
 
-test("receipt/setup failure never waits for a TERM-resistant target's natural exit", async () => {
+test.skip("obsolete broker: receipt failure cleanup is bounded", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-setup-failure-"));
@@ -502,7 +503,7 @@ test("receipt/setup failure never waits for a TERM-resistant target's natural ex
   assert.ok(Date.now() - started < 3_000, "setup failure cleanup is bounded");
 });
 
-test("supervisor crash triggers detached-descendant cgroup cleanup", async () => {
+test.skip("obsolete broker: supervisor crash cleans detached descendants", async () => {
   if (process.platform !== "linux") return;
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-crash-cleanup-"));
   const bin = join(root, "bin");
@@ -560,7 +561,7 @@ int main(void) {
   }
 });
 
-test("production CLI kimi-process-run supervises fixed kimi stdio/exit and retains only a diagnostic receipt", async () => {
+test.skip("obsolete broker: CLI supervises Kimi and retains a diagnostic receipt", async () => {
   if (process.platform !== "linux") return;
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-cli-run-"));
   const bin = join(root, "bin");
@@ -589,4 +590,70 @@ test("production CLI kimi-process-run supervises fixed kimi stdio/exit and retai
   assert.equal(failure?.code, 7);
   assert.equal(failure?.stdout, "transparent-child-output\n");
   assert.equal((await readdir(join(home, ".muster", "dispatch-receipts"))).length, 1);
+});
+
+test("runKimiProcess is report-only before spawn, receipt, hook, or signal side effects", async () => {
+  const fixture = await fixtureRequest();
+  const receiptRoot = await tempStore();
+  const signalSource = new EventEmitter();
+  let spawnCalls = 0;
+  let hookCalls = 0;
+  let signalCalls = 0;
+  signalSource.on = () => { signalCalls += 1; };
+
+  await assert.rejects(runKimiProcess(fixture, {
+    receiptRoot,
+    signalSource,
+    spawnProcess: () => { spawnCalls += 1; },
+    beforeFinalSpawn: async () => { hookCalls += 1; },
+    onReceiptEstablished: async () => { hookCalls += 1; },
+  }), /Kimi process dispatch is report-only: trusted broker bootstrap is unavailable/);
+
+  assert.equal(spawnCalls, 0);
+  assert.equal(hookCalls, 0);
+  assert.equal(signalCalls, 0);
+  await assert.rejects(readdir(receiptRoot), /ENOENT/);
+});
+
+test("internal broker and launcher modes cannot bypass report-only dispatch", async () => {
+  for (const mode of ["--broker", "--launcher"]) {
+    await assert.rejects(execFile(process.execPath, [DISPATCH_MODULE, mode]), (error) => {
+      assert.notEqual(error.code, 0);
+      assert.equal(error.stderr, "Kimi process dispatch is report-only: trusted broker bootstrap is unavailable\n");
+      return true;
+    });
+  }
+});
+
+test("CLI kimi-process-run fails report-only without launching Kimi, receipts, or cgroups", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-cli-report-only-"));
+  const bin = join(root, "bin");
+  const home = join(root, "home");
+  const cwd = join(root, "work");
+  const marker = join(root, "kimi-ran");
+  await Promise.all([mkdir(bin), mkdir(home), mkdir(cwd)]);
+  const fakeKimi = join(bin, "kimi");
+  await writeFile(fakeKimi, `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran");\n`);
+  await chmod(fakeKimi, 0o755);
+  const agentFile = join(cwd, "agent.md");
+  await writeFile(agentFile, "---\nname: fixture\n---\n");
+  const cgroupsBefore = await currentDispatchCgroupPids();
+
+  await assert.rejects(execFile(process.execPath, [
+    CLI, "kimi-process-run",
+    "--brief", "must remain report-only",
+    "--agent-file", agentFile,
+    "--cwd", cwd,
+    "--lane", "primary",
+  ], {
+    env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
+  }), (error) => {
+    assert.notEqual(error.code, 0);
+    assert.match(error.stderr, /Kimi process dispatch is report-only: trusted broker bootstrap is unavailable/);
+    return true;
+  });
+
+  await assert.rejects(readFile(marker), /ENOENT/);
+  await assert.rejects(readdir(join(home, ".muster", "dispatch-receipts")), /ENOENT/);
+  assert.deepEqual(await currentDispatchCgroupPids(), cgroupsBefore);
 });

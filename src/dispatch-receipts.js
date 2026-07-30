@@ -698,98 +698,11 @@ function sendIpc(message) {
   });
 }
 
-export async function runKimiProcess(request, {
-  receiptRoot = dispatchReceiptDirectory(),
-  spawnProcess = spawn,
-  signalSource = process,
-  onReceiptEstablished = async () => {},
-  beforeFinalSpawn = async () => {},
-  executable,
-  env = process.env,
-  killTimeoutMs = 1_000,
-  now,
-  token,
-} = {}) {
-  if (process.platform !== "linux") {
-    throw new Error("safe Kimi process containment is unavailable on this platform; dispatch is report-only");
-  }
-  const descriptor = kimiProcessDispatch(request);
-  const providerEnv = sanitizeContainedProviderEnv({ ...env, ...descriptor.env });
-  const executableBinding = resolveKimiExecutable({ env, executable });
-  const bindings = openLaunchBindings(descriptor, executableBinding);
-  const inheritedDescriptor = descriptorForInheritedBindings(descriptor, bindings);
-  const sourceBindings = bindingSource(bindings);
-  const brokerUnit = `muster-dispatch-broker-${randomUUID()}`;
-  let bindingsOpen = true;
-  const closeSourceBindings = () => {
-    if (!bindingsOpen) return;
-    bindingsOpen = false;
-    closeLaunchBindings(bindings);
-  };
-  let child;
-  try {
-    await beforeFinalSpawn();
-    child = spawnProcess(resolveSystemdRun(), [
-      "--user",
-      "--scope",
-      "--quiet",
-      `--unit=${brokerUnit}`,
-      "--property=Delegate=yes",
-      process.execPath,
-      MODULE_PATH,
-      "--broker",
-    ], {
-      stdio: bindingStdio({ ipc: true }),
-      env: sanitizeDispatchHelperEnv(env),
-    });
-  } catch (error) {
-    closeSourceBindings();
-    throw error;
-  }
-  const brokerMessages = createMessageQueue(child);
-  const terminal = terminalPromise(child);
-  terminal.catch(() => {});
-  const forwarders = new Map(SIGNALS.map((signal) => [
-    signal,
-    () => {
-      try { child.send({ type: "SIGNAL", signal }); } catch { /* broker already exited */ }
-    },
-  ]));
-  for (const [signal, listener] of forwarders) signalSource.on(signal, listener);
+const KIMI_PROCESS_REPORT_ONLY_MESSAGE =
+  "Kimi process dispatch is report-only: trusted broker bootstrap is unavailable";
 
-  let handle = null;
-  try {
-    child.send({
-      type: "CONFIGURE",
-      descriptor: inheritedDescriptor,
-      bindingSource: sourceBindings,
-      env: providerEnv,
-      killTimeoutMs,
-    });
-    const established = await brokerMessages.next(["ESTABLISHED", "FAILURE"]);
-    if (established.type === "FAILURE") throw new Error(established.error);
-    closeSourceBindings();
-    handle = await writeDispatchReceipt(established.pid, established.startIdentity, {
-      receiptRoot,
-      ...(now ? { now } : {}),
-      ...(token ? { token } : {}),
-    });
-    await onReceiptEstablished({ ...handle.receipt });
-    const outcome = await brokerMessages.next(["RESULT", "FAILURE"]);
-    await terminal;
-    if (outcome.type === "FAILURE") throw new Error(outcome.error);
-    return { code: outcome.code, signal: outcome.signal };
-  } catch (error) {
-    if (child.connected) {
-      try { child.send({ type: "SHUTDOWN", reason: error.message }); } catch { /* broker already exited */ }
-    }
-    try { await terminal; } catch { /* original setup/runtime error wins */ }
-    throw error;
-  } finally {
-    closeSourceBindings();
-    for (const [signal, listener] of forwarders) signalSource.off(signal, listener);
-    if (handle) await removeExactReceipt(handle);
-  }
+export async function runKimiProcess(_request, _options = {}) {
+  throw new Error(KIMI_PROCESS_REPORT_ONLY_MESSAGE);
 }
 
 function readLinuxProcessGroup(pid) {
@@ -1176,5 +1089,8 @@ async function launcherMain() {
   });
 }
 
-if (process.argv[1] === MODULE_PATH && process.argv[2] === "--broker") await brokerMain();
-if (process.argv[1] === MODULE_PATH && process.argv[2] === "--launcher") await launcherMain();
+if (process.argv[1] === MODULE_PATH &&
+    (process.argv[2] === "--broker" || process.argv[2] === "--launcher")) {
+  process.stderr.write(`${KIMI_PROCESS_REPORT_ONLY_MESSAGE}\n`);
+  process.exitCode = 1;
+}

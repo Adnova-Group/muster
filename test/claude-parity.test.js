@@ -1301,5 +1301,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // pins immutable executable/interpreter snapshots, delegated cgroup-v2 plus
   // bubblewrap containment, setsid-proof cgroup.kill, and bounded receipt
   // compaction. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "0129cafd750111b834ea5cdbeda472cc0b728091dface3c1753c325291c558d5");
+  // 2026-07-30 re-pin #27 (trusted-broker decision): the same two Kimi
+  // process-lane prose files now make process dispatch report-only on every
+  // platform, escalate attended lane-sensitive legs, and retain the
+  // descriptor-only plus unattended in-session contracts. File count remains
+  // unchanged.
+  assert.equal(hash.digest("hex"), "86db128aa40534408767b90cd7a5a920198e11bd79f47c2c91db77f18ab0218b");
 });

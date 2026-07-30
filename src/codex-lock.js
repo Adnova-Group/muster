@@ -40,8 +40,9 @@ async function readLock(path, maxBytes = 16 * 1024) {
 }
 
 // The per-acquire owner identity carried in the lockfile: pid + a random nonce
-// (token) + the lock's start time (createdAt) + the process start identity. Each
-// acquire writes a fresh token, so this string uniquely names one lock instance.
+// (token) + the lock's start time (createdAt) + the process start identity
+// (explicitly null where the platform cannot provide one). Each acquire writes
+// a fresh token, so this string uniquely names one lock instance.
 // A replacement owner that reclaimed after a prior reclaimer's staleness decision
 // always writes its own identity, so it can never byte-match the stale instance.
 function lockIdentity(record) {
@@ -51,7 +52,8 @@ function lockIdentity(record) {
     || !Number.isInteger(pid) || pid < 1
     || typeof token !== "string" || !token
     || !Number.isFinite(createdAt) || createdAt < 0
-    || typeof processIdentity !== "string" || !processIdentity) return null;
+    || !Object.hasOwn(record, "processIdentity")
+    || (processIdentity !== null && (typeof processIdentity !== "string" || !processIdentity))) return null;
   return JSON.stringify({ pid, token, createdAt, processIdentity });
 }
 
@@ -149,17 +151,20 @@ async function restoreOrRequireReplacement(path, retirement, expected, waitForVa
   }
 }
 
-async function lockIsStale(current, { staleMs, maxStaleMs }) {
+async function lockIsStale(current, { staleMs }) {
   const age = Date.now() - current.stat.mtimeMs;
   if (age < staleMs) return false;
   const pid = Number(current.record?.pid);
   const alive = processAlive(pid);
-  const actualIdentity = alive ? await processStartIdentity(pid) : null;
-  const recordedIdentity = typeof current.record?.processIdentity === "string" ? current.record.processIdentity : null;
-  const sameProcess = alive && recordedIdentity && actualIdentity && recordedIdentity === actualIdentity;
-  if (sameProcess && age < maxStaleMs) return false;
-  if (alive && (!recordedIdentity || !actualIdentity) && age < maxStaleMs) return false;
-  return true;
+  if (!alive) return true;
+  const recordedIdentity = typeof current.record?.processIdentity === "string"
+    ? current.record.processIdentity
+    : null;
+  const actualIdentity = recordedIdentity ? await processStartIdentity(pid) : null;
+  // Time alone never overrides positive liveness. Reclaim a live PID only when
+  // both sides provide process-start identity and prove that the PID was reused.
+  if (!recordedIdentity || !actualIdentity) return false;
+  return recordedIdentity !== actualIdentity;
 }
 
 async function retireLockUnderTransition(path, expected, {
@@ -205,6 +210,7 @@ async function ownerInstanceIsGone(current) {
   if (!lockIdentity(current.record)) return false;
   const pid = current.record.pid;
   if (!processAlive(pid)) return true;
+  if (current.record.processIdentity === null) return false;
   const actualIdentity = await processStartIdentity(pid);
   return Boolean(actualIdentity && current.record.processIdentity !== actualIdentity);
 }

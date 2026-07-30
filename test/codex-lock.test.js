@@ -64,6 +64,34 @@ test("withCodexFileLock times out on a live, fresh lock without ever touching it
   assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), owner, "a contended live lock must be left untouched");
 });
 
+test("withCodexFileLock never reclaims an exact live owner solely because maxStaleMs elapsed", async t => {
+  const identity = await processStartIdentity();
+  if (!identity) return t.skip("requires process-start identity support");
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-live-expired-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "live-expired.lock");
+  const owner = {
+    format: 1,
+    pid: process.pid,
+    processIdentity: identity,
+    createdAt: 1,
+    token: "exact-live-expired-owner"
+  };
+  await writeFile(lock, JSON.stringify(owner) + "\n");
+  const old = new Date(Date.now() - 60_000);
+  await utimes(lock, old, old);
+
+  await assert.rejects(
+    withCodexFileLock(lock, async () => assert.fail("exact live owner must remain gated"), {
+      staleMs: 1,
+      maxStaleMs: 2,
+      timeoutMs: 30
+    }),
+    /timed out waiting/
+  );
+  assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), owner);
+});
+
 // codex-release.js's residual (i): the `.build.lock` is created by
 // open(path,"wx") before any in-lock canonical re-check can fire, so an
 // ancestor swapped in the realpath-capture -> lock-open window materializes the
@@ -322,6 +350,47 @@ test("withCodexFileLock reclaims only a proven-dead transition gate", async t =>
   assert.equal(ran, true);
   await assert.rejects(lstat(gate), /ENOENT/);
   assert.ok(gateInode > 0, "the stale gate fixture must have a stable inode identity");
+});
+
+test("withCodexFileLock reclaims a dead transition whose official process identity is unavailable", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-null-identity-dead-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "null-identity-dead-transition.lock");
+  const gate = `${lock}.muster-transition`;
+  await writeFile(gate, JSON.stringify({
+    format: 1,
+    pid: 2_147_483_647,
+    processIdentity: null,
+    createdAt: 1,
+    token: "null-identity-dead-transition"
+  }) + "\n", { mode: 0o600 });
+
+  let ran = false;
+  await withCodexFileLock(lock, async () => { ran = true; }, { timeoutMs: 40 });
+
+  assert.equal(ran, true);
+  await assert.rejects(lstat(gate), /ENOENT/);
+});
+
+test("withCodexFileLock keeps a live transition fail-closed when process identity is unavailable", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-null-identity-live-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "null-identity-live-transition.lock");
+  const gate = `${lock}.muster-transition`;
+  const owner = {
+    format: 1,
+    pid: process.pid,
+    processIdentity: null,
+    createdAt: 1,
+    token: "null-identity-live-transition"
+  };
+  await writeFile(gate, JSON.stringify(owner) + "\n", { mode: 0o600 });
+
+  await assert.rejects(
+    withCodexFileLock(lock, async () => assert.fail("live null-identity gate must remain closed"), { timeoutMs: 30 }),
+    /timed out waiting/
+  );
+  assert.deepEqual(JSON.parse(await readFile(gate, "utf8")), owner);
 });
 
 test("withCodexFileLock never treats a token-only transition record as dead", async t => {

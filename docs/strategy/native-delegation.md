@@ -276,7 +276,7 @@ the amount of native-mechanic narration they carry. **[JUDGMENT]**
 Assess-ready one-liners with measurable success criteria, tagged `[harness | thins/retires]`.
 Items already captured in `.muster/backlog.md` are marked (existing #line); the rest are new.
 
-1. **cowork-plugin-loader-probe** `[Cowork | thins: 29-tool MCP-only adapter]` — Hands-on phase-3 probe
+1. **cowork-plugin-loader-probe** `[Cowork | thins: 30-tool MCP-only adapter]` — Hands-on phase-3 probe
    whether muster's `plugin/` (skills+hooks+subagents, Claude Code plugin format) loads under
    Cowork's native plugin loader; if it loads, add a capability check that prefers the native
    plugin ride over MCP-only, MCP server kept as fallback. Success: a documented probe result

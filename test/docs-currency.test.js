@@ -200,7 +200,7 @@ test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and b
     "readOnlyHint=true",
     "destructiveHint=false",
     "openWorldHint=false",
-    "29-tool",
+    "30-tool",
     "full-MCP",
     "Refresh",
     "recreate",

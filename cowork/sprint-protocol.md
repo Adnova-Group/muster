@@ -105,8 +105,10 @@ loop (`muster_detect`/`muster_capabilities`, `muster_route`/`muster_domain`, `mu
 gate, a crew manifest validated with `muster_manifest_validate`, and that item's own `muster_wave`
 crew waves). An item's OWN crew may still fan out in parallel.
 
-- **Flat path (`annotated:false`).** Process the in-file-order queue sequentially in the main tree,
-  including finish/disposition after each item. This is the pre-existing flat-backlog behavior.
+- **Flat path (`annotated:false`).** The orchestrator creates a dedicated isolated Git worktree for
+  each write-capable item and processes the in-file-order queue sequentially in those assigned
+  worktrees, including finish/disposition after each item. The main tree remains the coordination
+  and ordered-integration surface. This preserves the pre-existing flat-backlog order.
 - **Wave path (`annotated:true`).** For each object in `schedule.waves`, in emitted order:
   1. Record the wave base SHA. For every id in each emitted `buildReview.batches` array, first inspect
      its emitted `items[id].deps`; when any predecessor was escalated or its build/review failed,

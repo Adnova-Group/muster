@@ -114,7 +114,15 @@ Init learns bounded repository facts, writes `.muster/project-profile.json` plus
 /muster:init path/to/repo
 ```
 
-Claude Code expects `CLAUDE.md`; Codex expects `AGENTS.md`. Kimi has no proven callable native Init action, so Muster records an unavailable handoff and waits for an explicit acknowledgement instead of inventing a command. See [The nine modes](/reference/modes#init) for the evidence and finalization states.
+Claude Code and Codex use one canonical instruction pair: `AGENTS.md` is authoritative, and `CLAUDE.md` contains exactly:
+
+```md
+# Claude Code
+
+@AGENTS.md
+```
+
+If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. Kimi has no proven callable native Init action, so Muster records an unavailable handoff and waits for an explicit acknowledgement instead of inventing a command. See [The nine modes](/reference/modes#init) for the evidence and finalization states.
 
 ## Inspect the routing yourself
 

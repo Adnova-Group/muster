@@ -146,10 +146,11 @@ Native primitives that are **absent** (the gap muster's port exists to fill)
 - No enforcement hooks an integrator can register: muster's wave-guard, scale-gate, and
   action-class fence have "no Cowork equivalent — this session's own discipline is the
   only enforcement there is" [src: sprint-14].
-- No isolated per-item worktree runners; running multiple backlog items concurrently
-  "has no validated isolation model here," so muster's sprint degradation path
-  (sequential, one item at a time, in the main tree) "IS the path for Cowork sprints,
-  not a fallback" [src: sprint-24].
+- No native isolated per-item worktree runners. Without a proven native per-subagent
+  worktree primitive, the orchestrator creates a dedicated isolated Git worktree for
+  each write-capable item and executes those implementations sequentially in their
+  assigned worktrees. The main tree remains the coordination and ordered-integration
+  surface [src: sprint-24].
 - No session sharing, no compliance/audit capture [src: cw-start] [src: cw-arch].
 
 ## 3. Extension surfaces: MCP as the (formerly only) integration plane

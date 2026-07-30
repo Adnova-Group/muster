@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, access } from "node:fs/promises";
+import { readFile, access, readdir } from "node:fs/promises";
 import { scoreHumanness } from "../src/humanizer-score.js";
 
 const root = new URL("../", import.meta.url);
@@ -140,18 +140,69 @@ test("newly changed README and modes prose remains humanizer-passing", async () 
 });
 
 test("Cowork sequential fallback retains dedicated per-item worktree isolation", async () => {
-  const cowork = await read("website/guides/cowork.md");
-  assert.match(cowork, /orchestrator creates[\s\S]{0,120}dedicated isolated Git worktree[\s\S]{0,180}sequentially/i);
-  assert.match(cowork, /connected project is the coordination and ordered-integration surface/i);
-  assert.doesNotMatch(cowork, /write-capable wave items must run sequentially in the connected project/i);
+  const files = [
+    "cowork/README.md",
+    "cowork/sprint-protocol.md",
+    "docs/research/claude-cowork.md",
+    "website/guides/cowork.md",
+  ];
+  for (const file of files) {
+    const text = await read(file);
+    assert.match(
+      text,
+      /orchestrator[\s\S]{0,180}(?:creates?|create)[\s\S]{0,180}dedicated[\s\S]{0,80}(?:isolated )?(?:Git )?worktree[\s\S]{0,220}sequential/i,
+      `${file} must keep sequential Cowork implementation in orchestrator-created per-item worktrees`,
+    );
+    assert.match(
+      text,
+      /(?:connected project|main tree)[\s\S]{0,180}coordination[\s\S]{0,180}(?:ordered )?integration/i,
+      `${file} must reserve the connected tree for coordination and ordered integration`,
+    );
+    assert.doesNotMatch(
+      text,
+      /(?:every wave|one item at a time|write-capable wave items)[^\n]{0,120}(?:in|into) the (?:connected project|main tree)/i,
+      `${file} must not send fallback implementation into the connected tree`,
+    );
+  }
 });
 
 test("Init public reference pins one instruction authority and holds conflicts", async () => {
+  const files = [
+    "README.md",
+    "website/guides/codex.md",
+    "website/guides/harnesses.md",
+    "website/guides/quickstart.md",
+    "website/reference/modes.md",
+  ];
+  for (const file of files) {
+    const text = await read(file);
+    assert.match(text, /`AGENTS\.md` is authoritative/i, `${file} must name AGENTS.md as authoritative`);
+    assert.match(
+      text,
+      /`CLAUDE\.md` contains exactly:[\s\S]{0,80}# Claude Code\n\n@AGENTS\.md/i,
+      `${file} must pin the exact two-line CLAUDE.md content`,
+    );
+    assert.match(
+      text,
+      /(?:preparation baseline|baseline files?)[\s\S]{0,220}HUMAN-HOLD/i,
+      `${file} must hold conflicting baseline instruction files`,
+    );
+  }
   const modes = await read("website/reference/modes.md");
-  assert.match(modes, /`AGENTS\.md` is authoritative/i);
-  assert.match(modes, /# Claude Code[\s\S]{0,40}@AGENTS\.md/);
-  assert.match(modes, /existed at the preparation baseline[\s\S]{0,180}HUMAN-HOLD/i);
   assert.match(modes, /reverse `AGENTS\.md` reference to `CLAUDE\.md` cannot satisfy/i);
+});
+
+test("public docs contain no stale 29-tool total claims", async () => {
+  const roots = ["cowork", "docs", "website"];
+  const files = ["README.md"];
+  for (const dir of roots) {
+    const entries = await readdir(new URL(dir, root), { recursive: true });
+    files.push(...entries.filter((entry) => entry.endsWith(".md")).map((entry) => `${dir}/${entry}`));
+  }
+  const staleTotal = /\b29-tool\b|\b29\s+(?!CLI-wrapper\b)(?:deterministic\s+)?tools?\b/i;
+  for (const file of files) {
+    assert.doesNotMatch(await read(file), staleTotal, `${file} must not claim a 29-tool total`);
+  }
 });
 
 test("command reference never pairs artifact-delta with an evidence file", async () => {

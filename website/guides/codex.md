@@ -84,7 +84,15 @@ $muster Add rate limiting to the public API with tests
 
 All nine modes have a skill: the five above plus `$muster-plan-backlog`, `$muster-go-backlog`, `$muster-diagnose`, and `$muster-runner`. The three legacy aliases remain skills too: `run` maps to `plan`, `autopilot` maps to `go`, and `sprint` maps to `go-backlog`. They are deprecated as of 2026-07-17 and retire in Muster 0.7.0.
 
-Codex native Init expects `AGENTS.md`. A request to run Init, an existing file, or a refusal to overwrite does not prove completion. Muster finalizes only from an artifact delta, an explicit pre-existing confirmation, or an attempt-bound call-result receipt.
+Codex native Init uses the canonical instruction pair: `AGENTS.md` is authoritative, and `CLAUDE.md` contains exactly:
+
+```md
+# Claude Code
+
+@AGENTS.md
+```
+
+If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. A request to run Init, an existing file, or a refusal to overwrite does not prove completion. Muster finalizes only from an artifact delta, an explicit pre-existing confirmation, or an attempt-bound call-result receipt.
 
 For annotated go-backlog files, Codex dispatches every ready implementation/review leg in the dependency wave up to the emitted concurrency bound. Completion notifications are not a reason to wait for a user turn: after each wake, the orchestrator drains all available receipts, runs `sprint-reconcile`, dispatches every returned action, and reconciles again before waiting. Integration remains backlog-ordered after the full wave build/review barrier. There is no special three-runner ceiling; the current backlog control defaults to 5 and clamps at 10, while the shared Codex thread floor remains 12.
 

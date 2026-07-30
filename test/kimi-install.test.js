@@ -13,6 +13,7 @@ import { readInstalledKimi } from "../src/harness.js";
 import { KIMI_LANES, kimiLaneEnv, kimiModelPreferenceForTier, kimiPreferenceForAgentId } from "../src/kimi.js";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
+import { matchFrontmatter } from "../src/frontmatter.js";
 
 function tmp() { return mkdtempSync(join(tmpdir(), "muster-kimi-install-")); }
 function write(p, s) { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); }
@@ -91,7 +92,14 @@ test("runKimiInstall: every builtin provider resolved by capabilities --kimi is 
       if (chosen.kind === "skill" && !installedSkills.has(chosen.id)) unreachable.push(`${role}:skill:${chosen.id}`);
     }
     for (const skill of caps.skills) {
-      if (skill.source === "builtin" && !installedSkills.has(skill.id)) unreachable.push(`skill:${skill.id}`);
+      if (skill.source !== "builtin") continue;
+      if (!installedSkills.has(skill.id)) {
+        unreachable.push(`skill:${skill.id}`);
+        continue;
+      }
+      const text = readFileSync(join(home, ".kimi-code", "skills", skill.id, "SKILL.md"), "utf8");
+      const name = matchFrontmatter(text)?.body.match(/^name[ \t]*:[ \t]*(.+)$/m)?.[1]?.trim();
+      if (name !== skill.id) unreachable.push(`skill-name:${skill.id}:${name || "<missing>"}`);
     }
 
     assert.deepEqual(unreachable, []);

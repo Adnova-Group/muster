@@ -282,8 +282,8 @@ test("runHygiene: cwd remains diagnostic but only a dispatch receipt authorizes 
   assert.match(result.reapedProcesses.skipped[0].reason, /no muster provenance/);
 });
 
-// Ownership surfacing: the CLI currently wires no dispatch receipt store, so
-// --reap can never fire and the report must say that explicitly.
+// Ownership surfacing: a composition with no receipt-store provider remains
+// report-only and must say that explicitly.
 test("runHygiene + renderHygieneReport: ownership receipts unavailable is surfaced, not silent", async () => {
   const result = await runHygiene({
     processes: [

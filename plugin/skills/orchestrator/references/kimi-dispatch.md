@@ -51,16 +51,19 @@ only because `kimiGoalInvocation` (go.md step 6) already set the env pair for th
 loop. An ATTENDED/interactive session (a human driving this skill in the TUI) has no such
 bind, and the TUI ignores `model_preference` entirely, so an in-session `Agent` call there
 can never engage a lane. Lane-sensitive legs in an attended session therefore dispatch via
-`kimiProcessDispatch` -- build the descriptor with `$MUSTER_CLI kimi-process-dispatch
+the Muster-owned supervisor: `$MUSTER_CLI kimi-process-run
 --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>`
-(`src/kimi-dispatch.js`) -- one
-headless `kimi -p` process per leg, spawned straight from the printed descriptor's `{ argv, env,
-cwd, lane }`: `argv` is `["-p", brief, "--agent-file", <absolute agent file>,
+(`src/dispatch-receipts.js`) -- one headless `kimi -p` process per leg. The supervisor reuses
+`kimiProcessDispatch` validation internally, spawns only `kimi`, retains the child PID plus stable
+kernel start identity in a private Muster dispatch receipt, forwards stdio/signals/exit, and removes
+only its token-bound receipt on normal completion. `$MUSTER_CLI kimi-process-dispatch ...` remains
+descriptor-only compatibility/debug output and MUST NOT be manually spawned for a production leg,
+because a caller outside the supervisor cannot retain authoritative process provenance. The validated
+`argv` is `["-p", brief, "--agent-file", <absolute agent file>,
 "--output-format", "stream-json", "-m", KIMI_LANES[lane]]`, and `env` is the shared
 `kimiLaneEnv()` OVERRIDE pair, carried for the v2 engine flag `--agent-file` needs (its
 `KIMI_SECONDARY_MODEL` half also binds lanes for any subagents the leg itself spawns) --
-merge it over the ambient process env at spawn (`{ ...process.env, ...d.env }`), never
-pass it as the whole env (a wholesale replacement loses HOME/PATH and the child breaks). `-m` is ALWAYS
+the supervisor merges it over the ambient process env. `-m` is ALWAYS
 emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
 SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
 `-m` and omitting it silently falls to config `default_model`. The leg's receipt is the

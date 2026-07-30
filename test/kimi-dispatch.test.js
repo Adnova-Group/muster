@@ -720,17 +720,17 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.match(section, /kimiGoalInvocation/, "the rule must name kimiGoalInvocation as the unattended path's env binder");
   assert.match(section, /TUI ignores `model_preference` entirely/, "the rule must state WHY attended sessions cannot bind lanes in-session");
   assert.match(section, /genuinely need the parent's live context/, "the rule must reserve the native Agent tool for live-context legs");
-  // names the builder and the descriptor keys exactly (src/kimi-dispatch.js is canonical);
-  // the model reaches the builder through the CLI verb (the two-layer boundary), never a
-  // direct call
-  assert.match(section, /`kimiProcessDispatch` -- build the descriptor with `\$MUSTER_CLI kimi-process-dispatch\s+--brief <text> --agent-file <name\|path> --cwd <dir> --lane <primary\|secondary>`/, "the rule must name the kimi-process-dispatch verb with its exact argument shape");
-  assert.match(section, /`src\/kimi-dispatch\.js`/, "the rule must cite src/kimi-dispatch.js");
-  assert.match(section, /\{ argv, env,\s*cwd, lane \}/, "the rule must name the descriptor keys { argv, env, cwd, lane }");
+  // Production legs go through the PID-owning supervisor. The descriptor verb
+  // remains inspectable, but prose must never manually spawn from it because
+  // that loses authoritative process provenance.
+  assert.match(section, /`\$MUSTER_CLI kimi-process-run\s+--brief <text> --agent-file <name\|path> --cwd <dir> --lane <primary\|secondary>`/, "the rule must name the kimi-process-run supervisor with its exact argument shape");
+  assert.match(section, /`src\/dispatch-receipts\.js`/, "the rule must cite the supervisor implementation");
+  assert.match(section, /reuses\s+`kimiProcessDispatch`\s+validation internally/, "the supervisor must retain the canonical descriptor validation");
+  assert.match(section, /`?\$MUSTER_CLI kimi-process-dispatch \.\.\.`? remains\s+descriptor-only compatibility\/debug output/, "the descriptor verb must remain explicitly non-production");
+  assert.match(section, /MUST NOT be manually spawned for a production leg/, "production prose must forbid unreceipted manual descriptor spawning");
+  assert.match(section, /child PID plus stable\s+kernel start identity in a private Muster dispatch receipt/, "the rule must retain identity-bound process provenance");
+  assert.match(section, /forwards stdio\/signals\/exit/, "the rule must preserve transparent supervision");
   assert.match(section, /kimiLaneEnv\(\)/, "the rule must name the shared kimiLaneEnv() env derivation");
-  // the env is an OVERRIDE pair merged over the ambient env, never the whole
-  // spawn env -- a wholesale replacement loses HOME/PATH and the child breaks
-  assert.match(section, /\{ \.\.\.process\.env, \.\.\.d\.env \}/, "the rule must pin the env merge shape ({ ...process.env, ...d.env })");
-  assert.match(section, /never\s+pass it as the whole env/, "the rule must forbid passing descriptor.env as the whole spawn env");
   // the always-emit -m rule and its rationale
   assert.match(section, /`-m` is ALWAYS\s*emitted/, "the rule must state -m is always emitted");
   assert.match(section, /binds only a process's SPAWNED\s*SUBAGENTS/, "the rule must state model_preference binds only spawned subagents");

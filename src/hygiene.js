@@ -41,7 +41,7 @@ import { computeSprintWaves } from "./sprint-waves.js";
 // Guard 1 -- zombie provider CLI process: detect + (conservatively) reap
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_PROVIDER_PROCESS_PATTERN = /^(codex|claude)$/i;
+export const DEFAULT_PROVIDER_PROCESS_PATTERN = /^(codex|claude|kimi)$/i;
 export const DEFAULT_ZOMBIE_STALE_MS = 60 * 60 * 1000; // 60 minutes
 
 // Reap PROVENANCE (audit S10, security): a dead parent alone never makes a
@@ -495,6 +495,14 @@ export function renderHygieneReport(result) {
         `(no matching Muster {pid,startIdentity} dispatch receipts; cwd/worktree naming and legacy pid-only receipts are diagnostic only)`);
     }
   }
+  if ((result.provenance?.rejectedDispatchReceipts ?? 0) > 0) {
+    lines.push(`  dispatch receipts: ${result.provenance.rejectedDispatchReceipts} rejected ` +
+      `(report-only; malformed, legacy, symlinked, or unsafe rows are never trusted or removed)`);
+  }
+  if ((result.provenance?.cleanedDispatchReceipts ?? 0) > 0) {
+    lines.push(`  dispatch receipts: ${result.provenance.cleanedDispatchReceipts} stale receipt` +
+      `${result.provenance.cleanedDispatchReceipts === 1 ? "" : "s"} cleaned without signaling`);
+  }
 
   lines.push(`  worktrees: ${result.worktrees.count} live (threshold ${result.worktrees.threshold})` +
     (result.worktrees.sweepOffered ? " -- SWEEP OFFERED" : ""));
@@ -526,6 +534,7 @@ export async function runHygiene({
   claimOptions = {},
   kill,
   getProcessIdentity,
+  dispatchReceiptStore = null,
 } = {}) {
   const processList = typeof processes === "function" ? await processes() : (processes || []);
 
@@ -536,10 +545,18 @@ export async function runHygiene({
   // The reap-provenance gate (see findZombieProcesses) defaults its muster
   // roots retain diagnostic cwd context; only explicit identity-bound
   // zombieOptions.dispatchReceipts establish process ownership.
+  const stored = typeof dispatchReceiptStore === "function"
+    ? await dispatchReceiptStore({ processes: processList, reap })
+    : { receipts: [], rejected: [], cleaned: [] };
+  const injectedReceipts = Array.isArray(zombieOptions.dispatchReceipts)
+    ? zombieOptions.dispatchReceipts
+    : [];
+  const effectiveDispatchReceipts = [...injectedReceipts, ...(stored.receipts || [])];
   const zombieResult = findZombieProcesses(processList, {
     newestRunMarkerAt: now,
     musterRoots: deriveMusterWorktreeRoots(wtList),
     ...zombieOptions,
+    dispatchReceipts: effectiveDispatchReceipts,
   });
 
   const content = typeof backlogContent === "function" ? await backlogContent() : backlogContent;
@@ -553,9 +570,7 @@ export async function runHygiene({
 
   // Ownership availability is surfaced by renderHygieneReport. Cwd is tracked
   // only for diagnostics; injected dispatch receipts are the ownership source.
-  const dispatchReceipts = Array.isArray(zombieOptions.dispatchReceipts)
-    ? zombieOptions.dispatchReceipts
-    : [];
+  const dispatchReceipts = effectiveDispatchReceipts;
   const validDispatchReceipts = dispatchReceipts.filter((r) =>
     r && Number.isInteger(Number(r.pid)) && Number(r.pid) > 0 &&
     typeof r.startIdentity === "string" && r.startIdentity
@@ -569,6 +584,8 @@ export async function runHygiene({
     stableIdentities: processList.filter(
       (p) => p && typeof p.startIdentity === "string" && p.startIdentity
     ).length,
+    rejectedDispatchReceipts: stored.rejected?.length ?? 0,
+    cleanedDispatchReceipts: stored.cleaned?.length ?? 0,
     blind: false,
   };
   provenance.blind = processList.length > 0 && provenance.dispatchReceipts === 0;

@@ -5,9 +5,11 @@ argument-hint: "[backlog path | issues:<label>]"
 disable-model-invocation: true
 ---
 
+<!-- prompt-lint-disable ANTH-POS-001: unattended coordination prompt — pr-only disposition, claim limits, authenticated resume, and failed-gate stops are load-bearing safety guarantees -->
+
 You are muster's runner: one unattended work cycle — resume or claim exactly ONE item, run it, leave a receipt, stop.
 
-Respond with the cycle's receipt (idle / resumed / claimed, disposition executed, gate summary, escalation if any) written to STATE.
+Respond with the cycle's receipt (idle / resumed / claimed, disposition executed, gate summary, escalation if any) written to STATE. Cite the source item or issue for each factual claim derived from it.
 
 <source>$ARGUMENTS</source>
 

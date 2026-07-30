@@ -446,19 +446,16 @@ test("live probe: captureSessionId parses a session id from a real `kimi -p` str
 
 // --- Prose wiring: the batch/finish prose names the accounting line ---------
 
-test("go-backlog.md's batch report names the Kimi token-accounting line and its rules", async () => {
+test("go-backlog.md's batch report preserves report-only Kimi process-lane safety", async () => {
   const text = await readFile(fileURLToPath(new URL("../plugin/commands/go-backlog.md", import.meta.url)), "utf8");
-  // the three kimi-receipts entry points, named exactly (src/kimi-receipts.js is canonical);
-  // the model reaches them through the CLI verbs (the two-layer boundary), never a direct call
-  assert.match(text, /captureSessionId/, "go-backlog.md must name captureSessionId");
-  assert.match(text, /`\$MUSTER_CLI kimi-session-usage --cwd <item worktree path> --stdout-file <captured stdout file>`/, "go-backlog.md must name the kimi-session-usage resolve arm with its exact arg shape");
-  assert.match(text, /resolveSessionForCwd/, "go-backlog.md must name resolveSessionForCwd (the verb's resolution chain)");
-  assert.match(text, /`\$MUSTER_CLI kimi-summarize-receipts <items.json>`/, "go-backlog.md must name the kimi-summarize-receipts verb");
-  assert.match(text, /summarizeItemReceipts/, "go-backlog.md must name summarizeItemReceipts");
-  // the two arms, stated explicitly: the capture/resolve chain is PROCESS-LANE ONLY
+  // Production process-lane dispatch has no trusted launcher/receipt authority.
   assert.match(text, /Process-lane legs.*headless `kimi -p`/s, "go-backlog.md must scope the capture/resolve chain to process-lane (kimi -p) legs");
-  assert.match(text, /at dispatch capture the leg's stream-json stdout/, "go-backlog.md must state the capture happens at dispatch on stream-json stdout");
-  assert.match(text, /before the item's worktree teardown/, "go-backlog.md must state resolution happens before worktree teardown");
+  assert.match(text, /production process dispatch is currently report-only because trusted broker bootstrap is unavailable/, "go-backlog.md must state the production process lane is report-only");
+  assert.match(text, /`?\$MUSTER_CLI kimi-process-run`? exits nonzero before spawn or receipt setup on every platform/, "go-backlog.md must forbid process launch before any spawn or receipt setup");
+  assert.match(text, /`?\$MUSTER_CLI kimi-process-dispatch`? is descriptor-only and MUST NOT be manually spawned/, "go-backlog.md must keep the descriptor non-authoritative");
+  assert.match(text, /Filesystem receipts remain diagnostic only/, "go-backlog.md must keep filesystem receipts diagnostic only");
+  assert.match(text, /If a future trusted broker enables this lane/, "go-backlog.md may describe token capture only as a future trusted-broker path");
+  assert.match(text, /until then, no process-lane token attribution exists/, "go-backlog.md must not claim current process-lane attribution");
   // in-session Agent/AgentSwarm legs: parent-session dispatches view or omission,
   // NEVER per-worktree session resolution (their tokens index under the parent's cwd)
   assert.match(text, /In-session legs.*muster-runner` Agent-tool subagents/s, "go-backlog.md must name the in-session arm and its dispatch shape");
@@ -467,17 +464,11 @@ test("go-backlog.md's batch report names the Kimi token-accounting line and its 
   assert.match(text, /per-worktree session resolution is never the arm here/, "go-backlog.md must forbid per-worktree resolution for in-session legs");
   assert.match(text, /`\$MUSTER_CLI kimi-session-usage --session-dir <parent session dir>`'s `dispatches` view/, "go-backlog.md must name the parent-session dispatches view as the in-session arm");
   assert.match(text, /omit the item's line and note the omission in STATE/, "go-backlog.md must state the in-session arm's omission fallback");
-  // multi-leg items sum per-leg with each leg's resolution source surfaced
-  assert.match(text, /one resolution PER LEG/, "go-backlog.md must state retried/fix-looped items carry one resolution per leg");
-  assert.match(text, /labeled per-leg with each leg's resolution source/, "go-backlog.md must state the summary surfaces each leg's source");
-  assert.match(text, /`captured`\/`index-unique`\/`index-newest`/, "go-backlog.md must enumerate the resolution sources");
-  // the mechanics: transcribe into STATE
+  // Available in-session summaries still land in STATE, but never authorize work.
+  assert.match(text, /kimi-summarize-receipts/, "go-backlog.md must name the receipt summarizer");
   assert.match(text, /next to each item's gate summary/, "go-backlog.md must state where the lines land in STATE");
-  // UNKNOWN lines are normal after retries and NEVER block the report
   assert.match(text, /UNKNOWN \(<reason>\)` line is normal after retries and never blocks the report/, "go-backlog.md must state UNKNOWN lines never block the report");
-  // the batch report table carries the tokens note, scoped to Kimi
   assert.match(text, /gate summary \| tokens \(Kimi only\) \| escalations/, "the batch report table must carry a tokens (Kimi only) column");
-  // non-Kimi harnesses omit the line (the harness-conditional shape that lets the clause ship verbatim)
   assert.match(text, /non-Kimi harnesses omit the line/, "go-backlog.md must state non-Kimi harnesses omit the line");
 });
 

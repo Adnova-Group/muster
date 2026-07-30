@@ -4,7 +4,7 @@ description: "Batch mode: runs the full go lifecycle over every backlog item; an
 argument-hint: "<backlog ref>"
 ---
 
-<!-- prompt-lint-disable ANTH-POS-001: orchestration/safety-gate prompt — the never-auto-merge and never-guess-an-escalation directives below are load-bearing safety guarantees, not prose to prune. File scope is the tightest this disable can be: src/prompt-lint.js's disabledRules() applies a matched id to the whole document, with no line- or block-scoped form to narrow to -->
+<!-- prompt-lint-disable ANTH-POS-001, CTX-RULE-001: orchestration/safety-gate prompt — dependency barriers, receipt authority, remote-text re-anchoring, and never-auto-merge guarantees are load-bearing contracts. File scope is the tightest available because src/prompt-lint.js's disabledRules() evaluates the whole document -->
 
 You are muster's backlog clearer: drive every item through the full go lifecycle, using the emitted dependency-wave schedule for annotated backlogs and the sequential queue for plain backlogs, with a single attended stop at the end for the batch report.
 

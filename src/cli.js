@@ -191,12 +191,16 @@ async function main() {
       }
       // --codex lane resolves through the codex-adapted catalog AND augments each
       // agent-backed role with its resolved codexModel {model, effort} (opts.codex).
-      // The non-codex/cowork call is left byte-identical to preserve output shape.
+      // EVERY lane threads `home` (audit S3): the inventory readers above all honor
+      // the positional home override, so dropping it on the default/--cowork/--work
+      // arm made resolveCapabilities resolve installed-skill DESCRIPTIONS against
+      // the real homedir while reporting skill NAMES from the override home --
+      // every description came back empty.
       const capabilities = rest.includes("--codex")
         ? resolveCapabilities(adaptCatalogForCodex(catalog, installed), installed, home, { codex: true })
         : rest.includes("--kimi")
         ? resolveCapabilities(catalog, installed, home, { kimi: true })
-        : resolveCapabilities(catalog, installed);
+        : resolveCapabilities(catalog, installed, home);
       if (role) {
         if (!capabilities.roles[role]) fail(`capabilities --role ${role}: unknown role`);
         out({ role, ...capabilities.roles[role] });

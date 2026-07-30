@@ -1,5 +1,5 @@
-import { modelForRole, normalizeTier } from "./model.js";
-import { resolveNeutralProfile } from "./model-policy.js";
+import { emissionTier, modelForRole, normalizeTier } from "./model.js";
+import { assertNeutralProfile, resolveNeutralProfile } from "./model-policy.js";
 import { agentProfiles } from "./agent-manifest.js";
 
 // Claude is an adapter target, not the identity muster's tiers are named after —
@@ -64,8 +64,24 @@ export function claudeModelForRole(role) {
 // resolves to. Consumes { tier, effort? } (model-policy.js) from the SAME
 // catalog/agents.manifest.json the Codex and Kimi adapters read. Mirrors
 // codexProfileForConfig / kimiProfileForConfig.
+//
+// The declared tier goes through the shared emission layer (model.js
+// emissionTier: apex opt-in check + MUSTER_MAX_TIER) before it is resolved,
+// because on Claude the apex tier's model is PLATFORM-GATED -- Fable. The
+// Codex/Kimi apex entries (sol/high, k3/max) are always dispatchable, so those
+// adapters can resolve a manifest tier raw; a Claude dispatch on a disabled
+// apex is REJECTED, which is exactly what model.js's degradation exists to
+// prevent (and why the apex tier entry above documents "dispatch normally never
+// reaches it"). Since capabilities.js now treats this profile as the
+// authoritative dispatch pin (audit S3), resolving apex raw here would have put
+// `fable` in the field the orchestrator dispatches on, and a manifest-declared
+// prime agent would have escaped a MUSTER_MAX_TIER=core budget cap. The
+// semantic effort is a separate axis and is never touched by the cap.
 export function claudeProfileForConfig(config) {
-  return resolveNeutralProfile(config, CLAUDE_MODEL_POLICY);
+  // Asserted on the CALLER's config first so a malformed entry still fails loud
+  // with its own message (a governed tier would mask which field was wrong).
+  assertNeutralProfile(config);
+  return resolveNeutralProfile({ ...config, tier: emissionTier(config.tier) }, CLAUDE_MODEL_POLICY);
 }
 
 // Resolve an agent id (a manifest key) to its concrete Claude {model}. Returns

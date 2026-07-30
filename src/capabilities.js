@@ -93,29 +93,39 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
       }
     }
     const model = modelForRole(role);
-    // `model` is the CONCEPTUAL tier (scout|core|prime|apex). `claudeModel` is the
-    // Claude adapter's concrete value for it -- what the Agent tool's `model`
-    // override actually accepts on Claude Code. Attached on every dispatch lane
-    // except Work, whose host has no Claude model override and remains on the
-    // harness-neutral conceptual tier.
+    // `model` is the CONCEPTUAL tier (scout|core|prime|apex), emitted on every
+    // lane. `claudeModel`/`claudeProfile` are the CLAUDE adapter's concrete
+    // dispatch values, so they ride only the lanes whose host actually
+    // dispatches Claude models: the default lane and Cowork. Work has no Claude
+    // model override at all, and a --codex/--kimi driver dispatches on its own
+    // codexModel/kimiModel -- a Claude model sitting beside those is noise it
+    // could act on (audit S3, P2: the guard here used to be `!work` alone, so
+    // both Claude fields leaked into the codex and kimi lane output).
     roles[role] = { chosen, chain, recommendations, model };
-    // Work stays harness-neutral: its host does not dispatch Claude models, so
-    // only the conceptual tier is meaningful. Every pre-existing lane retains
-    // the Claude adapter mapping for backward compatibility.
-    if (!work) roles[role].claudeModel = claudeModelForTier(model).model;
     // claudeProfile: the Claude lane's sibling of the codex/kimi profile
     // emissions -- the SAME manifest-driven resolution (claudeProfileForAgentId),
     // carrying {model} plus the Workflow-lane `workflowEffort` when the chosen
     // agent's profile declares a semantic effort (src/claude.js). This is what
     // makes orchestrator SKILL.md's native Workflow dispatch ("effort = the
     // member's workflowEffort") read a field that EXISTS in capabilities.json
-    // instead of re-deriving it. Emitted on the default (Claude) lane, agent-
-    // backed roles only; the key is absent for inline/skill/mcp chosen exactly
-    // as codexModel/kimiModel are, and src/claude.js's lane scoping is honored:
-    // the field is a pre-dispatch resolution surface, never agent frontmatter
-    // or an Agent-tool call.
-    if (!work && chosen.kind === "agent") {
-      const claudeProfile = claudeProfileForAgentId(chosen.id);
+    // instead of re-deriving it. Agent-backed roles only; the key is absent for
+    // inline/skill/mcp chosen exactly as codexModel/kimiModel are, and
+    // src/claude.js's lane scoping is honored: the field is a pre-dispatch
+    // resolution surface, never agent frontmatter or an Agent-tool call.
+    if (!work && !codex && !kimi) {
+      const claudeProfile = chosen.kind === "agent" ? claudeProfileForAgentId(chosen.id) : null;
+      // PRECEDENCE (audit S3, P1): when the chosen agent HAS a manifest profile,
+      // that profile is the authoritative dispatch pin, so claudeModel IS
+      // claudeProfile.model -- same principle as the Codex lane's committed
+      // profile pins. Deriving claudeModel from the ROLE's tier while
+      // claudeProfile came from the AGENT's manifest made the two contradict
+      // each other on live roles (implement: sonnet beside a profile saying
+      // opus), leaving a driver two different Claude models for one member. The
+      // role-tier derivation survives only as the fallback for a role with no
+      // agent-backed profile. Both paths pass through model.js's emission layer
+      // (apex opt-in + MUSTER_MAX_TIER): modelForRole for the fallback,
+      // emissionTier inside claudeProfileForConfig for the profile.
+      roles[role].claudeModel = claudeProfile ? claudeProfile.model : claudeModelForTier(model).model;
       if (claudeProfile) roles[role].claudeProfile = claudeProfile;
     }
     if (codex && chosen.kind === "agent") {

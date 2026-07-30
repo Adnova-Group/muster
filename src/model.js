@@ -84,10 +84,22 @@ function apexEnabled() {
   return !!v && v !== "0" && v.toLowerCase() !== "false";
 }
 
+// The emission layer in one function: a DECLARED tier (a role's tier, or an
+// agent's tier from catalog/agents.manifest.json) → the tier that may actually
+// be emitted for dispatch, after the apex opt-in check and MUSTER_MAX_TIER.
+// modelForRole is this applied to a role's declared tier; the harness adapters
+// apply it to a manifest-declared agent tier (see claudeProfileForConfig), so a
+// per-agent override cannot smuggle a platform-disabled or over-cap tier into a
+// dispatch pin that the role path would have degraded.
+export function emissionTier(tier) {
+  const canonical = normalizeTier(tier);
+  return capTier(canonical === "apex" && !apexEnabled() ? fallbackModelFor("apex") : canonical);
+}
+
 export function modelForRole(role) {
-  if (SCOUT.has(role)) return capTier("scout");
-  if (APEX.has(role)) return capTier(apexEnabled() ? "apex" : fallbackModelFor("apex"));
-  return capTier("core");
+  if (SCOUT.has(role)) return emissionTier("scout");
+  if (APEX.has(role)) return emissionTier("apex");
+  return emissionTier("core");
 }
 
 // Apex degrades per this map — never fail the task over a model tier, and never

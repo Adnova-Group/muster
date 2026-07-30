@@ -167,6 +167,7 @@ test("Codex CLI research carries the 0.146 performance decision matrix and exper
     REJECT: [34852, 35078, 35098, 35364],
   };
   const matrix = cli.slice(cli.indexOf("### 11.1 Decision matrix"), cli.indexOf("### 11.2 Net decision"));
+  const netDecision = cli.slice(cli.indexOf("### 11.2 Net decision"));
   for (const [status, prs] of Object.entries(decisions)) {
     for (const pr of prs) {
       assert.match(cli, new RegExp(`https://github\\.com/openai/codex/pull/${pr}(?:\\s|$)`), `0.146 audit must link PR #${pr}`);
@@ -175,6 +176,9 @@ test("Codex CLI research carries the 0.146 performance decision matrix and exper
       assert.match(row, new RegExp(`\\| \\*\\*${status}\\*\\* \\|`), `PR #${pr} must remain classified ${status}`);
     }
   }
+  assert.match(netDecision, /compaction_ms/);
+  assert.match(netDecision, /successful (?:installed-app and `app\/read`|app) request duration/i);
+  assert.match(netDecision, /item elapsed time/i);
   assert.match(cli, /code_mode[\s\S]{0,100}under development[\s\S]{0,60}false/i);
   assert.match(cli, /code_mode_host[\s\S]{0,100}stable[\s\S]{0,60}true/i);
   assert.doesNotMatch(cli, /remote Code Mode[^.\n]*(?:production-ready|stable end-to-end)/i);

@@ -577,8 +577,11 @@ Decision vocabulary:
 
 0.146 is primarily a **free substrate upgrade** for Muster: request construction, app-server
 serialization, skill-catalog packing, plugin lookup, MCP reconnection, MCP prewarming, and attended
-TUI responsiveness improve automatically. The only immediate Muster adoption is methodological:
-capture `compaction_ms` in the next bounded performance comparison. Shadow skill selection and
-deferred tool-world-state need pilots; remote Code Mode remains rejected for production use while
-the underlying `code_mode` feature is explicitly under development [src: codex-release-0146]
-[src: installed-codex-0146].
+TUI responsiveness improve automatically. Immediate Muster adoption is methodological rather than a
+runtime integration: the next bounded performance comparison should record `compaction_ms`,
+successful installed-app and `app/read` request duration, and item elapsed time alongside total turn
+duration and tokens. Keep failed app requests outside the success-latency distribution, and treat
+missing completion start times as compatible older telemetry rather than zero elapsed time. Shadow
+skill selection and deferred tool-world-state still need pilots; remote Code Mode remains rejected
+for production use while the underlying `code_mode` feature is explicitly under development
+[src: codex-release-0146] [src: installed-codex-0146].

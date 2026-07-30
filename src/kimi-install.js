@@ -730,9 +730,9 @@ export async function runKimiInstall({
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
   await reconcileOrphanedManifestQuarantine(dest, manifestPath);
   const previous = await readManifest(manifestPath, dest);
-  const reconciled = previous
+  const reconciliation = previous
     ? await reconcileManifestQuarantines(dest, manifestPath, previous, process.platform)
-    : new Set();
+    : { skip: new Set(), manifestIdentity: null };
   const ownedSet = new Set(ownedRel);
   const staleRel = (previous ? [...previous.agents, ...previous.skills, ...(previous.verbs || [])] : [])
     .filter(rel => !ownedSet.has(rel));
@@ -743,7 +743,7 @@ export async function runKimiInstall({
   ]);
   const removedStale = [];
   for (const rel of staleRel) {
-    if (reconciled.has(rel)) {
+    if (reconciliation.skip.has(rel)) {
       removedStale.push(rel);
       continue;
     }
@@ -845,7 +845,7 @@ function quarantineIdentityMatches(info, record) {
 }
 
 async function persistUninstallManifest(manifestPath, manifest, dest) {
-  await atomicWriteJson(manifestPath, manifest, dest, null, { fsync: true, fsyncDir: true });
+  return atomicWriteJson(manifestPath, manifest, dest, null, { fsync: true, fsyncDir: true });
 }
 
 async function reconcileQuarantine(dest, record, platform = process.platform) {
@@ -941,14 +941,15 @@ async function reconcileQuarantine(dest, record, platform = process.platform) {
 
 async function reconcileManifestQuarantines(dest, manifestPath, manifest, platform) {
   const skip = new Set();
+  let manifestIdentity = null;
   while (manifest.quarantines?.length) {
     const record = manifest.quarantines[0];
     const result = await reconcileQuarantine(dest, record, platform);
     if (result.skipSource) skip.add(record.rel);
     manifest.quarantines.shift();
-    await persistUninstallManifest(manifestPath, manifest, dest);
+    manifestIdentity = await persistUninstallManifest(manifestPath, manifest, dest);
   }
-  return skip;
+  return { skip, manifestIdentity };
 }
 
 // The ownership manifest is the final managed file removed. Its quarantine
@@ -1016,11 +1017,12 @@ export async function runKimiUninstall({
     };
   }
 
-  const reconciled = await reconcileManifestQuarantines(dest, manifestPath, manifest, _platform);
+  const reconciliation = await reconcileManifestQuarantines(dest, manifestPath, manifest, _platform);
+  let finalManifestTarget = reconciliation.manifestIdentity;
   const managedPaths = [...owned.map(rel => join(dest, rel)), manifestPath];
   await assertSafeManagedFiles(dest, managedPaths);
   const deleteIdentities = new Map();
-  for (const path of managedPaths) {
+  for (const path of owned.map(rel => join(dest, rel))) {
     try { deleteIdentities.set(path, await captureManagedDeleteIdentity(dest, path)); }
     catch (error) {
       if (error.code === "ENOENT") deleteIdentities.set(path, null);
@@ -1030,7 +1032,7 @@ export async function runKimiUninstall({
 
   const removed = [];
   for (const rel of owned) {
-    if (reconciled.has(rel)) {
+    if (reconciliation.skip.has(rel)) {
       removed.push(rel);
       continue;
     }
@@ -1047,7 +1049,7 @@ export async function runKimiUninstall({
       await _beforeManagedMutation?.({ operation: "delete", path });
       await assertSafeManagedFiles(dest, [path]);
       manifest.quarantines = [...(manifest.quarantines || []), record];
-      await persistUninstallManifest(manifestPath, manifest, dest);
+      finalManifestTarget = await persistUninstallManifest(manifestPath, manifest, dest);
       await _beforeManagedMutation?.({
         operation: "receipt-durable",
         path,
@@ -1056,7 +1058,13 @@ export async function runKimiUninstall({
       });
       await unlinkManaged(dest, path, _beforeManagedMutation, expected, _platform, record, true);
       manifest.quarantines = manifest.quarantines.filter(candidate => candidate !== record);
-      await persistUninstallManifest(manifestPath, manifest, dest);
+      finalManifestTarget = await persistUninstallManifest(manifestPath, manifest, dest);
+      await _beforeManagedMutation?.({
+        operation: "receipt-cleared",
+        path,
+        manifestPath,
+        quarantine: record.directory
+      });
       removed.push(rel);
     }
     catch (error) { if (error.code !== "ENOENT") throw error; }
@@ -1078,7 +1086,10 @@ export async function runKimiUninstall({
   for (const rel of skillDirs) await rmdirIfEmpty(join(dest, rel));
   await rmdirIfEmpty(join(dest, "skills"));
   await rmdirIfEmpty(join(dest, "agents"));
-  const finalManifestIdentity = await captureManagedDeleteIdentity(dest, manifestPath);
+  const finalManifestIdentity = {
+    ...await captureManagedParentIdentity(dest, manifestPath),
+    target: finalManifestTarget ?? await lstat(manifestPath)
+  };
   await unlinkManaged(
     dest,
     manifestPath,
@@ -1114,12 +1125,18 @@ async function atomicWriteJson(
   beforeManagedMutation,
   { fsync = false, fsyncDir = false } = {}
 ) {
+  let publishedIdentity = null;
   await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", {
     fsync,
     fsyncDir,
     beforeRename: async temporary => {
       await beforeManagedMutation?.({ operation: "publish", path, temporary });
       await assertSafeManagedFiles(dest, [path]);
+      publishedIdentity = await lstat(temporary);
+      if (!publishedIdentity.isFile() || publishedIdentity.isSymbolicLink()) {
+        throw new Error(`Refusing to publish a non-ordinary Kimi file: ${temporary}`);
+      }
     }
   });
+  return publishedIdentity;
 }

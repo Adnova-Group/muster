@@ -517,6 +517,38 @@ test("runKimiUninstall: a final manifest replaced during its delete hook survive
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiUninstall: a final manifest replaced after its last publication survives", async () => {
+  const home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const managedAgent = join(root, "agents", "owned.md");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    const parkedManifest = join(root, "muster", "muster-published-manifest.json");
+    write(managedAgent, "managed agent bytes");
+    write(manifestPath, JSON.stringify({
+      owner: "muster",
+      format: 1,
+      agents: ["agents/owned.md"],
+      skills: []
+    }));
+    let replaced = false;
+
+    await assert.rejects(runKimiUninstall({
+      home,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation !== "receipt-cleared" || path !== managedAgent || replaced) return;
+        replaced = true;
+        renameSync(manifestPath, parkedManifest);
+        write(manifestPath, "replacement after final publication");
+      }
+    }), /changed during safe deletion/);
+
+    assert.equal(replaced, true);
+    assert.equal(readFileSync(manifestPath, "utf8"), "replacement after final publication");
+    assert.ok(existsSync(parkedManifest));
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiUninstall: an empty receipted quarantine skips a recreated source with a different identity", async () => {
   const home = tmp();
   try {

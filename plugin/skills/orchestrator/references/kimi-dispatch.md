@@ -54,12 +54,18 @@ can never engage a lane. Lane-sensitive legs in an attended session therefore di
 the Muster-owned supervisor: `$MUSTER_CLI kimi-process-run
 --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>`
 (`src/dispatch-receipts.js`) -- one headless `kimi -p` process per leg. On Linux the supervisor
-resolves and pins the canonical absolute Kimi executable, revalidates the canonical cwd/agent-file
-identities at final spawn, and launches a trusted per-leg broker plus detached trusted launcher.
-The launcher establishes the process group before untrusted Kimi work starts; the broker alone
-retains its live kernel identity, revalidates it before signaling, and performs bounded group
-TERM then KILL plus direct-child wait on failure or supervisor disconnect. Filesystem receipts are
-diagnostic only and never authorize hygiene signaling, including valid same-UID fabrications.
+opens the resolved executable/cwd/agent objects with `O_NOFOLLOW`, verifies their descriptor
+identities, snapshots the agent file into an unlinked read-only descriptor, and explicitly inherits
+those descriptors through the trusted per-leg broker and detached launcher. The final process uses
+only `/proc/self/fd/*` for executable, cwd, and agent-file access, so same-UID pathname replacement
+after binding cannot change what is launched or opened. The launcher establishes the process group
+before untrusted Kimi work starts and stays alive after the direct child exits; the broker retains
+the launcher's live kernel identity and routes completion, SIGINT/SIGTERM/SIGHUP, setup failure, and
+supervisor disconnect through bounded group TERM then KILL, awaiting the trusted launcher only after
+decisive cleanup. The launcher's own broker-disconnect fallback uses a referenced KILL timer.
+Filesystem receipts are diagnostic only and never authorize hygiene signaling, including valid
+same-UID fabrications; receipt directory enumeration is globally capped even under malformed-name
+flooding.
 Platforms without this containment fail closed/report-only (Windows Job Objects are not available
 to this Node implementation). `$MUSTER_CLI kimi-process-dispatch ...` remains
 descriptor-only compatibility/debug output and MUST NOT be manually spawned for a production leg,

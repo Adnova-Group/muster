@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { chmod, mkdir, mkdtemp, readdir, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,10 +109,9 @@ test("receipt enumeration filters malformed names before the cap and reports inc
     pid: 8223, startIdentity: "linux-proc-stat:82230", createdAt: new Date().toISOString(),
   }), { mode: 0o600 });
   const result = await readDispatchReceipts({ receiptRoot, processes: [] });
-  assert.deepEqual(result.receipts, [{ pid: 8223, startIdentity: "linux-proc-stat:82230" }]);
-  assert.equal(result.rejected.length, 300);
+  assert.ok(result.rejected.length <= 256, "the total directory walk is globally bounded");
   assert.equal(result.incompleteProvenance, true);
-  assert.equal(result.truncated, false, "invalid names do not consume the valid-receipt cap");
+  assert.equal(result.truncated, true, "malformed-name flooding is reported as truncation");
 });
 
 test("partial process snapshots never prove death or delete a diagnostic receipt", async () => {
@@ -134,43 +134,166 @@ test("partial process snapshots never prove death or delete a diagnostic receipt
   assert.equal(result.incompleteProvenance, true);
 });
 
-test("validated cwd and agent file identities are rechecked before final spawn", async () => {
+test("agent-file launch is bound to the opened descriptor across same-UID replacement", async () => {
+  if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const receiptRoot = await tempStore();
+  const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-agent-binding-"));
+  const executable = join(executableRoot, "kimi");
+  await writeFile(executable,
+    "#!/usr/bin/env node\n" +
+    "const fs=require('node:fs');const i=process.argv.indexOf('--agent-file');" +
+    "process.exit(fs.readFileSync(process.argv[i+1],'utf8').includes('fixture')?31:32);\n");
+  await chmod(executable, 0o755);
   const moved = `${fixture.agentFile}.old`;
-  let spawned = false;
-  await assert.rejects(runKimiProcess(fixture, {
+  const result = await runKimiProcess(fixture, {
     receiptRoot,
-    executable: process.execPath,
+    executable,
     beforeFinalSpawn: async () => {
       await rename(fixture.agentFile, moved);
       await writeFile(fixture.agentFile, "---\nname: substituted\n---\n");
     },
-    spawnProcess: () => { spawned = true; throw new Error("must not spawn"); },
-  }), /agent file identity changed|agentFile identity changed/);
-  assert.equal(spawned, false);
+    onReceiptEstablished: async () => {},
+  });
+  assert.deepEqual(result, { code: 31, signal: null });
+  assert.match(await readFile(moved, "utf8"), /name: fixture/);
 });
 
-test("final spawn uses the pinned absolute executable after PATH substitution", async () => {
+test("agent-file descriptor is an immutable snapshot across same-inode mutation", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
-  const root = await mkdtemp(join(tmpdir(), "muster-kimi-path-pin-"));
-  const first = join(root, "first");
-  const second = join(root, "second");
-  await Promise.all([mkdir(first), mkdir(second)]);
-  await writeFile(join(first, "kimi"), "#!/usr/bin/env node\nprocess.exit(11);\n");
-  await writeFile(join(second, "kimi"), "#!/usr/bin/env node\nprocess.exit(12);\n");
-  await Promise.all([chmod(join(first, "kimi"), 0o755), chmod(join(second, "kimi"), 0o755)]);
-  const dispatchEnv = { ...process.env, PATH: `${first}:${process.env.PATH}` };
+  const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-agent-snapshot-"));
+  const executable = join(executableRoot, "kimi");
+  await writeFile(executable,
+    "#!/usr/bin/env node\nconst fs=require('node:fs');const i=process.argv.indexOf('--agent-file');" +
+    "process.exit(fs.readFileSync(process.argv[i+1],'utf8').includes('fixture')?33:34);\n");
+  await chmod(executable, 0o755);
   const result = await runKimiProcess(fixture, {
     receiptRoot: await tempStore(),
-    env: dispatchEnv,
-    beforeFinalSpawn: async () => { dispatchEnv.PATH = `${second}:${process.env.PATH}`; },
+    executable,
+    beforeFinalSpawn: async () => {
+      await writeFile(fixture.agentFile, "---\nname: mutated-in-place\n---\n");
+    },
+  });
+  assert.deepEqual(result, { code: 33, signal: null });
+});
+
+test("executable launch is bound to the opened descriptor across same-UID replacement", async () => {
+  if (process.platform !== "linux") return;
+  const fixture = await fixtureRequest();
+  const root = await mkdtemp(join(tmpdir(), "muster-kimi-exec-binding-"));
+  const executable = join(root, "kimi");
+  const original = join(root, "kimi.original");
+  await writeFile(executable, "#!/usr/bin/env node\nprocess.exit(11);\n");
+  await chmod(executable, 0o755);
+  const result = await runKimiProcess(fixture, {
+    receiptRoot: await tempStore(),
+    executable,
+    beforeFinalSpawn: async () => {
+      await rename(executable, original);
+      await writeFile(executable, "#!/usr/bin/env node\nprocess.exit(12);\n");
+      await chmod(executable, 0o755);
+    },
   });
   assert.deepEqual(result, { code: 11, signal: null });
 });
 
-test("broker setup failure is terminal only after the trusted launcher has been decisively awaited", async () => {
+test("cwd launch is bound to the opened directory across same-UID replacement", async () => {
+  if (process.platform !== "linux") return;
+  const fixture = await fixtureRequest();
+  const originalCwd = `${fixture.cwd}.original`;
+  const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-cwd-binding-"));
+  const executable = join(executableRoot, "kimi");
+  await writeFile(join(fixture.cwd, "identity"), "original");
+  await writeFile(executable,
+    "#!/usr/bin/env node\nconst fs=require('node:fs');" +
+    "process.exit(fs.readFileSync('identity','utf8')==='original'?21:22);\n");
+  await chmod(executable, 0o755);
+  const result = await runKimiProcess(fixture, {
+    receiptRoot: await tempStore(),
+    executable,
+    beforeFinalSpawn: async () => {
+      await rename(fixture.cwd, originalCwd);
+      await mkdir(fixture.cwd);
+      await writeFile(join(fixture.cwd, "identity"), "replacement");
+    },
+  });
+  assert.deepEqual(result, { code: 21, signal: null });
+});
+
+test("SIGINT, SIGTERM, and SIGHUP cancellation use bounded broker TERM-to-KILL cleanup", async () => {
+  if (process.platform !== "linux") return;
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    const fixture = await fixtureRequest();
+    const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-cancel-"));
+    const executable = join(executableRoot, "kimi");
+    const pidFile = join(executableRoot, "target.pid");
+    const signalSource = new EventEmitter();
+    await writeFile(executable,
+      "#!/usr/bin/env node\nrequire('node:fs').writeFileSync(" + JSON.stringify(pidFile) + ",String(process.pid));" +
+      "process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});" +
+      "process.on('SIGHUP',()=>{});setInterval(()=>{},1000);\n");
+    await chmod(executable, 0o755);
+    const started = Date.now();
+    let targetPid;
+    const running = runKimiProcess(fixture, {
+      receiptRoot: await tempStore(),
+      executable,
+      signalSource,
+      killTimeoutMs: 100,
+      onReceiptEstablished: async () => {
+        for (let i = 0; i < 50 && !targetPid; i += 1) {
+          try { targetPid = Number(await readFile(pidFile, "utf8")); } catch {
+            await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+          }
+        }
+        assert.ok(targetPid > 0, `target started before ${signal} cancellation`);
+        signalSource.emit(signal);
+      },
+    });
+    try {
+      await assert.rejects(running, new RegExp(`cancel|${signal}|exited`, "i"));
+      assert.ok(Date.now() - started < 3_000, `${signal} cancellation is bounded`);
+      assert.throws(() => process.kill(targetPid, 0), /ESRCH/,
+        `broker KILLs a TERM-resistant target after ${signal}`);
+    } finally {
+      if (targetPid) {
+        try { process.kill(targetPid, "SIGKILL"); } catch {}
+      }
+    }
+  }
+});
+
+test("successful direct-child exit still cleans surviving descendants before return", async () => {
+  if (process.platform !== "linux") return;
+  const fixture = await fixtureRequest();
+  const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-descendant-"));
+  const executable = join(executableRoot, "kimi");
+  const pidFile = join(executableRoot, "descendant.pid");
+  await writeFile(executable,
+    "#!/usr/bin/env node\nconst {spawn}=require('node:child_process');const fs=require('node:fs');" +
+    "const c=spawn(process.execPath,['-e',\"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)\"],{stdio:'ignore'});" +
+    `fs.writeFileSync(${JSON.stringify(pidFile)},String(c.pid));process.exit(0);\n`);
+  await chmod(executable, 0o755);
+  let descendantPid;
+  try {
+    const result = await runKimiProcess(fixture, {
+      receiptRoot: await tempStore(),
+      executable,
+      killTimeoutMs: 100,
+    });
+    descendantPid = Number(await readFile(pidFile, "utf8"));
+    assert.deepEqual(result, { code: 0, signal: null });
+    assert.throws(() => process.kill(descendantPid, 0), /ESRCH/,
+      "run completion is not reported while a group descendant remains alive");
+  } finally {
+    if (descendantPid) {
+      try { process.kill(descendantPid, "SIGKILL"); } catch {}
+    }
+  }
+});
+
+test("unreadable spawned identity fails immediately and decisively cleans the trusted group", async () => {
   if (process.platform !== "linux") return;
   const fixture = await fixtureRequest();
   const root = await mkdtemp(join(tmpdir(), "muster-kimi-bad-exec-"));
@@ -182,8 +305,26 @@ test("broker setup failure is terminal only after the trusted launcher has been 
     receiptRoot: await tempStore(),
     executable: bad,
     killTimeoutMs: 100,
-  }), /ENOENT|spawn/);
+  }), /ENOENT|spawn|stable Kimi process identity unavailable/);
   assert.ok(Date.now() - started < 5_000, "setup cleanup and direct-child wait are bounded");
+});
+
+test("receipt/setup failure never waits for a TERM-resistant target's natural exit", async () => {
+  if (process.platform !== "linux") return;
+  const fixture = await fixtureRequest();
+  const executableRoot = await mkdtemp(join(tmpdir(), "muster-kimi-setup-failure-"));
+  const executable = join(executableRoot, "kimi");
+  await writeFile(executable,
+    "#!/usr/bin/env node\nprocess.on('SIGTERM',()=>{});setInterval(()=>{},1000);\n");
+  await chmod(executable, 0o755);
+  const started = Date.now();
+  await assert.rejects(runKimiProcess(fixture, {
+    receiptRoot: await tempStore(),
+    executable,
+    killTimeoutMs: 100,
+    onReceiptEstablished: async () => { throw new Error("injected receipt publication failure"); },
+  }), /injected receipt publication failure/);
+  assert.ok(Date.now() - started < 3_000, "setup failure cleanup is bounded");
 });
 
 test("supervisor crash triggers descendant process-group cleanup", async () => {

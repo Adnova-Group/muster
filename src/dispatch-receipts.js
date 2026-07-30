@@ -5,17 +5,22 @@ import {
   constants as fsConstants,
   existsSync,
   fstatSync,
+  fchmodSync,
+  mkdtempSync,
   openSync,
   realpathSync,
   readFileSync,
+  rmdirSync,
   statSync,
+  unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import {
   lstat,
   mkdir,
-  readdir,
+  opendir,
 } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { atomicWrite, readNoFollowRegular } from "./fs-safe.js";
@@ -25,9 +30,11 @@ export const DISPATCH_RECEIPT_FORMAT = "muster.dispatch-process";
 export const DISPATCH_RECEIPT_SCHEMA = 1;
 export const MAX_DISPATCH_RECEIPTS = 256;
 export const MAX_DISPATCH_RECEIPT_BYTES = 4096;
+const MAX_BOUND_AGENT_BYTES = 1024 * 1024;
 const RECEIPT_NAME = /^receipt-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.json$/;
 const RECEIPT_KEYS = ["createdAt", "format", "pid", "provider", "schemaVersion", "startIdentity", "token"];
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+const BINDING_FDS = Object.freeze({ executable: 3, cwd: 4, agentFile: 5 });
 
 export function dispatchReceiptDirectory() {
   return join(homedir(), ".muster", "dispatch-receipts");
@@ -153,10 +160,20 @@ export async function readDispatchReceipts({
     if (error?.code === "ENOENT") return { receipts: [], rejected: [], cleaned: [], truncated: false };
     throw error;
   }
-  const allEntries = (await readdir(receiptRoot)).sort();
+  const allEntries = [];
+  let directoryTruncated = false;
+  const directory = await opendir(receiptRoot);
+  for await (const entry of directory) {
+    if (allEntries.length === MAX_DISPATCH_RECEIPTS) {
+      directoryTruncated = true;
+      break;
+    }
+    allEntries.push(entry.name);
+  }
+  allEntries.sort();
   const invalidNames = allEntries.filter((name) => !RECEIPT_NAME.test(name));
   const validNames = allEntries.filter((name) => RECEIPT_NAME.test(name));
-  const entries = validNames.slice(0, MAX_DISPATCH_RECEIPTS);
+  const entries = validNames;
   const processRows = Array.isArray(processes) ? processes : [];
   const byPid = new Map(processRows.map((row) => [Number(row?.pid), row]));
   const receipts = [];
@@ -199,9 +216,9 @@ export async function readDispatchReceipts({
     receipts,
     rejected,
     cleaned,
-    truncated: validNames.length > MAX_DISPATCH_RECEIPTS,
+    truncated: directoryTruncated,
     incompleteProvenance: processSnapshotComplete !== true ||
-      validNames.length > MAX_DISPATCH_RECEIPTS ||
+      directoryTruncated ||
       rejected.length > 0,
   };
 }
@@ -217,29 +234,6 @@ function terminalPromise(child) {
     child.once("error", (error) => finish(reject, error));
     child.once("exit", (code, signal) => finish(resolve, { code, signal }));
   });
-}
-
-function sameIdentity(path, expected, kind, label = kind) {
-  try {
-    const current = statSync(path);
-    const canonical = realpathSync(path);
-    if (canonical !== path || current.dev !== expected.dev || current.ino !== expected.ino ||
-        (kind === "directory" ? !current.isDirectory() : !current.isFile())) {
-      throw new Error(`${label} identity changed before final spawn: ${path}`);
-    }
-  } catch (error) {
-    if (/identity changed/.test(error.message)) throw error;
-    throw new Error(`${label} identity changed before final spawn: ${path}`);
-  }
-}
-
-function validateDescriptorBindings(descriptor) {
-  sameIdentity(descriptor.cwd, descriptor.pathBindings.cwd, "directory", "cwd");
-  sameIdentity(
-    descriptor.pathBindings.agentFile.path,
-    descriptor.pathBindings.agentFile,
-    "agent file",
-  );
 }
 
 export function resolveKimiExecutable({
@@ -269,8 +263,110 @@ export function resolveKimiExecutable({
   throw new Error("unable to resolve an executable Kimi binary from PATH");
 }
 
-function validateExecutable(binding) {
-  sameIdentity(binding.path, binding, "Kimi executable");
+function openBoundPath(path, expected, flags, predicate, label) {
+  if (!fsConstants.O_NOFOLLOW) throw new Error(`${label} descriptor binding requires O_NOFOLLOW`);
+  let fd;
+  try {
+    fd = openSync(path, flags | fsConstants.O_NOFOLLOW);
+    const info = fstatSync(fd);
+    if (!predicate(info) || info.dev !== expected.dev || info.ino !== expected.ino) {
+      throw new Error(`${label} identity changed before descriptor binding: ${path}`);
+    }
+    return fd;
+  } catch (error) {
+    if (fd !== undefined) closeSync(fd);
+    if (/descriptor binding/.test(error.message)) throw error;
+    throw new Error(`${label} identity changed before descriptor binding: ${path}`);
+  }
+}
+
+function openLaunchBindings(descriptor, executableBinding) {
+  const opened = [];
+  try {
+    const executableFd = openBoundPath(
+      executableBinding.path,
+      executableBinding,
+      fsConstants.O_RDONLY,
+      (info) => info.isFile() && (info.mode & 0o111) !== 0,
+      "Kimi executable",
+    );
+    opened.push(executableFd);
+    const cwdFd = openBoundPath(
+      descriptor.cwd,
+      descriptor.pathBindings.cwd,
+      fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY || 0),
+      (info) => info.isDirectory(),
+      "cwd",
+    );
+    opened.push(cwdFd);
+    const sourceAgentFileFd = openBoundPath(
+      descriptor.pathBindings.agentFile.path,
+      descriptor.pathBindings.agentFile,
+      fsConstants.O_RDONLY,
+      (info) => info.isFile(),
+      "agent file",
+    );
+    opened.push(sourceAgentFileFd);
+    const sourceInfo = fstatSync(sourceAgentFileFd);
+    if (sourceInfo.size > MAX_BOUND_AGENT_BYTES) {
+      throw new Error(`agent file exceeds descriptor snapshot cap of ${MAX_BOUND_AGENT_BYTES} bytes`);
+    }
+    const agentBytes = readFileSync(sourceAgentFileFd);
+    const snapshotRoot = mkdtempSync(join(tmpdir(), "muster-agent-binding-"));
+    const snapshotPath = join(snapshotRoot, "agent");
+    let snapshotWriteFd;
+    let agentFileFd;
+    try {
+      snapshotWriteFd = openSync(
+        snapshotPath,
+        fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_RDWR | fsConstants.O_NOFOLLOW,
+        0o600,
+      );
+      writeFileSync(snapshotWriteFd, agentBytes);
+      fchmodSync(snapshotWriteFd, 0o400);
+      agentFileFd = openSync(snapshotPath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      closeSync(snapshotWriteFd);
+      snapshotWriteFd = undefined;
+      unlinkSync(snapshotPath);
+      rmdirSync(snapshotRoot);
+    } catch (error) {
+      if (snapshotWriteFd !== undefined) closeSync(snapshotWriteFd);
+      if (agentFileFd !== undefined) closeSync(agentFileFd);
+      try { unlinkSync(snapshotPath); } catch {}
+      try { rmdirSync(snapshotRoot); } catch {}
+      throw error;
+    }
+    closeSync(sourceAgentFileFd);
+    opened.pop();
+    opened.push(agentFileFd);
+    return { executableFd, cwdFd, agentFileFd };
+  } catch (error) {
+    for (const fd of opened) closeSync(fd);
+    throw error;
+  }
+}
+
+function closeLaunchBindings(bindings) {
+  if (!bindings) return;
+  for (const fd of [bindings.executableFd, bindings.cwdFd, bindings.agentFileFd]) {
+    try { closeSync(fd); } catch {}
+  }
+}
+
+function descriptorForInheritedBindings(descriptor) {
+  const argv = [...descriptor.argv];
+  const agentIndex = argv.indexOf("--agent-file");
+  if (agentIndex < 0 || agentIndex + 1 >= argv.length) {
+    throw new Error("validated Kimi argv has no agent-file slot");
+  }
+  argv[agentIndex + 1] = `/proc/self/fd/${BINDING_FDS.agentFile}`;
+  return {
+    argv,
+    cwd: `/proc/self/fd/${BINDING_FDS.cwd}`,
+    executable: `/proc/self/fd/${BINDING_FDS.executable}`,
+    env: descriptor.env,
+    lane: descriptor.lane,
+  };
 }
 
 function createMessageQueue(child) {
@@ -332,13 +428,25 @@ export async function runKimiProcess(request, {
   }
   const descriptor = kimiProcessDispatch(request);
   const executableBinding = resolveKimiExecutable({ env, executable });
-  await beforeFinalSpawn();
-  validateDescriptorBindings(descriptor);
-  validateExecutable(executableBinding);
-  const child = spawnProcess(process.execPath, [MODULE_PATH, "--broker"], {
-    stdio: ["ignore", "inherit", "inherit", "ipc"],
-    env,
-  });
+  const bindings = openLaunchBindings(descriptor, executableBinding);
+  let child;
+  try {
+    await beforeFinalSpawn();
+    child = spawnProcess(process.execPath, [MODULE_PATH, "--broker"], {
+      stdio: [
+        "ignore",
+        "inherit",
+        "inherit",
+        bindings.executableFd,
+        bindings.cwdFd,
+        bindings.agentFileFd,
+        "ipc",
+      ],
+      env,
+    });
+  } finally {
+    closeLaunchBindings(bindings);
+  }
   const brokerMessages = createMessageQueue(child);
   const terminal = terminalPromise(child);
   terminal.catch(() => {});
@@ -354,8 +462,7 @@ export async function runKimiProcess(request, {
   try {
     child.send({
       type: "CONFIGURE",
-      descriptor,
-      executableBinding,
+      descriptor: descriptorForInheritedBindings(descriptor),
       env: { ...env, ...descriptor.env },
       killTimeoutMs,
     });
@@ -373,7 +480,7 @@ export async function runKimiProcess(request, {
     return { code: outcome.code, signal: outcome.signal };
   } catch (error) {
     if (child.connected) {
-      try { child.send({ type: "SHUTDOWN" }); } catch { /* broker already exited */ }
+      try { child.send({ type: "SHUTDOWN", reason: error.message }); } catch { /* broker already exited */ }
     }
     try { await terminal; } catch { /* original setup/runtime error wins */ }
     throw error;
@@ -414,19 +521,19 @@ async function terminateContainedGroup(child, identity, timeoutMs, childTerminal
   } catch (error) {
     if (error?.code !== "ESRCH") throw error;
   }
-  const exited = (childTerminal || terminalPromise(child)).then(() => true, () => true);
-  const timedOut = await Promise.race([
-    exited.then(() => false),
-    new Promise((resolveTimeout) => setTimeout(() => resolveTimeout(true), timeoutMs)),
-  ]);
-  if (timedOut) {
-    try {
-      signalContainedGroup({ pid: child.pid, startIdentity: identity, signal: "SIGKILL" });
-    } catch (error) {
-      if (error?.code !== "ESRCH" && !/identity\/state changed/.test(error.message)) throw error;
-    }
-    await exited;
+  await new Promise((resolveTimeout) => setTimeout(resolveTimeout, timeoutMs));
+  try {
+    signalContainedGroup({ pid: child.pid, startIdentity: identity, signal: "SIGKILL" });
+  } catch (error) {
+    if (error?.code !== "ESRCH" && !/identity\/state changed/.test(error.message)) throw error;
   }
+  await (childTerminal || terminalPromise(child)).then(() => {}, () => {});
+}
+
+async function killTrustedDirectChild(child, terminal) {
+  if (!child) return;
+  try { child.kill("SIGKILL"); } catch {}
+  await (terminal || terminalPromise(child)).then(() => {}, () => {});
 }
 
 async function brokerMain() {
@@ -435,30 +542,41 @@ async function brokerMain() {
   let launcherIdentity = null;
   let killTimeoutMs = 1_000;
   let shuttingDown = false;
-  const shutdown = async () => {
+  const shutdown = async (reason = "dispatch cancelled") => {
     if (shuttingDown) return;
     shuttingDown = true;
-    try { await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal); }
-    finally { process.exit(); }
+    try {
+      if (launcherIdentity) {
+        await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal);
+      } else {
+        await killTrustedDirectChild(launcher, launcherTerminal);
+      }
+      await sendIpc({ type: "FAILURE", error: reason }).catch(() => {});
+    } finally {
+      process.exitCode = 1;
+      if (process.connected) process.disconnect();
+    }
   };
-  process.on("disconnect", shutdown);
+  process.on("disconnect", () => { void shutdown("supervisor disconnected"); });
   process.on("message", async (message) => {
     try {
-      if (message?.type === "SHUTDOWN") return void shutdown();
+      if (message?.type === "SHUTDOWN") return void shutdown(message.reason || "dispatch shutdown");
       if (message?.type === "SIGNAL") {
-        if (!launcher) throw new Error("contained process group is unavailable");
-        signalContainedGroup({
-          pid: launcher.pid,
-          startIdentity: launcherIdentity,
-          signal: message.signal,
-        });
-        return;
+        return void shutdown(`dispatch cancelled by ${message.signal}`);
       }
       if (message?.type !== "CONFIGURE" || launcher) return;
       killTimeoutMs = message.killTimeoutMs;
       launcher = spawn(process.execPath, [MODULE_PATH, "--launcher"], {
         detached: true,
-        stdio: ["ignore", "inherit", "inherit", "ipc"],
+        stdio: [
+          "ignore",
+          "inherit",
+          "inherit",
+          BINDING_FDS.executable,
+          BINDING_FDS.cwd,
+          BINDING_FDS.agentFile,
+          "ipc",
+        ],
         env: process.env,
       });
       launcherTerminal = terminalPromise(launcher);
@@ -474,16 +592,24 @@ async function brokerMain() {
       const established = await launcherMessages.next(["ESTABLISHED", "FAILURE"]);
       if (established.type === "FAILURE") throw new Error(established.error);
       await sendIpc(established);
-      const result = await launcherMessages.next(["RESULT", "FAILURE"]);
-      await sendIpc(result);
-      await launcherTerminal;
-      process.exit();
+      const result = await launcherMessages.next(["CHILD_RESULT", "FAILURE"]);
+      if (result.type === "FAILURE") throw new Error(result.error);
+      await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal);
+      shuttingDown = true;
+      await sendIpc({ type: "RESULT", code: result.code, signal: result.signal });
+      if (process.connected) process.disconnect();
     } catch (error) {
+      shuttingDown = true;
       try {
-        await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal);
+        if (launcherIdentity) {
+          await terminateContainedGroup(launcher, launcherIdentity, killTimeoutMs, launcherTerminal);
+        } else {
+          await killTrustedDirectChild(launcher, launcherTerminal);
+        }
       } catch { /* fail closed */ }
       await sendIpc({ type: "FAILURE", error: error.message }).catch(() => {});
       process.exitCode = 1;
+      if (process.connected) process.disconnect();
     }
   });
 }
@@ -498,32 +624,38 @@ async function launcherMain() {
     try { process.kill(-process.pid, "SIGTERM"); } catch { /* group already gone */ }
     setTimeout(() => {
       try { process.kill(-process.pid, "SIGKILL"); } catch { /* group already gone */ }
-    }, 1_000).unref();
+    }, 1_000);
   };
   process.on("disconnect", disconnectCleanup);
   await sendIpc({ type: "READY" });
   process.on("message", async (message) => {
     if (message?.type !== "START" || child) return;
     try {
-      validateDescriptorBindings(message.descriptor);
-      validateExecutable(message.executableBinding);
-      child = spawn(message.executableBinding.path, message.descriptor.argv, {
+      child = spawn(message.descriptor.executable, message.descriptor.argv, {
         cwd: message.descriptor.cwd,
         env: message.env,
-        stdio: "inherit",
+        stdio: [
+          "inherit",
+          "inherit",
+          "inherit",
+          BINDING_FDS.executable,
+          BINDING_FDS.cwd,
+          BINDING_FDS.agentFile,
+        ],
       });
       const childTerminal = terminalPromise(child);
       childTerminal.catch(() => {});
       const identity = readKernelStartIdentity(child.pid);
       if (!identity) {
-        try { await childTerminal; } catch (error) { throw error; }
+        try { process.kill(-process.pid, "SIGTERM"); } catch {}
+        setTimeout(() => {
+          try { process.kill(-process.pid, "SIGKILL"); } catch {}
+        }, 1_000);
         throw new Error("stable Kimi process identity unavailable");
       }
       await sendIpc({ type: "ESTABLISHED", pid: child.pid, startIdentity: identity });
       const result = await childTerminal;
-      await sendIpc({ type: "RESULT", ...result });
-      process.disconnect();
-      process.exit();
+      await sendIpc({ type: "CHILD_RESULT", ...result });
     } catch (error) {
       await sendIpc({ type: "FAILURE", error: error.message }).catch(() => {});
       disconnectCleanup();

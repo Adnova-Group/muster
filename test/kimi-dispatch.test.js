@@ -725,13 +725,14 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   // that loses authoritative process provenance.
   assert.match(section, /`\$MUSTER_CLI kimi-process-run\s+--brief <text> --agent-file <name\|path> --cwd <dir> --lane <primary\|secondary>`/, "the rule must name the kimi-process-run supervisor with its exact argument shape");
   assert.match(section, /`src\/dispatch-receipts\.js`/, "the rule must cite the supervisor implementation");
-  assert.match(section, /resolves and pins the canonical absolute Kimi executable/, "the supervisor must pin the executable before the final spawn");
-  assert.match(section, /revalidates the canonical cwd\/agent-file\s+identities at final spawn/, "the supervisor must bind path identity through final spawn");
+  assert.match(section, /opens the resolved executable\/cwd\/agent objects with `O_NOFOLLOW`/, "the supervisor must descriptor-bind all launch paths");
+  assert.match(section, /only `\/proc\/self\/fd\/\*` for executable, cwd, and agent-file access/, "the final spawn must consume inherited kernel-bound descriptors");
+  assert.match(section, /snapshots the agent file into an unlinked read-only descriptor/, "agent contents must be immutable after validation");
   assert.match(section, /`?\$MUSTER_CLI kimi-process-dispatch \.\.\.`? remains\s+descriptor-only compatibility\/debug output/, "the descriptor verb must remain explicitly non-production");
   assert.match(section, /MUST NOT be manually spawned for a production leg/, "production prose must forbid unreceipted manual descriptor spawning");
-  assert.match(section, /broker alone\s+retains its live kernel identity/, "live broker state, not a receipt, must retain signaling authority");
+  assert.match(section, /broker retains\s+the launcher's live kernel identity/, "live broker state, not a receipt, must retain signaling authority");
   assert.match(section, /Filesystem receipts are\s+diagnostic only and never authorize hygiene signaling/, "the rule must deny receipt-based signaling authority");
-  assert.match(section, /bounded group\s+TERM then KILL plus direct-child wait/, "the rule must state decisive group cleanup");
+  assert.match(section, /bounded group TERM then KILL, awaiting the trusted launcher only after\s+decisive cleanup/, "the rule must state decisive group cleanup");
   assert.match(section, /Briefs MUST be secret-free/, "the rule must state the argv prompt limitation");
   assert.match(section, /kimiLaneEnv\(\)/, "the rule must name the shared kimiLaneEnv() env derivation");
   // the always-emit -m rule and its rationale

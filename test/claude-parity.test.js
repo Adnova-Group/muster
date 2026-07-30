@@ -1293,5 +1293,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // diagnostic-only filesystem receipts, fail-closed unsupported platforms,
   // canonical executable/path binding, and the unavoidable secret-free argv
   // brief rule. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "9d74e047c15e6fde89e4a97115842369c68582dfdce49f8a324c7764a99e80e6");
+  // 2026-07-30 re-pin #25 (receipt broker review remediation): the Kimi
+  // process-lane paragraph now names inherited /proc/self/fd bindings,
+  // immutable agent snapshots, bounded signal cleanup, launcher lifetime, and
+  // globally bounded diagnostic-receipt enumeration. File count is unchanged.
+  assert.equal(hash.digest("hex"), "d3dca76065eb0d4844dd45f89e32dd6a0956796aad58cd663b4b283a5b440b0b");
 });

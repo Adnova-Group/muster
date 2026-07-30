@@ -243,6 +243,21 @@ export function detectKimiQuotaFault(text) {
   return pattern ? pattern.source : null;
 }
 
+// Scope a captured output stream to its ERROR-SURFACE lines before the quota
+// match: stream-json {"type":"error"} events plus raw `error:`-prefixed lines.
+// Matching the whole stream lets injected or merely topical billing text in
+// assistant/tool output (a payments codebase discussing balances) flip a
+// resumable paused run into a non-resumable billing escalation. detectKimiQuotaFault's
+// own signature is unchanged -- callers that already hold scoped text keep
+// passing it straight through.
+export function quotaFaultLines(stdout) {
+  if (typeof stdout !== "string") return "";
+  return stdout.split("\n").filter((line) => {
+    if (line.startsWith("error:")) return true;
+    try { return JSON.parse(line).type === "error"; } catch { return false; }
+  }).join("\n");
+}
+
 // Map a `kimi -p "/goal ..."` process exit code onto muster's run disposition.
 // This is the whole reason /goal is worth adopting: muster's escalation signal
 // arrives as an exit code instead of being parsed out of a STATE file.
@@ -253,10 +268,11 @@ export function detectKimiQuotaFault(text) {
 // Any other code is a harness fault, not a goal outcome -- never silently
 // treated as an escalation (that would report a crash as a clean stop).
 //
-// `output` (optional) is the process's captured stdout/stderr text. When it
-// carries the 0.30.0 quota/balance fail-fast signature (detectKimiQuotaFault),
-// a non-complete exit is reclassified as a BILLING escalation -- kind:
-// "billing", escalate: true, resumable: false: the binary itself marks the
+// `output` (optional) is the process's captured stdout/stderr text. When its
+// ERROR-SURFACE lines (quotaFaultLines: stream-json {"type":"error"} events
+// plus raw `error:` lines) carry the 0.30.0 quota/balance fail-fast signature
+// (detectKimiQuotaFault), a non-complete exit is reclassified as a BILLING
+// escalation -- kind: "billing", escalate: true, resumable: false: the binary itself marks the
 // fault retryable: false, so an unattended resume/retry loop only re-pays a
 // guaranteed-fail round trip until a human recharges the account. Only after
 // the recharge does the paused goal's resume path apply. A complete exit is
@@ -264,7 +280,7 @@ export function detectKimiQuotaFault(text) {
 // its output is incidental).
 export function interpretKimiGoalExit(code, output) {
   const status = Object.keys(KIMI_GOAL_EXIT_CODES).find(name => KIMI_GOAL_EXIT_CODES[name] === code);
-  const quotaSignal = status !== "complete" ? detectKimiQuotaFault(output) : null;
+  const quotaSignal = status !== "complete" ? detectKimiQuotaFault(quotaFaultLines(output)) : null;
   if (!status) {
     return {
       status: "failed",

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, interpretKimiGoalExit, resolveKimiWaveDispatch,
-  interpretKimiBackgroundCompletion, detectKimiQuotaFault,
+  interpretKimiBackgroundCompletion, detectKimiQuotaFault, quotaFaultLines,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_PROCESS_MAX_BRIEF, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
@@ -280,6 +280,61 @@ test("interpretKimiGoalExit: a quota/balance fault is a BILLING escalation, neve
   assert.equal(complete.status, "complete");
   assert.equal(complete.kind, undefined);
   assert.equal(complete.escalate, false);
+});
+
+test("quotaFaultLines: keeps only error-surface lines (stream-json error events + raw error: lines)", () => {
+  const stdout = '{"role":"meta","type":"system.version","version":"0.30.0"}\n' +
+    '{"role":"assistant","content":"please check your account balance"}\n' +
+    '{"type":"error","code":"api_error","name":"APIProviderQuotaExhaustedError","retryable":false}\n' +
+    'error: insufficient_quota\n' +
+    'some raw noise line\n';
+  const scoped = quotaFaultLines(stdout);
+  assert.equal(scoped,
+    '{"type":"error","code":"api_error","name":"APIProviderQuotaExhaustedError","retryable":false}\n' +
+    'error: insufficient_quota');
+  assert.equal(quotaFaultLines(""), "");
+  assert.equal(quotaFaultLines(null), "");
+  assert.equal(quotaFaultLines(undefined), "");
+});
+
+test("interpretKimiGoalExit: quota wording ONLY in assistant/tool text is NOT a billing fault (scoped match)", () => {
+  // Injected or merely topical billing text (a payments codebase discussing
+  // balances) must not flip a resumable pause into a non-resumable billing
+  // escalation -- the match is scoped to error-surface lines, as in the eval
+  // harness's quotaFaultLines rule.
+  const billingTalk = '{"role":"assistant","content":"You should check your account balance regularly."}\n' +
+    '{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"refund","arguments":"{\\"reason\\":\\"please recharge\\"}"}}]}\n';
+
+  const paused = interpretKimiGoalExit(6, billingTalk);
+  assert.equal(paused.status, "paused");
+  assert.equal(paused.resumable, true);
+  assert.equal(paused.escalate, false);
+  assert.equal(paused.kind, undefined);
+
+  const crashed = interpretKimiGoalExit(1, billingTalk);
+  assert.equal(crashed.status, "failed");
+  assert.equal(crashed.kind, undefined);
+  assert.match(crashed.reason, /not a \/goal terminal state/);
+});
+
+test("interpretKimiGoalExit: quota wording in an error-surface line DOES reclassify as billing", () => {
+  // Raw `error:`-prefixed line (non-stream-json capture) carrying the wording.
+  const rawError = "error: Exceeded your current quota, please check your account balance\n";
+  const paused = interpretKimiGoalExit(6, rawError);
+  assert.equal(paused.kind, "billing");
+  assert.equal(paused.resumable, false);
+  assert.equal(paused.escalate, true);
+
+  // Stream-json {"type":"error"} event carrying only the wording (no error
+  // class name or provider code) still matches -- the line is error-surface.
+  const errorEvent = '{"type":"error","code":"api_error","message":"insufficient balance"}\n';
+  const crashed = interpretKimiGoalExit(1, errorEvent);
+  assert.equal(crashed.kind, "billing");
+  assert.match(crashed.reason, /BILLING escalation/);
+
+  // The same wording on a NON-error stream-json line never reclassifies.
+  const assistantEcho = '{"type":"assistant","message":"insufficient balance"}\n';
+  assert.equal(interpretKimiGoalExit(1, assistantEcho).kind, undefined);
 });
 
 test("kimiGoalInvocation: builds argv + the per-process lane env", () => {

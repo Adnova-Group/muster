@@ -63,7 +63,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { kimiProcessDispatch, KIMI_PROCESS_MAX_BRIEF, detectKimiQuotaFault } from "../src/kimi-dispatch.js";
+import { kimiProcessDispatch, KIMI_PROCESS_MAX_BRIEF, detectKimiQuotaFault, quotaFaultLines } from "../src/kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, readSessionThinkingEfforts } from "../src/kimi-receipts.js";
 
 const pexecFile = promisify(execFile);
@@ -273,17 +273,11 @@ export function spawnEnv(descriptorEnv, baseEnv = process.env) {
 // The signature lives on stdout: the stream-json `error` event keeps
 // `name: "APIProviderQuotaExhaustedError"`, and the provider's quota wording
 // is emitted there too (spawnAttempt does not capture stderr). The match is
-// SCOPED to error-surface lines (stream-json {"type":"error"} events plus raw
-// `error:` lines) -- never the whole stdout, so assistant/tool text about
+// SCOPED to error-surface lines via quotaFaultLines (imported from
+// src/kimi-dispatch.js -- one source of truth shared with the production
+// interpretKimiGoalExit): stream-json {"type":"error"} events plus raw
+// `error:` lines, never the whole stdout, so assistant/tool text about
 // billing in an unrelated run cannot false-positive (review-gate minor).
-export function quotaFaultLines(stdout) {
-  if (typeof stdout !== "string") return "";
-  return stdout.split("\n").filter((line) => {
-    if (line.startsWith("error:")) return true;
-    try { return JSON.parse(line).type === "error"; } catch { return false; }
-  }).join("\n");
-}
-
 export function cellNeedsRetry({ exitCode, stdout }) {
   if (detectKimiQuotaFault(quotaFaultLines(stdout))) return false;
   if (exitCode !== 0) return true;

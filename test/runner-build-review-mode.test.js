@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { profileToml } from "../src/codex-release.js";
+import { generateCodexProfiles, profileToml } from "../src/codex-release.js";
 import { selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
@@ -25,11 +25,17 @@ test("runner source contract defines a side-effect-free build-review-only mode",
 
 test("generated Codex runner profile preserves the build-review-only contract", async () => {
   const source = await readFile(runnerAgentPath, "utf8");
+  const canonicalProfiles = await generateCodexProfiles(repoRoot);
+  const canonicalRunner = canonicalProfiles.get("muster-runner.toml");
+  const committedRunner = await readFile(join(repoRoot, ".codex", "agents", "muster-runner.toml"), "utf8");
   const profiles = [
     profileToml("muster-runner", source, { tier: "opus" }),
     await readFile(join(selectedPluginRoot, "agents", "muster-runner.toml"), "utf8"),
+    committedRunner,
   ];
 
+  assert.equal(committedRunner, canonicalRunner,
+    "committed .codex runner profile must exactly match canonical generateCodexProfiles output");
   for (const profile of profiles) {
     assert.match(profile, /build-review-only/);
     assert.match(profile, /must not push/is);

@@ -59,7 +59,7 @@
 import { execFileSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, writeFile } from "node:fs/promises";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -183,10 +183,30 @@ export function probeMaterial(probeId, repoRoot = REPO_ROOT) {
 // material file. The cell's cwd is this dir, so nothing else is in reach by
 // default -- no repo, no git history, no prior cells' results. (Dry-run
 // builds these too: descriptor construction IS the quarantine construction.)
+// Every quarantine dir is tracked, and REAL runs sweep them on process exit
+// (tmp-fixture-leak follow-up: ~24 leaked dirs per probe run). The sweep is
+// armed only from main()'s run path, never at module load: dry-run's whole
+// contract is that construction IS the product -- its caller (including the
+// test suite's --dry-run child processes) inspects the dirs after this
+// process exits -- and a cell's dir is its spawned process's cwd for the
+// cell's whole lifetime, so per-cell removal is wrong in run mode too.
+const QUARANTINE_DIRS = [];
+let sweepArmed = false;
+function armQuarantineSweep() {
+  if (sweepArmed) return;
+  sweepArmed = true;
+  process.on("exit", () => {
+    for (const dir of QUARANTINE_DIRS) {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort sweep */ }
+    }
+  });
+}
+
 export function buildQuarantineDir({ probeId, repoRoot = REPO_ROOT, baseDir } = {}) {
   const file = PROBE_MATERIAL_FILES[probeId];
   if (!file) throw new Error(`buildQuarantineDir: unknown probe ${JSON.stringify(probeId)}`);
   const dir = mkdtempSync(join(baseDir ?? tmpdir(), `kimi-tier-probe-${probeId}-`));
+  QUARANTINE_DIRS.push(dir);
   writeFileSync(join(dir, file), probeMaterial(probeId, repoRoot));
   return { dir, file };
 }
@@ -614,6 +634,7 @@ async function main(argv) {
     process.stdout.write(JSON.stringify({ mode: "dry-run", probeMode: opts.mode, protocolVersion: PROTOCOL_VERSION, cells: view }, null, 2) + "\n");
     return;
   }
+  armQuarantineSweep(); // real run from here on -- dry-run returned above, its dirs stay for the caller
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outFile = resolve(opts.out ?? join(REPO_ROOT, "eval", "results", `kimi-reviewer-tier-probe-${opts.mode}-${stamp}.json`));
   const resultsDir = resolve(opts.resultsDir ?? join(dirname(outFile), `kimi-reviewer-tier-probe-${opts.mode}-${stamp}.stdout`));

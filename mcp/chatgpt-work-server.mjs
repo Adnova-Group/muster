@@ -21,7 +21,9 @@ if (process.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH || process.env.MUSTER_CHATGPT_WO
     const ordinaryPluginPath = await ordinaryDirectoryPath(pluginPath, {
       unsafeError: current => new Error(`${current} is not an ordinary directory`),
     });
-    if (!ordinaryPluginPath) throw new Error(`${pluginPath} is missing`);
+    if (!ordinaryPluginPath) {
+      throw Object.assign(new Error(`${pluginPath} is missing`), { code: "ENOENT" });
+    }
     for (const candidate of [path.dirname(path.dirname(pluginPath)), path.dirname(pluginPath), pluginPath]) {
       const info = lstatSync(candidate);
       if (process.platform !== "win32" && typeof process.getuid === "function"

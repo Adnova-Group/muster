@@ -144,6 +144,47 @@ test("runKimiUninstall: a clean home reports nothing to remove", async () => {
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiUninstall: a manifest-owned target already missing is an idempotent skip", async () => {
+  const home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    write(manifestPath, JSON.stringify({
+      owner: "muster",
+      format: 1,
+      agents: ["agents/already-gone.md"],
+      skills: []
+    }));
+
+    const r = await runKimiUninstall({ home });
+    assert.deepEqual(r.removed, []);
+    assert.ok(!existsSync(manifestPath));
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiUninstall: platforms without directory-relative deletion fail closed", async () => {
+  const home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const managedAgent = join(root, "agents", "owned.md");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    write(managedAgent, "managed agent bytes");
+    write(manifestPath, JSON.stringify({
+      owner: "muster",
+      format: 1,
+      agents: ["agents/owned.md"],
+      skills: []
+    }));
+
+    await assert.rejects(
+      runKimiUninstall({ home, _platform: "win32" }),
+      /Safe Kimi uninstall is unavailable on win32/
+    );
+    assert.equal(readFileSync(managedAgent, "utf8"), "managed agent bytes");
+    assert.ok(existsSync(manifestPath));
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiInstall --dry-run: reports the plan without writing", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {
@@ -297,6 +338,75 @@ test("runKimiUninstall: an ancestor swapped after validation is rejected before 
     assert.deepEqual(readFileSync(join(elsewhere, "owned.md")), outsideBefore);
     assert.deepEqual(readFileSync(manifestPath), manifestBefore);
   } finally { [home, elsewhere].forEach(d => rmSync(d, { recursive: true, force: true })); }
+});
+
+test("runKimiUninstall: a final-window ancestor swap cannot redirect deletion", async () => {
+  const home = tmp(), elsewhere = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const agentDir = join(root, "agents", "nested");
+    const parkedDir = join(root, "agents", "nested-parked");
+    const managedAgent = join(agentDir, "owned.md");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    write(managedAgent, "managed agent bytes");
+    write(join(elsewhere, "owned.md"), "outside delete sentinel");
+    write(manifestPath, JSON.stringify({
+      owner: "muster",
+      format: 1,
+      agents: ["agents/nested/owned.md"],
+      skills: []
+    }));
+    const outsideBefore = readFileSync(join(elsewhere, "owned.md"));
+    let swapped = false;
+
+    await assert.rejects(runKimiUninstall({
+      home,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation !== "delete-ready" || swapped || path !== managedAgent) return;
+        swapped = true;
+        renameSync(agentDir, parkedDir);
+        symlinkSync(elsewhere, agentDir);
+      }
+    }), /changed during safe deletion|non-ordinary Kimi directory/);
+
+    assert.equal(swapped, true);
+    assert.equal(readFileSync(join(parkedDir, "owned.md"), "utf8"), "managed agent bytes");
+    assert.deepEqual(readFileSync(join(elsewhere, "owned.md")), outsideBefore);
+    assert.ok(existsSync(manifestPath));
+  } finally { [home, elsewhere].forEach(d => rmSync(d, { recursive: true, force: true })); }
+});
+
+test("runKimiUninstall: a final-window replacement target is not deleted", async () => {
+  const home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const managedAgent = join(root, "agents", "owned.md");
+    const parkedAgent = join(root, "agents", "owned-parked.md");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    write(managedAgent, "managed agent bytes");
+    write(manifestPath, JSON.stringify({
+      owner: "muster",
+      format: 1,
+      agents: ["agents/owned.md"],
+      skills: []
+    }));
+    let replaced = false;
+
+    await assert.rejects(runKimiUninstall({
+      home,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation !== "delete-ready" || replaced || path !== managedAgent) return;
+        replaced = true;
+        renameSync(managedAgent, parkedAgent);
+        write(managedAgent, "replacement bytes");
+      }
+    }), /changed during safe deletion/);
+
+    assert.equal(replaced, true);
+    assert.equal(readFileSync(parkedAgent, "utf8"), "managed agent bytes");
+    assert.equal(readFileSync(managedAgent, "utf8"), "replacement bytes");
+    assert.ok(existsSync(manifestPath));
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 test("runKimiInstall: a stale manifest temp from a crashed install (pid recycled) never blocks the publish", async () => {

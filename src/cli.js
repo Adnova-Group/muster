@@ -61,7 +61,9 @@ import { detectScope } from "./scope.js";
 import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./hygiene.js";
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
-import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
+import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, codexSpawnAgentCall, codexWaitAgentCall } from "./wave-dispatch.js";
+import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
+import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
 import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
@@ -81,6 +83,8 @@ const USAGE = [
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
+  // harness-native dispatch packets + session receipts (kimi/codex lanes)
+  "kimi-goal-invocation <objective> [--stream-json]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|all|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
   "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|",
   // planning + routing artifacts
@@ -386,6 +390,98 @@ async function main() {
         eligible: lightBriefEligible({ reviewerCount, diffFiles, diffText }),
         triggers: detectReviewTriggers(diffFiles, { diffText }),
       });
+    // ── harness-native dispatch packets + session receipts (kimi/codex lanes) ──
+    // The model layer reaches these builders ONLY through these verbs (the
+    // two-layer boundary): each verb prints the descriptor src/kimi-dispatch.js /
+    // src/kimi-receipts.js / src/wave-dispatch.js constructs, and the prose
+    // spawns/records from the printed JSON. Builder validation errors throw and
+    // surface through main()'s catch as fail() -- only MISSING cli args fail here.
+    } else if (cmd === "kimi-goal-invocation") {
+      const objective = requireArg(rest, 0, "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]: missing objective (the bare objective; the /goal prefix is added for you)", fail);
+      const secondary = flagValue(rest, "--secondary");
+      out(kimiGoalInvocation({
+        objective,
+        streamJson: rest.includes("--stream-json"),
+        ...(secondary ? { secondaryModel: secondary } : {})
+      }));
+    } else if (cmd === "kimi-process-dispatch") {
+      const usage = "kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>";
+      const brief = flagValue(rest, "--brief");
+      if (!brief) fail(`${usage}: missing --brief`);
+      const agentFile = flagValue(rest, "--agent-file");
+      if (!agentFile) fail(`${usage}: missing --agent-file`);
+      const cwd = flagValue(rest, "--cwd");
+      if (!cwd) fail(`${usage}: missing --cwd`);
+      const lane = flagValue(rest, "--lane");
+      if (!lane) fail(`${usage}: missing --lane`);
+      out(kimiProcessDispatch({ brief, agentFile, cwd, lane }));
+    } else if (cmd === "kimi-session-usage") {
+      // Two arms, mirroring the prose's two accounting arms: --session-dir reads
+      // a KNOWN session dir (the in-session arm's parent session); --cwd RESOLVES
+      // the session for a -p leg first (captureSessionId on --stdout-file's
+      // captured stream-json stdout when given, else the session-index fallback),
+      // printing { resolution, usage } -- or { resolution } alone when resolution
+      // comes back UNKNOWN (resolved:false), which is a recorded outcome, never a
+      // failure (exit stays 0).
+      const usage = "kimi-session-usage <--session-dir <dir> | --cwd <dir> [--stdout-file <file>] [--index <file>]>";
+      const sessionDir = flagValue(rest, "--session-dir");
+      const cwd = flagValue(rest, "--cwd");
+      if (!sessionDir && !cwd) fail(`${usage}: missing --session-dir or --cwd`);
+      if (sessionDir && cwd) fail(`${usage}: --session-dir and --cwd are mutually exclusive (--session-dir reads a known session; --cwd resolves one first)`);
+      if (sessionDir) {
+        out(await readSessionUsage(sessionDir));
+      } else {
+        const stdoutFile = flagValue(rest, "--stdout-file");
+        const capturedSessionId = stdoutFile ? captureSessionId(await readFile(stdoutFile, "utf8")) : null;
+        const index = flagValue(rest, "--index");
+        const resolution = await resolveSessionForCwd({
+          ...(index ? { indexPath: index } : {}),
+          cwd,
+          capturedSessionId
+        });
+        out(resolution.resolved
+          ? { resolution, usage: await readSessionUsage(resolution.sessionDir) }
+          : { resolution });
+      }
+    } else if (cmd === "kimi-summarize-receipts") {
+      const file = requireArg(rest, 0, "kimi-summarize-receipts <items.json>: missing items file ([{ itemId, resolution | resolutions }])", fail);
+      const items = JSON.parse(await readFile(file, "utf8"));
+      process.stdout.write((await summarizeItemReceipts(items)).join("\n") + "\n");
+    } else if (cmd === "codex-spawn-packet") {
+      // The version-aware spawn_agent constructor (src/wave-dispatch.js): prints
+      // the exact call JSON for the target model's API version, failing closed to
+      // v1 when --version is absent (never guessing v2 at a v1 model).
+      const usage = "codex-spawn-packet --task-id <id> --agent-type <id> [--message <text> | --message-file <file>] [--version v1|v2] [--fork-turns <none|all|N>]";
+      const taskId = flagValue(rest, "--task-id");
+      if (!taskId) fail(`${usage}: missing --task-id`);
+      const agentType = flagValue(rest, "--agent-type");
+      if (!agentType) fail(`${usage}: missing --agent-type`);
+      const message = flagValue(rest, "--message");
+      const messageFile = flagValue(rest, "--message-file");
+      if (message !== undefined && messageFile !== undefined) fail(`${usage}: --message and --message-file are mutually exclusive`);
+      const version = flagValue(rest, "--version");
+      const forkTurns = flagValue(rest, "--fork-turns");
+      out(codexSpawnAgentCall({
+        taskId,
+        agentType,
+        ...(messageFile !== undefined ? { message: await readFile(messageFile, "utf8") } : message !== undefined ? { message } : {}),
+        ...(version !== undefined ? { version } : {}),
+        ...(forkTurns !== undefined ? { forkTurns } : {})
+      }));
+    } else if (cmd === "codex-wait-packet") {
+      // The wave-barrier counterpart: v1 waits on named --targets, v2 takes no
+      // targets at all -- the builder throws on a version/targets mismatch.
+      const usage = "codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]";
+      const version = flagValue(rest, "--version");
+      const targetsArg = flagValue(rest, "--targets");
+      const timeoutArg = flagValue(rest, "--timeout-ms");
+      const timeoutMs = timeoutArg === undefined ? undefined : Number(timeoutArg);
+      if (timeoutMs !== undefined && !Number.isInteger(timeoutMs)) fail(`${usage}: --timeout-ms must be an integer`);
+      out(codexWaitAgentCall({
+        ...(version !== undefined ? { version } : {}),
+        ...(targetsArg !== undefined ? { targets: targetsArg.split(",").map(t => t.trim()).filter(Boolean) } : {}),
+        ...(timeoutMs !== undefined ? { timeoutMs } : {})
+      }));
     } else if (cmd === "sprint-waves") {
       const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
       // Canonical containment before the read (audit S4 finding 5, extended to

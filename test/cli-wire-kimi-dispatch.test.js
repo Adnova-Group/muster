@@ -1,0 +1,278 @@
+/**
+ * CLI wire-format integration tests for the harness-native dispatch packet +
+ * session receipt verbs (audit 2026-07-29, slice E):
+ *
+ *   kimi-goal-invocation   -> src/kimi-dispatch.js's kimiGoalInvocation
+ *   kimi-process-dispatch  -> src/kimi-dispatch.js's kimiProcessDispatch
+ *   kimi-session-usage     -> src/kimi-receipts.js's captureSessionId /
+ *                             resolveSessionForCwd / readSessionUsage
+ *   kimi-summarize-receipts -> src/kimi-receipts.js's summarizeItemReceipts
+ *   codex-spawn-packet     -> src/wave-dispatch.js's codexSpawnAgentCall
+ *   codex-wait-packet      -> src/wave-dispatch.js's codexWaitAgentCall
+ *
+ * These verbs are the ONLY path by which the model layer reaches those
+ * builders (the two-layer boundary): the prose commands/reference files name
+ * `$MUSTER_CLI <verb>` invocations, and these tests pin the exact JSON shapes
+ * that prose depends on.
+ */
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { join, dirname } from "node:path";
+import { writeFile, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
+
+const pexecFile = promisify(execFile);
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, "..");
+const CLI = join(REPO_ROOT, "src/cli.js");
+
+const FIXTURE_SESSION = join(REPO_ROOT, "test", "fixtures", "kimi-session-usage");
+const FIXTURE_STDOUT = join(REPO_ROOT, "test", "fixtures", "kimi-stream-stdout.jsonl");
+const CAPTURED_ID = "session_fb2161ac-ff97-40f2-9f2c-dd60f5e84c5f";
+
+function run(args, options = {}) {
+  return pexecFile(process.execPath, [CLI, ...args], { cwd: REPO_ROOT, ...options });
+}
+
+// A rejection helper: the command must exit nonzero with the expected stderr.
+async function fails(args, pattern, options = {}) {
+  await assert.rejects(
+    run(args, options),
+    (err) => {
+      assert.match(err.stderr, pattern);
+      return true;
+    }
+  );
+}
+
+async function writeIndex(entries) {
+  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-index-"));
+  const indexPath = join(dir, "session_index.jsonl");
+  await writeFile(indexPath, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  return indexPath;
+}
+
+// ---------------------------------------------------------------------------
+// kimi-goal-invocation
+// ---------------------------------------------------------------------------
+
+test("cli wire: kimi-goal-invocation prints the argv+env descriptor, stream-json opt-in", async () => {
+  const plain = JSON.parse((await run(["kimi-goal-invocation", "Ship the feature with tests green"])).stdout);
+  assert.deepEqual(plain.argv, ["-p", "/goal Ship the feature with tests green", "-m", "kimi-code/k3"]);
+  assert.equal(plain.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
+  assert.ok(plain.env.KIMI_SECONDARY_MODEL, "the lane bind rides the env pair");
+  assert.deepEqual(plain.exitCodes, { complete: 0, blocked: 3, paused: 6 });
+
+  const streamed = JSON.parse((await run(["kimi-goal-invocation", "Ship it", "--stream-json"])).stdout);
+  assert.deepEqual(streamed.argv, ["-p", "/goal Ship it", "--output-format", "stream-json", "-m", "kimi-code/k3"]);
+
+  const secondary = JSON.parse((await run(["kimi-goal-invocation", "Ship it", "--secondary", "kimi-code/k3"])).stdout);
+  assert.equal(secondary.env.KIMI_SECONDARY_MODEL, "kimi-code/k3");
+});
+
+test("cli wire: kimi-goal-invocation fails loud on a missing or /goal-prefixed objective", async () => {
+  await fails(["kimi-goal-invocation"], /kimi-goal-invocation <objective>.*missing objective/);
+  await fails(["kimi-goal-invocation", "/goal already prefixed"], /pass the bare objective/);
+});
+
+// ---------------------------------------------------------------------------
+// kimi-process-dispatch
+// ---------------------------------------------------------------------------
+
+test("cli wire: kimi-process-dispatch prints the headless -p descriptor, -m ALWAYS emitted", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-kimi-wire-dispatch-"));
+  const agentFile = join(cwd, "worker.md");
+  await writeFile(agentFile, "---\nname: worker\n---\n");
+  for (const [lane, model] of [["primary", "kimi-code/k3"], ["secondary", "kimi-code/kimi-for-coding"]]) {
+    const d = JSON.parse((await run([
+      "kimi-process-dispatch", "--brief", "Implement the feature.", "--agent-file", agentFile, "--cwd", cwd, "--lane", lane,
+    ])).stdout);
+    assert.deepEqual(d.argv, ["-p", "Implement the feature.", "--agent-file", agentFile, "--output-format", "stream-json", "-m", model]);
+    assert.equal(d.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
+    assert.equal(d.cwd, cwd);
+    assert.equal(d.lane, lane);
+  }
+});
+
+test("cli wire: kimi-process-dispatch resolves a bare agent-file name under KIMI_CODE_HOME", async () => {
+  const home = await mkdtemp(join(tmpdir(), "muster-kimi-wire-home-"));
+  await mkdir(join(home, "agents"), { recursive: true });
+  await writeFile(join(home, "agents", "muster-builder.md"), "---\nname: muster-builder\n---\n");
+  const cwd = await mkdtemp(join(tmpdir(), "muster-kimi-wire-cwd-"));
+  const d = JSON.parse((await run(
+    ["kimi-process-dispatch", "--brief", "b", "--agent-file", "muster-builder.md", "--cwd", cwd, "--lane", "primary"],
+    { env: { ...process.env, KIMI_CODE_HOME: home } }
+  )).stdout);
+  assert.deepEqual(d.argv.slice(2, 4), ["--agent-file", join(home, "agents", "muster-builder.md")]);
+});
+
+test("cli wire: kimi-process-dispatch fails loud on missing/invalid args", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-kimi-wire-fail-"));
+  const agentFile = join(cwd, "worker.md");
+  await writeFile(agentFile, "---\nname: worker\n---\n");
+  await fails(["kimi-process-dispatch", "--agent-file", agentFile, "--cwd", cwd, "--lane", "primary"], /missing --brief/);
+  await fails(["kimi-process-dispatch", "--brief", "b", "--cwd", cwd, "--lane", "primary"], /missing --agent-file/);
+  await fails(["kimi-process-dispatch", "--brief", "b", "--agent-file", agentFile, "--lane", "primary"], /missing --cwd/);
+  await fails(["kimi-process-dispatch", "--brief", "b", "--agent-file", agentFile, "--cwd", cwd], /missing --lane/);
+  await fails(["kimi-process-dispatch", "--brief", "b", "--agent-file", agentFile, "--cwd", cwd, "--lane", "k3"], /lane is required and must be one of primary\|secondary/);
+  await fails(["kimi-process-dispatch", "--brief", "b", "--agent-file", agentFile, "--cwd", join(cwd, "nope"), "--lane", "primary"], /cwd must be an existing directory/);
+});
+
+// ---------------------------------------------------------------------------
+// kimi-session-usage
+// ---------------------------------------------------------------------------
+
+test("cli wire: kimi-session-usage --session-dir reads a known session's usage", async () => {
+  const usage = JSON.parse((await run(["kimi-session-usage", "--session-dir", FIXTURE_SESSION])).stdout);
+  assert.equal(usage.sessionDir, FIXTURE_SESSION);
+  assert.ok(usage.agents.main, "the main agent's usage is present");
+  assert.ok(usage.dispatches["agent-0"], "the sub agent surfaces in the dispatches view");
+  assert.equal(typeof usage.total.total, "number");
+});
+
+test("cli wire: kimi-session-usage --cwd resolves via the captured stdout id, then reads usage", async () => {
+  const indexPath = await writeIndex([
+    { sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, workDir: "/repo/other" },
+  ]);
+  const result = JSON.parse((await run([
+    "kimi-session-usage", "--cwd", "/repo/leg", "--stdout-file", FIXTURE_STDOUT, "--index", indexPath,
+  ])).stdout);
+  assert.deepEqual(result.resolution, {
+    resolved: true, sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, source: "captured",
+  });
+  assert.ok(result.usage.total.total > 0, "usage rides the resolved session dir");
+});
+
+test("cli wire: kimi-session-usage --cwd falls back to the index, and UNKNOWN exits 0", async () => {
+  const indexPath = await writeIndex([
+    { sessionId: "session_leg", sessionDir: FIXTURE_SESSION, workDir: "/repo/leg" },
+  ]);
+  const resolved = JSON.parse((await run(["kimi-session-usage", "--cwd", "/repo/leg", "--index", indexPath])).stdout);
+  assert.equal(resolved.resolution.source, "index-unique");
+  assert.equal(resolved.resolution.sessionId, "session_leg");
+
+  const unknown = JSON.parse((await run(["kimi-session-usage", "--cwd", "/repo/nothing", "--index", indexPath])).stdout);
+  assert.deepEqual(unknown, { resolution: { resolved: false, reason: "no-sessions-for-cwd", candidates: [] } });
+});
+
+test("cli wire: kimi-session-usage fails loud on missing or conflicting arm flags", async () => {
+  await fails(["kimi-session-usage"], /missing --session-dir or --cwd/);
+  await fails(
+    ["kimi-session-usage", "--session-dir", FIXTURE_SESSION, "--cwd", "/repo/leg"],
+    /mutually exclusive/
+  );
+});
+
+// ---------------------------------------------------------------------------
+// kimi-summarize-receipts
+// ---------------------------------------------------------------------------
+
+test("cli wire: kimi-summarize-receipts prints one line per item, UNKNOWN as a line", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-summary-"));
+  const itemsFile = join(dir, "items.json");
+  await writeFile(itemsFile, JSON.stringify([
+    { itemId: "item-1", resolution: { resolved: true, sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, source: "captured" } },
+    { itemId: "item-2", resolution: { resolved: false, reason: "ambiguous-tie", candidates: ["a", "b"] } },
+  ]));
+  const { stdout } = await run(["kimi-summarize-receipts", itemsFile]);
+  const lines = stdout.trim().split("\n");
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^item-1: session=kimi-session-usage source=captured total=\d+ in=\d+ out=\d+ cache-read=\d+ cache-create=\d+ records=\d+ dispatches: /);
+  assert.equal(lines[1], "item-2: UNKNOWN (ambiguous-tie)");
+});
+
+test("cli wire: kimi-summarize-receipts fails loud on a missing file or non-array input", async () => {
+  await fails(["kimi-summarize-receipts"], /kimi-summarize-receipts <items.json>: missing items file/);
+  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-summary-bad-"));
+  const badFile = join(dir, "bad.json");
+  await writeFile(badFile, JSON.stringify({ not: "an array" }));
+  await fails(["kimi-summarize-receipts", badFile], /summarizeItemReceipts: items must be an array/);
+});
+
+// ---------------------------------------------------------------------------
+// codex-spawn-packet
+// ---------------------------------------------------------------------------
+
+test("cli wire: codex-spawn-packet fails closed to the v1 shape without --version", async () => {
+  const packet = JSON.parse((await run([
+    "codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--message", "Do the thing",
+  ])).stdout);
+  assert.deepEqual(packet, {
+    tool: "multi_agent_v1.spawn_agent",
+    message: "Do the thing",
+    fork_context: false,
+    agent_type: "muster-builder",
+  });
+});
+
+test("cli wire: codex-spawn-packet --version v2 prints the collaboration shape with STRING fork_turns", async () => {
+  const packet = JSON.parse((await run([
+    "codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--version", "v2", "--fork-turns", "3",
+  ])).stdout);
+  assert.deepEqual(packet, {
+    tool: "collaboration.spawn_agent",
+    task_name: "task-1",
+    message: "",
+    fork_turns: "3",
+    agent_type: "muster-builder",
+  });
+});
+
+test("cli wire: codex-spawn-packet --message-file reads the brief from disk; the two message arms conflict", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-wire-spawn-"));
+  const briefFile = join(dir, "brief.md");
+  await writeFile(briefFile, "Build the wave task.\n");
+  const packet = JSON.parse((await run([
+    "codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--message-file", briefFile,
+  ])).stdout);
+  assert.equal(packet.message, "Build the wave task.\n");
+  await fails([
+    "codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--message", "x", "--message-file", briefFile,
+  ], /mutually exclusive/);
+});
+
+test("cli wire: codex-spawn-packet fails loud on missing args, a bad version, or fork_turns \"all\"", async () => {
+  await fails(["codex-spawn-packet", "--agent-type", "muster-builder"], /missing --task-id/);
+  await fails(["codex-spawn-packet", "--task-id", "task-1"], /missing --agent-type/);
+  await fails(["codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--version", "v3"], /unknown multi_agent_version/);
+  await fails(["codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--version", "v2", "--fork-turns", "all"], /full-history fork/);
+});
+
+// ---------------------------------------------------------------------------
+// codex-wait-packet
+// ---------------------------------------------------------------------------
+
+test("cli wire: codex-wait-packet prints the per-version barrier shapes", async () => {
+  const v2 = JSON.parse((await run(["codex-wait-packet", "--version", "v2"])).stdout);
+  assert.deepEqual(v2, { tool: "collaboration.wait_agent", timeout_ms: 30000 });
+
+  const v1 = JSON.parse((await run(["codex-wait-packet", "--targets", "agent-1,agent-2", "--timeout-ms", "60000"])).stdout);
+  assert.deepEqual(v1, { tool: "multi_agent_v1.wait_agent", targets: ["agent-1", "agent-2"], timeout_ms: 60000 });
+});
+
+test("cli wire: codex-wait-packet fails loud on a version/targets mismatch or a bad timeout", async () => {
+  await fails(["codex-wait-packet"], /v1 wait_agent requires a non-empty targets array/);
+  await fails(["codex-wait-packet", "--version", "v2", "--targets", "agent-1"], /v2 wait_agent takes no targets/);
+  await fails(["codex-wait-packet", "--version", "v2", "--timeout-ms", "5"], /timeoutMs must be an integer within 10000\.\.3600000 ms/);
+  await fails(["codex-wait-packet", "--version", "v2", "--timeout-ms", "abc"], /--timeout-ms must be an integer/);
+});
+
+// ---------------------------------------------------------------------------
+// usage string
+// ---------------------------------------------------------------------------
+
+test("cli wire: the usage string names all six dispatch packet/receipt verbs", async () => {
+  const { stdout } = await run(["help"]);
+  for (const verb of [
+    "kimi-goal-invocation", "kimi-process-dispatch", "kimi-session-usage",
+    "kimi-summarize-receipts", "codex-spawn-packet", "codex-wait-packet",
+  ]) {
+    assert.ok(stdout.includes(verb), `usage must name ${verb}`);
+  }
+});

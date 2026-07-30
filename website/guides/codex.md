@@ -102,7 +102,7 @@ For annotated go-backlog files, Codex dispatches every ready implementation/revi
 | --- | --- |
 | Deterministic CLI | the full `muster` verb surface |
 | Pipelines | all of them |
-| MCP tools | 30 tools (29 CLI wrappers plus `muster_sprint_protocol`) |
+| MCP tools | 30 tools: 29 CLI-wrapper tools plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
 | Skills | 76 total: 13 public + 63 internal |
 | Internal skill breakdown | 12 native orchestration + 51 capability |

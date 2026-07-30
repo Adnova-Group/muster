@@ -142,9 +142,21 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 | `memory read` / `memory write ...` | Read and write Muster's memory store. |
 | `hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]` | Burn-hygiene report for orphaned/stale provider CLIs, excess/prunable worktrees, and stale backlog claims. Provider processes are always report-only: worktree location and filesystem dispatch receipts are same-user diagnostics, not signal authority. Worktrees are also never removed automatically. `--reap` can release eligible stale backlog claims, but it cannot signal provider processes or delete worktrees. |
 
+### Init instruction authority
+
+Claude Code and Codex Init use one canonical instruction pair: `AGENTS.md` is authoritative, and `CLAUDE.md` contains exactly:
+
+```md
+# Claude Code
+
+@AGENTS.md
+```
+
+If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them.
+
 ## MCP tools
 
-The same deterministic core is also exposed as a local MCP server. The canonical implementation is `mcp/server.mjs`; `cowork/mcp-server.mjs` is the explicit Cowork adapter declared in `cowork/manifest.json`, while `cowork/chatgpt-work-server.mjs` remains a compatibility entrypoint for older Work configurations. There are **30 tools: 29 CLI-wrapper MCP tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
+The same deterministic core is also exposed as a local MCP server. The canonical implementation is `mcp/server.mjs`; `cowork/mcp-server.mjs` is the explicit Cowork adapter declared in `cowork/manifest.json`, while `cowork/chatgpt-work-server.mjs` remains a compatibility entrypoint for older Work configurations. There are **30 tools: 29 CLI-wrapper tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
 
 | Tool | Wraps | What it does |
 | --- | --- | --- |

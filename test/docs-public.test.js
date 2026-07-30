@@ -172,6 +172,7 @@ test("Init public reference pins one instruction authority and holds conflicts",
     "website/guides/codex.md",
     "website/guides/harnesses.md",
     "website/guides/quickstart.md",
+    "website/reference/commands.md",
     "website/reference/modes.md",
   ];
   for (const file of files) {
@@ -195,14 +196,21 @@ test("Init public reference pins one instruction authority and holds conflicts",
 test("public docs contain no stale 29-tool total claims", async () => {
   const roots = ["cowork", "docs", "website"];
   const files = ["README.md"];
+  const exactComponentPhrase = "29 CLI-wrapper tools plus `muster_sprint_protocol`";
   for (const dir of roots) {
     const entries = await readdir(new URL(dir, root), { recursive: true });
     files.push(...entries.filter((entry) => entry.endsWith(".md")).map((entry) => `${dir}/${entry}`));
   }
-  const staleTotal = /\b29-tool\b|\b29\s+(?!CLI-wrapper\b)(?:deterministic\s+)?tools?\b/i;
+  const staleTotal = /\b29(?:-tool\b|\s+(?:deterministic\s+)?tools?\b|\s+CLI(?:-|\s)?wrappers?\b|\s+CLI(?:-|\s)?wrapper(?:\s+MCP)?\s+tools?\b)/i;
   for (const file of files) {
-    assert.doesNotMatch(await read(file), staleTotal, `${file} must not claim a 29-tool total`);
+    const text = (await read(file)).replaceAll(exactComponentPhrase, "");
+    assert.doesNotMatch(
+      text,
+      staleTotal,
+      `${file} may use 29 only in the exact component phrase "${exactComponentPhrase}"`,
+    );
   }
+  assert.match(await read("website/guides/codex.md"), new RegExp(exactComponentPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("command reference never pairs artifact-delta with an evidence file", async () => {

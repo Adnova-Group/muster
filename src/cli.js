@@ -6,7 +6,7 @@ import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves, nextTasks } from "./wave.js";
-import { computeSprintWaves } from "./sprint-waves.js";
+import { computeSprintWaves, reconcileSprintProgress } from "./sprint-waves.js";
 import { tallyReview, verdictsTallyCorruptionErrors } from "./review.js";
 import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
@@ -83,7 +83,7 @@ const USAGE = [
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
-  "sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
+  "sprint-waves <backlog.md>|sprint-reconcile <progress.json>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
@@ -550,6 +550,15 @@ async function main() {
       }
       const content = await readFile(canonical, "utf8");
       const r = computeSprintWaves(content, { parallelLimit: process.env.MUSTER_SPRINT_PARALLEL });
+      out(r);
+      if (!r.ok) process.exit(2);
+    } else if (cmd === "sprint-reconcile") {
+      const file = requireArg(rest, 0, "sprint-reconcile <progress.json>: missing file path", fail);
+      const input = JSON.parse(await readFile(file, "utf8"));
+      const r = reconcileSprintProgress(input.plan, {
+        receipts: input.receipts,
+        inFlight: input.inFlight,
+      });
       out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "tally") {

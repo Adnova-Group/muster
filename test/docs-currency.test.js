@@ -200,7 +200,7 @@ test("ChatGPT Work docs carry the current private plugin, tunnel, profile, and b
     "readOnlyHint=true",
     "destructiveHint=false",
     "openWorldHint=false",
-    "28-tool",
+    "29-tool",
     "full-MCP",
     "Refresh",
     "recreate",
@@ -306,6 +306,10 @@ test("current Cowork research uses the live MCP tool count and phase-3-gated dis
     assert.match(text, /sequential\s+`?muster_next`?[\s\S]{0,180}(?:default|verified)/i, `${path} must name the verified sequential default`);
     assert.match(text, /fresh\s+successful\s+phase-3\s+receipt|phase-3\s+receipt[\s\S]{0,100}(?:required|require)/i, `${path} must require active-build phase-3 evidence`);
     assert.match(text, /phase-3/i, `${path} must identify the dispatch evidence gate`);
+  }
+  for (const path of ["docs/research/claude-cowork.md", "docs/research/codex-cli.md"]) {
+    const text = await read(path);
+    assert.doesNotMatch(text, /\bexpos(?:es|ing)\s+28\b/i, `${path} must not retain the stale 28-tool current inventory`);
   }
 });
 

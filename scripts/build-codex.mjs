@@ -212,11 +212,11 @@ function buildAgentWatchProtocol(root, contract) {
   if (!lintDirective) throw new Error("codex/skill-adapter.md agent-watch lint directive not found");
   const versionPreamble = `\n**The dispatch and barrier shapes are VERSION-DEPENDENT**: Codex resolves its subagent API per MODEL from the catalog's \`multi_agent_version\`, so never hardcode one shape -- resolve the version from each dispatched role's model and fail closed to v1 rather than guessing v2. The v2 names below are shorthand for the resolved call: on a v1 model every \`collaboration.*\` call is its \`multi_agent_v1.*\` counterpart, and \`multi_agent_v1.wait_agent\` requires the \`targets[]\` of the ids being waited on.\n\n${contract.shapesTable}\n`;
   let result = source.replace(lintDirective[0], `${lintDirective[0]}${versionPreamble}`);
-  const retainAnchor = "retain every canonical agent id returned by `collaboration.spawn_agent` and immediately call `collaboration.wait_agent` with a timeout of at most 60 seconds.";
+  const retainAnchor = "retain every canonical agent id returned by `collaboration.spawn_agent`.";
   if (!result.includes(retainAnchor)) throw new Error("codex/skill-adapter.md agent-watch dispatch/barrier anchor not found");
   result = result.replace(
     retainAnchor,
-    "retain every canonical agent id returned by the version-resolved spawn -- `collaboration.spawn_agent` on v2, `multi_agent_v1.spawn_agent` on v1 -- and immediately call `collaboration.wait_agent` with a timeout of at most 60 seconds (`multi_agent_v1.wait_agent(targets[], timeout_ms)` on v1, naming every outstanding id)."
+    "retain every canonical agent id returned by the version-resolved spawn -- `collaboration.spawn_agent` on v2, `multi_agent_v1.spawn_agent` on v1."
   );
   const spawnDefaultAnchor = "Spawn with `fork_turns: \"none\"` unless the user explicitly requests a context fork.";
   if (!result.includes(spawnDefaultAnchor)) throw new Error("codex/skill-adapter.md agent-watch spawn-default anchor not found");

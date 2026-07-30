@@ -67,6 +67,15 @@ Call **`muster_sprint_waves`** with the raw backlog text. Its JSON is authoritat
 Missing backlog file, or a malformed annotation the tool reports as an error, stops the run — nothing to
 run, report it plainly.
 
+Persist that successful result as `plan`. During execution, call **`muster_sprint_reconcile`** with
+`plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`), and
+the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`). Drive a strict **reconcile → dispatch → wait** loop:
+drain all completions after every wake, reconcile once, execute every returned action, update
+`inFlight`, then reconcile again before waiting. `next:dispatch` forbids an idle wait;
+`next:terminal|escalated` ends the loop; only `wait.eligible:true` permits waiting. Duplicate or
+out-of-order receipts are retained idempotently, while failed/cancelled/missing receipts never unlock
+dependencies. This MCP result owns the state transition; Cowork still owns the actual subagent calls.
+
 ## 2. Sprint state (native board when present; STATE as ledger, done by hand)
 
 The current model makes the native task board (`TaskCreate`/`TaskUpdate`/`TaskList` on Claude Code)

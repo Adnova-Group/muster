@@ -54,6 +54,28 @@ const T = (description, prop, required = true) => ({
   inputSchema: { type: "object", properties: { [prop]: { type: "string" } }, required: required ? [prop] : [] },
   prop,
 });
+const SPRINT_RECEIPT_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string", minLength: 1, maxLength: 256 },
+    itemId: { type: "string", minLength: 1, maxLength: 128 },
+    phase: { type: "string", enum: ["implementation", "review", "integration"] },
+    status: { type: "string", enum: ["completed", "failed", "cancelled"] },
+    attempt: { type: "integer", minimum: 1, maximum: 1000000 },
+  },
+  required: ["id", "itemId", "phase", "status"],
+  additionalProperties: false,
+};
+const SPRINT_IN_FLIGHT_SCHEMA = {
+  type: "object",
+  properties: {
+    itemId: { type: "string", minLength: 1, maxLength: 128 },
+    phase: { type: "string", enum: ["implementation", "review", "integration"] },
+    attempt: { type: "integer", minimum: 1, maximum: 1000000 },
+  },
+  required: ["itemId", "phase", "attempt"],
+  additionalProperties: false,
+};
 
 const TOOLS = {
   // analysis verbs — string or no arg
@@ -85,6 +107,19 @@ const TOOLS = {
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_wave: { argv: ["wave"], ...J2("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_sprint_waves: { argv: ["sprint-waves"], ...T("Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations. Returns waves/items plus an explicit schedule: cap-bounded isolated build/review batches, the barrier, ordered merge integration, and sequential-degradation metadata; annotated:false means the backlog is unannotated/sequential.", "backlog") },
+  muster_sprint_reconcile: {
+    argv: ["sprint-reconcile"],
+    ...J2(
+      "Reconciles all available sprint completion receipts with the emitted schedule. Returns canonical item states and newly eligible implementation/review/integration dispatch actions; call after every wake before waiting again.",
+      {
+        plan: { type: "object" },
+        receipts: { type: "array", maxItems: 10000, items: SPRINT_RECEIPT_SCHEMA },
+        inFlight: { type: "array", maxItems: 1000, items: SPRINT_IN_FLIGHT_SCHEMA },
+      },
+      ["plan", "receipts", "inFlight"],
+    ),
+    picks: (a) => [{ plan: a.plan, receipts: a.receipts, inFlight: a.inFlight }],
+  },
   muster_sprint_protocol: {
     kind: "static", text: null, error: "muster_sprint_protocol: adapter did not supply static content",
     description: "Returns the bundled sprint orchestration playbook: backlog resolution, sprint-waves, sequential wave execution, claim/receipt discipline, and honest disposition defaults.",

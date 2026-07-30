@@ -234,12 +234,12 @@ test("verb-rename: zero pre-rename verb-name citations remain in the 3 cowork su
   }
 });
 
-test("tools/list exposes exactly the 28 brain verbs, matching the MCPB manifest", async () => {
+test("tools/list exposes exactly the 29 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 28, "28 tools served");
+  assert.equal(served.length, 29, "29 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -422,8 +422,8 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.equal(manifest.license, pkg.license, "MCPB license must match the package license");
   assert.equal(packedLicense, rootLicense, "the packed cowork/ tree must carry the repository license");
   assert.equal(packedNotice, rootNotice, "the packed cowork/ tree must carry repository attributions");
-  assert.equal(manifest.tools.length, 28, "MCPB manifest declares the complete deterministic tool surface");
-  assert.match(manifest.long_description, /28 deterministic MCP tools/);
+  assert.equal(manifest.tools.length, 29, "MCPB manifest declares the complete deterministic tool surface");
+  assert.match(manifest.long_description, /29 deterministic MCP tools/);
   assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit/);
   assert.equal(manifest.server.entry_point, "mcp-server.mjs", "MCPB entry point is relative to the packed cowork/ root");
   assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/mcp-server.mjs"]);
@@ -802,6 +802,65 @@ test("file verb: muster_sprint_waves exposes build concurrency and post-barrier 
   assert.deepEqual(res.schedule.waves[0].buildReview.batches, [["local", "pr"], ["push"]]);
   assert.deepEqual(res.schedule.waves[0].integration.itemIds, ["local", "pr", "push"]);
   assert.equal(res.schedule.degradation.buildReviewMode, "sequential-isolated");
+});
+
+test("json verb: muster_sprint_reconcile drains a completion wake and exposes review without a user turn", async () => {
+  const backlog = "- [ ] Open PR {id: a} {deps: none} {disposition: pr}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  const reconciled = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_sprint_reconcile",
+        arguments: {
+          plan,
+          inFlight: [{ itemId: "a", phase: "implementation", attempt: 1 }],
+          receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed" }],
+        },
+      },
+    },
+  ]);
+  const res = JSON.parse(reconciled[2].result.content[0].text);
+
+  assert.equal(reconciled[2].result.isError, false);
+  assert.equal(res.next, "dispatch");
+  assert.deepEqual(res.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1 }]);
+  assert.equal(res.wait.eligible, false);
+});
+
+test("json verb: muster_sprint_reconcile returns isError with structured validation errors for a forged plan", async () => {
+  const backlog = "- [ ] Open PR {id: a} {deps: none} {disposition: pr}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  plan.schedule.buildReview.maxConcurrency = 999;
+  const reconciled = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_sprint_reconcile",
+        arguments: { plan, receipts: [], inFlight: [] },
+      },
+    },
+  ]);
+  const res = JSON.parse(reconciled[2].result.content[0].text);
+
+  assert.equal(reconciled[2].result.isError, true);
+  assert.equal(res.ok, false);
+  assert.match(res.errors.join(" | "), /maxConcurrency/);
+  assert.notEqual(res.wait?.eligible, true);
 });
 
 test("file verb: muster_sprint_waves on an unannotated backlog returns annotated:false, sequential waves", async () => {

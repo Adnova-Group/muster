@@ -86,7 +86,7 @@ Codex native Init expects `AGENTS.md`. A request to run Init, an existing file, 
 | --- | --- |
 | Deterministic CLI | the full `muster` verb surface |
 | Pipelines | all of them |
-| MCP tools | 28 tools (27 CLI wrappers plus `muster_sprint_protocol`) |
+| MCP tools | 29 tools (28 CLI wrappers plus `muster_sprint_protocol`) |
 | Custom-agent profiles | 27 |
 | Skills | 76 total: 13 public + 63 internal |
 | Internal skill breakdown | 12 native orchestration + 51 capability |

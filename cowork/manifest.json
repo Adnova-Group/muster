@@ -4,7 +4,7 @@
   "display_name": "Muster",
   "version": "0.5.0",
   "description": "Glass-box agentic router. Exposes muster's deterministic CLI brain (capability and domain routing, gate scoring, RICE prioritization, wave planning) as MCP tools.",
-  "long_description": "Development descriptor for Muster's deterministic core wrapped as 28 deterministic MCP tools for Claude Cowork: project detection, role-to-provider resolution, artifact gate scoring, and dependency-ordered wave planning. This MCPB package is not self-contained and is not an installable distribution; use the documented Route A local MCP configuration. MCP instructions provide the supported protocol subset: Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit. Runner and Capture are not provided as MCP modes; Init remains CLI-only.",
+  "long_description": "Development descriptor for Muster's deterministic core wrapped as 29 deterministic MCP tools for Claude Cowork: project detection, role-to-provider resolution, artifact gate scoring, dependency-ordered wave planning, and receipt reconciliation. This MCPB package is not self-contained and is not an installable distribution; use the documented Route A local MCP configuration. MCP instructions provide the supported protocol subset: Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit. Runner and Capture are not provided as MCP modes; Init remains CLI-only.",
   "author": { "name": "rnbennett" },
   "license": "Apache-2.0",
   "server": {
@@ -60,6 +60,7 @@
     { "name": "muster_manifest_validate", "description": "Validate a crew manifest's shape and dependency graph." },
     { "name": "muster_wave", "description": "Compute dependency-ordered execution waves." },
     { "name": "muster_sprint_waves", "description": "Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations (returns waves JSON; annotated:false means the backlog is unannotated/sequential)." },
+    { "name": "muster_sprint_reconcile", "description": "Reconciles all available sprint completion receipts and in-flight phases, returning deterministic item states and newly eligible dispatch actions before the harness waits again." },
     { "name": "muster_sprint_protocol", "description": "Returns the Cowork-adapted sprint orchestration playbook: backlog resolution, sprint-waves, sequential wave execution, claim/receipt discipline, honest disposition defaults, and what Cowork lacks vs the Claude Code plugin." },
     { "name": "muster_next", "description": "Single-agent driver: next runnable task given completed ids." },
     { "name": "muster_score", "description": "Score an artifact against a gate." },

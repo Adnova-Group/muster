@@ -383,6 +383,9 @@ export function startMusterMcpServer(config) {
   const err = (id, code, message) => send({ jsonrpc: "2.0", id, error: { code, message } });
 
   async function handle(msg) {
+  if (Object.hasOwn(msg, "id") && msg.id === null) {
+    return err(null, -32600, "Invalid Request");
+  }
   const { id, method, params } = msg;
   const isNotification = !Object.hasOwn(msg, "id");
   const replyOk = (result) => {

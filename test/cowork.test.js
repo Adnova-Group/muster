@@ -1062,7 +1062,7 @@ test("notifications/initialized produces no spurious reply", async () => {
   assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after notification");
 });
 
-test("method notifications never reply, while an explicit null id remains a request", async () => {
+test("request ids reject null, preserve absent-id notifications, and accept strings and numbers", async () => {
   const messages = await new Promise((resolve, reject) => {
     const srv = spawn(process.execPath, [path.join(rootDir, "cowork", "mcp-server.mjs")], {
       cwd: rootDir,
@@ -1104,6 +1104,7 @@ test("method notifications never reply, while an explicit null id remains a requ
       { jsonrpc: "2.0", method: "tools/list" },
       { jsonrpc: "2.0", method: "notifications/unknown" },
       { jsonrpc: "2.0", id: null, method: "ping" },
+      { jsonrpc: "2.0", id: "request-2", method: "ping" },
       { jsonrpc: "2.0", id: 2, method: "ping" },
     ]) {
       srv.stdin.write(JSON.stringify(message) + "\n");
@@ -1112,11 +1113,16 @@ test("method notifications never reply, while an explicit null id remains a requ
 
   assert.deepEqual(
     messages.map((msg) => msg.id),
-    [1, null, 2],
-    "only requests with an own id property receive responses",
+    [1, null, "request-2", 2],
+    "absent-id notifications stay silent while null, string, and number request ids receive responses",
   );
-  assert.deepEqual(messages[1].result, {}, "id:null is an explicit request id and receives a response");
-  assert.deepEqual(messages[2].result, {}, "subsequent requests remain healthy");
+  assert.deepEqual(
+    messages[1],
+    { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } },
+    "an explicit null id is an invalid JSON-RPC request",
+  );
+  assert.deepEqual(messages[2].result, {}, "string request ids remain valid");
+  assert.deepEqual(messages[3].result, {}, "number request ids remain valid");
 });
 
 test("tools/call notifications execute without replies, undefined-id collisions, or cancellation", async () => {

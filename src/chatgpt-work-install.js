@@ -29,9 +29,10 @@ import {
   cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withCodexFileLock } from "./codex-lock.js";
+import { ordinaryDirectoryPath as walkOrdinaryDirectoryPath } from "./fs-safe.js";
 
 const CONNECTION_ID = /^asdk_app_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const PROFILES = new Set(["pro-safe", "full"]);
@@ -75,26 +76,10 @@ export function normalizeChatgptWorkConnectionId(value) {
   return normalized;
 }
 
-async function ordinaryDirectory(path, { create = false } = {}) {
-  const absolute = resolve(path);
-  let current = parse(absolute).root;
-  for (const part of relative(current, absolute).split(sep).filter(Boolean)) {
-    current = join(current, part);
-    let info;
-    try { info = await lstat(current); }
-    catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      if (!create) return false;
-      try { await mkdir(current, { mode: 0o700 }); }
-      catch (createError) { if (createError.code !== "EEXIST") throw createError; }
-      info = await lstat(current);
-    }
-    if (info.isSymbolicLink() || !info.isDirectory()) {
-      throw new Error(`ChatGPT Work path ancestry must be ordinary directories: ${current}`);
-    }
-  }
-  return absolute;
-}
+const ordinaryDirectory = (path, options = {}) => walkOrdinaryDirectoryPath(path, {
+  ...options,
+  unsafeError: current => new Error(`ChatGPT Work path ancestry must be ordinary directories: ${current}`),
+});
 
 async function privateManagedDirectory(path) {
   const info = await lstat(path);

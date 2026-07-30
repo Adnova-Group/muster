@@ -1283,5 +1283,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // counts are unchanged (re-verified green).
   // 2026-07-30 re-pin #22 (audit S6): runner.md gains the $MUSTER_CLI resolution block its
   // siblings carry; both hardcoded node src/cli.js call sites switched.
-  assert.equal(hash.digest("hex"), "9d967a7f9a2d897e48f4f70a30566b4070437cf80069007779b79d358e05ca45");
+  // 2026-07-30 re-pin #23 (wave-dispatch review fix): muster-runner gains the explicit
+  // build-review-only mode; go-backlog selects it for scheduled legs and defers all
+  // dispositions until the emitted post-barrier phase. The ordinary runner command remains
+  // full-lifecycle. Cowork mirrors the same no-push/no-PR/no-integration leg boundary.
+  assert.equal(hash.digest("hex"), "9065bbab2b98c61b7a5a5f9b8058dfbd67c6412f5b790d15348b6463ab209421");
 });

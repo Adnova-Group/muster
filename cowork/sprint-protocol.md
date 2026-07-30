@@ -59,7 +59,8 @@ Call **`muster_sprint_waves`** with the raw backlog text. Its JSON is authoritat
 - `ok:true`, `annotated:true` — **wave mode**: consume `schedule.waves`, not a prose reconstruction
   from `waves` or item dispositions. Each wave's `buildReview.batches` is the authoritative,
   `MUSTER_SPRINT_PARALLEL`-capped build grouping; its barrier is `all-build-review-complete`; and its
-  `integration.itemIds` is the complete backlog-ordered list allowed to integrate into the main tree.
+  `integration.itemIds` is the complete backlog-ordered list allowed to execute a disposition after
+  the barrier; only merge dispositions may integrate into the main tree.
   Cowork cannot safely fan out those worktrees in parallel, so traverse each emitted batch and its ids
   sequentially while preserving the emitted per-item isolation. Never recompute or widen the cap.
 
@@ -94,18 +95,21 @@ crew waves). An item's OWN crew may still fan out in parallel.
   including finish/disposition after each item. This is the pre-existing flat-backlog behavior.
 - **Wave path (`annotated:true`).** For each object in `schedule.waves`, in emitted order:
   1. Record the wave base SHA. For every id in each emitted `buildReview.batches` array, create a
-     dedicated `.worktrees/<validated-item-id>` worktree from that same wave base and run the complete
-     build + review lifecycle there. Cowork's unavailable parallel fan-out changes only dispatch mode:
+     dedicated `.worktrees/<validated-item-id>` worktree from that same wave base and run the runner's
+     `build-review-only` lifecycle there. The declared disposition is metadata for the later phase;
+     this leg must not push, open a PR, merge, or integrate. Cowork's unavailable parallel fan-out changes only dispatch mode:
      execute these legs sequentially in their isolated worktrees (`sequential-isolated`). It does not
      move them into the main tree, change batch membership, or let disposition select who builds.
-     Each successful leg stops at a reviewed commit/branch receipt; `merge-local` and `merge-push`
-     do not execute yet. A `pr`/`keep` leg may complete its non-integrating disposition from its
-     worktree, but never changes the main-tree base.
+     Each successful leg stops at an implementation + review receipt naming its reviewed commit and
+     branch. No disposition executes yet.
   2. Enforce the emitted `all-build-review-complete` barrier. Do not begin integration until every
      non-escalated build/review leg in this wave has a receipt and every escalation is recorded.
-  3. In the main tree, execute only `schedule.waves[].integration.itemIds`, sequentially in their
-     emitted order. Each id must have a reviewed branch receipt from step 1; apply its declared
-     `merge-local`/`merge-push` disposition now. No other item may touch the base during integration.
+  3. Only after `all-build-review-complete`, execute `schedule.waves[].integration.itemIds`
+     sequentially in their emitted order. Each id must have a reviewed branch receipt from step 1;
+     apply its declared disposition now: `pr` pushes the item branch and opens its receipts-backed PR,
+     `keep` preserves the local reviewed branch without a remote change, `merge-local` merges into the
+     main-tree base without pushing, and `merge-push` merges then pushes the base. No other item may
+     touch the base during integration.
      The next dependency wave starts only from this post-integration base. For dependencies on
      unmerged `pr`/`keep` predecessors, preserve `go-backlog.md`'s stacked-fork visibility rules rather
      than silently building without predecessor code.

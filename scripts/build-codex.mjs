@@ -59,7 +59,7 @@ const modes = {
   },
   "muster-runner": {
     command: "runner",
-    purpose: "drive one claimed backlog item end-to-end in its own worktree",
+    purpose: "drive one claimed backlog item end-to-end in its own worktree in ordinary full-lifecycle mode, pushing the reviewed item branch and opening its receipts-backed PR",
     description: "Run one backlog item end to end with Muster in its own worktree."
   },
   "muster-capture": {

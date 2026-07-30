@@ -55,6 +55,8 @@
     "integration": {
       "mode": "sequential-backlog-order",
       "dispositions": [
+        "pr",
+        "keep",
         "merge-local",
         "merge-push"
       ]
@@ -86,7 +88,11 @@
         "barrier": "all-build-review-complete",
         "integration": {
           "mode": "sequential-backlog-order",
-          "itemIds": []
+          "itemIds": [
+            "retry",
+            "logging",
+            "metrics"
+          ]
         }
       },
       {
@@ -105,7 +111,9 @@
         "barrier": "all-build-review-complete",
         "integration": {
           "mode": "sequential-backlog-order",
-          "itemIds": []
+          "itemIds": [
+            "docs"
+          ]
         }
       }
     ]

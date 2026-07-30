@@ -23,6 +23,7 @@ test("schedule makes every ready disposition build/review eligible before ordere
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.waves, [["pr-item", "local-item", "push-item", "keep-item"]]);
+  assert.deepEqual(result.schedule.integration.dispositions, ["pr", "keep", "merge-local", "merge-push"]);
   assert.deepEqual(result.schedule.waves[0], {
     wave: 1,
     buildReview: {
@@ -33,7 +34,7 @@ test("schedule makes every ready disposition build/review eligible before ordere
     barrier: "all-build-review-complete",
     integration: {
       mode: "sequential-backlog-order",
-      itemIds: ["local-item", "push-item"],
+      itemIds: ["pr-item", "local-item", "push-item", "keep-item"],
     },
   });
 });
@@ -53,7 +54,7 @@ test("sprint-waves CLI emits the effective cap, explicit build batches, and inte
       ["pr-item", "local-item"],
       ["push-item", "keep-item"],
     ]);
-    assert.deepEqual(result.schedule.waves[0].integration.itemIds, ["local-item", "push-item"]);
+    assert.deepEqual(result.schedule.waves[0].integration.itemIds, ["pr-item", "local-item", "push-item", "keep-item"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -68,7 +69,7 @@ test("schedule preserves a named sequential degradation without changing depende
     dependencyOrder: "preserved",
     integrationOrder: "preserved",
   });
-  assert.deepEqual(result.schedule.waves[0].integration.itemIds, ["local-item", "push-item"]);
+  assert.deepEqual(result.schedule.waves[0].integration.itemIds, ["pr-item", "local-item", "push-item", "keep-item"]);
 });
 
 test("schedule applies the documented default and hard ceiling to build concurrency", () => {
@@ -77,13 +78,14 @@ test("schedule applies the documented default and hard ceiling to build concurre
   assert.equal(computeSprintWaves(backlog, { parallelLimit: 99 }).schedule.buildReview.maxConcurrency, 10);
 });
 
-test("go-backlog contract dispatches every ready disposition before the barrier and integrates merges afterward", async () => {
+test("go-backlog contract dispatches every ready disposition before the barrier and disposes every item afterward", async () => {
   const text = await readFile(join(repoRoot, "plugin", "commands", "go-backlog.md"), "utf8");
   const waveMode = text.slice(text.indexOf("**Wave mode**"), text.indexOf("**Unattended (Routine) mode**"));
 
   assert.match(waveMode, /every ready item regardless of disposition/i);
   assert.match(waveMode, /build \+ review barrier/i);
-  assert.match(waveMode, /`merge-local`\/`merge-push` affect only.*integration/i);
+  assert.match(waveMode, /build-review-only/i);
+  assert.match(waveMode, /`pr`\/`keep`\/`merge-local`\/`merge-push`.*integration/i);
   assert.doesNotMatch(waveMode, /\(a\) `pr`\/`keep` items/);
   assert.match(waveMode, /cannot dispatch parallel runners.*same build\/review schedule sequentially/i);
   assert.doesNotMatch(text.slice(0, text.indexOf("**Wave mode**")), /full go lifecycle sequentially over every item/i);

@@ -800,7 +800,7 @@ test("file verb: muster_sprint_waves exposes build concurrency and post-barrier 
   const res = JSON.parse(r[2].result.content[0].text);
   assert.equal(r[2].result.isError, false);
   assert.deepEqual(res.schedule.waves[0].buildReview.batches, [["local", "pr"], ["push"]]);
-  assert.deepEqual(res.schedule.waves[0].integration.itemIds, ["local", "push"]);
+  assert.deepEqual(res.schedule.waves[0].integration.itemIds, ["local", "pr", "push"]);
   assert.equal(res.schedule.degradation.buildReviewMode, "sequential-isolated");
 });
 

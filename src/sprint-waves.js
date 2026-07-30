@@ -107,7 +107,7 @@ export function buildSprintSchedule(waves, items, { parallelLimit } = {}) {
     barrier: "all-build-review-complete",
     integration: {
       mode: "sequential-backlog-order",
-      dispositions: ["merge-local", "merge-push"],
+      dispositions: ["pr", "keep", "merge-local", "merge-push"],
     },
     degradation: {
       when: "parallel-dispatch-unavailable",
@@ -125,7 +125,7 @@ export function buildSprintSchedule(waves, items, { parallelLimit } = {}) {
       barrier: "all-build-review-complete",
       integration: {
         mode: "sequential-backlog-order",
-        itemIds: itemIds.filter((id) => ["merge-local", "merge-push"].includes(items[id]?.disposition)),
+        itemIds: [...itemIds],
       },
     })),
   };

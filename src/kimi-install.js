@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, readFile, readdir, realpath, rmdir, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, rmdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -223,19 +223,33 @@ async function readPackageVersion(root) {
   return typeof pkg?.version === "string" ? pkg.version : "0.5.0";
 }
 
-async function copyInto(srcFile, destFile, dest) {
-  await mkdir(dirname(destFile), { recursive: true });
-  await assertSafeManagedFiles(dest, [destFile]);
-  await copyFile(srcFile, destFile);
+async function copyInto(srcFile, destFile, dest, beforeManagedMutation) {
+  await writeManaged(dest, destFile, await readFile(srcFile), beforeManagedMutation);
 }
 
-async function writeManaged(dest, path, bytes) {
+// Publish managed content via an exclusive no-follow temp and atomic rename.
+// The final ancestry recheck happens after staging and immediately before the
+// rename, so a directory swapped to a symlink during preparation fails closed.
+// Rename also replaces (rather than writes through) a hard-linked destination,
+// leaving every outside alias byte-identical.
+async function writeManaged(dest, path, bytes, beforeManagedMutation) {
   await mkdir(dirname(path), { recursive: true });
   await assertSafeManagedFiles(dest, [path]);
-  await writeFile(path, bytes);
+  await atomicWrite(path, bytes, {
+    fsync: false,
+    beforeRename: async temporary => {
+      await beforeManagedMutation?.({ operation: "publish", path, temporary });
+      await assertSafeManagedFiles(dest, [path]);
+    }
+  });
 }
 
-async function unlinkManaged(dest, path) {
+async function unlinkManaged(dest, path, beforeManagedMutation) {
+  await assertSafeManagedFiles(dest, [path]);
+  await beforeManagedMutation?.({ operation: "delete", path });
+  // Revalidate after the last await under our control. Node has no portable
+  // openat/unlinkat binding, so this is the narrowest practical name-based
+  // deletion window; see the residual-risk note in the tests/report.
   await assertSafeManagedFiles(dest, [path]);
   await unlink(path);
 }
@@ -535,7 +549,10 @@ async function collectSource(pluginRoot) {
 // install no longer ships, and replaces the marker-delimited permission-rules
 // block in place. Returns a glass-box summary (agent/skill counts, the dest,
 // the fence rules, and the probe verdict when --probe is set).
-export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = false, probe = false, fetchImpl } = {}) {
+export async function runKimiInstall({
+  home = homedir(), repoRoot, dryRun = false, probe = false, fetchImpl,
+  _beforeManagedMutation = null
+} = {}) {
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await resolvePluginRoot(root);
   const dest = kimiHome(home);
@@ -581,24 +598,24 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   ]);
   const removedStale = [];
   for (const rel of staleRel) {
-    try { await unlinkManaged(dest, join(dest, rel)); removedStale.push(rel); }
+    try { await unlinkManaged(dest, join(dest, rel), _beforeManagedMutation); removedStale.push(rel); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 
   // Skills copy byte-for-byte; agents are stamped with their model_preference
   // lane (see the header note -- an un-stamped agent would silently bind to the
   // secondary/cheap lane once a [secondary_model] is configured).
-  for (const { rel, src } of skills) await copyInto(src, join(dest, rel), dest);
+  for (const { rel, src } of skills) await copyInto(src, join(dest, rel), dest, _beforeManagedMutation);
   const lanes = { primary: [], secondary: [] }, unstamped = [];
   for (const { rel, src, id, lane } of agents) {
     const destFile = join(dest, rel);
     const stamped = lane ? stampModelPreference(await readFile(src, "utf8"), lane) : null;
     if (stamped === null) {
-      await copyInto(src, destFile, dest);
+      await copyInto(src, destFile, dest, _beforeManagedMutation);
       unstamped.push({ id, reason: lane ? "no frontmatter" : "no manifest entry" });
       continue;
     }
-    await writeManaged(dest, destFile, stamped);
+    await writeManaged(dest, destFile, stamped, _beforeManagedMutation);
     lanes[lane].push(id);
   }
 
@@ -609,7 +626,7 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
   for (const { rel, src, name } of verbs) {
     const destFile = join(dest, rel);
     const stamped = stampSkillName(await readFile(src, "utf8"), name);
-    await writeManaged(dest, destFile, stamped ?? await readFile(src, "utf8"));
+    await writeManaged(dest, destFile, stamped ?? await readFile(src, "utf8"), _beforeManagedMutation);
     installedVerbs.push(name);
   }
 
@@ -635,7 +652,7 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
     format: 1, owner: "muster", packageVersion,
     agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
     permissionRules: { created: configCreated }
-  }, dest);
+  }, dest, _beforeManagedMutation);
 
   return {
     dest, packageVersion, agents: agents.map(a => basename(a.rel)), skills: skillNames,
@@ -656,7 +673,7 @@ export async function runKimiInstall({ home = homedir(), repoRoot, dryRun = fals
 // are untouched), strip muster's marker-delimited permission-rules block from
 // config.toml (deleting the file only when muster created it), prune the
 // now-empty muster-created dirs, and drop the manifest.
-export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}) {
+export async function runKimiUninstall({ home = homedir(), dryRun = false, _beforeManagedMutation = null } = {}) {
   const dest = kimiHome(home);
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
   const manifest = await readManifest(manifestPath, dest);
@@ -675,7 +692,7 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
 
   const removed = [];
   for (const rel of owned) {
-    try { await unlinkManaged(dest, join(dest, rel)); removed.push(rel); }
+    try { await unlinkManaged(dest, join(dest, rel), _beforeManagedMutation); removed.push(rel); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 
@@ -695,7 +712,7 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
   for (const rel of skillDirs) await rmdirIfEmpty(join(dest, rel));
   await rmdirIfEmpty(join(dest, "skills"));
   await rmdirIfEmpty(join(dest, "agents"));
-  await unlinkManaged(dest, manifestPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+  await unlinkManaged(dest, manifestPath, _beforeManagedMutation).catch(error => { if (error.code !== "ENOENT") throw error; });
   await rmdirIfEmpty(join(dest, "muster"));
 
   return { dest, removed, fileCount: removed.length, ...(manifest.permissionRules ? { permissionRules: { stripped: true, configRemoved } } : {}) };
@@ -710,9 +727,12 @@ export async function runKimiUninstall({ home = homedir(), dryRun = false } = {}
 // and a torn publish is self-healing on rerun; the fence block's config.toml
 // write is deliberately NOT this helper -- see the "deliberately a plain
 // writeFile" comment at the install merge).
-async function atomicWriteJson(path, value, dest) {
+async function atomicWriteJson(path, value, dest, beforeManagedMutation) {
   await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", {
     fsync: false,
-    beforeRename: () => assertSafeManagedFiles(dest, [path])
+    beforeRename: async temporary => {
+      await beforeManagedMutation?.({ operation: "publish", path, temporary });
+      await assertSafeManagedFiles(dest, [path]);
+    }
   });
 }

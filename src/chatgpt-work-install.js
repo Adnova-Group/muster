@@ -25,14 +25,17 @@
 //   the error escalates to HUMAN-HOLD instead of leaving mixed state.
 
 import { createHash, randomUUID } from "node:crypto";
+import { execFile as execFileCb } from "node:child_process";
 import {
   cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { withCodexFileLock } from "./codex-lock.js";
 
+const execFile = promisify(execFileCb);
 const CONNECTION_ID = /^asdk_app_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const PROFILES = new Set(["pro-safe", "full"]);
 const RECEIPT_NAME = "chatgpt-work.json";
@@ -117,7 +120,8 @@ async function securePublicationDirectory(path) {
 }
 
 async function projectGitDir(cwd) {
-  const marker = join(resolve(cwd), ".git");
+  const projectRoot = resolve(cwd);
+  const marker = join(projectRoot, ".git");
   let info;
   try { info = await lstat(marker); } catch (cause) {
     if (cause.code !== "ENOENT") throw cause;
@@ -126,12 +130,16 @@ async function projectGitDir(cwd) {
     throw error;
   }
   if (info.isSymbolicLink()) throw new Error("project scope rejects symlinked .git metadata");
-  if (info.isDirectory()) return marker;
-  if (!info.isFile()) throw new Error("project scope requires an ordinary .git directory or gitdir file");
-  const text = await readFile(marker, "utf8");
-  const match = text.trim().match(/^gitdir:\s*(.+)$/);
-  if (!match) throw new Error("project scope .git file has an invalid gitdir pointer");
-  const gitDir = isAbsolute(match[1]) ? resolve(match[1]) : resolve(dirname(marker), match[1]);
+  let gitDir;
+  if (info.isDirectory()) {
+    gitDir = marker;
+  } else {
+    if (!info.isFile()) throw new Error("project scope requires an ordinary .git directory or gitdir file");
+    const text = await readFile(marker, "utf8");
+    const match = text.trim().match(/^gitdir:\s*(.+)$/);
+    if (!match) throw new Error("project scope .git file has an invalid gitdir pointer");
+    gitDir = isAbsolute(match[1]) ? resolve(match[1]) : resolve(dirname(marker), match[1]);
+  }
   try {
     if (!(await ordinaryDirectory(gitDir))) throw new Error("gitdir is missing");
   } catch (cause) {
@@ -140,6 +148,27 @@ async function projectGitDir(cwd) {
   const resolved = await realpath(gitDir);
   const gitInfo = await lstat(resolved);
   if (gitInfo.isSymbolicLink() || !gitInfo.isDirectory()) throw new Error("project gitdir must resolve to an ordinary directory");
+
+  let stdout;
+  try {
+    ({ stdout } = await execFile("git", [
+      "-C", projectRoot, "rev-parse", "--path-format=absolute", "--git-dir", "--is-inside-work-tree",
+    ], { timeout: 10_000, maxBuffer: 1024 * 1024 }));
+  } catch (cause) {
+    const error = new Error("project scope requires a Git worktree", { cause });
+    error.code = "MUSTER_NO_GIT_WORKTREE";
+    throw error;
+  }
+  const lines = stdout.trim().split(/\r?\n/);
+  if (lines.length !== 2 || lines[1] !== "true") {
+    const error = new Error("project scope requires a Git worktree");
+    error.code = "MUSTER_NO_GIT_WORKTREE";
+    throw error;
+  }
+  const authoritative = await realpath(resolve(lines[0]));
+  if (authoritative !== resolved) {
+    throw new Error("project .git pointer does not match Git's authoritative gitdir");
+  }
   return resolved;
 }
 

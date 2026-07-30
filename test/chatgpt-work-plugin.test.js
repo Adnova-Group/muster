@@ -15,6 +15,14 @@ import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 const execFile = promisify(execFileCb);
 const root = new URL("../", import.meta.url).pathname;
 
+async function initGit(project, { separateGitDir } = {}) {
+  await mkdir(project, { recursive: true });
+  const args = separateGitDir
+    ? ["init", "--separate-git-dir", separateGitDir, project]
+    : ["init", project];
+  await execFile("git", args, { env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } });
+}
+
 test("connection IDs normalize only an initial plugin_ and otherwise fail closed", () => {
   assert.equal(normalizeChatgptWorkConnectionId("asdk_app_Abc-123_x"), "asdk_app_Abc-123_x");
   assert.equal(normalizeChatgptWorkConnectionId("plugin_asdk_app_Abc-123_x"), "asdk_app_Abc-123_x");
@@ -28,7 +36,7 @@ test("installer supports project/user scopes, dry-run, persistence, and full opt
   const dir = await mkdtemp(join(tmpdir(), "muster-work-install-"));
   const home = join(dir, "home");
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   await mkdir(home, { recursive: true });
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -75,7 +83,7 @@ test("installer supports project/user scopes, dry-run, persistence, and full opt
 
 test("CLI install chatgpt-work validates flags and dry-run emits no receipt", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-cli-"));
-  await mkdir(join(dir, ".git"), { recursive: true });
+  await initGit(dir);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const { stdout } = await execFile(process.execPath, [
     join(root, "src", "cli.js"), "install", "chatgpt-work",
@@ -113,8 +121,7 @@ test("project-scope install accepts an ordinary relative gitdir and rejects unsa
 
   const ordinaryProject = join(dir, "ordinary-project");
   const ordinaryGitDir = join(dir, "ordinary-gitdir");
-  await mkdir(ordinaryProject, { recursive: true });
-  await mkdir(ordinaryGitDir, { recursive: true });
+  await initGit(ordinaryProject, { separateGitDir: ordinaryGitDir });
   await writeFile(join(ordinaryProject, ".git"), "gitdir: ../ordinary-gitdir\n");
 
   const installed = await runChatgptWorkInstall({
@@ -122,6 +129,21 @@ test("project-scope install accepts an ordinary relative gitdir and rejects unsa
     scope: "project", cwd: ordinaryProject, home: join(dir, "home"),
   });
   assert.equal(installed.configPath, join(ordinaryGitDir, "muster", "chatgpt-work.json"));
+
+  const forgedProject = join(dir, "forged-project");
+  const forgedGitDir = join(dir, "forged-gitdir");
+  await mkdir(forgedProject, { recursive: true });
+  await mkdir(forgedGitDir, { recursive: true });
+  await writeFile(join(forgedProject, ".git"), "gitdir: ../forged-gitdir\n");
+  await assert.rejects(
+    runChatgptWorkInstall({
+      connectionId: "asdk_app_ForgedGitdir", profile: "pro-safe",
+      scope: "project", cwd: forgedProject, home: join(dir, "home"),
+    }),
+    /Git worktree|authoritative gitdir/i,
+  );
+  await assert.rejects(stat(join(forgedProject, ".agents")), /ENOENT/);
+  await assert.rejects(stat(join(forgedGitDir, "muster")), /ENOENT/);
 
   const malformedProject = join(dir, "malformed-project");
   await mkdir(malformedProject, { recursive: true });
@@ -218,7 +240,7 @@ test("dedicated server fails before MCP output without known profile and full do
 test("dedicated full server starts only with receipted activation and both opt-ins", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-full-server-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const installed = await runChatgptWorkInstall({
     connectionId: "asdk_app_FullServer1",
@@ -256,7 +278,7 @@ test("dedicated full server starts only with receipted activation and both opt-i
 test("installed full Work runtime executes with Work-only capability semantics", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-runtime-call-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const installed = await runChatgptWorkInstall({
     connectionId: "asdk_app_RuntimeCall1",
@@ -346,7 +368,7 @@ test("probe startup fails before MCP output for invalid or pre-existing attestat
 test("bundled runtime installs a scope-correct neutral Work plugin without source build scripts", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-bundled-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const cli = join(root, ".agents", "plugins", "plugin", "runtime", "muster.mjs");
   const { stdout } = await execFile(process.execPath, [
@@ -373,7 +395,7 @@ test("bundled runtime installs a scope-correct neutral Work plugin without sourc
 test("installer cache identity revokes full opt-in on full to pro-safe transition", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-transition-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const common = { connectionId: "asdk_app_Transition1", scope: "project", cwd: project, home: join(dir, "home") };
   const full = await runChatgptWorkInstall({ ...common, profile: "full", allowFullActions: true });
@@ -390,7 +412,7 @@ test("installer cache identity revokes full opt-in on full to pro-safe transitio
 test("receipt v3 binds every Work activation artifact and rejects tampering", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-receipt-v3-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const installed = await runChatgptWorkInstall({
     connectionId: "asdk_app_Receipt3", profile: "pro-safe", scope: "project", cwd: project,
@@ -440,7 +462,7 @@ test("receipt v3 binds every Work activation artifact and rejects tampering", as
 test("installed server startup rejects a receipt whose profile or artifact set no longer matches", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-receipt-mutation-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const installed = await runChatgptWorkInstall({
     connectionId: "asdk_app_Mutation1", profile: "pro-safe", scope: "project", cwd: project,
@@ -475,7 +497,7 @@ test("installed server startup rejects a receipt whose profile or artifact set n
 test("receipt validation names the offending field for each invalid shape", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-receipt-fields-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const installed = await runChatgptWorkInstall({
     connectionId: "asdk_app_Fields1", profile: "pro-safe", scope: "project", cwd: project,
@@ -517,7 +539,7 @@ test("an existing unowned Work destination fails closed without mutation", async
   const dir = await mkdtemp(join(tmpdir(), "muster-work-unowned-"));
   const project = join(dir, "project");
   const destination = join(project, ".agents", "plugins", "muster-chatgpt-work");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   await mkdir(destination, { recursive: true });
   await writeFile(join(destination, "foreign.txt"), "leave me\n");
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -532,7 +554,7 @@ test("Work marketplace merge preserves Codex and rejects an unowned Work entry",
   const project = join(dir, "project");
   const pluginsRoot = join(project, ".agents", "plugins");
   const marketplacePath = join(pluginsRoot, "marketplace.json");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   await mkdir(pluginsRoot, { recursive: true });
   const codexEntry = {
     name: "muster",
@@ -557,7 +579,7 @@ test("Work marketplace merge preserves Codex and rejects an unowned Work entry",
 
   const other = join(dir, "other");
   const otherRoot = join(other, ".agents", "plugins");
-  await mkdir(join(other, ".git"), { recursive: true });
+  await initGit(other);
   await mkdir(otherRoot, { recursive: true });
   const unowned = {
     name: "muster",
@@ -576,7 +598,7 @@ test("Work marketplace merge preserves Codex and rejects an unowned Work entry",
 test("overlapping full and pro-safe installs serialize into one coherent receipted state", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-overlap-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const common = { connectionId: "asdk_app_Overlap1", scope: "project", cwd: project };
   await Promise.all([
@@ -596,7 +618,7 @@ test("overlapping full and pro-safe installs serialize into one coherent receipt
 test("a late receipt failure restores the prior plugin and receipt as one pair", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-rollback-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const common = { connectionId: "asdk_app_Rollback1", scope: "project", cwd: project };
   const first = await runChatgptWorkInstall({ ...common, profile: "pro-safe" });
@@ -622,7 +644,7 @@ test("a late receipt failure restores the prior plugin and receipt as one pair",
 test("symlinked marketplace ancestry fails before receipt mutation", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-symlink-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   await mkdir(join(dir, "redirect"), { recursive: true });
   await symlink(join(dir, "redirect"), join(project, ".agents"));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -637,7 +659,7 @@ test("group/world-writable Work publication directories fail closed", async t =>
   const project = join(dir, "project");
   const agents = join(project, ".agents");
   const plugins = join(agents, "plugins");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   await mkdir(plugins, { recursive: true });
   await chmod(agents, 0o777);
   await chmod(plugins, 0o777);
@@ -651,7 +673,7 @@ test("group/world-writable Work publication directories fail closed", async t =>
 test("installed Work startup rejects a symlink introduced anywhere in managed ancestry", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-startup-symlink-"));
   const project = join(dir, "project");
-  await mkdir(join(project, ".git"), { recursive: true });
+  await initGit(project);
   t.after(() => rm(dir, { recursive: true, force: true }));
   const installed = await runChatgptWorkInstall({
     connectionId: "asdk_app_StartupSymlink1", profile: "pro-safe", scope: "project", cwd: project,

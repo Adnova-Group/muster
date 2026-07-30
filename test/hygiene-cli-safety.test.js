@@ -42,6 +42,20 @@ for (const flag of ["--worktree-threshold", "--zombie-stale-min", "--claim-stale
   }
 }
 
+for (const value of ["", " ", "0x10", "+1", "1_000"]) {
+  test(`hygiene rejects non-strict threshold syntax ${JSON.stringify(value)} before mutation`, async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "muster-hygiene-syntax-"));
+    const backlog = join(cwd, "backlog.md");
+    await writeFile(backlog, STALE_BACKLOG);
+
+    await assert.rejects(
+      () => runHygiene(cwd, ["--reap", "--backlog", backlog, "--claim-stale-min", value]),
+      /must be a non-negative finite number/,
+    );
+    assert.equal(await readFile(backlog, "utf8"), STALE_BACKLOG);
+  });
+}
+
 test("hygiene accepts zero thresholds and preserves its JSON contract", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "muster-hygiene-zero-"));
   const backlog = join(cwd, "backlog.md");
@@ -116,6 +130,63 @@ test("hygiene refuses a FIFO backlog without blocking", async (t) => {
   );
 });
 
+test("hygiene fails closed when the runtime cannot provide O_NOFOLLOW", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-hygiene-no-nofollow-"));
+  const backlog = join(cwd, "backlog.md");
+  await writeFile(backlog, STALE_BACKLOG);
+
+  await assert.rejects(
+    () => runHygiene(cwd, ["--reap", "--backlog", backlog], {
+      env: { ...process.env, MUSTER_TEST_FORCE_NO_NOFOLLOW: "1" },
+    }),
+    /O_NOFOLLOW is unavailable/,
+  );
+  assert.equal(await readFile(backlog, "utf8"), STALE_BACKLOG);
+});
+
+test("hygiene detects a same-inode equal-length backlog refresh before publication", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "muster-hygiene-content-swap-"));
+  const backlog = join(cwd, "backlog.md");
+  const preload = join(cwd, "refresh-after-read.mjs");
+  const refreshed = "R".repeat(Buffer.byteLength(STALE_BACKLOG));
+  await writeFile(backlog, STALE_BACKLOG);
+  await writeFile(preload, `
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const target = process.env.MUSTER_REFRESH_BACKLOG;
+    const refreshed = process.env.MUSTER_REFRESH_CONTENT;
+    let refreshedOnce = false;
+    const originalOpen = fs.promises.open;
+    fs.promises.open = async function(path, ...args) {
+      const handle = await originalOpen.call(this, path, ...args);
+      if (String(path) === target && !refreshedOnce) {
+        const originalClose = handle.close.bind(handle);
+        handle.close = async () => {
+          const result = await originalClose();
+          fs.writeFileSync(target, refreshed);
+          refreshedOnce = true;
+          return result;
+        };
+      }
+      return handle;
+    };
+    syncBuiltinESMExports();
+  `);
+
+  await assert.rejects(
+    () => runHygiene(cwd, ["--reap", "--backlog", backlog], {
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --import=${preload}`.trim(),
+        MUSTER_REFRESH_BACKLOG: backlog,
+        MUSTER_REFRESH_CONTENT: refreshed,
+      },
+    }),
+    /content changed before publication/,
+  );
+  assert.equal(await readFile(backlog, "utf8"), refreshed);
+});
+
 test("hygiene detects a read-to-write identity swap and never changes the symlink target", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "muster-hygiene-swap-"));
   const backlog = join(cwd, "backlog.md");
@@ -170,7 +241,7 @@ test("hygiene detects a read-to-write identity swap and never changes the symlin
         MUSTER_SWAP_EXTERNAL: external,
       },
     }),
-    /changed while reading|symlink|ELOOP/i,
+    /changed while reading|symlink|ELOOP|unsafe regular file/i,
   );
   assert.equal(await readFile(external, "utf8"), "EXTERNAL MUST NOT CHANGE\n");
   assert.equal(await readFile(displaced, "utf8"), STALE_BACKLOG);

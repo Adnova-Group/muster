@@ -1062,6 +1062,63 @@ test("notifications/initialized produces no spurious reply", async () => {
   assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after notification");
 });
 
+test("method notifications never reply, while an explicit null id remains a request", async () => {
+  const messages = await new Promise((resolve, reject) => {
+    const srv = spawn(process.execPath, [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+      cwd: rootDir,
+      stdio: ["pipe", "pipe", "inherit"],
+    });
+    const got = [];
+    let buf = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      srv.kill("SIGKILL");
+      reject(new Error(`method notification timeout; replies=${JSON.stringify(got)}`));
+    }, 3_000);
+    srv.stdout.setEncoding("utf8");
+    srv.stdout.on("data", (data) => {
+      buf += data;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const msg = JSON.parse(line);
+        got.push(msg);
+        if (!settled && msg.id === 2) {
+          settled = true;
+          setTimeout(() => {
+            clearTimeout(timer);
+            srv.stdin.end();
+            resolve(got);
+          }, 50);
+        }
+      }
+    });
+    srv.on("error", reject);
+    for (const message of [
+      INIT,
+      { jsonrpc: "2.0", method: "initialize", params: {} },
+      { jsonrpc: "2.0", method: "ping" },
+      { jsonrpc: "2.0", method: "tools/list" },
+      { jsonrpc: "2.0", method: "notifications/unknown" },
+      { jsonrpc: "2.0", id: null, method: "ping" },
+      { jsonrpc: "2.0", id: 2, method: "ping" },
+    ]) {
+      srv.stdin.write(JSON.stringify(message) + "\n");
+    }
+  });
+
+  assert.deepEqual(
+    messages.map((msg) => msg.id),
+    [1, null, 2],
+    "only requests with an own id property receive responses",
+  );
+  assert.deepEqual(messages[1].result, {}, "id:null is an explicit request id and receives a response");
+  assert.deepEqual(messages[2].result, {}, "subsequent requests remain healthy");
+});
+
 test("tools/call notifications execute without replies, undefined-id collisions, or cancellation", async () => {
   const fixture = mkdtempSync(path.join(tmpdir(), "cowork-tool-notifications-"));
   const fakeCli = path.join(fixture, "recording-cli.mjs");

@@ -384,11 +384,17 @@ export function startMusterMcpServer(config) {
 
   async function handle(msg) {
   const { id, method, params } = msg;
-  const isNotification = id === undefined || id === null;
+  const isNotification = !Object.hasOwn(msg, "id");
+  const replyOk = (result) => {
+    if (!isNotification) ok(id, result);
+  };
+  const replyErr = (code, message) => {
+    if (!isNotification) err(id, code, message);
+  };
 
   switch (method) {
     case "initialize":
-      return ok(id, {
+      return replyOk({
         protocolVersion: params?.protocolVersion || PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: SERVER_INFO,
@@ -400,9 +406,9 @@ export function startMusterMcpServer(config) {
       limiter.cancel(params?.requestId);
       return; // no response to notifications
     case "ping":
-      return ok(id, {});
+      return replyOk({});
     case "tools/list":
-      return ok(id, {
+      return replyOk({
         tools: Object.entries(exposedTools).map(([name, t]) => ({
           name, ...(t.title ? { title: t.title } : {}),
           description: t.description, inputSchema: t.inputSchema,
@@ -411,8 +417,7 @@ export function startMusterMcpServer(config) {
       });
     case "tools/call": {
       if (!Object.hasOwn(exposedTools, params?.name)) {
-        if (isNotification) return;
-        return ok(id, {
+        return replyOk({
           content: [{
             type: "text",
             text: profileName
@@ -424,11 +429,10 @@ export function startMusterMcpServer(config) {
       }
       const workId = isNotification ? Symbol("tools/call notification") : id;
       const r = await limiter.run(workId, (signal) => invoke(params?.name, params?.arguments || {}, signal));
-      if (!isNotification) return ok(id, { content: [{ type: "text", text: r.text }], isError: !r.ok });
-      return;
+      return replyOk({ content: [{ type: "text", text: r.text }], isError: !r.ok });
     }
     default:
-      if (!isNotification) err(id, -32601, `method not found: ${method}`);
+      return replyErr(-32601, `method not found: ${method}`);
   }
   }
 
@@ -454,7 +458,9 @@ const STDIN_MAX_BYTES = 4 * 1024 * 1024;
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
     Promise.resolve(handle(msg)).catch((e) => {
-      if (msg?.id != null) err(msg.id, -32603, `internal error: ${e.message}`);
+      if (msg !== null && typeof msg === "object" && Object.hasOwn(msg, "id")) {
+        err(msg.id, -32603, `internal error: ${e.message}`);
+      }
     });
   }
   });

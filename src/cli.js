@@ -11,6 +11,7 @@ import { tallyReview, verdictsTallyCorruptionErrors } from "./review.js";
 import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
+import { constants as fsConstants } from "node:fs";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
@@ -894,6 +895,12 @@ async function main() {
           if (rest.includes(flag)) fail(`hygiene ${flag} must be a non-negative finite number`);
           return fallback;
         }
+        // JSON-number syntax keeps coercion-only spellings (blank strings,
+        // whitespace, hex, numeric separators, leading "+") out while retaining
+        // zero, fractions, and exponents.
+        if (!/^(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(raw)) {
+          fail(`hygiene ${flag} must be a non-negative finite number`);
+        }
         const value = Number(raw);
         if (!Number.isFinite(value) || value < 0 || !Number.isFinite(value * multiplier)) {
           fail(`hygiene ${flag} must be a non-negative finite number`);
@@ -924,14 +931,37 @@ async function main() {
         }
       };
       let backlogIdentity = null;
+      let backlogBytes = null;
+      const readPinnedBacklog = async (expectedInfo = null) => {
+        // fs-safe's generic reader degrades to a zero flag on runtimes without
+        // O_NOFOLLOW. Hygiene is mutation-capable, so this call site instead
+        // fails closed. The env arm is a test fixture for otherwise-unavailable
+        // platforms; it can only make the command more restrictive.
+        if (!fsConstants.O_NOFOLLOW || process.env.MUSTER_TEST_FORCE_NO_NOFOLLOW === "1") {
+          throw new Error("hygiene backlog cannot be read safely: O_NOFOLLOW is unavailable");
+        }
+        await assertNoSymlinkAncestors();
+        const pathInfo = await lstat(absoluteBacklogPath);
+        if (!pathInfo.isFile()) {
+          throw new Error(`unsafe regular file: hygiene backlog ${backlogPath}`);
+        }
+        if (expectedInfo &&
+            (pathInfo.ino !== expectedInfo.ino || pathInfo.dev !== expectedInfo.dev)) {
+          throw new Error(`file changed while reading: hygiene backlog ${backlogPath}`);
+        }
+        // expectedInfo pins the explicit final-component lstat to the descriptor
+        // opened O_NOFOLLOW inside readNoFollowRegular.
+        return readNoFollowRegular(absoluteBacklogPath, {
+          maxBytes: MAX_HYGIENE_BACKLOG_BYTES,
+          label: `hygiene backlog ${backlogPath}`,
+          expectedInfo: pathInfo,
+        });
+      };
       const readBacklog = async () => {
         try {
-          await assertNoSymlinkAncestors();
-          const { bytes, info } = await readNoFollowRegular(absoluteBacklogPath, {
-            maxBytes: MAX_HYGIENE_BACKLOG_BYTES,
-            label: `hygiene backlog ${backlogPath}`,
-          });
+          const { bytes, info } = await readPinnedBacklog();
           backlogIdentity = info;
+          backlogBytes = bytes;
           return bytes.toString("utf8");
         } catch (error) {
           if (error.code === "ENOENT") return null;
@@ -949,12 +979,10 @@ async function main() {
         await atomicWrite(absoluteBacklogPath, result.claims.content, {
           mode: backlogIdentity.mode & 0o777,
           beforeRename: async () => {
-            await assertNoSymlinkAncestors();
-            await readNoFollowRegular(absoluteBacklogPath, {
-              maxBytes: MAX_HYGIENE_BACKLOG_BYTES,
-              label: `hygiene backlog ${backlogPath}`,
-              expectedInfo: backlogIdentity,
-            });
+            const current = await readPinnedBacklog(backlogIdentity);
+            if (!current.bytes.equals(backlogBytes)) {
+              throw new Error(`hygiene backlog content changed before publication: ${backlogPath}`);
+            }
           },
         });
       }

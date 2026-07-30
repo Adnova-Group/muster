@@ -47,7 +47,7 @@ test("findZombieProcesses + reapZombieProcesses: detects and reaps an orphaned p
   const { ok, zombies } = findZombieProcesses(processes, {
     newestRunMarkerAt: "2026-07-16T00:00:00Z",
     musterRoots: ["/repo/.worktrees/burn-fix"],
-    dispatchPids: [100],
+    dispatchReceipts: [{ pid: 100, startIdentity: "linux-proc-stat:1000" }],
   });
   assert.equal(ok, true);
   assert.equal(zombies.length, 1);
@@ -141,7 +141,7 @@ test("findZombieProcesses + reapZombieProcesses: a recorded dispatch receipt cor
   ];
   const { zombies } = findZombieProcesses(processes, {
     newestRunMarkerAt: "2026-07-16T00:00:00Z",
-    dispatchPids: [4242],
+    dispatchReceipts: [{ pid: 4242, startIdentity: "linux-proc-stat:777" }],
   });
   assert.equal(zombies.length, 1);
   assert.equal(zombies[0].provenance, "dispatch-receipt");
@@ -156,14 +156,15 @@ test("findZombieProcesses + reapZombieProcesses: a recorded dispatch receipt cor
   assert.deepEqual(killed, [4242]);
 });
 
-test("findZombieProcesses + reapZombieProcesses: a receipted process without stable start identity remains report-only", () => {
+test("findZombieProcesses + reapZombieProcesses: a process without stable start identity cannot match its receipt and remains report-only", () => {
   const { zombies } = findZombieProcesses([
     { pid: 4243, ppid: 1, command: "claude --print", startedAt: "2026-07-14T00:00:00Z" },
   ], {
     newestRunMarkerAt: "2026-07-16T00:00:00Z",
-    dispatchPids: [4243],
+    dispatchReceipts: [{ pid: 4243, startIdentity: "linux-proc-stat:4243" }],
   });
-  assert.equal(zombies[0].provenance, "dispatch-receipt");
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].receiptIdentityMatch, null);
   assert.equal(zombies[0].startIdentity, null);
   assert.equal(zombies[0].reapable, false, "unsupported identity platforms fail closed");
 
@@ -185,7 +186,7 @@ test("reapZombieProcesses (adversarial): PID reuse between classification and re
     },
   ], {
     newestRunMarkerAt: "2026-07-16T00:00:00Z",
-    dispatchPids: [4343],
+    dispatchReceipts: [{ pid: 4343, startIdentity: "linux-proc-stat:100" }],
   });
   assert.equal(zombies[0].reapable, true, "classification sees both receipt and stable identity");
 
@@ -196,6 +197,50 @@ test("reapZombieProcesses (adversarial): PID reuse between classification and re
   assert.deepEqual(reaped, []);
   assert.equal(skipped[0].pid, 4343);
   assert.match(skipped[0].reason, /process identity changed/);
+});
+
+test("findZombieProcesses (adversarial): a stale OLD receipt cannot authorize a NEW process already using the same pid", () => {
+  const { zombies } = findZombieProcesses([
+    {
+      pid: 4444,
+      ppid: 1,
+      command: "codex exec",
+      startedAt: "2026-07-14T00:00:00Z",
+      startIdentity: "linux-proc-stat:new-process",
+    },
+  ], {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    dispatchReceipts: [{ pid: 4444, startIdentity: "linux-proc-stat:old-process" }],
+  });
+
+  assert.equal(zombies.length, 1, "the candidate remains diagnostically visible");
+  assert.equal(zombies[0].provenance, null, "a receipt for an earlier occupant of the pid is not ownership proof");
+  assert.equal(zombies[0].reapable, false);
+  assert.equal(zombies[0].receiptIdentityMatch, false);
+
+  const { reaped } = reapZombieProcesses(zombies, {
+    getProcessIdentity: () => "linux-proc-stat:new-process",
+    kill: () => assert.fail("a stale receipt must never authorize the new process"),
+  });
+  assert.deepEqual(reaped, []);
+});
+
+test("findZombieProcesses: legacy PID-only dispatch receipts are rejected and remain report-only", () => {
+  const { zombies } = findZombieProcesses([
+    {
+      pid: 4555,
+      ppid: 1,
+      command: "claude --print",
+      startedAt: "2026-07-14T00:00:00Z",
+      startIdentity: "linux-proc-stat:4555",
+    },
+  ], {
+    newestRunMarkerAt: "2026-07-16T00:00:00Z",
+    dispatchPids: [4555],
+  });
+
+  assert.equal(zombies[0].provenance, null);
+  assert.equal(zombies[0].reapable, false);
 });
 
 test("deriveMusterWorktreeRoots: only `.worktrees/` entries are muster-owned roots", () => {
@@ -224,7 +269,9 @@ test("runHygiene: cwd remains diagnostic but only a dispatch receipt authorizes 
     ],
     now: Date.parse("2026-07-16T00:00:00Z"),
     reap: true,
-    zombieOptions: { dispatchPids: [100] },
+    zombieOptions: {
+      dispatchReceipts: [{ pid: 100, startIdentity: "linux-proc-stat:100" }],
+    },
     getProcessIdentity: () => "linux-proc-stat:100",
     kill: (pid) => killed.push(pid),
   });
@@ -255,8 +302,8 @@ test("runHygiene + renderHygieneReport: ownership receipts unavailable is surfac
   assert.equal(result.provenance.dispatchReceipts, 0);
   assert.deepEqual(result.reapedProcesses.reaped, []);
   const report = renderHygieneReport(result);
-  assert.match(report, /ownership receipts unavailable: reap disabled for 2 candidates/);
-  assert.match(report, /report-only \(no dispatch receipt\)/);
+  assert.match(report, /identity-bound ownership receipts unavailable: reap disabled for 2 candidates/);
+  assert.match(report, /report-only \(no identity-bound dispatch receipt\)/);
 });
 
 test("runHygiene: cwd alone remains blind; injected dispatch receipts provide ownership evidence", async () => {
@@ -270,12 +317,14 @@ test("runHygiene: cwd alone remains blind; injected dispatch receipts provide ow
     processes: [{ pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: "/somewhere" }],
   });
   assert.equal(withCwd.provenance.blind, true, "a readable cwd is diagnostic, not ownership evidence");
-  assert.match(renderHygieneReport(withCwd), /ownership receipts unavailable/);
+  assert.match(renderHygieneReport(withCwd), /identity-bound ownership receipts unavailable/);
 
   const withReceipts = await runHygiene({
     ...base,
     processes: [{ pid: 100, ppid: 1, command: "codex exec", startedAt: "2026-07-14T00:00:00Z", cwd: null }],
-    zombieOptions: { dispatchPids: [999] },
+    zombieOptions: {
+      dispatchReceipts: [{ pid: 999, startIdentity: "linux-proc-stat:999" }],
+    },
   });
   assert.equal(withReceipts.provenance.blind, false, "injected receipts mean provenance was evaluated");
 

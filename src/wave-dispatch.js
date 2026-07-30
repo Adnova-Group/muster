@@ -167,8 +167,11 @@ export function resolveCodexMultiAgentVersion({ override, catalogVersion } = {})
 // `fork_turns` is a STRING on the wire: Codex rejects the integer 3, accepts "3".
 // "none" keeps no context; "all" forks full history but then REFUSES a named
 // agent_type and any model/effort override; a positive integer string keeps that
-// many turns AND still accepts both -- so it is the useful middle muster wants,
-// not the "none" it used to always send.
+// many turns AND still accepts both. Union semantics: "none" is the standing
+// default -- a forked history is copied into every spawned agent, so the quota
+// policy (36bed34) keeps "none" the spawn default -- and a positive integer
+// string (the version-aware spawn mechanism, 7d88686) is sent only on explicit
+// request.
 const FORK_TURNS = /^(?:none|all|[1-9]\d*)$/;
 
 // Builds the spawn_agent call packet for one wave task, in the shape the target
@@ -177,7 +180,7 @@ const FORK_TURNS = /^(?:none|all|[1-9]\d*)$/;
 // may be missing from a simplified displayed tool signature
 // (docs/research/codex-cli.md sec 6: "may be absent from the simplified
 // displayed tool signature but must be sent anyway").
-export function codexSpawnAgentCall({ taskId, message, agentType, version, forkTurns = "none" } = {}) {
+export function codexSpawnAgentCall({ taskId, message, agentType, version, forkTurns } = {}) {
   if (!taskId) throw new Error("codexSpawnAgentCall: taskId is required");
   if (typeof agentType !== "string" || !agentType) {
     throw new Error(`codexSpawnAgentCall: agentType is required for task "${taskId}" (the crew member's resolved chosen.id)`);
@@ -189,7 +192,12 @@ export function codexSpawnAgentCall({ taskId, message, agentType, version, forkT
     // "fork_context is not supported in MultiAgentV2; use fork_turns instead"
     // (and the converse). v1's fork_context defaults to false, which is the
     // no-context spawn muster wants, and false never trips the full-history
-    // guard that would reject a named agent_type.
+    // guard that would reject a named agent_type. An explicit forkTurns at a
+    // v1 model is version drift: fail loud rather than silently drop it (the
+    // caller believes the spawn forks N turns; the dropped flag forks none).
+    if (forkTurns !== undefined) {
+      throw new Error(`codexSpawnAgentCall: fork_turns is v2-only -- v1 (task "${taskId}") takes fork_context (false, the no-context spawn); drop forkTurns or target a v2 model`);
+    }
     return {
       tool: "multi_agent_v1.spawn_agent",
       message: message ?? "",
@@ -198,17 +206,18 @@ export function codexSpawnAgentCall({ taskId, message, agentType, version, forkT
     };
   }
 
-  if (typeof forkTurns !== "string" || !FORK_TURNS.test(forkTurns)) {
-    throw new Error(`codexSpawnAgentCall: fork_turns must be the STRING "none", "all", or a positive integer string; got ${JSON.stringify(forkTurns)}`);
+  const forkTurnsValue = forkTurns ?? "none";
+  if (typeof forkTurnsValue !== "string" || !FORK_TURNS.test(forkTurnsValue)) {
+    throw new Error(`codexSpawnAgentCall: fork_turns must be the STRING "none", "all", or a positive integer string; got ${JSON.stringify(forkTurnsValue)}`);
   }
-  if (forkTurns === "all") {
+  if (forkTurnsValue === "all") {
     throw new Error(`codexSpawnAgentCall: fork_turns "all" is a full-history fork, which Codex refuses to combine with a named agent_type ("Full-history forked agents inherit the parent agent type") -- use "none" or a positive integer string for task "${taskId}"`);
   }
   return {
     tool: "collaboration.spawn_agent",
     task_name: taskId,
     message: message ?? "",
-    fork_turns: forkTurns,
+    fork_turns: forkTurnsValue,
     agent_type: agentType,
   };
 }

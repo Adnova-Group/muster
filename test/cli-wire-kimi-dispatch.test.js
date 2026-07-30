@@ -22,7 +22,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
@@ -49,13 +49,6 @@ async function fails(args, pattern, options = {}) {
       return true;
     }
   );
-}
-
-async function writeIndex(entries) {
-  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-index-"));
-  const indexPath = join(dir, "session_index.jsonl");
-  await writeFile(indexPath, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
-  return indexPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,12 +130,16 @@ test("cli wire: kimi-session-usage --session-dir reads a known session's usage",
 });
 
 test("cli wire: kimi-session-usage --cwd resolves via the captured stdout id, then reads usage", async () => {
-  const indexPath = await writeIndex([
-    { sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, workDir: "/repo/other" },
-  ]);
+  // The run root is process.cwd() and every file arg must resolve inside it
+  // (the slice-B containment), so the leg's files live in one temp run root.
+  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-cwd-"));
+  const stdoutFile = join(dir, "stdout.jsonl");
+  await writeFile(stdoutFile, await readFile(FIXTURE_STDOUT, "utf8"));
+  const indexPath = join(dir, "session_index.jsonl");
+  await writeFile(indexPath, JSON.stringify({ sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, workDir: "/repo/other" }) + "\n");
   const result = JSON.parse((await run([
-    "kimi-session-usage", "--cwd", "/repo/leg", "--stdout-file", FIXTURE_STDOUT, "--index", indexPath,
-  ])).stdout);
+    "kimi-session-usage", "--cwd", "/repo/leg", "--stdout-file", stdoutFile, "--index", indexPath,
+  ], { cwd: dir })).stdout);
   assert.deepEqual(result.resolution, {
     resolved: true, sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, source: "captured",
   });
@@ -150,14 +147,14 @@ test("cli wire: kimi-session-usage --cwd resolves via the captured stdout id, th
 });
 
 test("cli wire: kimi-session-usage --cwd falls back to the index, and UNKNOWN exits 0", async () => {
-  const indexPath = await writeIndex([
-    { sessionId: "session_leg", sessionDir: FIXTURE_SESSION, workDir: "/repo/leg" },
-  ]);
-  const resolved = JSON.parse((await run(["kimi-session-usage", "--cwd", "/repo/leg", "--index", indexPath])).stdout);
+  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-index-arm-"));
+  const indexPath = join(dir, "session_index.jsonl");
+  await writeFile(indexPath, JSON.stringify({ sessionId: "session_leg", sessionDir: FIXTURE_SESSION, workDir: "/repo/leg" }) + "\n");
+  const resolved = JSON.parse((await run(["kimi-session-usage", "--cwd", "/repo/leg", "--index", indexPath], { cwd: dir })).stdout);
   assert.equal(resolved.resolution.source, "index-unique");
   assert.equal(resolved.resolution.sessionId, "session_leg");
 
-  const unknown = JSON.parse((await run(["kimi-session-usage", "--cwd", "/repo/nothing", "--index", indexPath])).stdout);
+  const unknown = JSON.parse((await run(["kimi-session-usage", "--cwd", "/repo/nothing", "--index", indexPath], { cwd: dir })).stdout);
   assert.deepEqual(unknown, { resolution: { resolved: false, reason: "no-sessions-for-cwd", candidates: [] } });
 });
 
@@ -180,7 +177,7 @@ test("cli wire: kimi-summarize-receipts prints one line per item, UNKNOWN as a l
     { itemId: "item-1", resolution: { resolved: true, sessionId: CAPTURED_ID, sessionDir: FIXTURE_SESSION, source: "captured" } },
     { itemId: "item-2", resolution: { resolved: false, reason: "ambiguous-tie", candidates: ["a", "b"] } },
   ]));
-  const { stdout } = await run(["kimi-summarize-receipts", itemsFile]);
+  const { stdout } = await run(["kimi-summarize-receipts", itemsFile], { cwd: dir });
   const lines = stdout.trim().split("\n");
   assert.equal(lines.length, 2);
   assert.match(lines[0], /^item-1: session=kimi-session-usage source=captured total=\d+ in=\d+ out=\d+ cache-read=\d+ cache-create=\d+ records=\d+ dispatches: /);
@@ -192,7 +189,7 @@ test("cli wire: kimi-summarize-receipts fails loud on a missing file or non-arra
   const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-summary-bad-"));
   const badFile = join(dir, "bad.json");
   await writeFile(badFile, JSON.stringify({ not: "an array" }));
-  await fails(["kimi-summarize-receipts", badFile], /summarizeItemReceipts: items must be an array/);
+  await fails(["kimi-summarize-receipts", badFile], /summarizeItemReceipts: items must be an array/, { cwd: dir });
 });
 
 // ---------------------------------------------------------------------------
@@ -230,7 +227,7 @@ test("cli wire: codex-spawn-packet --message-file reads the brief from disk; the
   await writeFile(briefFile, "Build the wave task.\n");
   const packet = JSON.parse((await run([
     "codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--message-file", briefFile,
-  ])).stdout);
+  ], { cwd: dir })).stdout);
   assert.equal(packet.message, "Build the wave task.\n");
   await fails([
     "codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--message", "x", "--message-file", briefFile,
@@ -242,6 +239,76 @@ test("cli wire: codex-spawn-packet fails loud on missing args, a bad version, or
   await fails(["codex-spawn-packet", "--task-id", "task-1"], /missing --agent-type/);
   await fails(["codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--version", "v3"], /unknown multi_agent_version/);
   await fails(["codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--version", "v2", "--fork-turns", "all"], /full-history fork/);
+});
+
+test("cli wire: codex-spawn-packet --version v1 --fork-turns fails loud -- v1 has no fork_turns to send", async () => {
+  // v1 takes fork_context, not fork_turns: silently dropping the flag would
+  // print a packet the caller believes forks N turns but forks none.
+  await fails(
+    ["codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--version", "v1", "--fork-turns", "3"],
+    /fork_turns is v2-only/
+  );
+});
+
+// ---------------------------------------------------------------------------
+// file-arg containment (the slice-B convention on the new verbs)
+// ---------------------------------------------------------------------------
+// Every file-arg READ in these verbs resolves through resolveContainedRealpath
+// against the run root (process.cwd()) before reading -- the same discipline
+// the sprint-waves branch carries (test/fs-safe.test.js). A planted symlink
+// (.muster/brief.md -> ~/.ssh/id_rsa) fails with the named refusal, never a
+// read; --message-file is the worst case because its contents are ECHOED into
+// the printed packet JSON.
+
+// Plant `name` inside `dir` as a symlink to a file OUTSIDE the run root.
+async function plantEscape(dir, name, contents = "TOPSECRET-target-contents\n") {
+  const outside = join(tmpdir(), `muster-wire-outside-${process.pid}-${name}`);
+  await writeFile(outside, contents);
+  await symlink(outside, join(dir, name));
+  return outside;
+}
+
+test("cli wire: codex-spawn-packet --message-file refuses a symlink escaping the run root -- contents never echoed", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-wire-symlink-"));
+  const outside = await plantEscape(dir, "brief.md");
+  try {
+    await assert.rejects(
+      run(["codex-spawn-packet", "--task-id", "task-1", "--agent-type", "muster-builder", "--message-file", "brief.md"], { cwd: dir }),
+      (err) => {
+        assert.match(err.stderr, /contained under the run root/);
+        assert.ok(!String(err.stdout).includes("TOPSECRET"), "the symlink target's contents must never be echoed into the printed packet");
+        return true;
+      }
+    );
+  } finally {
+    await rm(outside, { force: true });
+  }
+});
+
+test("cli wire: kimi-session-usage refuses symlink-escaping --session-dir, --stdout-file, and --index", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-symlink-"));
+  const outsideDir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-outside-session-"));
+  const outsideStdout = await plantEscape(dir, "stdout.jsonl", "{}\n");
+  const outsideIndex = await plantEscape(dir, "session_index.jsonl", "");
+  await symlink(outsideDir, join(dir, "session"));
+  try {
+    await fails(["kimi-session-usage", "--session-dir", "session"], /contained under the run root/, { cwd: dir });
+    await fails(["kimi-session-usage", "--cwd", dir, "--stdout-file", "stdout.jsonl"], /contained under the run root/, { cwd: dir });
+    await fails(["kimi-session-usage", "--cwd", dir, "--index", "session_index.jsonl"], /contained under the run root/, { cwd: dir });
+  } finally {
+    await rm(outsideStdout, { force: true });
+    await rm(outsideIndex, { force: true });
+  }
+});
+
+test("cli wire: kimi-summarize-receipts refuses a symlink items file escaping the run root", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-kimi-wire-symlink-items-"));
+  const outside = await plantEscape(dir, "items.json", "[]\n");
+  try {
+    await fails(["kimi-summarize-receipts", "items.json"], /contained under the run root/, { cwd: dir });
+  } finally {
+    await rm(outside, { force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

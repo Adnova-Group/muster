@@ -84,7 +84,7 @@ const USAGE = [
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
-  "kimi-goal-invocation <objective> [--stream-json]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|all|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
+  "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
   "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|",
   // planning + routing artifacts
@@ -428,14 +428,25 @@ async function main() {
       const cwd = flagValue(rest, "--cwd");
       if (!sessionDir && !cwd) fail(`${usage}: missing --session-dir or --cwd`);
       if (sessionDir && cwd) fail(`${usage}: --session-dir and --cwd are mutually exclusive (--session-dir reads a known session; --cwd resolves one first)`);
+      // Slice-B containment on every file-arg READ (the same
+      // resolveContainedRealpath discipline the sprint-waves branch applies
+      // below): these paths come from prose/model output, so a planted symlink
+      // must fail with the named refusal, never be read.
+      const contained = async (flag, value) => {
+        const canonical = await resolveContainedRealpath(process.cwd(), value);
+        if (canonical === null) {
+          fail(`${usage}: ${flag} ${value} does not resolve to a path contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
+        }
+        return canonical;
+      };
       if (sessionDir) {
-        out(await readSessionUsage(sessionDir));
+        out(await readSessionUsage(await contained("--session-dir", sessionDir)));
       } else {
         const stdoutFile = flagValue(rest, "--stdout-file");
-        const capturedSessionId = stdoutFile ? captureSessionId(await readFile(stdoutFile, "utf8")) : null;
+        const capturedSessionId = stdoutFile ? captureSessionId(await readFile(await contained("--stdout-file", stdoutFile), "utf8")) : null;
         const index = flagValue(rest, "--index");
         const resolution = await resolveSessionForCwd({
-          ...(index ? { indexPath: index } : {}),
+          ...(index ? { indexPath: await contained("--index", index) } : {}),
           cwd,
           capturedSessionId
         });
@@ -445,13 +456,20 @@ async function main() {
       }
     } else if (cmd === "kimi-summarize-receipts") {
       const file = requireArg(rest, 0, "kimi-summarize-receipts <items.json>: missing items file ([{ itemId, resolution | resolutions }])", fail);
-      const items = JSON.parse(await readFile(file, "utf8"));
+      // Same slice-B containment as the sprint-waves branch below: the items
+      // file is a model-supplied path, so a planted symlink fails with the
+      // named refusal, never a read.
+      const canonical = await resolveContainedRealpath(process.cwd(), file);
+      if (canonical === null) {
+        fail(`kimi-summarize-receipts <items.json>: ${file} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
+      }
+      const items = JSON.parse(await readFile(canonical, "utf8"));
       process.stdout.write((await summarizeItemReceipts(items)).join("\n") + "\n");
     } else if (cmd === "codex-spawn-packet") {
       // The version-aware spawn_agent constructor (src/wave-dispatch.js): prints
       // the exact call JSON for the target model's API version, failing closed to
       // v1 when --version is absent (never guessing v2 at a v1 model).
-      const usage = "codex-spawn-packet --task-id <id> --agent-type <id> [--message <text> | --message-file <file>] [--version v1|v2] [--fork-turns <none|all|N>]";
+      const usage = "codex-spawn-packet --task-id <id> --agent-type <id> [--message <text> | --message-file <file>] [--version v1|v2] [--fork-turns <none|N>]";
       const taskId = flagValue(rest, "--task-id");
       if (!taskId) fail(`${usage}: missing --task-id`);
       const agentType = flagValue(rest, "--agent-type");
@@ -459,12 +477,25 @@ async function main() {
       const message = flagValue(rest, "--message");
       const messageFile = flagValue(rest, "--message-file");
       if (message !== undefined && messageFile !== undefined) fail(`${usage}: --message and --message-file are mutually exclusive`);
+      // --message-file is the worst of the new-verb file args: its contents are
+      // ECHOED into the printed packet JSON, so a planted symlink
+      // (.muster/brief.md -> ~/.ssh/id_rsa) would leak the target into the
+      // transcript. Same slice-B containment as the sprint-waves branch below --
+      // the named refusal, never a read.
+      let fileMessage;
+      if (messageFile !== undefined) {
+        const canonical = await resolveContainedRealpath(process.cwd(), messageFile);
+        if (canonical === null) {
+          fail(`${usage}: --message-file ${messageFile} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
+        }
+        fileMessage = await readFile(canonical, "utf8");
+      }
       const version = flagValue(rest, "--version");
       const forkTurns = flagValue(rest, "--fork-turns");
       out(codexSpawnAgentCall({
         taskId,
         agentType,
-        ...(messageFile !== undefined ? { message: await readFile(messageFile, "utf8") } : message !== undefined ? { message } : {}),
+        ...(fileMessage !== undefined ? { message: fileMessage } : message !== undefined ? { message } : {}),
         ...(version !== undefined ? { version } : {}),
         ...(forkTurns !== undefined ? { forkTurns } : {})
       }));

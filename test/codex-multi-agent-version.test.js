@@ -66,6 +66,16 @@ test("codexSpawnAgentCall: fork_turns 'all' with a named agent_type is refused b
   );
 });
 
+test("codexSpawnAgentCall: an explicit forkTurns at a v1 model fails loud, never silently dropped", () => {
+  // v1 has no fork_turns at all (it takes fork_context) — silently dropping an
+  // explicit forkTurns would print a packet the caller believes forks N turns
+  // but forks none.
+  assert.throws(
+    () => codexSpawnAgentCall({ taskId: "t", agentType: "muster-builder", version: "v1", forkTurns: "3" }),
+    /fork_turns is v2-only/
+  );
+});
+
 test("codexSpawnAgentCall: still requires taskId and agentType", () => {
   assert.throws(() => codexSpawnAgentCall({ agentType: "a" }), /taskId is required/);
   assert.throws(() => codexSpawnAgentCall({ taskId: "t" }), /agentType is required/);

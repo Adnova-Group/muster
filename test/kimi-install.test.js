@@ -376,6 +376,38 @@ test("runKimiUninstall: a final-window ancestor swap cannot redirect deletion", 
   } finally { [home, elsewhere].forEach(d => rmSync(d, { recursive: true, force: true })); }
 });
 
+test("runKimiUninstall: a final-window ancestor rename is uncertainty, not a missing target", async () => {
+  const home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const agentDir = join(root, "agents", "nested");
+    const parkedDir = join(root, "agents", "nested-parked");
+    const managedAgent = join(agentDir, "owned.md");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    write(managedAgent, "managed agent bytes");
+    write(manifestPath, JSON.stringify({
+      owner: "muster",
+      format: 1,
+      agents: ["agents/nested/owned.md"],
+      skills: []
+    }));
+    let renamed = false;
+
+    await assert.rejects(runKimiUninstall({
+      home,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation !== "delete-ready" || renamed || path !== managedAgent) return;
+        renamed = true;
+        renameSync(agentDir, parkedDir);
+      }
+    }), /changed during safe deletion/);
+
+    assert.equal(renamed, true);
+    assert.equal(readFileSync(join(parkedDir, "owned.md"), "utf8"), "managed agent bytes");
+    assert.ok(existsSync(manifestPath));
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiUninstall: a final-window replacement target is not deleted", async () => {
   const home = tmp();
   try {

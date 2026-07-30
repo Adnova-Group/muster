@@ -276,7 +276,7 @@ async function openPinnedDirectory(path, managedPath) {
   try {
     return await open(path, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
   } catch (error) {
-    if (["ELOOP", "ENOTDIR"].includes(error.code)) throw changedDuringSafeDeletion(managedPath);
+    if (["ELOOP", "ENOENT", "ENOTDIR"].includes(error.code)) throw changedDuringSafeDeletion(managedPath);
     throw error;
   }
 }
@@ -337,6 +337,14 @@ async function unlinkPinnedManaged(path, expected, platform = process.platform) 
     await unlink(quarantinedPath);
     await rmdir(quarantinePath);
     quarantinePath = null;
+  } catch (error) {
+    // The only benign ENOENT is handled before entering this helper, when
+    // uninstall preflight proved the final target was already absent. Here an
+    // ENOENT can mean a captured ancestor was renamed, /proc/self/fd became
+    // unavailable, or the final target changed after capture. All are
+    // uncertainty: fail closed and retain the ownership manifest.
+    if (error.code === "ENOENT") throw changedDuringSafeDeletion(path);
+    throw error;
   } finally {
     for (const handle of handles.reverse()) await handle.close().catch(() => {});
     if (quarantinePath) await rmdir(quarantinePath).catch(() => {});

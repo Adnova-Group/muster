@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { lstat, open, readFile, unlink, utimes } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, rmdir, unlink, utimes } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -23,13 +24,6 @@ export async function processStartIdentity(pid = process.pid) {
     return /^\d+$/.test(startTicks || "") ? `linux-proc-start:${startTicks}` : null;
   } catch { return null; }
 }
-
-// Dropped: a quarantine/retirement dance (rename a contested lock into a
-// private per-attempt directory, re-validate identity, then delete) that
-// guarded every stale-lock reclaim and lock release. A per-user Codex install
-// does not need multi-stage crash-safe lock handoff; a single lockfile with a
-// direct unlink-then-retry (reclaim) or unlink-after-ownership-check
-// (release) is enough, and it is ~150 fewer lines to reason about.
 
 async function readLock(path, maxBytes = 16 * 1024) {
   let handle;
@@ -57,6 +51,70 @@ function lockIdentity(record) {
   return JSON.stringify({ pid, token, createdAt, processIdentity });
 }
 
+const sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+
+function sameLock(current, expected) {
+  if (!sameInode(current.stat, expected.stat)) return false;
+  const currentIdentity = lockIdentity(current.record);
+  const expectedIdentity = lockIdentity(expected.record);
+  return expectedIdentity === null ? currentIdentity === null : currentIdentity === expectedIdentity;
+}
+
+async function assertPrivateRetirementDirectory(path) {
+  const stat = await lstat(path);
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  const ownerMismatch = process.platform !== "win32" && typeof uid === "number" && stat.uid !== uid;
+  const unsafeMode = process.platform !== "win32" && ((stat.mode & 0o700) !== 0o700 || (stat.mode & 0o077) !== 0);
+  if (stat.isSymbolicLink() || !stat.isDirectory() || ownerMismatch || unsafeMode) {
+    throw new Error(`unsafe Codex transaction retirement directory: ${path}`);
+  }
+}
+
+async function privateRetirement(path) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const dir = join(dirname(path), `.muster-retired-${process.pid}-${randomUUID()}`);
+    try { await mkdir(dir, { mode: 0o700 }); }
+    catch (error) { if (error.code === "EEXIST" && attempt < 7) continue; throw error; }
+    await assertPrivateRetirementDirectory(dir);
+    return { dir, path: join(dir, "lock") };
+  }
+  throw new Error(`could not create Codex transaction retirement directory for ${path}`);
+}
+
+async function removeRetirement(retirement) {
+  await assertPrivateRetirementDirectory(retirement.dir);
+  await unlink(retirement.path);
+  await rmdir(retirement.dir);
+}
+
+async function restoreRetiredLock(path, retirement, expected) {
+  await assertPrivateRetirementDirectory(retirement.dir);
+  let current;
+  try { current = await readLock(retirement.path); }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  if (!sameLock(current, expected)) return false;
+  try { await link(retirement.path, path); }
+  catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  }
+  const restored = await readLock(path);
+  if (!sameLock(restored, expected)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
+  await removeRetirement(retirement);
+  return true;
+}
+
+async function restoreOrRequireReplacement(path, retirement, expected) {
+  if (await restoreRetiredLock(path, retirement, expected)) return;
+  try { await lstat(path); }
+  catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error(`Codex transaction lock could not be restored after ownership changed: ${path}`);
+    }
+    throw error;
+  }
+}
+
 async function lockIsStale(current, { staleMs, maxStaleMs }) {
   const age = Date.now() - current.stat.mtimeMs;
   if (age < staleMs) return false;
@@ -70,40 +128,53 @@ async function lockIsStale(current, { staleMs, maxStaleMs }) {
   return true;
 }
 
-async function reclaimIfStale(path, options, onReclaimRaceWindow) {
+async function retireLock(path, expected, {
+  restorePath = path,
+  stale,
+  afterValidation
+} = {}) {
+  const retirement = await privateRetirement(path);
+  try { await rename(path, retirement.path); }
+  catch (error) {
+    try { await rmdir(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    if (error.code === "ENOENT") return { removed: false, missing: true };
+    throw error;
+  }
+
+  await assertPrivateRetirementDirectory(retirement.dir);
+  const retired = await readLock(retirement.path);
+  if (!sameLock(retired, expected) || (stale && !await stale(retired))) {
+    await restoreOrRequireReplacement(restorePath, retirement, retired);
+    return { removed: false, missing: false };
+  }
+
+  if (afterValidation) await afterValidation({ path: restorePath, retirementPath: retirement.path });
+
+  // Validate once more after the injected test seam. The only pathname ever
+  // deleted is now inside a fresh private directory, never the public lock
+  // pathname where a replacement owner can appear.
+  await assertPrivateRetirementDirectory(retirement.dir);
+  const final = await readLock(retirement.path);
+  if (!sameLock(final, retired) || (stale && !await stale(final))) {
+    await restoreOrRequireReplacement(restorePath, retirement, final);
+    return { removed: false, missing: false };
+  }
+  await removeRetirement(retirement);
+  return { removed: true, missing: false };
+}
+
+async function reclaimIfStale(path, options, onReclaimRaceWindow, afterValidation) {
   let current;
   try { current = await readLock(path); }
   catch (error) { if (error.code === "ENOENT") return true; throw error; }
   if (!await lockIsStale(current, options)) return false;
-  const inspected = lockIdentity(current.record);
-  try {
-    const before = await lstat(path);
-    if (before.dev !== current.stat.dev || before.ino !== current.stat.ino) return false;
-    // The reclaim window: between deciding a lock is stale and removing it,
-    // another process can unlink this exact instance and write its OWN fresh
-    // lockfile, becoming the legitimate new owner. The dev/ino check above ran
-    // BEFORE that could happen, and unlink() removes whatever is at `path` now
-    // (it cannot tell a reused inode from the original) -- so re-read the lock as
-    // the last gate and only unlink when it is still byte-for-byte the owner
-    // identity we decided was dead. A replacement owner carries its own fresh
-    // token, so it is left intact and this reclaimer loses the race cleanly (the
-    // caller retries/backs off) instead of unlinking the new owner's lock and
-    // letting two publish callbacks overlap. When the inspected lock was
-    // corrupt/partial (no parseable identity), fall back to requiring an
-    // unchanged inode so only that same unparseable instance is removed.
-    if (onReclaimRaceWindow) await onReclaimRaceWindow(); // test-only seam; no-op in production
-    const verify = await readLock(path);
-    const verifyIdentity = lockIdentity(verify.record);
-    const removable = inspected !== null
-      ? verifyIdentity === inspected
-      : verifyIdentity === null && verify.stat.dev === current.stat.dev && verify.stat.ino === current.stat.ino;
-    if (!removable) return false;
-    await unlink(path);
-    return true;
-  } catch (error) {
-    if (error.code === "ENOENT") return true;
-    throw error;
-  }
+  if (onReclaimRaceWindow) await onReclaimRaceWindow();
+  const result = await retireLock(path, current, {
+    stale: state => lockIsStale(state, options),
+    restorePath: path,
+    afterValidation
+  });
+  return result.removed || result.missing;
 }
 
 export async function withCodexFileLock(path, callback, {
@@ -112,11 +183,11 @@ export async function withCodexFileLock(path, callback, {
   timeoutMs = 30_000,
   beforeOpen,
   releaseGuard,
-  // Test-only seam: fires inside reclaimIfStale's reclaim window (after the
-  // stale decision + dev/ino check, before the identity-verified unlink) so a
-  // test can inject a replacement owner at the exact race point. No-op in
-  // production -- the sole real caller never passes it.
-  __reclaimRaceHook
+  // Test-only seams for deterministic replacement-owner races. Production
+  // callers never pass them.
+  __reclaimRaceHook,
+  __afterReclaimValidationHook,
+  __afterReleaseValidationHook
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
@@ -139,7 +210,7 @@ export async function withCodexFileLock(path, callback, {
     } catch (error) {
       if (handle) await handle.close().catch(() => {});
       if (error.code !== "EEXIST") throw error;
-      if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook)) continue;
+      if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook, __afterReclaimValidationHook)) continue;
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
       await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
     }
@@ -159,7 +230,12 @@ export async function withCodexFileLock(path, callback, {
     try {
       const current = await readLock(path);
       if (current.record?.token !== token) return;
-      await unlink(path);
+      const result = await retireLock(path, current, {
+        afterValidation: __afterReleaseValidationHook
+      });
+      if (!result.removed && !result.missing) {
+        throw new Error(`Codex transaction lock ownership changed: ${path}`);
+      }
     } catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 }

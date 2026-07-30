@@ -163,19 +163,49 @@ test("withCodexFileLock never unlinks a replacement owner's lock reclaimed with 
   });
 });
 
-test("withCodexFileLock's simplified surface no longer invokes the removed quarantine/retirement hooks", async t => {
-  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-no-hooks-"));
+test("withCodexFileLock stale reclaim cannot unlink a replacement injected after final owner validation", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-final-reclaim-race-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
-  const lock = join(tmp, "hooks.lock");
-  let retirementCalled = false, quarantineCalled = false, modeCapabilityCalled = false;
+  const lock = join(tmp, "reclaim.lock");
+  await writeFile(lock, JSON.stringify({ format: 1, pid: 2_147_483_647, createdAt: 0, token: "dead" }) + "\n");
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(lock, old, old);
+
+  const replacement = { format: 1, pid: process.pid, createdAt: Date.now(), token: "fresh-after-validation" };
+  let injected = false;
+  await assert.rejects(withCodexFileLock(lock, async () => {
+    assert.fail("a reclaimer must not enter while the injected replacement owns the lock");
+  }, {
+    staleMs: 1_000,
+    maxStaleMs: 5_000,
+    timeoutMs: 50,
+    __afterReclaimValidationHook: async ({ path }) => {
+      if (injected) return;
+      injected = true;
+      await rm(path, { force: true });
+      await writeFile(path, JSON.stringify(replacement) + "\n", { flag: "wx" });
+    }
+  }), /timed out waiting for Codex transaction lock/);
+
+  assert.equal(injected, true, "the final-validation race seam must fire");
+  assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), replacement);
+});
+
+test("withCodexFileLock release cannot unlink a replacement injected after final owner validation", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-final-release-race-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "release.lock");
+  const replacement = { format: 1, pid: process.pid, createdAt: Date.now(), token: "fresh-release-owner" };
+  let injected = false;
+
   await withCodexFileLock(lock, async () => {}, {
-    afterRetirement: () => { retirementCalled = true; },
-    afterQuarantine: () => { quarantineCalled = true; },
-    afterValidation: () => { quarantineCalled = true; },
-    beforeRelease: () => { retirementCalled = true; },
-    modeCapability: () => { modeCapabilityCalled = true; return true; }
+    __afterReleaseValidationHook: async ({ path }) => {
+      injected = true;
+      await rm(path, { force: true });
+      await writeFile(path, JSON.stringify(replacement) + "\n", { flag: "wx" });
+    }
   });
-  assert.equal(retirementCalled, false, "the retirement dance was removed; its hooks must be inert");
-  assert.equal(quarantineCalled, false, "the quarantine dance was removed; its hooks must be inert");
-  assert.equal(modeCapabilityCalled, false, "there is no retirement directory left to probe a mode capability for");
+
+  assert.equal(injected, true, "the final-release-validation race seam must fire");
+  assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), replacement);
 });

@@ -63,7 +63,7 @@ Uninstall preserves unrelated config and Codex's project trust records, removes 
 
 Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. The three legacy aliases (`run`, `autopilot`, `sprint`) remain skills. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
 
-The Codex plugin bundles the deterministic CLI, all pipelines, 28 MCP tools, 27 custom-agent profiles, and 76 skills: 13 public mode/router/alias skills plus 63 internal skills (12 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
+The Codex plugin bundles the deterministic CLI, all pipelines, 29 MCP tools, 27 custom-agent profiles, and 76 skills: 13 public mode/router/alias skills plus 63 internal skills (12 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
 ### ChatGPT Work (private/local plugin lane)
 

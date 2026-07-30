@@ -45,10 +45,11 @@ unchanged until then.
 ## 1. Resolve the backlog
 
 Read `.muster/backlog.md` yourself (Cowork's own file tools — this is outside the MCP server's remit).
-For every later claim, heartbeat, tick, completion, failure, or escalation mutation, stage the complete
-new bytes and invoke `muster backlog-publish .muster/backlog.md --expect <sha256>` with those bytes on
-stdin. On a changed-before-publication failure, reread and reapply the still-valid mutation; never
-edit or rename the backlog directly. The publisher coordinates with `hygiene --reap`.
+For every later claim, heartbeat, tick, completion, failure, or escalation mutation, call
+`muster_backlog_publish` with the explicit project `dir`, relative `path: ".muster/backlog.md"`,
+the complete staged `content`, and `expectedSha256` from the bytes you read. On a
+changed-before-publication failure, reread and reapply the still-valid mutation; never edit or rename
+the backlog directly. This bounded MCP publisher coordinates with CLI `hygiene --reap`.
 Empty argument defaults to that path. Items are the unchecked `- [ ]` checklist lines; an item may carry
 a trailing annotation, e.g. `- [ ] Add retry to fetch {disposition: pr}` (`{id}`, `{deps}`,
 `{disposition: merge-local|merge-push|pr|keep|ask}`, `{escalated: ...}`).

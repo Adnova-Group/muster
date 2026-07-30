@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmod, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 import { atomicWrite, readNoFollowRegular, withFileMutationLock } from "../src/fs-safe.js";
@@ -12,9 +12,12 @@ import { atomicWrite, readNoFollowRegular, withFileMutationLock } from "../src/f
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-function publish(path, expected, content) {
+function publish(path, expected, content, { cwd, env, fileArg = path, umask } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [CLI, "backlog-publish", path, "--expect", expected], {
+    const child = spawn(process.execPath, [CLI, "backlog-publish", fileArg, "--expect", expected], {
+      cwd,
+      env: { ...process.env, ...env },
+      ...(umask === undefined ? {} : { umask }),
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -123,9 +126,9 @@ test("backlog-publish enforces CAS, preserves mode, and leaves the winner intact
   await writeFile(backlog, original, { mode: 0o640 });
   await chmod(backlog, 0o640);
 
-  await publish(backlog, sha256(original), "winner\n");
+  await publish(backlog, sha256(original), "winner\n", { cwd: dir, fileArg: "backlog.md" });
   await assert.rejects(
-    () => publish(backlog, sha256(original), "loser\n"),
+    () => publish(backlog, sha256(original), "loser\n", { cwd: dir, fileArg: "backlog.md" }),
     /backlog changed before publication/,
   );
   assert.equal(await readFile(backlog, "utf8"), "winner\n");
@@ -140,10 +143,156 @@ test("backlog-publish refuses a symlink target without changing its referent", a
   await symlink(external, backlog);
 
   await assert.rejects(
-    () => publish(backlog, sha256("external\n"), "overwrite\n"),
+    () => publish(backlog, sha256("external\n"), "overwrite\n", { cwd: dir, fileArg: "backlog.md" }),
     /ELOOP|symlink|unsafe regular file/i,
   );
   assert.equal(await readFile(external, "utf8"), "external\n");
+});
+
+test("backlog-publish rejects lexical and absolute escapes from the run root", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-backlog-contained-root-"));
+  const outside = join(dirname(root), `${root.split("/").at(-1)}-outside.md`);
+  await writeFile(outside, "outside\n");
+
+  for (const fileArg of ["../outside.md", outside]) {
+    await assert.rejects(
+      () => publish(outside, sha256("outside\n"), "overwrite\n", { cwd: root, fileArg }),
+      /contained under the run root|relative backlog path/i,
+    );
+  }
+  assert.equal(await readFile(outside, "utf8"), "outside\n");
+});
+
+test("backlog-publish rejects a symlinked ancestor inside the run root", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-backlog-ancestor-root-"));
+  const outside = await mkdtemp(join(tmpdir(), "muster-backlog-ancestor-outside-"));
+  await writeFile(join(outside, "backlog.md"), "outside\n");
+  await symlink(outside, join(root, "linked"));
+
+  await assert.rejects(
+    () => publish(join(outside, "backlog.md"), sha256("outside\n"), "overwrite\n", {
+      cwd: root,
+      fileArg: "linked/backlog.md",
+    }),
+    /symlink|contained under the run root/i,
+  );
+  assert.equal(await readFile(join(outside, "backlog.md"), "utf8"), "outside\n");
+});
+
+test("backlog-publish revalidates ancestry immediately before publication", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-backlog-publication-swap-"));
+  const safe = join(root, "safe");
+  const displaced = join(root, "safe-original");
+  const outside = await mkdtemp(join(tmpdir(), "muster-backlog-publication-outside-"));
+  const preload = join(root, "swap-parent.mjs");
+  await mkdir(safe);
+  await writeFile(join(safe, "backlog.md"), "original\n");
+  await writeFile(join(outside, "backlog.md"), "external\n");
+  await writeFile(preload, `
+    import fs from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    const safe = process.env.MUSTER_SWAP_SAFE;
+    const displaced = process.env.MUSTER_SWAP_DISPLACED;
+    const outside = process.env.MUSTER_SWAP_OUTSIDE;
+    let swapped = false;
+    const originalOpen = fs.promises.open;
+    fs.promises.open = async function(path, ...args) {
+      const handle = await originalOpen.call(this, path, ...args);
+      if (String(path).includes(".muster-tmp-") && !swapped) {
+        const originalClose = handle.close.bind(handle);
+        handle.close = async () => {
+          const result = await originalClose();
+          fs.renameSync(safe, displaced);
+          fs.symlinkSync(outside, safe);
+          swapped = true;
+          return result;
+        };
+      }
+      return handle;
+    };
+    syncBuiltinESMExports();
+  `);
+
+  await assert.rejects(
+    () => publish(join(safe, "backlog.md"), sha256("original\n"), "new\n", {
+      cwd: root,
+      fileArg: "safe/backlog.md",
+      env: {
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --import=${preload}`.trim(),
+        MUSTER_SWAP_SAFE: safe,
+        MUSTER_SWAP_DISPLACED: displaced,
+        MUSTER_SWAP_OUTSIDE: outside,
+      },
+    }),
+    /symlink|contained under the run root/i,
+  );
+  assert.equal(await readFile(join(outside, "backlog.md"), "utf8"), "external\n");
+  assert.equal(await readFile(join(displaced, "backlog.md"), "utf8"), "original\n");
+});
+
+test("backlog-publish preserves mode under a restrictive child umask", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-backlog-umask-"));
+  const backlog = join(dir, "backlog.md");
+  await writeFile(backlog, "original\n");
+  await chmod(backlog, 0o666);
+
+  await publish(backlog, sha256("original\n"), "updated\n", {
+    cwd: dir,
+    fileArg: "backlog.md",
+    umask: 0o077,
+  });
+  assert.equal((await stat(backlog)).mode & 0o777, 0o666);
+});
+
+test("backlog-publish fails closed when O_NOFOLLOW is unavailable", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-backlog-no-nofollow-"));
+  const backlog = join(dir, "backlog.md");
+  await writeFile(backlog, "original\n");
+
+  await assert.rejects(
+    () => publish(backlog, sha256("original\n"), "updated\n", {
+      cwd: dir,
+      fileArg: "backlog.md",
+      env: { MUSTER_TEST_FORCE_NO_NOFOLLOW: "1" },
+    }),
+    /O_NOFOLLOW is unavailable/,
+  );
+  assert.equal(await readFile(backlog, "utf8"), "original\n");
+});
+
+test("a dead stale mutation lock is reclaimed without overlapping a live owner", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-backlog-stale-reclaim-"));
+  const backlog = join(dir, "backlog.md");
+  const lock = `${backlog}.muster-lock`;
+  await writeFile(backlog, "original\n");
+  await writeFile(lock, `${JSON.stringify({
+    format: 1,
+    pid: 999_999_999,
+    processIdentity: null,
+    createdAt: 1,
+    token: "dead-owner",
+  })}\n`);
+  await utimes(lock, new Date(0), new Date(0));
+
+  await withFileMutationLock(backlog, async () => {
+    await writeFile(backlog, "reclaimed\n");
+  }, { staleMs: 1, maxStaleMs: 2, timeoutMs: 200 });
+  assert.equal(await readFile(backlog, "utf8"), "reclaimed\n");
+});
+
+test("two real concurrent backlog-publish processes produce one CAS winner", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-backlog-process-race-"));
+  const backlog = join(dir, "backlog.md");
+  await writeFile(backlog, "original\n");
+  const expected = sha256("original\n");
+
+  const results = await Promise.allSettled([
+    publish(backlog, expected, "writer-a\n", { cwd: dir, fileArg: "backlog.md" }),
+    publish(backlog, expected, "writer-b\n", { cwd: dir, fileArg: "backlog.md" }),
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+  assert.ok(["writer-a\n", "writer-b\n"].includes(await readFile(backlog, "utf8")));
 });
 
 test("every instruction-driven production backlog writer requires the shared CAS publisher", async () => {
@@ -159,6 +308,6 @@ test("every instruction-driven production backlog writer requires the shared CAS
   ];
   for (const writer of writers) {
     const text = await readFile(new URL(`../${writer}`, import.meta.url), "utf8");
-    assert.match(text, /backlog-publish/, `${writer} can mutate backlog.md but does not require the shared CAS publisher`);
+    assert.match(text, /backlog[-_]publish/, `${writer} can mutate backlog.md but does not require the shared CAS publisher`);
   }
 });

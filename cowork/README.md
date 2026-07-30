@@ -20,11 +20,11 @@ This matrix describes the verified MCP-only distribution in this directory. It d
 | Audit | MCP protocol | Drive the whole-codebase lifecycle from the server instructions and deterministic tools. |
 | Runner | Not provided | There is no Runner-mode MCP protocol or tool in this distribution. |
 | Capture | Not provided | There is no Capture-mode MCP protocol or tool in this distribution. |
-| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 28 MCP tools. |
+| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 29 MCP tools. |
 
 ## What you get
 
-Twenty-eight deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, and scheduling operations without model calls; the Cowork agent still performs the judgment and execution work.
+Twenty-nine deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, and scheduling operations without model calls; the Cowork agent still performs the judgment and execution work.
 
 | Tool | Does |
 | --- | --- |
@@ -38,6 +38,7 @@ Twenty-eight deterministic tools, plus an execution protocol that teaches the ag
 | `muster_diagnose` / `muster_audit` | Build the diagnose / whole-codebase audit manifest |
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
 | `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
+| `muster_backlog_publish` | Bounded CAS publication for complete backlog content under an explicit project root |
 | `muster_sprint_protocol` | Return the Cowork-adapted sprint playbook (no args) -- see below |
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_gate_cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves |

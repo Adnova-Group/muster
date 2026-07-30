@@ -111,6 +111,7 @@ export async function withCodexFileLock(path, callback, {
   maxStaleMs = 15 * 60_000,
   timeoutMs = 30_000,
   beforeOpen,
+  releaseGuard,
   // Test-only seam: fires inside reclaimIfStale's reclaim window (after the
   // stale decision + dev/ino check, before the identity-verified unlink) so a
   // test can inject a replacement owner at the exact race point. No-op in
@@ -154,6 +155,7 @@ export async function withCodexFileLock(path, callback, {
   try { return await callback(); }
   finally {
     clearInterval(heartbeat);
+    if (releaseGuard) await releaseGuard();
     try {
       const current = await readLock(path);
       if (current.record?.token !== token) return;

@@ -70,7 +70,14 @@ import { resolvePlanSurface } from "./plan-surface.js";
 import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
-import { atomicWrite, readNoFollowRegular, resolveContainedRealpath, withFileMutationLock } from "./fs-safe.js";
+import {
+  assertContainedNoSymlinkPath,
+  atomicWrite,
+  isUnsafePathToken,
+  readNoFollowRegular,
+  resolveContainedRealpath,
+  withFileMutationLock,
+} from "./fs-safe.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // One array element per command group, each carrying its own "|" separators and
@@ -555,13 +562,25 @@ async function main() {
       if (!r.ok) process.exit(2);
     } else if (cmd === "backlog-publish") {
       const file = requireArg(rest, 0, "backlog-publish <backlog.md> --expect <sha256|absent>: missing file path", fail);
+      if (isUnsafePathToken(file)) {
+        fail("backlog-publish requires a relative backlog path contained under the run root");
+      }
       const expected = flagValue(rest, "--expect");
       if (expected !== "absent" && !/^[a-f0-9]{64}$/.test(expected || "")) {
         fail("backlog-publish --expect must be a lowercase sha256 digest or absent");
       }
-      const target = resolve(file);
+      if (!fsConstants.O_NOFOLLOW || process.env.MUSTER_TEST_FORCE_NO_NOFOLLOW === "1") {
+        fail("backlog-publish cannot run safely: O_NOFOLLOW is unavailable");
+      }
+      const runRoot = process.cwd();
+      const target = resolve(runRoot, file);
+      const assertSafeMutationPath = () => assertContainedNoSymlinkPath(runRoot, target, {
+        allowMissingFinal: true,
+      });
+      await assertSafeMutationPath();
       const nextBytes = Buffer.from(await readStdin(MAX_HYGIENE_BACKLOG_BYTES));
       const result = await withFileMutationLock(target, async () => {
+        await assertSafeMutationPath();
         let prior = null;
         try {
           prior = await readNoFollowRegular(target, {
@@ -580,6 +599,7 @@ async function main() {
         await atomicWrite(target, nextBytes, {
           mode: prior === null ? 0o600 : prior.info.mode & 0o777,
           beforeRename: async () => {
+            await assertSafeMutationPath();
             if (prior === null) {
               try {
                 await lstat(target);
@@ -600,7 +620,7 @@ async function main() {
           },
         });
         return { ok: true, sha256: createHash("sha256").update(nextBytes).digest("hex") };
-      });
+      }, { beforeOpen: assertSafeMutationPath });
       out(result);
     } else if (cmd === "tally") {
       const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);

@@ -1285,5 +1285,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // siblings carry; both hardcoded node src/cli.js call sites switched.
   // 2026-07-30 re-pin #23 (backlog writer serialization): every file-backed backlog
   // producer now routes publication through the shared backlog-publish CAS command.
-  assert.equal(hash.digest("hex"), "78641dc3f761eeda612d3e767940f6d02480f56eeb348c17108332300d809ae1");
+  // Review-gate follow-up: Cowork's writer now invokes the bounded MCP publisher
+  // directly instead of naming a CLI/stdin mechanism unavailable on MCP-only hosts.
+  assert.equal(hash.digest("hex"), "8bccc143524dabce509083026dabf51ee7303d386dfee866761ad8d2e512d62d");
 });

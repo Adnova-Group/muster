@@ -23,6 +23,7 @@ const PROTOCOL_VERSION = "2025-06-18"; // MCP spec version date-string (matches 
 // Single-source the version from package.json so serverInfo never drifts from the release.
 const VERSION = JSON.parse(readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;
 const SERVER_INFO = { name: "muster", version: VERSION };
+const MAX_MCP_BACKLOG_BYTES = 1_048_576;
 // ── Tool catalog ──────────────────────────────────────────────────────────────
 // Factory shapes used by most TOOLS entries:
 //
@@ -85,6 +86,20 @@ const TOOLS = {
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_wave: { argv: ["wave"], ...J2("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_sprint_waves: { argv: ["sprint-waves"], ...T("Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations (returns waves JSON; annotated:false means the backlog is unannotated/sequential).", "backlog") },
+  muster_backlog_publish: {
+    argv: ["backlog-publish"], kind: "backlogPublish",
+    description: "CAS-publish a complete backlog under an explicit project root. The relative path must remain symlink-free and contained; expectedSha256 is the prior lowercase SHA-256 or absent. A concurrent-writer failure requires reread/reapply/retry.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dir: { type: "string" },
+        path: { type: "string" },
+        expectedSha256: { type: "string" },
+        content: { type: "string", maxLength: MAX_MCP_BACKLOG_BYTES },
+      },
+      required: ["dir", "path", "expectedSha256", "content"],
+    },
+  },
   muster_sprint_protocol: {
     kind: "static", text: null, error: "muster_sprint_protocol: adapter did not supply static content",
     description: "Returns the bundled sprint orchestration playbook: backlog resolution, sprint-waves, sequential wave execution, claim/receipt discipline, and honest disposition defaults.",
@@ -247,10 +262,10 @@ export function startMusterMcpServer(config) {
   const profileName = authorized.profileName || "";
   const limiter = new WorkLimiter(config.maxInflight || 4, config.maxQueue || 16);
 
-  async function runCli(argv, { cwd = config.cwd, signal } = {}) {
+  async function runCli(argv, { cwd = config.cwd, signal, input } = {}) {
     try {
       const { stdout } = await new Promise((resolve, reject) => {
-        execFile("node", [config.cliPath, ...argv], {
+        const child = execFile("node", [config.cliPath, ...argv], {
           cwd,
           signal,
           timeout: 60_000,
@@ -263,6 +278,7 @@ export function startMusterMcpServer(config) {
             reject(error);
           } else resolve({ stdout: childStdout });
         });
+        if (input !== undefined) child.stdin.end(input);
       });
       return { ok: true, text: stdout.trim() };
     } catch (e) {
@@ -312,6 +328,29 @@ export function startMusterMcpServer(config) {
   // static: no CLI call at all — return pre-loaded file content verbatim (muster_sprint_protocol).
   // A load-time read failure (tool.error set) surfaces as isError instead of serving `null` text.
   if (tool.kind === "static") return tool.error ? { ok: false, text: tool.error } : { ok: true, text: tool.text };
+
+  if (tool.kind === "backlogPublish") {
+    if (typeof args.dir !== "string" || !args.dir.trim()) {
+      return { ok: false, text: "muster_backlog_publish: explicit project dir is required" };
+    }
+    if (typeof args.path !== "string" || !args.path.trim()) {
+      return { ok: false, text: "muster_backlog_publish: relative backlog path is required" };
+    }
+    if (args.expectedSha256 !== "absent" && !/^[a-f0-9]{64}$/.test(args.expectedSha256 || "")) {
+      return { ok: false, text: "muster_backlog_publish: expectedSha256 must be a lowercase sha256 digest or absent" };
+    }
+    if (typeof args.content !== "string") {
+      return { ok: false, text: "muster_backlog_publish: content must be a string" };
+    }
+    if (Buffer.byteLength(args.content, "utf8") > MAX_MCP_BACKLOG_BYTES) {
+      return { ok: false, text: `muster_backlog_publish: content exceeds ${MAX_MCP_BACKLOG_BYTES} byte limit` };
+    }
+    return runCli([...tool.argv, args.path, "--expect", args.expectedSha256], {
+      cwd: path.resolve(args.dir),
+      signal,
+      input: args.content,
+    });
+  }
 
   // fastPath: muster_fast_path's bespoke kind -- a required string positional (`outcome`)
   // PLUS an OPTIONAL JSON payload (`capabilities`) behind a flag. Neither "str" (single

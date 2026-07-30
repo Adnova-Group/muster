@@ -141,7 +141,7 @@ test("harness documentation routes and support claims are explicit", async () =>
   assert.match(kimi, /symbolic[\s\S]{0,100}`primary`[\s\S]{0,80}`secondary`/i);
   assert.match(kimi, /explicit[\s\S]{0,120}overrides[\s\S]{0,120}model_preference/i);
   assert.match(cowork, /support matrix/i);
-  assert.match(cowork, /27 CLI-wrapper tools/i);
+  assert.match(cowork, /28 CLI-wrapper tools/i);
   assert.match(cowork, /`muster_sprint_protocol`/);
   assert.match(cowork, /phase-?3[\s\S]{0,260}before relying on parallel/i);
   assert.doesNotMatch(cowork, /Parallel subagents \| Confirmed/i);
@@ -251,4 +251,13 @@ test("command reference documents safe help, install style ownership, and signal
   assert.match(commands, /output-styles\/muster\.md/);
   assert.match(commands, /\[dir\]\/\.muster\/signals\.json/);
   assert.doesNotMatch(commands, /Run any verb with no arguments to see its usage/);
+});
+
+test("command reference documents backlog-publish CAS, locking, containment, and retry contract", async () => {
+  const commands = await readFile(new URL("../website/reference/commands.md", import.meta.url), "utf8");
+  assert.match(commands, /backlog-publish <backlog\.md> --expect <sha256\\?\|absent>/);
+  assert.match(commands, /compare-and-swap|CAS/i);
+  assert.match(commands, /lock/i);
+  assert.match(commands, /run root|contained/i);
+  assert.match(commands, /reread.*retry|retry.*reread/i);
 });

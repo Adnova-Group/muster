@@ -680,7 +680,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+async function preparePluginChecks({ root, cwd, execFile, env, platform }) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -788,6 +788,10 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       ? `malformed or non-regular runtime artifacts: ${problems.join(", ")}`
       : "bundled runtime and MCP entrypoint present" });
   }
+  return { available, checks, isPluginRoot, plugin, selected, selectionFailed, selectionSkip };
+}
+
+async function discoverScopes({ checks, cwd, codexHome, readConfigToml }) {
   const userCodexHome = codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
   const registeredScopes = await registeredManagedScopes(userCodexHome);
   checks.push({ name: "codex-managed-scopes", ok: registeredScopes.issues.length === 0, detail: registeredScopes.issues.length
@@ -865,6 +869,10 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const scopeHomes = new Map([[join(cwd, ".codex"), false], [userCodexHome, false]]);
   for (const dir of registeredScopes.dirs) scopeHomes.set(dir, true);
   const hookHomes = [...scopeHomes.keys()];
+  return { configTomlText, hookHomes, scopeHomes, userCodexHome };
+}
+
+async function checkMcp({ checks, cwd, mcpRunner, plugin, selectionFailed, selectionSkip }) {
   // The handshake spawns `plugin`'s bundled MCP entrypoint -- a runtime claim
   // about the SELECTED tree. On selection failure `plugin` is unconfirmed, so
   // skip the handshake rather than green-light an unselected runtime.
@@ -883,10 +891,13 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   } catch (error) {
     checks.push({ name: "codex-mcp-handshake", ok: false, detail: `bundled MCP initialize/tools/list handshake failed: ${error.message}; ${mcpVisibilityNote}` });
   }
-  const scopeKeyword = dir => dir === userCodexHome ? "user" : "project";
-  const legacyRemediation = dirs => `legacy pre-0.5.x install detected at ${dirs
-    .map(dir => `${dir} (rerun \`muster install codex --scope ${scopeKeyword(dir)}\` to migrate)`)
+}
+
+const legacyRemediation = (dirs, userCodexHome) => `legacy pre-0.5.x install detected at ${dirs
+    .map(dir => `${dir} (rerun \`muster install codex --scope ${dir === userCodexHome ? "user" : "project"}\` to migrate)`)
     .join(", ")}`;
+
+async function checkInstallGeneration({ checks, hookHomes, scopeHomes, selected, selectionFailed, selectionSkip, userCodexHome }) {
   if (selected) {
     const installations = [];
     const unsafeProfileScopes = [];
@@ -931,7 +942,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
           // Surface the healthy count even on failure so an operator sees the
           // other scopes are still counted correctly, not masked by the failure.
           matched.length ? `${matched.length} managed scope(s) match package version ${selected.packageVersion}` : null,
-          legacyStale.length ? legacyRemediation(legacyStale) : null,
+          legacyStale.length ? legacyRemediation(legacyStale, userCodexHome) : null,
           versionStale.length ? `installed profiles do not match the selected package version at: ${versionStale.join(", ")}; rerun muster install codex` : null,
           ...scopeCauseClauses("profile", profileFailures),
           unsafeProfileScopes.length ? `unsafe managed profile scope read rejected: ${unsafeProfileScopes.map(item => `${item.dir} (${item.reason})`).join(", ")}` : null
@@ -942,6 +953,9 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     // never report ok:true about a tree that was never confirmed as selected.
     checks.push({ name: "codex-install-generation", ok: false, detail: selectionSkip("installed profile package versions were") });
   }
+}
+
+async function checkHooks({ checks, configTomlText, hookHomes, platform, scopeHomes, selected, userCodexHome }) {
   const hookStatuses = [];
   const staleHookScopes = [];
   const legacyHookScopes = [];
@@ -1039,9 +1053,32 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       hookCauseFailures.push({ dir, cause, path, message: error.message });
     }
   }
+  return {
+    hookCauseFailures,
+    hookInterpreters,
+    hookStatuses,
+    hookTrustGaps,
+    legacyHookScopes,
+    mismatchHookScopes,
+    staleHookScopes,
+    unsafeHookScopes
+  };
+}
+
+async function assembleHookChecks({ checks, hookInspection, userCodexHome }) {
+  const {
+    hookCauseFailures,
+    hookInterpreters,
+    hookStatuses,
+    hookTrustGaps,
+    legacyHookScopes,
+    mismatchHookScopes,
+    staleHookScopes,
+    unsafeHookScopes
+  } = hookInspection;
   const hookStatus = staleHookScopes.length === 0 ? hookStatuses[0] || null : null;
   const otherStaleHookScopes = staleHookScopes.filter(dir => !legacyHookScopes.includes(dir));
-  const legacyHookDetail = legacyHookScopes.length ? legacyRemediation(legacyHookScopes) : null;
+  const legacyHookDetail = legacyHookScopes.length ? legacyRemediation(legacyHookScopes, userCodexHome) : null;
   const unsafeHookDetail = unsafeHookScopes.length ? `unsafe managed hook scope read rejected: ${unsafeHookScopes.map(item => `${item.dir} (${item.reason})`).join(", ")}` : null;
   const hooksOk = Boolean(hookStatus) && unsafeHookScopes.length === 0;
   // Each non-legacy stale scope appears in exactly one clause: MISMATCH scopes
@@ -1102,6 +1139,9 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     : hookStatuses.length
     ? `all Muster-owned Codex hooks in ${hookStatuses.length} scope(s) carry a config.toml trust entry`
     : "no managed Codex hooks to verify trust for" });
+}
+
+async function checkPluginCacheHooks({ checks, selected, userCodexHome }) {
   // The installed plugin cache must be the hooks-free Codex flavor: Codex
   // >=0.144.5 fires a plugin's default hooks/hooks.json on every lifecycle
   // event, so a with-hooks (Claude-flavor) cache double-fires on top of the
@@ -1134,6 +1174,9 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       ? `installed muster plugin cache ships ${cacheHookCount} firing lifecycle hook(s) at ${cacheHooksPath} -- the with-hooks (Claude) plugin flavor, which double-fires on top of the scoped hooks.json install; rerun muster install codex to reinstall the hooks-free Codex plugin`
       : "installed muster plugin cache ships no lifecycle hooks (hooks-free Codex flavor)" });
   }
+}
+
+async function assembleReport({ available, checks, cwd, codexHome, execFile }) {
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
     const inventory = await readCodexInventory({ cwd, codexHome, execFile });
@@ -1142,4 +1185,24 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     checks.push({ name: "codex-inventory", ok: true, detail: `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state` });
   }
   return { ok: checks.every(check => check.ok), target: "codex", checks };
+}
+
+export async function runCodexDoctor({
+  root,
+  cwd = process.cwd(),
+  codexHome,
+  execFile,
+  mcpRunner = runMcpHandshake,
+  env = process.env,
+  platform = process.platform,
+  readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES)
+} = {}) {
+  const context = await preparePluginChecks({ root, cwd, execFile, env, platform });
+  const scopes = await discoverScopes({ checks: context.checks, cwd, codexHome, readConfigToml });
+  await checkMcp({ ...context, cwd, mcpRunner });
+  await checkInstallGeneration({ ...context, ...scopes });
+  const hookInspection = await checkHooks({ ...context, ...scopes, platform });
+  await assembleHookChecks({ checks: context.checks, hookInspection, userCodexHome: scopes.userCodexHome });
+  await checkPluginCacheHooks({ checks: context.checks, selected: context.selected, userCodexHome: scopes.userCodexHome });
+  return assembleReport({ available: context.available, checks: context.checks, cwd, codexHome, execFile });
 }

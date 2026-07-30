@@ -149,6 +149,30 @@ test("current Codex docs match live model policy, installer, marketplace, and di
   assert.doesNotMatch(cli, /muster hardcodes the v2 packet/i);
 });
 
+test("Codex CLI research carries the 0.146 performance decision matrix and experimental boundaries", async () => {
+  const cli = await read("docs/research/codex-cli.md");
+  assert.match(
+    cli,
+    /\*\*Version anchor:\*\*[\s\S]{0,240}Codex CLI 0\.146\.0[\s\S]{0,160}rust-v0\.146\.0/,
+    "Codex research must anchor current claims to the installed 0.146.0 binary and official release"
+  );
+  for (const status of ["ADOPT", "AUTOMATIC", "PILOT", "REJECT"]) {
+    assert.match(cli, new RegExp(`\\| \\*\\*${status}\\*\\* \\|`), `0.146 decision matrix must include ${status}`);
+  }
+  for (const source of [
+    "https://github.com/openai/codex/releases/tag/rust-v0.146.0",
+    "https://github.com/openai/codex/pull/34761",
+    "https://github.com/openai/codex/pull/34825",
+    "https://github.com/openai/codex/pull/34952",
+    "https://github.com/openai/codex/pull/35144",
+  ]) {
+    assert.match(cli, new RegExp(source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `0.146 audit must link ${source}`);
+  }
+  assert.match(cli, /code_mode[\s\S]{0,100}under development[\s\S]{0,60}false/i);
+  assert.match(cli, /code_mode_host[\s\S]{0,100}stable[\s\S]{0,60}true/i);
+  assert.doesNotMatch(cli, /remote Code Mode[^.\n]*(?:production-ready|stable end-to-end)/i);
+});
+
 test("ChatGPT Work compatibility is explicitly unverified rather than inherited from Codex", async () => {
   for (const path of [
     "docs/research/gpt-work.md",

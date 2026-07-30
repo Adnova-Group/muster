@@ -12,7 +12,7 @@ import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
@@ -63,7 +63,7 @@ import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, codexSpawnAgentCall, codexWaitAgentCall } from "./wave-dispatch.js";
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
-import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts } from "./kimi-receipts.js";
+import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
 import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
@@ -432,10 +432,10 @@ async function main() {
       // resolveContainedRealpath discipline the sprint-waves branch applies
       // below): these paths come from prose/model output, so a planted symlink
       // must fail with the named refusal, never be read.
-      const contained = async (flag, value) => {
-        const canonical = await resolveContainedRealpath(process.cwd(), value);
+      const contained = async (label, value, { root = process.cwd(), rootName = "the run root" } = {}) => {
+        const canonical = await resolveContainedRealpath(root, value);
         if (canonical === null) {
-          fail(`${usage}: ${flag} ${value} does not resolve to a path contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
+          fail(`${usage}: ${label} ${value} does not resolve to a path contained under ${rootName} (missing, dangling, or a symlink escape) -- refusing to read`);
         }
         return canonical;
       };
@@ -445,13 +445,24 @@ async function main() {
         const stdoutFile = flagValue(rest, "--stdout-file");
         const capturedSessionId = stdoutFile ? captureSessionId(await readFile(await contained("--stdout-file", stdoutFile), "utf8")) : null;
         const index = flagValue(rest, "--index");
-        const resolution = await resolveSessionForCwd({
-          ...(index ? { indexPath: await contained("--index", index) } : {}),
-          cwd,
-          capturedSessionId
-        });
+        const indexPath = index ? await contained("--index", index) : DEFAULT_SESSION_INDEX;
+        const resolution = await resolveSessionForCwd({ indexPath, cwd, capturedSessionId });
+        // The RESOLVED session dir needs the same gate as the flags above: it is
+        // data (a session_index.jsonl `sessionDir` field, which readSessionIndex
+        // accepts as any string), and its usage is echoed into this JSON. Root:
+        // the index's OWN directory -- kimi writes session_index.jsonl at the
+        // kimi-home root and every sessionDir under it
+        // (<home>/sessions/wd_<slug>/session_<uuid>, probe evidence in
+        // src/kimi-receipts.js), so an entry resolving anywhere else is planted,
+        // never a session. src/kimi-receipts.js's readers re-check on their own.
         out(resolution.resolved
-          ? { resolution, usage: await readSessionUsage(resolution.sessionDir) }
+          ? {
+            resolution,
+            usage: await readSessionUsage(await contained("resolved session dir", resolution.sessionDir, {
+              root: dirname(indexPath),
+              rootName: "the session index root"
+            }))
+          }
           : { resolution });
       }
     } else if (cmd === "kimi-summarize-receipts") {

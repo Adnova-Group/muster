@@ -5,7 +5,7 @@
 // text was cut. See docs/research/kimi-code-cli.md sec 8's dated probe note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -209,6 +209,32 @@ test("readSessionUsage: throws when the session dir has no agents tree", async (
   const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-"));
   await assert.rejects(() => readSessionUsage(dir), /cannot read agents tree/);
   await assert.rejects(() => readSessionUsage(""), /sessionDir is required/);
+});
+
+test("readSessionUsage: refuses a session dir that canonically escapes its own parent (defense in depth)", async () => {
+  // A sessionDir is a path FROM DATA (a session-index field, an items.json
+  // resolution), so containment cannot live only in whichever caller remembers
+  // to check: a planted symlink is lexically fine and must still refuse HERE,
+  // in the shared readers, so no future caller inherits the gap (audit S2 P2).
+  const root = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-contain-"));
+  const outside = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-outside-"));
+  await mkdir(path.join(outside, "agents/main"), { recursive: true });
+  await writeFile(path.join(outside, "agents/main/wire.jsonl"),
+    '{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":1,"output":2,"inputCacheRead":3,"inputCacheCreation":4},"usageScope":"turn","time":1}\n');
+  const linked = path.join(root, "session");
+  await symlink(outside, linked);
+  await assert.rejects(() => readSessionUsage(linked), /readSessionUsage: session dir .* contained under its own parent/);
+  await assert.rejects(() => readSessionThinkingEfforts(linked), /readSessionThinkingEfforts: session dir .* contained under its own parent/);
+  // summarizeItemReceipts reads resolution.sessionDir straight out of a
+  // model-supplied items.json -- it inherits the same refusal.
+  await assert.rejects(
+    () => summarizeItemReceipts([
+      { itemId: "item-1", resolution: { resolved: true, sessionId: "session_planted", sessionDir: linked, source: "captured" } }
+    ]),
+    /contained under its own parent/
+  );
+  // A real (unlinked) session tree at the same depth still reads.
+  assert.equal((await readSessionUsage(outside)).total.total, 10);
 });
 
 // --- captureSessionId (PREFERRED: capture-at-dispatch) -----------------------

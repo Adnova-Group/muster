@@ -224,41 +224,45 @@ function validateConfig(config) {
     "allowFullActions", "appId", "artifactFlavor", "artifacts", "cacheKey",
     "connectionId", "format", "owner", "pluginPath", "profile",
   ];
-  // Per-clause failures: every rejection names the field and its expectation,
-  // so a tampered or stale receipt is diagnosable from the error alone.
+  // Per-clause failures: every rejection names the field, its expectation, AND
+  // the value actually received (`got ...`, the same shape this file's newer
+  // receipt/marketplace errors use), so a tampered or stale receipt is fully
+  // diagnosable from the error alone -- without it, an operator holding a
+  // rejected receipt could not tell WHICH value the installer objected to.
   if (!config || Object.keys(config).sort().join("\0") !== [...receiptKeys].sort().join("\0")) {
-    throw new Error(`ChatGPT Work installer receipt keys must be exactly: ${receiptKeys.join(", ")}`);
+    throw new Error(`ChatGPT Work installer receipt keys must be exactly: ${receiptKeys.join(", ")}; got ${JSON.stringify(config && Object.keys(config).sort())}`);
   }
-  if (config.format !== 3) throw new Error("ChatGPT Work installer receipt format must be 3");
-  if (config.owner !== "muster") throw new Error("ChatGPT Work installer receipt owner must be \"muster\"");
+  if (config.format !== 3) throw new Error(`ChatGPT Work installer receipt format must be 3; got ${JSON.stringify(config.format)}`);
+  if (config.owner !== "muster") throw new Error(`ChatGPT Work installer receipt owner must be "muster"; got ${JSON.stringify(config.owner)}`);
   if (config.artifactFlavor !== "chatgpt-work") {
-    throw new Error("ChatGPT Work installer receipt artifactFlavor must be \"chatgpt-work\"");
+    throw new Error(`ChatGPT Work installer receipt artifactFlavor must be "chatgpt-work"; got ${JSON.stringify(config.artifactFlavor)}`);
   }
   if (!PROFILES.has(config.profile)) {
-    throw new Error("ChatGPT Work installer receipt profile must be pro-safe or full");
+    throw new Error(`ChatGPT Work installer receipt profile must be pro-safe or full; got ${JSON.stringify(config.profile)}`);
   }
   if (typeof config.allowFullActions !== "boolean") {
-    throw new Error("ChatGPT Work installer receipt allowFullActions must be a boolean");
+    throw new Error(`ChatGPT Work installer receipt allowFullActions must be a boolean; got ${JSON.stringify(config.allowFullActions)}`);
   }
   const connectionId = normalizeChatgptWorkConnectionId(config.connectionId);
   if (connectionId !== config.connectionId || config.appId !== connectionId) {
-    throw new Error("ChatGPT Work installer receipt app id is not canonical");
+    throw new Error(`ChatGPT Work installer receipt app id is not canonical; got connectionId ${JSON.stringify(config.connectionId)} and appId ${JSON.stringify(config.appId)}, expected both to be ${JSON.stringify(connectionId)}`);
   }
   if ((config.profile === "full") !== config.allowFullActions) {
-    throw new Error("ChatGPT Work installer receipt profile/action opt-in is inconsistent");
+    throw new Error(`ChatGPT Work installer receipt profile/action opt-in is inconsistent; got profile ${JSON.stringify(config.profile)} with allowFullActions ${JSON.stringify(config.allowFullActions)}`);
   }
   const cacheKey = sha256(JSON.stringify(["chatgpt-work", connectionId, config.profile, config.allowFullActions]));
   if (config.cacheKey !== cacheKey) {
-    throw new Error("ChatGPT Work installer receipt cacheKey must be the install identity digest");
+    throw new Error(`ChatGPT Work installer receipt cacheKey must be the install identity digest; got ${JSON.stringify(config.cacheKey)}, expected ${cacheKey}`);
   }
   if (!isAbsolute(config.pluginPath ?? "")) {
-    throw new Error("ChatGPT Work installer receipt pluginPath must be an absolute path");
+    throw new Error(`ChatGPT Work installer receipt pluginPath must be an absolute path; got ${JSON.stringify(config.pluginPath)}`);
   }
   if (!config.artifacts || Object.keys(config.artifacts).sort().join("\0") !== [...ARTIFACT_PATHS].sort().join("\0")) {
-    throw new Error("ChatGPT Work installer receipt artifacts must cover exactly the published artifact set");
+    throw new Error(`ChatGPT Work installer receipt artifacts must cover exactly the published artifact set; got ${JSON.stringify(config.artifacts && Object.keys(config.artifacts).sort())}`);
   }
-  if (Object.values(config.artifacts).some(digest => !HEX64.test(digest))) {
-    throw new Error("ChatGPT Work installer receipt artifact digests must be 64-character lowercase hex sha256 values");
+  const malformedDigests = Object.entries(config.artifacts).filter(([, digest]) => !HEX64.test(digest));
+  if (malformedDigests.length) {
+    throw new Error(`ChatGPT Work installer receipt artifact digests must be 64-character lowercase hex sha256 values; got ${JSON.stringify(Object.fromEntries(malformedDigests))}`);
   }
   return {
     format: 3, owner: "muster", artifactFlavor: "chatgpt-work", appId: connectionId,
@@ -276,7 +280,7 @@ async function readArtifact(path, label) {
 
 async function validateInstalledConfig(config, expectedPluginPath, expectedConfigPath) {
   if (resolve(config.pluginPath) !== resolve(expectedPluginPath)) {
-    throw new Error("ChatGPT Work installer receipt plugin path is outside its scope");
+    throw new Error(`ChatGPT Work installer receipt plugin path is outside its scope; got ${JSON.stringify(resolve(config.pluginPath))}, expected ${JSON.stringify(resolve(expectedPluginPath))}`);
   }
   for (const path of ARTIFACT_PATHS) {
     const bytes = await readArtifact(join(config.pluginPath, ...path.split("/")), `installed artifact ${path}`);
@@ -286,11 +290,11 @@ async function validateInstalledConfig(config, expectedPluginPath, expectedConfi
   }
   const app = JSON.parse(await readFile(join(config.pluginPath, ".app.json"), "utf8"));
   if (JSON.stringify(app) !== JSON.stringify({ apps: { muster: { id: config.appId } } })) {
-    throw new Error("ChatGPT Work installer receipt does not match installed app metadata");
+    throw new Error(`ChatGPT Work installer receipt does not match installed app metadata; got ${JSON.stringify(app)}, expected ${JSON.stringify({ apps: { muster: { id: config.appId } } })}`);
   }
   const manifest = JSON.parse(await readFile(join(config.pluginPath, ".codex-plugin", "plugin.json"), "utf8"));
   if (manifest?.name !== WORK_PLUGIN_ID || manifest?.apps !== "./.app.json" || manifest?.mcpServers !== "./.mcp.json") {
-    throw new Error("ChatGPT Work installed plugin manifest is inconsistent");
+    throw new Error(`ChatGPT Work installed plugin manifest is inconsistent; got ${JSON.stringify({ name: manifest?.name, apps: manifest?.apps, mcpServers: manifest?.mcpServers })}, expected ${JSON.stringify({ name: WORK_PLUGIN_ID, apps: "./.app.json", mcpServers: "./.mcp.json" })}`);
   }
   const mcp = JSON.parse(await readFile(join(config.pluginPath, ".mcp.json"), "utf8"));
   const env = mcp?.mcpServers?.muster?.env;
@@ -304,7 +308,7 @@ async function validateInstalledConfig(config, expectedPluginPath, expectedConfi
     || resolve(env?.MUSTER_CHATGPT_WORK_RECEIPT_PATH ?? "") !== resolve(expectedConfigPath)
     || env?.MUSTER_CHATGPT_WORK_PLUGIN_VERSION !== manifest.version
     || (env?.MUSTER_CHATGPT_WORK_INSTALL_ALLOW_FULL_ACTIONS === "1") !== config.allowFullActions) {
-    throw new Error("ChatGPT Work installed MCP activation metadata is inconsistent");
+    throw new Error(`ChatGPT Work installed MCP activation metadata is inconsistent; got ${JSON.stringify(mcp?.mcpServers?.muster)}`);
   }
   const pluginsRoot = dirname(config.pluginPath);
   const { value: marketplace } = await readWorkMarketplace(pluginsRoot);
@@ -468,7 +472,7 @@ export async function runChatgptWorkInstall({
   __testBeforeReceiptCommit,
 } = {}) {
   const canonicalId = normalizeChatgptWorkConnectionId(connectionId);
-  if (!PROFILES.has(profile)) throw new Error("ChatGPT Work profile must be pro-safe or full");
+  if (!PROFILES.has(profile)) throw new Error(`ChatGPT Work profile must be pro-safe or full; got ${JSON.stringify(profile)}`);
   if (profile === "full" && !allowFullActions) throw new Error("ChatGPT Work full profile requires --allow-full-actions");
   if (profile !== "full" && allowFullActions) throw new Error("--allow-full-actions is valid only with --profile full");
   const config = { connectionId: canonicalId, profile, allowFullActions: profile === "full" };

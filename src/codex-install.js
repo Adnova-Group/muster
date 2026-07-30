@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { codexAvailable } from "./codex-inventory.js";
+import { escapeRe } from "./keyword.js";
 import { generateCodexProfiles } from "./codex-release.js";
 import { processAlive, processStartIdentity } from "./codex-lock.js";
 import {
@@ -755,10 +756,7 @@ function declarationRegion(declarations, newline = "\n") {
 }
 
 function declarationBounds(text) {
-  const markerLines = marker => {
-    const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return [...text.matchAll(new RegExp(`^${escaped}\\r?$`, "gm"))];
-  };
+  const markerLines = marker => [...text.matchAll(new RegExp(`^${escapeRe(marker)}\\r?$`, "gm"))];
   const starts = markerLines(AGENT_DECLARATIONS_START);
   const ends = markerLines(AGENT_DECLARATIONS_END);
   if (starts.length !== ends.length || starts.length > 1
@@ -1209,7 +1207,10 @@ async function existingMusterMarketplace(execFile, repoRoot) {
   return matches[0];
 }
 
-async function registerPlugin(execFile, dryRun, repoRoot) {
+// File-local, so the flag is an OPTIONS object rather than a positional
+// boolean: `registerPlugin(execFile, root, { dryRun: true })` reads at the call
+// site; the old `registerPlugin(execFile, true, root)` did not.
+async function registerPlugin(execFile, repoRoot, { dryRun }) {
   if (dryRun) return [`codex plugin marketplace add ${repoRoot}`, `codex plugin add ${CODEX_PLUGIN}`];
   let marketplaceAdded = false, pluginAdded = false;
   try {
@@ -1488,14 +1489,14 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           declarationSeparatorAdded: declarationReconcile.separatorAdded,
           declarationRegion: declarationReconcile.receipt
         }, null, 2) + "\n");
-        actions = present ? await registerPlugin(execFile, false, distributionRoot) : [];
+        actions = present ? await registerPlugin(execFile, distributionRoot, { dryRun: false }) : [];
       } catch (error) {
         await restoreFilesystem(originals, changed);
         throw error;
       }
     }, scopeLockOptions);
   } else {
-    actions = present ? await registerPlugin(execFile, true, distributionRoot) : [];
+    actions = present ? await registerPlugin(execFile, distributionRoot, { dryRun: true }) : [];
   }
   return { ok: true, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
     hooksSkipped: hooks.skipped,

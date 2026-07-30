@@ -17,6 +17,8 @@
 // enters (manifests, MUSTER_MAX_TIER, adapter lookups) via LEGACY_TIER_ALIASES,
 // and live on as the CLAUDE adapter's concrete values — a Claude word now, not a
 // muster word, exactly like "gpt-5.6-terra" is a Codex word.
+import { isTruthyFlag } from "./env-util.js";
+
 const SCOUT = new Set(["code-navigation", "docs-research", "research"]);
 // "judge" is an intentional conceptual role OUTSIDE the resolved ROLES enum
 // (roles.js): the tournament skill (plugin/skills/tournament/SKILL.md) dispatches
@@ -79,9 +81,10 @@ export function capTier(tier, cap = process.env.MUSTER_MAX_TIER) {
 // tier is available again.
 function apexEnabled() {
   // Robust against MCPB boolean user_config, which substitutes as the string
-  // "false"/"true": only "1"/"true"-ish values enable; "0"/"false"/"" do not.
-  const v = process.env.MUSTER_ENABLE_APEX ?? process.env.MUSTER_ENABLE_FABLE;
-  return !!v && v !== "0" && v.toLowerCase() !== "false";
+  // "false"/"true": only "1"/"true"-ish values enable; "0"/"false"/"" do not
+  // (isTruthyFlag in src/env-util.js -- shared with the --native-plugin ride's
+  // parse in src/cli.js).
+  return isTruthyFlag(process.env.MUSTER_ENABLE_APEX ?? process.env.MUSTER_ENABLE_FABLE);
 }
 
 // The emission layer in one function: a DECLARED tier (a role's tier, or an

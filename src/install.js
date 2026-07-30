@@ -14,6 +14,24 @@ const NOFOLLOW = constants.O_NOFOLLOW || 0;
 // Exact digests of output-styles/muster.md revisions that the retired installer
 // copied into user homes. Ownership is content-based because that installer did
 // not write a registry or sidecar marker. Unknown same-name files are preserved.
+//
+// PROVENANCE (so this set can be pruned deliberately, not guessed at). Each
+// entry is `sha256` of one git revision of the output style, in the order the
+// history produced them -- reproduce with:
+//   git show <commit>:<path> | sha256sum
+//   502075b0 output-styles/muster.md          @ befc5f5 (2026-06-08)
+//   fc7eba32 plugin/output-styles/muster.md   @ 9a64c8a (2026-06-08)
+//   49e17cb9 plugin/output-styles/muster.md   @ 6eb51ae (2026-06-08)
+//   48fa150d plugin/output-styles/muster.md   @ a54a4fe (2026-06-18)
+//   02117ed0 plugin/output-styles/muster.md   @ 2887787 (2026-07-02, current)
+// 9a64c8a ("fix(install): ship output style in-plugin (force-for-plugin); add
+// uninstall", 2026-06-08) is the RETIRING commit: it moved the style from the
+// repo-root output-styles/ path into plugin/ and replaced the home-copying
+// installer with the in-plugin ship, so no revision after it was ever written
+// into a user home by the retired path. The later digests are kept only because
+// an install performed on an OLD checkout (or a home still holding a
+// pre-uninstall copy) can carry them; the set may be pruned once no supported
+// upgrade path can still start from a pre-9a64c8a install.
 const LEGACY_STYLE_DIGESTS = new Set([
   "02117ed091e2c1a11054631815bb0734b238652b65f664c939bdf526ed926732",
   "48fa150dcc1999db9de9439f2a2b7cb267ece1221fc435fd166b2f6746fce6cb",

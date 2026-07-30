@@ -65,7 +65,7 @@ import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, code
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
-import { envInt } from "./env-util.js";
+import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import { resolveContainedRealpath } from "./fs-safe.js";
@@ -181,10 +181,10 @@ async function main() {
         // plugin/ tree is unverified and has no on-disk/protocol detection signal,
         // so it is DECLARED the same way remote connectors are -- --native-plugin
         // or MUSTER_COWORK_NATIVE_PLUGIN (MCPB-boolean-safe: only "1"/"true"-ish
-        // values enable, mirroring MUSTER_ENABLE_FABLE's parse in src/model.js).
-        const nativeFlag = process.env.MUSTER_COWORK_NATIVE_PLUGIN;
+        // values enable -- isTruthyFlag in src/env-util.js, the same parse
+        // MUSTER_ENABLE_APEX uses in src/model.js).
         const nativePluginRide = rest.includes("--native-plugin")
-          || (!!nativeFlag && nativeFlag !== "0" && nativeFlag.toLowerCase() !== "false");
+          || isTruthyFlag(process.env.MUSTER_COWORK_NATIVE_PLUGIN);
         installed = await readInstalledCowork(home, { declaredConnectors: declared, nativePluginRide });
       } else {
         installed = await readInstalled(home);

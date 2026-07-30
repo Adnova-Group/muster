@@ -385,11 +385,14 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   // path separator is an explicit path (absolute as-is, or relative to the
   // run's cwd). Either way the file must exist -- discovered here, not from a
   // failed spawn.
-  const resolvedAgentFile = isAbsolute(agentFile)
-    ? agentFile
-    : agentFile.includes("/") || agentFile.includes(sep)
-      ? resolve(resolvedCwd, agentFile)
-      : join(kimiAgentsDir(), agentFile);
+  let resolvedAgentFile;
+  if (isAbsolute(agentFile)) {
+    resolvedAgentFile = agentFile;
+  } else if (agentFile.includes("/") || agentFile.includes(sep)) {
+    resolvedAgentFile = resolve(resolvedCwd, agentFile);
+  } else {
+    resolvedAgentFile = join(kimiAgentsDir(), agentFile);
+  }
   if (!existsSync(resolvedAgentFile) || !statSync(resolvedAgentFile).isFile()) {
     throw new Error(`kimiProcessDispatch: agentFile ${JSON.stringify(agentFile)} resolved to ${resolvedAgentFile}, which does not exist (bare names resolve under the installed agents dir ${kimiAgentsDir()}; explicit paths resolve against cwd)`);
   }

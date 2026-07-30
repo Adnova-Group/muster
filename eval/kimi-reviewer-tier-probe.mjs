@@ -119,9 +119,11 @@ export const PROBES = Object.freeze([
 export const LANES = Object.freeze(["primary", "secondary"]);
 
 // Effort mode: the K3 effort ladder rungs this probe compares (the third
-// rung, max, is muster's fable-only reserve -- docs/research/kimi-code-cli.md
-// section 11.2). There is no per-invocation effort flag; this env var is read
-// per-process and overrides config [thinking].effort.
+// rung, max, is reserved for muster's APEX tier on this harness: KIMI_TIERS.apex
+// is kimi-code/k3 at effort max, src/kimi.js -- docs/research/kimi-code-cli.md
+// section 11.2). There is
+// no per-invocation effort flag; this env var is read per-process and
+// overrides config [thinking].effort.
 export const EFFORTS = Object.freeze(["low", "high"]);
 export const EFFORT_ENV_VAR = "KIMI_MODEL_THINKING_EFFORT";
 export const PROBE_MODES = Object.freeze(["tier", "effort"]);

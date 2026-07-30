@@ -13,6 +13,23 @@ export function isPlainObject(x) {
 }
 
 /**
+ * Permissive opt-in flag parse: TRUE for any set value except "0" and (case-
+ * insensitive) "false". Extracted from the identical expression duplicated at
+ * src/cli.js (MUSTER_COWORK_NATIVE_PLUGIN) and src/model.js (MUSTER_ENABLE_APEX
+ * / MUSTER_ENABLE_FABLE), both of which exist to be MCPB-boolean-safe: MCPB
+ * substitutes boolean user_config as the STRING "false"/"true", so a bare
+ * truthiness check would read "false" as on.
+ *
+ * Deliberately NOT the strict form used for capability declarations
+ * (src/wave-dispatch.js's truthyEnv, which accepts only normalized "1"/"true"
+ * and fails closed on everything else) -- these are opt-ins, where any set
+ * value that is not an explicit denial means "the operator asked for it".
+ */
+export function isTruthyFlag(v) {
+  return !!v && v !== "0" && String(v).toLowerCase() !== "false";
+}
+
+/**
  * Read an integer from an environment variable.
  *
  * Rules (in order):

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRegularTree, CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
+import { escapeRe } from "../src/keyword.js";
 
 // Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
 //
@@ -100,8 +101,7 @@ const codexModeNames = new Map([
 function translateModeNames(text) {
   let result = text;
   for (const [legacy, current] of codexModeNames) {
-    const escaped = legacy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    result = result.replace(new RegExp(`/muster:${escaped}(?![a-z-])`, "g"), `$${current}`);
+    result = result.replace(new RegExp(`/muster:${escapeRe(legacy)}(?![a-z-])`, "g"), `$${current}`);
   }
   return result;
 }
@@ -499,9 +499,15 @@ function adaptOrchestratorForCodex(text, contract) {
   if (enforcement < 0) throw new Error("orchestrator enforcement section not found");
   return result.slice(0, enforcement) + `## Codex enforcement model\n\n- **Mechanically validated:** manifest schema, dependency waves, capability resolution, worktree/base-SHA receipts, file ownership checks, tests, reviews, commits, and terminal receipts.\n- **Hook diagnostics:** session/prompt context, supported action-class warnings, a warn-only border-invitation drift reminder, stale-marker diagnostics, and subagent start/stop context after one-time hook trust.\n- **Advisory:** todo-before-spawn and universal dispatch-not-inline blocking. Current Codex hooks cannot reliably intercept every subagent or unified-shell action, so do not claim these are hard gates.\n- **Required invariant:** every write-capable wave runs in explicitly created isolated worktrees and is verified from repository state after the barrier.\n\n${contract.watchProtocol}`;
 }
+// Every muster CLI verb whose Codex-side invocation must carry --codex (the
+// Codex-adapted catalog/capability surface). One list, one rewrite loop below:
+// the six chains this replaced were byte-identical except for the verb, so a
+// seventh verb is now a one-word edit instead of a copied `.replace` line.
+const CODEX_ADAPTED_VERBS = ["capabilities", "match", "assess", "diagnose", "audit", "manifest validate"];
 function bindBundledCodexCli(text) {
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
-  return text
+  const escapedCli = escapeRe(cli);
+  let result = text
     // The Claude-side performance pass resolves `$MUSTER_CLI` once per run
     // (plugin/commands/go.md step -2) because a raw `npx` call pays a cold
     // start on every invocation. The Codex package has no such ambiguity:
@@ -510,13 +516,11 @@ function bindBundledCodexCli(text) {
     // the bundled entrypoint before the per-verb --codex rewrites below.
     .replaceAll("$MUSTER_CLI", cli)
     .replaceAll("$CLAUDE_PLUGIN_ROOT/", "${PLUGIN_ROOT}/")
-    .replaceAll("npx -y @adnova-group/muster", cli)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} capabilities(?! --codex)`, "g"), `${cli} capabilities --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} match(?! --codex)`, "g"), `${cli} match --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} assess(?! --codex)`, "g"), `${cli} assess --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} diagnose(?! --codex)`, "g"), `${cli} diagnose --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} audit(?! --codex)`, "g"), `${cli} audit --codex`)
-    .replace(new RegExp(`${cli.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} manifest validate(?! --codex)`, "g"), `${cli} manifest validate --codex`);
+    .replaceAll("npx -y @adnova-group/muster", cli);
+  for (const verb of CODEX_ADAPTED_VERBS) {
+    result = result.replace(new RegExp(`${escapedCli} ${verb}(?! --codex)`, "g"), `${cli} ${verb} --codex`);
+  }
+  return result;
 }
 // skill-frontmatter-capabilities item: Claude Code skill frontmatter supports capability
 // keys (disallowed-tools, argument-hint, disable-model-invocation, etc. --

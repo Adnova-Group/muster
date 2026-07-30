@@ -35,11 +35,25 @@ export const AGENT_TEAMS_ENV = "MUSTER_AGENT_TEAMS";
 export const WAVE_DISPATCH_MODES = Object.freeze({ NATIVE: "native", PROSE: "prose" });
 
 // Capability declarations are intentionally strict: normalized "1"/"true" enable,
-// normalized "0"/"false" disable, and every other value fails closed.
+// normalized "0"/"false" disable, and every other value fails closed. NOT
+// env-util.js's isTruthyFlag, which is the permissive opt-in parse (any set
+// value but "0"/"false" is on) -- a capability claim must fail closed, so these
+// two are not interchangeable and stay separate.
 function truthyEnv(v) {
   if (typeof v !== "string") return false;
   const normalized = v.trim().toLowerCase();
   return normalized === "1" || normalized === "true";
+}
+
+// The selection shape both resolvers below share: the caller's own live
+// observation, an explicit boolean (true OR false), always wins; when omitted
+// (undefined) fall back to that harness's DECLARED env-var signal. Only the
+// FALLBACK is shared -- each declared* reader keeps its own default policy
+// (agent-teams: nothing declared means off; Codex multi_agent: nothing declared
+// means Codex's own shipped default, on), and each resolver keeps its own
+// mode/reason strings.
+function explicitOrDeclared(explicit, declared) {
+  return typeof explicit === "boolean" ? explicit : declared();
 }
 
 export function declaredAgentTeams(env = process.env) {
@@ -53,7 +67,7 @@ export function declaredAgentTeams(env = process.env) {
 // of any self-inspection. An explicit boolean (true OR false) always wins over the env
 // var -- the session's live observation is authoritative when it exists.
 export function resolveWaveDispatch({ agentTeams, env = process.env } = {}) {
-  const declared = typeof agentTeams === "boolean" ? agentTeams : declaredAgentTeams(env);
+  const declared = explicitOrDeclared(agentTeams, () => declaredAgentTeams(env));
   if (declared) {
     return {
       mode: WAVE_DISPATCH_MODES.NATIVE,
@@ -110,7 +124,7 @@ export function declaredCodexMultiAgent(env = process.env) {
 // `features.multi_agent` is on this session; omitted, falls back to the
 // declared env var. An explicit boolean always wins over the env var.
 export function resolveCodexWaveDispatch({ multiAgent, env = process.env } = {}) {
-  const enabled = typeof multiAgent === "boolean" ? multiAgent : declaredCodexMultiAgent(env);
+  const enabled = explicitOrDeclared(multiAgent, () => declaredCodexMultiAgent(env));
   if (enabled) {
     return {
       mode: CODEX_DISPATCH_MODES.SPAWN_AGENT,
@@ -208,7 +222,11 @@ export function codexSpawnAgentCall({ taskId, message, agentType, version, forkT
 
   const forkTurnsValue = forkTurns ?? "none";
   if (typeof forkTurnsValue !== "string" || !FORK_TURNS.test(forkTurnsValue)) {
-    throw new Error(`codexSpawnAgentCall: fork_turns must be the STRING "none", "all", or a positive integer string; got ${JSON.stringify(forkTurnsValue)}`);
+    // "all" is DELIBERATELY absent from the enumerated valids: it parses as a
+    // well-formed fork_turns value but muster never emits it (the dedicated
+    // rejection just below explains why), so naming it here as valid would
+    // contradict the very next check.
+    throw new Error(`codexSpawnAgentCall: fork_turns must be the STRING "none" or a positive integer string; got ${JSON.stringify(forkTurnsValue)}`);
   }
   if (forkTurnsValue === "all") {
     throw new Error(`codexSpawnAgentCall: fork_turns "all" is a full-history fork, which Codex refuses to combine with a named agent_type ("Full-history forked agents inherit the parent agent type") -- use "none" or a positive integer string for task "${taskId}"`);

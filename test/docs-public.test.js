@@ -139,6 +139,21 @@ test("newly changed README and modes prose remains humanizer-passing", async () 
   }
 });
 
+test("Cowork sequential fallback retains dedicated per-item worktree isolation", async () => {
+  const cowork = await read("website/guides/cowork.md");
+  assert.match(cowork, /orchestrator creates[\s\S]{0,120}dedicated isolated Git worktree[\s\S]{0,180}sequentially/i);
+  assert.match(cowork, /connected project is the coordination and ordered-integration surface/i);
+  assert.doesNotMatch(cowork, /write-capable wave items must run sequentially in the connected project/i);
+});
+
+test("Init public reference pins one instruction authority and holds conflicts", async () => {
+  const modes = await read("website/reference/modes.md");
+  assert.match(modes, /`AGENTS\.md` is authoritative/i);
+  assert.match(modes, /# Claude Code[\s\S]{0,40}@AGENTS\.md/);
+  assert.match(modes, /existed at the preparation baseline[\s\S]{0,180}HUMAN-HOLD/i);
+  assert.match(modes, /reverse `AGENTS\.md` reference to `CLAUDE\.md` cannot satisfy/i);
+});
+
 test("command reference never pairs artifact-delta with an evidence file", async () => {
   const commands = await read("website/reference/commands.md");
   assert.match(commands, /`init transition \[dir\] --to completed --evidence artifact-delta`/);

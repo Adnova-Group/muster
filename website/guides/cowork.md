@@ -40,7 +40,7 @@ Use Node 20 or newer on the host path, then fully restart Cowork. Connect or tru
 
 ## Backlog runs
 
-Call `muster_sprint_protocol` before a Cowork backlog clear. It names backlog resolution, dependency waves, per-item lifecycle, and claim receipts. After each worker wake, use `muster_sprint_reconcile` to drain all receipts and dispatch every newly eligible action before waiting again. Without a proven per-subagent worktree primitive, write-capable wave items must run sequentially in the connected project. Prefer `pr` or `keep` dispositions over direct base-branch merges.
+Call `muster_sprint_protocol` before a Cowork backlog clear. It names backlog resolution, dependency waves, per-item lifecycle, and claim receipts. After each worker wake, use `muster_sprint_reconcile` to drain all receipts and dispatch every newly eligible action before waiting again. Without a proven native per-subagent worktree primitive, the orchestrator creates a dedicated isolated Git worktree for each write-capable wave item and executes those items sequentially in their assigned worktrees. The connected project is the coordination and ordered-integration surface, not the fallback implementation workspace. Prefer `pr` or `keep` dispositions over direct base-branch merges.
 
 Cowork's native plugin loader may eventually carry Muster's skills, hooks, and agents. That path is not auto-detected. Leave `MUSTER_COWORK_NATIVE_PLUGIN` unset unless a live Cowork session has loaded the plugin and exposed those capabilities.
 

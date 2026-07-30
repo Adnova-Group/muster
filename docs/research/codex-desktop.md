@@ -234,7 +234,7 @@ with the GPT-5.6 family split into Sol (deep reasoning), Terra (balanced default
   set their transport, but can control on/off state and tool policy under
   `plugins.<plugin>.mcp_servers.<server>` keys [DOCUMENTED] [src: mcp] [src: cfg-ref].
 
-muster's 29 MCP tools ride the plugin path: the generated plugin's `.mcp.json` starts the
+muster's 30 MCP tools ride the plugin path: the generated plugin's `.mcp.json` starts the
 bundled `runtime/muster-mcp.mjs` server. `CODEX_COUNTS.mcpTools` and the focused generated
 surface tests pin the current inventory [src: build-codex] [src: codex-js]. The retriage's
 "21/21 tools" result remains a valid dated 2026-07-16 handshake, not a current count
@@ -261,7 +261,7 @@ surface tests pin the current inventory [src: build-codex] [src: codex-js]. The 
   CLI, and the IDE extension"; the CLI adds `/agent` for thread switching; the IDE shows a
   background-agent panel above the composer [DOCUMENTED] [src: subagents].
 
-Current generated surface: 76 skills (13 public + 63 internal) and 29 MCP tools, plus 27
+Current generated surface: 76 skills (13 public + 63 internal) and 30 MCP tools, plus 27
 profiles. The public skills include `$muster-init` (Init), the other eight primary
 `$muster-*` modes, three legacy aliases, and the root `$muster` router. Profiles are
 `.codex/agents/*.toml` / `$CODEX_HOME/agents/*.toml` files shared by all three local clients;

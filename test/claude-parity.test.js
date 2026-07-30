@@ -1327,5 +1327,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // producer now routes publication through the shared backlog-publish CAS command.
   // Review-gate follow-up: Cowork's writer now invokes the bounded MCP publisher
   // directly instead of naming a CLI/stdin mechanism unavailable on MCP-only hosts.
-  assert.equal(hash.digest("hex"), "1158203953bf99ceb451e54e944e281a8b1e1da01e8cf0d2ad0746846b447c9e");
+  // 2026-07-30 re-pin #33 (final integration verification): audit.md and runner.md
+  // document narrowly scoped prompt-lint safety exceptions; go-backlog.md adds
+  // the matching rule-density exception while preserving its remote-text and
+  // report-only Kimi process-lane contracts. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "13da731131a968f1fbd1a0988914a7ffcdfce88625cdd12ab32556bc2b37f370");
 });

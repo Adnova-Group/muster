@@ -67,22 +67,6 @@ Apex is disabled by default, so `modelForRole` (`src/model.js`) degrades it to p
 Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
 <!-- legacy-tier-compat:end -->
 
-## Harness-specific bindings
-
-Claude Code and Codex translate the neutral agent manifest into their native
-profiles. Codex currently maps bounded implementation work to
-`gpt-5.6-luna`/xhigh, read-only locator work to `gpt-5.6-terra`/high, ordinary
-review and strategy to `gpt-5.6-sol`/high, and security to
-`gpt-5.6-sol`/xhigh through its `peak` effort override. The generator and
-`check:codex` validate concrete TOML against the neutral manifest. The sections
-below describe shared orchestration behavior unless their headings name an
-adapter.
-
-### Kimi adapter: optional network probe
-
-`install kimi --probe` performs the fourth network-capable CLI operation: an
-authenticated models request. Omit `--probe` to keep Kimi installation offline.
-
 ## Provider kinds
 
 A provider resolves to one of four kinds, which decides how the orchestrator dispatches it:
@@ -122,13 +106,13 @@ A backlog with any `{id}`/`{deps}`-annotated item (the shape `/muster:audit back
 
 **Diagnose** is failure-first. Reproduce, find the root cause via systematic debugging on the best available debug provider, fix, add a regression test, verify. No symptom-patching.
 
-**Audit** is the review-and-fix counterpart to diagnose: where diagnose is one bug, audit sweeps the whole codebase. Claude Code fans out six read-only dimension reviews in parallel (architecture, tech-debt, coverage, simplification, readability, security), with a conditional seventh (prompt-quality) when the project builds prompts or agents. Codex covers the same ledger with three nonredundant read-only briefs: system quality combines architecture, tech debt, simplification, and readability as separately labeled lists; coverage owns test gaps and untested failure paths; security owns trust boundaries, injection, secrets, unsafe IO, installers, and lifecycle hooks. Prompt-heavy scopes add a fourth prompt-quality brief. Codex dispatches these concurrently when configured capacity permits, otherwise in dependency-free batches. Both harnesses consolidate only after every required dimension has a receipt, then fix with TDD and verify through the review gate. A `backlog` first token (`/muster:audit backlog [path]`) swaps the last two steps: no branch, no fixing, no merge. The ranked ledger is written to `.muster/backlog.md` instead, one item per finding-cluster, for `/muster:go-backlog` to clear later.
+**Audit** is the review-and-fix counterpart to diagnose: where diagnose is one bug, audit sweeps the whole codebase. It covers six read-only dimensions (architecture, tech-debt, coverage, simplification, readability, security), with a conditional seventh (prompt-quality) when the project builds prompts or agents. The active adapter may group them into three nonredundant read-only briefs: system quality, coverage, and security. Prompt-heavy scopes add a prompt-quality brief. Every required dimension must have a receipt before consolidation. Briefs dispatch concurrently when configured capacity permits, otherwise in dependency-free batches. Audit then fixes with TDD and verifies through the review gate. A `backlog` first token (`/muster:audit backlog [path]`) swaps the last two steps: no branch, no fixing, no merge. The ranked ledger is written to `.muster/backlog.md` instead, one item per finding-cluster, for `/muster:go-backlog` to clear later.
 
 **Runner** is `/muster:runner`'s single-cycle counterpart to Go-backlog's batch clear: resolve the source, resume an answered BLOCKED or HUMAN-HOLD item (resume rules depend on the binding -- see the coordination skill) or claim exactly one available item, drive it through the full Go lifecycle with the merge disposition force-coerced to `pr`, leave a receipt, and stop -- one item per invocation, meant to be re-fired by a harness scheduler or cron rather than looped internally. Go-backlog and Runner both load the **coordination** skill when a backlog or `issues:<label>` may be worked by more than one runner at once: CLAIM an item before touching it, leave a RECEIPT on every state change, scan BLOCKED items for an answer before claiming new work, and keep one LEDGER heartbeat per runner. Coordination is orchestrator-level only -- wave mode's isolated per-item worktree runners never write coordination state themselves.
 
 **Capture** is the third backlog generator, alongside the interview skill's decomposition check and audit's backlog mode: it turns a session's discussion into backlog items so none has to be hand-written. It extracts candidate items from the conversation (scoped by an optional hint) -- findings, decisions, review residuals, an explicit user directive -- each traced to a quoted fragment or named decision (glass box), excluding unactioned musings, work already shipped this session, items already on the backlog, superseded calls, and anything explicitly parked. More than 10 survivors are capped, presenting only the most recent/decision-weighted 10 with the holdback count stated. Every surviving candidate runs through the same `assess`-passable validation and `.muster/backlog.md` dedupe the interview and audit backlog modes use, capped at 2 reword attempts before an item is offered marked `UNMEASURABLE` rather than fabricating a metric. Nothing is written until an explicit structured approval -- Approve all, Edit (re-validates before re-offering), Drop, or Cancel (writes nothing) -- because capture's write is human-gated by design, the same way the interview decomposition's write is. Capture has no run-active lifecycle: it never assembles a crew or dispatches a subagent wave, so the wave-guard and scale-gate hooks have nothing to gate here -- a `run-active` marker would be inert boilerplate, deliberately omitted rather than copied from the other modes.
 
-**Init** prepares a repository before greenfield work or adoption in a clone. The CLI learns bounded facts and writes the canonical `.muster/project-profile.json` and `.muster/init-receipt.json` pair. The profile is provider/model-neutral. Native instruction generation stays with the active runtime, so the command records a HUMAN-HOLD until artifact-delta, pre-existing confirmation, or a bound call-result provides positive evidence. Kimi, Copilot, and any unknown runtime with no proven callable adapter remain unavailable rather than receiving an invented command; acknowledge with `muster init acknowledge [dir] --reason unavailable` when the user accepts that limitation. Init preserves brownfield content, allows only four missing generic greenfield seeds at finalization, and never executes repository instructions or hooks. The legacy `setup` verb remains available for callers that explicitly need its scaffold behavior.
+**Init** prepares a repository before greenfield work or adoption in a clone. The CLI learns bounded facts and writes the canonical `.muster/project-profile.json` and `.muster/init-receipt.json` pair. The profile is provider/model-neutral. Native instruction generation stays with the active runtime, so the command records a HUMAN-HOLD until artifact-delta, pre-existing confirmation, or a bound call-result provides positive evidence. An unknown harness, or any runtime with no proven callable native-init adapter, remains unavailable rather than receiving an invented command; acknowledge with `muster init acknowledge [dir] --reason unavailable` when the user accepts that limitation. Init preserves brownfield content, allows only four missing generic greenfield seeds at finalization, and never executes repository instructions or hooks. The legacy `setup` verb remains available for callers that explicitly need its scaffold behavior.
 
 ## Pipelines
 
@@ -158,11 +142,27 @@ Orchestration loops until done via a Ralph-style primitive (`src/loop.js`). `loo
 
 Plan tasks may also declare `owns`/`frozen` arrays -- opaque path-label strings validated by shape only, never by glob matching or overlap detection -- so the orchestrator can copy them into a dispatch brief as scope fences and dispatch same-wave tasks in parallel only when their `owns` sets are disjoint. A manifest (or an individual task) may also declare `forbiddenActions`, drawn from a fixed action-class vocabulary (`send`/`sign`/`submit`/`publish`/`purchase`/`delete-remote`); the orchestrator writes the run's effective (top-level union task-level) set to `.muster/forbidden-actions` at run start, copies it into each brief as a `FORBIDDEN ACTIONS:` line, and removes the file immediately before executing the run's declared merge disposition -- the fence guards the work phase, the disposition is the authorized exit. Every dispatch brief also ends with a mandatory return contract: implementers return raw data (<=2000 chars), reviewers return a verdict first with <=1500 chars of findings, and the orchestrator reads each subagent result exactly once with no accumulation between waves -- git history and the run STATE are the record. Immediately after each wave commit, the orchestrator attaches a `git notes --ref=muster` record of that wave's intent (decisions, review cycles, findings fixed and accepted); the review gate reads it back on later waves to check the implementation against recorded intent, not just the diff against the spec, and also runs `muster citation-check` on research/content artifacts before dispatching reviewers so a dangling citation or an ingestion-ledger gap travels in their briefs as a finding.
 
+## Harness-specific bindings
+
+### Claude Code and Codex adapter: model profiles
+
+Both adapters translate the neutral agent manifest into native profiles. The
+Codex adapter currently maps bounded implementation work to
+`gpt-5.6-luna`/xhigh, read-only locator work to `gpt-5.6-terra`/high, ordinary
+review and strategy to `gpt-5.6-sol`/high, and security to
+`gpt-5.6-sol`/xhigh through its `peak` effort override. Its generator and
+`check:codex` validate concrete TOML against the neutral manifest.
+
+### Kimi adapter: optional network probe
+
+`install kimi --probe` performs the fourth network-capable CLI operation: an
+authenticated models request. Omit `--probe` to keep Kimi installation offline.
+
 ### Claude Code adapter: remote controls
 
 Driving Muster remotely in Claude Code uses the harness's own features, not a transport Muster ships. A Routine can fire `/muster:go` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session when a human wants to take over.
 
-### Adapter dispatch lanes
+### Claude Code and Kimi adapters: dispatch lanes
 
 Two adapter-specific dispatch lanes refine the wave fan-out picture. On Claude Code, a wave rides the native `Workflow` tool when the session's own tool list carries it -- a declared, self-observed capability, never probed from outside -- with the prose wave loop as the unconditional floor on every session or harness without it (`src/wave-dispatch.js`, `docs/native-workflow-dispatch.md`). On Kimi, model work goes through Kimi's own `Agent` dispatch: a leg may run foreground or background (`run_in_background`), a backgrounded leg returning a task id whose completion arrives as a later synthetic user message with an on-disk receipt under the session's `tasks/` dir -- and barrier-gated work never dispatches background (`src/kimi-dispatch.js`). The orchestrator's per-harness dispatch detail lives in `plugin/skills/orchestrator/references/` (split out of `SKILL.md`), e.g. `kimi-dispatch.md` and `codex-dispatch.md`.
 

@@ -95,6 +95,8 @@ test("paired instruction artifact-delta requires the canonical authority pair", 
     { name: "AGENTS only", agents: "# Policy\n", claude: null, ok: false },
     { name: "CLAUDE only", agents: null, claude: CLAUDE_POINTER, ok: false },
     { name: "conflicting CLAUDE", agents: "# Policy\n", claude: "# Independent\n", ok: false },
+    { name: "policy then reverse import", agents: "# Policy\n\n  @CLAUDE.md\n", claude: CLAUDE_POINTER, ok: false },
+    { name: "reverse import then policy", agents: "@./CLAUDE.md\n\n# Policy\n", claude: CLAUDE_POINTER, ok: false },
     { name: "canonical pair", agents: "# Policy\n", claude: CLAUDE_POINTER, ok: true },
   ];
 

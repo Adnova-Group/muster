@@ -377,11 +377,12 @@ Code reads `CLAUDE.md`. It is a plausible landing spot for the one primitive wit
 fallback above: Enforce's `SessionStart`/`UserPromptSubmit` context-injection role, which today
 has no substitute on a harness with no session-lifecycle hook at all.
 
-Two things already exist in this repo named "AGENTS.md" and neither is this adapter, which is
-worth stating explicitly so a future reader does not conflate them: `src/setup.js`'s
-`scaffoldProject()` seeds a placeholder `AGENTS.md` stub ("This repository is managed with
-muster.") into a fresh greenfield project, and `eval/modes/fixtures/skills/greenfield/plan-annotated-parallel.md`
-references seeding one the same way. Both are a one-line bootstrap file, not a binding.
+Two places already describe greenfield instruction scaffolding, and neither is this adapter,
+which is worth stating explicitly so a future reader does not conflate them: `src/setup.js`'s
+`scaffoldProject()` seeds the canonical pair, with `AGENTS.md` as the authority and
+`CLAUDE.md` containing only the `@AGENTS.md` pointer, while
+`eval/modes/fixtures/skills/greenfield/plan-annotated-parallel.md` names that same pair in its
+legacy setup fixture. This is a bootstrap authority pair, not a generated binding surface.
 
 Building an actual AGENTS.md adapter would mean generating and keeping in sync a real
 degradation surface: the working principles, the verb lexicon, and a routing-policy reminder

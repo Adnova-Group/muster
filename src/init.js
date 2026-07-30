@@ -869,9 +869,9 @@ async function validateCanonicalInstructionPair(root, expected) {
     readRegular(root, "AGENTS.md", INIT_LIMITS.learnFileBytes),
     readRegular(root, "CLAUDE.md", INIT_LIMITS.learnFileBytes),
   ]);
-  const agentsIsClaudePointer = agents &&
-    /^(?:# [^\n]+\n\n)?@(?:\.\/)?CLAUDE\.md\s*$/.test(agents.bytes.toString("utf8"));
-  if (!agents || agents.bytes.length === 0 || agentsIsClaudePointer ||
+  const agentsImportsClaude = agents &&
+    /^[ \t]*@(?:\.\/)?CLAUDE\.md\s*$/m.test(agents.bytes.toString("utf8"));
+  if (!agents || agents.bytes.length === 0 || agentsImportsClaude ||
       !claude || !claude.bytes.equals(CLAUDE_AUTHORITY_POINTER)) {
     throw new Error("native completion requires the canonical instruction authority pair");
   }

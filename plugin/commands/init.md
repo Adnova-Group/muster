@@ -109,7 +109,7 @@ instruction seeds.
      expected-artifact subset the user explicitly confirmed):
 
      ```json
-     {"format":"muster.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":["AGENTS.md"]}
+     {"format":"muster.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":["AGENTS.md","CLAUDE.md"]}
      ```
 
      Then run
@@ -122,7 +122,7 @@ instruction seeds.
      or omitting it. For example:
 
      ```json
-     {"format":"muster.native-init-result","schemaVersion":1,"ok":true,"operation":"native-init","attemptId":"<receipt.nativeInit.attemptId>","artifacts":["AGENTS.md"]}
+     {"format":"muster.native-init-result","schemaVersion":1,"ok":true,"operation":"native-init","attemptId":"<receipt.nativeInit.attemptId>","artifacts":["AGENTS.md","CLAUDE.md"]}
      ```
 
      Set `EVIDENCE_FILE=".muster/native-init-result.json"` and run

@@ -1289,5 +1289,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // CLAUDE.md to be the thin @AGENTS.md pointer, and records both files in the
   // expected-artifact baseline. This is the reviewed shared-surface remediation
   // for the one-authority contract, not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "354943aa0f044de89aab7675ea0a1203b7cdc7b29b31e3c383db384aa638a211");
+  // 2026-07-30 re-pin #24 (docs-authority review fix): file COUNT unchanged
+  // (144) -- plugin/commands/init.md's confirmation and call-result examples
+  // now attest both canonical instruction artifacts rather than showing an
+  // AGENTS.md-only proof that the validator correctly rejects.
+  assert.equal(hash.digest("hex"), "74a35b1b309ce208079865019a02e5fdf27c61fb2038ff711975da92b289c2cc");
 });

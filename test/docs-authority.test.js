@@ -31,12 +31,25 @@ test("documentation index declares the public precedence order", async () => {
 
 test("shared architecture is harness-neutral and adapters are explicitly scoped", async () => {
   const architecture = await read("docs/architecture.md");
-  const sharedEnd = architecture.indexOf("## Harness-specific bindings");
-
-  assert.ok(sharedEnd > 0, "must separate shared architecture from harness bindings");
-  const shared = architecture.slice(0, sharedEnd);
-  assert.match(shared, /active harness/i);
-  assert.doesNotMatch(shared, /\bClaude Code\b|\bCodex\b|\bKimi\b|\bCowork\b/);
+  const lines = architecture.split("\n");
+  let h2 = "";
+  let h3 = "";
+  for (const [index, line] of lines.entries()) {
+    if (line.startsWith("## ")) {
+      h2 = line;
+      h3 = "";
+    } else if (line.startsWith("### ")) {
+      h3 = line;
+    }
+    if (/\b(?:Claude Code|Codex|Kimi|Cowork)\b/.test(line)) {
+      assert.match(
+        `${h2} ${h3}`,
+        /(?:Harness-specific bindings|adapter)/i,
+        `line ${index + 1} contains harness-specific prose outside an adapter scope`,
+      );
+    }
+  }
+  assert.match(architecture, /active harness/i);
   assert.match(architecture, /## Claude Code adapter: session hooks/);
 });
 
@@ -58,4 +71,9 @@ test("native init handoff requires the same one-authority pair", async () => {
   assert.match(command, /AGENTS\.md[\s\S]{0,180}authoritative/i);
   assert.match(command, /CLAUDE\.md[\s\S]{0,180}@AGENTS\.md/);
   assert.doesNotMatch(command, /--expect (?:AGENTS|CLAUDE)\.md(?:`|\s|$)/);
+  for (const example of command.matchAll(/"artifacts":\[(.*?)\]/g)) {
+    assert.match(example[1], /"AGENTS\.md"/, "every paired proof example must attest AGENTS.md");
+    assert.match(example[1], /"CLAUDE\.md"/, "every paired proof example must attest CLAUDE.md");
+  }
+  assert.ok([...command.matchAll(/"artifacts":\[(.*?)\]/g)].length >= 2);
 });

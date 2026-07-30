@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { CODEX_COUNTS } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { assertContainedProfiles, formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { canonicalMusterMarketplace, localMusterMarketplace, repoRoot, runCodexHook, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";

@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
-import { CODEX_COUNTS } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP, DOCTOR_READ_MAX_BYTES, DOCTOR_CONFIG_READ_MAX_BYTES } from "../src/codex-doctor.js";
 import { repoRoot, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";

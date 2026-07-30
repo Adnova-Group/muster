@@ -11,7 +11,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
-import { CODEX_COUNTS, CODEX_MODEL_POLICY } from "../src/codex.js";
+import { CODEX_MODEL_POLICY } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { REQUIRED_CODEX_THREAD_LIMITS } from "../src/codex-thread-limits.js";
 import { ROLES } from "../src/roles.js";
 import { CODEX_MULTI_AGENT_VERSIONS } from "../src/wave-dispatch.js";

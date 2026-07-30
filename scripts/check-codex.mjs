@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { CODEX_COUNTS, CODEX_MODEL_POLICY, codexProfileForConfig } from "../src/codex.js";
+import { CODEX_MODEL_POLICY, codexProfileForConfig } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
 import { parseHookCommand } from "../src/codex-install.js";
 

@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
-import { CODEX_COUNTS } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 
 const absentCodex = async () => { throw new Error("codex absent"); };
 // Isolate this test from the bundled-MCP handshake (and its known border

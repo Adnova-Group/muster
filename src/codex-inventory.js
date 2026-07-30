@@ -7,6 +7,24 @@ import { readdirSafe, readJson } from "./fs-util.js";
 
 const execFileDefault = promisify(execFileCb);
 
+// Expected contents of one generated Codex bundle. This census belongs with
+// inventory/build validation; model adapters only translate tiers to models.
+export const CODEX_COUNTS = Object.freeze({
+  agents: 27,
+  // improver-fork item: plugin/skills/improve (a new `context: fork` skill, Claude-only
+  // frontmatter key stripped by build-codex.mjs's codexSkill()) is a genuinely new native
+  // skill dir, ported into internal-skills like any other -- 11 -> 12.
+  nativeSkills: 12,
+  builtinSkills: 51,
+  publicSkills: 13,
+  // 62 -> 63: nativeSkills (12) + builtinSkills (51).
+  internalSkills: 63,
+  pipelines: 20,
+  mcpTools: 28,
+  primaryModes: 9,
+  aliases: 3
+});
+
 async function jsonCommand(execFile, args) {
   try {
     const { stdout } = await execFile("codex", args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });

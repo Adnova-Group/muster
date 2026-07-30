@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { CODEX_COUNTS } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { scoreHumanness } from "../src/humanizer-score.js";
 
 const root = new URL("../", import.meta.url);

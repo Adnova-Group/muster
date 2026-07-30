@@ -7,7 +7,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { CODEX_COUNTS, CODEX_MODEL_POLICY, codexModelForRole, codexModelForTier, codexProfileForConfig } from "../src/codex.js";
+import { CODEX_MODEL_POLICY, codexModelForRole, codexModelForTier, codexProfileForConfig } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { profileToml } from "../src/codex-release.js";
 import { repoRoot, selectedPlugin } from "../test-support/codex-helpers.js";
 

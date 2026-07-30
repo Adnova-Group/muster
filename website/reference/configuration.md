@@ -28,7 +28,7 @@ The Cowork adapter is `cowork/mcp-server.mjs`; the neutral core receives its run
 
 | Variable | Default | Semantics | Read by |
 | --- | --- | --- | --- |
-| `MUSTER_CODEX_MULTI_AGENT` | _(unset — on)_ | Declares whether Codex's `features.multi_agent` is enabled this session. Codex ships it on, so the default is on; only an explicit off drops wave dispatch to the `sequential-inline` floor. | CLI (`src/wave-dispatch.js`) |
+| `MUSTER_CODEX_MULTI_AGENT` | _(unset — on)_ | Declares whether Codex's `features.multi_agent` is enabled this session. Codex ships it on, so the default is on; only an explicit off drops wave dispatch to the `sequential-inline` floor. | CLI (`src/codex-dispatch.js`) |
 | `MUSTER_RUNTIME` | _(unset)_ | The neutral MCP core marks nested CLI invocations with the active host (`cowork`, `codex`, or `work`), so capability resolution uses that lane. Set on child CLI spawns by `mcp/server.mjs`. | CLI (`src/capabilities.js`) |
 | `MUSTER_COWORK_NATIVE_PLUGIN` | _(unset — off)_ | Declares that Cowork's own plugin loader accepted muster's `plugin/` tree. A declared capability check, never a probe: unset keeps resolution MCP-only. | CLI (`src/cli.js`, `src/capabilities.js`) |
 | `MUSTER_COWORK_CONNECTORS` | _(unset)_ | Comma-separated remote-connector names (e.g. `slack,drive`) to treat as available. Remote connectors live in your cloud account, not on disk, so they cannot be auto-discovered. | CLI (`src/cli.js`) |

@@ -342,4 +342,3 @@ export function codexReviewCall({ base, uncommitted = false, commit, title, prom
   if (prompt) argv.push(prompt);
   return { command: "codex", argv };
 }
-

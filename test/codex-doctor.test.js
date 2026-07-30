@@ -642,6 +642,21 @@ test("Codex doctor live-inventory: stale active Muster mode protocol names the d
   assert.equal(await readFile(stalePath, "utf8"), staleText, "doctor must report cache drift without mutating the installed plugin");
 });
 
+test("Codex doctor live-inventory: active-only retired mode protocol is reported as cache drift", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mode-protocol-retired-"));
+  const codexHome = join(tmp, "home", ".codex");
+  const { pluginPath, cachePath } = await activeMusterProtocolFixture(tmp, codexHome);
+  await writeFile(join(cachePath, "commands", "retired.md"), "# retired mode\n");
+  const execFile = liveCodexExec({
+    plugins: JSON.stringify({ installed: [{ name: "muster", version: selectedPlugin.packageVersion, installed: true, enabled: true, source: { path: pluginPath } }] }),
+    mcp: "[]"
+  });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome, execFile, mcpRunner: liveMcpRunner });
+  const protocol = report.checks.find(check => check.name === "codex-mode-protocol");
+  assert.equal(protocol?.ok, false);
+  assert.match(protocol?.detail || "", /commands\/retired\.md/);
+});
+
 test("Codex doctor live-inventory: ABSENT -- empty live state reports the plugin missing with a zeroed inventory, no error", async () => {
   const { installed, inventory } = await inventoryDoctor(liveCodexExec({
     plugins: JSON.stringify({ installed: [], available: [] }),

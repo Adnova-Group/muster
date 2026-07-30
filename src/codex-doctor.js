@@ -458,12 +458,27 @@ async function readRegularJson(path) {
   return content === null ? null : JSON.parse(content);
 }
 
+async function readRegularDirectoryNames(path) {
+  if (!(await ordinaryDirectoryPath(path))) throw new Error(`mode protocol directory is missing: ${path}`);
+  const before = await lstat(path);
+  const entries = await readdir(path, { withFileTypes: true });
+  const after = await lstat(path);
+  if (before.isSymbolicLink() || !before.isDirectory() || after.isSymbolicLink() || !after.isDirectory()
+    || before.dev !== after.dev || before.ino !== after.ino || !(await ordinaryDirectoryPath(path))) {
+    throw unsafeScopeRead(`Codex mode protocol directory changed while reading: ${path}`);
+  }
+  return entries.map(entry => entry.name);
+}
+
 async function compareModeProtocols(contractRoot, activeRoot) {
   const contractDir = join(contractRoot, "commands");
-  if (!(await ordinaryDirectoryPath(contractDir))) throw new Error(`mode protocol directory is missing: ${contractDir}`);
-  const names = (await readdir(contractDir, { withFileTypes: true }))
-    .filter(entry => entry.name.endsWith(".md"))
-    .map(entry => entry.name)
+  const activeDir = join(activeRoot, "commands");
+  const [contractNames, activeNames] = await Promise.all([
+    readRegularDirectoryNames(contractDir),
+    readRegularDirectoryNames(activeDir)
+  ]);
+  const names = [...new Set([...contractNames, ...activeNames])]
+    .filter(name => name.endsWith(".md"))
     .sort();
   const stale = [];
   for (const name of names) {

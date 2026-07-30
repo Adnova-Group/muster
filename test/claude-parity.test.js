@@ -1283,5 +1283,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // counts are unchanged (re-verified green).
   // 2026-07-30 re-pin #22 (audit S6): runner.md gains the $MUSTER_CLI resolution block its
   // siblings carry; both hardcoded node src/cli.js call sites switched.
-  assert.equal(hash.digest("hex"), "9d967a7f9a2d897e48f4f70a30566b4070437cf80069007779b79d358e05ca45");
+  // 2026-07-30 re-pin #23 (desktop harness support): init.md distinguishes the
+  // ChatGPT Desktop shell, Codex Desktop, and ChatGPT Work init handoffs.
+  assert.equal(hash.digest("hex"), "f5f7ed5ab127f283171d05f8d3c3d043934095945274c3448b3ce790fe323c1a");
 });

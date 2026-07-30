@@ -549,7 +549,7 @@ async function main() {
         fail(`sprint-waves <backlog.md>: ${file} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
       }
       const content = await readFile(canonical, "utf8");
-      const r = computeSprintWaves(content);
+      const r = computeSprintWaves(content, { parallelLimit: process.env.MUSTER_SPRINT_PARALLEL });
       out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "tally") {

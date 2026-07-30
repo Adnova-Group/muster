@@ -771,6 +771,23 @@ test("file verb: muster_sprint_waves computes dependency-ordered waves from a ba
   assert.deepEqual(res.waves[1].sort(), ["b", "c"]);
 });
 
+test("file verb: muster_sprint_waves exposes build concurrency and post-barrier integration order", async () => {
+  const backlog = [
+    "- [ ] Merge locally {id: local} {deps: none} {disposition: merge-local}",
+    "- [ ] Open PR {id: pr} {deps: none} {disposition: pr}",
+    "- [ ] Merge and push {id: push} {deps: none} {disposition: merge-push}",
+  ].join("\n");
+  const r = await rpc(
+    [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } }],
+    { env: { MUSTER_SPRINT_PARALLEL: "2" } },
+  );
+  const res = JSON.parse(r[2].result.content[0].text);
+  assert.equal(r[2].result.isError, false);
+  assert.deepEqual(res.schedule.waves[0].buildReview.batches, [["local", "pr"], ["push"]]);
+  assert.deepEqual(res.schedule.waves[0].integration.itemIds, ["local", "push"]);
+  assert.equal(res.schedule.degradation.buildReviewMode, "sequential-isolated");
+});
+
 test("file verb: muster_sprint_waves on an unannotated backlog returns annotated:false, sequential waves", async () => {
   const backlog = ["- [ ] Do first", "- [ ] Do second"].join("\n");
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } }]);

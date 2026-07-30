@@ -213,6 +213,110 @@ test("withCodexFileLock restores a quarantined replacement whose paused writer c
   assert.equal(thirdRan, false, "a third holder must not enter through a stranded public-path gap");
 });
 
+test("withCodexFileLock keeps the restore gate closed while an exact pre-gate acquirer remains paused", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-long-restore-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "long-restore.lock");
+  await writeFile(lock, JSON.stringify({ format: 1, pid: 2_147_483_647, createdAt: 0, token: "dead" }) + "\n");
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  await utimes(lock, old, old);
+
+  let releasePreOpen;
+  const preOpenBlocked = new Promise(resolve => { releasePreOpen = resolve; });
+  let preOpenReachedResolve;
+  const preOpenReached = new Promise(resolve => { preOpenReachedResolve = resolve; });
+  let releaseAfterWrite;
+  const afterWriteBlocked = new Promise(resolve => { releaseAfterWrite = resolve; });
+  let afterWriteReachedResolve;
+  const afterWriteReached = new Promise(resolve => { afterWriteReachedResolve = resolve; });
+  let thirdOutcome;
+  let thirdRan = false;
+  let overlapped = false;
+  let replacementRunning = false;
+  let writer;
+
+  try {
+    const reclaimer = withCodexFileLock(lock, async () => {
+      if (replacementRunning) overlapped = true;
+    }, {
+      staleMs: 1_000,
+      maxStaleMs: 5_000,
+      timeoutMs: 350,
+      __reclaimRaceHook: async () => {
+        await rm(lock, { force: true });
+        writer = await open(lock, "wx", 0o600);
+        await writer.write('{"format":1', 0, "utf8");
+        replacementRunning = true;
+        thirdOutcome = withCodexFileLock(lock, async () => {
+          thirdRan = true;
+          if (replacementRunning) overlapped = true;
+        }, {
+          timeoutMs: 300,
+          beforeOpen: async () => {
+            preOpenReachedResolve();
+            await preOpenBlocked;
+          },
+          __afterAcquireWriteHook: async () => {
+            afterWriteReachedResolve();
+            await afterWriteBlocked;
+          }
+        }).then(() => null, error => error);
+        await preOpenReached;
+      },
+      __beforeRestoreHook: async () => {
+        await writer.truncate(0);
+        await writer.write(JSON.stringify({
+          format: 1,
+          pid: process.pid,
+          processIdentity: null,
+          createdAt: Date.now(),
+          token: "long-paused-owner"
+        }) + "\n", 0, "utf8");
+        await writer.sync();
+        releasePreOpen();
+        await Promise.race([
+          afterWriteReached,
+          pause(250).then(() => { throw new Error("post-write acquisition seam did not fire"); })
+        ]);
+        setTimeout(releaseAfterWrite, 175);
+      }
+    }).then(() => null, error => error);
+
+    const reclaimerError = await reclaimer;
+    assert.match(reclaimerError?.message || "", /timed out waiting/);
+    assert.match((await thirdOutcome)?.message || "", /timed out waiting/);
+  } finally {
+    releasePreOpen?.();
+    releaseAfterWrite?.();
+    await writer?.close();
+  }
+
+  assert.equal(thirdRan, false, "the exact pre-gate acquirer must withdraw instead of publishing");
+  assert.equal(overlapped, false, "no callback may overlap the live quarantined replacement");
+});
+
+test("withCodexFileLock reclaims only a proven-dead transition gate", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-dead-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "dead-transition.lock");
+  const gate = `${lock}.muster-transition`;
+  await writeFile(gate, JSON.stringify({
+    format: 1,
+    pid: 2_147_483_647,
+    processIdentity: "linux-proc-start:dead",
+    createdAt: 0,
+    token: "dead-transition"
+  }) + "\n", { mode: 0o600 });
+  const gateInode = (await lstat(gate)).ino;
+
+  let ran = false;
+  await withCodexFileLock(lock, async () => { ran = true; });
+
+  assert.equal(ran, true);
+  await assert.rejects(lstat(gate), /ENOENT/);
+  assert.ok(gateInode > 0, "the stale gate fixture must have a stable inode identity");
+});
+
 test("withCodexFileLock stale reclaim cannot unlink a replacement injected after final owner validation", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-final-reclaim-race-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

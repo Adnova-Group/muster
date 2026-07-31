@@ -1,0 +1,135 @@
+{
+  "schema": "muster-codex-ephemeral-fork-benchmark/v1",
+  "generatedAt": "2026-07-31T05:08:23.561Z",
+  "protocol": {
+    "caseSource": "deterministic fixtures",
+    "seedModelTurnsExecuted": 1,
+    "representativeModelTurnsExecuted": 0,
+    "fixtureCorrectnessIsNotModelCorrectness": true,
+    "hostUnobservableMetrics": [
+      "modelWallTimeReductionPct",
+      "modelInputTokenReductionPct"
+    ],
+    "comparison": "Codex app-server ephemeral thread/fork versus ephemeral thread/start control-plane calls"
+  },
+  "fixture": {
+    "caseCount": 12,
+    "lanes": [
+      "read-only-review",
+      "spec-gate",
+      "tournament"
+    ],
+    "ephemeralFork": {
+      "correctness": 1,
+      "historyPollutionTurns": 5,
+      "inputTokens": "UNKNOWN",
+      "modelWallTimeMs": "UNKNOWN"
+    },
+    "freshContext": {
+      "correctness": 1,
+      "historyPollutionTurns": 0,
+      "inputTokens": "UNKNOWN",
+      "modelWallTimeMs": "UNKNOWN"
+    }
+  },
+  "controlPlane": {
+    "status": "MEASURED",
+    "codexVersion": "codex-cli 0.146.0",
+    "seedTurn": {
+      "status": "completed",
+      "usage": "UNKNOWN"
+    },
+    "forkControlPlaneWallTimeMs": {
+      "samples": [
+        93.95,
+        107.095,
+        104.949,
+        252.312,
+        297.16,
+        642.178,
+        742.633,
+        872.111,
+        1055.414,
+        965.737,
+        1149.558,
+        2220.968
+      ],
+      "mean": 708.672
+    },
+    "freshControlPlaneWallTimeMs": {
+      "samples": [
+        86.96,
+        100.214,
+        109.071,
+        219.142,
+        447.082,
+        488.473,
+        724.112,
+        901.659,
+        1001.086,
+        884.129,
+        1409.278,
+        1369.644
+      ],
+      "mean": 645.071
+    },
+    "pagination": {
+      "pageSize": 1,
+      "pagesRead": 2,
+      "persistentThreadsFound": 2,
+      "exhausted": true
+    },
+    "ephemeralPersistenceLeaks": 0
+  },
+  "metrics": {
+    "fixtureCorrectnessDelta": 0,
+    "historyPollutionDeltaTurns": 5,
+    "modelWallTimeReductionPct": "UNKNOWN",
+    "modelInputTokenReductionPct": "UNKNOWN",
+    "ephemeralPersistenceLeaks": 0
+  },
+  "thresholds": {
+    "minimumCases": 10,
+    "minimumModelWallTimeReductionPct": 10,
+    "minimumModelInputTokenReductionPct": 10,
+    "minimumCorrectnessDelta": 0,
+    "maximumHistoryPollutionDeltaTurns": 0,
+    "maximumEphemeralPersistenceLeaks": 0
+  },
+  "adoption": {
+    "decision": "REJECT",
+    "checks": [
+      {
+        "name": "model wall-time reduction",
+        "value": "UNKNOWN",
+        "pass": false
+      },
+      {
+        "name": "model input-token reduction",
+        "value": "UNKNOWN",
+        "pass": false
+      },
+      {
+        "name": "fixture correctness delta",
+        "value": 0,
+        "pass": true
+      },
+      {
+        "name": "history-pollution delta",
+        "value": 5,
+        "pass": false
+      },
+      {
+        "name": "ephemeral persistence leaks",
+        "value": 0,
+        "pass": true
+      }
+    ],
+    "failed": [
+      "model wall-time reduction: UNKNOWN (threshold cannot pass)",
+      "model input-token reduction: UNKNOWN (threshold cannot pass)",
+      "history-pollution delta: 5"
+    ]
+  },
+  "productionDependencyAdded": false
+}

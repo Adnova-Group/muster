@@ -141,8 +141,11 @@ async function loadEffectiveCatalog(args) {
   const catalog = await loadCatalog(CATALOG_DIR);
   const codex = args.includes("--codex");
   const work = args.includes("--work");
+  const agentPlugins = args.includes("--agent-plugins");
   const installed = codex
     ? await readCodexInventory({ cwd: process.cwd() })
+    : agentPlugins
+    ? await readAgentPluginInventory(process.env.PLUGIN_ROOT || process.cwd())
     : work
     ? readInstalledWork()
     : await readInstalled(homedir());
@@ -245,13 +248,13 @@ async function main() {
       out({ ranked, suggested });
     } else if (cmd === "match") {
       const work = rest.includes("--work");
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--agent-plugins");
       if (!args[0]) fail("match <task>: missing task");
       const { catalog, installed } = await loadEffectiveCatalog(rest);
       out(matchProviders(args[0], catalog, installed, { callableOnly: work }));
     // ── manifest + waves: validate, order, and drive a plan ──
     } else if (cmd === "manifest" && rest[0] === "validate") {
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--agent-plugins");
       const file = requireArg(args, 1, "manifest validate <file>: missing file path", fail);
       const obj = JSON.parse(await readFile(file, "utf8"));
       const r = validateManifest(obj);
@@ -834,7 +837,7 @@ async function main() {
       const p = routePipeline(ps, outcome, domain);
       out({ domain, pipeline: p ? p.id : null });
     } else if (cmd === "diagnose") {
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--agent-plugins");
       const ci = args.includes("--ci");
       let input;
       if (ci) {
@@ -850,7 +853,7 @@ async function main() {
       // --backlog: read-only sweep -> ranked capture, no fix/verify (the $muster-audit
       // skill's backlog mode). Remaining positionals are optional path scopes.
       const backlog = rest.includes("--backlog");
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--backlog");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--agent-plugins" && arg !== "--backlog");
       // Remaining positionals are path scopes; a "-"-leading token is an unrecognized flag,
       // not a path (path scopes never start with "-"). Fail cleanly rather than silently
       // scoping to a bogus path -- mirrors the muster_audit MCP boundary's own guard.

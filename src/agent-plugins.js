@@ -209,13 +209,6 @@ export async function validateMcpConfiguration(root, mcp) {
     if (server.type === "stdio") await validateStdioServer(root, name, server);
     else if (server.type === "streamable-http" || server.type === "sse") validateHttpServer(name, server);
     else invalidServer(name, `unknown transport ${JSON.stringify(server.type)}`);
-    for (const value of server.args ?? []) {
-      const prefix = "${PLUGIN_ROOT}/";
-      if (typeof value !== "string" || !value.startsWith(prefix)) continue;
-      const target = resolve(root, value.slice(prefix.length));
-      assertInside(resolve(root), target, `MCP server ${name} argument`);
-      await assertExistingInside(root, target, `MCP server ${name} argument`);
-    }
   }
 }
 

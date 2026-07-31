@@ -18,6 +18,16 @@ try {
   };
 }
 
+const inventoryTools = new Set([
+  "muster_capabilities",
+  "muster_capabilities_roles",
+  "muster_match",
+  "muster_match_skills",
+  "muster_manifest_validate",
+  "muster_diagnose",
+  "muster_audit",
+]);
+
 startMusterMcpServer({
   protocol,
   runtimeIdentity: "agent-plugins",
@@ -28,10 +38,10 @@ startMusterMcpServer({
   maxInflight: 4,
   maxQueue: 16,
   staticTools: { muster_sprint_protocol: sprintProtocol },
-  mapArgv: (name, argv) => name === "muster_capabilities"
-    ? ["capabilities", "--agent-plugins"]
-    : name === "muster_capabilities_roles"
-      ? ["capabilities", "--agent-plugins", "--roles-only"]
+  mapArgv: (name, argv) => name === "muster_match_skills"
+    ? ["match", "--agent-plugins", "--skills"]
+    : inventoryTools.has(name)
+      ? [...argv, "--agent-plugins"]
       : argv,
   authorizeTools: catalog => ({ tools: catalog }),
 });

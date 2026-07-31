@@ -121,6 +121,19 @@ test("plugin-relative MCP command and cwd reject symlink escapes", async () => {
   }
 });
 
+test("stdio MCP arguments are opaque and need not name package files", async () => {
+  await validateMcpConfiguration(repoRoot, {
+    $schema: AGENT_PLUGIN_MCP_SCHEMA,
+    mcpServers: {
+      opaque: {
+        type: "stdio",
+        command: "node",
+        args: ["${PLUGIN_ROOT}/does-not-exist", "--literal", "../not-a-path"],
+      },
+    },
+  });
+});
+
 test("portable package validates schema, direct-child discovery, and package boundaries", async () => {
   const result = await validateAgentPluginPackage(repoRoot);
 
@@ -154,10 +167,12 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
   const mcp = await json("mcp.json");
   const entry = mcp.mcpServers.muster.args[0].replace("${PLUGIN_ROOT}/", "");
   assert.equal(entry, "mcp/agent-plugins-server.mjs");
+  const cleanHome = await mkdtemp(join(tmpdir(), "muster-agent-plugins-home-"));
 
   const result = await new Promise((resolve, reject) => {
     const server = spawn("node", [join(repoRoot, entry)], {
       cwd: repoRoot,
+      env: { ...process.env, HOME: cleanHome },
       stdio: ["pipe", "pipe", "pipe"],
     });
     const messages = new Map();
@@ -183,11 +198,12 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
         if (!line) continue;
         const message = JSON.parse(line);
         messages.set(message.id, message);
-        if (messages.has(1) && messages.has(2) && messages.has(3)) {
+        if (messages.has(1) && messages.has(2) && messages.has(3) && messages.has(4)) {
           finish(null, {
             initialize: messages.get(1).result,
             tools: messages.get(2).result.tools,
             capabilities: JSON.parse(messages.get(3).result.content[0].text),
+            matches: JSON.parse(messages.get(4).result.content[0].text),
           });
         }
       }
@@ -213,6 +229,15 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
       method: "tools/call",
       params: { name: "muster_capabilities", arguments: {} },
     }) + "\n");
+    server.stdin.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "muster_match_skills",
+        arguments: { task: "coordination" },
+      },
+    }) + "\n");
   });
 
   assert.match(result.initialize.instructions, /Agent Plugins client/);
@@ -232,5 +257,9 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
     new Set(result.capabilities.skills.map(skill => skill.id)),
     portableSkills,
     "the neutral lane must not advertise skills absent from the portable package"
+  );
+  assert.ok(
+    result.matches.ranked.some(skill => portableSkills.has(skill.id)),
+    "inventory-dependent MCP tools must resolve portable skills under a clean HOME"
   );
 });

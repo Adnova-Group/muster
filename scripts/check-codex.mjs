@@ -156,7 +156,7 @@ for (const marker of ["capabilities --codex --role <role>", "never attach the fu
 await stat(join(plugin, "internal-skills", "review-gate", "verdict.schema.json")).catch(() => fail("missing bundled review-gate verdict schema"));
 if (!reviewGate.includes("${PLUGIN_ROOT}/internal-skills/review-gate/verdict.schema.json")) fail("Codex review gate does not cite the bundled verdict schema path");
 const auditCommand = await readFile(join(plugin, "commands", "audit.md"), "utf8");
-for (const marker of ["Quota-bounded dimension sweep", "three nonredundant read-only briefs", "system quality", "Respect `agents.max_threads`", "fork_turns: \"none\""]) {
+for (const marker of ["Quota-bounded dimension sweep", "three nonredundant read-only briefs", "system quality", "Respect `agents.max_concurrent_threads_per_session`", "fork_turns: \"none\""]) {
   if (!auditCommand.includes(marker)) fail(`Codex audit lacks quota policy marker ${marker}`);
 }
 if (auditCommand.includes("requested=6") || auditCommand.includes("six core dimensions remain independent")) fail("Codex audit retains redundant six-worker fan-out");

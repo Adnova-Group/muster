@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -42,22 +42,108 @@ test("schedule makes every ready disposition build/review eligible before ordere
 test("sprint-waves CLI emits the effective cap, explicit build batches, and integration order", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-wave-schedule-"));
   try {
+    const codexHome = join(dir, "codex-home");
+    await mkdir(codexHome);
+    await writeFile(
+      join(codexHome, "config.toml"),
+      "[agents]\nmax_concurrent_threads_per_session = 2\n",
+    );
     await writeFile(join(dir, "backlog.md"), backlog);
     const { stdout } = await pexecFile(process.execPath, [cli, "sprint-waves", "backlog.md"], {
       cwd: dir,
-      env: { ...process.env, MUSTER_SPRINT_PARALLEL: "2" },
+      env: { ...process.env, CODEX_HOME: codexHome, MUSTER_SPRINT_PARALLEL: "9" },
     });
     const result = JSON.parse(stdout);
 
-    assert.equal(result.schedule.buildReview.maxConcurrency, 2);
+    assert.equal(result.schedule.buildReview.maxConcurrency, 1);
     assert.deepEqual(result.schedule.waves[0].buildReview.batches, [
-      ["pr-item", "local-item"],
-      ["push-item", "keep-item"],
+      ["pr-item"],
+      ["local-item"],
+      ["push-item"],
+      ["keep-item"],
     ]);
     assert.deepEqual(result.schedule.waves[0].integration.itemIds, ["pr-item", "local-item", "push-item", "keep-item"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("sprint-waves CLI accepts the effective higher-precedence Codex ceiling explicitly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-wave-effective-ceiling-"));
+  try {
+    const codexHome = join(dir, "codex-home");
+    await mkdir(codexHome);
+    await writeFile(
+      join(codexHome, "config.toml"),
+      "[agents]\nmax_concurrent_threads_per_session = 2\n",
+    );
+    await writeFile(join(dir, "backlog.md"), backlog);
+    const { stdout } = await pexecFile(process.execPath, [
+      cli,
+      "sprint-waves",
+      "backlog.md",
+      "--max-concurrent-threads-per-session",
+      "3",
+    ], {
+      cwd: dir,
+      env: { ...process.env, CODEX_HOME: codexHome, MUSTER_SPRINT_PARALLEL: "9" },
+    });
+    assert.equal(JSON.parse(stdout).schedule.buildReview.maxConcurrency, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("sprint-waves CLI does not read CODEX_HOME config when the ceiling is explicit", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-wave-explicit-no-config-read-"));
+  try {
+    const codexHome = join(dir, "codex-home");
+    await mkdir(join(codexHome, "config.toml"), { recursive: true });
+    await writeFile(join(dir, "backlog.md"), backlog);
+    const { stdout } = await pexecFile(process.execPath, [
+      cli,
+      "sprint-waves",
+      "backlog.md",
+      "--max-concurrent-threads-per-session",
+      "3",
+    ], {
+      cwd: dir,
+      env: { ...process.env, CODEX_HOME: codexHome, MUSTER_SPRINT_PARALLEL: "9" },
+    });
+    assert.equal(JSON.parse(stdout).schedule.buildReview.maxConcurrency, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("sprint waves reserve the root orchestrator slot from an explicit Codex ceiling", () => {
+  const result = computeSprintWaves(backlog, {
+    parallelLimit: 9,
+    maxConcurrentThreadsPerSession: 2,
+  });
+
+  assert.equal(result.schedule.buildReview.maxConcurrency, 1);
+  assert.deepEqual(result.schedule.waves[0].buildReview.batches, [
+    ["pr-item"],
+    ["local-item"],
+    ["push-item"],
+    ["keep-item"],
+  ]);
+});
+
+test("a one-thread Codex ceiling falls back to the scheduler's safe sequential capacity", () => {
+  const result = computeSprintWaves(backlog, {
+    parallelLimit: 9,
+    maxConcurrentThreadsPerSession: 1,
+  });
+
+  assert.equal(result.schedule.buildReview.maxConcurrency, 1);
+  assert.deepEqual(result.schedule.waves[0].buildReview.batches, [
+    ["pr-item"],
+    ["local-item"],
+    ["push-item"],
+    ["keep-item"],
+  ]);
 });
 
 test("schedule preserves a named sequential degradation without changing dependency or integration order", () => {

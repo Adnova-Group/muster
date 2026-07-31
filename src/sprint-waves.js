@@ -78,13 +78,20 @@ function stripAnnotations(text) {
   return { anns, text: stripped };
 }
 
-function resolveParallelLimit(value) {
-  if (value === undefined || value === null || value === "") return SPRINT_PARALLEL_DEFAULT;
-  const normalized = typeof value === "number" ? String(value) : String(value).trim();
-  if (!/^\d+$/.test(normalized)) return SPRINT_PARALLEL_DEFAULT;
-  const parsed = Number.parseInt(normalized, 10);
-  if (parsed < 1) return SPRINT_PARALLEL_DEFAULT;
-  return Math.min(parsed, SPRINT_PARALLEL_MAX);
+function resolveParallelLimit(value, maxConcurrentThreadsPerSession) {
+  const normalized = value === undefined || value === null
+    ? ""
+    : typeof value === "number" ? String(value) : String(value).trim();
+  const parsed = /^\d+$/.test(normalized) && Number.parseInt(normalized, 10) > 0
+    ? Number.parseInt(normalized, 10)
+    : SPRINT_PARALLEL_DEFAULT;
+  // Codex counts the root orchestrator in this session-wide ceiling. Reserve
+  // that slot before deriving the child-runner cap; retain one as the safe
+  // sequential scheduler fallback when the ceiling leaves no child capacity.
+  const configuredCeiling = Number.isInteger(maxConcurrentThreadsPerSession) && maxConcurrentThreadsPerSession > 0
+    ? Math.max(maxConcurrentThreadsPerSession - 1, 1)
+    : SPRINT_PARALLEL_MAX;
+  return Math.min(parsed, SPRINT_PARALLEL_MAX, configuredCeiling);
 }
 
 function chunk(ids, size) {
@@ -93,8 +100,8 @@ function chunk(ids, size) {
   return batches;
 }
 
-export function buildSprintSchedule(waves, items, { parallelLimit } = {}) {
-  const maxConcurrency = resolveParallelLimit(parallelLimit);
+export function buildSprintSchedule(waves, items, { parallelLimit, maxConcurrentThreadsPerSession } = {}) {
+  const maxConcurrency = resolveParallelLimit(parallelLimit, maxConcurrentThreadsPerSession);
   return {
     version: 1,
     buildReview: {

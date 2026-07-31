@@ -70,6 +70,14 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
     const text = await readFile(join(commands, `${command}.md`), "utf8");
     assert.match(text, /capabilities --codex --roles-only/, `${command} should route from compact role capabilities`);
   }
+  for (const command of ["plan-backlog", "go-backlog"]) {
+    const text = await readFile(join(commands, `${command}.md`), "utf8");
+    assert.match(
+      text,
+      /--max-concurrent-threads-per-session <effective agents\.max_concurrent_threads_per_session>/,
+      `${command} must carry the effective Codex ceiling into deterministic wave scheduling`,
+    );
+  }
 });
 
 test("generated Codex init binds the bundled runtime without Claude resolver leakage", async () => {
@@ -246,7 +254,7 @@ test("generated Codex audits cover six dimensions with three nonredundant scans"
   const text = await readFile(join(selectedPluginRoot, "commands", "audit.md"), "utf8");
   assert.match(text, /Quota-bounded dimension sweep/);
   assert.match(text, /three nonredundant read-only briefs/);
-  assert.match(text, /Respect `agents\.max_threads`/);
+  assert.match(text, /Respect `agents\.max_concurrent_threads_per_session`/);
   assert.match(text, /fork_turns: "none"/);
   assert.doesNotMatch(text, /requested=6|six core dimensions remain independent/);
 });

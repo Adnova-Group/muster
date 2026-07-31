@@ -14,7 +14,7 @@ npx -y @adnova-group/muster doctor --codex
 Output is `{ ok, checks }`, one entry per check:
 
 ```json
-{ "name": "codex-thread-limits", "ok": true, "detail": "max_threads=12, max_depth=2 at ~/.codex/config.toml meet the Muster floor (>=12/>=2)" }
+{ "name": "codex-thread-limits", "ok": true, "detail": "max_concurrent_threads_per_session=3 at ~/.codex/config.toml is a valid user ceiling" }
 ```
 
 - **`name`** — the check id. There is no severity axis; a check either passes or it does not.

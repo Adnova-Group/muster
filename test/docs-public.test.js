@@ -31,7 +31,7 @@ test("README documents current install, lifecycle, and configuration boundaries"
   }
   assert.match(readme, /@adnova-group\/muster@0\.5\.0/);
   assert.match(readme, /npm exec|npx[\s\S]{0,180}(?:registry|provenance|download)/i);
-  assert.match(readme, /--scope project[\s\S]{0,900}config\.toml[\s\S]{0,300}max_threads[\s\S]{0,160}max_depth/i);
+  assert.match(readme, /--scope project[\s\S]{0,900}config\.toml[\s\S]{0,300}max_concurrent_threads_per_session/i);
   assert.match(readme, /--dry-run/);
   assert.match(readme, /uninstall codex --scope project/);
   assert.match(readme, /Claude Code-only lifecycle hooks|Claude-only lifecycle hooks/i);

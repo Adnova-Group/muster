@@ -172,7 +172,7 @@ phase-3 receipt.
 | genuine hard gate | MCP governance (`required`, allow/deny tool lists, per-tool approval), `sandbox_mode` [src: cx-mcp] | "use MCP (not hooks) when a gate genuinely must gate" [src: cx-mcp] | narrow surface | ride |
 | approve-first flow | bundled `plan` skill + `permission_mode:"plan"` + plan-update loop items [src: cx-loop] | native plan surface for `/muster:plan` | no standalone plan-mode object | M |
 | skills / verbs | `SKILL.md` (agent-skills standard); `$muster-*` routing; marketplaces read legacy `.claude-plugin/` [src: cx-skills] | verbs+skills already native | plugin-bundled hooks execute on 0.144.5, so Muster's Codex plugin stays hooks-free and scoped `hooks.json` remains the single source, preventing double firing [src: cx-hooks] | done |
-| thread/quota budgets | `ensureCodexThreadLimits` raises `max_threads ≥ 12` and `max_depth ≥ 2`; final-scope uninstall uses `restoreCodexThreadLimits`; 25-step ceiling discipline [src: cx-subagents] [src: cxd-quota] | install-time managed floors are landed without lowering higher user values; shared 5h pool remains the burn hazard [src: cxd-quota] | runtime token budgets/timeouts remain advisory [src: dr-efficiency] | done |
+| thread/quota budgets | `ensureCodexThreadLimits` ensures canonical `max_concurrent_threads_per_session`, defaulting to `12` only when absent; final-scope uninstall uses `restoreCodexThreadLimits`; wave batches honor the same ceiling [src: cx-subagents] [src: cxd-quota] | positive user ceilings are preserved and legacy cleanup is receipt-owned; shared 5h pool remains the burn hazard [src: cxd-quota] | runtime token budgets/timeouts remain advisory [src: dr-efficiency] | done |
 
 ### 5. Codex Desktop — same core, cross-surface parity, one shared config
 

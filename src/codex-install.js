@@ -894,12 +894,51 @@ function validateHookManifest(manifest, dir, manifestPath) {
   return { files: [...seen], hookGroups: manifest.hookGroups, hookConfigCreated: manifest.hookConfigCreated === true };
 }
 
-function validateThreadLimitManifest(manifest, manifestPath) {
-  const validValues = value => value && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(REQUIRED_CODEX_THREAD_LIMITS).every(key => value[key] === null || Number.isInteger(value[key]));
-  if (manifest?.owner !== "muster" || manifest.format !== 1 || typeof manifest.configPath !== "string"
+function validateThreadLimitManifest(manifest, manifestPath, expectedConfigPath) {
+  const currentKeys = Object.keys(REQUIRED_CODEX_THREAD_LIMITS);
+  const legacyKeys = ["max_threads", "max_depth"];
+  const receiptInteger = value => typeof value === "string"
+    && /^[1-9]\d*$/.test(value)
+    && BigInt(value) > BigInt(Number.MAX_SAFE_INTEGER)
+    ? BigInt(value)
+    : Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+  const sameReceiptInteger = (left, right) => {
+    const leftExact = receiptInteger(left);
+    const rightExact = receiptInteger(right);
+    return leftExact !== null && rightExact !== null && leftExact === rightExact;
+  };
+  const schemaFor = value => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const keys = Object.keys(value).sort();
+    const exact = schema => keys.length === schema.length
+      && keys.every((key, index) => key === [...schema].sort()[index]);
+    const schema = exact(currentKeys) ? "current" : exact(legacyKeys) ? "legacy" : null;
+    return schema && Object.values(value).every(item => item === null || receiptInteger(item) !== null)
+      ? schema
+      : null;
+  };
+  const beforeSchema = schemaFor(manifest?.before);
+  const installedSchema = schemaFor(manifest?.installed);
+  const legacyInstalledValue = (before, floor) => {
+    const exact = receiptInteger(before) ?? 0n;
+    return exact > BigInt(floor) ? exact : BigInt(floor);
+  };
+  const validLegacyReceipt = beforeSchema !== "legacy" || (
+    receiptInteger(manifest.installed.max_threads) === legacyInstalledValue(manifest.before.max_threads, 12)
+    && receiptInteger(manifest.installed.max_depth) === legacyInstalledValue(manifest.before.max_depth, 2)
+  );
+  const validCurrentReceipt = beforeSchema !== "current" || (
+    (manifest.before.max_concurrent_threads_per_session === null
+      || (receiptInteger(manifest.before.max_concurrent_threads_per_session) > 0n
+        && sameReceiptInteger(
+          manifest.before.max_concurrent_threads_per_session,
+          manifest.installed.max_concurrent_threads_per_session,
+        )))
+    && receiptInteger(manifest.installed.max_concurrent_threads_per_session) > 0n
+  );
+  if (manifest?.owner !== "muster" || manifest.format !== 1 || manifest.configPath !== expectedConfigPath
     || typeof manifest.configCreated !== "boolean" || typeof manifest.sectionCreated !== "boolean"
-    || !validValues(manifest.before) || !validValues(manifest.installed)) {
+    || !beforeSchema || beforeSchema !== installedSchema || !validLegacyReceipt || !validCurrentReceipt) {
     throw new Error(`Codex thread-limit manifest conflict: ${manifestPath}. Move it or remove it, then rerun the command.`);
   }
   return manifest;
@@ -1440,19 +1479,40 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, hookStateEntries, reconciled, {
             onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
           });
-          const threadLimits = ensureCodexThreadLimits(hookStateReconcile.text);
+          const previousManifest = await safeExists(threadLimitManifestPath)
+            ? validateThreadLimitManifest(
+              await readJson(threadLimitManifestPath),
+              threadLimitManifestPath,
+              threadLimitConfigPath,
+            )
+            : null;
+          const legacyManifest = Object.hasOwn(previousManifest?.installed || {}, "max_threads");
+          const reconciledThreadText = legacyManifest
+            ? restoreCodexThreadLimits(hookStateReconcile.text, previousManifest)
+            : hookStateReconcile.text;
+          const threadLimits = ensureCodexThreadLimits(reconciledThreadText);
           // A repeat install must not re-derive before/sectionCreated/
-          // configCreated from the ALREADY-raised file -- that would
+          // configCreated from the already-managed file -- that would
           // permanently lose the true pre-Muster baseline the very first
           // install recorded, so an eventual last-scope uninstall could
           // never fully restore it. Mirrors prepareHooks' identical
           // `previous?.hookConfigCreated ?? !configExists` guard above.
-          const previousManifest = await safeExists(threadLimitManifestPath)
-            ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath)
-            : null;
-          const before = previousManifest?.before ?? threadLimits.before;
-          const sectionCreated = previousManifest ? previousManifest.sectionCreated : threadLimits.sectionCreated;
-          const configCreated = previousManifest
+          const currentCanonicalValue = threadLimits.before.max_concurrent_threads_per_session;
+          // A missing live key is an authoritative user deletion, not an
+          // unchanged managed value. Rebase this key's ownership so the
+          // default added by this reinstall is removed on uninstall instead
+          // of resurrecting the stale pre-deletion user value.
+          const before = previousManifest && !legacyManifest && currentCanonicalValue !== null
+            ? previousManifest.before
+            : threadLimits.before;
+          const installed = previousManifest && !legacyManifest && currentCanonicalValue !== null
+            ? previousManifest.installed
+            : threadLimits.installed;
+          const ownershipRebased = previousManifest && !legacyManifest && currentCanonicalValue === null;
+          const sectionCreated = previousManifest && !legacyManifest && !ownershipRebased
+            ? previousManifest.sectionCreated
+            : threadLimits.sectionCreated;
+          const configCreated = previousManifest && !ownershipRebased
             ? previousManifest.configCreated
             : !(scope === "user" ? declarationConfigExists : configExistedBefore);
           await snapshot(originals, changed, threadLimitConfigPath);
@@ -1460,7 +1520,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           await snapshot(originals, changed, threadLimitManifestPath);
           await atomicWriteSafe(threadLimitManifestPath, JSON.stringify({
             format: 1, owner: "muster", configPath: threadLimitConfigPath,
-            before, installed: threadLimits.installed,
+            before, installed,
             sectionCreated, configCreated
           }, null, 2) + "\n");
         } catch (error) {
@@ -1581,7 +1641,11 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile }) {
   const threadLimitManifestPath = codexThreadLimitManifestPath(codexHome(home));
   const threadLimitManifestExists = await safeExists(threadLimitManifestPath);
   const threadLimitManifest = threadLimitManifestExists
-    ? validateThreadLimitManifest(await readJson(threadLimitManifestPath), threadLimitManifestPath)
+    ? validateThreadLimitManifest(
+      await readJson(threadLimitManifestPath),
+      threadLimitManifestPath,
+      threadLimitConfigPath,
+    )
     : null;
   return { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig, declarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest };
 }

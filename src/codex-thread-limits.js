@@ -1,129 +1,237 @@
-// Codex subagent thread-limit floor enforcement (backlog item
-// `codex-thread-limits-enforcement`). Re-opened by
-// docs/decisions/retriage-install-items.md: nothing in mainline wrote
-// [agents] max_threads/max_depth at install time -- the module that would
-// have done it (ensureCodexThreadLimits/restoreCodexThreadLimits) was
-// dropped on a never-merged burn branch (f2da066). This is a fresh
-// implementation reusing that commit's pure text-editor shape (a scoped
-// line-based [agents]-table editor, not a full TOML parser -- the only
-// keys this ever touches are max_threads/max_depth, so a general parser is
-// unwarranted complexity) but wired fresh against the CURRENT
-// install-time-generation architecture: no globalHomes/WSL-dual-home
-// discovery (out of scope per the retriage's narrowing), a single
-// shared-CODEX_HOME target used identically regardless of install scope,
-// and a remediation string shared verbatim between install-time failure
-// and doctor's drift check.
 import { join } from "node:path";
 
-export const REQUIRED_CODEX_THREAD_LIMITS = Object.freeze({ max_threads: 12, max_depth: 2 });
+export const DEFAULT_CODEX_THREAD_LIMITS = Object.freeze({
+  max_concurrent_threads_per_session: 12,
+});
+
+// Compatibility export for callers that use this object as the managed-key
+// schema. This is a default, not a floor: a positive user ceiling always wins.
+export const REQUIRED_CODEX_THREAD_LIMITS = DEFAULT_CODEX_THREAD_LIMITS;
 
 export const CODEX_THREAD_LIMIT_REMEDIATION =
-  "Set [agents] max_threads >= 12 and max_depth >= 2 in Codex's config.toml, then rerun muster install codex.";
+  "Set [agents] max_concurrent_threads_per_session to a positive integer in Codex's config.toml, then rerun muster install codex.";
 
 export const codexThreadLimitConfigPath = codexHomeDir => join(codexHomeDir, "config.toml");
 export const codexThreadLimitManifestPath = codexHomeDir => join(codexHomeDir, "muster", "thread-limits.json");
 
-export function codexThreadLimitsMeetFloor(limits) {
-  return Object.entries(REQUIRED_CODEX_THREAD_LIMITS)
-    .every(([key, minimum]) => Number.isInteger(limits?.[key]) && limits[key] >= minimum);
+const CANONICAL_KEY = "max_concurrent_threads_per_session";
+const LEGACY_KEYS = Object.freeze(["max_threads", "max_depth"]);
+const PARSED_KEYS = Object.freeze([CANONICAL_KEY, ...LEGACY_KEYS]);
+const TOML_BASIC_KEY = String.raw`"(?:[^"\\]|\\(?:["\\btnfr]|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}))*"`;
+const TOML_LITERAL_KEY = String.raw`'[^']*'`;
+const TOML_BARE_KEY = String.raw`[A-Za-z0-9_-]+`;
+const TOML_KEY_TOKEN = `(?:${TOML_BASIC_KEY}|${TOML_LITERAL_KEY}|${TOML_BARE_KEY})`;
+const INTEGER_TOKEN = "(?:\\+?\\d(?:_?\\d)*|0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*|0o[0-7](?:_?[0-7])*|0b[01](?:_?[01])*)";
+const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+
+function decodeTomlKey(raw) {
+  if (raw.startsWith("'")) return raw.slice(1, -1);
+  if (!raw.startsWith('"')) return raw;
+  return raw.slice(1, -1).replace(
+    /\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)/g,
+    (_, escape) => {
+      if (escape[0] === "u" || escape[0] === "U") return String.fromCodePoint(Number.parseInt(escape.slice(1), 16));
+      return { '"': '"', "\\": "\\", b: "\b", t: "\t", n: "\n", f: "\f", r: "\r" }[escape];
+    },
+  );
 }
 
-// Scoped [agents]-table editor: locates the FIRST top-level `[agents]`
-// section (TOML sections are unambiguous top-level headers; muster never
-// needs to reason about any other table), and within it recognizes only
-// `max_threads`/`max_depth` as plain non-negative integer assignments
-// (optionally trailing an inline comment, which is preserved verbatim on
-// raise). Any other line, section, or key in the file is passed through
-// byte-for-byte. A malformed existing max_threads/max_depth (non-integer,
-// or a duplicate key) throws rather than silently accepting or mangling it
-// -- this IS the "strict validation" gate clause (2) of the item requires.
+const integerValue = raw => {
+  const normalized = raw.replaceAll("_", "");
+  const exact = BigInt(normalized);
+  return exact <= MAX_SAFE_BIGINT ? Number(exact) : exact.toString();
+};
+const integerBigInt = value => typeof value === "string" && /^\d+$/.test(value)
+  ? BigInt(value)
+  : Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+const positiveInteger = value => {
+  const exact = integerBigInt(value);
+  return exact !== null && exact > 0n;
+};
+const sameInteger = (left, right) => {
+  const leftExact = integerBigInt(left);
+  const rightExact = integerBigInt(right);
+  return leftExact !== null && rightExact !== null && leftExact === rightExact;
+};
+
 function parseAgentsSection(text) {
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
   const finalNewline = text.endsWith("\n");
   const lines = text ? text.split(/\r?\n/) : [];
   if (finalNewline) lines.pop();
-  let start = -1, end = lines.length;
+  let start = -1;
+  let end = lines.length;
+  let firstSection = lines.length;
   for (let index = 0; index < lines.length; index++) {
     const section = lines[index].match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/);
     if (!section) continue;
-    if (start >= 0) { end = index; break; }
-    if (section[1].trim() === "agents") start = index;
+    firstSection = Math.min(firstSection, index);
+    if (start >= 0) {
+      end = index;
+      break;
+    }
+    const headerKey = section[1].trim();
+    if (new RegExp(`^${TOML_KEY_TOKEN}$`).test(headerKey) && decodeTomlKey(headerKey) === "agents") start = index;
   }
   const values = {};
-  if (start >= 0) for (let index = start + 1; index < end; index++) {
-    for (const key of Object.keys(REQUIRED_CODEX_THREAD_LIMITS)) {
-      const candidate = lines[index].match(new RegExp(`^(\\s*${key}\\s*=\\s*)(\\d+)(\\s*(?:#.*)?)$`));
-      if (candidate) {
-        if (Object.hasOwn(values, key)) throw new Error(`Codex config.toml has a duplicate [agents] ${key} key`);
-        values[key] = { value: Number(candidate[2]), index, prefix: candidate[1], suffix: candidate[3] };
-      } else if (new RegExp(`^\\s*${key}\\s*=`).test(lines[index])) {
+  let dottedEnd = -1;
+  let inlineAgents = false;
+  const record = (key, raw, index, prefix, suffix, { inline = false } = {}) => {
+    if (Object.hasOwn(values, key)) throw new Error(`Codex config.toml has a duplicate [agents] ${key} key`);
+    values[key] = {
+      value: integerValue(raw),
+      index,
+      prefix,
+      suffix,
+      inline,
+    };
+  };
+  for (let index = 0; index < firstSection; index++) {
+    const inline = lines[index].match(new RegExp(`^\\s*(${TOML_KEY_TOKEN})\\s*=\\s*\\{(.*)\\}\\s*(?:#.*)?$`));
+    if (inline && decodeTomlKey(inline[1]) !== "agents") continue;
+    if (inline) {
+      inlineAgents = true;
+      const validKeys = new Set();
+      for (const match of inline[2].matchAll(
+        new RegExp(`(?:^|,)\\s*((${TOML_KEY_TOKEN})\\s*=\\s*)(${INTEGER_TOKEN})(\\s*)(?=,|$)`, "g"),
+      )) {
+        const key = decodeTomlKey(match[2]);
+        if (!PARSED_KEYS.includes(key)) continue;
+        record(key, match[3], index, match[1], match[4], { inline: true });
+        validKeys.add(key);
+      }
+      for (const match of inline[2].matchAll(new RegExp(`(?:^|,)\\s*(${TOML_KEY_TOKEN})\\s*=`, "g"))) {
+        const key = decodeTomlKey(match[1]);
+        if (PARSED_KEYS.includes(key) && !validKeys.has(key)) {
+          throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
+        }
+      }
+      continue;
+    }
+    const dotted = lines[index].match(
+      new RegExp(`^(\\s*(${TOML_KEY_TOKEN})\\s*\\.\\s*(${TOML_KEY_TOKEN})\\s*=\\s*)(${INTEGER_TOKEN})(\\s*(?:#.*)?)$`),
+    );
+    const dottedAssignment = lines[index].match(
+      new RegExp(`^\\s*(${TOML_KEY_TOKEN})\\s*\\.\\s*(${TOML_KEY_TOKEN})\\s*=`),
+    );
+    if (dotted && decodeTomlKey(dotted[2]) === "agents") {
+      const key = decodeTomlKey(dotted[3]);
+      if (PARSED_KEYS.includes(key)) {
+        record(key, dotted[4], index, dotted[1], dotted[5]);
+        dottedEnd = Math.max(dottedEnd, index + 1);
+      }
+    } else if (dottedAssignment && decodeTomlKey(dottedAssignment[1]) === "agents") {
+      const key = decodeTomlKey(dottedAssignment[2]);
+      if (PARSED_KEYS.includes(key)) {
         throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
       }
     }
   }
-  return { lines, newline, finalNewline, start, end, values };
+  if (start >= 0) {
+    for (let index = start + 1; index < end; index++) {
+      const candidate = lines[index].match(
+        new RegExp(`^(\\s*(${TOML_KEY_TOKEN})\\s*=\\s*)(${INTEGER_TOKEN})(\\s*(?:#.*)?)$`),
+      );
+      const assignment = lines[index].match(new RegExp(`^\\s*(${TOML_KEY_TOKEN})\\s*=`));
+      if (candidate) {
+        const key = decodeTomlKey(candidate[2]);
+        if (PARSED_KEYS.includes(key)) record(key, candidate[3], index, candidate[1], candidate[4]);
+      } else if (assignment) {
+        const key = decodeTomlKey(assignment[1]);
+        if (PARSED_KEYS.includes(key)) {
+          throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
+        }
+      }
+    }
+  }
+  return { lines, newline, finalNewline, start, end, dottedEnd, inlineAgents, values };
 }
 
 const render = state => state.lines.join(state.newline) + (state.finalNewline || state.lines.length ? state.newline : "");
 
-// Read-only status (for doctor's drift check): current [agents] values,
-// `null` for an absent key. Throws the same strict-validation errors as
-// ensureCodexThreadLimits on malformed input -- a drifted config that is
-// also malformed is still a floor violation, not a silent pass.
 export function readCodexThreadLimits(text) {
   const state = parseAgentsSection(text);
-  const result = {};
-  for (const key of Object.keys(REQUIRED_CODEX_THREAD_LIMITS)) result[key] = state.values[key]?.value ?? null;
-  return result;
+  return { [CANONICAL_KEY]: state.values[CANONICAL_KEY]?.value ?? null };
 }
 
-// Raise-not-lower: an absent key is created at the floor; a lower existing
-// value is raised to the floor (preserving its trailing comment); a higher
-// existing value is left untouched (byte-identical output when the whole
-// file already meets the floor). Returns enough of a record
-// (`before`/`installed`/`sectionCreated`) for restoreCodexThreadLimits to
-// undo exactly muster's own change and nothing else.
+export function codexThreadLimitsMeetFloor(limits) {
+  return positiveInteger(limits?.[CANONICAL_KEY]);
+}
+
+export function resolveCodexThreadCeiling(text) {
+  const state = parseAgentsSection(text);
+  const value = state.values[CANONICAL_KEY]?.value
+    ?? state.values.max_threads?.value
+    ?? DEFAULT_CODEX_THREAD_LIMITS[CANONICAL_KEY];
+  if (!positiveInteger(value)) {
+    throw new Error(`Codex config.toml [agents] ${CANONICAL_KEY} must be a positive integer`);
+  }
+  return value;
+}
+
+// Add the canonical key only. An existing canonical value is byte-preserved.
+// Otherwise an unowned legacy ceiling is copied without deleting or raising it.
 export function ensureCodexThreadLimits(text) {
-  const state = parseAgentsSection(text), before = {}, installed = {}, sectionCreated = state.start < 0;
-  for (const key of Object.keys(REQUIRED_CODEX_THREAD_LIMITS)) before[key] = state.values[key]?.value ?? null;
+  const state = parseAgentsSection(text);
+  const sectionCreated = state.start < 0 && state.dottedEnd < 0 && !state.inlineAgents;
+  const existing = state.values[CANONICAL_KEY];
+  const installedValue = existing?.value
+    ?? state.values.max_threads?.value
+    ?? DEFAULT_CODEX_THREAD_LIMITS[CANONICAL_KEY];
+  if (!positiveInteger(installedValue)) {
+    throw new Error(`Codex config.toml [agents] ${CANONICAL_KEY} must be a positive integer`);
+  }
+  if (!existing && state.inlineAgents) {
+    throw new Error(`Codex config.toml uses an inline [agents] table without ${CANONICAL_KEY}; convert it to a standard [agents] table before installation`);
+  }
   if (sectionCreated) {
+    if (state.lines.every(line => !line.trim())) state.lines.length = 0;
     if (state.lines.length && state.lines.at(-1).trim()) state.lines.push("");
     state.start = state.lines.length;
     state.lines.push("[agents]");
     state.end = state.lines.length;
   }
-  let insertion = state.end;
-  for (const [key, minimum] of Object.entries(REQUIRED_CODEX_THREAD_LIMITS)) {
-    const current = state.values[key];
-    installed[key] = Math.max(current?.value ?? 0, minimum);
-    if (current) {
-      if (current.value < minimum) state.lines[current.index] = `${current.prefix}${minimum}${current.suffix}`;
+  if (!existing) {
+    if (state.start >= 0) {
+      state.lines.splice(state.end, 0, `${CANONICAL_KEY} = ${installedValue}`);
+    } else if (state.dottedEnd >= 0) {
+      state.lines.splice(
+        state.dottedEnd,
+        0,
+        `agents.${CANONICAL_KEY} = ${installedValue}`,
+      );
     } else {
-      state.lines.splice(insertion++, 0, `${key} = ${minimum}`);
+      state.lines.splice(state.end, 0, `${CANONICAL_KEY} = ${installedValue}`);
     }
   }
-  return { text: render(state), before, installed, sectionCreated };
+  return {
+    text: render(state),
+    before: { [CANONICAL_KEY]: existing?.value ?? null },
+    installed: { [CANONICAL_KEY]: installedValue },
+    sectionCreated,
+  };
 }
 
-// Restores exactly the Muster-owned change recorded by ensureCodexThreadLimits:
-// a key is only touched if its CURRENT value still equals what Muster
-// installed (a user who raised it further after install keeps their own
-// value, untouched); restoring to `null` (a key Muster created from
-// nothing) removes the line entirely, and an empty section Muster itself
-// created is removed too.
+// Restore current or legacy receipt keys only while their live values still
+// equal the exact values Muster recorded. Any later user edit is authoritative.
 export function restoreCodexThreadLimits(text, record) {
   const state = parseAgentsSection(text);
-  for (const key of Object.keys(REQUIRED_CODEX_THREAD_LIMITS)) {
+  const keys = Object.keys(record?.installed || {}).filter(key => PARSED_KEYS.includes(key));
+  for (const key of keys) {
     const current = state.values[key];
-    if (!current || current.value !== record.installed[key]) continue;
-    if (record.before[key] === null) {
+    if (!current || !sameInteger(current.value, record.installed[key])) continue;
+    if (current.inline || sameInteger(record.before?.[key], record.installed[key])) continue;
+    if (record.before?.[key] === null) {
       state.lines.splice(current.index, 1);
-      for (const value of Object.values(state.values)) if (value.index > current.index) value.index--;
-    } else {
+      delete state.values[key];
+      for (const value of Object.values(state.values)) {
+        if (value.index > current.index) value.index--;
+      }
+    } else if (integerBigInt(record.before?.[key]) !== null) {
       state.lines[current.index] = `${current.prefix}${record.before[key]}${current.suffix}`;
     }
   }
-  if (record.sectionCreated) {
+  if (record?.sectionCreated) {
     const reparsed = parseAgentsSection(render(state));
     if (reparsed.start >= 0 && reparsed.lines.slice(reparsed.start + 1, reparsed.end).every(line => !line.trim())) {
       reparsed.lines.splice(reparsed.start, reparsed.end - reparsed.start);

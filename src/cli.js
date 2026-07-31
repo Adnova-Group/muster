@@ -72,6 +72,10 @@ import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import {
+  codexThreadLimitConfigPath,
+  resolveCodexThreadCeiling,
+} from "./codex-thread-limits.js";
+import {
   assertContainedNoSymlinkPath,
   atomicWrite,
   isUnsafePathToken,
@@ -93,7 +97,7 @@ const USAGE = [
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
-  "sprint-waves <backlog.md>|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
+  "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
@@ -591,7 +595,31 @@ async function main() {
         fail(`sprint-waves <backlog.md>: ${file} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
       }
       const content = await readFile(canonical, "utf8");
-      const r = computeSprintWaves(content, { parallelLimit: process.env.MUSTER_SPRINT_PARALLEL });
+      const ceilingFlag = "--max-concurrent-threads-per-session";
+      const explicitCeiling = flagValue(rest, ceilingFlag);
+      if (rest.includes(ceilingFlag) && !/^[1-9]\d*$/.test(explicitCeiling || "")) {
+        fail(`sprint-waves <backlog.md>: ${ceilingFlag} must be a positive integer`);
+      }
+      let threadConfigText = "";
+      if (explicitCeiling === undefined) {
+        const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+        try {
+          threadConfigText = await readFile(codexThreadLimitConfigPath(waveCodexHome), "utf8");
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+      }
+      const explicitCeilingValue = explicitCeiling === undefined
+        ? undefined
+        : BigInt(explicitCeiling) <= BigInt(Number.MAX_SAFE_INTEGER)
+          ? Number(explicitCeiling)
+          : explicitCeiling;
+      const r = computeSprintWaves(content, {
+        parallelLimit: process.env.MUSTER_SPRINT_PARALLEL,
+        maxConcurrentThreadsPerSession: explicitCeilingValue === undefined
+          ? resolveCodexThreadCeiling(threadConfigText)
+          : explicitCeilingValue,
+      });
       out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "sprint-reconcile") {

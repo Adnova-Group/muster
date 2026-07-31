@@ -19,7 +19,7 @@ and explicitly parked, not built.
 ## Scope of the audit
 
 "Plugin prose" here means the model-facing surface Claude Code actually loads and reads at
-dispatch time: `plugin/commands` (the nine modes plus the three legacy aliases,
+dispatch time: `plugin/commands` (the ten modes plus the three legacy aliases,
 as `*.md` files), `plugin/skills` (the eleven core skills, one `SKILL.md` per
 subdirectory), muster's own agents in `plugin/agents` (seven `muster-*.md` files; not the
 vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- thirty-one files.
@@ -292,7 +292,7 @@ stale:
 AskUserQuestion    files=13  mentions=36
 dispatch (Agent/Task tool)  files=5  mentions=18
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
-worktree   files=5  mentions=36
+worktree   files=5  mentions=37
 ```
 
 Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave

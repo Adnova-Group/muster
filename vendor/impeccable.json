@@ -1,0 +1,32 @@
+{
+  "name": "Impeccable",
+  "repository": "https://github.com/pbakaus/impeccable",
+  "ref": "32930818a109fafa87199babe92fa8e530cff5d3",
+  "license": "Apache-2.0",
+  "use": "Design workflow vocabulary, context-resolution behavior, and bounded detector inspiration",
+  "workflows": [
+    "craft",
+    "init",
+    "document",
+    "extract",
+    "live",
+    "adapt",
+    "animate",
+    "audit",
+    "bolder",
+    "clarify",
+    "colorize",
+    "critique",
+    "delight",
+    "distill",
+    "harden",
+    "onboard",
+    "layout",
+    "optimize",
+    "overdrive",
+    "polish",
+    "quieter",
+    "shape",
+    "typeset"
+  ]
+}

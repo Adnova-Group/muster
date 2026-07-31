@@ -117,6 +117,7 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 
 | Command | What it does |
 | --- | --- |
+| `design <init\|status\|resolve\|detect\|ignores\|provider\|gate\|workflows\|run> ...` | Own the first-class design surface: resolve monorepo-aware canonical `DESIGN.md`, emit SHA-256 context receipts, initialize only with attended confirmed content, manage ignore/provider state, run bounded evidence detection, enforce human-facing write gates, or dispatch one of 23 pinned Impeccable-inspired workflows. The optional detector requires Node 22.12+, while Muster itself remains Node 20+. |
 | `install [home]` | Print the plugin-install steps (`/plugin marketplace add …`, `/plugin install …`) — the Claude Code actions a shell command cannot perform. It **mutates nothing under `~/.claude`**: the glass-box output style is plugin-native and force-applied (`force-for-plugin`) when the plugin is enabled, so there is no file to copy and no style command to run. `[home]` (default: your home directory) only scopes the legacy-path checks. |
 | `uninstall [home]` | Print the plugin-removal steps, then clean up after older Muster versions: a **legacy copied style** at `[home]/.claude/output-styles/muster.md` is removed, and a displaced original is restored from its `.bak`. This is the one path that writes under `~/.claude`; on a current install there is nothing there to remove. |
 | `init [dir]` | Prepare a deterministic, provider/model-neutral repository profile and receipt at `.muster/project-profile.json` and `.muster/init-receipt.json`. For an empty greenfield directory, preparation may safely initialize `.git` before the owned pair. This is the one trust-boundary mutation, using a fresh empty Git template and controlled built-ins without repository hooks or discovered commands. The CLI learns bounded facts, captures the native-artifact baseline, and emits a complete receipt envelope. The active runtime owns instruction generation: use its native action when callable, then resume with positive artifact-delta, preexisting-confirmed, or attempt-bound call-result evidence. A suggestion, request, invocation, refusal to overwrite, or existing artifact alone is not completion. Copilot, Kimi, and unknown runtimes without a proven adapter remain unavailable; acknowledge with `init acknowledge [dir] --reason unavailable` when accepted. An unavailable handoff remains a HUMAN-HOLD until that acknowledgement; finalization keeps `nativeInit.state` as `handoff`. Same-state reruns are no-ops. Greenfield finalization can create only missing `.gitignore`, `README.md`, `docs/design/.gitkeep`, and `docs/plan/.gitkeep`; brownfield finalization creates none and preserves user files. Init never executes repository scripts, hooks, installers, or discovered commands. Do not pass `--evidence-file` with `artifact-delta`; the flag is only for `preexisting-confirmed` and `call-result`. |
@@ -156,7 +157,7 @@ If conflicting instruction files existed at the preparation baseline, Init leave
 
 ## MCP tools
 
-The same deterministic core is also exposed as a local MCP server. The canonical implementation is `mcp/server.mjs`; `cowork/mcp-server.mjs` is the explicit Cowork adapter declared in `cowork/manifest.json`, while `cowork/chatgpt-work-server.mjs` remains a compatibility entrypoint for older Work configurations. There are **30 tools: 29 CLI-wrapper tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
+The same deterministic core is also exposed as a local MCP server. The canonical implementation is `mcp/server.mjs`; `cowork/mcp-server.mjs` is the explicit Cowork adapter declared in `cowork/manifest.json`, while `cowork/chatgpt-work-server.mjs` remains a compatibility entrypoint for older Work configurations. There are **31 tools: 30 CLI-wrapper tools plus `muster_sprint_protocol`**. The wrappers return the same deterministic JSON as the CLI. The protocol tool returns Cowork's backlog execution playbook and does not wrap a CLI verb.
 
 | Tool | Wraps | What it does |
 | --- | --- | --- |
@@ -174,6 +175,7 @@ The same deterministic core is also exposed as a local MCP server. The canonical
 | `muster_steer` | `steer` | Classify a mid-run steer message. |
 | `muster_diagnose` | `diagnose` | Classify a failure symptom and build a diagnose manifest. |
 | `muster_audit` | `audit` | Build the whole-codebase audit manifest. |
+| `muster_design` | `design` | Resolve/gate canonical design context or run a pinned design workflow across Cowork, ChatGPT Work full, Codex, and inline MCP lanes. |
 | `muster_manifest_validate` | `manifest validate` | Validate a Crew Manifest's shape and dependency graph. |
 | `muster_plan_checklist` | `plan-checklist` | Render a manifest's plan array as a markdown checklist. |
 | `muster_wave` | `wave` | Compute dependency-ordered execution waves. |

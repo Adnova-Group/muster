@@ -1,6 +1,6 @@
-# The nine modes
+# The ten modes
 
-Muster exposes nine primary entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), four standalone verbs (`diagnose`, `audit`, `runner`, `capture`), and `init` for repository initialization. `run`, `autopilot`, and `sprint` still work -- each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged for the rest of the window.
+Muster exposes ten primary entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), five standalone verbs (`diagnose`, `audit`, `design`, `runner`, `capture`), and `init` for repository initialization. `run`, `autopilot`, and `sprint` still work -- each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged for the rest of the window.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Muster exposes nine primary entry points as slash commands under the `muster:` n
 | Go-backlog | `/muster:go-backlog <backlog ref>` | Batch Go over every backlog item, never interviewing mid-batch, one stop at the end |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
+| Design | `/muster:design <action>` | Canonical design context, bounded evidence detection, write gates, and 23 pinned workflows |
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker: resume or claim exactly one item, run it, leave a receipt, stop |
 | Capture | `/muster:capture [hint]` | Mine the conversation into approval-gated backlog items, then stop -- no crew, no waves |
 | Init | `/muster:init [dir]` | Prepare repository state, hand native instruction work to the active runtime, and finalize from positive evidence or an acknowledged unavailable handoff |
@@ -107,6 +108,29 @@ A first token of `backlog` (`/muster:audit backlog [path]`) switches to a **back
 /muster:audit backlog
 /muster:audit backlog src/payments
 ```
+
+## Design
+
+The Design surface at `/muster:design` establishes canonical `DESIGN.md`
+context behind an attended `init` confirmation and never silently
+overwrites an existing file. `status`, `resolve`, `detect`, `ignores`, and
+`provider install|check` are deterministic CLI utilities; `design gate`
+returns the scope-bound SHA-256 receipt required before frontend, brand, UX,
+accessibility, responsive, visual, or other human-facing implementation.
+
+```sh
+/muster:design init
+/muster:design polish src/App.tsx
+npx -y @adnova-group/muster design status .
+```
+
+Muster exposes 23 pinned Impeccable-inspired workflows without requiring the
+Impeccable CLI: `craft`, `init`, `document`, `extract`, `live`, `adapt`,
+`animate`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`,
+`distill`, `harden`, `onboard`, `layout`, `optimize`, `overdrive`, `polish`,
+`quieter`, `shape`, and `typeset`. Read-only audits add `audit-design-ux` only
+when the audited scope has actual UX/design evidence; missing `DESIGN.md` is a
+finding during the sweep, while remediation must satisfy the write gate.
 
 ## Go-backlog
 

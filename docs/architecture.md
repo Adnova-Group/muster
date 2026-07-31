@@ -78,9 +78,9 @@ A provider resolves to one of four kinds, which decides how the orchestrator dis
 
 Dispatch honors `chosen.kind`: an agent routes by native agent identifier, anything else gets a generic subagent with the relevant skill injected. The model override from per-role selection always applies, regardless of kind.
 
-## The nine modes
+## The ten modes
 
-Muster exposes nine primary entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), four standalone verbs (`diagnose`, `audit`, `runner`, `capture`), and the repository initialization handoff (`init`). `run`, `autopilot`, and `sprint` still work -- each is a one-line heads-up followed by identical behavior under its new name (`plan`, `go`, and `go-backlog`); deprecated as of 2026-07-17 and retiring in muster 0.7.0, with behavior unchanged until then.
+Muster exposes ten primary entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), five standalone verbs (`diagnose`, `audit`, `design`, `runner`, `capture`), and the repository initialization handoff (`init`). `run`, `autopilot`, and `sprint` still work -- each is a one-line heads-up followed by identical behavior under its new name (`plan`, `go`, and `go-backlog`); deprecated as of 2026-07-17 and retiring in muster 0.7.0, with behavior unchanged until then.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
@@ -90,6 +90,7 @@ Muster exposes nine primary entry points as slash commands under the `muster:` n
 | Go-backlog | `/muster:go-backlog <backlog ref>` | Batch Go over every backlog item, never interviewing mid-batch, one stop at the end |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
+| Design | `/muster:design <action>` | Canonical design-context resolution, digest/write gates, and 23 design workflows |
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker, fired repeatedly by a Routine/cron: resume or claim exactly one item, run it force-coerced to `pr`, leave a receipt, stop |
 | Capture | `/muster:capture [hint]` | Conversation-to-backlog generator: mines the session's discussion into approval-gated backlog items, then stops -- no crew, no waves |
 | Init | `/muster:init [dir]` | Prepare deterministic project state, coordinate native instruction handoff, and finalize from positive evidence or an acknowledged unavailable handoff |

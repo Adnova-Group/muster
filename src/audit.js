@@ -17,6 +17,11 @@ const PROMPT_DIMENSION = {
   focus: "prompt structure + agent/tool-prompt quality (run `muster prompt scan` to find and lint repo prompts)"
 };
 
+const DESIGN_DIMENSION = {
+  id: "design-ux", role: "frontend",
+  focus: "UX/design quality, accessibility, hierarchy, responsive behavior, and consistency; missing DESIGN.md is a finding, not a blocker"
+};
+
 // opts.paths, when non-empty, scopes the whole audit to those paths/subsystems. Kept as
 // a plain list of trimmed strings so the default (whole-repo) path stays byte-identical.
 function normalizePaths(paths) {
@@ -35,7 +40,11 @@ export function buildAuditManifest(caps = {}, opts = {}) {
   const scoped = paths.length > 0;
   const scopeSuffix = scoped ? ` (scope: ${paths.join(", ")})` : "";
   const stage = makeStage(caps, scoped ? `scoped review: ${paths.join(", ")}` : "whole-codebase review");
-  const dimensions = opts.prompting ? [...AUDIT_DIMENSIONS, PROMPT_DIMENSION] : AUDIT_DIMENSIONS;
+  const dimensions = [
+    ...AUDIT_DIMENSIONS,
+    ...(opts.prompting ? [PROMPT_DIMENSION] : []),
+    ...(opts.designEvidence ? [DESIGN_DIMENSION] : []),
+  ];
 
   const crew = dimensions.map(d => stage(d.role, `audit: ${d.focus}${scopeSuffix}`));
   if (!backlog) {
@@ -65,7 +74,16 @@ export function buildAuditManifest(caps = {}, opts = {}) {
       deps: ["consolidate"]
     });
   } else {
-    plan.push({ id: "fix", task: "remediate all findings (TDD: failing test first where behavior changes); defer only with written reason", mode: "single", deps: ["consolidate"] });
+    plan.push({
+      id: "fix",
+      task: `remediate all findings (TDD: failing test first where behavior changes); defer only with written reason${
+        opts.designEvidence
+          ? "; before UX/design remediation, require a current `muster design gate` DESIGN.md digest receipt"
+          : ""
+      }`,
+      mode: "single",
+      deps: ["consolidate"]
+    });
     plan.push({ id: "verify", task: "review-gate + full suite green; confirm no regressions", mode: "single", deps: ["fix"] });
   }
 

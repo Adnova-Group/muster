@@ -37,7 +37,7 @@ B1. **Resolve the source** — `$ARGUMENTS` is one of:
    - anything else non-empty (no ref shape per `parseBacklogRef`, and not an existing readable checklist file per the bullet above) — a **raw intent**. Run **Bootstrap** below to generate `.muster/backlog.md` first, then resolve it via the file form above.
 
    Routing here is planning, not execution: nothing is dispatched, no branch is created.
-B2. **Shared context, once** — run `$MUSTER_CLI detect .` and `$MUSTER_CLI capabilities` (capture both JSON blobs), plus `$MUSTER_CLI memory read .muster/memory "<key terms from the backlog>"` and skim any hits — a single time; every item shares the same ProjectProfile and AvailableCapabilities.
+B2. **Shared context, once** — run `$MUSTER_CLI detect .` and `$MUSTER_CLI capabilities` (capture both JSON blobs), plus `$MUSTER_CLI memory read .muster/memory "<key terms from the backlog>"` and skim any hits — a single time; every item shares the same ProjectProfile and AvailableCapabilities. For every item whose text carries go step 3.5's human-facing design signals, annotate its manifest row as design-qualified and require a canonical `DESIGN.md` scope/digest receipt before its later write leg. Do not resolve or traverse design context while planning non-design items.
 B3. **Route every item up front** — per item, in backlog order: run `$MUSTER_CLI assess "<item text>"`
    (a `clear:false` item is NEVER interviewed here — record its gap `signals` as a flag on the item's plan row
    instead; the fix belongs in the backlog text, per go-backlog.md step 3's interviews-belong-at-authoring-time rule), then

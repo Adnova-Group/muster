@@ -79,6 +79,21 @@ import {
   withFileMutationLock,
 } from "./fs-safe.js";
 import { readDispatchReceipts, runKimiProcess } from "./dispatch-receipts.js";
+import {
+  DESIGN_SOURCE,
+  DESIGN_WORKFLOWS,
+  addDesignIgnore,
+  detectAuditDesignEvidence,
+  designGate,
+  designProviderCheck,
+  designStatus,
+  initializeDesign,
+  installDesignProvider,
+  readDesignIgnores,
+  resolveDesignContext,
+  runDesignWorkflow,
+  scanDesign,
+} from "./design.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // One array element per command group, each carrying its own "|" separators and
@@ -96,7 +111,7 @@ const USAGE = [
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
-  "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|",
+  "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
   "plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|",
   // prompt tooling
@@ -733,6 +748,72 @@ async function main() {
           out(await finalizeInitialization(dir));
         }
       }
+    } else if (cmd === "design") {
+      const sub = rest[0];
+      const target = flagValue(rest, "--target");
+      const optionValues = new Set([
+        flagValue(rest, "--content-file"),
+        target,
+        flagValue(rest, "--outcome"),
+        flagValue(rest, "--add"),
+        flagValue(rest, "--wave"),
+        flagValue(rest, "--args"),
+      ].filter(Boolean));
+      const positionals = rest.slice(1).filter((arg) => !arg.startsWith("--") && !optionValues.has(arg));
+      const workflowIds = new Set(DESIGN_WORKFLOWS.map(({ id }) => id));
+      if (sub === "workflows") {
+        out({ source: DESIGN_SOURCE, workflows: DESIGN_WORKFLOWS });
+      } else if (sub === "init") {
+        out(await initializeDesign(positionals[0] || process.cwd(), {
+          target,
+          contentFile: flagValue(rest, "--content-file"),
+        }));
+      } else if (sub === "status") {
+        out(await designStatus(positionals[0] || process.cwd(), { target }));
+      } else if (sub === "resolve") {
+        out(await resolveDesignContext(positionals[0] || process.cwd(), { target }));
+      } else if (sub === "detect") {
+        out(await scanDesign(positionals[0] || process.cwd(), {
+          target,
+          wave: flagValue(rest, "--wave") || "cli",
+        }));
+      } else if (sub === "ignores") {
+        const dir = positionals[0] || process.cwd();
+        const pattern = flagValue(rest, "--add");
+        out(pattern ? await addDesignIgnore(dir, pattern) : {
+          path: join((await resolveDesignContext(dir)).repoRoot, ".muster", "design-ignores"),
+          ignores: await readDesignIgnores(dir),
+        });
+      } else if (sub === "provider") {
+        const action = positionals[0];
+        const dir = positionals[1] || process.cwd();
+        if (action === "check") out(await designProviderCheck(dir));
+        else if (action === "install") out(await installDesignProvider(dir));
+        else fail("design provider <install|check> [dir]: unknown or missing action");
+      } else if (sub === "gate") {
+        const outcome = flagValue(rest, "--outcome");
+        if (!outcome) fail("design gate [dir] --outcome <text>: missing --outcome");
+        out(await designGate(positionals[0] || process.cwd(), {
+          target,
+          outcome,
+          write: !rest.includes("--read-only"),
+          audit: rest.includes("--audit"),
+        }));
+      } else if (sub === "run") {
+        const workflow = positionals[0];
+        if (!workflow) fail("design run <workflow> [dir]: missing workflow");
+        out(await runDesignWorkflow(positionals[1] || process.cwd(), workflow, {
+          target,
+          args: flagValue(rest, "--args") || "",
+        }));
+      } else if (workflowIds.has(sub)) {
+        out(await runDesignWorkflow(positionals[0] || process.cwd(), sub, {
+          target,
+          args: flagValue(rest, "--args") || "",
+        }));
+      } else {
+        fail("design <init|status|resolve|detect|ignores|provider|gate|workflows|run>: unknown or missing action");
+      }
     // ── manifest + waves (cont.): human-readable plan checklist ──
     } else if (cmd === "plan-checklist") {
       const file = requireArg(rest, 0, "plan-checklist <manifest.json> [--done a,b]: missing file path", fail);
@@ -856,7 +937,8 @@ async function main() {
       // incur git spawns (it stays offline for CI / the MCP wrapper). args[0], the first
       // scope path, also seeds the prompting-signal probe (unchanged for whole-repo runs).
       const prompting = await hasPromptingSignal(args[0] || process.cwd());
-      out(buildAuditManifest(caps, { prompting, backlog, paths: args }));
+      const designEvidence = await detectAuditDesignEvidence(process.cwd(), args);
+      out(buildAuditManifest(caps, { prompting, designEvidence, backlog, paths: args }));
     } else if (cmd === "issue") {
       if (!rest[0]) fail("issue <ref>: missing #N | number | issue-url");
       if (parseIssueRef(rest[0]).kind !== "issue") fail("not a GitHub issue reference: " + rest[0]);

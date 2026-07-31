@@ -63,7 +63,7 @@ test("contributor and architecture docs describe the current build and dispatch 
 
 test("binding inventory and docs index match the public surface", async () => {
   const binding = await read("docs/binding-interface.md");
-  assert.match(binding, /nine modes plus the three.*aliases/i);
+  assert.match(binding, /ten modes plus the three.*aliases/i);
   assert.match(binding, /thirty-one files|31 files/i);
   const index = await read("docs/README.md");
   for (const expected of ["Architecture", "Binding", "Operations", "Research", "Historical"]) {
@@ -78,14 +78,15 @@ test("README has no dead links to removed internal docs", async () => {
   }
 });
 
-test("public references document init as the ninth primary mode", async () => {
+test("public references document design and init in the ten primary modes", async () => {
   const readme = await read("README.md");
   const architecture = await read("docs/architecture.md");
   const modes = await read("website/reference/modes.md");
-  assert.match(readme, /## The nine modes/);
-  assert.match(architecture, /## The nine modes/);
-  assert.match(modes, /# The nine modes/);
+  assert.match(readme, /## The ten modes/);
+  assert.match(architecture, /## The ten modes/);
+  assert.match(modes, /# The ten modes/);
   for (const text of [readme, architecture, modes]) {
+    assert.match(text, /Design[^\n]*\/muster:design/);
     assert.match(text, /Init[^\n]*\/muster:init \[dir\]/);
     assert.match(text, /native instruction|native initialization/i);
   }
@@ -196,7 +197,7 @@ test("Init public reference pins one instruction authority and holds conflicts",
 test("public docs contain no stale 29-tool total claims", async () => {
   const roots = ["cowork", "docs", "website"];
   const files = ["README.md"];
-  const exactComponentPhrase = "29 CLI-wrapper tools plus `muster_sprint_protocol`";
+  const exactComponentPhrase = "30 CLI-wrapper tools plus `muster_sprint_protocol`";
   for (const dir of roots) {
     const entries = await readdir(new URL(dir, root), { recursive: true });
     files.push(...entries.filter((entry) => entry.endsWith(".md")).map((entry) => `${dir}/${entry}`));

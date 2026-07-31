@@ -32,7 +32,7 @@ Codex Desktop on native Windows is also distinct from both ChatGPT Work and a Co
 
 - [Codex](/guides/codex) covers scoped profiles, hooks, trust, and receipts.
 - [Kimi](/guides/kimi) covers native agents, skills, permission rules, and model lanes.
-- [Cowork](/guides/cowork) covers the local MCP server, its 30-tool surface, and the verified degradation path.
+- [Cowork](/guides/cowork) covers the local MCP server, its 31-tool surface, and the verified degradation path.
 - [ChatGPT Work](/guides/chatgpt-work) covers the private/local universal plugin, Secure MCP Tunnel, profile opt-ins, and the native proof contract.
 - [Install](/guides/install) covers Claude Code.
 

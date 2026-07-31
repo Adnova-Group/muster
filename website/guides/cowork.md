@@ -7,7 +7,7 @@ Muster runs in Claude Cowork through a local MCP server. The neutral core is `mc
 | Capability | Cowork support |
 | --- | --- |
 | Routing, manifests, waves, and gates | Native MCP tools |
-| Tool inventory | 30 tools: 29 CLI-wrapper tools plus `muster_sprint_protocol` |
+| Tool inventory | 31 tools: 30 CLI-wrapper tools plus `muster_sprint_protocol` |
 | Parallel subagents | Conditional; run probe phase 3 on the active build first |
 | Sequential execution | `muster_next` fallback |
 | Per-agent worktree isolation | No proven native primitive |
@@ -15,7 +15,7 @@ Muster runs in Claude Cowork through a local MCP server. The neutral core is `mc
 | Native Muster plugin | Unverified; declared through `MUSTER_COWORK_NATIVE_PLUGIN` |
 | Remote connectors | Declared through `MUSTER_COWORK_CONNECTORS` |
 
-The server exposes 30 tools in total: 29 CLI-wrapper tools plus `muster_sprint_protocol`. The protocol returns the Cowork-adapted backlog playbook. It is a protocol tool, not a CLI wrapper.
+The server exposes 31 tools in total: 30 CLI-wrapper tools plus `muster_sprint_protocol`. The protocol returns the Cowork-adapted backlog playbook. It is a protocol tool, not a CLI wrapper.
 
 Backlog writes use `muster_backlog_publish`, a compare-and-swap publication tool. Pass the complete next content plus the lowercase SHA-256 of the version you read (or `absent` for creation). A concurrent-writer mismatch fails closed; reread, reapply your change, and retry instead of overwriting another runner's update.
 

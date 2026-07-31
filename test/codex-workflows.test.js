@@ -122,18 +122,18 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
 });
 
 // Every generated surface that carries the agent watch protocol (adapter + orchestrator +
-// the root router and 13 mode skills), shared by the watch-invariant and dispatch-shape
+// the root router and 14 mode skills), shared by the watch-invariant and dispatch-shape
 // guards below and mirroring scripts/check-codex.mjs's own `watchSurfaces` list.
 const watchInvariantSurfaces = new Map([
   ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
   ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
-  ...["muster", "muster-init", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
+  ...["muster", "muster-init", "muster-design", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
     .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
 ]);
 
 test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {
   const surfaces = watchInvariantSurfaces;
-  assert.equal(surfaces.size, 15, "every generated Codex watch-invariant surface must be covered");
+  assert.equal(surfaces.size, 16, "every generated Codex watch-invariant surface must be covered");
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
     assert.match(text, /collaboration\.list_agents/, `${name} must reconcile worker state`);
@@ -171,7 +171,7 @@ test("generated Codex orchestration surfaces enforce the state-based agent watch
 // `fork_turns`, and a wait that REQUIRES `targets[]`. The 2026-07-29 slice D (ed54355)
 // single-sourced the v1/v2 contract out of plugin/skills/orchestrator/references/
 // codex-dispatch.md into the orchestrator's wave-dispatch span and go-backlog only; the watch
-// protocol and the skill adapter never got threaded, so every one of those 15 surfaces still
+// protocol and the skill adapter never got threaded, so every one of those 16 surfaces still
 // taught a Codex-luna session a dispatch shape its model rejects. These guards pin the
 // reference's shapes table into each surface's watch section byte-for-byte and fail on a
 // return to v2-only phrasing.
@@ -273,7 +273,7 @@ test("Codex exposes a bounded public skill surface while packaging internal work
     .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
   assert.equal(publicSkills.length, CODEX_COUNTS.publicSkills);
   assert.deepEqual(publicSkills, [
-    "autopilot", "muster", "muster-audit", "muster-capture", "muster-diagnose", "muster-go",
+    "autopilot", "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
     "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
   ]);
 
@@ -295,7 +295,7 @@ test("Codex exposes a bounded public skill surface while packaging internal work
 
 test("generated Codex public skill metadata stays within Muster's discovery budget", async () => {
   const expectedSkills = [
-    "autopilot", "muster", "muster-audit", "muster-capture", "muster-diagnose", "muster-go",
+    "autopilot", "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
     "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
   ];
   const metadata = [];
@@ -311,9 +311,10 @@ test("generated Codex public skill metadata stays within Muster's discovery budg
     (total, skill) => total + skill.name.length + skill.description.length,
     0
   );
+  const discoveryBudget = CODEX_COUNTS.publicSkills * 65;
   assert.ok(
-    advertisedCharacters <= 850,
-    `generated Muster skills advertise ${advertisedCharacters} name/description characters; expected at most 850`
+    advertisedCharacters <= discoveryBudget,
+    `generated Muster skills advertise ${advertisedCharacters} name/description characters; expected at most ${discoveryBudget}`
   );
 });
 

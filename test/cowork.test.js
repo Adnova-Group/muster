@@ -135,7 +135,7 @@ test("instructions carry a Cowork execution protocol with the sequential (no-fan
   assert.doesNotMatch(instr, /parallel fan-out and per-call model override both work|confirmed to support parallel/i);
 });
 
-test("instructions cover the six-mode MCP protocol subset and sequential fallback", async () => {
+test("instructions cover the seven-mode MCP protocol subset and sequential fallback", async () => {
   const r = await rpc([INIT]);
   const instr = r[1].result.instructions;
   assert.match(instr, /parallel/i, "documents the phase-3-gated optional fan-out");
@@ -210,9 +210,9 @@ test("Cowork sprint protocol consumes the emitted build/barrier/integration sche
 test("verb-rename: README.md enumeration uses plan/go/plan-backlog/go-backlog and cites /muster:go-backlog", async () => {
   const text = await read("cowork/README.md");
   const norm = text.replace(/\s+/g, " ");
-  assert.match(norm, /six-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit\)/, "MCP protocol subset uses the new lexicon");
+  assert.match(norm, /seven-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design\)/, "MCP protocol subset uses the new lexicon");
   assert.doesNotMatch(norm, /\(autopilot, audit, diagnose\)/, "no pre-rename enumeration");
-  assert.match(norm, /the core loop plus the Plan\/Go\/Plan-backlog\/Go-backlog\/Diagnose\/Audit lifecycles/, "protocol-summary sentence uses the exact six-mode subset");
+  assert.match(norm, /the core loop plus the Plan\/Go\/Plan-backlog\/Go-backlog\/Diagnose\/Audit\/Design lifecycles/, "protocol-summary sentence uses the exact seven-mode subset");
   assert.doesNotMatch(norm, /autopilot\/audit\/diagnose\/run lifecycles/, "no pre-rename lifecycle slash-list");
   assert.match(norm, /Claude Code plugin's `\/muster:go-backlog` lifecycle/, "sprint citation repoints to /muster:go-backlog");
   assert.doesNotMatch(norm, /Claude Code plugin's `\/muster:sprint` lifecycle/, "no more citation of the pre-rename /muster:sprint verb");
@@ -234,12 +234,12 @@ test("verb-rename: zero pre-rename verb-name citations remain in the 3 cowork su
   }
 });
 
-test("tools/list exposes exactly the 30 brain verbs, matching the MCPB manifest", async () => {
+test("tools/list exposes exactly the 31 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 30, "30 tools served");
+  assert.equal(served.length, 31, "31 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -422,16 +422,16 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.equal(manifest.license, pkg.license, "MCPB license must match the package license");
   assert.equal(packedLicense, rootLicense, "the packed cowork/ tree must carry the repository license");
   assert.equal(packedNotice, rootNotice, "the packed cowork/ tree must carry repository attributions");
-  assert.equal(manifest.tools.length, 30, "MCPB manifest declares the complete deterministic tool surface");
-  assert.match(manifest.long_description, /30 deterministic MCP tools/);
-  assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit/);
+  assert.equal(manifest.tools.length, 31, "MCPB manifest declares the complete deterministic tool surface");
+  assert.match(manifest.long_description, /31 deterministic MCP tools/);
+  assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design/);
   assert.equal(manifest.server.entry_point, "mcp-server.mjs", "MCPB entry point is relative to the packed cowork/ root");
   assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/mcp-server.mjs"]);
   assert.match(manifest.long_description, /not self-contained/i);
   assert.match(manifest.long_description, /Route A/i);
 
-  assert.match(norm, /nine canonical product modes/i);
-  assert.match(norm, /six-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit\)/);
+  assert.match(norm, /ten canonical product modes/i);
+  assert.match(norm, /seven-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design\)/);
   assert.doesNotMatch(norm, /full orchestration lifecycle is available/i);
   for (const [mode, status] of [
     ["Plan", "MCP protocol"],
@@ -665,6 +665,27 @@ test("tools/call: muster_audit paths -> manifest scoped to the requested paths",
   const m = JSON.parse(res.content[0].text);
   assert.match(m.outcome, /src\/audit\.js/, "scope names the requested path in the outcome");
   assert.match(m.plan.find((p) => p.id === "audit-security").task, /src\/audit\.js/, "scope reaches the audit tasks");
+});
+
+test("tools/call: muster_design exposes pinned workflows and canonical context receipts", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-design-mcp-"));
+  writeFileSync(path.join(dir, "DESIGN.md"), "# Design\n\n## Direction\nClear.\n");
+  const r = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: {
+      name: "muster_design",
+      arguments: { action: "workflows", dir },
+    } },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: {
+      name: "muster_design",
+      arguments: { action: "run", workflow: "polish", dir, target: "src/App.tsx" },
+    } },
+  ]);
+  const workflows = JSON.parse(r[2].result.content[0].text);
+  const packet = JSON.parse(r[3].result.content[0].text);
+  assert.equal(workflows.workflows.length, 23);
+  assert.equal(packet.workflow, "polish");
+  assert.match(packet.context.digest, /^[a-f0-9]{64}$/);
 });
 
 // A `paths` entry is spread as a positional CLI arg, and the CLI's flag scans (--help/-h,

@@ -91,7 +91,7 @@ test("every CLI subcommand in usage string appears in website/reference/commands
   );
 });
 
-test("public navigation exposes every guide route and names the nine-mode reference", async () => {
+test("public navigation exposes every guide route and names the ten-mode reference", async () => {
   const config = await read("website/.vitepress/config.js");
   for (const route of [
     "/guides/install",
@@ -105,23 +105,26 @@ test("public navigation exposes every guide route and names the nine-mode refere
   ]) {
     assert.match(config, new RegExp(`link:\\s*"${route}"`), `${route} must be reachable from navigation`);
   }
-  assert.match(config, /text:\s*"The nine modes"/);
+  assert.match(config, /text:\s*"The ten modes"/);
   assert.doesNotMatch(config, /The eight modes/);
 });
 
-test("public entry points consistently document nine modes including Init", async () => {
+test("public entry points consistently document ten modes including Design and Init", async () => {
   const pages = await Promise.all([
     read("website/index.md"),
     read("website/guides/quickstart.md"),
     read("website/guides/codex.md"),
   ]);
   for (const page of pages) {
-    assert.match(page, /\b[Nn]ine modes\b/);
+    assert.match(page, /\b[Tt]en modes\b/);
+    assert.match(page, /\bDesign\b/);
     assert.match(page, /\bInit\b/);
     assert.doesNotMatch(page, /\b[Ee]ight modes\b/);
   }
   assert.match(pages[1], /\/muster:init/);
+  assert.match(pages[1], /\/muster:design/);
   assert.match(pages[2], /\$muster-init/);
+  assert.match(pages[2], /\$muster-design/);
 });
 
 test("harness documentation routes and support claims are explicit", async () => {
@@ -141,7 +144,7 @@ test("harness documentation routes and support claims are explicit", async () =>
   assert.match(kimi, /symbolic[\s\S]{0,100}`primary`[\s\S]{0,80}`secondary`/i);
   assert.match(kimi, /explicit[\s\S]{0,120}overrides[\s\S]{0,120}model_preference/i);
   assert.match(cowork, /support matrix/i);
-  assert.match(cowork, /29 CLI-wrapper tools/i);
+  assert.match(cowork, /30 CLI-wrapper tools/i);
   assert.match(cowork, /`muster_sprint_protocol`/);
   assert.match(cowork, /phase-?3[\s\S]{0,260}before relying on parallel/i);
   assert.match(cowork, /orchestrator creates[\s\S]{0,120}dedicated isolated Git worktree[\s\S]{0,180}sequentially/i);

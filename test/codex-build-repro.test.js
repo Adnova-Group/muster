@@ -132,14 +132,17 @@ test("Codex build accepts CRLF-normalized dispatch references from Windows check
   await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
   await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
 
-  const canonicalInputs = [
-    join(checkout, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md"),
-    join(checkout, "codex", "skill-adapter.md"),
-  ];
-  await Promise.all(canonicalInputs.map(async path => {
-    const source = await readFile(path, "utf8");
-    await writeFile(path, source.replace(/\r?\n/g, "\r\n"));
-  }));
+  const convertTextTree = async directory => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await convertTextTree(path);
+      else if (entry.isFile() && /\.(?:js|mjs|json|md|sh|toml|ya?ml)$/.test(entry.name)) {
+        const source = await readFile(path, "utf8");
+        await writeFile(path, source.replace(/\r?\n/g, "\r\n"));
+      }
+    }
+  };
+  await convertTextTree(checkout);
 
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
   const { pluginRoot } = await resolveCodexPlugin(checkout);

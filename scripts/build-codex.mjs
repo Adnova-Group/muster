@@ -96,6 +96,7 @@ const modes = {
 
 function ensure(dir) { mkdirSync(dir, { recursive: true }); }
 function write(path, content) { ensure(dirname(path)); writeFileSync(path, content, "utf8"); }
+function normalizeLf(text) { return text.replace(/\r\n/g, "\n"); }
 const codexModeNames = new Map([
   ["plan-backlog", "muster-plan-backlog"], ["go-backlog", "muster-go-backlog"],
   ["autopilot", "muster-go"], ["sprint", "muster-go-backlog"], ["run", "muster-plan"],
@@ -174,8 +175,7 @@ function loadCodexDispatchContract(root) {
   // canonical prose source before locating paragraph boundaries so generated
   // artifacts remain host-independent and the LF-only blank-line delimiter
   // cannot reject an otherwise identical Windows checkout.
-  const ref = readFileSync(join(root, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md"), "utf8")
-    .replace(/\r\n/g, "\n");
+  const ref = normalizeLf(readFileSync(join(root, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md"), "utf8"));
   const extract = (startMarker, label) => {
     const start = ref.indexOf(startMarker);
     const end = start < 0 ? -1 : ref.indexOf("\n\n", start);
@@ -212,8 +212,7 @@ function loadCodexDispatchContract(root) {
 // every edit to them.
 const WATCH_HEADING = "## Agent watch invariant";
 function buildAgentWatchProtocol(root, contract) {
-  const adapter = readFileSync(join(root, "codex", "skill-adapter.md"), "utf8")
-    .replace(/\r\n/g, "\n");
+  const adapter = normalizeLf(readFileSync(join(root, "codex", "skill-adapter.md"), "utf8"));
   const start = adapter.indexOf(WATCH_HEADING);
   if (start < 0) throw new Error("codex/skill-adapter.md agent-watch section not found");
   const next = adapter.indexOf("\n## ", start + WATCH_HEADING.length);
@@ -243,6 +242,7 @@ function buildAgentWatchProtocol(root, contract) {
 // the orchestrator get) and its watch section is replaced by the single-sourced protocol
 // above, so all 15 watch surfaces ship one identical, version-resolved contract.
 function adaptSkillAdapterForCodex(text, contract) {
+  text = normalizeLf(text);
   const dispatchAnchor = "call `collaboration.spawn_agent` with the ordinary `task_name`, `message`, `fork_turns: \"none\"`, and `agent_type: \"<exact chosen.id>\"`. A positive context fork is allowed only when the user explicitly requests one; never use `\"all\"`.";
   if (!text.includes(dispatchAnchor)) throw new Error("codex/skill-adapter.md named-profile dispatch anchor not found");
   const result = text.replace(
@@ -256,6 +256,7 @@ function adaptSkillAdapterForCodex(text, contract) {
   return result.slice(0, start) + contract.watchProtocol;
 }
 function adaptCommandForCodex(text, name, contract) {
+  text = normalizeLf(text);
   for (const [marker, files, arrayName] of COMMAND_MARKER_COVERAGE) {
     if (text.includes(marker) && !files.includes(name)) {
       throw new Error(`${name}: carries the ${arrayName} boilerplate but is not listed in ${arrayName} -- add it so its anchor stays fail-loud`);
@@ -552,6 +553,7 @@ function bindBundledCodexCli(text) {
 const CODEX_SKILL_KEYS = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
 const codexSkillId = name => name.startsWith("gsd-") ? `muster-${name}` : name;
 function codexSkill(source, id, contract) {
+  source = normalizeLf(source);
   const match = source.match(/^(---\r?\n[\s\S]*?\r?\n---)([\s\S]*)$/);
   if (!match) throw new Error("Ported Codex skill is missing YAML frontmatter");
   let header = translateModeNames(match[1]).replaceAll("AskUserQuestion", "interactive user input");

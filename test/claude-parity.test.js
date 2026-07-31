@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 146); // previous 145-file surface +1: hardened brainstorm companion source
+  assert.equal(paths.length, 147); // previous 145-file surface +2: hardened brainstorm server and helper sources
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1338,6 +1338,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // conditional design qualification. File count grows from 144 to 145.
   // 2026-07-31 re-pin #35 (release-readiness audit): shared workflow and agent
   // contracts now enforce approval-bound actions, PASS-only advancement, and
-  // the hardened brainstorm asset. File count grows from 145 to 146.
-  assert.equal(hash.digest("hex"), "e08a0a3e15d8aeb60bbd102f93bf1aef7084f40c0c91556f2f3359c025ea4d2e");
+  // the hardened brainstorm server asset. File count grows from 145 to 146.
+  // 2026-07-31 re-pin #36 (browser-boundary security review): the companion
+  // helper is now a second intentional local overlay, isolating untrusted
+  // generated screens from the authenticated controller. Count grows to 147.
+  assert.equal(hash.digest("hex"), "9737b3f22b5487b936f26876f53e90b09e40f32efef44f210996c2e071e76dc7");
 });

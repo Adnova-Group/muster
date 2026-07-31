@@ -255,12 +255,14 @@ export async function probeAppServer({ cases, cwd }) {
       "turn/completed",
       params => params?.threadId === parent.thread.id
     );
-    await client.request("turn/start", {
-      threadId: parent.thread.id,
-      input: [{ type: "text", text: "Reply with exactly OK." }],
-      effort: "low"
-    });
-    const seedTurn = await completion;
+    const [, seedTurn] = await Promise.all([
+      client.request("turn/start", {
+        threadId: parent.thread.id,
+        input: [{ type: "text", text: "Reply with exactly OK." }],
+        effort: "low"
+      }),
+      completion
+    ]);
 
     const sentinel = await client.request("thread/fork", {
       threadId: parent.thread.id,
@@ -342,12 +344,30 @@ export async function probeAppServer({ cases, cwd }) {
     };
   } finally {
     try {
-      for (const threadId of [...ephemeralIds, ...persistentIds]) {
+      const cleanupErrors = [];
+      for (const threadId of ephemeralIds) {
         try {
           await client?.request("thread/delete", { threadId }, 2_000);
-        } catch {
-          // Ephemeral threads have no rollout to delete; cleanup is best effort.
+        } catch (error) {
+          if (!/no rollout found|not found|thread is not persisted and cannot be deleted/i.test(
+            error instanceof Error ? error.message : String(error)
+          )) {
+            cleanupErrors.push(error);
+          }
         }
+      }
+      for (const threadId of [...persistentIds].reverse()) {
+        try {
+          await client?.request("thread/delete", { threadId }, 2_000);
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length) {
+        const details = cleanupErrors
+          .map(error => error instanceof Error ? error.message : String(error))
+          .join("; ");
+        throw new AggregateError(cleanupErrors, `app-server benchmark cleanup failed: ${details}`);
       }
     } finally {
       client?.close();

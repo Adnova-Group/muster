@@ -52,7 +52,7 @@ The checked-in run is `eval/results/codex-ephemeral-fork-benchmark.json`.
 | Irrelevant inherited turns | `UNKNOWN` | `UNKNOWN` | Fork contents were not model-inspected |
 | Model input tokens | `UNKNOWN` | `UNKNOWN` | Threshold cannot pass |
 | Model wall time | `UNKNOWN` | `UNKNOWN` | Threshold cannot pass |
-| Control-plane mean | 700.207 ms | 679.183 ms | Fork was 3.1% slower in this single run |
+| Control-plane mean | 774.327 ms | 754.425 ms | Fork was 2.6% slower in this single run |
 | Ephemeral IDs in persisted listing | 0 | 0 | Pass |
 | Pagination | 2 pages at `limit: 1` | same listing | Exhausted at `nextCursor: null` |
 

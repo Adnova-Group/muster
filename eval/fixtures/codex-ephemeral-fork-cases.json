@@ -1,0 +1,14 @@
+[
+  {"id":"spec-valid-linear","lane":"spec-gate","expected":"PASS","material":{"plan":[{"id":"a","deps":[]},{"id":"b","deps":["a"]}],"successCriteria":["suite green"]}},
+  {"id":"spec-cycle","lane":"spec-gate","expected":"FAIL","material":{"plan":[{"id":"a","deps":["b"]},{"id":"b","deps":["a"]}],"successCriteria":["suite green"]}},
+  {"id":"spec-missing-success","lane":"spec-gate","expected":"FAIL","material":{"plan":[{"id":"a","deps":[]}],"successCriteria":[]}},
+  {"id":"spec-overlap-ownership","lane":"spec-gate","expected":"FAIL","material":{"plan":[{"id":"a","deps":[],"owns":["src/x.js"]},{"id":"b","deps":[],"owns":["src/x.js"]}],"successCriteria":["suite green"]}},
+  {"id":"tournament-clear-winner","lane":"tournament","expected":"candidate-a","material":{"candidates":[{"id":"candidate-a","passing":true,"total":9},{"id":"candidate-b","passing":true,"total":6}]}},
+  {"id":"tournament-tie-break","lane":"tournament","expected":"candidate-a","material":{"candidates":[{"id":"candidate-b","passing":true,"total":8},{"id":"candidate-a","passing":true,"total":8}]}},
+  {"id":"tournament-no-pass","lane":"tournament","expected":"ESCALATE","material":{"candidates":[{"id":"candidate-a","passing":false,"total":4},{"id":"candidate-b","passing":false,"total":3}]}},
+  {"id":"tournament-fuse","lane":"tournament","expected":"FUSE","material":{"candidates":[{"id":"candidate-a","passing":true,"total":9},{"id":"candidate-b","passing":true,"total":8}],"disagreement":0.4}},
+  {"id":"review-clean","lane":"read-only-review","expected":"PASS","material":{"verdicts":[{"reviewer":"r1","findings":[]}]}},
+  {"id":"review-blocker","lane":"read-only-review","expected":"FAIL","material":{"verdicts":[{"reviewer":"r1","findings":[{"severity":"blocker","note":"wrong result"}]}]}},
+  {"id":"review-minor-only","lane":"read-only-review","expected":"PASS","material":{"verdicts":[{"reviewer":"r1","findings":[{"severity":"minor","note":"wording"}]}]}},
+  {"id":"review-exhausted","lane":"read-only-review","expected":"BLOCKED","material":{"verdicts":[{"reviewer":"r1","status":"exhausted"}]}}
+]

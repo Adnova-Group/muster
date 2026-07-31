@@ -1,0 +1,144 @@
+{
+  "schema": "muster-codex-ephemeral-fork-benchmark/v1",
+  "generatedAt": "2026-07-31T05:25:31.823Z",
+  "protocol": {
+    "caseSource": "deterministic case definitions",
+    "seedModelTurnsExecuted": 1,
+    "representativeModelTurnsExecuted": 0,
+    "fixtureCorrectnessIsNotModelCorrectness": true,
+    "unmeasuredRepresentativeMetrics": [
+      "modelWallTimeReductionPct",
+      "modelInputTokenReductionPct",
+      "correctnessDelta",
+      "historyPollutionDeltaTurns"
+    ],
+    "comparison": "Codex app-server ephemeral thread/fork versus ephemeral thread/start control-plane calls"
+  },
+  "fixture": {
+    "caseCount": 12,
+    "lanes": [
+      "read-only-review",
+      "spec-gate",
+      "tournament"
+    ],
+    "ephemeralFork": {
+      "correctness": "UNKNOWN",
+      "historyPollutionTurns": "UNKNOWN",
+      "inputTokens": "UNKNOWN",
+      "modelWallTimeMs": "UNKNOWN"
+    },
+    "freshContext": {
+      "correctness": "UNKNOWN",
+      "historyPollutionTurns": "UNKNOWN",
+      "inputTokens": "UNKNOWN",
+      "modelWallTimeMs": "UNKNOWN"
+    }
+  },
+  "controlPlane": {
+    "status": "MEASURED",
+    "codexVersion": "codex-cli 0.146.0",
+    "seedTurn": {
+      "status": "completed",
+      "usage": "UNKNOWN"
+    },
+    "forkControlPlaneWallTimeMs": {
+      "samples": [
+        104.891,
+        124.157,
+        118.217,
+        202.633,
+        396.011,
+        491.978,
+        644.634,
+        853.984,
+        1113.122,
+        1424.68,
+        1372.267,
+        2445.353
+      ],
+      "mean": 774.327
+    },
+    "freshControlPlaneWallTimeMs": {
+      "samples": [
+        100.783,
+        103.735,
+        105.117,
+        257.387,
+        427.749,
+        478.317,
+        661.7,
+        972.793,
+        966.098,
+        1027.334,
+        1657.608,
+        2294.477
+      ],
+      "mean": 754.425
+    },
+    "pagination": {
+      "pageSize": 1,
+      "pagesRead": 2,
+      "persistentThreadsFound": 2,
+      "exhausted": true
+    },
+    "ephemeralPersistenceLeaks": 0
+  },
+  "metrics": {
+    "caseCount": 12,
+    "fixtureCorrectnessDelta": "UNKNOWN",
+    "historyPollutionDeltaTurns": "UNKNOWN",
+    "modelWallTimeReductionPct": "UNKNOWN",
+    "modelInputTokenReductionPct": "UNKNOWN",
+    "ephemeralPersistenceLeaks": 0
+  },
+  "thresholds": {
+    "minimumCases": 10,
+    "minimumModelWallTimeReductionPct": 10,
+    "minimumModelInputTokenReductionPct": 10,
+    "minimumCorrectnessDelta": 0,
+    "maximumHistoryPollutionDeltaTurns": 0,
+    "maximumEphemeralPersistenceLeaks": 0
+  },
+  "adoption": {
+    "decision": "REJECT",
+    "checks": [
+      {
+        "name": "representative case count",
+        "value": 12,
+        "pass": true
+      },
+      {
+        "name": "model wall-time reduction",
+        "value": "UNKNOWN",
+        "pass": false
+      },
+      {
+        "name": "model input-token reduction",
+        "value": "UNKNOWN",
+        "pass": false
+      },
+      {
+        "name": "fixture correctness delta",
+        "value": "UNKNOWN",
+        "pass": false
+      },
+      {
+        "name": "history-pollution delta",
+        "value": "UNKNOWN",
+        "pass": false
+      },
+      {
+        "name": "ephemeral persistence leaks",
+        "value": 0,
+        "pass": true
+      }
+    ],
+    "failed": [
+      "model wall-time reduction: UNKNOWN (threshold cannot pass)",
+      "model input-token reduction: UNKNOWN (threshold cannot pass)",
+      "fixture correctness delta: UNKNOWN (threshold cannot pass)",
+      "history-pollution delta: UNKNOWN (threshold cannot pass)"
+    ]
+  },
+  "productionDependencyAdded": false
+}

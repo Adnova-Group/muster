@@ -104,7 +104,10 @@ export function compareMcpContracts(before, after) {
   if (JSON.stringify(sortedUnique(before?.toolNames || [])) !== JSON.stringify(sortedUnique(after?.toolNames || []))) {
     failures.push("tools-list-changed");
   }
-  if (before?.toolNames?.length !== CODEX_COUNTS.mcpTools || after?.toolNames?.length !== CODEX_COUNTS.mcpTools) {
+  if (
+    sortedUnique(before?.toolNames || []).length !== CODEX_COUNTS.mcpTools
+    || sortedUnique(after?.toolNames || []).length !== CODEX_COUNTS.mcpTools
+  ) {
     failures.push("unexpected-tool-count");
   }
   if (!before?.toolNames?.includes("muster_detect") || !after?.toolNames?.includes("muster_detect")) {

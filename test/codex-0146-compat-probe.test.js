@@ -103,6 +103,21 @@ test("degenerate identical MCP snapshots cannot fabricate PASS", () => {
   ]);
 });
 
+test("duplicate MCP tool names cannot satisfy the 30-tool contract", () => {
+  const duplicateTools = {
+    protocolVersion: "2025-06-18",
+    toolNames: Array.from({ length: 30 }, () => "muster_detect"),
+    representativeCall: {
+      name: "muster_detect",
+      ok: true,
+      resultShape: ["greenfield", "languages", "vcs"],
+    },
+  };
+  const result = compareMcpContracts(duplicateTools, duplicateTools);
+  assert.equal(result.status, "FAIL");
+  assert.deepEqual(result.failures, ["unexpected-tool-count"]);
+});
+
 test("generated skill inventory is pinned to the canonical 13 public skills", () => {
   const empty = validateGeneratedSkillInventory([]);
   assert.equal(empty.status, "FAIL");

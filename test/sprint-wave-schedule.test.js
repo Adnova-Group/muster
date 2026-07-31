@@ -136,8 +136,4 @@ test("go-backlog contract dispatches every ready disposition before the barrier 
   assert.match(waveMode, /preserv(?:e|ing).*emitted order/i);
   assert.match(waveMode, /dependent.*escalat(?:e|es).*immediately.*never build/i);
   assert.doesNotMatch(text.slice(0, text.indexOf("**Wave mode**")), /full go lifecycle sequentially over every item/i);
-  assert.match(
-    text,
-    /--max-concurrent-threads-per-session <effective agents\.max_concurrent_threads_per_session>/,
-  );
 });

@@ -70,6 +70,14 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
     const text = await readFile(join(commands, `${command}.md`), "utf8");
     assert.match(text, /capabilities --codex --roles-only/, `${command} should route from compact role capabilities`);
   }
+  for (const command of ["plan-backlog", "go-backlog"]) {
+    const text = await readFile(join(commands, `${command}.md`), "utf8");
+    assert.match(
+      text,
+      /--max-concurrent-threads-per-session <effective agents\.max_concurrent_threads_per_session>/,
+      `${command} must carry the effective Codex ceiling into deterministic wave scheduling`,
+    );
+  }
 });
 
 test("generated Codex init binds the bundled runtime without Claude resolver leakage", async () => {

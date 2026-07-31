@@ -290,6 +290,15 @@ function adaptCommandForCodex(text, name, contract) {
     if (!result.includes("capabilities --codex")) throw new Error(`${name}: capabilities --codex anchor not found for Codex roles-only rewrite`);
     result = result.replaceAll("capabilities --codex", "capabilities --codex --roles-only");
   }
+  if (["go-backlog.md", "plan-backlog.md"].includes(name)) {
+    const sprintWavesAnchor = "JSON is authoritative";
+    const anchorIndex = result.indexOf(sprintWavesAnchor);
+    if (anchorIndex < 0) throw new Error(`${name}: sprint-waves result anchor not found for Codex ceiling binding`);
+    const lineEnd = result.indexOf("\n", anchorIndex);
+    if (lineEnd < 0) throw new Error(`${name}: sprint-waves result line has no insertion boundary`);
+    const ceilingBinding = "\n   - **Codex ceiling binding:** for every Codex `sprint-waves` call in this mode, append `--max-concurrent-threads-per-session <effective agents.max_concurrent_threads_per_session>`. The explicit value carries Codex's project/profile/CLI precedence into the deterministic schedule; the user `$CODEX_HOME/config.toml` read is only a fallback when no effective value is supplied.";
+    result = result.slice(0, lineEnd) + ceilingBinding + result.slice(lineEnd);
+  }
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
   if (["go.md", "diagnose.md", "audit.md"].includes(name)) {
     if (!result.includes(`${cli} manifest validate --codex`)) throw new Error(`${name}: manifest validate --codex anchor not found for Codex rewrite`);

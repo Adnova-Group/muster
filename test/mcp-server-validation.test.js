@@ -69,12 +69,12 @@ test("tools/call enforces enum, additional-property, and array-bound constraints
   }
 });
 
-test("CLI dispatch uses process.execPath and excludes unrelated host variables", async (t) => {
+test("CLI dispatch uses process.execPath, preserves Windows runtime variables, and excludes unrelated host variables", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "muster-mcp-runtime-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const fakeCli = path.join(dir, "fake-cli.mjs");
   const shadowNode = path.join(dir, process.platform === "win32" ? "node.cmd" : "node");
-  await writeFile(fakeCli, "console.log(JSON.stringify({runtime:process.execPath,canary:process.env.UNRELATED_SECRET??null}))\n");
+  await writeFile(fakeCli, "console.log(JSON.stringify({runtime:process.execPath,canary:process.env.UNRELATED_SECRET??null,systemRoot:process.env.SystemRoot??null,comSpec:process.env.ComSpec??null}))\n");
   await writeFile(shadowNode, process.platform === "win32" ? "@echo SHADOWED\r\n" : "#!/bin/sh\necho SHADOWED\n");
   if (process.platform !== "win32") await chmod(shadowNode, 0o755);
   const responses = await rpc([
@@ -85,11 +85,18 @@ test("CLI dispatch uses process.execPath and excludes unrelated host variables",
       ...process.env,
       PATH: dir,
       NODE_ENV: "test",
+      SystemRoot: "C:\\Windows",
+      ComSpec: "C:\\Windows\\System32\\cmd.exe",
       MUSTER_COWORK_TEST_CLI: fakeCli,
       UNRELATED_SECRET: "must-not-cross",
     },
   });
   const result = responses.get(2).result;
   assert.equal(result.isError, false);
-  assert.deepEqual(JSON.parse(result.content[0].text), { runtime: process.execPath, canary: null });
+  assert.deepEqual(JSON.parse(result.content[0].text), {
+    runtime: process.execPath,
+    canary: null,
+    systemRoot: "C:\\Windows",
+    comSpec: "C:\\Windows\\System32\\cmd.exe",
+  });
 });

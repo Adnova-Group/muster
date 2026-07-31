@@ -225,7 +225,7 @@ const withLegacyTierAlias = (source) => {
 // boundary. Keep this list deliberately small and explicit.
 const childEnvironment = (source, runtimeIdentity) => {
   const allowed = new Set([
-    "PATH", "PATHEXT", "SystemRoot", "ComSpec", "WINDIR",
+    "PATH", "PATHEXT", "SYSTEMROOT", "COMSPEC", "WINDIR",
     "HOME", "USERPROFILE", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP",
     "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM", "NO_COLOR", "FORCE_COLOR", "CI",
     "NODE_ENV", "CODEX_HOME", "KIMI_CODE_HOME", "PLUGIN_ROOT", "PLUGIN_DATA",

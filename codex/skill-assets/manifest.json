@@ -16,12 +16,18 @@
     {
       "id": "sp-brainstorm",
       "source": "superpowers:skills/brainstorming",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "scripts",
         "spec-document-reviewer-prompt.md",
         "visual-companion.md"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/sp-brainstorm",
+        "files": [
+          "scripts/server.cjs"
+        ]
+      }
     },
     {
       "id": "sp-debug",

@@ -37,7 +37,8 @@ test("README documents current install, lifecycle, and configuration boundaries"
   assert.match(readme, /--dry-run/);
   assert.match(readme, /uninstall codex --scope project/);
   assert.match(readme, /Claude Code-only lifecycle hooks|Claude-only lifecycle hooks/i);
-  assert.match(readme, /fail(?:s)? open[\s\S]{0,220}subagent/i);
+  assert.match(readme, /classifies every payload[\s\S]{0,260}agent_id/i);
+  assert.match(readme, /one hour[\s\S]{0,120}(?:stale|lease)/i);
   assert.match(readme, /directive-shaped prompt[\s\S]{0,220}corroborates orchestration scale/i);
   assert.match(readme, /15-minute cooldown[\s\S]{0,220}60 minutes/i);
   assert.match(readme, /full configuration reference/i);

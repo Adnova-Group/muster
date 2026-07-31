@@ -9,9 +9,17 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const server = new URL("../codex/skill-assets/sp-brainstorm/scripts/server.cjs", import.meta.url).pathname;
 const sourceServer = new URL("../plugin/builtins/sp-brainstorm/scripts/server.cjs", import.meta.url).pathname;
+const assetManifest = new URL("../codex/skill-assets/manifest.json", import.meta.url).pathname;
 
-test("packaged brainstorm server is byte-identical to its builtin source", async () => {
+test("packaged brainstorm server and manifest identify the byte-identical local overlay", async () => {
   assert.deepEqual(await readFile(server), await readFile(sourceServer));
+  const manifest = JSON.parse(await readFile(assetManifest, "utf8"));
+  const brainstorm = manifest.skills.find((skill) => skill.id === "sp-brainstorm");
+  assert.deepEqual(brainstorm.overlay, {
+    source: "plugin/builtins/sp-brainstorm",
+    files: ["scripts/server.cjs"],
+  });
+  assert.match(brainstorm.adaptation, /intentional local supporting-asset overlay/);
 });
 
 async function rejectedStartup(env) {

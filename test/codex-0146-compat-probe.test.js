@@ -64,7 +64,7 @@ test("skill-catalog pressure fails closed when host evidence omits an expected l
 });
 
 test("MCP contract comparison covers initialize, tools/list, and representative tools/call", () => {
-  const toolNames = ["muster_detect", ...Array.from({ length: 29 }, (_, index) => `muster_tool_${index}`)];
+  const toolNames = ["muster_detect", ...Array.from({ length: 30 }, (_, index) => `muster_tool_${index}`)];
   const before = {
     protocolVersion: "2025-06-18",
     toolNames,
@@ -80,7 +80,7 @@ test("MCP contract comparison covers initialize, tools/list, and representative 
     status: "PASS",
     reason: "mcp-contract-stable-across-rebuild",
     protocolVersion: "2025-06-18",
-    toolCount: 30,
+    toolCount: 31,
     representativeTool: "muster_detect",
   });
 
@@ -103,10 +103,10 @@ test("degenerate identical MCP snapshots cannot fabricate PASS", () => {
   ]);
 });
 
-test("duplicate MCP tool names cannot satisfy the 30-tool contract", () => {
+test("duplicate MCP tool names cannot satisfy the 31-tool contract", () => {
   const duplicateTools = {
     protocolVersion: "2025-06-18",
-    toolNames: Array.from({ length: 30 }, () => "muster_detect"),
+    toolNames: Array.from({ length: 31 }, () => "muster_detect"),
     representativeCall: {
       name: "muster_detect",
       ok: true,
@@ -118,14 +118,14 @@ test("duplicate MCP tool names cannot satisfy the 30-tool contract", () => {
   assert.deepEqual(result.failures, ["unexpected-tool-count"]);
 });
 
-test("generated skill inventory is pinned to the canonical 13 public skills", () => {
+test("generated skill inventory is pinned to the canonical 14 public skills", () => {
   const empty = validateGeneratedSkillInventory([]);
   assert.equal(empty.status, "FAIL");
-  assert.equal(empty.expectedCount, 13);
+  assert.equal(empty.expectedCount, 14);
   assert.equal(empty.observedCount, 0);
 
   const canonical = [
-    "autopilot", "muster", "muster-audit", "muster-capture", "muster-diagnose",
+    "autopilot", "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose",
     "muster-go", "muster-go-backlog", "muster-init", "muster-plan",
     "muster-plan-backlog", "muster-runner", "run", "sprint",
   ];

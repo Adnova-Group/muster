@@ -20,6 +20,7 @@ export const CODEX_0146_PUBLIC_SKILLS = Object.freeze([
   "muster",
   "muster-audit",
   "muster-capture",
+  "muster-design",
   "muster-diagnose",
   "muster-go",
   "muster-go-backlog",

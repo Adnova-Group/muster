@@ -212,7 +212,8 @@ function loadCodexDispatchContract(root) {
 // every edit to them.
 const WATCH_HEADING = "## Agent watch invariant";
 function buildAgentWatchProtocol(root, contract) {
-  const adapter = readFileSync(join(root, "codex", "skill-adapter.md"), "utf8");
+  const adapter = readFileSync(join(root, "codex", "skill-adapter.md"), "utf8")
+    .replace(/\r\n/g, "\n");
   const start = adapter.indexOf(WATCH_HEADING);
   if (start < 0) throw new Error("codex/skill-adapter.md agent-watch section not found");
   const next = adapter.indexOf("\n## ", start + WATCH_HEADING.length);

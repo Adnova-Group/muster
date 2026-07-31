@@ -132,9 +132,14 @@ test("Codex build accepts CRLF-normalized dispatch references from Windows check
   await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
   await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
 
-  const referencePath = join(checkout, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md");
-  const reference = await readFile(referencePath, "utf8");
-  await writeFile(referencePath, reference.replace(/\r?\n/g, "\r\n"));
+  const canonicalInputs = [
+    join(checkout, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md"),
+    join(checkout, "codex", "skill-adapter.md"),
+  ];
+  await Promise.all(canonicalInputs.map(async path => {
+    const source = await readFile(path, "utf8");
+    await writeFile(path, source.replace(/\r?\n/g, "\r\n"));
+  }));
 
   await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
   const { pluginRoot } = await resolveCodexPlugin(checkout);

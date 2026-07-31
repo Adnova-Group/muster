@@ -1,11 +1,11 @@
-import { lstat, opendir, realpath } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { lstat, open, opendir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { matchFrontmatter } from "./frontmatter.js";
 import {
   isContainedLexical,
-  readNoFollowRegular,
   resolveContainedRealpath,
   safeRelativePath,
 } from "./fs-safe.js";
@@ -101,12 +101,48 @@ async function readContainedText({
   if (!before.isFile() || before.isSymbolicLink()) {
     throw new Error(`${label} must be a regular file`);
   }
+  if (before.size > maxBytes) {
+    throw new Error(`${label} exceeds the ${maxBytes} byte limit`);
+  }
+  let handle;
   try {
-    const { bytes } = await readNoFollowRegular(canonical, {
-      maxBytes,
-      label,
-      expectedInfo: before,
-    });
+    handle = await open(
+      canonical,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0),
+    );
+    const opened = await handle.stat();
+    if (
+      !opened.isFile()
+      || opened.ino !== before.ino
+      || opened.dev !== before.dev
+      || opened.size !== before.size
+    ) {
+      throw new Error(`file changed while reading: ${label}`);
+    }
+    const bounded = Buffer.allocUnsafe(maxBytes + 1);
+    let total = 0;
+    while (total < bounded.length) {
+      const { bytesRead } = await handle.read(
+        bounded,
+        total,
+        bounded.length - total,
+        total,
+      );
+      if (bytesRead === 0) break;
+      total += bytesRead;
+    }
+    const descriptorAfter = await handle.stat();
+    if (
+      descriptorAfter.ino !== opened.ino
+      || descriptorAfter.dev !== opened.dev
+      || descriptorAfter.size !== opened.size
+      || !descriptorAfter.isFile()
+    ) {
+      throw new Error(`file changed while reading: ${label}`);
+    }
+    if (total > maxBytes) {
+      throw new Error(`${label} exceeds the ${maxBytes} byte limit`);
+    }
     const afterCanonical = await realpath(candidate);
     const after = await lstat(afterCanonical);
     if (
@@ -121,12 +157,9 @@ async function readContainedText({
     ) {
       throw new Error(`file changed while reading: ${label}`);
     }
-    return bytes.toString("utf8");
-  } catch (error) {
-    if (error?.fsSafe?.reason === "too-large") {
-      throw new Error(`${label} exceeds the ${maxBytes} byte limit`, { cause: error });
-    }
-    throw error;
+    return bounded.subarray(0, total).toString("utf8");
+  } finally {
+    await handle?.close();
   }
 }
 

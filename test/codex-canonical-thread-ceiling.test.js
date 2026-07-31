@@ -263,16 +263,19 @@ test("Codex wave scheduling cannot exceed the canonical session ceiling", () => 
     parallelLimit: 9,
     maxConcurrentThreadsPerSession: 2,
   });
-  assert.equal(result.schedule.buildReview.maxConcurrency, 2);
+  assert.equal(result.schedule.buildReview.maxConcurrency, 1);
   assert.deepEqual(result.schedule.waves[0].buildReview.batches, [
-    ["item-1", "item-2"],
-    ["item-3", "item-4"],
-    ["item-5", "item-6"],
+    ["item-1"],
+    ["item-2"],
+    ["item-3"],
+    ["item-4"],
+    ["item-5"],
+    ["item-6"],
   ]);
   assert.equal(
     computeSprintWaves(backlog, { maxConcurrentThreadsPerSession: 2 })
       .schedule.buildReview.maxConcurrency,
-    2,
+    1,
   );
 });
 

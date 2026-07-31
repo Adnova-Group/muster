@@ -73,6 +73,7 @@ test("discovery skips malformed Agent Skills metadata and mismatched frontmatter
     ["missing-frontmatter", "# No metadata\n"],
     ["missing-description", "---\nname: missing-description\n---\n"],
     ["wrong-name", "---\nname: another-name\ndescription: mismatch\n---\n"],
+    ["non-scalar-description", "---\nname: non-scalar-description\ndescription: [not, a, string]\n---\n"],
   ]) {
     const skill = join(capabilityRoot, "skills", name);
     await mkdir(skill);

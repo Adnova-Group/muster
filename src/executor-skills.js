@@ -1,5 +1,6 @@
 import { lstat, opendir, realpath } from "node:fs/promises";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 import { matchFrontmatter } from "./frontmatter.js";
 import {
@@ -32,23 +33,18 @@ function boundedPositiveInteger(value, fallback, hardMaximum, label) {
 function skillDescription(markdown) {
   const frontmatter = matchFrontmatter(markdown);
   if (!frontmatter) return null;
-  const fields = {};
-  for (const line of frontmatter.body.split(/\r?\n/)) {
-    const match = line.match(/^(name|description):\s*(.*)$/);
-    if (!match || fields[match[1]] !== undefined) continue;
-    let value = match[2].trim();
-    if (
-      value.length >= 2
-      && (
-        (value.startsWith('"') && value.endsWith('"'))
-        || (value.startsWith("'") && value.endsWith("'"))
-      )
-    ) {
-      value = value.slice(1, -1);
-    }
-    fields[match[1]] = value;
+  try {
+    const fields = parseYaml(frontmatter.body, { maxAliasCount: 0 });
+    return (
+      fields
+      && typeof fields === "object"
+      && !Array.isArray(fields)
+      && typeof fields.name === "string"
+      && typeof fields.description === "string"
+    ) ? fields : null;
+  } catch {
+    return null;
   }
-  return fields;
 }
 
 function validSkillMetadata(markdown, directoryName) {

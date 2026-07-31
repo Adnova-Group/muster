@@ -65,6 +65,8 @@ Uninstall preserves unrelated config and Codex's project trust records, removes 
 
 Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. The three legacy aliases (`run`, `autopilot`, `sprint`) remain skills. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
 
+From an interactive terminal, `muster codex-plan "<outcome>"` starts a new local App Server session, discovers the advertised Plan preset, invokes the installed `muster-plan` skill with `turn/start.collaborationMode`, and reports the effective mode from `thread/settings/updated`. It relays Muster's structured approval question to that terminal, but never overrides the user's approval policy, reviewer, permissions, or sandbox. It cannot switch an already-running desktop/IDE chat. Non-interactive callers and unavailable or unconfirmed App Server control exit nonzero with the safe in-session path: `/plan $muster-plan <outcome>`.
+
 The Codex plugin bundles the deterministic CLI, all pipelines, 31 MCP tools, 27 custom-agent profiles, and 77 skills: 14 public mode/router/alias skills plus 63 internal skills (12 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
 ### Kimi

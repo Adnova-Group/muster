@@ -249,8 +249,8 @@ test("architecture docs name every network-capable CLI boundary and offline beha
   ]);
   for (const doc of docs) {
     assert.doesNotMatch(doc, /one carve-out is the `issue` verb/);
-    assert.match(doc, /four boundaries/i);
-    for (const command of ["`issue`", "`vendor`", "`doctor`", "`install kimi --probe`"]) {
+    assert.match(doc, /five boundaries/i);
+    for (const command of ["`issue`", "`vendor`", "`doctor`", "`install kimi --probe`", "`codex-plan`"]) {
       assert.match(doc, new RegExp(command));
     }
     assert.match(doc, /offline/i);

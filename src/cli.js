@@ -15,6 +15,7 @@ import { constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
@@ -68,6 +69,7 @@ import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, code
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
+import { classifyPlanTurn, createCodexAppServerClient, fallbackPlanLaunch, launchCodexPlan, renderPlanNotification } from "./codex-plan-launch.js";
 import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
@@ -110,7 +112,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
@@ -385,6 +387,67 @@ async function main() {
       // resolve to the universal AskUserQuestion fallback, never a thrown error -- see
       // src/plan-surface.js.
       out(resolvePlanSurface(rest[0]));
+    } else if (cmd === "codex-plan") {
+      // First-class native Codex Plan launcher. It controls turn creation through
+      // App Server, discovers the current Plan preset, and reports the effective
+      // mode receipt. It never supplies an approval override.
+      const cwd = resolve(flagValue(rest, "--cwd") || process.cwd());
+      const cwdFlag = rest.indexOf("--cwd");
+      const outcome = rest
+        .filter((_, index) => cwdFlag < 0 || (index !== cwdFlag && index !== cwdFlag + 1))
+        .join(" ")
+        .trim();
+      if (!process.stdin.isTTY || !process.stderr.isTTY) {
+        out(fallbackPlanLaunch(outcome, new Error("native Plan launch requires an interactive terminal to preserve Muster's approval gate")));
+        process.exitCode = 2;
+        return;
+      }
+      const terminal = createInterface({ input: process.stdin, output: process.stderr });
+      const userInput = async (question, options) => {
+        process.stderr.write(`\n${question.header ? `${question.header}: ` : ""}${question.question}\n`);
+        for (const [index, option] of options.entries())
+          process.stderr.write(`  ${index + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}\n`);
+        return terminal.question("> ");
+      };
+      let client;
+      try {
+        client = await createCodexAppServerClient({
+          cwd,
+          userInput,
+          onNotification: message => renderPlanNotification(message, text => process.stderr.write(text)),
+        });
+      } catch (error) {
+        terminal.close();
+        out(fallbackPlanLaunch(outcome, error));
+        process.exitCode = 2;
+        return;
+      }
+      try {
+        const launched = await launchCodexPlan({ client, cwd, outcome });
+        out(launched);
+        if (launched.status !== "started") {
+          process.exitCode = 2;
+          return;
+        }
+        const completed = await client.waitForNotification(
+          "turn/completed",
+          message => message.params?.threadId === launched.threadId
+            && message.params?.turn?.id === launched.turnId,
+          30 * 60_000,
+        );
+        const result = classifyPlanTurn(completed.params.turn);
+        out({
+          status: result.status,
+          native: true,
+          effectiveMode: launched.effectiveMode,
+          threadId: launched.threadId,
+          turn: completed.params.turn,
+        });
+        if (result.exitCode !== 0) process.exitCode = result.exitCode;
+      } finally {
+        await client.close();
+        terminal.close();
+      }
     } else if (cmd === "receipt-verify") {
       // base-sha-receipt-verification item: the executable consumer -- proof that a
       // base-SHA receipt's SHA is REAL, not just well-formed (buildBaseShaReceipt's

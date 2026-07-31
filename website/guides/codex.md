@@ -15,6 +15,24 @@ Model work uses the account or subscription of the active Codex session. Muster'
 npx -y @adnova-group/muster@0.5.0 install codex --scope project
 ```
 
+## Start in native Plan mode
+
+From an interactive terminal, use the App Server-backed front door when you want Muster to activate Plan mode for a new turn instead of relying on the ambient session mode:
+
+```sh
+muster codex-plan "Design the import flow"
+```
+
+The command asks `collaborationMode/list` for the host's current Plan preset, starts the thread without changing its approval policy, reviewer, permissions, or sandbox, and passes the discovered preset to `turn/start.collaborationMode`. It reports `effectiveMode: "plan"` only after the App Server returns matching effective thread settings. Muster's approve/adjust/cancel question is relayed to the terminal; action approvals are never accepted automatically.
+
+The launcher streams authoritative completed plan and agent messages to the terminal before relaying structured input. It cannot switch an already-running desktop or IDE chat. If invoked non-interactively, or if this Codex build cannot expose App Server control, the Plan preset, the installed `muster-plan` skill, or an effective-mode receipt, it exits nonzero with the in-session path:
+
+```text
+/plan $muster-plan Design the import flow
+```
+
+That fallback is guidance, not a claim that Plan mode was activated. In either path, Muster's manifest and explicit approve/adjust/cancel gate still control whether execution begins.
+
 `--scope project` writes:
 
 - Muster-owned agent profiles under `.codex/agents/`

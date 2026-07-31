@@ -170,7 +170,12 @@ const COMMAND_MARKER_COVERAGE = [
 // under plugin/ (a CODEX_BUILD_INPUT_DIRS entry), so the skip-if-current input digest
 // observes every edit to it.
 function loadCodexDispatchContract(root) {
-  const ref = readFileSync(join(root, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md"), "utf8");
+  // Git may materialize text inputs with CRLF on Windows. Normalize this
+  // canonical prose source before locating paragraph boundaries so generated
+  // artifacts remain host-independent and the LF-only blank-line delimiter
+  // cannot reject an otherwise identical Windows checkout.
+  const ref = readFileSync(join(root, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md"), "utf8")
+    .replace(/\r\n/g, "\n");
   const extract = (startMarker, label) => {
     const start = ref.indexOf(startMarker);
     const end = start < 0 ? -1 : ref.indexOf("\n\n", start);

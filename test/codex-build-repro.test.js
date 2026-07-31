@@ -124,6 +124,25 @@ test("Codex bundles are byte-identical across checkout roots with shared symlink
   }
 });
 
+test("Codex build accepts CRLF-normalized dispatch references from Windows checkouts", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-crlf-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const checkout = join(tmp, "checkout");
+  await mkdir(checkout, { recursive: true });
+  await Promise.all(fixtureEntries.map(entry => cp(join(repoRoot, entry), join(checkout, entry), { recursive: true })));
+  await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
+
+  const referencePath = join(checkout, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md");
+  const reference = await readFile(referencePath, "utf8");
+  await writeFile(referencePath, reference.replace(/\r?\n/g, "\r\n"));
+
+  await execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 });
+  const { pluginRoot } = await resolveCodexPlugin(checkout);
+  const orchestrator = await readFile(join(pluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
+  assert.match(orchestrator, /multi_agent_v1\.spawn_agent/);
+  assert.match(orchestrator, /`fork_turns` \(v2 only\)/);
+});
+
 test("repeated Codex build produces byte-identical bundles from unchanged source", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-repeat-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

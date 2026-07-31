@@ -28,6 +28,10 @@ startMusterMcpServer({
   maxInflight: 4,
   maxQueue: 16,
   staticTools: { muster_sprint_protocol: sprintProtocol },
-  mapArgv: (_name, argv) => argv,
+  mapArgv: (name, argv) => name === "muster_capabilities"
+    ? ["capabilities", "--agent-plugins"]
+    : name === "muster_capabilities_roles"
+      ? ["capabilities", "--agent-plugins", "--roles-only"]
+      : argv,
   authorizeTools: catalog => ({ tools: catalog }),
 });

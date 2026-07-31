@@ -101,6 +101,13 @@ function validateStdioServer(root, name, server) {
   ) {
     invalidServer(name, "command must be one bare executable token or a ./ plugin path");
   }
+  if (server.command.startsWith("./")) {
+    try {
+      assertInside(resolve(root), resolve(root, server.command), `MCP server ${name} command`);
+    } catch (error) {
+      invalidServer(name, error.message);
+    }
+  }
   if (server.args !== undefined && !stringArray(server.args)) invalidServer(name, "args must be strings");
   if (server.env !== undefined && !stringRecord(server.env)) invalidServer(name, "env must contain strings");
   if (server.env && ("PLUGIN_ROOT" in server.env || "PLUGIN_DATA" in server.env)) {
@@ -118,11 +125,27 @@ function validateStdioServer(root, name, server) {
       assertInside(resolve(root), resolve(root, server.cwd), `MCP server ${name} cwd`);
     }
     if (server.cwd.startsWith("${PLUGIN_ROOT}/")) {
-      assertInside(
-        resolve(root),
-        resolve(root, server.cwd.slice("${PLUGIN_ROOT}/".length)),
-        `MCP server ${name} cwd`
-      );
+      try {
+        assertInside(
+          resolve(root),
+          resolve(root, server.cwd.slice("${PLUGIN_ROOT}/".length)),
+          `MCP server ${name} cwd`
+        );
+      } catch (error) {
+        invalidServer(name, error.message);
+      }
+    }
+    if (server.cwd.startsWith("${PLUGIN_DATA}/")) {
+      const dataRoot = resolve(root, ".agent-plugin-data-boundary");
+      try {
+        assertInside(
+          dataRoot,
+          resolve(dataRoot, server.cwd.slice("${PLUGIN_DATA}/".length)),
+          `MCP server ${name} cwd`
+        );
+      } catch (error) {
+        invalidServer(name, error.message);
+      }
     }
   }
 }
@@ -152,6 +175,14 @@ function validateHttpServer(name, server) {
   }
   if (server.headers !== undefined && !stringRecord(server.headers)) {
     invalidServer(name, "headers must contain strings");
+  }
+  for (const [header, value] of Object.entries(server.headers ?? {})) {
+    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(header)) {
+      invalidServer(name, `invalid HTTP header name ${JSON.stringify(header)}`);
+    }
+    if (/[\x00-\x08\x0a-\x1f\x7f]/.test(value)) {
+      invalidServer(name, `invalid HTTP header value for ${header}`);
+    }
   }
   const names = Object.keys(server.headers ?? {}).map(header => header.toLowerCase());
   if (new Set(names).size !== names.length) invalidServer(name, "header names must be unique ignoring case");
@@ -213,5 +244,19 @@ export async function validateAgentPluginPackage(root) {
     skills,
     mcpServers: mcp.mcpServers,
     packageFiles,
+  };
+}
+
+export async function readAgentPluginInventory(root) {
+  const manifest = await readJson(join(root, "plugin.json"));
+  const mcp = await readJson(join(root, "mcp.json"));
+  validateManifest(manifest);
+  await validateMcpConfiguration(root, mcp);
+  return {
+    runtime: "agent-plugins",
+    plugins: [manifest.name],
+    skills: await listDirectChildSkills(join(root, "skills")),
+    agents: [],
+    mcpServers: Object.keys(mcp.mcpServers).sort(),
   };
 }

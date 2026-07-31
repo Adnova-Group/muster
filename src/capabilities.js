@@ -35,6 +35,9 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   // Code alias + effort it dispatches on, resolved from the SAME neutral manifest
   // (kimiProfileForAgentId). Non-kimi output shape is unchanged.
   const kimi = opts.kimi === true;
+  const agentPlugins = opts.agentPlugins === true
+    || installed.runtime === "agent-plugins"
+    || process.env.MUSTER_RUNTIME === "agent-plugins";
   // Cowork has no agent or skill loader by default: its host can invoke
   // registered MCP servers and can always execute a task inline, but a Claude
   // Code plugin merely being present on disk does not make that plugin's
@@ -112,7 +115,7 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     // inline/skill/mcp chosen exactly as codexModel/kimiModel are, and
     // src/claude.js's lane scoping is honored: the field is a pre-dispatch
     // resolution surface, never agent frontmatter or an Agent-tool call.
-    if (!work && !codex && !kimi) {
+    if (!work && !codex && !kimi && !agentPlugins) {
       const claudeProfile = chosen.kind === "agent" ? claudeProfileForAgentId(chosen.id) : null;
       // PRECEDENCE (audit S3, P1): when the chosen agent HAS a manifest profile,
       // that profile is the authoritative dispatch pin, so claudeModel IS

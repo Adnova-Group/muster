@@ -79,9 +79,13 @@ test("unsupported Agent Plugins schema versions fail closed", async () => {
 test("invalid closed-variant MCP server entries fail validation", async () => {
   const invalidServers = [
     { type: "stdio", command: "" },
+    { type: "stdio", command: "./../outside" },
     { type: "stdio", command: "node", cwd: "outside" },
+    { type: "stdio", command: "node", cwd: "${PLUGIN_DATA}/../outside" },
     { type: "stdio", command: "node", env: { PLUGIN_ROOT: "/tmp/override" } },
     { type: "stdio", command: "node", surprise: true },
+    { type: "streamable-http", url: "https://example.com/mcp", headers: { "bad header": "x" } },
+    { type: "streamable-http", url: "https://example.com/mcp", headers: { Good: "line\nbreak" } },
   ];
   for (const server of invalidServers) {
     await assert.rejects(
@@ -156,10 +160,11 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
         if (!line) continue;
         const message = JSON.parse(line);
         messages.set(message.id, message);
-        if (messages.has(1) && messages.has(2)) {
+        if (messages.has(1) && messages.has(2) && messages.has(3)) {
           finish(null, {
             initialize: messages.get(1).result,
             tools: messages.get(2).result.tools,
+            capabilities: JSON.parse(messages.get(3).result.content[0].text),
           });
         }
       }
@@ -179,10 +184,18 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
       },
     }) + "\n");
     server.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }) + "\n");
+    server.stdin.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "muster_capabilities", arguments: {} },
+    }) + "\n");
   });
 
   assert.match(result.initialize.instructions, /Agent Plugins client/);
   assert.doesNotMatch(result.initialize.instructions, /\bCodex\b/);
   assert.ok(result.tools.length > 0);
   assert.ok(result.tools.every(tool => tool.name.startsWith("muster_")));
+  assert.equal(result.capabilities.installedRaw.runtime, "agent-plugins");
+  assert.ok(Object.values(result.capabilities.roles).every(role => role.claudeModel === undefined));
 });

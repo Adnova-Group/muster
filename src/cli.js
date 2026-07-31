@@ -41,6 +41,7 @@ import { runKimiInstall, runKimiUninstall } from "./kimi-install.js";
 import { runCodexDoctor } from "./codex-doctor.js";
 import { readCodexInventory } from "./codex-inventory.js";
 import { adaptCatalogForCodex } from "./codex-catalog.js";
+import { readAgentPluginInventory } from "./agent-plugins.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
 import { dirFromImportMeta } from "./fs-util.js";
@@ -86,7 +87,7 @@ const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // pre-split string (website-docs.test.js reassembles this array from source).
 const USAGE = [
   // routing: project detection, capability discovery, task→provider matching
-  "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--work] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
+  "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--work] [--agent-plugins] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
@@ -170,7 +171,7 @@ async function main() {
       // The optional positional home-dir override is found by elimination: take the
       // first arg that neither looks like a flag nor is a value a flag consumed. In
       // this branch only --role and --connectors take values; every other flag
-      // (--codex/--kimi/--cowork/--work/--roles-only/--native-plugin) is a boolean switch.
+      // (--codex/--kimi/--cowork/--work/--agent-plugins/--roles-only/--native-plugin) is a boolean switch.
       const role = flagValue(rest, "--role");
       const connectors = flagValue(rest, "--connectors");
       const consumedValues = new Set([role, connectors].filter(Boolean));
@@ -180,6 +181,8 @@ async function main() {
       let installed;
       if (rest.includes("--codex")) {
         installed = await readCodexInventory({ cwd: process.cwd() });
+      } else if (rest.includes("--agent-plugins")) {
+        installed = await readAgentPluginInventory(process.env.PLUGIN_ROOT || process.cwd());
       } else if (rest.includes("--kimi")) {
         installed = await readInstalledKimi(home);
       } else if (rest.includes("--work")) {
@@ -211,6 +214,8 @@ async function main() {
         ? resolveCapabilities(adaptCatalogForCodex(catalog, installed), installed, home, { codex: true })
         : rest.includes("--kimi")
         ? resolveCapabilities(catalog, installed, home, { kimi: true })
+        : rest.includes("--agent-plugins")
+        ? resolveCapabilities(catalog, installed, home, { agentPlugins: true })
         : resolveCapabilities(catalog, installed, home);
       if (role) {
         if (!capabilities.roles[role]) fail(`capabilities --role ${role}: unknown role`);

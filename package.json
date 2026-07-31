@@ -32,6 +32,9 @@
   "files": [
     "src",
     "scripts",
+    "plugin.json",
+    "skills",
+    "mcp.json",
     "plugin",
     ".claude-plugin",
     "codex",

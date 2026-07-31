@@ -41,6 +41,7 @@ import { runKimiInstall, runKimiUninstall } from "./kimi-install.js";
 import { runCodexDoctor } from "./codex-doctor.js";
 import { readCodexInventory } from "./codex-inventory.js";
 import { adaptCatalogForCodex } from "./codex-catalog.js";
+import { readAgentPluginInventory } from "./agent-plugins.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
 import { dirFromImportMeta } from "./fs-util.js";
@@ -86,7 +87,7 @@ const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // pre-split string (website-docs.test.js reassembles this array from source).
 const USAGE = [
   // routing: project detection, capability discovery, task→provider matching
-  "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--work] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
+  "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--work] [--agent-plugins] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
@@ -140,8 +141,14 @@ async function loadEffectiveCatalog(args) {
   const catalog = await loadCatalog(CATALOG_DIR);
   const codex = args.includes("--codex");
   const work = args.includes("--work");
+  const agentPlugins = args.includes("--agent-plugins");
   const installed = codex
     ? await readCodexInventory({ cwd: process.cwd() })
+    : agentPlugins
+    ? await readAgentPluginInventory(
+      process.env.PLUGIN_ROOT || process.cwd(),
+      { pluginDataRoot: process.env.PLUGIN_DATA }
+    )
     : work
     ? readInstalledWork()
     : await readInstalled(homedir());
@@ -170,7 +177,7 @@ async function main() {
       // The optional positional home-dir override is found by elimination: take the
       // first arg that neither looks like a flag nor is a value a flag consumed. In
       // this branch only --role and --connectors take values; every other flag
-      // (--codex/--kimi/--cowork/--work/--roles-only/--native-plugin) is a boolean switch.
+      // (--codex/--kimi/--cowork/--work/--agent-plugins/--roles-only/--native-plugin) is a boolean switch.
       const role = flagValue(rest, "--role");
       const connectors = flagValue(rest, "--connectors");
       const consumedValues = new Set([role, connectors].filter(Boolean));
@@ -180,6 +187,11 @@ async function main() {
       let installed;
       if (rest.includes("--codex")) {
         installed = await readCodexInventory({ cwd: process.cwd() });
+      } else if (rest.includes("--agent-plugins")) {
+        installed = await readAgentPluginInventory(
+          process.env.PLUGIN_ROOT || process.cwd(),
+          { pluginDataRoot: process.env.PLUGIN_DATA }
+        );
       } else if (rest.includes("--kimi")) {
         installed = await readInstalledKimi(home);
       } else if (rest.includes("--work")) {
@@ -211,6 +223,8 @@ async function main() {
         ? resolveCapabilities(adaptCatalogForCodex(catalog, installed), installed, home, { codex: true })
         : rest.includes("--kimi")
         ? resolveCapabilities(catalog, installed, home, { kimi: true })
+        : rest.includes("--agent-plugins")
+        ? resolveCapabilities(catalog, installed, home, { agentPlugins: true })
         : resolveCapabilities(catalog, installed, home);
       if (role) {
         if (!capabilities.roles[role]) fail(`capabilities --role ${role}: unknown role`);
@@ -240,13 +254,13 @@ async function main() {
       out({ ranked, suggested });
     } else if (cmd === "match") {
       const work = rest.includes("--work");
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--agent-plugins");
       if (!args[0]) fail("match <task>: missing task");
       const { catalog, installed } = await loadEffectiveCatalog(rest);
       out(matchProviders(args[0], catalog, installed, { callableOnly: work }));
     // ── manifest + waves: validate, order, and drive a plan ──
     } else if (cmd === "manifest" && rest[0] === "validate") {
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--agent-plugins");
       const file = requireArg(args, 1, "manifest validate <file>: missing file path", fail);
       const obj = JSON.parse(await readFile(file, "utf8"));
       const r = validateManifest(obj);
@@ -829,7 +843,7 @@ async function main() {
       const p = routePipeline(ps, outcome, domain);
       out({ domain, pipeline: p ? p.id : null });
     } else if (cmd === "diagnose") {
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--agent-plugins");
       const ci = args.includes("--ci");
       let input;
       if (ci) {
@@ -845,7 +859,7 @@ async function main() {
       // --backlog: read-only sweep -> ranked capture, no fix/verify (the $muster-audit
       // skill's backlog mode). Remaining positionals are optional path scopes.
       const backlog = rest.includes("--backlog");
-      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--backlog");
+      const args = rest.filter(arg => arg !== "--codex" && arg !== "--work" && arg !== "--agent-plugins" && arg !== "--backlog");
       // Remaining positionals are path scopes; a "-"-leading token is an unrecognized flag,
       // not a path (path scopes never start with "-"). Fail cleanly rather than silently
       // scoping to a bogus path -- mirrors the muster_audit MCP boundary's own guard.

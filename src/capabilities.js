@@ -35,6 +35,11 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   // Code alias + effort it dispatches on, resolved from the SAME neutral manifest
   // (kimiProfileForAgentId). Non-kimi output shape is unchanged.
   const kimi = opts.kimi === true;
+  const agentPlugins = opts.agentPlugins === true
+    || installed.runtime === "agent-plugins"
+    || process.env.MUSTER_RUNTIME === "agent-plugins";
+  const agentPluginSkills = new Set(installed.skills || []);
+  const agentPluginMcpServers = new Set(installed.mcpServers || []);
   // Cowork has no agent or skill loader by default: its host can invoke
   // registered MCP servers and can always execute a task inline, but a Claude
   // Code plugin merely being present on disk does not make that plugin's
@@ -70,6 +75,14 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
         entry = { id: e.id, source: "installed", kind: providerType(e) };
       } else if (e.kind === "builtin" || e.kind === "agent") {
         entry = { id: e.id, source: "builtin", kind: providerType(e) };
+      }
+      if (agentPlugins && entry) {
+        const portable = entry.kind === "skill"
+          ? agentPluginSkills.has(entry.id)
+          : entry.kind === "mcp"
+            ? agentPluginMcpServers.has(entry.id)
+            : false;
+        if (!portable) entry = null;
       }
       if (mcpOnly && entry?.kind !== "mcp") entry = null;
       if (!entry) continue;
@@ -112,7 +125,7 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     // inline/skill/mcp chosen exactly as codexModel/kimiModel are, and
     // src/claude.js's lane scoping is honored: the field is a pre-dispatch
     // resolution surface, never agent frontmatter or an Agent-tool call.
-    if (!work && !codex && !kimi) {
+    if (!work && !codex && !kimi && !agentPlugins) {
       const claudeProfile = chosen.kind === "agent" ? claudeProfileForAgentId(chosen.id) : null;
       // PRECEDENCE (audit S3, P1): when the chosen agent HAS a manifest profile,
       // that profile is the authoritative dispatch pin, so claudeModel IS
@@ -153,10 +166,18 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   const skillDescriptionCache = {};
   for (const name of new Set(installed.skills || [])) {
     seen.add(name);
-    skills.push({ id: name, source: "installed", description: installedSkillDescription(home, name, skillDescriptionCache) });
+    const portableDescription = installed.skillDescriptions?.[name];
+    skills.push({
+      id: name,
+      source: "installed",
+      description: typeof portableDescription === "string"
+        ? portableDescription
+        : installedSkillDescription(home, name, skillDescriptionCache),
+    });
   }
   for (const e of catalog) {
     if (e.kind !== "builtin" || seen.has(e.id)) continue;
+    if (agentPlugins && !agentPluginSkills.has(e.id)) continue;
     seen.add(e.id);
     skills.push({ id: e.id, source: "builtin", description: e.description || "" });
   }

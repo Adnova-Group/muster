@@ -1,4 +1,5 @@
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { isIP } from "node:net";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export const AGENT_PLUGIN_SCHEMA =
@@ -89,7 +90,7 @@ function invalidServer(name, reason) {
   throw new Error(`invalid Agent Plugins MCP server ${name}: ${reason}`);
 }
 
-function validateStdioServer(root, name, server) {
+async function validateStdioServer(root, name, server) {
   const allowed = new Set(["type", "command", "args", "env", "cwd"]);
   const unknown = Object.keys(server).find(key => !allowed.has(key));
   if (unknown) invalidServer(name, `unknown field ${unknown}`);
@@ -103,7 +104,7 @@ function validateStdioServer(root, name, server) {
   }
   if (server.command.startsWith("./")) {
     try {
-      assertInside(resolve(root), resolve(root, server.command), `MCP server ${name} command`);
+      await assertExistingInside(root, resolve(root, server.command), `MCP server ${name} command`);
     } catch (error) {
       invalidServer(name, error.message);
     }
@@ -122,12 +123,16 @@ function validateStdioServer(root, name, server) {
       || server.cwd.startsWith("./");
     if (!portable) invalidServer(name, "cwd must be plugin-relative, PLUGIN_ROOT, or PLUGIN_DATA");
     if (server.cwd.startsWith("./")) {
-      assertInside(resolve(root), resolve(root, server.cwd), `MCP server ${name} cwd`);
+      try {
+        await assertExistingInside(root, resolve(root, server.cwd), `MCP server ${name} cwd`);
+      } catch (error) {
+        invalidServer(name, error.message);
+      }
     }
     if (server.cwd.startsWith("${PLUGIN_ROOT}/")) {
       try {
-        assertInside(
-          resolve(root),
+        await assertExistingInside(
+          root,
           resolve(root, server.cwd.slice("${PLUGIN_ROOT}/".length)),
           `MCP server ${name} cwd`
         );
@@ -151,10 +156,11 @@ function validateStdioServer(root, name, server) {
 }
 
 function isLoopback(hostname) {
-  return hostname === "localhost"
-    || hostname === "127.0.0.1"
-    || hostname === "::1"
-    || /^127\./.test(hostname);
+  const literal = hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1)
+    : hostname;
+  if (literal === "localhost" || literal === "::1") return true;
+  return isIP(literal) === 4 && literal.split(".")[0] === "127";
 }
 
 function validateHttpServer(name, server) {
@@ -200,7 +206,7 @@ export async function validateMcpConfiguration(root, mcp) {
 
   for (const [name, server] of Object.entries(mcp.mcpServers)) {
     if (!isRecord(server)) invalidServer(name, "entry must be an object");
-    if (server.type === "stdio") validateStdioServer(root, name, server);
+    if (server.type === "stdio") await validateStdioServer(root, name, server);
     else if (server.type === "streamable-http" || server.type === "sse") validateHttpServer(name, server);
     else invalidServer(name, `unknown transport ${JSON.stringify(server.type)}`);
     for (const value of server.args ?? []) {

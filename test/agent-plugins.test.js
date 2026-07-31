@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCallback } from "node:child_process";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -86,12 +86,35 @@ test("invalid closed-variant MCP server entries fail validation", async () => {
     { type: "stdio", command: "node", surprise: true },
     { type: "streamable-http", url: "https://example.com/mcp", headers: { "bad header": "x" } },
     { type: "streamable-http", url: "https://example.com/mcp", headers: { Good: "line\nbreak" } },
+    { type: "streamable-http", url: "http://127.example.com/mcp" },
   ];
   for (const server of invalidServers) {
     await assert.rejects(
       validateMcpConfiguration(repoRoot, {
         $schema: AGENT_PLUGIN_MCP_SCHEMA,
         mcpServers: { invalid: server },
+      }),
+      /invalid Agent Plugins MCP server/
+    );
+  }
+});
+
+test("plugin-relative MCP command and cwd reject symlink escapes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-agent-plugin-root-"));
+  const outside = await mkdtemp(join(tmpdir(), "muster-agent-plugin-outside-"));
+  await writeFile(join(outside, "server.mjs"), "export {};\n");
+  await symlink(outside, join(root, "escape"), "dir");
+  await mkdir(join(root, "inside"));
+
+  for (const server of [
+    { type: "stdio", command: "./escape/server.mjs" },
+    { type: "stdio", command: "node", cwd: "./escape" },
+    { type: "stdio", command: "node", cwd: "${PLUGIN_ROOT}/escape" },
+  ]) {
+    await assert.rejects(
+      validateMcpConfiguration(root, {
+        $schema: AGENT_PLUGIN_MCP_SCHEMA,
+        mcpServers: { escaped: server },
       }),
       /invalid Agent Plugins MCP server/
     );
@@ -198,4 +221,16 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
   assert.ok(result.tools.every(tool => tool.name.startsWith("muster_")));
   assert.equal(result.capabilities.installedRaw.runtime, "agent-plugins");
   assert.ok(Object.values(result.capabilities.roles).every(role => role.claudeModel === undefined));
+  const portableSkills = new Set(await listDirectChildSkills(join(repoRoot, "skills")));
+  const portableMcp = new Set(Object.keys(mcp.mcpServers));
+  for (const role of Object.values(result.capabilities.roles)) {
+    assert.notEqual(role.chosen.kind, "agent");
+    if (role.chosen.kind === "skill") assert.ok(portableSkills.has(role.chosen.id));
+    if (role.chosen.kind === "mcp") assert.ok(portableMcp.has(role.chosen.id));
+  }
+  assert.deepEqual(
+    new Set(result.capabilities.skills.map(skill => skill.id)),
+    portableSkills,
+    "the neutral lane must not advertise skills absent from the portable package"
+  );
 });

@@ -109,7 +109,10 @@ test("Codex doctor flags a managed hook whose pinned Node interpreter no longer 
   assert.equal(report.checks.find(c => c.name === "codex-hooks")?.ok, true, "coherent hooks must still pass codex-hooks");
   const interp = report.checks.find(c => c.name === "codex-hook-interpreter");
   assert.equal(interp?.ok, false, "a vanished pinned node must fail codex-hook-interpreter");
-  assert.match(interp?.detail || "", new RegExp(`${ghostNode.replaceAll("/", "\\/")}`));
+  assert.ok(
+    (interp?.detail || "").includes(formatCodexWindowsPath(ghostNode)),
+    "diagnostic must name the missing interpreter using the hook command's portable path form",
+  );
   assert.match(interp?.detail || "", /rerun muster install codex/i);
 });
 

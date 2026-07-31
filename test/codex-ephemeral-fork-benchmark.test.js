@@ -17,6 +17,7 @@ test("fixture matrix has at least 10 cases and covers all three requested lanes"
     [...new Set(cases.map(item => item.lane))].sort(),
     ["read-only-review", "spec-gate", "tournament"]
   );
+  assert.ok(cases.every(item => item.material && typeof item.material === "object"));
 });
 
 test("fixture summary refuses to invent model correctness or history measurements", () => {

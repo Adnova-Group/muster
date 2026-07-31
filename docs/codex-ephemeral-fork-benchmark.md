@@ -19,8 +19,9 @@ The rerunnable harness is `eval/codex-ephemeral-fork-benchmark.mjs`. It uses onl
 the installed Codex binary; no production package or app-server client was added.
 
 - Twelve deterministic case definitions: four spec-gates, four tournament decisions, and four
-  read-only reviews. They establish the representative matrix but do not carry fabricated lane
-  outputs.
+  read-only reviews. Each carries executable-shaped manifest, candidate, or verdict material. The
+  harness serializes that material into `developerInstructions` on both members of its matching
+  fork/start control-plane pair; it does not carry fabricated lane outputs.
 - One minimal seed turn materializes a persisted parent rollout. This is required because the live
   server rejects a fork of an unmaterialized `thread/start` with `no rollout found for thread id`.
 - Each case measures one `thread/fork` with `ephemeral: true, excludeTurns: true` and one fresh
@@ -51,7 +52,7 @@ The checked-in run is `eval/results/codex-ephemeral-fork-benchmark.json`.
 | Irrelevant inherited turns | `UNKNOWN` | `UNKNOWN` | Fork contents were not model-inspected |
 | Model input tokens | `UNKNOWN` | `UNKNOWN` | Threshold cannot pass |
 | Model wall time | `UNKNOWN` | `UNKNOWN` | Threshold cannot pass |
-| Control-plane mean | 765.806 ms | 721.837 ms | Fork was 6.1% slower in this single run |
+| Control-plane mean | 700.207 ms | 679.183 ms | Fork was 3.1% slower in this single run |
 | Ephemeral IDs in persisted listing | 0 | 0 | Pass |
 | Pagination | 2 pages at `limit: 1` | same listing | Exhausted at `nextCursor: null` |
 

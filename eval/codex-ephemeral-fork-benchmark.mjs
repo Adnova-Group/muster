@@ -37,7 +37,7 @@ export function summarizeFixtureCases(cases) {
     throw new Error(`fixture benchmark must cover exactly ${requiredLanes.join(", ")}`);
   }
   for (const item of cases) {
-    if (!item.id || !item.expected) {
+    if (!item.id || !item.expected || !item.material || typeof item.material !== "object") {
       throw new Error(`fixture case is missing a required field: ${JSON.stringify(item)}`);
     }
   }
@@ -155,17 +155,24 @@ class AppServerClient {
       if (message.error) pending.reject(new Error(`${pending.method}: ${JSON.stringify(message.error)}`));
       else pending.resolve(message.result);
     });
-    this.child.on("exit", code => {
+    const fail = error => {
+      if (this.exited) return;
       this.exited = true;
       for (const pending of this.pending.values()) {
-        pending.reject(new Error(`codex app-server exited ${code}: ${this.stderr.trim()}`));
+        pending.reject(error);
       }
       this.pending.clear();
       for (const waiter of this.waiters) {
         clearTimeout(waiter.timer);
-        waiter.reject(new Error(`codex app-server exited ${code} while waiting for ${waiter.method}`));
+        waiter.reject(error);
       }
       this.waiters = [];
+    };
+    this.child.on("error", error => {
+      fail(new Error(`codex app-server spawn failed: ${error.message}`));
+    });
+    this.child.on("exit", code => {
+      fail(new Error(`codex app-server exited ${code}: ${this.stderr.trim()}`));
     });
   }
 
@@ -229,12 +236,13 @@ async function timed(request) {
   return { result, durationMs: performance.now() - started };
 }
 
-export async function probeAppServer({ caseCount, cwd }) {
+export async function probeAppServer({ cases, cwd }) {
   const probeCwd = mkdtempSync(join(tmpdir(), "muster-ephemeral-fork-benchmark-"));
-  const client = new AppServerClient({ cwd });
+  let client;
   const persistentIds = [];
   const ephemeralIds = [];
   try {
+    client = new AppServerClient({ cwd });
     await client.initialize();
     const parent = await client.request("thread/start", {
       cwd: probeCwd,
@@ -242,6 +250,7 @@ export async function probeAppServer({ caseCount, cwd }) {
       approvalPolicy: "never",
       sandbox: "read-only"
     });
+    persistentIds.push(parent.thread.id);
     const completion = client.waitFor(
       "turn/completed",
       params => params?.threadId === parent.thread.id
@@ -260,15 +269,18 @@ export async function probeAppServer({ caseCount, cwd }) {
       approvalPolicy: "never",
       sandbox: "read-only"
     });
-    persistentIds.push(parent.thread.id, sentinel.thread.id);
+    persistentIds.push(sentinel.thread.id);
 
     const forkDurations = [];
     const freshDurations = [];
-    for (let index = 0; index < caseCount; index++) {
+    for (const benchmarkCase of cases) {
+      const caseInstructions =
+        `Control-plane-only benchmark case ${benchmarkCase.id}: ${JSON.stringify(benchmarkCase.material)}`;
       const fork = await timed(() => client.request("thread/fork", {
         threadId: parent.thread.id,
         ephemeral: true,
         excludeTurns: true,
+        developerInstructions: caseInstructions,
         approvalPolicy: "never",
         sandbox: "read-only"
       }));
@@ -278,6 +290,7 @@ export async function probeAppServer({ caseCount, cwd }) {
       const fresh = await timed(() => client.request("thread/start", {
         cwd: probeCwd,
         ephemeral: true,
+        developerInstructions: caseInstructions,
         approvalPolicy: "never",
         sandbox: "read-only"
       }));
@@ -331,13 +344,13 @@ export async function probeAppServer({ caseCount, cwd }) {
     try {
       for (const threadId of [...ephemeralIds, ...persistentIds]) {
         try {
-          await client.request("thread/delete", { threadId }, 2_000);
+          await client?.request("thread/delete", { threadId }, 2_000);
         } catch {
           // Ephemeral threads have no rollout to delete; cleanup is best effort.
         }
       }
     } finally {
-      client.close();
+      client?.close();
       rmSync(probeCwd, { recursive: true, force: true });
     }
   }
@@ -348,7 +361,7 @@ export async function runBenchmark({ fixturePath = DEFAULT_FIXTURE, cwd = join(H
   const fixture = summarizeFixtureCases(cases);
   let controlPlane;
   try {
-    controlPlane = await probeAppServer({ caseCount: cases.length, cwd });
+    controlPlane = await probeAppServer({ cases, cwd });
   } catch (error) {
     controlPlane = {
       status: UNKNOWN,

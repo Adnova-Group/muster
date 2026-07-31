@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,40 @@ const sourceServer = new URL("../plugin/builtins/sp-brainstorm/scripts/server.cj
 const helper = new URL("../codex/skill-assets/sp-brainstorm/scripts/helper.js", import.meta.url).pathname;
 const sourceHelper = new URL("../plugin/builtins/sp-brainstorm/scripts/helper.js", import.meta.url).pathname;
 const assetManifest = new URL("../codex/skill-assets/manifest.json", import.meta.url).pathname;
+
+async function launchServer(session, extraEnv = {}) {
+  const child = spawn(process.execPath, [server], {
+    env: {
+      ...process.env,
+      BRAINSTORM_DIR: session,
+      BRAINSTORM_PORT: String(49152 + Math.floor(Math.random() * 15000)),
+      BRAINSTORM_IDLE_TIMEOUT_MS: "10000",
+      BRAINSTORM_LIFECYCLE_CHECK_MS: "20",
+      ...extraEnv,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const info = await new Promise((resolve, reject) => {
+    let stdout = "";
+    const timer = setTimeout(() => reject(new Error(`server startup timed out: ${stdout}`)), 2000);
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      for (const line of stdout.split("\n")) {
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.type === "server-started") {
+            clearTimeout(timer);
+            resolve(parsed);
+            return;
+          }
+        } catch { /* incomplete/non-JSON diagnostic */ }
+      }
+    });
+    child.once("error", (error) => { clearTimeout(timer); reject(error); });
+    child.once("exit", (code) => { clearTimeout(timer); reject(new Error(`server exited during startup: ${code}`)); });
+  });
+  return { child, info };
+}
 
 test("packaged brainstorm server and manifest identify the byte-identical local overlay", async () => {
   assert.deepEqual(await readFile(server), await readFile(sourceServer));
@@ -31,7 +65,11 @@ test("brainstorm browser boundary keeps the token out of scripts and sandboxes g
     readFile(helper, "utf8"),
   ]);
   assert.doesNotMatch(serverSource, /sessionStorage|localStorage/);
+  assert.doesNotMatch(serverSource, /Set-Cookie|COOKIE_NAME|parseCookies/);
   assert.doesNotMatch(helperSource, /sessionStorage|localStorage|WebSocket|\?key=/);
+  assert.match(serverSource, /const VIEW_TOKEN = crypto\.randomBytes\(32\)/);
+  assert.match(serverSource, /new WebSocket\('ws:\/\/' \+ location\.host \+ '\/\?key='/);
+  assert.match(serverSource, /src="\/screen\?view=\$\{VIEW_TOKEN\}/);
   assert.match(serverSource, /sandbox="allow-scripts"/);
   assert.match(serverSource, /event\.source !== frame\.contentWindow \|\| event\.origin !== 'null'/);
   assert.match(serverSource, /const channel = crypto\.randomBytes\(16\)\.toString\('hex'\)/);
@@ -52,7 +90,55 @@ test("brainstorm content reads stay on one no-follow descriptor through validati
   assert.match(contract, /before\.dev !== pathStat\.dev \|\| before\.ino !== pathStat\.ino/);
   assert.match(contract, /const bytes = fs\.readFileSync\(handle\)/);
   assert.match(contract, /const after = fs\.fstatSync\(handle\)/);
+  assert.match(contract, /assertContentDirectoryStable\(\)/);
   assert.doesNotMatch(contract, /readFileSync\(resolved|readFileSync\(filePath/);
+});
+
+test("brainstorm pins and revalidates the content directory identity", async () => {
+  const source = await readFile(server, "utf8");
+  assert.match(source, /contentDirectoryIdentity = \{\s*dev: contentStat\.dev,\s*ino: contentStat\.ino,\s*realpath: fs\.realpathSync\(CONTENT_DIR\)/);
+  assert.match(source, /current\.isSymbolicLink\(\) \|\| !current\.isDirectory\(\)/);
+  assert.match(source, /current\.dev !== contentDirectoryIdentity\.dev \|\| current\.ino !== contentDirectoryIdentity\.ino/);
+  assert.match(source, /function getNewestScreen\(\) \{\s*assertContentDirectoryStable\(\)/);
+});
+
+test("controller bootstrap sets no localhost cookie and uses a separate view capability", async (t) => {
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-http-"));
+  await chmod(session, 0o700);
+  const { child, info } = await launchServer(session);
+  t.after(async () => { child.kill(); await rm(session, { recursive: true, force: true }); });
+  const response = await fetch(info.url);
+  const body = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("set-cookie"), null);
+  const master = new URL(info.url).searchParams.get("key");
+  const view = body.match(/\/screen\?view=([0-9a-f]{64})&channel=/)?.[1];
+  assert.ok(view);
+  assert.notEqual(view, master);
+});
+
+test("replacing the content directory cannot serve an outside screen", async (t) => {
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-dir-swap-"));
+  const outside = await mkdtemp(join(tmpdir(), "muster-brainstorm-outside-"));
+  await chmod(session, 0o700);
+  await chmod(outside, 0o700);
+  await writeFile(join(outside, "secret.html"), "OUTSIDE_SECRET", { mode: 0o600 });
+  const { child, info } = await launchServer(session);
+  t.after(async () => {
+    child.kill();
+    await Promise.all([rm(session, { recursive: true, force: true }), rm(outside, { recursive: true, force: true })]);
+  });
+  const controller = await (await fetch(info.url)).text();
+  const view = controller.match(/\/screen\?view=([0-9a-f]{64})&channel=/)?.[1];
+  assert.ok(view);
+  await rm(join(session, "content"), { recursive: true });
+  await symlink(outside, join(session, "content"), "dir");
+  let servedOutside = false;
+  try {
+    const response = await fetch(`http://127.0.0.1:${info.port}/screen?view=${view}&channel=${"a".repeat(32)}`);
+    servedOutside = response.status === 200 && (await response.text()).includes("OUTSIDE_SECRET");
+  } catch { /* fail-closed connection termination is acceptable */ }
+  assert.equal(servedOutside, false);
 });
 
 async function rejectedStartup(env) {

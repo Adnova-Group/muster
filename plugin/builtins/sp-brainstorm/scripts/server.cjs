@@ -203,10 +203,12 @@ let ownerPid = process.env.BRAINSTORM_OWNER_PID ? Number(process.env.BRAINSTORM_
 // and, when bound to a non-loopback host, by any host that can route to it.
 // The key authenticates the real client uniformly across loopback, tunnel, and
 // remote binds — and defeats DNS rebinding — where a Host/Origin allowlist
-// cannot. It rides the served URL as ?key= and is mirrored into a cookie on
-// first load so same-origin subresources and the WebSocket carry it for free.
-// Persisted alongside the port (BRAINSTORM_TOKEN_FILE) so a restart keeps the
-// same key and an already-open tab's cookie still validates.
+// cannot. It rides only the trusted controller URL as ?key=. The controller
+// keeps it in its nonce-protected closure and authenticates the WebSocket;
+// generated screens receive a separate read-only capability. Never put either
+// capability in a localhost cookie because cookies are not port-scoped.
+// Persisted alongside the port (BRAINSTORM_TOKEN_FILE) so the same launch URL
+// remains valid across a restart.
 const TOKEN_FILE = process.env.BRAINSTORM_TOKEN_FILE || null;
 function generateToken() {
   return crypto.randomBytes(32).toString('hex');
@@ -214,6 +216,9 @@ function generateToken() {
 
 function initialToken() {
   if (process.env.BRAINSTORM_TOKEN) {
+    if (!/^[0-9a-f]{32,}$/i.test(process.env.BRAINSTORM_TOKEN)) {
+      throw new Error('BRAINSTORM_TOKEN must be at least 32 hexadecimal characters');
+    }
     return { value: process.env.BRAINSTORM_TOKEN, source: 'env' };
   }
   if (TOKEN_FILE) {
@@ -230,7 +235,8 @@ function initialToken() {
 const tokenInfo = initialToken();
 let TOKEN = tokenInfo.value;
 let tokenSource = tokenInfo.source;
-let COOKIE_NAME = 'brainstorm-key-' + PORT; // refined to the actual bound port in onListen
+const VIEW_TOKEN = crypto.randomBytes(32).toString('hex');
+let contentDirectoryIdentity = null;
 
 const MIME_TYPES = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -271,16 +277,18 @@ const frameTemplate = fs.readFileSync(path.join(__dirname, 'frame-template.html'
 const helperScript = fs.readFileSync(path.join(__dirname, 'helper.js'), 'utf-8');
 const helperInjection = (nonce, channel) => '<script nonce="' + nonce + '">globalThis.__MUSTER_BRAINSTORM_CHANNEL__=' + JSON.stringify(channel) + ';\n' + helperScript + '\n</script>';
 
-function controllerPage(nonce, channel) {
+function controllerPage(nonce, channel, key) {
+  const encodedKey = JSON.stringify(String(key));
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Brainstorm Companion</title>
 <style>html,body{height:100%;margin:0;background:#1d1d1f}body{display:grid;grid-template-rows:auto 1fr;font-family:system-ui,sans-serif}.status{padding:.45rem .75rem;color:#d1d1d6;font-size:.75rem}iframe{width:100%;height:100%;border:0;background:#fff}</style>
 </head><body><div class="status" id="status">Connecting...</div>
-<iframe id="screen" title="Brainstorm choices" src="/screen?channel=${channel}" sandbox="allow-scripts"></iframe>
+<iframe id="screen" title="Brainstorm choices" src="/screen?view=${VIEW_TOKEN}&channel=${channel}" sandbox="allow-scripts"></iframe>
 <script nonce="${nonce}">
 (() => {
   const frame = document.getElementById('screen');
   const status = document.getElementById('status');
+  const key = ${encodedKey};
   let socket;
   function validEvent(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -296,12 +304,12 @@ function controllerPage(nonce, channel) {
   });
   function connect() {
     status.textContent = 'Connecting...';
-    socket = new WebSocket('ws://' + location.host + '/');
+    socket = new WebSocket('ws://' + location.host + '/?key=' + encodeURIComponent(key));
     socket.onopen = () => { status.textContent = 'Connected'; };
     socket.onmessage = message => {
       try {
         const data = JSON.parse(message.data);
-        if (data.type === 'reload') frame.src = '/screen?channel=${channel}&reload=' + Date.now();
+        if (data.type === 'reload') frame.src = '/screen?view=${VIEW_TOKEN}&channel=${channel}&reload=' + Date.now();
       } catch (_) {}
     };
     socket.onclose = () => { status.textContent = 'Reconnecting...'; setTimeout(connect, 1000); };
@@ -380,14 +388,17 @@ function readPinnedContentFile(filePath, encoding = null) {
   if (path.dirname(resolved) !== path.resolve(CONTENT_DIR)) return null;
   let handle;
   try {
+    assertContentDirectoryStable();
     const pathStat = fs.lstatSync(resolved);
     if (pathStat.isSymbolicLink() || !pathStat.isFile() || pathStat.nlink !== 1) return null;
     handle = fs.openSync(resolved, fs.constants.O_RDONLY | NOFOLLOW | fs.constants.O_NONBLOCK);
     const before = fs.fstatSync(handle);
+    assertContentDirectoryStable();
     if (!before.isFile() || before.nlink !== 1 || before.size > MAX_CONTENT_FILE_BYTES) return null;
     if (before.dev !== pathStat.dev || before.ino !== pathStat.ino) return null;
     const bytes = fs.readFileSync(handle);
     const after = fs.fstatSync(handle);
+    assertContentDirectoryStable();
     if (!after.isFile() || after.nlink !== 1 || after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size) return null;
     return { data: encoding ? bytes.toString(encoding) : bytes, stat: after };
   } catch (error) {
@@ -398,7 +409,18 @@ function readPinnedContentFile(filePath, encoding = null) {
   }
 }
 
+function assertContentDirectoryStable() {
+  if (!contentDirectoryIdentity) throw new Error('unsafe content directory: identity unavailable');
+  const current = fs.lstatSync(CONTENT_DIR);
+  if (current.isSymbolicLink() || !current.isDirectory()
+      || current.dev !== contentDirectoryIdentity.dev || current.ino !== contentDirectoryIdentity.ino
+      || fs.realpathSync(CONTENT_DIR) !== contentDirectoryIdentity.realpath) {
+    throw new Error('unsafe content directory: identity changed');
+  }
+}
+
 function getNewestScreen() {
+  assertContentDirectoryStable();
   const files = fs.readdirSync(CONTENT_DIR)
     .filter(f => !f.startsWith('.') && f.endsWith('.html'))
     .map(f => {
@@ -445,19 +467,9 @@ function timingSafeEqualStr(a, b) {
   return crypto.timingSafeEqual(ab, bb);
 }
 
-function parseCookies(header) {
-  const out = {};
-  if (!header) return out;
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq < 0) continue;
-    out[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
-  }
-  return out;
-}
-
-// A request is authorized if it carries the session key as ?key= or as the
-// session cookie. Both are compared in constant time.
+// Master authorization is query-bound to this exact localhost port. Browser
+// cookies are host-scoped rather than port-scoped, so they must never carry
+// the bearer token: an unrelated localhost service would receive them.
 function isAuthorized(req) {
   const q = req.url.indexOf('?');
   if (q >= 0) {
@@ -467,8 +479,6 @@ function isAuthorized(req) {
       return Boolean(key && timingSafeEqualStr(key, TOKEN));
     }
   }
-  const cookie = parseCookies(req.headers['cookie'])[COOKIE_NAME];
-  if (cookie && timingSafeEqualStr(cookie, TOKEN)) return true;
   return false;
 }
 
@@ -487,6 +497,16 @@ function queryParameter(url, name) {
   const q = url.indexOf('?');
   if (q < 0) return null;
   return new URLSearchParams(url.slice(q + 1)).get(name);
+}
+
+function hasViewCapability(url) {
+  const view = queryParameter(url, 'view');
+  return Boolean(view && timingSafeEqualStr(view, VIEW_TOKEN));
+}
+
+function attachViewCapability(html) {
+  return html.replace(/\b(src|href)=(['"])\/files\/([^'"?#\s]+)\2/gi,
+    (_match, attribute, quote, file) => `${attribute}=${quote}/files/${file}?view=${VIEW_TOKEN}${quote}`);
 }
 
 function securityHeaders(headers = {}) {
@@ -519,32 +539,25 @@ function isAllowedWebSocketOrigin(req) {
 // ========== HTTP Request Handler ==========
 
 function handleRequest(req, res) {
-  if (!isAuthorized(req)) {
+  const pathname = pathnameOf(req.url);
+  const masterAuthorized = isAuthorized(req);
+  const viewAuthorized = hasViewCapability(req.url);
+  if (!masterAuthorized && !((pathname === '/screen' || pathname.startsWith('/files/')) && viewAuthorized)) {
     res.writeHead(403, securityHeaders({ 'Content-Type': 'text/html; charset=utf-8' }));
     res.end(FORBIDDEN_PAGE);
     return;
   }
   touchActivity(); // only authorized requests count as activity
 
-  // Mirror the key into a cookie so same-origin subresources (/files/*) can
-  // authenticate after bootstrap. HttpOnly keeps it away from page scripts; the
-  // WebSocket Origin check below is what blocks cross-origin localhost injection.
-  res.setHeader('Set-Cookie',
-    COOKIE_NAME + '=' + TOKEN + '; HttpOnly; SameSite=Strict; Path=/');
-
-  const pathname = pathnameOf(req.url);
   const keyFromQuery = queryKey(req.url);
   if (req.method === 'GET' && pathname === '/' && keyFromQuery && timingSafeEqualStr(keyFromQuery, TOKEN)) {
-    res.writeHead(303, securityHeaders({ 'Location': '/' }));
-    res.end();
-  } else if (req.method === 'GET' && pathname === '/') {
     const nonce = crypto.randomBytes(18).toString('base64');
     const channel = crypto.randomBytes(16).toString('hex');
     res.writeHead(200, securityHeaders({
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; frame-src 'self'; connect-src 'self' ws:; frame-ancestors 'none'; base-uri 'none'`,
     }));
-    res.end(controllerPage(nonce, channel));
+    res.end(controllerPage(nonce, channel, keyFromQuery));
   } else if (req.method === 'GET' && pathname === '/screen') {
     const channel = queryParameter(req.url, 'channel');
     if (!channel || !/^[0-9a-f]{32}$/.test(channel)) {
@@ -556,6 +569,7 @@ function handleRequest(req, res) {
     let html = screen
       ? (raw => isFullDocument(raw) ? raw : wrapInFrame(raw))(screen)
       : waitingPage();
+    html = attachViewCapability(html);
     const nonce = crypto.randomBytes(18).toString('base64');
     const injection = helperInjection(nonce, channel);
     if (html.includes('</body>')) {
@@ -730,6 +744,12 @@ function startServer() {
   assertPrivateDirectory(SESSION_DIR, 'session directory', true);
   assertPrivateDirectory(CONTENT_DIR, 'content directory', true);
   assertPrivateDirectory(STATE_DIR, 'state directory', true);
+  const contentStat = fs.lstatSync(CONTENT_DIR);
+  contentDirectoryIdentity = {
+    dev: contentStat.dev,
+    ino: contentStat.ino,
+    realpath: fs.realpathSync(CONTENT_DIR),
+  };
 
   // Track known files to distinguish new screens from updates.
   // macOS fs.watch reports 'rename' for both new files and overwrites,
@@ -816,10 +836,6 @@ function startServer() {
   let triedFallback = false;
 
   function onListen() {
-    // Cookie name keys on the ACTUAL bound port (may differ from the preferred
-    // one after an EADDRINUSE fallback) so it can't collide with another server's
-    // cookie in the shared localhost jar.
-    COOKIE_NAME = 'brainstorm-key-' + PORT;
     // Record the bound port AND token so the next restart of this session reuses
     // them — but ONLY when we got our preferred port. On a fallback we bound a
     // *different* port because someone else holds the preferred one; persisting

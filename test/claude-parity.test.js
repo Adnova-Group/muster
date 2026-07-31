@@ -1342,5 +1342,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 2026-07-31 re-pin #36 (browser-boundary security review): the companion
   // helper is now a second intentional local overlay, isolating untrusted
   // generated screens from the authenticated controller. Count grows to 147.
-  assert.equal(hash.digest("hex"), "9737b3f22b5487b936f26876f53e90b09e40f32efef44f210996c2e071e76dc7");
+  // 2026-07-31 re-pin #37 (release gate follow-up): isolated writer worktrees
+  // now receive the active action-fence markers, and the brainstorm controller
+  // uses distinct query capabilities instead of a host-wide localhost cookie.
+  assert.equal(hash.digest("hex"), "b9ebc8263500d73600ee765b32bc8cebeff6b066dfc8a3ec759585a100a14863");
 });

@@ -463,3 +463,25 @@ test("orchestrator SKILL.md: forbidden-actions file carries only the top-level s
     "must clarify per-task additions are brief-level discipline, not hook-enforced",
   );
 });
+
+test("orchestrator propagates action-fence markers into each isolated writer worktree", () => {
+  assert.match(SKILL_MD, /every isolated writer worktree must carry a regular-file\s+copy of both `\.muster\/run-active` and the exact top-level `\.muster\/forbidden-actions`/i);
+  assert.match(SKILL_MD, /never rely on\s+the outer worktree's markers and never symlink them/i);
+});
+
+test("separate worker cwd denies a forbidden publish using propagated markers", async () => {
+  const outerDir = makeRunDir();
+  const workerDir = mkdtempSync(path.join(os.tmpdir(), "muster-action-worker-"));
+  try {
+    writeForbidden(outerDir, ["publish"]);
+    makeRunActive(workerDir);
+    writeForbidden(workerDir, ["publish"]);
+    const result = await runRaw(bashPayload("npm publish", workerDir));
+    assert.equal(result.code, 0);
+    const out = JSON.parse(result.stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny");
+  } finally {
+    cleanDir(outerDir);
+    cleanDir(workerDir);
+  }
+});

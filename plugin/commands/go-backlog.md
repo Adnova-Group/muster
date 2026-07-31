@@ -22,6 +22,11 @@ before writing `.muster/run-active`, STATE, backlog annotations, branches, or in
 paths; if they do not, refuse all writes and stop. A plain branch in the primary checkout is not isolation.
 Every per-item implementation/review leg and every integration leg must likewise run from its verified
 isolated worktree; repeat the check after changing cwd and never use the main checkout as a write surface.
+Before dispatching any writer, propagate the batch fence into that writer's cwd as regular files: create
+or renew the isolated worktree's `.muster/run-active` lease and copy the batch's exact top-level set into
+its `.muster/forbidden-actions`. Verify both from the worker cwd; never rely on the outer worktree's markers
+and never symlink them. Renew the lease while the worker runs, then remove both propagated files only after
+the worker stops or its wave reaches the barrier.
 
 0. **Resolve the CLI (once per batch).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself never pays a cold start), preferring a vendored/local install over `npx` — see docs/performance-pass.md:
    ```bash

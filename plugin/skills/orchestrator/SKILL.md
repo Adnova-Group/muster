@@ -56,7 +56,14 @@ doing the work.
         same-wave tasks cannot collide; the barrier reconciles them. On a harness whose
         dispatch carries no isolation parameter, muster supplies the worktree itself before
         dispatch -- the per-harness selection below ("Worktree isolation per harness +
-        base-SHA receipts") says which case this harness is. Read-only/single-task waves skip it.
+        base-SHA receipts") says which case this harness is. Before dispatch, propagate the
+        active action fence into every isolated writer worktree as regular files: create that
+        worktree's `.muster/run-active` lease and copy the run's exact top-level set into that
+        worktree's `.muster/forbidden-actions`. Verify both files from the worker cwd; a marker
+        that exists only in the outer worktree does not protect a delegated hook call. Renew the
+        worktree lease with the outer lease and remove both propagated files at the wave barrier
+        after the worker has stopped. Read-only/single-task waves skip worktree creation, but any
+        writer that already runs in another cwd still receives this same propagation.
       - **Provider kind:** look up the role's chosen provider from `.muster/capabilities.json` ->
         `roles[<role>].chosen = { id, source, kind }` (do NOT re-invoke `capabilities` mid-run).
         `chosen.kind === "agent"` -> dispatch that agent as the `subagent_type`, task + Crew Manifest as BRIEF; if
@@ -285,7 +292,11 @@ file to deny matching tool calls for the run's duration (top-level set only; per
 brief-level discipline, not hook-enforced). For each task, copy the effective set (top-level UNION the task's own `forbiddenActions`)
 into its brief as `FORBIDDEN ACTIONS:`, same as `OWNS`/`FROZEN`. Remove `.muster/forbidden-actions`
 immediately before executing the declared merge disposition (fences guard the work phase; the
-disposition is the human-authorized exit) and no later than run close in any case.
+disposition is the human-authorized exit) and no later than run close in any case. The hook resolves
+these files from the tool payload's cwd, so every isolated writer worktree must carry a regular-file
+copy of both `.muster/run-active` and the exact top-level `.muster/forbidden-actions`; never rely on
+the outer worktree's markers and never symlink them. Renew propagated leases while the worker runs,
+then remove the propagated files only after that worker stops or at the wave barrier.
 
 ## Required skills (brief binding)
 

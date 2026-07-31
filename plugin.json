@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "muster",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Glass-box agentic orchestrator: detects context, assembles the right crew, and shows its reasoning.",
   "author": {
     "name": "Adnova Group",

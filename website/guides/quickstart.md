@@ -2,9 +2,27 @@
 
 Muster turns an outcome into finished work. You give it a goal in plain language; it picks the right tools for each piece and drives toward your success criteria, showing its reasoning the whole way.
 
-Pick the mode that matches what you want.
+## Choose a mode by task
 
-Muster has ten modes. The eight delivery and backlog modes below are joined by Design for human-facing work and Init for native repository instruction setup.
+Muster has ten modes, including Design for human-facing work and Init for native repository
+instruction setup. Start with the result you need:
+
+<div class="decision-grid">
+
+<article class="decision-card"><strong>Shape one outcome before work starts</strong><span>Use <a href="#plan-and-review-muster-plan">Plan</a> to inspect the crew and approve the plan.</span></article>
+<article class="decision-card"><strong>Deliver one outcome end to end</strong><span>Use <a href="#hands-off-delivery-muster-go">Go</a> for the hands-off lifecycle.</span></article>
+<article class="decision-card"><strong>Plan a batch without executing it</strong><span>Use <a href="#plan-a-whole-backlog-muster-plan-backlog">Plan-backlog</a>.</span></article>
+<article class="decision-card"><strong>Clear a batch of work</strong><span>Use <a href="#clear-a-backlog-muster-go-backlog">Go-backlog</a>, including dependency waves.</span></article>
+<article class="decision-card"><strong>Reproduce and fix one failure</strong><span>Use <a href="#fix-a-bug-muster-diagnose">Diagnose</a>.</span></article>
+<article class="decision-card"><strong>Find and fix broad codebase risks</strong><span>Use <a href="#sweep-the-codebase-muster-audit">Audit</a>.</span></article>
+<article class="decision-card"><strong>Create or improve a human-facing surface</strong><span>Use <a href="#design-a-human-facing-surface-muster-design">Design</a>.</span></article>
+<article class="decision-card"><strong>Run one scheduled backlog cycle</strong><span>Use <a href="#schedule-one-cycle-at-a-time-muster-runner">Runner</a>.</span></article>
+<article class="decision-card"><strong>Turn decisions into backlog items</strong><span>Use <a href="#turn-a-discussion-into-backlog-items-muster-capture">Capture</a>.</span></article>
+<article class="decision-card"><strong>Prepare a repository for Muster</strong><span>Use <a href="#initialize-a-repository-muster-init">Init</a>.</span></article>
+
+</div>
+
+If you have not installed Muster yet, [choose your harness first](/guides/get-started).
 
 ::: tip On Codex?
 Every mode below is available on Codex as a skill (`$muster-plan`, `$muster-go`, and so on) once Muster's managed profiles and plugin are installed. See the [Codex guide](/guides/codex) for that install path. If something does not appear or behaves oddly, start at [Troubleshooting](/guides/troubleshooting).

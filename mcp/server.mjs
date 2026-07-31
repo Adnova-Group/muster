@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { PRINCIPLES, VERBS, ROUTING_POLICY } from "../plugin/hooks/guidance.js";
@@ -218,6 +219,80 @@ const withLegacyTierAlias = (source) => {
   return environment;
 };
 
+// CLI children need the user's executable/config locations and Muster's own
+// adapter controls, but not every variable inherited by the long-lived MCP
+// host. In particular, Node loader/preload variables must not cross this trust
+// boundary. Keep this list deliberately small and explicit.
+const childEnvironment = (source, runtimeIdentity) => {
+  const allowed = new Set([
+    "PATH", "PATHEXT", "SystemRoot", "ComSpec", "WINDIR",
+    "HOME", "USERPROFILE", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP",
+    "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM", "NO_COLOR", "FORCE_COLOR", "CI",
+    "NODE_ENV", "CODEX_HOME", "KIMI_CODE_HOME", "PLUGIN_ROOT", "PLUGIN_DATA",
+    "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+  ]);
+  const environment = {};
+  for (const [name, value] of Object.entries(source)) {
+    const normalized = name.toUpperCase();
+    if ((allowed.has(normalized) || normalized.startsWith("LC_") || normalized.startsWith("MUSTER_")) && value !== undefined) {
+      environment[name] = value;
+    }
+  }
+  environment.MUSTER_RUNTIME = runtimeIdentity;
+  return environment;
+};
+
+function schemaViolation(schema, value, location = "arguments") {
+  if (!schema || typeof schema !== "object") return null;
+  if (Object.hasOwn(schema, "const") && value !== schema.const) return `${location} must equal ${JSON.stringify(schema.const)}`;
+  if (Array.isArray(schema.enum) && !schema.enum.some((entry) => Object.is(entry, value))) {
+    return `${location} must be one of ${schema.enum.map(JSON.stringify).join(", ")}`;
+  }
+  const typeMatches = {
+    object: value !== null && typeof value === "object" && !Array.isArray(value),
+    array: Array.isArray(value),
+    string: typeof value === "string",
+    number: typeof value === "number" && Number.isFinite(value),
+    integer: Number.isSafeInteger(value),
+    boolean: typeof value === "boolean",
+    null: value === null,
+  };
+  if (schema.type && !typeMatches[schema.type]) return `${location} must be ${schema.type}`;
+  if (schema.type === "object") {
+    for (const required of schema.required || []) {
+      if (!Object.hasOwn(value, required)) return `${location}.${required} is required`;
+    }
+    const properties = schema.properties || {};
+    if (schema.additionalProperties === false) {
+      const unexpected = Object.keys(value).find((name) => !Object.hasOwn(properties, name));
+      if (unexpected !== undefined) return `${location}.${unexpected} is not allowed`;
+    }
+    for (const [name, childSchema] of Object.entries(properties)) {
+      if (!Object.hasOwn(value, name)) continue;
+      const violation = schemaViolation(childSchema, value[name], `${location}.${name}`);
+      if (violation) return violation;
+    }
+  }
+  if (schema.type === "array") {
+    if (schema.minItems !== undefined && value.length < schema.minItems) return `${location} must contain at least ${schema.minItems} items`;
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) return `${location} must contain at most ${schema.maxItems} items`;
+    for (let index = 0; schema.items && index < value.length; index += 1) {
+      const violation = schemaViolation(schema.items, value[index], `${location}[${index}]`);
+      if (violation) return violation;
+    }
+  }
+  if (schema.type === "string") {
+    if (schema.minLength !== undefined && value.length < schema.minLength) return `${location} must have length at least ${schema.minLength}`;
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) return `${location} must have length at most ${schema.maxLength}`;
+    if (schema.pattern !== undefined && !(new RegExp(schema.pattern).test(value))) return `${location} does not match its required pattern`;
+  }
+  if (["number", "integer"].includes(schema.type)) {
+    if (schema.minimum !== undefined && value < schema.minimum) return `${location} must be at least ${schema.minimum}`;
+    if (schema.maximum !== undefined && value > schema.maximum) return `${location} must be at most ${schema.maximum}`;
+  }
+  return null;
+}
+
 const cancelled = () => ({ ok: false, text: "muster MCP request cancelled" });
 
 class WorkLimiter {
@@ -294,7 +369,7 @@ export function startMusterMcpServer(config) {
   if (!io?.stdin || !io?.stdout || !io?.stderr || typeof io.exit !== "function") {
     throw new TypeError("startMusterMcpServer: explicit io is required");
   }
-  const environment = withLegacyTierAlias(config.environment || {});
+  const environment = childEnvironment(withLegacyTierAlias(config.environment || {}), config.runtimeIdentity);
   const catalog = Object.fromEntries(Object.entries(TOOLS).map(([name, tool]) => [
     name,
     {
@@ -322,12 +397,12 @@ export function startMusterMcpServer(config) {
   async function runCli(argv, { cwd = config.cwd, signal, input } = {}) {
     try {
       const { stdout } = await new Promise((resolve, reject) => {
-        const child = execFile("node", [config.cliPath, ...argv], {
+        const child = execFile(process.execPath, [config.cliPath, ...argv], {
           cwd,
           signal,
           timeout: 60_000,
           maxBuffer: 16 * 1024 * 1024,
-          env: { ...environment, MUSTER_RUNTIME: config.runtimeIdentity },
+          env: environment,
         }, (error, childStdout, stderr) => {
           if (error) {
             error.stdout = childStdout;
@@ -506,6 +581,13 @@ export function startMusterMcpServer(config) {
   const err = (id, code, message) => send({ jsonrpc: "2.0", id, error: { code, message } });
 
   async function handle(msg) {
+  if (msg === null || typeof msg !== "object" || Array.isArray(msg)
+      || msg.jsonrpc !== "2.0" || typeof msg.method !== "string"
+      || (Object.hasOwn(msg, "id") && !(typeof msg.id === "string" || (typeof msg.id === "number" && Number.isFinite(msg.id))))) {
+    const invalidId = msg !== null && typeof msg === "object" && !Array.isArray(msg)
+      && (typeof msg.id === "string" || (typeof msg.id === "number" && Number.isFinite(msg.id))) ? msg.id : null;
+    return err(invalidId, -32600, "Invalid Request");
+  }
   if (Object.hasOwn(msg, "id") && msg.id === null) {
     return err(null, -32600, "Invalid Request");
   }
@@ -517,6 +599,10 @@ export function startMusterMcpServer(config) {
   const replyErr = (code, message) => {
     if (!isNotification) err(id, code, message);
   };
+
+  if (params !== undefined && (params === null || typeof params !== "object" || Array.isArray(params))) {
+    return replyErr(-32602, "Invalid params");
+  }
 
   switch (method) {
     case "initialize":
@@ -542,6 +628,10 @@ export function startMusterMcpServer(config) {
         })),
       });
     case "tools/call": {
+      if (typeof params?.name !== "string" || (params.arguments !== undefined
+          && (params.arguments === null || typeof params.arguments !== "object" || Array.isArray(params.arguments)))) {
+        return replyErr(-32602, "Invalid params");
+      }
       if (!Object.hasOwn(exposedTools, params?.name)) {
         return replyOk({
           content: [{
@@ -553,8 +643,11 @@ export function startMusterMcpServer(config) {
           isError: true,
         });
       }
+      const args = params.arguments ?? {};
+      const violation = schemaViolation(exposedTools[params.name].inputSchema, args);
+      if (violation) return replyErr(-32602, `Invalid params: ${violation}`);
       const workId = isNotification ? Symbol("tools/call notification") : id;
-      const r = await limiter.run(workId, (signal) => invoke(params?.name, params?.arguments || {}, signal));
+      const r = await limiter.run(workId, (signal) => invoke(params.name, args, signal));
       return replyOk({ content: [{ type: "text", text: r.text }], isError: !r.ok });
     }
     default:
@@ -582,7 +675,10 @@ const STDIN_MAX_BYTES = 4 * 1024 * 1024;
     buffer = buffer.slice(nl + 1);
     if (!line) continue;
     let msg;
-    try { msg = JSON.parse(line); } catch { continue; }
+    try { msg = JSON.parse(line); } catch {
+      err(null, -32700, "Parse error");
+      continue;
+    }
     Promise.resolve(handle(msg)).catch((e) => {
       if (msg !== null && typeof msg === "object" && Object.hasOwn(msg, "id")) {
         err(msg.id, -32603, `internal error: ${e.message}`);

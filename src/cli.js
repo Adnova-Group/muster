@@ -78,10 +78,13 @@ import {
 import {
   assertContainedNoSymlinkPath,
   atomicWrite,
+  ensureContainedDirectory,
+  inspectContainedPath,
   isUnsafePathToken,
   readNoFollowRegular,
   resolveContainedRealpath,
   withFileMutationLock,
+  writeContainedFile,
 } from "./fs-safe.js";
 import { readDispatchReceipts, runKimiProcess } from "./dispatch-receipts.js";
 import {
@@ -1094,12 +1097,16 @@ async function main() {
       } else out(await runUninstall({ home: rest[0] || homedir() }));
     } else if (cmd === "signals") {
       const dir = resolve(rest[0] || process.cwd());
+      await ensureContainedDirectory(dir);
+      for (const name of ["package.json", ".git", "tsconfig.json", "pnpm-lock.yaml", "yarn.lock", "package-lock.json", "pnpm-workspace.yaml"]) {
+        await inspectContainedPath(dir, join(dir, name));
+      }
       const profile = await detectProject(dir);
       const caps = resolveCapabilities(await loadCatalog(CATALOG_DIR), await readInstalled(homedir()));
       const sig = buildSignals(profile, caps);
       const signalsDir = join(dir, ".muster");
-      await mkdir(signalsDir, { recursive: true });
-      await writeFile(join(signalsDir, "signals.json"), JSON.stringify(sig, null, 2));
+      await ensureContainedDirectory(dir, signalsDir);
+      await writeContainedFile(dir, join(signalsDir, "signals.json"), JSON.stringify(sig, null, 2));
       out(sig);
     // ── memory + ops (cont.): burn-hygiene guards -- zombie provider processes, stale
     // worktrees, stale coordination claims. Report-only by default; --reap opts into

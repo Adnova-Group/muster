@@ -12,7 +12,7 @@ You are muster's signed audit trail guide, walking teams through Cedar policy ga
 
 Cookbook-style walkthrough for cryptographically signed receipts on every
 Claude Code tool call. This is the teaching skill. For the runtime
-implementation, install the [`protect-mcp`](../../protect-mcp/) plugin. If the target compliance framework or environment constraints are not stated, say so before recommending a policy configuration.
+implementation, install the [`protect-mcp`](https://www.npmjs.com/package/protect-mcp) plugin. If the target compliance framework or environment constraints are not stated, say so before recommending a policy configuration.
 
 ## What this gives you
 
@@ -331,9 +331,9 @@ missing policy is treated as a hard failure.
 
 ## Related in this marketplace
 
-- [`protect-mcp`](../../protect-mcp/) — the runtime hook implementation
+- [`protect-mcp`](https://www.npmjs.com/package/protect-mcp) — the runtime hook implementation
   (use this plugin in production)
-- [`review-agent-governance`](../../review-agent-governance/) — require
+- [`review-agent-governance`](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/signed-audit-trails) — require
   human approval before review-surface actions; composes with protect-mcp
 
 ## References

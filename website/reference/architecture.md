@@ -1,6 +1,6 @@
 # Architecture
 
-Muster is a glass-box, multi-runtime, multi-domain agentic orchestrator. Supported lanes include Claude Code, Codex, Kimi, and Cowork. The deterministic CLI needs no separate model API. This page is the source-level map. For the gentler tour, start with [Concepts](/reference/concepts).
+Muster is a glass-box, multi-runtime, multi-domain agentic orchestrator. Supported native lanes include Claude Code, Codex, Kimi, and Cowork. The deterministic CLI makes no model calls and those native lanes need no Muster-specific model API. The private/local ChatGPT Work lane is the exception: Secure MCP Tunnel uses a separately billed OpenAI Platform API key and remains proof-gated. This page is the source-level map. For the gentler tour, start with [Concepts](/reference/concepts).
 
 ## Two layers
 
@@ -82,7 +82,7 @@ Model work uses the account or subscription of the active runtime. On Claude Cod
 
 - Muster draws the active runtime's normal quota. On Claude Code it does not hit a separate Agent-SDK credit pool.
 - Fan-out spends that same quota faster, since parallel subagents are parallel quota.
-- There is no separate runtime to deploy or key to manage.
+- Native CLI/harness lanes have no separate Muster runtime to deploy or model key to manage. The private/local ChatGPT Work tunnel is a separately billed Platform-key exception.
 
 Orchestration loops until done via a Ralph-style primitive (`src/loop.js`). Each wave re-runs implement, review, and fix until the gate passes or the iteration cap escalates, so subagents drive toward the success criteria rather than stopping after one pass. A pre-flight plan-conflict review runs before wave 1, the `muster-strategist` is dispatched for root-cause analysis when a review gate escalates (before any human prompt), and concurrent file-writing wave tasks each run in their own git worktree so parallel edits never collide.
 

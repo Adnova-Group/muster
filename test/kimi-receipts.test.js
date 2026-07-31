@@ -5,7 +5,7 @@
 // text was cut. See docs/research/kimi-code-cli.md sec 8's dated probe note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdir, writeFile, symlink } from "node:fs/promises";
+import { readFile, mkdir, rm, writeFile, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -205,6 +205,25 @@ test("readSessionUsage: works without state.json (agents tree alone, non-main de
   assert.equal(session.total.total, 10);
 });
 
+test("Kimi receipt readers reject symlinked or non-regular final wire/state artifacts", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-final-file-"));
+  const outside = path.join(dir, "outside.json");
+  await mkdir(path.join(dir, "agents/main"), { recursive: true });
+  await writeFile(outside, '{"updatedAt":"2026-07-27T01:00:00.000Z","agents":{}}\n');
+
+  await symlink(outside, path.join(dir, "agents/main/wire.jsonl"));
+  await assert.rejects(() => readSessionUsage(dir), /wire\.jsonl.*symlink|ELOOP/i);
+  await assert.rejects(() => readSessionThinkingEfforts(dir), /wire\.jsonl.*symlink|ELOOP/i);
+
+  await rm(path.join(dir, "agents/main/wire.jsonl"));
+  await mkdir(path.join(dir, "agents/main/wire.jsonl"));
+  await assert.rejects(() => readSessionUsage(dir), /wire\.jsonl.*regular file/i);
+
+  await rm(path.join(dir, "agents/main/wire.jsonl"), { recursive: true });
+  await symlink(outside, path.join(dir, "state.json"));
+  await assert.rejects(() => readSessionUsage(dir), /state\.json.*symlink|ELOOP/i);
+});
+
 test("readSessionUsage: throws when the session dir has no agents tree", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-"));
   await assert.rejects(() => readSessionUsage(dir), /cannot read agents tree/);
@@ -310,6 +329,21 @@ test("resolveSessionForCwd: newest-wins by state.json updatedAt, NEVER index lin
   assert.equal(resolution.resolved, true);
   assert.equal(resolution.sessionId, "session_new");
   assert.equal(resolution.source, "index-newest");
+});
+
+test("resolveSessionForCwd rejects a symlinked final state artifact during newest selection", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-receipts-state-link-"));
+  await mkdir(path.join(dir, "sess-a"));
+  await mkdir(path.join(dir, "sess-b"));
+  const outside = path.join(dir, "outside-state.json");
+  await writeFile(outside, '{"updatedAt":"2026-07-27T02:00:00.000Z"}\n');
+  await symlink(outside, path.join(dir, "sess-a/state.json"));
+  await writeFile(path.join(dir, "sess-b/state.json"), '{"updatedAt":"2026-07-27T01:00:00.000Z"}\n');
+  const indexPath = await writeIndex([
+    { sessionId: "session_a", sessionDir: path.join(dir, "sess-a"), workDir: LEG_CWD },
+    { sessionId: "session_b", sessionDir: path.join(dir, "sess-b"), workDir: LEG_CWD },
+  ]);
+  await assert.rejects(() => resolveSessionForCwd({ indexPath, cwd: LEG_CWD }), /state\.json.*symlink|ELOOP/i);
 });
 
 test("resolveSessionForCwd: one candidate for the cwd resolves without reading state.json", async () => {

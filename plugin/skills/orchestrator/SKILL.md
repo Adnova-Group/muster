@@ -64,15 +64,12 @@ doing the work.
         generic subagent with the provider's brief injected -- the model override still applies, note
         the fallback in STATE. Else (skill/mcp/inline) -> dispatch a generic subagent with the resolved
         provider injected into the BRIEF.
-      - **Model (authoritative):** the crew member's `model` is a CONCEPTUAL tier (scout|core|prime|
-        apex, or a neutral `{tier, effort?}` profile; legacy haiku|sonnet|opus|fable normalize) --
-        NEVER pass it raw. Dispatch on the harness-concrete value `capabilities` already resolved:
-        on Claude Code, `roles[<role>].claudeModel` is the Agent tool's `model` override
-        (`src/claude.js` adapter output); on Codex/Kimi, `codexModel`/`kimiModel` carry the
-        role profile/lane the same way. Apex degrades to prime at the emission layer
-        by default (`modelForRole` in `src/model.js`); an opted-in (`MUSTER_ENABLE_APEX=1`, legacy
-        `MUSTER_ENABLE_FABLE`) dispatch that's still rejected retries once on prime's concrete model
-        and records the degradation -- never fail the task over a model tier, never drop the override.
+      - **Model (authoritative):** agent policy is the canonical `{tier, effort?}` profile in
+        `catalog/agents.manifest.json`; do not embed or maintain a concrete model/version catalog in
+        this prompt. Use the captured capabilities' resolved dispatch profile for the active harness
+        (`claudeProfile`, `codexModel`, or `kimiModel`) exactly as emitted by its adapter, and never
+        pass the neutral profile raw. The harness-specific dispatch reference below owns call shape
+        and fallback behavior; record any adapter-reported degradation in STATE.
       - **Subagent failure:** never a silent stop -- re-dispatch ONCE with the error appended as
         context (`dispatchRetryState`, `src/loop.js`, max 2 attempts). **On Kimi the re-dispatch is
         a native RESUME, never a fresh spawn** -- the Agent tool's `resume` for a per-agent
@@ -90,12 +87,17 @@ doing the work.
    c. **Review gate — cadence follows step 2's result:** `fastPath: false` -> invoke **review-gate**
       over this wave now. `fastPath: true` -> accumulate the diff and defer the dispatch to step 5,
       after the last wave (one pass over the full cumulative diff); still commit this wave's work
-      per step d. Either way, the review->fix cycle re-dispatches fixes until `done` or the cap
+      per step d. Either way, the review->fix cycle re-dispatches fixes until a recorded `VERDICT: PASS`
+      or the cap
       (**3 fix iterations**, `REVIEW_GATE_MAX_ITERATIONS` in `src/loop.js`) hits, then escalates
       (step 4e) -- unchanged by batching, a batched pass gets the same cap over the larger diff.
       **Advisor escalation:** a worker returning a structured advice-request instead of a final
       result is serviced via the **advisor** skill (`$MUSTER_CLI advise .muster/advice-request.json`,
       consult budget from `src/advisor.js`, default cap 3) -- see `plugin/skills/advisor/SKILL.md`.
+      **Advancement invariant:** do not mark tasks complete, start the next wave, or enter disposition
+      until the exact reviewed diff has `VERDICT: PASS` recorded in STATE and the task-board mapping.
+      Human approval or input is acknowledgment or an escalation decision, never a review substitute;
+      it cannot manufacture or waive PASS.
    d. Append to STATE: wave index, tasks, winners, review result (or "deferred to the batched pass")
       -- AND the re-rendered plan checklist (`$MUSTER_CLI plan-checklist .muster/manifest.json --done
       <ids>`).
@@ -155,10 +157,12 @@ per-item status line in STATE is not duplication, since nothing else exists to c
 
 **Codex's counterpart is `update_plan`** -- registered unconditionally, taking `{explanation?,
 plan: [{step, status: pending|in_progress|completed}]}` with the harness-enforced invariant
-*"At most one step can be in_progress at a time"* (the same one-in-flight rule this board already
-requires), rendering in the TUI and streaming from `codex exec --json` as a `todo_list` receipt.
-Use it exactly as `TaskCreate`/`TaskUpdate`: emit the full plan at dispatch, re-emit on each
-transition (the tool takes the whole list). (Correction history: docs/research/codex-cli.md.)
+*"At most one step can be in_progress at a time"*. This is a projection constraint, not an
+execution limit: parallel execution remains live. Project exactly one representative wave item as
+`in_progress`; leave the remaining concurrently running items `pending`, where `pending` does not
+mean queued or not running. Record every actual positive-attempt `inFlight` member in STATE and
+dispatch receipts, rotate the representative when it finishes, and keep reconciling all receipts at
+the barrier. Emit the full plan at dispatch and on each transition (the tool takes the whole list).
 
 Kimi Code CLI's counterpart is `TodoList` (`{todos: [{title, status}]}`, auto-allowed,
 session-scoped; omitting `todos` queries, `[]` clears) -- see docs/research/kimi-code-cli.md.
@@ -170,9 +174,8 @@ Only a harness with genuinely none of these falls back to the STATE-carried stat
 **Capability check (once, before wave 1):** run `$MUSTER_CLI wave-dispatch [--agent-teams|--no-agent-teams]`
 -> `{mode: "native"|"prose", agentTeams, reason}` (`src/wave-dispatch.js`). Pass `--agent-teams` when
 this session's own tool list carries the `Workflow` tool (present in PLAIN single-session tool lists
-on current Claude Code builds -- observed live 2.1.220, 2026-07-29, correcting the earlier
-"agent-teams mode only" record; older builds and `--tools`-restricted sessions still lack it:
-docs/research/claude-code-cli.md's dated correction); omit the flag to fall back to the declared
+when the session's declared tool inventory includes it; restricted sessions may lack it (the
+canonical capability history lives in docs/research/claude-code-cli.md); omit the flag to fall back to the declared
 `MUSTER_AGENT_TEAMS` env var. This is a DECLARED capability, never an auto-probe (same shape as
 Cowork's `nativePluginRide` -- `src/harness.js`/`src/capabilities.js`): only the session itself can
 see its own tool list, so `mode` defaults to `"prose"` whenever nothing is declared.
@@ -188,10 +191,8 @@ Record the result to STATE once; it does not change mid-run.
   declares a semantic effort
   (src/claude.js's Workflow-lane ladder: workhorse->medium, judgment->high, peak->xhigh; the key is
   absent otherwise -- omit `effort` to inherit the session effort); `isolation: "worktree"` on every file-writing member
-  (CORRECTED 2026-07-29, lifting the prior "documented gap -- multi-file-writing waves stay on
-  prose" restriction: Workflow's `agent()` carries its own per-agent worktree isolation, observed
-  live on 2.1.220 -- the collision guarantee now rides the native lane too; auto-clean skips
-  changed worktrees, so cleanup of committing members stays muster's job); `schema` = the member's
+  (Workflow's `agent()` carries per-agent worktree isolation; auto-clean skips changed worktrees,
+  so cleanup of committing members stays muster's job); `schema` = the member's
   return contract, so results come back validated -- those returns plus the run's
   `<transcriptDir>/journal.jsonl` are the wave's receipts, recorded to STATE. A member that fails
   after its retry re-dispatches via `resumeFromRunId` (unchanged calls return cached; only the
@@ -341,7 +342,7 @@ injected user message at a step boundary, not a `<channel>` event. Classify it w
 queue: TUI `Ctrl-S` (interactive only), Wire `steer` (gen1 kimi-cli only), ACP mid-turn (gen2),
 and `kimi web`'s HTTP API -- `POST /sessions/{session_id}/prompts` then
 `POST /sessions/{session_id}/prompts:steer` ("Steer queued prompts into the active turn"; single
-colon, verified live against `kimi web` on 0.30.0, mounted under `/api/v1` -- and a `/goal` run is
+colon, mounted under `/api/v1` -- and a `/goal` run is
 steerable over this route: a mid-pursuit message is queued, not rejected, sec 11.11). `muster steer --harness kimi "<msg>"` constructs that
 native delivery (`kimiSteerDelivery` in `src/kimi-steer.js`) for the driver holding the live
 session; muster's own `kimi -p` run loop holds no session handle, so the CLI builds the delivery

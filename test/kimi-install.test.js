@@ -59,6 +59,17 @@ test("runKimiInstall: writes agents + skills into the kimi root with an ownershi
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: fails loud when the source package version is missing", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fixture" }));
+    await assert.rejects(
+      runKimiInstall({ home, repoRoot: repo, dryRun: true }),
+      /missing a coherent package version/
+    );
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiInstall: the installed root reads back through readInstalledKimi", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {

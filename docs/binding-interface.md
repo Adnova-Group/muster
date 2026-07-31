@@ -20,9 +20,9 @@ and explicitly parked, not built.
 
 "Plugin prose" here means the model-facing surface Claude Code actually loads and reads at
 dispatch time: `plugin/commands` (the ten modes plus the three legacy aliases,
-as `*.md` files), `plugin/skills` (the eleven core skills, one `SKILL.md` per
+as `*.md` files), `plugin/skills` (the twelve core skills, one `SKILL.md` per
 subdirectory), muster's own agents in `plugin/agents` (seven `muster-*.md` files; not the
-vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- thirty-one files.
+vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- thirty-three files.
 
 Two adjacent trees were deliberately excluded, with evidence rather than assertion:
 
@@ -264,7 +264,7 @@ scanned.
 
 ## Grep audit
 
-Reproducible commands, run from the repo root against the thirty-one-file "plugin prose" scope
+Reproducible commands, run from the repo root against the thirty-three-file "plugin prose" scope
 defined above (`FILES` set to every `*.md` in `plugin/commands`, every `SKILL.md` in
 `plugin/skills`, every `muster-*.md` in `plugin/agents`, and every `*.md` in
 `plugin/output-styles`):
@@ -289,10 +289,10 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=13  mentions=36
-dispatch (Agent/Task tool)  files=5  mentions=18
+AskUserQuestion    files=13  mentions=35
+dispatch (Agent/Task tool)  files=5  mentions=16
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
-worktree   files=5  mentions=37
+worktree   files=5  mentions=41
 ```
 
 Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave
@@ -362,7 +362,7 @@ equivalent (resolution "before worktree teardown") -- two more `worktree` mentio
 lines (26 -> 28). File counts unchanged (still the same 5 files); AskUserQuestion, dispatch, and
 hook counts are untouched by this item.
 
-Every one of those 111 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Every one of those 120 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

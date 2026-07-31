@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -119,6 +119,52 @@ test("writeMemory INDEX.md dedups a repeated slug but appends a distinct one", a
   index = await readFile(join(d, "INDEX.md"), "utf8");
   assert.equal(index.split("\n").filter(l => l.includes("dup.md")).length, 1, "dup.md still single");
   assert.equal(index.split("\n").filter(l => l.includes("other.md")).length, 1, "other.md appended once");
+});
+
+test("writeMemory serializes concurrent writes of the same slug in INDEX.md", async () => {
+  const d = await dir();
+  await Promise.all(Array.from({ length: 32 }, (_, i) => writeMemory(d, {
+    slug: "same", title: `Title ${i}`, outcome: `Outcome ${i}`, body: `Body ${i}`,
+  })));
+  const index = await readFile(join(d, "INDEX.md"), "utf8");
+  assert.equal(index.split("\n").filter(line => line.includes("same.md")).length, 1);
+});
+
+test("memory operations refuse symlinked ancestors, final files, and dangling finals", async () => {
+  const d = await dir();
+  const outside = join(d, "outside");
+  await mkdir(outside);
+  await symlink(outside, join(d, "linked-store"), "dir");
+  await assert.rejects(
+    () => writeMemory(join(d, "linked-store"), { slug: "escape", title: "T", outcome: "O", body: "B" }),
+    /symlink|reparse/i,
+  );
+  assert.equal(await fileExists(join(outside, "escape.md")), false);
+
+  const store = join(d, "store");
+  await mkdir(store);
+  const victim = join(d, "victim.md");
+  await writeFile(victim, "ORIGINAL");
+  await symlink(victim, join(store, "entry.md"));
+  await assert.rejects(
+    () => writeMemory(store, { slug: "entry", title: "T", outcome: "O", body: "B" }),
+    /symlink|reparse/i,
+  );
+  assert.equal(await readFile(victim, "utf8"), "ORIGINAL");
+
+  await symlink(join(d, "missing-target.md"), join(store, "dangling.md"));
+  await assert.rejects(() => readMemory(store, "anything"), /symlink|reparse/i);
+});
+
+test("appendState and appendFollowup refuse planted final symlinks", async () => {
+  const d = await dir();
+  const victim = join(d, "victim.md");
+  await writeFile(victim, "ORIGINAL");
+  await symlink(victim, join(d, "run.state.md"));
+  await symlink(join(d, "missing-followups.md"), join(d, "run.followups.md"));
+  await assert.rejects(() => appendState(d, "run", "changed"), /symlink|reparse/i);
+  await assert.rejects(() => appendFollowup(d, "run", { severity: "P1", note: "changed" }), /symlink|reparse/i);
+  assert.equal(await readFile(victim, "utf8"), "ORIGINAL");
 });
 
 test("readMemory returns entries matching a query substring", async () => {

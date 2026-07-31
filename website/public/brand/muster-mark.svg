@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Muster</title>
+  <desc id="desc">One path branching through three transparent nodes and joining at a verified result.</desc>
+  <defs>
+    <linearGradient id="g" x1="8" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6d5ce7"/>
+      <stop offset="1" stop-color="#41b3ff"/>
+    </linearGradient>
+  </defs>
+  <path d="M12 32h10m0 0 10-16h10m-20 16h20m-20 0 10 16h10m0-32 10 16-10 16" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="12" cy="32" r="6" fill="#fff" stroke="#6d5ce7" stroke-width="4"/>
+  <circle cx="42" cy="16" r="5" fill="#fff" fill-opacity=".9" stroke="#8978ff" stroke-width="3"/>
+  <circle cx="42" cy="32" r="5" fill="#fff" fill-opacity=".9" stroke="#7565f0" stroke-width="3"/>
+  <circle cx="42" cy="48" r="5" fill="#fff" fill-opacity=".9" stroke="#41b3ff" stroke-width="3"/>
+  <path d="m51 32 4 4 7-9" fill="none" stroke="#41b3ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -177,9 +177,9 @@ semgrep --config p/pci-dss --json -o pci-scan-results.json
 
 ## Related Skills
 
-- [OWASP Top 10 Checklist](../owasp-top10-checklist/SKILL.md)
-- [Container Security](../container-security/SKILL.md)
-- [Dependency Scanning](../dependency-scanning/SKILL.md)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html)
+- [OWASP Component Analysis](https://owasp.org/www-community/Component_Analysis)
 
 ## Tool Comparison
 

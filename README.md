@@ -18,7 +18,7 @@ It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and i
 ## Quickstart
 
 ```sh
-npx -y @adnova-group/muster@0.5.0 install
+npx -y @adnova-group/muster@0.6.0 install
 ```
 
 Pin the reviewed release in automation and copy the current version from `package.json` when updating. `npx` uses npm's execution path and may download the named package from the configured registry before running it. Review the package provenance and release notes before changing the pin.
@@ -41,7 +41,7 @@ Muster's glass-box output style ships inside the plugin and applies automaticall
 Build or install the package, then install Muster's managed Codex profiles and plugin:
 
 ```sh
-npx -y @adnova-group/muster@0.5.0 install codex --scope project
+npx -y @adnova-group/muster@0.6.0 install codex --scope project
 ```
 
 `--scope project` writes Muster-owned profiles and declarations under the project's `.codex/` layer, installs the hook runtime under `.codex/muster/`, and merges owned hook groups into `.codex/hooks.json`. The install also records ownership receipts and registers the plugin. Existing unrelated profiles, configuration, and hook groups are preserved.
@@ -49,7 +49,7 @@ npx -y @adnova-group/muster@0.5.0 install codex --scope project
 Codex CLI, Desktop, and the IDE share `$CODEX_HOME/config.toml`. Even for `--scope project`, the installer ensures the canonical `agents.max_concurrent_threads_per_session` setting exists, defaulting it to `12` only when the user has not configured a canonical or legacy ceiling. Existing positive user ceilings are preserved. A receipt lets the last managed-scope uninstall restore only values Muster changed, including cleanup of legacy `max_threads`/`max_depth` values only when an older Muster receipt proves ownership. The user scope is canonical for hooks: a healthy user install makes a project install skip its own hook merge, avoiding duplicate events. Use `--dry-run` to inspect the complete write, merge, registration, and cleanup plan first:
 
 ```sh
-npx -y @adnova-group/muster@0.5.0 install codex --scope project --dry-run
+npx -y @adnova-group/muster@0.6.0 install codex --scope project --dry-run
 ```
 
 On Windows, install from the same host that runs Codex. Native Windows and WSL have different home directories, Node installations, plugin caches, and normally different `CODEX_HOME` values; an install under `~/.codex` in WSL does not configure native Codex Desktop under `%USERPROFILE%\.codex`. If you switch hosts, rerun the scoped install and `muster doctor --codex` in the new host. Do not point native Desktop at a WSL-only path or assume that a `/mnt/c/...` checkout makes the two user scopes identical.
@@ -57,8 +57,8 @@ On Windows, install from the same host that runs Codex. Native Windows and WSL h
 Codex requires a new trust review when installed hook definitions change. Inspect exact definitions with `/hooks`; update-sensitive trust means a previously trusted hash does not authorize changed code. To remove only Muster-owned project state, preview and then run:
 
 ```sh
-npx -y @adnova-group/muster@0.5.0 uninstall codex --scope project --dry-run
-npx -y @adnova-group/muster@0.5.0 uninstall codex --scope project
+npx -y @adnova-group/muster@0.6.0 uninstall codex --scope project --dry-run
+npx -y @adnova-group/muster@0.6.0 uninstall codex --scope project
 ```
 
 Uninstall preserves unrelated config and Codex's project trust records, removes only receipted Muster declarations and hook groups, prunes Muster-owned hook trust entries, and unregisters the plugin only after the last managed scope is gone. With Codex on `PATH`, install registers `Adnova-Group/muster` and adds `muster@muster` idempotently. Without Codex it installs profiles and hooks, then prints the exact registration follow-up.
@@ -112,7 +112,7 @@ export MUSTER_CHATGPT_WORK_PROBE_NONCE=<32-lowercase-hex-nonce>
 export MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH=/absolute/private/probe-dir/server-attestation.json
 export MUSTER_CHATGPT_WORK_CONNECTION_ID=asdk_app_...
 export MUSTER_CHATGPT_WORK_APP_JSON_PATH=/absolute/path/to/installed/.app.json
-export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.5.0
+export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.6.0
 export MUSTER_CHATGPT_WORK_CONNECTION_LABEL="Muster ChatGPT Work"
 tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work \
   --tunnel-id tunnel_... --mcp-command "node runtime/chatgpt-work-server.mjs"
@@ -132,10 +132,10 @@ For the identity-bound native proof, supply the normalized connection and exact 
 ```sh
 node scripts/chatgpt-work-native-probe.mjs \
   --connection-id asdk_app_... --app-json /path/to/installed/.app.json \
-  --plugin-version 0.5.0 --connection-label "Muster ChatGPT Work"
+  --plugin-version 0.6.0 --connection-label "Muster ChatGPT Work"
 node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
   --server-attestation attestation.json --connection-id asdk_app_... \
-  --app-json /path/to/installed/.app.json --plugin-version 0.5.0 \
+  --app-json /path/to/installed/.app.json --plugin-version 0.6.0 \
   --connection-label "Muster ChatGPT Work" \
   --snapshot-out /private/retained/grade-snapshot.json \
   --owned-plugin-path /exact/owned/plugin-path \
@@ -166,7 +166,7 @@ node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
 
 `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work: each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`, respectively) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0 -- migrate to the replacement verb before then; behavior stays unchanged for the rest of the window.
 
-Design mode's context resolution, attended initialization, bounded detector, provider contract, and complete workflow list are documented in [docs/design.md](docs/design.md).
+Design mode's context resolution, attended initialization, bounded detector, provider contract, and complete workflow list are documented in the [Design reference](https://github.com/Adnova-Group/muster/blob/main/docs/design.md).
 
 Plan and Go accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome; both also accept the same backlog refs as Plan-backlog and Go-backlog (a backlog `.md` path, `issues:<label>`, or `linear:<key>`) and confirm the scope before planning a whole batch. A thin outcome gets refined first: `muster assess` does a deterministic gap-check, and if the outcome is vague, an interview skill asks one question at a time behind an approval gate before any crew is assembled. An outcome that decomposes into independent parts can instead be written to a backlog (`.muster/backlog.md`) for `/muster:go-backlog` to clear as a batch, or for `/muster:plan-backlog` to batch-plan first; `/muster:audit backlog [path]` fills the same backlog from audit's findings, sweeping read-only instead of fixing them inline; `/muster:capture [hint]` fills it a third way, mining a conversation's findings and decisions instead of an audit sweep or an interview decomposition.
 
@@ -209,7 +209,7 @@ The novel core is a capability and domain router. Muster names a fixed vocabular
 
 The role set is fixed but the provider set is not. When an outcome does not fit a named role, description-search bridges the gap: `muster match "<task>"` ranks every catalog provider by deterministic token overlap (no model call), so "audit this code for security vulnerabilities" surfaces the security specialist even though it never names a role.
 
-Each role also carries a conceptual tier picked to fit the work. The ladder, from least to most capable, is `scout`, `core`, `prime`, and `apex`. Mechanical roles use scout, routine work defaults to core, and peak-judgment roles use apex with a deterministic fallback to prime. Runtime adapters map those tiers to concrete models. Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or [docs/architecture.md](docs/architecture.md) in-repo).
+Each role also carries a conceptual tier picked to fit the work. The ladder, from least to most capable, is `scout`, `core`, `prime`, and `apex`. Mechanical roles use scout, routine work defaults to core, and peak-judgment roles use apex with a deterministic fallback to prime. Runtime adapters map those tiers to concrete models. Muster composes the tools you already have and falls back to its own. For the full design, see the [architecture reference](https://adnova-group.github.io/muster/reference/architecture) (or the [architecture source](https://github.com/Adnova-Group/muster/blob/main/docs/architecture.md)).
 
 ## Claude Code-only lifecycle hooks
 
@@ -285,6 +285,6 @@ Alongside the vendored material, Muster ships its own clean-room specialists, au
 
 ## Contributing and license
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+Contributions are welcome. See the [contribution guide](https://github.com/Adnova-Group/muster/blob/main/CONTRIBUTING.md) to get started.
 
 Muster is licensed under Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

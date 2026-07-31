@@ -159,7 +159,7 @@ If the `Order` context is importing `User` entities from the `Identity` context,
 
 For detailed DDD bounded context mapping, full multi-service project trees, Anti-Corruption Layer implementations, and Onion Architecture comparisons, see:
 
-- [`references/advanced-patterns.md`](references/advanced-patterns.md)
+- [`advanced-patterns.md` (pinned upstream)](https://github.com/wshobson/agents/blob/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/backend-development/skills/architecture-patterns/references/advanced-patterns.md)
 
 ## Related Skills
 

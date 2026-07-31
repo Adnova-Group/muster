@@ -1,12 +1,12 @@
 // Tests for session-start wave-guard fix:
 // - marker survives source:"compact" and source:"resume"
-// - marker removed on "startup"/"clear"/missing-source
+// - only expired markers are removed on "startup"/"clear"/missing-source
 // - uses payload.cwd when present
 // - run-active marker cleared on fresh sessions, survives mid-session sources
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mkdtempSync, existsSync,
+  mkdtempSync, existsSync, utimesSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,11 @@ function markerExists(dir) {
   return existsSync(path.join(dir, ".muster", "wave-active"));
 }
 
+function expireMarker(dir, name) {
+  const stale = new Date(Date.now() - (2 * 60 * 60 * 1000));
+  utimesSync(path.join(dir, ".muster", name), stale, stale);
+}
+
 // ── source:"compact" — marker must survive ───────────────────────────────────
 test("session-start: marker survives source:compact (wave guard must not fire mid-wave)", async () => {
   const tmpDir = makeTmpMarker("wave-compact-1");
@@ -72,22 +77,23 @@ test("session-start: marker survives source:resume", async () => {
   }
 });
 
-// ── source:"startup" — marker must be removed ───────────────────────────────
-test("session-start: marker removed on source:startup", async () => {
+// ── source:"startup" — a live marker must survive ───────────────────────────
+test("session-start: a fresh live wave marker survives source:startup", async () => {
   const tmpDir = makeTmpMarker("wave-old");
   try {
     const payload = JSON.stringify({ source: "startup", session_id: "s3", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
     assert.equal(code, 0, "exit 0");
-    assert.ok(!markerExists(tmpDir), "wave-active marker must be removed on startup");
+    assert.ok(markerExists(tmpDir), "a new session cannot clear another live wave");
   } finally {
     cleanDir(tmpDir);
   }
 });
 
-// ── source:"clear" — marker must be removed ─────────────────────────────────
-test("session-start: marker removed on source:clear", async () => {
+// ── source:"clear" — an expired marker is recovered ─────────────────────────
+test("session-start: an expired wave marker is removed on source:clear", async () => {
   const tmpDir = makeTmpMarker("wave-old-2");
+  expireMarker(tmpDir, "wave-active");
   try {
     const payload = JSON.stringify({ source: "clear", session_id: "s4", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
@@ -99,8 +105,9 @@ test("session-start: marker removed on source:clear", async () => {
 });
 
 // ── missing source — marker must be removed (old-style no-source SessionStart) ─
-test("session-start: marker removed when source field is absent", async () => {
+test("session-start: an expired wave marker is removed when source field is absent", async () => {
   const tmpDir = makeTmpMarker("wave-nosrc");
+  expireMarker(tmpDir, "wave-active");
   try {
     const payload = JSON.stringify({ session_id: "s5", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
@@ -112,8 +119,9 @@ test("session-start: marker removed when source field is absent", async () => {
 });
 
 // ── payload.cwd takes precedence over process.cwd() ────────────────────────
-test("session-start: uses payload.cwd to locate the marker (not process.cwd)", async () => {
+test("session-start: uses payload.cwd to locate an expired marker (not process.cwd)", async () => {
   const tmpDir = makeTmpMarker("wave-cwd-test");
+  expireMarker(tmpDir, "wave-active");
   // Run hook from a DIFFERENT directory (os.tmpdir()) but pass cwd in payload.
   try {
     const payload = JSON.stringify({ source: "startup", session_id: "s6", cwd: tmpDir });
@@ -142,8 +150,8 @@ test("session-start: additionalContext is the trimmed one-line pointer", async (
 
 // ── run-active marker lifecycle ──────────────────────────────────────────────
 
-// source:"startup" — run-active must be cleared (crashed verb)
-test("session-start: run-active marker removed on source:startup", async () => {
+// source:"startup" — a live run-active marker must survive
+test("session-start: a fresh live run-active marker survives source:startup", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-ra-"));
   makeRunMarker(tmpDir, "run-old");
   try {
@@ -151,7 +159,7 @@ test("session-start: run-active marker removed on source:startup", async () => {
     const { stdout, code } = await runHookStdin(tmpDir, payload);
     assert.equal(code, 0, "exit 0");
     assert.doesNotThrow(() => JSON.parse(stdout), "valid JSON");
-    assert.ok(!runActiveExists(tmpDir), "run-active must be removed on startup");
+    assert.ok(runActiveExists(tmpDir), "a new session cannot clear another live run");
   } finally {
     cleanDir(tmpDir);
   }
@@ -161,6 +169,7 @@ test("session-start: run-active marker removed on source:startup", async () => {
 test("session-start: run-active marker removed on source:clear", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-ra-"));
   makeRunMarker(tmpDir, "run-old-2");
+  expireMarker(tmpDir, "run-active");
   try {
     const payload = JSON.stringify({ source: "clear", session_id: "ra2", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);
@@ -175,6 +184,7 @@ test("session-start: run-active marker removed on source:clear", async () => {
 test("session-start: run-active marker removed when source field is absent", async () => {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "muster-ss-ra-"));
   makeRunMarker(tmpDir, "run-nosrc");
+  expireMarker(tmpDir, "run-active");
   try {
     const payload = JSON.stringify({ session_id: "ra3", cwd: tmpDir });
     const { stdout, code } = await runHookStdin(tmpDir, payload);

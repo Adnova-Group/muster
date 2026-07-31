@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 420" role="img" aria-labelledby="title desc">
+  <title id="title">Muster orchestration paths</title>
+  <desc id="desc">A transparent panel showing one outcome routed through three visible paths into a verified result.</desc>
+  <defs>
+    <linearGradient id="line" x1="70" y1="70" x2="450" y2="350" gradientUnits="userSpaceOnUse"><stop stop-color="#6d5ce7"/><stop offset="1" stop-color="#41b3ff"/></linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#6d5ce7" stop-opacity=".18"/><stop offset="1" stop-color="#41b3ff" stop-opacity=".08"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#26214e" flood-opacity=".2"/></filter>
+  </defs>
+  <rect x="44" y="38" width="432" height="344" rx="38" fill="url(#panel)" stroke="#8f83ed" stroke-opacity=".55" stroke-width="2" filter="url(#shadow)"/>
+  <path d="M90 210h88m0 0 74-98h90m-164 98h164m-164 0 74 98h90m0-196 70 98-70 98" fill="none" stroke="url(#line)" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="90" cy="210" r="25" fill="#fff" fill-opacity=".94" stroke="#6d5ce7" stroke-width="10"/>
+  <g fill="#fff" fill-opacity=".9" stroke-width="8"><circle cx="342" cy="112" r="22" stroke="#8978ff"/><circle cx="342" cy="210" r="22" stroke="#7565f0"/><circle cx="342" cy="308" r="22" stroke="#41b3ff"/></g>
+  <circle cx="420" cy="210" r="37" fill="#fff" fill-opacity=".94" stroke="#41b3ff" stroke-width="9"/>
+  <path d="m400 210 14 14 28-34" fill="none" stroke="#4f3fc4" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

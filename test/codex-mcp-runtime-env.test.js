@@ -121,6 +121,6 @@ test("Cowork adapter supplies its runtime identity while the neutral core passes
   ]);
   assert.match(adapter, /runtimeIdentity:\s*"cowork"/);
   assert.doesNotMatch(adapter, /MUSTER_MCP_HOST/);
-  assert.match(core, /MUSTER_RUNTIME:\s*config\.runtimeIdentity/);
+  assert.match(core, /environment\.MUSTER_RUNTIME\s*=\s*runtimeIdentity/);
   assert.doesNotMatch(core, /MUSTER_MCP_HOST/);
 });

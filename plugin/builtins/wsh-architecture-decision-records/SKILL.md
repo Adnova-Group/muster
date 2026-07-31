@@ -357,10 +357,10 @@ This directory contains Architecture Decision Records (ADRs) for [Project Name].
 
 | ADR                                   | Title                              | Status     | Date       |
 | ------------------------------------- | ---------------------------------- | ---------- | ---------- |
-| [0001](0001-use-postgresql.md)        | Use PostgreSQL as Primary Database | Accepted   | 2024-01-10 |
-| [0002](0002-caching-strategy.md)      | Caching Strategy with Redis        | Accepted   | 2024-01-12 |
-| [0003](0003-mongodb-user-profiles.md) | MongoDB for User Profiles          | Deprecated | 2023-06-15 |
-| [0020](0020-deprecate-mongodb.md)     | Deprecate MongoDB                  | Accepted   | 2024-01-15 |
+| [0001](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/documentation-generation/skills/architecture-decision-records)        | Use PostgreSQL as Primary Database | Accepted   | 2024-01-10 |
+| [0002](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/documentation-generation/skills/architecture-decision-records)      | Caching Strategy with Redis        | Accepted   | 2024-01-12 |
+| [0003](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/documentation-generation/skills/architecture-decision-records) | MongoDB for User Profiles          | Deprecated | 2023-06-15 |
+| [0020](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/documentation-generation/skills/architecture-decision-records)     | Deprecate MongoDB                  | Accepted   | 2024-01-15 |
 
 ## Creating a New ADR
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpProject } from "../test-support/helpers.js";
 import { scaffoldProject } from "../src/setup.js";
@@ -50,4 +50,18 @@ test("scaffoldProject preserves every existing instruction-file combination", as
     }
     assert.equal(await readFile(join(dir, "CLAUDE.md"), "utf8"), fixture.claude, fixture.name);
   }
+});
+
+test("scaffoldProject refuses symlinked directories and dangling seed files", async () => {
+  const dir = await tmpProject({});
+  const outside = join(dir, "outside");
+  await mkdir(outside);
+  await symlink(outside, join(dir, "docs"), "dir");
+  await assert.rejects(() => scaffoldProject(dir), /symlink|reparse/i);
+  assert.equal(await exists(join(outside, "design", ".gitkeep")), false);
+
+  const other = await tmpProject({});
+  await symlink(join(other, "missing-readme"), join(other, "README.md"));
+  await assert.rejects(() => scaffoldProject(other), /symlink|reparse/i);
+  assert.equal(await exists(join(other, "missing-readme")), false);
 });

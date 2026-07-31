@@ -280,4 +280,4 @@ pytest --cov=myapp --cov-fail-under=80 tests/
 pytest --cov=myapp --cov-report=term-missing tests/
 ```
 
-For advanced patterns (async testing, monkeypatching, property-based testing, database testing, CI/CD integration, and configuration), see [references/advanced-patterns.md](references/advanced-patterns.md)
+For advanced patterns (async testing, monkeypatching, property-based testing, database testing, CI/CD integration, and configuration), see the [pinned upstream advanced-patterns.md](https://github.com/wshobson/agents/blob/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/python-development/skills/python-testing-patterns/references/advanced-patterns.md)

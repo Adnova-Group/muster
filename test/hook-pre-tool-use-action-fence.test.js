@@ -10,7 +10,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, statSync,
+} from "node:fs";
 import os from "node:os";
 import { cleanDir, makeRunActive, spawnHook } from "./test-support/hook-helpers.js";
 import { classifyToolName, classifyBashCommand, classifyAction } from "../plugin/hooks/action-guard.js";
@@ -182,6 +184,55 @@ test("deny: npm publish Bash command when 'publish' is forbidden and a run is ac
   }
 });
 
+test("deny: delegated external actions do not bypass the run's forbidden-action fence", async () => {
+  const tmpDir = makeRunDir();
+  writeForbidden(tmpDir, ["send", "publish"]);
+  try {
+    for (const payload of [
+      mcpPayload("mcp__gmail__send_email", tmpDir, { agent_id: "agent-1" }),
+      bashPayload("npm publish", tmpDir, { agent_id: "agent-2" }),
+    ]) {
+      const { stdout, code } = await runRaw(payload);
+      assert.equal(code, 0);
+      assert.equal(
+        JSON.parse(stdout).hookSpecificOutput.permissionDecision,
+        "deny",
+        "agent_id must not exempt a classified forbidden external action",
+      );
+    }
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("deny: action classification precedes metadata path exemptions", async () => {
+  const tmpDir = makeRunDir();
+  writeForbidden(tmpDir, ["send"]);
+  try {
+    const payload = JSON.stringify({
+      tool_name: "mcp__gmail__send_email",
+      tool_input: { file_path: path.join(tmpDir, ".muster", "receipt") },
+      cwd: tmpDir,
+      agent_id: "agent-3",
+    });
+    const { stdout } = await runRaw(payload);
+    assert.equal(JSON.parse(stdout).hookSpecificOutput.permissionDecision, "deny");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("allow: delegated shell text outside the conservative classifier is not claimed as sandboxed", async () => {
+  const tmpDir = makeRunDir();
+  writeForbidden(tmpDir, ["publish"]);
+  try {
+    const { stdout } = await runRaw(bashPayload("command npm p\"ublish\"", tmpDir, { agent_id: "agent-4" }));
+    assert.notEqual(JSON.parse(stdout).hookSpecificOutput.permissionDecision, "deny");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
 // ── F1: harness-internal tools never action-classified (hook integration) ──
 test("allow: SendMessage is never action-classified, even with 'send' forbidden and a run active", async () => {
   const tmpDir = makeRunDir();
@@ -283,6 +334,20 @@ test("allow: action class classified but not in the forbidden set", async () => 
   }
 });
 
+test("live marker lease is renewed by hook activity", async () => {
+  const tmpDir = makeRunDir();
+  const marker = path.join(tmpDir, ".muster", "run-active");
+  const old = new Date(Date.now() - (2 * 60 * 60 * 1000));
+  utimesSync(marker, old, old);
+  try {
+    const before = statSync(marker).mtimeMs;
+    await runRaw(mcpPayload("mcp__calendar__list_events", tmpDir));
+    assert.ok(statSync(marker).mtimeMs > before, "activity refreshes the marker lease");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
 test("warn: MUSTER_ACTION_GUARD=warn allows with additionalContext instead of denying", async () => {
   const tmpDir = makeRunDir();
   writeForbidden(tmpDir, ["publish"]);
@@ -325,22 +390,22 @@ test("fail-open: forbidden-actions is an unreadable directory (not a file)", asy
   }
 });
 
-// ── regression: subagent + meta-exempt exemptions still hold ───────────────
+// ── regression: exemptions remain advisory-only ────────────────────────────
 
-test("regression: agent_id subagent call is allowed even with a matching forbidden action", async () => {
+test("regression: agent_id does not exempt a matching forbidden action", async () => {
   const tmpDir = makeRunDir();
   writeForbidden(tmpDir, ["publish"]);
   try {
     const { stdout, code } = await runRaw(bashPayload("npm publish", tmpDir, { agent_id: "sub-abc" }));
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
-    assert.notEqual(out.permissionDecision, "deny", "subagent calls must remain exempt from the action fence");
+    assert.equal(out.permissionDecision, "deny", "subagent calls remain subject to the action fence");
   } finally {
     cleanDir(tmpDir);
   }
 });
 
-test("regression: Edit targeting .muster/ stays exempt even with a matching forbidden action", async () => {
+test("regression: .muster path metadata does not exempt a matching external action", async () => {
   const tmpDir = makeRunDir();
   writeForbidden(tmpDir, ["send"]);
   try {
@@ -353,7 +418,7 @@ test("regression: Edit targeting .muster/ stays exempt even with a matching forb
     );
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
-    assert.notEqual(out.permissionDecision, "deny", ".muster/ target must remain meta-exempt");
+    assert.equal(out.permissionDecision, "deny", "external action classification precedes path exemptions");
   } finally {
     cleanDir(tmpDir);
   }

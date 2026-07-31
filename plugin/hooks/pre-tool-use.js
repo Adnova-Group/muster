@@ -32,16 +32,14 @@
 // isScaleCorroborated).
 //
 // Decision order:
-//   1. ALLOW if payload has agent_id (crew subagent — always allowed).
-//   2. ALLOW if the target path is under a META_EXEMPT root (.muster/ or
+//   1. Action-class fence: classify every payload, including delegated calls,
+//      before considering any exemption.
+//   2. ALLOW if payload has agent_id (crew subagent — advisory policy only;
+//      never an exemption from a classified forbidden external action).
+//   3. ALLOW if the target path is under a META_EXEMPT root (.muster/ or
 //      .claude/ — orchestrator bookkeeping and repo-local settings).
-//   3. ALLOW if the target path is outside the cwd tree (GUARD-SCOPE) —
+//   4. ALLOW if the target path is outside the cwd tree (GUARD-SCOPE) —
 //      out of scope for a cwd-relative fence.
-//   4. Action-class fence: if .muster/run-active AND .muster/forbidden-actions
-//      both exist, classify the tool call (action-guard.js) and DENY when it
-//      matches a listed class (honors MUSTER_ACTION_GUARD off|warn|deny).
-//      Fail-open (no-op) when either file is absent/unreadable, or no class
-//      matches. THE ONLY DENY THIS HOOK CAN EMIT.
 //   5. Border invitation: if this call is a qualifying inline file touch
 //      (Edit/Write/NotebookEdit with a resolved target, or a Bash command
 //      bash-write-target.js classifies as a high-confidence write) and no
@@ -65,7 +63,10 @@
 // whether a shell command IS a file write for cumulative-counter keying; it no
 // longer backs any deny path.
 
-import { readFileSync, statSync, realpathSync } from "node:fs";
+import {
+  readFileSync, statSync, realpathSync, openSync, closeSync, fstatSync,
+  futimesSync, constants,
+} from "node:fs";
 import path from "node:path";
 import { emit, CREW_INVITATION } from "./guidance.js";
 import { bashWriteTarget } from "./bash-write-target.js";
@@ -140,6 +141,25 @@ function realpathOr(p) {
   }
 }
 
+// Refresh a live repository marker's activity lease without following links.
+// SessionStart only recovers markers whose lease has expired, so active runs
+// remain protected even when they span multiple wall-clock hours.
+function renewMarkerLease(file, now) {
+  let fd;
+  try {
+    fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | constants.O_NONBLOCK);
+    if (!fstatSync(fd).isFile()) return;
+    const at = new Date(now);
+    futimesSync(fd, at, at);
+  } catch {
+    // Missing/linked/unreadable marker: never weaken the hook decision.
+  } finally {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch { /* best-effort */ }
+    }
+  }
+}
+
 try {
   // Resolved once per invocation: real Date.now() in production, or the
   // injected MUSTER_TEST_NOW_MS clock under test (see inline-budget.js:
@@ -156,14 +176,39 @@ try {
     allow();
   }
 
-  // 1. Subagent calls always allowed.
-  if (payload.agent_id !== undefined && payload.agent_id !== null) {
-    allow();
-  }
-
   const cwd = typeof payload.cwd === "string" && payload.cwd.length > 0
     ? payload.cwd
     : process.cwd();
+
+  renewMarkerLease(path.join(cwd, ".muster", "run-active"), now);
+  renewMarkerLease(path.join(cwd, ".muster", "wave-active"), now);
+
+  // 1. Action-class fence — THE ONLY DENY THIS HOOK CAN EMIT. This must run
+  //    before every exemption: delegation and path metadata do not make an
+  //    otherwise-classified external effect safe. The Bash classifier remains
+  //    deliberately conservative; this hook is a fence for recognized action
+  //    classes, not a complete shell sandbox.
+  try {
+    statSync(path.join(cwd, ".muster", "run-active"));
+    const forbiddenRaw = readFileSync(path.join(cwd, ".muster", "forbidden-actions"), "utf8");
+    const forbidden = new Set(forbiddenRaw.split("\n").map((l) => l.trim()).filter(Boolean));
+    const cls = classifyAction(payload);
+    if (cls && forbidden.has(cls)) {
+      const actionGuard = (process.env.MUSTER_ACTION_GUARD || "deny").toLowerCase();
+      if (actionGuard === "warn") {
+        warnActionAllow(cls);
+      } else if (actionGuard !== "off") {
+        denyAction(cls);
+      }
+    }
+  } catch {
+    // Missing/unreadable run state remains fail-open.
+  }
+
+  // 2. Subagent calls are exempt from advisory inline-drift accounting only.
+  if (payload.agent_id !== undefined && payload.agent_id !== null) {
+    allow();
+  }
 
   const rawTarget =
     (payload.tool_input && (payload.tool_input.file_path || payload.tool_input.notebook_path)) || "";
@@ -180,7 +225,7 @@ try {
   const cwdAbs = realpathOr(path.resolve(cwd));
   const targetCanon = target ? realpathOr(target) : "";
 
-  // 2. Meta-exempt roots — orchestrator bookkeeping dirs always allowed.
+  // 3. Meta-exempt roots — orchestrator bookkeeping dirs always allowed.
   //    (Bash has no file_path/notebook_path; target is "" so this gate is skipped.)
   //    To add a new exempt root, extend META_EXEMPT_ROOTS here and nowhere else.
   const META_EXEMPT_ROOTS = [".muster", ".claude"];
@@ -191,36 +236,9 @@ try {
     }
   }
 
-  // 3. GUARD-SCOPE: targets outside the cwd tree are out of this hook's scope.
+  // 4. GUARD-SCOPE: targets outside the cwd tree are out of this hook's scope.
   if (targetCanon && !targetCanon.startsWith(cwdAbs + path.sep) && targetCanon !== cwdAbs) {
     allow();
-  }
-
-  // 4. Action-class fence — THE ONLY DENY THIS HOOK CAN EMIT. Requires BOTH
-  //    .muster/run-active (a run is live) AND .muster/forbidden-actions (one
-  //    class per line, written by the orchestrator from the manifest at run
-  //    start) to exist — either absent means this gate is a no-op
-  //    (fail-open). Classification lives in action-guard.js. Honors
-  //    MUSTER_ACTION_GUARD ("off" | "warn" | default deny). Never throws past
-  //    this block: any failure (missing/unreadable file) falls through to the
-  //    outer catch, equivalent to "no-op" here since nothing was decided yet.
-  try {
-    statSync(path.join(cwd, ".muster", "run-active"));
-    const forbiddenRaw = readFileSync(path.join(cwd, ".muster", "forbidden-actions"), "utf8");
-    const forbidden = new Set(forbiddenRaw.split("\n").map((l) => l.trim()).filter(Boolean));
-    const cls = classifyAction(payload);
-    if (cls && forbidden.has(cls)) {
-      const actionGuard = (process.env.MUSTER_ACTION_GUARD || "deny").toLowerCase();
-      if (actionGuard === "warn") {
-        warnActionAllow(cls);
-      } else if (actionGuard !== "off") {
-        denyAction(cls);
-      }
-      // actionGuard === "off": fall through silently — no deny/warn, continue below.
-    }
-  } catch {
-    // .muster/run-active absent, .muster/forbidden-actions absent/unreadable,
-    // or no forbidden class matched — fail-open, continue to the border check.
   }
 
   // 5. Border invitation — warn-only cumulative drift signal. Never denies.

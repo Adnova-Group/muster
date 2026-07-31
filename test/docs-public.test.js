@@ -26,10 +26,12 @@ test("security policy documents the private reporting and disclosure contract", 
 
 test("README documents current install, lifecycle, and configuration boundaries", async () => {
   const readme = await read("README.md");
+  const pkg = JSON.parse(await read("package.json"));
+  const escapedVersion = pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const harness of ["Claude Code", "Codex", "Kimi", "Cowork"]) {
     assert.match(readme, new RegExp(harness), `README must name the ${harness} lane`);
   }
-  assert.match(readme, /@adnova-group\/muster@0\.5\.0/);
+  assert.match(readme, new RegExp(`@adnova-group/muster@${escapedVersion}`));
   assert.match(readme, /npm exec|npx[\s\S]{0,180}(?:registry|provenance|download)/i);
   assert.match(readme, /--scope project[\s\S]{0,900}config\.toml[\s\S]{0,300}max_concurrent_threads_per_session/i);
   assert.match(readme, /--dry-run/);
@@ -64,7 +66,7 @@ test("contributor and architecture docs describe the current build and dispatch 
 test("binding inventory and docs index match the public surface", async () => {
   const binding = await read("docs/binding-interface.md");
   assert.match(binding, /ten modes plus the three.*aliases/i);
-  assert.match(binding, /thirty-one files|31 files/i);
+  assert.match(binding, /thirty-three files|33 files/i);
   const index = await read("docs/README.md");
   for (const expected of ["Architecture", "Binding", "Operations", "Research", "Historical"]) {
     assert.match(index, new RegExp(`## ${expected}`, "i"));

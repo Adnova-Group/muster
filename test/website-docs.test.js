@@ -13,6 +13,8 @@ import { scoreHumanness } from "../src/humanizer-score.js";
 
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
+const { version: releaseVersion } = JSON.parse(await read("package.json"));
+const escapedReleaseVersion = releaseVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // --- helper: extract the usage line from cli.js and parse subcommand names ----
 
@@ -94,12 +96,14 @@ test("every CLI subcommand in usage string appears in website/reference/commands
 test("public navigation exposes every guide route and names the ten-mode reference", async () => {
   const config = await read("website/.vitepress/config.js");
   for (const route of [
+    "/guides/get-started",
     "/guides/install",
     "/guides/quickstart",
     "/guides/harnesses",
     "/guides/codex",
     "/guides/kimi",
     "/guides/cowork",
+    "/guides/chatgpt-work",
     "/guides/security",
     "/guides/troubleshooting",
   ]) {
@@ -114,6 +118,9 @@ test("public entry points consistently document ten modes including Design and I
     read("website/index.md"),
     read("website/guides/quickstart.md"),
     read("website/guides/codex.md"),
+    read("website/guides/install.md"),
+    read("website/guides/kimi.md"),
+    read("website/guides/harnesses.md"),
   ]);
   for (const page of pages) {
     assert.match(page, /\b[Tt]en modes\b/);
@@ -140,7 +147,7 @@ test("harness documentation routes and support claims are explicit", async () =>
   }
   assert.match(kimi, /support matrix/i);
   assert.match(kimi, /hooks-free/i);
-  assert.match(kimi, /@adnova-group\/muster@0\.5\.0/);
+  assert.match(kimi, new RegExp(`@adnova-group/muster@${escapedReleaseVersion}`));
   assert.match(kimi, /symbolic[\s\S]{0,100}`primary`[\s\S]{0,80}`secondary`/i);
   assert.match(kimi, /explicit[\s\S]{0,120}overrides[\s\S]{0,120}model_preference/i);
   assert.match(cowork, /support matrix/i);
@@ -220,8 +227,41 @@ test("website install and uninstall examples pin the reviewed release", async ()
     const page = await read(file);
     assert.doesNotMatch(page, /npx -y @adnova-group\/muster (?:install|uninstall)/);
     for (const line of page.split("\n").filter((value) => /npx -y @adnova-group\/muster.*(?:install|uninstall)/.test(value))) {
-      assert.match(line, /@adnova-group\/muster@0\.5\.0/, `${file} has an unpinned mutation example: ${line}`);
+      assert.match(line, new RegExp(`@adnova-group/muster@${escapedReleaseVersion}`), `${file} has an unpinned mutation example: ${line}`);
     }
+  }
+});
+
+test("website release surface routes through harness choice and publishes accessible brand metadata", async () => {
+  const [config, home, getStarted, quickstart, harnesses, work] = await Promise.all([
+    read("website/.vitepress/config.js"),
+    read("website/index.md"),
+    read("website/guides/get-started.md"),
+    read("website/guides/quickstart.md"),
+    read("website/guides/harnesses.md"),
+    read("website/guides/chatgpt-work.md"),
+  ]);
+  assert.match(home, /text: Get Started[\s\S]{0,80}link: \/guides\/get-started/);
+  assert.doesNotMatch(home, /(?:🔍|🧩|🌐|⚙️|🚦|🔒)/u);
+  for (const harness of ["Claude Code", "Codex", "Kimi", "Cowork", "ChatGPT Work"]) {
+    assert.match(getStarted, new RegExp(harness));
+  }
+  for (const disclosure of [/private\/local/i, /proof-gated/i, /Secure MCP Tunnel/i, /separately billed OpenAI Platform API key/i]) {
+    assert.match(getStarted, disclosure);
+    assert.match(work + harnesses, disclosure);
+  }
+  for (const mode of ["Plan", "Go", "Plan-backlog", "Go-backlog", "Diagnose", "Audit", "Design", "Runner", "Capture", "Init"]) {
+    assert.match(quickstart, new RegExp(`>${mode}<|>${mode.replace("-", "-")}<|\\b${mode}\\b`, "i"));
+  }
+  for (const marker of ["favicon.svg", "muster-mark.svg", "social-preview.png", "og:image:alt", "twitter:image:alt"]) {
+    assert.match(config, new RegExp(marker.replace(".", "\\.")));
+  }
+  for (const asset of [
+    "website/public/brand/favicon.svg",
+    "website/public/brand/muster-mark.svg",
+    "website/public/brand/social-preview.png",
+  ]) {
+    assert.ok((await readFile(new URL(asset, root))).byteLength > 0, `${asset} must be non-empty`);
   }
 });
 

@@ -1,5 +1,5 @@
 import { parse, stringify } from "yaml";
-import { mkdir, readdir, lstat, realpath, open, rename, unlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, lstat, realpath, open, rename, rm, unlink } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join, dirname, sep, resolve, relative, basename } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -336,20 +336,29 @@ async function fetchSourceRoot(source, home) {
     if (source.id === "superpowers") return { root: await resolveSuperpowers(home) };
     return { root: null };
   }
-  const vendorBase = join(tmpdir(), "muster-vendor-");
-  const dir = join(tmpdir(), `muster-vendor-${source.id}`);
-  // Belt-and-suspenders: computed dir must start with the expected vendor base
-  // (validateVendorManifest should have caught bad ids already, but guard anyway).
-  if (!dir.startsWith(vendorBase)) {
-    return { root: null, error: new Error(`source.id "${source.id}" would escape vendor tmp dir`) };
-  }
+  let tempRoot;
   try {
-    await pexec("rm", ["-rf", dir]);
+    // mkdtemp atomically creates a mode-0700 directory on supported platforms.
+    // The checkout lives below that unguessable root, so concurrent runs and a
+    // hostile pre-created /tmp/muster-vendor-<id> tree cannot collide with it.
+    tempRoot = await mkdtemp(join(tmpdir(), "muster-vendor-"));
+    const dir = join(tempRoot, "checkout");
     for (const [cmd, args] of cloneCommandsFor(source, dir)) {
       await pexec(cmd, args);
     }
-    return { root: dir };
-  } catch (e) { return { root: null, error: e }; }
+    const inside = (await pexec("git", ["-C", dir, "rev-parse", "--is-inside-work-tree"])).stdout.trim();
+    if (inside !== "true") throw new Error("fetched source is not a git work tree");
+    const commit = (await pexec("git", ["-C", dir, "rev-parse", "--verify", "HEAD^{commit}"])).stdout.trim();
+    if (!SHA_RE.test(commit)) throw new Error("fetched source HEAD is not a commit");
+    if (SHA_RE.test(source.ref || "") && commit.toLowerCase() !== source.ref.toLowerCase())
+      throw new Error(`fetched source resolved ${commit}, expected ${source.ref}`);
+    await pexec("git", ["-C", dir, "fsck", "--no-dangling"]);
+    await pexec("git", ["-C", dir, "diff-index", "--quiet", "HEAD", "--"]);
+    return { root: dir, cleanup: () => rm(tempRoot, { recursive: true, force: true }) };
+  } catch (e) {
+    if (tempRoot) await rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+    return { root: null, error: e };
+  }
 }
 
 export async function runVendor({ home = homedir(), repoRoot = process.cwd(), manifest } = {}) {
@@ -369,35 +378,39 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
       });
       continue;
     }
-    const { root, error } = await fetchSourceRoot(source, home);
+    const { root, error, cleanup } = await fetchSourceRoot(source, home);
     if (!root) {
       const detail = error ? `: ${error.message}` : "";
       warnings.push(`source ${source.id}: could not fetch (${source.kind})${detail}`);
       continue;
     }
-    for (const item of source.items) {
-      const srcPath = join(root, item.from);
-      // Guard: srcPath must stay within the clone/source root (no traversal via item.from).
-      if (srcPath !== root && !srcPath.startsWith(root + sep)) {
-        warnings.push(`${source.id}: item ${item.from} is outside of source root — skipping (traversal attempt)`);
-        continue;
+    try {
+      for (const item of source.items) {
+        const srcPath = join(root, item.from);
+        // Guard: srcPath must stay within the clone/source root (no traversal via item.from).
+        if (srcPath !== root && !srcPath.startsWith(root + sep)) {
+          warnings.push(`${source.id}: item ${item.from} is outside of source root — skipping (traversal attempt)`);
+          continue;
+        }
+        let text;
+        try { text = await readSourceRegular(root, item.from); }
+        catch (error) { warnings.push(`${source.id}: unsafe source path for ${item.from}: ${error.message}`); continue; }
+        if (text === null) { warnings.push(`${source.id}: missing item ${item.from}`); continue; }
+        const isAgent = item.as === "agent";
+        const { path, content, catalogEntry } = isAgent
+          ? toAgent(text, item, source)
+          : toBuiltin(text, item, source);
+        const abs = join(outputRoot, path);
+        // Guard: abs output path must stay within repoRoot (no traversal via item.id).
+        if (!contained(outputRoot, abs)) {
+          warnings.push(`${source.id}: item.id "${item.id}" would write outside repoRoot — skipping`);
+          continue;
+        }
+        await atomicPublish(outputRoot, path, content);
+        (isAgent ? agentEntries : builtinEntries).push(catalogEntry);
       }
-      let text;
-      try { text = await readSourceRegular(root, item.from); }
-      catch (error) { warnings.push(`${source.id}: unsafe source path for ${item.from}: ${error.message}`); continue; }
-      if (text === null) { warnings.push(`${source.id}: missing item ${item.from}`); continue; }
-      const isAgent = item.as === "agent";
-      const { path, content, catalogEntry } = isAgent
-        ? toAgent(text, item, source)
-        : toBuiltin(text, item, source);
-      const abs = join(outputRoot, path);
-      // Guard: abs output path must stay within repoRoot (no traversal via item.id).
-      if (!contained(outputRoot, abs)) {
-        warnings.push(`${source.id}: item.id "${item.id}" would write outside repoRoot — skipping`);
-        continue;
-      }
-      await atomicPublish(outputRoot, path, content);
-      (isAgent ? agentEntries : builtinEntries).push(catalogEntry);
+    } finally {
+      await cleanup?.();
     }
   }
   const allEntries = [...builtinEntries, ...agentEntries];

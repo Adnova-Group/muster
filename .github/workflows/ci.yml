@@ -35,3 +35,31 @@ jobs:
           npm install "$OLDPWD/$TARBALL"
           ./node_modules/.bin/muster detect
           ./node_modules/.bin/muster doctor
+
+  windows-smoke:
+    name: Windows smoke (Node 20)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - run: npm ci
+      - name: Build generated Codex assets
+        run: npm run build:codex
+      - name: Verify generated Codex assets
+        run: npm run check:codex
+      - name: Run Windows-focused tests
+        run: >-
+          node --test
+          test/fs-util.test.js
+          test/install.test.js
+          test/codex-hook-node-pin.test.js
+          test/harness-cowork.test.js
+      - name: Smoke npm CLI shim (detect)
+        run: npx --no-install muster detect .
+      - name: Smoke npm CLI shim (doctor)
+        run: npx --no-install muster doctor

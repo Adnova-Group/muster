@@ -16,7 +16,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
-import { writeFile, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { trackedMkdtemp as mkdtemp, tmpProject } from "../test-support/helpers.js";
 
@@ -71,6 +71,27 @@ test("cli wire: signals writes signals.json under the explicit target directory"
   const persisted = JSON.parse(await readFile(join(target, ".muster/signals.json"), "utf8"));
   assert.deepEqual(persisted, JSON.parse(stdout));
   await assert.rejects(() => readFile(join(cwd, ".muster/signals.json"), "utf8"), { code: "ENOENT" });
+});
+
+test("cli wire: signals refuses symlinked .muster ancestry and dangling signals.json", async () => {
+  const target = await mkdtemp(join(tmpdir(), "muster-signals-safe-"));
+  const outside = await mkdtemp(join(tmpdir(), "muster-signals-outside-"));
+  await writeFile(join(target, "package.json"), "{}");
+  await symlink(outside, join(target, ".muster"), "dir");
+  await assert.rejects(() => run(["signals", target]), error => {
+    assert.match(String(error.stderr), /symlink|reparse/i);
+    return true;
+  });
+  await assert.rejects(() => readFile(join(outside, "signals.json")), { code: "ENOENT" });
+
+  const dangling = await mkdtemp(join(tmpdir(), "muster-signals-dangling-"));
+  await mkdir(join(dangling, ".muster"));
+  await symlink(join(dangling, "missing.json"), join(dangling, ".muster", "signals.json"));
+  await assert.rejects(() => run(["signals", dangling]), error => {
+    assert.match(String(error.stderr), /symlink|reparse/i);
+    return true;
+  });
+  await assert.rejects(() => readFile(join(dangling, "missing.json")), { code: "ENOENT" });
 });
 
 // ---------------------------------------------------------------------------

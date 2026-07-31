@@ -1,8 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { exists } from "./fs-util.js";
+import { createContainedFile, ensureContainedDirectory, inspectContainedPath } from "./fs-safe.js";
 const pexec = promisify(execFile);
 
 const SEEDS = {
@@ -16,23 +15,22 @@ const SEEDS = {
 
 export async function scaffoldProject(dir) {
   const created = [], skipped = [];
-  if (!(await exists(join(dir, ".git")))) {
+  await ensureContainedDirectory(dir);
+  if (!(await inspectContainedPath(dir, join(dir, ".git")))) {
     try { await pexec("git", ["init", "-q"], { cwd: dir }); created.push(".git"); }
     catch { skipped.push(".git (git unavailable)"); }
   } else skipped.push(".git");
 
-  const preserveClaudeOnly = await exists(join(dir, "CLAUDE.md")) &&
-    !(await exists(join(dir, "AGENTS.md")));
+  const preserveClaudeOnly = Boolean(await inspectContainedPath(dir, join(dir, "CLAUDE.md"))) &&
+    !(await inspectContainedPath(dir, join(dir, "AGENTS.md")));
   for (const [rel, content] of Object.entries(SEEDS)) {
     const abs = join(dir, rel);
     if (rel === "AGENTS.md" && preserveClaudeOnly) {
       skipped.push(rel);
       continue;
     }
-    if (await exists(abs)) { skipped.push(rel); continue; }
-    await mkdir(dirname(abs), { recursive: true });
-    await writeFile(abs, content);
-    created.push(rel);
+    if (await createContainedFile(dir, abs, content)) created.push(rel);
+    else skipped.push(rel);
   }
   return { created, skipped };
 }

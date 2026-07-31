@@ -12,7 +12,7 @@
 // from the original implementations -- read them before changing anything.
 
 import { closeSync, constants as fsConstants, fstatSync, openSync, readFileSync } from "node:fs";
-import { lstat, open, realpath, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
@@ -145,6 +145,163 @@ export async function assertContainedNoSymlinkPath(root, path, { allowMissingFin
   return target;
 }
 
+// Create a directory tree without traversing a caller-controlled symlink or
+// Windows junction/reparse link. The nearest existing ancestor is the trust
+// anchor (important on systems where a platform directory such as /tmp is
+// itself a symlink); every component created below it is checked with lstat.
+// When `root` already exists it is always checked, so a planted root link is
+// never accepted merely because its target is a directory.
+async function ensureNoLinkDirectory(path) {
+  const target = resolve(path);
+  const missing = [];
+  let component = target;
+  for (;;) {
+    try {
+      const info = await lstat(component);
+      if (info.isSymbolicLink() || !info.isDirectory()) {
+        throw new Error(`directory path must not contain a symlink or reparse link: ${path}`);
+      }
+      break;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      missing.push(component);
+      const parent = dirname(component);
+      if (parent === component) throw error;
+      component = parent;
+    }
+  }
+  for (const next of missing.reverse()) {
+    try { await mkdir(next); }
+    catch (error) { if (error.code !== "EEXIST") throw error; }
+    const info = await lstat(next);
+    if (info.isSymbolicLink() || !info.isDirectory()) {
+      throw new Error(`directory path must not contain a symlink or reparse link: ${path}`);
+    }
+  }
+  return target;
+}
+
+export async function ensureContainedDirectory(root, path = root) {
+  const lexicalRoot = resolve(root);
+  const target = resolve(path);
+  if (!isContainedLexical(lexicalRoot, target)) {
+    throw new Error(`mutation path must be contained under the run root: ${path}`);
+  }
+  await ensureNoLinkDirectory(lexicalRoot);
+  if (target === lexicalRoot) return target;
+
+  const rel = relative(lexicalRoot, target);
+  let component = lexicalRoot;
+  for (const part of rel.split(sep)) {
+    component = join(component, part);
+    try { await mkdir(component); }
+    catch (error) { if (error.code !== "EEXIST") throw error; }
+    const info = await lstat(component);
+    if (info.isSymbolicLink() || !info.isDirectory()) {
+      throw new Error(`directory path must not contain a symlink or reparse link: ${path}`);
+    }
+  }
+  const canonicalRoot = await realpath(lexicalRoot);
+  const canonicalTarget = await realpath(target);
+  if (!isContainedLexical(canonicalRoot, canonicalTarget)) {
+    throw new Error(`mutation path must be contained under the run root: ${path}`);
+  }
+  return target;
+}
+
+async function lstatOrNull(path) {
+  try { return await lstat(path); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+}
+
+function rejectLinkOrNonFile(info, path) {
+  if (info?.isSymbolicLink()) throw new Error(`file path must not be a symlink or reparse link: ${path}`);
+  if (info && !info.isFile()) throw new Error(`file path must be a regular file: ${path}`);
+}
+
+export async function inspectContainedPath(root, path) {
+  await ensureContainedDirectory(root);
+  await assertContainedNoSymlinkPath(root, path, { allowMissingFinal: true });
+  const info = await lstatOrNull(path);
+  if (!info) return null;
+  if (info.isSymbolicLink()) throw new Error(`path must not be a symlink or reparse link: ${path}`);
+  if (info.isFile()) return "file";
+  if (info.isDirectory()) return "directory";
+  throw new Error(`path must be a regular file or directory: ${path}`);
+}
+
+// Root-scoped, no-follow file helpers for small managed state files. They
+// deliberately combine ancestry validation with descriptor-pinned reads and
+// atomic rename publication; checking only the final name is insufficient.
+export async function readContainedFile(root, path, { maxBytes = 16 * 1024 * 1024, allowMissing = false } = {}) {
+  await ensureContainedDirectory(root, dirname(path));
+  await assertContainedNoSymlinkPath(root, path, { allowMissingFinal: allowMissing });
+  const info = await lstatOrNull(path);
+  if (!info && allowMissing) return null;
+  rejectLinkOrNonFile(info, path);
+  return (await readNoFollowRegular(path, { maxBytes, label: path, expectedInfo: info })).bytes;
+}
+
+export async function writeContainedFile(root, path, bytes) {
+  await ensureContainedDirectory(root, dirname(path));
+  await assertContainedNoSymlinkPath(root, path, { allowMissingFinal: true });
+  const existing = await lstatOrNull(path);
+  rejectLinkOrNonFile(existing, path);
+  // Match writeFile's historical permissions: preserve an existing file's
+  // mode, and filter a new 0666 mode through the caller's umask.
+  const mode = existing ? existing.mode & 0o777 : 0o666 & ~process.umask();
+  return atomicWrite(path, bytes, {
+    mode,
+    beforeRename: async () => {
+      await assertContainedNoSymlinkPath(root, path, { allowMissingFinal: true });
+      rejectLinkOrNonFile(await lstatOrNull(path), path);
+    },
+  });
+}
+
+export async function createContainedFile(root, path, bytes, { mode = 0o666 } = {}) {
+  await ensureContainedDirectory(root, dirname(path));
+  await assertContainedNoSymlinkPath(root, path, { allowMissingFinal: true });
+  const existing = await lstatOrNull(path);
+  rejectLinkOrNonFile(existing, path);
+  if (existing) return false;
+  let handle;
+  try {
+    handle = await open(path, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL |
+      (fsConstants.O_NOFOLLOW || 0), mode);
+    const info = await handle.stat();
+    if (!info.isFile()) throw new Error(`file path must be a regular file: ${path}`);
+    await handle.writeFile(bytes);
+    await handle.sync();
+    return true;
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    const raced = await lstatOrNull(path);
+    rejectLinkOrNonFile(raced, path);
+    return false;
+  } finally {
+    await handle?.close();
+  }
+}
+
+export async function updateContainedFile(root, path, transform) {
+  const guard = async () => {
+    await ensureContainedDirectory(root, dirname(path));
+    await assertContainedNoSymlinkPath(root, path, { allowMissingFinal: true });
+    rejectLinkOrNonFile(await lstatOrNull(path), path);
+  };
+  await guard();
+  return withFileMutationLock(path, async () => {
+    await guard();
+    const current = await readContainedFile(root, path, { allowMissing: true });
+    const next = await transform(current);
+    const nextBytes = Buffer.isBuffer(next) ? next : Buffer.from(next);
+    if (current && current.equals(nextBytes)) return next;
+    await writeContainedFile(root, path, nextBytes);
+    return next;
+  }, { beforeOpen: guard, requireNoFollow: false });
+}
+
 // --- No-follow regular-file reads --------------------------------------------
 
 // Tag the shared-implementation errors so wrappers can translate them back
@@ -221,12 +378,12 @@ export async function withFileMutationLock(path, callback, {
   staleMs = 60_000,
   maxStaleMs = 15 * 60_000,
   beforeOpen = null,
+  requireNoFollow = true,
   __reclaimRaceHook,
 } = {}) {
   if (typeof callback !== "function") throw new TypeError("file mutation lock callback must be a function");
   if (!Number.isFinite(timeoutMs) || timeoutMs < 0) throw new TypeError("file mutation lock timeoutMs must be non-negative");
-  if (!fsConstants.O_NOFOLLOW) throw new Error("file mutation lock requires O_NOFOLLOW");
-
+  if (requireNoFollow && !fsConstants.O_NOFOLLOW) throw new Error("file mutation lock requires O_NOFOLLOW");
   const target = resolve(path);
   const ancestryGuard = beforeOpen || (async () => {
     let component = dirname(target);

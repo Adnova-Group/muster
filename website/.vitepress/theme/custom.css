@@ -30,3 +30,138 @@
 .VPFeature:hover {
   border-color: var(--vp-c-brand-1);
 }
+
+/* Project-owned feature SVGs are decorative; the adjacent title carries meaning. */
+.VPFeature article > img {
+  width: 32px;
+  height: 32px;
+  box-sizing: content-box;
+  margin-bottom: 16px;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--vp-c-brand-soft);
+}
+
+.harness-picker,
+.decision-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.harness-card,
+.decision-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: var(--vp-c-bg-soft);
+}
+
+a.harness-card {
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+  transition: border-color 0.2s, transform 0.2s, background-color 0.2s;
+}
+
+a.harness-card:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+  transform: translateY(-2px);
+}
+
+a.harness-card:focus-visible,
+.harness-table-wrap:focus-visible {
+  outline: 3px solid var(--vp-c-brand-1);
+  outline-offset: 3px;
+}
+
+.harness-card strong,
+.decision-card strong {
+  color: var(--vp-c-text-1);
+  font-size: 1rem;
+}
+
+.harness-card__eyebrow {
+  color: var(--vp-c-brand-1);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.harness-card__action {
+  margin-top: auto;
+  padding-top: 8px;
+  color: var(--vp-c-brand-1);
+  font-weight: 650;
+}
+
+.harness-card--conditional {
+  border-style: dashed;
+}
+
+.decision-card span {
+  color: var(--vp-c-text-2);
+}
+
+.harness-table-wrap {
+  max-width: 100%;
+  margin: 20px 0 12px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+}
+
+.harness-table-wrap table {
+  display: table;
+  min-width: 980px;
+  margin: 0;
+  border: 0;
+}
+
+.harness-table-wrap th:first-child,
+.harness-table-wrap td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 144px;
+  background: var(--vp-c-bg);
+  box-shadow: 1px 0 var(--vp-c-divider);
+}
+
+.harness-table-wrap th:first-child {
+  z-index: 2;
+  background: var(--vp-c-bg-soft);
+}
+
+@media (max-width: 640px) {
+  .harness-picker,
+  .decision-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .harness-card,
+  .decision-card {
+    padding: 16px;
+  }
+
+  .harness-table-wrap {
+    margin-inline: -8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a.harness-card {
+    transition: none;
+  }
+
+  a.harness-card:hover {
+    transform: none;
+  }
+}

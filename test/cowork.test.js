@@ -341,7 +341,7 @@ test("ChatGPT Work probe locks descriptor, exact call, one invocation, and serve
   assert.equal(descriptor.inputSchema.properties.model.const, "rice");
   assert.equal(descriptor.inputSchema.properties.items.items.properties.name.const, `WORK_WEB_PROBE_${nonce}`);
   assert.equal(r[3].result.isError, true, "wrong tool rejected");
-  assert.equal(r[4].result.isError, true, "wrong args rejected before dispatch");
+  assert.equal(r[4].error.code, -32602, "wrong args rejected before dispatch");
   assert.equal(r[5].result.isError, false, "one exact invocation succeeds");
   assert.equal(r[6].result.isError, true, "second exact invocation rejected");
 
@@ -401,8 +401,8 @@ test("ChatGPT Work probe rejects wrong arguments before CLI dispatch and creates
       MUSTER_COWORK_TEST_CLI: path.join(rootDir, "definitely-missing-cli.mjs"),
     },
   });
-  assert.equal(r[2].result.isError, true);
-  assert.match(r[2].result.content[0].text, /arguments do not exactly match/);
+  assert.equal(r[2].error.code, -32602);
+  assert.match(r[2].error.message, /arguments\.model must equal "rice"/);
   await assert.rejects(readFile(attestationPath, "utf8"), /ENOENT/);
 });
 
@@ -454,7 +454,8 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.match(norm, /phase-3 probe[\s\S]{0,180}no live phase-3 receipt/i);
   assert.match(norm, /Phase 3[\s\S]{0,180}Require that receipt before enabling the parallel path/i);
   assert.match(norm, /@anthropic-ai\/mcpb@2\.1\.2/);
-  assert.match(norm, /@adnova-group\/muster@0\.5\.0/);
+  const packageVersion = JSON.parse(await read("package.json")).version;
+  assert.match(norm, new RegExp(`@adnova-group/muster@${packageVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(norm, /Route B[\s\S]{0,220}not installable/i);
   assert.match(norm, /archive is not self-contained/i);
   assert.match(norm, /Do not install `muster\.mcpb`/i);
@@ -552,12 +553,10 @@ test("tools/call: muster_receipt_verify -- a fabricated well-formed SHA verifies
 // that produced a misleading `{"sha":"--cwd","cwd":...,"verified":false}` diagnostic that
 // falsely implied a real git-object verification attempt occurred, instead of the CLI's
 // own clean "missing sha" usage error.
-test("tools/call: muster_receipt_verify -- omitting required sha reports the CLI's own missing-sha error, not a shifted --cwd", async () => {
+test("tools/call: muster_receipt_verify -- omitting required sha is rejected before CLI dispatch", async () => {
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_receipt_verify", arguments: { cwd: rootDir } } }]);
-  const res = r[2].result;
-  assert.equal(res.isError, true, "missing required sha must error");
-  assert.match(res.content[0].text, /missing sha/, "must be the CLI's own usage error, not a --cwd-as-sha misfire");
-  assert.doesNotMatch(res.content[0].text, /"sha":"--cwd"/, "the --cwd flag must never shift into the sha slot");
+  assert.equal(r[2].error.code, -32602);
+  assert.match(r[2].error.message, /arguments\.sha is required/);
 });
 
 // ── codex-mcp-surface-gaps round 2: 3 more deterministic ops the 2026-07-19 clean ──
@@ -611,9 +610,8 @@ test("tools/call: muster_fast_path with capabilities (the muster_capabilities_ro
 
 test("tools/call: muster_fast_path -- missing outcome errors instead of silently scoring an empty string", async () => {
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_fast_path", arguments: {} } }]);
-  const res = r[2].result;
-  assert.equal(res.isError, true, "missing required outcome must error");
-  assert.match(res.content[0].text, /outcome is required/);
+  assert.equal(r[2].error.code, -32602);
+  assert.match(r[2].error.message, /arguments\.outcome is required/);
 });
 
 test("tools/call: muster_plan_checklist renders a manifest's plan as a markdown checklist", async () => {
@@ -926,8 +924,8 @@ test("MCP backlog publisher rejects content above its one-megabyte boundary befo
       },
     },
   ]);
-  assert.equal(r[2].result.isError, true);
-  assert.match(r[2].result.content[0].text, /exceeds 1048576 byte limit/);
+  assert.equal(r[2].error.code, -32602);
+  assert.match(r[2].error.message, /arguments\.content must have length at most 1048576/);
 });
 
 test("file verb: muster_sprint_waves on an unannotated backlog returns annotated:false, sequential waves", async () => {
@@ -961,10 +959,10 @@ test("json verb: muster_next drives sequentially (completed ids -> next runnable
   assert.equal(res.done, false);
 });
 
-test("error path: a CLI failure surfaces as isError, not a crash", async () => {
+test("error path: missing required arguments are rejected before CLI dispatch", async () => {
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_route", arguments: {} } }]);
-  assert.equal(r[2].result.isError, true, "missing required arg → isError");
-  assert.match(r[2].result.content[0].text, /missing outcome/);
+  assert.equal(r[2].error.code, -32602);
+  assert.match(r[2].error.message, /arguments\.outcome is required/);
 });
 
 test("unknown method returns JSON-RPC method-not-found", async () => {
@@ -1098,8 +1096,8 @@ test("tools/call: muster_audit requires and analyzes its explicit target directo
       { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "muster_audit", arguments: { dir: plain } } },
       { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "muster_audit", arguments: { dir: prompting } } },
     ]);
-    assert.equal(r[2].result.isError, true, "omitting the target must not silently audit the server cwd");
-    assert.match(r[2].result.content[0].text, /target directory.*required/i);
+    assert.equal(r[2].error.code, -32602, "omitting the target must not silently audit the server cwd");
+    assert.match(r[2].error.message, /arguments\.dir is required/);
     const plainManifest = JSON.parse(r[3].result.content[0].text);
     const promptingManifest = JSON.parse(r[4].result.content[0].text);
     assert.equal(plainManifest.plan.some(({ id }) => id === "audit-prompt-quality"), false);

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initScratchpad } from "../src/scratchpad.js";
@@ -46,5 +46,22 @@ describe("initScratchpad", () => {
     const tmp = await mkdtemp(join(tmpdir(), "muster-scratch-"));
     await assert.rejects(() => initScratchpad(tmp, "a/b"), /invalid runId/);
     await assert.rejects(() => initScratchpad(tmp, "a\\b"), /invalid runId/);
+  });
+
+  it("refuses symlinked ancestors and planted final files", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-scratch-"));
+    const outside = join(tmp, "outside");
+    await mkdir(outside);
+    await symlink(outside, join(tmp, "scratchpad"), "dir");
+    await assert.rejects(() => initScratchpad(tmp, "run"), /symlink|reparse/i);
+    assert.equal(await fileExists(join(outside, "run", "BRIEF.md")), false);
+
+    const other = await mkdtemp(join(tmpdir(), "muster-scratch-"));
+    await mkdir(join(other, "scratchpad", "run"), { recursive: true });
+    const victim = join(other, "victim.md");
+    await writeFile(victim, "ORIGINAL");
+    await symlink(victim, join(other, "scratchpad", "run", "BRIEF.md"));
+    await assert.rejects(() => initScratchpad(other, "run"), /symlink|reparse/i);
+    assert.equal(await readFile(victim, "utf8"), "ORIGINAL");
   });
 });

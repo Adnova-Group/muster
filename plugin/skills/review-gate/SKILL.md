@@ -8,84 +8,72 @@ description: Adversarial review gate for a completed wave — dispatch all avail
 
 You are muster's adversarial review gate — dispatch reviewers, tally verdicts, drive fix iterations, and escalate unresolved blockers.
 
-Inputs: the wave's changes (under `fastPath: true`, the full cumulative diff of every batched
-wave — `plugin/skills/orchestrator/SKILL.md` step 4c/5), and `AvailableCapabilities` read from the run's already-captured `.muster/capabilities.json` (written once at
+Inputs: the wave diff (full batched diff under `fastPath: true`) and `AvailableCapabilities` read from the run's already-captured `.muster/capabilities.json` (written once at
 run start by the invoking verb; the inventory stays constant for the whole run, so this same capture
-serves every wave). `$MUSTER_CLI` (resolved once by the invoking verb) is the reused invocation for every
-CLI call below.
+serves every wave). Reuse the invoking verb's resolved `$MUSTER_CLI`.
 
 **QA memory:** read `docs/qa/RUNBOOK.md` first if present; update it on a new divergence/gotcha.
 
-1. **Select reviewers, scaled by diff size.** Measure the diff's changed-line count (the wave's own
-   changes, or the full cumulative diff under `fastPath: true`) via `git diff --numstat` against the
-   pre-wave commit, folded into the SAME `gate-cadence` decision the invoking verb already captured:
+1. **Select reviewers, scaled by diff size.** Use `git diff --numstat` against the
+   pre-wave commit (cumulative under `fastPath: true`), folded into the captured cadence:
    `$MUSTER_CLI gate-cadence .muster/manifest.json --changed-lines <n>` → `reviewerCount` (default
    threshold 200 lines, `MUSTER_REVIEW_DIFF_THRESHOLD` env override — `src/gate-cadence.js`'s
    `reviewerCountForDiff`/`DEFAULT_REVIEW_DIFF_THRESHOLD`).
    - `reviewerCount: 1` (under threshold) — dispatch only the chosen `code-review` provider (built-in
-     if none installed).
+     if none installed), unless the semantic security trigger below fires.
    - `reviewerCount: 2` (at/over threshold, the default) — dispatch the chosen providers for roles
      `code-review` and `security-review`.
-   Diff SIZE, not task count: a large multi-task wave's diff always lands at/over the threshold
-   (docs/weight-reduction.md).
-2. Dispatch the selected reviewer(s) **concurrently** (when more than one), each adversarially prompted to
-   REFUTE the work / find the worst real problem. Each returns findings: `[{ severity: "blocker"|"risk"|"nit", note }]`.
-   - **Exhausted/absent reviewer:** a reviewer worker killed or exhausted (its dispatch's budget/heartbeat
-     ceiling hit, per the harness's agent-watch invariant) before returning a verdict, or one whose dispatch
-     never started, gets a named status entry in place of findings:
-     `{reviewer: <name>, status: "exhausted"}` (`"absent"` when it never started), recorded
-     directly in `.muster/verdicts.json`; step 5's `tally` (`src/review.js`) forces a deterministic block
-     on any such entry, regardless of other findings.
-3. **Citation guard:** run `$MUSTER_CLI citation-check <file>` on each artifact BEFORE dispatching
-   reviewers, flags in hand for their briefs. A dangling anchor (`ok:false`, exit 2) is an automatic
-   FAIL. `uncited` paragraphs instead get a reviewer's judgment call (`pass`/`needs_review`/`fail`).
-   Delivery stays blocked while any `fail` stands, including an ingestion-bearing artifact's
-   untraceable facts.
+   - **Semantic security trigger (independent of changed-line count):** inspect changed paths or changed content.
+     Always dispatch the chosen `security-review` provider when either concerns
+     authentication, authorization or access control, secrets/credentials/tokens, trust-boundary
+     parsing, or injection-sensitive execution (prompt, SQL, shell/command, template, path, or code
+     injection). This fires regardless of diff size; use the full brief, never the fast path.
+2. Dispatch selected reviewers **concurrently**, prompted to REFUTE the work. Findings are
+   `[{ severity: "blocker"|"risk"|"nit", note }]`. A killed/exhausted or never-started reviewer
+   writes `{reviewer: <name>, status: "exhausted"|"absent"}` to `.muster/verdicts.json`; tally blocks.
+3. **Citation guard:** run `$MUSTER_CLI citation-check <file>` before review. A dangling anchor
+   (`ok:false`, exit 2) or any standing `fail` blocks; reviewers judge `uncited` paragraphs.
 4. **Intent vs implementation:** run `git notes --ref=muster show <wave commit>` when present; a mismatch
    between notes and code is a finding even when tests pass.
-5. Write verdicts to `.muster/verdicts.json`, per `plugin/skills/review-gate/verdict.schema.json`'s
-   emission contract (native constrained output applies to headless surfaces only); run
-   `$MUSTER_CLI tally .muster/verdicts.json`.
+5. Write `.muster/verdicts.json` per
+   `${PLUGIN_ROOT}/plugin/skills/review-gate/verdict.schema.json`, then run
+   `$MUSTER_CLI tally .muster/verdicts.json`. Advancement requires the tally's explicit
+   `VERDICT: PASS` to be recorded in STATE for this exact reviewed diff. Human approval or input is
+   an acknowledgment or a decision about escalation; it is never a substitute for review and can
+   never synthesize or waive a missing `VERDICT: PASS`.
 6. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review. Cap at
    **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3). If still blocked, ESCALATE to the human with the unresolved blockers.
 7. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking).
 
-Return pass (all clear) or escalate (cap hit with remaining blockers) to the orchestrator.
+Return the recorded `VERDICT: PASS` or escalate; no other success wording advances the run.
 
 ## Surface-type definition-of-done gates
 
-Additive, never a softening. FIRES the moment any trigger hits; the reviewer records which trigger
-fired and the resolving evidence. No evidence recorded is an automatic FAIL.
+Additive: when any trigger fires, record the trigger and resolving evidence or FAIL.
 
 1. **Design/UX gate** — triggers: `surface` is `"ui"`; OR `skills` includes `frontend-design` (or
    design/frontend-tagged); OR the diff touches UI globs (`components/**`, `app/**/page.*`,
    `*.css`, `*.scss`). PASS requires a pass from the chosen provider for role `frontend`
-   (`AvailableCapabilities.roles.frontend.chosen`), or the built-in reviewer's checklist otherwise.
-   Evidence must quote the specific element/state reviewed.
+   (`AvailableCapabilities.roles.frontend.chosen`), or the built-in checklist; quote the element/state.
 2. **Humanizer gate** — triggers: `surface` is `"copy"`; OR `skills` includes `muster-humanizer` (or
-   humanizer-tagged); OR the diff adds customer-facing copy. PASS requires clearing `humanize` +
-   `humanize-score`; same quoted-evidence bar.
+   humanizer-tagged); OR the diff adds customer-facing copy. PASS requires `humanize` +
+   `humanize-score` with quoted evidence.
 3. **Live-verification gate** — triggers: `surface` is `"integration"`; OR `skills` includes `sp-verify`
    (or integration-testing-tagged); OR the wave claims an integration works. PASS requires
-   live evidence — the command/request and its result, not inference from unit tests.
+   the live command/request and result, not inference from unit tests.
 
 ## Fast-path reviewer brief (small diff, single reviewer)
 
-Additive lever, never a scope cut: when step 1 resolves `reviewerCount: 1`, ALSO run
+When step 1 resolves `reviewerCount: 1`, run
 `$MUSTER_CLI review-brief --reviewer-count 1 --diff-files <file> [--diff-text-file <file>]` →
 `{ eligible, triggers }` (`src/review-brief.js`'s `lightBriefEligible`/`detectReviewTriggers`).
-`--diff-files <file>` is step 1's `git diff --numstat` path list, one path per line;
-`--diff-text-file <file>` is OPTIONAL — the wave's own diff text already in hand — omitting it
-only disables the citation-in-text (`[src: ...]`) signal; path-based signals still apply.
+`--diff-files` is the numstat path list; optional `--diff-text-file` enables citation-in-text signals.
 
 - **`eligible: true`** (`reviewerCount: 1` AND no citation/mutant-kill/surface trigger) — dispatch
   the reviewer with `plugin/skills/review-gate/fast-path-brief.md` INSTEAD OF this full file,
-  requesting `gate-cadence`'s `reviewerReasoning` (`"medium"`, `src/gate-cadence.js`'s
-  `reviewerReasoningForCount`) on any interface accepting a per-call override; where none exists
-  (docs/fast-path-token-gap.md), the brief substitution stays the operative lever.
+  requesting `reviewerReasoningForCount`'s `"medium"` where supported.
 - **`eligible: false`** (any trigger, OR `reviewerCount: 2`) — dispatch with THIS file at
-  `reviewerReasoning: "high"`; the light brief is reserved strictly for a diff that cannot need
-  what it omits.
+  `reviewerReasoning: "high"`; the light brief never handles a triggered diff.
 
 ## Mutant-kill gate
 

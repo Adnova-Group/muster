@@ -12,7 +12,7 @@ Model work uses the account or subscription of the active Claude Code session. M
 ## 1. Run the installer
 
 ```sh
-npx -y @adnova-group/muster@0.5.0 install
+npx -y @adnova-group/muster@0.6.0 install
 ```
 
 `install` mutates nothing in your `~/.claude`. It only prints the steps it cannot do for you, because registering a plugin is a Claude Code action, not a shell command.
@@ -57,7 +57,9 @@ If the crew manifest does not appear, or `/muster:*` commands are missing, run `
 
 ## What the plugin adds
 
-- **Nine slash commands**: `/muster:plan`, `/muster:go`, `/muster:plan-backlog`, `/muster:go-backlog`, `/muster:diagnose`, `/muster:audit`, `/muster:runner`, `/muster:capture`, and `/muster:init`. `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work as aliases of `plan`, `go`, and `go-backlog`. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged until then.
+Claude Code exposes all ten modes, including Design and Init.
+
+- **Ten slash-command modes**: `/muster:plan`, `/muster:go`, `/muster:plan-backlog`, `/muster:go-backlog`, `/muster:diagnose`, `/muster:audit`, `/muster:design`, `/muster:runner`, `/muster:capture`, and `/muster:init`. `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work as aliases of `plan`, `go`, and `go-backlog`. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged until then.
 - **Four session hooks**, all declared in `plugin/hooks/hooks.json` and active only while Muster is enabled. Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits: the action-class fence below is the only hard deny on a tool call, and the `TaskCompleted` gate below is the one other block surface (it gates a task-board completion tick, not a tool call); everything else is a single warn-only "border invitation" that sells the value of a crew run rather than commanding.
   - **`SessionStart`** injects a one-line pointer ("muster available; `/muster:plan` for orchestration-scale work") into every session, and clears stale run/session state on a genuinely fresh start. Never writes to your `~/.claude` files.
   - **`UserPromptSubmit`** fires the ONLY prompt-time nudge: a directive-shaped prompt (fix/build/implement, etc.) with no active run sells the value of a crew run (parallel dispatch, adversarial review, a receipts trail) once per crossing, then stays silent until a run starts, a fresh session, or 60 minutes of inactivity re-arms it.
@@ -70,7 +72,7 @@ If the crew manifest does not appear, or `/muster:*` commands are missing, run `
 Because everything Muster adds lives **inside the plugin**, removal is mostly a matter of removing the plugin. Muster never writes to your `~/.claude/CLAUDE.md` or `settings.json`, so there is nothing tangled to unpick.
 
 ```sh
-npx -y @adnova-group/muster@0.5.0 uninstall
+npx -y @adnova-group/muster@0.6.0 uninstall
 ```
 
 `uninstall` prints the steps it cannot do for you, because removing a plugin is a Claude Code action:

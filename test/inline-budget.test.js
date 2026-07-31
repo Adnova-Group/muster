@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   mkdtempSync, writeFileSync, utimesSync, rmSync, symlinkSync, statSync,
-  readFileSync as readFileSyncRaw,
+  readFileSync as readFileSyncRaw, mkdirSync, chmodSync,
 } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -213,6 +213,52 @@ test("marker writers (recordCum/resetCum/markNudged/recordInvite): a symlink pla
       rmSync(outsideDir, { recursive: true, force: true });
     }
   }
+});
+
+test("marker writers fail closed on hostile non-regular entries", () => {
+  const writers = {
+    recordCum: (file) => recordCum(file, "a.js"),
+    resetCum: (file) => resetCum(file),
+    markNudged: (file) => markNudged(file),
+    recordInvite: (file) => recordInvite(file),
+    markDirective: (file) => markDirective(file),
+  };
+  for (const [name, write] of Object.entries(writers)) {
+    const { dir, file } = tmpFile();
+    try {
+      mkdirSync(file);
+      write(file);
+      assert.ok(statSync(file).isDirectory(), `${name}: hostile entry must remain a directory`);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+test("marker readers do not follow a planted symlink", () => {
+  const { dir, file } = tmpFile();
+  const outsideDir = mkdtempSync(path.join(os.tmpdir(), "muster-ib-read-victim-"));
+  const victim = path.join(outsideDir, "victim.json");
+  try {
+    writeFileSync(victim, JSON.stringify({ files: ["secret.js"], nudged: true }));
+    symlinkSync(victim, file);
+    assert.deepEqual(readCum(file), { files: [], nudged: false });
+    assert.equal(corroboratingCount(file), 0);
+    assert.equal(isInCooldown(file), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test("marker writers create private regular files", () => {
+  const { dir, file } = tmpFile();
+  try {
+    resetCum(file);
+    assert.ok(statSync(file).isFile());
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    chmodSync(file, 0o666);
+    recordCum(file, "a.js");
+    assert.equal(statSync(file).mode & 0o777, 0o600, "existing marker permissions are tightened");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 // ── inviteCooldownMs / cooldownFile ─────────────────────────────────────────

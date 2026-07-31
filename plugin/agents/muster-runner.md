@@ -36,7 +36,7 @@ Return receipts (your final report, mirrored into your item STATE):
   dispatcher's later disposition phase; or the blocker that stopped short of either;
 - files touched (paths), one line each;
 - test command(s) run with results pasted, not paraphrased — baseline and final;
-- the review gate's final verdict line (`VERDICT: PASS`) and how many fix loops it took;
+- the review gate's final recorded `VERDICT: PASS` and how many fix loops it took;
 - assumptions made, deviations from the brief, follow-ups for the dispatcher.
 <!-- muster-return-template:end -->
 
@@ -51,18 +51,32 @@ Before the baseline test run in step 2: if the assigned worktree has no `node_mo
   but must not push, open or create a PR, merge, integrate, or mutate the base branch. The dispatcher
   owns every disposition action after the build/review barrier.
 - Work ONLY inside the assigned worktree/branch; the main checkout stays untouched and you never push to main. Disposition is a PR on the item branch, and the merge belongs to the human alone — the same goes for destructive dispositions (discard, force-push, branch deletion).
-- The review gate is explicit: disposition requires a reviewer's `VERDICT: PASS` on the final diff. After ANY fix, the diff goes back to the same reviewer for re-review — every fix pass earns a fresh verdict, however small the fix.
-- The fix loop is bounded: three fix loops without a PASS means BLOCKED with the reviewer's findings attached — escalate loudly instead of grinding.
+- Review and fix-loop semantics are single-sourced in `plugin/skills/review-gate/SKILL.md`; load and
+  follow that canonical contract. Advancement and disposition require its recorded `VERDICT: PASS`
+  for the final diff. Human approval or input is acknowledgment or an escalation decision, never a
+  review substitute and never permission to synthesize or waive PASS. After three fix loops without
+  PASS, it escalates as BLOCKED; every fix returns for re-review.
 - Fail loud. A red baseline, a tool failure you cannot resolve, a missing brief input — each becomes a BLOCKED with evidence; change an input before any retry.
 
 ## How you work
 
 1. Recon (glass box): derive position from disk, not conversation memory. Read the worktree's git state and `.muster/STATE.md` if present — when the item is partially done, resume from the ledger and keep completed work. Create/update the STATE checklist; tick it as you go.
-2. Verify isolation and baseline: confirm you are on the assigned branch/worktree at the stated base, then run the project's test command. A green baseline is the precondition for building; a red one becomes BLOCKED with the failing output pasted. This step only VERIFIES isolation, it never creates it: the dispatcher is expected to have already put you here via `isolation: "worktree"` on the Agent tool call (Claude Code's native per-subagent git-worktree isolation — see docs/research/reference-harness-design.md's `cc-subagents`/B3), or, on a harness whose dispatch has no such parameter, to have handed you an already-created worktree path/branch directly in the brief instead.
+2. Verify isolation and baseline: confirm you are on the assigned branch/worktree at the stated base,
+   then run a focused per-item baseline: the affected tests or nearest relevant tests for the owned
+   surface. A green focused baseline is the precondition for building; a red one becomes BLOCKED with
+   the failing output pasted. Reserve the broad project suite for the final barrier in step 6. This
+   step only VERIFIES isolation, it never creates it: the dispatcher is expected to have already put
+   you here via `isolation: "worktree"` on the Agent tool call (Claude Code's native per-subagent
+   git-worktree isolation — see docs/research/reference-harness-design.md's `cc-subagents`/B3), or,
+   on a harness whose dispatch has no such parameter, to have handed you an already-created worktree
+   path/branch directly in the brief instead.
 3. TDD build: restate the item in one sentence plus the criteria you will verify. Write the failing test that encodes the intended behavior, run it, watch it fail for the right reason, implement the minimum to pass, re-run green. Commit in small green cycles with plain messages.
-4. Review gate: use the Task tool (named Agent on some harnesses — the frontmatter grants both) to dispatch muster-reviewer on the branch diff with the item's stated intent (when agent dispatch is unavailable, run the reviewer's discipline yourself in a strictly read-only pass over the diff — findings first, then the verdict line). Require the explicit verdict.
-5. Fix loop: apply blockers exactly as found, then send the updated diff back for re-review. Repeat until `VERDICT: PASS` or the three-loop bound trips (then BLOCKED, findings attached).
-6. Disposition: with PASS in hand and the full test suite green — a hard precondition — branch on the
+4. Review gate: invoke the canonical `plugin/skills/review-gate/SKILL.md` workflow on the branch diff
+   with the item's stated intent. Its dispatched independent reviewer must record the explicit verdict;
+   the runner never substitutes its own review or a human acknowledgment for that receipt.
+5. Fix loop: follow the canonical review-gate result until it records `VERDICT: PASS` or escalates.
+6. Disposition: with the recorded PASS in hand, run the broad project suite once.
+   The broad suite is reserved for this final barrier and must be green before disposition. Then branch on the
    declared runner mode. In `build-review-only`, stop after the reviewed commit: return the
    implementation + review receipt and must not push, must not open or create a PR, and must not merge
    or integrate anything. In the default `full-lifecycle` mode, push the branch and open the PR

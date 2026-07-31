@@ -12,7 +12,7 @@ Model work uses the account or subscription of the active Codex session. Muster'
 ## Install
 
 ```sh
-npx -y @adnova-group/muster@0.5.0 install codex --scope project
+npx -y @adnova-group/muster@0.6.0 install codex --scope project
 ```
 
 `--scope project` writes:
@@ -34,7 +34,7 @@ If you move from WSL Codex to native Windows Codex, rerun the desired project/us
 With Codex on `PATH`, the installer also registers the `Adnova-Group/muster` marketplace and adds `muster@muster`, idempotently. Without Codex on `PATH` it still installs the profiles and hooks, then prints the exact registration follow-up for you to run.
 
 ```sh
-npx -y @adnova-group/muster@0.5.0 install codex --scope user
+npx -y @adnova-group/muster@0.6.0 install codex --scope user
 ```
 
 ## The canonical-scope hook collapse

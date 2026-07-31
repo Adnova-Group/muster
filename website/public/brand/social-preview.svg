@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Muster: glass-box agentic orchestration</title>
+  <desc id="desc">The Muster path mark beside its name and a description of deterministic orchestration across agent harnesses.</desc>
+  <defs>
+    <linearGradient id="bg" x1="80" y1="30" x2="1120" y2="600" gradientUnits="userSpaceOnUse"><stop stop-color="#171528"/><stop offset=".62" stop-color="#29245c"/><stop offset="1" stop-color="#183a59"/></linearGradient>
+    <linearGradient id="g" x1="90" y1="100" x2="560" y2="500" gradientUnits="userSpaceOnUse"><stop stop-color="#9b8cff"/><stop offset="1" stop-color="#41b3ff"/></linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="1070" cy="-10" r="280" fill="#41b3ff" fill-opacity=".08"/><circle cx="130" cy="650" r="310" fill="#6d5ce7" fill-opacity=".12"/>
+  <g transform="translate(90 120)">
+    <rect width="430" height="390" rx="42" fill="#fff" fill-opacity=".06" stroke="#b9b0ff" stroke-opacity=".35" stroke-width="2"/>
+    <path d="M64 195h70m0 0 70-98h88m-158 98h158m-158 0 70 98h88m0-196 70 98-70 98" fill="none" stroke="url(#g)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <g fill="#fff"><circle cx="64" cy="195" r="20"/><circle cx="292" cy="97" r="17"/><circle cx="292" cy="195" r="17"/><circle cx="292" cy="293" r="17"/></g>
+    <path d="m355 195 14 14 29-35" fill="none" stroke="#41b3ff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="590" y="245" fill="#fff" font-family="ui-sans-serif,system-ui,sans-serif" font-size="92" font-weight="760">Muster</text>
+  <text x="594" y="318" fill="#c9c5ee" font-family="ui-sans-serif,system-ui,sans-serif" font-size="31">Glass-box agentic orchestration</text>
+  <text x="594" y="373" fill="#c9c5ee" font-family="ui-sans-serif,system-ui,sans-serif" font-size="25">across agent harnesses</text>
+  <text x="594" y="456" fill="#8ed3ff" font-family="ui-monospace,SFMono-Regular,monospace" font-size="22">deterministic routing · visible crews · proof gates</text>
+</svg>

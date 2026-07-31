@@ -223,7 +223,8 @@ async function walkFiles(dir, from = dir) {
 
 async function readPackageVersion(root) {
   const pkg = await readJson(join(root, "package.json"));
-  return typeof pkg?.version === "string" ? pkg.version : "0.5.0";
+  if (typeof pkg?.version === "string" && pkg.version.trim()) return pkg.version;
+  throw new Error("Kimi installation source is missing a coherent package version");
 }
 
 async function copyInto(srcFile, destFile, dest, beforeManagedMutation) {

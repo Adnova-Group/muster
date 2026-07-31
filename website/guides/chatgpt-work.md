@@ -1,6 +1,6 @@
 # ChatGPT Work
 
-This is Muster's private/local ChatGPT Work integration lane. Plugins are available in ChatGPT Work on the web and in the ChatGPT desktop app when ChatGPT → Work is selected. Codex Desktop is a separate product surface; Work does not inherit Codex configuration, skills, hooks, MCP servers, or `config.toml`.
+This is Muster's **private/local, proof-gated** ChatGPT Work integration lane. Plugins are available in ChatGPT Work on the web and in the ChatGPT desktop app when ChatGPT → Work is selected. Codex Desktop is a separate product surface; Work does not inherit Codex configuration, skills, hooks, MCP servers, or `config.toml`. A configured connection, successful tool scan, or assistant claim is not support proof; the native invocation contract below must pass in the active Work host.
 
 The MCP implementation is neutral and adapter-based: `mcp/server.mjs` is the shared core, `mcp/chatgpt-work-server.mjs` is the Work adapter, and `cowork/chatgpt-work-server.mjs` is only a compatibility shim for source-checkout callers. Generated Work plugins still expose the public `runtime/chatgpt-work-server.mjs` command.
 
@@ -69,7 +69,7 @@ export MUSTER_CHATGPT_WORK_PROBE_NONCE=<32-lowercase-hex-nonce>
 export MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH=/absolute/private/probe-dir/server-attestation.json
 export MUSTER_CHATGPT_WORK_CONNECTION_ID=asdk_app_...
 export MUSTER_CHATGPT_WORK_APP_JSON_PATH=/absolute/path/to/installed/.app.json
-export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.5.0
+export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.6.0
 export MUSTER_CHATGPT_WORK_CONNECTION_LABEL="Muster ChatGPT Work"
 tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work \
   --tunnel-id tunnel_... --mcp-command "node runtime/chatgpt-work-server.mjs"
@@ -93,7 +93,7 @@ Run the probe with the real installed identity to emit a fresh nonce-bearing run
 ```sh
 node scripts/chatgpt-work-native-probe.mjs \
   --connection-id asdk_app_... --app-json /path/to/installed/.app.json \
-  --plugin-version 0.5.0 --connection-label "Muster ChatGPT Work"
+  --plugin-version 0.6.0 --connection-label "Muster ChatGPT Work"
 ```
 
 - the operator sees a completed native `muster_prioritize` card in Work (web or desktop), with the exact nonce request and deterministic result;
@@ -110,7 +110,7 @@ For an identity-bound grade, provide the normalized ID and exact installed `.app
 ```sh
 node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
   --server-attestation attestation.json --connection-id asdk_app_... \
-  --app-json /path/to/installed/.app.json --plugin-version 0.5.0 \
+  --app-json /path/to/installed/.app.json --plugin-version 0.6.0 \
   --connection-label "Muster ChatGPT Work" \
   --snapshot-out /private/retained/grade-snapshot.json \
   --owned-plugin-path /exact/owned/plugin-path \

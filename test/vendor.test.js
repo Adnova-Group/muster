@@ -872,6 +872,33 @@ test("runVendor: github-kind source via source.url (branch ref) vendors a local 
   assert.match(written, /muster_builtin: true/, "vendored SKILL.md must carry muster_builtin frontmatter");
 });
 
+test("runVendor: github fetch uses a private unique temp tree without deleting a predictable peer", async (t) => {
+  const base = await mkdtemp(join(tmpdir(), "muster-vgit-private-"));
+  const { home, repoRoot } = await tmpDirs();
+  const predictable = join(tmpdir(), "muster-vendor-collision-fixture");
+  t.after(() => Promise.all([
+    rm(base, { recursive: true, force: true }),
+    rm(home, { recursive: true, force: true }),
+    rm(repoRoot, { recursive: true, force: true }),
+    rm(predictable, { recursive: true, force: true })
+  ]));
+
+  const { bare } = await createLocalBareFixture(base);
+  await mkdir(join(repoRoot, "catalog"), { recursive: true });
+  await mkdir(predictable, { recursive: true });
+  await writeFile(join(predictable, "peer-owned"), "must survive\n");
+  const manifest = { sources: [{
+    id: "collision-fixture", kind: "github", repo: "test/fixture", license: "MIT",
+    ref: "main", url: bare,
+    items: [{ from: "skills/fixture/SKILL.md", id: "fix-private", roles: ["brainstorm"] }]
+  }] };
+
+  const res = await runVendor({ home, repoRoot, manifest });
+
+  assert.equal(res.count, 1, JSON.stringify(res.warnings));
+  assert.equal(await readFile(join(predictable, "peer-owned"), "utf8"), "must survive\n");
+});
+
 test("runVendor: github-kind source via source.url (SHA ref) vendors a local bare-git fixture", async (t) => {
   const base = await mkdtemp(join(tmpdir(), "muster-vgit-sha-"));
   const { home, repoRoot } = await tmpDirs();

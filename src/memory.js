@@ -1,7 +1,7 @@
-import { readdir, readFile, writeFile, mkdir, appendFile } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify } from "yaml";
-import { exists } from "./fs-util.js";
+import { ensureContainedDirectory, readContainedFile, updateContainedFile, writeContainedFile } from "./fs-safe.js";
 
 export async function writeMemory(dir, entry) {
   for (const field of ["slug", "title", "outcome", "body"]) {
@@ -20,35 +20,36 @@ export async function writeMemory(dir, entry) {
     if (typeof l !== "string" || l.includes("]]") || /[\n\r]/.test(l))
       throw new Error(`writeMemory: invalid link ${JSON.stringify(l)} (no "]]" or newlines)`);
   }
-  await mkdir(dir, { recursive: true });
+  await ensureContainedDirectory(dir);
   const linkLine = links.map(l => `[[${l}]]`).join(" ");
   // Build frontmatter from an object via yaml.stringify so free-text fields
   // (title/outcome) are quoted/escaped — a newline or `---` in a value becomes a
   // YAML scalar, never a forged key. Mirrors vendor.js's stringify wrapping.
   const frontmatter = stringify({ title: entry.title, outcome: entry.outcome }, { lineWidth: 0 }).trim();
   const md = `---\n${frontmatter}\n---\n\n${entry.body}\n\n${linkLine}\n`;
-  await writeFile(join(dir, `${entry.slug}.md`), md);
+  await writeContainedFile(dir, join(dir, `${entry.slug}.md`), md);
 
   const line = `- [${entry.title}](${entry.slug}.md) — ${entry.outcome}\n`;
   const indexPath = join(dir, "INDEX.md");
-  // Use appendFile so concurrent writes of different slugs never overwrite each other.
-  // A sequential same-slug dedup check runs before the append; truly concurrent
-  // same-slug calls may still produce duplicate lines (narrow race), but data from
-  // other slugs is never lost.
-  const existing = (await exists(indexPath)) ? await readFile(indexPath, "utf8") : "";
-  if (!existing.includes(`${entry.slug}.md`)) {
+  await updateContainedFile(dir, indexPath, currentBytes => {
+    const existing = currentBytes?.toString("utf8") || "";
+    if (existing.includes(`${entry.slug}.md`)) return existing;
     const prefix = existing ? "" : "# Muster memory index\n\n";
-    await appendFile(indexPath, prefix + line);
-  }
+    return existing + prefix + line;
+  });
 }
 
 export async function readMemory(dir, query) {
-  if (!(await exists(dir))) return [];
+  let rootInfo;
+  try { rootInfo = await lstat(dir); }
+  catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  if (rootInfo.isSymbolicLink()) throw new Error(`directory path must not be a symlink or reparse link: ${dir}`);
+  if (!rootInfo.isDirectory()) throw new Error(`memory path must be a directory: ${dir}`);
   const files = (await readdir(dir)).filter(f => f.endsWith(".md") && f !== "INDEX.md");
   const q = query.toLowerCase();
   const hits = [];
   for (const f of files) {
-    const content = await readFile(join(dir, f), "utf8");
+    const content = (await readContainedFile(dir, join(dir, f))).toString("utf8");
     if (content.toLowerCase().includes(q)) hits.push({ slug: f.replace(/\.md$/, ""), content });
   }
   return hits;
@@ -66,8 +67,8 @@ export async function appendState(dir, runId, line) {
   // would write files outside the named store.
   if (typeof runId !== "string" || runId.includes("/") || runId.includes("\\") || runId.includes(".."))
     throw new Error(`appendState: invalid runId ${JSON.stringify(runId)} (no path separators or ..)`);
-  await mkdir(dir, { recursive: true });
-  await appendFile(join(dir, `${runId}.state.md`), line.replace(/\n/g, " ") + "\n");
+  await updateContainedFile(dir, join(dir, `${runId}.state.md`), current =>
+    (current?.toString("utf8") || "") + line.replace(/\n/g, " ") + "\n");
 }
 
 // Run-record STATE API (intended public surface — see appendState above).
@@ -76,6 +77,6 @@ export async function appendFollowup(dir, runId, finding) {
   // runId check and writeMemory's slug check).
   if (typeof runId !== "string" || runId.includes("/") || runId.includes("\\") || runId.includes(".."))
     throw new Error(`appendFollowup: invalid runId ${JSON.stringify(runId)} (no path separators or ..)`);
-  await mkdir(dir, { recursive: true });
-  await appendFile(join(dir, `${runId}.followups.md`), `- [${finding.severity}] ${finding.note}\n`);
+  await updateContainedFile(dir, join(dir, `${runId}.followups.md`), current =>
+    (current?.toString("utf8") || "") + `- [${finding.severity}] ${finding.note}\n`);
 }

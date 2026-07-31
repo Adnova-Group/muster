@@ -11,6 +11,7 @@ const { version } = JSON.parse(
 // One sidebar shape for the whole site, reused under every path prefix so a page in
 // any section can reach every other section (and so a new page is added in one place).
 const guideItems = [
+  { text: "Get Started", link: "/guides/get-started" },
   { text: "Install", link: "/guides/install" },
   { text: "Quickstart", link: "/guides/quickstart" },
   { text: "Harness support", link: "/guides/harnesses" },
@@ -50,10 +51,22 @@ export default defineConfig({
   base: "/muster/",
   cleanUrls: true,
   lastUpdated: true,
+  sitemap: {
+    hostname: "https://adnova-group.github.io/muster/",
+  },
   head: [
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/muster/brand/favicon.svg" }],
     ["meta", { name: "theme-color", content: "#6d5ce7" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:title", content: "Muster" }],
+    ["meta", { property: "og:site_name", content: "Muster" }],
+    ["meta", { property: "og:url", content: "https://adnova-group.github.io/muster/" }],
+    ["meta", { property: "og:image", content: "https://adnova-group.github.io/muster/brand/social-preview.png" }],
+    ["meta", { property: "og:image:width", content: "1200" }],
+    ["meta", { property: "og:image:height", content: "630" }],
+    ["meta", { property: "og:image:alt", content: "Muster glass-box orchestration paths" }],
+    ["meta", { name: "twitter:card", content: "summary_large_image" }],
+    ["meta", { name: "twitter:title", content: "Muster" }],
     [
       "meta",
       {
@@ -62,8 +75,17 @@ export default defineConfig({
           "Glass-box agentic orchestrator for Claude Code, Codex, Kimi, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
       },
     ],
+    ["meta", { name: "twitter:description", content: "Glass-box agentic orchestrator across agent harnesses." }],
+    ["meta", { name: "twitter:image", content: "https://adnova-group.github.io/muster/brand/social-preview.png" }],
+    ["meta", { name: "twitter:image:alt", content: "Muster glass-box orchestration paths" }],
   ],
   themeConfig: {
+    logo: {
+      src: "/brand/muster-mark.svg",
+      alt: "Muster home",
+      width: 30,
+      height: 30,
+    },
     nav: [
       { text: "Guide", activeMatch: "/guides/", items: guideItems },
       {

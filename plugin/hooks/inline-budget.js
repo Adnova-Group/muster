@@ -44,33 +44,57 @@
 //
 // SELF-CONTAINED: only node: builtins. Ships under plugin/hooks/ with the hooks.
 
-import { readFileSync, writeFileSync, statSync, lstatSync, unlinkSync, lutimesSync } from "node:fs";
+import {
+  readFileSync, writeFileSync, lutimesSync, openSync, closeSync,
+  fstatSync, fchmodSync, constants,
+} from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { envInt } from "./env-util.js";
 
-// Symlink-safe write (CWE-59 hardening): the marker files below live in a
+const NOFOLLOW = constants.O_NOFOLLOW || 0;
+
+// Symlink-safe/private write (CWE-59 hardening): the marker files below live in a
 // shared, world-writable tmpdir (os.tmpdir()) keyed only by a sanitized
 // session id -- a co-resident, less-privileged process on the same host can
 // plant a symlink at that exact path before this hook ever runs. A plain
 // writeFileSync(file, ...) follows a symlink at `file` and truncates/
 // overwrites whatever it points to. Refuse that: if something already sits at
-// `file` and it is not a plain regular file (a symlink, fifo, etc.), remove it
-// first so the write always lands on a fresh regular file at this exact path,
-// never wherever a symlink resolves to. ENOENT (nothing there yet, the common
-// case) needs no action. Any other lstat/unlink failure is swallowed here so
-// the write below still attempts and surfaces its own error to the caller,
-// exactly as before this guard existed (every call site already wraps its
-// writeFileSync in a best-effort try/catch).
+// `file`, descriptor-level O_NOFOLLOW refuses it. O_NONBLOCK also prevents a
+// raced FIFO from hanging the hook. Validate the opened descriptor itself,
+// force mode 0600 for new and pre-existing files, and propagate every failure
+// to the best-effort caller without attempting an unsafe fallback.
 function safeWriteFileSync(file, content) {
+  let fd;
   try {
-    const st = lstatSync(file);
-    if (!st.isFile()) unlinkSync(file);
-  } catch {
-    // ENOENT, or unlink failed (e.g. EISDIR on a directory) -- fall through;
-    // writeFileSync below throws its own error in that case.
+    fd = openSync(
+      file,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC |
+        NOFOLLOW | constants.O_NONBLOCK,
+      0o600,
+    );
+    if (!fstatSync(fd).isFile()) throw new Error("marker is not a regular file");
+    fchmodSync(fd, 0o600);
+    writeFileSync(fd, content);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
-  writeFileSync(file, content);
+}
+
+function safeReadMarker(file) {
+  let fd;
+  try {
+    fd = openSync(file, constants.O_RDONLY | NOFOLLOW | constants.O_NONBLOCK);
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error("marker is not a regular file");
+    return { content: readFileSync(fd, "utf8"), mtimeMs: st.mtimeMs };
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function markerMtime(file) {
+  try { return safeReadMarker(file).mtimeMs; } catch { return null; }
 }
 
 // ── injectable clock (test-only) ────────────────────────────────────────────
@@ -170,15 +194,17 @@ export function directiveFile(sessionId, tmp = os.tmpdir()) {
 // like the other marker writers; stamps the marker's mtime to `now` (see
 // resolveNow() above).
 export function markDirective(file, now = Date.now()) {
-  try { safeWriteFileSync(file, "1"); } catch { /* best-effort */ }
-  stampMtime(file, now);
+  try {
+    safeWriteFileSync(file, "1");
+    stampMtime(file, now);
+  } catch { /* best-effort */ }
 }
 
 // Read the cumulative state: { files: string[], nudged: boolean }.
 // Missing/corrupt/malformed -> the empty shape (never throws).
 export function readCum(file) {
   try {
-    const raw = JSON.parse(readFileSync(file, "utf8"));
+    const raw = JSON.parse(safeReadMarker(file).content);
     const v = raw && typeof raw === "object" ? raw : {};
     const files = Array.isArray(v.files) ? v.files.filter((x) => typeof x === "string") : [];
     const nudged = Boolean(v.nudged);
@@ -191,8 +217,10 @@ export function readCum(file) {
 // Reset the cumulative state to empty (new session, or a muster run started).
 // Stamps the marker's mtime to `now` (see resolveNow() above).
 export function resetCum(file, now = Date.now()) {
-  try { safeWriteFileSync(file, JSON.stringify({ files: [], nudged: false })); } catch { /* best-effort */ }
-  stampMtime(file, now);
+  try {
+    safeWriteFileSync(file, JSON.stringify({ files: [], nudged: false }));
+    stampMtime(file, now);
+  } catch { /* best-effort */ }
 }
 
 // Add `key` to the cumulative distinct-file set if absent, persist, and return
@@ -203,13 +231,14 @@ export function resetCum(file, now = Date.now()) {
 // Stamps the marker's mtime to `now` (see resolveNow() above) so a later
 // staleness check against the SAME injected clock is exact.
 export function recordCum(file, key, now = Date.now()) {
-  let mtimeMs = null;
-  try { mtimeMs = statSync(file).mtimeMs; } catch { mtimeMs = null; }
+  const mtimeMs = markerMtime(file);
 
   const state = isCrossingStale(mtimeMs, now) ? { files: [], nudged: false } : readCum(file);
   if (!state.files.includes(key)) state.files.push(key);
-  try { safeWriteFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
-  stampMtime(file, now);
+  try {
+    safeWriteFileSync(file, JSON.stringify(state));
+    stampMtime(file, now);
+  } catch { /* best-effort */ }
   return { count: state.files.length, nudged: state.nudged };
 }
 
@@ -218,8 +247,10 @@ export function recordCum(file, key, now = Date.now()) {
 export function markNudged(file, now = Date.now()) {
   const state = readCum(file);
   state.nudged = true;
-  try { safeWriteFileSync(file, JSON.stringify(state)); } catch { /* best-effort */ }
-  stampMtime(file, now);
+  try {
+    safeWriteFileSync(file, JSON.stringify(state));
+    stampMtime(file, now);
+  } catch { /* best-effort */ }
 }
 
 // ── cooldown: hysteresis shared by both border-invitation signals ──────────
@@ -262,12 +293,8 @@ export function isInCooldown(file, now = Date.now(), env = process.env) {
   if (!file) return false;
   const ms = inviteCooldownMs(env);
   if (ms <= 0) return false;
-  let mtimeMs;
-  try {
-    mtimeMs = statSync(file).mtimeMs;
-  } catch {
-    return false;
-  }
+  const mtimeMs = markerMtime(file);
+  if (mtimeMs === null) return false;
   return (now - mtimeMs) < ms;
 }
 
@@ -276,8 +303,10 @@ export function isInCooldown(file, now = Date.now(), env = process.env) {
 // Stamps the marker's mtime to `now` (see resolveNow() above).
 export function recordInvite(file, now = Date.now()) {
   if (!file) return;
-  try { safeWriteFileSync(file, "1"); } catch { /* best-effort */ }
-  stampMtime(file, now);
+  try {
+    safeWriteFileSync(file, "1");
+    stampMtime(file, now);
+  } catch { /* best-effort */ }
 }
 
 // ── isDirective scale correlation ───────────────────────────────────────────
@@ -309,12 +338,8 @@ export function isScaleCorroborated(priorCount) {
 // staleness itself rather than trusting the caller.
 export function corroboratingCount(file, now = Date.now()) {
   if (!file) return 0;
-  let mtimeMs;
-  try {
-    mtimeMs = statSync(file).mtimeMs;
-  } catch {
-    return 0;
-  }
+  const mtimeMs = markerMtime(file);
+  if (mtimeMs === null) return 0;
   if (isCrossingStale(mtimeMs, now)) return 0;
   return readCum(file).files.length;
 }

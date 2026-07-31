@@ -1,7 +1,22 @@
 import { readFile, readdir, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveContainedRealpath } from "./fs-safe.js";
+import { readNoFollowRegular, resolveContainedRealpath } from "./fs-safe.js";
+
+const MAX_KIMI_WIRE_BYTES = 256 * 1024 * 1024;
+const MAX_KIMI_STATE_BYTES = 16 * 1024 * 1024;
+
+async function readFinalRegular(pathname, { label, maxBytes, optional = false }) {
+  try {
+    const { bytes } = await readNoFollowRegular(pathname, { label, maxBytes });
+    return bytes.toString("utf8");
+  } catch (error) {
+    if (optional && error.code === "ENOENT") return null;
+    if (error.code === "ELOOP") throw new Error(`${label} must not be a symlink`);
+    if (error.fsSafe?.reason === "not-regular") throw new Error(`${label} must be a regular file`);
+    throw error;
+  }
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Kimi-native token receipts: per-dispatch usage attribution from wire.jsonl
@@ -179,11 +194,16 @@ async function readAgentWires(sessionDir) {
   }
   const wires = {};
   for (const agentId of agentDirs) {
-    try {
-      wires[agentId] = await readFile(path.join(root, "agents", agentId, "wire.jsonl"), "utf8");
-    } catch {
-      wires[agentId] = ""; // an agent dir without a wire file contributed nothing measurable
-    }
+    const lexicalAgentDir = path.join(root, "agents", agentId);
+    const agentDir = await resolveContainedRealpath(root, lexicalAgentDir);
+    if (!agentDir) throw new Error(`Kimi agent directory is not contained under the session: ${lexicalAgentDir}`);
+    const wirePath = path.join(agentDir, "wire.jsonl");
+    const wire = await readFinalRegular(wirePath, {
+      label: `Kimi wire artifact ${wirePath}`,
+      maxBytes: MAX_KIMI_WIRE_BYTES,
+      optional: true,
+    });
+    wires[agentId] = wire ?? ""; // an agent dir without a wire file contributed nothing measurable
   }
   return wires;
 }
@@ -225,10 +245,18 @@ export async function readSessionUsage(sessionDir) {
     throw new Error(`readSessionUsage: ${err.message}`);
   }
   let state = null;
-  try {
-    state = JSON.parse(await readFile(path.join(root, "state.json"), "utf8"));
-  } catch {
-    state = null; // no state.json (or unreadable) -- fall back to the agents tree alone
+  const statePath = path.join(root, "state.json");
+  const stateText = await readFinalRegular(statePath, {
+    label: `Kimi state artifact ${statePath}`,
+    maxBytes: MAX_KIMI_STATE_BYTES,
+    optional: true,
+  });
+  if (stateText !== null) {
+    try {
+      state = JSON.parse(stateText);
+    } catch {
+      state = null; // malformed state retains the historical agents-tree fallback
+    }
   }
   let wires;
   try {
@@ -342,8 +370,16 @@ async function readSessionIndex(indexPath) {
 
 // state.json's updatedAt as epoch ms; NaN when absent or unparseable.
 async function readUpdatedAt(sessionDir) {
+  const root = await containedSessionDir(sessionDir);
+  const statePath = path.join(root, "state.json");
+  const stateText = await readFinalRegular(statePath, {
+    label: `Kimi state artifact ${statePath}`,
+    maxBytes: MAX_KIMI_STATE_BYTES,
+    optional: true,
+  });
+  if (stateText === null) return NaN;
   try {
-    const state = JSON.parse(await readFile(path.join(sessionDir, "state.json"), "utf8"));
+    const state = JSON.parse(stateText);
     return Date.parse(state?.updatedAt);
   } catch {
     return NaN;

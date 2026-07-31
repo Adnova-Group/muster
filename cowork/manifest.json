@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "muster",
   "display_name": "Muster",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Glass-box agentic router. Exposes muster's deterministic CLI brain (capability and domain routing, gate scoring, RICE prioritization, wave planning) as MCP tools.",
   "long_description": "Development descriptor for Muster's deterministic core wrapped as 31 deterministic MCP tools for Claude Cowork: project detection, role-to-provider resolution, design context and workflow gates, artifact gate scoring, dependency-ordered wave planning, receipt reconciliation, and bounded backlog CAS publication. This MCPB package is not self-contained and is not an installable distribution; use the documented Route A local MCP configuration. MCP instructions provide the supported protocol subset: Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design. Runner and Capture are not provided as MCP modes; Init remains CLI-only.",
   "author": { "name": "rnbennett" },

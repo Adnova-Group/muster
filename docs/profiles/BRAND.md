@@ -20,8 +20,8 @@ brand rules into the skills themselves.
 
 ---
 
-## muster brand (starter content — derived from `website/.vitepress/theme/custom.css` and
-`website/.vitepress/config.js`; genuinely sourced, not placeholders, unless marked otherwise)
+## muster brand (derived from canonical `DESIGN.md`, `website/.vitepress/theme/custom.css`, and
+`website/.vitepress/config.js`; genuinely sourced, not placeholders)
 
 ### Palette
 - **Primary (indigo)**: `#5b4bd6`
@@ -38,10 +38,10 @@ brand rules into the skills themselves.
 - **Theme-color meta (browser chrome)**: `#6d5ce7`
 
 ### Typography feel
-- **PLACEHOLDER — no custom webfont is declared in the site theme** (VitePress default system-ui /
-  Inter-like sans stack). Treat as a placeholder to formalize, not a confirmed brand asset.
-- Editorial feel to match until a real typeface is chosen: clean, geometric sans, no serif, no
-  script/display faces — "engineered," not "friendly startup."
+- **Confirmed system sans stack**: the site deliberately uses VitePress's system UI sans stack,
+  avoiding a third-party font request. Commands and identifiers use the platform monospace stack.
+- Editorial feel: clean, geometric, and engineered. Use compact declarative headings and readable
+  prose. Do not introduce serif, script, or novelty display faces.
 
 ### Style rules (positive — inline these into every prompt)
 - **Glass-box motif**: transparency, inspectability, visible mechanism. Favor imagery that shows the
@@ -49,13 +49,18 @@ brand rules into the skills themselves.
   opaque surfaces.
 - **Indigo-to-sky gradient** as the signature color transition — use it for light sources, glows, or
   gradient fills rather than flat single-hue blocks.
-- **Soft blur / glass depth**: a blurred, translucent backdrop (frosted-glass feel) behind sharper
-  foreground elements — mirrors the site's blurred hero-image treatment.
+- **Faceted path mark**: use the project-owned Muster mark, which shows one outcome branching into
+  visible execution paths and returning to a verified result. The home hero pairs it with a soft,
+  blurred indigo-to-sky field.
+- **Soft blur / glass depth**: a blurred, translucent backdrop (frosted-glass feel) behind the sharp
+  hero mark and within restrained supporting surfaces.
 - **Tight, "engineered" geometry**: crisp edges, grid-aligned composition, restrained ornamentation —
   the site's feature cards are deliberately tighter/more technical than a typical marketing page.
 - **Deterministic / code-over-model sensibility**: when depicting the product conceptually, favor
   circuit-board-precise, blueprint, or schematic framing over painterly abstraction — the brand's
   core claim is "no LLM calls, reproducible by construction."
+- **Consistent line icons**: use the project's two-tone indigo/sky SVG language. Decorative icons
+  are hidden from assistive technology; adjacent visible labels carry the meaning.
 
 ### Negative rules (never render)
 - No generic "AI robot" imagery: no humanoid robots, glowing red eyes, robotic hands reaching toward
@@ -66,6 +71,7 @@ brand rules into the skills themselves.
 - No off-palette neon (pure red/green saturated tech-cliché colors) — stay within the indigo/sky
   gradient family plus neutral grays/whites/blacks.
 - No dense, illegible circuit-board texture used purely as filler background noise.
+- No emoji as interface or feature icons; rendering and spoken labels vary across platforms.
 
 ### Voice (for video/script cadence)
 Direct, technical, unhurried — short declarative sentences, confident without hype. Avoid marketing

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCallback } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +11,7 @@ import {
   AGENT_PLUGIN_SCHEMA,
   generateAgentPluginManifest,
   listDirectChildSkills,
+  validateMcpConfiguration,
   validateAgentPluginPackage,
 } from "../src/agent-plugins.js";
 
@@ -74,6 +76,24 @@ test("unsupported Agent Plugins schema versions fail closed", async () => {
   );
 });
 
+test("invalid closed-variant MCP server entries fail validation", async () => {
+  const invalidServers = [
+    { type: "stdio", command: "" },
+    { type: "stdio", command: "node", cwd: "outside" },
+    { type: "stdio", command: "node", env: { PLUGIN_ROOT: "/tmp/override" } },
+    { type: "stdio", command: "node", surprise: true },
+  ];
+  for (const server of invalidServers) {
+    await assert.rejects(
+      validateMcpConfiguration(repoRoot, {
+        $schema: AGENT_PLUGIN_MCP_SCHEMA,
+        mcpServers: { invalid: server },
+      }),
+      /invalid Agent Plugins MCP server/
+    );
+  }
+});
+
 test("portable package validates schema, direct-child discovery, and package boundaries", async () => {
   const result = await validateAgentPluginPackage(repoRoot);
 
@@ -94,11 +114,75 @@ test("npm package includes every Agent Plugins entry point and mapped component"
   const [packed] = JSON.parse(stdout);
   const paths = new Set(packed.files.map(file => file.path));
 
-  for (const path of ["plugin.json", "mcp.json", "mcp/codex-server.mjs"]) {
+  for (const path of ["plugin.json", "mcp.json", "mcp/agent-plugins-server.mjs"]) {
     assert.ok(paths.has(path), `npm package must include ${path}`);
   }
   for (const name of await listDirectChildSkills(join(repoRoot, "plugin", "skills"))) {
     assert.ok(paths.has(`skills/${name}/SKILL.md`), `npm package must include portable skill ${name}`);
     assert.ok(paths.has(`plugin/skills/${name}/SKILL.md`), `npm package must include canonical skill ${name}`);
   }
+});
+
+test("portable MCP entry point starts with neutral instructions and exposes Muster tools", async () => {
+  const mcp = await json("mcp.json");
+  const entry = mcp.mcpServers.muster.args[0].replace("${PLUGIN_ROOT}/", "");
+  assert.equal(entry, "mcp/agent-plugins-server.mjs");
+
+  const result = await new Promise((resolve, reject) => {
+    const server = spawn("node", [join(repoRoot, entry)], {
+      cwd: repoRoot,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const messages = new Map();
+    let buffer = "";
+    let stderr = "";
+    const timer = setTimeout(() => finish(new Error(`portable MCP timeout: ${stderr}`)), 10_000);
+    const finish = (error, value) => {
+      clearTimeout(timer);
+      server.kill();
+      if (error) reject(error);
+      else resolve(value);
+    };
+    server.stderr.setEncoding("utf8");
+    server.stderr.on("data", chunk => { stderr += chunk; });
+    server.stdout.setEncoding("utf8");
+    server.stdout.on("data", chunk => {
+      buffer += chunk;
+      for (;;) {
+        const newline = buffer.indexOf("\n");
+        if (newline < 0) break;
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line) continue;
+        const message = JSON.parse(line);
+        messages.set(message.id, message);
+        if (messages.has(1) && messages.has(2)) {
+          finish(null, {
+            initialize: messages.get(1).result,
+            tools: messages.get(2).result.tools,
+          });
+        }
+      }
+    });
+    server.on("error", error => finish(error));
+    server.on("exit", code => {
+      if (code && !messages.has(2)) finish(new Error(stderr || `portable MCP exited ${code}`));
+    });
+    server.stdin.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "agent-plugins-test", version: "1" },
+      },
+    }) + "\n");
+    server.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }) + "\n");
+  });
+
+  assert.match(result.initialize.instructions, /Agent Plugins client/);
+  assert.doesNotMatch(result.initialize.instructions, /\bCodex\b/);
+  assert.ok(result.tools.length > 0);
+  assert.ok(result.tools.every(tool => tool.name.startsWith("muster_")));
 });

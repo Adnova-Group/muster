@@ -5,7 +5,7 @@
       "type": "stdio",
       "command": "node",
       "args": [
-        "${PLUGIN_ROOT}/mcp/codex-server.mjs"
+        "${PLUGIN_ROOT}/mcp/agent-plugins-server.mjs"
       ],
       "cwd": "${PLUGIN_ROOT}"
     }

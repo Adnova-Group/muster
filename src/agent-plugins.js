@@ -81,20 +81,97 @@ function validateManifest(manifest) {
   }
 }
 
-async function validateMcp(root, mcp) {
+const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
+const stringArray = value => Array.isArray(value) && value.every(item => typeof item === "string");
+const stringRecord = value => isRecord(value) && Object.values(value).every(item => typeof item === "string");
+
+function invalidServer(name, reason) {
+  throw new Error(`invalid Agent Plugins MCP server ${name}: ${reason}`);
+}
+
+function validateStdioServer(root, name, server) {
+  const allowed = new Set(["type", "command", "args", "env", "cwd"]);
+  const unknown = Object.keys(server).find(key => !allowed.has(key));
+  if (unknown) invalidServer(name, `unknown field ${unknown}`);
+  if (
+    typeof server.command !== "string"
+    || !server.command
+    || /\s/.test(server.command)
+    || (server.command.includes("/") && !server.command.startsWith("./"))
+  ) {
+    invalidServer(name, "command must be one bare executable token or a ./ plugin path");
+  }
+  if (server.args !== undefined && !stringArray(server.args)) invalidServer(name, "args must be strings");
+  if (server.env !== undefined && !stringRecord(server.env)) invalidServer(name, "env must contain strings");
+  if (server.env && ("PLUGIN_ROOT" in server.env || "PLUGIN_DATA" in server.env)) {
+    invalidServer(name, "env must not override PLUGIN_ROOT or PLUGIN_DATA");
+  }
+  if (server.cwd !== undefined) {
+    if (typeof server.cwd !== "string") invalidServer(name, "cwd must be a string");
+    const portable = server.cwd === "${PLUGIN_ROOT}"
+      || server.cwd.startsWith("${PLUGIN_ROOT}/")
+      || server.cwd === "${PLUGIN_DATA}"
+      || server.cwd.startsWith("${PLUGIN_DATA}/")
+      || server.cwd.startsWith("./");
+    if (!portable) invalidServer(name, "cwd must be plugin-relative, PLUGIN_ROOT, or PLUGIN_DATA");
+    if (server.cwd.startsWith("./")) {
+      assertInside(resolve(root), resolve(root, server.cwd), `MCP server ${name} cwd`);
+    }
+    if (server.cwd.startsWith("${PLUGIN_ROOT}/")) {
+      assertInside(
+        resolve(root),
+        resolve(root, server.cwd.slice("${PLUGIN_ROOT}/".length)),
+        `MCP server ${name} cwd`
+      );
+    }
+  }
+}
+
+function isLoopback(hostname) {
+  return hostname === "localhost"
+    || hostname === "127.0.0.1"
+    || hostname === "::1"
+    || /^127\./.test(hostname);
+}
+
+function validateHttpServer(name, server) {
+  const allowed = new Set(["type", "url", "headers"]);
+  const unknown = Object.keys(server).find(key => !allowed.has(key));
+  if (unknown) invalidServer(name, `unknown field ${unknown}`);
+  let url;
+  try {
+    url = new URL(server.url);
+  } catch {
+    invalidServer(name, "url must be an absolute HTTP(S) URL");
+  }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) {
+    invalidServer(name, "url must be an absolute HTTP(S) URL without credentials or a fragment");
+  }
+  if (url.protocol === "http:" && !isLoopback(url.hostname)) {
+    invalidServer(name, "non-loopback MCP URLs must use HTTPS");
+  }
+  if (server.headers !== undefined && !stringRecord(server.headers)) {
+    invalidServer(name, "headers must contain strings");
+  }
+  const names = Object.keys(server.headers ?? {}).map(header => header.toLowerCase());
+  if (new Set(names).size !== names.length) invalidServer(name, "header names must be unique ignoring case");
+}
+
+export async function validateMcpConfiguration(root, mcp) {
   if (mcp?.$schema !== AGENT_PLUGIN_MCP_SCHEMA) {
     throw new Error(`unsupported Agent Plugins MCP schema: ${JSON.stringify(mcp?.$schema)}`);
   }
-  if (!mcp.mcpServers || typeof mcp.mcpServers !== "object" || Array.isArray(mcp.mcpServers)) {
+  if (!isRecord(mcp.mcpServers)) {
     throw new Error("Agent Plugins mcpServers must be an object");
   }
   const extra = Object.keys(mcp).filter(key => !["$schema", "mcpServers"].includes(key));
   if (extra.length) throw new Error(`unknown Agent Plugins MCP field: ${extra[0]}`);
 
   for (const [name, server] of Object.entries(mcp.mcpServers)) {
-    if (server?.type !== "stdio" || typeof server.command !== "string") {
-      throw new Error(`invalid Agent Plugins MCP server: ${name}`);
-    }
+    if (!isRecord(server)) invalidServer(name, "entry must be an object");
+    if (server.type === "stdio") validateStdioServer(root, name, server);
+    else if (server.type === "streamable-http" || server.type === "sse") validateHttpServer(name, server);
+    else invalidServer(name, `unknown transport ${JSON.stringify(server.type)}`);
     for (const value of server.args ?? []) {
       const prefix = "${PLUGIN_ROOT}/";
       if (typeof value !== "string" || !value.startsWith(prefix)) continue;
@@ -109,7 +186,7 @@ export async function validateAgentPluginPackage(root) {
   const manifest = await readJson(join(root, "plugin.json"));
   const mcp = await readJson(join(root, "mcp.json"));
   validateManifest(manifest);
-  await validateMcp(root, mcp);
+  await validateMcpConfiguration(root, mcp);
 
   const pkg = await readJson(join(root, "package.json"));
   const claude = await readJson(join(root, "plugin", ".claude-plugin", "plugin.json"));

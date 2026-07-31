@@ -85,8 +85,11 @@ function resolveParallelLimit(value, maxConcurrentThreadsPerSession) {
   const parsed = /^\d+$/.test(normalized) && Number.parseInt(normalized, 10) > 0
     ? Number.parseInt(normalized, 10)
     : SPRINT_PARALLEL_DEFAULT;
+  // Codex counts the root orchestrator in this session-wide ceiling. Reserve
+  // that slot before deriving the child-runner cap; retain one as the safe
+  // sequential scheduler fallback when the ceiling leaves no child capacity.
   const configuredCeiling = Number.isInteger(maxConcurrentThreadsPerSession) && maxConcurrentThreadsPerSession > 0
-    ? maxConcurrentThreadsPerSession
+    ? Math.max(maxConcurrentThreadsPerSession - 1, 1)
     : SPRINT_PARALLEL_MAX;
   return Math.min(parsed, SPRINT_PARALLEL_MAX, configuredCeiling);
 }

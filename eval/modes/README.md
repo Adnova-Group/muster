@@ -4,8 +4,9 @@ An empirical eval of 8 run-lifecycle mode prompts (`plugin/commands/*.md`: `plan
 `go`, `go-backlog`, `runner`, `audit`, `diagnose`, `capture`) plus the 3 legacy alias
 stubs that delegate to them (`run` -> `plan`, `autopilot` -> `go`, `sprint` ->
 `go-backlog` — thin, minimal files graded structurally, not via dataset cases; see "Alias
-stubs" below). The ninth mode, `init`, is graded structurally and through its filesystem
-and receipt contract tests rather than response-quality fixtures. The harness also covers
+stubs" below). The ninth and tenth modes, `init` and `design`, are graded structurally
+and through their focused filesystem, receipt, context, and mutation-safety tests rather
+than response-quality fixtures. The harness also covers
 the 10 skill-protocol skills the modes delegate to (`plugin/skills/*` —
 `orchestrator`, `review-gate`, `coordination`,
 `interview`, `tournament`, `domain-router`, `advisor`, `greenfield`, `prd-pipeline`,
@@ -261,7 +262,7 @@ stale. Tiers: **empirical** (>=1 code-graded dataset case grades it directly),
 **static** (covered only by `muster prompt lint`/`prompt scan` structural linting, not by
 this eval), **deliberate-none** (out of scope for this eval, with a stated reason).
 
-### Mode prompts (`plugin/commands/*.md`, 8 of the 11 files there — the other 3 are alias stubs, see below)
+### Mode prompts (`plugin/commands/*.md`, 8 of the 13 files there)
 
 | surface | tier | cases |
 |---|---|---|
@@ -274,7 +275,13 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 | diagnose.md | empirical | 7 |
 | capture.md | empirical | 9 — closed this pass (was zero-verification); `prompt scan plugin/commands` verdict: 7/7 passing as of the full prompt-improve pass (the earlier `ANTH-POS-001` finding on capture.md is resolved) |
 
-### Alias stubs (`plugin/commands/*.md`, the remaining 3 of the 11 files there)
+### Structurally graded modes
+
+`init.md` and `design.md` are covered by prompt lint plus their focused contract suites.
+They perform filesystem and context lifecycle work that the no-I/O response grader does
+not model.
+
+### Alias stubs (`plugin/commands/*.md`, the remaining 3 compatibility files)
 
 `run`, `autopilot`, and `sprint` are legacy names kept working for backward compatibility
 — each is now a minimal delegation stub (frontmatter + one heads-up guidance line + a

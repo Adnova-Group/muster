@@ -286,6 +286,60 @@ supported policy warnings. They do not prove subagent liveness and cannot
 reliably enforce every unified-shell or subagent action; write-capable waves
 still require isolated worktrees and event-driven, wait-first receipt handling.
 
+### Codex 0.146 skill-catalog and MCP refresh compatibility probe
+
+Run the repository-observable portion against a generated plugin and a forced
+rebuild:
+
+```
+node scripts/codex-0146-compat-probe.mjs --json
+```
+
+`results.mcpContract` is `PASS` only when both generated runtimes complete
+`initialize`, expose the same `tools/list` names, and return the same result
+shape from a representative `muster_detect` `tools/call`. This proves Muster's
+generated MCP contract across the rebuild boundary. It does **not** prove that
+Codex reused an in-process connection: connection object identity is inside the
+host and is not exposed to this repository process, so
+`results.connectionReuse` deliberately remains bounded `UNKNOWN`.
+
+Skill-catalog pressure also stays `UNKNOWN` unless evidence was captured from
+the host-rendered catalog. Do not manufacture this evidence from the generated
+plugin tree; that would prove only that the source skills exist, not that Codex
+retained their metadata under pressure. A host capture has this minimal shape:
+
+```json
+{
+  "descriptionTruncationObserved": true,
+  "entries": [
+    {
+      "name": "muster:muster-go",
+      "locator": "file: r3/muster-go/SKILL.md",
+      "description": "Use for Muster orches..."
+    }
+  ]
+}
+```
+
+Pass it with:
+
+```
+node scripts/codex-0146-compat-probe.mjs --catalog-evidence /private/path/catalog-evidence.json --json
+```
+
+The catalog cell passes only when truncation is explicitly observed and every
+generated public Muster skill still has its name (optionally host-namespaced)
+and skill-relative locator suffix in the host capture. A missing name or locator is `FAIL`; absent evidence or a
+capture without observed truncation is `UNKNOWN`. The process exits nonzero
+only for `FAIL`, so a bounded `UNKNOWN` remains machine-readable without being
+misrepresented as compatibility proof.
+
+Focused regression coverage:
+
+```
+node --test test/codex-0146-compat-probe.test.js
+```
+
 ---
 
 ## Maintenance

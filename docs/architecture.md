@@ -195,7 +195,7 @@ Muster keeps a running ledger of caught failure classes in `docs/anti-patterns.m
 
 **Action-class fence.** When both `.muster/run-active` and `.muster/forbidden-actions` exist, a tool call classified (`action-guard.js`) into a run-forbidden action class (`send`/`sign`/`submit`/`publish`/`purchase`/`delete-remote`) is denied. Either file absent, or no class matching, is a no-op (fail-open). Set `MUSTER_ACTION_GUARD=warn` to allow with a reminder, `off` to disable. This is the only hard deny the `PreToolUse` hook can emit.
 
-**Meta-exempt roots.** `.muster/` and `.claude/` (in-cwd repo) are always allowed so orchestrator bookkeeping and repo-local settings are never blocked mid-run. Paths outside the project cwd are already out of scope for the cwd-relative gate.
+**Meta-exempt roots.** `.muster/` and `.claude/` (in-cwd repo) are exempt from advisory drift accounting only after the action-class fence has classified the payload. A recognized forbidden external action cannot bypass the fence by carrying a metadata path. Paths outside the project cwd are likewise out of scope only for cwd-relative drift accounting after classification.
 
 **Task-completion gate.** `plugin/hooks/task-completed-gate.js` denies (`TaskCompleted`, exit 2) a native task board completion tick for any task muster's own `.muster/task-board.json` tracks whose `reviewGate` isn't `"pass"` -- ties the board's authoritative "completed" tick to a real review-gate result. Fail-open for any task the map doesn't track (never gates a harness-native task muster didn't create). Set `MUSTER_TASK_GATE=off` to disable.
 

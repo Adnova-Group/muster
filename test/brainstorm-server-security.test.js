@@ -9,17 +9,50 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const server = new URL("../codex/skill-assets/sp-brainstorm/scripts/server.cjs", import.meta.url).pathname;
 const sourceServer = new URL("../plugin/builtins/sp-brainstorm/scripts/server.cjs", import.meta.url).pathname;
+const helper = new URL("../codex/skill-assets/sp-brainstorm/scripts/helper.js", import.meta.url).pathname;
+const sourceHelper = new URL("../plugin/builtins/sp-brainstorm/scripts/helper.js", import.meta.url).pathname;
 const assetManifest = new URL("../codex/skill-assets/manifest.json", import.meta.url).pathname;
 
 test("packaged brainstorm server and manifest identify the byte-identical local overlay", async () => {
   assert.deepEqual(await readFile(server), await readFile(sourceServer));
+  assert.deepEqual(await readFile(helper), await readFile(sourceHelper));
   const manifest = JSON.parse(await readFile(assetManifest, "utf8"));
   const brainstorm = manifest.skills.find((skill) => skill.id === "sp-brainstorm");
   assert.deepEqual(brainstorm.overlay, {
     source: "plugin/builtins/sp-brainstorm",
-    files: ["scripts/server.cjs"],
+    files: ["scripts/helper.js", "scripts/server.cjs"],
   });
   assert.match(brainstorm.adaptation, /intentional local supporting-asset overlay/);
+});
+
+test("brainstorm browser boundary keeps the token out of scripts and sandboxes generated screens", async () => {
+  const [serverSource, helperSource] = await Promise.all([
+    readFile(server, "utf8"),
+    readFile(helper, "utf8"),
+  ]);
+  assert.doesNotMatch(serverSource, /sessionStorage|localStorage/);
+  assert.doesNotMatch(helperSource, /sessionStorage|localStorage|WebSocket|\?key=/);
+  assert.match(serverSource, /sandbox="allow-scripts"/);
+  assert.match(serverSource, /event\.source !== frame\.contentWindow \|\| event\.origin !== 'null'/);
+  assert.match(serverSource, /const channel = crypto\.randomBytes\(16\)\.toString\('hex'\)/);
+  assert.match(helperSource, /__MUSTER_BRAINSTORM_CHANNEL__/);
+  assert.match(serverSource, /script-src 'nonce-\$\{nonce\}'/);
+  assert.match(serverSource, /sandbox allow-scripts; default-src 'none'/);
+  assert.match(serverSource, /Buffer\.byteLength\(text, 'utf8'\) > 8192/);
+});
+
+test("brainstorm content reads stay on one no-follow descriptor through validation and read", async () => {
+  const source = await readFile(server, "utf8");
+  const start = source.indexOf("function readPinnedContentFile");
+  const end = source.indexOf("function getNewestScreen", start);
+  const contract = source.slice(start, end);
+  assert.match(contract, /const pathStat = fs\.lstatSync\(resolved\)/);
+  assert.match(contract, /openSync\(resolved, fs\.constants\.O_RDONLY \| NOFOLLOW/);
+  assert.match(contract, /const before = fs\.fstatSync\(handle\)/);
+  assert.match(contract, /before\.dev !== pathStat\.dev \|\| before\.ino !== pathStat\.ino/);
+  assert.match(contract, /const bytes = fs\.readFileSync\(handle\)/);
+  assert.match(contract, /const after = fs\.fstatSync\(handle\)/);
+  assert.doesNotMatch(contract, /readFileSync\(resolved|readFileSync\(filePath/);
 });
 
 async function rejectedStartup(env) {

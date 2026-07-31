@@ -25,6 +25,7 @@
       "overlay": {
         "source": "plugin/builtins/sp-brainstorm",
         "files": [
+          "scripts/helper.js",
           "scripts/server.cjs"
         ]
       }

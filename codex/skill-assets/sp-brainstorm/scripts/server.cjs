@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const NOFOLLOW = fs.constants.O_NOFOLLOW || 0;
+const MAX_CONTENT_FILE_BYTES = 10 * 1024 * 1024;
 
 function assertPrivateDirectory(directory, label, create) {
   if (create && !fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -266,23 +267,50 @@ h1 { color: #333; } p { color: #666; } code { background: #f0f0f0; padding: 0.1e
 <p>This page needs the full URL your coding agent gave you, including the
 <code>?key=&hellip;</code> part. Copy the complete URL and open it again.</p></body></html>`;
 
-function bootstrapPage(key) {
-  const jsonKey = JSON.stringify(String(key));
-  return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Opening Brainstorm Companion</title></head>
-<body>
-<script>
-try { sessionStorage.setItem('brainstorm-session-key', ${jsonKey}); } catch (e) {}
-location.replace('/');
-</script>
-</body>
-</html>`;
-}
-
 const frameTemplate = fs.readFileSync(path.join(__dirname, 'frame-template.html'), 'utf-8');
 const helperScript = fs.readFileSync(path.join(__dirname, 'helper.js'), 'utf-8');
-const helperInjection = '<script>\n' + helperScript + '\n</script>';
+const helperInjection = (nonce, channel) => '<script nonce="' + nonce + '">globalThis.__MUSTER_BRAINSTORM_CHANNEL__=' + JSON.stringify(channel) + ';\n' + helperScript + '\n</script>';
+
+function controllerPage(nonce, channel) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Brainstorm Companion</title>
+<style>html,body{height:100%;margin:0;background:#1d1d1f}body{display:grid;grid-template-rows:auto 1fr;font-family:system-ui,sans-serif}.status{padding:.45rem .75rem;color:#d1d1d6;font-size:.75rem}iframe{width:100%;height:100%;border:0;background:#fff}</style>
+</head><body><div class="status" id="status">Connecting...</div>
+<iframe id="screen" title="Brainstorm choices" src="/screen?channel=${channel}" sandbox="allow-scripts"></iframe>
+<script nonce="${nonce}">
+(() => {
+  const frame = document.getElementById('screen');
+  const status = document.getElementById('status');
+  let socket;
+  function validEvent(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    if (value.type !== 'click') return false;
+    for (const key of Object.keys(value)) if (!['type','text','choice','id'].includes(key)) return false;
+    for (const key of ['text','choice','id']) if (value[key] !== null && typeof value[key] !== 'string') return false;
+    return JSON.stringify(value).length <= 8192;
+  }
+  window.addEventListener('message', event => {
+    if (event.source !== frame.contentWindow || event.origin !== 'null') return;
+    if (!event.data || event.data.channel !== '${channel}' || !validEvent(event.data.event)) return;
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(event.data.event));
+  });
+  function connect() {
+    status.textContent = 'Connecting...';
+    socket = new WebSocket('ws://' + location.host + '/');
+    socket.onopen = () => { status.textContent = 'Connected'; };
+    socket.onmessage = message => {
+      try {
+        const data = JSON.parse(message.data);
+        if (data.type === 'reload') frame.src = '/screen?channel=${channel}&reload=' + Date.now();
+      } catch (_) {}
+    };
+    socket.onclose = () => { status.textContent = 'Reconnecting...'; setTimeout(connect, 1000); };
+    socket.onerror = () => { try { socket.close(); } catch (_) {} };
+  }
+  connect();
+})();
+</script></body></html>`;
+}
 
 // ========== Helper Functions ==========
 
@@ -342,7 +370,32 @@ function isFullDocument(html) {
 }
 
 function wrapInFrame(content) {
-  return renderBranding(frameTemplate).replace('<!-- CONTENT -->', content);
+  return renderBranding(frameTemplate)
+    .replace('<div class="status">Connecting…</div>', '')
+    .replace('<!-- CONTENT -->', content);
+}
+
+function readPinnedContentFile(filePath, encoding = null) {
+  const resolved = path.resolve(filePath);
+  if (path.dirname(resolved) !== path.resolve(CONTENT_DIR)) return null;
+  let handle;
+  try {
+    const pathStat = fs.lstatSync(resolved);
+    if (pathStat.isSymbolicLink() || !pathStat.isFile() || pathStat.nlink !== 1) return null;
+    handle = fs.openSync(resolved, fs.constants.O_RDONLY | NOFOLLOW | fs.constants.O_NONBLOCK);
+    const before = fs.fstatSync(handle);
+    if (!before.isFile() || before.nlink !== 1 || before.size > MAX_CONTENT_FILE_BYTES) return null;
+    if (before.dev !== pathStat.dev || before.ino !== pathStat.ino) return null;
+    const bytes = fs.readFileSync(handle);
+    const after = fs.fstatSync(handle);
+    if (!after.isFile() || after.nlink !== 1 || after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size) return null;
+    return { data: encoding ? bytes.toString(encoding) : bytes, stat: after };
+  } catch (error) {
+    if (['ELOOP', 'EMLINK', 'EINVAL', 'ENOENT'].includes(error.code)) return null;
+    throw error;
+  } finally {
+    if (handle !== undefined) fs.closeSync(handle);
+  }
 }
 
 function getNewestScreen() {
@@ -350,12 +403,13 @@ function getNewestScreen() {
     .filter(f => !f.startsWith('.') && f.endsWith('.html'))
     .map(f => {
       const fp = path.join(CONTENT_DIR, f);
-      if (!isRegularFileInsideContentDir(fp)) return null;
-      return { path: fp, mtime: fs.statSync(fp).mtime.getTime() };
+      const pinned = readPinnedContentFile(fp, 'utf8');
+      if (!pinned) return null;
+      return { data: pinned.data, mtime: pinned.stat.mtime.getTime() };
     })
     .filter(Boolean)
     .sort((a, b) => b.mtime - a.mtime);
-  return files.length > 0 ? files[0].path : null;
+  return files.length > 0 ? files[0].data : null;
 }
 
 function urlHostForHttp(host) {
@@ -380,21 +434,6 @@ function browserLauncherForPlatform(url, {
   }
   if (env.DISPLAY || env.WAYLAND_DISPLAY) return { bin: 'xdg-open', args: [url] };
   return null;
-}
-
-function isRegularFileInsideContentDir(filePath) {
-  let stat, realContentDir, realFilePath;
-  try {
-    stat = fs.lstatSync(filePath);
-    if (stat.isSymbolicLink()) return false;
-    if (!stat.isFile()) return false;
-    if (stat.nlink !== 1) return false;
-    realContentDir = fs.realpathSync(CONTENT_DIR);
-    realFilePath = fs.realpathSync(filePath);
-  } catch (e) {
-    return false;
-  }
-  return realFilePath.startsWith(realContentDir + path.sep);
 }
 
 // ========== Authentication ==========
@@ -444,6 +483,12 @@ function queryKey(url) {
   return new URLSearchParams(url.slice(q + 1)).get('key');
 }
 
+function queryParameter(url, name) {
+  const q = url.indexOf('?');
+  if (q < 0) return null;
+  return new URLSearchParams(url.slice(q + 1)).get(name);
+}
+
 function securityHeaders(headers = {}) {
   return {
     'Referrer-Policy': 'no-referrer',
@@ -453,6 +498,14 @@ function securityHeaders(headers = {}) {
     'Cross-Origin-Resource-Policy': 'same-origin',
     ...headers
   };
+}
+
+function screenSecurityHeaders(nonce, headers = {}) {
+  return securityHeaders({
+    'X-Frame-Options': 'SAMEORIGIN',
+    'Content-Security-Policy': `sandbox allow-scripts; default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`,
+    ...headers,
+  });
 }
 
 function isAllowedWebSocketOrigin(req) {
@@ -482,28 +535,43 @@ function handleRequest(req, res) {
   const pathname = pathnameOf(req.url);
   const keyFromQuery = queryKey(req.url);
   if (req.method === 'GET' && pathname === '/' && keyFromQuery && timingSafeEqualStr(keyFromQuery, TOKEN)) {
-    res.writeHead(200, securityHeaders({ 'Content-Type': 'text/html; charset=utf-8' }));
-    res.end(bootstrapPage(keyFromQuery));
+    res.writeHead(303, securityHeaders({ 'Location': '/' }));
+    res.end();
   } else if (req.method === 'GET' && pathname === '/') {
-    const screenFile = getNewestScreen();
-    let html = screenFile
-      ? (raw => isFullDocument(raw) ? raw : wrapInFrame(raw))(fs.readFileSync(screenFile, 'utf-8'))
-      : waitingPage();
-
-    if (html.includes('</body>')) {
-      html = html.replace('</body>', helperInjection + '\n</body>');
-    } else {
-      html += helperInjection;
+    const nonce = crypto.randomBytes(18).toString('base64');
+    const channel = crypto.randomBytes(16).toString('hex');
+    res.writeHead(200, securityHeaders({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; frame-src 'self'; connect-src 'self' ws:; frame-ancestors 'none'; base-uri 'none'`,
+    }));
+    res.end(controllerPage(nonce, channel));
+  } else if (req.method === 'GET' && pathname === '/screen') {
+    const channel = queryParameter(req.url, 'channel');
+    if (!channel || !/^[0-9a-f]{32}$/.test(channel)) {
+      res.writeHead(404, securityHeaders());
+      res.end('Not found');
+      return;
     }
-
-    res.writeHead(200, securityHeaders({ 'Content-Type': 'text/html; charset=utf-8' }));
+    const screen = getNewestScreen();
+    let html = screen
+      ? (raw => isFullDocument(raw) ? raw : wrapInFrame(raw))(screen)
+      : waitingPage();
+    const nonce = crypto.randomBytes(18).toString('base64');
+    const injection = helperInjection(nonce, channel);
+    if (html.includes('</body>')) {
+      html = html.replace('</body>', injection + '\n</body>');
+    } else {
+      html += injection;
+    }
+    res.writeHead(200, screenSecurityHeaders(nonce, { 'Content-Type': 'text/html; charset=utf-8' }));
     res.end(html);
   } else if (req.method === 'GET' && pathname.startsWith('/files/')) {
     const fileName = path.basename(pathname.slice(7));
     const filePath = path.join(CONTENT_DIR, fileName);
     // Reject empty/dotfile names and anything that isn't a regular file —
     // `/files/` would otherwise resolve to CONTENT_DIR and crash readFileSync (EISDIR).
-    if (!fileName || fileName.startsWith('.') || !isRegularFileInsideContentDir(filePath)) {
+    const pinned = (!fileName || fileName.startsWith('.')) ? null : readPinnedContentFile(filePath);
+    if (!pinned) {
       res.writeHead(404, securityHeaders());
       res.end('Not found');
       return;
@@ -511,7 +579,7 @@ function handleRequest(req, res) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     res.writeHead(200, securityHeaders({ 'Content-Type': contentType }));
-    res.end(fs.readFileSync(filePath));
+    res.end(pinned.data);
   } else {
     res.writeHead(404, securityHeaders());
     res.end('Not found');
@@ -582,6 +650,7 @@ function handleUpgrade(req, socket) {
 }
 
 function handleMessage(text) {
+  if (Buffer.byteLength(text, 'utf8') > 8192) return;
   let event;
   try {
     event = JSON.parse(text);
@@ -589,6 +658,9 @@ function handleMessage(text) {
     console.error('Failed to parse WebSocket message:', e.message);
     return;
   }
+  if (!event || typeof event !== 'object' || Array.isArray(event) || event.type !== 'click') return;
+  if (Object.keys(event).some(key => !['type', 'text', 'choice', 'id'].includes(key))) return;
+  if (['text', 'choice', 'id'].some(key => event[key] !== null && typeof event[key] !== 'string')) return;
   touchActivity();
   console.log(JSON.stringify({ source: 'user-event', ...event }));
   if (event && event.choice) {

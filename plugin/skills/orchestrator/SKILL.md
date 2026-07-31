@@ -357,7 +357,7 @@ docs/architecture.md's "Enforcement model: gates vs conventions" for the full mo
 **THE ONE HARD DENY (hook-enforced):** while a run is active and `.muster/forbidden-actions` exists,
 `plugin/hooks/pre-tool-use.js`/`action-guard.js` deny a tool call classified into a forbidden action
 class -- fail-open on either file's absence, `MUSTER_ACTION_GUARD=warn|off` softens/disables it.
-`.muster/` and `.claude/` (in-cwd) are always exempt, ahead of the fence check. This is the ONLY tool
+`.muster/` and `.claude/` (in-cwd) are exempt only from advisory drift accounting after the action-class fence. This is the ONLY tool
 call the `PreToolUse` hook can deny; everything else (dispatch-not-inline, todo-driving, the
 inline-edit border invitation) is SKILL discipline or a warn-only reminder, never a block.
 

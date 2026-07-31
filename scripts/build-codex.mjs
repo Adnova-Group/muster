@@ -137,13 +137,12 @@ const SESSION_START_CLEAR_FILES = ["go.md", "diagnose.md", "audit.md", "runner.m
 const registryFallbackRe = /when the running session's registry doesn't carry that type[\s\S]*?note the degradation in STATE/;
 // build-anchor-audit item: this previously anchored on a literal ending "instead of
 // blocking." that go-backlog.md's own source no longer carries at all (the sentence was
-// reworded to describe the `agent_id` subagent exemption and the worktree's empty
-// `.muster/` fence instead) -- a pre-existing silent no-op this audit's throw-on-miss
-// caught live. Anchored on the stable "Runner cwd..."/"`PreToolUse` hook" prefix through
-// the sentence's current "regardless." close, tolerant of further rewording in between,
+// reworded to require propagated action-fence markers and reject `agent_id` exemptions)
+// -- a pre-existing silent no-op this audit's throw-on-miss caught live. Anchored on the
+// stable "Runner cwd..."/marker prefix through the sentence's "action fence." close,
 // and scoped to leave the FOLLOWING worktree-removal/node_modules-bootstrap sentences
 // (harness-neutral, no PreToolUse/hook content) untouched.
-const runnerCwdRe = /Runner cwd is its worktree; tool calls rely on the `PreToolUse` hook[\s\S]*?regardless\./;
+const runnerCwdRe = /Runner cwd is its worktree, and the preflight above copies regular `[.]muster\/run-active`[\s\S]*?do not bypass the action fence\./;
 const captureWritesRe = /capture only ever writes[\s\S]*?deliberately omitted\./i;
 // adapt-command-file-arrays item (PR #163 reviewer nit): the four arrays above
 // are hand-maintained -- a NEW command file adopting the same boilerplate would

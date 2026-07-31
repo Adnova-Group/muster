@@ -4,6 +4,7 @@ import {
   compareMcpContracts,
   evaluateConnectionReuse,
   evaluateSkillCatalogEvidence,
+  validateGeneratedSkillInventory,
 } from "../scripts/codex-0146-compat-probe.mjs";
 
 const expectedSkills = [
@@ -63,14 +64,15 @@ test("skill-catalog pressure fails closed when host evidence omits an expected l
 });
 
 test("MCP contract comparison covers initialize, tools/list, and representative tools/call", () => {
+  const toolNames = ["muster_detect", ...Array.from({ length: 29 }, (_, index) => `muster_tool_${index}`)];
   const before = {
     protocolVersion: "2025-06-18",
-    toolNames: ["muster_assess", "muster_detect"],
+    toolNames,
     representativeCall: { name: "muster_detect", ok: true, resultShape: ["greenfield", "languages", "vcs"] },
   };
   const after = {
     protocolVersion: "2025-06-18",
-    toolNames: ["muster_detect", "muster_assess"],
+    toolNames: [...toolNames].reverse(),
     representativeCall: { name: "muster_detect", ok: true, resultShape: ["vcs", "languages", "greenfield"] },
   };
 
@@ -78,11 +80,41 @@ test("MCP contract comparison covers initialize, tools/list, and representative 
     status: "PASS",
     reason: "mcp-contract-stable-across-rebuild",
     protocolVersion: "2025-06-18",
-    toolCount: 2,
+    toolCount: 30,
     representativeTool: "muster_detect",
   });
 
   assert.equal(compareMcpContracts(before, { ...after, toolNames: ["muster_detect"] }).status, "FAIL");
+});
+
+test("degenerate identical MCP snapshots cannot fabricate PASS", () => {
+  const empty = {
+    protocolVersion: undefined,
+    toolNames: [],
+    representativeCall: { name: "muster_detect", ok: true, resultShape: [] },
+  };
+  const result = compareMcpContracts(empty, empty);
+  assert.equal(result.status, "FAIL");
+  assert.deepEqual(result.failures, [
+    "unsupported-initialize-protocol",
+    "unexpected-tool-count",
+    "muster-detect-tool-missing",
+    "representative-result-shape-invalid",
+  ]);
+});
+
+test("generated skill inventory is pinned to the canonical 13 public skills", () => {
+  const empty = validateGeneratedSkillInventory([]);
+  assert.equal(empty.status, "FAIL");
+  assert.equal(empty.expectedCount, 13);
+  assert.equal(empty.observedCount, 0);
+
+  const canonical = [
+    "autopilot", "muster", "muster-audit", "muster-capture", "muster-diagnose",
+    "muster-go", "muster-go-backlog", "muster-init", "muster-plan",
+    "muster-plan-backlog", "muster-runner", "run", "sprint",
+  ];
+  assert.equal(validateGeneratedSkillInventory(canonical).status, "PASS");
 });
 
 test("connection reuse stays bounded UNKNOWN because repository probes cannot observe host connection identity", () => {

@@ -5,6 +5,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { CODEX_COUNTS } from "../src/codex.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
 
 const execFile = promisify(execFileCb);
@@ -12,6 +13,23 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRoot = resolve(scriptDir, "..");
 const MCP_TIMEOUT_MS = 15_000;
 const MCP_OUTPUT_CAP = 256 * 1024;
+const MCP_PROTOCOL_VERSION = "2025-06-18";
+const REQUIRED_DETECT_FIELDS = Object.freeze(["greenfield", "languages", "vcs"]);
+export const CODEX_0146_PUBLIC_SKILLS = Object.freeze([
+  "autopilot",
+  "muster",
+  "muster-audit",
+  "muster-capture",
+  "muster-diagnose",
+  "muster-go",
+  "muster-go-backlog",
+  "muster-init",
+  "muster-plan",
+  "muster-plan-backlog",
+  "muster-runner",
+  "run",
+  "sprint",
+]);
 
 function sortedUnique(values) {
   return [...new Set(values)].sort();
@@ -80,8 +98,17 @@ export function compareMcpContracts(before, after) {
   const failures = [];
   if (!before || !after) failures.push("missing-runtime-snapshot");
   if (before?.protocolVersion !== after?.protocolVersion) failures.push("initialize-protocol-changed");
+  if (before?.protocolVersion !== MCP_PROTOCOL_VERSION || after?.protocolVersion !== MCP_PROTOCOL_VERSION) {
+    failures.push("unsupported-initialize-protocol");
+  }
   if (JSON.stringify(sortedUnique(before?.toolNames || [])) !== JSON.stringify(sortedUnique(after?.toolNames || []))) {
     failures.push("tools-list-changed");
+  }
+  if (before?.toolNames?.length !== CODEX_COUNTS.mcpTools || after?.toolNames?.length !== CODEX_COUNTS.mcpTools) {
+    failures.push("unexpected-tool-count");
+  }
+  if (!before?.toolNames?.includes("muster_detect") || !after?.toolNames?.includes("muster_detect")) {
+    failures.push("muster-detect-tool-missing");
   }
   if (before?.representativeCall?.name !== after?.representativeCall?.name) failures.push("representative-tool-changed");
   if (before?.representativeCall?.ok !== true || after?.representativeCall?.ok !== true) failures.push("representative-call-failed");
@@ -90,6 +117,11 @@ export function compareMcpContracts(before, after) {
     !== JSON.stringify(sortedUnique(after?.representativeCall?.resultShape || []))
   ) {
     failures.push("representative-result-shape-changed");
+  }
+  if ([before, after].some(snapshot => REQUIRED_DETECT_FIELDS.some(
+    field => !snapshot?.representativeCall?.resultShape?.includes(field)
+  ))) {
+    failures.push("representative-result-shape-invalid");
   }
   if (failures.length) {
     return { status: "FAIL", reason: "mcp-contract-changed-across-rebuild", failures };
@@ -111,7 +143,7 @@ export function evaluateConnectionReuse() {
   };
 }
 
-async function expectedSkills(pluginRoot) {
+async function generatedSkillNames(pluginRoot) {
   const skillsRoot = join(pluginRoot, "skills");
   const dirs = (await readdir(skillsRoot, { withFileTypes: true }))
     .filter(entry => entry.isDirectory())
@@ -121,8 +153,36 @@ async function expectedSkills(pluginRoot) {
     const text = await readFile(join(skillsRoot, dir, "SKILL.md"), "utf8");
     const name = text.match(/^name:\s*(.+?)\s*$/m)?.[1];
     if (!name) throw new Error(`generated skill ${dir} has no frontmatter name`);
-    return { name, locator: `/skills/${dir}/SKILL.md` };
+    return name;
   }));
+}
+
+export function validateGeneratedSkillInventory(observedNames = []) {
+  const observed = sortedUnique(observedNames);
+  const expected = sortedUnique(CODEX_0146_PUBLIC_SKILLS);
+  const missing = expected.filter(name => !observed.includes(name));
+  const unexpected = observed.filter(name => !expected.includes(name));
+  if (
+    expected.length !== CODEX_COUNTS.publicSkills
+    || observed.length !== CODEX_COUNTS.publicSkills
+    || missing.length
+    || unexpected.length
+  ) {
+    return {
+      status: "FAIL",
+      reason: "generated-public-skill-inventory-mismatch",
+      expectedCount: CODEX_COUNTS.publicSkills,
+      observedCount: observed.length,
+      missing,
+      unexpected,
+    };
+  }
+  return {
+    status: "PASS",
+    reason: "generated-public-skill-inventory-matches-canonical-contract",
+    expectedCount: CODEX_COUNTS.publicSkills,
+    observedCount: observed.length,
+  };
 }
 
 async function mcpSnapshot(entrypoint, cwd) {
@@ -232,9 +292,15 @@ export async function runCompatibilityProbe({ root = defaultRoot, catalogEvidenc
   const evidence = catalogEvidencePath
     ? JSON.parse(await readFile(resolve(catalogEvidencePath), "utf8"))
     : undefined;
+  const observedSkills = await generatedSkillNames(after.pluginRoot);
+  const canonicalExpectedSkills = CODEX_0146_PUBLIC_SKILLS.map(name => ({
+    name,
+    locator: `/skills/${name}/SKILL.md`,
+  }));
   const results = {
+    generatedSkillInventory: validateGeneratedSkillInventory(observedSkills),
     skillCatalog: evaluateSkillCatalogEvidence({
-      expectedSkills: await expectedSkills(after.pluginRoot),
+      expectedSkills: canonicalExpectedSkills,
       evidence,
     }),
     mcpContract: compareMcpContracts(before.snapshot, after.snapshot),

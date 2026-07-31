@@ -897,26 +897,44 @@ function validateHookManifest(manifest, dir, manifestPath) {
 function validateThreadLimitManifest(manifest, manifestPath, expectedConfigPath) {
   const currentKeys = Object.keys(REQUIRED_CODEX_THREAD_LIMITS);
   const legacyKeys = ["max_threads", "max_depth"];
+  const receiptInteger = value => typeof value === "string"
+    && /^[1-9]\d*$/.test(value)
+    && BigInt(value) > BigInt(Number.MAX_SAFE_INTEGER)
+    ? BigInt(value)
+    : Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+  const sameReceiptInteger = (left, right) => {
+    const leftExact = receiptInteger(left);
+    const rightExact = receiptInteger(right);
+    return leftExact !== null && rightExact !== null && leftExact === rightExact;
+  };
   const schemaFor = value => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     const keys = Object.keys(value).sort();
     const exact = schema => keys.length === schema.length
       && keys.every((key, index) => key === [...schema].sort()[index]);
     const schema = exact(currentKeys) ? "current" : exact(legacyKeys) ? "legacy" : null;
-    return schema && Object.values(value).every(
-      item => item === null || (Number.isInteger(item) && item >= 0),
-    ) ? schema : null;
+    return schema && Object.values(value).every(item => item === null || receiptInteger(item) !== null)
+      ? schema
+      : null;
   };
   const beforeSchema = schemaFor(manifest?.before);
   const installedSchema = schemaFor(manifest?.installed);
+  const legacyInstalledValue = (before, floor) => {
+    const exact = receiptInteger(before) ?? 0n;
+    return exact > BigInt(floor) ? exact : BigInt(floor);
+  };
   const validLegacyReceipt = beforeSchema !== "legacy" || (
-    manifest.installed.max_threads === Math.max(manifest.before.max_threads ?? 0, 12)
-    && manifest.installed.max_depth === Math.max(manifest.before.max_depth ?? 0, 2)
+    receiptInteger(manifest.installed.max_threads) === legacyInstalledValue(manifest.before.max_threads, 12)
+    && receiptInteger(manifest.installed.max_depth) === legacyInstalledValue(manifest.before.max_depth, 2)
   );
   const validCurrentReceipt = beforeSchema !== "current" || (
     (manifest.before.max_concurrent_threads_per_session === null
-      || manifest.before.max_concurrent_threads_per_session > 0)
-    && manifest.installed.max_concurrent_threads_per_session > 0
+      || (receiptInteger(manifest.before.max_concurrent_threads_per_session) > 0n
+        && sameReceiptInteger(
+          manifest.before.max_concurrent_threads_per_session,
+          manifest.installed.max_concurrent_threads_per_session,
+        )))
+    && receiptInteger(manifest.installed.max_concurrent_threads_per_session) > 0n
   );
   if (manifest?.owner !== "muster" || manifest.format !== 1 || manifest.configPath !== expectedConfigPath
     || typeof manifest.configCreated !== "boolean" || typeof manifest.sectionCreated !== "boolean"
@@ -1490,10 +1508,11 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           const installed = previousManifest && !legacyManifest && currentCanonicalValue !== null
             ? previousManifest.installed
             : threadLimits.installed;
-          const sectionCreated = previousManifest && !legacyManifest
+          const ownershipRebased = previousManifest && !legacyManifest && currentCanonicalValue === null;
+          const sectionCreated = previousManifest && !legacyManifest && !ownershipRebased
             ? previousManifest.sectionCreated
             : threadLimits.sectionCreated;
-          const configCreated = previousManifest
+          const configCreated = previousManifest && !ownershipRebased
             ? previousManifest.configCreated
             : !(scope === "user" ? declarationConfigExists : configExistedBefore);
           await snapshot(originals, changed, threadLimitConfigPath);

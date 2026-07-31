@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -156,6 +156,32 @@ test("Codex install rejects impossible legacy ownership values", async t => {
   assert.equal(await readFile(configPath, "utf8"), "[agents]\nmax_threads = 4\nmax_depth = 1\n");
 });
 
+test("Codex install rejects a current receipt that claims Muster overwrote an existing ceiling", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-canonical-thread-current-forged-"));
+  t.after(() => import("node:fs/promises").then(fs => fs.rm(tmp, { recursive: true, force: true })));
+  const cwd = join(tmp, "project");
+  const home = join(tmp, "home");
+  const codexHome = join(home, ".codex");
+  const configPath = join(codexHome, "config.toml");
+  await mkdir(join(codexHome, "muster"), { recursive: true });
+  await writeFile(configPath, "[agents]\nmax_concurrent_threads_per_session = 4\n");
+  await writeFile(codexThreadLimitManifestPath(codexHome), JSON.stringify({
+    format: 1,
+    owner: "muster",
+    configPath,
+    before: { max_concurrent_threads_per_session: 3 },
+    installed: { max_concurrent_threads_per_session: 4 },
+    sectionCreated: false,
+    configCreated: false,
+  }));
+
+  await assert.rejects(
+    runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex }),
+    /thread-limit manifest conflict/,
+  );
+  assert.equal(await readFile(configPath, "utf8"), "[agents]\nmax_concurrent_threads_per_session = 4\n");
+});
+
 test("Codex reinstall does not rebind ownership to a later positive user edit", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-canonical-thread-drift-"));
   t.after(() => import("node:fs/promises").then(fs => fs.rm(tmp, { recursive: true, force: true })));
@@ -169,6 +195,21 @@ test("Codex reinstall does not rebind ownership to a later positive user edit", 
   await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
   await runCodexUninstall({ cwd, home, execFile: absentCodex });
   assert.equal(await readFile(configPath, "utf8"), "[agents]\nmax_concurrent_threads_per_session = 4\n");
+});
+
+test("Codex reinstall and uninstall preserve an unsafe canonical ceiling exactly", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-canonical-thread-unsafe-"));
+  t.after(() => import("node:fs/promises").then(fs => fs.rm(tmp, { recursive: true, force: true })));
+  const cwd = join(tmp, "project");
+  const home = join(tmp, "home");
+  const configPath = join(home, ".codex", "config.toml");
+  const exact = "9007199254740993";
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(configPath, `[agents]\nmax_concurrent_threads_per_session = ${exact}\n`);
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await runCodexUninstall({ cwd, home, execFile: absentCodex });
+  assert.equal(await readFile(configPath, "utf8"), `[agents]\nmax_concurrent_threads_per_session = ${exact}\n`);
 });
 
 test("Codex reinstall rebases ownership after the user deletes the canonical ceiling", async t => {
@@ -185,6 +226,36 @@ test("Codex reinstall rebases ownership after the user deletes the canonical cei
   await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
   await runCodexUninstall({ cwd, home, execFile: absentCodex });
   assert.equal(await readFile(configPath, "utf8"), "[agents]\n");
+});
+
+test("Codex reinstall rebases created substrate after the user deletes the whole agents table", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-canonical-thread-table-deleted-"));
+  t.after(() => import("node:fs/promises").then(fs => fs.rm(tmp, { recursive: true, force: true })));
+  const cwd = join(tmp, "project");
+  const home = join(tmp, "home");
+  const configPath = join(home, ".codex", "config.toml");
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(configPath, "[agents]\nmax_concurrent_threads_per_session = 3\n");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await writeFile(configPath, "model = \"gpt\"\n");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await runCodexUninstall({ cwd, home, execFile: absentCodex });
+  assert.equal(await readFile(configPath, "utf8"), "model = \"gpt\"\n");
+});
+
+test("Codex reinstall rebases created substrate after the user deletes config.toml", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-canonical-thread-file-deleted-"));
+  t.after(() => import("node:fs/promises").then(fs => fs.rm(tmp, { recursive: true, force: true })));
+  const cwd = join(tmp, "project");
+  const home = join(tmp, "home");
+  const configPath = join(home, ".codex", "config.toml");
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(configPath, "[agents]\nmax_concurrent_threads_per_session = 3\n");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await rm(configPath);
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await runCodexUninstall({ cwd, home, execFile: absentCodex });
+  await assert.rejects(readFile(configPath, "utf8"), { code: "ENOENT" });
 });
 
 test("Codex wave scheduling cannot exceed the canonical session ceiling", () => {

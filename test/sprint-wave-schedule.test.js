@@ -92,6 +92,28 @@ test("sprint-waves CLI accepts the effective higher-precedence Codex ceiling exp
   }
 });
 
+test("sprint-waves CLI does not read CODEX_HOME config when the ceiling is explicit", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-wave-explicit-no-config-read-"));
+  try {
+    const codexHome = join(dir, "codex-home");
+    await mkdir(join(codexHome, "config.toml"), { recursive: true });
+    await writeFile(join(dir, "backlog.md"), backlog);
+    const { stdout } = await pexecFile(process.execPath, [
+      cli,
+      "sprint-waves",
+      "backlog.md",
+      "--max-concurrent-threads-per-session",
+      "3",
+    ], {
+      cwd: dir,
+      env: { ...process.env, CODEX_HOME: codexHome, MUSTER_SPRINT_PARALLEL: "9" },
+    });
+    assert.equal(JSON.parse(stdout).schedule.buildReview.maxConcurrency, 3);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("schedule preserves a named sequential degradation without changing dependency or integration order", () => {
   const result = computeSprintWaves(backlog);
 

@@ -36,6 +36,32 @@ test("Codex thread limits: existing canonical values are preserved byte-identica
   }
 });
 
+test("Codex thread limits: escaped quoted keys are decoded before canonical mutation", () => {
+  const escaped = "[\"ag\\u0065nts\"]\n\"max_concurrent_threads_per_sessi\\u006fn\" = 3\n";
+  assert.equal(ensureCodexThreadLimits(escaped).text, escaped);
+  assert.throws(
+    () => ensureCodexThreadLimits(
+      "[agents]\nmax_concurrent_threads_per_session = 3\n\"max_concurrent_threads_per_sessi\\u006fn\" = 4\n",
+    ),
+    /duplicate \[agents\] max_concurrent_threads_per_session key/,
+  );
+});
+
+test("Codex thread limits: unsafe integers retain exact identity in JSON-serializable records", () => {
+  const exact = "9007199254740993";
+  const installed = ensureCodexThreadLimits(`[agents]\nmax_concurrent_threads_per_session = ${exact}\n`);
+  assert.deepEqual(installed.before, { max_concurrent_threads_per_session: exact });
+  assert.deepEqual(installed.installed, { max_concurrent_threads_per_session: exact });
+  assert.doesNotThrow(() => JSON.stringify(installed));
+  assert.equal(
+    restoreCodexThreadLimits(
+      "[agents]\nmax_concurrent_threads_per_session = 9007199254740992\n",
+      { ...installed, before: { max_concurrent_threads_per_session: null } },
+    ),
+    "[agents]\nmax_concurrent_threads_per_session = 9007199254740992\n",
+  );
+});
+
 test("Codex thread limits: an unowned legacy ceiling is copied, not removed or raised", () => {
   const input = "model = \"gpt\"\n\n[agents]\nmax_threads = 4 # user\nmax_depth = 1\n";
   const result = ensureCodexThreadLimits(input);

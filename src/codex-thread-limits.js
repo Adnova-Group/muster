@@ -17,15 +17,41 @@ export const codexThreadLimitManifestPath = codexHomeDir => join(codexHomeDir, "
 const CANONICAL_KEY = "max_concurrent_threads_per_session";
 const LEGACY_KEYS = Object.freeze(["max_threads", "max_depth"]);
 const PARSED_KEYS = Object.freeze([CANONICAL_KEY, ...LEGACY_KEYS]);
-const keyToken = key => `(?:"${key}"|'${key}'|${key})`;
-const AGENTS_TOKEN = keyToken("agents");
+const TOML_BASIC_KEY = String.raw`"(?:[^"\\]|\\(?:["\\btnfr]|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}))*"`;
+const TOML_LITERAL_KEY = String.raw`'[^']*'`;
+const TOML_BARE_KEY = String.raw`[A-Za-z0-9_-]+`;
+const TOML_KEY_TOKEN = `(?:${TOML_BASIC_KEY}|${TOML_LITERAL_KEY}|${TOML_BARE_KEY})`;
 const INTEGER_TOKEN = "(?:\\+?\\d(?:_?\\d)*|0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*|0o[0-7](?:_?[0-7])*|0b[01](?:_?[01])*)";
+const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+
+function decodeTomlKey(raw) {
+  if (raw.startsWith("'")) return raw.slice(1, -1);
+  if (!raw.startsWith('"')) return raw;
+  return raw.slice(1, -1).replace(
+    /\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)/g,
+    (_, escape) => {
+      if (escape[0] === "u" || escape[0] === "U") return String.fromCodePoint(Number.parseInt(escape.slice(1), 16));
+      return { '"': '"', "\\": "\\", b: "\b", t: "\t", n: "\n", f: "\f", r: "\r" }[escape];
+    },
+  );
+}
+
 const integerValue = raw => {
   const normalized = raw.replaceAll("_", "");
-  if (normalized.startsWith("0x")) return Number.parseInt(normalized.slice(2), 16);
-  if (normalized.startsWith("0o")) return Number.parseInt(normalized.slice(2), 8);
-  if (normalized.startsWith("0b")) return Number.parseInt(normalized.slice(2), 2);
-  return Number(normalized);
+  const exact = BigInt(normalized);
+  return exact <= MAX_SAFE_BIGINT ? Number(exact) : exact.toString();
+};
+const integerBigInt = value => typeof value === "string" && /^\d+$/.test(value)
+  ? BigInt(value)
+  : Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+const positiveInteger = value => {
+  const exact = integerBigInt(value);
+  return exact !== null && exact > 0n;
+};
+const sameInteger = (left, right) => {
+  const leftExact = integerBigInt(left);
+  const rightExact = integerBigInt(right);
+  return leftExact !== null && rightExact !== null && leftExact === rightExact;
 };
 
 function parseAgentsSection(text) {
@@ -44,59 +70,75 @@ function parseAgentsSection(text) {
       end = index;
       break;
     }
-    if (new RegExp(`^\\s*${AGENTS_TOKEN}\\s*$`).test(section[1])) start = index;
+    const headerKey = section[1].trim();
+    if (new RegExp(`^${TOML_KEY_TOKEN}$`).test(headerKey) && decodeTomlKey(headerKey) === "agents") start = index;
   }
   const values = {};
   let dottedEnd = -1;
   let inlineAgents = false;
-  const record = (key, candidate, index, { inline = false } = {}) => {
+  const record = (key, raw, index, prefix, suffix, { inline = false } = {}) => {
     if (Object.hasOwn(values, key)) throw new Error(`Codex config.toml has a duplicate [agents] ${key} key`);
     values[key] = {
-      value: integerValue(candidate[2]),
+      value: integerValue(raw),
       index,
-      prefix: candidate[1],
-      suffix: candidate[3],
+      prefix,
+      suffix,
       inline,
     };
   };
   for (let index = 0; index < firstSection; index++) {
-    const inline = lines[index].match(new RegExp(`^\\s*${AGENTS_TOKEN}\\s*=\\s*\\{(.*)\\}\\s*(?:#.*)?$`));
+    const inline = lines[index].match(new RegExp(`^\\s*(${TOML_KEY_TOKEN})\\s*=\\s*\\{(.*)\\}\\s*(?:#.*)?$`));
+    if (inline && decodeTomlKey(inline[1]) !== "agents") continue;
     if (inline) {
       inlineAgents = true;
-      for (const key of PARSED_KEYS) {
-        const token = keyToken(key);
-        const matches = [...inline[1].matchAll(new RegExp(`(?:^|,)\\s*(${token}\\s*=\\s*)(${INTEGER_TOKEN})(\\s*)(?=,|$)`, "g"))];
-        if (matches.length > 1) throw new Error(`Codex config.toml has a duplicate [agents] ${key} key`);
-        if (matches.length === 1) record(key, matches[0], index, { inline: true });
-        else if (new RegExp(`(?:^|,)\\s*${token}\\s*=`).test(inline[1])) {
+      const validKeys = new Set();
+      for (const match of inline[2].matchAll(
+        new RegExp(`(?:^|,)\\s*((${TOML_KEY_TOKEN})\\s*=\\s*)(${INTEGER_TOKEN})(\\s*)(?=,|$)`, "g"),
+      )) {
+        const key = decodeTomlKey(match[2]);
+        if (!PARSED_KEYS.includes(key)) continue;
+        record(key, match[3], index, match[1], match[4], { inline: true });
+        validKeys.add(key);
+      }
+      for (const match of inline[2].matchAll(new RegExp(`(?:^|,)\\s*(${TOML_KEY_TOKEN})\\s*=`, "g"))) {
+        const key = decodeTomlKey(match[1]);
+        if (PARSED_KEYS.includes(key) && !validKeys.has(key)) {
           throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
         }
       }
       continue;
     }
-    for (const key of PARSED_KEYS) {
-      const prefix = `${AGENTS_TOKEN}\\s*\\.\\s*${keyToken(key)}`;
-      const candidate = lines[index].match(
-        new RegExp(`^(\\s*${prefix}\\s*=\\s*)(${INTEGER_TOKEN})(\\s*(?:#.*)?)$`),
-      );
-      if (candidate) {
-        record(key, candidate, index);
+    const dotted = lines[index].match(
+      new RegExp(`^(\\s*(${TOML_KEY_TOKEN})\\s*\\.\\s*(${TOML_KEY_TOKEN})\\s*=\\s*)(${INTEGER_TOKEN})(\\s*(?:#.*)?)$`),
+    );
+    const dottedAssignment = lines[index].match(
+      new RegExp(`^\\s*(${TOML_KEY_TOKEN})\\s*\\.\\s*(${TOML_KEY_TOKEN})\\s*=`),
+    );
+    if (dotted && decodeTomlKey(dotted[2]) === "agents") {
+      const key = decodeTomlKey(dotted[3]);
+      if (PARSED_KEYS.includes(key)) {
+        record(key, dotted[4], index, dotted[1], dotted[5]);
         dottedEnd = Math.max(dottedEnd, index + 1);
-      } else if (new RegExp(`^\\s*${prefix}\\s*=`).test(lines[index])) {
+      }
+    } else if (dottedAssignment && decodeTomlKey(dottedAssignment[1]) === "agents") {
+      const key = decodeTomlKey(dottedAssignment[2]);
+      if (PARSED_KEYS.includes(key)) {
         throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
       }
     }
   }
   if (start >= 0) {
     for (let index = start + 1; index < end; index++) {
-      for (const key of PARSED_KEYS) {
-        const token = keyToken(key);
-        const candidate = lines[index].match(
-          new RegExp(`^(\\s*${token}\\s*=\\s*)(${INTEGER_TOKEN})(\\s*(?:#.*)?)$`),
-        );
-        if (candidate) {
-          record(key, candidate, index);
-        } else if (new RegExp(`^\\s*${token}\\s*=`).test(lines[index])) {
+      const candidate = lines[index].match(
+        new RegExp(`^(\\s*(${TOML_KEY_TOKEN})\\s*=\\s*)(${INTEGER_TOKEN})(\\s*(?:#.*)?)$`),
+      );
+      const assignment = lines[index].match(new RegExp(`^\\s*(${TOML_KEY_TOKEN})\\s*=`));
+      if (candidate) {
+        const key = decodeTomlKey(candidate[2]);
+        if (PARSED_KEYS.includes(key)) record(key, candidate[3], index, candidate[1], candidate[4]);
+      } else if (assignment) {
+        const key = decodeTomlKey(assignment[1]);
+        if (PARSED_KEYS.includes(key)) {
           throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
         }
       }
@@ -113,7 +155,7 @@ export function readCodexThreadLimits(text) {
 }
 
 export function codexThreadLimitsMeetFloor(limits) {
-  return Number.isInteger(limits?.[CANONICAL_KEY]) && limits[CANONICAL_KEY] > 0;
+  return positiveInteger(limits?.[CANONICAL_KEY]);
 }
 
 export function resolveCodexThreadCeiling(text) {
@@ -121,7 +163,7 @@ export function resolveCodexThreadCeiling(text) {
   const value = state.values[CANONICAL_KEY]?.value
     ?? state.values.max_threads?.value
     ?? DEFAULT_CODEX_THREAD_LIMITS[CANONICAL_KEY];
-  if (!Number.isInteger(value) || value < 1) {
+  if (!positiveInteger(value)) {
     throw new Error(`Codex config.toml [agents] ${CANONICAL_KEY} must be a positive integer`);
   }
   return value;
@@ -136,7 +178,7 @@ export function ensureCodexThreadLimits(text) {
   const installedValue = existing?.value
     ?? state.values.max_threads?.value
     ?? DEFAULT_CODEX_THREAD_LIMITS[CANONICAL_KEY];
-  if (installedValue < 1) {
+  if (!positiveInteger(installedValue)) {
     throw new Error(`Codex config.toml [agents] ${CANONICAL_KEY} must be a positive integer`);
   }
   if (!existing && state.inlineAgents) {
@@ -177,15 +219,15 @@ export function restoreCodexThreadLimits(text, record) {
   const keys = Object.keys(record?.installed || {}).filter(key => PARSED_KEYS.includes(key));
   for (const key of keys) {
     const current = state.values[key];
-    if (!current || current.value !== record.installed[key]) continue;
-    if (current.inline || record.before?.[key] === record.installed[key]) continue;
+    if (!current || !sameInteger(current.value, record.installed[key])) continue;
+    if (current.inline || sameInteger(record.before?.[key], record.installed[key])) continue;
     if (record.before?.[key] === null) {
       state.lines.splice(current.index, 1);
       delete state.values[key];
       for (const value of Object.values(state.values)) {
         if (value.index > current.index) value.index--;
       }
-    } else if (Number.isInteger(record.before?.[key])) {
+    } else if (integerBigInt(record.before?.[key]) !== null) {
       state.lines[current.index] = `${current.prefix}${record.before[key]}${current.suffix}`;
     }
   }

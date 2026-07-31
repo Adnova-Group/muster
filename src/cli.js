@@ -581,23 +581,30 @@ async function main() {
         fail(`sprint-waves <backlog.md>: ${file} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
       }
       const content = await readFile(canonical, "utf8");
-      const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
-      let threadConfigText = "";
-      try {
-        threadConfigText = await readFile(codexThreadLimitConfigPath(waveCodexHome), "utf8");
-      } catch (error) {
-        if (error.code !== "ENOENT") throw error;
-      }
       const ceilingFlag = "--max-concurrent-threads-per-session";
       const explicitCeiling = flagValue(rest, ceilingFlag);
       if (rest.includes(ceilingFlag) && !/^[1-9]\d*$/.test(explicitCeiling || "")) {
         fail(`sprint-waves <backlog.md>: ${ceilingFlag} must be a positive integer`);
       }
+      let threadConfigText = "";
+      if (explicitCeiling === undefined) {
+        const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+        try {
+          threadConfigText = await readFile(codexThreadLimitConfigPath(waveCodexHome), "utf8");
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+      }
+      const explicitCeilingValue = explicitCeiling === undefined
+        ? undefined
+        : BigInt(explicitCeiling) <= BigInt(Number.MAX_SAFE_INTEGER)
+          ? Number(explicitCeiling)
+          : explicitCeiling;
       const r = computeSprintWaves(content, {
         parallelLimit: process.env.MUSTER_SPRINT_PARALLEL,
-        maxConcurrentThreadsPerSession: explicitCeiling === undefined
+        maxConcurrentThreadsPerSession: explicitCeilingValue === undefined
           ? resolveCodexThreadCeiling(threadConfigText)
-          : Number(explicitCeiling),
+          : explicitCeilingValue,
       });
       out(r);
       if (!r.ok) process.exit(2);

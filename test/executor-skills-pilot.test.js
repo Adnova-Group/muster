@@ -119,6 +119,27 @@ test("fixture rejects traversal, symlink escapes, and reads beyond its byte boun
   );
 });
 
+test("fixture reads only SKILL.md and allowlisted skill resource directories", async () => {
+  const capabilityRoot = await buildPackage();
+  await writeFile(
+    join(capabilityRoot, "skills", "explicit-skill", "private.txt"),
+    "private",
+  );
+  const fixture = await createExecutorSkillsFixture({
+    capabilityRoot,
+    explicitSkills: ["explicit-skill"],
+  });
+
+  await assert.rejects(
+    fixture.read({ skill: "explicit-skill", path: "private.txt" }),
+    /SKILL\.md or under references\/, scripts\/, or assets\//,
+  );
+  await assert.rejects(
+    fixture.read({ skill: "explicit-skill", path: "references" }),
+    /SKILL\.md or under references\/, scripts\/, or assets\//,
+  );
+});
+
 test("production activation requires authority demonstrated by the same active host and capability root", async () => {
   const capabilityRoot = await buildPackage();
   const callerFabricatedAuthority = {

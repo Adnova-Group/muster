@@ -71,6 +71,17 @@ function assertSkillId(id) {
   return id;
 }
 
+function assertAllowedResourcePath(relativePath) {
+  if (relativePath === "SKILL.md") return relativePath;
+  const [directory, ...rest] = relativePath.split("/");
+  if (!["references", "scripts", "assets"].includes(directory) || rest.length === 0) {
+    throw new Error(
+      "executor skill resource path must be SKILL.md or under references/, scripts/, or assets/",
+    );
+  }
+  return relativePath;
+}
+
 async function resolveCapabilityRoot(capabilityRoot) {
   const root = await realpath(capabilityRoot);
   const skillsRoot = await resolveContainedRealpath(root, join(root, "skills"));
@@ -256,7 +267,7 @@ export async function createExecutorSkillsFixture({
     },
     async read({ skill, path } = {}) {
       assertSkillId(skill);
-      const relativePath = safeRelativePath(path);
+      const relativePath = assertAllowedResourcePath(safeRelativePath(path));
       const selected = (await currentInventory()).find(candidate => candidate.id === skill);
       if (!selected) throw new Error(`executor skill is unavailable: ${skill}`);
       return readContainedText({

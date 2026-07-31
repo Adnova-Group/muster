@@ -19,7 +19,14 @@ const LEGACY_KEYS = Object.freeze(["max_threads", "max_depth"]);
 const PARSED_KEYS = Object.freeze([CANONICAL_KEY, ...LEGACY_KEYS]);
 const keyToken = key => `(?:"${key}"|'${key}'|${key})`;
 const AGENTS_TOKEN = keyToken("agents");
-const integerValue = raw => Number(raw.replaceAll("_", ""));
+const INTEGER_TOKEN = "(?:\\+?\\d(?:_?\\d)*|0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*|0o[0-7](?:_?[0-7])*|0b[01](?:_?[01])*)";
+const integerValue = raw => {
+  const normalized = raw.replaceAll("_", "");
+  if (normalized.startsWith("0x")) return Number.parseInt(normalized.slice(2), 16);
+  if (normalized.startsWith("0o")) return Number.parseInt(normalized.slice(2), 8);
+  if (normalized.startsWith("0b")) return Number.parseInt(normalized.slice(2), 2);
+  return Number(normalized);
+};
 
 function parseAgentsSection(text) {
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
@@ -41,20 +48,36 @@ function parseAgentsSection(text) {
   }
   const values = {};
   let dottedEnd = -1;
-  const record = (key, candidate, index) => {
+  let inlineAgents = false;
+  const record = (key, candidate, index, { inline = false } = {}) => {
     if (Object.hasOwn(values, key)) throw new Error(`Codex config.toml has a duplicate [agents] ${key} key`);
     values[key] = {
       value: integerValue(candidate[2]),
       index,
       prefix: candidate[1],
       suffix: candidate[3],
+      inline,
     };
   };
   for (let index = 0; index < firstSection; index++) {
+    const inline = lines[index].match(new RegExp(`^\\s*${AGENTS_TOKEN}\\s*=\\s*\\{(.*)\\}\\s*(?:#.*)?$`));
+    if (inline) {
+      inlineAgents = true;
+      for (const key of PARSED_KEYS) {
+        const token = keyToken(key);
+        const matches = [...inline[1].matchAll(new RegExp(`(?:^|,)\\s*(${token}\\s*=\\s*)(${INTEGER_TOKEN})(\\s*)(?=,|$)`, "g"))];
+        if (matches.length > 1) throw new Error(`Codex config.toml has a duplicate [agents] ${key} key`);
+        if (matches.length === 1) record(key, matches[0], index, { inline: true });
+        else if (new RegExp(`(?:^|,)\\s*${token}\\s*=`).test(inline[1])) {
+          throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
+        }
+      }
+      continue;
+    }
     for (const key of PARSED_KEYS) {
       const prefix = `${AGENTS_TOKEN}\\s*\\.\\s*${keyToken(key)}`;
       const candidate = lines[index].match(
-        new RegExp(`^(\\s*${prefix}\\s*=\\s*)(\\d(?:_?\\d)*)(\\s*(?:#.*)?)$`),
+        new RegExp(`^(\\s*${prefix}\\s*=\\s*)(${INTEGER_TOKEN})(\\s*(?:#.*)?)$`),
       );
       if (candidate) {
         record(key, candidate, index);
@@ -69,7 +92,7 @@ function parseAgentsSection(text) {
       for (const key of PARSED_KEYS) {
         const token = keyToken(key);
         const candidate = lines[index].match(
-          new RegExp(`^(\\s*${token}\\s*=\\s*)(\\d(?:_?\\d)*)(\\s*(?:#.*)?)$`),
+          new RegExp(`^(\\s*${token}\\s*=\\s*)(${INTEGER_TOKEN})(\\s*(?:#.*)?)$`),
         );
         if (candidate) {
           record(key, candidate, index);
@@ -79,7 +102,7 @@ function parseAgentsSection(text) {
       }
     }
   }
-  return { lines, newline, finalNewline, start, end, dottedEnd, values };
+  return { lines, newline, finalNewline, start, end, dottedEnd, inlineAgents, values };
 }
 
 const render = state => state.lines.join(state.newline) + (state.finalNewline || state.lines.length ? state.newline : "");
@@ -108,13 +131,16 @@ export function resolveCodexThreadCeiling(text) {
 // Otherwise an unowned legacy ceiling is copied without deleting or raising it.
 export function ensureCodexThreadLimits(text) {
   const state = parseAgentsSection(text);
-  const sectionCreated = state.start < 0 && state.dottedEnd < 0;
+  const sectionCreated = state.start < 0 && state.dottedEnd < 0 && !state.inlineAgents;
   const existing = state.values[CANONICAL_KEY];
   const installedValue = existing?.value
     ?? state.values.max_threads?.value
     ?? DEFAULT_CODEX_THREAD_LIMITS[CANONICAL_KEY];
   if (installedValue < 1) {
     throw new Error(`Codex config.toml [agents] ${CANONICAL_KEY} must be a positive integer`);
+  }
+  if (!existing && state.inlineAgents) {
+    throw new Error(`Codex config.toml uses an inline [agents] table without ${CANONICAL_KEY}; convert it to a standard [agents] table before installation`);
   }
   if (sectionCreated) {
     if (state.lines.every(line => !line.trim())) state.lines.length = 0;
@@ -152,6 +178,7 @@ export function restoreCodexThreadLimits(text, record) {
   for (const key of keys) {
     const current = state.values[key];
     if (!current || current.value !== record.installed[key]) continue;
+    if (current.inline || record.before?.[key] === record.installed[key]) continue;
     if (record.before?.[key] === null) {
       state.lines.splice(current.index, 1);
       delete state.values[key];

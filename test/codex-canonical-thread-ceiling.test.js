@@ -28,6 +28,16 @@ test("Codex 0.146 install preserves a canonical user ceiling and defaults only w
   assert.equal(ensureCodexThreadLimits(userConfig).text, userConfig);
   const alternateSyntax = "[\"agents\"]\n\"max_concurrent_threads_per_session\" = 3_0 # user\n";
   assert.equal(ensureCodexThreadLimits(alternateSyntax).text, alternateSyntax);
+  for (const alternateInteger of ["+3", "0x0c"]) {
+    const config = `[agents]\nmax_concurrent_threads_per_session = ${alternateInteger}\n`;
+    assert.equal(ensureCodexThreadLimits(config).text, config);
+  }
+  const inline = "agents = { max_concurrent_threads_per_session = 3, max_depth = 1 }\n";
+  assert.equal(ensureCodexThreadLimits(inline).text, inline);
+  assert.throws(
+    () => ensureCodexThreadLimits("agents = { max_threads = 3 }\n"),
+    /inline \[agents\] table/,
+  );
 });
 
 test("Codex 0.146 migration copies but does not clean an unowned legacy ceiling", () => {
@@ -144,6 +154,21 @@ test("Codex install rejects impossible legacy ownership values", async t => {
     /thread-limit manifest conflict/,
   );
   assert.equal(await readFile(configPath, "utf8"), "[agents]\nmax_threads = 4\nmax_depth = 1\n");
+});
+
+test("Codex reinstall does not rebind ownership to a later positive user edit", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-canonical-thread-drift-"));
+  t.after(() => import("node:fs/promises").then(fs => fs.rm(tmp, { recursive: true, force: true })));
+  const cwd = join(tmp, "project");
+  const home = join(tmp, "home");
+  const configPath = join(home, ".codex", "config.toml");
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(configPath, "[agents]\nmax_concurrent_threads_per_session = 3\n");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await writeFile(configPath, "[agents]\nmax_concurrent_threads_per_session = 4\n");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await runCodexUninstall({ cwd, home, execFile: absentCodex });
+  assert.equal(await readFile(configPath, "utf8"), "[agents]\nmax_concurrent_threads_per_session = 4\n");
 });
 
 test("Codex wave scheduling cannot exceed the canonical session ceiling", () => {

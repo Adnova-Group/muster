@@ -1480,6 +1480,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           // never fully restore it. Mirrors prepareHooks' identical
           // `previous?.hookConfigCreated ?? !configExists` guard above.
           const before = previousManifest && !legacyManifest ? previousManifest.before : threadLimits.before;
+          const currentCanonicalValue = threadLimits.before.max_concurrent_threads_per_session;
+          const installed = previousManifest && !legacyManifest && currentCanonicalValue !== null
+            ? previousManifest.installed
+            : threadLimits.installed;
           const sectionCreated = previousManifest && !legacyManifest
             ? previousManifest.sectionCreated
             : threadLimits.sectionCreated;
@@ -1491,7 +1495,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           await snapshot(originals, changed, threadLimitManifestPath);
           await atomicWriteSafe(threadLimitManifestPath, JSON.stringify({
             format: 1, owner: "muster", configPath: threadLimitConfigPath,
-            before, installed: threadLimits.installed,
+            before, installed,
             sectionCreated, configCreated
           }, null, 2) + "\n");
         } catch (error) {

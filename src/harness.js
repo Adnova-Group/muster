@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { readJson, readdirSafe } from "./fs-util.js";
 import { readPluginInventory } from "./plugin-inventory.js";
 export { readCodexInventory } from "./codex-inventory.js";
@@ -33,7 +33,7 @@ export function readInstalledWork() {
 // Ordered candidate Claude config dirs for a platform. On Windows the MSIX-virtualized
 // path is the one the app actually reads, so it comes before the %APPDATA% fallback.
 export async function coworkConfigDirs(home, platform = process.platform) {
-  if (platform === "darwin") return [join(home, "Library/Application Support/Claude")];
+  if (platform === "darwin") return [posix.join(home, "Library/Application Support/Claude")];
   if (platform === "win32") {
     const dirs = [];
     const packages = join(home, "AppData/Local/Packages");
@@ -43,7 +43,7 @@ export async function coworkConfigDirs(home, platform = process.platform) {
     dirs.push(join(home, "AppData/Roaming/Claude"));
     return dirs;
   }
-  return [join(home, ".config/Claude")]; // linux (community builds) + fallback
+  return [posix.join(home, ".config/Claude")]; // linux (community builds) + fallback
 }
 
 // Read each Claude Extensions/<id>/manifest.json and return its declared name

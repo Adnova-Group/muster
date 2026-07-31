@@ -3,10 +3,11 @@
 // per file, mirroring the existing test-support/helpers.js convention.
 import { execFile as execFileCb, spawn } from "node:child_process";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { resolveCodexPlugin } from "../src/codex-release.js";
 
-export const repoRoot = new URL("../", import.meta.url).pathname;
+export const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 export const selectedPlugin = await resolveCodexPlugin(repoRoot);
 export const selectedPluginRoot = selectedPlugin.pluginRoot;
 export const execFile = promisify(execFileCb);

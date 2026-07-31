@@ -19,13 +19,13 @@ test("fixture matrix has at least 10 cases and covers all three requested lanes"
   );
 });
 
-test("fixture summary reports correctness and history pollution per lane", () => {
+test("fixture summary refuses to invent model correctness or history measurements", () => {
   const summary = summarizeFixtureCases(cases);
   assert.equal(summary.caseCount, 12);
-  assert.equal(summary.ephemeralFork.correctness, 1);
-  assert.equal(summary.freshContext.correctness, 1);
-  assert.equal(summary.ephemeralFork.historyPollutionTurns, 5);
-  assert.equal(summary.freshContext.historyPollutionTurns, 0);
+  assert.equal(summary.ephemeralFork.correctness, UNKNOWN);
+  assert.equal(summary.freshContext.correctness, UNKNOWN);
+  assert.equal(summary.ephemeralFork.historyPollutionTurns, UNKNOWN);
+  assert.equal(summary.freshContext.historyPollutionTurns, UNKNOWN);
   assert.equal(summary.ephemeralFork.inputTokens, UNKNOWN);
   assert.equal(summary.freshContext.inputTokens, UNKNOWN);
 });
@@ -47,8 +47,9 @@ test("paginateAll follows opaque cursors to exhaustion without inventing a page 
 
 test("adoption fails closed when model wall time or token metrics are UNKNOWN", () => {
   const decision = evaluateAdoption({
-    fixtureCorrectnessDelta: 0,
-    historyPollutionDeltaTurns: 4,
+    caseCount: 12,
+    fixtureCorrectnessDelta: UNKNOWN,
+    historyPollutionDeltaTurns: UNKNOWN,
     modelWallTimeReductionPct: UNKNOWN,
     modelInputTokenReductionPct: UNKNOWN,
     ephemeralPersistenceLeaks: 0
@@ -59,6 +60,7 @@ test("adoption fails closed when model wall time or token metrics are UNKNOWN", 
 
 test("adoption requires every threshold to pass", () => {
   const decision = evaluateAdoption({
+    caseCount: 12,
     fixtureCorrectnessDelta: 0,
     historyPollutionDeltaTurns: 0,
     modelWallTimeReductionPct: 20,
@@ -67,4 +69,17 @@ test("adoption requires every threshold to pass", () => {
   });
   assert.equal(decision.decision, "ADOPT");
   assert.deepEqual(decision.failed, []);
+});
+
+test("adoption enforces the published minimum-case threshold", () => {
+  const decision = evaluateAdoption({
+    caseCount: 9,
+    fixtureCorrectnessDelta: 0,
+    historyPollutionDeltaTurns: 0,
+    modelWallTimeReductionPct: 20,
+    modelInputTokenReductionPct: 15,
+    ephemeralPersistenceLeaks: 0
+  });
+  assert.equal(decision.decision, "REJECT");
+  assert.match(decision.failed.join("\n"), /representative case count/);
 });

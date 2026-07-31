@@ -1,14 +1,16 @@
 {
   "schema": "muster-codex-ephemeral-fork-benchmark/v1",
-  "generatedAt": "2026-07-31T05:08:23.561Z",
+  "generatedAt": "2026-07-31T05:14:36.168Z",
   "protocol": {
-    "caseSource": "deterministic fixtures",
+    "caseSource": "deterministic case definitions",
     "seedModelTurnsExecuted": 1,
     "representativeModelTurnsExecuted": 0,
     "fixtureCorrectnessIsNotModelCorrectness": true,
-    "hostUnobservableMetrics": [
+    "unmeasuredRepresentativeMetrics": [
       "modelWallTimeReductionPct",
-      "modelInputTokenReductionPct"
+      "modelInputTokenReductionPct",
+      "correctnessDelta",
+      "historyPollutionDeltaTurns"
     ],
     "comparison": "Codex app-server ephemeral thread/fork versus ephemeral thread/start control-plane calls"
   },
@@ -20,14 +22,14 @@
       "tournament"
     ],
     "ephemeralFork": {
-      "correctness": 1,
-      "historyPollutionTurns": 5,
+      "correctness": "UNKNOWN",
+      "historyPollutionTurns": "UNKNOWN",
       "inputTokens": "UNKNOWN",
       "modelWallTimeMs": "UNKNOWN"
     },
     "freshContext": {
-      "correctness": 1,
-      "historyPollutionTurns": 0,
+      "correctness": "UNKNOWN",
+      "historyPollutionTurns": "UNKNOWN",
       "inputTokens": "UNKNOWN",
       "modelWallTimeMs": "UNKNOWN"
     }
@@ -41,37 +43,37 @@
     },
     "forkControlPlaneWallTimeMs": {
       "samples": [
-        93.95,
-        107.095,
-        104.949,
-        252.312,
-        297.16,
-        642.178,
-        742.633,
-        872.111,
-        1055.414,
-        965.737,
-        1149.558,
-        2220.968
+        98.517,
+        117.114,
+        112.086,
+        223.027,
+        431.089,
+        572.813,
+        754.265,
+        1008.157,
+        1065.886,
+        1098.525,
+        1201.115,
+        2507.077
       ],
-      "mean": 708.672
+      "mean": 765.806
     },
     "freshControlPlaneWallTimeMs": {
       "samples": [
-        86.96,
-        100.214,
-        109.071,
-        219.142,
-        447.082,
-        488.473,
-        724.112,
-        901.659,
-        1001.086,
-        884.129,
-        1409.278,
-        1369.644
+        98.496,
+        109.347,
+        184.585,
+        215.747,
+        414.177,
+        584.069,
+        770.933,
+        892.053,
+        950.633,
+        948.888,
+        1448.094,
+        2045.026
       ],
-      "mean": 645.071
+      "mean": 721.837
     },
     "pagination": {
       "pageSize": 1,
@@ -82,8 +84,9 @@
     "ephemeralPersistenceLeaks": 0
   },
   "metrics": {
-    "fixtureCorrectnessDelta": 0,
-    "historyPollutionDeltaTurns": 5,
+    "caseCount": 12,
+    "fixtureCorrectnessDelta": "UNKNOWN",
+    "historyPollutionDeltaTurns": "UNKNOWN",
     "modelWallTimeReductionPct": "UNKNOWN",
     "modelInputTokenReductionPct": "UNKNOWN",
     "ephemeralPersistenceLeaks": 0
@@ -100,6 +103,11 @@
     "decision": "REJECT",
     "checks": [
       {
+        "name": "representative case count",
+        "value": 12,
+        "pass": true
+      },
+      {
         "name": "model wall-time reduction",
         "value": "UNKNOWN",
         "pass": false
@@ -111,12 +119,12 @@
       },
       {
         "name": "fixture correctness delta",
-        "value": 0,
-        "pass": true
+        "value": "UNKNOWN",
+        "pass": false
       },
       {
         "name": "history-pollution delta",
-        "value": 5,
+        "value": "UNKNOWN",
         "pass": false
       },
       {
@@ -128,7 +136,8 @@
     "failed": [
       "model wall-time reduction: UNKNOWN (threshold cannot pass)",
       "model input-token reduction: UNKNOWN (threshold cannot pass)",
-      "history-pollution delta: 5"
+      "fixture correctness delta: UNKNOWN (threshold cannot pass)",
+      "history-pollution delta: UNKNOWN (threshold cannot pass)"
     ]
   },
   "productionDependencyAdded": false

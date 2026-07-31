@@ -37,33 +37,22 @@ export function summarizeFixtureCases(cases) {
     throw new Error(`fixture benchmark must cover exactly ${requiredLanes.join(", ")}`);
   }
   for (const item of cases) {
-    if (!item.id || !item.expected || !item.forkOutput || !item.freshOutput) {
+    if (!item.id || !item.expected) {
       throw new Error(`fixture case is missing a required field: ${JSON.stringify(item)}`);
     }
-    if (!Number.isInteger(item.inheritedTurns) || !Number.isInteger(item.relevantInheritedTurns)) {
-      throw new Error(`fixture case ${item.id} must declare integer turn counts`);
-    }
-    if (item.relevantInheritedTurns > item.inheritedTurns) {
-      throw new Error(`fixture case ${item.id} has more relevant turns than inherited turns`);
-    }
   }
-  const correct = field => cases.filter(item => item[field] === item.expected).length / cases.length;
-  const pollution = cases.reduce(
-    (sum, item) => sum + (item.inheritedTurns - item.relevantInheritedTurns),
-    0
-  );
   return {
     caseCount: cases.length,
     lanes,
     ephemeralFork: {
-      correctness: correct("forkOutput"),
-      historyPollutionTurns: pollution,
+      correctness: UNKNOWN,
+      historyPollutionTurns: UNKNOWN,
       inputTokens: UNKNOWN,
       modelWallTimeMs: UNKNOWN
     },
     freshContext: {
-      correctness: correct("freshOutput"),
-      historyPollutionTurns: 0,
+      correctness: UNKNOWN,
+      historyPollutionTurns: UNKNOWN,
       inputTokens: UNKNOWN,
       modelWallTimeMs: UNKNOWN
     }
@@ -89,6 +78,12 @@ export async function paginateAll(fetchPage) {
 export function evaluateAdoption(metrics) {
   const checks = [
     {
+      name: "representative case count",
+      value: metrics.caseCount,
+      pass: Number.isInteger(metrics.caseCount) &&
+        metrics.caseCount >= ADOPTION_THRESHOLDS.minimumCases
+    },
+    {
       name: "model wall-time reduction",
       value: metrics.modelWallTimeReductionPct,
       pass: metrics.modelWallTimeReductionPct !== UNKNOWN &&
@@ -103,12 +98,14 @@ export function evaluateAdoption(metrics) {
     {
       name: "fixture correctness delta",
       value: metrics.fixtureCorrectnessDelta,
-      pass: metrics.fixtureCorrectnessDelta >= ADOPTION_THRESHOLDS.minimumCorrectnessDelta
+      pass: metrics.fixtureCorrectnessDelta !== UNKNOWN &&
+        metrics.fixtureCorrectnessDelta >= ADOPTION_THRESHOLDS.minimumCorrectnessDelta
     },
     {
       name: "history-pollution delta",
       value: metrics.historyPollutionDeltaTurns,
-      pass: metrics.historyPollutionDeltaTurns <= ADOPTION_THRESHOLDS.maximumHistoryPollutionDeltaTurns
+      pass: metrics.historyPollutionDeltaTurns !== UNKNOWN &&
+        metrics.historyPollutionDeltaTurns <= ADOPTION_THRESHOLDS.maximumHistoryPollutionDeltaTurns
     },
     {
       name: "ephemeral persistence leaks",
@@ -132,6 +129,7 @@ class AppServerClient {
     this.pending = new Map();
     this.waiters = [];
     this.stderr = "";
+    this.exited = false;
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", chunk => { this.stderr += chunk; });
     const lines = createInterface({ input: this.child.stdout });
@@ -158,18 +156,38 @@ class AppServerClient {
       else pending.resolve(message.result);
     });
     this.child.on("exit", code => {
+      this.exited = true;
       for (const pending of this.pending.values()) {
         pending.reject(new Error(`codex app-server exited ${code}: ${this.stderr.trim()}`));
       }
       this.pending.clear();
+      for (const waiter of this.waiters) {
+        clearTimeout(waiter.timer);
+        waiter.reject(new Error(`codex app-server exited ${code} while waiting for ${waiter.method}`));
+      }
+      this.waiters = [];
     });
   }
 
-  request(method, params = {}) {
+  request(method, params = {}, timeoutMs = 30_000) {
+    if (this.exited) return Promise.reject(new Error(`codex app-server already exited before ${method}`));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(String(id), { method, resolve, reject });
-      this.child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+      const timer = setTimeout(() => {
+        this.pending.delete(String(id));
+        reject(new Error(`timed out waiting for ${method}`));
+      }, timeoutMs);
+      this.pending.set(String(id), {
+        method,
+        resolve: value => { clearTimeout(timer); resolve(value); },
+        reject: error => { clearTimeout(timer); reject(error); }
+      });
+      this.child.stdin.write(`${JSON.stringify({ id, method, params })}\n`, error => {
+        if (!error) return;
+        this.pending.delete(String(id));
+        clearTimeout(timer);
+        reject(error);
+      });
     });
   }
 
@@ -178,6 +196,7 @@ class AppServerClient {
   }
 
   waitFor(method, predicate = () => true, timeoutMs = 60_000) {
+    if (this.exited) return Promise.reject(new Error(`codex app-server already exited before ${method}`));
     return new Promise((resolve, reject) => {
       const waiter = { method, predicate, resolve, reject };
       waiter.timer = setTimeout(() => {
@@ -197,8 +216,10 @@ class AppServerClient {
   }
 
   close() {
-    this.child.stdin.end();
-    this.child.kill("SIGTERM");
+    if (!this.exited) {
+      this.child.stdin.end();
+      this.child.kill("SIGTERM");
+    }
   }
 }
 
@@ -276,6 +297,12 @@ export async function probeAppServer({ caseCount, cwd }) {
       });
     });
     const listedIds = new Set(listed.map(thread => thread.id));
+    const persistentThreadsFound = persistentIds.filter(id => listedIds.has(id)).length;
+    if (persistentThreadsFound !== persistentIds.length) {
+      throw new Error(
+        `paginated thread/list omitted persistent sentinels: found ${persistentThreadsFound}/${persistentIds.length}`
+      );
+    }
     const leaks = ephemeralIds.filter(id => listedIds.has(id));
     return {
       status: "MEASURED",
@@ -295,21 +322,24 @@ export async function probeAppServer({ caseCount, cwd }) {
       pagination: {
         pageSize: 1,
         pagesRead: pageCount,
-        persistentThreadsFound: persistentIds.filter(id => listedIds.has(id)).length,
+        persistentThreadsFound,
         exhausted: true
       },
       ephemeralPersistenceLeaks: leaks.length
     };
   } finally {
-    for (const threadId of [...ephemeralIds, ...persistentIds]) {
-      try {
-        await client.request("thread/delete", { threadId });
-      } catch {
-        // Ephemeral threads have no rollout to delete; cleanup is best effort.
+    try {
+      for (const threadId of [...ephemeralIds, ...persistentIds]) {
+        try {
+          await client.request("thread/delete", { threadId }, 2_000);
+        } catch {
+          // Ephemeral threads have no rollout to delete; cleanup is best effort.
+        }
       }
+    } finally {
+      client.close();
+      rmSync(probeCwd, { recursive: true, force: true });
     }
-    client.close();
-    rmSync(probeCwd, { recursive: true, force: true });
   }
 }
 
@@ -330,10 +360,9 @@ export async function runBenchmark({ fixturePath = DEFAULT_FIXTURE, cwd = join(H
     };
   }
   const metrics = {
-    fixtureCorrectnessDelta:
-      fixture.ephemeralFork.correctness - fixture.freshContext.correctness,
-    historyPollutionDeltaTurns:
-      fixture.ephemeralFork.historyPollutionTurns - fixture.freshContext.historyPollutionTurns,
+    caseCount: fixture.caseCount,
+    fixtureCorrectnessDelta: UNKNOWN,
+    historyPollutionDeltaTurns: UNKNOWN,
     modelWallTimeReductionPct: UNKNOWN,
     modelInputTokenReductionPct: UNKNOWN,
     ephemeralPersistenceLeaks: controlPlane.ephemeralPersistenceLeaks
@@ -343,11 +372,16 @@ export async function runBenchmark({ fixturePath = DEFAULT_FIXTURE, cwd = join(H
     schema: "muster-codex-ephemeral-fork-benchmark/v1",
     generatedAt: new Date().toISOString(),
     protocol: {
-      caseSource: "deterministic fixtures",
+      caseSource: "deterministic case definitions",
       seedModelTurnsExecuted: 1,
       representativeModelTurnsExecuted: 0,
       fixtureCorrectnessIsNotModelCorrectness: true,
-      hostUnobservableMetrics: ["modelWallTimeReductionPct", "modelInputTokenReductionPct"],
+      unmeasuredRepresentativeMetrics: [
+        "modelWallTimeReductionPct",
+        "modelInputTokenReductionPct",
+        "correctnessDelta",
+        "historyPollutionDeltaTurns"
+      ],
       comparison: "Codex app-server ephemeral thread/fork versus ephemeral thread/start control-plane calls"
     },
     fixture,

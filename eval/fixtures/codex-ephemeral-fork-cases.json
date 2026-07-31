@@ -1,14 +1,14 @@
 [
-  {"id":"spec-valid-linear","lane":"spec-gate","expected":"PASS","forkOutput":"PASS","freshOutput":"PASS","inheritedTurns":2,"relevantInheritedTurns":2},
-  {"id":"spec-cycle","lane":"spec-gate","expected":"FAIL","forkOutput":"FAIL","freshOutput":"FAIL","inheritedTurns":2,"relevantInheritedTurns":2},
-  {"id":"spec-missing-success","lane":"spec-gate","expected":"FAIL","forkOutput":"FAIL","freshOutput":"FAIL","inheritedTurns":3,"relevantInheritedTurns":2},
-  {"id":"spec-overlap-ownership","lane":"spec-gate","expected":"FAIL","forkOutput":"FAIL","freshOutput":"FAIL","inheritedTurns":3,"relevantInheritedTurns":2},
-  {"id":"tournament-clear-winner","lane":"tournament","expected":"candidate-a","forkOutput":"candidate-a","freshOutput":"candidate-a","inheritedTurns":2,"relevantInheritedTurns":2},
-  {"id":"tournament-tie-break","lane":"tournament","expected":"candidate-a","forkOutput":"candidate-a","freshOutput":"candidate-a","inheritedTurns":3,"relevantInheritedTurns":2},
-  {"id":"tournament-no-pass","lane":"tournament","expected":"ESCALATE","forkOutput":"ESCALATE","freshOutput":"ESCALATE","inheritedTurns":2,"relevantInheritedTurns":2},
-  {"id":"tournament-fuse","lane":"tournament","expected":"FUSE","forkOutput":"FUSE","freshOutput":"FUSE","inheritedTurns":3,"relevantInheritedTurns":2},
-  {"id":"review-clean","lane":"read-only-review","expected":"PASS","forkOutput":"PASS","freshOutput":"PASS","inheritedTurns":2,"relevantInheritedTurns":2},
-  {"id":"review-blocker","lane":"read-only-review","expected":"FAIL","forkOutput":"FAIL","freshOutput":"FAIL","inheritedTurns":2,"relevantInheritedTurns":2},
-  {"id":"review-minor-only","lane":"read-only-review","expected":"PASS","forkOutput":"PASS","freshOutput":"PASS","inheritedTurns":3,"relevantInheritedTurns":2},
-  {"id":"review-exhausted","lane":"read-only-review","expected":"BLOCKED","forkOutput":"BLOCKED","freshOutput":"BLOCKED","inheritedTurns":2,"relevantInheritedTurns":2}
+  {"id":"spec-valid-linear","lane":"spec-gate","expected":"PASS"},
+  {"id":"spec-cycle","lane":"spec-gate","expected":"FAIL"},
+  {"id":"spec-missing-success","lane":"spec-gate","expected":"FAIL"},
+  {"id":"spec-overlap-ownership","lane":"spec-gate","expected":"FAIL"},
+  {"id":"tournament-clear-winner","lane":"tournament","expected":"candidate-a"},
+  {"id":"tournament-tie-break","lane":"tournament","expected":"candidate-a"},
+  {"id":"tournament-no-pass","lane":"tournament","expected":"ESCALATE"},
+  {"id":"tournament-fuse","lane":"tournament","expected":"FUSE"},
+  {"id":"review-clean","lane":"read-only-review","expected":"PASS"},
+  {"id":"review-blocker","lane":"read-only-review","expected":"FAIL"},
+  {"id":"review-minor-only","lane":"read-only-review","expected":"PASS"},
+  {"id":"review-exhausted","lane":"read-only-review","expected":"BLOCKED"}
 ]

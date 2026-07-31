@@ -9,7 +9,7 @@ Run `muster design status .` to resolve the nearest canonical `DESIGN.md`. In a 
 `muster design init` is attended. With no confirmed content it returns `HUMAN-HOLD` and asks for the product direction, visual constraints, typography, color, and component principles. After that answer has been saved to a file, pass it explicitly:
 
 ```sh
-muster design init . confirmed-design.md
+muster design init . --content-file confirmed-design.md
 ```
 
 Initialization creates a missing canonical file atomically and never overwrites an existing one.
@@ -24,7 +24,7 @@ muster design gate . --outcome "implement responsive checkout UI" --write
 
 A missing context blocks qualifying writes with `HUMAN-HOLD`. Read-only design audits continue and report the missing context as a risk finding. Outcomes without design, UI, UX, frontend, accessibility, or other human-facing signals return immediately without design-tree traversal or provider startup.
 
-`muster design detect [scope]` performs a bounded scan: at most 250 files, 500 ms, and 64 KiB of evidence. Add stable exclusions with `muster design ignores add <pattern>`.
+`muster design detect [scope]` performs a bounded scan: at most 250 files, 500 ms, and 64 KiB of evidence. Add stable exclusions with `muster design ignores [dir] --add <pattern>`.
 
 ## Providers and workflows
 
@@ -35,7 +35,7 @@ muster design provider check .
 muster design provider install .
 ```
 
-Run a workflow with `muster design run <workflow> [target]`, or use the harness shortcut `/muster:design <workflow> [target]`. The 23 pinned workflow names are:
+Run a workflow with `muster design run <workflow> [dir] --target <path>`, or use the harness shortcut `/muster:design <workflow> [target]`. The 23 pinned workflow names are:
 
 `craft`, `init`, `document`, `extract`, `live`, `adapt`, `animate`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`, `distill`, `harden`, `onboard`, `layout`, `optimize`, `overdrive`, `polish`, `quieter`, `shape`, and `typeset`.
 

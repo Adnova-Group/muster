@@ -1336,5 +1336,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // adds the attended DESIGN.md context gate and 23 pinned workflows; the
   // shared MCP core adds muster_design and the existing lifecycle prompts gain
   // conditional design qualification. File count grows from 144 to 145.
-  assert.equal(hash.digest("hex"), "a5be88bf7e38f5f9e3d6356aad63e437926d9efa0b8cb48aca388841bd665ba8");
+  assert.equal(hash.digest("hex"), "024bf723d396a61d4f2267d1e80379c5c2961cd3c514e90c0a3fa00d3c6a341b");
 });

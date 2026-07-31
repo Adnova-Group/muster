@@ -9,6 +9,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  assertContainedNoSymlinkPath,
+  atomicWrite,
+  readNoFollowRegular,
+} from "./fs-safe.js";
 
 export const DESIGN_SOURCE = Object.freeze({
   name: "Impeccable",
@@ -59,6 +64,7 @@ const MAX_SCAN_MS = 500;
 const MAX_SCAN_OUTPUT = 64 * 1024;
 const IGNORE_PATH = join(".muster", "design-ignores");
 const PROVIDER_PATH = join(".muster", "design-provider.json");
+const MAX_CACHE_ENTRIES = 64;
 const scanCache = new Map();
 
 function sha256(value) {
@@ -234,7 +240,11 @@ export async function initializeDesign(cwd = process.cwd(), options = {}) {
   const text = await readFile(resolve(cwd, options.contentFile), "utf8");
   validateDesignText(text);
   const destination = join(context.scopeRoot, "DESIGN.md");
+  await assertContainedNoSymlinkPath(context.repoRoot, destination, { allowMissingFinal: true });
   try {
+    // `wx` is one atomic exclusive create: it neither follows nor replaces an
+    // existing final-component symlink. The ancestry guard above rejects
+    // package-directory symlinks before any bytes are published.
     await writeFile(destination, text, { flag: "wx", mode: 0o644 });
   } catch (error) {
     if (error?.code !== "EEXIST") throw error;
@@ -244,15 +254,53 @@ export async function initializeDesign(cwd = process.cwd(), options = {}) {
   return { ...ready, status: "created" };
 }
 
-export async function readDesignIgnores(cwd = process.cwd()) {
-  const repoRoot = await findRepoRoot(cwd);
+async function ensureDesignStateDir(repoRoot) {
+  const stateDir = join(repoRoot, ".muster");
   try {
-    return [...new Set((await readFile(join(repoRoot, IGNORE_PATH), "utf8"))
-      .split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")))].sort();
+    await mkdir(stateDir, { mode: 0o700 });
   } catch (error) {
-    if (error?.code === "ENOENT") return [];
+    if (error?.code !== "EEXIST") throw error;
+  }
+  await assertContainedNoSymlinkPath(repoRoot, stateDir);
+  return stateDir;
+}
+
+async function readOwnedOptional(repoRoot, path, maxBytes) {
+  try {
+    await lstat(dirname(path));
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
     throw error;
   }
+  await assertContainedNoSymlinkPath(repoRoot, path, { allowMissingFinal: true });
+  try {
+    const { bytes } = await readNoFollowRegular(path, {
+      maxBytes,
+      label: relative(repoRoot, path),
+      requireSingleLink: true,
+    });
+    return bytes.toString("utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function publishOwned(repoRoot, path, text, mode = 0o644) {
+  await assertContainedNoSymlinkPath(repoRoot, path, { allowMissingFinal: true });
+  return atomicWrite(path, text, {
+    mode,
+    fsyncDir: true,
+    beforeRename: () => assertContainedNoSymlinkPath(repoRoot, path, { allowMissingFinal: true }),
+  });
+}
+
+export async function readDesignIgnores(cwd = process.cwd()) {
+  const repoRoot = await findRepoRoot(cwd);
+  const text = await readOwnedOptional(repoRoot, join(repoRoot, IGNORE_PATH), 64 * 1024);
+  if (text === null) return [];
+  return [...new Set(text
+    .split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")))].sort();
 }
 
 export async function addDesignIgnore(cwd = process.cwd(), pattern) {
@@ -261,8 +309,8 @@ export async function addDesignIgnore(cwd = process.cwd(), pattern) {
   }
   const repoRoot = await findRepoRoot(cwd);
   const values = [...new Set([...(await readDesignIgnores(repoRoot)), pattern.trim()])].sort();
-  await mkdir(join(repoRoot, ".muster"), { recursive: true });
-  await writeFile(join(repoRoot, IGNORE_PATH), `${values.join("\n")}\n`, { mode: 0o644 });
+  await ensureDesignStateDir(repoRoot);
+  await publishOwned(repoRoot, join(repoRoot, IGNORE_PATH), `${values.join("\n")}\n`);
   return { path: join(repoRoot, IGNORE_PATH), ignores: values };
 }
 
@@ -343,6 +391,7 @@ export async function scanDesign(cwd = process.cwd(), options = {}) {
   if (scanCache.has(key)) return scanCache.get(key);
   const scan = options.scan || detectDesignEvidence;
   const result = await scan(cwd, options);
+  if (scanCache.size >= MAX_CACHE_ENTRIES) scanCache.delete(scanCache.keys().next().value);
   scanCache.set(key, result);
   return result;
 }
@@ -371,11 +420,8 @@ function nodeSupportsOptionalDetector(version) {
 export async function designProviderCheck(cwd = process.cwd(), options = {}) {
   const repoRoot = await findRepoRoot(cwd);
   let installed = null;
-  try {
-    installed = JSON.parse(await readFile(join(repoRoot, PROVIDER_PATH), "utf8"));
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
+  const providerText = await readOwnedOptional(repoRoot, join(repoRoot, PROVIDER_PATH), 64 * 1024);
+  if (providerText !== null) installed = JSON.parse(providerText);
   const nodeVersion = options.nodeVersion || process.versions.node;
   return {
     internal: { available: true, source: DESIGN_SOURCE, installed: Boolean(installed), receipt: installed },
@@ -397,12 +443,13 @@ export async function installDesignProvider(cwd = process.cwd()) {
     source: DESIGN_SOURCE,
     digest: sha256(JSON.stringify(DESIGN_SOURCE)),
   };
-  await mkdir(dirname(path), { recursive: true });
+  await ensureDesignStateDir(repoRoot);
   try {
+    await assertContainedNoSymlinkPath(repoRoot, path, { allowMissingFinal: true });
     await writeFile(path, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o644 });
   } catch (error) {
     if (error?.code !== "EEXIST") throw error;
-    const existing = JSON.parse(await readFile(path, "utf8"));
+    const existing = JSON.parse(await readOwnedOptional(repoRoot, path, 64 * 1024));
     if (existing.digest !== receipt.digest) {
       throw new Error("existing design provider receipt is not owned by this pinned provider; refusing overwrite");
     }

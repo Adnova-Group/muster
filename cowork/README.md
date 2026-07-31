@@ -18,13 +18,14 @@ This matrix describes the verified MCP-only distribution in this directory. It d
 | Go-backlog | MCP protocol | Drive the batch clearing lifecycle; load `muster_sprint_protocol` for the Cowork-specific playbook. |
 | Diagnose | MCP protocol | Drive the failure-first lifecycle from the server instructions and deterministic tools. |
 | Audit | MCP protocol | Drive the whole-codebase lifecycle from the server instructions and deterministic tools. |
+| Design | MCP protocol | Use `muster_design` for canonical context, attended initialization, write gates, and pinned workflows. |
 | Runner | Not provided | There is no Runner-mode MCP protocol or tool in this distribution. |
 | Capture | Not provided | There is no Capture-mode MCP protocol or tool in this distribution. |
-| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 30 MCP tools. |
+| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 31 MCP tools. |
 
 ## What you get
 
-Thirty deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, scheduling, receipt reconciliation, and bounded backlog publication without model calls; the Cowork agent still performs the judgment and execution work.
+Thirty-one deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, scheduling, design-context gating, receipt reconciliation, and bounded backlog publication without model calls; the Cowork agent still performs the judgment and execution work.
 
 | Tool | Does |
 | --- | --- |
@@ -36,6 +37,7 @@ Thirty deterministic tools, plus an execution protocol that teaches the agent ho
 | `muster_assess` | Gap-check an outcome before running |
 | `muster_steer` | Classify a mid-run steer message |
 | `muster_diagnose` / `muster_audit` | Build the diagnose / whole-codebase audit manifest |
+| `muster_design` | Resolve or initialize canonical design context, inspect bounded evidence/provider state, gate human-facing writes, and dispatch a pinned workflow |
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
 | `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
 | `muster_sprint_reconcile` | Drain completion receipts into deterministic sprint states and the next eligible implementation/review/integration actions |

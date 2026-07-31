@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
@@ -12,6 +12,7 @@ import {
   designProviderCheck,
   detectDesignEvidence,
   initializeDesign,
+  installDesignProvider,
   readDesignIgnores,
   resolveDesignContext,
   runDesignWorkflow,
@@ -45,6 +46,9 @@ test("distribution metadata and public docs preserve the exact source pin and wo
   assert.deepEqual(metadata.workflows, DESIGN_WORKFLOWS.map(({ id }) => id));
   assert.match(notice, new RegExp(DESIGN_SOURCE.ref));
   assert.match(docs, new RegExp(DESIGN_SOURCE.ref));
+  assert.match(docs, /muster design init \. --content-file confirmed-design\.md/);
+  assert.match(docs, /muster design ignores \[dir\] --add <pattern>/);
+  assert.match(docs, /muster design run <workflow> \[dir\] --target <path>/);
   for (const { id } of DESIGN_WORKFLOWS) assert.match(command, new RegExp(`\\b${id}\\b`));
 });
 
@@ -83,6 +87,32 @@ test("design init is attended, refuses overwrite, and emits a digest receipt", a
   const existing = await initializeDesign(root, { contentFile: source });
   assert.equal(existing.status, "exists");
   assert.equal(await readFile(join(root, "DESIGN.md"), "utf8"), DESIGN);
+});
+
+test("design mutations reject symlinked package and state ancestry without external writes", async () => {
+  const root = await tmp();
+  const externalPackage = await tmp();
+  const externalState = await tmp();
+  await mkdir(join(root, ".git"));
+  await mkdir(join(root, "apps"));
+  await mkdir(join(externalPackage, "src"));
+  await writeFile(join(root, "package.json"), JSON.stringify({ workspaces: ["apps/*"] }));
+  await writeFile(join(externalPackage, "package.json"), '{"name":"escaped"}');
+  await symlink(externalPackage, join(root, "apps/store"), "dir");
+  const source = join(root, "confirmed.md");
+  await writeFile(source, DESIGN);
+
+  await assert.rejects(
+    initializeDesign(root, { target: "apps/store/src/App.tsx", contentFile: source }),
+    /symlink|contained/i,
+  );
+  await assert.rejects(readFile(join(externalPackage, "DESIGN.md"), "utf8"), /ENOENT/);
+
+  await symlink(externalState, join(root, ".muster"), "dir");
+  await assert.rejects(addDesignIgnore(root, "generated/**"), /symlink/i);
+  await assert.rejects(installDesignProvider(root), /symlink/i);
+  await assert.rejects(readFile(join(externalState, "design-ignores"), "utf8"), /ENOENT/);
+  await assert.rejects(readFile(join(externalState, "design-provider.json"), "utf8"), /ENOENT/);
 });
 
 test("designGate returns immediately for non-design work and requires a current receipt for design writes", async () => {

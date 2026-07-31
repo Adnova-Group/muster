@@ -170,7 +170,7 @@ test("ROUTING_POLICY carries the VOICE_NUDGE line (folded into the full-principl
   );
 });
 
-// ── all seven routed verbs enumerated under their NEW names (P1-14) ────────
+// ── all eight routed verbs enumerated under their NEW names (P1-14) ────────
 // VERBS and ROUTING_POLICY's enumeration must all name every routed mode
 // under its post-rename name (plan/go/plan-backlog/diagnose/audit/go-backlog/
 // runner) — checking only the legacy alias substrings (run/autopilot/sprint)
@@ -183,12 +183,13 @@ function countMatches(text, re) {
   return m ? m.length : 0;
 }
 
-test("VERBS names all seven routed verbs under their new names, with each legacy alias mentioned exactly once", () => {
+test("VERBS names all eight routed verbs under their new names, with each legacy alias mentioned exactly once", () => {
   assert.match(VERBS, /\/muster:plan\b(?!-backlog)/, "must name /muster:plan");
   assert.match(VERBS, /\/muster:go\b(?!-backlog)/, "must name /muster:go");
   assert.match(VERBS, /\/muster:plan-backlog\b/, "must name /muster:plan-backlog");
   assert.match(VERBS, /\/muster:diagnose\b/);
   assert.match(VERBS, /\/muster:audit\b/);
+  assert.match(VERBS, /\/muster:design\b/);
   assert.match(VERBS, /\/muster:go-backlog\b/, "must name /muster:go-backlog");
   assert.match(VERBS, /\/muster:runner\b/);
   assert.equal(countMatches(VERBS, /\/muster:run\b/g), 1, "/muster:run legacy alias mentioned exactly once");
@@ -199,6 +200,7 @@ test("VERBS names all seven routed verbs under their new names, with each legacy
 test("ROUTING_POLICY's verb enumeration includes the new plan-backlog/go-backlog names, with each legacy alias mentioned exactly once", () => {
   assert.match(ROUTING_POLICY, /:plan-backlog\b/, "must name :plan-backlog");
   assert.match(ROUTING_POLICY, /:go-backlog\b/, "must name :go-backlog");
+  assert.match(ROUTING_POLICY, /:design\b/);
   assert.match(ROUTING_POLICY, /:runner\b/);
   assert.equal(countMatches(ROUTING_POLICY, /\brun\b/g), 1, "run legacy alias mentioned exactly once");
   assert.equal(countMatches(ROUTING_POLICY, /\bautopilot\b/g), 1, "autopilot legacy alias mentioned exactly once");

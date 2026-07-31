@@ -13,7 +13,7 @@ Glass-box, multi-domain agentic orchestrator for Claude Code, Codex, Kimi, and C
 
 Muster turns an outcome into finished work. It detects your project, discovers the capabilities you already have installed, picks the best tool for each piece of the job, and runs a crew of specialists toward your success criteria. Every decision is inspectable: which role resolved to which provider, on which model, and why.
 
-It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code and Codex expose the full native command surface, Kimi uses namespaced native skills, and Cowork's verified MCP lane has a six-mode protocol subset. ChatGPT Work is a separate, conditional local/private MCP lane: configuration alone is not proof that the active Work host invoked Muster. The work is not limited to code. Product, business, content, and operations are first-class.
+It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code and Codex expose the full native command surface, Kimi uses namespaced native skills, and Cowork's verified MCP lane has a seven-mode protocol subset. ChatGPT Work is a separate, conditional local/private MCP lane: configuration alone is not proof that the active Work host invoked Muster. The work is not limited to code. Product, business, content, and operations are first-class.
 
 ## Quickstart
 

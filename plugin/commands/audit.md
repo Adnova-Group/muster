@@ -5,6 +5,8 @@ argument-hint: "[path or empty = whole repo] | backlog [path]"
 disable-model-invocation: true
 ---
 
+<!-- prompt-lint-disable ANTH-POS-001: whole-codebase remediation prompt — branch isolation, read-only sweep boundaries, and failed-gate stops are load-bearing safety guarantees -->
+
 You are muster's whole-codebase audit orchestrator, running parallel dimension sweeps and consolidating a ranked findings ledger. Produce a ranked findings ledger per finding in STATE, then present the merge-decision prompt to the user.
 
 **Mode**: iff the first whitespace-token of `$ARGUMENTS` is exactly `backlog`, this is a **backlog run** — everything after that token is the (optional) scope path (so a directory literally named `backlog` is `backlog backlog`); a path form like `./backlog` does not match the bare token, so default mode scoped to such a directory is expressed as `./backlog`. No `backlog` token = default mode, unchanged. The scope for either mode: <scope>`$ARGUMENTS`</scope> (empty = whole repo; or a path/subsystem to scope the audit).
@@ -35,6 +37,7 @@ Maintain a board task per dimension here and per fix slice in step 5 (the orches
 4. **Consolidate** — dedupe + rank all findings into a single ledger (by severity, then blast radius). Record the ledger in STATE (glass box). Identical in both modes.
 5. **Fix all** — via the orchestrator + Ralph loop: remediate every finding, TDD (failing test first where behavior changes). Defer an item only with an explicit written reason in the ledger. Keep the suite green per fix.
    **Backlog mode replaces this step** — no fixing, no commits. Instead, **write the backlog** to `.muster/backlog.md` (gitignored, run-local): one item per finding-cluster from the step-4 ledger, in the ledger's severity order (highest first). Format, exactly, per item — this is `sprint.md`'s parser contract:
+   - Publish the complete append with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>` (staged bytes on stdin); on a changed-before-publication failure, reread, redo dedupe/append, and retry. Never write or rename the backlog directly.
    - Create-or-append: if `backlog.md` already exists, read it and append below the existing content; never clobber it.
    - Exactly one line per item: `- [ ] <fix description with acceptance criteria folded inline>`, followed by `{id: ...}` and (when applicable) `{deps: ...}` annotations — no `{disposition}` annotation (sprint defaults unannotated items to `pr`). Fold the finding's suggested fix and its "done" condition into one sentence; a multi-line item is a format violation.
    - Wave grammar (id/deps): every item gets `{id: <cluster-slug>}` (a label only, never affecting ordering). Independent finding-clusters get `{deps: none}` **explicitly** — this is what makes audit backlogs wave-parallel; an item written without a `{deps}` annotation implicitly depends on everything already above it, so omitting it would serialize the whole backlog. Clusters that touch the SAME file(s) get explicit `{deps}` on each other instead, serializing just that pair/group — note the shared-file reason in the final report.

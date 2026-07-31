@@ -13,11 +13,10 @@
 // pure-function tests.
 //
 // Conservative by construction:
-//   - Zombie reap is opt-in (`--reap`) AND further gated per-process TWICE:
-//     only a process whose parent is provably dead (ppid 1, or a ppid absent
-//     from the same snapshot) AND whose muster provenance is corroborated
-//     (cwd under a known muster run worktree, or a recorded dispatch receipt
-//     -- see the reap-provenance note below) is ever reap-eligible. A process
+//   - Zombie process reap is report-only. Filesystem receipts are same-UID
+//     forgeable diagnostics and never authorize signals; only the live per-leg
+//     dispatch broker has the in-memory process-group identity needed to signal.
+//     A process
 //     merely flagged by the stale-start age heuristic, but whose parent is
 //     still alive, is reported ONLY -- it is still owned by a live supervisor,
 //     and killing it on an age guess alone is exactly the burn this guard
@@ -33,7 +32,7 @@
 //     it just needs to keep its own claim timestamp fresh.
 
 import { execFileSync } from "node:child_process";
-import { readlinkSync } from "node:fs";
+import { readFileSync, readlinkSync } from "node:fs";
 import { sep } from "node:path";
 import { computeSprintWaves } from "./sprint-waves.js";
 
@@ -41,21 +40,18 @@ import { computeSprintWaves } from "./sprint-waves.js";
 // Guard 1 -- zombie provider CLI process: detect + (conservatively) reap
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_PROVIDER_PROCESS_PATTERN = /^(codex|claude)$/i;
+export const DEFAULT_PROVIDER_PROCESS_PATTERN = /^(codex|claude|kimi)$/i;
 export const DEFAULT_ZOMBIE_STALE_MS = 60 * 60 * 1000; // 60 minutes
 
-// Reap PROVENANCE (audit S10, security): a dead parent alone never makes a
+// Process diagnostics (audit S10, security): a dead parent alone never makes a
 // host process muster's to kill -- another tool's legitimately orphaned
 // codex/claude process (a detached editor session, a crashed non-muster run)
 // matches the exact same ps shape, and SIGTERMing it would be the very burn
-// this guard exists to prevent. Reap eligibility must be corroborated by
-// MUSTER-OWNED state before any kill:
-//   - "muster-worktree-cwd": the process's cwd sits under a known muster run
-//     worktree (entries under `.worktrees/`, see deriveMusterWorktreeRoots), or
-//   - "dispatch-receipt": the pid appears in a recorded dispatch receipt
-//     (injected via the `dispatchPids` option).
-// An orphaned process with NEITHER is still detected and reported -- it is
-// just never reaped.
+// this guard exists to prevent. No persisted state can recreate the live
+// broker's authority, so this module never signals provider processes.
+// A `.worktrees/` cwd is useful diagnostic context but is not ownership proof:
+// anyone can create a worktree under that directory. An unreceipted orphan is
+// still detected and reported, but never reaped.
 
 // True when `cwd` equals `root` or sits strictly inside it (lexical; both are
 // expected absolute here -- ps /proc readlinks and git worktree paths are).
@@ -63,10 +59,8 @@ function cwdUnderRoot(cwd, root) {
   return cwd === root || cwd.startsWith(root.endsWith(sep) ? root : root + sep);
 }
 
-// The muster-owned worktree roots out of a worktree list (parseWorktreePorcelain
-// output or equivalent): live entries whose path sits under a `.worktrees/`
-// directory -- muster's run-worktree convention. The repo root and any
-// non-muster worktree are NOT provenance: a process parked there proves nothing
+// Worktree roots matching muster's convention, retained for diagnostic context.
+// They are not ownership provenance: a process parked there proves nothing
 // about who dispatched it.
 export function deriveMusterWorktreeRoots(worktrees) {
   return (Array.isArray(worktrees) ? worktrees : [])
@@ -87,20 +81,21 @@ function commandExecutableName(command) {
   return base.replace(/\.(exe|cmd|bat)$/i, "");
 }
 
-// processes: [{ pid, ppid, command, startedAt, cwd? }], startedAt is epoch ms or an
-// ISO string; cwd (when the provider can supply it -- listSystemProcessesSync
-// reads /proc/<pid>/cwd) corroborates muster provenance. newestRunMarkerAt
+// processes: [{ pid, ppid, command, startedAt, startIdentity?, cwd? }],
+// startedAt is epoch ms or an ISO string; cwd is diagnostic only, while
+// startIdentity is the stable kernel identity required for reap. newestRunMarkerAt
 // anchors the stale-start heuristic -- the most recent known "a run started"
 // timestamp (epoch ms or ISO string); a provider process whose start predates
 // it by more than staleMs is flagged as stale. musterRoots: known muster run
-// worktree roots (see deriveMusterWorktreeRoots); dispatchPids: pids recorded
-// in muster dispatch receipts. Both feed the reap-provenance gate above.
+// worktree roots (see deriveMusterWorktreeRoots); dispatchReceipts:
+// identity-bound `{pid,startIdentity}` records. Legacy pid-only receipts never
+// feed the ownership gate.
 export function findZombieProcesses(processes, {
   pattern = DEFAULT_PROVIDER_PROCESS_PATTERN,
   newestRunMarkerAt,
   staleMs = DEFAULT_ZOMBIE_STALE_MS,
   musterRoots = [],
-  dispatchPids = [],
+  dispatchReceipts = [],
 } = {}) {
   const list = Array.isArray(processes) ? processes : [];
   const knownPids = new Set(list.map((p) => p.pid));
@@ -108,7 +103,11 @@ export function findZombieProcesses(processes, {
     ? null
     : (typeof newestRunMarkerAt === "number" ? newestRunMarkerAt : Date.parse(newestRunMarkerAt));
   const roots = Array.isArray(musterRoots) ? musterRoots : [];
-  const receiptPids = new Set((Array.isArray(dispatchPids) ? dispatchPids : []).map(Number));
+  const receiptIdentities = new Map(
+    (Array.isArray(dispatchReceipts) ? dispatchReceipts : [])
+      .filter((r) => r && Number(r.pid) > 0 && typeof r.startIdentity === "string")
+      .map((r) => [Number(r.pid), r.startIdentity])
+  ); // diagnostics only; never feeds the signaling gate
 
   const zombies = [];
   for (const proc of list) {
@@ -132,14 +131,16 @@ export function findZombieProcesses(processes, {
     if (orphaned) reasons.push("orphaned-parent");
     if (staleStart) reasons.push("stale-start");
 
-    // Reap provenance (see the gate at the top of this section): cwd under a
-    // known muster worktree, or a recorded dispatch receipt for this pid.
-    let provenance = null;
-    if (typeof proc.cwd === "string" && proc.cwd && roots.some((r) => cwdUnderRoot(proc.cwd, r))) {
-      provenance = "muster-worktree-cwd";
-    } else if (receiptPids.has(Number(proc.pid))) {
-      provenance = "dispatch-receipt";
-    }
+    // Worktree membership is diagnostic only. Ownership comes exclusively
+    // from the existing narrow dispatch receipt contract (a receipted pid).
+    const cwdMatchesMusterWorktree =
+      typeof proc.cwd === "string" && proc.cwd && roots.some((r) => cwdUnderRoot(proc.cwd, r));
+    const startIdentity =
+      typeof proc.startIdentity === "string" && proc.startIdentity ? proc.startIdentity : null;
+    const receiptIdentity = receiptIdentities.get(Number(proc.pid)) ?? null;
+    const receiptIdentityMatch =
+      receiptIdentity === null || startIdentity === null ? null : receiptIdentity === startIdentity;
+    const provenance = null;
 
     zombies.push({
       pid: proc.pid,
@@ -148,11 +149,13 @@ export function findZombieProcesses(processes, {
       startedAt: proc.startedAt ?? null,
       reasons,
       provenance,
-      // The conservative reap gate: ONLY an orphaned process whose muster
-      // provenance is corroborated is ever eligible for --reap. See the
-      // file-level note above for why age alone -- and now orphanage alone --
-      // never is.
-      reapable: orphaned && provenance !== null,
+      cwdMatchesMusterWorktree: Boolean(cwdMatchesMusterWorktree),
+      startIdentity,
+      receiptIdentity,
+      receiptIdentityMatch,
+      // Filesystem receipts are same-UID forgeable diagnostics. Only the live
+      // dispatch broker may signal its in-memory identity-bound process group.
+      reapable: false,
     });
   }
   return { ok: true, zombies };
@@ -160,8 +163,11 @@ export function findZombieProcesses(processes, {
 
 // zombies: findZombieProcesses(...).zombies. kill defaults to a real SIGTERM;
 // tests inject a fake to assert exactly which pids get touched.
-export function reapZombieProcesses(zombies, { kill } = {}) {
+export function reapZombieProcesses(zombies, { kill, getProcessIdentity } = {}) {
   const killer = typeof kill === "function" ? kill : (pid) => process.kill(pid, "SIGTERM");
+  const identityProvider = typeof getProcessIdentity === "function"
+    ? getProcessIdentity
+    : readProcessStartIdentitySync;
   const reaped = [];
   const skipped = [];
   for (const z of (zombies || [])) {
@@ -173,13 +179,34 @@ export function reapZombieProcesses(zombies, { kill } = {}) {
       const orphaned = (z.reasons || []).includes("orphaned-parent");
       skipped.push({
         pid: z.pid,
-        reason: orphaned
-          ? "no muster provenance -- not reaped (an orphaned parent alone is never sufficient to kill; the process must also tie back to a muster run via its cwd or a dispatch receipt)"
+        reason: orphaned && z.receiptIdentity !== null && z.startIdentity === null
+          ? "stable process-start identity unavailable -- not reaped (the identity-bound receipt cannot be matched on this platform)"
+          : orphaned && z.receiptIdentityMatch === false
+            ? "dispatch receipt identity mismatch -- not reaped (the pid now belongs to a different process)"
+          : orphaned && z.provenance == null
+            ? "no live broker authority -- not reaped (cwd and filesystem dispatch receipts are diagnostic only)"
+          : orphaned
+            ? "stable process-start identity unavailable -- not reaped (unsupported identity platforms remain report-only)"
           : "parent alive -- not reaped (the stale-start age heuristic alone is never sufficient to kill)",
       });
       continue;
     }
     try {
+      const currentIdentity = identityProvider(z.pid);
+      if (typeof currentIdentity !== "string" || !currentIdentity) {
+        skipped.push({
+          pid: z.pid,
+          reason: "stable process-start identity unavailable during revalidation -- not reaped",
+        });
+        continue;
+      }
+      if (currentIdentity !== z.startIdentity) {
+        skipped.push({
+          pid: z.pid,
+          reason: `process identity changed before signal -- not reaped (expected ${z.startIdentity}, found ${currentIdentity})`,
+        });
+        continue;
+      }
       killer(z.pid);
       reaped.push(z.pid);
     } catch (e) {
@@ -390,10 +417,33 @@ export function listSystemProcessesSync() {
       // permissions) degrades to null, which simply means "no cwd provenance".
       let cwd = null;
       try { cwd = readlinkSync(`/proc/${pid}/cwd`); } catch { /* no cwd provenance */ }
-      return { pid: Number(pid), ppid: Number(ppid), startedAt: now - Number(etimes) * 1000, command, cwd };
+      return {
+        pid: Number(pid),
+        ppid: Number(ppid),
+        startedAt: now - Number(etimes) * 1000,
+        startIdentity: readProcessStartIdentitySync(Number(pid)),
+        command,
+        cwd,
+      };
     }).filter(Boolean);
   } catch {
     return [];
+  }
+}
+
+// Linux exposes a process's kernel start tick as field 22 of /proc/<pid>/stat.
+// This is stable for the process lifetime and changes when a pid is reused.
+// Unsupported platforms and unreadable entries fail closed with null.
+export function readProcessStartIdentitySync(pid) {
+  try {
+    const stat = readFileSync(`/proc/${Number(pid)}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    if (close < 0) return null;
+    const fieldsFromState = stat.slice(close + 1).trim().split(/\s+/);
+    const startTicks = fieldsFromState[19];
+    return /^\d+$/.test(startTicks || "") ? `linux-proc-stat:${startTicks}` : null;
+  } catch {
+    return null;
   }
 }
 
@@ -421,21 +471,35 @@ export function renderHygieneReport(result) {
     const eligibility = z.reapable
       ? `reapable (${z.provenance})`
       : (z.reasons.includes("orphaned-parent")
-        ? (blind ? "report-only (provenance unavailable)" : "report-only (no muster provenance)")
+        ? (z.receiptIdentity !== null && z.receiptIdentityMatch !== true
+          ? "report-only (dispatch receipt identity mismatch)"
+          : z.provenance == null
+            ? "report-only (no live dispatch-broker authority)"
+          : "report-only (stable process identity unavailable)")
         : "report-only (parent alive)");
     lines.push(`    pid ${z.pid} ppid ${z.ppid ?? "?"} [${z.reasons.join(",")}] ` +
       `${eligibility} :: ${z.command}`);
   }
-  // Honest surfacing (review-gate round 1): when the provider could supply no
-  // cwd provenance (non-Linux /proc readlink always fails) AND no dispatch
-  // receipts were injected, --reap can NEVER fire -- the report must say so
-  // rather than silently listing orphans as if provenance had been evaluated.
+  // Without injected dispatch receipts, --reap can never fire. Say so rather
+  // than letting a `.worktrees/` cwd read like ownership was established.
   if (blind) {
     const disabled = result.zombies.filter((z) => z.reasons.includes("orphaned-parent") && !z.reapable).length;
     if (disabled > 0) {
-      lines.push(`  provenance unavailable: reap disabled for ${disabled} candidate${disabled === 1 ? "" : "s"} ` +
-        `(no cwd provenance from the process provider, no dispatch receipts)`);
+      lines.push(`  live dispatch-broker authority unavailable: reap disabled for ${disabled} candidate${disabled === 1 ? "" : "s"} ` +
+        `(hygiene is report-only for processes; cwd and filesystem receipts are diagnostic only)`);
     }
+  }
+  if ((result.provenance?.rejectedDispatchReceipts ?? 0) > 0) {
+    lines.push(`  dispatch receipts: ${result.provenance.rejectedDispatchReceipts} rejected ` +
+      `(report-only; malformed, legacy, symlinked, or unsafe rows are never trusted or removed)`);
+  }
+  if ((result.provenance?.cleanedDispatchReceipts ?? 0) > 0) {
+    lines.push(`  dispatch receipts: ${result.provenance.cleanedDispatchReceipts} stale receipt` +
+      `${result.provenance.cleanedDispatchReceipts === 1 ? "" : "s"} cleaned without signaling`);
+  }
+  if (result.provenance?.incompleteDispatchProvenance) {
+    lines.push("  dispatch receipts: diagnostic provenance incomplete " +
+      "(partial process snapshot, rejected names, or valid-entry truncation; absence never proves process death)");
   }
 
   lines.push(`  worktrees: ${result.worktrees.count} live (threshold ${result.worktrees.threshold})` +
@@ -456,7 +520,7 @@ export function renderHygieneReport(result) {
 //   now: epoch ms (default Date.now())
 //   reap: boolean -- gates zombie kill + claim release; the worktree guard NEVER deletes, reap or not
 //   zombieOptions/worktreeOptions/claimOptions: passed through to each guard's pure function
-//   kill: injected process killer for reapZombieProcesses
+//   kill/getProcessIdentity: injected signal and stable-identity providers
 export async function runHygiene({
   processes = listSystemProcessesSync,
   worktrees = () => listGitWorktreesSync(process.cwd()),
@@ -467,6 +531,8 @@ export async function runHygiene({
   worktreeOptions = {},
   claimOptions = {},
   kill,
+  getProcessIdentity,
+  dispatchReceiptStore = null,
 } = {}) {
   const processList = typeof processes === "function" ? await processes() : (processes || []);
 
@@ -474,14 +540,20 @@ export async function runHygiene({
   const wtList = typeof wtRaw === "string" ? parseWorktreePorcelain(wtRaw) : (wtRaw || []);
   const worktreeResult = evaluateWorktreeSweep(wtList, worktreeOptions);
 
-  // The reap-provenance gate (see findZombieProcesses) defaults its muster
-  // roots to the repo's OWN muster run worktrees (the `.worktrees/` entries
-  // of the worktree list just fetched) -- an explicit zombieOptions.musterRoots
-  // or dispatchPids overrides/augments that.
+  // Cwd and receipt stores enrich diagnostics only. The live per-leg broker is
+  // the sole signaling authority and is intentionally not reconstructible here.
+  const stored = typeof dispatchReceiptStore === "function"
+    ? await dispatchReceiptStore({ processes: processList, reap })
+    : { receipts: [], rejected: [], cleaned: [] };
+  const injectedReceipts = Array.isArray(zombieOptions.dispatchReceipts)
+    ? zombieOptions.dispatchReceipts
+    : [];
+  const effectiveDispatchReceipts = [...injectedReceipts, ...(stored.receipts || [])];
   const zombieResult = findZombieProcesses(processList, {
     newestRunMarkerAt: now,
     musterRoots: deriveMusterWorktreeRoots(wtList),
     ...zombieOptions,
+    dispatchReceipts: effectiveDispatchReceipts,
   });
 
   const content = typeof backlogContent === "function" ? await backlogContent() : backlogContent;
@@ -489,23 +561,33 @@ export async function runHygiene({
     ? releaseStaleClaims(content, { now, ...claimOptions })
     : { ok: true, errors: [], content: null, releases: [] };
 
-  const reapedProcesses = reap ? reapZombieProcesses(zombieResult.zombies, { kill }) : { reaped: [], skipped: [] };
+  const reapedProcesses = reap
+    ? reapZombieProcesses(zombieResult.zombies, { kill, getProcessIdentity })
+    : { reaped: [], skipped: [] };
 
-  // Provenance availability (surfaced by renderHygieneReport, never silently
-  // dropped): cwd provenance requires the provider to have read at least one
-  // process's cwd (on non-Linux the /proc readlink always fails, so every
-  // entry's cwd is null), and dispatch-receipt provenance requires injected
-  // receipts (the CLI's hygiene branch wires none today -- no dispatch-receipt
-  // store exists yet). When a process list WAS captured but neither source can
-  // corroborate anything, --reap can never fire: mark the report blind rather
-  // than letting orphans read as "checked, no muster provenance".
-  const receiptPids = zombieOptions.dispatchPids;
+  // Ownership availability is surfaced by renderHygieneReport. Cwd is tracked
+  // only for diagnostics; injected dispatch receipts are the ownership source.
+  const dispatchReceipts = effectiveDispatchReceipts;
+  const validDispatchReceipts = dispatchReceipts.filter((r) =>
+    r && Number.isInteger(Number(r.pid)) && Number(r.pid) > 0 &&
+    typeof r.startIdentity === "string" && r.startIdentity
+  );
   const provenance = {
     cwdAvailable: processList.some((p) => p && typeof p.cwd === "string" && p.cwd !== ""),
-    dispatchReceipts: Array.isArray(receiptPids) ? receiptPids.length : 0,
+    dispatchReceipts: validDispatchReceipts.length,
+    rejectedLegacyPidReceipts: Array.isArray(zombieOptions.dispatchPids)
+      ? zombieOptions.dispatchPids.length
+      : 0,
+    stableIdentities: processList.filter(
+      (p) => p && typeof p.startIdentity === "string" && p.startIdentity
+    ).length,
+    rejectedDispatchReceipts: stored.rejected?.length ?? 0,
+    cleanedDispatchReceipts: stored.cleaned?.length ?? 0,
+    dispatchReceiptsTruncated: stored.truncated === true,
+    incompleteDispatchProvenance: stored.incompleteProvenance === true,
     blind: false,
   };
-  provenance.blind = processList.length > 0 && !provenance.cwdAvailable && provenance.dispatchReceipts === 0;
+  provenance.blind = processList.length > 0;
 
   return {
     ok: true,

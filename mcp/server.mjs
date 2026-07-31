@@ -23,6 +23,7 @@ const PROTOCOL_VERSION = "2025-06-18"; // MCP spec version date-string (matches 
 // Single-source the version from package.json so serverInfo never drifts from the release.
 const VERSION = JSON.parse(readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;
 const SERVER_INFO = { name: "muster", version: VERSION };
+const MAX_MCP_BACKLOG_BYTES = 1_048_576;
 // ── Tool catalog ──────────────────────────────────────────────────────────────
 // Factory shapes used by most TOOLS entries:
 //
@@ -54,6 +55,28 @@ const T = (description, prop, required = true) => ({
   inputSchema: { type: "object", properties: { [prop]: { type: "string" } }, required: required ? [prop] : [] },
   prop,
 });
+const SPRINT_RECEIPT_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string", minLength: 1, maxLength: 256 },
+    itemId: { type: "string", minLength: 1, maxLength: 128 },
+    phase: { type: "string", enum: ["implementation", "review", "integration"] },
+    status: { type: "string", enum: ["completed", "failed", "cancelled"] },
+    attempt: { type: "integer", minimum: 1, maximum: 1000000 },
+  },
+  required: ["id", "itemId", "phase", "status"],
+  additionalProperties: false,
+};
+const SPRINT_IN_FLIGHT_SCHEMA = {
+  type: "object",
+  properties: {
+    itemId: { type: "string", minLength: 1, maxLength: 128 },
+    phase: { type: "string", enum: ["implementation", "review", "integration"] },
+    attempt: { type: "integer", minimum: 1, maximum: 1000000 },
+  },
+  required: ["itemId", "phase", "attempt"],
+  additionalProperties: false,
+};
 
 const TOOLS = {
   // analysis verbs — string or no arg
@@ -84,7 +107,34 @@ const TOOLS = {
   // gate/math verbs — JSON in, written to a temp file
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
   muster_wave: { argv: ["wave"], ...J2("Compute dependency-ordered execution waves from a manifest's plan.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
-  muster_sprint_waves: { argv: ["sprint-waves"], ...T("Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations (returns waves JSON; annotated:false means the backlog is unannotated/sequential).", "backlog") },
+  muster_sprint_waves: { argv: ["sprint-waves"], ...T("Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations. Returns waves/items plus an explicit schedule: cap-bounded isolated build/review batches, the barrier, ordered merge integration, and sequential-degradation metadata; annotated:false means the backlog is unannotated/sequential.", "backlog") },
+  muster_sprint_reconcile: {
+    argv: ["sprint-reconcile"],
+    ...J2(
+      "Reconciles all available sprint completion receipts with the emitted schedule. Returns canonical item states and newly eligible implementation/review/integration dispatch actions; call after every wake before waiting again.",
+      {
+        plan: { type: "object" },
+        receipts: { type: "array", maxItems: 10000, items: SPRINT_RECEIPT_SCHEMA },
+        inFlight: { type: "array", maxItems: 1000, items: SPRINT_IN_FLIGHT_SCHEMA },
+      },
+      ["plan", "receipts", "inFlight"],
+    ),
+    picks: (a) => [{ plan: a.plan, receipts: a.receipts, inFlight: a.inFlight }],
+  },
+  muster_backlog_publish: {
+    argv: ["backlog-publish"], kind: "backlogPublish",
+    description: "CAS-publish a complete backlog under an explicit project root. The relative path must remain symlink-free and contained; expectedSha256 is the prior lowercase SHA-256 or absent. A concurrent-writer failure requires reread/reapply/retry.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dir: { type: "string" },
+        path: { type: "string" },
+        expectedSha256: { type: "string" },
+        content: { type: "string", maxLength: MAX_MCP_BACKLOG_BYTES },
+      },
+      required: ["dir", "path", "expectedSha256", "content"],
+    },
+  },
   muster_sprint_protocol: {
     kind: "static", text: null, error: "muster_sprint_protocol: adapter did not supply static content",
     description: "Returns the bundled sprint orchestration playbook: backlog resolution, sprint-waves, sequential wave execution, claim/receipt discipline, and honest disposition defaults.",
@@ -247,10 +297,10 @@ export function startMusterMcpServer(config) {
   const profileName = authorized.profileName || "";
   const limiter = new WorkLimiter(config.maxInflight || 4, config.maxQueue || 16);
 
-  async function runCli(argv, { cwd = config.cwd, signal } = {}) {
+  async function runCli(argv, { cwd = config.cwd, signal, input } = {}) {
     try {
       const { stdout } = await new Promise((resolve, reject) => {
-        execFile("node", [config.cliPath, ...argv], {
+        const child = execFile("node", [config.cliPath, ...argv], {
           cwd,
           signal,
           timeout: 60_000,
@@ -263,6 +313,7 @@ export function startMusterMcpServer(config) {
             reject(error);
           } else resolve({ stdout: childStdout });
         });
+        if (input !== undefined) child.stdin.end(input);
       });
       return { ok: true, text: stdout.trim() };
     } catch (e) {
@@ -312,6 +363,29 @@ export function startMusterMcpServer(config) {
   // static: no CLI call at all — return pre-loaded file content verbatim (muster_sprint_protocol).
   // A load-time read failure (tool.error set) surfaces as isError instead of serving `null` text.
   if (tool.kind === "static") return tool.error ? { ok: false, text: tool.error } : { ok: true, text: tool.text };
+
+  if (tool.kind === "backlogPublish") {
+    if (typeof args.dir !== "string" || !args.dir.trim()) {
+      return { ok: false, text: "muster_backlog_publish: explicit project dir is required" };
+    }
+    if (typeof args.path !== "string" || !args.path.trim()) {
+      return { ok: false, text: "muster_backlog_publish: relative backlog path is required" };
+    }
+    if (args.expectedSha256 !== "absent" && !/^[a-f0-9]{64}$/.test(args.expectedSha256 || "")) {
+      return { ok: false, text: "muster_backlog_publish: expectedSha256 must be a lowercase sha256 digest or absent" };
+    }
+    if (typeof args.content !== "string") {
+      return { ok: false, text: "muster_backlog_publish: content must be a string" };
+    }
+    if (Buffer.byteLength(args.content, "utf8") > MAX_MCP_BACKLOG_BYTES) {
+      return { ok: false, text: `muster_backlog_publish: content exceeds ${MAX_MCP_BACKLOG_BYTES} byte limit` };
+    }
+    return runCli([...tool.argv, args.path, "--expect", args.expectedSha256], {
+      cwd: path.resolve(args.dir),
+      signal,
+      input: args.content,
+    });
+  }
 
   // fastPath: muster_fast_path's bespoke kind -- a required string positional (`outcome`)
   // PLUS an OPTIONAL JSON payload (`capabilities`) behind a flag. Neither "str" (single
@@ -383,12 +457,21 @@ export function startMusterMcpServer(config) {
   const err = (id, code, message) => send({ jsonrpc: "2.0", id, error: { code, message } });
 
   async function handle(msg) {
+  if (Object.hasOwn(msg, "id") && msg.id === null) {
+    return err(null, -32600, "Invalid Request");
+  }
   const { id, method, params } = msg;
-  const isNotification = id === undefined || id === null;
+  const isNotification = !Object.hasOwn(msg, "id");
+  const replyOk = (result) => {
+    if (!isNotification) ok(id, result);
+  };
+  const replyErr = (code, message) => {
+    if (!isNotification) err(id, code, message);
+  };
 
   switch (method) {
     case "initialize":
-      return ok(id, {
+      return replyOk({
         protocolVersion: params?.protocolVersion || PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: SERVER_INFO,
@@ -400,9 +483,9 @@ export function startMusterMcpServer(config) {
       limiter.cancel(params?.requestId);
       return; // no response to notifications
     case "ping":
-      return ok(id, {});
+      return replyOk({});
     case "tools/list":
-      return ok(id, {
+      return replyOk({
         tools: Object.entries(exposedTools).map(([name, t]) => ({
           name, ...(t.title ? { title: t.title } : {}),
           description: t.description, inputSchema: t.inputSchema,
@@ -411,7 +494,7 @@ export function startMusterMcpServer(config) {
       });
     case "tools/call": {
       if (!Object.hasOwn(exposedTools, params?.name)) {
-        return ok(id, {
+        return replyOk({
           content: [{
             type: "text",
             text: profileName
@@ -421,11 +504,12 @@ export function startMusterMcpServer(config) {
           isError: true,
         });
       }
-      const r = await limiter.run(id, (signal) => invoke(params?.name, params?.arguments || {}, signal));
-      return ok(id, { content: [{ type: "text", text: r.text }], isError: !r.ok });
+      const workId = isNotification ? Symbol("tools/call notification") : id;
+      const r = await limiter.run(workId, (signal) => invoke(params?.name, params?.arguments || {}, signal));
+      return replyOk({ content: [{ type: "text", text: r.text }], isError: !r.ok });
     }
     default:
-      if (!isNotification) err(id, -32601, `method not found: ${method}`);
+      return replyErr(-32601, `method not found: ${method}`);
   }
   }
 
@@ -451,7 +535,9 @@ const STDIN_MAX_BYTES = 4 * 1024 * 1024;
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
     Promise.resolve(handle(msg)).catch((e) => {
-      if (msg?.id != null) err(msg.id, -32603, `internal error: ${e.message}`);
+      if (msg !== null && typeof msg === "object" && Object.hasOwn(msg, "id")) {
+        err(msg.id, -32603, `internal error: ${e.message}`);
+      }
     });
   }
   });

@@ -711,7 +711,7 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.ok(match, "references/kimi-dispatch.md must carry the '### Kimi-native dispatch' section");
   const section = match[1];
   // the rule itself exists
-  assert.match(section, /Attended sessions dispatch lane-sensitive legs as headless `kimi -p` processes/, "the Kimi subsection must state the attended-session process-lane rule");
+  assert.match(section, /Attended sessions cannot currently dispatch lane-sensitive legs as headless `kimi -p`\s+processes/, "the Kimi subsection must state the attended-session report-only rule");
   // the attended-vs-unattended division: process lane for attended sessions,
   // native Agent/AgentSwarm stays the unattended in-session path (the env bind
   // is already set by kimiGoalInvocation there)
@@ -720,17 +720,18 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.match(section, /kimiGoalInvocation/, "the rule must name kimiGoalInvocation as the unattended path's env binder");
   assert.match(section, /TUI ignores `model_preference` entirely/, "the rule must state WHY attended sessions cannot bind lanes in-session");
   assert.match(section, /genuinely need the parent's live context/, "the rule must reserve the native Agent tool for live-context legs");
-  // names the builder and the descriptor keys exactly (src/kimi-dispatch.js is canonical);
-  // the model reaches the builder through the CLI verb (the two-layer boundary), never a
-  // direct call
-  assert.match(section, /`kimiProcessDispatch` -- build the descriptor with `\$MUSTER_CLI kimi-process-dispatch\s+--brief <text> --agent-file <name\|path> --cwd <dir> --lane <primary\|secondary>`/, "the rule must name the kimi-process-dispatch verb with its exact argument shape");
-  assert.match(section, /`src\/kimi-dispatch\.js`/, "the rule must cite src/kimi-dispatch.js");
-  assert.match(section, /\{ argv, env,\s*cwd, lane \}/, "the rule must name the descriptor keys { argv, env, cwd, lane }");
+  // No trusted process broker is currently available. Attended lane-sensitive
+  // legs escalate instead of spawning; the descriptor remains inspection-only.
+  assert.match(section, /`\$MUSTER_CLI kimi-process-run\s+--brief <text> --agent-file <name\|path> --cwd <dir> --lane <primary\|secondary>`/, "the rule must name the kimi-process-run supervisor with its exact argument shape");
+  assert.match(section, /`src\/dispatch-receipts\.js`/, "the rule must cite the supervisor implementation");
+  assert.match(section, /always exits nonzero before spawn, receipt, cgroup, or\s+signal setup/, "the process-run verb must be pinned report-only before side effects");
+  assert.match(section, /trusted broker bootstrap is unavailable/, "the rule must state why process dispatch is unavailable");
+  assert.match(section, /escalate the leg/, "attended lane-sensitive work must escalate");
+  assert.match(section, /`\$MUSTER_CLI kimi-process-dispatch \.\.\.` remains descriptor-only/, "the descriptor verb must remain explicitly non-production");
+  assert.match(section, /MUST NOT be manually spawned/, "production prose must forbid manual descriptor spawning");
+  assert.match(section, /Filesystem receipts are\s+diagnostic only and never authorize hygiene signaling/, "the rule must deny receipt-based signaling authority");
+  assert.match(section, /Briefs MUST be secret-free/, "the rule must state the argv prompt limitation");
   assert.match(section, /kimiLaneEnv\(\)/, "the rule must name the shared kimiLaneEnv() env derivation");
-  // the env is an OVERRIDE pair merged over the ambient env, never the whole
-  // spawn env -- a wholesale replacement loses HOME/PATH and the child breaks
-  assert.match(section, /\{ \.\.\.process\.env, \.\.\.d\.env \}/, "the rule must pin the env merge shape ({ ...process.env, ...d.env })");
-  assert.match(section, /never\s+pass it as the whole env/, "the rule must forbid passing descriptor.env as the whole spawn env");
   // the always-emit -m rule and its rationale
   assert.match(section, /`-m` is ALWAYS\s*emitted/, "the rule must state -m is always emitted");
   assert.match(section, /binds only a process's SPAWNED\s*SUBAGENTS/, "the rule must state model_preference binds only spawned subagents");
@@ -739,6 +740,6 @@ test("references/kimi-dispatch.md carries the attended-session process-lane rule
   assert.match(section, /stream-json result on stdout/, "the rule must name the stream-json stdout receipt");
   assert.match(section, /process exit code/, "the rule must name the process exit code receipt");
   assert.match(section, /`\$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>`/, "the rule must name the kimi-session-usage verb for per-leg token accounting");
-  assert.match(section, /src\/kimi-receipts\.js's\s+`readSessionUsage`, reached through `captureSessionId`\/`resolveSessionForCwd`/, "the rule must name readSessionUsage (src/kimi-receipts.js) and its resolution chain");
+  assert.match(section, /src\/kimi-receipts\.js's\s+`readSessionUsage`, reached through\s+`captureSessionId`\/`resolveSessionForCwd`/, "the rule must name readSessionUsage (src/kimi-receipts.js) and its resolution chain");
   assert.match(section, /docs\/research\/kimi-code-cli\.md sec 8/, "the rule must cite the receipts research section");
 });

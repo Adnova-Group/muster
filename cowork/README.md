@@ -20,11 +20,11 @@ This matrix describes the verified MCP-only distribution in this directory. It d
 | Audit | MCP protocol | Drive the whole-codebase lifecycle from the server instructions and deterministic tools. |
 | Runner | Not provided | There is no Runner-mode MCP protocol or tool in this distribution. |
 | Capture | Not provided | There is no Capture-mode MCP protocol or tool in this distribution. |
-| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 28 MCP tools. |
+| Init | CLI-only | Run `npx -y @adnova-group/muster@0.5.0 init [dir]`; Init is not one of the 30 MCP tools. |
 
 ## What you get
 
-Twenty-eight deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, and scheduling operations without model calls; the Cowork agent still performs the judgment and execution work.
+Thirty deterministic tools, plus an execution protocol that teaches the agent how to drive them. The tools perform routing, validation, scoring, scheduling, receipt reconciliation, and bounded backlog publication without model calls; the Cowork agent still performs the judgment and execution work.
 
 | Tool | Does |
 | --- | --- |
@@ -38,6 +38,8 @@ Twenty-eight deterministic tools, plus an execution protocol that teaches the ag
 | `muster_diagnose` / `muster_audit` | Build the diagnose / whole-codebase audit manifest |
 | `muster_manifest_validate` / `muster_wave` | Validate a crew manifest and compute its execution waves |
 | `muster_sprint_waves` | Compute dependency-ordered waves from a sprint backlog's `{id}`/`{deps}` annotations (`annotated:false` means the backlog is unannotated/sequential) |
+| `muster_sprint_reconcile` | Drain completion receipts into deterministic sprint states and the next eligible implementation/review/integration actions |
+| `muster_backlog_publish` | Bounded compare-and-swap publication for complete, contained backlog content; concurrent writers must reread and reapply |
 | `muster_sprint_protocol` | Return the Cowork-adapted sprint playbook (no args) -- see below |
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_gate_cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves |
@@ -56,7 +58,7 @@ muster's principles, routing policy, and a per-mode execution protocol (the core
 
 `muster_sprint_protocol` is a protocol-content tool, not an MCP wrapper for a same-name CLI command. With no arguments, it returns `cowork/sprint-protocol.md` verbatim -- a condensed, Cowork-native port of the Claude Code plugin's `/muster:go-backlog` lifecycle: backlog resolution against `.muster/backlog.md`, calling `muster_sprint_waves` for dependency order, the per-item go lifecycle, and claim/receipt discipline for shared backlogs. Call it at the start of a sprint the same way you'd load the slash command's protocol on Claude Code.
 
-Be honest about what does not port on the verified MCP-only route: it has no lifecycle hooks (no wave-guard, no scale-gate, no action-class fence), no slash verbs, and no isolated per-item worktree runners, so sprint's parallel wave-mode dispatch has no safe equivalent -- every wave runs sequentially, one item at a time, in the main tree; that degradation path *is* the path here, not a fallback. And with no wave-guard hook bounding a direct-to-base merge, a `merge-local`/`merge-push` disposition executes with no structural safety net beyond the session's own diligence -- prefer `pr`/`keep` when authoring a backlog for a Cowork sprint. The full caveats live in the protocol file itself. A declared native plugin load may change those capabilities, but it remains conditional and unverified until tested on the specific Cowork build.
+Be honest about what does not port on the verified MCP-only route: it has no lifecycle hooks (no wave-guard, no scale-gate, no action-class fence), no slash verbs, and no native isolated per-item worktree runner. Without a proven native per-subagent worktree primitive, the orchestrator creates a dedicated isolated Git worktree for each write-capable item and executes those implementations sequentially in their assigned worktrees. The main tree is only the coordination and ordered-integration surface. And with no wave-guard hook bounding a direct-to-base merge, a `merge-local`/`merge-push` disposition executes with no structural safety net beyond the session's own diligence -- prefer `pr`/`keep` when authoring a backlog for a Cowork sprint. The full caveats live in the protocol file itself. A declared native plugin load may change those capabilities, but it remains conditional and unverified until tested on the specific Cowork build.
 
 ## Prerequisites
 
@@ -171,7 +173,7 @@ Phase 3 passing means parallel fan-out plus per-call model override work, so the
 
 This directory is the Claude Cowork MCP package; it is not ChatGPT Work's plugin. ChatGPT Work is available on the web and in the ChatGPT desktop app with Work selected, and uses the universal Plugins Directory plus a registered MCP connection. Work does not inherit this Cowork package or Codex Desktop configuration. Follow [`website/guides/chatgpt-work.md`](../website/guides/chatgpt-work.md) for the private/local Work lane.
 
-The recommended Work profile (`pro-safe`) is exactly one titled, read-only `muster_prioritize` tool after a successful native Scan Tools gate; the installer requires an explicit `--profile`. Its `full` profile is the existing 28-tool deterministic surface, not write support, and requires a full-MCP workspace entitlement and both installer/server opt-ins. Secure MCP Tunnel is outbound-only private transport and is not a public plugin-submission path.
+The recommended Work profile (`pro-safe`) is exactly one titled, read-only `muster_prioritize` tool after a successful native Scan Tools gate; the installer requires an explicit `--profile`. Its `full` profile is the existing 30-tool deterministic surface, not write support, and requires a full-MCP workspace entitlement and both installer/server opt-ins. Secure MCP Tunnel is outbound-only private transport and is not a public plugin-submission path.
 
 ## Troubleshooting
 

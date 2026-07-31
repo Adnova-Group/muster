@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { mkdtempSync, writeFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, execFile } from "node:child_process";
@@ -183,12 +183,28 @@ test("verb-rename: sprint-protocol.md cites go-backlog.md (not the sprint.md ali
   const norm = text.replace(/\s+/g, " ");
   assert.match(norm, /port of `\/muster:go-backlog`'s lifecycle \(`plugin\/commands\/go-backlog\.md`\)/, "citation repoints to go-backlog.md");
   assert.doesNotMatch(text, /plugin\/commands\/sprint\.md/, "no more citation of the alias-stub sprint.md");
-  assert.match(norm, /driving the full go lifecycle sequentially/, "'go lifecycle', not 'autopilot lifecycle'");
+  assert.match(norm, /driving every item through the full go lifecycle/, "'go lifecycle', not 'autopilot lifecycle'");
   assert.match(norm, /single go pass/, "'go pass', not 'autopilot pass'");
   assert.match(norm, /There is no `\/muster:go-backlog` grammar/, "no-slash-verbs bullet cites the current verb name");
   assert.match(norm, /the "Degradation" path in `go-backlog\.md`/, "Degradation citation repoints to go-backlog.md");
   assert.match(norm, /`\/muster:sprint` still works as the legacy alias of `\/muster:go-backlog`/, "alias noted once");
   assert.match(text, /## Sprint/, "the '## Sprint' STATE-heading cross-repo convention stays untouched");
+});
+
+test("Cowork sprint protocol consumes the emitted build/barrier/integration schedule", async () => {
+  const text = await read("cowork/sprint-protocol.md");
+  const norm = text.replace(/\s+/g, " ");
+  assert.match(norm, /schedule\.waves/, "annotated mode must consume the emitted per-wave schedule");
+  assert.match(norm, /buildReview\.batches/, "the emitted cap-sized build batches are authoritative");
+  assert.match(norm, /sequential-isolated/, "Cowork degradation must preserve isolated build/review legs");
+  assert.match(norm, /all-build-review-complete/, "integration must wait for the emitted build/review barrier");
+  assert.match(norm, /integration\.itemIds/, "only the emitted ordered integration ids may touch the base");
+  assert.match(norm, /annotated:false.*flat.*sequential/i, "plain backlogs must retain the flat sequential path");
+  assert.doesNotMatch(
+    norm,
+    /every wave executed sequentially, one item at a time, in the main tree/,
+    "Cowork must not collapse isolated build/review and integration into one main-tree loop",
+  );
 });
 
 test("verb-rename: README.md enumeration uses plan/go/plan-backlog/go-backlog and cites /muster:go-backlog", async () => {
@@ -218,12 +234,12 @@ test("verb-rename: zero pre-rename verb-name citations remain in the 3 cowork su
   }
 });
 
-test("tools/list exposes exactly the 28 brain verbs, matching the MCPB manifest", async () => {
+test("tools/list exposes exactly the 30 brain verbs, matching the MCPB manifest", async () => {
   const manifest = JSON.parse(await read("cowork/manifest.json"));
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 28, "28 tools served");
+  assert.equal(served.length, 30, "30 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -406,8 +422,8 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.equal(manifest.license, pkg.license, "MCPB license must match the package license");
   assert.equal(packedLicense, rootLicense, "the packed cowork/ tree must carry the repository license");
   assert.equal(packedNotice, rootNotice, "the packed cowork/ tree must carry repository attributions");
-  assert.equal(manifest.tools.length, 28, "MCPB manifest declares the complete deterministic tool surface");
-  assert.match(manifest.long_description, /28 deterministic MCP tools/);
+  assert.equal(manifest.tools.length, 30, "MCPB manifest declares the complete deterministic tool surface");
+  assert.match(manifest.long_description, /30 deterministic MCP tools/);
   assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit/);
   assert.equal(manifest.server.entry_point, "mcp-server.mjs", "MCPB entry point is relative to the packed cowork/ root");
   assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/mcp-server.mjs"]);
@@ -771,6 +787,128 @@ test("file verb: muster_sprint_waves computes dependency-ordered waves from a ba
   assert.deepEqual(res.waves[1].sort(), ["b", "c"]);
 });
 
+test("file verb: muster_sprint_waves exposes build concurrency and post-barrier integration order", async () => {
+  const backlog = [
+    "- [ ] Merge locally {id: local} {deps: none} {disposition: merge-local}",
+    "- [ ] Open PR {id: pr} {deps: none} {disposition: pr}",
+    "- [ ] Merge and push {id: push} {deps: none} {disposition: merge-push}",
+  ].join("\n");
+  const r = await rpc(
+    [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } }],
+    { env: { MUSTER_SPRINT_PARALLEL: "2" } },
+  );
+  const res = JSON.parse(r[2].result.content[0].text);
+  assert.equal(r[2].result.isError, false);
+  assert.deepEqual(res.schedule.waves[0].buildReview.batches, [["local", "pr"], ["push"]]);
+  assert.deepEqual(res.schedule.waves[0].integration.itemIds, ["local", "pr", "push"]);
+  assert.equal(res.schedule.degradation.buildReviewMode, "sequential-isolated");
+});
+
+test("json verb: muster_sprint_reconcile drains a completion wake and exposes review without a user turn", async () => {
+  const backlog = "- [ ] Open PR {id: a} {deps: none} {disposition: pr}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  const reconciled = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_sprint_reconcile",
+        arguments: {
+          plan,
+          inFlight: [{ itemId: "a", phase: "implementation", attempt: 1 }],
+          receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed" }],
+        },
+      },
+    },
+  ]);
+  const res = JSON.parse(reconciled[2].result.content[0].text);
+
+  assert.equal(reconciled[2].result.isError, false);
+  assert.equal(res.next, "dispatch");
+  assert.deepEqual(res.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1 }]);
+  assert.equal(res.wait.eligible, false);
+});
+
+test("json verb: muster_sprint_reconcile returns isError with structured validation errors for a forged plan", async () => {
+  const backlog = "- [ ] Open PR {id: a} {deps: none} {disposition: pr}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  plan.schedule.buildReview.maxConcurrency = 999;
+  const reconciled = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_sprint_reconcile",
+        arguments: { plan, receipts: [], inFlight: [] },
+      },
+    },
+  ]);
+  const res = JSON.parse(reconciled[2].result.content[0].text);
+
+  assert.equal(reconciled[2].result.isError, true);
+  assert.equal(res.ok, false);
+  assert.match(res.errors.join(" | "), /maxConcurrency/);
+  assert.notEqual(res.wait?.eligible, true);
+});
+
+test("MCP backlog publisher performs a bounded CAS write inside an explicit project root", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-mcp-backlog-publish-"));
+  const backlog = path.join(dir, "backlog.md");
+  writeFileSync(backlog, "original\n");
+  const expectedSha256 = createHash("sha256").update("original\n").digest("hex");
+  const r = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_backlog_publish",
+        arguments: { dir, path: "backlog.md", expectedSha256, content: "updated\n" },
+      },
+    },
+  ]);
+  const res = JSON.parse(r[2].result.content[0].text);
+  assert.equal(r[2].result.isError, false);
+  assert.equal(res.ok, true);
+  assert.equal(readFileSync(backlog, "utf8"), "updated\n");
+});
+
+test("MCP backlog publisher rejects content above its one-megabyte boundary before CLI dispatch", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-mcp-backlog-bound-"));
+  const r = await rpc([
+    INIT,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "muster_backlog_publish",
+        arguments: {
+          dir,
+          path: "backlog.md",
+          expectedSha256: "absent",
+          content: "x".repeat(1_048_577),
+        },
+      },
+    },
+  ]);
+  assert.equal(r[2].result.isError, true);
+  assert.match(r[2].result.content[0].text, /exceeds 1048576 byte limit/);
+});
+
 test("file verb: muster_sprint_waves on an unannotated backlog returns annotated:false, sequential waves", async () => {
   const backlog = ["- [ ] Do first", "- [ ] Do second"].join("\n");
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } }]);
@@ -1060,6 +1198,161 @@ test("notifications/initialized produces no spurious reply", async () => {
   ]);
   assert.deepEqual(Object.keys(r).sort(), ["1", "2"], "server must not emit a reply to the notification");
   assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after notification");
+});
+
+test("request ids reject null, preserve absent-id notifications, and accept strings and numbers", async () => {
+  const messages = await new Promise((resolve, reject) => {
+    const srv = spawn(process.execPath, [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+      cwd: rootDir,
+      stdio: ["pipe", "pipe", "inherit"],
+    });
+    const got = [];
+    let buf = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      srv.kill("SIGKILL");
+      reject(new Error(`method notification timeout; replies=${JSON.stringify(got)}`));
+    }, 3_000);
+    srv.stdout.setEncoding("utf8");
+    srv.stdout.on("data", (data) => {
+      buf += data;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const msg = JSON.parse(line);
+        got.push(msg);
+        if (!settled && msg.id === 2) {
+          settled = true;
+          setTimeout(() => {
+            clearTimeout(timer);
+            srv.stdin.end();
+            resolve(got);
+          }, 50);
+        }
+      }
+    });
+    srv.on("error", reject);
+    for (const message of [
+      INIT,
+      { jsonrpc: "2.0", method: "initialize", params: {} },
+      { jsonrpc: "2.0", method: "ping" },
+      { jsonrpc: "2.0", method: "tools/list" },
+      { jsonrpc: "2.0", method: "notifications/unknown" },
+      { jsonrpc: "2.0", id: null, method: "ping" },
+      { jsonrpc: "2.0", id: "request-2", method: "ping" },
+      { jsonrpc: "2.0", id: 2, method: "ping" },
+    ]) {
+      srv.stdin.write(JSON.stringify(message) + "\n");
+    }
+  });
+
+  assert.deepEqual(
+    messages.map((msg) => msg.id),
+    [1, null, "request-2", 2],
+    "absent-id notifications stay silent while null, string, and number request ids receive responses",
+  );
+  assert.deepEqual(
+    messages[1],
+    { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } },
+    "an explicit null id is an invalid JSON-RPC request",
+  );
+  assert.deepEqual(messages[2].result, {}, "string request ids remain valid");
+  assert.deepEqual(messages[3].result, {}, "number request ids remain valid");
+});
+
+test("tools/call notifications execute without replies, undefined-id collisions, or cancellation", async () => {
+  const fixture = mkdtempSync(path.join(tmpdir(), "cowork-tool-notifications-"));
+  const fakeCli = path.join(fixture, "recording-cli.mjs");
+  const marker = path.join(fixture, "calls.log");
+  writeFileSync(fakeCli, [
+    'import { appendFileSync } from "node:fs";',
+    'appendFileSync(process.env.MUSTER_TEST_MARKER, "started\\n");',
+    'await new Promise((resolve) => setTimeout(resolve, 100));',
+    'appendFileSync(process.env.MUSTER_TEST_MARKER, "completed\\n");',
+    'process.stdout.write("ok");',
+  ].join("\n"));
+
+  try {
+    const messages = await new Promise((resolve, reject) => {
+      const srv = spawn(process.execPath, [path.join(rootDir, "cowork", "mcp-server.mjs")], {
+        cwd: rootDir,
+        env: {
+          ...process.env,
+          NODE_ENV: "test",
+          MUSTER_COWORK_TEST_CLI: fakeCli,
+          MUSTER_TEST_MARKER: marker,
+        },
+        stdio: ["pipe", "pipe", "inherit"],
+      });
+      const got = [];
+      let buf = "";
+      let settled = false;
+      let completionScheduled = false;
+      const timer = setTimeout(() => {
+        settled = true;
+        srv.kill("SIGKILL");
+        reject(new Error(`tools/call notification timeout; replies=${JSON.stringify(got)}`));
+      }, 3_000);
+      const finishWhenComplete = () => {
+        if (settled) return;
+        let completed = 0;
+        try {
+          completed = readFileSync(marker, "utf8").split("\n").filter((line) => line === "completed").length;
+        } catch {}
+        if (completed < 2 || !got.some((msg) => msg.id === 2)) {
+          setTimeout(finishWhenComplete, 10);
+          return;
+        }
+        if (!completionScheduled) {
+          completionScheduled = true;
+          setTimeout(() => {
+            settled = true;
+            clearTimeout(timer);
+            srv.stdin.end();
+            resolve(got);
+          }, 50);
+        }
+      };
+      srv.stdout.setEncoding("utf8");
+      srv.stdout.on("data", (data) => {
+        buf += data;
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (line) got.push(JSON.parse(line));
+        }
+      });
+      srv.on("error", reject);
+      srv.stdin.write(JSON.stringify(INIT) + "\n");
+      srv.stdin.write(JSON.stringify({
+        jsonrpc: "2.0", method: "tools/call",
+        params: { name: "muster_detect", arguments: {} },
+      }) + "\n");
+      srv.stdin.write(JSON.stringify({
+        jsonrpc: "2.0", method: "notifications/cancelled", params: {},
+      }) + "\n");
+      srv.stdin.write(JSON.stringify({
+        jsonrpc: "2.0", method: "tools/call",
+        params: { name: "muster_detect", arguments: {} },
+      }) + "\n");
+      srv.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping" }) + "\n");
+      finishWhenComplete();
+    });
+
+    assert.deepEqual(messages.map((msg) => msg.id).sort(), [1, 2], "tools/call notifications must emit no response");
+    assert.deepEqual(messages.find((msg) => msg.id === 2)?.result, {}, "a subsequent ping request stays healthy");
+    assert.equal(
+      readFileSync(marker, "utf8").split("\n").filter((line) => line === "completed").length,
+      2,
+      "both notifications execute without colliding or being cancelled via an undefined id",
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 // ── A-SEC6: stdin buffer overflow guard ─────────────────────────────────────

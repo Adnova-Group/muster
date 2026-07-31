@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, access } from "node:fs/promises";
+import { readFile, access, readdir } from "node:fs/promises";
 import { scoreHumanness } from "../src/humanizer-score.js";
 
 const root = new URL("../", import.meta.url);
@@ -55,7 +55,7 @@ test("contributor and architecture docs describe the current build and dispatch 
   assert.match(architecture, /harness-neutral[\s\S]{0,220}(?:tier|effort|readOnly)/i);
   assert.match(architecture, /three nonredundant read-only briefs|three read-only briefs/i);
   assert.match(architecture, /system quality[\s\S]{0,220}coverage[\s\S]{0,180}security/i);
-  assert.match(architecture, /four boundaries[\s\S]{0,900}`install kimi --probe`/i);
+  assert.match(architecture, /four boundaries[\s\S]{0,900}opt-in adapter probe/i);
   const voice = await read("docs/profiles/VOICE.md");
   assert.doesNotMatch(voice, /single runtime dependency/i);
   assert.match(voice, /two runtime dependencies/i);
@@ -137,6 +137,80 @@ test("newly changed README and modes prose remains humanizer-passing", async () 
   for (const f of ["README.md", "website/reference/modes.md"]) {
     assert.equal(scoreHumanness(await read(f)).passing, true, `${f} must pass humanizer score`);
   }
+});
+
+test("Cowork sequential fallback retains dedicated per-item worktree isolation", async () => {
+  const files = [
+    "cowork/README.md",
+    "cowork/sprint-protocol.md",
+    "docs/research/claude-cowork.md",
+    "website/guides/cowork.md",
+  ];
+  for (const file of files) {
+    const text = await read(file);
+    assert.match(
+      text,
+      /orchestrator[\s\S]{0,180}(?:creates?|create)[\s\S]{0,180}dedicated[\s\S]{0,80}(?:isolated )?(?:Git )?worktree[\s\S]{0,220}sequential/i,
+      `${file} must keep sequential Cowork implementation in orchestrator-created per-item worktrees`,
+    );
+    assert.match(
+      text,
+      /(?:connected project|main tree)[\s\S]{0,180}coordination[\s\S]{0,180}(?:ordered )?integration/i,
+      `${file} must reserve the connected tree for coordination and ordered integration`,
+    );
+    assert.doesNotMatch(
+      text,
+      /(?:every wave|one item at a time|write-capable wave items)[^\n]{0,120}(?:in|into) the (?:connected project|main tree)/i,
+      `${file} must not send fallback implementation into the connected tree`,
+    );
+  }
+});
+
+test("Init public reference pins one instruction authority and holds conflicts", async () => {
+  const files = [
+    "README.md",
+    "website/guides/codex.md",
+    "website/guides/harnesses.md",
+    "website/guides/quickstart.md",
+    "website/reference/commands.md",
+    "website/reference/modes.md",
+  ];
+  for (const file of files) {
+    const text = await read(file);
+    assert.match(text, /`AGENTS\.md` is authoritative/i, `${file} must name AGENTS.md as authoritative`);
+    assert.match(
+      text,
+      /`CLAUDE\.md` contains exactly:[\s\S]{0,80}# Claude Code\n\n@AGENTS\.md/i,
+      `${file} must pin the exact two-line CLAUDE.md content`,
+    );
+    assert.match(
+      text,
+      /(?:preparation baseline|baseline files?)[\s\S]{0,220}HUMAN-HOLD/i,
+      `${file} must hold conflicting baseline instruction files`,
+    );
+  }
+  const modes = await read("website/reference/modes.md");
+  assert.match(modes, /reverse `AGENTS\.md` reference to `CLAUDE\.md` cannot satisfy/i);
+});
+
+test("public docs contain no stale 29-tool total claims", async () => {
+  const roots = ["cowork", "docs", "website"];
+  const files = ["README.md"];
+  const exactComponentPhrase = "29 CLI-wrapper tools plus `muster_sprint_protocol`";
+  for (const dir of roots) {
+    const entries = await readdir(new URL(dir, root), { recursive: true });
+    files.push(...entries.filter((entry) => entry.endsWith(".md")).map((entry) => `${dir}/${entry}`));
+  }
+  const staleTotal = /\b29(?:-tool\b|\s+(?:deterministic\s+)?tools?\b|\s+CLI(?:-|\s)?wrappers?\b|\s+CLI(?:-|\s)?wrapper(?:\s+MCP)?\s+tools?\b)/i;
+  for (const file of files) {
+    const text = (await read(file)).replaceAll(exactComponentPhrase, "");
+    assert.doesNotMatch(
+      text,
+      staleTotal,
+      `${file} may use 29 only in the exact component phrase "${exactComponentPhrase}"`,
+    );
+  }
+  assert.match(await read("website/guides/codex.md"), new RegExp(exactComponentPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("command reference never pairs artifact-delta with an evidence file", async () => {

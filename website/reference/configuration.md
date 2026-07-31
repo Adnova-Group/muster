@@ -56,7 +56,7 @@ To confirm a value is actually reaching the CLI, read it back off a command that
 Muster's conceptual ladder is `scout`, `core`, `prime`, and `apex`; harness adapters map those tiers to concrete models.
 
 <!-- legacy-tier-compat:start -->
-Compatibility: legacy tier inputs `haiku`, `sonnet`, `opus`, and `fable` map to `scout`, `core`, `prime`, and `apex`; `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
+Compatibility only: legacy input aliases `haiku`, `sonnet`, `opus`, and `fable` normalize to `scout`, `core`, `prime`, and `apex`; they are not a second conceptual ladder. `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
 <!-- legacy-tier-compat:end -->
 
 ## Not user knobs

@@ -1283,5 +1283,54 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // counts are unchanged (re-verified green).
   // 2026-07-30 re-pin #22 (audit S6): runner.md gains the $MUSTER_CLI resolution block its
   // siblings carry; both hardcoded node src/cli.js call sites switched.
-  assert.equal(hash.digest("hex"), "9d967a7f9a2d897e48f4f70a30566b4070437cf80069007779b79d358e05ca45");
+  // 2026-07-30 re-pin #23 (docs-authority remediation): file COUNT unchanged
+  // (144) -- plugin/commands/init.md now makes AGENTS.md the single native
+  // instruction authority for both Claude Code and Codex handoffs, requires
+  // CLAUDE.md to be the thin @AGENTS.md pointer, and records both files in the
+  // expected-artifact baseline. This is the reviewed shared-surface remediation
+  // for the one-authority contract, not accidental Codex-side drift.
+  // 2026-07-30 re-pin #24 (docs-authority review fix): file COUNT unchanged
+  // (144) -- plugin/commands/init.md's confirmation and call-result examples
+  // now attest both canonical instruction artifacts rather than showing an
+  // AGENTS.md-only proof that the validator correctly rejects.
+  // 2026-07-30 re-pin #25 (wave-dispatch review fix): muster-runner gains the explicit
+  // build-review-only mode; go-backlog selects it for scheduled legs and defers all
+  // dispositions until the emitted post-barrier phase. The ordinary runner command remains
+  // full-lifecycle. Cowork mirrors the same no-push/no-PR/no-integration leg boundary.
+  // 2026-07-30 re-pin #26 (wave escalation semantics): go-backlog now omits escalated/failed
+  // build-review legs from disposition/integration without reordering survivors, and fails
+  // dependent items closed before worktree creation or dispatch. The runner profile is unchanged.
+  // 2026-07-30 re-pin #27 (production dispatch receipts): only the executable
+  // Kimi process-lane prose changed. references/kimi-dispatch.md now requires
+  // the PID-owning `kimi-process-run` supervisor and leaves
+  // `kimi-process-dispatch` descriptor-only; go-backlog.md names that same
+  // supervised lane for its token-accounting arm. File count is unchanged.
+  // 2026-07-30 re-pin #28 (receipt authority remediation): the same two Kimi
+  // process-lane prose files now pin the live Linux broker/group boundary,
+  // diagnostic-only filesystem receipts, fail-closed unsupported platforms,
+  // canonical executable/path binding, and the unavoidable secret-free argv
+  // brief rule. File count remains unchanged.
+  // 2026-07-30 re-pin #29 (receipt broker review remediation): the Kimi
+  // process-lane paragraph now names inherited /proc/self/fd bindings,
+  // immutable agent snapshots, bounded signal cleanup, launcher lifetime, and
+  // globally bounded diagnostic-receipt enumeration. File count is unchanged.
+  // 2026-07-30 re-pin #30 (kernel containment fix loop): that paragraph now
+  // pins immutable executable/interpreter snapshots, delegated cgroup-v2 plus
+  // bubblewrap containment, setsid-proof cgroup.kill, and bounded receipt
+  // compaction. File count remains unchanged.
+  // 2026-07-30 re-pin #31 (trusted-broker decision): the same two Kimi
+  // process-lane prose files now make process dispatch report-only on every
+  // platform, escalate attended lane-sensitive legs, and retain the
+  // descriptor-only plus unattended in-session contracts. File count remains
+  // unchanged.
+  // 2026-07-30 re-pin #32 (backlog writer serialization): every file-backed backlog
+  // producer now routes publication through the shared backlog-publish CAS command.
+  // Review-gate follow-up: Cowork's writer now invokes the bounded MCP publisher
+  // directly instead of naming a CLI/stdin mechanism unavailable on MCP-only hosts.
+  // 2026-07-30 re-pin #33 (final integration verification): audit.md and runner.md
+  // document narrowly scoped prompt-lint safety exceptions; go-backlog.md adds
+  // the matching rule-density exception while preserving its remote-text and
+  // report-only Kimi process-lane contracts. Runner receipts now also require
+  // source-item or issue citations for factual claims. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "13da731131a968f1fbd1a0988914a7ffcdfce88625cdd12ab32556bc2b37f370");
 });

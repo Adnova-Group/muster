@@ -6,9 +6,9 @@
 // stop claiming the aliases are "not deprecated on any schedule," and — critically —
 // nothing about the alias's own behavior changes yet (it still delegates to its
 // target verb, byte-identical Read-and-execute directive). These tests pin the two
-// fixed tokens the notice carries (DEPRECATION_DATE, RETIREMENT_TARGET) across every
-// surface that documents the aliases' fate, and re-assert the "no behavior change"
-// promise against the same alias-shape contract test/mode-evals.test.js already pins.
+// fixed tokens in the accepted retirement decision across every surface that
+// documents the aliases' fate, and re-assert the "no behavior change" promise
+// against the same alias-shape contract test/mode-evals.test.js already pins.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -16,29 +16,58 @@ import { readFile } from "node:fs/promises";
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
 
-// Single source of truth for this test file's own expectations. The command files
-// themselves are the actual canonical source (each carries its own dated notice);
-// these constants exist so every assertion below checks for the SAME date/target,
-// not independently-typo-able copies of the same two facts.
-const DEPRECATION_DATE = "2026-07-17";
-const RETIREMENT_TARGET = "muster 0.7.0";
 const ALIASES = { run: "plan", autopilot: "go", sprint: "go-backlog" };
+const SHARED_NOTICE_FILES = [
+  "README.md",
+  "cowork/sprint-protocol.md",
+  "docs/architecture.md",
+  "website/guides/codex.md",
+  "website/guides/install.md",
+  "website/reference/modes.md",
+];
+
+async function retirementDecision() {
+  const text = await read("docs/decisions/legacy-alias-retirement-clock.md");
+  const status = text.match(/^- \*\*Status:\*\* (.+)$/m)?.[1];
+  const deprecationDate = text.match(/^- \*\*Deprecation date:\*\* `([^`]+)`$/m)?.[1];
+  const retirementTarget = text.match(/^- \*\*Retirement target:\*\* `([^`]+)`$/m)?.[1];
+
+  assert.equal(status, "Accepted", "only an accepted decision may govern the retirement clock");
+  assert.equal(deprecationDate, "2026-07-17", "the decision must preserve the notice date users already received");
+  assert.equal(retirementTarget, "muster 0.7.0", "the decision must explicitly reaffirm muster 0.7.0");
+  assert.match(text, /first shipped 0\.7\.0 release/i, "the decision must anchor retirement to a shipped release");
+  assert.match(text, /calendar time does not advance this clock/i, "the decision must reject a calendar-based interpretation");
+
+  return { deprecationDate, retirementTarget };
+}
+
+test("deprecation clock: an accepted decision makes the first shipped 0.7.0 release authoritative", async () => {
+  await retirementDecision();
+});
 
 test("deprecation notice: every alias command file's guidance line carries the dated notice and names the retirement target", async () => {
+  const { deprecationDate: DEPRECATION_DATE, retirementTarget: RETIREMENT_TARGET } = await retirementDecision();
   for (const alias of Object.keys(ALIASES)) {
     const text = await read(`plugin/commands/${alias}.md`);
+    const fmMatch = text.match(/^---\n([\s\S]*?)\n---\n/);
+    assert.ok(fmMatch, `${alias}.md must open with a --- frontmatter block`);
+    const frontmatter = fmMatch[1];
+    const body = text.slice(fmMatch[0].length);
     assert.ok(
-      text.includes(`Deprecation notice (${DEPRECATION_DATE})`),
+      body.includes(`Deprecation notice (${DEPRECATION_DATE})`),
       `${alias}.md must carry "Deprecation notice (${DEPRECATION_DATE})"`,
     );
     assert.ok(
-      text.includes(`retires in ${RETIREMENT_TARGET}`),
+      body.includes(`retires in ${RETIREMENT_TARGET}`),
       `${alias}.md must name the retirement target "retires in ${RETIREMENT_TARGET}"`,
     );
+    assert.ok(frontmatter.includes(`deprecated ${DEPRECATION_DATE}`), `${alias}.md frontmatter must name the deprecation date`);
+    assert.ok(frontmatter.includes(`retiring in ${RETIREMENT_TARGET}`), `${alias}.md frontmatter must name the retirement target`);
   }
 });
 
 test("deprecation notice: the notice lives in the SAME paragraph as the heads-up line, not a new third paragraph (alias-shape stays exactly 2 paragraphs)", async () => {
+  const { deprecationDate: DEPRECATION_DATE } = await retirementDecision();
   for (const alias of Object.keys(ALIASES)) {
     const text = await read(`plugin/commands/${alias}.md`);
     const fmMatch = text.match(/^---\n[\s\S]*?\n---\n/);
@@ -62,28 +91,18 @@ test("deprecation notice: no behavior change during the window — each alias st
   }
 });
 
-test("deprecation notice: README.md's alias line names the same notice date and retirement target, and no longer claims an open-ended window", async () => {
-  const text = await read("README.md");
-  assert.ok(text.includes(DEPRECATION_DATE), `README.md must name the deprecation date ${DEPRECATION_DATE}`);
-  assert.ok(text.includes(RETIREMENT_TARGET), `README.md must name the retirement target ${RETIREMENT_TARGET}`);
-  assert.doesNotMatch(text, /not deprecated on any schedule/, "README.md must not still claim the aliases are undeprecated");
-});
-
-test("deprecation notice: docs/architecture.md names the same notice date and retirement target", async () => {
-  const text = await read("docs/architecture.md");
-  assert.ok(text.includes(DEPRECATION_DATE), `docs/architecture.md must name the deprecation date ${DEPRECATION_DATE}`);
-  assert.ok(text.includes(RETIREMENT_TARGET), `docs/architecture.md must name the retirement target ${RETIREMENT_TARGET}`);
-});
-
-test("deprecation notice: website reference/modes.md and guides/install.md name the retirement target", async () => {
-  for (const f of ["website/reference/modes.md", "website/guides/install.md"]) {
+test("deprecation notice: every shared documentation notice names the decision's date and target", async () => {
+  const { deprecationDate: DEPRECATION_DATE, retirementTarget: RETIREMENT_TARGET } = await retirementDecision();
+  for (const f of SHARED_NOTICE_FILES) {
     const text = await read(f);
-    assert.ok(text.includes(RETIREMENT_TARGET), `${f} must name the retirement target ${RETIREMENT_TARGET}`);
+    assert.ok(text.includes(DEPRECATION_DATE), `${f} must name the deprecation date ${DEPRECATION_DATE}`);
+    assert.ok(text.toLowerCase().includes(RETIREMENT_TARGET), `${f} must name the retirement target ${RETIREMENT_TARGET}`);
     assert.doesNotMatch(text, /not deprecated on any schedule/, `${f} must not still claim the aliases are undeprecated`);
   }
 });
 
 test("deprecation notice: website guides/quickstart.md names the retirement target once per alias section (3 total)", async () => {
+  const { retirementTarget: RETIREMENT_TARGET } = await retirementDecision();
   const text = await read("website/guides/quickstart.md");
   const escaped = RETIREMENT_TARGET.replace(/\./g, "\\.");
   const hits = text.match(new RegExp(escaped, "g")) || [];

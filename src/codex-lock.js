@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { lstat, open, readFile, unlink, utimes } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, rmdir, unlink, utimes } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -24,13 +25,6 @@ export async function processStartIdentity(pid = process.pid) {
   } catch { return null; }
 }
 
-// Dropped: a quarantine/retirement dance (rename a contested lock into a
-// private per-attempt directory, re-validate identity, then delete) that
-// guarded every stale-lock reclaim and lock release. A per-user Codex install
-// does not need multi-stage crash-safe lock handoff; a single lockfile with a
-// direct unlink-then-retry (reclaim) or unlink-after-ownership-check
-// (release) is enough, and it is ~150 fewer lines to reason about.
-
 async function readLock(path, maxBytes = 16 * 1024) {
   let handle;
   try {
@@ -46,64 +40,280 @@ async function readLock(path, maxBytes = 16 * 1024) {
 }
 
 // The per-acquire owner identity carried in the lockfile: pid + a random nonce
-// (token) + the lock's start time (createdAt) + the process start identity. Each
-// acquire writes a fresh token, so this string uniquely names one lock instance.
+// (token) + the lock's start time (createdAt) + the process start identity
+// (explicitly null where the platform cannot provide one). Each acquire writes
+// a fresh token, so this string uniquely names one lock instance.
 // A replacement owner that reclaimed after a prior reclaimer's staleness decision
 // always writes its own identity, so it can never byte-match the stale instance.
 function lockIdentity(record) {
-  if (!record || typeof record !== "object") return null;
+  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
   const { pid, token, createdAt, processIdentity } = record;
-  if (typeof token !== "string" || !token) return null;
+  if (record.format !== 1
+    || !Number.isInteger(pid) || pid < 1
+    || typeof token !== "string" || !token
+    || !Number.isFinite(createdAt) || createdAt < 0
+    || !Object.hasOwn(record, "processIdentity")
+    || (processIdentity !== null && (typeof processIdentity !== "string" || !processIdentity))) return null;
   return JSON.stringify({ pid, token, createdAt, processIdentity });
 }
 
-async function lockIsStale(current, { staleMs, maxStaleMs }) {
+const sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const transitionPath = path => `${path}.muster-transition`;
+
+function sameLock(current, expected) {
+  if (!sameInode(current.stat, expected.stat)) return false;
+  const currentIdentity = lockIdentity(current.record);
+  const expectedIdentity = lockIdentity(expected.record);
+  return expectedIdentity === null ? currentIdentity === null : currentIdentity === expectedIdentity;
+}
+
+async function assertPrivateRetirementDirectory(path) {
+  const stat = await lstat(path);
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  const ownerMismatch = process.platform !== "win32" && typeof uid === "number" && stat.uid !== uid;
+  const unsafeMode = process.platform !== "win32" && ((stat.mode & 0o700) !== 0o700 || (stat.mode & 0o077) !== 0);
+  if (stat.isSymbolicLink() || !stat.isDirectory() || ownerMismatch || unsafeMode) {
+    throw new Error(`unsafe Codex transaction retirement directory: ${path}`);
+  }
+}
+
+async function privateRetirement(path) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const dir = join(dirname(path), `.muster-retired-${process.pid}-${randomUUID()}`);
+    try { await mkdir(dir, { mode: 0o700 }); }
+    catch (error) { if (error.code === "EEXIST" && attempt < 7) continue; throw error; }
+    await assertPrivateRetirementDirectory(dir);
+    return { dir, path: join(dir, "lock") };
+  }
+  throw new Error(`could not create Codex transaction retirement directory for ${path}`);
+}
+
+async function removeRetirement(retirement) {
+  await assertPrivateRetirementDirectory(retirement.dir);
+  await unlink(retirement.path);
+  await rmdir(retirement.dir);
+}
+
+async function restoreRetiredLock(path, retirement, expected, waitForVacancy = false) {
+  await assertPrivateRetirementDirectory(retirement.dir);
+  let current;
+  try { current = await lstat(retirement.path); }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  // Restoration is non-destructive: bind it to the stable quarantined inode,
+  // not mutable record bytes. A legitimate replacement owner can still be
+  // finishing its initial write while a stale reclaimer moves that inode.
+  if (!sameInode(current, expected.stat)) return false;
+  for (;;) {
+    try { await link(retirement.path, path); break; }
+    catch (error) {
+      // An acquirer that passed its pre-open gate check just before this
+      // transition began can briefly own the public pathname. Its post-open
+      // check removes that uncommitted lock; keep the transition closed until
+      // the quarantined inode is back in place.
+      if (error.code === "EEXIST" && waitForVacancy) {
+        // A pre-gate acquirer can die after publishing its complete record but
+        // before observing the transition marker. Reclaim only when that exact
+        // inode carries a complete owner identity whose process is proven gone
+        // (or whose PID now names a different process instance).
+        let blocker;
+        try { blocker = await readLock(path); }
+        catch (readError) {
+          if (readError.code === "ENOENT") continue;
+          throw readError;
+        }
+        if (await ownerInstanceIsGone(blocker)) {
+          const result = await retireLockUnderTransition(path, blocker, {
+            stale: ownerInstanceIsGone
+          });
+          if (result.removed || result.missing) continue;
+        }
+        await pause(1);
+        continue;
+      }
+      if (error.code === "EEXIST") return false;
+      throw error;
+    }
+  }
+  const restored = await lstat(path);
+  if (!sameInode(restored, expected.stat)) throw new Error(`Codex transaction lock restore changed identity: ${path}`);
+  await removeRetirement(retirement);
+  return true;
+}
+
+async function restoreOrRequireReplacement(path, retirement, expected, waitForVacancy = false) {
+  if (await restoreRetiredLock(path, retirement, expected, waitForVacancy)) return;
+  try { await lstat(path); }
+  catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error(`Codex transaction lock could not be restored after ownership changed: ${path}`);
+    }
+    throw error;
+  }
+}
+
+async function lockIsStale(current, { staleMs }) {
   const age = Date.now() - current.stat.mtimeMs;
   if (age < staleMs) return false;
   const pid = Number(current.record?.pid);
   const alive = processAlive(pid);
-  const actualIdentity = alive ? await processStartIdentity(pid) : null;
-  const recordedIdentity = typeof current.record?.processIdentity === "string" ? current.record.processIdentity : null;
-  const sameProcess = alive && recordedIdentity && actualIdentity && recordedIdentity === actualIdentity;
-  if (sameProcess && age < maxStaleMs) return false;
-  if (alive && (!recordedIdentity || !actualIdentity) && age < maxStaleMs) return false;
-  return true;
+  if (!alive) return true;
+  const recordedIdentity = typeof current.record?.processIdentity === "string"
+    ? current.record.processIdentity
+    : null;
+  const actualIdentity = recordedIdentity ? await processStartIdentity(pid) : null;
+  // Time alone never overrides positive liveness. Reclaim a live PID only when
+  // both sides provide process-start identity and prove that the PID was reused.
+  if (!recordedIdentity || !actualIdentity) return false;
+  return recordedIdentity !== actualIdentity;
 }
 
-async function reclaimIfStale(path, options, onReclaimRaceWindow) {
+async function retireLockUnderTransition(path, expected, {
+  restorePath = path,
+  stale,
+  afterValidation,
+  beforeRestore,
+  waitForRestoreVacancy = false
+} = {}) {
+  const retirement = await privateRetirement(path);
+  try { await rename(path, retirement.path); }
+  catch (error) {
+    try { await rmdir(retirement.dir); } catch { /* preserve an ambiguous retirement directory */ }
+    if (error.code === "ENOENT") return { removed: false, missing: true };
+    throw error;
+  }
+
+  await assertPrivateRetirementDirectory(retirement.dir);
+  const retired = await readLock(retirement.path);
+  if (!sameLock(retired, expected) || (stale && !await stale(retired))) {
+    if (beforeRestore) await beforeRestore({ path: restorePath, retirementPath: retirement.path });
+    await restoreOrRequireReplacement(restorePath, retirement, retired, waitForRestoreVacancy);
+    return { removed: false, missing: false };
+  }
+
+  if (afterValidation) await afterValidation({ path: restorePath, retirementPath: retirement.path });
+
+  // Validate once more after the injected test seam. The only pathname ever
+  // deleted is now inside a fresh private directory, never the public lock
+  // pathname where a replacement owner can appear.
+  await assertPrivateRetirementDirectory(retirement.dir);
+  const final = await readLock(retirement.path);
+  if (!sameLock(final, retired) || (stale && !await stale(final))) {
+    if (beforeRestore) await beforeRestore({ path: restorePath, retirementPath: retirement.path });
+    await restoreOrRequireReplacement(restorePath, retirement, final, waitForRestoreVacancy);
+    return { removed: false, missing: false };
+  }
+  await removeRetirement(retirement);
+  return { removed: true, missing: false };
+}
+
+async function ownerInstanceIsGone(current) {
+  if (!lockIdentity(current.record)) return false;
+  const pid = current.record.pid;
+  if (!processAlive(pid)) return true;
+  if (current.record.processIdentity === null) return false;
+  const actualIdentity = await processStartIdentity(pid);
+  return Boolean(actualIdentity && current.record.processIdentity !== actualIdentity);
+}
+
+async function transitionGateIsRecoverable(current) {
+  // publishTransition exposes only a fully written staging inode. Invalid JSON
+  // therefore cannot be an in-progress gate from this implementation. Still
+  // quarantine and re-read that exact inode twice: an external paused writer
+  // that completes after the rename is restored instead of deleted.
+  if (current.record === null || typeof current.record !== "object" || Array.isArray(current.record)) return true;
+  return ownerInstanceIsGone(current);
+}
+
+async function clearStaleTransition(path, current) {
+  if (!await transitionGateIsRecoverable(current)) return false;
+  const result = await retireLockUnderTransition(transitionPath(path), current, {
+    stale: transitionGateIsRecoverable
+  });
+  return result.removed || result.missing;
+}
+
+async function transitionIsActive(path) {
+  let current;
+  try { current = await readLock(transitionPath(path)); }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  return !await clearStaleTransition(path, current);
+}
+
+async function publishTransition(path, record) {
+  const gate = transitionPath(path);
+  const staging = await privateRetirement(gate);
+  let handle;
+  try {
+    handle = await open(staging.path, "wx", 0o600);
+    await handle.writeFile(JSON.stringify(record) + "\n", "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    const expected = await readLock(staging.path);
+    try { await link(staging.path, gate); }
+    catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      await removeRetirement(staging);
+      return null;
+    }
+    const published = await readLock(gate);
+    if (!sameLock(published, expected)) throw new Error(`Codex transaction transition changed identity: ${gate}`);
+    await removeRetirement(staging);
+    return published;
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    throw error;
+  }
+}
+
+async function beginTransition(path) {
+  const processIdentity = await processStartIdentity();
+  const started = Date.now();
+  for (;;) {
+    const gate = await publishTransition(path, {
+      format: 1,
+      pid: process.pid,
+      processIdentity,
+      createdAt: Date.now(),
+      token: randomUUID()
+    });
+    if (gate) return gate;
+    if (!await transitionIsActive(path)) continue;
+    if (Date.now() - started >= 30_000) {
+      throw new Error(`timed out waiting for Codex transaction lock transition: ${path}`);
+    }
+    await pause(5);
+  }
+}
+
+async function retireLock(path, expected, options = {}) {
+  const gate = await beginTransition(path);
+  try {
+    return await retireLockUnderTransition(path, expected, {
+      ...options,
+      waitForRestoreVacancy: true
+    });
+  } finally {
+    const result = await retireLockUnderTransition(transitionPath(path), gate);
+    if (!result.removed && !result.missing) {
+      throw new Error(`Codex transaction lock transition ownership changed: ${transitionPath(path)}`);
+    }
+  }
+}
+
+async function reclaimIfStale(path, options, onReclaimRaceWindow, afterValidation, beforeRestore) {
   let current;
   try { current = await readLock(path); }
   catch (error) { if (error.code === "ENOENT") return true; throw error; }
   if (!await lockIsStale(current, options)) return false;
-  const inspected = lockIdentity(current.record);
-  try {
-    const before = await lstat(path);
-    if (before.dev !== current.stat.dev || before.ino !== current.stat.ino) return false;
-    // The reclaim window: between deciding a lock is stale and removing it,
-    // another process can unlink this exact instance and write its OWN fresh
-    // lockfile, becoming the legitimate new owner. The dev/ino check above ran
-    // BEFORE that could happen, and unlink() removes whatever is at `path` now
-    // (it cannot tell a reused inode from the original) -- so re-read the lock as
-    // the last gate and only unlink when it is still byte-for-byte the owner
-    // identity we decided was dead. A replacement owner carries its own fresh
-    // token, so it is left intact and this reclaimer loses the race cleanly (the
-    // caller retries/backs off) instead of unlinking the new owner's lock and
-    // letting two publish callbacks overlap. When the inspected lock was
-    // corrupt/partial (no parseable identity), fall back to requiring an
-    // unchanged inode so only that same unparseable instance is removed.
-    if (onReclaimRaceWindow) await onReclaimRaceWindow(); // test-only seam; no-op in production
-    const verify = await readLock(path);
-    const verifyIdentity = lockIdentity(verify.record);
-    const removable = inspected !== null
-      ? verifyIdentity === inspected
-      : verifyIdentity === null && verify.stat.dev === current.stat.dev && verify.stat.ino === current.stat.ino;
-    if (!removable) return false;
-    await unlink(path);
-    return true;
-  } catch (error) {
-    if (error.code === "ENOENT") return true;
-    throw error;
-  }
+  if (onReclaimRaceWindow) await onReclaimRaceWindow();
+  const result = await retireLock(path, current, {
+    stale: state => lockIsStale(state, options),
+    restorePath: path,
+    afterValidation,
+    beforeRestore
+  });
+  return result.removed || result.missing;
 }
 
 export async function withCodexFileLock(path, callback, {
@@ -111,16 +321,24 @@ export async function withCodexFileLock(path, callback, {
   maxStaleMs = 15 * 60_000,
   timeoutMs = 30_000,
   beforeOpen,
-  // Test-only seam: fires inside reclaimIfStale's reclaim window (after the
-  // stale decision + dev/ino check, before the identity-verified unlink) so a
-  // test can inject a replacement owner at the exact race point. No-op in
-  // production -- the sole real caller never passes it.
-  __reclaimRaceHook
+  releaseGuard,
+  // Test-only seams for deterministic replacement-owner races. Production
+  // callers never pass them.
+  __reclaimRaceHook,
+  __afterReclaimValidationHook,
+  __afterReleaseValidationHook,
+  __beforeRestoreHook,
+  __afterAcquireWriteHook
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
   const started = Date.now();
   for (;;) {
+    if (await transitionIsActive(path)) {
+      if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
+      await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
+      continue;
+    }
     // Optional caller guard fired synchronously before EACH create attempt (a
     // contended lock retries, and the guarded condition — e.g. a symlinked
     // ancestor swapped under `path` — can change between attempts). A throw
@@ -134,11 +352,24 @@ export async function withCodexFileLock(path, callback, {
       await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
       await handle.sync();
       await handle.close();
+      handle = null;
+      if (__afterAcquireWriteHook) await __afterAcquireWriteHook();
+      if (await transitionIsActive(path)) {
+        // The transition marker appeared after our pre-open check. Withdraw
+        // this not-yet-published owner through the same quarantine + identity
+        // validation used by ordinary release; the transition holder keeps
+        // its marker until the quarantined replacement is restored.
+        const current = await readLock(path);
+        if (current.record?.token !== token) throw new Error(`Codex transaction lock ownership changed: ${path}`);
+        const result = await retireLockUnderTransition(path, current, { waitForRestoreVacancy: true });
+        if (!result.removed && !result.missing) throw new Error(`Codex transaction lock ownership changed: ${path}`);
+        continue;
+      }
       break;
     } catch (error) {
       if (handle) await handle.close().catch(() => {});
       if (error.code !== "EEXIST") throw error;
-      if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook)) continue;
+      if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook, __afterReclaimValidationHook, __beforeRestoreHook)) continue;
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
       await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
     }
@@ -154,10 +385,16 @@ export async function withCodexFileLock(path, callback, {
   try { return await callback(); }
   finally {
     clearInterval(heartbeat);
+    if (releaseGuard) await releaseGuard();
     try {
       const current = await readLock(path);
       if (current.record?.token !== token) return;
-      await unlink(path);
+      const result = await retireLock(path, current, {
+        afterValidation: __afterReleaseValidationHook
+      });
+      if (!result.removed && !result.missing) {
+        throw new Error(`Codex transaction lock ownership changed: ${path}`);
+      }
     } catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 }

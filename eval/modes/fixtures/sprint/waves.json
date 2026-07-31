@@ -17,29 +17,112 @@
       "text": "Add retry to the fetch client with backoff",
       "disposition": "pr",
       "escalated": false,
-      "claimed": null
+      "claimed": null,
+      "deps": []
     },
     "logging": {
       "line": 2,
       "text": "Add structured logging to the fetch client",
       "disposition": "pr",
       "escalated": false,
-      "claimed": null
+      "claimed": null,
+      "deps": []
     },
     "docs": {
       "line": 3,
       "text": "Document the new retry and logging behavior",
       "disposition": "pr",
       "escalated": false,
-      "claimed": null
+      "claimed": null,
+      "deps": [
+        "retry",
+        "logging"
+      ]
     },
     "metrics": {
       "line": 4,
       "text": "Add a dashboard metric for retry counts",
       "disposition": "keep",
       "escalated": false,
-      "claimed": null
+      "claimed": null,
+      "deps": []
     }
   },
-  "annotated": true
+  "annotated": true,
+  "schedule": {
+    "version": 1,
+    "buildReview": {
+      "eligibility": "all-ready-wave-items-regardless-of-disposition",
+      "isolation": "per-item-worktree",
+      "maxConcurrency": 5,
+      "defaultMaxConcurrency": 5,
+      "hardMaxConcurrency": 10
+    },
+    "barrier": "all-build-review-complete",
+    "integration": {
+      "mode": "sequential-backlog-order",
+      "dispositions": [
+        "pr",
+        "keep",
+        "merge-local",
+        "merge-push"
+      ]
+    },
+    "degradation": {
+      "when": "parallel-dispatch-unavailable",
+      "buildReviewMode": "sequential-isolated",
+      "dependencyOrder": "preserved",
+      "integrationOrder": "preserved"
+    },
+    "waves": [
+      {
+        "wave": 1,
+        "buildReview": {
+          "mode": "concurrent-isolated",
+          "itemIds": [
+            "retry",
+            "logging",
+            "metrics"
+          ],
+          "batches": [
+            [
+              "retry",
+              "logging",
+              "metrics"
+            ]
+          ]
+        },
+        "barrier": "all-build-review-complete",
+        "integration": {
+          "mode": "sequential-backlog-order",
+          "itemIds": [
+            "retry",
+            "logging",
+            "metrics"
+          ]
+        }
+      },
+      {
+        "wave": 2,
+        "buildReview": {
+          "mode": "concurrent-isolated",
+          "itemIds": [
+            "docs"
+          ],
+          "batches": [
+            [
+              "docs"
+            ]
+          ]
+        },
+        "barrier": "all-build-review-complete",
+        "integration": {
+          "mode": "sequential-backlog-order",
+          "itemIds": [
+            "docs"
+          ]
+        }
+      }
+    ]
+  }
 }

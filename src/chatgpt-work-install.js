@@ -25,14 +25,17 @@
 //   the error escalates to HUMAN-HOLD instead of leaving mixed state.
 
 import { createHash, randomUUID } from "node:crypto";
+import { execFile as execFileCb } from "node:child_process";
 import {
   cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { withCodexFileLock } from "./codex-lock.js";
 
+const execFile = promisify(execFileCb);
 const CONNECTION_ID = /^asdk_app_[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const PROFILES = new Set(["pro-safe", "full"]);
 const RECEIPT_NAME = "chatgpt-work.json";
@@ -49,6 +52,26 @@ const PIPELINE_ARTIFACTS = [
   "okrs.yaml", "prd.yaml", "release-notes.yaml", "roadmap.yaml", "runbook.yaml",
   "social-post.yaml", "user-story.yaml", "video-content.yaml",
 ].map(path => `pipelines/${path}`);
+const GIT_REPOSITORY_OVERRIDES = [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_COMMON_DIR",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+  "GIT_GRAFT_FILE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_SHALLOW_FILE",
+  "GIT_NAMESPACE",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_PREFIX",
+];
 // The installed server duplicates this list verbatim (artifactPaths in
 // mcp/chatgpt-work-server.mjs) and hard-fails startup on any mismatch;
 // test/chatgpt-work-artifact-parity.test.js pins the two lists identical.
@@ -65,6 +88,12 @@ const ARTIFACT_PATHS = [
 ];
 const HEX64 = /^[a-f0-9]{64}$/;
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
+
+function gitVerificationEnvironment() {
+  const env = { ...process.env };
+  for (const name of GIT_REPOSITORY_OVERRIDES) delete env[name];
+  return env;
+}
 
 export function normalizeChatgptWorkConnectionId(value) {
   if (typeof value !== "string") throw new Error("ChatGPT Work connection id is required");
@@ -117,7 +146,8 @@ async function securePublicationDirectory(path) {
 }
 
 async function projectGitDir(cwd) {
-  const marker = join(resolve(cwd), ".git");
+  const projectRoot = resolve(cwd);
+  const marker = join(projectRoot, ".git");
   let info;
   try { info = await lstat(marker); } catch (cause) {
     if (cause.code !== "ENOENT") throw cause;
@@ -126,15 +156,49 @@ async function projectGitDir(cwd) {
     throw error;
   }
   if (info.isSymbolicLink()) throw new Error("project scope rejects symlinked .git metadata");
-  if (info.isDirectory()) return marker;
-  if (!info.isFile()) throw new Error("project scope requires an ordinary .git directory or gitdir file");
-  const text = await readFile(marker, "utf8");
-  const match = text.trim().match(/^gitdir:\s*(.+)$/);
-  if (!match) throw new Error("project scope .git file has an invalid gitdir pointer");
-  const gitDir = isAbsolute(match[1]) ? resolve(match[1]) : resolve(dirname(marker), match[1]);
+  let gitDir;
+  if (info.isDirectory()) {
+    gitDir = marker;
+  } else {
+    if (!info.isFile()) throw new Error("project scope requires an ordinary .git directory or gitdir file");
+    const text = await readFile(marker, "utf8");
+    const match = text.trim().match(/^gitdir:\s*(.+)$/);
+    if (!match) throw new Error("project scope .git file has an invalid gitdir pointer");
+    gitDir = isAbsolute(match[1]) ? resolve(match[1]) : resolve(dirname(marker), match[1]);
+  }
+  try {
+    if (!(await ordinaryDirectory(gitDir))) throw new Error("gitdir is missing");
+  } catch (cause) {
+    throw new Error("project gitdir ancestry must contain only ordinary directories", { cause });
+  }
   const resolved = await realpath(gitDir);
   const gitInfo = await lstat(resolved);
   if (gitInfo.isSymbolicLink() || !gitInfo.isDirectory()) throw new Error("project gitdir must resolve to an ordinary directory");
+
+  let stdout;
+  try {
+    ({ stdout } = await execFile("git", [
+      "-C", projectRoot, "rev-parse", "--path-format=absolute", "--git-dir", "--is-inside-work-tree",
+    ], {
+      env: gitVerificationEnvironment(),
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    }));
+  } catch (cause) {
+    const error = new Error("project scope requires a Git worktree", { cause });
+    error.code = "MUSTER_NO_GIT_WORKTREE";
+    throw error;
+  }
+  const lines = stdout.trim().split(/\r?\n/);
+  if (lines.length !== 2 || lines[1] !== "true") {
+    const error = new Error("project scope requires a Git worktree");
+    error.code = "MUSTER_NO_GIT_WORKTREE";
+    throw error;
+  }
+  const authoritative = await realpath(resolve(lines[0]));
+  if (authoritative !== resolved) {
+    throw new Error("project .git pointer does not match Git's authoritative gitdir");
+  }
   return resolved;
 }
 

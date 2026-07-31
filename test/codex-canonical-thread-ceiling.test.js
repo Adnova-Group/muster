@@ -26,6 +26,8 @@ test("Codex 0.146 install preserves a canonical user ceiling and defaults only w
   );
   const userConfig = "[agents]\nmax_concurrent_threads_per_session = 3 # user\n";
   assert.equal(ensureCodexThreadLimits(userConfig).text, userConfig);
+  const alternateSyntax = "[\"agents\"]\n\"max_concurrent_threads_per_session\" = 3_0 # user\n";
+  assert.equal(ensureCodexThreadLimits(alternateSyntax).text, alternateSyntax);
 });
 
 test("Codex 0.146 migration copies but does not clean an unowned legacy ceiling", () => {
@@ -34,6 +36,11 @@ test("Codex 0.146 migration copies but does not clean an unowned legacy ceiling"
   assert.match(installed.text, /max_threads = 4 # user/);
   assert.match(installed.text, /max_depth = 1/);
   assert.match(installed.text, /max_concurrent_threads_per_session = 4/);
+
+  const dotted = "agents.'max_threads' = 2_4 # user\n";
+  const dottedInstalled = ensureCodexThreadLimits(dotted);
+  assert.match(dottedInstalled.text, /agents\.'max_threads' = 2_4 # user/);
+  assert.match(dottedInstalled.text, /agents\.max_concurrent_threads_per_session = 24/);
 });
 
 test("Codex 0.146 legacy cleanup is restricted to receipt-proven Muster values", () => {
@@ -111,6 +118,32 @@ test("Codex install rejects legacy ownership receipts for another config path", 
     /thread-limit manifest conflict/,
   );
   assert.equal(await readFile(configPath, "utf8"), "[agents]\nmax_threads = 12\nmax_depth = 2\n");
+});
+
+test("Codex install rejects impossible legacy ownership values", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-canonical-thread-impossible-"));
+  t.after(() => import("node:fs/promises").then(fs => fs.rm(tmp, { recursive: true, force: true })));
+  const cwd = join(tmp, "project");
+  const home = join(tmp, "home");
+  const codexHome = join(home, ".codex");
+  const configPath = join(codexHome, "config.toml");
+  await mkdir(join(codexHome, "muster"), { recursive: true });
+  await writeFile(configPath, "[agents]\nmax_threads = 4\nmax_depth = 1\n");
+  await writeFile(codexThreadLimitManifestPath(codexHome), JSON.stringify({
+    format: 1,
+    owner: "muster",
+    configPath,
+    before: { max_threads: null, max_depth: null },
+    installed: { max_threads: 4, max_depth: 1 },
+    sectionCreated: false,
+    configCreated: false,
+  }));
+
+  await assert.rejects(
+    runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex }),
+    /thread-limit manifest conflict/,
+  );
+  assert.equal(await readFile(configPath, "utf8"), "[agents]\nmax_threads = 4\nmax_depth = 1\n");
 });
 
 test("Codex wave scheduling cannot exceed the canonical session ceiling", () => {

@@ -66,6 +66,32 @@ test("sprint-waves CLI emits the effective cap, explicit build batches, and inte
   }
 });
 
+test("sprint-waves CLI accepts the effective higher-precedence Codex ceiling explicitly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-wave-effective-ceiling-"));
+  try {
+    const codexHome = join(dir, "codex-home");
+    await mkdir(codexHome);
+    await writeFile(
+      join(codexHome, "config.toml"),
+      "[agents]\nmax_concurrent_threads_per_session = 2\n",
+    );
+    await writeFile(join(dir, "backlog.md"), backlog);
+    const { stdout } = await pexecFile(process.execPath, [
+      cli,
+      "sprint-waves",
+      "backlog.md",
+      "--max-concurrent-threads-per-session",
+      "3",
+    ], {
+      cwd: dir,
+      env: { ...process.env, CODEX_HOME: codexHome, MUSTER_SPRINT_PARALLEL: "9" },
+    });
+    assert.equal(JSON.parse(stdout).schedule.buildReview.maxConcurrency, 3);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("schedule preserves a named sequential degradation without changing dependency or integration order", () => {
   const result = computeSprintWaves(backlog);
 
@@ -110,4 +136,8 @@ test("go-backlog contract dispatches every ready disposition before the barrier 
   assert.match(waveMode, /preserv(?:e|ing).*emitted order/i);
   assert.match(waveMode, /dependent.*escalat(?:e|es).*immediately.*never build/i);
   assert.doesNotMatch(text.slice(0, text.indexOf("**Wave mode**")), /full go lifecycle sequentially over every item/i);
+  assert.match(
+    text,
+    /--max-concurrent-threads-per-session <effective agents\.max_concurrent_threads_per_session>/,
+  );
 });

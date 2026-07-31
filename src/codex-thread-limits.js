@@ -17,6 +17,9 @@ export const codexThreadLimitManifestPath = codexHomeDir => join(codexHomeDir, "
 const CANONICAL_KEY = "max_concurrent_threads_per_session";
 const LEGACY_KEYS = Object.freeze(["max_threads", "max_depth"]);
 const PARSED_KEYS = Object.freeze([CANONICAL_KEY, ...LEGACY_KEYS]);
+const keyToken = key => `(?:"${key}"|'${key}'|${key})`;
+const AGENTS_TOKEN = keyToken("agents");
+const integerValue = raw => Number(raw.replaceAll("_", ""));
 
 function parseAgentsSection(text) {
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
@@ -25,30 +28,58 @@ function parseAgentsSection(text) {
   if (finalNewline) lines.pop();
   let start = -1;
   let end = lines.length;
+  let firstSection = lines.length;
   for (let index = 0; index < lines.length; index++) {
     const section = lines[index].match(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/);
     if (!section) continue;
+    firstSection = Math.min(firstSection, index);
     if (start >= 0) {
       end = index;
       break;
     }
-    if (section[1].trim() === "agents") start = index;
+    if (new RegExp(`^\\s*${AGENTS_TOKEN}\\s*$`).test(section[1])) start = index;
   }
   const values = {};
+  let dottedEnd = -1;
+  const record = (key, candidate, index) => {
+    if (Object.hasOwn(values, key)) throw new Error(`Codex config.toml has a duplicate [agents] ${key} key`);
+    values[key] = {
+      value: integerValue(candidate[2]),
+      index,
+      prefix: candidate[1],
+      suffix: candidate[3],
+    };
+  };
+  for (let index = 0; index < firstSection; index++) {
+    for (const key of PARSED_KEYS) {
+      const prefix = `${AGENTS_TOKEN}\\s*\\.\\s*${keyToken(key)}`;
+      const candidate = lines[index].match(
+        new RegExp(`^(\\s*${prefix}\\s*=\\s*)(\\d(?:_?\\d)*)(\\s*(?:#.*)?)$`),
+      );
+      if (candidate) {
+        record(key, candidate, index);
+        dottedEnd = Math.max(dottedEnd, index + 1);
+      } else if (new RegExp(`^\\s*${prefix}\\s*=`).test(lines[index])) {
+        throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
+      }
+    }
+  }
   if (start >= 0) {
     for (let index = start + 1; index < end; index++) {
       for (const key of PARSED_KEYS) {
-        const candidate = lines[index].match(new RegExp(`^(\\s*${key}\\s*=\\s*)(\\d+)(\\s*(?:#.*)?)$`));
+        const token = keyToken(key);
+        const candidate = lines[index].match(
+          new RegExp(`^(\\s*${token}\\s*=\\s*)(\\d(?:_?\\d)*)(\\s*(?:#.*)?)$`),
+        );
         if (candidate) {
-          if (Object.hasOwn(values, key)) throw new Error(`Codex config.toml has a duplicate [agents] ${key} key`);
-          values[key] = { value: Number(candidate[2]), index, prefix: candidate[1], suffix: candidate[3] };
-        } else if (new RegExp(`^\\s*${key}\\s*=`).test(lines[index])) {
+          record(key, candidate, index);
+        } else if (new RegExp(`^\\s*${token}\\s*=`).test(lines[index])) {
           throw new Error(`Codex config.toml [agents] ${key} must be a non-negative integer`);
         }
       }
     }
   }
-  return { lines, newline, finalNewline, start, end, values };
+  return { lines, newline, finalNewline, start, end, dottedEnd, values };
 }
 
 const render = state => state.lines.join(state.newline) + (state.finalNewline || state.lines.length ? state.newline : "");
@@ -77,7 +108,7 @@ export function resolveCodexThreadCeiling(text) {
 // Otherwise an unowned legacy ceiling is copied without deleting or raising it.
 export function ensureCodexThreadLimits(text) {
   const state = parseAgentsSection(text);
-  const sectionCreated = state.start < 0;
+  const sectionCreated = state.start < 0 && state.dottedEnd < 0;
   const existing = state.values[CANONICAL_KEY];
   const installedValue = existing?.value
     ?? state.values.max_threads?.value
@@ -92,7 +123,19 @@ export function ensureCodexThreadLimits(text) {
     state.lines.push("[agents]");
     state.end = state.lines.length;
   }
-  if (!existing) state.lines.splice(state.end, 0, `${CANONICAL_KEY} = ${installedValue}`);
+  if (!existing) {
+    if (state.start >= 0) {
+      state.lines.splice(state.end, 0, `${CANONICAL_KEY} = ${installedValue}`);
+    } else if (state.dottedEnd >= 0) {
+      state.lines.splice(
+        state.dottedEnd,
+        0,
+        `agents.${CANONICAL_KEY} = ${installedValue}`,
+      );
+    } else {
+      state.lines.splice(state.end, 0, `${CANONICAL_KEY} = ${installedValue}`);
+    }
+  }
   return {
     text: render(state),
     before: { [CANONICAL_KEY]: existing?.value ?? null },

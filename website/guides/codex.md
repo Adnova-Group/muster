@@ -21,9 +21,9 @@ npx -y @adnova-group/muster@0.5.0 install codex --scope project
 - the hook runtime under `.codex/muster/`
 - Muster-owned hook groups merged into `.codex/hooks.json`
 - a managed agent-declaration region in `.codex/config.toml`
-- a shared `[agents]` floor of `max_threads = 12` and `max_depth = 2`
+- the canonical shared `[agents]` key `max_concurrent_threads_per_session`
 
-`--scope user` writes the same owned material under `$CODEX_HOME` (or `~/.codex` when that is unset). The thread-limit floor is shared in the Codex home config. Existing higher values survive. Muster records the previous values so the last managed-scope uninstall can restore keys it raised, while preserving a later user increase.
+`--scope user` writes the same owned material under `$CODEX_HOME` (or `~/.codex` when that is unset). The canonical ceiling is shared in the Codex home config. Muster defaults it to `12` only when no canonical or legacy user ceiling exists, and it never raises or lowers a positive user value. The last managed-scope uninstall restores only receipt-proven Muster changes; legacy `max_threads`/`max_depth` values are cleaned only when an older valid Muster receipt proves ownership.
 
 ### Native Windows and WSL are separate installs
 

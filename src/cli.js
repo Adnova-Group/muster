@@ -588,9 +588,16 @@ async function main() {
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
       }
+      const ceilingFlag = "--max-concurrent-threads-per-session";
+      const explicitCeiling = flagValue(rest, ceilingFlag);
+      if (rest.includes(ceilingFlag) && !/^[1-9]\d*$/.test(explicitCeiling || "")) {
+        fail(`sprint-waves <backlog.md>: ${ceilingFlag} must be a positive integer`);
+      }
       const r = computeSprintWaves(content, {
         parallelLimit: process.env.MUSTER_SPRINT_PARALLEL,
-        maxConcurrentThreadsPerSession: resolveCodexThreadCeiling(threadConfigText),
+        maxConcurrentThreadsPerSession: explicitCeiling === undefined
+          ? resolveCodexThreadCeiling(threadConfigText)
+          : Number(explicitCeiling),
       });
       out(r);
       if (!r.ok) process.exit(2);

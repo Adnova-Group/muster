@@ -909,9 +909,18 @@ function validateThreadLimitManifest(manifest, manifestPath, expectedConfigPath)
   };
   const beforeSchema = schemaFor(manifest?.before);
   const installedSchema = schemaFor(manifest?.installed);
+  const validLegacyReceipt = beforeSchema !== "legacy" || (
+    manifest.installed.max_threads === Math.max(manifest.before.max_threads ?? 0, 12)
+    && manifest.installed.max_depth === Math.max(manifest.before.max_depth ?? 0, 2)
+  );
+  const validCurrentReceipt = beforeSchema !== "current" || (
+    (manifest.before.max_concurrent_threads_per_session === null
+      || manifest.before.max_concurrent_threads_per_session > 0)
+    && manifest.installed.max_concurrent_threads_per_session > 0
+  );
   if (manifest?.owner !== "muster" || manifest.format !== 1 || manifest.configPath !== expectedConfigPath
     || typeof manifest.configCreated !== "boolean" || typeof manifest.sectionCreated !== "boolean"
-    || !beforeSchema || beforeSchema !== installedSchema) {
+    || !beforeSchema || beforeSchema !== installedSchema || !validLegacyReceipt || !validCurrentReceipt) {
     throw new Error(`Codex thread-limit manifest conflict: ${manifestPath}. Move it or remove it, then rerun the command.`);
   }
   return manifest;

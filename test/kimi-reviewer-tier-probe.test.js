@@ -63,7 +63,7 @@ test("KNOWN_BLOCKERS is pinned verbatim (the human-judgment rubric for probe 1)"
 test("PROBE2_MANIFEST carries the model_preference misattribution the spec gate must catch", () => {
   assert.equal(PROBE2_MANIFEST.schema, "muster-crew-manifest/v1");
   assert.match(PROBE2_MANIFEST.outcome, /stamped model_preference on the --agent-file agent engages the -p process's own model lanes/);
-  assert.equal(PROBE1_COMMIT, "9027136");
+  assert.equal(PROBE1_COMMIT, "d5ae59d");
 });
 
 test("briefs are pinned constants stating the return contract, the quarantine file, and the quarantine instruction", () => {
@@ -122,7 +122,7 @@ test("quarantine dirs are fresh per cell and contain ONLY the probe material fil
     const content = readFileSync(join(cell.quarantineDir, cell.materialFile), "utf8");
     assert.equal(content, probeMaterial(cell.probe, REPO_ROOT));
   }
-  // probe 1's material is the real 9027136 diff, with the prose the known
+  // probe 1's material is the real, reachable d5ae59d diff, with the prose the known
   // blocker lives in; probe 2's is the pinned synthetic manifest
   const p1 = out.cells.find(c => c.probe === "review-gate-diff");
   const p1Material = readFileSync(join(p1.quarantineDir, p1.materialFile), "utf8");
@@ -328,7 +328,7 @@ test("assembleResults emits the full v2 results shape with the caveat, rubric, a
   assert.match(results.rubric.note, /does NOT keyword-score/);
   assert.deepEqual(results.rubric.knownBlockers, [...KNOWN_BLOCKERS]);
   assert.deepEqual(results.constants.probe2Manifest, PROBE2_MANIFEST);
-  assert.equal(results.constants.probe1Commit, "9027136");
+  assert.equal(results.constants.probe1Commit, "d5ae59d");
   assert.deepEqual(results.constants.probeMaterialFiles, { "review-gate-diff": "probe.patch", "spec-gate-manifest": "probe-manifest.json" });
   assert.equal(results.cells.length, 4);
   for (const cell of results.cells) {

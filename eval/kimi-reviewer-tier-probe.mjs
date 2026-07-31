@@ -4,7 +4,8 @@
 // (kimi-code/k3)? Two pinned probes x two lanes, each cell one headless
 // `kimi -p --agent-file` process via kimiProcessDispatch (src/kimi-dispatch.js).
 //
-//   PROBE 1 (review-gate pass): the diff of commit 9027136 (parent of the
+//   PROBE 1 (review-gate pass): the diff of commit d5ae59d (the reachable,
+//     rebased equivalent of the original 9027136 probe and parent of the
 //     env-merge fix 3cf6084), reviewed with a review-gate-style brief. The
 //     KNOWN-BLOCKER list is pinned verbatim below as the human-judgment rubric.
 //   PROBE 2 (spec-gate pass): a small synthetic Crew Manifest (pinned below)
@@ -78,8 +79,10 @@ const REPO_ROOT = join(HERE, "..");
 // were discarded -- see the header comment and docs/fast-path-token-gap.md).
 export const PROTOCOL_VERSION = 2;
 
-// Probe 1's subject commit -- parent of the env-merge fix 3cf6084.
-export const PROBE1_COMMIT = "9027136";
+// Probe 1's subject commit -- the canonical, reachable rebased equivalent of
+// the original 9027136 probe. Keeping this on main makes clean clones and CI
+// reproducible; the original object existed only in a local reflog.
+export const PROBE1_COMMIT = "d5ae59d";
 
 // KNOWN-BLOCKER list, pinned verbatim: the rubric the orchestrator's HUMAN
 // JUDGMENT step checks probe-1 verdicts against. Never shown to the reviewer.

@@ -13,7 +13,7 @@ Glass-box, multi-domain agentic orchestrator for Claude Code, Codex, Kimi, and C
 
 Muster turns an outcome into finished work. It detects your project, discovers the capabilities you already have installed, picks the best tool for each piece of the job, and runs a crew of specialists toward your success criteria. Every decision is inspectable: which role resolved to which provider, on which model, and why.
 
-It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code and Codex expose the full native command surface, Kimi uses namespaced native skills, and Cowork's verified MCP lane has a six-mode protocol subset. ChatGPT Work is a separate, conditional local/private MCP lane: configuration alone is not proof that the active Work host invoked Muster. The work is not limited to code. Product, business, content, and operations are first-class.
+It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code and Codex expose the full native command surface, Kimi uses namespaced native skills, and Cowork's verified MCP lane has a seven-mode protocol subset. ChatGPT Work is a separate, conditional local/private MCP lane: configuration alone is not proof that the active Work host invoked Muster. The work is not limited to code. Product, business, content, and operations are first-class.
 
 ## Quickstart
 
@@ -65,11 +65,11 @@ Uninstall preserves unrelated config and Codex's project trust records, removes 
 
 Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. The three legacy aliases (`run`, `autopilot`, `sprint`) remain skills. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
 
-The Codex plugin bundles the deterministic CLI, all pipelines, 30 MCP tools, 27 custom-agent profiles, and 76 skills: 13 public mode/router/alias skills plus 63 internal skills (12 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
+The Codex plugin bundles the deterministic CLI, all pipelines, 31 MCP tools, 27 custom-agent profiles, and 77 skills: 14 public mode/router/alias skills plus 63 internal skills (12 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
 ### Kimi
 
-Kimi installs the same nine primary modes as namespaced `/muster-*` skills. In-session native subagents are the supported execution path. `kimi-process-dispatch` remains descriptor-only, and the attended `kimi-process-run` lane is report-only on every platform until Muster can bootstrap a trusted immutable, kernel-bound broker. Filesystem dispatch receipts and worktree paths are diagnostic only; they never authorize signaling a process.
+Kimi installs the same ten primary modes as namespaced `/muster-*` skills. In-session native subagents are the supported execution path. `kimi-process-dispatch` remains descriptor-only, and the attended `kimi-process-run` lane is report-only on every platform until Muster can bootstrap a trusted immutable, kernel-bound broker. Filesystem dispatch receipts and worktree paths are diagnostic only; they never authorize signaling a process.
 
 ### ChatGPT Work (private/local plugin lane)
 
@@ -121,7 +121,7 @@ tunnel-client run --profile muster-chatgpt-work
 
 On POSIX, the probe directory must already exist, be owned by the current user, and have no group/world permissions (for example `0700`); the attestation file must be a new `0600` file. Windows native proof is always `HUMAN-HOLD`: there is no usable Windows attestation claim. On every platform, an attestation collision is `HUMAN-HOLD`, never an overwrite.
 
-For `pro-safe`, set `MUSTER_CHATGPT_WORK_PROFILE=pro-safe`; exactly one tool (`muster_prioritize`) is exposed with title **Prioritize backlog items**, `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. Pro's custom MCP path is read/fetch; claim Pro support only after a successful native **Scan Tools** gate in Work. Full MCP (including write/modify actions) is a Business/Enterprise/Edu rollout, not a Pro entitlement. Muster's `full` profile is the existing 30-tool deterministic surface, not a write-action surface: it requires both `--profile full --allow-full-actions` at install and `MUSTER_CHATGPT_WORK_SERVER_ALLOW_FULL_ACTIONS=1` at server startup, plus the ChatGPT workspace's full-MCP entitlement. Treat those as a deliberate double opt-in.
+For `pro-safe`, set `MUSTER_CHATGPT_WORK_PROFILE=pro-safe`; exactly one tool (`muster_prioritize`) is exposed with title **Prioritize backlog items**, `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. Pro's custom MCP path is read/fetch; claim Pro support only after a successful native **Scan Tools** gate in Work. Full MCP (including write/modify actions) is a Business/Enterprise/Edu rollout, not a Pro entitlement. Muster's `full` profile is the existing 31-tool deterministic surface, not a write-action surface: it requires both `--profile full --allow-full-actions` at install and `MUSTER_CHATGPT_WORK_SERVER_ALLOW_FULL_ACTIONS=1` at server startup, plus the ChatGPT workspace's full-MCP entitlement. Treat those as a deliberate double opt-in.
 
 The tunnel's `CONTROL_PLANE_API_KEY` is an OpenAI Platform runtime credential and is billed under Platform API usage; it is not supplied by, or interchangeable with, a ChatGPT Pro subscription. Associate the tunnel with the personal Platform organization for a personal test, or with both the Platform organization and target ChatGPT workspace for workspace use. A connection ID is an identifier, not a secret; never record the runtime key, tunnel ID, screenshots, or raw app contents in a receipt.
 
@@ -149,7 +149,7 @@ node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
   --grade-snapshot /private/retained/grade-snapshot.json
 ```
 
-## The nine modes
+## The ten modes
 
 | Mode | Command | What it does |
 | --- | --- | --- |
@@ -159,11 +159,14 @@ node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
 | Go-backlog | `/muster:go-backlog <backlog ref>` | The batch clearer. Plain backlogs run sequentially. An annotated `{id}`/`{deps}` backlog builds and reviews every ready item in dependency waves, concurrently when the runtime can dispatch safely, then performs disposition/integration in emitted order after the wave barrier. It has one attended stop at the end; an escalated item never aborts the batch. |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first bug fix: reproduce, find root cause, fix, add a regression test, verify. No symptom-patching. |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions (seven when the project builds prompts or agents), then fixes everything with tests and verifies. |
+| Design | `/muster:design <action>` | Resolve canonical `DESIGN.md` context and digest receipts, initialize it with an attended hold, inspect bounded design evidence/provider state, or run one of 23 pinned design workflows. |
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker for a Claude Code Routine or cron: resumes an answered blocked item or claims exactly one available item, drives it through the full Go lifecycle force-coerced to a `pr` disposition, leaves a receipt, and stops. The schedule provides the loop, not the verb. |
 | Capture | `/muster:capture [hint]` | Conversation-to-backlog generator: mines the session's discussion (findings, decisions, review residuals, an explicit directive) into backlog items via the same extract/validate/dedupe/write machinery, gated by your approval before anything is written. Writes only `.muster/backlog.md` -- it never assembles a crew or runs work itself. |
 | Init | `/muster:init [dir]` | Prepare a repository profile and receipt, hand native instruction work to the active runtime, and finalize only after positive evidence or an acknowledged unavailable handoff. |
 
 `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work: each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`, respectively) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0 -- migrate to the replacement verb before then; behavior stays unchanged for the rest of the window.
+
+Design mode's context resolution, attended initialization, bounded detector, provider contract, and complete workflow list are documented in [docs/design.md](docs/design.md).
 
 Plan and Go accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome; both also accept the same backlog refs as Plan-backlog and Go-backlog (a backlog `.md` path, `issues:<label>`, or `linear:<key>`) and confirm the scope before planning a whole batch. A thin outcome gets refined first: `muster assess` does a deterministic gap-check, and if the outcome is vague, an interview skill asks one question at a time behind an approval gate before any crew is assembled. An outcome that decomposes into independent parts can instead be written to a backlog (`.muster/backlog.md`) for `/muster:go-backlog` to clear as a batch, or for `/muster:plan-backlog` to batch-plan first; `/muster:audit backlog [path]` fills the same backlog from audit's findings, sweeping read-only instead of fixing them inline; `/muster:capture [hint]` fills it a third way, mining a conversation's findings and decisions instead of an audit sweep or an interview decomposition.
 

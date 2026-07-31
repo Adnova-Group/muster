@@ -267,7 +267,7 @@ const YAML_BANNER = `# ${BANNER_TEXT}\n`;
 export function generateNotice(builtinEntries) {
   const bySrc = new Map();
   for (const e of builtinEntries) {
-    const repo = e.provenance.adapted_from.split(" ")[0];
+    const repo = e.provenance.noticeSource || e.provenance.adapted_from.split(" ")[0];
     if (!bySrc.has(repo)) bySrc.set(repo, e.provenance.license);
   }
   let out = `${BANNER_TEXT}\n\nMuster\nCopyright 2026 Adnova Group\n\nThis product bundles adapted content from:\n`;
@@ -357,7 +357,18 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
   const warnings = [];
   const builtinEntries = [];
   const agentEntries = [];
+  const attributionEntries = [];
   for (const source of manifest.sources) {
+    if (source.attributionOnly === true) {
+      attributionEntries.push({
+        provenance: {
+          adapted_from: `${source.repo} @ ${source.ref || "main"}`,
+          noticeSource: `${source.repo} @ ${source.ref || "main"}`,
+          license: source.license,
+        },
+      });
+      continue;
+    }
     const { root, error } = await fetchSourceRoot(source, home);
     if (!root) {
       const detail = error ? `: ${error.message}` : "";
@@ -399,6 +410,6 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
     await atomicPublish(outputRoot, "catalog/builtins.generated.yaml", YAML_BANNER + stringify(builtinEntries, { lineWidth: 0 }));
   if (agentEntries.length > 0)
     await atomicPublish(outputRoot, "catalog/agents.generated.yaml", YAML_BANNER + stringify(agentEntries, { lineWidth: 0 }));
-  await atomicPublish(outputRoot, "NOTICE", generateNotice(allEntries));
+  await atomicPublish(outputRoot, "NOTICE", generateNotice([...allEntries, ...attributionEntries]));
   return { count: allEntries.length, builtins: builtinEntries.length, agents: agentEntries.length, warnings };
 }

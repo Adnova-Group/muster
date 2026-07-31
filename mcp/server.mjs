@@ -103,6 +103,28 @@ const TOOLS = {
       ...(Array.isArray(a.paths) ? a.paths.filter((p) => typeof p === "string" && p.trim()) : []),
     ],
   },
+  muster_design: {
+    argv: ["design"], kind: "design",
+    description: "Resolve canonical DESIGN.md context and digest receipts; initialize attended design context; inspect status/evidence/ignores/provider state; enforce the human-facing write gate; or dispatch one of Muster's 23 pinned Impeccable-inspired workflows.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["workflows", "init", "status", "resolve", "detect", "ignores", "provider-check", "provider-install", "gate", "run"] },
+        dir: { type: "string" },
+        workflow: { type: "string" },
+        target: { type: "string" },
+        outcome: { type: "string" },
+        contentFile: { type: "string" },
+        addIgnore: { type: "string" },
+        wave: { type: "string" },
+        args: { type: "string" },
+        readOnly: { type: "boolean" },
+        audit: { type: "boolean" },
+      },
+      required: ["action", "dir"],
+      additionalProperties: false,
+    },
+  },
 
   // gate/math verbs — JSON in, written to a temp file
   muster_manifest_validate: { argv: ["manifest", "validate"], ...J2("Validate a crew manifest's shape and dependency graph.", { manifest: { type: "object" } }, ["manifest"]), picks: (a) => [a.manifest] },
@@ -359,6 +381,33 @@ export function startMusterMcpServer(config) {
     // verb; the target's own required `dir` stays the resolved cwd, never a positional.
     const extra = tool.flags ? tool.flags(args) : [];
     return runCli([...tool.argv, ...extra], { cwd: path.resolve(args.dir), signal });
+  }
+  if (tool.kind === "design") {
+    if (typeof args.dir !== "string" || !args.dir.trim()) {
+      return { ok: false, text: "muster_design: explicit target directory is required" };
+    }
+    const actionMap = {
+      "provider-check": ["provider", "check"],
+      "provider-install": ["provider", "install"],
+    };
+    let action = actionMap[args.action] || [args.action];
+    if (args.action === "run") {
+      if (typeof args.workflow !== "string" || !args.workflow.trim()) {
+        return { ok: false, text: "muster_design: workflow is required for action run" };
+      }
+      action = ["run", args.workflow];
+    }
+    const flags = [
+      ...(args.target ? ["--target", args.target] : []),
+      ...(args.outcome ? ["--outcome", args.outcome] : []),
+      ...(args.contentFile ? ["--content-file", args.contentFile] : []),
+      ...(args.addIgnore ? ["--add", args.addIgnore] : []),
+      ...(args.wave ? ["--wave", args.wave] : []),
+      ...(args.args ? ["--args", args.args] : []),
+      ...(args.readOnly ? ["--read-only"] : []),
+      ...(args.audit ? ["--audit"] : []),
+    ];
+    return runCli([...tool.argv, ...action, ...flags], { cwd: path.resolve(args.dir), signal });
   }
   // static: no CLI call at all — return pre-loaded file content verbatim (muster_sprint_protocol).
   // A load-time read failure (tool.error set) surfaces as isError instead of serving `null` text.

@@ -77,6 +77,15 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
      with no specialists. The orchestrator and review-gate skills below reuse this same
      `.muster/capabilities.json` capture for the rest of the run — the inventory does not change mid-run, so
      they must NOT re-invoke `capabilities` per wave (dedup lever; see docs/performance-pass.md).
+3.5. **Design context write gate** — only when the outcome contains a human-facing design signal
+   (`ui`, `ux`, `design`, `frontend`, `brand`, `visual`, `interface`, `responsive`,
+   `accessibility`, typography, layout, animation, onboarding, landing page, or website), run
+   `$MUSTER_CLI design gate . --outcome "$ARGUMENTS"` before any implementation wave. A missing
+   canonical `DESIGN.md` is a `HUMAN-HOLD`; resume through attended `/muster:design init`. Record the
+   returned `muster.design-context` scope + digest receipt in STATE and every qualifying worker brief.
+   Re-resolve once when the scope/digest changes between waves; reuse the same receipt inside an
+   unchanged wave. For every other outcome, skip this step entirely: no design CLI process, provider
+   spawn, or `DESIGN.md` traversal is allowed on the non-design route.
 4. **Spec gate** — after the manifest validates, run `$MUSTER_CLI gate-cadence .muster/manifest.json` once and
    write its JSON to `.muster/gate-cadence.json` (this run's single capture — mirrors the `capabilities`
    dedup above) to learn this run's small-task fast path (`{specGateRounds, reviewGateBatches, fastPath,

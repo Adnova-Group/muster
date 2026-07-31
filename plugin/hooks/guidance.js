@@ -17,7 +17,7 @@ export const PRINCIPLES = [
 export const VERBS =
   "Verbs: /muster:plan (approve-first; a backlog scope confirms, then plans), /muster:go (hands-off lifecycle; same scope confirm), " +
   "/muster:plan-backlog (approve-first batch planner), /muster:diagnose (failure-first fix), /muster:audit (whole-codebase review-and-fix), " +
-  "/muster:go-backlog (batch backlog clear), /muster:runner (unattended one-cycle work-picker). " +
+  "/muster:design (canonical design-context and workflow gate), /muster:go-backlog (batch backlog clear), /muster:runner (unattended one-cycle work-picker). " +
   "Legacy aliases still work: /muster:run -> /muster:plan, /muster:autopilot -> /muster:go, /muster:sprint -> /muster:go-backlog.";
 
 // Voice anti-drift: a single reinforcement line every nudge tier must carry, to
@@ -29,7 +29,7 @@ export const ROUTING_POLICY =
   [
     "Default routing: in this muster repo, drive actionable prompts through muster --",
     "route directives and substantive questions to the verbs (/muster:plan · :go ·",
-    ":plan-backlog · :diagnose · :audit · :go-backlog · :runner) where applicable, and",
+    ":plan-backlog · :diagnose · :audit · :design · :go-backlog · :runner) where applicable, and",
     "content/copy work through the muster content pipeline (humanizer). Let conversational",
     "or trivial turns fall through. Honor explicit /muster commands as given.",
     "Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog.",

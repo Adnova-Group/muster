@@ -47,6 +47,19 @@ test("prompting projects get a 7th prompt-quality dimension; plain projects do n
   assert.ok(validateManifest(m).ok, "prompting manifest still validates");
 });
 
+test("design evidence adds audit-design-ux only for the actual audited scope", () => {
+  const plain = buildAuditManifest({}, { designEvidence: false });
+  assert.ok(!plain.plan.some((task) => task.id === "audit-design-ux"));
+
+  const design = buildAuditManifest({}, { designEvidence: true });
+  const task = design.plan.find((entry) => entry.id === "audit-design-ux");
+  assert.ok(task);
+  assert.match(task.task, /missing DESIGN\.md is a finding, not a blocker/i);
+  assert.ok(design.crew.some((entry) => entry.stage === "frontend"));
+  assert.match(design.plan.find((entry) => entry.id === "fix").task, /muster design gate/i);
+  assert.ok(validateManifest(design).ok);
+});
+
 test("consolidate/fix/verify dependency chain", () => {
   const m = buildAuditManifest({});
   const auditIds = m.plan.filter(p => p.id.startsWith("audit-")).map(p => p.id);

@@ -4,7 +4,7 @@ Muster turns an outcome into finished work. You give it a goal in plain language
 
 Pick the mode that matches what you want.
 
-Muster has nine modes. The eight delivery and backlog modes below are joined by Init, which prepares a repository and coordinates the active harness's native instruction setup.
+Muster has ten modes. The eight delivery and backlog modes below are joined by Design for human-facing work and Init for native repository instruction setup.
 
 ::: tip On Codex?
 Every mode below is available on Codex as a skill (`$muster-plan`, `$muster-go`, and so on) once Muster's managed profiles and plugin are installed. See the [Codex guide](/guides/codex) for that install path. If something does not appear or behaves oddly, start at [Troubleshooting](/guides/troubleshooting).
@@ -58,6 +58,17 @@ Breadth-first review and fix. It fans out six read-only dimension reviews in par
 ```
 
 Prefix with `backlog` to sweep read-only instead of fixing: `/muster:audit backlog` writes the ranked ledger to `.muster/backlog.md`, one item per finding-cluster, ready for `/muster:go-backlog` to clear later.
+
+## Design a human-facing surface: `/muster:design`
+
+Initialize or inspect canonical `DESIGN.md` context, then run one of 23
+design workflows. Human-facing implementation carries a scope-bound digest
+receipt; ordinary backend work never pays the design scan or provider cost.
+
+```sh
+/muster:design init
+/muster:design polish src/App.tsx
+```
 
 ## Plan a whole backlog: `/muster:plan-backlog`
 
@@ -122,7 +133,7 @@ Claude Code and Codex use one canonical instruction pair: `AGENTS.md` is authori
 @AGENTS.md
 ```
 
-If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. Kimi has no proven callable native Init action, so Muster records an unavailable handoff and waits for an explicit acknowledgement instead of inventing a command. See [The nine modes](/reference/modes#init) for the evidence and finalization states.
+If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. Kimi has no proven callable native Init action, so Muster records an unavailable handoff and waits for an explicit acknowledgement instead of inventing a command. See [The ten modes](/reference/modes#init) for the evidence and finalization states.
 
 ## Inspect the routing yourself
 

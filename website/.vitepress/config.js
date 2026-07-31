@@ -24,7 +24,7 @@ const guideItems = [
 
 const referenceItems = [
   { text: "Concepts", link: "/reference/concepts" },
-  { text: "The nine modes", link: "/reference/modes" },
+  { text: "The ten modes", link: "/reference/modes" },
   { text: "CLI commands", link: "/reference/commands" },
   { text: "Configuration", link: "/reference/configuration" },
   { text: "Pipelines", link: "/reference/pipelines" },

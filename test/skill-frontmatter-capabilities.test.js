@@ -64,6 +64,7 @@ const EXPECTED_ARGUMENT_HINTS = {
   audit: "[path or empty = whole repo] | backlog [path]",
   autopilot: "<outcome>",
   capture: "[hint]",
+  design: "<init|status|resolve|detect|ignores|provider|workflow> [target]",
   diagnose: "<symptom | paste failing test/CI output>",
   "go-backlog": "<backlog ref>",
   go: "<outcome>",

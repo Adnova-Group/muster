@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 144); // main's 143-file surface +1: neutral MCP core now explicitly pinned
+  assert.equal(paths.length, 145); // previous 144-file surface +1: first-class Design command
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1332,5 +1332,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the matching rule-density exception while preserving its remote-text and
   // report-only Kimi process-lane contracts. Runner receipts now also require
   // source-item or issue citations for factual claims. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "13da731131a968f1fbd1a0988914a7ffcdfce88625cdd12ab32556bc2b37f370");
+  // 2026-07-31 re-pin #34 (first-class design mode): plugin/commands/design.md
+  // adds the attended DESIGN.md context gate and 23 pinned workflows; the
+  // shared MCP core adds muster_design and the existing lifecycle prompts gain
+  // conditional design qualification. File count grows from 144 to 145.
+  assert.equal(hash.digest("hex"), "024bf723d396a61d4f2267d1e80379c5c2961cd3c514e90c0a3fa00d3c6a341b");
 });

@@ -30,7 +30,7 @@ features:
     title: Code over model
     details: A deterministic Node CLI owns routing, scoring, and validation. No LLM calls. Reproducible by construction. The model is reserved for judgment.
   - icon: 🚦
-    title: Nine modes
+    title: Ten modes, including Design
     details: Plan and Go handle one outcome; Plan-backlog and Go-backlog handle batches. Diagnose fixes one bug. Audit sweeps the codebase. Runner picks one scheduled item. Capture writes approved backlog items. Init prepares repository state and coordinates native instructions.
   - icon: 🔒
     title: No extra services

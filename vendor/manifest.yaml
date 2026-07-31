@@ -1,4 +1,11 @@
 sources:
+  - id: impeccable
+    kind: github
+    repo: pbakaus/impeccable
+    ref: 32930818a109fafa87199babe92fa8e530cff5d3
+    license: Apache-2.0
+    attributionOnly: true
+    items: []
   - id: superpowers
     kind: github
     repo: obra/superpowers

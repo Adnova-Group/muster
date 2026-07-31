@@ -4,7 +4,7 @@
   "display_name": "Muster",
   "version": "0.5.0",
   "description": "Glass-box agentic router. Exposes muster's deterministic CLI brain (capability and domain routing, gate scoring, RICE prioritization, wave planning) as MCP tools.",
-  "long_description": "Development descriptor for Muster's deterministic core wrapped as 30 deterministic MCP tools for Claude Cowork: project detection, role-to-provider resolution, artifact gate scoring, dependency-ordered wave planning, receipt reconciliation, and bounded backlog CAS publication. This MCPB package is not self-contained and is not an installable distribution; use the documented Route A local MCP configuration. MCP instructions provide the supported protocol subset: Plan, Go, Plan-backlog, Go-backlog, Diagnose, and Audit. Runner and Capture are not provided as MCP modes; Init remains CLI-only.",
+  "long_description": "Development descriptor for Muster's deterministic core wrapped as 31 deterministic MCP tools for Claude Cowork: project detection, role-to-provider resolution, design context and workflow gates, artifact gate scoring, dependency-ordered wave planning, receipt reconciliation, and bounded backlog CAS publication. This MCPB package is not self-contained and is not an installable distribution; use the documented Route A local MCP configuration. MCP instructions provide the supported protocol subset: Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design. Runner and Capture are not provided as MCP modes; Init remains CLI-only.",
   "author": { "name": "rnbennett" },
   "license": "Apache-2.0",
   "server": {
@@ -57,6 +57,7 @@
     { "name": "muster_steer", "description": "Classify a mid-run steer message." },
     { "name": "muster_diagnose", "description": "Classify a failure symptom and build a diagnose manifest." },
     { "name": "muster_audit", "description": "Build the whole-codebase audit manifest." },
+    { "name": "muster_design", "description": "Resolve and gate canonical DESIGN.md context or run one of 23 design workflows." },
     { "name": "muster_manifest_validate", "description": "Validate a crew manifest's shape and dependency graph." },
     { "name": "muster_wave", "description": "Compute dependency-ordered execution waves." },
     { "name": "muster_sprint_waves", "description": "Computes dependency-ordered execution waves from a backlog file's {id}/{deps} annotations (returns waves JSON; annotated:false means the backlog is unannotated/sequential)." },

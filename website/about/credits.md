@@ -9,6 +9,7 @@ Muster's design was inspired by [atomic-claude](https://atomic.alonso.network/),
 | obra/superpowers | MIT | Brainstorming, planning, TDD, code-review, debugging, verification skills |
 | wshobson/agents | MIT | Software and knowledge-work agents and skills across many specialties |
 | open-gsd/gsd-core | MIT | Plan, execute, and verify workflow phases |
+| pbakaus/impeccable @ `32930818a109fafa87199babe92fa8e530cff5d3` | Apache-2.0 | Design workflow vocabulary, context-resolution behavior, and bounded detector inspiration |
 
 Every vendored item is listed in `vendor/manifest.yaml` with its repository, license, and ref, and provenance is written into [NOTICE](https://github.com/Adnova-Group/muster/blob/main/NOTICE).
 

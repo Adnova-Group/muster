@@ -76,7 +76,7 @@ for (const [id, config] of Object.entries(mapping.agents)) {
 }
 const skills = new Set(await dirs(join(plugin, "skills")));
 const internalSkills = new Set(await dirs(join(plugin, "internal-skills")));
-const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "muster-init"];
+const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "muster-init", "muster-design"];
 const aliases = ["run", "autopilot", "sprint"];
 for (const name of [...modes, ...aliases]) if (!skills.has(name)) fail(`missing mode skill ${name}`);
 const native = await dirs(join(root, "plugin/skills"));
@@ -168,7 +168,7 @@ const watchSurfaces = [
   ["orchestrator", join(plugin, "internal-skills", "orchestrator", "SKILL.md")],
   ...[...modes, ...aliases].map(name => [name, join(plugin, "skills", name, "SKILL.md")])
 ];
-if (watchSurfaces.length !== 15) fail(`agent watch coverage drifted to ${watchSurfaces.length} surfaces instead of 15`);
+if (watchSurfaces.length !== 16) fail(`agent watch coverage drifted to ${watchSurfaces.length} surfaces instead of 16`);
 const assertWatchPattern = (text, name, pattern, label) => {
   if (!pattern.test(text)) fail(`${name} ${label}`);
 };

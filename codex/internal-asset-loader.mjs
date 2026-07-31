@@ -82,6 +82,26 @@ export async function readBundledAsset(id, relativeAsset = "SKILL.md") {
   }
 }
 
+export async function resolveBundledSkillPath(id) {
+  validatedAsset(id);
+  const handles = [];
+  try {
+    await openDirectory(pluginRoot, "plugin root", handles);
+    await openDirectory(runtimeRoot, "plugin runtime", handles);
+    const metadataBytes = await readRegular(join(runtimeRoot, "internal-assets.json"), "internal asset metadata", 4 * 1024 * 1024);
+    if (sha256(metadataBytes) !== METADATA_DIGEST) throw new Error("internal asset metadata hash mismatch");
+    const metadata = JSON.parse(metadataBytes.toString("utf8"));
+    if (metadata?.format !== 1 || !Array.isArray(metadata.files)) throw new Error("internal asset metadata contract mismatch");
+    const prefix = `${id}/`;
+    const skillFiles = metadata.files.filter(file => typeof file?.path === "string" && file.path.startsWith(prefix));
+    if (!skillFiles.length) throw new Error(`internal skill is absent from trusted metadata: ${id}`);
+    for (const file of skillFiles) await readBundledAsset(id, file.path.slice(prefix.length));
+    return join(pluginRoot, "internal-skills", id);
+  } finally {
+    await Promise.all(handles.map(handle => handle.close().catch(() => {})));
+  }
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [id, asset] = process.argv.slice(2);
   process.stdout.write(await readBundledAsset(id, asset));

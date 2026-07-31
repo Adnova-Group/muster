@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { fileURLToPath } from "node:url";
-import { readBundledAsset } from "./internal-asset-loader.mjs";
+import { readBundledAsset, resolveBundledSkillPath } from "./internal-asset-loader.mjs";
 
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -15,7 +15,18 @@ export async function resolveSkillProvider(source, id, asset) {
   return readBundledAsset(id, asset);
 }
 
+export async function resolveSkillProviderPath(source, id) {
+  if (source !== "builtin") throw new Error("only builtin skill providers expose a verified asset path");
+  if (!ID.test(id || "")) throw new Error(`invalid skill provider id: ${JSON.stringify(id)}`);
+  return resolveBundledSkillPath(id);
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [source, id, asset] = process.argv.slice(2);
-  process.stdout.write(await resolveSkillProvider(source, id, asset));
+  const [source, id, asset, extra] = process.argv.slice(2);
+  if (asset === "--path") {
+    if (extra !== undefined) throw new Error("--path takes no asset argument");
+    process.stdout.write(`${await resolveSkillProviderPath(source, id)}\n`);
+  } else {
+    process.stdout.write(await resolveSkillProvider(source, id, asset));
+  }
 }

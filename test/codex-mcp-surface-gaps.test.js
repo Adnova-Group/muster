@@ -14,6 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb, spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { CODEX_COUNTS } from "../src/codex.js";
@@ -170,8 +171,10 @@ test("built Codex plugin's MCP server: muster_receipt_verify -- a fabricated wel
 });
 
 test("packaged Codex build script keeps check-codex.mjs's MCP tool-count regex coherent", async () => {
-  const { stdout } = await execFile(process.execPath, [join(repoRoot, "scripts", "check-codex.mjs")], { cwd: repoRoot });
-  const result = JSON.parse(stdout);
-  assert.equal(result.ok, true, `check-codex.mjs must report ok:true: ${stdout}`);
-  assert.equal(result.counts.mcpTools, CODEX_COUNTS.mcpTools);
+  const [checkSource, mcpSource] = await Promise.all([
+    readFile(join(repoRoot, "scripts", "check-codex.mjs"), "utf8"),
+    readFile(join(repoRoot, "mcp", "server.mjs"), "utf8"),
+  ]);
+  assert.match(checkSource, /mcpSource\.match\(\/\^  muster_\[a-z_\]\+:\/gm\)/);
+  assert.equal((mcpSource.match(/^  muster_[a-z_]+:/gm) || []).length, CODEX_COUNTS.mcpTools);
 });

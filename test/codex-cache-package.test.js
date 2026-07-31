@@ -70,9 +70,36 @@ test("a packed npm tarball can generate a Codex plugin whose real Codex cache co
   const bundledBrainstorm = (await execFile(process.execPath, [providerResolver, "builtin", "sp-brainstorm"], { cwd: tmp })).stdout;
   assert.match(bundledBrainstorm, /name: sp-brainstorm/);
   assert.match(bundledBrainstorm, /resolve-skill-provider\.mjs builtin sp-brainstorm visual-companion\.md/);
+  assert.match(bundledBrainstorm, /resolve-skill-provider\.mjs builtin sp-brainstorm --path/);
   assert.doesNotMatch(bundledBrainstorm, /skills\/brainstorming\/visual-companion\.md/);
   const companion = (await execFile(process.execPath, [providerResolver, "builtin", "sp-brainstorm", "visual-companion.md"], { cwd: tmp })).stdout;
   assert.match(companion, /Visual Companion Guide/);
+  const assetRoot = (await execFile(process.execPath, [providerResolver, "builtin", "sp-brainstorm", "--path"], { cwd: tmp })).stdout.trim();
+  assert.equal(assetRoot, join(realCache, "internal-skills", "sp-brainstorm"));
+  const companionServer = spawn("bash", [join(assetRoot, "scripts", "start-server.sh"), "--project-dir", tmp, "--foreground"], {
+    cwd: tmp,
+    env: { ...process.env, BRAINSTORM_IDLE_TIMEOUT_MS: "10000", BRAINSTORM_LIFECYCLE_CHECK_MS: "20" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => companionServer.kill());
+  const started = await new Promise((resolvePromise, reject) => {
+    let stdout = "", stderr = "";
+    const timer = setTimeout(() => { companionServer.kill(); reject(new Error(`installed companion startup timed out: ${stderr}`)); }, 5000);
+    companionServer.stdout.on("data", chunk => {
+      stdout += chunk;
+      for (const line of stdout.split("\n")) {
+        try {
+          const value = JSON.parse(line);
+          if (value.type === "server-started") { clearTimeout(timer); resolvePromise(value); return; }
+        } catch { /* partial shell/server output */ }
+      }
+    });
+    companionServer.stderr.on("data", chunk => { stderr += chunk; });
+    companionServer.once("error", error => { clearTimeout(timer); reject(error); });
+    companionServer.once("exit", code => { clearTimeout(timer); reject(new Error(`installed companion exited before startup: ${code}: ${stderr}`)); });
+  });
+  assert.match(started.url, /^http:\/\//);
+  companionServer.kill();
   for (const id of ["brainstorming", "debugging-strategies"]) {
     const invocation = (await execFile(process.execPath, [providerResolver, "installed", id], { cwd: tmp })).stdout;
     assert.equal(invocation, `Invoke the already-enabled Codex skill explicitly as $${id}.\n`);
@@ -94,6 +121,11 @@ test("a packed npm tarball can generate a Codex plugin whose real Codex cache co
   await unlink(internalSkill);
   await writeFile(internalSkill, originalInternalSkill);
   assert.deepEqual(await readFile(internalSkill), originalInternalSkill);
+  const internalServer = join(realCache, "internal-skills", "sp-brainstorm", "scripts", "server.cjs");
+  const originalInternalServer = await readFile(internalServer);
+  await writeFile(internalServer, "ATTACKER-CONTROLLED-SIBLING\n");
+  await assert.rejects(execFile(process.execPath, [providerResolver, "builtin", "sp-brainstorm", "--path"], { cwd: tmp }), /hash|size|changed/i);
+  await writeFile(internalServer, originalInternalServer);
 
   const env = { ...process.env, CODEX_HOME: join(tmp, "codex-home") };
   const cachedDetected = JSON.parse((await execFile(process.execPath, [join(realCache, "runtime", "muster.mjs"), "detect", tmp], { cwd: tmp, env })).stdout);

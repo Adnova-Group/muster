@@ -570,7 +570,7 @@ function codexSkill(source, id, contract) {
     if (!body.includes(visualCompanionAnchor)) throw new Error("sp-brainstorm visual-companion anchor not found for Codex rewrite");
     body = body.replaceAll(
       visualCompanionAnchor,
-      `node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md`
+      `node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md\n\nBefore invoking any \`scripts/...\` command from that guide, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm --path\`. Treat its verified absolute output as the guide's asset root and resolve every \`scripts/...\` path beneath it; never execute a path from the internal tree without this full-tree verification.`
     );
   }
   if (id === "coordination") body = adaptCoordinationForCodex(body);
@@ -635,7 +635,7 @@ function codexSkill(source, id, contract) {
     if (!body.includes(semgrepRulesAnchor)) throw new Error("wsh-sast-configuration semgrep-rules anchor not found for Codex rewrite");
     body = body.replace(semgrepRulesAnchor, "# Example custom rule; adapt it to the repository's threat model");
   }
-  const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative. Load any relative bundled asset named by this workflow through \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin ${id} <relative-asset>\`; never read the internal tree directly.\n`;
+  const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative. Load any relative bundled asset named by this workflow through \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin ${id} <relative-asset>\`; never read the internal tree directly. When a bundled asset must execute with sibling files, first run the same resolver with \`--path\`; it verifies the complete skill tree before returning its absolute root.\n`;
   return header + binding + body.replace(/^\r?\n*/, "\n");
 }
 

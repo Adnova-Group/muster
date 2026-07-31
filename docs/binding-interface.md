@@ -172,10 +172,10 @@ collide with the base checkout or with a sibling task.
 (`plugin/skills/orchestrator/SKILL.md`: `isolation: "worktree"` passed as a parameter on the
 Agent tool call) and per dispatched backlog-item runner in wave mode
 (`plugin/commands/go-backlog.md`: each parallel item-runner subagent gets its own
-`.worktrees/<item-branch>`). The guarantee composes with Enforce:
-`plugin/commands/go-backlog.md` notes a runner's tool calls inside its worktree rely on the
-`PreToolUse` hook's subagent exemption, since a worktree carries no `.muster/` markers of its
-own.
+`.worktrees/<item-branch>`). The guarantee composes with Enforce: before dispatch, the
+orchestrator copies regular `.muster/run-active` and `.muster/forbidden-actions` files into
+every isolated writer cwd. The `PreToolUse` hook resolves those files from the tool payload
+cwd; `agent_id` and metadata paths do not bypass a matching action fence.
 
 **Degradation ladder (no-subagent harness, nothing to pin a cwd to).** Git worktrees and branches are
 themselves plain git, not Claude-Code-specific, so the filesystem sandbox survives unchanged on
@@ -291,7 +291,7 @@ stale:
 ```
 AskUserQuestion    files=13  mentions=35
 dispatch (Agent/Task tool)  files=6  mentions=17
-hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=30
+hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=29
 worktree   files=5  mentions=52
 ```
 

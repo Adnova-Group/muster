@@ -28,6 +28,7 @@
         "scripts/helper.js",
         "scripts/server.cjs",
         "scripts/start-server.sh",
+        "scripts/stop-server.sh",
         "visual-companion.md"
       ]
       }

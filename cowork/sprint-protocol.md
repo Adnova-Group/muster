@@ -30,9 +30,8 @@ unchanged until then.
   discipline, below) — orchestrator-level only, exactly as the skill specifies.
 - **No native isolated parallel item-runners.** Wave mode's per-item isolation on Claude Code is a
   `muster-runner` subagent per item, dispatched with `isolation: "worktree"` into its own
-  `.worktrees/<branch>`; its tool calls there rely on the `PreToolUse` hook's `agent_id` subagent
-  exemption (decision order step 1, ahead of the action-class fence), not a wave-guard exemption —
-  that hook has no wave-guard left to exempt from. That has no Cowork equivalent — there is no hook
+  `.worktrees/<branch>`; the orchestrator propagates regular run/fence markers into that cwd because
+  `agent_id` does not bypass the action-class fence. That has no Cowork equivalent — there is no hook
   to exempt from in the first place, and no per-dispatch worktree parameter on this MCP surface
   either. Cowork's own subagent fan-out is confirmed to work in general (see this server's core-loop
   instructions above), and it still applies **inside** a single item's own crew/waves. But running

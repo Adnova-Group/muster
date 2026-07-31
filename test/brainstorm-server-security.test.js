@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -13,6 +13,8 @@ const helper = new URL("../codex/skill-assets/sp-brainstorm/scripts/helper.js", 
 const sourceHelper = new URL("../plugin/builtins/sp-brainstorm/scripts/helper.js", import.meta.url).pathname;
 const launcher = new URL("../codex/skill-assets/sp-brainstorm/scripts/start-server.sh", import.meta.url).pathname;
 const sourceLauncher = new URL("../plugin/builtins/sp-brainstorm/scripts/start-server.sh", import.meta.url).pathname;
+const stopLauncher = new URL("../codex/skill-assets/sp-brainstorm/scripts/stop-server.sh", import.meta.url).pathname;
+const sourceStopLauncher = new URL("../plugin/builtins/sp-brainstorm/scripts/stop-server.sh", import.meta.url).pathname;
 const companionGuide = new URL("../codex/skill-assets/sp-brainstorm/visual-companion.md", import.meta.url).pathname;
 const sourceCompanionGuide = new URL("../plugin/builtins/sp-brainstorm/visual-companion.md", import.meta.url).pathname;
 const assetManifest = new URL("../codex/skill-assets/manifest.json", import.meta.url).pathname;
@@ -55,14 +57,20 @@ test("packaged brainstorm server and manifest identify the byte-identical local 
   assert.deepEqual(await readFile(server), await readFile(sourceServer));
   assert.deepEqual(await readFile(helper), await readFile(sourceHelper));
   assert.deepEqual(await readFile(launcher), await readFile(sourceLauncher));
+  assert.deepEqual(await readFile(stopLauncher), await readFile(sourceStopLauncher));
   assert.deepEqual(await readFile(companionGuide), await readFile(sourceCompanionGuide));
   const manifest = JSON.parse(await readFile(assetManifest, "utf8"));
   const brainstorm = manifest.skills.find((skill) => skill.id === "sp-brainstorm");
   assert.deepEqual(brainstorm.overlay, {
     source: "plugin/builtins/sp-brainstorm",
-    files: ["scripts/helper.js", "scripts/server.cjs", "scripts/start-server.sh", "visual-companion.md"],
+    files: ["scripts/helper.js", "scripts/server.cjs", "scripts/start-server.sh", "scripts/stop-server.sh", "visual-companion.md"],
   });
   assert.match(brainstorm.adaptation, /intentional local supporting-asset overlay/);
+  if (process.platform !== "win32") {
+    for (const file of [launcher, sourceLauncher, stopLauncher, sourceStopLauncher]) {
+      assert.notEqual((await stat(file)).mode & 0o111, 0, `${file} must remain executable in the package`);
+    }
+  }
 });
 
 test("brainstorm browser boundary keeps the token out of scripts and sandboxes generated screens", async () => {
@@ -138,12 +146,20 @@ test("screen CSP permits authenticated same-origin image and stylesheet assets",
   const screenResponse = await fetch(`http://127.0.0.1:${info.port}/screen?view=${view}&channel=${channel}`);
   const screen = await screenResponse.text();
   const csp = screenResponse.headers.get("content-security-policy");
-  assert.match(csp, /style-src 'self' 'unsafe-inline'/);
-  assert.match(csp, /img-src 'self' data:/);
+  const assetOriginPattern = new URL(info.url).origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(csp, new RegExp(`style-src ${assetOriginPattern} 'unsafe-inline'`));
+  assert.match(csp, new RegExp(`img-src ${assetOriginPattern} data:`));
+  assert.doesNotMatch(csp, /(?:style-src|img-src)[^;]*'self'/);
   assert.match(screen, new RegExp(`/files/pixel\\.png\\?view=${view}`));
   assert.match(screen, new RegExp(`/files/theme\\.css\\?view=${view}`));
-  assert.equal((await fetch(`http://127.0.0.1:${info.port}/files/pixel.png?view=${view}`)).status, 200);
-  assert.equal((await fetch(`http://127.0.0.1:${info.port}/files/theme.css?view=${view}`)).status, 200);
+  const imageResponse = await fetch(`http://127.0.0.1:${info.port}/files/pixel.png?view=${view}`);
+  const styleResponse = await fetch(`http://127.0.0.1:${info.port}/files/theme.css?view=${view}`);
+  assert.equal(imageResponse.status, 200);
+  assert.equal(styleResponse.status, 200);
+  for (const response of [imageResponse, styleResponse]) {
+    assert.equal(response.headers.get("cross-origin-resource-policy"), "cross-origin");
+    assert.equal(response.headers.get("access-control-allow-origin"), "*");
+  }
 });
 
 test("replacing the content directory cannot serve an outside screen", async (t) => {

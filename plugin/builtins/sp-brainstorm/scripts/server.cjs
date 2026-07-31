@@ -521,9 +521,22 @@ function securityHeaders(headers = {}) {
 }
 
 function screenSecurityHeaders(nonce, headers = {}) {
+  const assetOrigin = 'http://' + urlHostForHttp(URL_HOST) + ':' + PORT;
   return securityHeaders({
     'X-Frame-Options': 'SAMEORIGIN',
-    'Content-Security-Policy': `sandbox allow-scripts; default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`,
+    // The sandbox deliberately omits allow-same-origin, so `'self'` would be
+    // the opaque screen origin and would not authorize the companion server.
+    'Content-Security-Policy': `sandbox allow-scripts; default-src 'none'; script-src 'nonce-${nonce}'; style-src ${assetOrigin} 'unsafe-inline'; img-src ${assetOrigin} data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`,
+    ...headers,
+  });
+}
+
+function assetSecurityHeaders(headers = {}) {
+  return securityHeaders({
+    // Sandboxed screens have an opaque origin. The unguessable view capability
+    // remains the access check; CORP/CORS permit that iframe to consume assets.
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+    'Access-Control-Allow-Origin': '*',
     ...headers,
   });
 }
@@ -592,7 +605,7 @@ function handleRequest(req, res) {
     }
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-    res.writeHead(200, securityHeaders({ 'Content-Type': contentType }));
+    res.writeHead(200, assetSecurityHeaders({ 'Content-Type': contentType }));
     res.end(pinned.data);
   } else {
     res.writeHead(404, securityHeaders());

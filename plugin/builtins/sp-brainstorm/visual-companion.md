@@ -75,6 +75,12 @@ On Windows, the script auto-detects and switches to foreground mode (which block
 scripts/start-server.sh --project-dir /path/to/project --open
 ```
 
+On native Windows, this optional visual companion requires Git Bash (or WSL)
+to run `start-server.sh`; native PowerShell is not a supported launcher. If
+neither Bash environment is available, skip the companion and continue the
+same brainstorm in terminal text. This limitation does not affect Muster's
+native Windows Codex install, orchestration, or review lanes.
+
 **Copilot CLI:**
 ```bash
 # Use --foreground and start the server via the bash tool with mode: "async"

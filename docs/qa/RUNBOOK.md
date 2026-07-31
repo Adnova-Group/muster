@@ -174,10 +174,9 @@ warn/off/fail-open matrix.
   a new test, match with a regex (e.g. `/send/i`) the way
   `test/hook-pre-tool-use-action-fence.test.js` does, not an exact string, so
   wording tweaks don't need a test edit.
-- `agent_id` on the payload (a subagent call) and a target path under
-  `.muster/`/`.claude/` both bypass the fence entirely, forbidden class or
-  not -- see `pre-tool-use.js`'s decision-order docblock for the full
-  precedence.
+- `agent_id` and metadata paths do not bypass a matching action fence. The
+  action classification runs before advisory drift exemptions, and isolated
+  writer worktrees receive their own regular run/fence marker copies.
 
 ---
 

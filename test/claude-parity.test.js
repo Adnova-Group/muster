@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 149); // previous 145-file surface +4: hardened brainstorm runtime and guide overlays
+  assert.equal(paths.length, 150); // previous 145-file surface +5: hardened brainstorm runtime and guide overlays
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1348,5 +1348,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 2026-07-31 re-pin #38 (companion contract overlay): the no-cookie guide and
   // launcher are local overlays alongside the hardened runtime. Count grows
   // from 147 to 149; same-origin view-capability assets stay CSP-compatible.
-  assert.equal(hash.digest("hex"), "590ca878f6bbc77700934b65954fec3ed6db021f9a443decd81f28583b533472");
+  // 2026-07-31 re-pin #39 (final release review): stale runner exemption prose
+  // is removed, and opaque sandbox assets receive explicit CORP/CORS headers.
+  // Re-pin #40 adds the executable stop launcher to the durable local overlay,
+  // increasing the shared surface from 149 to 150 files.
+  assert.equal(hash.digest("hex"), "417a3a4ae8edb777e25d11d0823054902defd588851378582794b886a82f1d77");
 });

@@ -171,6 +171,22 @@ test("Codex reinstall does not rebind ownership to a later positive user edit", 
   assert.equal(await readFile(configPath, "utf8"), "[agents]\nmax_concurrent_threads_per_session = 4\n");
 });
 
+test("Codex reinstall rebases ownership after the user deletes the canonical ceiling", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-canonical-thread-deleted-"));
+  t.after(() => import("node:fs/promises").then(fs => fs.rm(tmp, { recursive: true, force: true })));
+  const cwd = join(tmp, "project");
+  const home = join(tmp, "home");
+  const codexHome = join(home, ".codex");
+  const configPath = join(codexHome, "config.toml");
+  await mkdir(codexHome, { recursive: true });
+  await writeFile(configPath, "[agents]\nmax_concurrent_threads_per_session = 3\n");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await writeFile(configPath, "[agents]\n");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  await runCodexUninstall({ cwd, home, execFile: absentCodex });
+  assert.equal(await readFile(configPath, "utf8"), "[agents]\n");
+});
+
 test("Codex wave scheduling cannot exceed the canonical session ceiling", () => {
   const result = computeSprintWaves(backlog, {
     parallelLimit: 9,

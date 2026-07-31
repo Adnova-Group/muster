@@ -1479,8 +1479,14 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           // install recorded, so an eventual last-scope uninstall could
           // never fully restore it. Mirrors prepareHooks' identical
           // `previous?.hookConfigCreated ?? !configExists` guard above.
-          const before = previousManifest && !legacyManifest ? previousManifest.before : threadLimits.before;
           const currentCanonicalValue = threadLimits.before.max_concurrent_threads_per_session;
+          // A missing live key is an authoritative user deletion, not an
+          // unchanged managed value. Rebase this key's ownership so the
+          // default added by this reinstall is removed on uninstall instead
+          // of resurrecting the stale pre-deletion user value.
+          const before = previousManifest && !legacyManifest && currentCanonicalValue !== null
+            ? previousManifest.before
+            : threadLimits.before;
           const installed = previousManifest && !legacyManifest && currentCanonicalValue !== null
             ? previousManifest.installed
             : threadLimits.installed;

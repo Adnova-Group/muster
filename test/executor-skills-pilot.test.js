@@ -67,6 +67,25 @@ test("bounded local fixture lists explicit and discoverable skills and reads pac
   );
 });
 
+test("discovery skips malformed Agent Skills metadata and mismatched frontmatter names", async () => {
+  const capabilityRoot = await buildPackage();
+  for (const [name, markdown] of [
+    ["missing-frontmatter", "# No metadata\n"],
+    ["missing-description", "---\nname: missing-description\n---\n"],
+    ["wrong-name", "---\nname: another-name\ndescription: mismatch\n---\n"],
+  ]) {
+    const skill = join(capabilityRoot, "skills", name);
+    await mkdir(skill);
+    await writeFile(join(skill, "SKILL.md"), markdown);
+  }
+  const fixture = await createExecutorSkillsFixture({ capabilityRoot });
+
+  assert.deepEqual(
+    (await fixture.list()).map(skill => skill.id),
+    ["discoverable-skill", "explicit-skill"],
+  );
+});
+
 test("fixture rejects traversal, symlink escapes, and reads beyond its byte bound", async () => {
   const capabilityRoot = await buildPackage();
   const outside = await mkdtemp(join(tmpdir(), "muster-executor-skills-outside-"));
@@ -101,7 +120,7 @@ test("fixture rejects traversal, symlink escapes, and reads beyond its byte boun
 
 test("production activation requires authority demonstrated by the same active host and capability root", async () => {
   const capabilityRoot = await buildPackage();
-  const authority = {
+  const callerFabricatedAuthority = {
     contract: EXECUTOR_SKILLS_CONTRACT.version,
     activeHost: "codex-desktop",
     capabilityRoot,
@@ -114,15 +133,15 @@ test("production activation requires authority demonstrated by the same active h
     await executorSkillsActivation({
       host: "codex-desktop",
       capabilityRoot,
-      authority,
+      authority: callerFabricatedAuthority,
     }),
-    { active: true, reason: "active-host-demonstrated" },
+    { active: false, reason: "active-host-authority-not-demonstrated" },
   );
   assert.deepEqual(
     await executorSkillsActivation({
       host: "chatgpt-work",
       capabilityRoot,
-      authority,
+      authority: callerFabricatedAuthority,
     }),
     { active: false, reason: "active-host-authority-not-demonstrated" },
   );
@@ -130,7 +149,7 @@ test("production activation requires authority demonstrated by the same active h
     await executorSkillsActivation({
       host: "codex-desktop",
       capabilityRoot,
-      authority: { ...authority, capabilityRoot: join(capabilityRoot, "skills") },
+      authority: { ...callerFabricatedAuthority, capabilityRoot: join(capabilityRoot, "skills") },
     }),
     { active: false, reason: "active-host-authority-not-demonstrated" },
   );

@@ -36,10 +36,12 @@ ChatGPT Work has a plugin and registered-MCP lane, but it does not inherit the
 Codex configuration plane. A successful tool scan or Muster MCP card therefore
 does not prove executor-provided skill authority.
 
-Production code may activate this pilot only from an authority receipt emitted
-by the same active host, for the exact capability root, contract version, and
-method pair. No current CLI, MCP adapter, installer, or capability resolver
-constructs that receipt. Static configuration and ambient environment variables
+Production code may activate this pilot only from an unforgeable authority
+receipt emitted by the same active host, for the exact capability root,
+contract version, and method pair. No current CLI, MCP adapter, installer, or
+capability resolver owns such an attestation channel, so
+`executorSkillsActivation` always fails closed. A caller-supplied object, static
+configuration, an external app-server query, and ambient environment variables
 are deliberately insufficient.
 
 ## Evidence

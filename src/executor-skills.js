@@ -20,7 +20,6 @@ const DEFAULT_MAX_RESOURCE_BYTES = 256 * 1024;
 const HARD_MAX_SKILLS = 512;
 const HARD_MAX_RESOURCE_BYTES = 1024 * 1024;
 const SKILL_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const SUPPORTED_HOSTS = new Set(["chatgpt-work", "codex-desktop"]);
 
 function boundedPositiveInteger(value, fallback, hardMaximum, label) {
   const resolved = value ?? fallback;
@@ -32,20 +31,41 @@ function boundedPositiveInteger(value, fallback, hardMaximum, label) {
 
 function skillDescription(markdown) {
   const frontmatter = matchFrontmatter(markdown);
-  if (!frontmatter) return "";
-  const line = frontmatter.body.split(/\r?\n/).find(value => /^description:/.test(value));
-  if (!line) return "";
-  const value = line.slice("description:".length).trim();
-  if (
-    value.length >= 2
-    && (
-      (value.startsWith('"') && value.endsWith('"'))
-      || (value.startsWith("'") && value.endsWith("'"))
-    )
-  ) {
-    return value.slice(1, -1);
+  if (!frontmatter) return null;
+  const fields = {};
+  for (const line of frontmatter.body.split(/\r?\n/)) {
+    const match = line.match(/^(name|description):\s*(.*)$/);
+    if (!match || fields[match[1]] !== undefined) continue;
+    let value = match[2].trim();
+    if (
+      value.length >= 2
+      && (
+        (value.startsWith('"') && value.endsWith('"'))
+        || (value.startsWith("'") && value.endsWith("'"))
+      )
+    ) {
+      value = value.slice(1, -1);
+    }
+    fields[match[1]] = value;
   }
-  return value;
+  return fields;
+}
+
+function validSkillMetadata(markdown, directoryName) {
+  const fields = skillDescription(markdown);
+  if (!fields) return null;
+  const { name, description } = fields;
+  if (
+    name !== directoryName
+    || !SKILL_ID.test(name)
+    || Buffer.byteLength(name) > 64
+    || typeof description !== "string"
+    || description.length < 1
+    || Buffer.byteLength(description) > 1024
+  ) {
+    return null;
+  }
+  return { name, description };
 }
 
 function assertSkillId(id) {
@@ -66,9 +86,45 @@ async function resolveCapabilityRoot(capabilityRoot) {
   return { root, skillsRoot };
 }
 
-async function readBoundedText(path, maxBytes, label) {
+async function readContainedText({
+  packageRoot,
+  containmentRoot,
+  candidate,
+  maxBytes,
+  label,
+}) {
+  const canonical = await resolveContainedRealpath(containmentRoot, candidate);
+  if (
+    !canonical
+    || !isContainedLexical(packageRoot, canonical)
+    || !isContainedLexical(containmentRoot, canonical)
+  ) {
+    throw new Error(`${label} must resolve inside its skill root`);
+  }
+  const before = await lstat(canonical);
+  if (!before.isFile() || before.isSymbolicLink()) {
+    throw new Error(`${label} must be a regular file`);
+  }
   try {
-    const { bytes } = await readNoFollowRegular(path, { maxBytes, label });
+    const { bytes } = await readNoFollowRegular(canonical, {
+      maxBytes,
+      label,
+      expectedInfo: before,
+    });
+    const afterCanonical = await realpath(candidate);
+    const after = await lstat(afterCanonical);
+    if (
+      afterCanonical !== canonical
+      || !isContainedLexical(packageRoot, afterCanonical)
+      || !isContainedLexical(containmentRoot, afterCanonical)
+      || after.ino !== before.ino
+      || after.dev !== before.dev
+      || after.size !== before.size
+      || !after.isFile()
+      || after.isSymbolicLink()
+    ) {
+      throw new Error(`file changed while reading: ${label}`);
+    }
     return bytes.toString("utf8");
   } catch (error) {
     if (error?.fsSafe?.reason === "too-large") {
@@ -98,17 +154,23 @@ async function inventory({ root, skillsRoot, explicitSkills, maxSkills, maxResou
     if (!entry.isDirectory() || !SKILL_ID.test(entry.name)) continue;
     const skillRoot = await resolveContainedRealpath(skillsRoot, join(skillsRoot, entry.name));
     if (!skillRoot || !isContainedLexical(root, skillRoot)) continue;
-    const skillMd = await resolveContainedRealpath(skillRoot, join(skillRoot, "SKILL.md"));
-    if (!skillMd || !isContainedLexical(skillRoot, skillMd)) continue;
     let markdown;
     try {
-      markdown = await readBoundedText(skillMd, maxResourceBytes, `skill ${entry.name} SKILL.md`);
+      markdown = await readContainedText({
+        packageRoot: root,
+        containmentRoot: skillRoot,
+        candidate: join(skillRoot, "SKILL.md"),
+        maxBytes: maxResourceBytes,
+        label: `skill ${entry.name} SKILL.md`,
+      });
     } catch {
       continue;
     }
+    const metadata = validSkillMetadata(markdown, entry.name);
+    if (!metadata) continue;
     discovered.push({
       id: entry.name,
-      description: skillDescription(markdown),
+      description: metadata.description,
       activation: explicit.has(entry.name) ? "explicit" : "discoverable",
       path: `skills/${entry.name}/SKILL.md`,
       skillRoot,
@@ -168,43 +230,25 @@ export async function createExecutorSkillsFixture({
       const relativePath = safeRelativePath(path);
       const selected = (await currentInventory()).find(candidate => candidate.id === skill);
       if (!selected) throw new Error(`executor skill is unavailable: ${skill}`);
-      const target = await resolveContainedRealpath(
-        selected.skillRoot,
-        join(selected.skillRoot, relativePath),
-      );
-      if (!target || !isContainedLexical(selected.skillRoot, target)) {
-        throw new Error("executor skill resource must resolve inside its skill root");
-      }
-      return readBoundedText(
-        target,
-        bounds.maxResourceBytes,
-        `skill ${skill} resource ${relativePath}`,
-      );
+      return readContainedText({
+        packageRoot: roots.root,
+        containmentRoot: selected.skillRoot,
+        candidate: join(selected.skillRoot, relativePath),
+        maxBytes: bounds.maxResourceBytes,
+        label: `executor skill resource`,
+      });
     },
   });
 }
 
 export async function executorSkillsActivation({ host, capabilityRoot, authority } = {}) {
-  const inactive = { active: false, reason: "active-host-authority-not-demonstrated" };
-  if (!SUPPORTED_HOSTS.has(host) || !authority || authority.demonstrated !== true) return inactive;
-  if (
-    authority.contract !== EXECUTOR_SKILLS_CONTRACT.version
-    || authority.activeHost !== host
-    || authority.source !== "active-host-executor"
-    || !Array.isArray(authority.methods)
-    || authority.methods.length !== EXECUTOR_SKILLS_CONTRACT.methods.length
-    || authority.methods.some((method, index) => method !== EXECUTOR_SKILLS_CONTRACT.methods[index])
-  ) {
-    return inactive;
-  }
-  let expectedRoot;
-  let observedRoot;
-  try {
-    expectedRoot = await realpath(capabilityRoot);
-    observedRoot = await realpath(authority.capabilityRoot);
-  } catch {
-    return inactive;
-  }
-  if (expectedRoot !== observedRoot) return inactive;
-  return { active: true, reason: "active-host-demonstrated" };
+  // The pilot has no production host adapter, so it has no private attestation
+  // channel. A plain object, environment variable, installed file, or external
+  // app-server query is forgeable by the caller and cannot activate this lane.
+  // When an active-host adapter exists, it must own an unforgeable receipt
+  // channel and replace this fail-closed boundary with its verifier.
+  void host;
+  void capabilityRoot;
+  void authority;
+  return { active: false, reason: "active-host-authority-not-demonstrated" };
 }

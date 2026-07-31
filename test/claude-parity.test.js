@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 147); // previous 145-file surface +2: hardened brainstorm server and helper sources
+  assert.equal(paths.length, 149); // previous 145-file surface +4: hardened brainstorm runtime and guide overlays
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1345,5 +1345,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 2026-07-31 re-pin #37 (release gate follow-up): isolated writer worktrees
   // now receive the active action-fence markers, and the brainstorm controller
   // uses distinct query capabilities instead of a host-wide localhost cookie.
-  assert.equal(hash.digest("hex"), "b9ebc8263500d73600ee765b32bc8cebeff6b066dfc8a3ec759585a100a14863");
+  // 2026-07-31 re-pin #38 (companion contract overlay): the no-cookie guide and
+  // launcher are local overlays alongside the hardened runtime. Count grows
+  // from 147 to 149; same-origin view-capability assets stay CSP-compatible.
+  assert.equal(hash.digest("hex"), "590ca878f6bbc77700934b65954fec3ed6db021f9a443decd81f28583b533472");
 });

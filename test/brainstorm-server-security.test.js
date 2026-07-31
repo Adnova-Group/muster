@@ -11,6 +11,10 @@ const server = new URL("../codex/skill-assets/sp-brainstorm/scripts/server.cjs",
 const sourceServer = new URL("../plugin/builtins/sp-brainstorm/scripts/server.cjs", import.meta.url).pathname;
 const helper = new URL("../codex/skill-assets/sp-brainstorm/scripts/helper.js", import.meta.url).pathname;
 const sourceHelper = new URL("../plugin/builtins/sp-brainstorm/scripts/helper.js", import.meta.url).pathname;
+const launcher = new URL("../codex/skill-assets/sp-brainstorm/scripts/start-server.sh", import.meta.url).pathname;
+const sourceLauncher = new URL("../plugin/builtins/sp-brainstorm/scripts/start-server.sh", import.meta.url).pathname;
+const companionGuide = new URL("../codex/skill-assets/sp-brainstorm/visual-companion.md", import.meta.url).pathname;
+const sourceCompanionGuide = new URL("../plugin/builtins/sp-brainstorm/visual-companion.md", import.meta.url).pathname;
 const assetManifest = new URL("../codex/skill-assets/manifest.json", import.meta.url).pathname;
 
 async function launchServer(session, extraEnv = {}) {
@@ -50,11 +54,13 @@ async function launchServer(session, extraEnv = {}) {
 test("packaged brainstorm server and manifest identify the byte-identical local overlay", async () => {
   assert.deepEqual(await readFile(server), await readFile(sourceServer));
   assert.deepEqual(await readFile(helper), await readFile(sourceHelper));
+  assert.deepEqual(await readFile(launcher), await readFile(sourceLauncher));
+  assert.deepEqual(await readFile(companionGuide), await readFile(sourceCompanionGuide));
   const manifest = JSON.parse(await readFile(assetManifest, "utf8"));
   const brainstorm = manifest.skills.find((skill) => skill.id === "sp-brainstorm");
   assert.deepEqual(brainstorm.overlay, {
     source: "plugin/builtins/sp-brainstorm",
-    files: ["scripts/helper.js", "scripts/server.cjs"],
+    files: ["scripts/helper.js", "scripts/server.cjs", "scripts/start-server.sh", "visual-companion.md"],
   });
   assert.match(brainstorm.adaptation, /intentional local supporting-asset overlay/);
 });
@@ -115,6 +121,29 @@ test("controller bootstrap sets no localhost cookie and uses a separate view cap
   const view = body.match(/\/screen\?view=([0-9a-f]{64})&channel=/)?.[1];
   assert.ok(view);
   assert.notEqual(view, master);
+});
+
+test("screen CSP permits authenticated same-origin image and stylesheet assets", async (t) => {
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-assets-"));
+  await chmod(session, 0o700);
+  const { child, info } = await launchServer(session);
+  t.after(async () => { child.kill(); await rm(session, { recursive: true, force: true }); });
+  await writeFile(join(session, "content", "screen.html"), '<img src="/files/pixel.png"><link rel="stylesheet" href="/files/theme.css">', { mode: 0o600 });
+  await writeFile(join(session, "content", "pixel.png"), Buffer.from([137, 80, 78, 71]), { mode: 0o600 });
+  await writeFile(join(session, "content", "theme.css"), "body{color:#123}", { mode: 0o600 });
+  const controller = await (await fetch(info.url)).text();
+  const view = controller.match(/\/screen\?view=([0-9a-f]{64})&channel=/)?.[1];
+  const channel = controller.match(/&channel=([0-9a-f]{32})/)?.[1];
+  assert.ok(view && channel);
+  const screenResponse = await fetch(`http://127.0.0.1:${info.port}/screen?view=${view}&channel=${channel}`);
+  const screen = await screenResponse.text();
+  const csp = screenResponse.headers.get("content-security-policy");
+  assert.match(csp, /style-src 'self' 'unsafe-inline'/);
+  assert.match(csp, /img-src 'self' data:/);
+  assert.match(screen, new RegExp(`/files/pixel\\.png\\?view=${view}`));
+  assert.match(screen, new RegExp(`/files/theme\\.css\\?view=${view}`));
+  assert.equal((await fetch(`http://127.0.0.1:${info.port}/files/pixel.png?view=${view}`)).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${info.port}/files/theme.css?view=${view}`)).status, 200);
 });
 
 test("replacing the content directory cannot serve an outside screen", async (t) => {

@@ -523,7 +523,7 @@ function securityHeaders(headers = {}) {
 function screenSecurityHeaders(nonce, headers = {}) {
   return securityHeaders({
     'X-Frame-Options': 'SAMEORIGIN',
-    'Content-Security-Policy': `sandbox allow-scripts; default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`,
+    'Content-Security-Policy': `sandbox allow-scripts; default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`,
     ...headers,
   });
 }

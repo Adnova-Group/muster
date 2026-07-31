@@ -25,7 +25,47 @@ async function annotateMarkdownReferences(path) {
   }
 }
 
-async function validateStagedOutput(staging, manifest, expectedSourceCount) {
+async function listFiles(path, prefix = "") {
+  const files = [];
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...await listFiles(join(path, entry.name), relativePath));
+    else files.push(relativePath);
+  }
+  return files;
+}
+
+async function localSupportingEntries(path) {
+  try {
+    return (await readdir(path, { withFileTypes: true })).filter(entry => entry.name !== "SKILL.md");
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function applyLocalOverlays(staging, builtinsDir, manifest, sourceBySkillId, copy) {
+  for (const [id, source] of sourceBySkillId) {
+    const localSkill = join(builtinsDir, id);
+    const entries = await localSupportingEntries(localSkill);
+    if (!entries.length) continue;
+
+    const destination = join(staging, id);
+    await mkdir(destination, { recursive: true });
+    for (const entry of entries) await copy(join(localSkill, entry.name), join(destination, entry.name), { recursive: true });
+    const overlayFiles = (await listFiles(localSkill)).filter(file => file !== "SKILL.md").sort();
+    let skill = manifest.skills.find(item => item.id === id);
+    if (!skill) {
+      skill = { id, source, adaptation: "upstream supporting assets with prompt-lint annotations on Markdown", files: [] };
+      manifest.skills.push(skill);
+    }
+    skill.files = [...new Set([...skill.files, ...entries.map(entry => entry.name)])].sort();
+    skill.adaptation = "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay";
+    skill.overlay = { source: `plugin/builtins/${id}`, files: overlayFiles };
+  }
+}
+
+async function validateStagedOutput(staging, builtinsDir, manifest, expectedSourceCount) {
   const persisted = JSON.parse(await readFile(join(staging, "manifest.json"), "utf8"));
   if (persisted.schemaVersion !== 1 || persisted.sources.length !== expectedSourceCount) {
     throw new Error("Staged Codex asset manifest is incomplete");
@@ -35,6 +75,13 @@ async function validateStagedOutput(staging, manifest, expectedSourceCount) {
   }
   for (const skill of persisted.skills) {
     for (const file of skill.files) await access(join(staging, skill.id, file));
+    for (const file of skill.overlay?.files ?? []) {
+      const [stagedContent, localContent] = await Promise.all([
+        readFile(join(staging, skill.id, file)),
+        readFile(join(builtinsDir, skill.id, file))
+      ]);
+      if (!stagedContent.equals(localContent)) throw new Error(`Staged local overlay does not match plugin/builtins/${skill.id}/${file}`);
+    }
   }
 }
 
@@ -78,6 +125,7 @@ async function publishStagedOutput(staging, output, renamePath) {
 
 export async function syncCodexSkillAssets({
   outputDir,
+  builtinsDir = join(root, "plugin", "builtins"),
   upstreams,
   vendor,
   selections = defaultSelections,
@@ -93,6 +141,7 @@ export async function syncCodexSkillAssets({
   const checkoutTemp = await mkdtemp(join(tmpdir(), "muster-codex-assets-"));
   const manifest = { schemaVersion: 1, sources: [], skills: [] };
   const familyById = new Map(upstreams.families.map(family => [family.id, family]));
+  const sourceBySkillId = new Map();
   let published = false;
 
   try {
@@ -111,18 +160,20 @@ export async function syncCodexSkillAssets({
 
       for (const item of source.items.filter(item => item.as !== "agent")) {
         const sourceDir = join(clone, dirname(item.from));
+        sourceBySkillId.set(item.id, `${selection.familyId}:${dirname(item.from)}`);
         const destination = join(staging, item.id);
         const entries = (await readdir(sourceDir, { withFileTypes: true })).filter(entry => entry.name !== "SKILL.md");
         if (!entries.length) continue;
         await mkdir(destination, { recursive: true });
         for (const entry of entries) await copy(join(sourceDir, entry.name), join(destination, entry.name), { recursive: true });
         await annotateMarkdownReferences(destination);
-        manifest.skills.push({ id: item.id, source: `${selection.familyId}:${dirname(item.from)}`, adaptation: "packaging-only prompt-lint annotations on Markdown supporting assets", files: entries.map(entry => entry.name).sort() });
+        manifest.skills.push({ id: item.id, source: sourceBySkillId.get(item.id), adaptation: "packaging-only prompt-lint annotations on Markdown supporting assets", files: entries.map(entry => entry.name).sort() });
       }
     }
+    await applyLocalOverlays(staging, builtinsDir, manifest, sourceBySkillId, copy);
     manifest.skills.sort((a, b) => a.id.localeCompare(b.id));
     await writeFile(join(staging, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    await validateStagedOutput(staging, manifest, selections.length);
+    await validateStagedOutput(staging, builtinsDir, manifest, selections.length);
     await publishStagedOutput(staging, output, renamePath);
     published = true;
     stdout.write(`${JSON.stringify({ ok: true, sources: manifest.sources.length, skills: manifest.skills.length }, null, 2)}\n`);

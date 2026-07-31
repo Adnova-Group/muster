@@ -290,10 +290,15 @@ stale:
 
 ```
 AskUserQuestion    files=13  mentions=35
-dispatch (Agent/Task tool)  files=5  mentions=16
-hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=28
-worktree   files=5  mentions=41
+dispatch (Agent/Task tool)  files=6  mentions=17
+hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=30
+worktree   files=5  mentions=52
 ```
+
+Counts refreshed for the release action-fence follow-up: `go.md`, `go-backlog.md`, and the
+orchestrator now require run markers to be copied into each isolated writer cwd. That adds
+the dispatch, hook, and worktree matches above; the executable test continues to derive the
+numbers from the same live plugin-prose scope.
 
 Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave
 dispatch: native Workflow vs prose fallback" section added one dispatch mention (`Agent`

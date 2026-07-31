@@ -52,3 +52,9 @@ test("every write-capable go path requires verified linked-worktree isolation", 
   const go = await read("plugin/commands/go.md");
   assert.doesNotMatch(go, /a plain branch is fine otherwise/i);
 });
+
+test("the full CI suite fetches history required by pinned diff probes", async () => {
+  const workflow = await read(".github/workflows/ci.yml");
+  const fullSuiteJob = workflow.split(/^  windows-smoke:/m)[0];
+  assert.match(fullSuiteJob, /uses: actions\/checkout@v4\s+with:\s+(?:#[^\n]*\s+)*fetch-depth: 0/m);
+});

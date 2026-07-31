@@ -14,6 +14,11 @@ jobs:
         node-version: [20.x, 22.x]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The full suite includes pinned historical-diff probes (for example
+          # eval/kimi-reviewer-tier-probe.mjs), so a depth-1 checkout cannot
+          # supply their immutable review material.
+          fetch-depth: 0
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:

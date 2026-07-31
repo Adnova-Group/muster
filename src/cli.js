@@ -71,6 +71,10 @@ import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import {
+  codexThreadLimitConfigPath,
+  resolveCodexThreadCeiling,
+} from "./codex-thread-limits.js";
+import {
   assertContainedNoSymlinkPath,
   atomicWrite,
   isUnsafePathToken,
@@ -577,7 +581,17 @@ async function main() {
         fail(`sprint-waves <backlog.md>: ${file} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
       }
       const content = await readFile(canonical, "utf8");
-      const r = computeSprintWaves(content, { parallelLimit: process.env.MUSTER_SPRINT_PARALLEL });
+      const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+      let threadConfigText = "";
+      try {
+        threadConfigText = await readFile(codexThreadLimitConfigPath(waveCodexHome), "utf8");
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      const r = computeSprintWaves(content, {
+        parallelLimit: process.env.MUSTER_SPRINT_PARALLEL,
+        maxConcurrentThreadsPerSession: resolveCodexThreadCeiling(threadConfigText),
+      });
       out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "sprint-reconcile") {

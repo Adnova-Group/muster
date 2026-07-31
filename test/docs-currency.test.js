@@ -330,7 +330,7 @@ test("cross-harness research preserves current Codex hook, dispatch, thread, and
     assert.match(text, /Codex plugin[\s\S]{0,140}hooks-free[\s\S]{0,140}(?:double firing|double-inject)/i, `${path} must explain Muster's hooks-free plugin`);
     assert.doesNotMatch(text, /Codex 0\.144(?:\.0)? does not execute plugin-bundled hooks|plugin-bundled hooks not executed on 0\.144/i, `${path} must not repeat the falsified hook claim`);
     assert.match(text, /ensureCodexThreadLimits[\s\S]{0,220}restoreCodexThreadLimits/i, `${path} must document landed thread-limit ownership`);
-    assert.match(text, new RegExp(`max_threads[\\s\\S]{0,100}(?:>=|≥)\\s*${REQUIRED_CODEX_THREAD_LIMITS.max_threads}[\\s\\S]{0,140}max_depth[\\s\\S]{0,100}(?:>=|≥)\\s*${REQUIRED_CODEX_THREAD_LIMITS.max_depth}`, "i"), `${path} must state the managed floors`);
+    assert.match(text, new RegExp(`max_concurrent_threads_per_session[\\s\\S]{0,180}(?:default(?:ing)?(?:\\s+it)?\\s+to|default[^\\n]*?)\\s*\\D*${REQUIRED_CODEX_THREAD_LIMITS.max_concurrent_threads_per_session}`, "i"), `${path} must state the managed canonical default`);
     assert.doesNotMatch(text, /thread-limits invalidated and re-opened|invalidated and re-opened[\s\S]{0,80}thread/i, `${path} must not present the landed thread-limit item as open`);
   }
 

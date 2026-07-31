@@ -104,7 +104,7 @@ test("generated Codex audit consolidates six dimensions into three quota-bounded
   assert.match(generated, /system quality/);
   assert.match(generated, /coverage/);
   assert.match(generated, /security/);
-  assert.match(generated, /Respect `agents\.max_threads`; neither lower nor raise it/);
+  assert.match(generated, /Respect `agents\.max_concurrent_threads_per_session`; neither lower nor raise it/);
   assert.match(generated, /fork_turns: "none"/);
   assert.match(generated, /Consolidation is forbidden until each required dimension has a receipt/);
   assert.doesNotMatch(generated, /CAPACITY-DEGRADED requested=6/);

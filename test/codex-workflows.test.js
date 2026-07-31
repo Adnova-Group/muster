@@ -246,7 +246,7 @@ test("generated Codex audits cover six dimensions with three nonredundant scans"
   const text = await readFile(join(selectedPluginRoot, "commands", "audit.md"), "utf8");
   assert.match(text, /Quota-bounded dimension sweep/);
   assert.match(text, /three nonredundant read-only briefs/);
-  assert.match(text, /Respect `agents\.max_threads`/);
+  assert.match(text, /Respect `agents\.max_concurrent_threads_per_session`/);
   assert.match(text, /fork_turns: "none"/);
   assert.doesNotMatch(text, /requested=6|six core dimensions remain independent/);
 });

@@ -195,9 +195,9 @@ Desktop, CLI, and IDE extension read the same configuration layers [DOCUMENTED]:
   restrictions and `features.plugin_sharing = false` [src: cfg-basic] [src: cfg-ref].
 
 Thread limits are global `[agents]` settings in this same shared file [DOCUMENTED]
-[src: subagents]. Muster now manages a safe floor through `ensureCodexThreadLimits` during
+[src: subagents]. Muster ensures the canonical ceiling through `ensureCodexThreadLimits` during
 install and records the owned change; `restoreCodexThreadLimits` runs on the last
-managed-scope uninstall and preserves unrelated settings and later user raises:
+managed-scope uninstall and preserves unrelated settings and later user edits:
 
 - `agents.max_threads`: legacy v1 name for the concurrent thread cap, default 6; Codex
   0.145.0 names `agents.max_concurrent_threads_per_session` as the v2 key, with a default
@@ -209,8 +209,9 @@ managed-scope uninstall and preserves unrelated settings and later user raises:
   CSV fan-out consumer was removed in 0.145.0; treat the 1800-second behavior as historical.
   `agents.interrupt_message` still defaults to true [src: subagents].
 
-Muster's managed `max_threads >= 12`, `max_depth >= 2` floor is a supported write to the
-shared `config.toml`. One write per physical `CODEX_HOME` reaches desktop, CLI, and IDE;
+Muster ensures canonical `max_concurrent_threads_per_session` exists in the shared
+`config.toml`, defaulting to `12` only when no canonical or legacy user ceiling exists.
+One write per physical `CODEX_HOME` reaches desktop, CLI, and IDE;
 the WSL/Windows dual-home case in section 4 is the remaining multiplicity. Install and
 uninstall own that write through the recorded ensure/restore contract described above
 [DOCUMENTED for the keys and sharing; CODE-VERIFIED for Muster's ownership behavior]

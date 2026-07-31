@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -42,10 +42,16 @@ test("schedule makes every ready disposition build/review eligible before ordere
 test("sprint-waves CLI emits the effective cap, explicit build batches, and integration order", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-wave-schedule-"));
   try {
+    const codexHome = join(dir, "codex-home");
+    await mkdir(codexHome);
+    await writeFile(
+      join(codexHome, "config.toml"),
+      "[agents]\nmax_concurrent_threads_per_session = 2\n",
+    );
     await writeFile(join(dir, "backlog.md"), backlog);
     const { stdout } = await pexecFile(process.execPath, [cli, "sprint-waves", "backlog.md"], {
       cwd: dir,
-      env: { ...process.env, MUSTER_SPRINT_PARALLEL: "2" },
+      env: { ...process.env, CODEX_HOME: codexHome, MUSTER_SPRINT_PARALLEL: "9" },
     });
     const result = JSON.parse(stdout);
 

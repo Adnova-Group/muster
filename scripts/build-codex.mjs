@@ -324,7 +324,7 @@ function adaptCommandForCodex(text, name, contract) {
       "   - **system quality:** architecture, tech debt, simplification, and readability, returned as four separately labeled finding lists;",
       "   - **coverage:** test gaps and untested failure paths;",
       "   - **security:** injection, secrets, unsafe IO, trust boundaries, installers, and lifecycle hooks.",
-      "   Dispatch these three briefs concurrently when the configured Codex capacity permits, otherwise in dependency-free batches. Respect `agents.max_threads`; neither lower nor raise it. Every worker uses `fork_turns: \"none\"`, a 25-step ceiling, focused commands only, and one concise receipt. Add prompt-quality as a fourth read-only brief only when the scoped diff changes prompts or agent instructions. Consolidation is forbidden until each required dimension has a receipt."
+      "   Dispatch these three briefs concurrently when the configured Codex capacity permits, otherwise in dependency-free batches. Respect `agents.max_concurrent_threads_per_session`; neither lower nor raise it. Every worker uses `fork_turns: \"none\"`, a 25-step ceiling, focused commands only, and one concise receipt. Add prompt-quality as a fourth read-only brief only when the scoped diff changes prompts or agent instructions. Consolidation is forbidden until each required dimension has a receipt."
     ].join("\n");
     result = result.slice(0, sweepStart) + capacitySweep + "\n" + result.slice(boardStart);
   }

@@ -46,7 +46,7 @@ npx -y @adnova-group/muster@0.5.0 install codex --scope project
 
 `--scope project` writes Muster-owned profiles and declarations under the project's `.codex/` layer, installs the hook runtime under `.codex/muster/`, and merges owned hook groups into `.codex/hooks.json`. The install also records ownership receipts and registers the plugin. Existing unrelated profiles, configuration, and hook groups are preserved.
 
-Codex CLI, Desktop, and the IDE share `$CODEX_HOME/config.toml`. Even for `--scope project`, the installer raises that shared file's orchestration floor to `max_threads >= 12` and `max_depth >= 2`, with a receipt so the last managed-scope uninstall can restore values Muster changed. The user scope is canonical for hooks: a healthy user install makes a project install skip its own hook merge, avoiding duplicate events. Use `--dry-run` to inspect the complete write, merge, registration, and cleanup plan first:
+Codex CLI, Desktop, and the IDE share `$CODEX_HOME/config.toml`. Even for `--scope project`, the installer ensures the canonical `agents.max_concurrent_threads_per_session` setting exists, defaulting it to `12` only when the user has not configured a canonical or legacy ceiling. Existing positive user ceilings are preserved. A receipt lets the last managed-scope uninstall restore only values Muster changed, including cleanup of legacy `max_threads`/`max_depth` values only when an older Muster receipt proves ownership. The user scope is canonical for hooks: a healthy user install makes a project install skip its own hook merge, avoiding duplicate events. Use `--dry-run` to inspect the complete write, merge, registration, and cleanup plan first:
 
 ```sh
 npx -y @adnova-group/muster@0.5.0 install codex --scope project --dry-run

@@ -166,7 +166,14 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   const skillDescriptionCache = {};
   for (const name of new Set(installed.skills || [])) {
     seen.add(name);
-    skills.push({ id: name, source: "installed", description: installedSkillDescription(home, name, skillDescriptionCache) });
+    const portableDescription = installed.skillDescriptions?.[name];
+    skills.push({
+      id: name,
+      source: "installed",
+      description: typeof portableDescription === "string"
+        ? portableDescription
+        : installedSkillDescription(home, name, skillDescriptionCache),
+    });
   }
   for (const e of catalog) {
     if (e.kind !== "builtin" || seen.has(e.id)) continue;

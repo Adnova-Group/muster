@@ -145,7 +145,10 @@ async function loadEffectiveCatalog(args) {
   const installed = codex
     ? await readCodexInventory({ cwd: process.cwd() })
     : agentPlugins
-    ? await readAgentPluginInventory(process.env.PLUGIN_ROOT || process.cwd())
+    ? await readAgentPluginInventory(
+      process.env.PLUGIN_ROOT || process.cwd(),
+      { pluginDataRoot: process.env.PLUGIN_DATA }
+    )
     : work
     ? readInstalledWork()
     : await readInstalled(homedir());
@@ -185,7 +188,10 @@ async function main() {
       if (rest.includes("--codex")) {
         installed = await readCodexInventory({ cwd: process.cwd() });
       } else if (rest.includes("--agent-plugins")) {
-        installed = await readAgentPluginInventory(process.env.PLUGIN_ROOT || process.cwd());
+        installed = await readAgentPluginInventory(
+          process.env.PLUGIN_ROOT || process.cwd(),
+          { pluginDataRoot: process.env.PLUGIN_DATA }
+        );
       } else if (rest.includes("--kimi")) {
         installed = await readInstalledKimi(home);
       } else if (rest.includes("--work")) {

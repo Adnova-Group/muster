@@ -1,6 +1,7 @@
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { isIP } from "node:net";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { matchFrontmatter } from "./frontmatter.js";
 
 export const AGENT_PLUGIN_SCHEMA =
   "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
@@ -66,12 +67,16 @@ export async function listDirectChildSkills(skillsDir) {
 }
 
 function validateManifest(manifest) {
+  if (!isRecord(manifest)) {
+    throw new Error("invalid Agent Plugins manifest: expected an object");
+  }
   if (manifest?.$schema !== AGENT_PLUGIN_SCHEMA) {
     throw new Error(`unsupported Agent Plugins manifest schema: ${JSON.stringify(manifest?.$schema)}`);
   }
   const name = manifest.name ?? "";
   if (
-    !/^[a-z0-9][a-z0-9.-]{0,62}[a-z0-9]$|^[a-z0-9]$/.test(name)
+    typeof name !== "string"
+    || !/^[a-z0-9][a-z0-9.-]{0,62}[a-z0-9]$|^[a-z0-9]$/.test(name)
     || name.includes("--")
     || name.includes("..")
   ) {
@@ -79,6 +84,37 @@ function validateManifest(manifest) {
   }
   for (const field of Object.keys(manifest)) {
     if (!MANIFEST_FIELDS.has(field)) throw new Error(`unknown Agent Plugins manifest field: ${field}`);
+  }
+  for (const field of ["version", "description", "homepage", "repository", "license"]) {
+    if (manifest[field] !== undefined && typeof manifest[field] !== "string") {
+      throw new Error(`invalid Agent Plugins manifest ${field}: expected a string`);
+    }
+  }
+  if (manifest.author !== undefined) {
+    if (!isRecord(manifest.author)) {
+      throw new Error("invalid Agent Plugins manifest author: expected an object");
+    }
+    const authorFields = new Set(["name", "email", "url"]);
+    for (const [field, value] of Object.entries(manifest.author)) {
+      if (!authorFields.has(field)) {
+        throw new Error(`invalid Agent Plugins manifest author: unknown field ${field}`);
+      }
+      if (typeof value !== "string") {
+        throw new Error(`invalid Agent Plugins manifest author.${field}: expected a string`);
+      }
+    }
+  }
+  if (manifest.keywords !== undefined && !stringArray(manifest.keywords)) {
+    throw new Error("invalid Agent Plugins manifest keywords: expected strings");
+  }
+  if (
+    manifest.extensions !== undefined
+    && (
+      !isRecord(manifest.extensions)
+      || !Object.values(manifest.extensions).every(isRecord)
+    )
+  ) {
+    throw new Error("invalid Agent Plugins manifest extensions: expected object values");
   }
 }
 
@@ -90,7 +126,7 @@ function invalidServer(name, reason) {
   throw new Error(`invalid Agent Plugins MCP server ${name}: ${reason}`);
 }
 
-async function validateStdioServer(root, name, server) {
+async function validateStdioServer(root, name, server, { pluginDataRoot } = {}) {
   const allowed = new Set(["type", "command", "args", "env", "cwd"]);
   const unknown = Object.keys(server).find(key => !allowed.has(key));
   if (unknown) invalidServer(name, `unknown field ${unknown}`);
@@ -98,6 +134,9 @@ async function validateStdioServer(root, name, server) {
     typeof server.command !== "string"
     || !server.command
     || /\s/.test(server.command)
+    || server.command.includes("\\")
+    || server.command === "."
+    || server.command === ".."
     || (server.command.includes("/") && !server.command.startsWith("./"))
   ) {
     invalidServer(name, "command must be one bare executable token or a ./ plugin path");
@@ -141,13 +180,21 @@ async function validateStdioServer(root, name, server) {
       }
     }
     if (server.cwd.startsWith("${PLUGIN_DATA}/")) {
-      const dataRoot = resolve(root, ".agent-plugin-data-boundary");
+      if (!pluginDataRoot) invalidServer(name, "PLUGIN_DATA cwd requires the runtime plugin-data root");
       try {
-        assertInside(
+        const dataRoot = await realpath(pluginDataRoot);
+        await assertExistingInside(
           dataRoot,
           resolve(dataRoot, server.cwd.slice("${PLUGIN_DATA}/".length)),
           `MCP server ${name} cwd`
         );
+      } catch (error) {
+        invalidServer(name, error.message);
+      }
+    } else if (server.cwd === "${PLUGIN_DATA}") {
+      if (!pluginDataRoot) invalidServer(name, "PLUGIN_DATA cwd requires the runtime plugin-data root");
+      try {
+        await realpath(pluginDataRoot);
       } catch (error) {
         invalidServer(name, error.message);
       }
@@ -194,7 +241,8 @@ function validateHttpServer(name, server) {
   if (new Set(names).size !== names.length) invalidServer(name, "header names must be unique ignoring case");
 }
 
-export async function validateMcpConfiguration(root, mcp) {
+export async function validateMcpConfiguration(root, mcp, options = {}) {
+  const resolvedRoot = await realpath(root);
   if (mcp?.$schema !== AGENT_PLUGIN_MCP_SCHEMA) {
     throw new Error(`unsupported Agent Plugins MCP schema: ${JSON.stringify(mcp?.$schema)}`);
   }
@@ -206,20 +254,66 @@ export async function validateMcpConfiguration(root, mcp) {
 
   for (const [name, server] of Object.entries(mcp.mcpServers)) {
     if (!isRecord(server)) invalidServer(name, "entry must be an object");
-    if (server.type === "stdio") await validateStdioServer(root, name, server);
+    if (server.type === "stdio") await validateStdioServer(resolvedRoot, name, server, options);
     else if (server.type === "streamable-http" || server.type === "sse") validateHttpServer(name, server);
     else invalidServer(name, `unknown transport ${JSON.stringify(server.type)}`);
   }
 }
 
-export async function validateAgentPluginPackage(root) {
-  const manifest = await readJson(join(root, "plugin.json"));
-  const mcp = await readJson(join(root, "mcp.json"));
-  validateManifest(manifest);
-  await validateMcpConfiguration(root, mcp);
+async function resolvePackageEntry(root, relativePath) {
+  return assertExistingInside(root, join(root, relativePath), relativePath);
+}
 
-  const pkg = await readJson(join(root, "package.json"));
-  const claude = await readJson(join(root, "plugin", ".claude-plugin", "plugin.json"));
+function descriptionFromSkillMd(text) {
+  const frontmatter = matchFrontmatter(text);
+  if (!frontmatter) return "";
+  const lines = frontmatter.body.split(/\r?\n/);
+  const line = lines.find(value => /^description:/.test(value));
+  if (line === undefined) return "";
+  let value = line.slice("description:".length).trim();
+  if (/^[|>][-+]?\d*$/.test(value)) {
+    const first = lines.slice(lines.indexOf(line) + 1).find(candidate => candidate.trim() !== "");
+    return first ? first.trim() : "";
+  }
+  if (
+    value.length >= 2
+    && (
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
+    )
+  ) {
+    value = value.slice(1, -1);
+  }
+  return value;
+}
+
+async function readPortableSkillDescriptions(skillsDir, skills) {
+  const descriptions = {};
+  for (const name of skills) {
+    const skillFile = await assertExistingInside(
+      skillsDir,
+      join(skillsDir, name, "SKILL.md"),
+      `skill ${name}`
+    );
+    descriptions[name] = descriptionFromSkillMd(await readFile(skillFile, "utf8"));
+  }
+  return descriptions;
+}
+
+export async function validateAgentPluginPackage(root, options = {}) {
+  const resolvedRoot = await realpath(root);
+  const manifestPath = await resolvePackageEntry(resolvedRoot, "plugin.json");
+  const mcpPath = await resolvePackageEntry(resolvedRoot, "mcp.json");
+  const skillsDir = await resolvePackageEntry(resolvedRoot, "skills");
+  const manifest = await readJson(manifestPath);
+  const mcp = await readJson(mcpPath);
+  validateManifest(manifest);
+  await validateMcpConfiguration(resolvedRoot, mcp, options);
+
+  const pkg = await readJson(await resolvePackageEntry(resolvedRoot, "package.json"));
+  const claude = await readJson(
+    await resolvePackageEntry(resolvedRoot, join("plugin", ".claude-plugin", "plugin.json"))
+  );
   const expected = generateAgentPluginManifest({ pkg, claude });
   if (JSON.stringify(manifest) !== JSON.stringify(expected)) {
     throw new Error("Agent Plugins manifest metadata differs from its package and Claude sources");
@@ -232,8 +326,10 @@ export async function validateAgentPluginPackage(root) {
     }
   }
 
-  const skills = await listDirectChildSkills(join(root, "skills"));
-  const canonicalSkills = await listDirectChildSkills(join(root, "plugin", "skills"));
+  const skills = await listDirectChildSkills(skillsDir);
+  const canonicalSkills = await listDirectChildSkills(
+    await resolvePackageEntry(resolvedRoot, join("plugin", "skills"))
+  );
   if (JSON.stringify(skills) !== JSON.stringify(canonicalSkills)) {
     throw new Error("portable skills differ from canonical direct-child skills");
   }
@@ -246,15 +342,21 @@ export async function validateAgentPluginPackage(root) {
   };
 }
 
-export async function readAgentPluginInventory(root) {
-  const manifest = await readJson(join(root, "plugin.json"));
-  const mcp = await readJson(join(root, "mcp.json"));
+export async function readAgentPluginInventory(root, options = {}) {
+  const resolvedRoot = await realpath(root);
+  const manifestPath = await resolvePackageEntry(resolvedRoot, "plugin.json");
+  const mcpPath = await resolvePackageEntry(resolvedRoot, "mcp.json");
+  const skillsDir = await resolvePackageEntry(resolvedRoot, "skills");
+  const manifest = await readJson(manifestPath);
+  const mcp = await readJson(mcpPath);
   validateManifest(manifest);
-  await validateMcpConfiguration(root, mcp);
+  await validateMcpConfiguration(resolvedRoot, mcp, options);
+  const skills = await listDirectChildSkills(skillsDir);
   return {
     runtime: "agent-plugins",
     plugins: [manifest.name],
-    skills: await listDirectChildSkills(join(root, "skills")),
+    skills,
+    skillDescriptions: await readPortableSkillDescriptions(skillsDir, skills),
     agents: [],
     mcpServers: Object.keys(mcp.mcpServers).sort(),
   };

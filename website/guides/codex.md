@@ -82,8 +82,9 @@ $muster Add rate limiting to the public API with tests
 | `$muster-capture` | Mine the conversation into approval-gated backlog items. |
 | `$muster-init` | Prepare repository state and coordinate Codex native Init evidence. |
 | `$muster-design` | Run context-gated Muster Design workflows with explicit `DESIGN.md` provenance. |
+| `$muster-security` | Run pinned Codex Security review or audit workflows with severity/evidence receipts. |
 
-All ten modes have a skill: the six above plus `$muster-plan-backlog`, `$muster-go-backlog`, `$muster-diagnose`, and `$muster-runner`. The three legacy aliases remain skills too: `run` maps to `plan`, `autopilot` maps to `go`, and `sprint` maps to `go-backlog`. They are deprecated as of 2026-07-17 and retire in Muster 0.7.0.
+All eleven modes have a skill: the seven above plus `$muster-plan-backlog`, `$muster-go-backlog`, `$muster-diagnose`, and `$muster-runner`. The three legacy aliases remain skills too: `run` maps to `plan`, `autopilot` maps to `go`, and `sprint` maps to `go-backlog`. They are deprecated as of 2026-07-17 and retire in Muster 0.7.0.
 
 Codex native Init uses the canonical instruction pair: `AGENTS.md` is authoritative, and `CLAUDE.md` contains exactly:
 
@@ -105,7 +106,7 @@ For annotated go-backlog files, Codex dispatches every ready implementation/revi
 | Pipelines | all of them |
 | MCP tools | 31 tools: 30 CLI-wrapper tools plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
-| Skills | 77 total: 14 public + 63 internal |
+| Skills | 78 total: 15 public + 63 internal |
 | Internal skill breakdown | 12 native orchestration + 51 capability |
 
 ## Inspecting a Codex install

@@ -86,6 +86,12 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    Re-resolve once when the scope/digest changes between waves; reuse the same receipt inside an
    unchanged wave. For every other outcome, skip this step entirely: no design CLI process, provider
    spawn, or `DESIGN.md` traversal is allowed on the non-design route.
+3.6. **Conditional security audit route** — write the changed path list and run
+   `$MUSTER_CLI security route --outcome "$ARGUMENTS" --diff-files <path-list>`. Only when the receipt
+   says `warranted: true`, schedule `$MUSTER_CLI security review . --base <base-ref>
+   --fail-on-severity high` in the review wave and record its `muster.security-receipt`. A false route
+   skips the external dependency entirely. Exit 1 means completed findings and blocks at the configured
+   severity; exit 2 or missing prerequisites means BLOCKED because coverage/runtime failed.
 4. **Spec gate** — after the manifest validates, run `$MUSTER_CLI gate-cadence .muster/manifest.json` once and
    write its JSON to `.muster/gate-cadence.json` (this run's single capture — mirrors the `capabilities`
    dedup above) to learn this run's small-task fast path (`{specGateRounds, reviewGateBatches, fastPath,

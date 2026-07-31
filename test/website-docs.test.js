@@ -91,7 +91,7 @@ test("every CLI subcommand in usage string appears in website/reference/commands
   );
 });
 
-test("public navigation exposes every guide route and names the ten-mode reference", async () => {
+test("public navigation exposes every guide route and names the eleven-mode reference", async () => {
   const config = await read("website/.vitepress/config.js");
   for (const route of [
     "/guides/install",
@@ -105,19 +105,20 @@ test("public navigation exposes every guide route and names the ten-mode referen
   ]) {
     assert.match(config, new RegExp(`link:\\s*"${route}"`), `${route} must be reachable from navigation`);
   }
-  assert.match(config, /text:\s*"The ten modes"/);
+  assert.match(config, /text:\s*"The eleven modes"/);
   assert.doesNotMatch(config, /The eight modes/);
 });
 
-test("public entry points consistently document ten modes including Design and Init", async () => {
+test("public entry points consistently document eleven modes including Security, Design, and Init", async () => {
   const pages = await Promise.all([
     read("website/index.md"),
     read("website/guides/quickstart.md"),
     read("website/guides/codex.md"),
   ]);
   for (const page of pages) {
-    assert.match(page, /\b[Tt]en modes\b/);
+    assert.match(page, /\b[Ee]leven modes\b/);
     assert.match(page, /\bDesign\b/);
+    assert.match(page, /\bSecurity\b/);
     assert.match(page, /\bInit\b/);
     assert.doesNotMatch(page, /\b[Ee]ight modes\b/);
   }
@@ -125,6 +126,7 @@ test("public entry points consistently document ten modes including Design and I
   assert.match(pages[1], /\/muster:design/);
   assert.match(pages[2], /\$muster-init/);
   assert.match(pages[2], /\$muster-design/);
+  assert.match(pages[2], /\$muster-security/);
 });
 
 test("harness documentation routes and support claims are explicit", async () => {

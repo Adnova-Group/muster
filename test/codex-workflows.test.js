@@ -130,18 +130,18 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
 });
 
 // Every generated surface that carries the agent watch protocol (adapter + orchestrator +
-// the root router and 14 mode skills), shared by the watch-invariant and dispatch-shape
+// the root router and 15 mode skills), shared by the watch-invariant and dispatch-shape
 // guards below and mirroring scripts/check-codex.mjs's own `watchSurfaces` list.
 const watchInvariantSurfaces = new Map([
   ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
   ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
-  ...["muster", "muster-init", "muster-design", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
+  ...["muster", "muster-init", "muster-design", "muster-security", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
     .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
 ]);
 
 test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {
   const surfaces = watchInvariantSurfaces;
-  assert.equal(surfaces.size, 16, "every generated Codex watch-invariant surface must be covered");
+  assert.equal(surfaces.size, 17, "every generated Codex watch-invariant surface must be covered");
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
     assert.match(text, /collaboration\.list_agents/, `${name} must reconcile worker state`);
@@ -172,14 +172,14 @@ test("generated Codex orchestration surfaces enforce the state-based agent watch
 });
 
 // codex-watch-protocol-v1 item (audit 2026-07-30, slice S1): the watch protocol injected
-// into all 13 mode skills, the root router, the orchestrator, and the copied
+// into all 14 mode skills, the root router, the orchestrator, and the copied
 // runtime/codex-skill-adapter.md hardcoded v2-only `collaboration.spawn_agent`/`wait_agent`/
 // `list_agents` phrasing -- but Codex resolves its subagent API PER MODEL, and muster's core
 // tier (gpt-5.6-luna) speaks v1: `multi_agent_v1.*`, a `fork_context` bool instead of
 // `fork_turns`, and a wait that REQUIRES `targets[]`. The 2026-07-29 slice D (ed54355)
 // single-sourced the v1/v2 contract out of plugin/skills/orchestrator/references/
 // codex-dispatch.md into the orchestrator's wave-dispatch span and go-backlog only; the watch
-// protocol and the skill adapter never got threaded, so every one of those 16 surfaces still
+// protocol and the skill adapter never got threaded, so every one of those 17 surfaces still
 // taught a Codex-luna session a dispatch shape its model rejects. These guards pin the
 // reference's shapes table into each surface's watch section byte-for-byte and fail on a
 // return to v2-only phrasing.
@@ -282,7 +282,7 @@ test("Codex exposes a bounded public skill surface while packaging internal work
   assert.equal(publicSkills.length, CODEX_COUNTS.publicSkills);
   assert.deepEqual(publicSkills, [
     "autopilot", "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
-    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
+    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "muster-security", "run", "sprint"
   ]);
 
   const internalRoot = join(selectedPluginRoot, "internal-skills");
@@ -304,7 +304,7 @@ test("Codex exposes a bounded public skill surface while packaging internal work
 test("generated Codex public skill metadata stays within Muster's discovery budget", async () => {
   const expectedSkills = [
     "autopilot", "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
-    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
+    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "muster-security", "run", "sprint"
   ];
   const metadata = [];
   for (const name of expectedSkills) {
@@ -334,6 +334,7 @@ test("generated Codex muster-init delegates to the guarded authoritative workflo
   assert.match(skill, /^name: muster-init$/m);
   assert.match(skill, /commands\/init\.md/);
   assert.match(router, /\$muster-init/);
+  assert.match(router, /\$muster-security/);
   assert.match(command, /Usage: \$muster-init \[dir\]/);
   assert.match(command, /--to completed --evidence artifact-delta/);
   assert.match(command, /nativeInit\.state: "completed"/);

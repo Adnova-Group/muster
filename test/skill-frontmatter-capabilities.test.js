@@ -73,6 +73,7 @@ const EXPECTED_ARGUMENT_HINTS = {
   plan: "<outcome text | backlog text>",
   run: "<outcome | backlog ref>",
   runner: "[backlog path | issues:<label>]",
+  security: "<review|audit> [scope]",
   sprint: "<backlog ref>",
 };
 
@@ -104,8 +105,8 @@ test("every plugin/commands/*.md file carries argument-hint, matching the Usage 
 
 // ── disable-model-invocation: judged per-command, documented in the PR body ────────────────
 
-test("disable-model-invocation applies only to audit.md and runner.md (side-effectful verbs judged unsafe for implicit routing)", async () => {
-  const disabled = new Set(["audit", "runner"]);
+test("disable-model-invocation covers the side-effectful audit, runner, and security verbs", async () => {
+  const disabled = new Set(["audit", "runner", "security"]);
   const names = (await readdir(new URL("plugin/commands", root)))
     .filter((f) => f.endsWith(".md"))
     .map((f) => f.replace(/\.md$/, ""));

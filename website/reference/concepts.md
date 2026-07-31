@@ -83,4 +83,4 @@ What happens when a role resolves to an agent whose type is **not dispatchable**
 - **On Claude Code**, the orchestrator falls back to a generic subagent with the resolved provider's brief injected, and records the fallback in the run STATE. The model override still applies, so model selection is never lost on the fallback.
 - **On Codex**, there is no fallback: a non-dispatchable agent profile fails closed with a reinstall/new-session diagnostic, because a generic Codex subagent would silently lose the profile's pinned role and model policy. See [Architecture](/reference/architecture#provider-kinds).
 
-Next: [The ten modes](/reference/modes).
+Next: [The eleven modes](/reference/modes).

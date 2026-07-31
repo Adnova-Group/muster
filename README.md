@@ -65,11 +65,11 @@ Uninstall preserves unrelated config and Codex's project trust records, removes 
 
 Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. The three legacy aliases (`run`, `autopilot`, `sprint`) remain skills. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
 
-The Codex plugin bundles the deterministic CLI, all pipelines, 31 MCP tools, 27 custom-agent profiles, and 77 skills: 14 public mode/router/alias skills plus 63 internal skills (12 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
+The Codex plugin bundles the deterministic CLI, all pipelines, 31 MCP tools, 27 custom-agent profiles, and 78 skills: 15 public mode/router/alias skills plus 63 internal skills (12 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
 ### Kimi
 
-Kimi installs the same ten primary modes as namespaced `/muster-*` skills. In-session native subagents are the supported execution path. `kimi-process-dispatch` remains descriptor-only, and the attended `kimi-process-run` lane is report-only on every platform until Muster can bootstrap a trusted immutable, kernel-bound broker. Filesystem dispatch receipts and worktree paths are diagnostic only; they never authorize signaling a process.
+Kimi installs the same eleven primary modes as namespaced `/muster-*` skills. In-session native subagents are the supported execution path. `kimi-process-dispatch` remains descriptor-only, and the attended `kimi-process-run` lane is report-only on every platform until Muster can bootstrap a trusted immutable, kernel-bound broker. Filesystem dispatch receipts and worktree paths are diagnostic only; they never authorize signaling a process.
 
 ### ChatGPT Work (private/local plugin lane)
 
@@ -149,7 +149,7 @@ node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
   --grade-snapshot /private/retained/grade-snapshot.json
 ```
 
-## The ten modes
+## The eleven modes
 
 | Mode | Command | What it does |
 | --- | --- | --- |
@@ -160,6 +160,7 @@ node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first bug fix: reproduce, find root cause, fix, add a regression test, verify. No symptom-patching. |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions (seven when the project builds prompts or agents), then fixes everything with tests and verifies. |
 | Design | `/muster:design <action>` | Resolve canonical `DESIGN.md` context and digest receipts, initialize it with an attended hold, inspect bounded design evidence/provider state, or run one of 23 pinned design workflows. |
+| Security | `/muster:security <review\|audit> [scope]` | Run risk-routed review or explicit audit through pinned official Codex Security, retaining severity, evidence, coverage, and dependency-failure receipts. |
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker for a Claude Code Routine or cron: resumes an answered blocked item or claims exactly one available item, drives it through the full Go lifecycle force-coerced to a `pr` disposition, leaves a receipt, and stops. The schedule provides the loop, not the verb. |
 | Capture | `/muster:capture [hint]` | Conversation-to-backlog generator: mines the session's discussion (findings, decisions, review residuals, an explicit directive) into backlog items via the same extract/validate/dedupe/write machinery, gated by your approval before anything is written. Writes only `.muster/backlog.md` -- it never assembles a crew or runs work itself. |
 | Init | `/muster:init [dir]` | Prepare a repository profile and receipt, hand native instruction work to the active runtime, and finalize only after positive evidence or an acknowledged unavailable handoff. |

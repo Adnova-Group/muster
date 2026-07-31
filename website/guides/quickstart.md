@@ -4,7 +4,7 @@ Muster turns an outcome into finished work. You give it a goal in plain language
 
 Pick the mode that matches what you want.
 
-Muster has ten modes. The eight delivery and backlog modes below are joined by Design for human-facing work and Init for native repository instruction setup.
+Muster has eleven modes. The delivery and backlog modes are joined by Design for human-facing work, Security for evidence-backed vulnerability scans, and Init for native repository instruction setup.
 
 ::: tip On Codex?
 Every mode below is available on Codex as a skill (`$muster-plan`, `$muster-go`, and so on) once Muster's managed profiles and plugin are installed. See the [Codex guide](/guides/codex) for that install path. If something does not appear or behaves oddly, start at [Troubleshooting](/guides/troubleshooting).
@@ -133,7 +133,7 @@ Claude Code and Codex use one canonical instruction pair: `AGENTS.md` is authori
 @AGENTS.md
 ```
 
-If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. Kimi has no proven callable native Init action, so Muster records an unavailable handoff and waits for an explicit acknowledgement instead of inventing a command. See [The ten modes](/reference/modes#init) for the evidence and finalization states.
+If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. Kimi has no proven callable native Init action, so Muster records an unavailable handoff and waits for an explicit acknowledgement instead of inventing a command. See [The eleven modes](/reference/modes#init) for the evidence and finalization states.
 
 ## Inspect the routing yourself
 

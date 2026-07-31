@@ -700,7 +700,7 @@ const dataset = JSON.parse(await read("eval/modes/dataset.json"));
 // for the same reason (their `check`s test go.md/go-backlog.md's real deterministic
 // steps, not the alias stub files' 2-line bodies).
 const MODES = ["plan", "plan-backlog", "go", "go-backlog", "runner", "audit", "diagnose", "capture"];
-const STRUCTURAL_MODES = ["init", "design"];
+const STRUCTURAL_MODES = ["init", "design", "security"];
 const ALIASES = { run: "plan", autopilot: "go", sprint: "go-backlog" };
 // The skill-protocol layer (plugin/skills/*, router excluded — it already has
 // eval:router). Every case's `mode` field names either one of the 8 mode prompts above

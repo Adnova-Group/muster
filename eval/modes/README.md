@@ -4,7 +4,7 @@ An empirical eval of 8 run-lifecycle mode prompts (`plugin/commands/*.md`: `plan
 `go`, `go-backlog`, `runner`, `audit`, `diagnose`, `capture`) plus the 3 legacy alias
 stubs that delegate to them (`run` -> `plan`, `autopilot` -> `go`, `sprint` ->
 `go-backlog` — thin, minimal files graded structurally, not via dataset cases; see "Alias
-stubs" below). The ninth and tenth modes, `init` and `design`, are graded structurally
+stubs" below). The ninth through eleventh modes, `init`, `design`, and `security`, are graded structurally
 and through their focused filesystem, receipt, context, and mutation-safety tests rather
 than response-quality fixtures. The harness also covers
 the 10 skill-protocol skills the modes delegate to (`plugin/skills/*` —

@@ -35,6 +35,10 @@ Alongside the vendored material, Muster ships its own specialists in `plugin/age
 
 A cluster of systems introduced in 0.5.0 -- the sprint coordination protocol (claim/receipt/ledger discipline), the citation-guard gate, QA runbook memory, the voice/audience/brand profile system, newsletter signal-diff, the assumption checker, and the document-ingestion contract -- were designed with mechanism-level inspiration from Nate B. Jones's Unlock AI open-skills/open-engine patterns ([unlock-ai.natebjones.com](https://unlock-ai.natebjones.com)). No code, prose, or configuration was copied; Muster's implementations are original, adapted to its own deterministic-CLI/model-facing-skill architecture.
 
+## Integrated dependency
+
+Muster invokes the official OpenAI Codex Security CLI through the exact optional npm dependency `@openai/codex-security` 0.1.5 (tag `npm-v0.1.5`, commit `66778d0d85f478d7832854b81d0a6ddb93a3ce4c`). Codex Security is Copyright 2025 OpenAI and licensed under Apache License 2.0. Muster uses its public CLI without modifying or vendoring its source.
+
 ## License
 
 Muster is licensed under Apache-2.0. See [LICENSE](https://github.com/Adnova-Group/muster/blob/main/LICENSE) and [NOTICE](https://github.com/Adnova-Group/muster/blob/main/NOTICE).

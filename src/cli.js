@@ -99,6 +99,7 @@ import {
   runDesignWorkflow,
   scanDesign,
 } from "./design.js";
+import { CODEX_SECURITY_UPSTREAM, runSecurityWorkflow, securityAuditWarranted } from "./security.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // One array element per command group, each carrying its own "|" separators and
@@ -122,13 +123,13 @@ const USAGE = [
   // prompt tooling
   "prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|",
   // diagnose/audit/issue/assess/steer/scope
-  "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|",
+  "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|security <info|route|review|audit> ...|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|",
   // doctor/conformance/scratchpad/profile/install/signals/hygiene/help
   "doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
 ].join("");
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
-function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); }
+function fail(msg, exitCode = 1) { process.stderr.write(`muster: ${msg}\n`); process.exit(exitCode); }
 
 // Shared stdin/text reader for every command that accepts a file-or-stdin arg. Caps stdin so an
 // untrusted caller can't pump unbounded input into a linter/scorer (used by `prompt` and `humanize-score`).
@@ -981,6 +982,50 @@ async function main() {
       const prompting = await hasPromptingSignal(args[0] || process.cwd());
       const designEvidence = await detectAuditDesignEvidence(process.cwd(), args);
       out(buildAuditManifest(caps, { prompting, designEvidence, backlog, paths: args }));
+    } else if (cmd === "security") {
+      const action = rest[0];
+      if (action === "info") {
+        if (rest.length !== 1) fail("security info: no arguments are accepted");
+        out({ format: "muster.security-upstream", upstream: CODEX_SECURITY_UPSTREAM });
+      } else if (action === "route") {
+        const allowed = new Set(["--outcome", "--diff-files"]);
+        for (let i = 1; i < rest.length; i++) {
+          if (!allowed.has(rest[i])) fail(`security route: unknown argument "${rest[i]}"`);
+          if (!rest[i + 1] || rest[i + 1].startsWith("--")) fail(`security route ${rest[i]} requires a value`);
+          i++;
+        }
+        const outcome = flagValue(rest, "--outcome") || "";
+        const diffFile = flagValue(rest, "--diff-files");
+        const diffFiles = diffFile
+          ? (await readNoFollowRegular(diffFile, { maxBytes: MAX_STDIN_BYTES, label: "security diff file" })).bytes
+            .toString("utf8").split(/\r?\n/).filter(Boolean)
+          : [];
+        out(securityAuditWarranted({ outcome, diffFiles }));
+      } else if (action === "review" || action === "audit") {
+        const sharedValued = new Set(["--auth", "--model", "--effort", "--fail-on-severity", "--max-cost", "--output-dir"]);
+        const actionValued = action === "review" ? new Set(["--base"]) : new Set(["--path"]);
+        const positionals = [];
+        const options = {
+          base: flagValue(rest, "--base"), auth: flagValue(rest, "--auth"), model: flagValue(rest, "--model"),
+          effort: flagValue(rest, "--effort"), failOnSeverity: flagValue(rest, "--fail-on-severity"),
+          maxCost: flagValue(rest, "--max-cost"), outputDir: flagValue(rest, "--output-dir"),
+          deep: rest.includes("--deep"), paths: [],
+        };
+        for (let i = 1; i < rest.length; i++) {
+          if (rest[i] === "--path" && action === "audit") { if (!rest[i + 1] || rest[i + 1].startsWith("--")) fail("security --path requires a value"); options.paths.push(rest[++i]); continue; }
+          if (sharedValued.has(rest[i]) || actionValued.has(rest[i])) { if (!rest[i + 1] || rest[i + 1].startsWith("--")) fail(`security ${rest[i]} requires a value`); i++; continue; }
+          if (rest[i] === "--deep" && action === "audit") continue;
+          if (rest[i].startsWith("-")) fail(`security: unknown option "${rest[i]}"`);
+          positionals.push(rest[i]);
+        }
+        if (positionals.length > 1) fail("security review|audit accepts at most one repository positional");
+        const repository = positionals[0] || process.cwd();
+        const receipt = runSecurityWorkflow(action, repository, options);
+        out(receipt);
+        if (receipt.exitCode === 1) process.exitCode = 1;
+      } else {
+        fail("security <info|route|review|audit>: missing or unknown workflow");
+      }
     } else if (cmd === "issue") {
       if (!rest[0]) fail("issue <ref>: missing #N | number | issue-url");
       if (parseIssueRef(rest[0]).kind !== "issue") fail("not a GitHub issue reference: " + rest[0]);
@@ -1238,7 +1283,7 @@ async function main() {
       fail(`unknown command: ${[cmd, ...rest].join(" ")}\n${USAGE}`);
     }
   } catch (e) {
-    fail(formatError(e));
+    fail(formatError(e), e?.exitCode === 2 ? 2 : 1);
   }
 }
 

@@ -1,6 +1,6 @@
-# The ten modes
+# The eleven modes
 
-Muster exposes ten primary entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), five standalone verbs (`diagnose`, `audit`, `design`, `runner`, `capture`), and `init` for repository initialization. `run`, `autopilot`, and `sprint` still work -- each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged for the rest of the window.
+Muster exposes eleven primary entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), six standalone verbs (`diagnose`, `audit`, `design`, `security`, `runner`, `capture`), and `init` for repository initialization. `run`, `autopilot`, and `sprint` still work -- each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0; behavior stays unchanged for the rest of the window.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
@@ -11,6 +11,7 @@ Muster exposes ten primary entry points as slash commands under the `muster:` na
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
 | Design | `/muster:design <action>` | Canonical design context, bounded evidence detection, write gates, and 23 pinned workflows |
+| Security | `/muster:security <review\|audit> [scope]` | Pinned Codex Security scans with conditional routing and severity/evidence receipts |
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker: resume or claim exactly one item, run it, leave a receipt, stop |
 | Capture | `/muster:capture [hint]` | Mine the conversation into approval-gated backlog items, then stop -- no crew, no waves |
 | Init | `/muster:init [dir]` | Prepare repository state, hand native instruction work to the active runtime, and finalize from positive evidence or an acknowledged unavailable handoff |
@@ -131,6 +132,10 @@ Impeccable CLI: `craft`, `init`, `document`, `extract`, `live`, `adapt`,
 `quieter`, `shape`, and `typeset`. Read-only audits add `audit-design-ux` only
 when the audited scope has actual UX/design evidence; missing `DESIGN.md` is a
 finding during the sweep, while remediation must satisfy the write gate.
+
+## Security
+
+The focused application-security surface. `review` scans a committed diff or working tree; `audit` scans a repository or selected paths. Ordinary Go and review work invokes it only when deterministic intent/path risk routing warrants the cost. Explicit Security always runs. Muster pins official `@openai/codex-security` 0.1.5 at commit `66778d0d85f478d7832854b81d0a6ddb93a3ce4c`; findings retain severity and evidence, while missing prerequisites, version drift, incomplete coverage, and upstream runtime exit 2 block loudly.
 
 ## Go-backlog
 

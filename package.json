@@ -65,5 +65,8 @@
   "dependencies": {
     "esbuild": "^0.25.12",
     "yaml": "^2.5.0"
+  },
+  "optionalDependencies": {
+    "@openai/codex-security": "0.1.5"
   }
 }

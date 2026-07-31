@@ -8,17 +8,14 @@ description: Adversarial review gate for a completed wave — dispatch all avail
 
 You are muster's adversarial review gate — dispatch reviewers, tally verdicts, drive fix iterations, and escalate unresolved blockers.
 
-Inputs: the wave's changes (under `fastPath: true`, the full cumulative diff of every batched
-wave — `plugin/skills/orchestrator/SKILL.md` step 4c/5), and `AvailableCapabilities` read from the run's already-captured `.muster/capabilities.json` (written once at
-run start by the invoking verb; the inventory stays constant for the whole run, so this same capture
-serves every wave). `$MUSTER_CLI` (resolved once by the invoking verb) is the reused invocation for every
-CLI call below.
+Inputs: the wave changes (the full cumulative diff under `fastPath: true`) and
+`AvailableCapabilities` from the run's single `.muster/capabilities.json` capture. Reuse the
+invoking verb's resolved `$MUSTER_CLI` for every call.
 
 **QA memory:** read `docs/qa/RUNBOOK.md` first if present; update it on a new divergence/gotcha.
 
-1. **Select reviewers, scaled by diff size.** Measure the diff's changed-line count (the wave's own
-   changes, or the full cumulative diff under `fastPath: true`) via `git diff --numstat` against the
-   pre-wave commit, folded into the SAME `gate-cadence` decision the invoking verb already captured:
+1. **Select reviewers, scaled by diff size.** Measure changed lines via `git diff --numstat`
+   against the pre-wave commit and fold them into the invoking verb's captured `gate-cadence` decision:
    `$MUSTER_CLI gate-cadence .muster/manifest.json --changed-lines <n>` → `reviewerCount` (default
    threshold 200 lines, `MUSTER_REVIEW_DIFF_THRESHOLD` env override — `src/gate-cadence.js`'s
    `reviewerCountForDiff`/`DEFAULT_REVIEW_DIFF_THRESHOLD`).
@@ -26,8 +23,7 @@ CLI call below.
      if none installed).
    - `reviewerCount: 2` (at/over threshold, the default) — dispatch the chosen providers for roles
      `code-review` and `security-review`.
-   Diff SIZE, not task count: a large multi-task wave's diff always lands at/over the threshold
-   (docs/weight-reduction.md).
+   Diff size, not task count, controls the threshold (docs/weight-reduction.md).
 2. Dispatch the selected reviewer(s) **concurrently** (when more than one), each adversarially prompted to
    REFUTE the work / find the worst real problem. Each returns findings: `[{ severity: "blocker"|"risk"|"nit", note }]`.
    - **Exhausted/absent reviewer:** a reviewer worker killed or exhausted (its dispatch's budget/heartbeat
@@ -36,6 +32,9 @@ CLI call below.
      `{reviewer: <name>, status: "exhausted"}` (`"absent"` when it never started), recorded
      directly in `.muster/verdicts.json`; step 5's `tally` (`src/review.js`) forces a deterministic block
      on any such entry, regardless of other findings.
+   Run `$MUSTER_CLI security route --outcome "<wave intent>" --diff-files <path-list>`. When
+   warranted, add the pinned security review's severity/evidence receipt. Exit 1 contributes findings;
+   exit 2, dependency/version failure, incomplete coverage, or malformed findings block.
 3. **Citation guard:** run `$MUSTER_CLI citation-check <file>` on each artifact BEFORE dispatching
    reviewers, flags in hand for their briefs. A dangling anchor (`ok:false`, exit 2) is an automatic
    FAIL. `uncited` paragraphs instead get a reviewer's judgment call (`pass`/`needs_review`/`fail`).

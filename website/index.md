@@ -30,8 +30,8 @@ features:
     title: Code over model
     details: A deterministic Node CLI owns routing, scoring, and validation. No LLM calls. Reproducible by construction. The model is reserved for judgment.
   - icon: 🚦
-    title: Ten modes, including Design
-    details: Plan and Go handle one outcome; Plan-backlog and Go-backlog handle batches. Diagnose fixes one bug. Audit sweeps the codebase. Runner picks one scheduled item. Capture writes approved backlog items. Init prepares repository state and coordinates native instructions.
+    title: Eleven modes, including Security
+    details: Plan and Go handle one outcome; backlog modes handle batches. Diagnose fixes one bug. Audit sweeps broadly. Design gates human-facing work. Security runs pinned risk-routed scans. Runner, Capture, and Init complete the lifecycle.
   - icon: 🔒
     title: No extra services
     details: The CLI makes no model calls. Model work uses the account or subscription of the active harness, so Muster adds no separate model API key or hosted runtime.

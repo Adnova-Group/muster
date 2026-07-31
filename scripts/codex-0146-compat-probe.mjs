@@ -28,6 +28,7 @@ export const CODEX_0146_PUBLIC_SKILLS = Object.freeze([
   "muster-plan",
   "muster-plan-backlog",
   "muster-runner",
+  "muster-security",
   "run",
   "sprint",
 ]);

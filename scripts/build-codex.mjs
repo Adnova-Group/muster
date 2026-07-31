@@ -62,6 +62,11 @@ const modes = {
     purpose: "resolve canonical DESIGN.md context and run one of Muster's pinned design workflows",
     description: "Initialize, inspect, gate, or execute Muster design workflows."
   },
+  "muster-security": {
+    command: "security",
+    purpose: "run risk-routed Codex Security review or audit workflows with severity and evidence receipts",
+    description: "Run pinned security reviews and audits."
+  },
   "muster-runner": {
     command: "runner",
     purpose: "drive one claimed backlog item end-to-end in its own worktree in ordinary full-lifecycle mode, pushing the reviewed item branch and opening its receipts-backed PR",
@@ -100,7 +105,7 @@ const codexModeNames = new Map([
   ["plan-backlog", "muster-plan-backlog"], ["go-backlog", "muster-go-backlog"],
   ["autopilot", "muster-go"], ["sprint", "muster-go-backlog"], ["run", "muster-plan"],
   ["plan", "muster-plan"], ["go", "muster-go"], ["diagnose", "muster-diagnose"],
-  ["audit", "muster-audit"], ["runner", "muster-runner"], ["capture", "muster-capture"],
+  ["audit", "muster-audit"], ["security", "muster-security"], ["runner", "muster-runner"], ["capture", "muster-capture"],
   ["init", "muster-init"]
 ]);
 function translateModeNames(text) {
@@ -591,7 +596,7 @@ function codexSkill(source, id, contract) {
     // reword of step 1's capability-source sentence or its reviewer-selection list
     // silently ships stale Claude-side prose into the Codex bundle exactly like the
     // pre-#159 fix-cap anchor did.
-    const capabilitySourceRe = /`AvailableCapabilities` read from the run's already-captured `\.muster\/capabilities\.json` \(written once at[\s\S]*?serves every wave\)\./;
+    const capabilitySourceRe = /`AvailableCapabilities` from the run's single `\.muster\/capabilities\.json` capture\./;
     if (!capabilitySourceRe.test(body)) throw new Error("review-gate capability-source anchor not found for Codex rewrite");
     const selectReviewersRe = /1\.\s+\*\*?Select reviewers[\s\S]*?(?=\n2\.\s+Dispatch)/;
     if (!selectReviewersRe.test(body)) throw new Error("review-gate select-reviewers anchor not found for Codex rewrite");
@@ -816,7 +821,9 @@ async function buildCodexPluginOnce({ root, outDir }) {
     await writeInternalRuntime(root, plugin);
 
     for (const [name, mode] of Object.entries(modes)) write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode, contract));
-    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Route orchestration requests across Muster modes and pipelines.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-init, $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-design, $muster-runner, or $muster-capture. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${contract.watchProtocol}`);
+    const explicitModeSkills = Object.keys(modes).map(name => `$${name}`);
+    const explicitModeList = `${explicitModeSkills.slice(0, -1).join(", ")}, or ${explicitModeSkills.at(-1)}`;
+    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Route orchestration requests across Muster modes and pipelines.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: ${explicitModeList}. Use the legacy run, autopilot, and sprint skills only for compatibility.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${contract.watchProtocol}`);
 
     const profiles = await generateCodexProfiles(root);
     for (const [name, content] of profiles) write(join(plugin, "agents", name), content);

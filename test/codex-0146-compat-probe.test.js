@@ -118,16 +118,16 @@ test("duplicate MCP tool names cannot satisfy the 31-tool contract", () => {
   assert.deepEqual(result.failures, ["unexpected-tool-count"]);
 });
 
-test("generated skill inventory is pinned to the canonical 14 public skills", () => {
+test("generated skill inventory is pinned to the canonical 15 public skills", () => {
   const empty = validateGeneratedSkillInventory([]);
   assert.equal(empty.status, "FAIL");
-  assert.equal(empty.expectedCount, 14);
+  assert.equal(empty.expectedCount, 15);
   assert.equal(empty.observedCount, 0);
 
   const canonical = [
     "autopilot", "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose",
     "muster-go", "muster-go-backlog", "muster-init", "muster-plan",
-    "muster-plan-backlog", "muster-runner", "run", "sprint",
+    "muster-plan-backlog", "muster-runner", "muster-security", "run", "sprint",
   ];
   assert.equal(validateGeneratedSkillInventory(canonical).status, "PASS");
 });

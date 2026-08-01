@@ -383,7 +383,7 @@ async function streamedFileDigest(path, rel, expectedInfo) {
     const before = await handle.stat({ bigint: true });
     const size = Number(before.size);
     if (!before.isFile()) throw new Error(`unsafe regular file: ${rel}`);
-    if (before.ino !== BigInt(expectedInfo.ino) || before.dev !== BigInt(expectedInfo.dev)) {
+    if (before.ino !== expectedInfo.ino || before.dev !== expectedInfo.dev) {
       throw new Error(`file changed while reading: ${rel}`);
     }
     const digest = createHash("sha256");
@@ -423,7 +423,7 @@ async function repositoryFingerprint(root) {
   for await (const rel of paths) {
     const path = join(root, rel);
     let info;
-    try { info = await lstat(path); }
+    try { info = await lstat(path, { bigint: true }); }
     catch (error) {
       if (error.code === "ENOENT") continue; // tracked-but-deleted Git path
       throw error;

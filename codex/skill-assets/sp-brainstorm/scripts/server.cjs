@@ -199,14 +199,16 @@ const TELEMETRY_DISABLE_ENV_VARS = [
 const SUPERPOWERS_TELEMETRY_DISABLED = TELEMETRY_DISABLE_ENV_VARS.some(name => isTruthyEnv(process.env[name]));
 let ownerPid = process.env.BRAINSTORM_OWNER_PID ? Number(process.env.BRAINSTORM_OWNER_PID) : null;
 
-// Per-session secret key. The companion is reachable by any local browser tab
-// and, when bound to a non-loopback host, by any host that can route to it.
-// The key authenticates the real client uniformly across loopback, tunnel, and
-// remote binds — and defeats DNS rebinding — where a Host/Origin allowlist
-// cannot. It rides only the trusted controller URL as ?key=. The controller
-// keeps it in its nonce-protected closure and authenticates the WebSocket;
-// generated screens receive a separate read-only capability. Never put either
-// capability in a localhost cookie because cookies are not port-scoped.
+function isLoopbackHost(host) {
+  const normalized = String(host).toLowerCase().replace(/^\[|\]$/g, '');
+  return normalized === 'localhost' || normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+}
+
+// Per-session bootstrap key. The server is loopback-only, including when an
+// authenticated encrypted tunnel provides remote access. A controller request
+// exchanges this key for short-lived, single-connection WebSocket and view
+// capabilities. Never put any capability in a localhost cookie because cookies
+// are not port-scoped.
 // Persisted alongside the port (BRAINSTORM_TOKEN_FILE) so the same launch URL
 // remains valid across a restart.
 const TOKEN_FILE = process.env.BRAINSTORM_TOKEN_FILE || null;
@@ -235,8 +237,41 @@ function initialToken() {
 const tokenInfo = initialToken();
 let TOKEN = tokenInfo.value;
 let tokenSource = tokenInfo.source;
-const VIEW_TOKEN = crypto.randomBytes(32).toString('hex');
+const CAPABILITY_TTL_MS = (() => {
+  const ms = Number(process.env.BRAINSTORM_CAPABILITY_TTL_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 5 * 60 * 1000;
+})();
+const pendingConnections = new Map();
+const viewCapabilities = new Map();
 let contentDirectoryIdentity = null;
+
+function createControllerCapabilities() {
+  const capabilities = {
+    connection: generateToken(),
+    view: generateToken(),
+    expiresAt: Date.now() + CAPABILITY_TTL_MS,
+  };
+  pendingConnections.set(capabilities.connection, capabilities);
+  viewCapabilities.set(capabilities.view, capabilities);
+  return capabilities;
+}
+
+function revokeCapabilities(capabilities) {
+  if (!capabilities) return;
+  pendingConnections.delete(capabilities.connection);
+  viewCapabilities.delete(capabilities.view);
+}
+
+function liveCapability(map, key) {
+  if (!key) return null;
+  const capability = map.get(key);
+  if (!capability) return null;
+  if (Date.now() >= capability.expiresAt) {
+    revokeCapabilities(capability);
+    return null;
+  }
+  return capability;
+}
 
 const MIME_TYPES = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -277,13 +312,13 @@ const frameTemplate = fs.readFileSync(path.join(__dirname, 'frame-template.html'
 const helperScript = fs.readFileSync(path.join(__dirname, 'helper.js'), 'utf-8');
 const helperInjection = (nonce, channel) => '<script nonce="' + nonce + '">globalThis.__MUSTER_BRAINSTORM_CHANNEL__=' + JSON.stringify(channel) + ';\n' + helperScript + '\n</script>';
 
-function controllerPage(nonce, channel, key) {
-  const encodedKey = JSON.stringify(String(key));
+function controllerPage(nonce, channel, capabilities) {
+  const encodedKey = JSON.stringify(capabilities.connection);
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Brainstorm Companion</title>
 <style>html,body{height:100%;margin:0;background:#1d1d1f}body{display:grid;grid-template-rows:auto 1fr;font-family:system-ui,sans-serif}.status{padding:.45rem .75rem;color:#d1d1d6;font-size:.75rem}iframe{width:100%;height:100%;border:0;background:#fff}</style>
 </head><body><div class="status" id="status">Connecting...</div>
-<iframe id="screen" title="Brainstorm choices" src="/screen?view=${VIEW_TOKEN}&channel=${channel}" sandbox="allow-scripts"></iframe>
+<iframe id="screen" title="Brainstorm choices" src="/screen?view=${capabilities.view}&channel=${channel}" sandbox="allow-scripts"></iframe>
 <script nonce="${nonce}">
 (() => {
   const frame = document.getElementById('screen');
@@ -304,15 +339,16 @@ function controllerPage(nonce, channel, key) {
   });
   function connect() {
     status.textContent = 'Connecting...';
-    socket = new WebSocket('ws://' + location.host + '/?key=' + encodeURIComponent(key));
+    const websocketScheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(websocketScheme + '//' + location.host + '/?key=' + encodeURIComponent(key));
     socket.onopen = () => { status.textContent = 'Connected'; };
     socket.onmessage = message => {
       try {
         const data = JSON.parse(message.data);
-        if (data.type === 'reload') frame.src = '/screen?view=${VIEW_TOKEN}&channel=${channel}&reload=' + Date.now();
+        if (data.type === 'reload') frame.src = '/screen?view=${capabilities.view}&channel=${channel}&reload=' + Date.now();
       } catch (_) {}
     };
-    socket.onclose = () => { status.textContent = 'Reconnecting...'; setTimeout(connect, 1000); };
+    socket.onclose = () => { status.textContent = 'Disconnected — refresh the secure launch URL to reconnect'; };
     socket.onerror = () => { try { socket.close(); } catch (_) {} };
   }
   connect();
@@ -501,12 +537,12 @@ function queryParameter(url, name) {
 
 function hasViewCapability(url) {
   const view = queryParameter(url, 'view');
-  return Boolean(view && timingSafeEqualStr(view, VIEW_TOKEN));
+  return Boolean(view && liveCapability(viewCapabilities, view));
 }
 
-function attachViewCapability(html) {
+function attachViewCapability(html, view) {
   return html.replace(/\b(src|href)=(['"])\/files\/([^'"?#\s]+)\2/gi,
-    (_match, attribute, quote, file) => `${attribute}=${quote}/files/${file}?view=${VIEW_TOKEN}${quote}`);
+    (_match, attribute, quote, file) => `${attribute}=${quote}/files/${file}?view=${view}${quote}`);
 }
 
 function securityHeaders(headers = {}) {
@@ -568,9 +604,9 @@ function handleRequest(req, res) {
     const channel = crypto.randomBytes(16).toString('hex');
     res.writeHead(200, securityHeaders({
       'Content-Type': 'text/html; charset=utf-8',
-      'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; frame-src 'self'; connect-src 'self' ws:; frame-ancestors 'none'; base-uri 'none'`,
+      'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; frame-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'none'`,
     }));
-    res.end(controllerPage(nonce, channel, keyFromQuery));
+    res.end(controllerPage(nonce, channel, createControllerCapabilities()));
   } else if (req.method === 'GET' && pathname === '/screen') {
     const channel = queryParameter(req.url, 'channel');
     if (!channel || !/^[0-9a-f]{32}$/.test(channel)) {
@@ -582,7 +618,7 @@ function handleRequest(req, res) {
     let html = screen
       ? (raw => isFullDocument(raw) ? raw : wrapInFrame(raw))(screen)
       : waitingPage();
-    html = attachViewCapability(html);
+    html = attachViewCapability(html, queryParameter(req.url, 'view'));
     const nonce = crypto.randomBytes(18).toString('base64');
     const injection = helperInjection(nonce, channel);
     if (html.includes('</body>')) {
@@ -616,9 +652,11 @@ function handleRequest(req, res) {
 // ========== WebSocket Connection Handling ==========
 
 const clients = new Set();
+const socketCapabilities = new WeakMap();
 
 function handleUpgrade(req, socket) {
-  if (!isAuthorized(req) || !isAllowedWebSocketOrigin(req)) { socket.destroy(); return; }
+  const connection = liveCapability(pendingConnections, queryKey(req.url));
+  if (!connection || !isAllowedWebSocketOrigin(req)) { socket.destroy(); return; }
 
   const key = req.headers['sec-websocket-key'];
   if (!key) { socket.destroy(); return; }
@@ -632,6 +670,8 @@ function handleUpgrade(req, socket) {
   );
 
   let buffer = Buffer.alloc(0);
+  pendingConnections.delete(connection.connection); // one successful upgrade consumes it
+  socketCapabilities.set(socket, connection);
   clients.add(socket);
 
   socket.on('data', (chunk) => {
@@ -672,8 +712,12 @@ function handleUpgrade(req, socket) {
     }
   });
 
-  socket.on('close', () => clients.delete(socket));
-  socket.on('error', () => clients.delete(socket));
+  const disconnect = () => {
+    clients.delete(socket);
+    revokeCapabilities(socketCapabilities.get(socket));
+  };
+  socket.on('close', disconnect);
+  socket.on('error', disconnect);
 }
 
 function handleMessage(text) {
@@ -754,6 +798,12 @@ const debounceTimers = new Map();
 // ========== Server Startup ==========
 
 function startServer() {
+  if (!isLoopbackHost(HOST)) {
+    throw new Error('unsafe non-loopback bind: keep the server on loopback and use an encrypted authenticated tunnel');
+  }
+  if (!isLoopbackHost(URL_HOST)) {
+    throw new Error('unsafe non-loopback URL host: tunnel clients must use a loopback URL');
+  }
   assertPrivateDirectory(SESSION_DIR, 'session directory', true);
   assertPrivateDirectory(CONTENT_DIR, 'content directory', true);
   assertPrivateDirectory(STATE_DIR, 'state directory', true);

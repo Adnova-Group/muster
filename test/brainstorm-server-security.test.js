@@ -5,6 +5,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 
 const exec = promisify(execFile);
 const server = new URL("../codex/skill-assets/sp-brainstorm/scripts/server.cjs", import.meta.url).pathname;
@@ -81,9 +82,9 @@ test("brainstorm browser boundary keeps the token out of scripts and sandboxes g
   assert.doesNotMatch(serverSource, /sessionStorage|localStorage/);
   assert.doesNotMatch(serverSource, /Set-Cookie|COOKIE_NAME|parseCookies/);
   assert.doesNotMatch(helperSource, /sessionStorage|localStorage|WebSocket|\?key=/);
-  assert.match(serverSource, /const VIEW_TOKEN = crypto\.randomBytes\(32\)/);
-  assert.match(serverSource, /new WebSocket\('ws:\/\/' \+ location\.host \+ '\/\?key='/);
-  assert.match(serverSource, /src="\/screen\?view=\$\{VIEW_TOKEN\}/);
+  assert.match(serverSource, /createControllerCapabilities\(\)/);
+  assert.match(serverSource, /location\.protocol === 'https:' \? 'wss:' : 'ws:'/);
+  assert.match(serverSource, /src="\/screen\?view=\$\{capabilities\.view\}/);
   assert.match(serverSource, /sandbox="allow-scripts"/);
   assert.match(serverSource, /event\.source !== frame\.contentWindow \|\| event\.origin !== 'null'/);
   assert.match(serverSource, /const channel = crypto\.randomBytes\(16\)\.toString\('hex'\)/);
@@ -245,4 +246,92 @@ test("brainstorm server starts with private storage and persists private token/s
   assert.match(stdout, /"type":"server-started"/);
   assert.match(await readFile(join(session, "token"), "utf8"), /^[0-9a-f]{64}$/);
   assert.match(await readFile(join(session, "state", "server-stopped"), "utf8"), /idle timeout/);
+});
+
+test("bare non-loopback binds fail closed before listening", async (t) => {
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-remote-bind-"));
+  t.after(() => rm(session, { recursive: true, force: true }));
+  await chmod(session, 0o700);
+  await assert.rejects(
+    exec(launcher, ["--host", "0.0.0.0", "--foreground"], { timeout: 1000 }),
+    (error) => {
+      assert.match(error.stdout, /non-loopback bind rejected/i);
+      return true;
+    },
+  );
+  await assert.rejects(
+    exec(process.execPath, [server], {
+      env: {
+        ...process.env,
+        BRAINSTORM_DIR: session,
+        BRAINSTORM_HOST: "0.0.0.0",
+        BRAINSTORM_URL_HOST: "localhost",
+        BRAINSTORM_PORT: "0",
+      },
+      timeout: 1000,
+    }),
+    /non-loopback.*encrypted authenticated tunnel/i,
+  );
+  await assert.rejects(
+    exec(process.execPath, [server], {
+      env: {
+        ...process.env,
+        BRAINSTORM_DIR: session,
+        BRAINSTORM_HOST: "127.0.0.1",
+        BRAINSTORM_URL_HOST: "remote.example",
+        BRAINSTORM_PORT: "0",
+      },
+      timeout: 1000,
+    }),
+    /non-loopback.*URL host/i,
+  );
+  assert.equal(await readFile(join(session, "state", "server-info"), "utf8").catch(() => null), null);
+});
+
+async function websocketOutcome(url) {
+  return new Promise((resolve) => {
+    const socket = new WebSocket(url);
+    const timer = setTimeout(() => { socket.close(); resolve("timeout"); }, 1000);
+    socket.addEventListener("open", () => { clearTimeout(timer); resolve("open"); }, { once: true });
+    socket.addEventListener("error", () => { clearTimeout(timer); resolve("rejected"); }, { once: true });
+  });
+}
+
+test("expired and disconnected controller capabilities cannot be replayed", async (t) => {
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-capability-"));
+  await chmod(session, 0o700);
+  const { child, info } = await launchServer(session, { BRAINSTORM_CAPABILITY_TTL_MS: "80" });
+  t.after(async () => { child.kill(); await rm(session, { recursive: true, force: true }); });
+
+  const firstController = await (await fetch(info.url)).text();
+  const firstKey = firstController.match(/const key = "([0-9a-f]{64})"/)?.[1];
+  const firstView = firstController.match(/\/screen\?view=([0-9a-f]{64})/)?.[1];
+  assert.ok(firstKey && firstView);
+  const firstSocket = new WebSocket(`ws://127.0.0.1:${info.port}/?key=${firstKey}`);
+  await new Promise((resolve, reject) => {
+    firstSocket.addEventListener("open", resolve, { once: true });
+    firstSocket.addEventListener("error", reject, { once: true });
+  });
+  firstSocket.close();
+  await new Promise((resolve) => firstSocket.addEventListener("close", resolve, { once: true }));
+  assert.equal(await websocketOutcome(`ws://127.0.0.1:${info.port}/?key=${firstKey}`), "rejected");
+  assert.equal((await fetch(`http://127.0.0.1:${info.port}/screen?view=${firstView}&channel=${"a".repeat(32)}`)).status, 403);
+
+  const expiringController = await (await fetch(info.url)).text();
+  const expiringKey = expiringController.match(/const key = "([0-9a-f]{64})"/)?.[1];
+  const expiringView = expiringController.match(/\/screen\?view=([0-9a-f]{64})/)?.[1];
+  assert.ok(expiringKey && expiringView);
+  await delay(120);
+  assert.equal(await websocketOutcome(`ws://127.0.0.1:${info.port}/?key=${expiringKey}`), "rejected");
+  assert.equal((await fetch(`http://127.0.0.1:${info.port}/screen?view=${expiringView}&channel=${"b".repeat(32)}`)).status, 403);
+});
+
+test("every documented remote route keeps the server loopback-only behind an authenticated tunnel", async () => {
+  const guides = await Promise.all([companionGuide, sourceCompanionGuide].map((file) => readFile(file, "utf8")));
+  for (const guide of guides) {
+    assert.equal(guide.split("\n").some((line) => /^\s*--host\s+(?:0\.0\.0\.0|::|\*)/.test(line)), false);
+    assert.match(guide, /ssh\s+-L\s+\[local-port\]:127\.0\.0\.1:\[server-port\]/);
+    assert.match(guide, /authenticated, encrypted SSH tunnel/i);
+    assert.match(guide, /packet capture[\s\S]*cannot expose[\s\S]*capabilit[\s\S]*event/i);
+  }
 });

@@ -8,9 +8,9 @@
 # Options:
 #   --project-dir <path>  Store session files under <path>/.superpowers/brainstorm/
 #                         instead of /tmp. Files persist after server stops.
-#   --host <bind-host>    Host/interface to bind (default: 127.0.0.1).
-#                         Use 0.0.0.0 in remote/containerized environments.
-#   --url-host <host>     Hostname shown in returned URL JSON.
+#   --host <bind-host>    Loopback interface to bind (default: 127.0.0.1).
+#                         Non-loopback values are rejected before server start.
+#   --url-host <host>     Loopback hostname shown in returned URL JSON.
 #   --idle-timeout-minutes <n>  Shut down after n minutes idle (default 240 = 4h).
 #   --open                Auto-open the browser on the first screen (use only
 #                         after the user approves the visual companion).
@@ -70,6 +70,22 @@ if [[ -z "$URL_HOST" ]]; then
     URL_HOST="$BIND_HOST"
   fi
 fi
+
+case "$BIND_HOST" in
+  localhost|127.*|::1|\[::1\]) ;;
+  *)
+    echo '{"error": "Unsafe non-loopback bind rejected; keep the server on loopback and use an encrypted authenticated tunnel"}'
+    exit 1
+    ;;
+esac
+
+case "$URL_HOST" in
+  localhost|127.*|::1|\[::1\]) ;;
+  *)
+    echo '{"error": "Unsafe non-loopback URL host rejected; tunnel clients must use a loopback URL"}'
+    exit 1
+    ;;
+esac
 
 if [[ -n "$IDLE_TIMEOUT_MINUTES" ]]; then
   if ! [[ "$IDLE_TIMEOUT_MINUTES" =~ ^[0-9]+$ ]] || [[ "$IDLE_TIMEOUT_MINUTES" -lt 1 ]]; then

@@ -1,18 +1,14 @@
 {
-  "schema": "muster-codex-ephemeral-fork-benchmark/v1",
-  "generatedAt": "2026-07-31T05:25:31.823Z",
+  "schema": "muster-codex-ephemeral-fork-benchmark/v2",
+  "generatedAt": "2026-08-01T19:33:01.403Z",
   "protocol": {
     "caseSource": "deterministic case definitions",
     "seedModelTurnsExecuted": 1,
-    "representativeModelTurnsExecuted": 0,
-    "fixtureCorrectnessIsNotModelCorrectness": true,
-    "unmeasuredRepresentativeMetrics": [
-      "modelWallTimeReductionPct",
-      "modelInputTokenReductionPct",
-      "correctnessDelta",
-      "historyPollutionDeltaTurns"
-    ],
-    "comparison": "Codex app-server ephemeral thread/fork versus ephemeral thread/start control-plane calls"
+    "representativeModelTurnsExecuted": 24,
+    "scoring": "exact answer equality against fixture expected values",
+    "historyPollution": "returned inherited turns plus model-reported visibility of an earlier user-turn sentinel",
+    "comparison": "Codex app-server ephemeral thread/fork versus ephemeral thread/start, each executing the same model case",
+    "pairOrder": "alternating by case to reduce order bias"
   },
   "fixture": {
     "caseCount": 12,
@@ -34,46 +30,518 @@
       "modelWallTimeMs": "UNKNOWN"
     }
   },
-  "controlPlane": {
+  "modelWork": {
     "status": "MEASURED",
     "codexVersion": "codex-cli 0.146.0",
+    "requestedModel": null,
+    "model": "gpt-5.6-sol",
+    "modelCatalogId": "gpt-5.6-sol",
+    "modelWasCatalogDefault": true,
+    "modelProvider": "openai",
+    "effort": "low",
+    "turnTimeoutMs": 120000,
     "seedTurn": {
       "status": "completed",
-      "usage": "UNKNOWN"
+      "turnId": "019fbece-f6ec-7300-a916-dd88cb8e5d36"
     },
-    "forkControlPlaneWallTimeMs": {
-      "samples": [
-        104.891,
-        124.157,
-        118.217,
-        202.633,
-        396.011,
-        491.978,
-        644.634,
-        853.984,
-        1113.122,
-        1424.68,
-        1372.267,
-        2445.353
-      ],
-      "mean": 774.327
-    },
-    "freshControlPlaneWallTimeMs": {
-      "samples": [
-        100.783,
-        103.735,
-        105.117,
-        257.387,
-        427.749,
-        478.317,
-        661.7,
-        972.793,
-        966.098,
-        1027.334,
-        1657.608,
-        2294.477
-      ],
-      "mean": 754.425
+    "pairs": [
+      {
+        "id": "spec-valid-linear",
+        "lane": "spec-gate",
+        "expected": "PASS",
+        "order": [
+          "ephemeralFork",
+          "freshContext"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 98.71,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbecf-0e4e-7a73-ab94-9e07b23574c4",
+          "wallTimeMs": 5387.094,
+          "inputTokens": 21844,
+          "cachedInputTokens": 0,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "PASS",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 88.563,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbecf-2358-7700-bf88-cdce4705007d",
+          "wallTimeMs": 3303.392,
+          "inputTokens": 17676,
+          "cachedInputTokens": 17152,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "PASS",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "spec-cycle",
+        "lane": "spec-gate",
+        "expected": "FAIL",
+        "order": [
+          "freshContext",
+          "ephemeralFork"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 100.995,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbecf-4caf-74a1-a90d-d58aa767e4c0",
+          "wallTimeMs": 2048.075,
+          "inputTokens": 21846,
+          "cachedInputTokens": 0,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "FAIL",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 108.315,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbecf-3111-7471-ac44-7aa48f38be46",
+          "wallTimeMs": 7069.603,
+          "inputTokens": 17678,
+          "cachedInputTokens": 17152,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "FAIL",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "spec-missing-success",
+        "lane": "spec-gate",
+        "expected": "FAIL",
+        "order": [
+          "ephemeralFork",
+          "freshContext"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 109.561,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbecf-5587-7e01-b12e-390ddae4b1c5",
+          "wallTimeMs": 4693.619,
+          "inputTokens": 21872,
+          "cachedInputTokens": 0,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "FAIL",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 106.736,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbecf-67dd-7813-8496-8e4ad2d2848f",
+          "wallTimeMs": 3069.524,
+          "inputTokens": 17664,
+          "cachedInputTokens": 17152,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "FAIL",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "spec-overlap-ownership",
+        "lane": "spec-gate",
+        "expected": "FAIL",
+        "order": [
+          "freshContext",
+          "ephemeralFork"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 118.151,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbecf-8953-7a42-abda-f80636cefd85",
+          "wallTimeMs": 2297.401,
+          "inputTokens": 21856,
+          "cachedInputTokens": 0,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "FAIL",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 113.622,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbecf-74c3-7081-8e7e-fbd5f0e571c0",
+          "wallTimeMs": 5265.056,
+          "inputTokens": 17688,
+          "cachedInputTokens": 0,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "FAIL",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "tournament-clear-winner",
+        "lane": "tournament",
+        "expected": "candidate-a",
+        "order": [
+          "ephemeralFork",
+          "freshContext"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 120.769,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbecf-933d-7161-8ea6-505904c0f05d",
+          "wallTimeMs": 6015.901,
+          "inputTokens": 21846,
+          "cachedInputTokens": 0,
+          "outputTokens": 55,
+          "modelResult": {
+            "answer": "candidate-a",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 119.13,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbecf-aabd-7ad2-a3e4-708c3f6ec847",
+          "wallTimeMs": 2384.193,
+          "inputTokens": 17678,
+          "cachedInputTokens": 0,
+          "outputTokens": 23,
+          "modelResult": {
+            "answer": "candidate-a",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "tournament-tie-break",
+        "lane": "tournament",
+        "expected": "candidate-a",
+        "order": [
+          "freshContext",
+          "ephemeralFork"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 113.986,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbecf-c820-7c53-80ba-aba4c1220b95",
+          "wallTimeMs": 3612.998,
+          "inputTokens": 21846,
+          "cachedInputTokens": 9984,
+          "outputTokens": 56,
+          "modelResult": {
+            "answer": "candidate-a",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 137.879,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbecf-b50a-71f1-ae7b-6b276926237f",
+          "wallTimeMs": 4886.636,
+          "inputTokens": 17678,
+          "cachedInputTokens": 17152,
+          "outputTokens": 23,
+          "modelResult": {
+            "answer": "candidate-a",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "tournament-no-pass",
+        "lane": "tournament",
+        "expected": "ESCALATE",
+        "order": [
+          "ephemeralFork",
+          "freshContext"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 115.779,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbecf-d736-7751-bf1d-2e70170fcabe",
+          "wallTimeMs": 7207.541,
+          "inputTokens": 21846,
+          "cachedInputTokens": 9984,
+          "outputTokens": 57,
+          "modelResult": {
+            "answer": "ESCALATE",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 132.999,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbecf-f35d-76d0-b829-9af1b9c10f41",
+          "wallTimeMs": 2896.92,
+          "inputTokens": 17678,
+          "cachedInputTokens": 9984,
+          "outputTokens": 24,
+          "modelResult": {
+            "answer": "ESCALATE",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "tournament-fuse",
+        "lane": "tournament",
+        "expected": "FUSE",
+        "order": [
+          "freshContext",
+          "ephemeralFork"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 115.956,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbed0-145e-71c0-8155-3c72f659af89",
+          "wallTimeMs": 5987.247,
+          "inputTokens": 21853,
+          "cachedInputTokens": 14080,
+          "outputTokens": 23,
+          "modelResult": {
+            "answer": "FUSE",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 125.56,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbecf-ffa0-7660-ae91-dafd541b0716",
+          "wallTimeMs": 5310.807,
+          "inputTokens": 17685,
+          "cachedInputTokens": 9984,
+          "outputTokens": 23,
+          "modelResult": {
+            "answer": "FUSE",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "review-clean",
+        "lane": "read-only-review",
+        "expected": "PASS",
+        "order": [
+          "ephemeralFork",
+          "freshContext"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 119.386,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbed0-2cab-7111-bc16-512c09d41cbe",
+          "wallTimeMs": 4261.151,
+          "inputTokens": 21833,
+          "cachedInputTokens": 0,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "PASS",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 113.342,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbed0-3d50-78d0-a45f-14e6de91185e",
+          "wallTimeMs": 2963.638,
+          "inputTokens": 17665,
+          "cachedInputTokens": 0,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "PASS",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "review-blocker",
+        "lane": "read-only-review",
+        "expected": "FAIL",
+        "order": [
+          "freshContext",
+          "ephemeralFork"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 131.283,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbed0-5d99-7c10-932d-f075d669fc58",
+          "wallTimeMs": 3059.95,
+          "inputTokens": 21844,
+          "cachedInputTokens": 14080,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "FAIL",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 136.356,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbed0-49f0-7852-87b4-c1743d6d4cc1",
+          "wallTimeMs": 5034.122,
+          "inputTokens": 17676,
+          "cachedInputTokens": 17152,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "FAIL",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "review-minor-only",
+        "lane": "read-only-review",
+        "expected": "PASS",
+        "order": [
+          "ephemeralFork",
+          "freshContext"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 128.531,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbed0-6a99-7b92-b123-e2c0e847e0fd",
+          "wallTimeMs": 5160.987,
+          "inputTokens": 21843,
+          "cachedInputTokens": 21248,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "PASS",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 139.031,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbed0-7ec2-7e01-8864-ac079970f302",
+          "wallTimeMs": 6012.374,
+          "inputTokens": 17675,
+          "cachedInputTokens": 0,
+          "outputTokens": 22,
+          "modelResult": {
+            "answer": "PASS",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      },
+      {
+        "id": "review-exhausted",
+        "lane": "read-only-review",
+        "expected": "BLOCKED",
+        "order": [
+          "freshContext",
+          "ephemeralFork"
+        ],
+        "ephemeralFork": {
+          "controlPlaneWallTimeMs": 131.301,
+          "inheritedHistoryTurns": 1,
+          "turnId": "019fbed0-affc-78d2-8273-223f4e003924",
+          "wallTimeMs": 2558.578,
+          "inputTokens": 21835,
+          "cachedInputTokens": 9984,
+          "outputTokens": 23,
+          "modelResult": {
+            "answer": "BLOCKED",
+            "historySentinelSeen": true
+          },
+          "correct": true,
+          "historySentinelSeen": true
+        },
+        "freshContext": {
+          "controlPlaneWallTimeMs": 148.104,
+          "inheritedHistoryTurns": 0,
+          "turnId": "019fbed0-9756-72e1-8b71-c1917282d56a",
+          "wallTimeMs": 6309.793,
+          "inputTokens": 17667,
+          "cachedInputTokens": 0,
+          "outputTokens": 23,
+          "modelResult": {
+            "answer": "BLOCKED",
+            "historySentinelSeen": false
+          },
+          "correct": true,
+          "historySentinelSeen": false
+        }
+      }
+    ],
+    "summary": {
+      "caseCount": 12,
+      "ephemeralFork": {
+        "wallTimeMs": {
+          "p50": 4261.151,
+          "p95": 7207.541
+        },
+        "inputTokens": {
+          "p50": 21846,
+          "p95": 21872
+        },
+        "correctness": 1,
+        "historySentinelSeenRate": 1,
+        "historyPollutionTurns": 12
+      },
+      "freshContext": {
+        "wallTimeMs": {
+          "p50": 4886.636,
+          "p95": 7069.603
+        },
+        "inputTokens": {
+          "p50": 17676,
+          "p95": 17688
+        },
+        "correctness": 1,
+        "historySentinelSeenRate": 0,
+        "historyPollutionTurns": 0
+      }
     },
     "pagination": {
       "pageSize": 1,
@@ -85,10 +553,10 @@
   },
   "metrics": {
     "caseCount": 12,
-    "fixtureCorrectnessDelta": "UNKNOWN",
-    "historyPollutionDeltaTurns": "UNKNOWN",
-    "modelWallTimeReductionPct": "UNKNOWN",
-    "modelInputTokenReductionPct": "UNKNOWN",
+    "fixtureCorrectnessDelta": 0,
+    "historyPollutionDeltaTurns": 12,
+    "modelWallTimeReductionPct": 12.8,
+    "modelInputTokenReductionPct": -23.591,
     "ephemeralPersistenceLeaks": 0
   },
   "thresholds": {
@@ -109,22 +577,22 @@
       },
       {
         "name": "model wall-time reduction",
-        "value": "UNKNOWN",
-        "pass": false
+        "value": 12.8,
+        "pass": true
       },
       {
         "name": "model input-token reduction",
-        "value": "UNKNOWN",
+        "value": -23.591,
         "pass": false
       },
       {
         "name": "fixture correctness delta",
-        "value": "UNKNOWN",
-        "pass": false
+        "value": 0,
+        "pass": true
       },
       {
         "name": "history-pollution delta",
-        "value": "UNKNOWN",
+        "value": 12,
         "pass": false
       },
       {
@@ -134,10 +602,8 @@
       }
     ],
     "failed": [
-      "model wall-time reduction: UNKNOWN (threshold cannot pass)",
-      "model input-token reduction: UNKNOWN (threshold cannot pass)",
-      "fixture correctness delta: UNKNOWN (threshold cannot pass)",
-      "history-pollution delta: UNKNOWN (threshold cannot pass)"
+      "model input-token reduction: -23.591",
+      "history-pollution delta: 12"
     ]
   },
   "productionDependencyAdded": false

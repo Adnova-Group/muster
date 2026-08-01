@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   DIAGNOSTIC_CONTENT_MAX_BYTES,
   classifyFailure,
@@ -31,7 +32,12 @@ test("diagnose preserves a long failure for reproduction while keeping its displ
   assert.equal(input.length, 500);
   assert.equal(failure.signal.length, 200, "UI-facing failure label stays capped");
   assert.ok(!failure.signal.includes(discriminator), "the discriminator exercises content beyond the label");
-  assert.equal(repro.diagnostic.content, input, "the reproduction task receives the exact diagnostic");
+  assert.equal(repro.diagnostic.encoding, "base64");
+  assert.equal(
+    Buffer.from(repro.diagnostic.contentBase64, "base64").toString("utf8"),
+    input,
+    "the reproduction task can recover the exact diagnostic without raw prompt content"
+  );
   assert.equal(repro.diagnostic.length, input.length);
   assert.match(repro.diagnostic.sha256, /^[a-f0-9]{64}$/);
 });
@@ -39,11 +45,17 @@ test("diagnose preserves a long failure for reproduction while keeping its displ
 test("diagnose bounds oversized diagnostic content but retains its full-input digest", () => {
   const input = `prefix-${"q".repeat(DIAGNOSTIC_CONTENT_MAX_BYTES)}-tail`;
   const failure = classifyFailure(input);
+  const differentTail = classifyFailure(`${input.slice(0, -1)}X`);
 
-  assert.equal(failure.diagnostic.content, null);
+  assert.equal(failure.diagnostic.contentBase64, null);
   assert.equal(failure.diagnostic.truncated, true);
   assert.ok(failure.diagnostic.bytes > DIAGNOSTIC_CONTENT_MAX_BYTES);
-  assert.match(failure.diagnostic.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(
+    failure.diagnostic.sha256,
+    createHash("sha256").update(input, "utf8").digest("hex"),
+    "digest covers the complete oversized input"
+  );
+  assert.notEqual(failure.diagnostic.sha256, differentTail.diagnostic.sha256);
 });
 
 const caps = { roles: {

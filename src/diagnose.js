@@ -7,7 +7,10 @@ export const DIAGNOSTIC_CONTENT_MAX_BYTES = 64 * 1024;
 function diagnosticIdentity(input) {
   const bytes = Buffer.byteLength(input, "utf8");
   return {
-    content: bytes <= DIAGNOSTIC_CONTENT_MAX_BYTES ? input : null,
+    contentBase64: bytes <= DIAGNOSTIC_CONTENT_MAX_BYTES
+      ? Buffer.from(input, "utf8").toString("base64")
+      : null,
+    encoding: "base64",
     length: input.length,
     bytes,
     sha256: createHash("sha256").update(input, "utf8").digest("hex"),

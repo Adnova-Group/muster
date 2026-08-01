@@ -20,9 +20,11 @@ adapter:
   Invalid ids, traversal, symlink escapes, non-regular files, and oversized
   resources fail closed.
 
-`src/executor-skills.js` implements a bounded local fixture for this contract.
-The fixture always reports `productionActive: false`; it is proof of package
-layout and read semantics, not proof that a product host exposed an executor.
+`test/test-support/executor-skills-fixture.js` preserves a bounded test-only
+fixture for this contract. The fixture always reports `productionActive: false`;
+it is proof of package layout and read semantics, not proof that a product host
+exposed an executor. It is deliberately outside production source and npm
+package contents until a same-host authority adapter exists.
 
 ## Host bindings
 

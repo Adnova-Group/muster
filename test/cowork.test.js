@@ -910,7 +910,7 @@ test("MCP backlog publisher performs a bounded CAS write inside an explicit proj
 test("MCP and CLI backlog publishers share the 16 MiB envelope and contain oversized calls", async () => {
   const cliDir = mkdtempSync(path.join(tmpdir(), "muster-cli-backlog-envelope-"));
   const mcpDir = mkdtempSync(path.join(tmpdir(), "muster-mcp-backlog-envelope-"));
-  const content = `${"x".repeat(1_048_576)}\nabove-one-mib\n`;
+  const content = `${"\\".repeat(9 * 1_048_576)}\nabove-one-mib\n`;
   const expectedDigest = createHash("sha256").update(content).digest("hex");
   const cliResult = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(rootDir, "src", "cli.js"), "backlog-publish", "backlog.md", "--expect", "absent"], {
@@ -1409,7 +1409,7 @@ test("tools/call notifications execute without replies, undefined-id collisions,
 // An unterminated request must remain bounded without taking down the process;
 // once its delimiter arrives, the server rejects that request and resumes.
 test("A-SEC6: an oversized unterminated request is discarded without killing the server", async () => {
-  const REQUEST_LIMIT = 17 * 1_048_576;
+  const REQUEST_LIMIT = 97 * 1_048_576;
   const pingId = 42;
   const responses = await new Promise((resolve, reject) => {
     const srv = spawn("node", [path.join(rootDir, "cowork", "mcp-server.mjs")], {
@@ -1429,7 +1429,7 @@ test("A-SEC6: an oversized unterminated request is discarded without killing the
         if (!line) continue;
         const message = JSON.parse(line);
         got[message.id] = message;
-        if (got[41] && got[pingId]) {
+        if (got.null && got[pingId]) {
           clearTimeout(timer);
           srv.stdin.end();
           resolve(got);
@@ -1437,14 +1437,14 @@ test("A-SEC6: an oversized unterminated request is discarded without killing the
       }
     });
     srv.on("error", (e) => { clearTimeout(timer); reject(e); });
-    const prefix = '{"jsonrpc":"2.0","id":41,"method":"ping","padding":"';
+    const prefix = '{"jsonrpc":"2.0","method":"ping","params":{"id":999},"id":41,"padding":"';
     srv.stdin.write(prefix + "x".repeat(REQUEST_LIMIT + 1));
     srv.stdin.write('"}\n');
     srv.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: pingId, method: "ping" }) + "\n");
   });
 
-  assert.equal(responses[41].error.code, -32600);
-  assert.match(responses[41].error.message, /Request exceeds 17825792 byte limit/);
+  assert.equal(responses.null.error.code, -32600);
+  assert.match(responses.null.error.message, /Request exceeds 101711872 byte limit/);
   assert.deepEqual(responses[pingId].result, {});
 });
 

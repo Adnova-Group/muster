@@ -658,18 +658,9 @@ export function startMusterMcpServer(config) {
 // The wire envelope allows the largest supported backlog plus bounded JSON-RPC
 // metadata. Oversized frames are discarded request-locally so one bad client
 // call cannot terminate the long-lived MCP server.
-const STDIN_MAX_BYTES = BACKLOG_PUBLICATION_MAX_BYTES + 1_048_576;
-
-const requestIdFromPrefix = (text) => {
-  const match = text.match(/"id"\s*:\s*("(?:[^"\\]|\\.)*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/);
-  if (!match) return null;
-  try {
-    const id = JSON.parse(match[1]);
-    return typeof id === "string" || (typeof id === "number" && Number.isFinite(id)) ? id : null;
-  } catch {
-    return null;
-  }
-};
+// JSON.stringify can expand one input byte to six ASCII bytes (for example a
+// NUL becomes `\u0000`). One extra MiB bounds the rest of the request envelope.
+const STDIN_MAX_BYTES = BACKLOG_PUBLICATION_MAX_BYTES * 6 + 1_048_576;
 
   let bufferParts = [];
   let bufferBytes = 0;
@@ -692,7 +683,9 @@ const requestIdFromPrefix = (text) => {
     bufferBytes += Buffer.byteLength(part);
     if (!completesLine) {
       if (bufferBytes > STDIN_MAX_BYTES) {
-        oversizedRequestId = requestIdFromPrefix(bufferParts.join(""));
+        // The frame is deliberately not parsed, so its top-level id is unknown.
+        // JSON-RPC requires null rather than guessing from nested attacker data.
+        oversizedRequestId = null;
         discardingOversizedRequest = true;
         bufferParts = [];
         bufferBytes = 0;
@@ -703,7 +696,7 @@ const requestIdFromPrefix = (text) => {
     bufferParts = [];
     bufferBytes = 0;
     if (Buffer.byteLength(rawLine) > STDIN_MAX_BYTES) {
-      err(requestIdFromPrefix(rawLine), -32600, `Request exceeds ${STDIN_MAX_BYTES} byte limit`);
+      err(null, -32600, `Request exceeds ${STDIN_MAX_BYTES} byte limit`);
       continue;
     }
     const line = rawLine.trim();

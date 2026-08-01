@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyFailure, buildDiagnoseManifest } from "../src/diagnose.js";
+import {
+  DIAGNOSTIC_CONTENT_MAX_BYTES,
+  classifyFailure,
+  buildDiagnoseManifest
+} from "../src/diagnose.js";
 import { validateManifest } from "../src/manifest.js";
 import { modelForRole } from "../src/model.js";
 
@@ -15,6 +19,31 @@ test("classifyFailure: --ci flag forces ci", () => {
 });
 test("classifyFailure: empty throws", () => {
   assert.throws(() => classifyFailure("  "), /empty/);
+});
+
+test("diagnose preserves a long failure for reproduction while keeping its display label capped", () => {
+  const discriminator = "UNIQUE-DISCRIMINATOR-AFTER-CHAR-200";
+  const input = `${"x".repeat(460)}${discriminator}`.padEnd(500, "z");
+  const failure = classifyFailure(input);
+  const manifest = buildDiagnoseManifest(failure, caps);
+  const repro = manifest.plan.find(task => task.id === "repro");
+
+  assert.equal(input.length, 500);
+  assert.equal(failure.signal.length, 200, "UI-facing failure label stays capped");
+  assert.ok(!failure.signal.includes(discriminator), "the discriminator exercises content beyond the label");
+  assert.equal(repro.diagnostic.content, input, "the reproduction task receives the exact diagnostic");
+  assert.equal(repro.diagnostic.length, input.length);
+  assert.match(repro.diagnostic.sha256, /^[a-f0-9]{64}$/);
+});
+
+test("diagnose bounds oversized diagnostic content but retains its full-input digest", () => {
+  const input = `prefix-${"q".repeat(DIAGNOSTIC_CONTENT_MAX_BYTES)}-tail`;
+  const failure = classifyFailure(input);
+
+  assert.equal(failure.diagnostic.content, null);
+  assert.equal(failure.diagnostic.truncated, true);
+  assert.ok(failure.diagnostic.bytes > DIAGNOSTIC_CONTENT_MAX_BYTES);
+  assert.match(failure.diagnostic.sha256, /^[a-f0-9]{64}$/);
 });
 
 const caps = { roles: {

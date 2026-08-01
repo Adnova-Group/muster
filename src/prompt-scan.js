@@ -14,6 +14,7 @@ export const SCAN_TEXT_EXT = new Set([".js", ".mjs", ".cjs", ".ts", ".tsx", ".js
   ".go", ".java", ".md", ".txt", ".prompt", ".tmpl", ".json", ".yaml", ".yml"]);
 export const SCAN_MAX_FILE = 256 * 1024;
 export const SCAN_MAX_FILES = 5000;
+export const SCAN_MAX_INCOMPLETE_EVIDENCE = 100;
 
 async function collectScanEvidence(root, io = {}) {
   const readdirFn = io.readdir ?? readdir;
@@ -22,11 +23,19 @@ async function collectScanEvidence(root, io = {}) {
   const files = [];
   const incompleteEvidence = [];
   let fileLimitWitnessFound = false;
+  let incompleteEvidenceTruncated = false;
+  const shouldStop = () => fileLimitWitnessFound || incompleteEvidenceTruncated;
+  const recordIncomplete = (file, reason) => {
+    incompleteEvidence.push({ file, reason });
+    if (incompleteEvidence.length >= SCAN_MAX_INCOMPLETE_EVIDENCE) {
+      incompleteEvidenceTruncated = true;
+    }
+  };
   async function walk(dir) {
-    if (fileLimitWitnessFound) return;
+    if (shouldStop()) return;
     let ents;
     try { ents = await readdirFn(dir, { withFileTypes: true }); } catch {
-      incompleteEvidence.push({ file: relative(root, dir) || ".", reason: "directory-read-failure" });
+      recordIncomplete(relative(root, dir) || ".", "directory-read-failure");
       return;
     }
     ents.sort((a, b) => a.name.localeCompare(b.name));
@@ -34,7 +43,7 @@ async function collectScanEvidence(root, io = {}) {
       const full = join(dir, e.name);
       if (e.isDirectory()) {
         if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full);
-        if (fileLimitWitnessFound) return;
+        if (shouldStop()) return;
         continue;
       }
       if (!e.isFile()) continue;
@@ -42,34 +51,38 @@ async function collectScanEvidence(root, io = {}) {
       if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;
       const path = relative(root, full);
       if (files.length >= SCAN_MAX_FILES) {
-        incompleteEvidence.push({ file: path, reason: "file-limit" });
+        recordIncomplete(path, "file-limit");
         fileLimitWitnessFound = true;
         return;
       }
       let fileStat;
       try { fileStat = await statFn(full); } catch {
-        incompleteEvidence.push({ file: path, reason: "read-failure" });
+        recordIncomplete(path, "read-failure");
+        if (shouldStop()) return;
         continue;
       }
       if (fileStat.size > SCAN_MAX_FILE) {
-        incompleteEvidence.push({ file: path, reason: "size-limit" });
+        recordIncomplete(path, "size-limit");
+        if (shouldStop()) return;
         continue;
       }
       let raw;
       try { raw = await readFileFn(full); } catch {
-        incompleteEvidence.push({ file: path, reason: "read-failure" });
+        recordIncomplete(path, "read-failure");
+        if (shouldStop()) return;
         continue;
       }
       const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw));
       if (bytes.byteLength > SCAN_MAX_FILE) {
-        incompleteEvidence.push({ file: path, reason: "size-limit" });
+        recordIncomplete(path, "size-limit");
+        if (shouldStop()) return;
         continue;
       }
       files.push({ path, content: bytes.toString("utf8") });
     }
   }
   await walk(root);
-  return { files, incompleteEvidence };
+  return { files, incompleteEvidence, incompleteEvidenceTruncated };
 }
 
 export async function collectScanFiles(root, io) {
@@ -78,7 +91,7 @@ export async function collectScanFiles(root, io) {
 }
 
 export async function scanRepoPrompts(root, io) {
-  const { files, incompleteEvidence } = await collectScanEvidence(root, io);
+  const { files, incompleteEvidence, incompleteEvidenceTruncated } = await collectScanEvidence(root, io);
   const reviewed = discoverPrompts(files).map((p) => {
     // Discovered prompt docs and system/instruction code-prompts are the system genre;
     // dedicated prompt files (.prompt/.tmpl/templates) are task prompts.
@@ -103,6 +116,7 @@ export async function scanRepoPrompts(root, io) {
     clean: complete && failing.length === 0,
     truncated: incompleteEvidence.some(({ reason }) => reason === "file-limit"),
     incompleteEvidence,
+    incompleteEvidenceTruncated,
     prompts: reviewed,
   };
 }

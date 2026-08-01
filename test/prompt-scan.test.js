@@ -187,6 +187,30 @@ test("directory read failures are named and cannot report complete and clean", a
   }
 });
 
+test("incomplete evidence is globally bounded even when every candidate is oversized", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-ps-evidence-bound-"));
+  try {
+    for (let i = 0; i < 101; i += 1) {
+      writeFileSync(path.join(dir, `oversized-${String(i).padStart(3, "0")}.prompt`), "x");
+    }
+
+    const result = await scanRepoPrompts(dir, {
+      stat: async () => ({ size: SCAN_MAX_FILE + 1 }),
+    });
+
+    assert.equal(result.complete, false);
+    assert.equal(result.clean, false);
+    assert.equal(result.incompleteEvidence.length, 100);
+    assert.equal(result.incompleteEvidenceTruncated, true);
+    assert.deepEqual(result.incompleteEvidence[0], {
+      file: "oversized-000.prompt",
+      reason: "size-limit",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── C7: readdir fault tolerance (chmod 000 subdir) ───────────────────────────
 // On Linux, a chmod 000 directory is unreadable. collectScanFiles must not
 // throw; readable siblings at the same level must still be returned.

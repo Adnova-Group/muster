@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -634,19 +635,18 @@ test("kimiProcessDispatch: rejects an empty brief", () => {
   });
 });
 
-test("kimiProcessDispatch: enforces the brief cap -- briefs ride argv, the /goal objective's budget class", () => {
-  // Same budget class as KIMI_GOAL_MAX_OBJECTIVE: a brief IS the -p prompt, and
-  // a /goal objective is itself a `-p "/goal <objective>"` argument.
-  assert.equal(KIMI_PROCESS_MAX_BRIEF, KIMI_GOAL_MAX_OBJECTIVE);
+test("kimiProcessDispatch: 4,001 chars and 64 KiB reach a child intact through the documented argv transport", () => {
+  assert.equal(KIMI_PROCESS_MAX_BRIEF, 64 * 1024);
   withKimiHome(home => {
     writeFileSync(join(home, "agents", "muster-builder.md"), "x");
-    assert.throws(
-      () => kimiProcessDispatch({ brief: "x".repeat(KIMI_PROCESS_MAX_BRIEF + 1), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
-      new RegExp(`kimiProcessDispatch: brief is ${KIMI_PROCESS_MAX_BRIEF + 1} chars; cap is ${KIMI_PROCESS_MAX_BRIEF}`)
-    );
-    assert.doesNotThrow(
-      () => kimiProcessDispatch({ brief: "x".repeat(KIMI_PROCESS_MAX_BRIEF), agentFile: "muster-builder.md", cwd: home, lane: "primary" })
-    );
+    const fakeChild = join(home, "fake-kimi.mjs");
+    writeFileSync(fakeChild, "process.stdout.write(process.argv[process.argv.indexOf('-p') + 1]);\n");
+    for (const brief of ["x".repeat(4001), "y".repeat(64 * 1024)]) {
+      const dispatch = kimiProcessDispatch({ brief, agentFile: "muster-builder.md", cwd: home, lane: "primary" });
+      assert.deepEqual(dispatch.briefTransport, { kind: "argv", flag: "-p", valueIndex: 1, maxChars: 64 * 1024 });
+      const received = execFileSync(process.execPath, [fakeChild, ...dispatch.argv], { encoding: "utf8", maxBuffer: 128 * 1024 });
+      assert.equal(received, brief);
+    }
   });
 });
 

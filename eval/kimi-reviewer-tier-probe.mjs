@@ -154,7 +154,8 @@ export function probe1Diff(repoRoot = REPO_ROOT) {
   return execFileSync("git", ["show", PROBE1_COMMIT], { cwd: repoRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
 }
 
-// Briefs ride argv as the -p prompt, capped at KIMI_PROCESS_MAX_BRIEF
+// Briefs ride argv as the bare -p prompt, capped by that transport's own
+// KIMI_PROCESS_MAX_BRIEF contract (independent of /goal objectives).
 // (src/kimi-dispatch.js). v2 briefs are small constants that REFERENCE the
 // quarantine file rather than inlining it, so they sit far under the budget;
 // fitBrief remains for any caller that still inlines an artifact: when the

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Kimi process briefs use their documented 64 KiB argv transport contract instead of inheriting `/goal`'s 4,000-character objective cap.** `kimiProcessDispatch` now accepts 4,001-character and 64 KiB briefs, records the exact `-p` argv binding in `briefTransport`, and keeps `kimiGoalInvocation`'s binary-pinned 4,000-character rejection unchanged.
+
 ## [0.6.0] - 2026-07-31
 
 ### Added

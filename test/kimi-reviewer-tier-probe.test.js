@@ -182,7 +182,7 @@ test("spawnEnv merges the descriptor env OVER the ambient env -- never wholesale
 test("fitBrief truncates over-budget artifacts at a newline with a disclosed note", () => {
   const small = fitBrief("prefix:", "short artifact");
   assert.equal(small, "prefix:short artifact");
-  const big = fitBrief("prefix:", ("x".repeat(100) + "\n").repeat(200));
+  const big = fitBrief("prefix:", ("x".repeat(100) + "\n").repeat(Math.ceil(KIMI_PROCESS_MAX_BRIEF / 100) + 2));
   assert.ok(big.length <= KIMI_PROCESS_MAX_BRIEF);
   assert.match(big, /artifact truncated to fit the -p brief budget/);
 });

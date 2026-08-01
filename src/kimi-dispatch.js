@@ -199,11 +199,11 @@ export function interpretKimiBackgroundCompletion({ status, result, terminalReas
 export const KIMI_GOAL_EXIT_CODES = Object.freeze({ complete: 0, blocked: 3, paused: 6 });
 export const KIMI_GOAL_MAX_OBJECTIVE = 4000;
 
-// Briefs ride argv as the `-p` prompt -- the same budget class as a /goal
-// objective (which is itself a `-p "/goal <objective>"` argument). No separate
-// binary limit is documented for a bare -p prompt, so the objective cap is
-// adopted as the conservative bound.
-export const KIMI_PROCESS_MAX_BRIEF = KIMI_GOAL_MAX_OBJECTIVE;
+// A process brief is a bare `-p` prompt, not a /goal objective. Keep its bound
+// tied to the transport Muster actually emits: one argv value, deliberately
+// capped at 64 KiB so descriptors and their callers have a concrete contract.
+// This is independent of the Kimi binary's 4,000-character /goal objective cap.
+export const KIMI_PROCESS_MAX_BRIEF = 64 * 1024;
 
 // --- Quota/balance fail-fast (kimi 0.30.0) ------------------------------------
 
@@ -402,6 +402,7 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   const agentFileInfo = statSync(resolvedAgentFile);
   return {
     argv: ["-p", brief, "--agent-file", resolvedAgentFile, "--output-format", "stream-json", "-m", KIMI_LANES[lane]],
+    briefTransport: { kind: "argv", flag: "-p", valueIndex: 1, maxChars: KIMI_PROCESS_MAX_BRIEF },
     // An OVERRIDE pair: merge over the ambient env at spawn
     // (`{ ...process.env, ...d.env }`), never pass as the whole env -- a
     // wholesale replacement loses HOME/PATH and the child breaks.

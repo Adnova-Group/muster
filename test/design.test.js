@@ -10,6 +10,7 @@ import {
   addDesignIgnore,
   designGate,
   designProviderCheck,
+  detectAuditDesignEvidence,
   detectDesignEvidence,
   initializeDesign,
   installDesignProvider,
@@ -155,6 +156,22 @@ test("bounded evidence detection caches once per unchanged wave and invalidates 
   await writeFile(join(root, "DESIGN.md"), DESIGN);
   await scanDesign(root, { wave: "wave-1", scan });
   assert.equal(scans, 2);
+});
+
+test("audit evidence remains unknown when the bounded scan stops before a later UI file", async () => {
+  const root = await tmp();
+  const nonUi = join(root, "a-non-ui");
+  const ui = join(root, "z-ui");
+  await mkdir(nonUi);
+  await mkdir(ui);
+  await Promise.all(Array.from({ length: 250 }, (_, index) =>
+    writeFile(join(nonUi, `${String(index).padStart(3, "0")}.txt`), "backend\n")));
+  await writeFile(join(ui, "App.tsx"), "export const App = () => <main>Hello</main>;\n");
+
+  const bounded = await detectDesignEvidence(root);
+  assert.equal(bounded.hasEvidence, false);
+  assert.equal(bounded.truncated, true);
+  assert.equal(await detectAuditDesignEvidence(root), "unknown");
 });
 
 test("provider check keeps Node 20 core support and gates only the optional detector at 22.12", async () => {

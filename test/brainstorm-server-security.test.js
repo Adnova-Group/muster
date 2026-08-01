@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { connect, createServer as createTcpServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -52,6 +54,54 @@ async function launchServer(session, extraEnv = {}) {
     child.once("exit", (code) => { clearTimeout(timer); reject(new Error(`server exited during startup: ${code}`)); });
   });
   return { child, info };
+}
+
+function sealTunnelRecord(key, plaintext) {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return Buffer.concat([nonce, cipher.getAuthTag(), ciphertext]);
+}
+
+function openTunnelRecord(key, record) {
+  const decipher = createDecipheriv("aes-256-gcm", key, record.subarray(0, 12));
+  decipher.setAuthTag(record.subarray(12, 28));
+  return Buffer.concat([decipher.update(record.subarray(28)), decipher.final()]);
+}
+
+async function captureAuthenticatedTunnel(upstreamPort, plaintext) {
+  const key = randomBytes(32);
+  const captured = sealTunnelRecord(key, plaintext);
+  let settleForward;
+  const forwarded = new Promise((resolve, reject) => { settleForward = { resolve, reject }; });
+  const tunnel = createTcpServer((socket) => {
+    const chunks = [];
+    socket.on("data", (chunk) => chunks.push(chunk));
+    socket.on("end", () => {
+      let cleartext;
+      try { cleartext = openTunnelRecord(key, Buffer.concat(chunks)); }
+      catch (error) { settleForward.reject(error); return; }
+      const upstream = connect(upstreamPort, "127.0.0.1");
+      upstream.on("connect", () => upstream.end(cleartext));
+      upstream.on("data", () => {});
+      upstream.on("close", settleForward.resolve);
+      upstream.on("error", settleForward.reject);
+    });
+  });
+  await new Promise((resolve, reject) => {
+    tunnel.once("error", reject);
+    tunnel.listen(0, "127.0.0.1", resolve);
+  });
+  const address = tunnel.address();
+  await new Promise((resolve, reject) => {
+    const client = connect(address.port, "127.0.0.1");
+    client.on("connect", () => client.end(captured));
+    client.on("close", resolve);
+    client.on("error", reject);
+  });
+  await forwarded;
+  await new Promise((resolve, reject) => tunnel.close((error) => error ? reject(error) : resolve()));
+  return { captured, key };
 }
 
 test("packaged brainstorm server and manifest identify the byte-identical local overlay", async () => {
@@ -123,6 +173,7 @@ test("controller bootstrap sets no localhost cookie and uses a separate view cap
   const { child, info } = await launchServer(session);
   t.after(async () => { child.kill(); await rm(session, { recursive: true, force: true }); });
   const response = await fetch(info.url);
+  assert.equal(info.host, "127.0.0.1");
   const body = await response.text();
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("set-cookie"), null);
@@ -285,6 +336,21 @@ test("bare non-loopback binds fail closed before listening", async (t) => {
     }),
     /non-loopback.*URL host/i,
   );
+  for (const invalidHost of ["127.999.999.999", "[::1", "::2"]) {
+    await assert.rejects(
+      exec(process.execPath, [server], {
+        env: {
+          ...process.env,
+          BRAINSTORM_DIR: session,
+          BRAINSTORM_HOST: invalidHost,
+          BRAINSTORM_URL_HOST: "localhost",
+          BRAINSTORM_PORT: "0",
+        },
+        timeout: 1000,
+      }),
+      /unsafe non-loopback bind/i,
+    );
+  }
   assert.equal(await readFile(join(session, "state", "server-info"), "utf8").catch(() => null), null);
 });
 
@@ -326,7 +392,7 @@ test("expired and disconnected controller capabilities cannot be replayed", asyn
   assert.equal((await fetch(`http://127.0.0.1:${info.port}/screen?view=${expiringView}&channel=${"b".repeat(32)}`)).status, 403);
 });
 
-test("every documented remote route keeps the server loopback-only behind an authenticated tunnel", async () => {
+test("documented remote traffic is tunnel-only and captured wire bytes expose no live capability or event", async (t) => {
   const guides = await Promise.all([companionGuide, sourceCompanionGuide].map((file) => readFile(file, "utf8")));
   for (const guide of guides) {
     assert.equal(guide.split("\n").some((line) => /^\s*--host\s+(?:0\.0\.0\.0|::|\*)/.test(line)), false);
@@ -334,4 +400,21 @@ test("every documented remote route keeps the server loopback-only behind an aut
     assert.match(guide, /authenticated, encrypted SSH tunnel/i);
     assert.match(guide, /packet capture[\s\S]*cannot expose[\s\S]*capabilit[\s\S]*event/i);
   }
+
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-tunnel-capture-"));
+  await chmod(session, 0o700);
+  const { child, info } = await launchServer(session);
+  t.after(async () => { child.kill(); await rm(session, { recursive: true, force: true }); });
+  const capability = new URL(info.url).searchParams.get("key");
+  const event = JSON.stringify({ type: "click", choice: "private-choice", text: "private-event" });
+  const request = Buffer.from(
+    `POST /?key=${capability} HTTP/1.1\r\nHost: 127.0.0.1:${info.port}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(event)}\r\nConnection: close\r\n\r\n${event}`,
+  );
+  const { captured, key } = await captureAuthenticatedTunnel(info.port, request);
+  assert.equal(captured.includes(Buffer.from(capability)), false);
+  assert.equal(captured.includes(Buffer.from(event)), false);
+  assert.deepEqual(openTunnelRecord(key, captured), request);
+  const tampered = Buffer.from(captured);
+  tampered[tampered.length - 1] ^= 1;
+  assert.throws(() => openTunnelRecord(key, tampered));
 });

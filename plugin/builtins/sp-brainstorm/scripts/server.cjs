@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const http = require('http');
 const fs = require('fs');
+const net = require('net');
 const os = require('os');
 const path = require('path');
 
@@ -199,9 +200,14 @@ const TELEMETRY_DISABLE_ENV_VARS = [
 const SUPERPOWERS_TELEMETRY_DISABLED = TELEMETRY_DISABLE_ENV_VARS.some(name => isTruthyEnv(process.env[name]));
 let ownerPid = process.env.BRAINSTORM_OWNER_PID ? Number(process.env.BRAINSTORM_OWNER_PID) : null;
 
-function isLoopbackHost(host) {
-  const normalized = String(host).toLowerCase().replace(/^\[|\]$/g, '');
-  return normalized === 'localhost' || normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+function loopbackAddress(host) {
+  const raw = String(host).toLowerCase();
+  if (raw === 'localhost') return '127.0.0.1';
+  const normalized = raw.startsWith('[') && raw.endsWith(']') ? raw.slice(1, -1) : raw;
+  const family = net.isIP(normalized);
+  if (family === 4 && normalized.startsWith('127.')) return normalized;
+  if (family === 6 && normalized === '::1') return normalized;
+  return null;
 }
 
 // Per-session bootstrap key. The server is loopback-only, including when an
@@ -798,10 +804,11 @@ const debounceTimers = new Map();
 // ========== Server Startup ==========
 
 function startServer() {
-  if (!isLoopbackHost(HOST)) {
+  const bindAddress = loopbackAddress(HOST);
+  if (!bindAddress) {
     throw new Error('unsafe non-loopback bind: keep the server on loopback and use an encrypted authenticated tunnel');
   }
-  if (!isLoopbackHost(URL_HOST)) {
+  if (!loopbackAddress(URL_HOST)) {
     throw new Error('unsafe non-loopback URL host: tunnel clients must use a loopback URL');
   }
   assertPrivateDirectory(SESSION_DIR, 'session directory', true);
@@ -910,7 +917,7 @@ function startServer() {
       }
     }
     const info = JSON.stringify({
-      type: 'server-started', port: Number(PORT), host: HOST,
+      type: 'server-started', port: Number(PORT), host: bindAddress,
       url_host: URL_HOST, url: companionUrl(),
       screen_dir: CONTENT_DIR, state_dir: STATE_DIR, idle_timeout_ms: IDLE_TIMEOUT_MS
     });
@@ -931,13 +938,13 @@ function startServer() {
         TOKEN = generateToken();
         tokenSource = 'generated-fallback';
       }
-      server.listen(PORT, HOST, onListen);
+      server.listen(PORT, bindAddress, onListen);
     } else {
       console.error('Server failed to bind:', err.message);
       process.exit(1);
     }
   });
-  server.listen(PORT, HOST, onListen);
+  server.listen(PORT, bindAddress, onListen);
 }
 
 if (require.main === module) {

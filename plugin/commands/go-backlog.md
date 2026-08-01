@@ -80,8 +80,15 @@ the worker stops or its wave reaches the barrier.
    live pending/running/done tick duplicating what the board already tracks. On a harness with no
    native task-tracking primitive, there is no board to be authoritative — fall back to the
    orchestrator's documented no-board path and keep the pending/running/done tick in STATE itself
-   (note the fallback once). Mirror onto `backlog.md` after the item's disposition executes: check
-   the box (`- [x]`) only for done items; an escalated item stays unchecked with a `{escalated:
+   (note the fallback once). Mirror onto `backlog.md` after the item's disposition executes. A checked
+   item must carry exactly one deterministic product receipt: `{merge: <40-hex SHA>}` for a merge or
+   `{done: <40-hex SHA>}` for an intentionally complete non-merge disposition. Before publishing the
+   tick, run `$MUSTER_CLI backlog-receipts <backlog.md> --release-ref <declared release branch>` against
+   the staged complete backlog; the receipt commit must be an ancestor of the declared release branch.
+   Any missing, malformed, or unreachable receipt fails closed: reopen that item as unchecked (or
+   correct its receipt when the release-reachable commit is known), and do not report it cleared.
+   `{withdrawn: <reason>}` is the only explicit exemption and requires a non-empty reason. Check the
+   box (`- [x]`) only for done items that pass this contract; an escalated item stays unchecked with a `{escalated:
    <runId or date>}` annotation appended instead, so a future go-backlog run can resurface it.
    Every FILE-backlog tick, claim, heartbeat, completion, and escalation annotation is published through `$MUSTER_CLI backlog-publish <backlog.md> --expect <sha256>` with the complete staged file on stdin. On a changed-before-publication failure, reread, reapply the still-valid mutation, and retry; never edit or rename the backlog directly.
 3. **Per item, SEQUENTIALLY** — run go steps 1-8 (branch, detect, route, spec gate, plan, orchestrate waves, escalation check, finish/disposition) using the item text as the outcome and the item's disposition as `manifest.mergeDisposition` — default `pr` when unannotated. Each item is already a known single item — go's own step -1 scope check does not run per item. Each item's board

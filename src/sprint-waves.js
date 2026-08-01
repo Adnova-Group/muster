@@ -64,7 +64,7 @@ function trailingAnnotationBlockRegex() {
   return new RegExp(`(?:\\s*${ANNOTATION_GROUP_SRC})+\\s*$`);
 }
 
-function stripAnnotations(text) {
+export function stripAnnotations(text) {
   const anns = {};
   const trailingMatch = text.match(trailingAnnotationBlockRegex());
   const bodyText = trailingMatch ? text.slice(0, trailingMatch.index) : text;

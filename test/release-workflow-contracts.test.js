@@ -75,3 +75,15 @@ test("the full CI suite fetches history required by pinned diff probes", async (
   const fullSuiteJob = workflow.split(/^  windows-smoke:/m)[0];
   assert.match(fullSuiteJob, /uses: actions\/checkout@v4\s+with:\s+(?:#[^\n]*\s+)*fetch-depth: 0/m);
 });
+
+test("CI explicitly gates checked backlog completion on release reachability", async () => {
+  const workflow = await read(".github/workflows/ci.yml");
+  assert.match(workflow, /Verify backlog completion receipts/);
+  assert.match(workflow, /node --test test\/backlog-receipts\.test\.js/);
+
+  const backlog = await read("plugin/commands/go-backlog.md");
+  assert.match(backlog, /\{merge: <40-hex SHA>\}.*\{done: <40-hex SHA>\}/is);
+  assert.match(backlog, /ancestor of the declared release branch/i);
+  assert.match(backlog, /\{withdrawn: <reason>\}/i);
+  assert.match(backlog, /reopen.*unchecked|unchecked.*reopen/is);
+});

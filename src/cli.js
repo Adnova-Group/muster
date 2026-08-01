@@ -7,12 +7,14 @@ import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves, nextTasks } from "./wave.js";
 import { computeSprintWaves, reconcileSprintProgress } from "./sprint-waves.js";
+import { checkBacklogReceipts, makeGitReachabilityVerifier } from "./backlog-receipts.js";
 import { tallyReview, verdictsTallyCorruptionErrors } from "./review.js";
 import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
@@ -115,7 +117,7 @@ const USAGE = [
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
-  "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
+  "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-receipts <backlog.md> --release-ref <ref>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
@@ -649,6 +651,28 @@ async function main() {
       });
       out(r);
       if (!r.ok) process.exit(2);
+    } else if (cmd === "backlog-receipts") {
+      const file = requireArg(rest, 0, "backlog-receipts <backlog.md> --release-ref <ref>: missing file path", fail);
+      const releaseRef = flagValue(rest, "--release-ref");
+      if (!releaseRef || releaseRef.startsWith("-") || /[\0-\x20\x7f]/.test(releaseRef)) {
+        fail("backlog-receipts --release-ref must be a non-option Git ref without control characters or whitespace");
+      }
+      const canonical = await resolveContainedRealpath(process.cwd(), file);
+      if (canonical === null) fail(`backlog-receipts: ${file} is not a regular file contained under the run root`);
+      let releaseCommit;
+      try {
+        releaseCommit = execFileSync("git", ["rev-parse", "--verify", `${releaseRef}^{commit}`], {
+          cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+        }).trim().toLowerCase();
+      } catch {
+        fail(`backlog-receipts: release ref ${releaseRef} does not resolve to a commit`);
+      }
+      const result = checkBacklogReceipts(await readFile(canonical, "utf8"), {
+        releaseRef,
+        isReachable: makeGitReachabilityVerifier({ cwd: process.cwd(), releaseCommit }),
+      });
+      out(result);
+      if (!result.ok) process.exit(2);
     } else if (cmd === "backlog-publish") {
       const file = requireArg(rest, 0, "backlog-publish <backlog.md> --expect <sha256|absent>: missing file path", fail);
       if (isUnsafePathToken(file)) {

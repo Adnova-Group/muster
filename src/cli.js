@@ -34,6 +34,7 @@ import { loadPipelines, pipelineForDomain, routePipeline } from "./pipeline.js";
 import { scoreArtifact } from "./score.js";
 import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { buildAuditManifest } from "./audit.js";
+import { selectCodexAuditProvider } from "./codex-audit-provider.js";
 import { runInstall, runUninstall } from "./install.js";
 import { runCodexInstall, runCodexUninstall } from "./codex-install.js";
 import { runChatgptWorkInstall } from "./chatgpt-work-install.js";
@@ -117,7 +118,7 @@ const USAGE = [
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
-  "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
+  "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-audit-provider <request.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
   "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
@@ -546,6 +547,9 @@ async function main() {
       }
       const items = JSON.parse(await readFile(canonical, "utf8"));
       process.stdout.write((await summarizeItemReceipts(items)).join("\n") + "\n");
+    } else if (cmd === "codex-audit-provider") {
+      const file = requireArg(rest, 0, "codex-audit-provider <request.json>: missing request file", fail);
+      out(selectCodexAuditProvider(JSON.parse(await readFile(file, "utf8"))));
     } else if (cmd === "codex-spawn-packet") {
       // The version-aware spawn_agent constructor (src/wave-dispatch.js): prints
       // the exact call JSON for the target model's API version, failing closed to

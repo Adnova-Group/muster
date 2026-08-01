@@ -259,7 +259,8 @@ test("generated Codex audits cover six dimensions with three nonredundant scans"
   assert.match(text, /Quota-bounded dimension sweep/);
   assert.match(text, /three nonredundant read-only briefs/);
   assert.match(text, /Respect `agents\.max_concurrent_threads_per_session`/);
-  assert.match(text, /codex-audit-provider <request\.json>/);
+  assert.match(text, /codex-audit-provider --role <role>/);
+  assert.match(text, /full manifest-ordered independent-agent chain/);
   assert.match(text, /CODEX_AUDIT_NO_COMPATIBLE_PROVIDER/);
   assert.match(text, /dispatch ONLY its returned packet/);
   assert.match(text, /namespace absent from this session/);

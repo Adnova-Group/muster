@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { selectCodexAuditProvider } from "../src/codex-audit-provider.js";
+import { deriveCodexAuditCandidates, selectCodexAuditProvider } from "../src/codex-audit-provider.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const execFile = promisify(execFileCb);
@@ -70,17 +70,42 @@ test("invalid or ambiguous API metadata fails closed before any packet can be em
   assert.throws(() => select(["v1"], [{ ...provider("candidate", "v1"), kind: "skill" }]), /independent agent provider/);
 });
 
-test("codex-audit-provider CLI emits the same machine-readable selection receipt", async () => {
+test("candidate derivation enriches the full ordered chain from live inventory and current model APIs", async () => {
+  const roleEntry = { chain: [provider("preferred", "v1"), provider("alternate", "v2"), { id: "inline", kind: "inline" }] };
+  const candidates = await deriveCodexAuditCandidates(roleEntry, { agents: ["preferred", "alternate"] }, {
+    profileForAgent: id => ({ model: `${id}-model` }),
+    versionForModel: async model => model === "preferred-model" ? "v1" : "v2",
+  });
+  assert.deepEqual(candidates, [provider("preferred", "v1"), provider("alternate", "v2")]);
+  assert.equal(select(["v2"], candidates).provider.id, "alternate");
+});
+
+test("codex-audit-provider CLI derives candidates instead of accepting a handcrafted matrix", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-codex-audit-provider-"));
-  const request = join(dir, "request.json");
-  await writeFile(request, JSON.stringify({
-    role: "security-review", taskId: "audit-security", message: "Review security",
-    callableApis: ["v2"],
-    candidates: [provider("stale-v1", "v1"), provider("compatible-v2", "v2")],
+  const home = join(dir, "home");
+  const codexHome = join(home, ".codex");
+  const agents = join(dir, ".codex", "agents");
+  const bin = join(dir, "bin");
+  await mkdir(codexHome, { recursive: true });
+  await mkdir(agents, { recursive: true });
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(codexHome, "models_cache.json"), JSON.stringify({
+    models: [{ slug: "gpt-5.6-sol", multi_agent_version: "v2" }],
   }));
-  const { stdout } = await execFile(process.execPath, [new URL("../src/cli.js", import.meta.url).pathname, "codex-audit-provider", request]);
+  await writeFile(join(agents, "muster-reviewer.toml"), "name = 'muster-reviewer'\n");
+  const codex = join(bin, "codex");
+  await writeFile(codex, `#!${process.execPath}\nconsole.log("[]");\n`);
+  await chmod(codex, 0o755);
+  const { stdout } = await execFile(process.execPath, [
+    new URL("../src/cli.js", import.meta.url).pathname,
+    "codex-audit-provider", "--role", "code-review", "--task-id", "audit-readability",
+    "--callable-apis", "v2", "--message", "Review readability",
+  ], {
+    cwd: dir,
+    env: { ...process.env, HOME: home, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH || ""}` },
+  });
   const result = JSON.parse(stdout);
-  assert.equal(result.provider.id, "compatible-v2");
+  assert.equal(result.provider.id, "muster-reviewer");
   assert.equal(result.packet.tool, "collaboration.spawn_agent");
   assert.equal(result.degradation, null);
 });

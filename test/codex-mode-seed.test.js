@@ -105,7 +105,8 @@ test("generated Codex audit consolidates six dimensions into three quota-bounded
   assert.match(generated, /coverage/);
   assert.match(generated, /security/);
   assert.match(generated, /Respect `agents\.max_concurrent_threads_per_session`; neither lower nor raise it/);
-  assert.match(generated, /codex-audit-provider <request\.json>/);
+  assert.match(generated, /codex-audit-provider --role <role>/);
+  assert.match(generated, /full manifest-ordered independent-agent chain/);
   assert.match(generated, /CODEX_AUDIT_NO_COMPATIBLE_PROVIDER/);
   assert.match(generated, /dispatch ONLY its returned packet/);
   assert.match(generated, /namespace absent from this session/);

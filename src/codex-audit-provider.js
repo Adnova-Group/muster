@@ -1,4 +1,6 @@
 import { codexSpawnAgentCall, CODEX_MULTI_AGENT_VERSIONS } from "./wave-dispatch.js";
+import { codexProfileForAgentId } from "./codex.js";
+import { readCodexMultiAgentVersion } from "./codex-inventory.js";
 
 const KNOWN_APIS = new Set(Object.values(CODEX_MULTI_AGENT_VERSIONS));
 
@@ -24,13 +26,40 @@ function normalizedCandidate(candidate, index) {
   if (candidate.kind !== "agent") {
     throw new Error(`selectCodexAuditProvider: candidate ${JSON.stringify(candidate.id)} must be an independent agent provider`);
   }
-  if (!KNOWN_APIS.has(candidate.apiVersion)) {
-    throw new Error(`selectCodexAuditProvider: candidate ${JSON.stringify(candidate.id)} apiVersion must be "v1" or "v2"`);
+  if (candidate.apiVersion !== null && !KNOWN_APIS.has(candidate.apiVersion)) {
+    throw new Error(`selectCodexAuditProvider: candidate ${JSON.stringify(candidate.id)} apiVersion must be "v1", "v2", or null when the current catalog has no safe answer`);
   }
   if (typeof candidate.available !== "boolean") {
     throw new Error(`selectCodexAuditProvider: candidate ${JSON.stringify(candidate.id)} availability must be explicit`);
   }
   return { ...candidate };
+}
+
+// Enrichs the role's full manifest-ordered chain from authoritative runtime
+// inputs. Callers do not hand-author candidate metadata: availability comes
+// from the live agent inventory, while each profile's model is resolved through
+// the current Codex model catalog. Unknown versions remain null and are never
+// eligible for packet construction.
+export async function deriveCodexAuditCandidates(roleEntry, inventory, {
+  profileForAgent = codexProfileForAgentId,
+  versionForModel = readCodexMultiAgentVersion,
+} = {}) {
+  if (!Array.isArray(roleEntry?.chain)) throw new Error("deriveCodexAuditCandidates: role chain is required");
+  const available = new Set(Array.isArray(inventory?.agents) ? inventory.agents : []);
+  const agents = roleEntry.chain.filter(candidate => candidate?.kind === "agent");
+  return Promise.all(agents.map(async candidate => {
+    const profile = profileForAgent(candidate.id);
+    const apiVersion = typeof profile?.model === "string"
+      ? await versionForModel(profile.model)
+      : null;
+    return {
+      id: candidate.id,
+      source: candidate.source,
+      kind: "agent",
+      apiVersion,
+      available: available.has(candidate.id),
+    };
+  }));
 }
 
 // Selects an audit worker from the manifest-ordered provider chain, but only

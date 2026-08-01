@@ -1,0 +1,12 @@
+[
+  { "id": "investigator-exports", "lane": "investigator", "task": "locate a named export and its defining file", "expected": { "kind": "file-lines" } },
+  { "id": "investigator-callers", "lane": "investigator", "task": "find direct callers of a named function", "expected": { "kind": "file-lines" } },
+  { "id": "investigator-tests", "lane": "investigator", "task": "map a source module to its focused tests", "expected": { "kind": "file-lines" } },
+  { "id": "investigator-config", "lane": "investigator", "task": "locate all reads of one configuration key", "expected": { "kind": "file-lines" } },
+  { "id": "investigator-command", "lane": "investigator", "task": "trace one CLI command to its implementation", "expected": { "kind": "file-lines" } },
+  { "id": "evidence-numstat", "lane": "evidence", "task": "collect changed paths and line counts", "expected": { "kind": "structured-evidence" } },
+  { "id": "evidence-focused-tests", "lane": "evidence", "task": "run focused tests and collect the exit result", "expected": { "kind": "structured-evidence" } },
+  { "id": "evidence-citations", "lane": "evidence", "task": "collect citation-check output for a document", "expected": { "kind": "structured-evidence" } },
+  { "id": "evidence-manifest", "lane": "evidence", "task": "extract selected manifest fields", "expected": { "kind": "structured-evidence" } },
+  { "id": "evidence-git-note", "lane": "evidence", "task": "collect a commit's intent note or absence", "expected": { "kind": "structured-evidence" } }
+]

@@ -24,7 +24,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import {
-  lstat, mkdir, mkdtemp, open, readdir, readlink, realpath,
+  lstat, mkdir, mkdtemp, open, opendir, readdir, readlink, realpath,
   rm, stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -346,7 +346,7 @@ async function* gitRelevantPaths(root) {
 }
 
 async function* filesystemRelevantPaths(abs, prefix = "") {
-  for (const name of (await readdir(abs)).sort(utf8Sort)) {
+  for await (const { name } of await opendir(abs)) {
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
@@ -357,14 +357,17 @@ async function* filesystemRelevantPaths(abs, prefix = "") {
 }
 
 async function rejectSpecialEntries(abs, prefix = "") {
-  for (const name of await readdir(abs)) {
+  for await (const { name } of await opendir(abs)) {
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
     const info = await lstat(path);
     if (info.isDirectory()) {
       if (!(await realGitMarker(path))) await rejectSpecialEntries(path, rel);
-    } else if (!info.isFile() && !info.isSymbolicLink()) {
+    } else if (info.isSymbolicLink()) {
+      const target = await readlink(path, { encoding: "buffer" });
+      if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
+    } else if (!info.isFile()) {
       throw new Error(`unsupported repository entry type: ${rel}`);
     }
   }
@@ -377,26 +380,28 @@ async function streamedFileDigest(path, rel, expectedInfo) {
       path,
       fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0),
     );
-    const info = await handle.stat();
-    if (!info.isFile()) throw new Error(`unsafe regular file: ${rel}`);
-    if (info.ino !== expectedInfo.ino || info.dev !== expectedInfo.dev) {
+    const before = await handle.stat({ bigint: true });
+    const size = Number(before.size);
+    if (!before.isFile()) throw new Error(`unsafe regular file: ${rel}`);
+    if (before.ino !== BigInt(expectedInfo.ino) || before.dev !== BigInt(expectedInfo.dev)) {
       throw new Error(`file changed while reading: ${rel}`);
     }
     const digest = createHash("sha256");
     const chunk = Buffer.allocUnsafe(64 * 1024);
     let position = 0;
-    while (position < info.size) {
-      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, info.size - position), position);
+    while (position < size) {
+      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - position), position);
       if (bytesRead === 0) break;
       digest.update(chunk.subarray(0, bytesRead));
       position += bytesRead;
     }
-    const after = await handle.stat();
-    if (position !== info.size || after.ino !== info.ino || after.dev !== info.dev ||
-        after.size !== info.size || after.nlink !== info.nlink || !after.isFile()) {
+    const after = await handle.stat({ bigint: true });
+    if (position !== size || after.ino !== before.ino || after.dev !== before.dev ||
+        after.size !== before.size || after.nlink !== before.nlink || after.mode !== before.mode ||
+        after.ctimeNs !== before.ctimeNs || after.mtimeNs !== before.mtimeNs || !after.isFile()) {
       throw new Error(`file changed while reading: ${rel}`);
     }
-    return { digest: digest.digest("hex"), info };
+    return { digest: digest.digest("hex"), mode: Number(before.mode), size };
   } finally {
     await handle?.close();
   }
@@ -407,7 +412,13 @@ async function repositoryFingerprint(root) {
   // Preserve the previous fail-closed repository walk before hashing only the
   // relevant paths; ignored/generated ordinary files remain unhashed.
   await rejectSpecialEntries(root);
-  const hash = createHash("sha256").update(Buffer.from(`${FINGERPRINT_BASIS}\0`));
+  const aggregate = Buffer.alloc(32);
+  let rowCount = 0;
+  const add = (row) => {
+    const digest = createHash("sha256").update(row).digest();
+    for (let index = 0; index < aggregate.length; index++) aggregate[index] ^= digest[index];
+    rowCount++;
+  };
   const paths = await realGitMarker(root) ? gitRelevantPaths(root) : filesystemRelevantPaths(root);
   for await (const rel of paths) {
     const path = join(root, rel);
@@ -423,19 +434,20 @@ async function repositoryFingerprint(root) {
         const value = await safeGit(path, ["rev-parse", "--verify", "HEAD^{commit}"]);
         if (GIT_HEAD.test(value)) head = value;
       } catch {}
-      hash.update(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
+      add(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
     } else if (info.isFile()) {
       const opened = await streamedFileDigest(path, rel, info);
-      hash.update(Buffer.from(`F\0${rel}\0${(opened.info.mode & 0o111) ? 1 : 0}\0${opened.info.size}\0${opened.digest}\n`));
+      add(Buffer.from(`F\0${rel}\0${(opened.mode & 0o111) ? 1 : 0}\0${opened.size}\0${opened.digest}\n`));
     } else if (info.isSymbolicLink()) {
       const target = await readlink(path, { encoding: "buffer" });
       if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
-      hash.update(Buffer.from(`L\0${rel}\0${sha256(target)}\n`));
+      add(Buffer.from(`L\0${rel}\0${sha256(target)}\n`));
     } else {
       throw new Error(`unsupported repository entry type: ${rel}`);
     }
   }
-  return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest: hash.digest("hex") };
+  const digest = createHash("sha256").update(`${FINGERPRINT_BASIS}\0${rowCount}\0`).update(aggregate).digest("hex");
+  return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest };
 }
 
 async function classify(root) {

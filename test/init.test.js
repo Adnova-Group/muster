@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { link, mkdir, readFile, stat, symlink, truncate, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, open, readFile, stat, symlink, truncate, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -388,9 +388,10 @@ test("project learning succeeds with 248 ordinary files and preserves accurate p
 test("repository fingerprints stream relevant files without repository-size ceilings", async () => {
   const dir = await tmp();
   await pexecFile("git", ["init", "--quiet"], { cwd: dir });
-  await writeFile(join(dir, ".gitignore"), "generated/\n");
+  await writeFile(join(dir, ".gitignore"), "generated/\nignored-link\n");
   await writeFile(join(dir, "tracked.txt"), "before\n");
   await pexecFile("git", ["add", ".gitignore", "tracked.txt"], { cwd: dir });
+  await symlink("a".repeat(4_095), join(dir, "ignored-link"));
 
   const generated = join(dir, "generated");
   await mkdir(generated);
@@ -425,6 +426,32 @@ test("repository fingerprints still reject relevant special files", async () => 
     () => learnProjectProfile(dir),
     /unsupported repository entry type: unsafe\.pipe/,
   );
+});
+
+test("repository fingerprints reject same-size in-place writes during a streamed read", async () => {
+  const dir = await tmp();
+  const target = join(dir, "changing.bin");
+  await writeFile(target, Buffer.alloc(16 * 1024 * 1024, 0x61));
+  const handle = await open(target, "r+");
+  const block = Buffer.alloc(64 * 1024, 0x62);
+  let stop = false;
+  const writer = (async () => {
+    let position = 0;
+    while (!stop) {
+      await handle.write(block, 0, block.length, position);
+      position = (position + block.length) % (16 * 1024 * 1024);
+    }
+  })();
+  try {
+    await assert.rejects(
+      () => learnProjectProfile(dir),
+      /file changed while reading: changing\.bin/,
+    );
+  } finally {
+    stop = true;
+    await writer;
+    await handle.close();
+  }
 });
 
 test("project learning records large metadata without treating storage size as a parse budget", async () => {

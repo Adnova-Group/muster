@@ -52,7 +52,7 @@ const READ_ONLY_AGENTS = new Set([
 ]);
 const BORDER_SCALE_DEFAULT = 3;
 const BORDER_MAX_AGE_MS = 60 * 60 * 1000; // 60 minutes -- mirrors inline-budget.js's CROSSING_MAX_AGE_MS
-const NOFOLLOW = constants.O_NOFOLLOW || 0;
+const NOFOLLOW = constants.O_NOFOLLOW;
 const BORDER_INVITATION =
   "A muster run buys parallel dispatch across the crew, adversarial review before merge, and a receipts trail for every decision.";
 
@@ -113,6 +113,9 @@ function borderFile(sessionId) {
 // open cannot redirect the write. O_NONBLOCK prevents a raced FIFO from
 // hanging, and every accepted marker is a regular file forced to mode 0600.
 function safeWriteFileSync(file, content) {
+  if (!NOFOLLOW || process.env.MUSTER_TEST_FORCE_NO_NOFOLLOW === "1") {
+    throw new Error("Codex hook marker writes require O_NOFOLLOW");
+  }
   let fd;
   try {
     fd = openSync(
@@ -129,6 +132,9 @@ function safeWriteFileSync(file, content) {
   }
 }
 function safeReadMarker(file) {
+  if (!NOFOLLOW || process.env.MUSTER_TEST_FORCE_NO_NOFOLLOW === "1") {
+    throw new Error("Codex hook marker reads require O_NOFOLLOW");
+  }
   let fd;
   try {
     fd = openSync(file, constants.O_RDONLY | NOFOLLOW | constants.O_NONBLOCK);

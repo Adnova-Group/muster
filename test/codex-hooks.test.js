@@ -209,6 +209,15 @@ test("Codex hook creates and repairs marker files as private regular files", asy
   const markerStat = await stat(marker);
   assert.equal(markerStat.isFile(), true, "the marker must be a regular file");
   assert.equal(markerStat.mode & 0o777, 0o600, "the marker must be private even when an existing file was permissive");
+
+  await unlink(marker);
+  await runCodexHook(
+    { hook_event_name: "SessionStart", session_id: sessionId, source: "startup", cwd: tmp },
+    tmp,
+    hookPath,
+    { MUSTER_TEST_FORCE_NO_NOFOLLOW: "1" },
+  );
+  await assert.rejects(stat(marker), { code: "ENOENT" }, "marker creation must fail closed when O_NOFOLLOW is unavailable");
 });
 
 test("codex/hooks/muster-hook.mjs and its tracked .codex install copy stay byte-identical", async () => {

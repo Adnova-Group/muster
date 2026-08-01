@@ -245,6 +245,24 @@ test("portable inventory rejects an oversized SKILL.md before reading its conten
   );
 });
 
+test("portable inventory bounds a manifest that grows after its descriptor is pinned", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-agent-plugin-growing-manifest-"));
+  await writeInventoryRoot(root);
+  let grew = false;
+
+  await assert.rejects(
+    readAgentPluginInventory(root, {
+      async __afterInventoryOpen({ path, label }) {
+        if (grew || label !== "plugin.json") return;
+        grew = true;
+        await truncate(path, AGENT_PLUGIN_INVENTORY_LIMITS.manifestBytes + 1);
+      },
+    }),
+    new RegExp(`plugin.json exceeds the ${AGENT_PLUGIN_INVENTORY_LIMITS.manifestBytes} byte limit`),
+  );
+  assert.equal(grew, true);
+});
+
 test("portable inventory rejects excessive skill counts instead of returning a partial inventory", async () => {
   const root = await mkdtemp(join(tmpdir(), "muster-agent-plugin-many-skills-"));
   await writeInventoryRoot(root);
@@ -259,6 +277,38 @@ test("portable inventory rejects excessive skill counts instead of returning a p
     readAgentPluginInventory(root),
     new RegExp(`Agent Plugin skills exceed the ${AGENT_PLUGIN_INVENTORY_LIMITS.maxSkills} skill limit`),
   );
+});
+
+test("portable inventory bounds directory scanning even when entries are not skills", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-agent-plugin-many-entries-"));
+  await writeInventoryRoot(root);
+  for (let index = 0; index <= AGENT_PLUGIN_INVENTORY_LIMITS.maxDirectoryEntries; index += 1) {
+    await writeFile(join(root, "skills", `entry-${String(index).padStart(3, "0")}`), "not a skill");
+  }
+
+  await assert.rejects(
+    readAgentPluginInventory(root),
+    new RegExp(`Agent Plugin skill discovery exceeds the ${AGENT_PLUGIN_INVENTORY_LIMITS.maxDirectoryEntries} entry scan limit`),
+  );
+});
+
+test("portable inventory deadline aborts an active bounded read", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-agent-plugin-deadline-"));
+  await writeInventoryRoot(root);
+  let observedAbort = false;
+
+  await assert.rejects(
+    readAgentPluginInventory(root, {
+      __timeoutMs: 10,
+      async __afterInventoryOpen({ signal }) {
+        await new Promise(resolve => signal.addEventListener("abort", resolve, { once: true }));
+        observedAbort = true;
+      },
+    }),
+    /Agent Plugin inventory exceeded the 10ms time limit/,
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(observedAbort, true, "the active reader must receive cancellation, not continue detached");
 });
 
 test("plugin-relative MCP command and cwd reject symlink escapes", async () => {

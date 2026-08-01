@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
-import { existsSync, lstatSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  closeSync, constants, existsSync, fchmodSync, fstatSync,
+  openSync, readFileSync, writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { classifyAction } from "./action-guard.mjs";
@@ -49,6 +52,7 @@ const READ_ONLY_AGENTS = new Set([
 ]);
 const BORDER_SCALE_DEFAULT = 3;
 const BORDER_MAX_AGE_MS = 60 * 60 * 1000; // 60 minutes -- mirrors inline-budget.js's CROSSING_MAX_AGE_MS
+const NOFOLLOW = constants.O_NOFOLLOW || 0;
 const BORDER_INVITATION =
   "A muster run buys parallel dispatch across the crew, adversarial review before merge, and a receipts trail for every decision.";
 
@@ -102,19 +106,42 @@ function borderFile(sessionId) {
   const s = safeSession(sessionId);
   return s ? join(tmpdir(), `muster-codex-border-${s}`) : null;
 }
-// Symlink-safe write (CWE-59 hardening, ported from inline-budget.js): the
+// Symlink-safe/private write (CWE-59 hardening, ported from inline-budget.js): the
 // marker lives in a shared, world-writable tmpdir keyed only by a sanitized
-// session id, so refuse to write through a planted symlink at that path.
+// session id, so refuse to write through a planted symlink at that path. Pin
+// validation and mutation to one no-follow descriptor: a replacement after
+// open cannot redirect the write. O_NONBLOCK prevents a raced FIFO from
+// hanging, and every accepted marker is a regular file forced to mode 0600.
 function safeWriteFileSync(file, content) {
+  let fd;
   try {
-    const st = lstatSync(file);
-    if (!st.isFile()) unlinkSync(file);
-  } catch { /* ENOENT, or unlink failed -- writeFileSync below surfaces its own error */ }
-  writeFileSync(file, content);
+    fd = openSync(
+      file,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC |
+        NOFOLLOW | constants.O_NONBLOCK,
+      0o600,
+    );
+    if (!fstatSync(fd).isFile()) throw new Error("marker is not a regular file");
+    fchmodSync(fd, 0o600);
+    writeFileSync(fd, content);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+function safeReadMarker(file) {
+  let fd;
+  try {
+    fd = openSync(file, constants.O_RDONLY | NOFOLLOW | constants.O_NONBLOCK);
+    const markerStat = fstatSync(fd);
+    if (!markerStat.isFile()) throw new Error("marker is not a regular file");
+    return { content: readFileSync(fd, "utf8"), mtimeMs: markerStat.mtimeMs };
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 function readBorder(file) {
   try {
-    const raw = JSON.parse(readFileSync(file, "utf8"));
+    const raw = JSON.parse(safeReadMarker(file).content);
     const v = raw && typeof raw === "object" ? raw : {};
     const touched = Array.isArray(v.touched) ? v.touched.filter(x => typeof x === "string") : [];
     return { touched, nudged: Boolean(v.nudged) };
@@ -128,7 +155,7 @@ function resetBorder(file) {
 // resulting { count, nudged }.
 function recordBorder(file, key, now = Date.now()) {
   let mtimeMs = null;
-  try { mtimeMs = statSync(file).mtimeMs; } catch { mtimeMs = null; }
+  try { mtimeMs = safeReadMarker(file).mtimeMs; } catch { mtimeMs = null; }
   const stale = typeof mtimeMs === "number" && Number.isFinite(mtimeMs) && (now - mtimeMs) > BORDER_MAX_AGE_MS;
   const current = stale ? { touched: [], nudged: false } : readBorder(file);
   if (!current.touched.includes(key)) current.touched.push(key);

@@ -21,7 +21,9 @@ async function collectScanEvidence(root, io = {}) {
   const statFn = io.stat ?? stat;
   const files = [];
   const incompleteEvidence = [];
+  let fileLimitWitnessFound = false;
   async function walk(dir) {
+    if (fileLimitWitnessFound) return;
     let ents;
     try { ents = await readdirFn(dir, { withFileTypes: true }); } catch {
       incompleteEvidence.push({ file: relative(root, dir) || ".", reason: "directory-read-failure" });
@@ -30,14 +32,19 @@ async function collectScanEvidence(root, io = {}) {
     ents.sort((a, b) => a.name.localeCompare(b.name));
     for (const e of ents) {
       const full = join(dir, e.name);
-      if (e.isDirectory()) { if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full); continue; }
+      if (e.isDirectory()) {
+        if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full);
+        if (fileLimitWitnessFound) return;
+        continue;
+      }
       if (!e.isFile()) continue;
       const isPromptName = /\.(prompt|tmpl)$/i.test(e.name);
       if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;
       const path = relative(root, full);
       if (files.length >= SCAN_MAX_FILES) {
         incompleteEvidence.push({ file: path, reason: "file-limit" });
-        continue;
+        fileLimitWitnessFound = true;
+        return;
       }
       let fileStat;
       try { fileStat = await statFn(full); } catch {
@@ -94,7 +101,7 @@ export async function scanRepoPrompts(root, io) {
     failing: failing.length,
     complete,
     clean: complete && failing.length === 0,
-    truncated: !complete,
+    truncated: incompleteEvidence.some(({ reason }) => reason === "file-limit"),
     incompleteEvidence,
     prompts: reviewed,
   };

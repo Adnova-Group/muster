@@ -365,8 +365,12 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   if (typeof brief !== "string" || !brief.trim()) {
     throw new Error("kimiProcessDispatch: brief is required (the -p prompt the dispatched process runs)");
   }
-  if (brief.length > KIMI_PROCESS_MAX_BRIEF) {
-    throw new Error(`kimiProcessDispatch: brief is ${brief.length} chars; cap is ${KIMI_PROCESS_MAX_BRIEF} -- briefs ride argv as the -p prompt, the same budget class as a /goal objective`);
+  if (brief.includes("\0")) {
+    throw new Error("kimiProcessDispatch: brief cannot contain NUL -- argv values cannot transport it");
+  }
+  const briefBytes = Buffer.byteLength(brief, "utf8");
+  if (briefBytes > KIMI_PROCESS_MAX_BRIEF) {
+    throw new Error(`kimiProcessDispatch: brief is ${briefBytes} UTF-8 bytes; argv transport cap is ${KIMI_PROCESS_MAX_BRIEF} bytes`);
   }
   if (!LANES.includes(lane)) {
     throw new Error(`kimiProcessDispatch: lane is required and must be one of ${LANES.join("|")} -- model_preference never binds the -p process's own main agent, so its model comes ONLY from -m; omitting it silently falls to config default_model; got ${JSON.stringify(lane)}`);
@@ -402,7 +406,7 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   const agentFileInfo = statSync(resolvedAgentFile);
   return {
     argv: ["-p", brief, "--agent-file", resolvedAgentFile, "--output-format", "stream-json", "-m", KIMI_LANES[lane]],
-    briefTransport: { kind: "argv", flag: "-p", valueIndex: 1, maxChars: KIMI_PROCESS_MAX_BRIEF },
+    briefTransport: { kind: "argv", flag: "-p", valueIndex: 1, encoding: "utf8", maxBytes: KIMI_PROCESS_MAX_BRIEF },
     // An OVERRIDE pair: merge over the ambient env at spawn
     // (`{ ...process.env, ...d.env }`), never pass as the whole env -- a
     // wholesale replacement loses HOME/PATH and the child breaks.

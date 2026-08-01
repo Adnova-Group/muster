@@ -635,18 +635,32 @@ test("kimiProcessDispatch: rejects an empty brief", () => {
   });
 });
 
-test("kimiProcessDispatch: 4,001 chars and 64 KiB reach a child intact through the documented argv transport", () => {
+test("kimiProcessDispatch: 4,001 chars and 64 KiB reach a child intact through the documented UTF-8 argv transport", () => {
   assert.equal(KIMI_PROCESS_MAX_BRIEF, 64 * 1024);
   withKimiHome(home => {
     writeFileSync(join(home, "agents", "muster-builder.md"), "x");
     const fakeChild = join(home, "fake-kimi.mjs");
     writeFileSync(fakeChild, "process.stdout.write(process.argv[process.argv.indexOf('-p') + 1]);\n");
-    for (const brief of ["x".repeat(4001), "y".repeat(64 * 1024)]) {
+    const exactMultibyte64KiB = "€".repeat(21_845) + "x";
+    for (const brief of ["x".repeat(4001), "y".repeat(64 * 1024), exactMultibyte64KiB]) {
+      assert.ok(Buffer.byteLength(brief, "utf8") <= 64 * 1024);
       const dispatch = kimiProcessDispatch({ brief, agentFile: "muster-builder.md", cwd: home, lane: "primary" });
-      assert.deepEqual(dispatch.briefTransport, { kind: "argv", flag: "-p", valueIndex: 1, maxChars: 64 * 1024 });
-      const received = execFileSync(process.execPath, [fakeChild, ...dispatch.argv], { encoding: "utf8", maxBuffer: 128 * 1024 });
+      assert.deepEqual(dispatch.briefTransport, { kind: "argv", flag: "-p", valueIndex: 1, encoding: "utf8", maxBytes: 64 * 1024 });
+      const received = execFileSync(process.execPath, [fakeChild, ...dispatch.argv], { encoding: "utf8", maxBuffer: 256 * 1024 });
       assert.equal(received, brief);
     }
+    assert.throws(
+      () => kimiProcessDispatch({ brief: "x".repeat(64 * 1024 + 1), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
+      /brief is 65537 UTF-8 bytes; argv transport cap is 65536 bytes/
+    );
+    assert.throws(
+      () => kimiProcessDispatch({ brief: "€".repeat(21_846), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
+      /brief is 65538 UTF-8 bytes; argv transport cap is 65536 bytes/
+    );
+    assert.throws(
+      () => kimiProcessDispatch({ brief: "before\0after", agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
+      /brief cannot contain NUL/
+    );
   });
 });
 

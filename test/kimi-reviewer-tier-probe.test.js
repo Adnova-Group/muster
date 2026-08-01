@@ -159,7 +159,7 @@ test("--dry-run briefs are identical across lanes and reference each probe's qua
     const briefs = out.cells.filter(c => c.probe === probe).map(c => c.brief);
     assert.equal(briefs.length, 2);
     assert.equal(briefs[0], briefs[1], "briefs must be identical across lanes");
-    assert.ok(briefs[0].length <= KIMI_PROCESS_MAX_BRIEF, "brief must fit the -p budget");
+    assert.ok(Buffer.byteLength(briefs[0], "utf8") <= KIMI_PROCESS_MAX_BRIEF, "brief must fit the -p byte budget");
     // briefs name the quarantine file by RELATIVE name only -- an absolute
     // temp path would differ per cell and break lane-identity
     assert.ok(!briefs[0].includes(tmpdir()), "brief must not embed the absolute quarantine path");
@@ -183,8 +183,11 @@ test("fitBrief truncates over-budget artifacts at a newline with a disclosed not
   const small = fitBrief("prefix:", "short artifact");
   assert.equal(small, "prefix:short artifact");
   const big = fitBrief("prefix:", ("x".repeat(100) + "\n").repeat(Math.ceil(KIMI_PROCESS_MAX_BRIEF / 100) + 2));
-  assert.ok(big.length <= KIMI_PROCESS_MAX_BRIEF);
+  assert.ok(Buffer.byteLength(big, "utf8") <= KIMI_PROCESS_MAX_BRIEF);
   assert.match(big, /artifact truncated to fit the -p brief budget/);
+  const multibyte = fitBrief("prefix:", ("€".repeat(100) + "\n").repeat(300));
+  assert.ok(Buffer.byteLength(multibyte, "utf8") <= KIMI_PROCESS_MAX_BRIEF);
+  assert.match(multibyte, /artifact truncated to fit the -p brief budget/);
 });
 
 // --- Retry policy ------------------------------------------------------------

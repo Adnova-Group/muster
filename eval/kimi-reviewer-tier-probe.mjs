@@ -162,11 +162,20 @@ export function probe1Diff(repoRoot = REPO_ROOT) {
 // budget is exceeded, cut the artifact at the last newline that fits and say
 // so in the brief -- deterministic, and the truncation is disclosed.
 export function fitBrief(prefix, artifact) {
-  if (prefix.length + artifact.length <= KIMI_PROCESS_MAX_BRIEF) return prefix + artifact;
+  if (Buffer.byteLength(prefix + artifact, "utf8") <= KIMI_PROCESS_MAX_BRIEF) return prefix + artifact;
   const note = "\n[artifact truncated to fit the -p brief budget]\n";
-  const room = KIMI_PROCESS_MAX_BRIEF - prefix.length - note.length;
-  const cut = artifact.lastIndexOf("\n", room);
-  return prefix + artifact.slice(0, cut > 0 ? cut : room) + note;
+  const room = KIMI_PROCESS_MAX_BRIEF - Buffer.byteLength(prefix + note, "utf8");
+  let used = 0;
+  let end = 0;
+  for (const char of artifact) {
+    const bytes = Buffer.byteLength(char, "utf8");
+    if (used + bytes > room) break;
+    used += bytes;
+    end += char.length;
+  }
+  const candidate = artifact.slice(0, end);
+  const cut = candidate.lastIndexOf("\n");
+  return prefix + candidate.slice(0, cut > 0 ? cut : candidate.length) + note;
 }
 
 export function buildBriefs() {

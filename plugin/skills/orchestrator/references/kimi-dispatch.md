@@ -71,9 +71,10 @@ unlinks only non-followed entries beneath an open receipt-directory descriptor. 
 emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
 SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
 `-m` and omitting it silently falls to config `default_model`. The descriptor records this
-as `briefTransport: { kind: "argv", flag: "-p", valueIndex: 1, maxChars: 65536 }`: a bare
-process brief has its own 64 KiB transport contract and does not inherit `/goal`'s unrelated
-4,000-character objective limit. Briefs MUST be secret-free:
+as `briefTransport: { kind: "argv", flag: "-p", valueIndex: 1, encoding: "utf8",
+maxBytes: 65536 }`: a bare process brief has its own 64 KiB UTF-8 transport contract and
+does not inherit `/goal`'s unrelated 4,000-character objective limit. NUL is rejected because
+an argv value cannot carry it. Briefs MUST be secret-free:
 Kimi requires the prompt in argv via `-p`, and Muster does not invent a misleading insecure
 transport. If a future trusted broker enables this interface, its execution receipt must be
 the stream-json result on stdout plus the process exit code, with per-leg token accounting

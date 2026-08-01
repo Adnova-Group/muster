@@ -33,6 +33,7 @@
 // are caught here and turned into { ok:false, errors:[...] } instead of propagating,
 // so this stays a pure function any caller (CLI or otherwise) can use without a
 // try/catch of its own.
+import { createHash } from "node:crypto";
 import { computeWaves } from "./wave.js";
 
 export const SPRINT_PARALLEL_DEFAULT = 5;
@@ -142,9 +143,11 @@ const SPRINT_PHASES = ["implementation", "review", "integration"];
 const SPRINT_RECEIPT_STATUSES = ["completed", "failed", "cancelled"];
 const FAILURE_STATES = new Set(["failed", "cancelled", "blocked"]);
 const SPRINT_DISPOSITIONS = [null, "merge-local", "merge-push", "pr", "keep", "ask"];
+const SPRINT_RECONCILE_PAGE_SIZE = 1_000;
+const SPRINT_RECONCILE_MAX_PAGES = 100;
 const SPRINT_RECONCILE_LIMITS = Object.freeze({
-  items: 1_000,
-  waves: 1_000,
+  items: SPRINT_RECONCILE_PAGE_SIZE * SPRINT_RECONCILE_MAX_PAGES,
+  waves: SPRINT_RECONCILE_PAGE_SIZE * SPRINT_RECONCILE_MAX_PAGES,
   receipts: 10_000,
   inFlight: 1_000,
   idLength: 256,
@@ -152,6 +155,22 @@ const SPRINT_RECONCILE_LIMITS = Object.freeze({
   textLength: 100_000,
   attempt: 1_000_000,
 });
+
+function* paginate(values, size = SPRINT_RECONCILE_PAGE_SIZE) {
+  for (let offset = 0; offset < values.length; offset += size) {
+    yield* values.slice(offset, offset + size);
+  }
+}
+
+function sprintPlanDigest(plan, orderedIds) {
+  const canonical = {
+    version: 1,
+    waves: plan.waves,
+    items: orderedIds.map((id) => ({ id, ...plan.items[id] })),
+    schedule: plan.schedule,
+  };
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -227,7 +246,7 @@ function validateSprintPlan(plan) {
   if (itemKeys.length !== itemIds.size || itemKeys.some((id) => !itemIds.has(id))) {
     errors.push("plan.items keys must exactly match the unique ids in plan.waves");
   }
-  for (const id of orderedIds) {
+  for (const id of paginate(orderedIds)) {
     const item = plan.items[id];
     if (!isRecord(item)) {
       errors.push(`plan.items['${id}'] must be an object`);
@@ -473,7 +492,7 @@ export function reconcileSprintProgress(plan, progress = {}) {
   };
   const items = {};
 
-  for (const itemId of orderedIds) {
+  for (const itemId of paginate(orderedIds)) {
     const source = plan.items[itemId];
     const deps = Array.isArray(source.deps) ? source.deps : [];
     const failedDependency = deps.find((dep) => FAILURE_STATES.has(items[dep]?.state));
@@ -524,10 +543,14 @@ export function reconcileSprintProgress(plan, progress = {}) {
 
   const activeInFlight = inFlight.filter(({ itemId, phase }) => items[itemId].state === `${phase}_in_flight`);
   const buildReviewActions = [];
-  const priorWavesComplete = (waveNumber) => plan.waves
-    .slice(0, waveNumber - 1)
-    .flat()
-    .every((itemId) => items[itemId].state === "completed");
+  const priorWaveCompletion = new Map();
+  let completedThroughPriorWave = true;
+  for (let waveIndex = 0; waveIndex < plan.waves.length; waveIndex += 1) {
+    priorWaveCompletion.set(waveIndex + 1, completedThroughPriorWave);
+    completedThroughPriorWave = completedThroughPriorWave
+      && plan.waves[waveIndex].every((itemId) => items[itemId].state === "completed");
+  }
+  const priorWavesComplete = (waveNumber) => priorWaveCompletion.get(waveNumber) === true;
 
   const causalErrors = [];
   for (const flight of inFlight) {
@@ -615,6 +638,13 @@ export function reconcileSprintProgress(plan, progress = {}) {
     terminal,
     escalated: next === "escalated",
     metadata: {
+      plan: {
+        digestAlgorithm: "sha256",
+        digest: sprintPlanDigest(plan, orderedIds),
+        totalItems: orderedIds.length,
+        pageSize: SPRINT_RECONCILE_PAGE_SIZE,
+        pageCount: Math.ceil(orderedIds.length / SPRINT_RECONCILE_PAGE_SIZE),
+      },
       buildReview: { ...plan.schedule.buildReview },
       barrier: plan.schedule.barrier,
       integration: { ...plan.schedule.integration },

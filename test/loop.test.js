@@ -16,7 +16,7 @@ test("defaults: maxIterations 25, done false", () => {
   assert.equal(loopState({ iteration: 0 }).continue, true);
 });
 
-// reviewGateState: the cap (3) IS the contract — these tests encode that.
+// reviewGateState: 3 is the configurable default no-progress budget.
 test("REVIEW_GATE_MAX_ITERATIONS is 3", () => {
   assert.equal(REVIEW_GATE_MAX_ITERATIONS, 3);
 });
@@ -31,7 +31,7 @@ test("reviewGateState: done still short-circuits before the cap", () => {
   assert.deepEqual(reviewGateState({ iteration: 1, done: true }), { continue: false, reason: "done" });
 });
 
-// dispatchRetryState: cap (2) IS the contract — these tests encode that.
+// dispatchRetryState: 2 is the configurable default attempt budget.
 test("DISPATCH_MAX_ATTEMPTS is 2", () => {
   assert.equal(DISPATCH_MAX_ATTEMPTS, 2);
 });

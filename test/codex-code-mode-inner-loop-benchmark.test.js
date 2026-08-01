@@ -5,6 +5,7 @@ import {
   UNKNOWN,
   evaluateAdoption,
   parseFeatureList,
+  runBenchmark,
   summarizePairs
 } from "../eval/codex-code-mode-inner-loop-benchmark.mjs";
 
@@ -18,7 +19,10 @@ const decisionDoc = await readFile(
 test("fixture matrix has at least 10 paired investigator/evidence cases", () => {
   assert.ok(cases.length >= 10);
   assert.deepEqual([...new Set(cases.map(item => item.lane))].sort(), ["evidence", "investigator"]);
-  assert.ok(cases.every(item => item.id && item.task && item.expected));
+  assert.ok(cases.every(item =>
+    item.id && item.task && item.sourceCommit === "248f556c790ff1b9765c053c89a7d7e1669a4419" &&
+    typeof item.expected?.value === "string"
+  ));
 });
 
 test("feature parser distinguishes stable Code Mode from its stable host", () => {
@@ -36,6 +40,7 @@ test("unavailable stable Code Mode records no fabricated paired measurements", (
   assert.equal(summary.codeMode.latencyMs.p50, UNKNOWN);
   assert.equal(summary.currentPath.inputTokens.p95, UNKNOWN);
   assert.equal(summary.correctnessRegressions, UNKNOWN);
+  assert.equal(summary.codeModeIncorrect, UNKNOWN);
 });
 
 test("paired summary records p50/p95 and rejects a correctness regression", () => {
@@ -69,6 +74,72 @@ test("adoption fails closed when paired metrics are unavailable", () => {
   assert.equal(decision.decision, "REJECT");
   assert.match(decision.failed.join("\n"), /10 completed pairs/);
   assert.match(decision.failed.join("\n"), /UNKNOWN/);
+});
+
+test("adoption rejects fast measurements when neither lane matches the pinned gold answer", () => {
+  const wrong = cases.map(item => ({
+    id: item.id,
+    codeMode: { latencyMs: 1, inputTokens: 1, correct: false },
+    currentPath: { latencyMs: 100, inputTokens: 100, correct: false }
+  }));
+  const decision = evaluateAdoption(summarizePairs(cases, wrong));
+  assert.equal(decision.decision, "REJECT");
+  assert.match(decision.failed.join("\n"), /gold-case correctness/);
+});
+
+test("unsupported host ignores the execution path and records UNKNOWN metrics", async () => {
+  let executions = 0;
+  const result = await runBenchmark({
+    outPath: null,
+    probe: async () => ({
+      version: "codex-cli test",
+      features: {
+        code_mode: { stage: "under development", enabled: false },
+        code_mode_host: { stage: "stable", enabled: true }
+      },
+      models: [{ slug: "test-model", toolMode: "code_mode_only" }]
+    }),
+    executeCase: async () => {
+      executions++;
+      return { latencyMs: 1, inputTokens: 1, correct: true };
+    }
+  });
+  assert.equal(executions, 0);
+  assert.equal(result.protocol.pairedCasesExecuted, 0);
+  assert.deepEqual(result.pairs, []);
+  assert.equal(result.summary.codeMode.latencyMs.p50, UNKNOWN);
+  assert.equal(result.summary.currentPath.inputTokens.p95, UNKNOWN);
+  assert.equal(result.adoption.decision, "REJECT");
+});
+
+test("stable host derives all 10 pairs from bounded executor calls and counterbalances order", async () => {
+  const calls = [];
+  const result = await runBenchmark({
+    outPath: null,
+    probe: async () => ({
+      version: "codex-cli test",
+      features: {
+        code_mode: { stage: "stable", enabled: true },
+        code_mode_host: { stage: "stable", enabled: true }
+      },
+      models: [{ slug: "test-model", toolMode: "code_mode_only" }]
+    }),
+    executeCase: async ({ benchmarkCase, mode }) => {
+      calls.push(`${benchmarkCase.id}:${mode}`);
+      return {
+        latencyMs: mode === "codeMode" ? 70 : 100,
+        inputTokens: 100,
+        correct: true,
+        provenance: { sourceCommit: benchmarkCase.sourceCommit, eventStreamSha256: "test" }
+      };
+    }
+  });
+  assert.equal(calls.length, 20);
+  assert.equal(result.pairs.length, 10);
+  assert.deepEqual(result.pairs[0].executionOrder, ["codeMode", "currentPath"]);
+  assert.deepEqual(result.pairs[1].executionOrder, ["currentPath", "codeMode"]);
+  assert.equal(result.summary.completedPairs, 10);
+  assert.equal(result.adoption.decision, "ADOPT");
 });
 
 test("decision record retains fallback and excludes Code Mode from orchestration", () => {

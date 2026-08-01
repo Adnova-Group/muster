@@ -14,13 +14,15 @@ four models, but model eligibility cannot override the failed feature-stability 
 
 ## Protocol
 
-The rerunnable gate is `eval/codex-code-mode-inner-loop-benchmark.mjs`; the ten deterministic case
-definitions are in `eval/fixtures/codex-code-mode-inner-loop-cases.json`.
+The rerunnable gate is `eval/codex-code-mode-inner-loop-benchmark.mjs`; the ten deterministic,
+commit-pinned gold cases are in `eval/fixtures/codex-code-mode-inner-loop-cases.json`.
 
 - Five investigator cases cover mechanical locate/map work.
 - Five evidence cases cover deterministic collection and aggregation work.
-- Each future measured row must pair Code Mode with the current path on the same case and record
-  latency, input tokens, and correctness for both sides.
+- On a stable host, the harness itself runs both paths on every pinned case. It measures wall time,
+  derives input usage from Codex JSONL events, scores the schema-constrained answer against the gold
+  result, and records the event-stream digest, model, commit, feature override, and answer. Pair
+  execution order alternates to counterbalance warm-cache bias; each turn has a three-minute cap.
 - The report computes p50 and p95 for latency and input tokens. Adoption requires at least ten
   completed pairs, zero correctness regressions, and at least 20% lower median latency **or** input
   tokens.
@@ -36,9 +38,9 @@ node eval/codex-code-mode-inner-loop-benchmark.mjs \
   --out eval/results/codex-code-mode-inner-loop-benchmark.json
 ```
 
-On a future stable host, supply independently captured paired measurements with `--pairs <file>`.
-The gate deliberately does not force-enable an under-development feature or manufacture model-turn
-measurements.
+On a future stable host, the same command executes all twenty bounded turns (ten Code Mode and ten
+current-path controls). The gate deliberately does not force-enable an under-development feature,
+accept externally supplied metrics, or manufacture model-turn measurements.
 
 ## Results
 

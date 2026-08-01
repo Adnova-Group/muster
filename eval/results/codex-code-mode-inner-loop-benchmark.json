@@ -1,6 +1,6 @@
 {
   "schema": "muster-codex-code-mode-inner-loop-benchmark/v1",
-  "generatedAt": "2026-08-01T19:30:24.046Z",
+  "generatedAt": "2026-08-01T19:39:54.805Z",
   "environment": {
     "codexVersion": "codex-cli 0.146.0",
     "configuration": "default active Codex configuration; no benchmark feature override",
@@ -16,19 +16,19 @@
     },
     "eligibleModels": [
       {
-        "slug": "gpt-5.6-sol",
-        "toolMode": "code_mode_only"
-      },
-      {
-        "slug": "gpt-5.6-terra",
-        "toolMode": "code_mode_only"
-      },
-      {
         "slug": "codex-auto-review",
         "toolMode": "code_mode_only"
       },
       {
         "slug": "gpt-5.6-luna",
+        "toolMode": "code_mode_only"
+      },
+      {
+        "slug": "gpt-5.6-sol",
+        "toolMode": "code_mode_only"
+      },
+      {
+        "slug": "gpt-5.6-terra",
         "toolMode": "code_mode_only"
       }
     ],
@@ -46,6 +46,7 @@
     "status": "UNSUPPORTED_HOST",
     "unsupportedHostFallback": "retain the current crew-member tool-call path"
   },
+  "pairs": [],
   "summary": {
     "caseCount": 10,
     "completedPairs": 0,
@@ -73,7 +74,9 @@
         "p95": "UNKNOWN"
       }
     },
-    "correctnessRegressions": "UNKNOWN"
+    "correctnessRegressions": "UNKNOWN",
+    "codeModeIncorrect": "UNKNOWN",
+    "currentPathIncorrect": "UNKNOWN"
   },
   "adoption": {
     "decision": "REJECT",
@@ -99,13 +102,22 @@
         "name": "correctness regressions",
         "value": "UNKNOWN",
         "pass": false
+      },
+      {
+        "name": "gold-case correctness",
+        "value": {
+          "codeModeIncorrect": "UNKNOWN",
+          "currentPathIncorrect": "UNKNOWN"
+        },
+        "pass": false
       }
     ],
     "failed": [
       "stable enabled Code Mode capability: unavailable",
       "10 completed pairs: 0",
       "median latency or input-token reduction: {\"medianLatencyReductionPct\":\"UNKNOWN\",\"medianInputTokenReductionPct\":\"UNKNOWN\"}",
-      "correctness regressions: UNKNOWN (threshold cannot pass)"
+      "correctness regressions: UNKNOWN (threshold cannot pass)",
+      "gold-case correctness: {\"codeModeIncorrect\":\"UNKNOWN\",\"currentPathIncorrect\":\"UNKNOWN\"}"
     ]
   }
 }

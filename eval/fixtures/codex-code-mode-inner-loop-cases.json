@@ -1,12 +1,12 @@
 [
-  { "id": "investigator-exports", "lane": "investigator", "task": "locate a named export and its defining file", "expected": { "kind": "file-lines" } },
-  { "id": "investigator-callers", "lane": "investigator", "task": "find direct callers of a named function", "expected": { "kind": "file-lines" } },
-  { "id": "investigator-tests", "lane": "investigator", "task": "map a source module to its focused tests", "expected": { "kind": "file-lines" } },
-  { "id": "investigator-config", "lane": "investigator", "task": "locate all reads of one configuration key", "expected": { "kind": "file-lines" } },
-  { "id": "investigator-command", "lane": "investigator", "task": "trace one CLI command to its implementation", "expected": { "kind": "file-lines" } },
-  { "id": "evidence-numstat", "lane": "evidence", "task": "collect changed paths and line counts", "expected": { "kind": "structured-evidence" } },
-  { "id": "evidence-focused-tests", "lane": "evidence", "task": "run focused tests and collect the exit result", "expected": { "kind": "structured-evidence" } },
-  { "id": "evidence-citations", "lane": "evidence", "task": "collect citation-check output for a document", "expected": { "kind": "structured-evidence" } },
-  { "id": "evidence-manifest", "lane": "evidence", "task": "extract selected manifest fields", "expected": { "kind": "structured-evidence" } },
-  { "id": "evidence-git-note", "lane": "evidence", "task": "collect a commit's intent note or absence", "expected": { "kind": "structured-evidence" } }
+  { "id": "investigator-reviewer-definition", "lane": "investigator", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "At the pinned commit, locate the definition of reviewerCountForDiff. Return its repository-relative file and 1-based line as file:line.", "expected": { "value": "src/gate-cadence.js:58" } },
+  { "id": "investigator-citation-command", "lane": "investigator", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "At the pinned commit, locate the CLI dispatch branch for the citation-check command. Return file:line.", "expected": { "value": "src/cli.js:925" } },
+  { "id": "investigator-thread-default", "lane": "investigator", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "At the pinned commit, locate the max_concurrent_threads_per_session default declaration. Return file:line.", "expected": { "value": "src/codex-thread-limits.js:4" } },
+  { "id": "investigator-review-skill", "lane": "investigator", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "At the pinned commit, locate the review-gate skill's name field. Return file:line.", "expected": { "value": "plugin/skills/review-gate/SKILL.md:2" } },
+  { "id": "investigator-ephemeral-fixture-test", "lane": "investigator", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "At the pinned commit, locate the test named 'fixture matrix has at least 10 cases and covers all three requested lanes'. Return file:line.", "expected": { "value": "test/codex-ephemeral-fork-benchmark.test.js:14" } },
+  { "id": "evidence-package-version", "lane": "evidence", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "Read package.json at the pinned commit and return only its version string.", "expected": { "value": "0.6.0" } },
+  { "id": "evidence-reviewer-call-count", "lane": "evidence", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "Count literal reviewerCountForDiff( occurrences in test/gate-cadence.test.js at the pinned commit. Return the decimal count as a string.", "expected": { "value": "14" } },
+  { "id": "evidence-code-mode-status", "lane": "evidence", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "From docs/research/codex-cli.md at the pinned commit, return the documented features.code_mode stage/enabled pair exactly as 'stage / enabled'.", "expected": { "value": "under development / false" } },
+  { "id": "evidence-code-mode-host-status", "lane": "evidence", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "From docs/research/codex-cli.md at the pinned commit, return the documented code_mode_host stage/enabled pair exactly as 'stage / enabled'.", "expected": { "value": "stable / true" } },
+  { "id": "evidence-review-threshold", "lane": "evidence", "sourceCommit": "248f556c790ff1b9765c053c89a7d7e1669a4419", "task": "Read DEFAULT_REVIEW_DIFF_THRESHOLD in src/gate-cadence.js at the pinned commit. Return its decimal value as a string.", "expected": { "value": "200" } }
 ]

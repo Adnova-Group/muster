@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { performance } from "node:perf_hooks";
 
 export const UNKNOWN = "UNKNOWN";
 
@@ -56,7 +60,7 @@ function validateCases(cases) {
   }
   const ids = new Set();
   for (const item of cases) {
-    if (!item.id || !item.task || !item.expected || ids.has(item.id)) {
+    if (!item.id || !item.task || !item.expected || !item.sourceCommit || ids.has(item.id)) {
       throw new Error(`invalid or duplicate benchmark case: ${JSON.stringify(item)}`);
     }
     ids.add(item.id);
@@ -88,7 +92,9 @@ export function summarizePairs(cases, pairs) {
       completedPairs: 0,
       codeMode: { latencyMs: distribution([]), inputTokens: distribution([]) },
       currentPath: { latencyMs: distribution([]), inputTokens: distribution([]) },
-      correctnessRegressions: UNKNOWN
+      correctnessRegressions: UNKNOWN,
+      codeModeIncorrect: UNKNOWN,
+      currentPathIncorrect: UNKNOWN
     };
   }
   return {
@@ -102,7 +108,9 @@ export function summarizePairs(cases, pairs) {
       latencyMs: distribution(pairs.map(pair => pair.currentPath.latencyMs)),
       inputTokens: distribution(pairs.map(pair => pair.currentPath.inputTokens))
     },
-    correctnessRegressions: pairs.filter(pair => pair.currentPath.correct && !pair.codeMode.correct).length
+    correctnessRegressions: pairs.filter(pair => pair.currentPath.correct && !pair.codeMode.correct).length,
+    codeModeIncorrect: pairs.filter(pair => !pair.codeMode.correct).length,
+    currentPathIncorrect: pairs.filter(pair => !pair.currentPath.correct).length
   };
 }
 
@@ -138,6 +146,11 @@ export function evaluateAdoption(summary) {
       value: summary.correctnessRegressions,
       pass: summary.correctnessRegressions !== UNKNOWN &&
         summary.correctnessRegressions <= ADOPTION_THRESHOLDS.maximumCorrectnessRegressions
+    },
+    {
+      name: "gold-case correctness",
+      value: { codeModeIncorrect: summary.codeModeIncorrect, currentPathIncorrect: summary.currentPathIncorrect },
+      pass: summary.codeModeIncorrect === 0 && summary.currentPathIncorrect === 0
     }
   ];
   const failed = checks.filter(check => !check.pass).map(check => {
@@ -156,15 +169,101 @@ function eligibleCodeModeModels(catalog) {
   const models = Array.isArray(catalog?.models) ? catalog.models : Array.isArray(catalog) ? catalog : [];
   return models
     .filter(model => ["code_mode", "code_mode_only"].includes(model.tool_mode))
-    .map(model => ({ slug: model.slug ?? model.model ?? UNKNOWN, toolMode: model.tool_mode }));
+    .map(model => ({ slug: model.slug ?? model.model ?? UNKNOWN, toolMode: model.tool_mode }))
+    .sort((left, right) => left.slug.localeCompare(right.slug));
 }
 
-export async function runBenchmark({ fixturePath = DEFAULT_FIXTURE, pairsPath, outPath = DEFAULT_OUT } = {}) {
-  const cases = JSON.parse(await readFile(fixturePath, "utf8"));
-  validateCases(cases);
+function deepEqualJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function findInputTokens(value, found = []) {
+  if (!value || typeof value !== "object") return found;
+  for (const [key, child] of Object.entries(value)) {
+    if (["input_tokens", "inputTokens"].includes(key) && Number.isFinite(child)) found.push(child);
+    else findInputTokens(child, found);
+  }
+  return found;
+}
+
+function runCodex(args, { cwd }) {
+  return new Promise((resolve, reject) => {
+    const started = performance.now();
+    const child = spawn("codex", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    const timer = setTimeout(() => child.kill("SIGTERM"), 180_000);
+    child.on("error", reject);
+    child.on("close", exitCode => {
+      clearTimeout(timer);
+      resolve({
+        exitCode,
+        stdout,
+        stderr,
+        latencyMs: Number((performance.now() - started).toFixed(3))
+      });
+    });
+  });
+}
+
+export async function executeCodexCase({ benchmarkCase, mode, cwd, model }) {
+  const scratch = mkdtempSync(join(tmpdir(), "muster-code-mode-benchmark-"));
+  const schemaPath = join(scratch, "answer.schema.json");
+  const answerPath = join(scratch, "answer.json");
+  try {
+    await writeFile(schemaPath, JSON.stringify({
+      type: "object",
+      additionalProperties: false,
+      required: ["value"],
+      properties: { value: { type: "string" } }
+    }));
+    const prompt = [
+      "Mechanical benchmark case. Do not spawn agents or orchestrate work.",
+      `Inspect repository commit ${benchmarkCase.sourceCommit} using read-only tools.`,
+      benchmarkCase.task,
+      "Return only the schema-conforming JSON answer."
+    ].join("\n");
+    const args = [
+      "exec", "--ephemeral", "--json", "--sandbox", "read-only", "--cd", cwd,
+      "--model", model, "--output-schema", schemaPath, "--output-last-message", answerPath,
+      "--config", "model_reasoning_effort=\"low\"", "--disable", "multi_agent",
+      mode === "codeMode" ? "--enable" : "--disable", "code_mode", prompt
+    ];
+    const execution = await runCodex(args, { cwd });
+    if (execution.exitCode !== 0) {
+      throw new Error(`${mode} execution failed for ${benchmarkCase.id}: ${execution.stderr.trim()}`);
+    }
+    const events = execution.stdout.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+    const tokenCandidates = events.flatMap(event => findInputTokens(event));
+    if (!tokenCandidates.length) throw new Error(`${mode} execution reported no input-token usage`);
+    const answerText = await readFile(answerPath, "utf8");
+    const answer = JSON.parse(answerText);
+    return {
+      latencyMs: execution.latencyMs,
+      inputTokens: Math.max(...tokenCandidates),
+      correct: deepEqualJson(answer, benchmarkCase.expected),
+      provenance: {
+        sourceCommit: benchmarkCase.sourceCommit,
+        model,
+        featureOverride: mode === "codeMode" ? "code_mode=true" : "code_mode=false",
+        exitCode: execution.exitCode,
+        eventCount: events.length,
+        eventStreamSha256: createHash("sha256").update(execution.stdout).digest("hex"),
+        answer
+      }
+    };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+async function defaultProbe() {
   const version = execFileSync("codex", ["--version"], { encoding: "utf8" }).trim();
-  const featureText = execFileSync("codex", ["features", "list"], { encoding: "utf8" });
-  const features = parseFeatureList(featureText);
+  const features = parseFeatureList(execFileSync("codex", ["features", "list"], { encoding: "utf8" }));
   let models = [];
   try {
     const home = process.env.CODEX_HOME || join(process.env.HOME, ".codex");
@@ -172,15 +271,44 @@ export async function runBenchmark({ fixturePath = DEFAULT_FIXTURE, pairsPath, o
   } catch {
     models = [];
   }
+  return { version, features, models };
+}
+
+export async function runBenchmark({
+  fixturePath = DEFAULT_FIXTURE,
+  outPath = DEFAULT_OUT,
+  cwd = join(HERE, ".."),
+  probe = defaultProbe,
+  executeCase = executeCodexCase
+} = {}) {
+  const cases = JSON.parse(await readFile(fixturePath, "utf8"));
+  validateCases(cases);
+  const { version, features, models } = await probe();
   const stableAvailable = features.code_mode?.stage === "stable" &&
     features.code_mode.enabled === true && models.length > 0;
-  let pairs = [];
-  if (stableAvailable && pairsPath) pairs = JSON.parse(await readFile(pairsPath, "utf8"));
+  const pairs = [];
+  if (stableAvailable) {
+    for (const [index, benchmarkCase] of cases.entries()) {
+      execFileSync("git", ["cat-file", "-e", `${benchmarkCase.sourceCommit}^{commit}`], { cwd });
+      const modes = index % 2 === 0 ? ["codeMode", "currentPath"] : ["currentPath", "codeMode"];
+      const measurements = {};
+      for (const mode of modes) {
+        measurements[mode] = await executeCase({ benchmarkCase, mode, cwd, model: models[0].slug });
+      }
+      pairs.push({
+        id: benchmarkCase.id,
+        executionOrder: modes,
+        codeMode: measurements.codeMode,
+        currentPath: measurements.currentPath
+      });
+    }
+  }
   const summary = summarizePairs(cases, pairs);
-  const adoption = stableAvailable ? evaluateAdoption(summary) : {
-    ...evaluateAdoption(summary),
+  const evaluated = evaluateAdoption(summary);
+  const adoption = stableAvailable ? evaluated : {
+    ...evaluated,
     decision: "REJECT",
-    failed: ["stable enabled Code Mode capability: unavailable", ...evaluateAdoption(summary).failed]
+    failed: ["stable enabled Code Mode capability: unavailable", ...evaluated.failed]
   };
   const result = {
     schema: "muster-codex-code-mode-inner-loop-benchmark/v1",
@@ -201,13 +329,14 @@ export async function runBenchmark({ fixturePath = DEFAULT_FIXTURE, pairsPath, o
       orchestrationExcluded: true,
       fixtureCases: cases.length,
       pairedCasesExecuted: pairs.length,
-      status: stableAvailable ? (pairsPath ? "MEASURED" : "READY_NOT_RUN") : "UNSUPPORTED_HOST",
+      status: stableAvailable ? "MEASURED" : "UNSUPPORTED_HOST",
       unsupportedHostFallback: "retain the current crew-member tool-call path"
     },
+    pairs,
     summary,
     adoption
   };
-  await writeFile(outPath, `${JSON.stringify(result, null, 2)}\n`);
+  if (outPath) await writeFile(outPath, `${JSON.stringify(result, null, 2)}\n`);
   return result;
 }
 
@@ -217,6 +346,6 @@ function option(name) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const result = await runBenchmark({ pairsPath: option("--pairs"), outPath: option("--out") ?? DEFAULT_OUT });
+  const result = await runBenchmark({ outPath: option("--out") ?? DEFAULT_OUT });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

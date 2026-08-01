@@ -2,13 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as execFileCallback } from "node:child_process";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
   AGENT_PLUGIN_MCP_SCHEMA,
   AGENT_PLUGIN_SCHEMA,
+  AGENT_PLUGIN_INVENTORY_LIMITS,
   generateAgentPluginManifest,
   listDirectChildSkills,
   readAgentPluginInventory,
@@ -214,6 +215,50 @@ test("portable inventory reads skill descriptions from the package, independent 
   const inventory = await readAgentPluginInventory(root);
   assert.deepEqual(inventory.skills, ["portable-skill"]);
   assert.equal(inventory.skillDescriptions["portable-skill"], "Finds quuxle-only capabilities.");
+});
+
+test("portable inventory rejects oversized manifests before reading their contents", async () => {
+  for (const manifestName of ["plugin.json", "mcp.json"]) {
+    const root = await mkdtemp(join(tmpdir(), "muster-agent-plugin-oversized-manifest-"));
+    await writeInventoryRoot(root);
+    await truncate(join(root, manifestName), AGENT_PLUGIN_INVENTORY_LIMITS.manifestBytes + 1);
+
+    await assert.rejects(
+      readAgentPluginInventory(root),
+      new RegExp(`${manifestName} exceeds the ${AGENT_PLUGIN_INVENTORY_LIMITS.manifestBytes} byte limit`),
+    );
+  }
+});
+
+test("portable inventory rejects an oversized SKILL.md before reading its contents", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-agent-plugin-oversized-skill-"));
+  await writeInventoryRoot(root);
+  const skillRoot = join(root, "skills", "oversized-skill");
+  await mkdir(skillRoot);
+  const skillFile = join(skillRoot, "SKILL.md");
+  await writeFile(skillFile, "");
+  await truncate(skillFile, AGENT_PLUGIN_INVENTORY_LIMITS.skillBytes + 1);
+
+  await assert.rejects(
+    readAgentPluginInventory(root),
+    new RegExp(`skill oversized-skill SKILL.md exceeds the ${AGENT_PLUGIN_INVENTORY_LIMITS.skillBytes} byte limit`),
+  );
+});
+
+test("portable inventory rejects excessive skill counts instead of returning a partial inventory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-agent-plugin-many-skills-"));
+  await writeInventoryRoot(root);
+  for (let index = 0; index <= AGENT_PLUGIN_INVENTORY_LIMITS.maxSkills; index += 1) {
+    const name = `skill-${String(index).padStart(3, "0")}`;
+    const skillRoot = join(root, "skills", name);
+    await mkdir(skillRoot);
+    await writeFile(join(skillRoot, "SKILL.md"), `---\nname: ${name}\ndescription: fixture\n---\n`);
+  }
+
+  await assert.rejects(
+    readAgentPluginInventory(root),
+    new RegExp(`Agent Plugin skills exceed the ${AGENT_PLUGIN_INVENTORY_LIMITS.maxSkills} skill limit`),
+  );
 });
 
 test("plugin-relative MCP command and cwd reject symlink escapes", async () => {

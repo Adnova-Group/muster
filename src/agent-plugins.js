@@ -1,19 +1,66 @@
-import { lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { lstat, opendir, realpath } from "node:fs/promises";
 import { isIP } from "node:net";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { matchFrontmatter } from "./frontmatter.js";
+import { readNoFollowRegular } from "./fs-safe.js";
 
 export const AGENT_PLUGIN_SCHEMA =
   "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 export const AGENT_PLUGIN_MCP_SCHEMA =
   "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 
+// Inventory data is untrusted package content. These fixed caps keep both the
+// bytes retained and the amount of directory work independent of package size.
+// The timeout is a final fail-closed guard around already-bounded operations;
+// tests use sparse files/count fixtures rather than timing assertions.
+export const AGENT_PLUGIN_INVENTORY_LIMITS = Object.freeze({
+  manifestBytes: 256 * 1024,
+  skillBytes: 256 * 1024,
+  maxSkills: 128,
+  maxDirectoryEntries: 512,
+  timeoutMs: 5_000,
+});
+
 const MANIFEST_FIELDS = new Set([
   "$schema", "name", "version", "description", "author", "homepage",
   "repository", "license", "keywords", "extensions",
 ]);
 
-const readJson = async path => JSON.parse(await readFile(path, "utf8"));
+async function readBoundedText(path, label, maxBytes) {
+  try {
+    const { bytes } = await readNoFollowRegular(path, { maxBytes, label });
+    return bytes.toString("utf8");
+  } catch (error) {
+    if (error?.fsSafe?.reason === "too-large") {
+      throw new Error(`${label} exceeds the ${maxBytes} byte limit`, { cause: error });
+    }
+    throw error;
+  }
+}
+
+const readJson = async (path, label = path) => JSON.parse(await readBoundedText(
+  path,
+  label,
+  AGENT_PLUGIN_INVENTORY_LIMITS.manifestBytes,
+));
+
+async function withinInventoryDeadline(operation) {
+  let timer;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Agent Plugin inventory exceeded the ${AGENT_PLUGIN_INVENTORY_LIMITS.timeoutMs}ms time limit`)),
+          AGENT_PLUGIN_INVENTORY_LIMITS.timeoutMs,
+        );
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function assertInside(root, candidate, label) {
   const rel = relative(root, candidate);
@@ -49,7 +96,12 @@ export function generateAgentPluginManifest({ pkg, claude }) {
 export async function listDirectChildSkills(skillsDir) {
   const root = await realpath(skillsDir);
   const names = [];
-  for (const entry of await readdir(skillsDir, { withFileTypes: true })) {
+  let scanned = 0;
+  for await (const entry of await opendir(skillsDir)) {
+    scanned += 1;
+    if (scanned > AGENT_PLUGIN_INVENTORY_LIMITS.maxDirectoryEntries) {
+      throw new Error(`Agent Plugin skill discovery exceeds the ${AGENT_PLUGIN_INVENTORY_LIMITS.maxDirectoryEntries} entry scan limit`);
+    }
     if (!entry.isDirectory()) continue;
     const skillFile = join(skillsDir, entry.name, "SKILL.md");
     let info;
@@ -62,6 +114,9 @@ export async function listDirectChildSkills(skillsDir) {
     if (!info.isFile() || info.isSymbolicLink()) continue;
     await assertExistingInside(root, skillFile, `skill ${entry.name}`);
     names.push(entry.name);
+    if (names.length > AGENT_PLUGIN_INVENTORY_LIMITS.maxSkills) {
+      throw new Error(`Agent Plugin skills exceed the ${AGENT_PLUGIN_INVENTORY_LIMITS.maxSkills} skill limit`);
+    }
   }
   return names.sort();
 }
@@ -295,24 +350,29 @@ async function readPortableSkillDescriptions(skillsDir, skills) {
       join(skillsDir, name, "SKILL.md"),
       `skill ${name}`
     );
-    descriptions[name] = descriptionFromSkillMd(await readFile(skillFile, "utf8"));
+    descriptions[name] = descriptionFromSkillMd(await readBoundedText(
+      skillFile,
+      `skill ${name} SKILL.md`,
+      AGENT_PLUGIN_INVENTORY_LIMITS.skillBytes,
+    ));
   }
   return descriptions;
 }
 
-export async function validateAgentPluginPackage(root, options = {}) {
+async function validateAgentPluginPackageBounded(root, options = {}) {
   const resolvedRoot = await realpath(root);
   const manifestPath = await resolvePackageEntry(resolvedRoot, "plugin.json");
   const mcpPath = await resolvePackageEntry(resolvedRoot, "mcp.json");
   const skillsDir = await resolvePackageEntry(resolvedRoot, "skills");
-  const manifest = await readJson(manifestPath);
-  const mcp = await readJson(mcpPath);
+  const manifest = await readJson(manifestPath, "plugin.json");
+  const mcp = await readJson(mcpPath, "mcp.json");
   validateManifest(manifest);
   await validateMcpConfiguration(resolvedRoot, mcp, options);
 
-  const pkg = await readJson(await resolvePackageEntry(resolvedRoot, "package.json"));
+  const pkg = await readJson(await resolvePackageEntry(resolvedRoot, "package.json"), "package.json");
   const claude = await readJson(
-    await resolvePackageEntry(resolvedRoot, join("plugin", ".claude-plugin", "plugin.json"))
+    await resolvePackageEntry(resolvedRoot, join("plugin", ".claude-plugin", "plugin.json")),
+    "plugin/.claude-plugin/plugin.json",
   );
   const expected = generateAgentPluginManifest({ pkg, claude });
   if (JSON.stringify(manifest) !== JSON.stringify(expected)) {
@@ -342,13 +402,17 @@ export async function validateAgentPluginPackage(root, options = {}) {
   };
 }
 
-export async function readAgentPluginInventory(root, options = {}) {
+export async function validateAgentPluginPackage(root, options = {}) {
+  return withinInventoryDeadline(() => validateAgentPluginPackageBounded(root, options));
+}
+
+async function readAgentPluginInventoryBounded(root, options = {}) {
   const resolvedRoot = await realpath(root);
   const manifestPath = await resolvePackageEntry(resolvedRoot, "plugin.json");
   const mcpPath = await resolvePackageEntry(resolvedRoot, "mcp.json");
   const skillsDir = await resolvePackageEntry(resolvedRoot, "skills");
-  const manifest = await readJson(manifestPath);
-  const mcp = await readJson(mcpPath);
+  const manifest = await readJson(manifestPath, "plugin.json");
+  const mcp = await readJson(mcpPath, "mcp.json");
   validateManifest(manifest);
   await validateMcpConfiguration(resolvedRoot, mcp, options);
   const skills = await listDirectChildSkills(skillsDir);
@@ -360,4 +424,8 @@ export async function readAgentPluginInventory(root, options = {}) {
     agents: [],
     mcpServers: Object.keys(mcp.mcpServers).sort(),
   };
+}
+
+export async function readAgentPluginInventory(root, options = {}) {
+  return withinInventoryDeadline(() => readAgentPluginInventoryBounded(root, options));
 }

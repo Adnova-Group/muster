@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { link, mkdir, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, stat, symlink, truncate, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -383,6 +383,48 @@ test("project learning succeeds with 248 ordinary files and preserves accurate p
   assert.deepEqual(profile.facts.packageManagers, ["npm"]);
   assert.deepEqual(profile.facts.testRunners, ["node --test"]);
   assert.deepEqual(profile.facts.manifests.map(({ path }) => path), ["package.json"]);
+});
+
+test("repository fingerprints stream relevant files without repository-size ceilings", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, ".gitignore"), "generated/\n");
+  await writeFile(join(dir, "tracked.txt"), "before\n");
+  await pexecFile("git", ["add", ".gitignore", "tracked.txt"], { cwd: dir });
+
+  const generated = join(dir, "generated");
+  await mkdir(generated);
+  for (let offset = 0; offset < 10_001; offset += 250) {
+    await Promise.all(Array.from({ length: Math.min(250, 10_001 - offset) }, (_, index) =>
+      writeFile(join(generated, `entry-${offset + index}`), "")));
+  }
+
+  const largeFiles = Array.from({ length: 8 }, (_, index) => join(dir, `large-${index}.bin`));
+  for (const path of largeFiles) {
+    await writeFile(path, "");
+    await truncate(path, 16 * 1024 * 1024 + 1);
+  }
+
+  const initialized = await initializeProject(dir);
+  const before = initialized.receipt.finalStateFingerprint.digest;
+  await writeFile(join(dir, "tracked.txt"), "after\n");
+  const changed = (await learnProjectProfile(dir)).repositoryFingerprint.digest;
+  assert.notEqual(changed, before, "changing one tracked file must change the digest");
+
+  await transitionNativeInit(dir, { to: "handoff", reason: "unavailable", expectedArtifacts: [] });
+  await acknowledgeNativeInitHandoff(dir, { reason: "unavailable" });
+  const finalized = await finalizeInitialization(dir);
+  assert.equal(finalized.receipt.phase, "finalized");
+});
+
+test("repository fingerprints still reject relevant special files", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await pexecFile("mkfifo", [join(dir, "unsafe.pipe")]);
+  await assert.rejects(
+    () => learnProjectProfile(dir),
+    /unsupported repository entry type: unsafe\.pipe/,
+  );
 });
 
 test("project learning records large metadata without treating storage size as a parse budget", async () => {

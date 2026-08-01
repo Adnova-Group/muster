@@ -21,7 +21,7 @@
 // mutating state. canonicalInitJson is the digest-stable serializer every
 // profile/receipt hash depends on.
 import { createHash, randomBytes } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import {
   lstat, mkdir, mkdtemp, open, readdir, readlink, realpath,
@@ -58,10 +58,6 @@ export const INIT_LIMITS = Object.freeze({
   learnDepth: 4,
   learnFileBytes: 1_048_576,
   learnProfileBytes: 524_288,
-  fingerprintDepth: 32,
-  fingerprintEntries: 10_000,
-  fingerprintFileBytes: 16_777_216,
-  fingerprintTotalBytes: 134_217_728,
   symlinkBytes: 4_096,
   evidenceBytes: 65_536,
   nativeArtifacts: 8,
@@ -309,54 +305,136 @@ async function realGitMarker(dir) {
   return info.isDirectory() || info.isFile();
 }
 
-async function repositoryFingerprint(root) {
-  const rows = [];
-  let entries = 0;
-  let total = 0;
-  async function walk(abs, prefix, depth) {
-    if (depth > INIT_LIMITS.fingerprintDepth) throw new Error("repository fingerprint depth limit exceeded");
-    const names = (await readdir(abs)).sort(utf8Sort);
-    for (const name of names) {
-      const rel = prefix ? `${prefix}/${name}` : name;
-      if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
-      if (++entries > INIT_LIMITS.fingerprintEntries) throw new Error("repository fingerprint entry limit exceeded");
-      const path = join(abs, name);
-      const info = await lstat(path);
-      if (info.isDirectory()) {
-        if (await realGitMarker(path)) {
-          let head = null;
-          try {
-            const value = await safeGit(path, ["rev-parse", "--verify", "HEAD^{commit}"]);
-            if (GIT_HEAD.test(value)) head = value;
-          } catch {}
-          rows.push({ path: rel, row: `V\0${rel}\0${head ?? "null"}\n` });
-        } else {
-          rows.push({ path: rel, row: `D\0${rel}\0\n` });
-          await walk(path, rel, depth + 1);
-        }
-      } else if (info.isFile()) {
-        const opened = await readNoFollowRegular(
-          path, { maxBytes: INIT_LIMITS.fingerprintFileBytes, label: rel, expectedInfo: info },
-        );
-        total += opened.info.size;
-        if (total > INIT_LIMITS.fingerprintTotalBytes) throw new Error("repository fingerprint total limit exceeded");
-        rows.push({
-          path: rel,
-          row: `F\0${rel}\0${(opened.info.mode & 0o111) ? 1 : 0}\0${opened.info.size}\0${sha256(opened.bytes)}\n`,
-        });
-      } else if (info.isSymbolicLink()) {
-        const target = await readlink(path, { encoding: "buffer" });
-        if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
-        rows.push({ path: rel, row: `L\0${rel}\0${sha256(target)}\n` });
-      } else {
-        throw new Error(`unsupported repository entry type: ${rel}`);
+async function* gitRelevantPaths(root) {
+  const sandbox = await mkdtemp(join(tmpdir(), "muster-git-"));
+  const args = [
+    "--no-optional-locks", "-c", `core.hooksPath=${sandbox}`, "-c", "core.fsmonitor=false",
+    "-c", "core.untrackedCache=false", "-c", "core.quotepath=false", "ls-files", "-z",
+    "--cached", "--others", "--exclude-standard", "--deduplicate",
+  ];
+  const child = spawn("git", args, {
+    cwd: root, env: gitEnvironment(), stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { if (stderr.length < 16_384) stderr += chunk; });
+  const closed = new Promise((resolveClosed, rejectClosed) => {
+    child.once("error", rejectClosed);
+    child.once("close", (code, signal) => resolveClosed({ code, signal }));
+  });
+  try {
+    let carry = Buffer.alloc(0);
+    for await (const chunk of child.stdout) {
+      const bytes = carry.length ? Buffer.concat([carry, chunk]) : chunk;
+      let start = 0;
+      for (let end = bytes.indexOf(0, start); end >= 0; end = bytes.indexOf(0, start)) {
+        const rel = bytes.subarray(start, end).toString("utf8");
+        start = end + 1;
+        if (rel && rel !== ".muster" && !rel.startsWith(".muster/") &&
+            !rel.startsWith(".muster-init-tmp-")) yield rel;
       }
+      carry = bytes.subarray(start);
+    }
+    if (carry.length) throw new Error("git returned an unterminated repository path");
+    const { code, signal } = await closed;
+    if (code !== 0) throw new Error(`git ls-files failed${signal ? ` (${signal})` : ""}: ${stderr.trim()}`);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    await closed.catch(() => {});
+    await rm(sandbox, { recursive: true, force: true });
+  }
+}
+
+async function* filesystemRelevantPaths(abs, prefix = "") {
+  for (const name of (await readdir(abs)).sort(utf8Sort)) {
+    if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
+    const rel = prefix ? `${prefix}/${name}` : name;
+    const path = join(abs, name);
+    const info = await lstat(path);
+    if (info.isDirectory() && !(await realGitMarker(path))) yield* filesystemRelevantPaths(path, rel);
+    else yield rel;
+  }
+}
+
+async function rejectSpecialEntries(abs, prefix = "") {
+  for (const name of await readdir(abs)) {
+    if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
+    const rel = prefix ? `${prefix}/${name}` : name;
+    const path = join(abs, name);
+    const info = await lstat(path);
+    if (info.isDirectory()) {
+      if (!(await realGitMarker(path))) await rejectSpecialEntries(path, rel);
+    } else if (!info.isFile() && !info.isSymbolicLink()) {
+      throw new Error(`unsupported repository entry type: ${rel}`);
     }
   }
-  await walk(root, "", 0);
-  rows.sort((a, b) => utf8Sort(a.path, b.path));
+}
+
+async function streamedFileDigest(path, rel, expectedInfo) {
+  let handle;
+  try {
+    handle = await open(
+      path,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0),
+    );
+    const info = await handle.stat();
+    if (!info.isFile()) throw new Error(`unsafe regular file: ${rel}`);
+    if (info.ino !== expectedInfo.ino || info.dev !== expectedInfo.dev) {
+      throw new Error(`file changed while reading: ${rel}`);
+    }
+    const digest = createHash("sha256");
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    let position = 0;
+    while (position < info.size) {
+      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, info.size - position), position);
+      if (bytesRead === 0) break;
+      digest.update(chunk.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+    const after = await handle.stat();
+    if (position !== info.size || after.ino !== info.ino || after.dev !== info.dev ||
+        after.size !== info.size || after.nlink !== info.nlink || !after.isFile()) {
+      throw new Error(`file changed while reading: ${rel}`);
+    }
+    return { digest: digest.digest("hex"), info };
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function repositoryFingerprint(root) {
+  // Git deliberately omits untrackable special entries from `ls-files`.
+  // Preserve the previous fail-closed repository walk before hashing only the
+  // relevant paths; ignored/generated ordinary files remain unhashed.
+  await rejectSpecialEntries(root);
   const hash = createHash("sha256").update(Buffer.from(`${FINGERPRINT_BASIS}\0`));
-  for (const { row } of rows) hash.update(Buffer.from(row));
+  const paths = await realGitMarker(root) ? gitRelevantPaths(root) : filesystemRelevantPaths(root);
+  for await (const rel of paths) {
+    const path = join(root, rel);
+    let info;
+    try { info = await lstat(path); }
+    catch (error) {
+      if (error.code === "ENOENT") continue; // tracked-but-deleted Git path
+      throw error;
+    }
+    if (info.isDirectory() && await realGitMarker(path)) {
+      let head = null;
+      try {
+        const value = await safeGit(path, ["rev-parse", "--verify", "HEAD^{commit}"]);
+        if (GIT_HEAD.test(value)) head = value;
+      } catch {}
+      hash.update(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
+    } else if (info.isFile()) {
+      const opened = await streamedFileDigest(path, rel, info);
+      hash.update(Buffer.from(`F\0${rel}\0${(opened.info.mode & 0o111) ? 1 : 0}\0${opened.info.size}\0${opened.digest}\n`));
+    } else if (info.isSymbolicLink()) {
+      const target = await readlink(path, { encoding: "buffer" });
+      if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
+      hash.update(Buffer.from(`L\0${rel}\0${sha256(target)}\n`));
+    } else {
+      throw new Error(`unsupported repository entry type: ${rel}`);
+    }
+  }
   return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest: hash.digest("hex") };
 }
 

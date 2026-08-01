@@ -7,6 +7,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { PRINCIPLES, VERBS, ROUTING_POLICY } from "../plugin/hooks/guidance.js";
+import { BACKLOG_PUBLICATION_MAX_BYTES } from "../src/backlog-publication.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // CLI resolution is layout-adaptive: source installs use ../src/cli.js while
@@ -24,7 +25,6 @@ const PROTOCOL_VERSION = "2025-06-18"; // MCP spec version date-string (matches 
 // Single-source the version from package.json so serverInfo never drifts from the release.
 const VERSION = JSON.parse(readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;
 const SERVER_INFO = { name: "muster", version: VERSION };
-const MAX_MCP_BACKLOG_BYTES = 1_048_576;
 // ── Tool catalog ──────────────────────────────────────────────────────────────
 // Factory shapes used by most TOOLS entries:
 //
@@ -153,7 +153,7 @@ const TOOLS = {
         dir: { type: "string" },
         path: { type: "string" },
         expectedSha256: { type: "string" },
-        content: { type: "string", maxLength: MAX_MCP_BACKLOG_BYTES },
+        content: { type: "string", description: `Complete UTF-8 backlog content (maximum ${BACKLOG_PUBLICATION_MAX_BYTES} bytes).` },
       },
       required: ["dir", "path", "expectedSha256", "content"],
     },
@@ -501,8 +501,8 @@ export function startMusterMcpServer(config) {
     if (typeof args.content !== "string") {
       return { ok: false, text: "muster_backlog_publish: content must be a string" };
     }
-    if (Buffer.byteLength(args.content, "utf8") > MAX_MCP_BACKLOG_BYTES) {
-      return { ok: false, text: `muster_backlog_publish: content exceeds ${MAX_MCP_BACKLOG_BYTES} byte limit` };
+    if (Buffer.byteLength(args.content, "utf8") > BACKLOG_PUBLICATION_MAX_BYTES) {
+      return { ok: false, text: `muster_backlog_publish: content exceeds ${BACKLOG_PUBLICATION_MAX_BYTES} byte limit` };
     }
     return runCli([...tool.argv, args.path, "--expect", args.expectedSha256], {
       cwd: path.resolve(args.dir),
@@ -655,24 +655,58 @@ export function startMusterMcpServer(config) {
   }
   }
 
-// A-SEC6: cap the stdin accumulator to prevent heap exhaustion when a client
-// sends data without a newline terminator (no-newline DoS). 4 MB is well above
-// any legitimate JSON-RPC request muster sends. On overflow: emit a one-line
-// diagnostic to stderr and exit cleanly (non-zero, not an uncaught exception).
-const STDIN_MAX_BYTES = 4 * 1024 * 1024;
+// The wire envelope allows the largest supported backlog plus bounded JSON-RPC
+// metadata. Oversized frames are discarded request-locally so one bad client
+// call cannot terminate the long-lived MCP server.
+const STDIN_MAX_BYTES = BACKLOG_PUBLICATION_MAX_BYTES + 1_048_576;
 
-  let buffer = "";
+const requestIdFromPrefix = (text) => {
+  const match = text.match(/"id"\s*:\s*("(?:[^"\\]|\\.)*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/);
+  if (!match) return null;
+  try {
+    const id = JSON.parse(match[1]);
+    return typeof id === "string" || (typeof id === "number" && Number.isFinite(id)) ? id : null;
+  } catch {
+    return null;
+  }
+};
+
+  let bufferParts = [];
+  let bufferBytes = 0;
+  let discardingOversizedRequest = false;
+  let oversizedRequestId = null;
   io.stdin.setEncoding("utf8");
   io.stdin.on("data", (chunk) => {
-  buffer += chunk;
-  if (Buffer.byteLength(buffer) > STDIN_MAX_BYTES) {
-    io.stderr.write("mcp-server: stdin buffer exceeded 4 MB cap; shutting down\n");
-    io.exit(1);
-  }
-  let nl;
-  while ((nl = buffer.indexOf("\n")) >= 0) {
-    const line = buffer.slice(0, nl).trim();
-    buffer = buffer.slice(nl + 1);
+  const parts = chunk.split("\n");
+  for (let i = 0; i < parts.length; i += 1) {
+    const completesLine = i < parts.length - 1;
+    if (discardingOversizedRequest) {
+      if (!completesLine) continue;
+      err(oversizedRequestId, -32600, `Request exceeds ${STDIN_MAX_BYTES} byte limit`);
+      discardingOversizedRequest = false;
+      oversizedRequestId = null;
+      continue;
+    }
+    const part = parts[i];
+    bufferParts.push(part);
+    bufferBytes += Buffer.byteLength(part);
+    if (!completesLine) {
+      if (bufferBytes > STDIN_MAX_BYTES) {
+        oversizedRequestId = requestIdFromPrefix(bufferParts.join(""));
+        discardingOversizedRequest = true;
+        bufferParts = [];
+        bufferBytes = 0;
+      }
+      continue;
+    }
+    const rawLine = bufferParts.join("");
+    bufferParts = [];
+    bufferBytes = 0;
+    if (Buffer.byteLength(rawLine) > STDIN_MAX_BYTES) {
+      err(requestIdFromPrefix(rawLine), -32600, `Request exceeds ${STDIN_MAX_BYTES} byte limit`);
+      continue;
+    }
+    const line = rawLine.trim();
     if (!line) continue;
     let msg;
     try { msg = JSON.parse(line); } catch {

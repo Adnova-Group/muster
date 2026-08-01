@@ -71,6 +71,7 @@ import { resolvePlanSurface } from "./plan-surface.js";
 import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
+import { BACKLOG_PUBLICATION_MAX_BYTES } from "./backlog-publication.js";
 import {
   codexThreadLimitConfigPath,
   resolveCodexThreadCeiling,
@@ -136,7 +137,7 @@ function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); 
 // Shared stdin/text reader for every command that accepts a file-or-stdin arg. Caps stdin so an
 // untrusted caller can't pump unbounded input into a linter/scorer (used by `prompt` and `humanize-score`).
 const MAX_STDIN_BYTES = 1_048_576; // 1 MB — far above any realistic prompt
-const MAX_HYGIENE_BACKLOG_BYTES = 16 * 1_048_576;
+const MAX_HYGIENE_BACKLOG_BYTES = BACKLOG_PUBLICATION_MAX_BYTES;
 function readStdin(maxBytes = MAX_STDIN_BYTES) {
   return new Promise((resolve, reject) => {
     let d = "", bytes = 0; process.stdin.setEncoding("utf8");

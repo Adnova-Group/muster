@@ -49,7 +49,6 @@ export const INIT_PATHS = Object.freeze({
 });
 
 export const INIT_LIMITS = Object.freeze({
-  learnFiles: 128,
   learnDepth: 4,
   learnFileBytes: 1_048_576,
   learnTotalBytes: 8_388_608,
@@ -381,7 +380,6 @@ async function learnFacts(root) {
   const testRoots = new Set();
   const extensions = new Set();
   let total = 0;
-  let count = 0;
   async function walk(abs, prefix, depth) {
     if (depth > INIT_LIMITS.learnDepth) return;
     for (const name of (await readdir(abs)).sort(utf8Sort)) {
@@ -398,7 +396,6 @@ async function learnFacts(root) {
       } else if (info.isFile()) {
         const dot = name.lastIndexOf(".");
         if (dot >= 0) extensions.add(name.slice(dot).toLowerCase());
-        if (++count > INIT_LIMITS.learnFiles) throw new Error("project learning limit exceeded");
         if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
         const opened = await readNoFollowRegular(path, { maxBytes: INIT_LIMITS.learnFileBytes, label: rel, expectedInfo: info });
         total += opened.info.size;

@@ -369,13 +369,39 @@ test("FIFO owned targets fail promptly instead of blocking on open", async () =>
   );
 });
 
-test("learning cap counts all encountered regular files, not only manifests", async () => {
+test("project learning succeeds with 248 ordinary files and preserves accurate profile facts", async () => {
   const dir = await tmp();
-  for (let index = 0; index < 128; index++) {
-    await writeFile(join(dir, `irrelevant-${String(index).padStart(3, "0")}.txt`), "");
-  }
-  await writeFile(join(dir, "package.json"), "{}");
-  await assert.rejects(() => learnProjectProfile(dir), /project learning limit exceeded/);
+  await Promise.all(Array.from({ length: 248 }, (_, index) => writeFile(
+    join(dir, `ordinary-${String(index).padStart(3, "0")}.txt`), "",
+  )));
+  await writeFile(join(dir, "package.json"), '{"scripts":{"test":"node --test"},"dependencies":{"express":"1"}}');
+  const profile = await learnProjectProfile(dir);
+  assert.equal(profile.classification, "brownfield");
+  assert.deepEqual(profile.facts.languages, ["javascript"]);
+  assert.deepEqual(profile.facts.frameworks, ["express"]);
+  assert.deepEqual(profile.facts.packageManagers, ["npm"]);
+  assert.deepEqual(profile.facts.testRunners, ["node --test"]);
+  assert.deepEqual(profile.facts.manifests.map(({ path }) => path), ["package.json"]);
+});
+
+test("project learning retains per-file and aggregate byte limits", async () => {
+  const oversized = await tmp();
+  await writeFile(join(oversized, "package.json"), Buffer.alloc(1_048_577, 0x61));
+  await assert.rejects(
+    () => learnProjectProfile(oversized),
+    /unsafe regular file: package\.json/,
+  );
+
+  const aggregate = await tmp();
+  const manifests = [
+    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "Cargo.toml",
+    "Cargo.lock", "pyproject.toml", "requirements.txt", "go.mod", "Gemfile",
+  ];
+  await Promise.all(manifests.map((name) => writeFile(join(aggregate, name), Buffer.alloc(900_000, 0x61))));
+  await assert.rejects(
+    () => learnProjectProfile(aggregate),
+    /project learning limit exceeded/,
+  );
 });
 
 // --- TOCTOU translation arm (audit 2 slice J) ------------------------------

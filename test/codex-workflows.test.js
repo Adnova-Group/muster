@@ -33,7 +33,7 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   assert.match(orchestrator, /agent_type: "<exact chosen\.id>"/);
   assert.match(orchestrator, /fork_turns: "none"/);
   assert.match(orchestrator, /never use `"all"`/);
-  assert.match(orchestrator, /25-step ceiling/);
+  assert.match(orchestrator, /explicit task budget \(25 steps by default, configurable upward for a cohesive task\)/);
   assert.match(orchestrator, /Respect the configured Codex thread concurrency/);
   assert.match(orchestrator, /capabilities --codex --role <role>/);
   assert.match(orchestrator, /do not reprint the full skills inventory/);
@@ -251,7 +251,9 @@ test("generated Codex review gates use compact, risk-based review dispatch", asy
   assert.match(text, /never attach the full skills inventory/);
   assert.match(text, /Select one code reviewer for ordinary waves/);
   assert.match(text, /Add the security reviewer only/);
-  assert.match(text, /one fix-and-re-review iteration/);
+  assert.match(text, /3 no-progress fix-and-re-review iterations/);
+  assert.match(text, /strictly increasing score earns another pass/);
+  assert.match(text, /identical or regressing findings exhaust the budget/);
 });
 
 test("generated Codex audits cover six dimensions with three nonredundant scans", async () => {

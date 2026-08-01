@@ -1356,5 +1356,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bootstraps and verifies its own isolated outer worktree when invoked from
   // a primary checkout, retaining fail-closed CAS publication for bookkeeping.
   // File count remains unchanged.
-  assert.equal(hash.digest("hex"), "e1f99f70792a1ff3dbdd6b0ec902fb53bcbf872dcd188d17c8a4d6136aeb3ee5");
+  // 2026-08-01 re-pin #42 (progress-aware execution budgets): canonical review,
+  // dispatch, and worker budget prose now permits bounded monotonic progress while
+  // identical/regressing failures still exhaust deterministically. Count unchanged.
+  assert.equal(hash.digest("hex"), "949725d8172ef622b30db0e20ca97118a68a299b5d44fd1540b15997a2f0ffc0");
 });

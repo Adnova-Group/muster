@@ -54,8 +54,10 @@ Before the baseline test run in step 2: if the assigned worktree has no `node_mo
 - Review and fix-loop semantics are single-sourced in `plugin/skills/review-gate/SKILL.md`; load and
   follow that canonical contract. Advancement and disposition require its recorded `VERDICT: PASS`
   for the final diff. Human approval or input is acknowledgment or an escalation decision, never a
-  review substitute and never permission to synthesize or waive PASS. After three fix loops without
-  PASS, it escalates as BLOCKED; every fix returns for re-review.
+  review substitute and never permission to synthesize or waive PASS. The default no-progress
+  budget is three fix loops, configurable by the brief: only a strictly increasing finite evidence
+  score earns another pass, while repeated identical/regressing findings exhaust the budget and
+  escalate as BLOCKED. Every fix returns for re-review.
 - Fail loud. A red baseline, a tool failure you cannot resolve, a missing brief input — each becomes a BLOCKED with evidence; change an input before any retry.
 
 ## How you work

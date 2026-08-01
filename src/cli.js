@@ -657,8 +657,13 @@ async function main() {
       if (!releaseRef || releaseRef.startsWith("-") || /[\0-\x20\x7f]/.test(releaseRef)) {
         fail("backlog-receipts --release-ref must be a non-option Git ref without control characters or whitespace");
       }
-      const canonical = await resolveContainedRealpath(process.cwd(), file);
-      if (canonical === null) fail(`backlog-receipts: ${file} is not a regular file contained under the run root`);
+      let content;
+      if (file === "-") content = await readStdin(MAX_HYGIENE_BACKLOG_BYTES);
+      else {
+        const canonical = await resolveContainedRealpath(process.cwd(), file);
+        if (canonical === null) fail(`backlog-receipts: ${file} is not a regular file contained under the run root`);
+        content = await readFile(canonical, "utf8");
+      }
       let releaseCommit;
       try {
         releaseCommit = execFileSync("git", ["rev-parse", "--verify", `${releaseRef}^{commit}`], {
@@ -667,7 +672,7 @@ async function main() {
       } catch {
         fail(`backlog-receipts: release ref ${releaseRef} does not resolve to a commit`);
       }
-      const result = checkBacklogReceipts(await readFile(canonical, "utf8"), {
+      const result = checkBacklogReceipts(content, {
         releaseRef,
         isReachable: makeGitReachabilityVerifier({ cwd: process.cwd(), releaseCommit }),
       });

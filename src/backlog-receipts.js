@@ -15,8 +15,13 @@ export function checkBacklogReceipts(content, { releaseRef, isReachable } = {}) 
     if (!match) return;
     checked += 1;
     const lineNo = index + 1;
-    const { anns } = stripAnnotations(match[1]);
+    const { anns, annotationCounts } = stripAnnotations(match[1]);
     const id = anns.id || `item-${lineNo}`;
+    const duplicatedReceipt = ["merge", "done", "withdrawn"].find((key) => (annotationCounts[key] || 0) > 1);
+    if (duplicatedReceipt) {
+      errors.push({ id, line: lineNo, reason: `checked item repeats {${duplicatedReceipt}: ...}; receipt annotations must be unique` });
+      return;
+    }
     if (Object.prototype.hasOwnProperty.call(anns, "withdrawn")) {
       if (anns.withdrawn) withdrawn += 1;
       else errors.push({ id, line: lineNo, reason: "withdrawn exemption requires a non-empty reason" });
@@ -48,5 +53,17 @@ export function checkBacklogReceipts(content, { releaseRef, isReachable } = {}) 
 
 export function makeGitReachabilityVerifier({ cwd, releaseCommit }) {
   if (!SHA_RE.test(releaseCommit || "")) throw new TypeError("releaseCommit must be a lowercase 40-character Git SHA");
-  return (receipt) => spawnSync("git", ["merge-base", "--is-ancestor", receipt, releaseCommit], { cwd, stdio: "ignore" }).status === 0;
+  const repository = spawnSync("git", ["rev-parse", "--git-dir"], { cwd, stdio: "ignore" });
+  if (repository.error) throw repository.error;
+  if (repository.status !== 0) throw new Error("git reachability verification requires a repository");
+  return (receipt) => {
+    const object = spawnSync("git", ["cat-file", "-e", `${receipt}^{commit}`], { cwd, stdio: "ignore" });
+    if (object.error) throw object.error;
+    if (object.status !== 0) return false;
+    const result = spawnSync("git", ["merge-base", "--is-ancestor", receipt, releaseCommit], { cwd, stdio: "ignore" });
+    if (result.error) throw result.error;
+    if (result.status === 0) return true;
+    if (result.status === 1) return false;
+    throw new Error(`git merge-base --is-ancestor failed with exit ${result.status ?? "unknown"}`);
+  };
 }

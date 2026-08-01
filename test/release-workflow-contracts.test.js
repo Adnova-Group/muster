@@ -79,11 +79,13 @@ test("the full CI suite fetches history required by pinned diff probes", async (
 test("CI explicitly gates checked backlog completion on release reachability", async () => {
   const workflow = await read(".github/workflows/ci.yml");
   assert.match(workflow, /Verify backlog completion receipts/);
-  assert.match(workflow, /node --test test\/backlog-receipts\.test\.js/);
+  assert.match(workflow, /node scripts\/check-backlog-receipts\.mjs --release-ref/);
 
   const backlog = await read("plugin/commands/go-backlog.md");
   assert.match(backlog, /\{merge: <40-hex SHA>\}.*\{done: <40-hex SHA>\}/is);
   assert.match(backlog, /ancestor of the declared release branch/i);
   assert.match(backlog, /\{withdrawn: <reason>\}/i);
   assert.match(backlog, /reopen.*unchecked|unchecked.*reopen/is);
+  assert.match(backlog, /backlog-receipts - --release-ref/);
+  assert.match(backlog, /Only those same verified bytes/i);
 });

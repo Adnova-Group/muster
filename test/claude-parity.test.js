@@ -1359,5 +1359,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 2026-08-01 re-pin #42 (backlog receipt reachability): checked file-backlog
   // items now require a release-ancestor merge/done SHA or an explicit
   // withdrawn reason before the driver may report them cleared.
-  assert.equal(hash.digest("hex"), "7d8f875ccfa157c72b62a5e98ac97aab3f7e4bdcda7a9a615e9df0a345a757eb");
+  // Correction-loop re-pin: staged bytes, not the old on-disk backlog, are
+  // now the input to the same release-reachability contract.
+  assert.equal(hash.digest("hex"), "3b9f8059714f95f13ff9727d75696a071f0cac846e9d6eca0fdfcfe444a57f4b");
 });

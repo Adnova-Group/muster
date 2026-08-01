@@ -83,8 +83,10 @@ the worker stops or its wave reaches the barrier.
    (note the fallback once). Mirror onto `backlog.md` after the item's disposition executes. A checked
    item must carry exactly one deterministic product receipt: `{merge: <40-hex SHA>}` for a merge or
    `{done: <40-hex SHA>}` for an intentionally complete non-merge disposition. Before publishing the
-   tick, run `$MUSTER_CLI backlog-receipts <backlog.md> --release-ref <declared release branch>` against
-   the staged complete backlog; the receipt commit must be an ancestor of the declared release branch.
+   tick, pipe the staged complete backlog bytes to
+   `$MUSTER_CLI backlog-receipts - --release-ref <declared release branch>`; the receipt commit must be
+   an ancestor of the declared release branch. Only those same verified bytes may then be passed to
+   `backlog-publish`; never validate the old on-disk backlog and publish different stdin.
    Any missing, malformed, or unreachable receipt fails closed: reopen that item as unchecked (or
    correct its receipt when the release-reachable commit is known), and do not report it cleared.
    `{withdrawn: <reason>}` is the only explicit exemption and requires a non-empty reason. Check the

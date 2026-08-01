@@ -66,16 +66,19 @@ function trailingAnnotationBlockRegex() {
 
 export function stripAnnotations(text) {
   const anns = {};
+  const annotationCounts = {};
   const trailingMatch = text.match(trailingAnnotationBlockRegex());
   const bodyText = trailingMatch ? text.slice(0, trailingMatch.index) : text;
   const annotationBlock = trailingMatch ? trailingMatch[0] : "";
   const re = annotationRegex();
   let m;
   while ((m = re.exec(annotationBlock))) {
-    anns[m[1].toLowerCase()] = m[2].trim();
+    const key = m[1].toLowerCase();
+    annotationCounts[key] = (annotationCounts[key] || 0) + 1;
+    anns[key] = m[2].trim();
   }
   const stripped = bodyText.replace(/\s+/g, " ").trim();
-  return { anns, text: stripped };
+  return { anns, annotationCounts, text: stripped };
 }
 
 function resolveParallelLimit(value, maxConcurrentThreadsPerSession) {

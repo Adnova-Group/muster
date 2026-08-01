@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { checkBacklogReceipts } from "../src/backlog-receipts.js";
+import { checkBacklogReceipts, makeGitReachabilityVerifier } from "../src/backlog-receipts.js";
 import { tmpProject } from "../test-support/helpers.js";
 
 const pexecFile = promisify(execFile);
@@ -55,6 +55,12 @@ test("ambiguous merge and done receipts are rejected even when both are reachabl
   assert.match(result.errors[0].reason, /exactly one/i);
 });
 
+test("duplicate same-key receipts are rejected before annotation normalization", () => {
+  const result = check("- [x] duplicated {id: twice} {done: 1111111111111111111111111111111111111111} {done: 1111111111111111111111111111111111111111}");
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].reason, /repeats.*done.*unique/i);
+});
+
 test("receipt syntax is canonical lowercase full SHA, never an abbreviation or uppercase alias", () => {
   const result = check([
     "- [x] abbreviated {id: short} {done: 1111111}",
@@ -92,4 +98,37 @@ test("CLI verifies against the declared release ref and reports every stale chec
       return true;
     },
   );
+});
+
+test("CLI validates staged stdin bytes rather than the old on-disk backlog", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n", "backlog.md": "- [ ] old unchecked\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+  const result = spawnSync(process.execPath, [CLI, "backlog-receipts", "-", "--release-ref", "main"], {
+    cwd, encoding: "utf8", input: "- [x] staged but stale {done: 3333333333333333333333333333333333333333}\n",
+  });
+  assert.equal(result.status, 2);
+  assert.equal(JSON.parse(result.stdout).summary.rejected, 1);
+});
+
+test("operational git failures throw instead of masquerading as ordinary unreachability", async () => {
+  const cwd = await tmpProject();
+  assert.throws(
+    () => makeGitReachabilityVerifier({ cwd, releaseCommit: "1111111111111111111111111111111111111111" }),
+    /requires a repository/i,
+  );
+});
+
+test("CI scanner rejects invalid canonical tracked backlog files", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n", "nested/backlog.md": "- [x] stale {id: stale}\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+  const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
+  await assert.rejects(() => pexecFile(process.execPath, [script, "--release-ref", "main"], { cwd }), (error) => {
+    assert.equal(error.code, 2);
+    assert.equal(JSON.parse(error.stdout).rejected, 1);
+    return true;
+  });
 });

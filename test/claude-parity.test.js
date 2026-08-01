@@ -1352,5 +1352,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // is removed, and opaque sandbox assets receive explicit CORP/CORS headers.
   // Re-pin #40 adds the executable stop launcher to the durable local overlay,
   // increasing the shared surface from 149 to 150 files.
-  assert.equal(hash.digest("hex"), "417a3a4ae8edb777e25d11d0823054902defd588851378582794b886a82f1d77");
+  // 2026-08-01 re-pin #41 (self-healing backlog driver): go-backlog now
+  // bootstraps and verifies its own isolated outer worktree when invoked from
+  // a primary checkout, retaining fail-closed CAS publication for bookkeeping.
+  // File count remains unchanged.
+  assert.equal(hash.digest("hex"), "e1f99f70792a1ff3dbdd6b0ec902fb53bcbf872dcd188d17c8a4d6136aeb3ee5");
 });

@@ -53,6 +53,23 @@ test("every write-capable go path requires verified linked-worktree isolation", 
   assert.doesNotMatch(go, /a plain branch is fine otherwise/i);
 });
 
+test("go-backlog self-heals a primary-checkout launch into a verified driver worktree", async () => {
+  const backlog = await read("plugin/commands/go-backlog.md");
+  assert.match(backlog, /self-healing transition/i);
+  assert.match(backlog, /git worktree list --porcelain/i);
+  assert.match(backlog, /git worktree add/i);
+  assert.match(backlog, /change every subsequent command's cwd to that driver/i);
+  assert.match(backlog, /Continue the batch automatically/i);
+  assert.match(backlog, /backlog-publish --expect <source digest>/i);
+  assert.match(backlog, /reject symlinks, special files/i);
+  assert.match(backlog, /never\s+delete, reset, or repurpose an existing path or branch/i);
+  assert.doesNotMatch(
+    backlog,
+    /paths; if they do not, refuse all writes and stop\. A plain branch in the primary checkout/i,
+    "primary-checkout detection must no longer be a fail-only terminal",
+  );
+});
+
 test("the full CI suite fetches history required by pinned diff probes", async () => {
   const workflow = await read(".github/workflows/ci.yml");
   const fullSuiteJob = workflow.split(/^  windows-smoke:/m)[0];

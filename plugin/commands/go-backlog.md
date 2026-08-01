@@ -19,7 +19,22 @@ Unlike outcome-anchored modes, an empty `$ARGUMENTS` is not a stop — it defaul
 **Isolation preflight:** this is a write-capable run, so it requires a **verified isolated git worktree**
 before writing `.muster/run-active`, STATE, backlog annotations, branches, or integration results. Verify that
 `git rev-parse --git-common-dir` and `git rev-parse --git-dir` both succeed and resolve to distinct canonical
-paths; if they do not, refuse all writes and stop. A plain branch in the primary checkout is not isolation.
+paths. A plain branch in the primary checkout is not isolation, but detecting the primary checkout is a
+**self-healing transition**, not a user-facing stop: before any Muster state write, record the source root,
+source HEAD, base branch, and SHA-256 digests of the regular-file batch inputs (`.muster/backlog.md`, plus
+present `.muster/manifest.json`, `.muster/STATE.md`, and `.muster/rubric.md`); reject symlinks, special files,
+or a dirty tracked source tree; then create or reuse a dedicated registered driver worktree under
+`.worktrees/go-backlog-<source-head-prefix>/` on a non-base `muster/go-backlog-<source-head-prefix>` branch.
+Reuse is allowed only when `git worktree list --porcelain` proves the exact canonical path, branch, common
+Git directory, and source HEAD; otherwise choose a collision-free suffix and run `git worktree add`, never
+delete, reset, or repurpose an existing path or branch. Copy the proven batch inputs as regular files into
+the driver, change every subsequent command's cwd to that driver, and repeat both `git rev-parse` checks,
+the non-base-branch check, and the source-HEAD check there. Continue the batch automatically after those
+checks pass. Refuse writes and stop only when creation, safe reuse, input transfer, or verification fails.
+The originating primary checkout is never a product-code write surface. It is only a coordination mirror:
+publish each changed backlog back through the bundled `backlog-publish --expect <source digest>` CAS path
+and copy the final STATE ledger only after verifying its previously recorded digest; a concurrent change
+fails closed and leaves the complete authoritative copy in the driver worktree for recovery.
 Every per-item implementation/review leg and every integration leg must likewise run from its verified
 isolated worktree; repeat the check after changing cwd and never use the main checkout as a write surface.
 Before dispatching any writer, propagate the batch fence into that writer's cwd as regular files: create

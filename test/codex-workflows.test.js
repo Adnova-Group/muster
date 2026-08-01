@@ -78,6 +78,10 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
       `${command} must carry the effective Codex ceiling into deterministic wave scheduling`,
     );
   }
+  const goBacklog = await readFile(join(commands, "go-backlog.md"), "utf8");
+  assert.match(goBacklog, /self-healing transition/i, "generated Codex go-backlog must bootstrap isolation from a primary checkout");
+  assert.match(goBacklog, /git worktree add/i, "generated Codex go-backlog must carry the driver-worktree recovery action");
+  assert.match(goBacklog, /Continue the batch automatically/i, "generated Codex go-backlog must not stop after successful isolation recovery");
 });
 
 test("generated Codex init binds the bundled runtime without Claude resolver leakage", async () => {

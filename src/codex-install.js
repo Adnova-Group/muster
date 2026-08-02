@@ -1624,7 +1624,7 @@ function hasDynamicInterpreterEval(command) {
       if (["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(executable)
         && flags.some(flag => /^-(?:c|command|e|enc|encodedcommand)$/i.test(flag))) return true;
       if (/^(?:pythonw?|pypy)(?:\d+(?:\.\d+)*)?(?:\.exe)?$/.test(executable)
-        && flags.some(flag => flag === "-c" || flag.startsWith("-c="))) return true;
+        && flags.some(flag => flag.startsWith("-c"))) return true;
       if (/^(?:ruby|perl|lua|luajit|r|rscript|osascript)(?:\.exe)?$/.test(executable)
         && flags.some(flag => /^-[^-]*e/i.test(flag))) return true;
       if (/^php(?:\.exe)?$/.test(executable) && flags.some(flag => /^-[^-]*r/i.test(flag))) return true;
@@ -1644,6 +1644,7 @@ const hasUnresolvedShellExpansion = command => typeof command === "string"
     || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command)
     || /(^|[\s=])~(?:[\\/]|$)|[*?]|\[[^\]\r\n]*\]/.test(command)
     || /(?:^|[;&|('"\s])(?:cd|chdir|pushd|popd)(?:\s|$)/i.test(command)
+    || (!parsePosixShellTokens(command) && !parseWindowsShellTokens(command))
     || hasDynamicInterpreterEval(command));
 
 async function physicalHookIdentity(path) {
@@ -2073,6 +2074,7 @@ async function prepareHooks({ scope, cwd, inventoryCwd = cwd, home, hookSourceRo
     throw new Error(`Codex hook conflict: ${configPath} contains an aliased Muster hook command. Remove the alias or restore the exact Muster hook manifest, then rerun the command.`);
   }
   const originalConfig = clone(config);
+  const skipped = scope === "project" && canonicalUserHooksActive === true;
   // Captured BEFORE removeOwnedHookGroups mutates `config` below, at exactly
   // the group/hook indices this scope's PRIOR install currently occupies in
   // its own live hooks.json -- the same exact-key technique runCodexUninstall
@@ -2084,13 +2086,18 @@ async function prepareHooks({ scope, cwd, inventoryCwd = cwd, home, hookSourceRo
   // config.toml's [hooks.state] trust cache stays untouched on every normal
   // reinstall exactly as before this feature.
   const previousOwnedHookStateKeys = previous ? ownedHookStateKeys(config, previous.hookGroups) : [];
+  const previousExpectedOwnedCount = previous ? Object.values(previous.hookGroups || {}).reduce((total, groups) => total
+    + (Array.isArray(groups) ? groups.reduce((groupTotal, group) => groupTotal
+      + (Array.isArray(group?.hooks) ? group.hooks.length : 0), 0) : 0), 0) : 0;
+  const previousLiveHookCount = previous ? codexHookStateKeys(config).length : 0;
+  if (skipped && previous && previousLiveHookCount > 0 && previousOwnedHookStateKeys.length !== previousExpectedOwnedCount) {
+    throw new Error(`Codex hook conflict: a Muster-owned hook was modified or removed in ${configPath}; not every Muster-owned hook position can be identified. Restore the managed hooks or remove unrelated hooks before retrying.`);
+  }
+  const pruneWholePreviousHookState = Boolean(skipped && previous && previousLiveHookCount === 0);
   if (previous) config = removeOwnedHookGroups(config, previous.hookGroups, configPath);
   if (Object.values(config.hooks).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
     throw new Error(`Codex hook conflict: ${configPath} contains a duplicate or unmanaged Muster hook outside manifest ownership. Remove the extra group, then rerun the command.`);
   }
-
-  const skipped = scope === "project" && canonicalUserHooksActive === true;
-
   const templatePath = join(hookSourceRoot, "hooks.json");
   const template = await readJson(templatePath);
   if (!template?.hooks || typeof template.hooks !== "object") throw new Error(`Codex hook template is missing or malformed: ${templatePath}`);
@@ -2121,7 +2128,8 @@ async function prepareHooks({ scope, cwd, inventoryCwd = cwd, home, hookSourceRo
     manifest: { format: 1, owner: "muster", files: hookFiles, packageVersion, hookHash: hookHash.digest("hex"), hookConfigCreated: previous?.hookConfigCreated ?? !configExists, hookGroups },
     sourceFiles, hookFiles,
     skipped: skipped ? "user-scope-canonical" : null,
-    previousOwnedHookStateKeys
+    previousOwnedHookStateKeys,
+    pruneWholePreviousHookState
   };
 }
 
@@ -2447,7 +2455,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
                 ? { ...entry, ownedHookStateKeys: hooks.previousOwnedHookStateKeys }
                 : entry)
             : candidateScopeEntries;
-          const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, hookStateEntries, reconciled, {
+          const hookStateKeptEntries = hooks.skipped && hooks.pruneWholePreviousHookState
+            ? reconciled.filter(entry => !sameScopeEntry(entry, currentScope))
+            : reconciled;
+          const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, hookStateEntries, hookStateKeptEntries, {
             onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
           });
           if (!hookStateReconcile.parseOk) throw new Error("Codex config.toml cannot be safely reconciled because its TOML string, array, or table boundaries are malformed or unsupported");
@@ -2681,6 +2692,9 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
     }
     departingScopeOwnedHookStateKeys = hookConfigExists && liveHookCount > 0 ? derivedOwnedKeys : null;
     hookConfig = removeOwnedHookGroups(rawHookConfig, hookManifest.hookGroups, hookConfigPath);
+    if (Object.values(hookConfig.hooks || {}).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
+      throw new Error(`Codex hook conflict: ${hookConfigPath} contains a duplicate or unmanaged Muster hook outside manifest ownership. Remove the extra group, then rerun the command.`);
+    }
     const otherKeys = Object.keys(hookConfig).filter(key => key !== "hooks");
     removeHookConfig = hookManifest.hookConfigCreated && otherKeys.length === 0 && Object.keys(hookConfig.hooks || {}).length === 0;
   }

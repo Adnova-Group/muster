@@ -546,6 +546,20 @@ test("Codex uninstall preserves original hook indices while pruning multiple own
   assert.deepEqual(result.prunedHookState.map(item => item.groupIndex).sort(), [0, 2]);
 });
 
+test("Codex uninstall rejects a duplicate Muster group left outside manifest ownership", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-uninstall-duplicate-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const config = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  config.hooks.Stop.push(config.hooks.Stop[0]);
+  await writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex }), /duplicate or unmanaged Muster hook/);
+  await readFile(join(cwd, ".codex", "muster", ".muster-managed.json"), "utf8");
+});
+
 // -- Doctor integration (fix D) ------------------------------------------------
 
 test("Codex doctor reports over-registration when a stale scope's hook trust entries are still present (regression 6)", async t => {

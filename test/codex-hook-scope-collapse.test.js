@@ -326,6 +326,23 @@ test("Codex install: reinstall migration prunes only the collapsing scope's conf
   assert.match(after, new RegExp(escapeRegex(userHooksJson)), "the still-firing user scope's trust entries survive");
 });
 
+test("Codex install: canonical collapse whole-path prunes stale trust when the previous project hooks.json is empty", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-empty-hookstate-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const projectResult = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const userResult = await installTrustedUser({ cwd, home });
+  const projectHooksJson = join(cwd, ".codex", "hooks.json");
+  await writeFile(projectHooksJson, `${JSON.stringify({ hooks: {} }, null, 2)}\n`);
+  const configTomlPath = join(codexHome, "config.toml");
+  await writeFile(configTomlPath, `${await readFile(configTomlPath, "utf8")}\n${exactHookStateBlock(projectHooksJson, projectResult)}\n`);
+
+  const migrated = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory });
+  assert.equal(migrated.hooksSkipped, "user-scope-canonical");
+  assert.equal(migrated.prunedHookState.length, 7);
+  assert.doesNotMatch(await readFile(configTomlPath, "utf8"), new RegExp(escapeRegex(projectHooksJson)));
+});
+
 test("Codex install: an ordinary (non-migrating) reinstall never prunes hooks.state for the still-owning scope", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-no-prune-steady-state-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

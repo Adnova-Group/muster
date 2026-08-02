@@ -167,6 +167,25 @@ test("comma-containing completed and done ids retain the CLI argv join/split byt
   assert.equal(responses.get(3).result.content[0].text, checklistCli.stdout.trim());
 });
 
+test("empty completed and done ids retain the CLI's empty-list bytes", async (t) => {
+  const fixture = await mkdtemp(join(tmpdir(), "muster-mcp-empty-id-"));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const manifest = { plan: [{ id: "a", task: "Build", mode: "single", deps: [] }] };
+  const file = join(fixture, "manifest.json");
+  await writeFile(file, JSON.stringify(manifest));
+  const [nextCli, checklistCli] = await Promise.all([
+    execFileP(process.execPath, [cliPath, "next", file, "--done", ""], { cwd: rootDir }),
+    execFileP(process.execPath, [cliPath, "plan-checklist", file, "--done", ""], { cwd: rootDir }),
+  ]);
+  const responses = await rpc([
+    INIT,
+    call(2, "muster_next", { manifest, completed: [""] }),
+    call(3, "muster_plan_checklist", { manifest, done: [""] }),
+  ]);
+  assert.equal(responses.get(2).result.content[0].text, nextCli.stdout.trim());
+  assert.equal(responses.get(3).result.content[0].text, checklistCli.stdout.trim());
+});
+
 test("negative changedLines retains the legacy CLI error bytes", async () => {
   const manifest = { plan: [{ id: "a", task: "Build", mode: "single", deps: [] }] };
   const responses = await rpc([INIT, call(2, "muster_gate_cadence", { manifest, changedLines: -1 })]);

@@ -38,7 +38,10 @@ function fail(message) {
   throw new Error(message);
 }
 
-const legacyCommaList = (values) => values?.length ? values.join(",").split(",") : [];
+const legacyCommaList = (values) => {
+  const joined = values?.length ? values.join(",") : "";
+  return joined ? joined.split(",") : [];
+};
 
 async function evaluate(name, args, environment, runtime = {}) {
   switch (name) {

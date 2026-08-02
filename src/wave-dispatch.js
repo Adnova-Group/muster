@@ -503,9 +503,9 @@ export function codexExecResumeCall({
   if (!['untrusted', 'on-request', 'never'].includes(approvalPolicy)) throw new Error("codexExecResumeCall: unsupported approval policy");
   const argv = [
     "--ask-for-approval", approvalPolicy,
-    "exec", "resume", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config",
+    "exec", "--sandbox", sandbox,
+    "resume", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config",
     "-c", 'shell_environment_policy.inherit="none"',
-    "--sandbox", sandbox,
   ];
   if (model) argv.push("-m", model);
   if (reasoningEffort) argv.push("-c", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  resolveCodexDispatchLane, codexExecCall, interpretCodexExecExit, codexReviewCall,
+  resolveCodexDispatchLane, codexExecCall, codexExecResumeCall, interpretCodexExecExit, codexReviewCall,
   resolveCodexReviewRouting, CODEX_EXEC_MODES
 } from "../src/wave-dispatch.js";
 
@@ -72,6 +72,21 @@ test("codexExecCall: trusted role policy is carried separately from the stdin br
   assert.ok(call.argv.includes("developer_instructions=\"trusted runner policy\""));
   assert.equal(call.argv.includes("private brief"), false);
   assert.equal(call.stdin, "private brief");
+});
+
+test("codexExecResumeCall: exec-level sandbox precedes the resume subcommand", () => {
+  const call = codexExecResumeCall({
+    threadId: "00000000-0000-4000-8000-00000000000a",
+    prompt: "review delta",
+    model: "gpt-5.6-sol",
+    sandbox: "workspace-write",
+  });
+  assert.deepEqual(call.argv.slice(0, 10), [
+    "--ask-for-approval", "never", "exec", "--sandbox", "workspace-write",
+    "resume", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config",
+  ]);
+  assert.equal(call.stdin, "review delta");
+  assert.deepEqual(call.argv.slice(-3), ["--", "00000000-0000-4000-8000-00000000000a", "-"]);
 });
 
 test("interpretCodexExecExit: 0 and 1 are verdicts, anything else is a harness fault", () => {

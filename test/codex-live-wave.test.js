@@ -235,7 +235,7 @@ test("runCodexWave resumes an authenticated persistent thread inside the same he
   assert.equal(Object.hasOwn(resumed, "argv"), false);
   assert.equal(await readFile(join(fixture.worktreeA, "result.txt"), "utf8"), "resumed");
   const launches = await readFile(fixture.launches, "utf8");
-  assert.match(launches, /exec resume --json --ignore-user-config --ignore-rules --strict-config/);
+  assert.match(launches, /exec --sandbox workspace-write resume --json --ignore-user-config --ignore-rules --strict-config/);
   assert.match(launches, /resume-stdin:true/);
   assert.doesNotMatch(launches, /exec .*--ephemeral/);
 });

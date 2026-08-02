@@ -433,6 +433,42 @@ test("request_user_input is bound to the exact active thread and turn", async ()
   await client.close();
 });
 
+test("only one interactive form can own terminal raw mode", async () => {
+  const child = fakeAppServerProcess();
+  const written = [];
+  child.stdin.setEncoding("utf8");
+  child.stdin.on("data", chunk => written.push(...chunk.trim().split("\n").filter(Boolean).map(JSON.parse)));
+  const input = new EventEmitter();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = value => { input.isRaw = value; };
+  input.resume = () => {};
+  const client = await createCodexAppServerClient({
+    cwd: "/repo",
+    spawnProcess: () => child,
+    timeoutMs: 100,
+    userInput: (_question, _options, timeoutMs, signal) =>
+      readSecretTerminalInput({ input, output: { write() {} }, timeoutMs, signal }),
+  });
+  const started = client.request("turn/start", { threadId: "thread-1" });
+  child.stdout.write(`${JSON.stringify({ id: 1, result: { turn: { id: "turn-1" } } })}\n`);
+  await started;
+  const form = id => ({ id, method: "item/tool/requestUserInput", params: {
+    threadId: "thread-1", turnId: "turn-1", itemId: `item-${id}`,
+    questions: [{ id: "secret", header: "Secret", question: "Token?", isSecret: true }],
+  } });
+  child.stdout.write(`${JSON.stringify(form(61))}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  child.stdout.write(`${JSON.stringify(form(62))}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(input.isRaw, true);
+  assert.equal(input.listenerCount("data"), 1);
+  assert.equal(written.find(message => message.id === 62)?.error?.code, -32000);
+  await client.close();
+  assert.equal(input.isRaw, false);
+  assert.equal(input.listenerCount("data"), 0);
+});
+
 test("unavailable App Server control fails safely with explicit /plan guidance", async () => {
   const result = await launchCodexPlan({
     cwd: "/repo",

@@ -392,11 +392,16 @@ class JsonRpcLineClient {
         // than being auto-approved or silently inherited as an unsafe default.
         if (message.method === "item/tool/requestUserInput") {
           if (this.closing
+            || this.inputControllers.size > 0
             || message.params?.threadId !== this.activeThreadId
             || message.params?.turnId !== this.activeTurnId) {
             this.#write({ jsonrpc: "2.0", id: message.id, error: {
               code: -32000,
-              message: "Muster's Plan launcher cannot answer input outside its active turn; resume with /plan for interactive input",
+              message: this.closing
+                ? "Muster's Plan launcher is closing; resume with /plan for interactive input"
+                : this.inputControllers.size > 0
+                  ? "Muster's Plan launcher already has an active input form; resume with /plan for interactive input"
+                  : "Muster's Plan launcher cannot answer input outside its active turn; resume with /plan for interactive input",
             } });
             continue;
           }

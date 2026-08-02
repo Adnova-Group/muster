@@ -59,6 +59,7 @@ export const INIT_LIMITS = Object.freeze({
   fingerprintDirectoryBytes: 8_388_608,
   fingerprintDirectoryEntries: 100_000,
   fingerprintDeadlineMs: 3_600_000,
+  fingerprintDirectoryNameBytes: 268_435_456,
   fingerprintEntries: 1_000_000,
   fingerprintPathBytes: 262_144,
   fingerprintTotalBytes: 1_099_511_627_776,
@@ -469,9 +470,23 @@ async function pinnedDirectoryNames(root, abs, rel) {
   return names.sort(utf8Sort);
 }
 
+async function pinnedFingerprintDirectoryNames(root, abs, rel) {
+  const names = [];
+  let totalBytes = 0;
+  await pinnedDirectoryVisit(root, abs, rel, (name, bytes) => {
+    totalBytes += bytes.length;
+    if (totalBytes > INIT_LIMITS.fingerprintDirectoryNameBytes ||
+        names.length >= INIT_LIMITS.fingerprintEntries) {
+      throw new Error(`repository fingerprint directory limit exceeded: ${rel || "."}`);
+    }
+    names.push(name);
+  });
+  return names.sort(utf8Sort);
+}
+
 async function* filesystemRelevantPaths(root, abs = root, prefix = "") {
   const children = [];
-  for (const name of await pinnedDirectoryNames(root, abs, prefix)) {
+  for (const name of await pinnedFingerprintDirectoryNames(root, abs, prefix)) {
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
@@ -597,11 +612,14 @@ function sameFingerprintIdentity(current, prior) {
     current.ctimeNs === prior.ctimeNs && current.mtimeNs === prior.mtimeNs;
 }
 
-async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadline = Infinity) {
+async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadline = Infinity, expectedSnapshot = null) {
   // Git deliberately omits untrackable special entries from `ls-files`.
   // Preserve the previous fail-closed repository walk before hashing only the
   // relevant paths; ignored/generated ordinary files remain unhashed.
   const directorySnapshot = await rejectSpecialEntries(root, root, "", new Map(), { deadline, entries: 0 });
+  if (expectedSnapshot && !sameDirectorySnapshot(directorySnapshot, expectedSnapshot)) {
+    throw new Error("repository changed while learning");
+  }
   const hash = createHash("sha256").update(Buffer.from(`${FINGERPRINT_BASIS}\0`));
   let rowCount = 0;
   let visitedPaths = 0;
@@ -677,9 +695,9 @@ async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadl
   return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest };
 }
 
-async function repositoryFingerprint(root, learnedDigests = new Map()) {
-  const deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs;
-  const first = await repositoryFingerprintPass(root, learnedDigests, deadline);
+async function repositoryFingerprint(root, learnedDigests = new Map(), deadline = null, expectedSnapshot = null) {
+  deadline ||= Date.now() + INIT_LIMITS.fingerprintDeadlineMs;
+  const first = await repositoryFingerprintPass(root, learnedDigests, deadline, expectedSnapshot);
   const second = await repositoryFingerprintPass(root, learnedDigests, deadline);
   if (first.digest !== second.digest) throw new Error("repository changed while fingerprinting");
   return second;
@@ -741,7 +759,7 @@ async function ensureLearningAncestors(root, path, rel) {
   if (!(await resolveContainedRealpath(root, dirname(path)))) throw new Error(`unsafe ancestor for ${rel}`);
 }
 
-async function readLearningMetadata(root, path, rel, expectedInfo, capture) {
+async function readLearningMetadata(root, path, rel, expectedInfo, capture, deadline = Infinity) {
   let handle;
   try {
     await ensureLearningAncestors(root, path, rel);
@@ -761,6 +779,7 @@ async function readLearningMetadata(root, path, rel, expectedInfo, capture) {
     const chunk = Buffer.allocUnsafe(64 * 1024);
     let position = 0;
     while (position < size) {
+      checkFingerprintDeadline(deadline);
       const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - position), position);
       if (bytesRead === 0) break;
       const bytes = chunk.subarray(0, bytesRead);
@@ -793,7 +812,7 @@ async function readLearningMetadata(root, path, rel, expectedInfo, capture) {
   }
 }
 
-async function learnFacts(root) {
+async function learnFacts(root, deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs) {
   const digests = new Map();
   const rows = [];
   const limitations = [];
@@ -801,6 +820,8 @@ async function learnFacts(root) {
   const testRoots = new Set();
   const extensions = new Set();
   let capturedBytes = 0;
+  let learnedBytes = 0;
+  let learnedEntries = 0;
   let evidenceBytes = 0;
   let profileLimited = false;
   const markProfileLimited = (path) => {
@@ -840,6 +861,11 @@ async function learnFacts(root) {
       throw error;
     }
     for (const name of names) {
+      checkFingerprintDeadline(deadline);
+      learnedEntries++;
+      if (learnedEntries > INIT_LIMITS.fingerprintEntries) {
+        throw new Error("project learning entry limit exceeded");
+      }
       if (!prefix && (name === ".git" || name === ".muster")) continue;
       const rel = prefix ? `${prefix}/${name}` : name;
       const path = join(abs, name);
@@ -855,13 +881,18 @@ async function learnFacts(root) {
         const suffix = dot >= 0 ? name.slice(dot).toLowerCase() : null;
         if (LANGUAGE_SUFFIXES.has(suffix)) extensions.add(suffix);
         if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
+        if (info.size > BigInt(Number.MAX_SAFE_INTEGER) ||
+            info.size > BigInt(INIT_LIMITS.fingerprintTotalBytes - learnedBytes)) {
+          throw new Error("project learning byte limit exceeded");
+        }
         const factBytes = Buffer.byteLength(JSON.stringify({
           bytes: Number.MAX_SAFE_INTEGER, path: rel, sha256: "0".repeat(64),
         })) + 2;
         if (!reserveEvidence(factBytes, rel)) continue;
         const parse = name === "package.json" && info.size <= BigInt(INIT_LIMITS.learnFileBytes) &&
           info.size <= BigInt(INIT_LIMITS.learnCaptureBytes - capturedBytes);
-        const opened = await readLearningMetadata(root, path, rel, info, parse);
+        const opened = await readLearningMetadata(root, path, rel, info, parse, deadline);
+        learnedBytes += opened.size;
         capturedBytes += opened.bytes?.length || 0;
         digests.set(rel, opened);
         if (name === "package.json" && !parse) addLimitation(rel, "parse-limit");
@@ -905,9 +936,12 @@ function boundSerializedProfile(profile) {
 
 export async function learnProjectProfile(dir) {
   const root = await validateRoot(dir);
+  const deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs;
+  const learningSnapshot = await rejectSpecialEntries(root, root, "", new Map(), { deadline, entries: 0 });
+  const vcs = await rootVcs(root);
   const owned = await readOwned(root);
   const classification = owned?.receipt.classification ?? await classify(root);
-  const { digests, extensions, limitations, rows, sourceRoots, testRoots } = await learnFacts(root);
+  const { digests, extensions, limitations, rows, sourceRoots, testRoots } = await learnFacts(root, deadline);
   const languages = new Set();
   const frameworks = new Set();
   const managers = new Set();
@@ -964,10 +998,13 @@ export async function learnProjectProfile(dir) {
       shape,
       sourceRoots: [...sourceRoots].sort(utf8Sort),
       testRunners: [...runners].sort(utf8Sort),
-      vcs: await rootVcs(root),
+      vcs,
     },
-    repositoryFingerprint: await repositoryFingerprint(root, digests),
+    repositoryFingerprint: await repositoryFingerprint(root, digests, deadline, learningSnapshot),
   };
+  if (JSON.stringify(await rootVcs(root)) !== JSON.stringify(vcs)) {
+    throw new Error("repository VCS changed while learning");
+  }
   return boundSerializedProfile(profile);
 }
 

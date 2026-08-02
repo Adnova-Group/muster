@@ -485,8 +485,6 @@ test("repository fingerprints reject a path-set addition during hashing", async 
 
 test("directory learning limits remain explicit without blocking fingerprinting", async () => {
   const dir = await tmp();
-  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
-  await writeFile(join(dir, ".gitignore"), "*\n");
   for (let offset = 0; offset < 33_000; offset += 500) {
     await Promise.all(Array.from({ length: 500 }, (_, index) => {
       const id = String(offset + index).padStart(5, "0");
@@ -640,6 +638,14 @@ test("project learning records large metadata without treating storage size as a
   assert.deepEqual(await initializeProject(aggregate), aggregateInit);
 });
 
+test("project learning rejects recognized metadata beyond its cumulative work budget before reading", async () => {
+  const dir = await tmp();
+  const lock = join(dir, "package-lock.json");
+  await writeFile(lock, "");
+  await truncate(lock, INIT_LIMITS.fingerprintTotalBytes + 1);
+  await assert.rejects(() => learnProjectProfile(dir), /project learning byte limit exceeded/);
+});
+
 test("project learning reuses a descriptor-pinned digest for sparse recognized metadata", async () => {
   const dir = await tmp();
   const lock = join(dir, "package-lock.json");
@@ -668,6 +674,39 @@ test("project learning rejects metadata changed before its fingerprint is sealed
     () => learnProjectProfile(dir),
     /file changed while reading: AGENTS\.md/,
   );
+  await writer;
+});
+
+test("project learning binds source facts to the pre-learning directory snapshot", async () => {
+  const dir = await tmp();
+  await mkdir(join(dir, "src"));
+  await writeFile(join(dir, "src", "app.js"), "export {};\n");
+  const lock = join(dir, "package-lock.json");
+  await writeFile(lock, "");
+  await truncate(lock, 128 * 1024 * 1024);
+  const writer = (async () => {
+    await sleep(20);
+    await rm(join(dir, "src", "app.js"));
+  })();
+  await assert.rejects(() => learnProjectProfile(dir), /repository changed while learning/);
+  await writer;
+});
+
+test("project learning binds root VCS facts to the sealed fingerprint", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await pexecFile("git", ["config", "user.name", "Muster Test"], { cwd: dir });
+  await pexecFile("git", ["config", "user.email", "muster@example.invalid"], { cwd: dir });
+  const large = join(dir, "large.bin");
+  await writeFile(large, "");
+  await truncate(large, 512 * 1024 * 1024);
+  await pexecFile("git", ["add", "large.bin"], { cwd: dir });
+  await pexecFile("git", ["commit", "--quiet", "-m", "initial"], { cwd: dir });
+  const writer = (async () => {
+    await sleep(50);
+    await pexecFile("git", ["commit", "--quiet", "--allow-empty", "-m", "advance"], { cwd: dir });
+  })();
+  await assert.rejects(() => learnProjectProfile(dir), /repository VCS changed while learning/);
   await writer;
 });
 

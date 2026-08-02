@@ -3,6 +3,8 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
+import { parseAgentProfileToml } from "./codex-release.js";
+import { readNoFollowRegular } from "./fs-safe.js";
 import { readdirSafe, readJson } from "./fs-util.js";
 
 const execFileDefault = promisify(execFileCb);
@@ -39,8 +41,41 @@ async function skillNames(root) {
   return names;
 }
 
-async function agentNames(root) {
-  return (await readdirSafe(root)).filter(name => name.endsWith(".toml")).map(name => name.slice(0, -5));
+function tomlString(raw) {
+  if (typeof raw !== "string") return null;
+  if (raw.startsWith("'")) return raw.slice(1, -1);
+  if (raw.startsWith('"')) {
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  return null;
+}
+
+async function agentProfileRecords(root, scope, plugin = null) {
+  const records = [];
+  for (const filename of (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort()) {
+    const path = join(root, filename);
+    const fallbackName = filename.slice(0, -5);
+    try {
+      const { bytes } = await readNoFollowRegular(path, {
+        maxBytes: 1_048_576,
+        label: `Codex agent profile ${path}`,
+      });
+      const parsed = parseAgentProfileToml(bytes.toString("utf8"));
+      const name = tomlString(parsed.name);
+      const model = tomlString(parsed.model);
+      records.push({
+        name: name || fallbackName,
+        model,
+        status: name && model ? "resolved" : "unresolved",
+        scope,
+        path,
+        ...(plugin ? { plugin } : {}),
+      });
+    } catch {
+      records.push({ name: fallbackName, model: null, status: "unresolved", scope, path, ...(plugin ? { plugin } : {}) });
+    }
+  }
+  return records;
 }
 
 function mcpNames(result) {
@@ -63,21 +98,28 @@ export async function readCodexInventory({ cwd = process.cwd(), codexHome = proc
     jsonCommand(execFile, ["mcp", "list", "--json"])
   ]);
   const active = installedPlugins(pluginsJson);
-  const pluginSkills = [], pluginAgents = [];
+  const pluginSkills = [], pluginAgentProfiles = [];
   for (const plugin of active) {
     if (!plugin.source?.path) continue;
     pluginSkills.push(...await skillNames(join(plugin.source.path, "skills")));
-    pluginAgents.push(...await agentNames(join(plugin.source.path, "agents")));
+    pluginAgentProfiles.push(...await agentProfileRecords(
+      join(plugin.source.path, "agents"),
+      "plugin",
+      plugin.name || plugin.pluginId?.split("@")[0] || null,
+    ));
   }
-  const [projectSkills, userSkills, projectAgents, userAgents] = await Promise.all([
+  const [projectSkills, userSkills, projectAgentProfiles, userAgentProfiles] = await Promise.all([
     skillNames(join(cwd, ".codex", "skills")), skillNames(join(codexHome, "skills")),
-    agentNames(join(cwd, ".codex", "agents")), agentNames(join(codexHome, "agents"))
+    agentProfileRecords(join(cwd, ".codex", "agents"), "project"),
+    agentProfileRecords(join(codexHome, "agents"), "user"),
   ]);
+  const agentProfiles = [...pluginAgentProfiles, ...userAgentProfiles, ...projectAgentProfiles];
   return {
     plugins: active.map(plugin => plugin.name || plugin.pluginId.split("@")[0]),
     skills: [...new Set([...pluginSkills, ...projectSkills, ...userSkills])],
     mcpServers: [...new Set(mcpNames(mcpJson))],
-    agents: [...new Set([...pluginAgents, ...projectAgents, ...userAgents])]
+    agents: [...new Set(agentProfiles.map(profile => profile.name))],
+    agentProfiles,
   };
 }
 

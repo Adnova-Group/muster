@@ -50,8 +50,8 @@ test("v1-only degrades inline only when no available provider speaks v1", () => 
   assert.deepEqual(result.degradation, {
     code: "CODEX_AUDIT_NO_COMPATIBLE_PROVIDER", role: "code-review", callableApis: ["v1"],
     considered: [
-      { id: "unavailable-v1", apiVersion: "v1", available: false },
-      { id: "v2-only", apiVersion: "v2", available: true },
+      { id: "unavailable-v1", apiVersion: "v1", available: false, profile: null },
+      { id: "v2-only", apiVersion: "v2", available: true, profile: null },
     ],
   });
 });
@@ -76,8 +76,49 @@ test("candidate derivation enriches the full ordered chain from live inventory a
     profileForAgent: id => ({ model: `${id}-model` }),
     versionForModel: async model => model === "preferred-model" ? "v1" : "v2",
   });
-  assert.deepEqual(candidates, [provider("preferred", "v1"), provider("alternate", "v2")]);
+  assert.deepEqual(candidates, [
+    { ...provider("preferred", "v1"), profile: { status: "manifest", scope: "manifest", path: null, model: "preferred-model" } },
+    { ...provider("alternate", "v2"), profile: { status: "manifest", scope: "manifest", path: null, model: "alternate-model" } },
+  ]);
   assert.equal(select(["v2"], candidates).provider.id, "alternate");
+});
+
+test("candidate derivation uses the effective project profile instead of a shadowed manifest model", async () => {
+  const roleEntry = { chain: [provider("reviewer", "v2")] };
+  const candidates = await deriveCodexAuditCandidates(roleEntry, {
+    agents: ["reviewer"],
+    agentProfiles: [
+      { name: "reviewer", model: "project-v1", status: "resolved", scope: "project", path: "/repo/.codex/agents/reviewer.toml" },
+      { name: "reviewer", model: "user-v2", status: "resolved", scope: "user", path: "/home/.codex/agents/reviewer.toml" },
+    ],
+  }, {
+    profileForAgent: () => ({ model: "manifest-v2" }),
+    versionForModel: async model => model.endsWith("v1") ? "v1" : "v2",
+  });
+  assert.equal(candidates[0].apiVersion, "v1");
+  assert.equal(candidates[0].profile.scope, "project");
+  assert.equal(candidates[0].profile.path, "/repo/.codex/agents/reviewer.toml");
+  assert.equal(select(["v1"], candidates).provider.profile.scope, "project");
+});
+
+test("ambiguous or model-inheriting effective profiles are ineligible", async () => {
+  const roleEntry = { chain: [provider("reviewer", "v2")] };
+  for (const agentProfiles of [
+    [
+      { name: "reviewer", model: "one", status: "resolved", scope: "project", path: "/repo/a.toml" },
+      { name: "reviewer", model: "two", status: "resolved", scope: "project", path: "/repo/b.toml" },
+    ],
+    [{ name: "reviewer", model: null, status: "unresolved", scope: "project", path: "/repo/reviewer.toml" }],
+  ]) {
+    const [candidate] = await deriveCodexAuditCandidates(roleEntry, { agents: ["reviewer"], agentProfiles }, {
+      profileForAgent: () => ({ model: "manifest-v2" }),
+      versionForModel: async () => "v2",
+    });
+    assert.equal(candidate.available, false);
+    assert.equal(candidate.apiVersion, null);
+    assert.match(candidate.profile.status, /shadowed|unresolved/);
+    assert.equal(select(["v2"], [candidate]).mode, "inline");
+  }
 });
 
 test("codex-audit-provider CLI derives candidates instead of accepting a handcrafted matrix", async () => {
@@ -92,7 +133,7 @@ test("codex-audit-provider CLI derives candidates instead of accepting a handcra
   await writeFile(join(codexHome, "models_cache.json"), JSON.stringify({
     models: [{ slug: "gpt-5.6-sol", multi_agent_version: "v2" }],
   }));
-  await writeFile(join(agents, "muster-reviewer.toml"), "name = 'muster-reviewer'\n");
+  await writeFile(join(agents, "muster-reviewer.toml"), "name = 'muster-reviewer'\nmodel = 'gpt-5.6-sol'\n");
   const codex = join(bin, "codex");
   await writeFile(codex, `#!${process.execPath}\nconsole.log("[]");\n`);
   await chmod(codex, 0o755);
@@ -108,4 +149,39 @@ test("codex-audit-provider CLI derives candidates instead of accepting a handcra
   assert.equal(result.provider.id, "muster-reviewer");
   assert.equal(result.packet.tool, "collaboration.spawn_agent");
   assert.equal(result.degradation, null);
+});
+
+test("codex-audit-provider CLI refuses a project profile whose effective model uses an uncallable API", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-audit-shadow-"));
+  const home = join(dir, "home");
+  const codexHome = join(home, ".codex");
+  const projectAgents = join(dir, ".codex", "agents");
+  const userAgents = join(codexHome, "agents");
+  const bin = join(dir, "bin");
+  await mkdir(projectAgents, { recursive: true });
+  await mkdir(userAgents, { recursive: true });
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(codexHome, "models_cache.json"), JSON.stringify({ models: [
+    { slug: "gpt-5.6-sol", multi_agent_version: "v2" },
+    { slug: "gpt-5.6-luna", multi_agent_version: "v1" },
+  ] }));
+  await writeFile(join(userAgents, "muster-reviewer.toml"), "name = 'muster-reviewer'\nmodel = 'gpt-5.6-sol'\n");
+  await writeFile(join(projectAgents, "muster-reviewer.toml"), "name = 'muster-reviewer'\nmodel = 'gpt-5.6-luna'\n");
+  const codex = join(bin, "codex");
+  await writeFile(codex, `#!${process.execPath}\nconsole.log("[]");\n`);
+  await chmod(codex, 0o755);
+  const { stdout } = await execFile(process.execPath, [
+    new URL("../src/cli.js", import.meta.url).pathname,
+    "codex-audit-provider", "--role", "code-review", "--task-id", "audit-readability",
+    "--callable-apis", "v2", "--message", "Review readability",
+  ], {
+    cwd: dir,
+    env: { ...process.env, HOME: home, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH || ""}` },
+  });
+  const result = JSON.parse(stdout);
+  assert.equal(result.mode, "inline");
+  const reviewer = result.degradation.considered.find(candidate => candidate.id === "muster-reviewer");
+  assert.equal(reviewer.apiVersion, "v1");
+  assert.equal(reviewer.profile.scope, "project");
+  assert.equal(reviewer.profile.model, "gpt-5.6-luna");
 });

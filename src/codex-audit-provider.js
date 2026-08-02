@@ -35,6 +35,35 @@ function normalizedCandidate(candidate, index) {
   return { ...candidate };
 }
 
+const PROFILE_PRECEDENCE = Object.freeze({ plugin: 1, user: 2, project: 3 });
+
+function effectiveAgentProfile(id, inventory, manifestProfile) {
+  const records = Array.isArray(inventory?.agentProfiles)
+    ? inventory.agentProfiles.filter(record => record?.name === id)
+    : [];
+  if (!records.length) {
+    return manifestProfile?.model
+      ? { status: "manifest", scope: "manifest", path: null, model: manifestProfile.model }
+      : { status: "unresolved", scope: null, path: null, model: null };
+  }
+  const highest = Math.max(...records.map(record => PROFILE_PRECEDENCE[record.scope] || 0));
+  const winners = records.filter(record => (PROFILE_PRECEDENCE[record.scope] || 0) === highest);
+  if (highest === 0 || winners.length !== 1) {
+    return { status: "shadowed", scope: null, path: null, model: null };
+  }
+  const winner = winners[0];
+  if (winner.status !== "resolved" || typeof winner.model !== "string" || !winner.model) {
+    return { status: "unresolved", scope: winner.scope, path: winner.path || null, model: null };
+  }
+  return {
+    status: "resolved",
+    scope: winner.scope,
+    path: winner.path || null,
+    plugin: winner.plugin || null,
+    model: winner.model,
+  };
+}
+
 // Enrichs the role's full manifest-ordered chain from authoritative runtime
 // inputs. Callers do not hand-author candidate metadata: availability comes
 // from the live agent inventory, while each profile's model is resolved through
@@ -48,8 +77,8 @@ export async function deriveCodexAuditCandidates(roleEntry, inventory, {
   const available = new Set(Array.isArray(inventory?.agents) ? inventory.agents : []);
   const agents = roleEntry.chain.filter(candidate => candidate?.kind === "agent");
   return Promise.all(agents.map(async candidate => {
-    const profile = profileForAgent(candidate.id);
-    const apiVersion = typeof profile?.model === "string"
+    const profile = effectiveAgentProfile(candidate.id, inventory, profileForAgent(candidate.id));
+    const apiVersion = typeof profile.model === "string"
       ? await versionForModel(profile.model)
       : null;
     return {
@@ -57,7 +86,9 @@ export async function deriveCodexAuditCandidates(roleEntry, inventory, {
       source: candidate.source,
       kind: "agent",
       apiVersion,
-      available: available.has(candidate.id),
+      available: available.has(candidate.id) && apiVersion !== null &&
+        (profile.status === "resolved" || profile.status === "manifest"),
+      profile,
     };
   }));
 }
@@ -81,6 +112,7 @@ export function selectCodexAuditProvider({ role, taskId, message, callableApis, 
       source: compatible.source,
       kind: compatible.kind,
       apiVersion: compatible.apiVersion,
+      profile: compatible.profile || null,
     };
     return {
       mode: "independent",
@@ -107,6 +139,7 @@ export function selectCodexAuditProvider({ role, taskId, message, callableApis, 
         id: candidate.id,
         apiVersion: candidate.apiVersion,
         available: candidate.available,
+        profile: candidate.profile || null,
       })),
     },
   };

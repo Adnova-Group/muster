@@ -12,7 +12,7 @@ Work use narrower MCP surfaces whose verified boundaries are listed below.
 | Harness | Entry points | Parallel dispatch | Write isolation | Policy enforcement | Init handoff |
 | --- | --- | --- | --- | --- | --- |
 | Claude Code | Ten `/muster:*` modes, including Design | Native agents; optional Workflow fan-out | Native agent worktrees | Plugin hooks plus review gates | Native `/init`, canonical instruction pair |
-| Codex | Ten `$muster-*` modes, including Design | `spawn_agent` or isolated `codex exec` processes | Muster-created worktrees and receipts | Advisory hooks plus review gates | Native `/init`, canonical instruction pair |
+| Codex | Ten `$muster-*` modes, including Design | Production waves use process-only `codex-wave` / `codex exec -C` | Authenticated pristine registered worktrees | Advisory hooks plus review gates | Native `/init`, canonical instruction pair |
 | Kimi | Ten `/muster-*` modes, including Design | In-session native subagents; attended process lane is report-only | Muster-created worktrees and base-SHA receipts | Native permission rules plus review gates | Unavailable; explicit acknowledgement required |
 | Cowork | MCP instructions and tools | Probe phase 3 required; sequential path is verified | No proven per-subagent worktree primitive | Review gates; native plugin enforcement is unverified | No proven callable native adapter |
 | ChatGPT Work (private/local; proof-gated) | Universal plugin + registered MCP connection | Pro-safe `muster_prioritize` only after native Scan Tools; full profile requires entitlement + double opt-in | Host-controlled; no Muster worktree claim | ChatGPT approvals/admin controls plus nonce-bound native proof gate | No callable Init adapter; no Codex-config inheritance |

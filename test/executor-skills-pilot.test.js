@@ -3,12 +3,35 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
 
 import {
   EXECUTOR_SKILLS_CONTRACT,
   createExecutorSkillsFixture,
   executorSkillsActivation,
-} from "../src/executor-skills.js";
+} from "./test-support/executor-skills-fixture.js";
+
+const execFile = promisify(execFileCallback);
+const repoRoot = new URL("../", import.meta.url).pathname;
+
+test("inactive executor-skills pilot is absent from production imports and packaged bytes", async () => {
+  const { stdout } = await execFile("npm", ["pack", "--dry-run", "--json"], {
+    cwd: repoRoot,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const [packed] = JSON.parse(stdout);
+  const packagedPaths = packed.files.map(file => file.path);
+
+  assert.ok(
+    !packagedPaths.includes("src/executor-skills.js"),
+    "inactive pilot implementation must not ship in the npm package",
+  );
+  await assert.rejects(
+    import("../src/executor-skills.js?production-boundary"),
+    error => error?.code === "ERR_MODULE_NOT_FOUND",
+  );
+});
 
 async function buildPackage() {
   const root = await mkdtemp(join(tmpdir(), "muster-executor-skills-"));

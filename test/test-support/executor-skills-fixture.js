@@ -3,12 +3,12 @@ import { lstat, open, opendir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
-import { matchFrontmatter } from "./frontmatter.js";
+import { matchFrontmatter } from "../../src/frontmatter.js";
 import {
   isContainedLexical,
   resolveContainedRealpath,
   safeRelativePath,
-} from "./fs-safe.js";
+} from "../../src/fs-safe.js";
 
 export const EXECUTOR_SKILLS_CONTRACT = Object.freeze({
   version: "muster.executor-skills.v1",

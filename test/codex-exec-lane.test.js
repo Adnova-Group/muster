@@ -39,13 +39,12 @@ test("resolveCodexDispatchLane: physically verified disjoint writers stay on the
   assert.equal(r.isolation, "context-only");
 });
 
-test("resolveCodexDispatchLane: only authenticated read-only roles may omit write fences", () => {
-  const r = resolveCodexDispatchLane({ members: [
-    { id: "a", readOnly: true, agentType: "muster-investigator" },
-    { id: "b", readOnly: true, agentType: "muster-reviewer" },
-  ] });
-  assert.equal(r.mode, CODEX_EXEC_MODES.SPAWN_AGENT);
-  for (const member of [{ id: "missing" }, { id: "claim", readOnly: true, agentType: "muster-builder" }]) {
+test("resolveCodexDispatchLane: project-shadowable role names cannot authenticate omitted write fences", () => {
+  for (const member of [
+    { id: "missing" },
+    { id: "claim", readOnly: true, agentType: "muster-builder" },
+    { id: "shadow", readOnly: true, agentType: "muster-reviewer" },
+  ]) {
     assert.equal(resolveCodexDispatchLane({ members: [member] }).mode, CODEX_EXEC_MODES.EXEC_PROCESS);
   }
 });
@@ -58,8 +57,12 @@ test("resolveCodexDispatchLane: physical, hard-link, symlink, case, and missing 
   symlinkSync(join(root, "target"), join(root, "sym"));
   writeFileSync(join(root, "Case"), "upper");
   writeFileSync(join(root, "case"), "lower");
+  mkdirSync(join(root, "a"));
+  mkdirSync(join(root, "b"));
+  linkSync(join(root, "target"), join(root, "a/shared"));
+  linkSync(join(root, "target"), join(root, "b/shared"));
   for (const writes of [
-    ["target", "hard"], ["target", "sym"], ["Case", "case"], ["target", "missing"],
+    ["target", "hard"], ["target", "sym"], ["Case", "case"], ["target", "missing"], ["a", "b"],
   ]) {
     assert.equal(resolveCodexDispatchLane({
       members: writes.map((write, index) => ({ id: String(index), writes: [write] })),

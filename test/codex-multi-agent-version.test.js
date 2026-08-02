@@ -5,6 +5,7 @@
 // Evidence: docs/research/codex-cli.md sec 10.1.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -108,6 +109,20 @@ test("readCodexMultiAgentVersion: a missing catalog degrades to null, never thro
   try {
     assert.equal(await readCodexMultiAgentVersion("gpt-5.6-sol", { home }), null);
     assert.equal(await readCodexMultiAgentVersion("", { home }), null);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("readCodexMultiAgentVersion: unsafe FIFO and oversized catalogs fail without blocking", async () => {
+  const home = mkdtempSync(join(tmpdir(), "muster-codex-cat-"));
+  try {
+    const codexDir = join(home, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    const catalog = join(codexDir, "models_cache.json");
+    execFileSync("mkfifo", [catalog]);
+    await assert.rejects(readCodexMultiAgentVersion("gpt-5.6-sol", { home }), /regular file|unsafe/i);
+    rmSync(catalog);
+    writeFileSync(catalog, " ".repeat(4 * 1024 * 1024 + 1));
+    await assert.rejects(readCodexMultiAgentVersion("gpt-5.6-sol", { home }), /unsafe regular file|too-large/i);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 

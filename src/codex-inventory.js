@@ -3,7 +3,8 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
-import { readdirSafe, readJson } from "./fs-util.js";
+import { readdirSafe } from "./fs-util.js";
+import { readNoFollowRegular } from "./fs-safe.js";
 
 const execFileDefault = promisify(execFileCb);
 
@@ -96,7 +97,19 @@ export async function codexAvailable({ execFile = execFileDefault } = {}) {
 export async function readCodexMultiAgentVersion(model, { home = homedir(), dir } = {}) {
   if (typeof model !== "string" || !model) return null;
   const root = dir || process.env.CODEX_HOME || join(home, ".codex");
-  const catalog = await readJson(join(root, "models_cache.json"));
+  let catalog;
+  try {
+    const bytes = (await readNoFollowRegular(join(root, "models_cache.json"), {
+      maxBytes: 4 * 1024 * 1024,
+      label: "Codex model catalog",
+      requireSingleLink: true,
+    })).bytes;
+    try { catalog = JSON.parse(bytes.toString("utf8")); }
+    catch { return null; }
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
   const models = Array.isArray(catalog?.models) ? catalog.models : [];
   const entry = models.find(m => m?.slug === model || m?.id === model);
   const version = entry?.multi_agent_version;

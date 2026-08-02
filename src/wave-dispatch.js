@@ -512,11 +512,6 @@ function codexWriteFencesOverlap(left, right) {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
-const TRUSTED_READ_ONLY_AGENT_TYPES = new Set([
-  "muster-investigator", "muster-reviewer", "muster-strategist", "muster-improver",
-  "wsh-code-reviewer", "wsh-security-auditor",
-]);
-
 function physicalCodexWriteFence(root, fence) {
   if (typeof root !== "string" || !root.trim()) return null;
   try {
@@ -528,6 +523,9 @@ function physicalCodexWriteFence(root, fence) {
     const physicalRel = relative(canonicalRoot, physical);
     if (physicalRel.startsWith("..") || isAbsolute(physicalRel) || physical !== lexical) return null;
     const info = statSync(physical);
+    // Directory fences cannot authenticate every descendant without an
+    // unbounded recursive walk; aliases below them therefore force isolation.
+    if (info.isDirectory()) return null;
     return { physical, folded: physical.toLocaleLowerCase("en-US"), dev: info.dev, ino: info.ino };
   } catch {
     // Missing targets/ancestors and filesystem aliases are ambiguous. A cold
@@ -541,7 +539,9 @@ export function resolveCodexDispatchLane({ members = [], forceProcess = false, r
   const writers = [];
   for (const [memberIndex, member] of members.entries()) {
     if (!member || !Object.hasOwn(member, "writes")) {
-      if (!(member?.readOnly === true && TRUSTED_READ_ONLY_AGENT_TYPES.has(member?.agentType))) unsafeFence = true;
+      // Agent profile names are project-shadowable, so a manifest's readOnly
+      // claim cannot authenticate the effective role. Missing fences fail shut.
+      unsafeFence = true;
       continue;
     }
     if (!Array.isArray(member.writes) || member.writes.length === 0) {

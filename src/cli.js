@@ -390,7 +390,8 @@ async function main() {
       const file = requireArg(rest, 0, "codex-wave <wave.json>: missing file path", fail);
       const wave = JSON.parse(await readBoundedCliText(file, CODEX_WAVE_FILE_MAX_BYTES, "Codex wave manifest"));
       if (!wave || typeof wave !== "object" || Array.isArray(wave)) fail("codex-wave <wave.json>: expected an object");
-      const waveCodexHome = wave.codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
+      if (Object.hasOwn(wave, "codexHome")) fail("codex-wave <wave.json>: codexHome is trusted out-of-band configuration and cannot be set by the manifest");
+      const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
       let threadConfigText = "";
       try {
         threadConfigText = await readBoundedCliText(

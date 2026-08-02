@@ -46,6 +46,7 @@ fs.appendFileSync(${JSON.stringify(launches)}, "worker-start:" + require("node:p
 fs.appendFileSync(${JSON.stringify(launches)}, "env-secret:" + String(process.env.SUPER_SECRET) + "\\n");
 if (payload.outputBytes) process.stdout.write("x".repeat(payload.outputBytes));
 setTimeout(() => {
+  if (payload.swapGitTarget && payload.swapGitSource) fs.copyFileSync(payload.swapGitSource, payload.swapGitTarget);
   fs.writeFileSync(cwd + "/result.txt", payload.value);
   if (!payload.omitTurn) process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:7,output_tokens:3}}) + "\\n");
   fs.appendFileSync(${JSON.stringify(launches)}, "worker-end:" + require("node:path").basename(cwd) + "\\n");
@@ -226,6 +227,40 @@ test("runCodexWave rejects NUL-bearing command inputs before every Codex probe",
     repositoryRoot: fixture.repo, baseSha: fixture.baseSha,
   }), /NUL/i);
   await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
+
+  const oversizedPrompt = member("oversized-prompt", fixture.worktreeA);
+  oversizedPrompt.prompt = "p".repeat(16 * 1024 + 1);
+  await assert.rejects(runCodexWave({
+    members: [oversizedPrompt], forceProcess: true, codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo, baseSha: fixture.baseSha,
+  }), /prompt exceeds/i);
+  await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
+});
+
+test("runCodexWave aborts and settles active writers when a queued member fails prelaunch revalidation", async t => {
+  const fixture = await waveFixture(t);
+  const worktreeC = join(fixture.root, "member-c");
+  await git(fixture.repo, "worktree", "add", "-b", "member-c", worktreeC, "HEAD");
+  const slow = member("slow", fixture.worktreeA);
+  slow.prompt = JSON.stringify({ value: "slow", delayMs: 5000 });
+  const tamper = member("tamper", fixture.worktreeB);
+  tamper.prompt = JSON.stringify({
+    value: "tamper", delayMs: 0,
+    swapGitTarget: join(worktreeC, ".git"),
+    swapGitSource: join(fixture.worktreeB, ".git"),
+  });
+  const queued = member("queued", worktreeC);
+  const started = Date.now();
+  await assert.rejects(runCodexWave({
+    members: [slow, tamper, queued], forceProcess: true, codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo, baseSha: fixture.baseSha,
+    maxConcurrentThreadsPerSession: 2, configuredThreadCeiling: 2,
+  }), /git directory|registry|backpointer|changed/i);
+  assert.ok(Date.now() - started < 3000, "active slow writer must be cancelled and settled before returning");
+  const events = await readFile(fixture.launches, "utf8");
+  assert.match(events, /worker-start:member-a/);
+  assert.match(events, /worker-start:member-b/);
+  assert.doesNotMatch(events, /worker-start:member-c/);
 });
 
 test("runCodexWave rejects executable project config and bounds members, duration, and captured output", async t => {
@@ -334,17 +369,30 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   });
   assert.equal(JSON.parse(result.stdout).mode, "exec-process");
 
+  await writeFile(join(fixture.repo, "packet-a.txt"), "a\n");
+  await writeFile(join(fixture.repo, "packet-b.txt"), "b\n");
   const packetFile = join(fixture.root, "packet-wave.json");
   await writeFile(packetFile, JSON.stringify({
     members: [
-      { id: "one", prompt: "one", model: "gpt-5.6-luna", agentType: "muster-investigator", readOnly: true },
-      { id: "two", prompt: "two", model: "gpt-5.6-sol", agentType: "muster-reviewer", readOnly: true },
+      { id: "one", prompt: "one", model: "gpt-5.6-luna", agentType: "muster-investigator", writes: ["packet-a.txt"] },
+      { id: "two", prompt: "two", model: "gpt-5.6-sol", agentType: "muster-reviewer", writes: ["packet-b.txt"] },
     ],
     catalogVersions: { "gpt-5.6-luna": "v1", "gpt-5.6-sol": "v2" },
     maxConcurrentThreadsPerSession: 2,
     availableThreadLimit: 1,
   }));
-  const packets = await execFile(process.execPath, [runtime, "codex-wave", packetFile]);
+  const untrustedHomeFile = join(fixture.root, "untrusted-home-wave.json");
+  await writeFile(untrustedHomeFile, JSON.stringify({
+    codexHome: join(fixture.root, "attacker-codex-home"),
+    members: [{ id: "one", prompt: "one", model: "gpt-5.6-luna", agentType: "muster-investigator", readOnly: true }],
+    catalogVersions: { "gpt-5.6-luna": "v1" },
+  }));
+  await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", untrustedHomeFile]), /trusted out-of-band|codexHome/i);
+  const packets = await execFile(process.execPath, [
+    runtime, "codex-wave", packetFile,
+    "--repository-root", fixture.repo,
+    "--base-sha", fixture.baseSha,
+  ]);
   const packetResult = JSON.parse(packets.stdout);
   assert.equal(packetResult.effectiveCeiling, 1);
   assert.deepEqual(packetResult.batches.map(batch => batch.length), [1, 1]);

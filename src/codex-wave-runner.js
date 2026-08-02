@@ -19,7 +19,8 @@ export const UNKNOWN_CODEX_USAGE = "UNKNOWN";
 export const MIN_CODEX_WAVE_VERSION = Object.freeze([0, 145, 0]);
 export const CODEX_WAVE_LIMITS = Object.freeze({
   members: 64,
-  promptBytes: 256 * 1024,
+  // Keep one prompt argv element below portable OS command-line ceilings.
+  promptBytes: 16 * 1024,
   outputBytes: 4 * 1024 * 1024,
   schemaBytes: 1024 * 1024,
   workerTimeoutMs: 10 * 60 * 1000,
@@ -160,6 +161,7 @@ function runProcess(command, argv, {
       resolveProcess({
         code: forcedReason ? 1 : (Number.isInteger(code) ? code : 1),
         signal: closeSignal,
+        forcedReason,
         stdout,
         stderr: forcedReason ? `${stderr}${stderr ? "\n" : ""}${forcedReason}` : stderr,
       });
@@ -480,26 +482,28 @@ async function runProcessWave({
   const support = await assertCodexProcessSupport({ command: codexCommand, env: childEnv, spawnProcess });
   const controller = new AbortController();
   const settled = await mapBounded(canonicalMembers, effectiveCeiling, async member => {
-    if (controller.signal.aborted) return { error: new Error("Codex wave cancelled after another member failed") };
-    const refreshedAuthority = await prepareTrustedRepository(authority.repositoryRoot, authority.baseSha);
-    if (refreshedAuthority.commonDir !== authority.commonDir) {
-      controller.abort();
-      return { error: new Error("runCodexWave: trusted repository common directory changed before spawn") };
-    }
-    const revalidated = await validateRegisteredLinkedWorktree(member, refreshedAuthority, member);
-    if (revalidated.cwd !== member.cwd) {
-      controller.abort();
-      return { error: new Error(`runCodexWave: process member ${JSON.stringify(member.id)} changed canonical cwd before spawn`) };
-    }
-    const call = codexExecCall({
-      prompt: member.prompt,
-      cwd: member.cwd,
-      model: member.model,
-      schemaPath: member.schemaPath,
-      sandbox,
-      approvalPolicy,
-    });
     try {
+      if (controller.signal.aborted) {
+        const error = new Error("Codex wave cancelled after another member failed");
+        error.cancelled = true;
+        return { error };
+      }
+      const refreshedAuthority = await prepareTrustedRepository(authority.repositoryRoot, authority.baseSha);
+      if (refreshedAuthority.commonDir !== authority.commonDir) {
+        throw new Error("runCodexWave: trusted repository common directory changed before spawn");
+      }
+      const revalidated = await validateRegisteredLinkedWorktree(member, refreshedAuthority, member);
+      if (revalidated.cwd !== member.cwd) {
+        throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} changed canonical cwd before spawn`);
+      }
+      const call = codexExecCall({
+        prompt: member.prompt,
+        cwd: member.cwd,
+        model: member.model,
+        schemaPath: member.schemaPath,
+        sandbox,
+        approvalPolicy,
+      });
       const result = await runProcess(codexCommand, call.argv, {
         cwd: member.cwd,
         env: childEnv,
@@ -513,6 +517,7 @@ async function runProcessWave({
         const error = new Error(`Codex process for wave member ${JSON.stringify(member.id)} exited ${result.code}: ${result.stderr.trim() || verdict.reason}`);
         error.code = result.code;
         error.memberId = member.id;
+        error.cancelled = result.forcedReason?.startsWith("process cancelled") === true;
         controller.abort();
         return { error };
       }
@@ -525,11 +530,12 @@ async function runProcessWave({
       }
       return { value: { id: member.id, usage: terminal.usage, stdout: result.stdout, stderr: result.stderr } };
     } catch (error) {
+      if (controller.signal.aborted) error.cancelled = true;
       controller.abort();
       return { error };
     }
   });
-  const failure = settled.find(row => row.error);
+  const failure = settled.find(row => row.error && !row.error.cancelled) || settled.find(row => row.error);
   if (failure) throw failure.error;
   return {
     mode: CODEX_EXEC_MODES.EXEC_PROCESS,

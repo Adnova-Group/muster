@@ -173,6 +173,27 @@ function eligibleCodeModeModels(catalog) {
     .sort((left, right) => left.slug.localeCompare(right.slug));
 }
 
+function collectToolNames(value, found = new Set()) {
+  if (!value || typeof value !== "object") return found;
+  for (const [key, child] of Object.entries(value)) {
+    if (["name", "tool", "tool_name", "toolName"].includes(key) && typeof child === "string") {
+      found.add(child);
+    }
+    collectToolNames(child, found);
+  }
+  return found;
+}
+
+export function effectiveToolModeFromEvents(events) {
+  const toolNames = [...collectToolNames(events)];
+  const codeMode = toolNames.some(name => ["exec", "functions.exec"].includes(name));
+  const directTools = toolNames.some(name => [
+    "apply_patch", "exec_command", "read_file", "view_image", "write_stdin"
+  ].includes(name));
+  if (codeMode === directTools) return { mode: UNKNOWN, toolNames };
+  return { mode: codeMode ? "code_mode" : "direct_tools", toolNames };
+}
+
 function deepEqualJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -223,6 +244,9 @@ export async function executeCodexCase({ benchmarkCase, mode, cwd, model }) {
     }));
     const prompt = [
       "Mechanical benchmark case. Do not spawn agents or orchestrate work.",
+      mode === "codeMode"
+        ? "Use the Code Mode JavaScript exec tool for repository inspection; do not use direct shell/file tools."
+        : "Use direct shell/file tools for repository inspection; do not use the Code Mode functions.exec tool.",
       `Inspect repository commit ${benchmarkCase.sourceCommit} using read-only tools.`,
       benchmarkCase.task,
       "Return only the schema-conforming JSON answer."
@@ -238,6 +262,7 @@ export async function executeCodexCase({ benchmarkCase, mode, cwd, model }) {
       throw new Error(`${mode} execution failed for ${benchmarkCase.id}: ${execution.stderr.trim()}`);
     }
     const events = execution.stdout.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+    const effectiveToolMode = effectiveToolModeFromEvents(events);
     const tokenCandidates = events.flatMap(event => findInputTokens(event));
     if (!tokenCandidates.length) throw new Error(`${mode} execution reported no input-token usage`);
     const answerText = await readFile(answerPath, "utf8");
@@ -253,6 +278,8 @@ export async function executeCodexCase({ benchmarkCase, mode, cwd, model }) {
         exitCode: execution.exitCode,
         eventCount: events.length,
         eventStreamSha256: createHash("sha256").update(execution.stdout).digest("hex"),
+        effectiveToolMode: effectiveToolMode.mode,
+        observedToolNames: effectiveToolMode.toolNames,
         answer
       }
     };
@@ -284,8 +311,18 @@ export async function runBenchmark({
   const cases = JSON.parse(await readFile(fixturePath, "utf8"));
   validateCases(cases);
   const { version, features, models } = await probe();
-  const stableAvailable = features.code_mode?.stage === "stable" &&
-    features.code_mode.enabled === true && models.length > 0;
+  const stableFeatureAvailable = features.code_mode?.stage === "stable" &&
+    features.code_mode.enabled === true;
+  const switchableModels = models.filter(model => model.toolMode === "code_mode");
+  const stableAvailable = stableFeatureAvailable && switchableModels.length > 0;
+  let modeIdentity = stableAvailable
+    ? { status: "PENDING", reason: "effective tool modes must be observed in both executions" }
+    : {
+        status: "UNAVAILABLE",
+        reason: stableFeatureAvailable
+          ? "no same-model switchable code_mode candidate; code_mode_only cannot provide a direct-tool control"
+          : "stable enabled Code Mode feature unavailable; effective modes cannot be compared"
+      };
   const pairs = [];
   if (stableAvailable) {
     for (const [index, benchmarkCase] of cases.entries()) {
@@ -293,7 +330,20 @@ export async function runBenchmark({
       const modes = index % 2 === 0 ? ["codeMode", "currentPath"] : ["currentPath", "codeMode"];
       const measurements = {};
       for (const mode of modes) {
-        measurements[mode] = await executeCase({ benchmarkCase, mode, cwd, model: models[0].slug });
+        measurements[mode] = await executeCase({ benchmarkCase, mode, cwd, model: switchableModels[0].slug });
+      }
+      const observed = {
+        codeMode: measurements.codeMode?.provenance?.effectiveToolMode ?? UNKNOWN,
+        currentPath: measurements.currentPath?.provenance?.effectiveToolMode ?? UNKNOWN
+      };
+      if (observed.codeMode !== "code_mode" || observed.currentPath !== "direct_tools") {
+        pairs.length = 0;
+        modeIdentity = {
+          status: "UNVERIFIED",
+          reason: `distinct effective tool modes not observed: ${JSON.stringify(observed)}`,
+          observed
+        };
+        break;
       }
       pairs.push({
         id: benchmarkCase.id,
@@ -302,13 +352,20 @@ export async function runBenchmark({
         currentPath: measurements.currentPath
       });
     }
+    if (pairs.length === cases.length) {
+      modeIdentity = {
+        status: "VERIFIED_DISTINCT",
+        reason: "every pair observed code_mode for the candidate and direct_tools for the control"
+      };
+    }
   }
   const summary = summarizePairs(cases, pairs);
   const evaluated = evaluateAdoption(summary);
-  const adoption = stableAvailable ? evaluated : {
+  const modesVerified = modeIdentity.status === "VERIFIED_DISTINCT";
+  const adoption = modesVerified ? evaluated : {
     ...evaluated,
     decision: "REJECT",
-    failed: ["stable enabled Code Mode capability: unavailable", ...evaluated.failed]
+    failed: [`effective standard versus Code Mode identity: ${modeIdentity.reason}`, ...evaluated.failed]
   };
   const result = {
     schema: "muster-codex-code-mode-inner-loop-benchmark/v1",
@@ -321,6 +378,7 @@ export async function runBenchmark({
         codeModeHost: features.code_mode_host ?? UNKNOWN
       },
       eligibleModels: models,
+      switchableModels,
       stableCodeModeAvailable: stableAvailable
     },
     protocol: {
@@ -329,7 +387,8 @@ export async function runBenchmark({
       orchestrationExcluded: true,
       fixtureCases: cases.length,
       pairedCasesExecuted: pairs.length,
-      status: stableAvailable ? "MEASURED" : "UNSUPPORTED_HOST",
+      status: modesVerified ? "MEASURED" : stableAvailable ? "MODE_IDENTITY_UNVERIFIED" : "UNSUPPORTED_HOST",
+      modeIdentity,
       unsupportedHostFallback: "retain the current crew-member tool-call path"
     },
     pairs,

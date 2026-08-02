@@ -10,7 +10,8 @@ The checked-in probe used `codex-cli 0.146.0` with the default active configurat
 override. `codex features list` reported `code_mode` as `under development / false` and
 `code_mode_host` as `stable / true`. The stable host process is infrastructure, not evidence that the
 Code Mode feature is stable and enabled. The local model catalog advertised `code_mode_only` for
-four models, but model eligibility cannot override the failed feature-stability gate.
+four models. That mode is also unusable as a control: model metadata wins over a feature override,
+so disabling `code_mode` cannot turn a `code_mode_only` model into a direct-tool model.
 
 ## Protocol
 
@@ -27,7 +28,11 @@ commit-pinned gold cases are in `eval/fixtures/codex-code-mode-inner-loop-cases.
   completed pairs, zero correctness regressions, and at least 20% lower median latency **or** input
   tokens.
 - The capability probe must see `code_mode` itself as both `stable` and enabled, plus an eligible
-  model. Unsupported hosts execute zero pairs and retain the current path.
+  same-model candidate whose catalog `tool_mode` is switchable `code_mode`, not `code_mode_only`.
+  Every measured execution must then expose the expected effective tool identity in its JSONL events:
+  `code_mode` for the candidate and `direct_tools` for the control. A missing, equivalent, or reversed
+  identity discards the measurements, rejects adoption, and records `MODE_IDENTITY_UNVERIFIED`.
+  Unsupported hosts execute zero pairs and retain the current path.
 - The benchmark excludes collaboration and wave dispatch. It evaluates only inner-loop mechanics.
 
 Reproduce the unsupported-host evidence:
@@ -39,7 +44,8 @@ node eval/codex-code-mode-inner-loop-benchmark.mjs \
 ```
 
 On a future stable host, the same command executes all twenty bounded turns (ten Code Mode and ten
-current-path controls). The gate deliberately does not force-enable an under-development feature,
+current-path controls) only when a switchable same-model candidate exists. The gate deliberately
+does not force-enable an under-development feature, treat `code_mode_only` as a direct-tool control,
 accept externally supplied metrics, or manufacture model-turn measurements.
 
 ## Results

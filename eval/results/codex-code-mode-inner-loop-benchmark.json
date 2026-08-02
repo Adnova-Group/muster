@@ -1,6 +1,6 @@
 {
   "schema": "muster-codex-code-mode-inner-loop-benchmark/v1",
-  "generatedAt": "2026-08-01T19:39:54.805Z",
+  "generatedAt": "2026-08-02T00:37:43.896Z",
   "environment": {
     "codexVersion": "codex-cli 0.146.0",
     "configuration": "default active Codex configuration; no benchmark feature override",
@@ -32,6 +32,7 @@
         "toolMode": "code_mode_only"
       }
     ],
+    "switchableModels": [],
     "stableCodeModeAvailable": false
   },
   "protocol": {
@@ -44,6 +45,10 @@
     "fixtureCases": 10,
     "pairedCasesExecuted": 0,
     "status": "UNSUPPORTED_HOST",
+    "modeIdentity": {
+      "status": "UNAVAILABLE",
+      "reason": "stable enabled Code Mode feature unavailable; effective modes cannot be compared"
+    },
     "unsupportedHostFallback": "retain the current crew-member tool-call path"
   },
   "pairs": [],
@@ -113,7 +118,7 @@
       }
     ],
     "failed": [
-      "stable enabled Code Mode capability: unavailable",
+      "effective standard versus Code Mode identity: stable enabled Code Mode feature unavailable; effective modes cannot be compared",
       "10 completed pairs: 0",
       "median latency or input-token reduction: {\"medianLatencyReductionPct\":\"UNKNOWN\",\"medianInputTokenReductionPct\":\"UNKNOWN\"}",
       "correctness regressions: UNKNOWN (threshold cannot pass)",

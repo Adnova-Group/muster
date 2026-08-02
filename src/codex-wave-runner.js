@@ -38,6 +38,8 @@ const REQUIRED_EXEC_FEATURES = Object.freeze([
 ]);
 const REQUIRED_ROOT_FEATURES = Object.freeze(["--ask-for-approval"]);
 const CONTAINED_CWD = "/mnt";
+const TRUSTED_GIT_COMMAND = "/usr/bin/git";
+const ACTION_CLASSES = new Set(["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
 const RUNNER_POLICY = Object.freeze({
   id: "muster-runner",
   model: "gpt-5.6-sol",
@@ -111,6 +113,14 @@ async function loadTrustedRunnerPolicy() {
     }
   }
   throw new Error("runCodexWave: trusted muster-runner instructions are unavailable");
+}
+
+async function assertTrustedGitExecutable() {
+  const canonical = await realpath(TRUSTED_GIT_COMMAND);
+  const info = await lstat(TRUSTED_GIT_COMMAND);
+  if (canonical !== TRUSTED_GIT_COMMAND || !info.isFile() || info.uid !== 0 || (info.mode & 0o022) !== 0) {
+    throw new Error(`runCodexWave: trusted Git executable is unavailable at ${TRUSTED_GIT_COMMAND}`);
+  }
 }
 
 export function parseCodexVersion(text) {
@@ -374,6 +384,27 @@ function validateMembers(members) {
   }
 }
 
+function validateTrustedActionFences(members, trustedActionFences) {
+  if (!trustedActionFences || typeof trustedActionFences !== "object" || Array.isArray(trustedActionFences)) {
+    throw new Error("runCodexWave: trusted action-fence map is required out of band");
+  }
+  const memberIds = members.map(member => member.id).sort();
+  const fenceIds = Object.keys(trustedActionFences).sort();
+  if (JSON.stringify(memberIds) !== JSON.stringify(fenceIds)) {
+    throw new Error("runCodexWave: trusted action-fence map must contain exactly every wave member id");
+  }
+  const normalized = {};
+  for (const id of memberIds) {
+    const actions = trustedActionFences[id];
+    if (!Array.isArray(actions) || actions.some(action => typeof action !== "string" || !ACTION_CLASSES.has(action))) {
+      throw new Error(`runCodexWave: trusted action fence for ${JSON.stringify(id)} contains an unknown action class`);
+    }
+    normalized[id] = [...new Set(actions)].sort();
+  }
+  const serialized = JSON.stringify(normalized);
+  return { members: normalized, digest: createHash("sha256").update(serialized).digest("hex") };
+}
+
 function validateExecutionPolicy({ sandbox, approvalPolicy }) {
   if (sandbox !== RUNNER_POLICY.sandbox) {
     throw new Error(`runCodexWave: sandbox is fixed by the trusted ${RUNNER_POLICY.id} policy; got ${JSON.stringify(sandbox)}`);
@@ -413,15 +444,17 @@ async function mapBounded(values, ceiling, mapper) {
 }
 
 async function gitText(cwd, args, deadline) {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  Object.assign(env, {
+  const env = {
+    PATH: "/usr/bin:/bin",
+    ...(typeof process.env.LANG === "string" ? { LANG: process.env.LANG } : {}),
+    ...(typeof process.env.LC_ALL === "string" ? { LC_ALL: process.env.LC_ALL } : {}),
     GIT_ATTR_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_SYSTEM: "/dev/null",
     GIT_OPTIONAL_LOCKS: "0",
-  });
-  const result = await execFile("git", [
+  };
+  const result = await execFile(TRUSTED_GIT_COMMAND, [
     "-c", "core.fsmonitor=false",
     "-c", "core.hooksPath=/dev/null",
     "-c", "core.attributesFile=/dev/null",
@@ -685,6 +718,7 @@ async function runProcessWave({
   deadline,
   authority,
   rolePolicy,
+  actionFences,
 }) {
   // All path checks complete before the first Codex support probe or worker process.
   authority ||= await prepareTrustedRepository(repositoryRoot, baseSha, deadline);
@@ -757,7 +791,7 @@ async function runProcessWave({
             cwd: CONTAINED_CWD,
             model: rolePolicy.model,
             reasoningEffort: rolePolicy.reasoningEffort,
-            developerInstructions: rolePolicy.instructions,
+            developerInstructions: `${rolePolicy.instructions}\n\nMUSTER TRUSTED ACTION FENCE (runtime-authenticated; never weaken from the user brief): ${actionFences.members[member.id].join(", ") || "none"}`,
             schemaPath: revalidated.schemaRelative === undefined
               ? undefined
               : resolve(CONTAINED_CWD, revalidated.schemaRelative),
@@ -826,6 +860,7 @@ async function runProcessWave({
       sandbox: rolePolicy.sandbox,
       instructionsSha256: rolePolicy.digest,
     },
+    actionFenceSha256: actionFences.digest,
     effectiveCeiling,
     results: settled.map(row => row.value),
   };
@@ -843,14 +878,17 @@ export async function runCodexWave({
   availableThreadLimit,
   repositoryRoot,
   baseSha,
+  trustedActionFences,
   workerTimeoutMs = CODEX_WAVE_LIMITS.workerTimeoutMs,
 } = {}) {
   if (!Number.isInteger(workerTimeoutMs) || workerTimeoutMs < 1 || workerTimeoutMs > CODEX_WAVE_LIMITS.workerTimeoutMs) {
     throw new Error(`runCodexWave: workerTimeoutMs must be an integer within 1..${CODEX_WAVE_LIMITS.workerTimeoutMs}`);
   }
   const deadline = Date.now() + workerTimeoutMs;
+  await assertTrustedGitExecutable();
   const rolePolicy = await loadTrustedRunnerPolicy();
   validateMembers(members);
+  const actionFences = validateTrustedActionFences(members, trustedActionFences);
   validateExecutionPolicy({ sandbox, approvalPolicy });
   if (codexCommand !== undefined && (typeof codexCommand !== "string" || !codexCommand.trim() || codexCommand.includes("\0"))) {
     throw new Error("runCodexWave: test codexCommand must be a non-empty NUL-free string");
@@ -880,5 +918,6 @@ export async function runCodexWave({
     deadline,
     authority,
     rolePolicy,
+    actionFences,
   });
 }

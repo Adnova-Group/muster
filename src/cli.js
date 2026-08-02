@@ -106,6 +106,7 @@ import {
 
 const CODEX_WAVE_FILE_MAX_BYTES = 1024 * 1024;
 const CODEX_THREAD_CONFIG_MAX_BYTES = 128 * 1024;
+const CODEX_ACTION_FENCE_MAX_BYTES = 64 * 1024;
 
 async function readBoundedCliText(path, maxBytes, label) {
   return (await readNoFollowRegular(resolve(path), {
@@ -125,7 +126,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --repository-root <repo> --base-sha <sha>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
@@ -392,6 +393,12 @@ async function main() {
       if (!wave || typeof wave !== "object" || Array.isArray(wave)) fail("codex-wave <wave.json>: expected an object");
       if (Object.hasOwn(wave, "codexHome")) fail("codex-wave <wave.json>: codexHome is trusted out-of-band configuration and cannot be set by the manifest");
       if (Object.hasOwn(wave, "catalogVersions")) fail("codex-wave <wave.json>: catalogVersions is trusted out-of-band configuration and cannot be set by the manifest");
+      const fenceFile = flagValue(rest, "--fence-file");
+      if (!fenceFile) fail("codex-wave <wave.json>: --fence-file is required for trusted action policy");
+      const fenceDocument = JSON.parse(await readBoundedCliText(fenceFile, CODEX_ACTION_FENCE_MAX_BYTES, "Codex action fence"));
+      if (!fenceDocument || typeof fenceDocument !== "object" || Array.isArray(fenceDocument) || !fenceDocument.members) {
+        fail("codex-wave --fence-file: expected an object with a members map");
+      }
       const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
       let threadConfigText = "";
       try {
@@ -410,6 +417,7 @@ async function main() {
         maxConcurrentThreadsPerSession: wave.maxConcurrentThreadsPerSession,
         configuredThreadCeiling: resolveCodexThreadCeiling(threadConfigText),
         availableThreadLimit: wave.availableThreadLimit,
+        trustedActionFences: fenceDocument.members,
         repositoryRoot: flagValue(rest, "--repository-root"),
         baseSha: flagValue(rest, "--base-sha"),
       }));

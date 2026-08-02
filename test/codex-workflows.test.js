@@ -29,7 +29,7 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   assert.match(coordination, /plugin cache is not a Git checkout/);
   assert.doesNotMatch(coordination, /git log -1 --format/);
   const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
-  assert.match(orchestrator, /codex-wave <wave\.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>/);
+  assert.match(orchestrator, /codex-wave <wave\.json> --fence-file <trusted no-follow action-fence\.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>/);
   assert.match(orchestrator, /one process-wave member/);
   assert.match(orchestrator, /pristine registered linked worktree/);
   assert.match(orchestrator, /hermetic `codex exec -C`/);
@@ -44,6 +44,7 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   assert.match(orchestrator, /Never attach unrelated plan items/);
   assert.match(orchestrator, /Never call a subagent API from this production-wave step/);
   assert.match(orchestrator, /sealed process lane rejects ignored artifacts/);
+  assert.match(orchestrator, /no-follow fence document is the runtime-authenticated action-policy source/);
   assert.doesNotMatch(orchestrator, /propagate the active action fence|receives this same action-fence propagation/i);
   assert.doesNotMatch(orchestrator, /generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK/);
 

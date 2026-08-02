@@ -5,10 +5,15 @@ import { promisify } from "node:util";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { posixContainmentCall, runCodexWave, terminateProcess } from "../src/codex-wave-runner.js";
+import { posixContainmentCall, runCodexWave as runCodexWaveImpl, terminateProcess } from "../src/codex-wave-runner.js";
 import { buildCodexPlugin } from "../scripts/build-codex.mjs";
 
 const execFile = promisify(execFileCb);
+
+function runCodexWave(options) {
+  const trustedActionFences = Object.fromEntries((options.members || []).map(member => [member.id, ["send", "purchase"]]));
+  return runCodexWaveImpl({ ...options, trustedActionFences });
+}
 
 async function git(cwd, ...args) {
   return execFile("git", args, { cwd });
@@ -178,6 +183,7 @@ test("runCodexWave keeps two concurrent conflicting writers isolated in register
     instructionsSha256: result.rolePolicy.instructionsSha256,
   });
   assert.match(result.rolePolicy.instructionsSha256, /^[a-f0-9]{64}$/);
+  assert.match(result.actionFenceSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(
     await Promise.all([
       readFile(join(fixture.worktreeA, "result.txt"), "utf8"),
@@ -268,6 +274,16 @@ test("runCodexWave rejects dirty tracked, untracked, and ignored worktrees befor
 
 test("runCodexWave rejects manifest role-policy overrides and hidden tracked changes", async t => {
   const policyFixture = await waveFixture(t);
+  const policyMember = member("policy", policyFixture.worktreeA);
+  await assert.rejects(runCodexWaveImpl({
+    members: [policyMember], codexCommand: policyFixture.codex,
+    repositoryRoot: policyFixture.repo, baseSha: policyFixture.baseSha,
+  }), /action-fence map is required out of band/i);
+  await assert.rejects(runCodexWaveImpl({
+    members: [policyMember], codexCommand: policyFixture.codex,
+    repositoryRoot: policyFixture.repo, baseSha: policyFixture.baseSha,
+    trustedActionFences: { policy: ["teleport"] },
+  }), /unknown action class/i);
   const overridden = { ...member("policy", policyFixture.worktreeA), model: "gpt-5.6-luna" };
   await assert.rejects(runCodexWave({
     members: [overridden], codexCommand: policyFixture.codex,
@@ -527,17 +543,26 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   await writeFile(waveFile, JSON.stringify({
     members: [member("a", fixture.worktreeA), member("b", fixture.worktreeB)],
   }));
+  const fenceFile = join(fixture.root, "action-fence.json");
+  await writeFile(fenceFile, JSON.stringify({ members: { a: ["send"], b: ["purchase"] } }));
+  const fakeGitMarker = join(fixture.root, "fake-git-ran");
+  const fakeGit = join(fixture.root, "git");
+  await writeFile(fakeGit, `#!/bin/sh\nprintf invoked > ${JSON.stringify(fakeGitMarker)}\nexit 99\n`);
+  await chmod(fakeGit, 0o755);
   await assert.rejects(execFile(process.execPath, [
     runtime, "codex-wave", waveFile,
+    "--fence-file", fenceFile,
     "--repository-root", fixture.repo,
     "--base-sha", fixture.baseSha,
   ], {
     env: { ...process.env, PATH: `${fixture.root}:/usr/bin:/bin`, MUSTER_CODEX_COMMAND: fixture.codex },
   }), /no trusted Codex executable/i);
+  await assert.rejects(readFile(fakeGitMarker, "utf8"), { code: "ENOENT" });
 
-  await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", waveFile]), /repositoryRoot is required/i);
+  await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", waveFile, "--fence-file", fenceFile]), /repositoryRoot is required/i);
   await assert.rejects(execFile(process.execPath, [
     runtime, "codex-wave", waveFile, "--repository-root", fixture.repo,
+    "--fence-file", fenceFile,
   ]), /baseSha must be a full/i);
 
   const untrustedHomeFile = join(fixture.root, "untrusted-home-wave.json");
@@ -559,6 +584,7 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   await execFile("mkfifo", [join(fifoHome, "config.toml")]);
   await assert.rejects(execFile(process.execPath, [
     runtime, "codex-wave", waveFile,
+    "--fence-file", fenceFile,
     "--repository-root", fixture.repo,
     "--base-sha", fixture.baseSha,
   ], {

@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } fr
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
+import { spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { codexAvailable } from "./codex-inventory.js";
 import { codexMcpOverlay, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
@@ -380,7 +381,10 @@ export function reconcileConfigTomlHookState(text, registeredEntries, keptEntrie
 // exists to prevent, so it must be reported loudly rather than inferred.
 //
 const HOOK_CONTEXT_EVENTS = new Set(["PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit", "SubagentStart"]);
+const MATCHER_IGNORED_EVENTS = new Set(["UserPromptSubmit", "Stop"]);
 const DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT = 2_500;
+const HOOK_INVENTORY_MAX_BYTES = 4 * 1024 * 1024;
+const HOOK_INVENTORY_TIMEOUT_MS = 10_000;
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return value.map(canonicalJson);
@@ -400,11 +404,10 @@ function currentCodexHookHash(event, group, hook) {
   const normalizedHook = {
     type: "command",
     command,
-    commandWindows: null,
     timeout,
-    async: hook?.async === true,
-    statusMessage: typeof hook?.statusMessage === "string" ? hook.statusMessage : null
+    async: hook?.async === true
   };
+  if (typeof hook?.statusMessage === "string") normalizedHook.statusMessage = hook.statusMessage;
   if (HOOK_CONTEXT_EVENTS.has(event)
     && Number.isSafeInteger(hook?.additionalContextLimit)
     && hook.additionalContextLimit >= 0
@@ -413,23 +416,105 @@ function currentCodexHookHash(event, group, hook) {
   }
   const identity = {
     event_name: hookStateEventName(event),
-    matcher: typeof group?.matcher === "string" ? group.matcher : null,
     hooks: [normalizedHook]
   };
+  if (!MATCHER_IGNORED_EVENTS.has(event) && typeof group?.matcher === "string") identity.matcher = group.matcher;
   return `sha256:${createHash("sha256").update(JSON.stringify(canonicalJson(identity))).digest("hex")}`;
 }
 
 function hookTrustSectionState(state, section) {
   let enabled = true;
   let trustedHash = null;
+  let malformed = false;
+  let sawEnabled = false;
+  let sawTrustedHash = false;
   for (let index = section.headerLine + 1; index < section.end; index++) {
     const line = state.lines[index];
+    if (!line.trim() || /^\s*#/.test(line)) continue;
     const enabledMatch = line.match(/^\s*enabled\s*=\s*(true|false)\s*(?:#.*)?$/);
-    if (enabledMatch) enabled = enabledMatch[1] === "true";
+    if (enabledMatch) {
+      if (sawEnabled) malformed = true;
+      sawEnabled = true;
+      enabled = enabledMatch[1] === "true";
+      continue;
+    }
     const hashMatch = line.match(/^\s*trusted_hash\s*=\s*(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/);
-    if (hashMatch) trustedHash = hashMatch[1] ?? hashMatch[2];
+    if (hashMatch) {
+      if (sawTrustedHash) malformed = true;
+      sawTrustedHash = true;
+      trustedHash = hashMatch[1] ?? hashMatch[2];
+      continue;
+    }
+    if (/^\s*(?:enabled|trusted_hash)\s*=/.test(line)) malformed = true;
   }
-  return { enabled, trustedHash };
+  return { enabled, trustedHash, malformed };
+}
+
+export async function readCodexHookInventory({ runtimeIdentity, cwds, env = process.env, spawnFn = spawn, timeoutMs = HOOK_INVENTORY_TIMEOUT_MS } = {}) {
+  if (!runtimeIdentity?.node || !runtimeIdentity?.codex) return { ok: false, error: "pinned Codex runtime unavailable", data: [] };
+  return new Promise(resolveInventory => {
+    let settled = false, stdout = "", stderr = "", initialized = false;
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (child.exitCode === null) child.kill();
+      resolveInventory(result);
+    };
+    const child = spawnFn(runtimeIdentity.node, [runtimeIdentity.codex, "app-server"], {
+      env,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    const timer = setTimeout(() => finish({ ok: false, error: "Codex hooks/list timed out", data: [] }), timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-HOOK_INVENTORY_MAX_BYTES); });
+    child.stdout.on("data", chunk => {
+      stdout += chunk;
+      if (Buffer.byteLength(stdout) > HOOK_INVENTORY_MAX_BYTES) return finish({ ok: false, error: "Codex hooks/list output exceeded its byte limit", data: [] });
+      let newline;
+      while ((newline = stdout.indexOf("\n")) >= 0) {
+        const line = stdout.slice(0, newline); stdout = stdout.slice(newline + 1);
+        let message;
+        try { message = JSON.parse(line); } catch { continue; }
+        if (message.id === 1 && message.result && !initialized) {
+          initialized = true;
+          child.stdin.write(`${JSON.stringify({ method: "initialized", params: {} })}\n`);
+          child.stdin.write(`${JSON.stringify({ method: "hooks/list", id: 2, params: { cwds } })}\n`);
+        } else if (message.id === 1 && message.error) {
+          finish({ ok: false, error: `Codex hooks/list initialize failed: ${message.error.message || "unknown error"}`, data: [] });
+        } else if (message.id === 2 && message.result?.data) {
+          finish({ ok: true, data: message.result.data });
+        } else if (message.id === 2 && message.error) {
+          finish({ ok: false, error: `Codex hooks/list failed: ${message.error.message || "unknown error"}`, data: [] });
+        }
+      }
+    });
+    child.on("error", error => finish({ ok: false, error: `Codex hooks/list launch failed: ${error.message}`, data: [] }));
+    child.on("exit", code => {
+      if (!settled) finish({ ok: false, error: `Codex hooks/list exited before a response (code ${code}; ${stderr.trim().slice(0, 300)})`, data: [] });
+    });
+    child.stdin.on("error", error => finish({ ok: false, error: `Codex hooks/list stdin failed: ${error.message}`, data: [] }));
+    child.stdin.write(`${JSON.stringify({ method: "initialize", id: 1, params: { clientInfo: { name: "muster", title: "Muster", version: "0.6.0" } } })}\n`);
+  });
+}
+
+export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results) {
+  if (!inventory?.ok) return { verified: false, ok: false, error: inventory?.error || "Codex hooks/list unavailable", results: [] };
+  const scope = inventory.data.find(entry => resolve(entry?.cwd || "") === resolve(cwd));
+  if (!scope || (Array.isArray(scope.errors) && scope.errors.length)) {
+    return { verified: true, ok: false, error: scope?.errors?.join("; ") || "Codex hooks/list omitted the requested scope", results: [] };
+  }
+  const hooks = Array.isArray(scope.hooks) ? scope.hooks : [];
+  const effectiveResults = results.map(result => {
+    const expectedKey = `${hooksJsonPath}:${result.key}`;
+    const hook = hooks.find(candidate => candidate?.key === expectedKey);
+    const active = Boolean(hook && hook.enabled === true && String(hook.trustStatus).toLowerCase() === "trusted"
+      && hook.currentHash === result.currentHash);
+    return { key: result.key, expectedKey, present: Boolean(hook), enabled: hook?.enabled ?? null,
+      trustStatus: hook?.trustStatus ?? null, currentHash: hook?.currentHash ?? null, status: active ? "active" : "inactive" };
+  });
+  return { verified: true, ok: effectiveResults.every(result => result.status === "active"), error: null, results: effectiveResults };
 }
 
 // Pure and text-scoped, mirroring reconcileConfigTomlHookState: verifies every
@@ -449,14 +534,17 @@ export function musterHookTrustGaps({ configTomlText, hooksJsonPath, config, hoo
     if (prefix !== hooksJsonPath) continue;
     const key = `${event}:${groupIndex}:${hookIndex}`;
     scopeKeys.push(key);
-    states.set(key, hookTrustSectionState(parsed, section));
+    const sectionState = hookTrustSectionState(parsed, section);
+    if (states.has(key)) sectionState.malformed = true;
+    states.set(key, sectionState);
   }
   const results = entries.map(({ key, event, group, hook }) => {
     const currentHash = currentCodexHookHash(event, group, hook);
     const state = states.get(key);
     const enabled = state?.enabled !== false;
     const trustedHash = state?.trustedHash ?? null;
-    const status = !enabled ? "disabled"
+    const status = state?.malformed ? "invalid"
+      : !enabled ? "disabled"
       : trustedHash === currentHash ? "trusted"
       : trustedHash === null ? "untrusted"
       : "modified";
@@ -1177,29 +1265,37 @@ function parseWindowsShellTokens(command) {
 // if rerun). A version mismatch fails closed to "not healthy" here, exactly
 // like every other validation failure above -- the project scope then
 // installs its own (current) hooks rather than trusting a stale peer.
-async function userScopeHooksHealthy({ home, packageVersion }) {
+async function inspectUserScopeHooks({ home, packageVersion }) {
   const dir = codexHome(home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
-  if (!(await safeExists(manifestPath))) return false;
+  if (!(await safeExists(manifestPath))) return null;
   const manifestRaw = await readJson(manifestPath);
-  if (manifestRaw?.packageVersion !== packageVersion) return false;
+  if (manifestRaw?.packageVersion !== packageVersion) return null;
   let manifest;
   try { manifest = validateHookManifest(manifestRaw, runtimeDir, manifestPath); }
-  catch { return false; }
+  catch { return null; }
   const events = Object.entries(manifest.hookGroups || {});
-  if (!manifest.files.length || !events.length) return false;
-  for (const file of manifest.files) if (!(await safeExists(join(runtimeDir, file)))) return false;
-  if (!(await safeExists(configPath))) return false;
+  if (!manifest.files.length || !events.length) return null;
+  for (const file of manifest.files) if (!(await safeExists(join(runtimeDir, file)))) return null;
+  if (!(await safeExists(configPath))) return null;
   let config;
   try { config = await readJson(configPath); }
-  catch { return false; }
-  if (!config || typeof config !== "object" || Array.isArray(config) || typeof config.hooks !== "object" || !config.hooks || Array.isArray(config.hooks)) return false;
+  catch { return null; }
+  if (!config || typeof config !== "object" || Array.isArray(config) || typeof config.hooks !== "object" || !config.hooks || Array.isArray(config.hooks)) return null;
   for (const [event, groups] of events) {
-    if (!Array.isArray(groups) || !groups.length) return false;
+    if (!Array.isArray(groups) || !groups.length) return null;
     const current = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
-    for (const group of groups) if (!current.some(candidate => same(candidate, group))) return false;
+    for (const group of groups) if (!current.some(candidate => same(candidate, group))) return null;
   }
-  return true;
+  const configTomlPath = join(dir, "config.toml");
+  const configTomlText = await safeExists(configTomlPath) ? await readSafe(configTomlPath) : "";
+  const gaps = musterHookTrustGaps({ configTomlText, hooksJsonPath: configPath, config, hookGroups: manifest.hookGroups });
+  return { dir, configPath, config, hookGroups: manifest.hookGroups, gaps };
+}
+
+async function userScopeHooksHealthy({ home, packageVersion }) {
+  const inspected = await inspectUserScopeHooks({ home, packageVersion });
+  return Boolean(inspected && inspected.gaps.untrusted.length === 0 && inspected.gaps.stale.length === 0);
 }
 
 async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath }) {
@@ -1458,7 +1554,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   return { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
 }
 
-export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, runtimeIdentity, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
+export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, runtimeIdentity, hookInventory, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
   const executor = execFile || execFileDefault;
   let identity = runtimeIdentity;
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
@@ -1644,25 +1740,42 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const trustRemediation = "Open Codex, run /hooks, and trust the exact current Muster hook definitions, then rerun muster install codex to verify them";
   let hookTrust;
   if (dryRun) {
-    hookTrust = { ok: true, blocking: false, verified: false, results: [], stale: [], remediation: null };
+    hookTrust = { ok: false, blocking: false, verified: false, results: [], stale: [], effective: { verified: false, ok: false, results: [], error: "dry-run does not verify effective hook activation" }, remediation: null };
   } else {
-    const configTomlText = await readSafe(threadLimitConfigPath);
-    const gaps = musterHookTrustGaps({
-      configTomlText,
-      hooksJsonPath: hooks.configPath,
+    const inspected = hooks.skipped ? await inspectUserScopeHooks({ home, packageVersion }) : null;
+    const trustTarget = hooks.skipped ? inspected : {
+      configPath: hooks.configPath,
       config: hooks.config,
-      hookGroups: hooks.manifest.hookGroups
+      hookGroups: hooks.manifest.hookGroups,
+      gaps: musterHookTrustGaps({
+        configTomlText: await readSafe(threadLimitConfigPath),
+        hooksJsonPath: hooks.configPath,
+        config: hooks.config,
+        hookGroups: hooks.manifest.hookGroups
+      })
+    };
+    const gaps = trustTarget?.gaps ?? { results: [], untrusted: ["canonical-scope-invalid"], stale: [] };
+    const inventoryReader = hookInventory || readCodexHookInventory;
+    const inventory = await inventoryReader({
+      runtimeIdentity: identity,
+      cwds: [cwd],
+      env: { ...process.env, CODEX_HOME: codexHome(home) }
     });
+    const effective = trustTarget
+      ? effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results)
+      : { verified: false, ok: false, results: [], error: "canonical user hook scope changed or became invalid during install" };
+    const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;
     hookTrust = {
-      ok: gaps.untrusted.length === 0,
-      blocking: gaps.untrusted.length > 0,
+      ok: persistedOk && effective.ok,
+      blocking: !persistedOk || !effective.ok,
       verified: true,
       results: gaps.results,
       stale: gaps.stale,
-      remediation: gaps.untrusted.length ? trustRemediation : null
+      effective,
+      remediation: !persistedOk || !effective.ok ? trustRemediation : null
     };
   }
-  return { ok: hookTrust.ok, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
+  return { ok: dryRun ? true : hookTrust.ok, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
     hooksSkipped: hooks.skipped,
     hookTrust,
     prunedScopes, prunedHookState, prunedProjectTrust,

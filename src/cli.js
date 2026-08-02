@@ -1076,7 +1076,9 @@ async function main() {
       out(await readProfile());
     } else if (cmd === "install") {
       if (rest[0] === "codex") {
-        out(await runCodexInstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));
+        const result = await runCodexInstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") });
+        out(result);
+        if (!result.ok) process.exitCode = 2;
       } else if (rest[0] === "chatgpt-work") {
         const installOptions = {
           connectionId: flagValue(rest, "--connection-id"),

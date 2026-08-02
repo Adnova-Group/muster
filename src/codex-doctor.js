@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { musterHookTrustGaps, parseHookCommand, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { effectiveHookTrust, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -681,7 +681,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, runtimeIdentity, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, runtimeIdentity, hookInventory, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -995,6 +995,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // Muster-owned hook groups that are correctly installed but carry NO
   // config.toml [hooks.state] trust entry -- i.e. Codex is skipping them.
   const hookTrustGaps = [];
+  const hookTrustTargets = [];
   // A present-but-incoherent scope (owner/version/groups/hash MISMATCH) with the
   // specific offending path (the runtime dir for a hash mismatch, else the
   // manifest); and the caught MISSING/MALFORMED/OTHER failures with their paths.
@@ -1069,7 +1070,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
           configTomlText, hooksJsonPath: configPath, config, hookGroups: owner.hookGroups
         });
         const blocked = gaps.results.filter(result => result.status !== "trusted");
-        if (blocked.length) hookTrustGaps.push({ dir, results: blocked });
+        hookTrustTargets.push({ dir, configPath, results: gaps.results });
+        if (blocked.length || gaps.stale.length) hookTrustGaps.push({ dir, results: blocked, stale: gaps.stale });
       } else {
         staleHookScopes.push(dir);
         // Present + parsed but not coherent: a MISMATCH. Name the runtime dir
@@ -1149,9 +1151,21 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // which is the exact failure mode muster's guard design exists to prevent.
   // Remediation is a human trusting the hook in Codex, never
   // --dangerously-bypass-hook-trust.
-  const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length, 0);
+  const inventoryReader = hookInventory || readCodexHookInventory;
+  const inventory = hookTrustTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: [cwd], env: { ...env, CODEX_HOME: userCodexHome } }) : null;
+  const effectiveFailures = hookTrustTargets.map(target => ({
+    dir: target.dir,
+    effective: effectiveHookTrust(inventory, cwd, target.configPath, target.results)
+  })).filter(item => !item.effective.ok);
+  const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length + item.stale.length, 0)
+    + effectiveFailures.reduce((total, item) => total + Math.max(1, item.effective.results.filter(result => result.status !== "active").length), 0);
+  const persistedDetail = hookTrustGaps.map(item => `${item.dir} (${[
+    ...item.results.map(result => `${result.key}=${result.status}`),
+    ...item.stale.map(key => `${key}=stale`)
+  ].join(", ")})`);
+  const effectiveDetail = effectiveFailures.map(item => `${item.dir} (effective=${item.effective.error || item.effective.results.filter(result => result.status !== "active").map(result => result.key).join(",")})`);
   checks.push({ name: "codex-hook-trust", ok: untrustedCount === 0, detail: untrustedCount
-    ? `${untrustedCount} Muster-owned Codex hook${untrustedCount === 1 ? " is" : "s are"} blocked by exact trust verification: ${hookTrustGaps.map(item => `${item.dir} (${item.results.map(result => `${result.key}=${result.status}`).join(", ")})`).join("; ")}. Codex runs a hook only when it is enabled and its trusted_hash equals the exact current hash -- open Codex, run /hooks, trust the exact current definitions, then rerun muster doctor --codex`
+    ? `${untrustedCount} Muster-owned Codex hook trust or activation check${untrustedCount === 1 ? " is" : "s are"} blocked: ${[...persistedDetail, ...effectiveDetail].join("; ")}. Codex runs a hook only when it is enabled, its trusted_hash equals the exact current hash, and hooks/list reports it active -- open Codex, run /hooks, trust the exact current definitions, then rerun muster doctor --codex`
     : hookStatuses.length
     ? `all Muster-owned Codex hooks in ${hookStatuses.length} scope(s) have the exact current hash and enabled state`
     : "no managed Codex hooks to verify trust for" });

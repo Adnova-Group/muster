@@ -5,12 +5,15 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
 
+const absentCodex = async () => { throw new Error("codex absent"); };
 const HOOKS_JSON = "/home/u/.codex/hooks.json";
-const group = command => ({ hooks: [{ type: "command", command }] });
+const group = (command, matcher) => ({ ...(matcher === undefined ? {} : { matcher }), hooks: [{ type: "command", command }] });
 const state = (key, { trustedHash, enabled } = {}) => [
   `[hooks.state."${HOOKS_JSON}:${key}"]`,
   ...(trustedHash === undefined ? [] : [`trusted_hash = "${trustedHash}"`]),
@@ -24,12 +27,12 @@ const fixtures = [
     event: "PreToolUse",
     command: "echo trusted",
     key: "pre_tool_use:0:0",
-    currentHash: "sha256:d4199fac84734f3033669015bf980b297547865b91ed664687715118b3e7a960",
+    currentHash: "sha256:620fb822b32c78c73a2c5817199b662d4e82c221d93dd1b85bf843cf8fec7785",
     configTomlText: state("pre_tool_use:0:0", {
-      trustedHash: "sha256:d4199fac84734f3033669015bf980b297547865b91ed664687715118b3e7a960"
+      trustedHash: "sha256:620fb822b32c78c73a2c5817199b662d4e82c221d93dd1b85bf843cf8fec7785"
     }),
     expectedStatus: "trusted",
-    expectedTrustedHash: "sha256:d4199fac84734f3033669015bf980b297547865b91ed664687715118b3e7a960",
+    expectedTrustedHash: "sha256:620fb822b32c78c73a2c5817199b662d4e82c221d93dd1b85bf843cf8fec7785",
     expectedStale: []
   },
   {
@@ -37,12 +40,12 @@ const fixtures = [
     event: "PreToolUse",
     command: "echo changed",
     key: "pre_tool_use:0:0",
-    currentHash: "sha256:e10af5663aa5fd8860e0cfe3d6bc7d581e41137b762edc0c8bac4ed4cfde447a",
+    currentHash: "sha256:a88d2495432877773f0f9dea0941d2e84b2eb8749b4cededf655d9894721b655",
     configTomlText: state("pre_tool_use:0:0", {
-      trustedHash: "sha256:d4199fac84734f3033669015bf980b297547865b91ed664687715118b3e7a960"
+      trustedHash: "sha256:620fb822b32c78c73a2c5817199b662d4e82c221d93dd1b85bf843cf8fec7785"
     }),
     expectedStatus: "modified",
-    expectedTrustedHash: "sha256:d4199fac84734f3033669015bf980b297547865b91ed664687715118b3e7a960",
+    expectedTrustedHash: "sha256:620fb822b32c78c73a2c5817199b662d4e82c221d93dd1b85bf843cf8fec7785",
     expectedStale: []
   },
   {
@@ -50,44 +53,47 @@ const fixtures = [
     event: "SessionStart",
     command: "echo disabled",
     key: "session_start:0:0",
-    currentHash: "sha256:983b18cf424022dec742ddd1a2d31abfa73b13c5b51ce5f67d6301a180048bd9",
+    currentHash: "sha256:b840eff221964b05297f06965435cdbe7509d7f8188b357c89367ae1e078eed8",
     configTomlText: state("session_start:0:0", {
-      trustedHash: "sha256:983b18cf424022dec742ddd1a2d31abfa73b13c5b51ce5f67d6301a180048bd9",
+      trustedHash: "sha256:b840eff221964b05297f06965435cdbe7509d7f8188b357c89367ae1e078eed8",
       enabled: false
     }),
     expectedStatus: "disabled",
-    expectedTrustedHash: "sha256:983b18cf424022dec742ddd1a2d31abfa73b13c5b51ce5f67d6301a180048bd9",
+    expectedTrustedHash: "sha256:b840eff221964b05297f06965435cdbe7509d7f8188b357c89367ae1e078eed8",
     expectedStale: []
   },
   {
     name: "absent-state",
     event: "Stop",
     command: "echo absent",
+    matcher: "ignored-by-codex",
     key: "stop:0:0",
-    currentHash: "sha256:fa846b180c6757b88e131b3ff412b8ee70fd8542a33fa34d6732be952fbbc956",
+    currentHash: "sha256:98a3fa002153cd1969a6a6384e406079ce1dd302be5fc0ff0fc42500389b93ce",
     configTomlText: "",
     expectedStatus: "untrusted",
     expectedTrustedHash: null,
     expectedStale: []
   },
   {
-    name: "stale-hash",
+    name: "stale-position",
     event: "PostToolUse",
     command: "echo stale",
     key: "post_tool_use:0:0",
-    currentHash: "sha256:02e3d436710ce3d6e69154c7747eec108a483f619cff6c149a0bc5336384f52d",
-    configTomlText: state("post_tool_use:1:0", {
-      trustedHash: "sha256:02e3d436710ce3d6e69154c7747eec108a483f619cff6c149a0bc5336384f52d"
+    currentHash: "sha256:f53f5dfc35e8db38250e7106ae0e719d9d64bfc77da7f9b79332374c37713278",
+    configTomlText: state("post_tool_use:0:0", {
+      trustedHash: "sha256:f53f5dfc35e8db38250e7106ae0e719d9d64bfc77da7f9b79332374c37713278"
+    }) + state("post_tool_use:1:0", {
+      trustedHash: "sha256:f53f5dfc35e8db38250e7106ae0e719d9d64bfc77da7f9b79332374c37713278"
     }),
-    expectedStatus: "untrusted",
-    expectedTrustedHash: null,
+    expectedStatus: "trusted",
+    expectedTrustedHash: "sha256:f53f5dfc35e8db38250e7106ae0e719d9d64bfc77da7f9b79332374c37713278",
     expectedStale: ["post_tool_use:1:0"]
   }
 ];
 
 test("musterHookTrustGaps returns exact per-hook trust results for all five Codex states", async t => {
   for (const fixture of fixtures) await t.test(fixture.name, () => {
-    const hookGroup = group(fixture.command);
+    const hookGroup = group(fixture.command, fixture.matcher);
     const result = musterHookTrustGaps({
       configTomlText: fixture.configTomlText,
       hooksJsonPath: HOOKS_JSON,
@@ -108,7 +114,32 @@ test("musterHookTrustGaps returns exact per-hook trust results for all five Code
   });
 });
 
-test("Codex install blocks on untrusted writes and clears only after exact external trust", async () => {
+test("musterHookTrustGaps matches Codex 0.145 matcher omission and rejects malformed or duplicate state", () => {
+  const promptGroup = group("echo prompt", "ignored-by-codex");
+  const prompt = musterHookTrustGaps({
+    configTomlText: "", hooksJsonPath: HOOKS_JSON,
+    config: { hooks: { UserPromptSubmit: [promptGroup] } }, hookGroups: { UserPromptSubmit: [promptGroup] }
+  });
+  assert.equal(prompt.results[0].currentHash, "sha256:dc1c713727e2f3066673ac61ad3ccfe653c4f0e9c9ae2cad0ce6233ba7f8b50d");
+
+  const trustedGroup = group("echo trusted");
+  const exactHash = fixtures[0].currentHash;
+  for (const configTomlText of [
+    `[hooks.state."${HOOKS_JSON}:pre_tool_use:0:0"]\ntrusted_hash = "${exactHash}"\nenabled = "false"\n`,
+    state("pre_tool_use:0:0", { trustedHash: exactHash }) + state("pre_tool_use:0:0", { trustedHash: exactHash })
+  ]) {
+    const result = musterHookTrustGaps({ configTomlText, hooksJsonPath: HOOKS_JSON,
+      config: { hooks: { PreToolUse: [trustedGroup] } }, hookGroups: { PreToolUse: [trustedGroup] } });
+    assert.equal(result.results[0].status, "invalid");
+    assert.deepEqual(result.untrusted, ["pre_tool_use:0:0"]);
+  }
+});
+
+const inventoryFor = (cwd, hooksJsonPath, results) => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: results.map(result => ({
+  key: `${hooksJsonPath}:${result.key}`, enabled: true, trustStatus: "trusted", currentHash: result.currentHash
+})) }] });
+
+test("Codex install blocks on untrusted writes and clears only after exact persisted and effective trust", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-install-hook-trust-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home");
   const absentCodex = async () => { throw new Error("not found"); };
@@ -138,14 +169,58 @@ test("Codex install blocks on untrusted writes and clears only after exact exter
   await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${trustText}`);
 
   const trusted = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
-  assert.equal(trusted.ok, true);
-  assert.equal(trusted.hookTrust.ok, true);
-  assert.equal(trusted.hookTrust.blocking, false);
-  assert.ok(trusted.hookTrust.results.every(result => result.status === "trusted"));
+  assert.equal(trusted.ok, false, "persisted trust alone cannot prove effective activation");
+  assert.equal(trusted.hookTrust.effective.verified, false);
+  const suppressedInventory = async () => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: [] }] });
+  const suppressed = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, hookInventory: suppressedInventory });
+  assert.equal(suppressed.ok, false, "policy-suppressed hooks cannot be reported active");
+  assert.equal(suppressed.hookTrust.effective.verified, true);
+  assert.equal(suppressed.hookTrust.effective.ok, false);
+  assert.equal(suppressed.hookTrust.effective.results.length, 7);
+  const hookInventory = async () => inventoryFor(cwd, join(cwd, ".codex", "hooks.json"), first.hookTrust.results);
+  const active = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, hookInventory });
+  assert.equal(active.ok, true);
+  assert.equal(active.hookTrust.ok, true);
+  assert.equal(active.hookTrust.blocking, false);
+  assert.equal(active.hookTrust.effective.ok, true);
+  assert.ok(active.hookTrust.results.every(result => result.status === "trusted"));
   const trustedDoctor = await runCodexDoctor({
-    root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absentCodex
+    root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absentCodex, hookInventory
   });
   const trustedDoctorTrust = trustedDoctor.checks.find(check => check.name === "codex-hook-trust");
   assert.equal(trustedDoctorTrust?.ok, true, trustedDoctorTrust?.detail);
   assert.match(trustedDoctorTrust?.detail || "", /exact current hash and enabled state/i);
+
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${state("pre_tool_use:9:0", { trustedHash: first.hookTrust.results[0].currentHash }).replaceAll(HOOKS_JSON, join(cwd, ".codex", "hooks.json"))}`);
+  const stale = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, hookInventory });
+  assert.equal(stale.ok, false);
+  assert.deepEqual(stale.hookTrust.stale, ["pre_tool_use:9:0"]);
+
+  const dry = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, dryRun: true });
+  assert.equal(dry.ok, true, "the dry-run plan itself completed");
+  assert.equal(dry.hookTrust.ok, false);
+  assert.equal(dry.hookTrust.verified, false);
+});
+
+test("Codex install CLI exits 2 for absent, modified, and disabled hook trust", async t => {
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+  for (const variant of ["absent", "modified", "disabled"]) await t.test(variant, async () => {
+    const tmp = await mkdtemp(join(tmpdir(), `muster-codex-hook-cli-${variant}-`));
+    const cwd = join(tmp, "project"), home = join(tmp, "home");
+    const installed = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+    if (variant !== "absent") {
+      const configPath = join(home, ".codex", "config.toml");
+      const trustText = installed.hookTrust.results.map((result, index) =>
+        `[hooks.state."${join(cwd, ".codex", "hooks.json")}:${result.key}"]\ntrusted_hash = "${variant === "modified" && index === 0 ? "sha256:deadbeef" : result.currentHash}"\n${variant === "disabled" && index === 0 ? "enabled = false\n" : ""}`
+      ).join("\n");
+      await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${trustText}`);
+    }
+    const run = spawnSync(process.execPath, [cli, "install", "codex", "--scope", "project"], {
+      cwd, encoding: "utf8", env: { ...process.env, HOME: home, CODEX_HOME: join(home, ".codex"), PATH: "" }
+    });
+    assert.equal(run.status, 2, run.stderr);
+    const output = JSON.parse(run.stdout);
+    assert.equal(output.ok, false);
+    assert.ok(output.hookTrust.results.some(result => result.status === ({ absent: "untrusted", modified: "modified", disabled: "disabled" })[variant]));
+  });
 });

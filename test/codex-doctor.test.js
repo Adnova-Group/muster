@@ -53,7 +53,12 @@ test("Codex doctor: a canonical-scope-skipped project scope is coherent and excl
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-collapse-doctor-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
   const absent = async () => { throw new Error("not found"); };
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const userInstall = await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const userConfigPath = join(codexHome, "config.toml");
+  const userHooksPath = join(codexHome, "hooks.json");
+  const exactTrust = userInstall.hookTrust.results.map(hook =>
+    `[hooks.state."${userHooksPath}:${hook.key}"]\ntrusted_hash = "${hook.currentHash}"\n`).join("\n");
+  await writeFile(userConfigPath, `${await readFile(userConfigPath, "utf8")}\n${exactTrust}`);
   const projectInstall = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent });
   assert.equal(projectInstall.hooksSkipped, "user-scope-canonical");
 

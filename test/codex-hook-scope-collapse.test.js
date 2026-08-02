@@ -22,6 +22,24 @@ const hookStateBlock = (hooksJsonPath, events = HOOK_STATE_EVENTS) =>
   events.map(event => `[hooks.state."${hooksJsonPath}:${event}:0:0"]\ntrusted_hash = "sha256:${"0".repeat(64)}"\n`).join("\n");
 const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const exactHookStateBlock = (hooksJsonPath, result, mutate) => result.hookTrust.results.map((hook, index) => {
+  const state = mutate ? mutate({ ...hook }, index) : hook;
+  return `[hooks.state."${hooksJsonPath}:${state.key}"]\ntrusted_hash = "${state.trustedHash ?? state.currentHash}"\n${state.enabled === false ? "enabled = false\n" : ""}`;
+}).join("\n");
+
+async function trustInstalledUser({ cwd, home, result, mutate }) {
+  const configPath = join(home, ".codex", "config.toml");
+  const hooksJsonPath = join(home, ".codex", "hooks.json");
+  const trust = exactHookStateBlock(hooksJsonPath, result, mutate);
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${trust}`);
+}
+
+async function installTrustedUser({ cwd, home }) {
+  const result = await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  await trustInstalledUser({ cwd, home, result });
+  return result;
+}
+
 function musterGroupCount(hooksConfig, event) {
   const groups = hooksConfig?.hooks?.[event];
   if (!Array.isArray(groups)) return 0;
@@ -34,7 +52,7 @@ test("Codex install: project scope skips writing hooks under a healthy user scop
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home");
 
-  const userResult = await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  const userResult = await installTrustedUser({ cwd, home });
   assert.equal(userResult.hooksSkipped, null);
   assert.equal(userResult.hooks, 7);
 
@@ -65,6 +83,20 @@ test("Codex install: project scope skips writing hooks under a healthy user scop
   for (const event of HOOK_EVENTS) assert.equal(musterGroupCount(userHooks, event), 1, `user scope must still carry exactly one ${event} muster group`);
 });
 
+test("Codex install: fresh, modified, and disabled user hooks never suppress the project fallback", async t => {
+  for (const variant of ["fresh", "modified", "disabled"]) await t.test(variant, async () => {
+    const tmp = await mkdtemp(join(tmpdir(), `muster-codex-scope-collapse-${variant}-`));
+    const cwd = join(tmp, "project"), home = join(tmp, "home");
+    const user = await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+    if (variant !== "fresh") await trustInstalledUser({ cwd, home, result: user, mutate: (hook, index) => index === 0
+      ? { ...hook, trustedHash: variant === "modified" ? "sha256:deadbeef" : hook.currentHash, enabled: variant !== "disabled" }
+      : hook });
+    const project = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+    assert.equal(project.hooksSkipped, null);
+    assert.equal(project.hooks, 7);
+  });
+});
+
 test("Codex install: project scope installs its own hooks exactly as before when no healthy user scope exists", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-no-user-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
@@ -79,7 +111,7 @@ test("Codex install: a self-consistent but version-stale user scope manifest is 
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-stale-user-version-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home");
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  await installTrustedUser({ cwd, home });
   // Hand-edit the user manifest's OWN recorded packageVersion to something
   // stale while leaving it otherwise perfectly self-consistent with its own
   // hooks.json/runtime -- a purely-internal-agreement health check would
@@ -115,8 +147,8 @@ test("Codex install: reinstalling project scope over a legacy dual-scope machine
   // Legacy dual-scope machine: project installed first (no healthy user
   // scope yet, so it installs real hooks), then user installed (always
   // installs). Both scopes now fire every event.
-  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  const projectResult = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  await installTrustedUser({ cwd, home });
   const projectHooksPathBefore = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
   for (const event of HOOK_EVENTS) assert.equal(musterGroupCount(projectHooksPathBefore, event), 1, `pre-migration: project must fire ${event}`);
   await readFile(join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs"), "utf8"); // exists pre-migration
@@ -159,14 +191,14 @@ test("Codex install: reinstall migration prunes only the collapsing scope's conf
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-hookstate-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
-  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  const projectResult = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  await installTrustedUser({ cwd, home });
 
   const configTomlPath = join(codexHome, "config.toml");
   const projectHooksJson = join(cwd, ".codex", "hooks.json");
   const userHooksJson = join(codexHome, "hooks.json");
   const before = await readFile(configTomlPath, "utf8");
-  await writeFile(configTomlPath, `${before}\n${hookStateBlock(projectHooksJson)}\n${hookStateBlock(userHooksJson)}\n`);
+  await writeFile(configTomlPath, `${before}\n${exactHookStateBlock(projectHooksJson, projectResult)}\n`);
 
   const migrated = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
   assert.equal(migrated.hooksSkipped, "user-scope-canonical");
@@ -199,7 +231,7 @@ test("Codex install: repeated skip installs (already collapsed) stay idempotent"
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-idempotent-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home");
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  await installTrustedUser({ cwd, home });
   const first = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
   assert.equal(first.hooksSkipped, "user-scope-canonical");
   const second = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
@@ -217,7 +249,7 @@ test("Codex install adversarial: an unmanaged Muster hook in project hooks.json 
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-conflict-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home");
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  await installTrustedUser({ cwd, home });
   await mkdir(join(cwd, ".codex"), { recursive: true });
   const unmanaged = { hooks: { Stop: [{ hooks: [{ type: "command", command: `node "${join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs")}"` }] }] } };
   await writeFile(join(cwd, ".codex", "hooks.json"), JSON.stringify(unmanaged, null, 2));
@@ -229,7 +261,7 @@ test("Codex install adversarial: a failed transaction mid-migration restores the
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
   await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  await installTrustedUser({ cwd, home });
 
   const projectHooksJsonPath = join(cwd, ".codex", "hooks.json");
   const projectManifestPath = join(cwd, ".codex", "muster", ".muster-managed.json");
@@ -280,7 +312,7 @@ test("Codex uninstall: a canonical-scope-skipped project scope uninstalls cleanl
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-uninstall-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  await installTrustedUser({ cwd, home });
   const installed = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
   assert.equal(installed.hooksSkipped, "user-scope-canonical");
 
@@ -312,7 +344,7 @@ test("Codex install adversarial: --dry-run previews the collapse without writing
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home");
   await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  await installTrustedUser({ cwd, home });
   const projectHooksJsonPath = join(cwd, ".codex", "hooks.json");
   const beforeHooksJson = await readFile(projectHooksJsonPath, "utf8");
   const beforeRuntime = await readFile(join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs"), "utf8");

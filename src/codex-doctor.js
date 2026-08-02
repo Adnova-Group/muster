@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { effectiveHookTrust, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { effectiveHookTrust, expectedCodexHookInstall, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -673,6 +673,25 @@ function ownsExactHookGroups(config, owner) {
   return actual.length === 0;
 }
 
+function canonicalHookGroupShape(hookGroups) {
+  if (!hookGroups || typeof hookGroups !== "object" || Array.isArray(hookGroups)) return null;
+  const shaped = {};
+  for (const [event, groups] of Object.entries(hookGroups)) {
+    if (!Array.isArray(groups)) return null;
+    shaped[event] = groups.map(group => {
+      if (!group || typeof group !== "object" || Array.isArray(group) || !Array.isArray(group.hooks)) return null;
+      return { ...group, hooks: group.hooks.map(hook => {
+        if (!hook || typeof hook !== "object" || Array.isArray(hook)) return null;
+        const next = { ...hook };
+        for (const key of ["command", "commandWindows", "command_windows"]) if (Object.hasOwn(next, key)) next[key] = `<${key}>`;
+        return next;
+      }) };
+    });
+    if (shaped[event].includes(null) || shaped[event].some(group => group.hooks.includes(null))) return null;
+  }
+  return shaped;
+}
+
 // Canonical-scope collapse (2026-07-18, codex-hook-scope-collapse): a
 // project scope installed under a healthy user scope writes exactly this
 // manifest shape (see src/codex-install.js's prepareHooks/
@@ -1030,7 +1049,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       readingPath = configPath;
       const config = await readRegularJson(configPath);
       if (!config) throw missingScopeFile("managed hook configuration", configPath);
-      if (isHooksSkippedManifest(owner)) {
+      if (dir !== userCodexHome && isHooksSkippedManifest(owner)) {
         // Coherent-and-non-firing: no runtime dir is expected, so it is
         // never pushed to hookStatuses (would count toward the overlap
         // dedupe check) OR staleHookScopes (would fail codex-hooks) --
@@ -1043,14 +1062,22 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       }
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
       const runtimeDir = join(dir, "muster", "hooks");
+      const expected = selected ? await expectedCodexHookInstall({
+        dir,
+        hookSourceRoot: join(selected.pluginRoot, "runtime", "install-hooks"),
+        nodeExecPath
+      }) : null;
       readingPath = runtimeDir;
       const runtime = await Promise.all(hookFiles.map(file => readRegularFile(join(runtimeDir, file))));
       if (runtime.some(file => file === null)) throw missingScopeFile("managed hook runtime", runtimeDir);
       const hash = createHash("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
       const digest = hash.digest("hex");
-      const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.packageVersion === selected?.packageVersion
-        && owner.hookHash === digest;
+      const coherent = owner.owner === "muster" && expected
+        && same(owner.files, expected.files)
+        && same(canonicalHookGroupShape(owner.hookGroups), canonicalHookGroupShape(expected.hookGroups))
+        && ownsExactHookGroups(config, owner) && owner.packageVersion === selected?.packageVersion
+        && owner.hookHash === expected.hookHash && digest === expected.hookHash;
       if (coherent) {
         hookStatuses.push(dir);
         // Persisted-interpreter capture (run-5 security audit Med #5): each
@@ -1075,7 +1102,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         // still be silently not firing. Coherence proves the bytes are right;
         // only a [hooks.state] entry proves Codex will actually run them.
         const gaps = musterHookTrustGaps({
-          configTomlText, hooksJsonPath: configPath, config, hookGroups: owner.hookGroups
+          configTomlText, hooksJsonPath: configPath, config, hookGroups: expected.hookGroups
         });
         const blocked = gaps.results.filter(result => result.status !== "trusted");
         hookTrustTargets.push({
@@ -1090,7 +1117,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         // Present + parsed but not coherent: a MISMATCH. Name the runtime dir
         // when the managed runtime's sha differs (a HASH MISMATCH), else the
         // manifest (a version/owned-group mismatch).
-        mismatchHookScopes.push({ dir, path: owner.hookHash !== digest ? runtimeDir : manifestPath });
+        mismatchHookScopes.push({ dir, path: !expected || digest !== expected.hookHash || owner.hookHash !== digest ? runtimeDir : manifestPath });
       }
     } catch (error) {
       const { cause, path } = classifyScopeReadError(error, readingPath);

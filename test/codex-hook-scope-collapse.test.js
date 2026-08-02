@@ -141,8 +141,8 @@ test("Codex install: a self-consistent but version-stale user scope manifest is 
   await readFile(join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs"), "utf8");
 });
 
-test("Codex install: incomplete or runtime-tampered user hooks never authorize fallback removal", async t => {
-  for (const variant of ["missing-event", "zero-hooks", "tampered-runtime"]) await t.test(variant, async () => {
+test("Codex install: incomplete, extra, or runtime-tampered user hooks never authorize fallback removal", async t => {
+  for (const variant of ["missing-event", "zero-hooks", "extra-event", "tampered-runtime"]) await t.test(variant, async () => {
     const tmp = await mkdtemp(join(tmpdir(), `muster-codex-scope-collapse-corrupt-user-${variant}-`));
     const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
     await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
@@ -157,6 +157,9 @@ test("Codex install: incomplete or runtime-tampered user hooks never authorize f
       if (variant === "missing-event") {
         delete manifest.hookGroups.Stop;
         delete hooks.hooks.Stop;
+      } else if (variant === "extra-event") {
+        const extra = structuredClone(manifest.hookGroups.Stop[0]);
+        hooks.hooks.SessionEnd = [extra];
       } else {
         manifest.hookGroups.Stop[0].hooks = [];
         hooks.hooks.Stop[0].hooks = [];
@@ -171,6 +174,57 @@ test("Codex install: incomplete or runtime-tampered user hooks never authorize f
     const projectHooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
     for (const event of HOOK_EVENTS) assert.equal(musterGroupCount(projectHooks, event), 1, `${variant}: ${event} fallback remains`);
   });
+});
+
+test("Codex install: canonical user drift during collapse rolls the project fallback back byte-identically", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-racing-user-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const user = await installTrustedUser({ cwd, home });
+  const projectHooksPath = join(cwd, ".codex", "hooks.json");
+  const projectManifestPath = join(cwd, ".codex", "muster", ".muster-managed.json");
+  const projectRuntimePath = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
+  const beforeHooks = await readFile(projectHooksPath, "utf8");
+  const beforeManifest = await readFile(projectManifestPath, "utf8");
+  const beforeRuntime = await readFile(projectRuntimePath, "utf8");
+  let inventoryCalls = 0;
+  const racingInventory = async args => {
+    inventoryCalls++;
+    if (inventoryCalls === 2) {
+      const userHooksPath = join(codexHome, "hooks.json");
+      const config = JSON.parse(await readFile(userHooksPath, "utf8"));
+      delete config.hooks.Stop;
+      await writeFile(userHooksPath, JSON.stringify(config, null, 2) + "\n");
+    }
+    return user.hookInventory(args);
+  };
+
+  await assert.rejects(
+    () => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: racingInventory }),
+    /canonical user hook scope changed|cannot remove the project hook fallback/i
+  );
+  assert.equal(inventoryCalls, 2, "canonical activation is checked before mutation and again inside the transaction");
+  assert.equal(await readFile(projectHooksPath, "utf8"), beforeHooks);
+  assert.equal(await readFile(projectManifestPath, "utf8"), beforeManifest);
+  assert.equal(await readFile(projectRuntimePath, "utf8"), beforeRuntime);
+});
+
+test("Codex install: unexpected active hook positions from canonical hooks.json retain the project fallback", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-extra-active-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), hooksPath = join(home, ".codex", "hooks.json");
+  const user = await installTrustedUser({ cwd, home });
+  const unexpectedInventory = async args => {
+    const inventory = await user.hookInventory(args);
+    inventory.data[0].hooks.push({
+      key: `${hooksPath}:session_end:99:0`, enabled: true, trustStatus: "trusted", currentHash: `sha256:${"f".repeat(64)}`
+    });
+    return inventory;
+  };
+  const project = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: unexpectedInventory });
+  assert.equal(project.hooksSkipped, null);
+  assert.equal(project.hooks, 7);
 });
 
 test("Codex install: user-scope installs never skip, even run twice in a row", async t => {

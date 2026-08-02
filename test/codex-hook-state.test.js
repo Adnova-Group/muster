@@ -129,6 +129,17 @@ test("Codex config.toml hook-state: quoted closing brackets in following table h
   }
 });
 
+test("Codex config.toml hook-state: malformed quoted table keys fail closed without mutation", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  for (const header of [String.raw`[foo."bad\q"]`, String.raw`[foo."bad\uZZZZ"]`, String.raw`[foo."bad\uD800"]`]) {
+    const text = `${hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"])}${header}\nvalue = 1\n`;
+    const result = reconcileConfigTomlHookState(text, registered, []);
+    assert.equal(result.parseOk, false, header);
+    assert.equal(result.text, text, header);
+    assert.deepEqual(result.prunedHookState, [], header);
+  }
+});
+
 test("Codex config.toml hook-state: nested arrays are not mistaken for table boundaries", () => {
   const registered = [{ scope: "project", configDir: "/repo/.codex" }];
   const text = `${hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"])}matrix = [\n  [1, 2],\n  [3, 4]\n]\n[projects."/safe"]\ntrust_level = "trusted"\n`;

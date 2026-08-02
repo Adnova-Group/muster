@@ -247,9 +247,15 @@ function inspectTomlHeader(line) {
   const whitespace = () => { while (/\s/.test(line[index] ?? "")) index++; };
   const component = () => {
     if (line[index] === '"' || line[index] === "'") {
+      const start = index;
       const quote = line[index++];
       while (index < line.length) {
-        if (line[index] === quote && (quote === "'" || !basicQuoteEscaped(line, index))) { index++; return true; }
+        if (line[index] === quote && (quote === "'" || !basicQuoteEscaped(line, index))) {
+          index++;
+          let decoded;
+          try { decoded = decodeTomlQuotedKey(line.slice(start, index)); } catch { return false; }
+          return decoded !== null && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uD800-\uDFFF]/u.test(decoded);
+        }
         index++;
       }
       return false;
@@ -626,7 +632,7 @@ export async function readCodexHookInventory({ runtimeIdentity, cwds, env = proc
   });
 }
 
-export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results) {
+export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys } = {}) {
   if (!inventory?.ok) return { verified: false, ok: false, error: inventory?.error || "Codex hooks/list unavailable", results: [] };
   if (!Array.isArray(results) || results.length === 0) return { verified: true, ok: false, error: "no expected Muster hooks were supplied for activation verification", results: [] };
   const scope = inventory.data.find(entry => resolve(entry?.cwd || "") === resolve(cwd));
@@ -634,6 +640,11 @@ export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results) {
     return { verified: true, ok: false, error: scope?.errors?.join("; ") || "Codex hooks/list omitted the requested scope", results: [] };
   }
   const hooks = Array.isArray(scope.hooks) ? scope.hooks : [];
+  if (knownKeys) {
+    const known = new Set(knownKeys.map(key => `${hooksJsonPath}:${key}`));
+    const unexpected = hooks.find(hook => typeof hook?.key === "string" && hook.key.startsWith(`${hooksJsonPath}:`) && !known.has(hook.key));
+    if (unexpected) return { verified: true, ok: false, error: `Codex hooks/list reported an unexpected active hook position for ${hooksJsonPath}: ${unexpected.key}`, results: [] };
+  }
   const effectiveResults = results.map(result => {
     const expectedKey = `${hooksJsonPath}:${result.key}`;
     const hook = hooks.find(candidate => candidate?.key === expectedKey);
@@ -1256,6 +1267,42 @@ const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 const groupCommands = group => (group?.hooks || []).flatMap(hook => [hook?.command, hook?.commandWindows, hook?.command_windows]).filter(Boolean);
 const isMusterHookCommand = command => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs");
 
+function exactMusterHookGroups(config, expectedHookGroups) {
+  if (!config?.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) return false;
+  const expected = [];
+  for (const [event, groups] of Object.entries(expectedHookGroups || {})) {
+    if (!Array.isArray(groups)) return false;
+    for (const group of groups) {
+      if (!groupCommands(group).some(isMusterHookCommand)) return false;
+      expected.push({ event, group });
+    }
+  }
+  const actual = [];
+  for (const [event, groups] of Object.entries(config.hooks)) {
+    if (!Array.isArray(groups)) return false;
+    for (const group of groups) if (groupCommands(group).some(isMusterHookCommand)) actual.push({ event, group });
+  }
+  if (!expected.length || actual.length !== expected.length) return false;
+  for (const item of expected) {
+    const index = actual.findIndex(candidate => candidate.event === item.event && same(candidate.group, item.group));
+    if (index < 0) return false;
+    actual.splice(index, 1);
+  }
+  return actual.length === 0;
+}
+
+function allHookStateKeys(config) {
+  const keys = [];
+  for (const [event, groups] of Object.entries(config?.hooks || {})) {
+    if (!Array.isArray(groups)) continue;
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+      const hooks = Array.isArray(groups[groupIndex]?.hooks) ? groups[groupIndex].hooks : [];
+      for (let hookIndex = 0; hookIndex < hooks.length; hookIndex++) keys.push(`${hookStateEventName(event)}:${groupIndex}:${hookIndex}`);
+    }
+  }
+  return keys;
+}
+
 function removeOwnedHookGroups(config, owned, configPath) {
   const next = clone(config);
   next.hooks ||= {};
@@ -1406,8 +1453,7 @@ function parseWindowsShellTokens(command) {
 // if rerun). A version mismatch fails closed to "not healthy" here, exactly
 // like every other validation failure above -- the project scope then
 // installs its own (current) hooks rather than trusting a stale peer.
-async function expectedUserHookInstall({ home, hookSourceRoot, nodeExecPath }) {
-  const dir = codexHome(home);
+export async function expectedCodexHookInstall({ dir, hookSourceRoot, nodeExecPath }) {
   const runtimeDir = join(dir, "muster");
   const template = await readJson(join(hookSourceRoot, "hooks.json"));
   if (!template?.hooks || typeof template.hooks !== "object" || Array.isArray(template.hooks)) return null;
@@ -1429,7 +1475,7 @@ async function expectedUserHookInstall({ home, hookSourceRoot, nodeExecPath }) {
   if (!hookCount) return null;
   const hash = createHash("sha256");
   for (const file of HOOK_FILES) hash.update(file).update("\0").update(await readSafe(join(hookSourceRoot, basename(file))));
-  return { dir, runtimeDir, hookGroups, hookCount, hookHash: hash.digest("hex") };
+  return { dir, runtimeDir, files: HOOK_FILES, hookGroups, hookCount, hookHash: hash.digest("hex") };
 }
 
 async function inspectUserScopeHooks({ home, packageVersion, expected }) {
@@ -1437,23 +1483,31 @@ async function inspectUserScopeHooks({ home, packageVersion, expected }) {
   const dir = codexHome(home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
   if (!(await safeExists(manifestPath))) return null;
-  const manifestRaw = await readJson(manifestPath);
+  let manifestText;
+  try { manifestText = await readSafe(manifestPath); } catch { return null; }
+  let manifestRaw;
+  try { manifestRaw = JSON.parse(manifestText); } catch { return null; }
   if (manifestRaw?.packageVersion !== packageVersion) return null;
   let manifest;
   try { manifest = validateHookManifest(manifestRaw, runtimeDir, manifestPath); }
   catch { return null; }
   if (!same(manifest.files, HOOK_FILES) || !same(manifest.hookGroups, expected.hookGroups)
     || typeof manifestRaw.hookHash !== "string" || manifestRaw.hookHash !== expected.hookHash) return null;
-  const runtimeHash = createHash("sha256");
+  const runtimeHash = createHash("sha256"), snapshotHash = createHash("sha256").update(manifestText).update("\0");
   try {
-    for (const file of HOOK_FILES) runtimeHash.update(file).update("\0").update(await readSafe(join(runtimeDir, file)));
+    for (const file of HOOK_FILES) {
+      const bytes = await readSafe(join(runtimeDir, file));
+      runtimeHash.update(file).update("\0").update(bytes);
+      snapshotHash.update(file).update("\0").update(bytes);
+    }
   } catch { return null; }
   if (runtimeHash.digest("hex") !== manifestRaw.hookHash) return null;
   if (!(await safeExists(configPath))) return null;
-  let config;
-  try { config = await readJson(configPath); }
+  let configText, config;
+  try { configText = await readSafe(configPath); config = JSON.parse(configText); }
   catch { return null; }
   if (!config || typeof config !== "object" || Array.isArray(config) || typeof config.hooks !== "object" || !config.hooks || Array.isArray(config.hooks)) return null;
+  if (!exactMusterHookGroups(config, expected.hookGroups)) return null;
   let matchedHookCount = 0;
   for (const [event, groups] of Object.entries(expected.hookGroups)) {
     const current = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
@@ -1467,20 +1521,28 @@ async function inspectUserScopeHooks({ home, packageVersion, expected }) {
   const configTomlPath = join(dir, "config.toml");
   const configTomlText = await safeExists(configTomlPath) ? await readSafe(configTomlPath) : "";
   const gaps = musterHookTrustGaps({ configTomlText, hooksJsonPath: configPath, config, hookGroups: manifest.hookGroups });
-  return { dir, configPath, config, hookGroups: manifest.hookGroups, gaps };
+  snapshotHash.update("config\0").update(configText).update("\0toml\0").update(configTomlText);
+  return { dir, configPath, config, hookGroups: manifest.hookGroups, gaps, knownKeys: allHookStateKeys(config), snapshot: snapshotHash.digest("hex") };
 }
 
-async function userScopeHooksHealthy({ home, packageVersion, expected, cwd, runtimeIdentity, hookInventory }) {
-  const inspected = await inspectUserScopeHooks({ home, packageVersion, expected });
-  if (!inspected || inspected.gaps.untrusted.length || inspected.gaps.stale.length) return false;
+async function inspectEffectiveUserScopeHooks({ home, packageVersion, expected, cwd, runtimeIdentity, hookInventory }) {
+  const before = await inspectUserScopeHooks({ home, packageVersion, expected });
+  if (!before || before.gaps.untrusted.length || before.gaps.stale.length) return null;
   const inventoryReader = hookInventory || readCodexHookInventory;
   const inventory = await inventoryReader({
     runtimeIdentity,
     cwds: [cwd],
     env: { ...process.env, CODEX_HOME: codexHome(home) }
   });
-  return inspected.gaps.results.length === expected.hookCount
-    && effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results).ok;
+  const inspected = await inspectUserScopeHooks({ home, packageVersion, expected });
+  if (!inspected || inspected.snapshot !== before.snapshot || inspected.gaps.untrusted.length || inspected.gaps.stale.length
+    || inspected.gaps.results.length !== expected.hookCount) return null;
+  const effective = effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results, { knownKeys: inspected.knownKeys });
+  return effective.ok ? { ...inspected, effective } : null;
+}
+
+async function userScopeHooksHealthy(options) {
+  return Boolean(await inspectEffectiveUserScopeHooks(options));
 }
 
 async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive }) {
@@ -1708,7 +1770,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   // hooks/list failure may block install success, but can never retroactively
   // justify deleting the fallback that was active when the command began.
   const canonicalUserExpected = scope === "project"
-    ? await expectedUserHookInstall({ home, hookSourceRoot, nodeExecPath })
+    ? await expectedCodexHookInstall({ dir: codexHome(home), hookSourceRoot, nodeExecPath })
     : null;
   const canonicalUserHooksActive = scope === "project" && await userScopeHooksHealthy({
     home, packageVersion, expected: canonicalUserExpected, cwd, runtimeIdentity, hookInventory
@@ -1757,6 +1819,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
   let originals, changed;
   let actions = [];
+  let canonicalUserTrust = null;
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
     originals = new Map(); changed = [];
@@ -1924,6 +1987,15 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           declarationSeparatorAdded: declarationReconcile.separatorAdded,
           declarationRegion: declarationReconcile.receipt
         }, null, 2) + "\n");
+        if (hooks.skipped) {
+          canonicalUserTrust = await inspectEffectiveUserScopeHooks({
+            home, packageVersion, expected: canonicalUserExpected, cwd,
+            runtimeIdentity: identity, hookInventory
+          });
+          if (!canonicalUserTrust) {
+            throw new Error("The canonical user hook scope changed or became inactive during install; cannot remove the project hook fallback");
+          }
+        }
         actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: false, runtimeIdentity: identity }) : [];
       } catch (error) {
         await restoreFilesystem(originals, changed);
@@ -1938,8 +2010,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   if (dryRun) {
     hookTrust = { ok: false, blocking: false, verified: false, results: [], stale: [], effective: { verified: false, ok: false, results: [], error: "dry-run does not verify effective hook activation" }, remediation: null };
   } else {
-    const inspected = hooks.skipped ? await inspectUserScopeHooks({ home, packageVersion, expected: canonicalUserExpected }) : null;
-    const trustTarget = hooks.skipped ? inspected : {
+    const trustTarget = hooks.skipped ? canonicalUserTrust : {
       configPath: hooks.configPath,
       config: hooks.config,
       hookGroups: hooks.manifest.hookGroups,
@@ -1952,14 +2023,14 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     };
     const gaps = trustTarget?.gaps ?? { results: [], untrusted: ["canonical-scope-invalid"], stale: [] };
     const inventoryReader = hookInventory || readCodexHookInventory;
-    const inventory = await inventoryReader({
+    const inventory = hooks.skipped ? null : await inventoryReader({
       runtimeIdentity: identity,
       cwds: [cwd],
       env: { ...process.env, CODEX_HOME: codexHome(home) }
     });
-    const effective = trustTarget
-      ? effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results)
-      : { verified: false, ok: false, results: [], error: "canonical user hook scope changed or became invalid during install" };
+    const effective = hooks.skipped
+      ? canonicalUserTrust.effective
+      : effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results);
     const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;
     hookTrust = {
       ok: persistedOk && effective.ok,

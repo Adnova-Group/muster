@@ -292,7 +292,7 @@ stale:
 AskUserQuestion    files=13  mentions=35
 dispatch (Agent/Task tool)  files=6  mentions=17
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=29
-worktree   files=5  mentions=57
+worktree   files=5  mentions=58
 ```
 
 Counts refreshed for the release action-fence follow-up: `go.md`, `go-backlog.md`, and the

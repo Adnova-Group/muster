@@ -2,10 +2,6 @@
 // diff-review gate. Evidence: docs/research/codex-cli.md sec 10.4.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   resolveCodexDispatchLane, codexExecCall, interpretCodexExecExit, codexReviewCall,
   resolveCodexReviewRouting, CODEX_EXEC_MODES
@@ -13,90 +9,12 @@ import {
 
 // --- lane selection ---------------------------------------------------------
 
-test("resolveCodexDispatchLane: overlapping write sets force process isolation", () => {
-  // spawn_agent shares ONE cwd across every agent — "edits made by one agent are
-  // immediately visible to all other agents" — so conflicting writers can only
-  // be isolated by separate processes.
-  const r = resolveCodexDispatchLane({ members: [
-    { id: "a", writes: ["src/x.js"] },
-    { id: "b", writes: ["src/x.js"] }
-  ]});
+test("resolveCodexDispatchLane is an unconditional process-only production selector", () => {
+  const r = resolveCodexDispatchLane();
   assert.equal(r.mode, CODEX_EXEC_MODES.EXEC_PROCESS);
   assert.equal(r.isolation, "process-cwd");
   assert.match(r.reason, /manifest write fences cannot be mechanically enforced/);
-});
-
-test("resolveCodexDispatchLane: even physically disjoint writers use hermetic processes", t => {
-  const root = mkdtempSync(join(tmpdir(), "muster-write-fences-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(join(root, "src"));
-  writeFileSync(join(root, "src/x.js"), "x");
-  writeFileSync(join(root, "src/y.js"), "y");
-  const r = resolveCodexDispatchLane({ members: [
-    { id: "a", writes: ["src/x.js"] },
-    { id: "b", writes: ["src/y.js"] }
-  ], repositoryRoot: root });
-  assert.equal(r.mode, CODEX_EXEC_MODES.EXEC_PROCESS);
-  assert.equal(r.isolation, "process-cwd");
-});
-
-test("resolveCodexDispatchLane: project-shadowable role names cannot authenticate omitted write fences", () => {
-  for (const member of [
-    { id: "missing" },
-    { id: "claim", readOnly: true, agentType: "muster-builder" },
-    { id: "shadow", readOnly: true, agentType: "muster-reviewer" },
-  ]) {
-    assert.equal(resolveCodexDispatchLane({ members: [member] }).mode, CODEX_EXEC_MODES.EXEC_PROCESS);
-  }
-});
-
-test("resolveCodexDispatchLane: physical, hard-link, symlink, case, and missing aliases fail closed", t => {
-  const root = mkdtempSync(join(tmpdir(), "muster-write-aliases-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  writeFileSync(join(root, "target"), "x");
-  linkSync(join(root, "target"), join(root, "hard"));
-  symlinkSync(join(root, "target"), join(root, "sym"));
-  execFileSync("mkfifo", [join(root, "pipe")]);
-  writeFileSync(join(root, "Case"), "upper");
-  writeFileSync(join(root, "case"), "lower");
-  mkdirSync(join(root, "a"));
-  mkdirSync(join(root, "b"));
-  linkSync(join(root, "target"), join(root, "a/shared"));
-  linkSync(join(root, "target"), join(root, "b/shared"));
-  for (const writes of [
-    ["target"], ["pipe"], ["target", "hard"], ["target", "sym"], ["Case", "case"], ["target", "missing"], ["a", "b"],
-  ]) {
-    assert.equal(resolveCodexDispatchLane({
-      members: writes.map((write, index) => ({ id: String(index), writes: [write] })),
-      repositoryRoot: root,
-    }).mode, CODEX_EXEC_MODES.EXEC_PROCESS);
-  }
-});
-
-test("resolveCodexDispatchLane: the caller can force isolation explicitly", () => {
-  const r = resolveCodexDispatchLane({ members: [{ id: "a" }], forceProcess: true });
-  assert.equal(r.mode, CODEX_EXEC_MODES.EXEC_PROCESS);
-  assert.match(r.reason, /always use separate/);
-});
-
-test("resolveCodexDispatchLane: prompts cannot escape advisory write fences through shared cwd", () => {
-  const result = resolveCodexDispatchLane({ members: [
-    { id: "a", writes: ["package.json"], prompt: "overwrite SECURITY.md" },
-    { id: "b", writes: ["LICENSE"], prompt: "overwrite SECURITY.md" },
-  ] });
-  assert.equal(result.mode, CODEX_EXEC_MODES.EXEC_PROCESS);
-});
-
-test("resolveCodexDispatchLane: semantic overlaps and malformed write fences fail closed to process isolation", () => {
-  for (const members of [
-    [{ writes: ["src/auth"] }, { writes: ["src/auth/session.js"] }],
-    [{ writes: ["src/**"] }, { writes: ["src/session.js"] }],
-    [{ writes: ["src/a/../x.js"] }, { writes: ["src/x.js"] }],
-    [{ writes: true }, { writes: ["src/x.js"] }],
-    [{ writes: [] }, { writes: ["src/x.js"] }],
-  ]) {
-    assert.equal(resolveCodexDispatchLane({ members }).mode, CODEX_EXEC_MODES.EXEC_PROCESS);
-  }
+  assert.equal(resolveCodexDispatchLane.length, 0, "the selector accepts no advisory manifest arguments");
 });
 
 // --- codex exec argv --------------------------------------------------------

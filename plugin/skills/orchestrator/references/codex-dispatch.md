@@ -18,8 +18,8 @@ so this file is their single source. -->
 
 Every production wave MUST first run through `$MUSTER_CLI codex-wave <wave.json>` with trusted repository/base inputs supplied out of band. Production waves are process-only; never choose or invoke `spawn_agent` from a wave manifest because its declared write fences and read-only profile names are not mechanically enforceable in Codex's shared cwd. The versioned spawn shapes below apply only to explicit non-wave leaf delegation.
 
-Codex has no `Workflow`-tool counterpart, so wave dispatch rides Codex's OWN native primitive,
-subagent collaboration itself, never a prose-loop substitute for the Claude-only `Workflow` tool.
+Codex has no `Workflow`-tool counterpart. The following versioned subagent collaboration packets
+are reserved for explicit non-wave leaf delegation and never authorize a production wave.
 **The dispatch and barrier shapes are VERSION-DEPENDENT** (corrected 2026-07-25 against Codex
 0.145.0). Codex resolves its subagent API per MODEL from the catalog's `multi_agent_version`, and
 the live catalog puts `gpt-5.6-sol`/`terra` on v2 but `gpt-5.6-luna` -- muster's core tier -- on

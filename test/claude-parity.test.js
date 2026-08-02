@@ -1362,5 +1362,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // now distinguishes authenticated `codex exec -C` production waves from
   // explicit non-wave spawn packets; no Claude dispatch behavior changed.
   // File count remains unchanged.
-  assert.equal(hash.digest("hex"), "c01dc2519addbed8f6400a937f7e6995613c5e8a402a03186b383bd672d16f0a");
+  // 2026-08-02 re-pin #44 (sealed process-wave instructions): the shared Codex
+  // reference removes its last sentence describing subagent collaboration as
+  // wave dispatch and labels those packet shapes non-wave only. The live
+  // worktree audit count is refreshed from 57 to 58; Claude behavior is unchanged.
+  assert.equal(hash.digest("hex"), "c086dd086222d98a12f33175e69a430997ef3e43aa4b360de46b01dc63f50252");
 });

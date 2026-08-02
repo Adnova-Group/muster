@@ -47,6 +47,7 @@ fs.appendFileSync(${JSON.stringify(launches)}, "env-secret:" + String(process.en
 if (payload.outputBytes) process.stdout.write("x".repeat(payload.outputBytes) + "\\n");
 setTimeout(() => {
   if (payload.swapGitTarget && payload.swapGitSource) fs.copyFileSync(payload.swapGitSource, payload.swapGitTarget);
+  if (payload.dirtyTarget) fs.writeFileSync(payload.dirtyTarget, "planted-after-admission\\n");
   fs.writeFileSync(cwd + "/result.txt", payload.value);
   if (!payload.omitTurn) process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:7,output_tokens:3}}) + "\\n");
   fs.appendFileSync(${JSON.stringify(launches)}, "worker-end:" + require("node:path").basename(cwd) + "\\n");
@@ -219,6 +220,21 @@ test("runCodexWave rejects worktrees from an unrelated repository before Codex e
   await assert.rejects(readFile(trusted.launches, "utf8"), { code: "ENOENT" });
 });
 
+test("runCodexWave rejects dirty tracked and untracked worktrees before Codex probes", async t => {
+  for (const kind of ["tracked", "untracked"]) {
+    const fixture = await waveFixture(t);
+    if (kind === "tracked") await writeFile(join(fixture.worktreeA, "seed.txt"), "dirty\n");
+    else await writeFile(join(fixture.worktreeA, "planted.txt"), "attacker-controlled\n");
+    await assert.rejects(runCodexWave({
+      members: [member(kind, fixture.worktreeA)],
+      codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo,
+      baseSha: fixture.baseSha,
+    }), /not pristine|tracked or untracked changes/i);
+    await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
+  }
+});
+
 test("runCodexWave rejects unsafe policy before probes and rejects an exit-zero run without a terminal turn", async t => {
   const fixture = await waveFixture(t);
   await assert.rejects(
@@ -291,6 +307,26 @@ test("runCodexWave aborts and settles active writers when a queued member fails 
   assert.match(events, /worker-start:member-a/);
   assert.match(events, /worker-start:member-b/);
   assert.doesNotMatch(events, /worker-start:member-c/);
+});
+
+test("runCodexWave repeats pristine-state validation immediately before a queued launch", async t => {
+  const fixture = await waveFixture(t);
+  const first = member("first", fixture.worktreeA);
+  first.prompt = JSON.stringify({
+    value: "first",
+    delayMs: 100,
+    dirtyTarget: join(fixture.worktreeB, "planted-after-admission.txt"),
+  });
+  await assert.rejects(runCodexWave({
+    members: [first, member("second", fixture.worktreeB)],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+    availableThreadLimit: 1,
+  }), /not pristine|tracked or untracked changes/i);
+  const events = await readFile(fixture.launches, "utf8");
+  assert.match(events, /worker-start:member-a/);
+  assert.doesNotMatch(events, /worker-start:member-b/);
 });
 
 test("runCodexWave rejects executable project config and bounds members, duration, and captured output", async t => {

@@ -484,6 +484,10 @@ async function validateRegisteredLinkedWorktree(member, authority, pinned = null
         throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} schema changed before launch`);
       }
     }
+    const status = await gitText(canonical, ["status", "--porcelain=v1", "--untracked-files=all"]);
+    if (status) {
+      throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} worktree is not pristine; tracked or untracked changes are forbidden before launch`);
+    }
     return { ...member, cwd: canonical, gitDir, ...currentIdentity, ...(schemaPath ? { schemaPath } : {}) };
   } catch (error) {
     if (error.message?.startsWith("runCodexWave:")) throw error;

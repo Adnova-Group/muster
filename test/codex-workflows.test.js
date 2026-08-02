@@ -29,22 +29,19 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   assert.match(coordination, /plugin cache is not a Git checkout/);
   assert.doesNotMatch(coordination, /git log -1 --format/);
   const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
-  assert.match(orchestrator, /call `collaboration\.spawn_agent`/);
-  assert.match(orchestrator, /agent_type: "<exact chosen\.id>"/);
+  assert.match(orchestrator, /codex-wave <wave\.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>/);
+  assert.match(orchestrator, /one process-wave member/);
+  assert.match(orchestrator, /pristine registered linked worktree/);
+  assert.match(orchestrator, /hermetic `codex exec -C`/);
   assert.match(orchestrator, /fork_turns: "none"/);
   assert.match(orchestrator, /never use `"all"`/);
   assert.match(orchestrator, /25-step ceiling/);
-  assert.match(orchestrator, /Respect the configured Codex thread concurrency/);
+  assert.match(orchestrator, /trusted thread ceiling/);
   assert.match(orchestrator, /capabilities --codex --role <role>/);
-  assert.match(orchestrator, /do not reprint the full skills inventory/);
-  assert.match(orchestrator, /implementer leaf agent/);
-  assert.match(orchestrator, /minimal dispatch packet/);
+  assert.match(orchestrator, /do not reprint the full inventory/);
+  assert.match(orchestrator, /minimal prompt/);
   assert.match(orchestrator, /Never attach unrelated plan items/);
-  assert.match(orchestrator, /Workers are leaves and must not spawn descendants/);
-  assert.match(orchestrator, /absolute `WORKTREE CWD`/);
-  assert.match(orchestrator, /never read the parent checkout's `.muster` artifacts/);
-  assert.match(orchestrator, /If the named type is rejected, stop with a registration diagnostic/);
-  assert.match(orchestrator, /do not silently inherit the parent model/);
+  assert.match(orchestrator, /Never call a subagent API from this production-wave step/);
   assert.doesNotMatch(orchestrator, /generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK/);
 
   for (const command of ["plan", "go", "plan-backlog", "go-backlog", "diagnose", "audit", "runner", "capture"]) {
@@ -116,7 +113,7 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
   // Production waves no longer rely on the weaker receipts-only floor: the
   // runtime authenticates repository/base/worktree identity before execution.
   assert.match(orchestrator, /Production waves do not use that weaker floor/);
-  assert.match(orchestrator, /binds each member's absolute worktree to the trusted common Git directory and exact base SHA/);
+  assert.match(orchestrator, /binds each member's absolute pristine worktree to the trusted common Git directory and exact base SHA/);
 
   // The bundled runtime IS `src/cli.js` (esbuild-bundled, scripts/build-codex.mjs), so the
   // `receipt-verify` command ships automatically once PR #78 lands -- prove the actual generated
@@ -148,7 +145,7 @@ async function generatedSpawnSurfaces(root) {
 
 test("every generated spawn-bearing production surface mandates codex-wave admission", async () => {
   const surfaces = await generatedSpawnSurfaces(selectedPluginRoot);
-  assert.ok(surfaces.length >= 18, "the global guard must cover every current spawn-bearing surface");
+  assert.ok(surfaces.length >= 17, "the global guard must cover every current explicit non-wave spawn surface");
   for (const path of surfaces) {
     const text = await readFile(path, "utf8");
     assert.match(
@@ -159,6 +156,18 @@ test("every generated spawn-bearing production surface mandates codex-wave admis
     assert.match(text, /Production waves are process-only/i, `${path} must prohibit shared-cwd spawn for production waves`);
     assert.doesNotMatch(text, /non-process packets returned by `codex-wave`/i, `${path} must not authorize deferred shared-cwd packets`);
   }
+});
+
+test("generated production-wave steps contain process manifests, never direct subagent dispatch", async () => {
+  const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
+  const production = orchestrator.slice(orchestrator.indexOf("## Iron rule"), orchestrator.indexOf("## Wave dispatch"));
+  assert.match(production, /codex-wave <wave\.json>/);
+  assert.doesNotMatch(production, /call `(?:collaboration|multi_agent_v1)\.spawn_agent`|Agent tool|Codex subagent dispatcher|spawns? a fresh agent|dispatched Codex subagent/i);
+
+  const goBacklog = await readFile(join(selectedPluginRoot, "commands", "go-backlog.md"), "utf8");
+  const waveMode = goBacklog.slice(goBacklog.indexOf("**Wave mode**"), goBacklog.indexOf("**Unattended", goBacklog.indexOf("**Wave mode**")));
+  assert.match(waveMode, /codex-wave <wave\.json>/);
+  assert.doesNotMatch(waveMode, /Agent tool|spawn_agent|actual Agent\/Workflow\/spawn/i);
 });
 
 test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {

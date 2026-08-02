@@ -140,8 +140,8 @@ const coordination = await readFile(join(plugin, "internal-skills", "coordinatio
 if (!coordination.includes("plugin cache is not a Git checkout") || /git log -1 --format/.test(coordination)) fail("coordination preflight is not package-cache safe");
 const orchestrator = await readFile(join(plugin, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
 if (/generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK|permissionDecision/.test(orchestrator)) fail("orchestrator overclaims Codex dispatch or hook enforcement");
-for (const marker of ["implementer leaf agent", "minimal dispatch packet", "Never attach unrelated plan items", "Workers are leaves and must not spawn descendants"]) {
-  if (!orchestrator.includes(marker)) fail(`orchestrator lacks compact leaf-worker marker ${marker}`);
+for (const marker of ["one process-wave member", "minimal prompt", "Never attach unrelated plan items", "Never call a subagent API from this production-wave step"]) {
+  if (!orchestrator.includes(marker)) fail(`orchestrator lacks process-wave marker ${marker}`);
 }
 const implementerPrompt = await readFile(join(plugin, "internal-skills", "sp-subagents", "implementer-prompt.md"), "utf8");
 if (!implementerPrompt.includes("the parent runs the broad suite once at final verification") || implementerPrompt.includes("full suite once before committing")) fail("Codex implementer prompt repeats broad suites inside workers");

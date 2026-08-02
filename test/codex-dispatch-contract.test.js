@@ -43,7 +43,7 @@ test("shipped Codex go-backlog command routes production waves through codex-wav
   const goBacklog = await readFile(join(selectedPluginRoot, "commands", "go-backlog.md"), "utf8");
   assert.match(goBacklog, /codex-wave <wave\.json>/);
   assert.match(goBacklog, /Production waves are process-only/);
-  assert.match(goBacklog, /never call `spawn_agent` directly from the backlog or manifest/);
+  assert.match(goBacklog, /never invoke a shared-CWD or inline dispatch path from the backlog or manifest/);
 });
 
 test("shipped Codex orchestrator carries BOTH multi-agent API shapes, not v2-only", async () => {

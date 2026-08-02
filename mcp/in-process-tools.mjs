@@ -82,7 +82,12 @@ async function evaluate(name, args, environment, runtime = {}) {
     case "muster_pick":
       return { ok: true, text: json(pickWinner(args.candidates, { environment })) };
     case "muster_tally": {
-      const validation = await validateVerdicts(args.verdicts, runtime.verdictSchemaPath);
+      let validation;
+      try {
+        validation = await validateVerdicts(args.verdicts, runtime.verdictSchemaPath);
+      } catch {
+        fail("internal error: verdict schema unavailable");
+      }
       if (!validation.ok) {
         const corrupt = verdictsTallyCorruptionErrors(args.verdicts);
         if (corrupt.length > 0) {

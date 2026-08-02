@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { computeSprintWaves } from "../src/sprint-waves.js";
-import { invokeInProcessTool } from "../mcp/in-process-tools.mjs";
+import { evaluateInProcessTool, invokeInProcessTool } from "../mcp/in-process-tools.mjs";
 
 const execFileP = promisify(execFile);
 const rootDir = fileURLToPath(new URL("../", import.meta.url));
@@ -291,4 +291,19 @@ test("worker output retains the legacy 16 MiB ceiling", async () => {
     ok: false,
     text: "muster MCP worker output exceeded 16777216 byte limit",
   });
+});
+
+test("tally schema infrastructure failures never disclose filesystem paths", async () => {
+  const privatePath = "/nonexistent/private/deployment/runtime/verdict.schema.json";
+  const result = await evaluateInProcessTool(
+    "muster_tally",
+    { verdicts: [] },
+    {},
+    { verdictSchemaPath: privatePath },
+  );
+  assert.deepEqual(result, {
+    ok: false,
+    text: "muster: internal error: verdict schema unavailable",
+  });
+  assert.doesNotMatch(result.text, /ENOENT|nonexistent|private|deployment|verdict\.schema\.json/);
 });

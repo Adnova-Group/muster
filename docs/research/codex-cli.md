@@ -414,7 +414,11 @@ any JSON thread/turn lifecycle event even on exit 0. Install validation copies t
 shared/project bytes into immutable staging while the live paths retain their originals, then
 stages marketplace/plugin registration in a private `CODEX_HOME`, parses the registered result a
 second time, and transactionally promotes both the registered plugin cache and exact config bytes
-only after both parser passes accept them. Descriptor-pinned snapshots bind
+only after both parser passes accept them. The staged cache's non-derived source projection must
+byte-match the trusted generated plugin tree, every Codex-derived command adapter is checked against
+its deterministic trusted-source transformation, and publication exclusively reserves the live
+version directory while retaining prior generations instead of recursively deleting possibly
+writer-held paths. Descriptor-pinned snapshots bind
 publication to unchanged config inodes and bytes; failure restores raw snapshotted bytes without
 overwriting a concurrent writer. Published installs retain every displaced config inode under an
 immutable, exclusive per-artifact ownership receipts instead of guessing when an already-open writer is quiescent; doctor and

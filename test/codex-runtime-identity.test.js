@@ -123,6 +123,25 @@ test("missing trusted identity performs no Codex PATH execution", async () => {
   assert.deepEqual(calls, []);
 });
 
+test("a declared managed Codex package with no native binary blocks install", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-broken-managed-codex-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const packageRoot = join(tmp, "managed", "@openai", "codex");
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await mkdir(join(packageRoot, "bin"), { recursive: true });
+  await mkdir(cwd, { recursive: true });
+  await writeFile(join(packageRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: "9.8.7" }));
+  await writeFile(join(packageRoot, "bin", "codex.js"), "#!/usr/bin/env node\n");
+  const previous = process.env.CODEX_MANAGED_PACKAGE_ROOT;
+  try {
+    process.env.CODEX_MANAGED_PACKAGE_ROOT = packageRoot;
+    await assert.rejects(runCodexInstall({ cwd, home, repoRoot }), /trusted Codex package|native executable|ENOENT/);
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_MANAGED_PACKAGE_ROOT;
+    else process.env.CODEX_MANAGED_PACKAGE_ROOT = previous;
+  }
+});
+
 test("Codex-absent install and uninstall preserve local workflow without PATH probing", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-absent-local-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

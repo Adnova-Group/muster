@@ -99,6 +99,21 @@ test("Codex config.toml hook-state: reconcile leaves non-Muster hook entries unt
   assert.match(result.text, /muster@muster/, "the plugin-bundled trust key (no scope registry path) is never touched");
 });
 
+test("Codex config.toml hook-state: header-shaped multiline string content is never pruned or corrupted", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  const fakeSection = `[hooks.state."/repo/.codex/hooks.json:pre_tool_use:0:0"]\ntrusted_hash = "sha256:exact"`;
+  const documents = [
+    `note = """\n${fakeSection} # """\nmodel = "gpt-5.6-sol"\n`,
+    `note = '''\n${fakeSection} # '''\nmodel = "gpt-5.6-sol"\n`,
+    `note = """\nescaped delimiter: \\"""\n${fakeSection}\n"""\nmodel = "gpt-5.6-sol"\n`
+  ];
+  for (const text of documents) {
+    const result = reconcileConfigTomlHookState(text, registered, []);
+    assert.equal(result.text, text, "multiline string bytes must survive exactly");
+    assert.deepEqual(result.prunedHookState, []);
+  }
+});
+
 test("Codex config.toml [projects]: reconcile NEVER prunes a [projects] entry, even alongside its stale paired hooks.state entry (blocker 2a regression)", () => {
   // Prior to fix iteration 1 this exact fixture pruned [projects."/repo"]
   // alongside the departing scope's hooks.state entry -- PoC-proved to

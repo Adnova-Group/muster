@@ -160,6 +160,26 @@ test("musterHookTrustGaps does not label a current non-Muster hook state stale",
   assert.deepEqual(result.stale, []);
 });
 
+test("musterHookTrustGaps never certifies header-shaped text inside TOML multiline strings", () => {
+  const musterGroup = group("echo trusted");
+  const exactHash = fixtures[0].currentHash;
+  const fakeSection = `[hooks.state."${HOOKS_JSON}:pre_tool_use:0:0"]\ntrusted_hash = "${exactHash}"`;
+  const documents = [
+    `note = """\n${fakeSection} # """\n`,
+    `note = '''\n${fakeSection} # '''\n`,
+    `note = """\nescaped delimiter: \\"""\n${fakeSection}\n"""\n`
+  ];
+  for (const configTomlText of documents) {
+    const result = musterHookTrustGaps({
+      configTomlText,
+      hooksJsonPath: HOOKS_JSON,
+      config: { hooks: { PreToolUse: [musterGroup] } },
+      hookGroups: { PreToolUse: [musterGroup] }
+    });
+    assert.equal(result.results[0].status, "untrusted");
+  }
+});
+
 const inventoryFor = (cwd, hooksJsonPath, results) => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: results.map(result => ({
   key: `${hooksJsonPath}:${result.key}`, enabled: true, trustStatus: "trusted", currentHash: result.currentHash
 })) }] });

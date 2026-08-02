@@ -238,6 +238,53 @@ const HOOK_STATE_HEADER = /^\s*\[hooks\.state\.((?:"(?:[^"\\]|\\.)*")|(?:'[^']*'
 const ANY_TOML_HEADER = /^\s*(?:\[\[[^\]]*\]\]|\[[^\]]*\])\s*(?:#.*)?$/;
 const HOOK_STATE_KEY = /^(.*):([a-z][a-z0-9_]*):(\d+):(\d+)$/;
 
+function basicQuoteEscaped(line, index) {
+  let slashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && line[cursor] === "\\"; cursor--) slashes++;
+  return slashes % 2 === 1;
+}
+
+// TOML table-shaped text is inert while it lives inside a multiline string.
+// Track only the lexical states that can cross line boundaries; ordinary
+// basic/literal strings and comments are consumed within their own line. If a
+// single-line string is unterminated, mark the document unsafe so trust fails
+// closed and reconciliation returns the original bytes unchanged.
+function scanTomlLine(line, multiline) {
+  let mode = multiline;
+  for (let index = 0; index < line.length;) {
+    if (mode === "basic") {
+      if (line.startsWith('"""', index) && !basicQuoteEscaped(line, index)) { mode = null; index += 3; }
+      else index++;
+      continue;
+    }
+    if (mode === "literal") {
+      if (line.startsWith("'''", index)) { mode = null; index += 3; }
+      else index++;
+      continue;
+    }
+    const char = line[index];
+    if (char === "#") break;
+    if (line.startsWith('"""', index)) { mode = "basic"; index += 3; continue; }
+    if (line.startsWith("'''", index)) { mode = "literal"; index += 3; continue; }
+    if (char === '"') {
+      let closed = false;
+      for (index++; index < line.length; index++) if (line[index] === '"' && !basicQuoteEscaped(line, index)) {
+        index++; closed = true; break;
+      }
+      if (!closed) return { multiline: null, safe: false };
+      continue;
+    }
+    if (char === "'") {
+      const closing = line.indexOf("'", index + 1);
+      if (closing < 0) return { multiline: null, safe: false };
+      index = closing + 1;
+      continue;
+    }
+    index++;
+  }
+  return { multiline: mode, safe: true };
+}
+
 function parseConfigTomlTrustSections(text) {
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
   const finalNewline = text === "" || text.endsWith("\n");
@@ -245,15 +292,21 @@ function parseConfigTomlTrustSections(text) {
   if (finalNewline && lines.length) lines.pop();
   const sections = [];
   let current = null;
+  let multiline = null;
+  let safe = true;
   const closeCurrent = end => { if (current) { current.end = end; sections.push(current); current = null; } };
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    const hookMatch = line.match(HOOK_STATE_HEADER);
-    if (hookMatch || ANY_TOML_HEADER.test(line)) closeCurrent(index);
+    const syntaxActive = multiline === null;
+    const hookMatch = syntaxActive ? line.match(HOOK_STATE_HEADER) : null;
+    if (syntaxActive && (hookMatch || ANY_TOML_HEADER.test(line))) closeCurrent(index);
     if (hookMatch) current = { table: "hooks.state", key: decodeTomlQuotedKey(hookMatch[1]), headerLine: index };
+    const scanned = scanTomlLine(line, multiline);
+    multiline = scanned.multiline;
+    safe &&= scanned.safe;
   }
   closeCurrent(lines.length);
-  return { lines, newline, finalNewline, sections };
+  return { lines, newline, finalNewline, sections, safe, multiline };
 }
 
 const renderConfigTomlTrustSections = state => state.lines.join(state.newline) + (state.finalNewline ? state.newline : "");
@@ -338,6 +391,7 @@ function ownedHookStateKeys(config, hookGroups) {
 // instead of being skipped outright.
 export function reconcileConfigTomlHookState(text, registeredEntries, keptEntries, { onPrune = () => {} } = {}) {
   const state = parseConfigTomlTrustSections(text);
+  if (!state.safe || state.multiline) return { text, prunedHookState: [], prunedProjects: [] };
   const registered = (registeredEntries || []).map(entry => ({
     scope: entry.scope,
     configDir: entry.configDir,
@@ -550,7 +604,7 @@ export function musterHookTrustGaps({ configTomlText, hooksJsonPath, config, hoo
     const state = states.get(key);
     const enabled = state?.enabled !== false;
     const trustedHash = state?.trustedHash ?? null;
-    const status = state?.malformed ? "invalid"
+    const status = !parsed.safe || parsed.multiline || state?.malformed ? "invalid"
       : !enabled ? "disabled"
       : trustedHash === currentHash ? "trusted"
       : trustedHash === null ? "untrusted"

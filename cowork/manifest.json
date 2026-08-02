@@ -17,7 +17,10 @@
         "MUSTER_ENABLE_APEX": "${user_config.enable_apex}",
         "MUSTER_ENABLE_FABLE": "${user_config.enable_fable}",
         "MUSTER_MAX_TIER": "${user_config.max_tier}",
-        "MUSTER_COWORK_CONNECTORS": "${user_config.connectors}"
+        "MUSTER_COWORK_CONNECTORS": "${user_config.connectors}",
+        "MUSTER_LIFECYCLE_RECEIPT_SECRET": "${user_config.lifecycle_receipt_secret}",
+        "MUSTER_INTEGRATION_APPROVAL_SECRET": "${user_config.integration_approval_secret}",
+        "MUSTER_RUN_ID": "${user_config.run_id}"
       }
     }
   },
@@ -44,6 +47,23 @@
       "title": "Declared remote connectors",
       "description": "Comma-separated names of remote connectors to treat as available. Remote connectors cannot be auto-discovered from disk.",
       "default": ""
+    },
+    "lifecycle_receipt_secret": {
+      "type": "string",
+      "title": "Lifecycle receipt verification secret",
+      "description": "Stable random secret shared only with the privileged host receipt callback. Never expose it to model-callable tools.",
+      "sensitive": true
+    },
+    "integration_approval_secret": {
+      "type": "string",
+      "title": "Integration approval verification secret",
+      "description": "Stable random secret shared only with the authenticated human-consent callback. Never expose it to model-callable tools.",
+      "sensitive": true
+    },
+    "run_id": {
+      "type": "string",
+      "title": "Trusted lifecycle run ID",
+      "description": "Stable adapter-owned identifier for this sprint run; callers cannot supply or override it."
     }
   },
   "tools": [

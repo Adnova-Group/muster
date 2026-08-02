@@ -17,6 +17,7 @@ import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { constants as fsConstants } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -120,7 +121,7 @@ const USAGE = [
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
-  "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
+  "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|sprint-receipt-issue <receipt.json>|sprint-approval-issue <approval.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
@@ -185,6 +186,91 @@ async function loadEffectiveCatalog(args) {
 async function resolveModeCapabilities(args) {
   const { catalog, installed } = await loadEffectiveCatalog(args);
   return resolveCapabilities(catalog, installed);
+}
+
+function trustedSprintAssignments() {
+  const raw = process.env.MUSTER_SPRINT_ASSIGNMENTS_JSON;
+  if (typeof raw !== "string" || !raw) throw new Error("trusted sprint assignments are unavailable");
+  const state = JSON.parse(raw);
+  if (!state || typeof state !== "object" || Array.isArray(state)
+    || typeof state.runId !== "string" || !state.runId
+    || !state.items || typeof state.items !== "object" || Array.isArray(state.items)) {
+    throw new Error("trusted sprint assignments are invalid");
+  }
+  if (state.runId !== process.env.MUSTER_RUN_ID) throw new Error("trusted sprint run identity mismatch");
+  return state;
+}
+
+function sprintSecret(name, label) {
+  const secret = process.env[name];
+  if (typeof secret !== "string" || secret.length < 16) throw new Error(`${label} secret is unavailable`);
+  return secret;
+}
+
+function hmacEvidence(secret, digest) {
+  return createHmac("sha256", secret).update(digest).digest("hex");
+}
+
+function secureEqualHex(actual, expected) {
+  return /^[0-9a-f]{64}$/.test(actual ?? "")
+    && timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
+}
+
+function gitText(cwd, args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", timeout: 10_000 }).trim();
+}
+
+function trustedItemAssignment(itemId, phase) {
+  const state = trustedSprintAssignments();
+  const assignment = state.items[itemId];
+  const actorId = process.env.MUSTER_AUTHENTICATED_ACTOR_ID;
+  if (!assignment || typeof assignment !== "object" || Array.isArray(assignment)) {
+    throw new Error(`no trusted assignment for item ${itemId}`);
+  }
+  if (typeof actorId !== "string" || !actorId || assignment.actors?.[phase] !== actorId) {
+    throw new Error(`authenticated actor is not assigned to ${itemId}:${phase}`);
+  }
+  if (phase === "review" && assignment.actors.review === assignment.actors.implementation) {
+    throw new Error("review receipt requires an independent assigned reviewer");
+  }
+  const worktreePath = assignment.worktreePath;
+  if (typeof worktreePath !== "string" || !worktreePath || typeof assignment.branch !== "string" || !assignment.branch
+    || typeof assignment.gitCommonDir !== "string" || !assignment.gitCommonDir) {
+    throw new Error(`trusted assignment for ${itemId} is incomplete`);
+  }
+  const actualBranch = gitText(worktreePath, ["symbolic-ref", "--short", "HEAD"]);
+  const commonDirText = gitText(worktreePath, ["rev-parse", "--git-common-dir"]);
+  const actualCommonDir = resolve(worktreePath, commonDirText);
+  if (actualBranch !== assignment.branch || actualCommonDir !== resolve(assignment.gitCommonDir)) {
+    throw new Error(`trusted assignment repository or branch mismatch for ${itemId}`);
+  }
+  return { state, assignment, actorId, worktreePath };
+}
+
+function exactOwnKeys(value, allowed, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const extras = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (extras.length > 0) throw new Error(`${label} contains forbidden fields: ${extras.join(", ")}`);
+}
+
+function verifyFreshApproval(approval, assignment, receipt, secret, runId, now = Date.now()) {
+  const approvedAt = Date.parse(approval?.approvedAt);
+  const target = assignment.integrationTarget;
+  const expectedTarget = target && {
+    itemId: receipt.itemId,
+    workBranch: assignment.branch,
+    workHeadSha: receipt.candidateSha,
+    baseBranch: target.baseBranch,
+    baseHeadSha: target.baseHeadSha,
+    operation: target.operation,
+  };
+  const targetMatches = expectedTarget && Object.entries(expectedTarget).every(([key, value]) => approval?.[key] === value);
+  const digest = integrationApprovalDigest(approval);
+  if (!targetMatches || approval.runId !== runId || approval.digest !== receipt.approvalDigest
+    || approval.digest !== digest || !Number.isFinite(approvedAt) || Math.abs(now - approvedAt) > 15 * 60 * 1000
+    || !secureEqualHex(approval.evidence, hmacEvidence(secret, digest))) {
+    throw new Error("integration completion requires a fresh exact authenticated approval");
+  }
 }
 
 async function main() {
@@ -645,38 +731,64 @@ async function main() {
       });
       out(r);
       if (!r.ok) process.exit(2);
+    } else if (cmd === "sprint-receipt-issue") {
+      const file = requireArg(rest, 0, "sprint-receipt-issue <receipt.json>: missing file path", fail);
+      const request = JSON.parse(await readFile(file, "utf8"));
+      exactOwnKeys(request, ["id", "itemId", "phase", "status", "attempt", "candidateSha", "findings",
+        "terminalReason", "implementationAttempt", "approvalDigest", "approval"], "receipt request");
+      const { state, assignment, worktreePath } = trustedItemAssignment(request.itemId, request.phase);
+      if (request.phase === "integration") {
+        verifyFreshApproval(request.approval, assignment, request,
+          sprintSecret("MUSTER_INTEGRATION_APPROVAL_SECRET", "integration approval"), state.runId);
+      } else if (request.approval !== undefined) {
+        throw new Error("approval evidence is only valid for integration completion");
+      }
+      const { approval: _approval, ...receiptFields } = request;
+      const secret = sprintSecret("MUSTER_LIFECYCLE_RECEIPT_SECRET", "lifecycle receipt");
+      out(buildSprintReceipt({
+        ...receiptFields,
+        worktreePath,
+        signReceipt: (digest) => hmacEvidence(secret, digest),
+      }));
+    } else if (cmd === "sprint-approval-issue") {
+      const file = requireArg(rest, 0, "sprint-approval-issue <approval.json>: missing file path", fail);
+      const request = JSON.parse(await readFile(file, "utf8"));
+      exactOwnKeys(request, ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation"], "approval request");
+      const { state, assignment, actorId, worktreePath } = trustedItemAssignment(request.itemId, "approval");
+      const consentToken = process.env.MUSTER_AUTHENTICATED_HUMAN_CONSENT;
+      if (typeof consentToken !== "string" || !consentToken
+        || assignment.consentTokenDigest !== createHash("sha256").update(consentToken).digest("hex")) {
+        throw new Error("authenticated human-consent attestation is required");
+      }
+      const target = assignment.integrationTarget;
+      const expected = {
+        itemId: request.itemId, workBranch: assignment.branch,
+        workHeadSha: gitText(worktreePath, ["rev-parse", "HEAD"]),
+        baseBranch: target?.baseBranch, baseHeadSha: target?.baseHeadSha, operation: target?.operation,
+      };
+      if (Object.entries(expected).some(([key, value]) => request[key] !== value)
+        || assignment.approvalActionDigest !== integrationApprovalDigest(request)) {
+        throw new Error("approval request does not match the prior trusted approval action");
+      }
+      const approval = {
+        ...request, approvedBy: actorId, approvedAt: new Date().toISOString(),
+        runId: state.runId, nonce: randomUUID(),
+      };
+      const digest = integrationApprovalDigest(approval);
+      out({
+        ...approval, digest,
+        evidence: hmacEvidence(sprintSecret("MUSTER_INTEGRATION_APPROVAL_SECRET", "integration approval"), digest),
+      });
     } else if (cmd === "sprint-reconcile") {
       const file = requireArg(rest, 0, "sprint-reconcile <progress.json>: missing file path", fail);
       const input = JSON.parse(await readFile(file, "utf8"));
       const receiptSecret = process.env.MUSTER_LIFECYCLE_RECEIPT_SECRET;
-      const approvalSecret = process.env.MUSTER_INTEGRATION_APPROVAL_SECRET;
       const trustedRunId = process.env.MUSTER_RUN_ID;
-      const sign = (secret, digest, label) => {
-        if (typeof secret !== "string" || secret.length < 16) throw new Error(`${label} secret is unavailable`);
-        return createHmac("sha256", secret).update(digest).digest("hex");
-      };
-      const receipts = (input.receipts ?? []).map((receipt) => receipt.evidence ? receipt : buildSprintReceipt({
-        ...receipt,
-        findings: receipt.findings ?? [],
-        signReceipt: (digest) => sign(receiptSecret, digest, "lifecycle receipt"),
-      }));
-      const issuedApprovals = (input.approvalRequests ?? []).map((request) => {
-        if (typeof trustedRunId !== "string" || !trustedRunId) throw new Error("adapter-owned MUSTER_RUN_ID is required to issue approval");
-        const approval = {
-          ...request,
-          approvedAt: new Date().toISOString(),
-          runId: trustedRunId,
-          nonce: randomUUID(),
-        };
-        const digest = integrationApprovalDigest(approval);
-        return { ...approval, digest, evidence: sign(approvalSecret, digest, "integration approval") };
-      });
-      const approvals = [...(input.approvals ?? []), ...issuedApprovals];
       const r = reconcileSprintProgress(input.plan, {
-        receipts,
+        receipts: input.receipts,
         inFlight: input.inFlight,
         integrationTargets: input.integrationTargets,
-        approvals,
+        approvals: input.approvals,
         recovery: {
           ...(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT === undefined ? {} : {
             noProgressLimit: Number(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT),
@@ -699,7 +811,7 @@ async function main() {
         },
         trustedRunId,
       });
-      out({ ...r, approvals });
+      out(r);
       if (!r.ok) process.exit(2);
     } else if (cmd === "backlog-publish") {
       const file = requireArg(rest, 0, "backlog-publish <backlog.md> --expect <sha256|absent>: missing file path", fail);

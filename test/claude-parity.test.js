@@ -1365,5 +1365,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // Re-pin #44 moves receipt and approval issuance behind the trusted adapter,
   // binds approvals to its run identity, and preserves authenticated completed
   // history beyond the live approval freshness window. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "34e0a3379e7ffeb33527c893610ef68f5ba857986a49752a6a79bc9cc16ce856");
+  // Re-pin #45 removes issuance from the model-callable surface and binds the
+  // privileged host callbacks to trusted assignments and human consent.
+  assert.equal(hash.digest("hex"), "baa0cf8d0a8f3513260b4591b9d9603d93897a370a5ba640e5cc96ac210970f2");
 });

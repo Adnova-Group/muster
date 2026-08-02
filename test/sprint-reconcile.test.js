@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import {
   buildSprintReceipt,
   computeSprintWaves,
@@ -669,6 +669,92 @@ test("sprint-reconcile CLI round-trips exact-head approval into integration disp
       type: "dispatch", itemId: "a", phase: "integration", wave: 1,
       candidateSha: SHA_A, approvalDigest: approved.digest,
     }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("privileged lifecycle issuers bind trusted assignments, actors, consent, and fresh integration approval", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-sprint-issuers-"));
+  const receiptSecret = "receipt-secret-0123456789abcdef";
+  const approvalSecret = "approval-secret-0123456789abcdef";
+  const consent = "one-time-host-consent-token";
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
+  const branch = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
+  const common = resolve(repoRoot, execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: repoRoot, encoding: "utf8" }).trim());
+  const baseHeadSha = "b".repeat(40);
+  const approvalTuple = {
+    itemId: "a", workBranch: branch, workHeadSha: head,
+    baseBranch: "main", baseHeadSha, operation: "merge-local",
+  };
+  const assignments = {
+    runId: RUN_ID,
+    items: {
+      a: {
+        worktreePath: repoRoot, branch, gitCommonDir: common,
+        actors: { implementation: "runner-a", review: "reviewer-a", integration: "integrator", approval: "human-a" },
+        integrationTarget: { baseBranch: "main", baseHeadSha, operation: "merge-local" },
+        approvalActionDigest: integrationApprovalDigest(approvalTuple),
+        consentTokenDigest: createHash("sha256").update(consent).digest("hex"),
+      },
+    },
+  };
+  const commonEnv = {
+    ...process.env,
+    MUSTER_RUN_ID: RUN_ID,
+    MUSTER_SPRINT_ASSIGNMENTS_JSON: JSON.stringify(assignments),
+    MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret,
+    MUSTER_INTEGRATION_APPROVAL_SECRET: approvalSecret,
+  };
+  try {
+    const receiptFile = join(dir, "receipt.json");
+    await writeFile(receiptFile, JSON.stringify({
+      id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: head,
+    }));
+    const issuedReceipt = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-receipt-issue", receiptFile], {
+      cwd: repoRoot, env: { ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "runner-a" },
+    })).stdout);
+    assert.match(issuedReceipt.evidence, /^[0-9a-f]{64}$/);
+
+    await writeFile(receiptFile, JSON.stringify({
+      id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: head,
+      worktreePath: repoRoot,
+    }));
+    await assert.rejects(pexecFile(process.execPath, [cli, "sprint-receipt-issue", receiptFile], {
+      cwd: repoRoot, env: { ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "runner-a" },
+    }), /forbidden fields: worktreePath/);
+
+    const approvalFile = join(dir, "approval.json");
+    await writeFile(approvalFile, JSON.stringify(approvalTuple));
+    const issuedApproval = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-approval-issue", approvalFile], {
+      cwd: repoRoot,
+      env: {
+        ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "human-a",
+        MUSTER_AUTHENTICATED_HUMAN_CONSENT: consent,
+      },
+    })).stdout);
+    assert.equal(issuedApproval.approvedBy, "human-a");
+    assert.match(issuedApproval.evidence, /^[0-9a-f]{64}$/);
+
+    await writeFile(approvalFile, JSON.stringify({ ...approvalTuple, approvedBy: "caller-asserted-human" }));
+    await assert.rejects(pexecFile(process.execPath, [cli, "sprint-approval-issue", approvalFile], {
+      cwd: repoRoot,
+      env: {
+        ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "human-a",
+        MUSTER_AUTHENTICATED_HUMAN_CONSENT: consent,
+      },
+    }), /forbidden fields: approvedBy/);
+
+    const expired = { ...issuedApproval, approvedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString() };
+    expired.digest = integrationApprovalDigest(expired);
+    expired.evidence = createHmac("sha256", approvalSecret).update(expired.digest).digest("hex");
+    await writeFile(receiptFile, JSON.stringify({
+      id: "integration-a", itemId: "a", phase: "integration", status: "completed", candidateSha: head,
+      approvalDigest: expired.digest, approval: expired,
+    }));
+    await assert.rejects(pexecFile(process.execPath, [cli, "sprint-receipt-issue", receiptFile], {
+      cwd: repoRoot, env: { ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "integrator" },
+    }), /fresh exact authenticated approval/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

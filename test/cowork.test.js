@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { integrationApprovalDigest, lifecycleReceiptDigest } from "../src/sprint-waves.js";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +15,12 @@ const read = (p) => readFile(new URL(p, root), "utf8");
 const rootDir = fileURLToPath(root);
 const execFileP = promisify(execFile);
 const MCP_RECEIPT_SECRET = "mcp-receipt-secret-0123456789abcdef";
+function signedMcpReceipt(receipt) {
+  return {
+    ...receipt,
+    evidence: createHmac("sha256", MCP_RECEIPT_SECRET).update(lifecycleReceiptDigest(receipt)).digest("hex"),
+  };
+}
 
 // Drive the MCP server over stdio: send requests, resolve a map of id -> response
 // once every id with an `id` has replied. Notifications (no id) expect no reply.
@@ -482,6 +489,11 @@ test("manifest: every user_config substitution is declared; apex/legacy keys car
   assert.ok(fable, "the legacy enable_fable key must stay declared for its env substitution");
   assert.equal(fable.type, "boolean");
   assert.match(`${fable.title} ${fable.description}`, /deprecat/i, "enable_fable must be marked deprecated");
+  for (const key of ["lifecycle_receipt_secret", "integration_approval_secret"]) {
+    assert.equal(manifest.user_config[key]?.sensitive, true, `${key} must be hidden by the settings UI`);
+    assert.ok(!("default" in manifest.user_config[key]), `${key} must not ship a shared default`);
+  }
+  assert.ok(!("default" in manifest.user_config.run_id), "run_id must be adapter-provisioned per sprint");
 });
 
 // ── codex-mcp-surface-gaps: 4 deterministic ops the 2026-07-19 Codex dogfood ──
@@ -843,10 +855,10 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
         arguments: {
           plan,
           inFlight: [{ itemId: "a", phase: "implementation", attempt: 1 }],
-          receipts: [{
+          receipts: [signedMcpReceipt({
             id: "impl-a", itemId: "a", phase: "implementation", status: "completed",
-            candidateSha: workHeadSha, worktreePath: rootDir,
-          }],
+            candidateSha: workHeadSha,
+          })],
         },
       },
     },
@@ -871,11 +883,14 @@ test("json verb: muster_sprint_reconcile forwards exact-head integration approva
   const plan = JSON.parse(planned[2].result.content[0].text);
   const workHeadSha = (await execFileP("git", ["rev-parse", "HEAD"], { cwd: rootDir })).stdout.trim();
   const baseHeadSha = "b".repeat(40);
-  const approvalRequest = {
+  const approval = {
     itemId: "a", workBranch: "work/a", workHeadSha, baseBranch: "main", baseHeadSha,
-    operation: "merge-local", approvedBy: "human",
+    operation: "merge-local", approvedBy: "human", approvedAt: new Date().toISOString(),
+    runId: "mcp-run", nonce: "mcp-approval-nonce",
   };
   const secret = "0123456789abcdef0123456789abcdef";
+  approval.digest = integrationApprovalDigest(approval);
+  approval.evidence = createHmac("sha256", secret).update(approval.digest).digest("hex");
   const response = await rpc([
     INIT,
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: {
@@ -883,13 +898,12 @@ test("json verb: muster_sprint_reconcile forwards exact-head integration approva
       arguments: {
         plan,
         receipts: [
-          { id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: workHeadSha, worktreePath: rootDir },
-          { id: "review-a", itemId: "a", phase: "review", status: "completed", candidateSha: workHeadSha, implementationAttempt: 1, worktreePath: rootDir },
+          signedMcpReceipt({ id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: workHeadSha }),
+          signedMcpReceipt({ id: "review-a", itemId: "a", phase: "review", status: "completed", candidateSha: workHeadSha, implementationAttempt: 1 }),
         ],
         inFlight: [],
         integrationTargets: { a: { workBranch: "work/a", baseBranch: "main", baseHeadSha } },
-        approvals: [],
-        approvalRequests: [approvalRequest],
+        approvals: [approval],
       },
     } },
   ], { env: {
@@ -901,10 +915,30 @@ test("json verb: muster_sprint_reconcile forwards exact-head integration approva
   assert.equal(response[2].result.isError, false);
   assert.deepEqual(result.actions, [{
     type: "dispatch", itemId: "a", phase: "integration", wave: 1,
-    candidateSha: workHeadSha, approvalDigest: result.approvals[0].digest,
+    candidateSha: workHeadSha, approvalDigest: approval.digest,
   }]);
-  assert.equal(result.approvals[0].runId, "mcp-run");
-  assert.match(result.approvals[0].evidence, /^[0-9a-f]{64}$/);
+});
+
+test("model-callable reconcile rejects unsigned receipts, caller worktrees, and approval issuance", async () => {
+  const backlog = "- [ ] A {id: a} {deps: none} {disposition: merge-local}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  for (const extra of [
+    { receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: "a".repeat(40), worktreePath: rootDir }] },
+    { receipts: [], approvalRequests: [{ itemId: "a", approvedBy: "caller" }] },
+  ]) {
+    const response = await rpc([
+      INIT,
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: {
+        name: "muster_sprint_reconcile",
+        arguments: { plan, receipts: [], inFlight: [], ...extra },
+      } },
+    ]);
+    assert.equal(response[2].error.code, -32602);
+  }
 });
 
 test("json verb: muster_sprint_reconcile returns isError with structured validation errors for a forged plan", async () => {

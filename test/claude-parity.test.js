@@ -1367,5 +1367,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // history beyond the live approval freshness window. File count remains unchanged.
   // Re-pin #45 removes issuance from the model-callable surface and binds the
   // privileged host callbacks to trusted assignments and human consent.
-  assert.equal(hash.digest("hex"), "baa0cf8d0a8f3513260b4591b9d9603d93897a370a5ba640e5cc96ac210970f2");
+  // Re-pin #46 moves signing into a capability-authenticated IPC broker and
+  // leaves only Ed25519 public verification keys on the model-callable path.
+  // Re-pin #47 makes that broker a separately privileged host service with
+  // owner-only key/state files, never a child of the Cowork/model process.
+  assert.equal(hash.digest("hex"), "2d36452e5dea5e08326feff8066ba923ed2f7f21ba676ee8a2b990ab03031cf6");
 });

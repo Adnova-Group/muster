@@ -72,7 +72,7 @@ const SPRINT_RECEIPT_SCHEMA = {
     terminalReason: { type: "string", enum: ["approval", "human-hold", "external-impossibility", "cancelled"] },
     approvalDigest: { type: "string", pattern: "^[0-9a-f]{64}$" },
     implementationAttempt: { type: "integer", minimum: 1, maximum: 1000000 },
-    evidence: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    evidence: { type: "string", pattern: "^[A-Za-z0-9+/]{86}==$" },
   },
   required: ["id", "itemId", "phase", "status", "evidence"],
   additionalProperties: false,
@@ -166,7 +166,7 @@ const TOOLS = {
           properties: {
             itemId: { type: "string" }, workBranch: { type: "string" }, workHeadSha: { type: "string" },
             baseBranch: { type: "string" }, baseHeadSha: { type: "string" }, operation: { type: "string", enum: ["merge-local", "merge-push"] },
-            approvedBy: { type: "string" }, approvedAt: { type: "string" }, evidence: { type: "string" }, digest: { type: "string", pattern: "^[0-9a-f]{64}$" },
+            approvedBy: { type: "string" }, approvedAt: { type: "string" }, evidence: { type: "string", pattern: "^[A-Za-z0-9+/]{86}==$" }, digest: { type: "string", pattern: "^[0-9a-f]{64}$" },
             runId: { type: "string" }, nonce: { type: "string" },
           },
           required: ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation", "approvedBy", "approvedAt", "runId", "nonce", "evidence", "digest"],

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash, createHmac } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { integrationApprovalDigest, lifecycleReceiptDigest } from "../src/sprint-waves.js";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
@@ -14,11 +14,16 @@ const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
 const rootDir = fileURLToPath(root);
 const execFileP = promisify(execFile);
-const MCP_RECEIPT_SECRET = "mcp-receipt-secret-0123456789abcdef";
+const mcpReceiptKeys = generateKeyPairSync("ed25519");
+const mcpApprovalKeys = generateKeyPairSync("ed25519");
+const MCP_RECEIPT_PRIVATE_KEY = mcpReceiptKeys.privateKey.export({ type: "pkcs8", format: "pem" });
+const MCP_RECEIPT_PUBLIC_KEY = mcpReceiptKeys.publicKey.export({ type: "spki", format: "pem" });
+const MCP_APPROVAL_PRIVATE_KEY = mcpApprovalKeys.privateKey.export({ type: "pkcs8", format: "pem" });
+const MCP_APPROVAL_PUBLIC_KEY = mcpApprovalKeys.publicKey.export({ type: "spki", format: "pem" });
 function signedMcpReceipt(receipt) {
   return {
     ...receipt,
-    evidence: createHmac("sha256", MCP_RECEIPT_SECRET).update(lifecycleReceiptDigest(receipt)).digest("hex"),
+    evidence: sign(null, Buffer.from(lifecycleReceiptDigest(receipt), "hex"), MCP_RECEIPT_PRIVATE_KEY).toString("base64"),
   };
 }
 
@@ -489,8 +494,8 @@ test("manifest: every user_config substitution is declared; apex/legacy keys car
   assert.ok(fable, "the legacy enable_fable key must stay declared for its env substitution");
   assert.equal(fable.type, "boolean");
   assert.match(`${fable.title} ${fable.description}`, /deprecat/i, "enable_fable must be marked deprecated");
-  for (const key of ["lifecycle_receipt_secret", "integration_approval_secret"]) {
-    assert.equal(manifest.user_config[key]?.sensitive, true, `${key} must be hidden by the settings UI`);
+  for (const key of ["lifecycle_receipt_public_key", "integration_approval_public_key"]) {
+    assert.ok(manifest.user_config[key], `${key} must be configurable for verifier-only reconciliation`);
     assert.ok(!("default" in manifest.user_config[key]), `${key} must not ship a shared default`);
   }
   assert.ok(!("default" in manifest.user_config.run_id), "run_id must be adapter-provisioned per sprint");
@@ -862,7 +867,7 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
         },
       },
     },
-  ], { env: { MUSTER_LIFECYCLE_RECEIPT_SECRET: MCP_RECEIPT_SECRET } });
+  ], { env: { MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: MCP_RECEIPT_PUBLIC_KEY } });
   const res = JSON.parse(reconciled[2].result.content[0].text);
 
   assert.equal(reconciled[2].result.isError, false);
@@ -888,9 +893,8 @@ test("json verb: muster_sprint_reconcile forwards exact-head integration approva
     operation: "merge-local", approvedBy: "human", approvedAt: new Date().toISOString(),
     runId: "mcp-run", nonce: "mcp-approval-nonce",
   };
-  const secret = "0123456789abcdef0123456789abcdef";
   approval.digest = integrationApprovalDigest(approval);
-  approval.evidence = createHmac("sha256", secret).update(approval.digest).digest("hex");
+  approval.evidence = sign(null, Buffer.from(approval.digest, "hex"), MCP_APPROVAL_PRIVATE_KEY).toString("base64");
   const response = await rpc([
     INIT,
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: {
@@ -907,8 +911,8 @@ test("json verb: muster_sprint_reconcile forwards exact-head integration approva
       },
     } },
   ], { env: {
-    MUSTER_INTEGRATION_APPROVAL_SECRET: secret,
-    MUSTER_LIFECYCLE_RECEIPT_SECRET: MCP_RECEIPT_SECRET,
+    MUSTER_INTEGRATION_APPROVAL_PUBLIC_KEY: MCP_APPROVAL_PUBLIC_KEY,
+    MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: MCP_RECEIPT_PUBLIC_KEY,
     MUSTER_RUN_ID: "mcp-run",
   } });
   const result = JSON.parse(response[2].result.content[0].text);

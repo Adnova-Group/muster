@@ -95,8 +95,8 @@ Merge this into `mcpServers` (keep any servers you already have). Use the absolu
         "MUSTER_COWORK_CONNECTORS": "",
         "MUSTER_ENABLE_APEX": "",
         "MUSTER_MAX_TIER": "",
-        "MUSTER_LIFECYCLE_RECEIPT_SECRET": "<stable random 32-byte value>",
-        "MUSTER_INTEGRATION_APPROVAL_SECRET": "<different stable random 32-byte value>",
+        "MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY": "<Ed25519 public PEM>",
+        "MUSTER_INTEGRATION_APPROVAL_PUBLIC_KEY": "<Ed25519 public PEM>",
         "MUSTER_RUN_ID": "<adapter-owned sprint UUID>"
       }
     }
@@ -143,11 +143,11 @@ All supported configuration is environment variables set in the Route A `env` bl
 | `MUSTER_COWORK_NATIVE_PLUGIN` | — | `1`/`true` DECLARES that Cowork's own plugin loader has natively loaded muster's `plugin/` tree (skills, hooks, sub-agents), so `muster_capabilities` resolves builtin skills/agents the same way it does on Claude Code instead of collapsing to MCP-only. Empty or `false` (the default) keeps the verified MCP-only ride. This is a DECLARED capability check, not a probe -- Cowork exposes no on-disk or protocol signal to auto-detect a native load, so only set this once you've confirmed one on your build (see "How capabilities resolve" below). |
 | `MUSTER_COWORK_MAX_INFLIGHT` | — | Maximum concurrent MCP tool executions (default `4`, hard ceiling `64`). Route A only; implemented by the neutral core through the Cowork adapter. |
 | `MUSTER_COWORK_MAX_QUEUE` | — | Maximum queued MCP tool executions before overload rejection (default `16`, hard ceiling `1024`). Route A only; implemented by the neutral core through the Cowork adapter. |
-| `MUSTER_LIFECYCLE_RECEIPT_SECRET` | `lifecycle_receipt_secret` | Stable random verifier secret for authenticated sprint receipts. Generate at least 32 random bytes, store it only in the MCP server and privileged host mailbox callback, and never put it in a model prompt or tool argument. |
-| `MUSTER_INTEGRATION_APPROVAL_SECRET` | `integration_approval_secret` | Different stable random verifier secret shared only with the privileged authenticated-human consent callback. The model-callable reconciler verifies but never issues approval evidence. |
+| `MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY` | `lifecycle_receipt_public_key` | Ed25519 public key used by model-callable reconciliation to verify broker-issued receipts. It cannot mint evidence. |
+| `MUSTER_INTEGRATION_APPROVAL_PUBLIC_KEY` | `integration_approval_public_key` | Ed25519 public key used by model-callable reconciliation to verify broker-issued approvals. It cannot mint evidence. |
 | `MUSTER_RUN_ID` | `run_id` | Stable adapter-owned UUID for one sprint run. Provision the identical value to verifier and privileged callbacks; rotate it for a new run. |
 
-For sprint lifecycle evidence, generate the two secrets in a host terminal (for example, `openssl rand -hex 32` twice) and a fresh UUID, then provision the same values to the MCP verifier and the privileged callbacks. The callbacks additionally receive adapter-owned `MUSTER_SPRINT_ASSIGNMENTS_JSON` and authenticated actor/consent variables only for the callback invocation. Do not place callback credentials or assignment state in MCP arguments: `muster_sprint_reconcile` deliberately has no evidence-issuance operation.
+For sprint lifecycle evidence, generate two Ed25519 keypairs and a fresh run UUID. Run `scripts/sprint-evidence-broker.mjs <protected-config.json>` as a separately privileged host service account; its owner-only config points to owner-only private-key files, adapter-owned assignment state, and a private socket or Windows named pipe. The Cowork MCP process receives only the public keys. A host mailbox or authenticated-human callback invokes `scripts/sprint-evidence-callback.mjs` with that socket and its actor-specific `MUSTER_EVIDENCE_CALLBACK_TOKEN`. The broker hashes the token into the adapter-owned principal map, verifies the assigned worktree/repository/branch/phase and prior approval action, and signs with its private key. Do not place private keys, callback tokens, or assignment state in the Cowork server environment, MCP arguments, or model-readable files. If the host cannot run the privileged service and callbacks, use the sequential fallback; authenticated parallel sprint lifecycle is unavailable rather than silently weakened.
 
 ### How capabilities resolve
 

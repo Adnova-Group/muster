@@ -5,7 +5,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
+import { once } from "node:events";
+import { startSprintEvidenceBroker } from "../mcp/evidence-broker.mjs";
 import {
   buildSprintReceipt,
   computeSprintWaves,
@@ -17,6 +19,13 @@ import {
 const pexecFile = promisify(execFile);
 const repoRoot = new URL("../", import.meta.url).pathname;
 const cli = join(repoRoot, "src", "cli.js");
+const callbackCli = join(repoRoot, "scripts", "sprint-evidence-callback.mjs");
+const receiptKeys = generateKeyPairSync("ed25519");
+const approvalKeys = generateKeyPairSync("ed25519");
+const receiptPrivateKey = receiptKeys.privateKey.export({ type: "pkcs8", format: "pem" });
+const receiptPublicKey = receiptKeys.publicKey.export({ type: "spki", format: "pem" });
+const approvalPrivateKey = approvalKeys.privateKey.export({ type: "pkcs8", format: "pem" });
+const approvalPublicKey = approvalKeys.publicKey.export({ type: "spki", format: "pem" });
 
 function plan(lines) {
   return computeSprintWaves(lines.join("\n"));
@@ -53,7 +62,7 @@ function signedReceipt(value) {
   return { ...unsigned, evidence: createHmac("sha256", RECEIPT_TOKEN).update(lifecycleReceiptDigest(unsigned)).digest("hex") };
 }
 
-function signedCliProgress(progress, secret) {
+function signedCliProgress(progress, privateKey = receiptPrivateKey) {
   return {
     ...progress,
     receipts: (progress.receipts ?? []).map((value) => {
@@ -61,7 +70,7 @@ function signedCliProgress(progress, secret) {
       delete unsigned.evidence;
       return {
         ...unsigned,
-        evidence: createHmac("sha256", secret).update(lifecycleReceiptDigest(unsigned)).digest("hex"),
+        evidence: sign(null, Buffer.from(lifecycleReceiptDigest(unsigned), "hex"), privateKey).toString("base64"),
       };
     }),
   };
@@ -581,16 +590,15 @@ test("a later dependency wave waits for all prior-wave integration", () => {
 
 test("sprint-reconcile CLI consumes the machine-checkable receipt envelope", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-sprint-reconcile-"));
-  const receiptSecret = "receipt-secret-0123456789abcdef";
   try {
     const input = join(dir, "progress.json");
     await writeFile(input, JSON.stringify(signedCliProgress({
       plan: plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]),
       inFlight: [flight("a", "implementation")],
       receipts: [receipt("impl-a", "a", "implementation")],
-    }, receiptSecret)));
+    })));
     const { stdout } = await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
-      cwd: repoRoot, env: { ...process.env, MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret },
+      cwd: repoRoot, env: { ...process.env, MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: receiptPublicKey },
     });
     const result = JSON.parse(stdout);
 
@@ -603,7 +611,6 @@ test("sprint-reconcile CLI consumes the machine-checkable receipt envelope", asy
 
 test("sprint-reconcile CLI reads recovery policy from trusted environment, not mailbox JSON", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-sprint-recovery-policy-"));
-  const receiptSecret = "receipt-secret-0123456789abcdef";
   try {
     const input = join(dir, "progress.json");
     await writeFile(input, JSON.stringify(signedCliProgress({
@@ -615,12 +622,12 @@ test("sprint-reconcile CLI reads recovery policy from trusted environment, not m
         { ...receipt("impl-a-2", "a", "implementation", "completed", 2), candidateSha: SHA_A },
         { ...receipt("review-a-2", "a", "review", "failed", 2), candidateSha: SHA_A, progressFingerprint: FINDING_A },
       ],
-    }, receiptSecret)));
+    })));
     const { stdout } = await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
       cwd: repoRoot,
       env: {
         ...process.env, MUSTER_RECOVERY_NO_PROGRESS_LIMIT: "3", MUSTER_RECOVERY_MAX_CONTINUATIONS: "10",
-        MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret,
+        MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: receiptPublicKey,
       },
     });
     const result = JSON.parse(stdout);
@@ -633,8 +640,6 @@ test("sprint-reconcile CLI reads recovery policy from trusted environment, not m
 
 test("sprint-reconcile CLI round-trips exact-head approval into integration dispatch", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-sprint-approval-"));
-  const secret = "0123456789abcdef0123456789abcdef";
-  const receiptSecret = "receipt-secret-0123456789abcdef";
   try {
     const input = join(dir, "progress.json");
     const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: merge-local}"]);
@@ -646,22 +651,22 @@ test("sprint-reconcile CLI round-trips exact-head approval into integration disp
       ],
       inFlight: [], integrationTargets: integrationTarget("a"), approvals: [],
     };
-    await writeFile(input, JSON.stringify(signedCliProgress(progress, receiptSecret)));
+    await writeFile(input, JSON.stringify(signedCliProgress(progress)));
     const requested = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
-      cwd: repoRoot, env: { ...process.env, MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret },
+      cwd: repoRoot, env: { ...process.env, MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: receiptPublicKey },
     })).stdout);
     assert.equal(requested.actions[0].type, "approval");
 
     const approved = approval("a", SHA_A, "merge-local");
-    approved.evidence = createHmac("sha256", secret).update(approved.digest).digest("hex");
+    approved.evidence = sign(null, Buffer.from(approved.digest, "hex"), approvalPrivateKey).toString("base64");
     progress.approvals = [approved];
     progress.runId = RUN_ID;
-    await writeFile(input, JSON.stringify(signedCliProgress(progress, receiptSecret)));
+    await writeFile(input, JSON.stringify(signedCliProgress(progress)));
     const dispatched = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
       cwd: repoRoot,
       env: {
-        ...process.env, MUSTER_INTEGRATION_APPROVAL_SECRET: secret,
-        MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret,
+        ...process.env, MUSTER_INTEGRATION_APPROVAL_PUBLIC_KEY: approvalPublicKey,
+        MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: receiptPublicKey,
         MUSTER_RUN_ID: RUN_ID,
       },
     })).stdout);
@@ -674,11 +679,11 @@ test("sprint-reconcile CLI round-trips exact-head approval into integration disp
   }
 });
 
-test("privileged lifecycle issuers bind trusted assignments, actors, consent, and fresh integration approval", async () => {
+test("privileged IPC broker binds callback capabilities, assignments, and fresh approval", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-sprint-issuers-"));
-  const receiptSecret = "receipt-secret-0123456789abcdef";
-  const approvalSecret = "approval-secret-0123456789abcdef";
-  const consent = "one-time-host-consent-token";
+  const runnerToken = "runner-host-callback-token-012345";
+  const humanToken = "human-host-callback-token-0123456";
+  const integrationToken = "integration-host-callback-token";
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
   const branch = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
   const common = resolve(repoRoot, execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: repoRoot, encoding: "utf8" }).trim());
@@ -689,73 +694,67 @@ test("privileged lifecycle issuers bind trusted assignments, actors, consent, an
   };
   const assignments = {
     runId: RUN_ID,
+    callbackPrincipals: {
+      [createHash("sha256").update(runnerToken).digest("hex")]: { actorId: "runner-a", purposes: ["implementation"] },
+      [createHash("sha256").update(humanToken).digest("hex")]: { actorId: "human-a", purposes: ["approval"] },
+      [createHash("sha256").update(integrationToken).digest("hex")]: { actorId: "integrator", purposes: ["integration"] },
+    },
     items: {
       a: {
         worktreePath: repoRoot, branch, gitCommonDir: common,
         actors: { implementation: "runner-a", review: "reviewer-a", integration: "integrator", approval: "human-a" },
         integrationTarget: { baseBranch: "main", baseHeadSha, operation: "merge-local" },
         approvalActionDigest: integrationApprovalDigest(approvalTuple),
-        consentTokenDigest: createHash("sha256").update(consent).digest("hex"),
       },
     },
   };
-  const commonEnv = {
-    ...process.env,
-    MUSTER_RUN_ID: RUN_ID,
-    MUSTER_SPRINT_ASSIGNMENTS_JSON: JSON.stringify(assignments),
-    MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret,
-    MUSTER_INTEGRATION_APPROVAL_SECRET: approvalSecret,
-  };
+  const socketPath = join(dir, "broker.sock");
+  const broker = startSprintEvidenceBroker({
+    socketPath, state: assignments, receiptPrivateKey, approvalPrivateKey, approvalPublicKey,
+  });
+  await once(broker, "listening");
+  const callback = (kind, file, token) => pexecFile(process.execPath, [callbackCli, kind, file], {
+    cwd: repoRoot,
+    env: { ...process.env, MUSTER_EVIDENCE_BROKER_SOCKET: socketPath, MUSTER_EVIDENCE_CALLBACK_TOKEN: token },
+  });
   try {
     const receiptFile = join(dir, "receipt.json");
     await writeFile(receiptFile, JSON.stringify({
       id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: head,
     }));
-    const issuedReceipt = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-receipt-issue", receiptFile], {
-      cwd: repoRoot, env: { ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "runner-a" },
-    })).stdout);
-    assert.match(issuedReceipt.evidence, /^[0-9a-f]{64}$/);
+    const issuedReceipt = JSON.parse((await callback("receipt", receiptFile, runnerToken)).stdout);
+    assert.match(issuedReceipt.evidence, /^[A-Za-z0-9+/]{86}==$/);
 
     await writeFile(receiptFile, JSON.stringify({
       id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: head,
       worktreePath: repoRoot,
     }));
-    await assert.rejects(pexecFile(process.execPath, [cli, "sprint-receipt-issue", receiptFile], {
-      cwd: repoRoot, env: { ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "runner-a" },
-    }), /forbidden fields: worktreePath/);
+    await assert.rejects(callback("receipt", receiptFile, runnerToken), /forbidden fields: worktreePath/);
+    await assert.rejects(callback("receipt", receiptFile, "forged-callback-token-012345"), /broker callback authentication failed/);
 
     const approvalFile = join(dir, "approval.json");
     await writeFile(approvalFile, JSON.stringify(approvalTuple));
-    const issuedApproval = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-approval-issue", approvalFile], {
-      cwd: repoRoot,
-      env: {
-        ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "human-a",
-        MUSTER_AUTHENTICATED_HUMAN_CONSENT: consent,
-      },
-    })).stdout);
+    const issuedApproval = JSON.parse((await callback("approval", approvalFile, humanToken)).stdout);
     assert.equal(issuedApproval.approvedBy, "human-a");
-    assert.match(issuedApproval.evidence, /^[0-9a-f]{64}$/);
+    assert.match(issuedApproval.evidence, /^[A-Za-z0-9+/]{86}==$/);
 
     await writeFile(approvalFile, JSON.stringify({ ...approvalTuple, approvedBy: "caller-asserted-human" }));
-    await assert.rejects(pexecFile(process.execPath, [cli, "sprint-approval-issue", approvalFile], {
-      cwd: repoRoot,
-      env: {
-        ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "human-a",
-        MUSTER_AUTHENTICATED_HUMAN_CONSENT: consent,
-      },
-    }), /forbidden fields: approvedBy/);
+    await assert.rejects(callback("approval", approvalFile, humanToken), /forbidden fields: approvedBy/);
 
     const expired = { ...issuedApproval, approvedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString() };
     expired.digest = integrationApprovalDigest(expired);
-    expired.evidence = createHmac("sha256", approvalSecret).update(expired.digest).digest("hex");
+    expired.evidence = sign(null, Buffer.from(expired.digest, "hex"), approvalPrivateKey).toString("base64");
     await writeFile(receiptFile, JSON.stringify({
       id: "integration-a", itemId: "a", phase: "integration", status: "completed", candidateSha: head,
       approvalDigest: expired.digest, approval: expired,
     }));
+    await assert.rejects(callback("receipt", receiptFile, integrationToken), /fresh exact authenticated approval/);
     await assert.rejects(pexecFile(process.execPath, [cli, "sprint-receipt-issue", receiptFile], {
-      cwd: repoRoot, env: { ...commonEnv, MUSTER_AUTHENTICATED_ACTOR_ID: "integrator" },
-    }), /fresh exact authenticated approval/);
+      cwd: repoRoot, env: { ...process.env, MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: receiptPublicKey },
+    }), /unknown command/);
   } finally {
+    broker.close();
+    await once(broker, "close");
     await rm(dir, { recursive: true, force: true });
   }
 });

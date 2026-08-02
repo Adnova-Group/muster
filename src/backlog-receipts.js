@@ -5,25 +5,31 @@ const CHECKED_CHECKBOX_RE = /^- \[[xX]\] (.*)$/;
 const SHA_RE = /^[0-9a-f]{40}$/;
 export const BACKLOG_RECEIPT_MAX_BYTES = 16 * 1024 * 1024;
 export const BACKLOG_RECEIPT_MAX_CHECKED_ITEMS = 1_000;
+export const BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS = 1_000;
 
 function gitFailure(operation, result) {
   if (result.error) throw result.error;
   throw new Error(`${operation} failed with exit ${result.status ?? "unknown"}`);
 }
 
-export function checkBacklogReceipts(content, { releaseRef, isReachable } = {}) {
+export function checkBacklogReceipts(content, {
+  releaseRef,
+  isReachable,
+  reachabilityCache = new Map(),
+  maxCheckedItems = BACKLOG_RECEIPT_MAX_CHECKED_ITEMS,
+  maxUniqueReceipts = BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS,
+} = {}) {
   if (typeof content !== "string") throw new TypeError("backlog content must be a string");
   if (typeof releaseRef !== "string" || releaseRef.trim() === "") throw new TypeError("releaseRef must be a non-empty string");
   if (typeof isReachable !== "function") throw new TypeError("isReachable must be a function");
   const errors = [];
-  const reachability = new Map();
   let checked = 0, withdrawn = 0, verified = 0;
   content.split(/\r?\n/).forEach((line, index) => {
     const match = CHECKED_CHECKBOX_RE.exec(line.replace(/^\s+/, ""));
     if (!match) return;
     checked += 1;
-    if (checked > BACKLOG_RECEIPT_MAX_CHECKED_ITEMS) {
-      throw new Error(`backlog contains more than ${BACKLOG_RECEIPT_MAX_CHECKED_ITEMS} checked items`);
+    if (checked > maxCheckedItems) {
+      throw new Error(`backlog contains more than ${maxCheckedItems} permitted checked items`);
     }
     const lineNo = index + 1;
     const { anns, annotationCounts } = stripAnnotations(match[1]);
@@ -53,8 +59,13 @@ export function checkBacklogReceipts(content, { releaseRef, isReachable } = {}) 
       errors.push({ id, line: lineNo, reason: `${receiptType} receipt must be a lowercase 40-character Git SHA` });
       return;
     }
-    if (!reachability.has(receipt)) reachability.set(receipt, isReachable(receipt));
-    if (!reachability.get(receipt)) {
+    if (!reachabilityCache.has(receipt)) {
+      if (reachabilityCache.size >= maxUniqueReceipts) {
+        throw new Error(`backlog contains more than ${maxUniqueReceipts} unique receipt SHAs`);
+      }
+      reachabilityCache.set(receipt, isReachable(receipt));
+    }
+    if (!reachabilityCache.get(receipt)) {
       errors.push({ id, line: lineNo, reason: `${receiptType} receipt ${receipt} is not reachable from release ref ${releaseRef}` });
       return;
     }

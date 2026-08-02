@@ -184,7 +184,17 @@ test("checked-item processing is capped and repeated receipt SHAs are verified o
   const oversized = Array.from({ length: BACKLOG_RECEIPT_MAX_CHECKED_ITEMS + 1 }, (_, index) =>
     `- [x] item ${index} {withdrawn: bounded fixture}`
   ).join("\n");
-  assert.throws(() => check(oversized), /more than 1000 checked items/i);
+  assert.throws(() => check(oversized), /more than 1000 permitted checked items/i);
+
+  const shared = new Map();
+  checkBacklogReceipts("- [x] first {done: 1111111111111111111111111111111111111111}", {
+    releaseRef: "main", isReachable: () => true, reachabilityCache: shared,
+  });
+  let crossFileCalls = 0;
+  checkBacklogReceipts("- [x] second {done: 1111111111111111111111111111111111111111}", {
+    releaseRef: "main", isReachable: () => { crossFileCalls += 1; return true; }, reachabilityCache: shared,
+  });
+  assert.equal(crossFileCalls, 0, "the repository-wide cache must span backlog files");
 });
 
 test("CI scanner rejects invalid canonical tracked backlog files", async () => {

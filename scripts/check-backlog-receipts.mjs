@@ -2,6 +2,8 @@
 import { spawnSync } from "node:child_process";
 import {
   BACKLOG_RECEIPT_MAX_BYTES,
+  BACKLOG_RECEIPT_MAX_CHECKED_ITEMS,
+  BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS,
   checkBacklogReceipts,
   makeGitReachabilityVerifier,
 } from "../src/backlog-receipts.js";
@@ -43,22 +45,25 @@ const releaseCommit = utf8.decode(git(["rev-parse", "--verify", `${releaseRef}^{
 // Freeze one logical index snapshot. Candidate discovery deliberately searches
 // a literal superset of the parser grammar, including binary-classified blobs;
 // exact parsing happens only after each raw path is mapped to its immutable blob.
-const beforeTree = git(["write-tree"]).stdout.toString("hex");
+const tree = utf8.decode(git(["write-tree"]).stdout).trim();
 const entries = new Map();
-for (const record of splitNul(git(["ls-files", "--stage", "-z"]).stdout)) {
+for (const record of splitNul(git(["ls-tree", "-r", "-z", "--full-tree", tree]).stdout)) {
   const tab = record.indexOf(9);
   if (tab < 0) throw new Error("git ls-files returned an invalid record");
   const header = record.subarray(0, tab).toString("ascii");
-  const match = /^(\d{6}) ([0-9a-f]{40,64}) 0$/.exec(header);
+  const match = /^(\d{6}) blob ([0-9a-f]{40,64})$/.exec(header);
   if (!match) continue;
   entries.set(record.subarray(tab + 1).toString("hex"), { mode: match[1], oid: match[2], rawPath: record.subarray(tab + 1) });
 }
 const discovery = git([
-  "grep", "--cached", "-z", "-l", "-a", "-F",
-  "-e", "- [x] ", "-e", "- [X] ", "--",
+  "grep", "-z", "-l", "-a", "-F",
+  "-e", "- [x] ", "-e", "- [X] ", tree, "--",
 ], { allowNoMatch: true });
 const candidates = discovery.status === 1 ? [] : splitNul(discovery.stdout).map((rawPath) => {
-  const entry = entries.get(rawPath.toString("hex"));
+  const prefix = Buffer.from(`${tree}:`);
+  if (!rawPath.subarray(0, prefix.length).equals(prefix)) throw new Error("git grep returned an invalid tree prefix");
+  const snapshotPath = rawPath.subarray(prefix.length);
+  const entry = entries.get(snapshotPath.toString("hex"));
   if (!entry) throw new Error("git grep returned a path absent from the captured index");
   if (entry.mode !== "100644" && entry.mode !== "100755") throw new Error("tracked checklist must be a regular file");
   let path;
@@ -66,8 +71,9 @@ const candidates = discovery.status === 1 ? [] : splitNul(discovery.stdout).map(
   catch { throw new Error("tracked checklist path is not valid UTF-8"); }
   return { ...entry, path };
 });
-const afterTree = git(["write-tree"]).stdout.toString("hex");
-if (afterTree !== beforeTree) throw new Error("Git index changed during backlog receipt discovery");
+if (candidates.length > BACKLOG_RECEIPT_MAX_CHECKED_ITEMS) {
+  throw new Error(`repository contains more than ${BACKLOG_RECEIPT_MAX_CHECKED_ITEMS} candidate checklist files`);
+}
 
 const uniqueOids = [...new Set(candidates.map(({ oid }) => oid))];
 const sizes = new Map();
@@ -83,7 +89,9 @@ if (uniqueOids.length > 0) {
 }
 
 const isReachable = makeGitReachabilityVerifier({ cwd: process.cwd(), releaseCommit });
+const reachabilityCache = new Map();
 const results = [];
+let checkedItems = 0;
 for (const { oid, path } of candidates.sort((a, b) => a.path.localeCompare(b.path))) {
   const size = sizes.get(oid);
   if (!Number.isSafeInteger(size) || size > BACKLOG_RECEIPT_MAX_BYTES) {
@@ -91,7 +99,15 @@ for (const { oid, path } of candidates.sort((a, b) => a.path.localeCompare(b.pat
   }
   const blob = git(["cat-file", "blob", oid], { maxBuffer: BACKLOG_RECEIPT_MAX_BYTES + 1 }).stdout;
   if (blob.length !== size) throw new Error(`git blob size changed while reading: ${path}`);
-  results.push({ path, ...checkBacklogReceipts(blob.toString("utf8"), { releaseRef, isReachable }) });
+  const result = checkBacklogReceipts(blob.toString("utf8"), {
+    releaseRef,
+    isReachable,
+    reachabilityCache,
+    maxCheckedItems: BACKLOG_RECEIPT_MAX_CHECKED_ITEMS - checkedItems,
+    maxUniqueReceipts: BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS,
+  });
+  checkedItems += result.summary.checked;
+  results.push({ path, ...result });
 }
 const rejected = results.reduce((sum, result) => sum + result.summary.rejected, 0);
 const report = { ok: rejected === 0, releaseRef, files: results.length, rejected, results };

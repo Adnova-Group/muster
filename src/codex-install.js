@@ -559,8 +559,21 @@ export function musterHookTrustGaps({ configTomlText, hooksJsonPath, config, hoo
   });
   const trusted = results.filter(result => result.status === "trusted").map(result => result.key);
   const untrusted = results.filter(result => result.status !== "trusted").map(result => result.key);
-  const ownedSet = new Set(owned);
-  const stale = [...new Set(scopeKeys.filter(key => !ownedSet.has(key)))];
+  // A state entry is stale only when its positional key no longer names ANY
+  // current hook. Non-Muster hooks share this hooks.json and have legitimate
+  // trust entries of their own; they are outside our exact-trust verdict but
+  // must not be mistaken for removed Muster positions.
+  const currentKeys = new Set();
+  for (const [event, groups] of Object.entries(config?.hooks || {})) {
+    if (!Array.isArray(groups)) continue;
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+      const hooks = Array.isArray(groups[groupIndex]?.hooks) ? groups[groupIndex].hooks : [];
+      for (let hookIndex = 0; hookIndex < hooks.length; hookIndex++) {
+        currentKeys.add(`${hookStateEventName(event)}:${groupIndex}:${hookIndex}`);
+      }
+    }
+  }
+  const stale = [...new Set(scopeKeys.filter(key => !currentKeys.has(key)))];
   return { owned, untrusted, trusted, results, stale };
 }
 

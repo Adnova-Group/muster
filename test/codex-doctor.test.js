@@ -253,6 +253,41 @@ test("Codex doctor verifies a healthy registered hook scope against its own proj
   assert.equal(trust?.ok, true, trust?.detail);
 });
 
+test("Codex doctor verifies canonical user hooks in every skipped project context", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-skipped-project-context-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current"), remote = join(tmp, "remote"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  const user = await runCodexInstall({ scope: "user", cwd: remote, home, repoRoot, execFile: absent });
+  const userHooksPath = join(codexHome, "hooks.json");
+  const configPath = join(codexHome, "config.toml");
+  const trustText = user.hookTrust.results.map(result =>
+    `[hooks.state."${userHooksPath}:${result.key}"]\ntrusted_hash = "${result.currentHash}"\n`).join("\n");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${trustText}`);
+  const activeHooks = user.hookTrust.results.map(result => ({
+    key: `${userHooksPath}:${result.key}`,
+    enabled: true,
+    trustStatus: "trusted",
+    currentHash: result.currentHash
+  }));
+  const activeRemoteInventory = async () => ({ ok: true, data: [{ cwd: remote, warnings: [], errors: [], hooks: activeHooks }] });
+  const skipped = await runCodexInstall({ scope: "project", cwd: remote, home, repoRoot, execFile: absent, hookInventory: activeRemoteInventory });
+  assert.equal(skipped.hooksSkipped, "user-scope-canonical");
+
+  let requestedCwds = [];
+  const contextInventory = async ({ cwds }) => {
+    requestedCwds = cwds;
+    return { ok: true, data: [
+      { cwd, warnings: [], errors: [], hooks: activeHooks },
+      { cwd: remote, warnings: [], errors: [], hooks: [] }
+    ] };
+  };
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, hookInventory: contextInventory });
+  const trust = report.checks.find(check => check.name === "codex-hook-trust");
+  assert.deepEqual(new Set(requestedCwds), new Set([cwd, remote]));
+  assert.equal(trust?.ok, false);
+  assert.match(trust?.detail || "", new RegExp(remote.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
 test("Codex doctor gives an actionable legacy pre-0.5.x diagnostic instead of an opaque generation/hooks mismatch", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-legacy-format-"));
   const home = join(tmp, "home"), cwd = join(tmp, "current-project"), codexHome = join(home, ".codex");

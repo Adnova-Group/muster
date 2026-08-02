@@ -489,7 +489,12 @@ async function registeredManagedScopes(home) {
     }
     seen.add(`${entry.scope}:${dir}`);
     try {
-      const managedDirectories = [dir, join(dir, "agents"), join(dir, "muster"), join(dir, "muster", "hooks")];
+      // A canonical-scope-skipped project deliberately has no muster/hooks
+      // runtime directory; its manifest is still a live registry obligation
+      // that doctor must inspect. Require the common managed directories here
+      // and let the hook-manifest scan below distinguish a valid skip from a
+      // non-skipped scope whose runtime directory is missing.
+      const managedDirectories = [dir, join(dir, "agents"), join(dir, "muster")];
       if ((await Promise.all(managedDirectories.map(ordinaryDirectoryPath))).every(Boolean)) dirs.push(dir);
       else issues.push(`registered managed scope is missing required content: ${dir}`);
     } catch (error) {
@@ -996,6 +1001,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // config.toml [hooks.state] trust entry -- i.e. Codex is skipping them.
   const hookTrustGaps = [];
   const hookTrustTargets = [];
+  const skippedProjectHookCwds = [];
   // A present-but-incoherent scope (owner/version/groups/hash MISMATCH) with the
   // specific offending path (the runtime dir for a hash mismatch, else the
   // manifest); and the caught MISSING/MALFORMED/OTHER failures with their paths.
@@ -1031,6 +1037,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         // its own manifest no longer declares, which is genuine drift.
         const carriesMusterGroups = Object.values(config?.hooks || {}).some(groups => Array.isArray(groups) && groups.some(isMusterHookGroup));
         if (carriesMusterGroups) throw new Error(`canonical-scope-skipped hook manifest still carries a Muster hook group: ${configPath}`);
+        if (dir !== userCodexHome) skippedProjectHookCwds.push(dirname(dir));
         continue;
       }
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
@@ -1157,10 +1164,22 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // Remediation is a human trusting the hook in Codex, never
   // --dangerously-bypass-hook-trust.
   const inventoryReader = hookInventory || readCodexHookInventory;
-  const inventoryCwds = [...new Set(hookTrustTargets.map(target => target.cwd))];
-  const inventory = hookTrustTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } }) : null;
-  const effectiveFailures = hookTrustTargets.map(target => ({
+  // A skipped project delegates to the canonical user hooks, but Codex loads
+  // that user configuration independently for every CWD. Preserve each
+  // skipped project as an activation obligation instead of checking the user
+  // target only in doctor's invocation directory.
+  const effectiveTargets = [...hookTrustTargets];
+  const userTrustTarget = hookTrustTargets.find(target => target.dir === userCodexHome);
+  if (userTrustTarget) for (const skippedCwd of skippedProjectHookCwds) {
+    if (!effectiveTargets.some(target => target.dir === userCodexHome && target.cwd === skippedCwd)) {
+      effectiveTargets.push({ ...userTrustTarget, cwd: skippedCwd });
+    }
+  }
+  const inventoryCwds = [...new Set(effectiveTargets.map(target => target.cwd))];
+  const inventory = effectiveTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } }) : null;
+  const effectiveFailures = effectiveTargets.map(target => ({
     dir: target.dir,
+    cwd: target.cwd,
     effective: effectiveHookTrust(inventory, target.cwd, target.configPath, target.results)
   })).filter(item => !item.effective.ok);
   const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length + item.stale.length, 0)
@@ -1169,7 +1188,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     ...item.results.map(result => `${result.key}=${result.status}`),
     ...item.stale.map(key => `${key}=stale`)
   ].join(", ")})`);
-  const effectiveDetail = effectiveFailures.map(item => `${item.dir} (effective=${item.effective.error || item.effective.results.filter(result => result.status !== "active").map(result => result.key).join(",")})`);
+  const effectiveDetail = effectiveFailures.map(item => `${item.dir} for ${item.cwd} (effective=${item.effective.error || item.effective.results.filter(result => result.status !== "active").map(result => result.key).join(",")})`);
   checks.push({ name: "codex-hook-trust", ok: untrustedCount === 0, detail: untrustedCount
     ? `${untrustedCount} Muster-owned Codex hook trust or activation check${untrustedCount === 1 ? " is" : "s are"} blocked: ${[...persistedDetail, ...effectiveDetail].join("; ")}. Codex runs a hook only when it is enabled, its trusted_hash equals the exact current hash, and hooks/list reports it active -- open Codex, run /hooks, trust the exact current definitions, then rerun muster doctor --codex`
     : hookStatuses.length

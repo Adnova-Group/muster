@@ -144,6 +144,22 @@ test("musterHookTrustGaps matches Codex 0.145 matcher omission and rejects malfo
   }
 });
 
+test("musterHookTrustGaps does not label a current non-Muster hook state stale", () => {
+  const musterGroup = group("echo trusted");
+  const foreignGroup = group("echo foreign");
+  const config = { hooks: { PreToolUse: [musterGroup, foreignGroup] } };
+  const exactHash = fixtures[0].currentHash;
+  const result = musterHookTrustGaps({
+    configTomlText: state("pre_tool_use:0:0", { trustedHash: exactHash })
+      + state("pre_tool_use:1:0", { trustedHash: "sha256:foreign-owned-state" }),
+    hooksJsonPath: HOOKS_JSON,
+    config,
+    hookGroups: { PreToolUse: [musterGroup] }
+  });
+  assert.deepEqual(result.trusted, ["pre_tool_use:0:0"]);
+  assert.deepEqual(result.stale, []);
+});
+
 const inventoryFor = (cwd, hooksJsonPath, results) => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: results.map(result => ({
   key: `${hooksJsonPath}:${result.key}`, enabled: true, trustStatus: "trusted", currentHash: result.currentHash
 })) }] });

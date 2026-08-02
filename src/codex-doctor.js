@@ -1031,10 +1031,31 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const hookCauseFailures = [];
   const managedHookScripts = [...hookHomes].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
   const managedProjectCwds = [...hookHomes].filter(dir => dir !== userCodexHome).map(dirname);
+  const currentProjectHookHome = join(cwd, ".codex");
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
-    if (!registered && !(await exists(manifestPath))) continue;
+    if (!registered && !(await exists(manifestPath))) {
+      if (dir === currentProjectHookHome) {
+        const configPath = join(dir, "hooks.json");
+        try {
+          const config = await readRegularJson(configPath);
+          if (config) {
+            const carriesMusterGroups = Object.values(config?.hooks || {}).some(groups => Array.isArray(groups) && groups.some(isMusterHookGroup));
+            const alias = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: [cwd] });
+            if (carriesMusterGroups || alias) {
+              staleHookScopes.push(dir);
+              mismatchHookScopes.push({ dir, path: configPath });
+            }
+          }
+        } catch (error) {
+          const { cause, path } = classifyScopeReadError(error, configPath);
+          staleHookScopes.push(dir);
+          hookCauseFailures.push({ dir, cause, path, message: error.message });
+        }
+      }
+      continue;
+    }
     // Every scope -- registered AND unregistered current-project/user -- reads
     // its hook manifest, hooks.json, and hook runtime through the same
     // no-follow bounded reader (readRegularJson/readRegularFile). A

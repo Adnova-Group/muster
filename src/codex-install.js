@@ -134,8 +134,10 @@ async function liveManagedHookScripts(home, extraConfigDirs = []) {
 }
 
 async function validateManagedHookAliasGraph({ home, cwd, entries, currentDir, currentConfig }) {
+  const currentProjectDir = join(cwd, ".codex");
   const scopes = [
     { scope: "user", configDir: codexHome(home) },
+    { scope: "project", configDir: currentProjectDir },
     ...entries,
     ...(currentDir ? [{ scope: currentDir === codexHome(home) ? "user" : "project", configDir: currentDir }] : [])
   ];
@@ -1058,6 +1060,7 @@ async function recoverStaleScopeLock(path, {
 
 async function acquireScopeLock(home, {
   maxAttempts = 1_000,
+  afterAcquire = async () => {},
   afterQuarantine = async () => {},
   afterValidation = async () => {},
   afterRetirement = async () => {},
@@ -1067,6 +1070,7 @@ async function acquireScopeLock(home, {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       await writeExclusiveSafe(path, await scopeLockText(token));
+      await afterAcquire({ path, token });
       return { path, token };
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
@@ -1728,8 +1732,10 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   const manifestRaw = manifestExists ? await readJson(manifestPath) : null;
   const previous = manifestExists ? validateHookManifest(manifestRaw, runtimeDir, manifestPath) : null;
   let config = { hooks: {} };
+  let configSnapshot = null;
   if (configExists) {
-    config = await readJson(configPath);
+    try { configSnapshot = await readSafe(configPath); config = JSON.parse(configSnapshot); }
+    catch { config = null; }
     if (!config || typeof config !== "object" || Array.isArray(config) || (config.hooks !== undefined && (typeof config.hooks !== "object" || Array.isArray(config.hooks)))) {
       throw new Error(`Codex hook configuration conflict: ${configPath} is not a valid hooks.json object. Repair it, then rerun the command.`);
     }
@@ -1744,6 +1750,7 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   if (await hasMusterHookCommandAlias(config, await liveManagedHookScripts(home, [dir]), { cwds: [cwd] })) {
     throw new Error(`Codex hook conflict: ${configPath} contains an aliased Muster hook command. Remove the alias or restore the exact Muster hook manifest, then rerun the command.`);
   }
+  const originalConfig = clone(config);
   // Captured BEFORE removeOwnedHookGroups mutates `config` below, at exactly
   // the group/hook indices this scope's PRIOR install currently occupies in
   // its own live hooks.json -- the same exact-key technique runCodexUninstall
@@ -1782,7 +1789,7 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   const hookHash = createHash("sha256");
   for (const [file, sourcePath] of sourceFiles) hookHash.update(file).update("\0").update(await readSafe(sourcePath));
   return {
-    dir, runtimeDir, manifestPath, manifestExists, configPath, configExists, config,
+    dir, runtimeDir, manifestPath, manifestExists, configPath, configExists, config, configSnapshot, originalConfig,
     staleFiles: (previous?.files || []).filter(file => !hookFiles.includes(file)),
     manifest: { format: 1, owner: "muster", files: hookFiles, packageVersion, hookHash: hookHash.digest("hex"), hookConfigCreated: previous?.hookConfigCreated ?? !configExists, hookGroups },
     sourceFiles, hookFiles,
@@ -2010,7 +2017,11 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       const manifestExists = checkedOwnership.manifest.exists;
       const declarationConfigExists = checkedOwnership.config.exists;
       const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
-      await validateManagedHookAliasGraph({ home, cwd, entries: registry.entries, currentDir: dir, currentConfig: hooks.config });
+      const currentHookConfigSnapshot = await safeExists(hooks.configPath) ? await readSafe(hooks.configPath) : null;
+      if (currentHookConfigSnapshot !== hooks.configSnapshot) {
+        throw new Error(`Codex hook configuration concurrent state change detected at ${hooks.configPath}; no installation state was modified.`);
+      }
+      await validateManagedHookAliasGraph({ home, cwd, entries: registry.entries, currentDir: dir, currentConfig: hooks.originalConfig });
       await ordinaryDirectoryPath(dir, { create: true });
       try {
         const currentScope = await scopeEntry(scope, cwd, home);

@@ -469,6 +469,52 @@ test("canonical user validation closes aliases to every registered project runti
   assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false);
 });
 
+test("user install scans an unregistered current project before and after creating its runtime", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-unregistered-current-alias-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), cleanCwd = join(tmp, "clean"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await mkdir(cleanCwd, { recursive: true });
+  const aliasPath = join(tmp, "future-user-runtime.mjs");
+  await symlink(join(codexHome, "muster", "hooks", "muster-hook.mjs"), aliasPath);
+  const projectHooksPath = join(cwd, ".codex", "hooks.json");
+  const original = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '${aliasPath}'` }] }] } }, null, 2);
+  await writeFile(projectHooksPath, original);
+
+  await assert.rejects(
+    () => runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex }),
+    /live managed Muster runtime/
+  );
+  assert.equal(await readFile(projectHooksPath, "utf8"), original);
+  await assert.rejects(() => readFile(join(codexHome, "muster", "hooks", "muster-hook.mjs"), "utf8"));
+
+  await runCodexInstall({ scope: "user", cwd: cleanCwd, home, repoRoot, execFile: absentCodex });
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absentCodex });
+  assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false);
+});
+
+test("registry acquisition revalidates the prepared hooks.json snapshot before overwrite", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-config-lock-snapshot-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksPath = join(cwd, ".codex", "hooks.json");
+  let racedText = null;
+  await assert.rejects(
+    () => runCodexInstall({
+      scope: "project", cwd, home, repoRoot, execFile: absentCodex,
+      scopeLockOptions: { afterAcquire: async () => {
+        const raced = JSON.parse(await readFile(hooksPath, "utf8"));
+        raced.hooks.Stop.push({ hooks: [{ type: "command", command: "node /foreign/hook.mjs" }] });
+        racedText = JSON.stringify(raced, null, 2) + "\n";
+        await writeFile(hooksPath, racedText);
+      } }
+    }),
+    /hook configuration concurrent state change/
+  );
+  assert.equal(await readFile(hooksPath, "utf8"), racedText);
+});
+
 test("Codex install adversarial: a failed transaction mid-migration restores the pre-migration dual-scope state byte-identically", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-rollback-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

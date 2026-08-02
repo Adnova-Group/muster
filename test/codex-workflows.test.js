@@ -289,7 +289,9 @@ test("generated Codex review gates use compact, risk-based review dispatch", asy
   assert.match(text, /cwd, base SHA, Codex version, and full resolved role profile/);
   assert.match(text, /only the new blocker deltas/);
   assert.match(text, /fix-loop-continue/);
+  assert.match(text, /muster-runner|runner profile/);
   assert.doesNotMatch(text, /resume --last/);
+  assert.doesNotMatch(text, /\$\{PLUGIN_ROOT\}\/\$\{PLUGIN_ROOT\}/);
 });
 
 test("generated Codex audits cover six dimensions with three nonredundant scans", async () => {

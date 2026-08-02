@@ -59,6 +59,7 @@ setTimeout(() => {
   if (payload.swapGitTarget && payload.swapGitSource) fs.copyFileSync(payload.swapGitSource, payload.swapGitTarget);
   if (payload.dirtyTarget) fs.writeFileSync(payload.dirtyTarget, "planted-after-admission\\n");
   fs.writeFileSync(cwd + "/result.txt", payload.value);
+  process.stdout.write(JSON.stringify({type:"thread.started",thread_id:worker.endsWith("a") ? "00000000-0000-4000-8000-00000000000a" : "00000000-0000-4000-8000-00000000000b"}) + "\\n");
   if (!payload.omitTurn) process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:7,output_tokens:3}}) + "\\n");
   if (payload.fatal) process.exitCode = 1;
   fs.appendFileSync(${JSON.stringify(launches)}, "worker-end:" + worker + "\\n");
@@ -185,6 +186,18 @@ test("runCodexWave keeps two concurrent conflicting writers isolated in register
   });
   assert.match(result.rolePolicy.instructionsSha256, /^[a-f0-9]{64}$/);
   assert.match(result.actionFenceSha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(result.results.map(row => ({
+    id: row.id,
+    lane: row.fixLoopBinding.lane,
+    threadId: row.fixLoopBinding.threadId,
+    cwd: row.fixLoopBinding.cwd,
+    baseSha: row.fixLoopBinding.baseSha,
+    codexVersion: row.fixLoopBinding.codexVersion,
+    roleId: row.fixLoopBinding.roleProfile.id,
+  })), [
+    { id: "a", lane: "exec-process", threadId: "00000000-0000-4000-8000-00000000000a", cwd: fixture.worktreeA, baseSha: fixture.baseSha, codexVersion: "0.145.0", roleId: "muster-runner" },
+    { id: "b", lane: "exec-process", threadId: "00000000-0000-4000-8000-00000000000b", cwd: fixture.worktreeB, baseSha: fixture.baseSha, codexVersion: "0.145.0", roleId: "muster-runner" },
+  ]);
   assert.deepEqual(
     await Promise.all([
       readFile(join(fixture.worktreeA, "result.txt"), "utf8"),

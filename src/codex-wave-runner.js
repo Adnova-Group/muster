@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { delimiter, dirname, isAbsolute, relative, resolve } from "node:path";
 import { readNoFollowRegular } from "./fs-safe.js";
+import { createCodexFixLoopBinding } from "./codex-fix-loop.js";
 import {
   CODEX_EXEC_MODES,
   codexExecCall,
@@ -40,6 +41,7 @@ const REQUIRED_ROOT_FEATURES = Object.freeze(["--ask-for-approval"]);
 const CONTAINED_CWD = "/mnt";
 const TRUSTED_GIT_COMMAND = "/usr/bin/git";
 const ACTION_CLASSES = new Set(["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
+const CODEX_THREAD_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RUNNER_POLICY = Object.freeze({
   id: "muster-runner",
   model: "gpt-5.6-sol",
@@ -105,6 +107,7 @@ async function loadTrustedRunnerPolicy() {
       if (!instructions.includes("single-item lifecycle runner") || !instructions.includes("review gate")) continue;
       return {
         ...RUNNER_POLICY,
+        profilePath: fileURLToPath(candidate.url),
         instructions,
         digest: createHash("sha256").update(instructions).digest("hex"),
       };
@@ -207,6 +210,8 @@ function runProcess(command, argv, {
     const stderrHash = createHash("sha256");
     let stdoutTruncated = false;
     let stderrTruncated = false;
+    let stdoutEventBuffer = "";
+    let threadId = null;
     let outputBytes = 0;
     let forcedReason = null;
     let finished = false;
@@ -239,6 +244,17 @@ function runProcess(command, argv, {
       };
       if (target === "stdout") {
         stdoutHash.update(chunk);
+        stdoutEventBuffer += chunk;
+        const lines = stdoutEventBuffer.split(/\r?\n/);
+        stdoutEventBuffer = lines.pop() ?? "";
+        for (const line of lines) {
+          try {
+            const event = JSON.parse(line);
+            if (event?.type === "thread.started" && CODEX_THREAD_ID_RE.test(event.thread_id)) {
+              threadId ||= event.thread_id;
+            }
+          } catch { /* version/help probes and ordinary stderr are not JSONL */ }
+        }
         const next = appendTail(stdout);
         stdoutTruncated ||= next.length < stdout.length + chunk.length;
         stdout = next;
@@ -276,6 +292,7 @@ function runProcess(command, argv, {
         stderrSha256: stderrHash.digest("hex"),
         stdoutTruncated,
         stderrTruncated,
+        threadId,
       });
     });
   });
@@ -827,8 +844,30 @@ async function runProcessWave({
           controller.abort();
           return { error };
         }
+        if (!result.threadId) {
+          const error = new Error(`Codex process for wave member ${JSON.stringify(member.id)} exited 0 without a thread.started identity`);
+          error.memberId = member.id;
+          controller.abort();
+          return { error };
+        }
+        const fixLoopBinding = createCodexFixLoopBinding({
+          lane: "exec-process",
+          threadId: result.threadId,
+          cwd: member.cwd,
+          baseSha: authority.baseSha,
+          codexVersion: support.version,
+          roleProfilePath: rolePolicy.profilePath,
+          roleProfile: {
+            id: rolePolicy.id,
+            model: rolePolicy.model,
+            reasoningEffort: rolePolicy.reasoningEffort,
+            sandboxMode: rolePolicy.sandbox,
+            developerInstructions: rolePolicy.instructions,
+          },
+        });
         return { value: {
           id: member.id,
+          fixLoopBinding,
           usage: terminal.usage,
           stdout: result.stdout,
           stderr: result.stderr,

@@ -99,6 +99,51 @@ function totalUsage(cases) {
   return totals;
 }
 
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function reduction(before, after) {
+  return before === 0 ? 0 : ((before - after) / before) * 100;
+}
+
+function summarize(cases) {
+  const rows = cases.map(entry => {
+    const freshUncached = entry.fresh.usage.input_tokens - (entry.fresh.usage.cached_input_tokens ?? 0);
+    const seedUncached = entry.seed.usage.input_tokens - (entry.seed.usage.cached_input_tokens ?? 0);
+    const continuedUncached = entry.continued.usage.input_tokens -
+      (entry.continued.usage.cached_input_tokens ?? 0) - seedUncached;
+    return {
+      freshTotal: entry.fresh.usage.input_tokens,
+      continuedTotal: entry.continued.usage.input_tokens - entry.seed.usage.input_tokens,
+      freshUncached,
+      continuedUncached,
+      freshTimeMs: entry.fresh.wallTimeMs,
+      continuedTimeMs: entry.continued.wallTimeMs,
+    };
+  });
+  const medianFreshInputTokens = median(rows.map(row => row.freshTotal));
+  const medianContinuedInputTokens = median(rows.map(row => row.continuedTotal));
+  const medianFreshUncachedInputTokens = median(rows.map(row => row.freshUncached));
+  const medianContinuedUncachedInputTokens = median(rows.map(row => row.continuedUncached));
+  const medianFreshTimeMs = median(rows.map(row => row.freshTimeMs));
+  const medianContinuedTimeMs = median(rows.map(row => row.continuedTimeMs));
+  return {
+    caseCount: cases.length,
+    medianFreshInputTokens,
+    medianContinuedInputTokens,
+    medianTotalInputTokenReductionPct: reduction(medianFreshInputTokens, medianContinuedInputTokens),
+    medianFreshUncachedInputTokens,
+    medianContinuedUncachedInputTokens,
+    medianUncachedInputTokenReductionPct: reduction(medianFreshUncachedInputTokens, medianContinuedUncachedInputTokens),
+    medianFreshTimeMs,
+    medianContinuedTimeMs,
+    medianTimeToFixReductionPct: reduction(medianFreshTimeMs, medianContinuedTimeMs),
+  };
+}
+
 const benchmarkRoot = await mkdtemp(join(tmpdir(), "muster-codex-fix-loop-"));
 const evidence = {
   harness: "real Codex fresh-dispatch vs exact-thread-id resume coding fix benchmark",
@@ -107,7 +152,7 @@ const evidence = {
   model: MODEL,
   reasoningEffort: REASONING,
   generatedAt: new Date().toISOString(),
-  metric: "input tokens = native turn.completed.usage.input_tokens; time-to-fix = Codex invocation start through post-fix test pass; uncached input tokens are retained as supplemental evidence",
+  metric: "primary context-input metric = per-fix uncached native input tokens (input_tokens - cached_input_tokens, with the seed counters subtracted from cumulative resume counters); raw total input tokens are reported separately; time-to-fix = Codex invocation start through post-fix test pass",
   cases: []
 };
 
@@ -151,7 +196,7 @@ try {
       const started = performance.now();
       const turn = await runCodex([
         "exec", "resume", "--json", "-m", MODEL,
-        "-c", `model_reasoning_effort="${REASONING}"`, seed.threadId, blocker
+        "-c", `model_reasoning_effort="${REASONING}"`, "--", seed.threadId, blocker
       ], resumedRepo);
       return { ...turn, wallTimeMs: performance.now() - started, verification: verify(resumedRepo) };
     };
@@ -172,6 +217,7 @@ try {
     process.stderr.write(`completed ${index + 1}/${caseCount}: ${name}\n`);
   }
   evidence.totalUsage = totalUsage(evidence.cases);
+  evidence.summary = summarize(evidence.cases);
   evidence.cost = {
     amountUsd: null,
     note: "Codex turn.completed.usage exposes tokens, not billed USD; use the account billing ledger for exact cost."

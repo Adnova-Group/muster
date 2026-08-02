@@ -1,59 +1,59 @@
 {
   "harness": "real Codex fresh-dispatch vs exact-thread-id resume coding fix benchmark",
   "command": "node scripts/benchmark-codex-fix-loop.mjs --cases 10 --output test/fixtures/codex-fix-loop/benchmark-evidence.json",
-  "codexVersion": "codex-cli 0.145.0",
+  "codexVersion": "codex-cli 0.146.0",
   "model": "gpt-5.6-sol",
   "reasoningEffort": "medium",
-  "generatedAt": "2026-07-27T02:47:50.789Z",
-  "metric": "input tokens = native turn.completed.usage.input_tokens; time-to-fix = Codex invocation start through post-fix test pass; uncached input tokens are retained as supplemental evidence",
+  "generatedAt": "2026-08-02T08:28:58.777Z",
+  "metric": "primary context-input metric = per-fix uncached native input tokens (input_tokens - cached_input_tokens, with the seed counters subtracted from cumulative resume counters); raw total input tokens are reported separately; time-to-fix = Codex invocation start through post-fix test pass",
   "cases": [
     {
       "case": "add_offset",
       "fixtureSha256": "2d35f507ce8d97e7de87f2e7a0d33c05ddd48084b7ede1405916d785eef21e36",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa178-b832-7df3-bc73-c2dfd56e985e",
+        "threadId": "019fc197-311c-7703-a699-096507ca9b30",
         "usage": {
-          "input_tokens": 51306,
-          "cached_input_tokens": 25344,
+          "input_tokens": 47445,
+          "cached_input_tokens": 30208,
           "cache_write_input_tokens": 0,
-          "output_tokens": 191,
-          "reasoning_output_tokens": 0
+          "output_tokens": 233,
+          "reasoning_output_tokens": 49
         },
-        "wallTimeMs": 12458.091278
+        "wallTimeMs": 12834.87575
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa178-e904-79c0-a3e5-cd08f68447b7",
+        "threadId": "019fc197-633f-7960-a1c4-907610a8f738",
         "usage": {
-          "input_tokens": 723010,
-          "cached_input_tokens": 671488,
+          "input_tokens": 88680,
+          "cached_input_tokens": 56320,
           "cache_write_input_tokens": 0,
-          "output_tokens": 5057,
-          "reasoning_output_tokens": 1550
+          "output_tokens": 475,
+          "reasoning_output_tokens": 59
         },
-        "wallTimeMs": 162732.351332,
+        "wallTimeMs": 22137.995867,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ add_offset returns the required value (0.659068ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 74.600521\n"
+          "output": "✔ add_offset returns the required value (0.5799ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 68.281266\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa178-b832-7df3-bc73-c2dfd56e985e",
+        "threadId": "019fc197-311c-7703-a699-096507ca9b30",
         "usage": {
-          "input_tokens": 129851,
-          "cached_input_tokens": 101376,
+          "input_tokens": 278833,
+          "cached_input_tokens": 248320,
           "cache_write_input_tokens": 0,
-          "output_tokens": 446,
-          "reasoning_output_tokens": 38
+          "output_tokens": 2188,
+          "reasoning_output_tokens": 889
         },
-        "wallTimeMs": 32615.027120000013,
+        "wallTimeMs": 66985.75597700001,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ add_offset returns the required value (0.639023ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.145775\n"
+          "output": "✔ add_offset returns the required value (0.605526ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.509947\n"
         }
       }
     },
@@ -62,48 +62,48 @@
       "fixtureSha256": "f1fc33ab2c039219314c10a8bf30151b69de8d1582b0381d0dd8b59aceb46d58",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa17b-e4f4-7942-87f1-815000f3d346",
+        "threadId": "019fc198-c069-7040-977e-541c12f2357f",
         "usage": {
-          "input_tokens": 51310,
-          "cached_input_tokens": 25344,
+          "input_tokens": 44887,
+          "cached_input_tokens": 28160,
           "cache_write_input_tokens": 0,
-          "output_tokens": 191,
-          "reasoning_output_tokens": 41
+          "output_tokens": 167,
+          "reasoning_output_tokens": 0
         },
-        "wallTimeMs": 11425.244548000017
+        "wallTimeMs": 10458.509428999998
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa17c-4bf0-73e1-af9b-6d686c60bb48",
+        "threadId": "019fc199-2fab-7c43-b602-91a5e18134f9",
         "usage": {
-          "input_tokens": 651738,
-          "cached_input_tokens": 605440,
+          "input_tokens": 88773,
+          "cached_input_tokens": 56320,
           "cache_write_input_tokens": 0,
-          "output_tokens": 3848,
-          "reasoning_output_tokens": 1051
+          "output_tokens": 541,
+          "reasoning_output_tokens": 75
         },
-        "wallTimeMs": 186949.76159999997,
+        "wallTimeMs": 23089.668088000006,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ subtract_offset returns the required value (0.619399ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 80.551871\n"
+          "output": "✔ subtract_offset returns the required value (0.707777ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 71.390848\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa17b-e4f4-7942-87f1-815000f3d346",
+        "threadId": "019fc198-c069-7040-977e-541c12f2357f",
         "usage": {
-          "input_tokens": 142315,
-          "cached_input_tokens": 109568,
+          "input_tokens": 113707,
+          "cached_input_tokens": 94976,
           "cache_write_input_tokens": 0,
-          "output_tokens": 493,
-          "reasoning_output_tokens": 111
+          "output_tokens": 426,
+          "reasoning_output_tokens": 14
         },
-        "wallTimeMs": 14809.44389200001,
+        "wallTimeMs": 17895.811552,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ subtract_offset returns the required value (0.672985ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 77.008214\n"
+          "output": "✔ subtract_offset returns the required value (0.591512ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 69.347757\n"
         }
       }
     },
@@ -112,48 +112,48 @@
       "fixtureSha256": "0b1b24068665c0fc3076ebb4bfa5962a5d8d85ab3386980ba5ad865257cb8ac2",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa17f-26ab-7312-b427-f788cee9f119",
+        "threadId": "019fc199-8a75-7952-b981-9937a8bfbe1a",
         "usage": {
-          "input_tokens": 51295,
-          "cached_input_tokens": 25344,
+          "input_tokens": 44880,
+          "cached_input_tokens": 28160,
           "cache_write_input_tokens": 0,
-          "output_tokens": 182,
+          "output_tokens": 166,
           "reasoning_output_tokens": 0
         },
-        "wallTimeMs": 11933.114777999988
+        "wallTimeMs": 13514.982715999999
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa17f-55a6-79d0-a6de-5c48f76d9694",
+        "threadId": "019fc199-bf46-7620-8472-79f737e0e4b7",
         "usage": {
-          "input_tokens": 611380,
-          "cached_input_tokens": 563712,
+          "input_tokens": 88757,
+          "cached_input_tokens": 70656,
           "cache_write_input_tokens": 0,
-          "output_tokens": 3362,
-          "reasoning_output_tokens": 821
+          "output_tokens": 510,
+          "reasoning_output_tokens": 89
         },
-        "wallTimeMs": 161896.23959899996,
+        "wallTimeMs": 30308.389182999992,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ double_value returns the required value (0.774239ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 91.611353\n"
+          "output": "✔ double_value returns the required value (0.57914ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 70.293404\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa17f-26ab-7312-b427-f788cee9f119",
+        "threadId": "019fc199-8a75-7952-b981-9937a8bfbe1a",
         "usage": {
-          "input_tokens": 142246,
-          "cached_input_tokens": 109568,
+          "input_tokens": 113658,
+          "cached_input_tokens": 94976,
           "cache_write_input_tokens": 0,
-          "output_tokens": 484,
-          "reasoning_output_tokens": 66
+          "output_tokens": 445,
+          "reasoning_output_tokens": 32
         },
-        "wallTimeMs": 18899.367611999973,
+        "wallTimeMs": 18379.402761000005,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ double_value returns the required value (0.672868ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 91.722875\n"
+          "output": "✔ double_value returns the required value (0.681884ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.971878\n"
         }
       }
     },
@@ -162,48 +162,48 @@
       "fixtureSha256": "ad31b960b9d33dd3809d47227cab4d7ec1ededd1265cd74177d7e0f1a423196f",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa182-192d-7501-add5-e27efafa58c2",
+        "threadId": "019fc19a-7e73-7f62-8965-347fdc5e9e4f",
         "usage": {
-          "input_tokens": 51709,
-          "cached_input_tokens": 25344,
+          "input_tokens": 45072,
+          "cached_input_tokens": 13824,
           "cache_write_input_tokens": 0,
-          "output_tokens": 160,
+          "output_tokens": 191,
           "reasoning_output_tokens": 0
         },
-        "wallTimeMs": 12450.307677999954
+        "wallTimeMs": 12706.899651999993
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa182-c529-76a1-bfbf-a58f0984cd48",
+        "threadId": "019fc19a-eb76-7db2-a12b-9ae745e233d8",
         "usage": {
-          "input_tokens": 233503,
-          "cached_input_tokens": 196864,
+          "input_tokens": 691424,
+          "cached_input_tokens": 648704,
           "cache_write_input_tokens": 0,
-          "output_tokens": 1435,
-          "reasoning_output_tokens": 541
+          "output_tokens": 4300,
+          "reasoning_output_tokens": 1243
         },
-        "wallTimeMs": 46709.298861999996,
+        "wallTimeMs": 214334.87925899998,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ triple_value returns the required value (0.938491ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 92.853913\n"
+          "output": "✔ triple_value returns the required value (0.595816ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 75.368219\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa182-192d-7501-add5-e27efafa58c2",
+        "threadId": "019fc19a-7e73-7f62-8965-347fdc5e9e4f",
         "usage": {
-          "input_tokens": 197530,
-          "cached_input_tokens": 162304,
+          "input_tokens": 129810,
+          "cached_input_tokens": 90880,
           "cache_write_input_tokens": 0,
-          "output_tokens": 857,
-          "reasoning_output_tokens": 200
+          "output_tokens": 471,
+          "reasoning_output_tokens": 14
         },
-        "wallTimeMs": 31394.826876999927,
+        "wallTimeMs": 15079.867757,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ triple_value returns the required value (0.641659ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 89.044171\n"
+          "output": "✔ triple_value returns the required value (0.6452ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 69.245335\n"
         }
       }
     },
@@ -212,48 +212,48 @@
       "fixtureSha256": "41173733217a4702bea9a334283a6bf4b6a4ac47ba2d6971223dabea6b5113a3",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa183-7c55-7072-a2fb-39ecaa721f4b",
+        "threadId": "019fc19e-3157-7eb2-8ac5-d2632ba71430",
         "usage": {
-          "input_tokens": 51516,
-          "cached_input_tokens": 25344,
+          "input_tokens": 44891,
+          "cached_input_tokens": 28160,
           "cache_write_input_tokens": 0,
-          "output_tokens": 137,
+          "output_tokens": 180,
           "reasoning_output_tokens": 0
         },
-        "wallTimeMs": 8965.202970999992
+        "wallTimeMs": 17086.094436999992
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa183-9f4c-7011-b3e8-4c2b0e495429",
+        "threadId": "019fc19e-7410-7560-b27d-4b16ca40dfc4",
         "usage": {
-          "input_tokens": 337893,
-          "cached_input_tokens": 298496,
+          "input_tokens": 88680,
+          "cached_input_tokens": 70656,
           "cache_write_input_tokens": 0,
-          "output_tokens": 3017,
-          "reasoning_output_tokens": 744
+          "output_tokens": 512,
+          "reasoning_output_tokens": 44
         },
-        "wallTimeMs": 84738.74739699997,
+        "wallTimeMs": 24420.527726,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ square_value returns the required value (0.877588ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 98.890529\n"
+          "output": "✔ square_value returns the required value (0.640797ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 74.832988\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa183-7c55-7072-a2fb-39ecaa721f4b",
+        "threadId": "019fc19e-3157-7eb2-8ac5-d2632ba71430",
         "usage": {
-          "input_tokens": 911128,
-          "cached_input_tokens": 848640,
+          "input_tokens": 691147,
+          "cached_input_tokens": 623872,
           "cache_write_input_tokens": 0,
-          "output_tokens": 5304,
-          "reasoning_output_tokens": 1086
+          "output_tokens": 3974,
+          "reasoning_output_tokens": 896
         },
-        "wallTimeMs": 175618.360445,
+        "wallTimeMs": 221820.367041,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ square_value returns the required value (0.634512ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 88.00775\n"
+          "output": "✔ square_value returns the required value (0.609163ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 69.071839\n"
         }
       }
     },
@@ -262,48 +262,48 @@
       "fixtureSha256": "a0e7147e3faae1158c0e2edf20e454810cc261c60e85237aaea7be77768f23e2",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa187-997d-7dc3-b525-1bbfcf4c16bd",
+        "threadId": "019fc1a2-36fd-7592-9e4a-b55cda37fb47",
         "usage": {
-          "input_tokens": 51590,
-          "cached_input_tokens": 25344,
+          "input_tokens": 44936,
+          "cached_input_tokens": 28160,
           "cache_write_input_tokens": 0,
-          "output_tokens": 207,
-          "reasoning_output_tokens": 70
+          "output_tokens": 227,
+          "reasoning_output_tokens": 38
         },
-        "wallTimeMs": 13620.503233999945
+        "wallTimeMs": 11464.159635000047
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa189-2308-7de0-a356-74180ee8b774",
+        "threadId": "019fc1a2-a93c-7160-9627-1b9bc499f52c",
         "usage": {
-          "input_tokens": 310066,
-          "cached_input_tokens": 290304,
+          "input_tokens": 181217,
+          "cached_input_tokens": 166144,
           "cache_write_input_tokens": 0,
-          "output_tokens": 3138,
-          "reasoning_output_tokens": 1047
+          "output_tokens": 1109,
+          "reasoning_output_tokens": 260
         },
-        "wallTimeMs": 86745.81618299987,
+        "wallTimeMs": 51488.99165500002,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ absolute_value returns the required value (0.656859ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 92.602569\n"
+          "output": "✔ absolute_value returns the required value (0.617576ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.332401\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa187-997d-7dc3-b525-1bbfcf4c16bd",
+        "threadId": "019fc1a2-36fd-7592-9e4a-b55cda37fb47",
         "usage": {
-          "input_tokens": 401348,
-          "cached_input_tokens": 359424,
+          "input_tokens": 113916,
+          "cached_input_tokens": 94976,
           "cache_write_input_tokens": 0,
-          "output_tokens": 2926,
-          "reasoning_output_tokens": 917
+          "output_tokens": 509,
+          "reasoning_output_tokens": 82
         },
-        "wallTimeMs": 86885.8381680001,
+        "wallTimeMs": 17661.20357500005,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ absolute_value returns the required value (0.775787ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 98.440934\n"
+          "output": "✔ absolute_value returns the required value (0.627052ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 70.120797\n"
         }
       }
     },
@@ -312,48 +312,48 @@
       "fixtureSha256": "826156ff407c922732f6f9889da9187519f5d3583d990be64cdef5cc3c7e641f",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa18a-76ac-7703-8a5c-cb4d357c04f7",
+        "threadId": "019fc1a3-72f3-7bc3-a922-3c44f3077ca2",
         "usage": {
-          "input_tokens": 51546,
-          "cached_input_tokens": 25344,
+          "input_tokens": 44920,
+          "cached_input_tokens": 28160,
           "cache_write_input_tokens": 0,
-          "output_tokens": 160,
+          "output_tokens": 197,
           "reasoning_output_tokens": 0
         },
-        "wallTimeMs": 8991.930052999873
+        "wallTimeMs": 12333.161269999924
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa18a-99a9-7d62-a916-b627d158bc4b",
+        "threadId": "019fc1a3-a31d-7850-b3be-cc16f78e780d",
         "usage": {
-          "input_tokens": 991480,
-          "cached_input_tokens": 935936,
+          "input_tokens": 88765,
+          "cached_input_tokens": 80896,
           "cache_write_input_tokens": 0,
-          "output_tokens": 6609,
-          "reasoning_output_tokens": 2372
+          "output_tokens": 527,
+          "reasoning_output_tokens": 88
         },
-        "wallTimeMs": 297025.8314700001,
+        "wallTimeMs": 20362.623411000008,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ floor_value returns the required value (0.673265ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 93.473641\n"
+          "output": "✔ floor_value returns the required value (0.648077ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 69.393968\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa18a-76ac-7703-8a5c-cb4d357c04f7",
+        "threadId": "019fc1a3-72f3-7bc3-a922-3c44f3077ca2",
         "usage": {
-          "input_tokens": 142266,
-          "cached_input_tokens": 109568,
+          "input_tokens": 235817,
+          "cached_input_tokens": 203776,
           "cache_write_input_tokens": 0,
-          "output_tokens": 399,
-          "reasoning_output_tokens": 27
+          "output_tokens": 1186,
+          "reasoning_output_tokens": 260
         },
-        "wallTimeMs": 14866.736339999828,
+        "wallTimeMs": 35439.56788600003,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ floor_value returns the required value (1.440433ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 98.775984\n"
+          "output": "✔ floor_value returns the required value (0.618156ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.161574\n"
         }
       }
     },
@@ -362,48 +362,48 @@
       "fixtureSha256": "440eea1d7ebb3e48eabbe172977b66301bca16f645ebb04748bed82822d8a97a",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa18f-5d87-7df2-ac90-24aafa96c811",
+        "threadId": "019fc1a4-7e26-75e0-bd8c-b4d772ea90e0",
         "usage": {
-          "input_tokens": 51262,
-          "cached_input_tokens": 25344,
+          "input_tokens": 47448,
+          "cached_input_tokens": 29184,
           "cache_write_input_tokens": 0,
-          "output_tokens": 163,
-          "reasoning_output_tokens": 0
+          "output_tokens": 215,
+          "reasoning_output_tokens": 51
         },
-        "wallTimeMs": 9428.641171999974
+        "wallTimeMs": 13286.25702499994
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa18f-bb63-7562-b7df-bbd420f0f624",
+        "threadId": "019fc1a8-7f66-73c3-85b1-955fd69bbfdf",
         "usage": {
-          "input_tokens": 101625,
-          "cached_input_tokens": 73984,
+          "input_tokens": 66337,
+          "cached_input_tokens": 49408,
           "cache_write_input_tokens": 0,
-          "output_tokens": 489,
-          "reasoning_output_tokens": 76
+          "output_tokens": 462,
+          "reasoning_output_tokens": 66
         },
-        "wallTimeMs": 21702.530183000024,
+        "wallTimeMs": 17999.22972199996,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ ceil_value returns the required value (1.196225ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 97.127155\n"
+          "output": "✔ ceil_value returns the required value (0.611789ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.554271\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa18f-5d87-7df2-ac90-24aafa96c811",
+        "threadId": "019fc1a4-7e26-75e0-bd8c-b4d772ea90e0",
         "usage": {
-          "input_tokens": 142001,
-          "cached_input_tokens": 109568,
+          "input_tokens": 735998,
+          "cached_input_tokens": 691456,
           "cache_write_input_tokens": 0,
-          "output_tokens": 425,
-          "reasoning_output_tokens": 24
+          "output_tokens": 5721,
+          "reasoning_output_tokens": 1042
         },
-        "wallTimeMs": 14423.337917000055,
+        "wallTimeMs": 249048.04627300007,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ ceil_value returns the required value (2.151685ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 104.754771\n"
+          "output": "✔ ceil_value returns the required value (0.668984ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.381059\n"
         }
       }
     },
@@ -412,48 +412,48 @@
       "fixtureSha256": "454502a2e9efd9a6f113087f0ed9df2e003798ee29617ff302851846fe454846",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa190-110a-7ca3-bea7-174b474959c3",
+        "threadId": "019fc1a8-c645-7872-b7db-913fe0102a28",
         "usage": {
-          "input_tokens": 51609,
-          "cached_input_tokens": 25344,
+          "input_tokens": 44897,
+          "cached_input_tokens": 27136,
           "cache_write_input_tokens": 0,
-          "output_tokens": 205,
-          "reasoning_output_tokens": 58
+          "output_tokens": 161,
+          "reasoning_output_tokens": 0
         },
-        "wallTimeMs": 16518.561651000055
+        "wallTimeMs": 14117.819172000047
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa190-5155-75a1-b0f2-950f03ec4c0d",
+        "threadId": "019fc1a8-fd70-70b1-8177-e08cca5d1f77",
         "usage": {
-          "input_tokens": 369423,
-          "cached_input_tokens": 328960,
+          "input_tokens": 88804,
+          "cached_input_tokens": 70656,
           "cache_write_input_tokens": 0,
-          "output_tokens": 3113,
-          "reasoning_output_tokens": 822
+          "output_tokens": 514,
+          "reasoning_output_tokens": 72
         },
-        "wallTimeMs": 107125.59531300003,
+        "wallTimeMs": 23577.780693999957,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ bounded_value returns the required value (1.081903ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 100.821583\n"
+          "output": "✔ bounded_value returns the required value (0.639272ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 73.193852\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa190-110a-7ca3-bea7-174b474959c3",
+        "threadId": "019fc1a8-c645-7872-b7db-913fe0102a28",
         "usage": {
-          "input_tokens": 142626,
-          "cached_input_tokens": 109568,
+          "input_tokens": 113696,
+          "cached_input_tokens": 93952,
           "cache_write_input_tokens": 0,
-          "output_tokens": 493,
-          "reasoning_output_tokens": 82
+          "output_tokens": 461,
+          "reasoning_output_tokens": 30
         },
-        "wallTimeMs": 16556.399575999938,
+        "wallTimeMs": 14876.678650000133,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ bounded_value returns the required value (0.753649ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 106.851579\n"
+          "output": "✔ bounded_value returns the required value (0.625607ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 74.870826\n"
         }
       }
     },
@@ -462,56 +462,68 @@
       "fixtureSha256": "0db6878880727a2ba67177e9112cbacf9959db0f65d4298f3864319fb2ccaa76",
       "seed": {
         "type": "turn.completed",
-        "threadId": "019fa192-3605-72a3-b646-ec3120d50a5c",
+        "threadId": "019fc1a9-94bd-77c1-b2ba-1eeafa63586c",
         "usage": {
-          "input_tokens": 51409,
-          "cached_input_tokens": 42496,
+          "input_tokens": 47558,
+          "cached_input_tokens": 30208,
           "cache_write_input_tokens": 0,
-          "output_tokens": 137,
-          "reasoning_output_tokens": 0
+          "output_tokens": 186,
+          "reasoning_output_tokens": 11
         },
-        "wallTimeMs": 12678.768528999994
+        "wallTimeMs": 12652.162008999847
       },
       "fresh": {
         "type": "turn.completed",
-        "threadId": "019fa192-a687-7b60-a1e5-b7a540bf5ccd",
+        "threadId": "019fc1a9-fbb0-7e43-8719-b7084ae55b62",
         "usage": {
-          "input_tokens": 201022,
-          "cached_input_tokens": 166400,
+          "input_tokens": 181466,
+          "cached_input_tokens": 156928,
           "cache_write_input_tokens": 0,
-          "output_tokens": 1360,
-          "reasoning_output_tokens": 427
+          "output_tokens": 1115,
+          "reasoning_output_tokens": 308
         },
-        "wallTimeMs": 44070.9056820001,
+        "wallTimeMs": 37964.32246599998,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ negate_value returns the required value (1.4451ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 97.992731\n"
+          "output": "✔ negate_value returns the required value (0.591925ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 70.413007\n"
         }
       },
       "continued": {
         "type": "turn.completed",
-        "threadId": "019fa192-3605-72a3-b646-ec3120d50a5c",
+        "threadId": "019fc1a9-94bd-77c1-b2ba-1eeafa63586c",
         "usage": {
-          "input_tokens": 142287,
-          "cached_input_tokens": 126720,
+          "input_tokens": 132318,
+          "cached_input_tokens": 108288,
           "cache_write_input_tokens": 0,
-          "output_tokens": 384,
-          "reasoning_output_tokens": 32
+          "output_tokens": 467,
+          "reasoning_output_tokens": 54
         },
-        "wallTimeMs": 15903.79660100001,
+        "wallTimeMs": 13577.730280000018,
         "verification": {
           "passed": true,
           "command": "node --test test/operation.test.js",
-          "output": "✔ negate_value returns the required value (0.901653ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 108.42195\n"
+          "output": "✔ negate_value returns the required value (0.603961ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 72.704254\n"
         }
       }
     }
   ],
   "totalUsage": {
-    "inputTokens": 7539290,
-    "cachedInputTokens": 6548480,
-    "outputTokens": 45372
+    "inputTokens": 4768737,
+    "cachedInputTokens": 4043520,
+    "outputTokens": 27836
+  },
+  "summary": {
+    "caseCount": 10,
+    "medianFreshInputTokens": 88769,
+    "medianContinuedInputTokens": 84749,
+    "medianTotalInputTokenReductionPct": 4.528607959986031,
+    "medianFreshUncachedInputTokens": 18124.5,
+    "medianContinuedUncachedInputTokens": 7181,
+    "medianUncachedInputTokenReductionPct": 60.37959667852907,
+    "medianFreshTimeMs": 23999.15420999998,
+    "medianContinuedTimeMs": 18137.607156500002,
+    "medianTimeToFixReductionPct": 24.423973454271085
   },
   "cost": {
     "amountUsd": null,

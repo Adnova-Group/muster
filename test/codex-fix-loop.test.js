@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -27,6 +27,9 @@ for (const name of ["spawn-agent.json", "exec-process.json"]) {
     assert.deepEqual(plan.blockers, input.reviewState.currentBlockers);
     assert.doesNotMatch(JSON.stringify(plan), /resume --last|--last/);
     assert.doesNotMatch(plan.message, /Crew Manifest|prior transcript|success criteria/i);
+    if (plan.mechanism === "exec-resume") {
+      assert.deepEqual(plan.argv.slice(0, 5), ["exec", "resume", "--json", "--", input.binding.threadId]);
+    }
   });
 }
 
@@ -51,9 +54,9 @@ test("state-isolation fixture: isolation-mismatches.json", () => {
 
 test("continuation requires blocker deltas and exact retained identity", () => {
   const common = {
-    cwd: "/w", baseSha: "a".repeat(40), codexVersion: "0.145.0", roleProfilePath: "/profiles/muster-builder.toml",
+    cwd: "/w", baseSha: "a".repeat(40), codexVersion: "0.145.0", roleProfilePath: "/profiles/muster-runner.toml",
     roleProfile: {
-      id: "muster-builder", model: "gpt-5.6-sol", reasoningEffort: "medium",
+      id: "muster-runner", model: "gpt-5.6-sol", reasoningEffort: "medium",
       sandboxMode: "workspace-write", developerInstructions: "Implement and verify."
     }
   };
@@ -79,16 +82,16 @@ test("continuation requires blocker deltas and exact retained identity", () => {
 });
 
 test("authoritative role profile requires every execution-affecting field", () => {
-  assert.throws(() => fingerprintCodexRoleProfile({ id: "muster-builder" }), /model is required/);
+  assert.throws(() => fingerprintCodexRoleProfile({ id: "muster-runner" }), /model is required/);
   const text = [
-    'name = "muster-builder"',
+    'name = "muster-runner"',
     'model = "gpt-5.6-sol"',
     'model_reasoning_effort = "medium"',
     'sandbox_mode = "workspace-write"',
     'developer_instructions = "Implement and verify."'
   ].join("\n");
   assert.deepEqual(resolveCodexRoleProfile(text), {
-    id: "muster-builder",
+    id: "muster-runner",
     model: "gpt-5.6-sol",
     reasoningEffort: "medium",
     sandboxMode: "workspace-write",
@@ -107,9 +110,9 @@ test("CLI persists a binding receipt and plans continuation from retained review
   const receipt = join(temp, "receipt.json");
   const current = join(temp, "current.json");
   const review = join(temp, "review.json");
-  const profile = join(temp, "muster-builder.toml");
+  const profile = join(temp, "muster-runner.toml");
   writeFileSync(profile, [
-    'name = "muster-builder"',
+    'name = "muster-runner"',
     'model = "gpt-5.6-sol"',
     'model_reasoning_effort = "medium"',
     'sandbox_mode = "workspace-write"',
@@ -118,8 +121,8 @@ test("CLI persists a binding receipt and plans continuation from retained review
   ].join("\n"));
   const { roleProfile: _dispatchProfile, ...dispatchContext } = input.binding;
   const { roleProfile: _currentProfile, ...currentContext } = input.current;
-  writeFileSync(dispatch, JSON.stringify({ ...dispatchContext, roleProfilePath: profile }));
-  writeFileSync(current, JSON.stringify({ ...currentContext, roleProfilePath: profile }));
+  writeFileSync(dispatch, JSON.stringify({ ...dispatchContext, cwd: temp, roleProfilePath: profile }));
+  writeFileSync(current, JSON.stringify({ ...currentContext, cwd: temp, roleProfilePath: profile }));
   writeFileSync(review, JSON.stringify(input.reviewState));
   const bundledCli = join(selectedPluginRoot, "runtime", "muster.mjs");
   execFileSync(process.execPath, [bundledCli, "fix-loop-bind", dispatch, receipt], { cwd: repoRoot });
@@ -130,9 +133,24 @@ test("CLI persists a binding receipt and plans continuation from retained review
   ));
   assert.equal(result.mechanism, "followup_task");
   assert.equal(result.target, input.expectedTarget);
+
+  const outsideReceipt = join(dirname(temp), `outside-${Date.now()}.json`);
+  assert.throws(
+    () => execFileSync(process.execPath, [bundledCli, "fix-loop-bind", dispatch, outsideReceipt], { cwd: repoRoot, encoding: "utf8" }),
+    /mutation path must be contained under the run root/
+  );
+
+  const linkedProfile = join(temp, "linked-runner.toml");
+  const linkedDispatch = join(temp, "linked-dispatch.json");
+  symlinkSync(profile, linkedProfile);
+  writeFileSync(linkedDispatch, JSON.stringify({ ...dispatchContext, cwd: temp, roleProfilePath: linkedProfile }));
+  assert.throws(
+    () => execFileSync(process.execPath, [bundledCli, "fix-loop-bind", linkedDispatch, join(temp, "linked-receipt.json")], { cwd: repoRoot, encoding: "utf8" }),
+    /unsafe regular file|ELOOP/
+  );
 });
 
-test("10-case benchmark clears the median token and time-to-fix bars", () => {
+test("10-case benchmark clears the median uncached input-token and time-to-fix bars", () => {
   const evidence = fixture("benchmark-evidence.json");
   assert.match(evidence.harness, /real Codex fresh-dispatch vs exact-thread-id resume/);
   assert.match(evidence.command, /benchmark-codex-fix-loop\.mjs/);
@@ -147,6 +165,7 @@ test("10-case benchmark clears the median token and time-to-fix bars", () => {
   ));
   const result = benchmarkCodexFixLoops(evidence.cases);
   assert.equal(result.caseCount, 10);
-  assert.ok(result.medianInputTokenReductionPct >= 25, JSON.stringify(result));
+  assert.ok(result.medianUncachedInputTokenReductionPct >= 25, JSON.stringify(result));
   assert.ok(result.medianTimeToFixReductionPct >= 20, JSON.stringify(result));
+  assert.deepEqual(evidence.summary, result);
 });

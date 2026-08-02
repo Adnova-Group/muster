@@ -79,6 +79,7 @@ import {
 import {
   assertContainedNoSymlinkPath,
   atomicWrite,
+  createContainedFile,
   ensureContainedDirectory,
   inspectContainedPath,
   isUnsafePathToken,
@@ -108,6 +109,8 @@ import { createCodexFixLoopBinding, planCodexFixContinuation, resolveCodexRolePr
 const CODEX_WAVE_FILE_MAX_BYTES = 1024 * 1024;
 const CODEX_THREAD_CONFIG_MAX_BYTES = 128 * 1024;
 const CODEX_ACTION_FENCE_MAX_BYTES = 64 * 1024;
+const CODEX_FIX_LOOP_JSON_MAX_BYTES = 1024 * 1024;
+const CODEX_ROLE_PROFILE_MAX_BYTES = 128 * 1024;
 
 async function readBoundedCliText(path, maxBytes, label) {
   return (await readNoFollowRegular(resolve(path), {
@@ -115,6 +118,15 @@ async function readBoundedCliText(path, maxBytes, label) {
     label,
     requireSingleLink: true,
   })).bytes.toString("utf8");
+}
+
+async function readFixLoopJson(path, label) {
+  const text = await readBoundedCliText(path, CODEX_FIX_LOOP_JSON_MAX_BYTES, label);
+  return JSON.parse(text);
+}
+
+async function readFixLoopRoleProfile(path) {
+  return resolveCodexRoleProfile(await readBoundedCliText(path, CODEX_ROLE_PROFILE_MAX_BYTES, "Codex fix-loop role profile"));
 }
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
@@ -456,26 +468,27 @@ async function main() {
     } else if (cmd === "fix-loop-bind") {
       const dispatchFile = requireArg(rest, 0, "fix-loop-bind <dispatch.json> <receipt.json>: missing dispatch file", fail);
       const receiptFile = requireArg(rest, 1, "fix-loop-bind <dispatch.json> <receipt.json>: missing receipt file", fail);
-      const dispatch = JSON.parse(await readFile(dispatchFile, "utf8"));
-      const roleProfilePath = resolve(requireArg([dispatch.roleProfilePath], 0, "fix-loop-bind: dispatch roleProfilePath is required", fail));
-      const roleProfile = resolveCodexRoleProfile(await readFile(roleProfilePath, "utf8"));
+      const dispatch = await readFixLoopJson(dispatchFile, "Codex fix-loop dispatch");
+      const roleProfilePath = requireArg([dispatch.roleProfilePath], 0, "fix-loop-bind: dispatch roleProfilePath is required", fail);
+      const roleProfile = await readFixLoopRoleProfile(roleProfilePath);
       const binding = createCodexFixLoopBinding({ ...dispatch, roleProfilePath, roleProfile });
-      await mkdir(dirname(resolve(receiptFile)), { recursive: true });
-      await writeFile(receiptFile, JSON.stringify(binding, null, 2) + "\n", { flag: "wx" });
-      out({ ok: true, receiptFile, binding });
+      const receiptPath = resolve(receiptFile);
+      const created = await createContainedFile(binding.cwd, receiptPath, JSON.stringify(binding, null, 2) + "\n");
+      if (!created) fail(`fix-loop-bind: receipt already exists: ${receiptPath}`);
+      out({ ok: true, receiptFile: receiptPath, binding });
     } else if (cmd === "fix-loop-continue") {
       const receiptFile = requireArg(rest, 0, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing receipt file", fail);
       const currentFile = requireArg(rest, 1, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing current context file", fail);
       const reviewFile = requireArg(rest, 2, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing review state file", fail);
-      const binding = JSON.parse(await readFile(receiptFile, "utf8"));
-      const current = JSON.parse(await readFile(currentFile, "utf8"));
-      const roleProfilePath = resolve(requireArg([current.roleProfilePath], 0, "fix-loop-continue: current roleProfilePath is required", fail));
+      const binding = await readFixLoopJson(receiptFile, "Codex fix-loop receipt");
+      const current = await readFixLoopJson(currentFile, "Codex fix-loop current context");
+      const roleProfilePath = requireArg([current.roleProfilePath], 0, "fix-loop-continue: current roleProfilePath is required", fail);
       if (roleProfilePath !== binding.roleProfilePath) fail("fix-loop-continue: roleProfilePath mismatch; refuse cross-context continuation");
-      const roleProfile = resolveCodexRoleProfile(await readFile(roleProfilePath, "utf8"));
+      const roleProfile = await readFixLoopRoleProfile(roleProfilePath);
       out(planCodexFixContinuation({
         binding,
         current: { ...current, roleProfilePath, roleProfile },
-        reviewState: JSON.parse(await readFile(reviewFile, "utf8"))
+        reviewState: await readFixLoopJson(reviewFile, "Codex fix-loop review state")
       }));
     } else if (cmd === "fast-path") {
       // weight-reduction item, criterion 1 (flagship): pre-router single-agent fast path.

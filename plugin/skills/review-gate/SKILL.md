@@ -36,7 +36,7 @@ serves every wave). Reuse the invoking verb's resolved `$MUSTER_CLI`.
 4. **Intent vs implementation:** run `git notes --ref=muster show <wave commit>` when present; a mismatch
    between notes and code is a finding even when tests pass.
 5. Write `.muster/verdicts.json` per
-   `${PLUGIN_ROOT}/plugin/skills/review-gate/verdict.schema.json`, then run
+   `plugin/skills/review-gate/verdict.schema.json`, then run
    `$MUSTER_CLI tally .muster/verdicts.json`. Advancement requires the tally's explicit
    `VERDICT: PASS` to be recorded in STATE for this exact reviewed diff. Human approval or input is
    an acknowledgment or a decision about escalation; it is never a substitute for review and can

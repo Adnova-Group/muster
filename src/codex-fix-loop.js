@@ -7,6 +7,7 @@ const BASE_SHA_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
 const CONTEXT_FIELDS = ["cwd", "baseSha", "codexVersion", "roleProfilePath"];
 const PROFILE_FIELDS = ["id", "model", "reasoningEffort", "sandboxMode", "developerInstructions"];
 const PROFILE_FINGERPRINT_RE = /^[0-9a-f]{64}$/i;
+const THREAD_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function requiredString(value, field) {
   if (typeof value !== "string" || !value.trim()) {
@@ -30,6 +31,9 @@ function validateCodexFixLoopBinding(binding) {
   const identityField = binding.lane === "spawn_agent" ? "workerId" : "threadId";
   const otherIdentityField = binding.lane === "spawn_agent" ? "threadId" : "workerId";
   requiredString(binding[identityField], identityField);
+  if (binding.lane === "exec-process" && !THREAD_ID_RE.test(binding.threadId)) {
+    throw new Error("planCodexFixContinuation: threadId must be an exact Codex UUID");
+  }
   if (binding[otherIdentityField] !== undefined) {
     throw new Error(`planCodexFixContinuation: ${otherIdentityField} is not valid for ${binding.lane}`);
   }
@@ -61,6 +65,9 @@ export function createCodexFixLoopBinding({
   const identity = lane === "spawn_agent"
     ? { workerId: requiredString(workerId, "workerId") }
     : { threadId: requiredString(threadId, "threadId") };
+  if (lane === "exec-process" && !THREAD_ID_RE.test(identity.threadId)) {
+    throw new Error("createCodexFixLoopBinding: threadId must be an exact Codex UUID");
+  }
   const binding = {
     lane,
     ...identity,
@@ -170,7 +177,7 @@ export function planCodexFixContinuation({ binding, current, reviewState } = {})
     target: binding.threadId,
     ...delta,
     command: "codex",
-    argv: ["exec", "resume", "--json", binding.threadId, delta.message],
+    argv: ["exec", "resume", "--json", "--", binding.threadId, delta.message],
     cwd: binding.cwd
   };
 }
@@ -195,11 +202,15 @@ export function benchmarkCodexFixLoops(cases = []) {
     if (entry?.fresh?.type !== "turn.completed" || entry?.continued?.type !== "turn.completed") {
       throw new Error(`benchmarkCodexFixLoops: case ${index + 1} requires fresh and continued turn.completed evidence`);
     }
+    const seedInputTokens = entry.seed?.usage?.input_tokens;
+    const seedCachedInputTokens = entry.seed?.usage?.cached_input_tokens ?? 0;
+    const continuedTotalInputTokens = entry.continued.usage?.input_tokens - seedInputTokens;
+    const continuedCachedInputTokens = (entry.continued.usage?.cached_input_tokens ?? 0) - seedCachedInputTokens;
     return {
       freshInputTokens: entry.fresh.usage?.input_tokens,
-      continuedInputTokens: entry.continued.usage?.input_tokens,
+      continuedInputTokens: continuedTotalInputTokens,
       freshUncachedInputTokens: entry.fresh.usage?.input_tokens - (entry.fresh.usage?.cached_input_tokens ?? 0),
-      continuedUncachedInputTokens: entry.continued.usage?.input_tokens - (entry.continued.usage?.cached_input_tokens ?? 0),
+      continuedUncachedInputTokens: continuedTotalInputTokens - continuedCachedInputTokens,
       freshTimeMs: entry.fresh.wallTimeMs,
       continuedTimeMs: entry.continued.wallTimeMs
     };
@@ -219,13 +230,16 @@ export function benchmarkCodexFixLoops(cases = []) {
   const medianContinuedInputTokens = median(measured.map(entry => entry.continuedInputTokens));
   const medianFreshTimeMs = median(measured.map(entry => entry.freshTimeMs));
   const medianContinuedTimeMs = median(measured.map(entry => entry.continuedTimeMs));
+  const medianFreshUncachedInputTokens = median(measured.map(entry => entry.freshUncachedInputTokens));
+  const medianContinuedUncachedInputTokens = median(measured.map(entry => entry.continuedUncachedInputTokens));
   return {
     caseCount: cases.length,
     medianFreshInputTokens,
     medianContinuedInputTokens,
-    medianInputTokenReductionPct: reduction(medianFreshInputTokens, medianContinuedInputTokens),
-    medianFreshUncachedInputTokens: median(measured.map(entry => entry.freshUncachedInputTokens)),
-    medianContinuedUncachedInputTokens: median(measured.map(entry => entry.continuedUncachedInputTokens)),
+    medianTotalInputTokenReductionPct: reduction(medianFreshInputTokens, medianContinuedInputTokens),
+    medianFreshUncachedInputTokens,
+    medianContinuedUncachedInputTokens,
+    medianUncachedInputTokenReductionPct: reduction(medianFreshUncachedInputTokens, medianContinuedUncachedInputTokens),
     medianFreshTimeMs,
     medianContinuedTimeMs,
     medianTimeToFixReductionPct: reduction(medianFreshTimeMs, medianContinuedTimeMs)

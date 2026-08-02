@@ -656,7 +656,7 @@ async function assertNoIgnoredCodexDiscovery(canonical, memberId, deadline) {
 
 async function assertNoTrackedCodexDiscoveryDrift(canonical, baseSha, headSha, memberId, deadline) {
   const changed = (await gitText(canonical, [
-    "diff", "--name-only", "--diff-filter=ACDMRTUXB", "-z", baseSha, headSha, "--",
+    "diff", "--no-renames", "--name-only", "--diff-filter=ACDMRTUXB", "-z", baseSha, headSha, "--",
   ], deadline)).split("\0").filter(Boolean);
   const drifted = changed.find(isCodexDiscoveryPath);
   if (drifted) {

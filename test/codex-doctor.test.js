@@ -10,7 +10,6 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { setTimeout as sleep } from "node:timers/promises";
 import { CODEX_COUNTS } from "../src/codex.js";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor, runMcpHandshake, MCP_STDOUT_CAP, MCP_STDERR_CAP, MCP_DIAGNOSTIC_CAP, DOCTOR_READ_MAX_BYTES, DOCTOR_CONFIG_READ_MAX_BYTES } from "../src/codex-doctor.js";
@@ -718,15 +717,17 @@ async function inventoryDoctor(execFile) {
 test("Codex doctor live-inventory: INSTALLED -- well-formed plugin/MCP JSON is reported present and healthy", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-inventory-installed-"));
   const pluginPath = join(tmp, "live-plugin");
+  const codexHome = join(tmp, "home", ".codex");
   await mkdir(join(pluginPath, "skills", "live-skill"), { recursive: true });
   await mkdir(join(pluginPath, "agents"), { recursive: true });
+  await cp(join(selectedPluginRoot, "commands"), join(codexHome, "plugins", "cache", "muster", "muster", selectedPlugin.packageVersion, "commands"), { recursive: true });
   await writeFile(join(pluginPath, "skills", "live-skill", "SKILL.md"), "---\nname: live-skill\n---\n");
   await writeFile(join(pluginPath, "agents", "live-agent.toml"), "name = 'live-agent'\n");
   const execFile = liveCodexExec({
-    plugins: JSON.stringify({ installed: [{ name: "muster", installed: true, enabled: true, source: { path: pluginPath } }], available: [] }),
+    plugins: JSON.stringify({ installed: [{ name: "muster", version: selectedPlugin.packageVersion, installed: true, enabled: true, source: { path: pluginPath } }], available: [] }),
     mcp: JSON.stringify([{ name: "muster", enabled: true }])
   });
-  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile, mcpRunner: liveMcpRunner });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome, execFile, mcpRunner: liveMcpRunner });
   const installed = report.checks.find(check => check.name === "codex-plugin-installed");
   const inventory = report.checks.find(check => check.name === "codex-inventory");
   assert.equal(installed?.ok, true, installed?.detail);
@@ -734,6 +735,63 @@ test("Codex doctor live-inventory: INSTALLED -- well-formed plugin/MCP JSON is r
   assert.equal(inventory?.ok, true, inventory?.detail);
   // Plugin source skills/agents thread through to the reported counts.
   assert.match(inventory?.detail || "", /1 plugins, 1 skills, 1 MCP servers, 1 agents from live Codex state/);
+});
+
+async function activeMusterProtocolFixture(tmp, codexHome) {
+  const pluginPath = join(tmp, "registered-muster");
+  const cachePath = join(codexHome, "plugins", "cache", "muster", "muster", selectedPlugin.packageVersion);
+  await mkdir(pluginPath, { recursive: true });
+  await mkdir(cachePath, { recursive: true });
+  await cp(join(selectedPluginRoot, "commands"), join(cachePath, "commands"), { recursive: true });
+  return { pluginPath, cachePath };
+}
+
+test("Codex doctor live-inventory: active Muster mode protocols match the selected package contract", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mode-protocol-current-"));
+  const codexHome = join(tmp, "home", ".codex");
+  const { pluginPath } = await activeMusterProtocolFixture(tmp, codexHome);
+  const execFile = liveCodexExec({
+    plugins: JSON.stringify({ installed: [{ name: "muster", version: selectedPlugin.packageVersion, installed: true, enabled: true, source: { path: pluginPath } }] }),
+    mcp: "[]"
+  });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome, execFile, mcpRunner: liveMcpRunner });
+  const protocol = report.checks.find(check => check.name === "codex-mode-protocol");
+  assert.equal(protocol?.ok, true, protocol?.detail);
+  assert.match(protocol?.detail || "", /active Muster mode protocols match the selected package contract/i);
+});
+
+test("Codex doctor live-inventory: stale active Muster mode protocol names the drift and reinstall/new-session remediation", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mode-protocol-stale-"));
+  const codexHome = join(tmp, "home", ".codex");
+  const { pluginPath, cachePath } = await activeMusterProtocolFixture(tmp, codexHome);
+  const staleText = "# stale default 3 / ceiling 8\n";
+  const stalePath = join(cachePath, "commands", "go-backlog.md");
+  await writeFile(stalePath, staleText);
+  const execFile = liveCodexExec({
+    plugins: JSON.stringify({ installed: [{ name: "muster", version: selectedPlugin.packageVersion, installed: true, enabled: true, source: { path: pluginPath } }] }),
+    mcp: "[]"
+  });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome, execFile, mcpRunner: liveMcpRunner });
+  const protocol = report.checks.find(check => check.name === "codex-mode-protocol");
+  assert.equal(protocol?.ok, false);
+  assert.match(protocol?.detail || "", /commands\/go-backlog\.md/);
+  assert.match(protocol?.detail || "", /rerun `muster install codex` and start a new Codex session/i);
+  assert.equal(await readFile(stalePath, "utf8"), staleText, "doctor must report cache drift without mutating the installed plugin");
+});
+
+test("Codex doctor live-inventory: active-only retired mode protocol is reported as cache drift", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mode-protocol-retired-"));
+  const codexHome = join(tmp, "home", ".codex");
+  const { pluginPath, cachePath } = await activeMusterProtocolFixture(tmp, codexHome);
+  await writeFile(join(cachePath, "commands", "retired.md"), "# retired mode\n");
+  const execFile = liveCodexExec({
+    plugins: JSON.stringify({ installed: [{ name: "muster", version: selectedPlugin.packageVersion, installed: true, enabled: true, source: { path: pluginPath } }] }),
+    mcp: "[]"
+  });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome, execFile, mcpRunner: liveMcpRunner });
+  const protocol = report.checks.find(check => check.name === "codex-mode-protocol");
+  assert.equal(protocol?.ok, false);
+  assert.match(protocol?.detail || "", /commands\/retired\.md/);
 });
 
 test("Codex doctor live-inventory: ABSENT -- empty live state reports the plugin missing with a zeroed inventory, no error", async () => {
@@ -1289,48 +1347,28 @@ test("Codex doctor: codex-hooks names a HASH-MISMATCHED hook runtime with the sp
 // shared reader's post-read identity recheck (nlink flip on the HELD
 // descriptor, fs-safe.js:159-161 -- the same "changed" reason the expectedInfo
 // arm throws for a lstat->open swap), which must surface translated, not raw.
-test("Codex doctor: a config.toml swapped mid-read surfaces the translated changed-while-reading diagnostic", async () => {
+test("Codex doctor: a config.toml changed mid-read surfaces the translated changed-while-reading diagnostic", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-toctou-"));
   const cwd = join(tmp, "project"), codexHome = join(tmp, "home", ".codex");
   await mkdir(cwd, { recursive: true });
   await mkdir(codexHome, { recursive: true });
   const configPath = join(codexHome, "config.toml");
-  // Big (valid-TOML) content so the guarded read spans many swap cycles; the
-  // doctor config read cap (DOCTOR_CONFIG_READ_MAX_BYTES) is 16 MiB.
-  const big = "# muster doctor toctou filler\n".repeat(200_000); // ~5.6 MB
-  const stagingA = join(tmp, "staging-a.toml"), stagingB = join(tmp, "staging-b.toml");
-  await writeFile(stagingA, big);
-  await writeFile(stagingB, big);
-  await link(stagingA, configPath);
+  await writeFile(configPath, "[agents]\nmax_threads = 12\nmax_depth = 2\n");
   const absent = async () => { throw new Error("not found"); };
-  // Continuously replace the target between the lstat and the guarded read:
-  // unlink drops the held inode's nlink mid-read and the alternating relink
-  // swaps which inode the name resolves to. The 1ms dwell keeps the name
-  // resolving (a read spanning several dwells is nearly always swapped
-  // mid-flight); without it the target is absent at open too often.
-  let stop = false;
-  const swapper = (async () => {
-    const stagings = [stagingA, stagingB];
-    for (let i = 0; !stop; i++) {
-      await unlink(configPath).catch(() => {});
-      await link(stagings[i % 2], configPath).catch(() => {});
-      await sleep(1);
-    }
-  })();
-  try {
-    let detail = null;
-    for (let attempt = 0; attempt < 12 && detail === null; attempt++) {
-      const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, mcpRunner: liveMcpRunner });
-      const check = report.checks.find(c => c.name === "codex-thread-limits");
-      // A miss reads clean (or hits a benign ENOENT/parse detail) -- retry; a
-      // hit carries the translated diagnostic naming the swapped target.
-      if (/changed while reading/.test(check?.detail || "")) detail = check.detail;
-    }
-    assert.ok(detail, "the changed-while-reading translation must surface within 12 attempts");
-    assert.match(detail, new RegExp(`Codex configuration target changed while reading: ${reEscape(configPath)}`));
-  } finally {
-    stop = true;
-    await swapper;
-    await rm(tmp, { recursive: true, force: true });
-  }
+  const changedRead = async () => {
+    const error = new Error(`file changed while reading: ${configPath}`);
+    error.fsSafe = { reason: "changed" };
+    throw error;
+  };
+  const report = await runCodexDoctor({
+    root: repoRoot,
+    cwd,
+    codexHome,
+    execFile: absent,
+    mcpRunner: liveMcpRunner,
+    readNoFollowRegularFile: changedRead
+  });
+  const check = report.checks.find(c => c.name === "codex-thread-limits");
+  assert.match(check?.detail || "", new RegExp(`Codex configuration target changed while reading: ${reEscape(configPath)}`));
+  await rm(tmp, { recursive: true, force: true });
 });

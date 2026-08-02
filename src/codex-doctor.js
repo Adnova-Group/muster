@@ -421,7 +421,7 @@ async function openRegularFile(path) {
 // shared read's tagged rejections are translated back into this module's exact
 // musterUnsafeRead messages; a raw system error (e.g. O_NOFOLLOW's ELOOP on a
 // symlink swapped in after the lstat) propagates, as before.
-async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES) {
+async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES, readNoFollow = readNoFollowRegular) {
   if (!(await ordinaryDirectoryPath(dirname(path)))) return null;
   let before;
   try { before = await lstat(path); }
@@ -432,7 +432,7 @@ async function readRegularFile(path, encoding, maxBytes = DOCTOR_READ_MAX_BYTES)
   if (before.isSymbolicLink() || !before.isFile()) throw unsafeScopeRead(`Codex configuration target must be a regular file: ${path}`);
   let opened;
   try {
-    opened = await readNoFollowRegular(path, { maxBytes, label: path, expectedInfo: before });
+    opened = await readNoFollow(path, { maxBytes, label: path, expectedInfo: before });
   } catch (error) {
     if (error?.fsSafe?.reason === "not-regular") throw unsafeScopeRead(`Codex configuration target must be a regular file: ${path}`);
     if (error?.fsSafe?.reason === "too-large") throw unsafeScopeRead(`Codex configuration target exceeds the ${maxBytes}-byte read cap (${error.fsSafe.size} bytes): ${path}`);
@@ -459,6 +459,39 @@ async function assertRegularFilePresent(path) {
 async function readRegularJson(path) {
   const content = await readRegularFile(path, "utf8");
   return content === null ? null : JSON.parse(content);
+}
+
+async function readRegularDirectoryNames(path) {
+  if (!(await ordinaryDirectoryPath(path))) throw new Error(`mode protocol directory is missing: ${path}`);
+  const before = await lstat(path);
+  const entries = await readdir(path, { withFileTypes: true });
+  const after = await lstat(path);
+  if (before.isSymbolicLink() || !before.isDirectory() || after.isSymbolicLink() || !after.isDirectory()
+    || before.dev !== after.dev || before.ino !== after.ino || !(await ordinaryDirectoryPath(path))) {
+    throw unsafeScopeRead(`Codex mode protocol directory changed while reading: ${path}`);
+  }
+  return entries.map(entry => entry.name);
+}
+
+async function compareModeProtocols(contractRoot, activeRoot) {
+  const contractDir = join(contractRoot, "commands");
+  const activeDir = join(activeRoot, "commands");
+  const [contractNames, activeNames] = await Promise.all([
+    readRegularDirectoryNames(contractDir),
+    readRegularDirectoryNames(activeDir)
+  ]);
+  const names = [...new Set([...contractNames, ...activeNames])]
+    .filter(name => name.endsWith(".md"))
+    .sort();
+  const stale = [];
+  for (const name of names) {
+    const [expected, installed] = await Promise.all([
+      readRegularFile(join(contractRoot, "commands", name), "utf8"),
+      readRegularFile(join(activeRoot, "commands", name), "utf8")
+    ]);
+    if (expected === null || installed === null || expected !== installed) stale.push(`commands/${name}`);
+  }
+  return stale;
 }
 
 async function registeredManagedScopes(home) {
@@ -714,7 +747,21 @@ function isHooksSkippedManifest(owner, packageVersion) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, strictConfigRunner, runtimeIdentity, hookInventory, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+export async function runCodexDoctor({
+  root,
+  cwd = process.cwd(),
+  codexHome,
+  execFile,
+  strictConfigRunner,
+  runtimeIdentity,
+  hookInventory,
+  mcpRunner = runMcpHandshake,
+  env = process.env,
+  platform = process.platform,
+  nodeExecPath = process.execPath,
+  readNoFollowRegularFile = readNoFollowRegular,
+  readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES, readNoFollowRegularFile)
+} = {}) {
   const inventoryCwd = resolve(cwd);
   cwd = await codexProjectRoot(cwd);
   const invocationConfigDirs = await codexActivationConfigDirs(cwd, inventoryCwd);
@@ -1345,9 +1392,30 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   }
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
-    const inventory = await readCodexInventory({ cwd, codexHome, execFile, runtimeIdentity: identity, env, allowInjected });
+    const inventory = await readCodexInventory({
+      cwd, codexHome, execFile, runtimeIdentity: identity, env, allowInjected,
+      includePluginSources: true
+    });
     const installed = inventory.plugins.includes("muster");
     checks.push({ name: "codex-plugin-installed", ok: installed, detail: installed ? "muster plugin is enabled in live Codex state" : "muster plugin is not installed; run muster install codex" });
+    if (installed && !selectionFailed) {
+      const activePlugin = inventory.pluginSources.find(item => item.name === "muster");
+      try {
+        if (typeof activePlugin?.path !== "string" || !activePlugin.path) throw new Error("live Codex state did not report its active plugin path");
+        if (typeof activePlugin.version !== "string" || !/^[A-Za-z0-9._+-]+$/.test(activePlugin.version)) {
+          throw new Error(`live Codex state did not report a safe Muster plugin version: ${JSON.stringify(activePlugin.version)}`);
+        }
+        let activeProtocolRoot = activePlugin.path;
+        const cacheRoot = join(userCodexHome, "plugins", "cache", "muster", "muster", activePlugin.version);
+        if (await ordinaryDirectoryPath(cacheRoot)) activeProtocolRoot = cacheRoot;
+        const stale = await compareModeProtocols(plugin, activeProtocolRoot);
+        checks.push({ name: "codex-mode-protocol", ok: stale.length === 0, detail: stale.length
+          ? `active Muster plugin mode protocol differs from the selected package contract for: ${stale.join(", ")}; rerun \`muster install codex\` and start a new Codex session`
+          : "active Muster mode protocols match the selected package contract" });
+      } catch (error) {
+        checks.push({ name: "codex-mode-protocol", ok: false, detail: `could not compare the active Muster plugin mode protocol with the selected package contract: ${error.message}; rerun \`muster install codex\` and start a new Codex session` });
+      }
+    }
     checks.push({ name: "codex-inventory", ok: true, detail: `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state` });
   }
   return { ok: checks.every(check => check.ok), target: "codex", checks };

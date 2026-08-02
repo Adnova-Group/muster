@@ -443,6 +443,29 @@ test("project learning accepts contained metadata paths longer than owned-artifa
   assert.deepEqual(await initializeProject(dir), initialized);
 });
 
+test("project learning bounds generated evidence so high-cardinality profiles reread", async () => {
+  const dir = await tmp();
+  const metadata = [
+    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb",
+    "Cargo.toml", "Cargo.lock", "pyproject.toml", "requirements.txt", "go.mod", "Gemfile",
+    "AGENTS.md", "CLAUDE.md", "GEMINI.md",
+  ];
+  for (let offset = 0; offset < 600; offset += 20) {
+    await Promise.all(Array.from({ length: 20 }, async (_, index) => {
+      const id = String(offset + index).padStart(3, "0");
+      const parent = join(dir, `${id}-${"x".repeat(246)}`);
+      await mkdir(parent);
+      await Promise.all(metadata.map((name) => writeFile(join(parent, name), name === "package.json" ? "{}" : "")));
+    }));
+  }
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  assert.equal(profile.facts.learning.status, "incomplete");
+  assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
+  assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= 1_048_576);
+  assert.deepEqual(await initializeProject(dir), initialized);
+});
+
 // --- TOCTOU translation arm (audit 2 slice J) ------------------------------
 // learnFacts passes the walk's own lstat to the streaming metadata reader; a
 // same-user writer replacing the target mid-read trips its "changed" reason

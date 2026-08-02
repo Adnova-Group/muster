@@ -57,6 +57,7 @@ export const INIT_PATHS = Object.freeze({
 export const INIT_LIMITS = Object.freeze({
   learnDepth: 4,
   learnFileBytes: 1_048_576,
+  learnProfileBytes: 524_288,
   fingerprintDepth: 32,
   fingerprintEntries: 10_000,
   fingerprintFileBytes: 16_777_216,
@@ -460,9 +461,33 @@ async function learnFacts(root) {
   const sourceRoots = new Set();
   const testRoots = new Set();
   const extensions = new Set();
+  let evidenceBytes = 0;
+  let profileLimited = false;
+  const markProfileLimited = (path) => {
+    if (profileLimited) return;
+    profileLimited = true;
+    limitations.push({ path: safeLearnedPath(path), reason: "profile-limit" });
+  };
+  const reserveEvidence = (bytes, path) => {
+    if (profileLimited) return false;
+    if (evidenceBytes + bytes > INIT_LIMITS.learnProfileBytes) {
+      markProfileLimited(path);
+      return false;
+    }
+    evidenceBytes += bytes;
+    return true;
+  };
+  const addLimitation = (path, reason) => {
+    const row = { path: safeLearnedPath(path), reason };
+    if (reserveEvidence(Buffer.byteLength(JSON.stringify(row)) + 2, path)) limitations.push(row);
+  };
+  const addRoot = (set, path) => {
+    if (set.has(path) || !reserveEvidence(Buffer.byteLength(JSON.stringify(path)) + 1, path)) return;
+    set.add(path);
+  };
   async function walk(abs, prefix, depth) {
     if (depth > INIT_LIMITS.learnDepth) {
-      limitations.push({ path: safeLearnedPath(prefix), reason: "depth-limit" });
+      addLimitation(prefix, "depth-limit");
       return;
     }
     for (const name of (await readdir(abs)).sort(utf8Sort)) {
@@ -472,17 +497,21 @@ async function learnFacts(root) {
       const info = await lstat(path, { bigint: true });
       if (info.isSymbolicLink()) continue;
       if (info.isDirectory()) {
-        if (SOURCE_NAMES.has(name)) sourceRoots.add(rel);
-        if (TEST_NAMES.has(name)) testRoots.add(rel);
+        if (SOURCE_NAMES.has(name)) addRoot(sourceRoots, rel);
+        if (TEST_NAMES.has(name)) addRoot(testRoots, rel);
         if (await realGitMarker(path)) continue;
         await walk(path, rel, depth + 1);
       } else if (info.isFile()) {
         const dot = name.lastIndexOf(".");
         if (dot >= 0) extensions.add(name.slice(dot).toLowerCase());
         if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
+        const factBytes = Buffer.byteLength(JSON.stringify({
+          bytes: Number.MAX_SAFE_INTEGER, path: rel, sha256: "0".repeat(64),
+        })) + 2;
+        if (!reserveEvidence(factBytes, rel)) continue;
         const parse = name === "package.json" && info.size <= BigInt(INIT_LIMITS.learnFileBytes);
         const opened = await readLearningMetadata(root, path, rel, info, parse);
-        if (name === "package.json" && !parse) limitations.push({ path: rel, reason: "parse-limit" });
+        if (name === "package.json" && !parse) addLimitation(rel, "parse-limit");
         rows.push({
           bytes: opened.size,
           content: opened.bytes,
@@ -631,7 +660,7 @@ function validateProfile(profile) {
     if (!exactKeys(learning, ["limitations", "status"]) || !["complete", "incomplete"].includes(learning.status) ||
         !Array.isArray(learning.limitations)) fail("facts.learning", "must carry a complete or incomplete status and limitations array");
     for (const limitation of learning.limitations) {
-      if (!exactKeys(limitation, ["path", "reason"]) || !["depth-limit", "parse-limit"].includes(limitation.reason)) {
+      if (!exactKeys(limitation, ["path", "reason"]) || !["depth-limit", "parse-limit", "profile-limit"].includes(limitation.reason)) {
         fail("facts.learning.limitations", "each limitation must name a path and known reason");
       }
       try { safeLearnedPath(limitation.path); } catch { fail("facts.learning.limitations", "paths must be safe learned paths"); }

@@ -47,9 +47,12 @@ const S = (description, prop, required = true) => ({
   prop,
 });
 // J2: `picks` returns an ARRAY of payloads (use `picks`, not `pick`) — each element becomes one temp file.
-const J2 = (description, props, required) => ({
+const J2 = (description, props, required, { additionalProperties } = {}) => ({
   kind: "json2", description,
-  inputSchema: { type: "object", properties: props, required },
+  inputSchema: {
+    type: "object", properties: props, required,
+    ...(additionalProperties === undefined ? {} : { additionalProperties }),
+  },
 });
 const T = (description, prop, required = true) => ({
   kind: "text", description,
@@ -64,8 +67,14 @@ const SPRINT_RECEIPT_SCHEMA = {
     phase: { type: "string", enum: ["implementation", "review", "integration"] },
     status: { type: "string", enum: ["completed", "failed", "cancelled"] },
     attempt: { type: "integer", minimum: 1, maximum: 1000000 },
+    candidateSha: { type: "string", pattern: "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    progressFingerprint: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    terminalReason: { type: "string", enum: ["approval", "human-hold", "external-impossibility", "cancelled"] },
+    approvalDigest: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    implementationAttempt: { type: "integer", minimum: 1, maximum: 1000000 },
+    evidence: { type: "string", pattern: "^[A-Za-z0-9+/]{86}==$" },
   },
-  required: ["id", "itemId", "phase", "status"],
+  required: ["id", "itemId", "phase", "status", "evidence"],
   additionalProperties: false,
 };
 const SPRINT_IN_FLIGHT_SCHEMA = {
@@ -74,6 +83,9 @@ const SPRINT_IN_FLIGHT_SCHEMA = {
     itemId: { type: "string", minLength: 1, maxLength: 128 },
     phase: { type: "string", enum: ["implementation", "review", "integration"] },
     attempt: { type: "integer", minimum: 1, maximum: 1000000 },
+    candidateSha: { type: "string", pattern: "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    approvalDigest: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    implementationAttempt: { type: "integer", minimum: 1, maximum: 1000000 },
   },
   required: ["itemId", "phase", "attempt"],
   additionalProperties: false,
@@ -139,10 +151,36 @@ const TOOLS = {
         plan: { type: "object" },
         receipts: { type: "array", maxItems: 10000, items: SPRINT_RECEIPT_SCHEMA },
         inFlight: { type: "array", maxItems: 1000, items: SPRINT_IN_FLIGHT_SCHEMA },
+        integrationTargets: { type: "object", additionalProperties: {
+          type: "object",
+          properties: {
+            workBranch: { type: "string", minLength: 1 },
+            baseBranch: { type: "string", minLength: 1 },
+            baseHeadSha: { type: "string", pattern: "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+          },
+          required: ["workBranch", "baseBranch", "baseHeadSha"],
+          additionalProperties: false,
+        } },
+        approvals: { type: "array", maxItems: 1000, items: {
+          type: "object",
+          properties: {
+            itemId: { type: "string" }, workBranch: { type: "string" }, workHeadSha: { type: "string" },
+            baseBranch: { type: "string" }, baseHeadSha: { type: "string" }, operation: { type: "string", enum: ["merge-local", "merge-push"] },
+            approvedBy: { type: "string" }, approvedAt: { type: "string" }, evidence: { type: "string", pattern: "^[A-Za-z0-9+/]{86}==$" }, digest: { type: "string", pattern: "^[0-9a-f]{64}$" },
+            runId: { type: "string" }, nonce: { type: "string" },
+          },
+          required: ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation", "approvedBy", "approvedAt", "runId", "nonce", "evidence", "digest"],
+          additionalProperties: false,
+        } },
       },
       ["plan", "receipts", "inFlight"],
+      { additionalProperties: false },
     ),
-    picks: (a) => [{ plan: a.plan, receipts: a.receipts, inFlight: a.inFlight }],
+    picks: (a) => [{
+      plan: a.plan, receipts: a.receipts, inFlight: a.inFlight,
+      ...(a.integrationTargets === undefined ? {} : { integrationTargets: a.integrationTargets }),
+      ...(a.approvals === undefined ? {} : { approvals: a.approvals }),
+    }],
   },
   muster_backlog_publish: {
     argv: ["backlog-publish"], kind: "backlogPublish",

@@ -1372,5 +1372,22 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // 2026-08-02 re-pin #46 (progress-aware execution budgets): configurable budgets
   // now reject invalid values, preserve trusted-dispatch authority, and retain
   // non-bypassable absolute ceilings around monotonic progress. Count unchanged.
-  assert.equal(hash.digest("hex"), "a24d744fd2bdd08a08fc5d41b2505d62d6d535a825ec1e403bd977a3a2401cb9");
+  // 2026-08-02 re-pin #47 (progress-aware backlog recovery): canonical
+  // orchestrator, go/go-backlog, runner, and review-gate prose now preserve
+  // findings and continue materially changed candidates; fixed attempt caps
+  // no longer terminate progressing work. File count remains unchanged.
+  // Re-pin #43 binds lifecycle receipts, in-flight work, and destructive
+  // approval evidence to exact candidate/base identities. File count remains unchanged.
+  // Re-pin #44 moves receipt and approval issuance behind the trusted adapter,
+  // binds approvals to its run identity, and preserves authenticated completed
+  // history beyond the live approval freshness window. File count remains unchanged.
+  // Re-pin #45 removes issuance from the model-callable surface and binds the
+  // privileged host callbacks to trusted assignments and human consent.
+  // Re-pin #46 moves signing into a capability-authenticated IPC broker and
+  // leaves only Ed25519 public verification keys on the model-callable path.
+  // Re-pin #47 makes that broker a separately privileged host service with
+  // owner-only key/state files, never a child of the Cowork/model process.
+  // Re-pin #48 preserves progress-aware runner recovery in the generated
+  // profile while retaining the configured non-waivable runaway boundary.
+  assert.equal(hash.digest("hex"), "e22ab36cc98990ff493de1737c8bf49b87f3a103014d8da5092c0140cfa75457");
 });

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { integrationApprovalDigest, lifecycleReceiptDigest } from "../src/sprint-waves.js";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +14,18 @@ const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
 const rootDir = fileURLToPath(root);
 const execFileP = promisify(execFile);
+const mcpReceiptKeys = generateKeyPairSync("ed25519");
+const mcpApprovalKeys = generateKeyPairSync("ed25519");
+const MCP_RECEIPT_PRIVATE_KEY = mcpReceiptKeys.privateKey.export({ type: "pkcs8", format: "pem" });
+const MCP_RECEIPT_PUBLIC_KEY = mcpReceiptKeys.publicKey.export({ type: "spki", format: "pem" });
+const MCP_APPROVAL_PRIVATE_KEY = mcpApprovalKeys.privateKey.export({ type: "pkcs8", format: "pem" });
+const MCP_APPROVAL_PUBLIC_KEY = mcpApprovalKeys.publicKey.export({ type: "spki", format: "pem" });
+function signedMcpReceipt(receipt) {
+  return {
+    ...receipt,
+    evidence: sign(null, Buffer.from(lifecycleReceiptDigest(receipt), "hex"), MCP_RECEIPT_PRIVATE_KEY).toString("base64"),
+  };
+}
 
 // Drive the MCP server over stdio: send requests, resolve a map of id -> response
 // once every id with an `id` has replied. Notifications (no id) expect no reply.
@@ -481,6 +494,11 @@ test("manifest: every user_config substitution is declared; apex/legacy keys car
   assert.ok(fable, "the legacy enable_fable key must stay declared for its env substitution");
   assert.equal(fable.type, "boolean");
   assert.match(`${fable.title} ${fable.description}`, /deprecat/i, "enable_fable must be marked deprecated");
+  for (const key of ["lifecycle_receipt_public_key", "integration_approval_public_key"]) {
+    assert.ok(manifest.user_config[key], `${key} must be configurable for verifier-only reconciliation`);
+    assert.ok(!("default" in manifest.user_config[key]), `${key} must not ship a shared default`);
+  }
+  assert.ok(!("default" in manifest.user_config.run_id), "run_id must be adapter-provisioned per sprint");
 });
 
 // ── codex-mcp-surface-gaps: 4 deterministic ops the 2026-07-19 Codex dogfood ──
@@ -832,6 +850,7 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
   ]);
   const plan = JSON.parse(planned[2].result.content[0].text);
+  const workHeadSha = (await execFileP("git", ["rev-parse", "HEAD"], { cwd: rootDir })).stdout.trim();
   const reconciled = await rpc([
     INIT,
     {
@@ -843,17 +862,89 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
         arguments: {
           plan,
           inFlight: [{ itemId: "a", phase: "implementation", attempt: 1 }],
-          receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed" }],
+          receipts: [signedMcpReceipt({
+            id: "impl-a", itemId: "a", phase: "implementation", status: "completed",
+            candidateSha: workHeadSha,
+          })],
         },
       },
     },
-  ]);
+  ], { env: { MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: MCP_RECEIPT_PUBLIC_KEY } });
   const res = JSON.parse(reconciled[2].result.content[0].text);
 
   assert.equal(reconciled[2].result.isError, false);
   assert.equal(res.next, "dispatch");
-  assert.deepEqual(res.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1 }]);
+  assert.deepEqual(res.actions, [{
+    type: "dispatch", itemId: "a", phase: "review", wave: 1,
+    candidateSha: workHeadSha, implementationAttempt: 1,
+  }]);
   assert.equal(res.wait.eligible, false);
+});
+
+test("json verb: muster_sprint_reconcile forwards exact-head integration approval evidence", async () => {
+  const backlog = "- [ ] Merge A {id: a} {deps: none} {disposition: merge-local}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  const workHeadSha = (await execFileP("git", ["rev-parse", "HEAD"], { cwd: rootDir })).stdout.trim();
+  const baseHeadSha = "b".repeat(40);
+  const approval = {
+    itemId: "a", workBranch: "work/a", workHeadSha, baseBranch: "main", baseHeadSha,
+    operation: "merge-local", approvedBy: "human", approvedAt: new Date().toISOString(),
+    runId: "mcp-run", nonce: "mcp-approval-nonce",
+  };
+  approval.digest = integrationApprovalDigest(approval);
+  approval.evidence = sign(null, Buffer.from(approval.digest, "hex"), MCP_APPROVAL_PRIVATE_KEY).toString("base64");
+  const response = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: {
+      name: "muster_sprint_reconcile",
+      arguments: {
+        plan,
+        receipts: [
+          signedMcpReceipt({ id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: workHeadSha }),
+          signedMcpReceipt({ id: "review-a", itemId: "a", phase: "review", status: "completed", candidateSha: workHeadSha, implementationAttempt: 1 }),
+        ],
+        inFlight: [],
+        integrationTargets: { a: { workBranch: "work/a", baseBranch: "main", baseHeadSha } },
+        approvals: [approval],
+      },
+    } },
+  ], { env: {
+    MUSTER_INTEGRATION_APPROVAL_PUBLIC_KEY: MCP_APPROVAL_PUBLIC_KEY,
+    MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: MCP_RECEIPT_PUBLIC_KEY,
+    MUSTER_RUN_ID: "mcp-run",
+  } });
+  const result = JSON.parse(response[2].result.content[0].text);
+  assert.equal(response[2].result.isError, false);
+  assert.deepEqual(result.actions, [{
+    type: "dispatch", itemId: "a", phase: "integration", wave: 1,
+    candidateSha: workHeadSha, approvalDigest: approval.digest,
+  }]);
+});
+
+test("model-callable reconcile rejects unsigned receipts, caller worktrees, and approval issuance", async () => {
+  const backlog = "- [ ] A {id: a} {deps: none} {disposition: merge-local}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  for (const extra of [
+    { receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: "a".repeat(40), worktreePath: rootDir }] },
+    { receipts: [], approvalRequests: [{ itemId: "a", approvedBy: "caller" }] },
+  ]) {
+    const response = await rpc([
+      INIT,
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: {
+        name: "muster_sprint_reconcile",
+        arguments: { plan, receipts: [], inFlight: [], ...extra },
+      } },
+    ]);
+    assert.equal(response[2].error.code, -32602);
+  }
 });
 
 test("json verb: muster_sprint_reconcile returns isError with structured validation errors for a forged plan", async () => {

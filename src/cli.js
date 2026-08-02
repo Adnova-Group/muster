@@ -13,7 +13,7 @@ import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { constants as fsConstants } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, verify as verifySignature } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -911,9 +911,40 @@ async function handleCoreCommandPart6(cmd, rest) {
   } else if (cmd === "sprint-reconcile") {
     const file = requireArg(rest, 0, "sprint-reconcile <progress.json>: missing file path", fail);
     const input = JSON.parse(await readFile(file, "utf8"));
+    const receiptPublicKey = process.env.MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY;
+    const approvalPublicKey = process.env.MUSTER_INTEGRATION_APPROVAL_PUBLIC_KEY;
+    const trustedRunId = process.env.MUSTER_RUN_ID;
     const r = reconcileSprintProgress(input.plan, {
       receipts: input.receipts,
       inFlight: input.inFlight,
+      integrationTargets: input.integrationTargets,
+      approvals: input.approvals,
+      recovery: {
+        ...(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT === undefined ? {} : {
+          noProgressLimit: Number(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT),
+        }),
+        ...(process.env.MUSTER_RECOVERY_MAX_CONTINUATIONS === undefined ? {} : {
+          maxContinuations: Number(process.env.MUSTER_RECOVERY_MAX_CONTINUATIONS),
+        }),
+      },
+    }, {
+      verifyApproval: approval => {
+        if (typeof approvalPublicKey !== "string" || !approvalPublicKey
+          || typeof approval.evidence !== "string") return false;
+        try {
+          return verifySignature(null, Buffer.from(approval.digest, "hex"), approvalPublicKey,
+            Buffer.from(approval.evidence, "base64"));
+        } catch { return false; }
+      },
+      verifyReceipt: (receipt, digest) => {
+        if (typeof receiptPublicKey !== "string" || !receiptPublicKey
+          || typeof receipt.evidence !== "string") return false;
+        try {
+          return verifySignature(null, Buffer.from(digest, "hex"), receiptPublicKey,
+            Buffer.from(receipt.evidence, "base64"));
+        } catch { return false; }
+      },
+      trustedRunId,
     });
     out(r);
     if (!r.ok) process.exit(2);

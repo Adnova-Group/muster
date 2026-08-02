@@ -110,7 +110,7 @@ test("dispatch contract: receipts the runner must return are named", async () =>
   assert.match(section, /PR (URL|link)/i, "receipts must carry the PR URL (or the blocker)");
 });
 
-test("gate rules: explicit PASS, re-review after fixes, bounded loop, fail-loud", async () => {
+test("gate rules: explicit PASS, re-review after fixes, progress-aware recovery, fail-loud", async () => {
   const src = await readDef();
   assert.match(src, /VERDICT: PASS/, "gate requires the explicit PASS verdict");
   assert.match(src, /re-review|back to the (same )?reviewer/i,
@@ -118,8 +118,10 @@ test("gate rules: explicit PASS, re-review after fixes, bounded loop, fail-loud"
   assert.match(src, /BLOCKED/, "BLOCKED must be a first-class reportable outcome");
   assert.match(src, /never .*(push|merge).*main|never merge/i,
     "the runner may never merge or push to main");
-  assert.match(src, /\b(three|3)\b.*(fix|attempt|loop)|(fix|attempt|loop).*\b(three|3)\b/i,
-    "the fix loop must be bounded with loud escalation, not an unbounded grind");
+  assert.match(src, /progress|materially changed|identical outcome/i,
+    "the fix loop must continue changed outcomes and stop repeated no-progress");
+  assert.match(src, /runaway|backstop|configured maximum/i,
+    "the fix loop retains a non-waivable runaway backstop");
 });
 
 test("TDD is encoded: failing test first, watch it fail", async () => {

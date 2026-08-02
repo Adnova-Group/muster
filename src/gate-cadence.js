@@ -15,7 +15,7 @@
 //
 // Levers only — batching (fewer review-gate dispatches) and the existing dedup (spec
 // gate is one whole-plan dispatch, not one per task). The reviewer's PASS BAR and the
-// fix-loop cap (3, `REVIEW_GATE_MAX_ITERATIONS` in src/loop.js) are untouched: a batched
+// progress-aware review recovery (`reviewGateState` in src/loop.js) is untouched: a batched
 // pass reviews the FULL cumulative diff across every batched wave, at the same rigor as
 // any single-wave pass — see docs/performance-pass.md. fast-path-token-gap (see
 // reviewerReasoningForCount below) ADDS a reasoning-effort axis for a sub-threshold diff's

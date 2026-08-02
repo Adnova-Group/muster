@@ -102,14 +102,15 @@ are exactly how muster would trip it. On a validation error, FIX the packet (ren
 merge the duplicate item, repair the template) and rebuild; a wave that cannot satisfy the
 distinct-prompts rule is not a uniform fan-out at all -- resolve it as agent-calls instead.
 
-**Failure retry rides the same native shapes.** Step 4a's re-dispatch-once rule RESUMES on
+**Failure retry rides the same native shapes.** Step 4a's progress-aware re-dispatch rule RESUMES on
 Kimi instead of re-spawning (docs/research/kimi-code-cli.md sec 6): a failed per-agent call is
 retried as `kimiAgentCall({ resume: <failed agent id>, prompt: <error context> })` -- Kimi's
 `resume` is mutually exclusive with `subagent_type`, and a resumed subagent keeps its model, so
 the retry packet drops the lane override too; a failed swarm member is retried as
 `kimiSwarmCall({ resumeAgentIds: { <failed agent id>: <error context> } })` -- which is also why
-the >=2-item floor lifts when resuming. One retry, the same cap every harness gets; a second
-failure escalates exactly as step 4a says.
+the >=2-item floor lifts when resuming. Each failure carries a deterministic fingerprint;
+changed outcomes may resume again, while the configured repeated-identical/no-progress threshold
+stops deterministically exactly as step 4a says.
 
 **Background a leg only when the wave does not barrier on it.** An independent read-only
 leg -- a reviewer whose verdict does not gate the CURRENT wave, an investigator whose
@@ -120,7 +121,7 @@ from the background-completion receipt -- a synthetic user message carrying the 
 final message (the whole handoff, same return contract as a foreground leg), backed by the
 on-disk `tasks/<task_id>.json` + `output.log` (docs/research/kimi-code-cli.md secs 6+8;
 `interpretKimiBackgroundCompletion` in `src/kimi-dispatch.js` maps the receipt onto the
-fold-back, and a failed backgrounded leg re-enters step 4a's re-dispatch-once rule
+fold-back, and a failed backgrounded leg re-enters step 4a's progress-aware fingerprint rule
 unchanged). Anything step 4b's barrier or step 4c's review gate depends on dispatches
 FOREGROUND: a backgrounded leg is still in flight at the barrier, so backgrounding
 barrier-gated work would silently empty the barrier's "all wave tasks done" meaning.

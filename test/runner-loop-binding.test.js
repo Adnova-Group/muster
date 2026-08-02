@@ -26,8 +26,8 @@ test("plugin/commands/runner.md documents the runner's standing cadence with the
   // Routine/cron is the verified-safe standing-cadence default.
   assert.match(text, /Claude Code Routine/, "the Routine/cron alternative must remain documented");
   assert.match(text, /claude -p "\/muster:runner issues:agent:todo"/, "the cron example must remain documented");
-  // Safety inventory paragraph applies unchanged (same load-bearing terms as before this item).
-  for (const term of ["pr-only", "2-failure retry cap", "claim lock"]) {
+  // Safety inventory keeps disposition/claim safety and progress-aware recovery.
+  for (const term of ["pr-only", "progress-aware repeated-outcome recovery", "claim lock"]) {
     assert.ok(text.includes(term), `Scheduling section must still name ${term}`);
   }
   // The exact /loop invocation form is still named -- now as the mechanism that is documented-inert.

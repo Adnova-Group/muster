@@ -83,13 +83,14 @@ Test evidence (`test/gate-cadence.test.js`): a 3-task plan across 3 sequential w
 
 ## Criterion 3 — review and spec gates stay full-strength
 
-Nothing about this item changes a gate's own pass bar, reviewer tier, or fix-loop cap:
+Nothing about this item changes a gate's own pass bar or reviewer tier. The later
+self-healing recovery contract replaced the former fixed fix-loop cap:
 
 - The review-gate's reviewer selection (`code-review`/`security-review`, or the built-in
   reviewer), its adversarial "refute the work" framing, its citation guard, its intent-vs-
-  implementation check, and its **3-fix-iteration cap** (`REVIEW_GATE_MAX_ITERATIONS`,
-  `src/loop.js`) are all unchanged — a batched pass gets the identical cap, just applied over a
-  larger (cumulative) diff instead of a single wave's diff.
+  implementation check are unchanged. A batched pass uses the identical progress-aware
+  candidate/finding digest, configured repeated-identical/no-progress threshold, and non-waivable
+  runaway backstop as any other pass, just over a larger cumulative diff.
 - The spec gate's architecture-review dispatch, its lazy-implementer/malicious-reader framing,
   and its file/symbol verification are unchanged; `gate-cadence` only ever reports the SAME
   `specGateRounds` the existing single-dispatch design already produced (0 for a single trivial

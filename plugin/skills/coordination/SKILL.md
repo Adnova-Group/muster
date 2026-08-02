@@ -66,13 +66,15 @@ primitive + capability gap, never the semantics again.
 4. **YIELD** — the losing claimant concedes: revert whatever it claimed, leave a `YIELD` receipt naming
    the winner, move on without touching a further-along state the winner already reached (its own
    cleanup, not another state change). No race in B/D means no YIELD case there.
-5. **FAILED / retry cap** — revert to claimable, always a record. Count prior `FAILED` receipts across
-   the WHOLE history (cumulative, not windowed); at 2, redirect straight to BLOCKED/needs-input instead
-   of another attempt. `attempt <n>` = 1 + that count.
+5. **FAILED / progress-aware retry** — revert to claimable, always a record. Each `FAILED` receipt
+   carries a deterministic normalized failure/progress fingerprint. Changed fingerprints remain
+   claimable; only the configured consecutive repeated-identical/no-progress threshold redirects to
+   BLOCKED/needs-input. `attempt <n>` remains monotonic for receipts, never as a terminal condition.
 6. **LEDGER** — exactly ONE heartbeat entry per runner, edited in place, not appended; an idle cycle
    reuses it with `result: idle`.
-7. **Escalation** (spec-gate/fix-loop cap -- a review-gate trigger, NOT bullet 5's coordination retry
-   cap) is not a new receipt type: a `FAILED` receipt plus the item-level escalated-marker -- B's
+7. **Terminal recovery** (a configured no-progress result or truthful approval/HUMAN-HOLD/external
+   impossibility/cancellation, distinct from bullet 5's progressing retry) is not a new receipt type:
+   a `FAILED` receipt plus the item-level escalated-marker -- B's
    `{escalated: <runId or date>}`, A's move to `agent:needs-input`, C's move to its blocked status, D's
    `kanban.failure_limit` auto-block (or a repeated `kanban_block` escalating to `triage`) -- a later
    scan relies on that marker alone.
@@ -151,11 +153,11 @@ gh issue comment <N> --body "MUSTER YIELD <runner> <ts> — lost claim race to <
 then move on (a later-state label already present -- `agent:review`/`agent:done`/`agent:needs-input`
 -- also needs `--remove-label agent:working` so it isn't mislabeled twice).
 
-Count prior `MUSTER FAILED` comments (same paginated shape, filtered to `^MUSTER FAILED`, `| length`);
-at the retry cap:
+Read prior `MUSTER FAILED` comments and their normalized fingerprints (same paginated shape, filtered
+to `^MUSTER FAILED`). At the configured consecutive repeated-identical/no-progress threshold:
 ```
 gh issue comment <N> --body "MUSTER BLOCKED <runner> <ts>
-retry cap reached (2 prior failures) — needs human input before another attempt"
+no progress: repeated identical failure fingerprint — needs human input before another attempt"
 gh issue edit <N> --remove-label agent:working --add-label agent:needs-input
 ```
 
@@ -200,7 +202,7 @@ login here, since a human replies under their own account). Once answered: re-cl
 agent:needs-input --add-label agent:working`, then `MUSTER CLAIMED ... — resumed`) -- that comment is
 the new window floor.
 
-**Failed:** revert to claimable, unless the retry cap already redirected:
+**Failed:** revert to claimable, unless the configured no-progress threshold already redirected:
 ```
 # write "MUSTER FAILED <runner> <ts> attempt <n>\n<reason>" to <bodyfile>, then:
 gh issue comment <N> --body-file <bodyfile>
@@ -262,9 +264,10 @@ wave completes.
   - `{human-hold: <slug>}`: the canonical unauthenticated-channel case (a plain STATE line can't
     authenticate its author) -- ATTENDED-only; an UNATTENDED runner permanently parks it.
 - **Done/Failed** — DONE: leave `{claimed:}` as a harmless audit trail. FAILED (crash/dispatch failure):
-  strip `{claimed:}`, bump `{attempts: n}` (absent → `1`; else increment), write the receipt. At
-  `{attempts: 2}` (the canonical retry cap): replace with `{blocked: max-retries-<item-id>}` and a
-  matching `BLOCKED` receipt in place of `FAILED`. Below the cap, stays reclaimable.
+  strip `{claimed:}`, bump `{attempts: n}` (absent → `1`; else increment), and write the receipt plus
+  normalized failure/progress fingerprint. Changed fingerprints stay reclaimable regardless of the
+  attempt count. At the configured consecutive repeated-identical/no-progress threshold, replace with
+  `{blocked: no-progress-<item-id>}` and a matching `BLOCKED` receipt in place of `FAILED`.
 
 ## Binding C — Linear (`linear:<team key or project>`)
 
@@ -288,9 +291,9 @@ save_issue({ id, assignee: null })
 save_comment({ issueId: id, body: "MUSTER YIELD <runner> <ts> — lost claim race to <winning runner>" })
 ```
 then move on -- `state` is single-valued (last write wins), so no "mislabeled with both states" cleanup
-like Binding A. Same retry-cap check as Binding A (paginated `^MUSTER FAILED` count); at the cap:
+like Binding A. Apply the same consecutive fingerprint/no-progress check as Binding A; at the threshold:
 ```
-save_comment({ issueId: id, body: "MUSTER BLOCKED <runner> <ts>\nretry cap reached (2 prior failures) — needs human input before another attempt" })
+save_comment({ issueId: id, body: "MUSTER BLOCKED <runner> <ts>\nno progress: repeated identical failure fingerprint — needs human input before another attempt" })
 save_issue({ id, state: "<blocked-status>" })
 ```
 
@@ -350,7 +353,7 @@ of truth. **MCP auth** -- confirm the connector's auth first, fail closed if una
 `gh` token). **Rate limits** -- a full-thread scan every cycle is read-heavy like A; same cadence as
 runner.md (15-30 min, widen if idle).
 
-Standing-context preflight/retry cap/escalation inherit the canonical rule unchanged; same fingerprint
+Standing-context preflight/progress-aware retry/terminal recovery inherit the canonical rule unchanged; same fingerprint
 set as the preflight above.
 
 ## Binding D — Hermes kanban (native `kanban.db`)
@@ -377,8 +380,9 @@ already harness machinery, not simulated prose (hermes.md §4, Kanban section).
   unauthenticated-channel case (same as B): ATTENDED-only until the board adds one.
 - **DONE** -> `kanban_complete(summary, metadata, result, artifacts)`; the card lands on `done`.
 - **FAILED** -> a `task_events` `gave_up` (self-reported) or `crashed` (dead-PID detection) entry
-  reverts the card to `todo`; `kanban.failure_limit` is the native retry cap (consecutive spawn
-  failures auto-block, no counting query needed).
+  reverts the card to `todo`; a native `kanban.failure_limit` may be configured only as a runaway
+  backstop. Ordinary recovery uses consecutive normalized fingerprints, so materially changed
+  outcomes remain retryable and repeated identical outcomes auto-block.
 - **YIELD** -> not applicable, per the canonical native-claim note (no losing claimant).
 - **LEDGER** -> `kanban_heartbeat`, once per cycle per profile. `task_events` is append-only, so "one
   heartbeat" reads the most recent `heartbeat` event, not an edited row -- same semantic, different
@@ -398,5 +402,5 @@ binding" 3-item smoke trail, in kanban primitives:
 - **failed** -- kill the profile's OS process; confirm the dead-PID tick logs `crashed`, reverts to
   `todo`; repeat past `kanban.failure_limit` for auto-block.
 
-Standing-context preflight/retry cap/escalation inherit the canonical rule unchanged (same fingerprint
+Standing-context preflight/progress-aware retry/terminal recovery inherit the canonical rule unchanged (same fingerprint
 set as above; escalation marker per bullet 7).

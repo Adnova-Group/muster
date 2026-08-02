@@ -17,7 +17,10 @@
         "MUSTER_ENABLE_APEX": "${user_config.enable_apex}",
         "MUSTER_ENABLE_FABLE": "${user_config.enable_fable}",
         "MUSTER_MAX_TIER": "${user_config.max_tier}",
-        "MUSTER_COWORK_CONNECTORS": "${user_config.connectors}"
+        "MUSTER_COWORK_CONNECTORS": "${user_config.connectors}",
+        "MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY": "${user_config.lifecycle_receipt_public_key}",
+        "MUSTER_INTEGRATION_APPROVAL_PUBLIC_KEY": "${user_config.integration_approval_public_key}",
+        "MUSTER_RUN_ID": "${user_config.run_id}"
       }
     }
   },
@@ -44,6 +47,21 @@
       "title": "Declared remote connectors",
       "description": "Comma-separated names of remote connectors to treat as available. Remote connectors cannot be auto-discovered from disk.",
       "default": ""
+    },
+    "lifecycle_receipt_public_key": {
+      "type": "string",
+      "title": "Lifecycle receipt public key",
+      "description": "Ed25519 public key used by model-callable reconciliation to verify broker-issued receipts."
+    },
+    "integration_approval_public_key": {
+      "type": "string",
+      "title": "Integration approval public key",
+      "description": "Ed25519 public key used by model-callable reconciliation to verify broker-issued approvals."
+    },
+    "run_id": {
+      "type": "string",
+      "title": "Trusted lifecycle run ID",
+      "description": "Stable adapter-owned identifier for this sprint run; callers cannot supply or override it."
     }
   },
   "tools": [

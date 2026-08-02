@@ -12,9 +12,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, withKimiProcessBriefFile, interpretKimiGoalExit, resolveKimiWaveDispatch,
+  kimiResumeState,
   interpretKimiBackgroundCompletion, detectKimiQuotaFault, quotaFaultLines,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_PROCESS_MAX_BRIEF, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
+
+test("Kimi resumes use parent evidence and cannot dispatch a 101st continuation", () => {
+  const attempts = Array.from({ length: 100 }, (_, index) => ({
+    candidateFingerprint: index.toString(16).padStart(64, "0"),
+    errorFingerprint: (index + 100).toString(16).padStart(64, "0"),
+  }));
+  assert.deepEqual(kimiResumeState({ attempts }), {
+    retry: false, reason: "max-continuations", noProgressCount: 1,
+  });
+  assert.throws(() => kimiResumeState({ attempts: [{
+    candidateFingerprint: "agent-selected", errorFingerprint: "also-untrusted",
+  }] }), /parent-computed/);
+  assert.throws(() => kimiResumeState({ attempts, outcomes: ["reset"] }), /unsupported.*outcomes/);
+});
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
 
 // --- AgentSwarm -------------------------------------------------------------
@@ -132,11 +147,11 @@ test("interpretKimiBackgroundCompletion: a completed receipt folds back as the w
   assert.match(done.reason, /synthetic user message/);
 });
 
-test("interpretKimiBackgroundCompletion: a failed leg re-enters the re-dispatch-once rule, never a silent drop", () => {
+test("interpretKimiBackgroundCompletion: a failed leg re-enters progress-aware recovery, never a silent drop", () => {
   const failed = interpretKimiBackgroundCompletion({ status: "failed", terminalReason: "timed_out" });
   assert.equal(failed.status, "failed");
   assert.equal(failed.terminal, true);
-  assert.match(failed.reason, /re-dispatch-once/);
+  assert.match(failed.reason, /progress-aware fingerprint/);
   assert.match(failed.reason, /never a silent drop/);
 
   for (const status of ["stopped", "timed_out"]) {
@@ -475,7 +490,7 @@ test("orchestrator references/kimi-dispatch.md has the Kimi subsection naming th
 
 // --- Prose wiring: the failure rule names the Kimi resume path --------------
 
-test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resume path", async () => {
+test("orchestrator/SKILL.md's progress-aware failure rule names the Kimi resume path", async () => {
   const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
   const start = text.indexOf("- **Subagent failure:**");
   assert.ok(start >= 0, "orchestrator/SKILL.md step 4a must carry the 'Subagent failure' bullet");
@@ -488,7 +503,8 @@ test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resum
   assert.match(bullet, /kimiAgentCall`\/`kimiSwarmCall` in `src\/kimi-dispatch\.js`/, "the failure bullet must cite the shipped builders");
   assert.match(bullet, /keeps its\s+prior context and only the error is appended/, "the failure bullet must state the resume keeps prior context and appends only the error");
   assert.match(bullet, /Non-Kimi harnesses keep the fresh re-dispatch/, "the failure bullet must keep the fresh re-dispatch on non-Kimi harnesses");
-  assert.match(bullet, /max 2 attempts/, "the one-retry cap is unchanged");
+  assert.match(bullet, /deterministic error\/progress fingerprint/, "the retry rule must key continuation to progress");
+  assert.match(bullet, /repeated-identical\/no-progress threshold/, "the retry rule must stop repeated outcomes deterministically");
 
   // ...and the Kimi-native dispatch reference carries the matching mechanics.
   const ref = await readFile(KIMI_DISPATCH_REF, "utf8");
@@ -498,6 +514,7 @@ test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resum
   assert.match(kimi[1], /kimiAgentCall\(\{ resume: /, "the Kimi subsection must show the per-agent resume retry shape");
   assert.match(kimi[1], /kimiSwarmCall\(\{ resumeAgentIds: /, "the Kimi subsection must show the swarm resume retry shape");
   assert.match(kimi[1], /mutually exclusive with `subagent_type`/, "the Kimi subsection must state resume's mutual exclusion with subagent_type");
+  assert.match(kimi[1], /changed outcomes may resume again/, "Kimi retries must continue while progress changes");
 });
 
 // --- Prose wiring: the Kimi subsection names the background-vs-barrier rule --
@@ -518,7 +535,7 @@ test("references/kimi-dispatch.md names when to background a leg versus barrier 
   assert.match(section, /interpretKimiBackgroundCompletion/, "the rule must name the shipped receipt interpreter");
   // the barrier is not weakened: barrier/review-gate work stays foreground
   assert.match(section, /step 4b's barrier[\s\S]*?step 4c's review gate[\s\S]*?FOREGROUND/, "the rule must keep barrier/review-gate work foreground");
-  assert.match(section, /re-dispatch-once/, "a failed backgrounded leg must re-enter the re-dispatch-once rule");
+  assert.match(section, /progress-aware fingerprint/, "a failed backgrounded leg must re-enter progress-aware recovery");
 });
 
 // --- Prose wiring: the runner prose routes the Kimi run loop through /goal ----

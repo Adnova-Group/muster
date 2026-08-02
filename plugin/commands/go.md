@@ -109,22 +109,16 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    findings second (one line per finding, each naming exactly one distinct defect — never merge two
    defects into one line or split one defect across several, so the next round's disjointness check
    compares like with like), <=1500 chars.<!-- muster-return-template:end --> **PASS** → proceed to step 5.
-   **Round 1 FAIL** → loop the findings back to the **router** skill (amend plan/manifest, re-validate,
-   re-run this gate) — the first amendment, always allowed. **Round 2 FAIL** → before deciding, compare
-   round 2's itemized findings against round 1's: a round-2 finding is **repeated** if it restates or is a
-   subset of an unresolved round-1 finding, **disjoint** if it names a distinct defect round 1 never raised
-   (round 1 improved, the gate dug deeper rather than stalling). Record the per-finding
-   repeated-vs-disjoint determination in STATE (glass box) either way, then:
-   - any round-2 finding judged **repeated** → hard abort — attended: report and stop; unattended: record
-     to STATE, stop. The spec is still broken the same way an amendment already tried to fix.
-   - every round-2 finding judged **disjoint** (none repeated) → allow a **second** amendment — loop the
-     findings back to the **router** skill once more (amend plan/manifest, re-validate, re-run this gate) —
-     the final amendment.
-   **Round 3 FAIL** → hard abort unconditionally, regardless of disjointness — attended: report and stop;
-   unattended: record to STATE, stop. Total rounds are capped at 3 (the initial dispatch plus at most two
-   amendments); each dispatch is still a single whole-plan round regardless of task count — `gate-cadence`
-   never reports more than 1 `specGateRounds` by default; note the skip/round count and every FAIL round's
-   findings + disjointness determination in STATE either way.
+   **Any FAIL** → preserve every structured finding, reject/invalidate the unsafe plan/manifest candidate,
+   and loop the findings back to the **router** skill as a correction/replan action. Record a deterministic
+   fingerprint of the candidate bytes plus the itemized findings, require a materially changed candidate,
+   re-validate it, and dispatch a fresh independent spec gate. Repeated findings — including target identity,
+   backup restoration proof, schema normalization scope, protected SQL provenance, or mutation allowlist
+   binding defects — never waive the gate and do not themselves prove no progress: a changed candidate may
+   continue beyond the old round-2/round-3 boundary. `specGateRecoveryState` in `src/loop.js` stops
+   deterministically only when candidate bytes/fingerprint repeat at the configured no-progress threshold,
+   or on explicit approval/HUMAN-HOLD, inaccessible external dependency, or cancellation. Note every round,
+   candidate fingerprint, preserved finding, correction action, and independent verdict in STATE.
 5. **Show the plan** — `$MUSTER_CLI plan-checklist .muster/manifest.json` and display it.
 6. **Orchestrate** — run the **orchestrator** skill over the manifest (waves, tournaments, review gate)
    **without pausing** at gates. Each wave loops until criteria are met via the Ralph loop (`loopState`
@@ -192,10 +186,11 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    (`KIMI_LOOP_MAX_STEPS_PER_TURN`, `KIMI_LOOP_MAX_RETRIES_PER_STEP`,
    `KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS`) cover any run that wants a non-default — same
    shared-config posture as the `KIMI_SECONDARY_MODEL` env pair above.
-7. **Escalation** — if a review gate escalates (fix-loop cap), a tournament has no passing candidate,
-   the spec gate hard-aborts (a round-2 FAIL repeats an unresolved round-1 finding, or a round-3 FAIL
-   regardless of disjointness), or a subagent dispatch that still fails after its retry, STOP and
-   report the unresolved items; the branch stays intact.
+7. **Terminal recovery** — if a review gate reaches its configured repeated-identical/no-progress
+   threshold, a tournament has no passing candidate, the spec gate repeats a byte-identical candidate,
+   or a subagent repeats an identical failure at its configured threshold, STOP and report the preserved
+   findings; the branch stays intact. Approval/HUMAN-HOLD, inaccessible external dependency, cancellation,
+   and explicit configured budget violations remain truthful terminal states.
 8. **Finish** — after the last wave, read `manifest.mergeDisposition`. Router output is advisory and
    **never authorizes** a base-branch mutation. `merge-local` and `merge-push` require explicit authenticated user approval
    in the attended harness after showing the exact work branch/head SHA, base branch/head SHA,
@@ -235,7 +230,7 @@ When go is fired by a Claude Code Routine (no interactive human present), steps 
 - On `$MUSTER_CLI assess` returning `clear: false`, proceed with best-effort defaults instead of the interview — record the gap (the `signals`) to the run report in STATE; autonomy still stops at the reviewable artifact (the PR), where the human can close the gap.
 - The merge **disposition**: `manifest.mergeDisposition` (step 8) takes precedence when set. When absent, fall back to the outcome text (e.g. "…then open a PR" / "…keep the branch"). **Default when neither is stated: open a Pull Request.**
 - **Never** auto-merge to a base branch or push directly to main/master in unattended mode — autonomy stops at the reviewable artifact (the PR).
-- Escalations (fix-loop cap reached, tournament with no passing candidate, a spec-gate hard abort (a repeated round-1 finding recurring in round 2, or any round-3 FAIL), or a subagent dispatch that still fails after its retry) are written to the run report in STATE instead of blocking on an interactive prompt; the Routine result and any wired Channel can surface them to the human.
+- Truthful terminal outcomes (configured no-progress threshold reached, tournament with no passing candidate, repeated byte-identical spec candidate, approval/HUMAN-HOLD, inaccessible external dependency, cancellation, or explicit configured budget violation) are written to the run report in STATE instead of blocking on an interactive prompt; the Routine result and any wired Channel can surface them to the human.
 - The outcome is supplied via the Routine's `text` field (API `/fire`) or the saved Routine config — the same `$ARGUMENTS` slot, nothing extra to wire.
 
 Glass box: branch, each commit, escalations, and the ticking checklist are recorded in STATE.

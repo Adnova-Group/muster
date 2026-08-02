@@ -41,15 +41,14 @@ serves every wave). Reuse the invoking verb's resolved `$MUSTER_CLI`.
    `VERDICT: PASS` to be recorded in STATE for this exact reviewed diff. Human approval or input is
    an acknowledgment or a decision about escalation; it is never a substitute for review and can
    never synthesize or waive a missing `VERDICT: PASS`.
-6. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review. The default
-   no-progress budget is **3 fix iterations** (`REVIEW_GATE_MAX_ITERATIONS` = 3), configurable per
-   task through `reviewGateState.maxIterations`, with a non-bypassable absolute ceiling of 12 total
-   iterations (`REVIEW_GATE_MAX_TOTAL_ITERATIONS`). The trusted dispatch fixes the budget before any
-   task text, diff, rubric, or finding is attached; those untrusted inputs can never change it.
-   Normalize the structured verdict's blocker set and record a finite progress score from the count
-   resolved against the first blocked pass; invented evidence and prose claims do not count. Only a
-   strictly increasing score earns another pass; an identical, regressing, or non-finite score consumes the no-progress budget. If
-   the blockers remain after the budget, ESCALATE to the human.
+6. If `blocked`: preserve the structured blocker notes, invalidate the reviewed candidate, and
+   re-dispatch the implementer for a materially changed repair, then obtain a fresh independent
+   review. The parent computes the candidate git SHA and finding SHA-256 digest; worker-provided
+   labels are never progress authority. Use `reviewGateState` from `src/loop.js`; continue while
+   the bound digest changes, even beyond three iterations, up to the non-waivable runaway backstop. Stop with
+   the unresolved blockers only when the configured repeated-identical/no-progress threshold is
+   reached, or on approval/HUMAN-HOLD, cancellation, or external impossibility. A changed candidate
+   always gets another independent review; neither a prior review nor human acknowledgment waives PASS.
 7. Carry `risk`/`nit` findings to FOLLOWUPS (non-blocking).
 
 Return the recorded `VERDICT: PASS` or escalate; no other success wording advances the run.

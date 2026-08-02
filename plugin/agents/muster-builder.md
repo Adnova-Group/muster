@@ -13,9 +13,9 @@ maxTurns: 25
 
      Claude Code's subagent frontmatter supports a hard `maxTurns` cap (docs/research/
      claude-code-cli.md:142, subagents-config source at :262), enforced natively by the
-     harness rather than relying on the burn-lesson quota-discipline prose alone
-     (25-step ceiling, one-follow-up max -- written in blood from the two-day Codex
-     quota burn, docs/research/codex-cli.md). Four tiers, coherent with Codex's own
+     harness as a runaway backstop, while the lifecycle's progress-aware recovery
+     contract prevents an ordinary step/follow-up count from declaring progressing
+     work terminal. Four tiers, coherent with Codex's own
      per-class heartbeat-extension ceilings (PR #83 codex-agent-watch-review-budget):
 
      - 15 (mechanical/surgical) -- muster-surgeon, muster-investigator, and the two

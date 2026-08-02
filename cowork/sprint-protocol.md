@@ -72,11 +72,11 @@ Missing backlog file, or a malformed annotation the tool reports as an error, st
 run, report it plainly.
 
 Persist that successful result as `plan`. During execution, call **`muster_sprint_reconcile`** with
-`plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`), and
-the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`). Drive a strict **reconcile → dispatch → wait** loop:
+`plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`, parent-verified `candidateSha` for every status, and parent-authenticated `evidence`; review also carries the exact `implementationAttempt`, and completed integration carries the exact-head `approvalDigest`), and
+the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`; review/integration also carry `candidateSha`, review carries `implementationAttempt`, and integration carries `approvalDigest`). The model-callable reconcile tool accepts only already-authenticated receipts and approvals and holds only Ed25519 public verification keys; it cannot sign caller input. A separately privileged local IPC broker (`scripts/sprint-evidence-broker.mjs`) holds the private keys and adapter-owned assignment state outside the Cowork/model process. A host mailbox callback invokes `scripts/sprint-evidence-callback.mjs`; the broker authenticates its actor-specific capability token, derives the worktree path, common repository identity, branch, phase actor, and reviewer independence from trusted state, verifies HEAD, and returns the signed canonical envelope to persist. Destructive dispositions also provide `integrationTargets`; after the emitted approval action, an authenticated-human callback uses the same broker path, which derives the approver from its capability and binds consent to the prior action. A newly issued integration-completion receipt requires a still-fresh exact approval; authenticated completed history remains valid after that live window. If the host cannot supply these callbacks, the authenticated parallel lifecycle is unavailable and the sequential fallback is mandatory. Drive a strict **reconcile → dispatch → wait** loop:
 drain all completions after every wake, reconcile once, execute every returned action, update
 `inFlight`, then reconcile again before waiting. `next:dispatch` forbids an idle wait;
-`next:terminal|escalated` ends the loop; only `wait.eligible:true` permits waiting. Duplicate or
+`next:terminal|blocked|invalid` ends the loop; only `wait.eligible:true` permits waiting. Duplicate or
 out-of-order receipts are retained idempotently, while failed/cancelled/missing receipts never unlock
 dependencies. This MCP result owns the state transition; Cowork still owns the actual subagent calls.
 

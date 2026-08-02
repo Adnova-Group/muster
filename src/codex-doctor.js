@@ -1070,7 +1070,12 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
           configTomlText, hooksJsonPath: configPath, config, hookGroups: owner.hookGroups
         });
         const blocked = gaps.results.filter(result => result.status !== "trusted");
-        hookTrustTargets.push({ dir, configPath, results: gaps.results });
+        hookTrustTargets.push({
+          dir,
+          cwd: dir === userCodexHome ? cwd : dirname(dir),
+          configPath,
+          results: gaps.results
+        });
         if (blocked.length || gaps.stale.length) hookTrustGaps.push({ dir, results: blocked, stale: gaps.stale });
       } else {
         staleHookScopes.push(dir);
@@ -1152,10 +1157,11 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // Remediation is a human trusting the hook in Codex, never
   // --dangerously-bypass-hook-trust.
   const inventoryReader = hookInventory || readCodexHookInventory;
-  const inventory = hookTrustTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: [cwd], env: { ...env, CODEX_HOME: userCodexHome } }) : null;
+  const inventoryCwds = [...new Set(hookTrustTargets.map(target => target.cwd))];
+  const inventory = hookTrustTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } }) : null;
   const effectiveFailures = hookTrustTargets.map(target => ({
     dir: target.dir,
-    effective: effectiveHookTrust(inventory, cwd, target.configPath, target.results)
+    effective: effectiveHookTrust(inventory, target.cwd, target.configPath, target.results)
   })).filter(item => !item.effective.ok);
   const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length + item.stale.length, 0)
     + effectiveFailures.reduce((total, item) => total + Math.max(1, item.effective.results.filter(result => result.status !== "active").length), 0);

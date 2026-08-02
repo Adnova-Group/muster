@@ -133,6 +133,15 @@ test("musterHookTrustGaps matches Codex 0.145 matcher omission and rejects malfo
     assert.equal(result.results[0].status, "invalid");
     assert.deepEqual(result.untrusted, ["pre_tool_use:0:0"]);
   }
+  for (const enabledKey of [`"enabled"`, `'enabled'`, `"en\\u0061bled"`]) {
+    const quotedDisabled = musterHookTrustGaps({
+      configTomlText: `[hooks.state."${HOOKS_JSON}:pre_tool_use:0:0"]\ntrusted_hash = "${exactHash}"\n${enabledKey} = false\n`,
+      hooksJsonPath: HOOKS_JSON,
+      config: { hooks: { PreToolUse: [trustedGroup] } },
+      hookGroups: { PreToolUse: [trustedGroup] }
+    });
+    assert.equal(quotedDisabled.results[0].status, "disabled", enabledKey);
+  }
 });
 
 const inventoryFor = (cwd, hooksJsonPath, results) => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: results.map(result => ({

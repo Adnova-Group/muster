@@ -59,10 +59,16 @@ test("Codex doctor: a canonical-scope-skipped project scope is coherent and excl
   const exactTrust = userInstall.hookTrust.results.map(hook =>
     `[hooks.state."${userHooksPath}:${hook.key}"]\ntrusted_hash = "${hook.currentHash}"\n`).join("\n");
   await writeFile(userConfigPath, `${await readFile(userConfigPath, "utf8")}\n${exactTrust}`);
-  const projectInstall = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent });
+  const hookInventory = async () => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: userInstall.hookTrust.results.map(hook => ({
+    key: `${userHooksPath}:${hook.key}`,
+    enabled: true,
+    trustStatus: "trusted",
+    currentHash: hook.currentHash
+  })) }] });
+  const projectInstall = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent, hookInventory });
   assert.equal(projectInstall.hooksSkipped, "user-scope-canonical");
 
-  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, hookInventory });
   const hooks = report.checks.find(check => check.name === "codex-hooks");
   const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
   assert.equal(hooks?.ok, true, hooks?.detail);
@@ -218,6 +224,33 @@ test("Codex doctor inspects stale registered project scopes outside the current 
   assert.match(generation?.detail || "", new RegExp(profilesScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.equal(hooks?.ok, false);
   assert.match(hooks?.detail || "", new RegExp(hooksScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("Codex doctor verifies a healthy registered hook scope against its own project inventory", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-remote-hook-trust-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current-project"), remote = join(tmp, "remote-project"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  const installed = await runCodexInstall({ cwd: remote, home, repoRoot, execFile: absent });
+  const hooksJsonPath = join(remote, ".codex", "hooks.json");
+  const trustText = installed.hookTrust.results.map(result =>
+    `[hooks.state."${hooksJsonPath}:${result.key}"]\ntrusted_hash = "${result.currentHash}"\n`).join("\n");
+  const configPath = join(codexHome, "config.toml");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${trustText}`);
+  let requestedCwds = [];
+  const hookInventory = async ({ cwds }) => {
+    requestedCwds = cwds;
+    return { ok: true, data: [{ cwd: remote, warnings: [], errors: [], hooks: installed.hookTrust.results.map(result => ({
+      key: `${hooksJsonPath}:${result.key}`,
+      enabled: true,
+      trustStatus: "trusted",
+      currentHash: result.currentHash
+    })) }] };
+  };
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, hookInventory });
+  const trust = report.checks.find(check => check.name === "codex-hook-trust");
+  assert.deepEqual(requestedCwds, [remote]);
+  assert.equal(trust?.ok, true, trust?.detail);
 });
 
 test("Codex doctor gives an actionable legacy pre-0.5.x diagnostic instead of an opaque generation/hooks mismatch", async () => {

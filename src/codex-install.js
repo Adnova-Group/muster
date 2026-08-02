@@ -431,21 +431,28 @@ function hookTrustSectionState(state, section) {
   for (let index = section.headerLine + 1; index < section.end; index++) {
     const line = state.lines[index];
     if (!line.trim() || /^\s*#/.test(line)) continue;
-    const enabledMatch = line.match(/^\s*enabled\s*=\s*(true|false)\s*(?:#.*)?$/);
-    if (enabledMatch) {
+    const assignment = line.match(/^\s*((?:"(?:[^"\\]|\\.)*")|(?:'[^']*')|[A-Za-z0-9_-]+)\s*=\s*(.*?)\s*$/);
+    const key = assignment ? (assignment[1][0] === "\"" || assignment[1][0] === "'"
+      ? decodeTomlQuotedKey(assignment[1])
+      : assignment[1]) : null;
+    const enabledMatch = key === "enabled" ? assignment[2].match(/^(true|false)\s*(?:#.*)?$/) : null;
+    if (key === "enabled" && enabledMatch) {
       if (sawEnabled) malformed = true;
       sawEnabled = true;
       enabled = enabledMatch[1] === "true";
       continue;
     }
-    const hashMatch = line.match(/^\s*trusted_hash\s*=\s*(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/);
-    if (hashMatch) {
+    const hashMatch = key === "trusted_hash" ? assignment[2].match(/^(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/) : null;
+    if (key === "trusted_hash" && hashMatch) {
       if (sawTrustedHash) malformed = true;
       sawTrustedHash = true;
       trustedHash = hashMatch[1] ?? hashMatch[2];
       continue;
     }
-    if (/^\s*(?:enabled|trusted_hash)\s*=/.test(line)) malformed = true;
+    // A partial TOML interpretation must never certify this section. Unknown,
+    // malformed, or future assignments fail closed until this reader can
+    // model their effect on Codex hook activation.
+    malformed = true;
   }
   return { enabled, trustedHash, malformed };
 }
@@ -1293,12 +1300,19 @@ async function inspectUserScopeHooks({ home, packageVersion }) {
   return { dir, configPath, config, hookGroups: manifest.hookGroups, gaps };
 }
 
-async function userScopeHooksHealthy({ home, packageVersion }) {
+async function userScopeHooksHealthy({ home, packageVersion, cwd, runtimeIdentity, hookInventory }) {
   const inspected = await inspectUserScopeHooks({ home, packageVersion });
-  return Boolean(inspected && inspected.gaps.untrusted.length === 0 && inspected.gaps.stale.length === 0);
+  if (!inspected || inspected.gaps.untrusted.length || inspected.gaps.stale.length) return false;
+  const inventoryReader = hookInventory || readCodexHookInventory;
+  const inventory = await inventoryReader({
+    runtimeIdentity,
+    cwds: [cwd],
+    env: { ...process.env, CODEX_HOME: codexHome(home) }
+  });
+  return effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results).ok;
 }
 
-async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath }) {
+async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive }) {
   const dir = configDir(scope, cwd, home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
   await ordinaryDirectoryPath(dir);
@@ -1333,7 +1347,7 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   const previousOwnedHookStateKeys = previous ? ownedHookStateKeys(config, previous.hookGroups) : [];
   if (previous) config = removeOwnedHookGroups(config, previous.hookGroups, configPath);
 
-  const skipped = scope === "project" && await userScopeHooksHealthy({ home, packageVersion });
+  const skipped = scope === "project" && canonicalUserHooksActive === true;
 
   const templatePath = join(hookSourceRoot, "hooks.json");
   const template = await readJson(templatePath);
@@ -1469,7 +1483,7 @@ async function profileSource(root, isPluginRoot) {
 // conflict probe precedes the marketplace + build pre-flight, which precede the
 // transaction. The only side effects are the pre-existing esbuild staging build
 // and ordinaryDirectoryPath probes (create:false) -- neither is rollback-owned.
-async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, runtimeIdentity, allowInjected, nodeExecPath }) {
+async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, runtimeIdentity, hookInventory, allowInjected, nodeExecPath }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
@@ -1518,7 +1532,14 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
     }
   );
   const hookSourceRoot = pluginRoot ? join(root, "runtime", "install-hooks") : join(root, "codex", "hooks");
-  const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath });
+  // Canonical collapse removes the project fallback, so it is authorized only
+  // by a pre-mutation persisted AND effective user-hook verdict. A later
+  // hooks/list failure may block install success, but can never retroactively
+  // justify deleting the fallback that was active when the command began.
+  const canonicalUserHooksActive = scope === "project" && await userScopeHooksHealthy({
+    home, packageVersion, cwd, runtimeIdentity, hookInventory
+  });
+  const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
   const staleFiles = managedFiles.filter(file => !files.includes(file));
   for (const file of files) {
@@ -1559,7 +1580,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   let identity = runtimeIdentity;
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
   const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
-    await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile), nodeExecPath });
+    await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
   let originals, changed;
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];

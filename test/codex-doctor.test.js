@@ -75,6 +75,25 @@ test("Codex doctor: a canonical-scope-skipped project scope is coherent and excl
   assert.equal(hooks?.ok, true, hooks?.detail);
   assert.equal(overlap?.ok, true, overlap?.detail);
   assert.doesNotMatch(overlap?.detail || "", /fire from \d+ scopes/);
+
+  const projectManifestPath = join(cwd, ".codex", "muster", ".muster-managed.json");
+  const pristineManifest = JSON.parse(await readFile(projectManifestPath, "utf8"));
+  for (const [name, mutate] of [
+    ["stale package version", manifest => { manifest.packageVersion = "0.0.0-stale"; }],
+    ["missing hook hash", manifest => { delete manifest.hookHash; }],
+    ["malformed config-created receipt", manifest => { manifest.hookConfigCreated = "false"; }]
+  ]) {
+    const corrupted = structuredClone(pristineManifest);
+    mutate(corrupted);
+    await writeFile(projectManifestPath, `${JSON.stringify(corrupted, null, 2)}\n`);
+    const corruptedReport = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, hookInventory });
+    assert.equal(
+      corruptedReport.checks.find(check => check.name === "codex-hooks")?.ok,
+      false,
+      `canonical-scope-skipped manifest must reject ${name}`
+    );
+  }
+  await writeFile(projectManifestPath, `${JSON.stringify(pristineManifest, null, 2)}\n`);
 });
 
 test("Codex doctor: a canonical-scope-skipped manifest whose hooks.json still carries a stray Muster group is reported stale, not silently coherent", async () => {

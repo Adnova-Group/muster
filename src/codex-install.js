@@ -1513,6 +1513,8 @@ function shellPathCandidates(command) {
     candidates.add(value);
     const assignment = value.match(/^[A-Za-z_][A-Za-z0-9_]*=(.+)$/s);
     if (assignment?.[1]) candidates.add(assignment[1].replace(/^["']+|["']+$/g, ""));
+    const option = value.match(/^(?:--?|\/)[^:=\s]+[:=](.+)$/s);
+    if (option?.[1]) candidates.add(option[1].replace(/^["']+|["']+$/g, ""));
   };
   for (const tokens of [parsePosixShellTokens(command), parseWindowsShellTokens(command)]) {
     if (tokens) for (const token of tokens) addCandidate(token);
@@ -1527,7 +1529,8 @@ function shellPathCandidates(command) {
 
 const hasUnresolvedShellExpansion = command => typeof command === "string"
   && (/(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command)
-    || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command));
+    || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command)
+    || /(^|[\s=])~(?:[\\/]|$)|[*?]|\[[^\]\r\n]*\]/.test(command));
 
 async function physicalHookIdentity(path) {
   const canonical = await realpath(path);

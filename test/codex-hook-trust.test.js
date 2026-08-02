@@ -228,6 +228,18 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
     }
   });
   assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, delayedExpansionDuplicate] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  for (const command of ["node ~/runtime-alias.mjs", "node ./runtime-*.mjs", "node ./runtime-?.mjs", "node ./runtime-[a-z].mjs"]) {
+    const expandedPathDuplicate = currentCodexInventoryHook({
+      key: "/repo/.codex/config.toml:stop:0:0",
+      currentHash,
+      overrides: { sourcePath: "/repo/.codex/config.toml", command, source: "project" }
+    });
+    assert.equal(
+      effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, expandedPathDuplicate] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok,
+      false,
+      `unresolved shell path expansion must fail closed: ${command}`
+    );
+  }
 
   for (const malformed of [
     { ...hook, sourcePath: "/foreign/hooks.json" },
@@ -321,6 +333,15 @@ test("install and doctor reject another inventory source physically aliasing the
   assert.equal(await hasManagedRuntimeInventoryAlias(directInventory, {
     cwd, hooksJsonPath, activationSnapshot: await hookActivationSnapshot({ home, cwd })
   }), true);
+
+  const optionInventory = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
+  optionInventory.data[0].hooks.push(currentCodexInventoryHook({
+    key: `${configPath}:stop:0:0`, currentHash: `sha256:${"c".repeat(64)}`,
+    overrides: { sourcePath: configPath, command: `node --import=${aliasPath} -e ''`, source: "project" }
+  }));
+  assert.equal(await hasManagedRuntimeInventoryAlias(optionInventory, {
+    cwd, hooksJsonPath, activationSnapshot: await hookActivationSnapshot({ home, cwd })
+  }), true, "option-attached paths must participate in physical alias detection");
 
   const installed = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, hookInventory: inventory });
   assert.equal(installed.ok, false);

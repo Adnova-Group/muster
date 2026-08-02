@@ -699,8 +699,15 @@ function canonicalHookGroupShape(hookGroups) {
 // ownsExactHookGroups above always returns false for it (expected.length
 // === 0 is an explicit false there), which would otherwise make the
 // coherence loop below misreport a deliberately hooks-free scope as stale.
-function isHooksSkippedManifest(owner) {
-  return owner?.owner === "muster" && owner.format === 1 && Array.isArray(owner.files) && owner.files.length === 0
+function isHooksSkippedManifest(owner, packageVersion) {
+  const canonicalKeys = ["files", "format", "hookConfigCreated", "hookGroups", "hookHash", "owner", "packageVersion"];
+  return owner?.owner === "muster" && owner.format === 1
+    && Object.keys(owner).sort().every((key, index) => key === canonicalKeys[index])
+    && Object.keys(owner).length === canonicalKeys.length
+    && Array.isArray(owner.files) && owner.files.length === 0
+    && owner.packageVersion === packageVersion
+    && owner.hookHash === createHash("sha256").digest("hex")
+    && typeof owner.hookConfigCreated === "boolean"
     && owner.hookGroups && typeof owner.hookGroups === "object" && !Array.isArray(owner.hookGroups)
     && Object.keys(owner.hookGroups).length === 0;
 }
@@ -1075,7 +1082,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       if (!config) throw missingScopeFile("managed hook configuration", configPath);
       const aliasCwds = dir === userCodexHome ? [...new Set([cwd, ...managedProjectCwds])] : [dirname(dir)];
       const aliasedMusterCommand = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: aliasCwds });
-      if (dir !== userCodexHome && isHooksSkippedManifest(owner)) {
+      if (dir !== userCodexHome && isHooksSkippedManifest(owner, selected?.packageVersion)) {
         // Coherent-and-non-firing: no runtime dir is expected, so it is
         // never pushed to hookStatuses (would count toward the overlap
         // dedupe check) OR staleHookScopes (would fail codex-hooks) --

@@ -55,7 +55,9 @@ export const INIT_PATHS = Object.freeze({
 });
 
 export const INIT_LIMITS = Object.freeze({
+  fingerprintPathBytes: 262_144,
   learnDepth: 4,
+  learnEvidenceBytes: 350_000,
   learnFileBytes: 1_048_576,
   learnProfileBytes: 524_288,
   symlinkBytes: 4_096,
@@ -323,19 +325,34 @@ async function* gitRelevantPaths(root) {
     child.once("close", (code, signal) => resolveClosed({ code, signal }));
   });
   try {
-    let carry = Buffer.alloc(0);
+    let fragments = [];
+    let pendingBytes = 0;
     for await (const chunk of child.stdout) {
-      const bytes = carry.length ? Buffer.concat([carry, chunk]) : chunk;
       let start = 0;
-      for (let end = bytes.indexOf(0, start); end >= 0; end = bytes.indexOf(0, start)) {
-        const rel = bytes.subarray(start, end).toString("utf8");
+      for (let end = chunk.indexOf(0, start); end >= 0; end = chunk.indexOf(0, start)) {
+        const fragment = chunk.subarray(start, end);
+        pendingBytes += fragment.length;
+        if (pendingBytes > INIT_LIMITS.fingerprintPathBytes) {
+          throw new Error("repository fingerprint path limit exceeded");
+        }
+        const bytes = fragments.length ? Buffer.concat([...fragments, fragment], pendingBytes) : fragment;
+        const rel = bytes.toString("utf8");
+        fragments = [];
+        pendingBytes = 0;
         start = end + 1;
         if (rel && rel !== ".muster" && !rel.startsWith(".muster/") &&
             !rel.startsWith(".muster-init-tmp-")) yield rel;
       }
-      carry = bytes.subarray(start);
+      const fragment = chunk.subarray(start);
+      if (fragment.length) {
+        pendingBytes += fragment.length;
+        if (pendingBytes > INIT_LIMITS.fingerprintPathBytes) {
+          throw new Error("repository fingerprint path limit exceeded");
+        }
+        fragments.push(fragment);
+      }
     }
-    if (carry.length) throw new Error("git returned an unterminated repository path");
+    if (pendingBytes) throw new Error("git returned an unterminated repository path");
     const { code, signal } = await closed;
     if (code !== 0) throw new Error(`git ls-files failed${signal ? ` (${signal})` : ""}: ${stderr.trim()}`);
   } finally {
@@ -617,7 +634,7 @@ async function learnFacts(root) {
   };
   const reserveEvidence = (bytes, path) => {
     if (profileLimited) return false;
-    if (evidenceBytes + bytes > INIT_LIMITS.learnProfileBytes) {
+    if (evidenceBytes + bytes > INIT_LIMITS.learnEvidenceBytes) {
       markProfileLimited(path);
       return false;
     }
@@ -722,7 +739,7 @@ export async function learnProjectProfile(dir) {
     .map(({ bytes, path, sha256: digest }) => ({ bytes, path, sha256: digest })).sort((a, b) => utf8Sort(a.path, b.path));
   const shape = classification === "greenfield" ? "empty" : monorepo ? "monorepo" :
     sourceRoots.size || frameworks.size ? "application" : library ? "library" : "unknown";
-  return {
+  const profile = {
     format: PROFILE_FORMAT,
     schemaVersion: 1,
     classification,
@@ -740,6 +757,10 @@ export async function learnProjectProfile(dir) {
     },
     repositoryFingerprint: await repositoryFingerprint(root, digests),
   };
+  if (Buffer.byteLength(prettyInitJson(profile)) > INIT_LIMITS.learnProfileBytes) {
+    throw new Error("generated project profile exceeds its serialization limit");
+  }
+  return profile;
 }
 
 function exactKeys(value, keys) {

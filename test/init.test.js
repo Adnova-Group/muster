@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { link, mkdir, open, readFile, rm, stat, symlink, truncate, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import {
   acknowledgeNativeInitHandoff,
   canonicalInitJson,
   finalizeInitialization,
+  INIT_LIMITS,
   initializeProject,
   learnProjectProfile,
   observeNativeInit,
@@ -24,6 +25,21 @@ const tmp = () => mkdtemp(join(tmpdir(), "muster-init-"));
 const pexecFile = promisify(execFile);
 const CLAUDE_POINTER = "# Claude Code\n\n@AGENTS.md\n";
 const readProfile = async (dir) => JSON.parse(await readFile(join(dir, ".muster/project-profile.json"), "utf8"));
+
+async function gitWithInput(cwd, args, input) {
+  const child = spawn("git", args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const stdout = [];
+  const stderr = [];
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
+  child.stdin.end(input);
+  const code = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  if (code !== 0) throw new Error(Buffer.concat(stderr).toString("utf8"));
+  return Buffer.concat(stdout).toString("utf8").trim();
+}
 
 test("canonicalInitJson recursively sorts keys and rejects non-JSON values", () => {
   assert.equal(canonicalInitJson({ z: 1, a: { d: true, c: null } }), '{"a":{"c":null,"d":true},"z":1}');
@@ -475,6 +491,19 @@ test("repository fingerprint recursion does not retain parent directory descript
   assert.equal(JSON.parse(stdout).receipt.phase, "prepared");
 });
 
+test("repository fingerprint bounds one forged Git index path while streaming", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, "blob"), "");
+  const blob = (await pexecFile("git", ["hash-object", "-w", "blob"], { cwd: dir })).stdout.trim();
+  const path = "a".repeat(262_145);
+  await gitWithInput(dir, ["update-index", "-z", "--index-info"], Buffer.from(`100644 ${blob}\t${path}\0`));
+  await assert.rejects(
+    () => learnProjectProfile(dir),
+    /repository fingerprint path limit exceeded/,
+  );
+});
+
 test("repository fingerprints reject same-size in-place writes during a streamed read", async () => {
   const dir = await tmp();
   const target = join(dir, "changing.bin");
@@ -591,7 +620,7 @@ test("project learning bounds generated evidence so high-cardinality profiles re
   const profile = await readProfile(dir);
   assert.equal(profile.facts.learning.status, "incomplete");
   assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
-  assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= 1_048_576);
+  assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= INIT_LIMITS.learnProfileBytes);
   assert.deepEqual(await initializeProject(dir), initialized);
 });
 

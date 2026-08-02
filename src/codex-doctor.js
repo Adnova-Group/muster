@@ -808,6 +808,11 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       const mcp = await readRegularJson(join(plugin, ".mcp.json"));
       if (mcp === null) problems.push(".mcp.json (missing)");
       else {
+        const exactDocument = mcp && typeof mcp === "object" && !Array.isArray(mcp)
+          && JSON.stringify(Object.keys(mcp).sort()) === JSON.stringify(["mcpServers"])
+          && mcp.mcpServers && typeof mcp.mcpServers === "object" && !Array.isArray(mcp.mcpServers)
+          && JSON.stringify(Object.keys(mcp.mcpServers).sort()) === JSON.stringify(["muster"]);
+        if (!exactDocument) problems.push(".mcp.json (document must contain only mcpServers.muster)");
         const server = mcp?.mcpServers?.muster;
         const command = server?.command;
         const exactKeys = server && typeof server === "object" && !Array.isArray(server)
@@ -1049,12 +1054,13 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         // NOT caught by the coherence loop (the command still matches its
         // manifest; only the file it points at is gone), so it needs its own
         // check.
-        const musterHook = Object.values(config.hooks).flat().filter(isMusterHookGroup)
-          .flatMap(group => Array.isArray(group?.hooks) ? group.hooks : [])
-          .find(hook => typeof (platform === "win32" ? hook?.commandWindows : hook?.command) === "string");
-        const rawCommand = musterHook && (platform === "win32" ? musterHook.commandWindows : musterHook.command);
-        const parsed = rawCommand ? parseHookCommand(rawCommand, { windows: platform === "win32" }) : null;
-        if (parsed?.interpreter) hookInterpreters.push({ dir, interpreter: parsed.interpreter });
+        const managedHooks = Object.values(config.hooks).flat().filter(isMusterHookGroup)
+          .flatMap(group => Array.isArray(group?.hooks) ? group.hooks : []);
+        for (const hook of managedHooks) {
+          const rawCommand = platform === "win32" ? hook?.commandWindows : hook?.command;
+          const parsed = typeof rawCommand === "string" ? parseHookCommand(rawCommand, { windows: platform === "win32" }) : null;
+          hookInterpreters.push({ dir, interpreter: parsed?.interpreter || null, script: parsed?.script || null });
+        }
         // Codex TRUSTS hooks per content hash and SKIPS new-or-changed ones
         // until a human trusts them, so a coherent, correctly-installed hook can
         // still be silently not firing. Coherence proves the bytes are right;
@@ -1120,13 +1126,17 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const badInterpreters = [];
   let expectedInterpreter = null;
   try { expectedInterpreter = await realpath(identity?.node || nodeExecPath); } catch { /* current Node failure is reported as a mismatch below */ }
-  for (const { dir, interpreter } of hookInterpreters) {
-    let actual = null, regular = false;
-    try { actual = await realpath(interpreter); regular = (await stat(actual)).isFile(); } catch { /* missing */ }
-    if (!regular || !expectedInterpreter || actual !== expectedInterpreter) badInterpreters.push({ dir, interpreter, actual, regular });
+  for (const { dir, interpreter, script } of hookInterpreters) {
+    let actual = null, actualScript = null, regular = false, scriptRegular = false, expectedScript = null;
+    try { actual = await realpath(interpreter); regular = (await stat(actual)).isFile(); } catch { /* missing/malformed */ }
+    try { actualScript = await realpath(script); scriptRegular = (await stat(actualScript)).isFile(); } catch { /* missing/malformed */ }
+    try { expectedScript = await realpath(join(dir, "muster", "hooks", "muster-hook.mjs")); } catch { /* missing runtime is reported by codex-hooks too */ }
+    if (!regular || !expectedInterpreter || actual !== expectedInterpreter || !scriptRegular || !expectedScript || actualScript !== expectedScript) {
+      badInterpreters.push({ dir, interpreter, actual, script, actualScript, regular, scriptRegular });
+    }
   }
   checks.push({ name: "codex-hook-interpreter", ok: badInterpreters.length === 0, detail: badInterpreters.length
-    ? `the pinned Node interpreter baked into managed Codex hooks is missing, not a regular file, or does not match current Node ${expectedInterpreter || nodeExecPath}: ${badInterpreters.map(item => `${item.actual || item.interpreter} (${item.dir})`).join(", ")}; rerun muster install codex to re-pin the current Node`
+    ? `a managed Codex hook interpreter or script is missing, malformed, outside the installed runtime, or does not match current Node ${expectedInterpreter || nodeExecPath}: ${badInterpreters.map(item => `${item.actual || item.interpreter || "<malformed>"} -> ${item.actualScript || item.script || "<malformed>"} (${item.dir})`).join(", ")}; rerun muster install codex to re-pin the current Node`
     : hookInterpreters.length
     ? `pinned Node interpreter present and a regular file for ${hookInterpreters.length} managed hook scope(s)`
     : "no managed Codex hook interpreter to verify" });

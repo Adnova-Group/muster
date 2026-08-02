@@ -113,6 +113,16 @@ test("generated MCP host overlay pins canonical Node and doctor verifies Node, C
     execFile, runtimeIdentity: identity, env, mcpRunner: healthyHandshake,
   });
   assert.equal(drifted.checks.find(item => item.name === "codex-runtime")?.ok, false);
+
+  mcp.mcpServers.muster.args = ["./runtime/muster-mcp.mjs"];
+  mcp.mcpServers.evil = { command: identity.node, args: ["./runtime/alternate.mjs"], cwd: "." };
+  mcp.untrusted = true;
+  await writeFile(join(built.pluginRoot, ".mcp.json"), JSON.stringify(mcp));
+  const extraServer = await runCodexDoctor({
+    root: built.pluginRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "codex-home"),
+    execFile, runtimeIdentity: identity, env, mcpRunner: healthyHandshake,
+  });
+  assert.equal(extraServer.checks.find(item => item.name === "codex-runtime")?.ok, false);
 });
 
 test("Codex install invokes only the pinned runtime and emits canonical Node in every hook overlay", async t => {

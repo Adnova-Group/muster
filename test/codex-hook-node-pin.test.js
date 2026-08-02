@@ -168,6 +168,29 @@ test("Codex doctor rejects a coherent hook pinned to a different existing Node",
   assert.match(check?.detail || "", /does not match current Node/i);
 });
 
+test("Codex doctor validates every managed hook instead of trusting the first canonical command", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-mixednode-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const otherNode = join(tmp, "other-node");
+  await cp(process.execPath, otherNode);
+  const scriptPath = join(codexHome, "muster", "hooks", "muster-hook.mjs");
+  const hooksPath = join(codexHome, "hooks.json"), manifestPath = join(codexHome, "muster", ".muster-managed.json");
+  const config = JSON.parse(await readFile(hooksPath, "utf8"));
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const event = Object.keys(config.hooks).find(name => name !== "SessionStart");
+  assert.ok(event, "fixture needs a later managed hook event");
+  repinInterpreter({ [event]: config.hooks[event] }, otherNode, scriptPath);
+  repinInterpreter({ [event]: manifest.hookGroups[event] }, otherNode, scriptPath);
+  await writeFile(hooksPath, JSON.stringify(config));
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  assert.equal(report.checks.find(item => item.name === "codex-hooks")?.ok, true);
+  const check = report.checks.find(item => item.name === "codex-hook-interpreter");
+  assert.equal(check?.ok, false, check?.detail);
+  assert.match(check?.detail || "", /does not match current Node/i);
+});
+
 test("Codex install refuses to pin an interpreter that is not a regular file", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-badnode-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home");

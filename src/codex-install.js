@@ -127,6 +127,12 @@ async function readScopeRegistry(home) {
   return { path, present: true, entries };
 }
 
+async function liveManagedHookScripts(home, extraConfigDirs = []) {
+  const registry = await readScopeRegistry(home);
+  const dirs = new Set([codexHome(home), ...extraConfigDirs, ...registry.entries.map(entry => entry.configDir)]);
+  return [...dirs].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
+}
+
 async function scopeEntry(scope, cwd, home) {
   const dir = configDir(scope, cwd, home);
   try { return { scope, configDir: await realpath(dir) }; }
@@ -1341,6 +1347,8 @@ const groupCommands = group => (group?.hooks || []).flatMap(hook => [hook?.comma
 const MUSTER_HOOK_POSIX_SUFFIX = "/muster/hooks/muster-hook.mjs";
 const MUSTER_HOOK_WINDOWS_SUFFIX = "\\muster\\hooks\\muster-hook.mjs";
 export function isMusterHookCommand(command) {
+  if (typeof command !== "string") return false;
+  if (command.replaceAll("\\", "/").toLowerCase().includes("muster-hook.mjs")) return true;
   for (const windows of [false, true]) {
     const parsed = parseHookCommand(command, { windows });
     if (!parsed) continue;
@@ -1351,17 +1359,29 @@ export function isMusterHookCommand(command) {
   return false;
 }
 
-export async function hasMusterHookCommandAlias(config, expectedScript) {
-  let expectedIdentity;
-  try { expectedIdentity = await realpath(expectedScript); } catch { return false; }
+function shellPathCandidates(command) {
+  if (typeof command !== "string") return [];
+  const candidates = new Set();
+  for (const match of command.matchAll(/'([^']+)'|"([^"]+)"/g)) candidates.add(match[1] ?? match[2]);
+  for (const token of command.split(/[\s;&|<>()]+/)) {
+    const value = token.replace(/^["']+|["']+$/g, "");
+    if (value) candidates.add(value);
+  }
+  return [...candidates].filter(value => posix.isAbsolute(value) || win32.isAbsolute(value));
+}
+
+export async function hasMusterHookCommandAlias(config, expectedScripts) {
+  const expectedIdentities = new Set();
+  for (const expectedScript of Array.isArray(expectedScripts) ? expectedScripts : [expectedScripts]) {
+    try { expectedIdentities.add(await realpath(expectedScript)); } catch { /* absent managed runtimes cannot be alias targets */ }
+  }
+  if (!expectedIdentities.size) return false;
   for (const groups of Object.values(config?.hooks || {})) {
     if (!Array.isArray(groups)) continue;
     for (const group of groups) for (const command of groupCommands(group)) {
       if (isMusterHookCommand(command)) continue;
-      for (const windows of [false, true]) {
-        const parsed = parseHookCommand(command, { windows });
-        if (!parsed || (!posix.isAbsolute(parsed.script) && !win32.isAbsolute(parsed.script))) continue;
-        try { if (await realpath(parsed.script) === expectedIdentity) return true; } catch { /* missing and foreign scripts are not managed aliases */ }
+      for (const candidate of shellPathCandidates(command)) {
+        try { if (expectedIdentities.has(await realpath(candidate))) return true; } catch { /* missing and foreign scripts are not managed aliases */ }
       }
     }
   }
@@ -1485,11 +1505,12 @@ function parsePosixShellTokens(command) {
   const tokens = [];
   let index = 0;
   while (index < command.length) {
-    while (index < command.length && command[index] === " ") index++;
+    while (index < command.length && /\s/.test(command[index])) index++;
     if (index >= command.length) break;
     let token = "";
-    while (index < command.length && command[index] !== " ") {
+    while (index < command.length && !/\s/.test(command[index])) {
       const char = command[index];
+      if (";&|<>()`".includes(char) || char === "$") return null;
       if (char === "'") {
         index++;
         while (index < command.length && command[index] !== "'") token += command[index++];
@@ -1498,6 +1519,7 @@ function parsePosixShellTokens(command) {
       } else if (char === '"') {
         index++;
         while (index < command.length && command[index] !== '"') {
+          if ("$`".includes(command[index])) return null;
           if (command[index] === "\\" && index + 1 < command.length) { token += command[index + 1]; index += 2; }
           else token += command[index++];
         }
@@ -1521,7 +1543,7 @@ function parseWindowsShellTokens(command) {
   const tokens = [];
   let index = 0;
   while (index < command.length) {
-    while (index < command.length && command[index] === " ") index++;
+    while (index < command.length && /\s/.test(command[index])) index++;
     if (index >= command.length) break;
     if (command[index] !== '"') return null;
     index++;
@@ -1533,6 +1555,7 @@ function parseWindowsShellTokens(command) {
     if (index >= command.length) return null;
     index++;
     tokens.push(token);
+    if (index < command.length && !/\s/.test(command[index])) return null;
   }
   return tokens;
 }
@@ -1678,7 +1701,7 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   if (!previous && Object.values(config.hooks).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
     throw new Error(`Codex hook conflict: ${configPath} contains an unmanaged Muster hook. Remove it or restore its Muster manifest, then rerun the command.`);
   }
-  if (await hasMusterHookCommandAlias(config, runtimeScript)) {
+  if (await hasMusterHookCommandAlias(config, await liveManagedHookScripts(home, [dir]))) {
     throw new Error(`Codex hook conflict: ${configPath} contains an aliased Muster hook command. Remove the alias or restore the exact Muster hook manifest, then rerun the command.`);
   }
   // Captured BEFORE removeOwnedHookGroups mutates `config` below, at exactly
@@ -1947,6 +1970,11 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       const manifestExists = checkedOwnership.manifest.exists;
       const declarationConfigExists = checkedOwnership.config.exists;
       const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
+      const transactionHookScripts = [...new Set([codexHome(home), dir, ...registry.entries.map(entry => entry.configDir)])]
+        .map(configDir => join(configDir, "muster", "hooks", "muster-hook.mjs"));
+      if (await hasMusterHookCommandAlias(hooks.config, transactionHookScripts)) {
+        throw new Error(`Codex hook conflict: ${hooks.configPath} contains a command aliased to a live managed Muster runtime; no installation state was modified.`);
+      }
       await ordinaryDirectoryPath(dir, { create: true });
       try {
         const currentScope = await scopeEntry(scope, cwd, home);

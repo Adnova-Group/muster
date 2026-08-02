@@ -1029,6 +1029,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // drives aggregate health exactly as before, so no verdict/count changes.
   const mismatchHookScopes = [];
   const hookCauseFailures = [];
+  const managedHookScripts = [...hookHomes].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
@@ -1049,6 +1050,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       readingPath = configPath;
       const config = await readRegularJson(configPath);
       if (!config) throw missingScopeFile("managed hook configuration", configPath);
+      const aliasedMusterCommand = await hasMusterHookCommandAlias(config, managedHookScripts);
       if (dir !== userCodexHome && isHooksSkippedManifest(owner)) {
         // Coherent-and-non-firing: no runtime dir is expected, so it is
         // never pushed to hookStatuses (would count toward the overlap
@@ -1056,7 +1058,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         // unless its hooks.json still somehow carries a live Muster group
         // its own manifest no longer declares, which is genuine drift.
         const carriesMusterGroups = Object.values(config?.hooks || {}).some(groups => Array.isArray(groups) && groups.some(isMusterHookGroup));
-        if (carriesMusterGroups) throw new Error(`canonical-scope-skipped hook manifest still carries a Muster hook group: ${configPath}`);
+        if (carriesMusterGroups || aliasedMusterCommand) throw new Error(`canonical-scope-skipped hook manifest still carries a Muster hook group: ${configPath}`);
         if (dir !== userCodexHome) skippedProjectHookCwds.push(dirname(dir));
         continue;
       }
@@ -1073,7 +1075,6 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       const hash = createHash("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
       const digest = hash.digest("hex");
-      const aliasedMusterCommand = await hasMusterHookCommandAlias(config, join(runtimeDir, "muster-hook.mjs"));
       const coherent = owner.owner === "muster" && expected
         && !aliasedMusterCommand
         && same(owner.files, expected.files)

@@ -86,15 +86,20 @@ test("parseHookCommand round-trips the pinned two-token shape for both POSIX and
   assert.equal(parseHookCommand("'/a' '/b' '/c'"), null);
 });
 
-test("Muster hook command identity recognizes only canonicalized two-token runtime scripts", () => {
+test("Muster hook ownership recognizes normalized runtimes and fails closed on ambiguous references", () => {
   for (const script of [
     "/scope/muster/./hooks/muster-hook.mjs",
     "/scope/muster/sub/../hooks/muster-hook.mjs",
     "/scope//muster///hooks/muster-hook.mjs"
   ]) assert.equal(isMusterHookCommand(`'/usr/bin/node' '${script}'`), true);
   assert.equal(isMusterHookCommand('"C:\\Node.exe" "C:\\Scope\\MUSTER\\hooks\\..\\hooks\\MUSTER-HOOK.MJS"'), true);
-  assert.equal(isMusterHookCommand("node relative/muster/hooks/muster-hook.mjs"), false);
-  assert.equal(isMusterHookCommand("node /scope/other.mjs /scope/muster/hooks/muster-hook.mjs"), false);
+  assert.equal(isMusterHookCommand("true; node /scope/muster/hooks/muster-hook.mjs --duplicate"), true);
+  assert.equal(isMusterHookCommand('C:\\Node.exe C:\\Scope\\muster\\hooks\\muster-hook.mjs --duplicate'), true);
+  assert.equal(isMusterHookCommand("node relative/muster/hooks/muster-hook.mjs"), true);
+  assert.equal(isMusterHookCommand("node /scope/other.mjs /scope/muster/hooks/muster-hook.mjs"), true);
+  assert.equal(parseHookCommand("true; node '/scope/muster/hooks/muster-hook.mjs'"), null);
+  assert.equal(parseHookCommand("node; '/scope/muster/hooks/muster-hook.mjs'"), null);
+  assert.equal(parseHookCommand('"C:\\Node.exe""C:\\Scope\\muster\\hooks\\muster-hook.mjs"', { windows: true }), null);
 });
 
 test("Codex doctor flags a managed hook whose pinned Node interpreter no longer exists (POSIX)", async () => {

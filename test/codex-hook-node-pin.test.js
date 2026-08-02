@@ -9,7 +9,7 @@
 // pinned interpreter no longer exists as a regular file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { cp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatCodexWindowsPath, parseHookCommand, runCodexInstall } from "../src/codex-install.js";
@@ -146,6 +146,26 @@ test("Codex doctor reports codex-hook-interpreter ok for a real managed install"
   const interp = report.checks.find(c => c.name === "codex-hook-interpreter");
   assert.equal(interp?.ok, true, interp?.detail);
   assert.match(interp?.detail || "", /pinned Node interpreter present/i);
+});
+
+test("Codex doctor rejects a coherent hook pinned to a different existing Node", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-othernode-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const otherNode = join(tmp, "other-node");
+  await cp(process.execPath, otherNode);
+  const scriptPath = join(codexHome, "muster", "hooks", "muster-hook.mjs");
+  const hooksPath = join(codexHome, "hooks.json"), manifestPath = join(codexHome, "muster", ".muster-managed.json");
+  const config = JSON.parse(await readFile(hooksPath, "utf8"));
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  repinInterpreter(config.hooks, otherNode, scriptPath);
+  repinInterpreter(manifest.hookGroups, otherNode, scriptPath);
+  await writeFile(hooksPath, JSON.stringify(config));
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const check = report.checks.find(item => item.name === "codex-hook-interpreter");
+  assert.equal(check?.ok, false, check?.detail);
+  assert.match(check?.detail || "", /does not match current Node/i);
 });
 
 test("Codex install refuses to pin an interpreter that is not a regular file", async () => {

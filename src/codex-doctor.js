@@ -718,7 +718,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     try { identity = resolveCodexRuntimeIdentity({ env, nodeExecPath }); }
     catch (error) { identityError = error; }
   }
-  const available = identityError ? false : await codexAvailable({ execFile, runtimeIdentity: identity });
+  const allowInjected = Boolean(execFile) && !identity;
+  const available = identityError ? false : await codexAvailable({ execFile, runtimeIdentity: identity, env, allowInjected });
   checks.push({ name: "codex-cli", ok: available, detail: available
     ? identity ? `Codex detected through pinned executable ${identity.codex}` : "codex detected through injected test runner"
     : identityError ? identityError.message : "codex not found — profiles can be installed, plugin registration is skipped" });
@@ -807,7 +808,13 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       const mcp = await readRegularJson(join(plugin, ".mcp.json"));
       if (mcp === null) problems.push(".mcp.json (missing)");
       else {
-        const command = mcp?.mcpServers?.muster?.command;
+        const server = mcp?.mcpServers?.muster;
+        const command = server?.command;
+        const exactKeys = server && typeof server === "object" && !Array.isArray(server)
+          && JSON.stringify(Object.keys(server).sort()) === JSON.stringify(["args", "command", "cwd"]);
+        if (!exactKeys || JSON.stringify(server?.args) !== JSON.stringify(["./runtime/muster-mcp.mjs"]) || server?.cwd !== ".") {
+          problems.push(".mcp.json (MCP entry must contain exactly canonical command, args [\"./runtime/muster-mcp.mjs\"], and cwd \".\")");
+        }
         if (typeof command !== "string" || !isAbsolute(command)) problems.push(".mcp.json (MCP Node executable is not absolute)");
         else {
           const [actual, expected] = await Promise.all([realpath(command), realpath(identity?.node || nodeExecPath)]);
@@ -1110,14 +1117,16 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // version pruned), Codex would fail every hook fire; reinstalling re-pins the
   // current node. Only coherent scopes are inspected -- a stale scope is already
   // reported by codex-hooks, and its command may not even carry a pinned node.
-  const missingInterpreters = [];
+  const badInterpreters = [];
+  let expectedInterpreter = null;
+  try { expectedInterpreter = await realpath(identity?.node || nodeExecPath); } catch { /* current Node failure is reported as a mismatch below */ }
   for (const { dir, interpreter } of hookInterpreters) {
-    let ok = false;
-    try { ok = (await stat(interpreter)).isFile(); } catch { ok = false; }
-    if (!ok) missingInterpreters.push({ dir, interpreter });
+    let actual = null, regular = false;
+    try { actual = await realpath(interpreter); regular = (await stat(actual)).isFile(); } catch { /* missing */ }
+    if (!regular || !expectedInterpreter || actual !== expectedInterpreter) badInterpreters.push({ dir, interpreter, actual, regular });
   }
-  checks.push({ name: "codex-hook-interpreter", ok: missingInterpreters.length === 0, detail: missingInterpreters.length
-    ? `the pinned Node interpreter baked into managed Codex hooks is missing or not a regular file: ${missingInterpreters.map(item => `${item.interpreter} (${item.dir})`).join(", ")}; rerun muster install codex to re-pin the current Node`
+  checks.push({ name: "codex-hook-interpreter", ok: badInterpreters.length === 0, detail: badInterpreters.length
+    ? `the pinned Node interpreter baked into managed Codex hooks is missing, not a regular file, or does not match current Node ${expectedInterpreter || nodeExecPath}: ${badInterpreters.map(item => `${item.actual || item.interpreter} (${item.dir})`).join(", ")}; rerun muster install codex to re-pin the current Node`
     : hookInterpreters.length
     ? `pinned Node interpreter present and a regular file for ${hookInterpreters.length} managed hook scope(s)`
     : "no managed Codex hook interpreter to verify" });
@@ -1169,7 +1178,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   }
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
-    const inventory = await readCodexInventory({ cwd, codexHome, execFile, runtimeIdentity: identity });
+    const inventory = await readCodexInventory({ cwd, codexHome, execFile, runtimeIdentity: identity, env, allowInjected });
     const installed = inventory.plugins.includes("muster");
     checks.push({ name: "codex-plugin-installed", ok: installed, detail: installed ? "muster plugin is enabled in live Codex state" : "muster plugin is not installed; run muster install codex" });
     checks.push({ name: "codex-inventory", ok: true, detail: `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state` });

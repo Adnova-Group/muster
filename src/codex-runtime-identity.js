@@ -52,6 +52,6 @@ export function runCodexCommand(execFile = execFileDefault, identity, args, opti
 }
 
 export function codexVersionMatches(stdout, expected) {
-  const found = String(stdout || "").match(/(?:codex-cli|codex)\s+v?([^\s]+)/i)?.[1] || null;
+  const found = String(stdout || "").match(/^(?:codex-cli|codex) v?([^\s\r\n]+)\r?\n?$/)?.[1] || null;
   return { found, ok: found === expected };
 }

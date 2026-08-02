@@ -1,15 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { execFile as execFileCb } from "node:child_process";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { buildCodexPlugin } from "../scripts/build-codex.mjs";
 import { runCodexDoctor } from "../src/codex-doctor.js";
-import { resolveCodexRuntimeIdentity, runCodexCommand } from "../src/codex-runtime-identity.js";
+import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "../src/codex-runtime-identity.js";
 import { parseHookCommand, runCodexInstall } from "../src/codex-install.js";
 import { CODEX_COUNTS } from "../src/codex.js";
+import { codexAvailable, readCodexInventory } from "../src/codex-inventory.js";
 
-const repoRoot = new URL("../", import.meta.url).pathname;
+const execFile = promisify(execFileCb);
+const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 const healthyHandshake = async () => ({ initialized: true, tools: Array.from({ length: CODEX_COUNTS.mcpTools }, () => ({})), toolCallOk: true });
 
 async function fixture(t, platform) {
@@ -30,7 +35,9 @@ async function fixture(t, platform) {
 }
 
 for (const platform of ["linux", "win32"]) {
-  test(`${platform}: fake PATH-precedence Codex is never executed and the trusted package entrypoint runs under canonical Node`, async t => {
+  test(`${platform}: fake PATH-precedence Codex is never executed and the trusted package entrypoint runs under canonical Node`, {
+    skip: process.platform === platform ? false : `native ${platform} fixture runs in its matching CI job`,
+  }, async t => {
     const { marker, env, identity } = await fixture(t, platform);
     const calls = [];
     const execFile = async (file, args) => {
@@ -45,6 +52,33 @@ for (const platform of ["linux", "win32"]) {
     assert.equal(env.PATH.startsWith(marker), false);
   });
 }
+
+test("Codex version attestation rejects warnings, suffixes, extra lines, and control text", () => {
+  assert.equal(codexVersionMatches("codex-cli 9.8.7\n", "9.8.7").ok, true);
+  for (const output of [
+    "warning: codex 9.8.7", "codex-cli 9.8.7 extra", "codex-cli 9.8.7\nattacker", "\u001b[31mcodex-cli 9.8.7\u001b[0m",
+  ]) assert.equal(codexVersionMatches(output, "9.8.7").ok, false, output);
+});
+
+test("missing trusted identity performs no Codex PATH execution", async () => {
+  const calls = [];
+  const runner = async (...args) => { calls.push(args); throw new Error("must not execute"); };
+  assert.equal(await codexAvailable({ execFile: runner, env: {} }), false);
+  const inventory = await readCodexInventory({ cwd: "/nonexistent", codexHome: "/nonexistent", execFile: runner, env: {} });
+  assert.deepEqual(inventory, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  assert.deepEqual(calls, []);
+});
+
+test("Codex-absent install and uninstall dry-runs preserve local workflow without PATH probing", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-absent-local-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const env = { ...process.env, HOME: join(tmp, "home"), CODEX_HOME: join(tmp, "home", ".codex"), PATH: "" };
+  delete env.CODEX_MANAGED_PACKAGE_ROOT;
+  for (const verb of ["install", "uninstall"]) {
+    const { stdout } = await execFile(process.execPath, [join(repoRoot, "src", "cli.js"), verb, "codex", "--dry-run"], { cwd: join(tmp), env });
+    assert.equal(JSON.parse(stdout).ok, true, verb);
+  }
+});
 
 test("generated MCP host overlay pins canonical Node and doctor verifies Node, Codex entrypoint, and Codex version", async t => {
   const { tmp, marker, env, identity } = await fixture(t, "linux");
@@ -71,6 +105,14 @@ test("generated MCP host overlay pins canonical Node and doctor verifies Node, C
   assert.ok(calls.length > 0 && calls.every(call => call.file === identity.node));
   assert.ok(calls.every(call => call.args[0] === identity.codex));
   await assert.rejects(readFile(marker), /ENOENT/);
+
+  mcp.mcpServers.muster.args = ["./runtime/alternate.mjs"];
+  await writeFile(join(built.pluginRoot, ".mcp.json"), JSON.stringify(mcp));
+  const drifted = await runCodexDoctor({
+    root: built.pluginRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "codex-home"),
+    execFile, runtimeIdentity: identity, env, mcpRunner: healthyHandshake,
+  });
+  assert.equal(drifted.checks.find(item => item.name === "codex-runtime")?.ok, false);
 });
 
 test("Codex install invokes only the pinned runtime and emits canonical Node in every hook overlay", async t => {

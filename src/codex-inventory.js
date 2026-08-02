@@ -5,15 +5,17 @@ import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { readdirSafe, readJson } from "./fs-util.js";
 import { runCodexCommand } from "./codex-runtime-identity.js";
+import { resolveCodexRuntimeIdentity } from "./codex-runtime-identity.js";
 
 const execFileDefault = promisify(execFileCb);
+const INJECTED_CODEX_RUNNER = "muster:injected-codex-runner";
 
-async function jsonCommand(execFile, args, runtimeIdentity) {
+async function jsonCommand(execFile, args, runtimeIdentity, allowInjected) {
   try {
-    const { stdout } = runtimeIdentity
+    const result = runtimeIdentity
       ? await runCodexCommand(execFile, runtimeIdentity, args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 })
-      : await execFile("codex", args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
-    return JSON.parse(stdout);
+      : allowInjected ? await execFile(INJECTED_CODEX_RUNNER, args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }) : null;
+    return result ? JSON.parse(result.stdout) : null;
   } catch { return null; }
 }
 
@@ -60,10 +62,12 @@ function mcpNames(result) {
 
 // Codex's live CLI output is authoritative. Never walk its plugin cache: it
 // can contain stale or disabled copies that Codex is not currently using.
-export async function readCodexInventory({ cwd = process.cwd(), codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"), execFile = execFileDefault, runtimeIdentity } = {}) {
+export async function readCodexInventory({ cwd = process.cwd(), codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"), execFile = execFileDefault, runtimeIdentity, env = process.env, allowInjected = false } = {}) {
+  let identity = runtimeIdentity;
+  if (!identity && !allowInjected) try { identity = resolveCodexRuntimeIdentity({ env }); } catch { /* unavailable is an empty live inventory, never a PATH probe */ }
   const [pluginsJson, mcpJson] = await Promise.all([
-    jsonCommand(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity),
-    jsonCommand(execFile, ["mcp", "list", "--json"], runtimeIdentity)
+    jsonCommand(execFile, ["plugin", "list", "--available", "--json"], identity, allowInjected),
+    jsonCommand(execFile, ["mcp", "list", "--json"], identity, allowInjected)
   ]);
   const active = installedPlugins(pluginsJson);
   const pluginSkills = [], pluginAgents = [];
@@ -84,10 +88,13 @@ export async function readCodexInventory({ cwd = process.cwd(), codexHome = proc
   };
 }
 
-export async function codexAvailable({ execFile = execFileDefault, runtimeIdentity } = {}) {
+export async function codexAvailable({ execFile = execFileDefault, runtimeIdentity, env = process.env, allowInjected = false } = {}) {
   try {
-    if (runtimeIdentity) await runCodexCommand(execFile, runtimeIdentity, ["--version"], { timeout: 5_000 });
-    else await execFile("codex", ["--version"], { timeout: 5_000 });
+    let identity = runtimeIdentity;
+    if (!identity && !allowInjected) identity = resolveCodexRuntimeIdentity({ env });
+    if (identity) await runCodexCommand(execFile, identity, ["--version"], { timeout: 5_000 });
+    else if (allowInjected) await execFile(INJECTED_CODEX_RUNNER, ["--version"], { timeout: 5_000 });
+    else return false;
     return true;
   }
   catch { return false; }

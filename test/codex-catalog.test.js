@@ -90,7 +90,7 @@ test("Codex inventory is driven by live JSON and project/user directories", asyn
     ], available: [{ name: "stale", installed: false, enabled: true, source: { path: "/never-read" } }] }) };
     return { stdout: JSON.stringify([{ name: "muster", enabled: true }, { name: "disabled-mcp", enabled: false }]) };
   };
-  const inventory = await readCodexInventory({ cwd: join(tmp, "project"), codexHome: join(tmp, "home"), execFile });
+  const inventory = await readCodexInventory({ cwd: join(tmp, "project"), codexHome: join(tmp, "home"), execFile, allowInjected: true });
   assert.deepEqual(inventory.plugins, ["muster"]);
   assert.deepEqual(new Set(inventory.skills), new Set(["plugin-skill", "project-skill", "user-skill"]));
   assert.deepEqual(inventory.mcpServers, ["muster"]);
@@ -101,7 +101,7 @@ test("Codex inventory excludes disabled plugins and MCP servers", async () => {
   const execFile = async (_bin, args) => args[0] === "plugin"
     ? { stdout: JSON.stringify({ installed: [{ name: "disabled", installed: true, enabled: false, source: { path: "/never-read" } }] }) }
     : { stdout: JSON.stringify([{ name: "disabled", enabled: false }, { name: "active", enabled: true }]) };
-  const inventory = await readCodexInventory({ cwd: "/nonexistent", codexHome: "/nonexistent", execFile });
+  const inventory = await readCodexInventory({ cwd: "/nonexistent", codexHome: "/nonexistent", execFile, allowInjected: true });
   assert.deepEqual(inventory.plugins, []);
   assert.deepEqual(inventory.skills, []);
   assert.deepEqual(inventory.agents, []);

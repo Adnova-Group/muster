@@ -689,7 +689,7 @@ async function removeSafe(path) {
 const profileFiles = async root => (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort();
 const run = (execFile, args, runtimeIdentity) => runtimeIdentity
   ? runCodexCommand(execFile, runtimeIdentity, args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 })
-  : execFile("codex", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+  : execFile("muster:injected-codex-runner", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
 async function runJson(execFile, args, runtimeIdentity) { return JSON.parse((await run(execFile, args, runtimeIdentity)).stdout); }
 
 // Defense in depth (arbitrary-write containment) behind generateCodexProfiles'
@@ -1298,7 +1298,7 @@ async function profileSource(root, isPluginRoot) {
 // conflict probe precedes the marketplace + build pre-flight, which precede the
 // transaction. The only side effects are the pre-existing esbuild staging build
 // and ordinaryDirectoryPath probes (create:false) -- neither is rollback-owned.
-async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, runtimeIdentity, nodeExecPath }) {
+async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, runtimeIdentity, allowInjected, nodeExecPath }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
@@ -1354,7 +1354,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
     const destination = join(dir, file);
     if (await safeExists(destination) && !managed.has(resolve(destination))) throw new Error(`Codex profile conflict: ${destination}. Move it or remove it, then rerun muster install codex.`);
   }
-  const present = await codexAvailable({ execFile, runtimeIdentity });
+  const present = await codexAvailable({ execFile, runtimeIdentity, allowInjected });
   if (present && !dryRun) {
     await existingMusterMarketplace(execFile, distributionRoot, runtimeIdentity);
     if (!pluginRoot) {
@@ -1383,9 +1383,10 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
 
 export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, runtimeIdentity, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
   const executor = execFile || execFileDefault;
-  const identity = runtimeIdentity || (!execFile ? resolveCodexRuntimeIdentity({ nodeExecPath }) : undefined);
+  let identity = runtimeIdentity;
+  if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
   const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
-    await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, nodeExecPath });
+    await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile), nodeExecPath });
   let originals, changed;
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
@@ -1590,7 +1591,7 @@ async function remainingManagedScopes(registry, currentScope) {
 // mutation stays inside uninstallScope's try/restore boundary. Order-sensitive
 // steps are preserved exactly: departingScopeOwnedHookStateKeys is captured from
 // the raw hooks.json BEFORE removeOwnedHookGroups strips muster's own groups.
-async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdentity }) {
+async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdentity, allowInjected }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
   const declarationConfigPath = join(configDir(scope, cwd, home), "config.toml");
@@ -1633,7 +1634,7 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
     removeHookConfig = hookManifest.hookConfigCreated && otherKeys.length === 0 && Object.keys(hookConfig.hooks || {}).length === 0;
   }
   const hookFiles = hookManifest ? hookManifest.files.map(file => join(hookRuntimeDir, file)) : [];
-  const present = await codexAvailable({ execFile, runtimeIdentity });
+  const present = await codexAvailable({ execFile, runtimeIdentity, allowInjected });
   const ownsScope = manifestExists || hookManifestExists;
   const currentScope = await scopeEntry(scope, cwd, home);
   // Thread limits target the single shared CODEX_HOME config.toml (see
@@ -1657,9 +1658,10 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
 
 export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile, runtimeIdentity } = {}) {
   const executor = execFile || execFileDefault;
-  const identity = runtimeIdentity || (!execFile ? resolveCodexRuntimeIdentity() : undefined);
+  let identity = runtimeIdentity;
+  if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity(); } catch { /* Codex absent: local cleanup still proceeds without PATH probing */ }
   const { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig: preflightDeclarationConfig, declarationConfigCreated: preflightDeclarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope: preflightOwnsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest } =
-    await prepareCodexUninstall({ scope, cwd, home, execFile: executor, runtimeIdentity: identity });
+    await prepareCodexUninstall({ scope, cwd, home, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile) });
   let liveScopes = [], ownershipCertain = false, removePlugin = false, restoreThreadLimits = false, removeThreadLimitConfig = false;
   let manifestExists = declarationOwnership.manifest.exists;
   let ownsScope = preflightOwnsScope;

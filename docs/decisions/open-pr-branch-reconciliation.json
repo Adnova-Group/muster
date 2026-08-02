@@ -43,7 +43,7 @@
       "base": "main",
       "observedState": "OPEN",
       "backlogState": "awaiting-disposition",
-      "proposedDisposition": "supersede-with-reviewed-current-base-implementation",
+      "proposedDisposition": "active-backlog-owner",
       "backlogOwner": "@rnbennett",
       "nextAction": "Integrate the exact-SHA reviewed codex-strict-config-reconcile branch, then close PR 146 as superseded without merging its conflicting stale head.",
       "rationale": "Codex 0.146.0 now exposes --strict-config on the non-session app-server host. Preserve PR 146's promised strict validation and rollback outcome through a current-base implementation that proves zero thread/turn events, rather than merging the conflicting stale branch.",

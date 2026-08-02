@@ -1276,10 +1276,13 @@ async function publishConfigCandidate(path, expected, bytes) {
       throw error;
     }
     const published = await exactFileSnapshot(path);
+    if (!sameExactFileSnapshot(stagedSnapshot, published)) {
+      throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+    }
     if (retired && !sameExactFileSnapshot(expected, await exactFileSnapshot(retired))) {
       throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
     }
-    return { path, expected, retired, published };
+    return { path, expected, retired, published: stagedSnapshot };
   } catch (error) {
     // Recover from retained bytes, not from the retirement pathname. If a
     // concurrent writer owns the live name, preserve it. If our candidate is

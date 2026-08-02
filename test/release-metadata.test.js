@@ -25,9 +25,9 @@ test("0.6.0 release metadata is synchronized across published manifests", async 
   assert.equal(lock.packages[""].version, expectedVersion, "package-lock root package must carry the release version");
 });
 
-test("0.6.0 changelog metadata closes the release and opens a fresh Unreleased section", async () => {
+test("0.6.0 changelog metadata closes the release and keeps an Unreleased section", async () => {
   const changelog = await read("CHANGELOG.md");
-  assert.match(changelog, /^## \[Unreleased\]\n\n## \[0\.6\.0\] - 2026-07-31$/m);
+  assert.match(changelog, /^## \[Unreleased\]\n\n[\s\S]*?^## \[0\.6\.0\] - 2026-07-31$/m);
   assert.match(
     changelog,
     /^\[Unreleased\]: https:\/\/github\.com\/Adnova-Group\/muster\/compare\/v0\.6\.0\.\.\.HEAD$/m

@@ -25,6 +25,14 @@ async function configureCodex(project, plugins = []) {
   await chmod(executable, 0o755);
   await writeFile(join(packageRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: "0.0.0-test" }));
   await writeFile(join(packageRoot, "bin", "codex.js"), `const command = process.argv[2];\nconsole.log(command === "plugin" ? ${JSON.stringify(pluginJson)} : "[]");\n`);
+  const triple = process.platform === "win32"
+    ? (process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc")
+    : process.platform === "darwin"
+      ? (process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin")
+      : (process.arch === "arm64" ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl");
+  const native = join(packageRoot, "vendor", triple, "bin", process.platform === "win32" ? "codex.exe" : "codex");
+  await mkdir(join(packageRoot, "vendor", triple, "bin"), { recursive: true });
+  await writeFile(native, "native fixture\n");
   return { home, bin, packageRoot };
 }
 

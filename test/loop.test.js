@@ -158,6 +158,21 @@ test("spec completion requires explicit independent PASS evidence bound to the c
   }] }), { continue: false, reason: "done", noProgressCount: 0, findings: [] });
 });
 
+test("a rejected spec candidate cannot be resurrected by a later PASS or caller done flag", () => {
+  const fail = {
+    candidateFingerprint: SPEC_A,
+    findings: SAFETY_FINDINGS,
+    verdict: "FAIL",
+    reviewer: "independent-reviewer",
+    evidenceDigest: EVIDENCE_DIGEST,
+  };
+  const pass = { ...fail, findings: [], verdict: "PASS" };
+  assert.deepEqual(specGateRecoveryState({ rounds: [fail, pass] }), {
+    continue: false, reason: "no-progress", noProgressCount: 2, findings: [],
+  });
+  assert.throws(() => specGateRecoveryState({ rounds: [fail], done: true }), /explicit independent PASS/);
+});
+
 test("empty spec history produces a defined initial independent review action", () => {
   assert.deepEqual(specGateRecoveryState(), {
     continue: true,

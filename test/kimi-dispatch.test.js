@@ -11,9 +11,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, interpretKimiGoalExit, resolveKimiWaveDispatch,
+  kimiResumeState,
   interpretKimiBackgroundCompletion, detectKimiQuotaFault, quotaFaultLines,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_PROCESS_MAX_BRIEF, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
+
+test("Kimi resumes use parent evidence and cannot dispatch a 101st continuation", () => {
+  const attempts = Array.from({ length: 100 }, (_, index) => ({
+    candidateFingerprint: index.toString(16).padStart(64, "0"),
+    errorFingerprint: (index + 100).toString(16).padStart(64, "0"),
+  }));
+  assert.deepEqual(kimiResumeState({ attempts }), {
+    retry: false, reason: "max-continuations", noProgressCount: 1,
+  });
+  assert.throws(() => kimiResumeState({ attempts: [{
+    candidateFingerprint: "agent-selected", errorFingerprint: "also-untrusted",
+  }] }), /parent-computed/);
+});
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
 
 // --- AgentSwarm -------------------------------------------------------------

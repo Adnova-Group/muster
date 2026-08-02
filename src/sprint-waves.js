@@ -34,6 +34,7 @@
 // so this stays a pure function any caller (CLI or otherwise) can use without a
 // try/catch of its own.
 import { computeWaves } from "./wave.js";
+import { createHash } from "node:crypto";
 
 export const SPRINT_PARALLEL_DEFAULT = 5;
 export const SPRINT_PARALLEL_MAX = 10;
@@ -159,6 +160,37 @@ const SPRINT_RECONCILE_LIMITS = Object.freeze({
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function buildSprintReceipt({ id, itemId, phase, status = "completed", attempt = 1,
+  candidateSha, findings = [], terminalReason, verifyCandidate } = {}) {
+  if (!["implementation", "review", "integration"].includes(phase)) throw new TypeError("invalid sprint receipt phase");
+  if (!CANDIDATE_SHA_RE.test(candidateSha ?? "")) throw new TypeError("candidateSha must be a git object id");
+  if (typeof verifyCandidate !== "function" || verifyCandidate(candidateSha) !== true) {
+    throw new TypeError("candidateSha must be verified against the item worktree HEAD");
+  }
+  if (!Array.isArray(findings)) throw new TypeError("findings must be an array");
+  return {
+    id, itemId, phase, status, attempt, candidateSha,
+    progressFingerprint: sha256(JSON.stringify(findings)),
+    ...(terminalReason === undefined ? {} : { terminalReason }),
+  };
+}
+
+export function integrationApprovalDigest(authorization) {
+  const fields = ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation"];
+  if (!isRecord(authorization) || fields.some((field) => typeof authorization[field] !== "string" || !authorization[field])) {
+    throw new TypeError("authorization must carry the complete integration identity tuple");
+  }
+  if (!CANDIDATE_SHA_RE.test(authorization.workHeadSha) || !CANDIDATE_SHA_RE.test(authorization.baseHeadSha)) {
+    throw new TypeError("authorization heads must be git object ids");
+  }
+  if (!["merge-local", "merge-push"].includes(authorization.operation)) throw new TypeError("authorization operation is invalid");
+  return sha256(fields.map((field) => `${field}\0${authorization[field]}`).join("\0"));
 }
 
 function invalidReconciliation(errors) {
@@ -375,6 +407,7 @@ function canonicalReceipts(receipts, itemIds) {
       ...(raw.progressFingerprint === undefined ? {} : { progressFingerprint: raw.progressFingerprint }),
       ...(raw.candidateSha === undefined ? {} : { candidateSha: raw.candidateSha }),
       ...(raw.terminalReason === undefined ? {} : { terminalReason: raw.terminalReason }),
+      ...(raw.approvalDigest === undefined ? {} : { approvalDigest: raw.approvalDigest }),
     };
     let valid = true;
     if (typeof receipt.id !== "string" || !receipt.id.trim() || receipt.id.length > SPRINT_RECONCILE_LIMITS.idLength) {
@@ -405,9 +438,17 @@ function canonicalReceipts(receipts, itemIds) {
       errors.push(`receipt '${receipt.id}' candidateSha must be a lowercase git object id`);
       valid = false;
     }
-    if (receipt.attempt > 1 && ["implementation", "review"].includes(receipt.phase)
+    if (["implementation", "review", "integration"].includes(receipt.phase)
       && receipt.status === "completed" && receipt.candidateSha === undefined) {
-      errors.push(`receipt '${receipt.id}' must bind completed ${receipt.phase} attempt ${receipt.attempt} to candidateSha`);
+      errors.push(`receipt '${receipt.id}' must bind completed ${receipt.phase} to candidateSha`);
+      valid = false;
+    }
+    if (receipt.approvalDigest !== undefined && !DIGEST_RE.test(receipt.approvalDigest)) {
+      errors.push(`receipt '${receipt.id}' approvalDigest must be a lowercase sha256 digest`);
+      valid = false;
+    }
+    if (receipt.phase === "integration" && receipt.status === "completed" && receipt.approvalDigest === undefined) {
+      errors.push(`receipt '${receipt.id}' must bind completed integration to approvalDigest`);
       valid = false;
     }
     if (receipt.terminalReason !== undefined && !TERMINAL_RECOVERY_REASONS.includes(receipt.terminalReason)) {
@@ -474,6 +515,14 @@ function canonicalInFlight(inFlight, itemIds) {
       errors.push(`inFlight entry for '${entry.itemId}' attempt must be an integer from 1 to ${SPRINT_RECONCILE_LIMITS.attempt}`);
       continue;
     }
+    if (["review", "integration"].includes(entry.phase) && !CANDIDATE_SHA_RE.test(entry.candidateSha ?? "")) {
+      errors.push(`inFlight ${entry.phase} for '${entry.itemId}' must bind candidateSha`);
+      continue;
+    }
+    if (entry.phase === "integration" && !DIGEST_RE.test(entry.approvalDigest ?? "")) {
+      errors.push(`inFlight integration for '${entry.itemId}' must bind approvalDigest`);
+      continue;
+    }
     const key = phaseKey(entry.itemId, entry.phase);
     const prior = byPhase.get(key);
     if (prior && prior.attempt !== entry.attempt) {
@@ -481,7 +530,11 @@ function canonicalInFlight(inFlight, itemIds) {
       continue;
     }
     if (!prior) {
-      const value = { itemId: entry.itemId, phase: entry.phase, attempt: entry.attempt };
+      const value = {
+        itemId: entry.itemId, phase: entry.phase, attempt: entry.attempt,
+        ...(entry.candidateSha === undefined ? {} : { candidateSha: entry.candidateSha }),
+        ...(entry.approvalDigest === undefined ? {} : { approvalDigest: entry.approvalDigest }),
+      };
       normalized.push(value);
       byPhase.set(key, value);
     }
@@ -512,15 +565,58 @@ export function reconcileSprintProgress(plan, progress = {}) {
     || (maxContinuations !== undefined && (!Number.isInteger(maxContinuations) || maxContinuations < 1 || maxContinuations > 100)))) {
     return invalidReconciliation(["progress.recovery thresholds are invalid"]);
   }
+  const integrationTargets = progress.integrationTargets ?? {};
+  if (!isRecord(integrationTargets)) return invalidReconciliation(["progress.integrationTargets must be an object"]);
+  const approvals = progress.approvals ?? [];
+  if (!Array.isArray(approvals)) return invalidReconciliation(["progress.approvals must be an array"]);
+  const approvalByItem = new Map();
+  for (const [itemId, target] of Object.entries(integrationTargets)) {
+    if (!itemIds.has(itemId) || !isRecord(target)
+      || typeof target.workBranch !== "string" || !target.workBranch
+      || typeof target.baseBranch !== "string" || !target.baseBranch
+      || !CANDIDATE_SHA_RE.test(target.baseHeadSha ?? "")) {
+      return invalidReconciliation([`integration target for '${itemId}' must bind work branch and exact base branch/head`]);
+    }
+  }
+  for (const approval of approvals) {
+    try {
+      if (!itemIds.has(approval?.itemId) || typeof approval.approvedBy !== "string" || !approval.approvedBy
+        || approval.digest !== integrationApprovalDigest(approval)) {
+        return invalidReconciliation([`approval for '${approval?.itemId}' is not bound to its identity tuple`]);
+      }
+      approvalByItem.set(approval.itemId, approval);
+    } catch (error) {
+      return invalidReconciliation([error.message]);
+    }
+  }
+  for (const receipt of receipts.filter((candidate) => candidate.phase === "integration" && candidate.status === "completed")) {
+    const approval = approvalByItem.get(receipt.itemId);
+    if (!approval || approval.digest !== receipt.approvalDigest || approval.workHeadSha !== receipt.candidateSha) {
+      return invalidReconciliation([`completed integration receipt '${receipt.id}' lacks matching exact-head approval evidence`]);
+    }
+  }
   const phaseState = (itemId, phase, candidateSha = undefined) => {
     const phaseReceipts = (receiptResult.byPhase.get(phaseKey(itemId, phase)) ?? [])
       .filter((candidate) => phase === "implementation"
         || (candidateSha === undefined
           ? candidate.candidateSha === undefined
           : candidate.candidateSha === candidateSha));
-    const receipt = phaseReceipts.reduce(strongerReceipt, null);
+    let receipt = phaseReceipts.reduce(strongerReceipt, null);
+    if (phase === "review") {
+      // A candidate rejected once remains rejected. A later PASS receipt cannot
+      // resurrect it; only a materially different implementation SHA can.
+      const invalidatingFailure = phaseReceipts.filter((candidate) => candidate.status === "failed")
+        .reduce(strongerReceipt, null);
+      if (invalidatingFailure) receipt = invalidatingFailure;
+    }
     const flight = inFlightResult.byPhase.get(phaseKey(itemId, phase));
-    if (flight && (!receipt || flight.attempt > receipt.attempt)) return { status: "in_flight", attempt: flight.attempt };
+    if (flight && phase !== "implementation" && flight.candidateSha !== candidateSha) {
+      return { status: "stale_in_flight", attempt: flight.attempt, candidateSha: flight.candidateSha };
+    }
+    if (flight && (!receipt || flight.attempt > receipt.attempt)) return {
+      status: "in_flight", attempt: flight.attempt, candidateSha: flight.candidateSha,
+      approvalDigest: flight.approvalDigest,
+    };
     if (!receipt) return null;
     if (receipt.status !== "failed") return {
       status: receipt.status,
@@ -540,7 +636,12 @@ export function reconcileSprintProgress(plan, progress = {}) {
       ...(maxContinuations === undefined ? {} : { maxContinuations }),
     });
     return recovery.continue
-      ? { status: phase === "review" ? "repair_ready" : "ready", attempt: receipt.attempt + 1, candidateSha: receipt.candidateSha }
+      ? {
+        status: phase === "review" ? "repair_ready" : "ready",
+        attempt: receipt.attempt + 1,
+        failedAttempt: receipt.attempt,
+        candidateSha: receipt.candidateSha,
+      }
       : { status: "blocked", attempt: receipt.attempt, terminalReason: recovery.reason };
   };
   const items = {};
@@ -568,17 +669,23 @@ export function reconcileSprintProgress(plan, progress = {}) {
         state = "blocked";
       } else {
         const review = phaseState(itemId, "review", implementation.candidateSha);
-        if (review?.status === "blocked" || review?.status === "cancelled") {
+        if (review?.status === "stale_in_flight") {
+          state = "blocked";
+        } else if (review?.status === "blocked" || review?.status === "cancelled") {
           state = review.status === "cancelled" ? "cancelled" : "blocked";
         } else if (review?.status === "repair_ready") {
-          state = "implementation_repair_ready";
+          // A repair that leaves the rejected exact head unchanged is itself a
+          // second identical recovery outcome and stops deterministically.
+          state = implementation.attempt > review.failedAttempt ? "blocked" : "implementation_repair_ready";
         } else if (review?.status !== "completed") {
           state = review?.status === "in_flight" ? "review_in_flight" : "review_ready";
         } else if (!["merge-local", "merge-push"].includes(source.disposition)) {
           state = "completed";
         } else {
           const integration = phaseState(itemId, "integration", implementation.candidateSha);
-          if (integration?.status === "blocked" || integration?.status === "cancelled") {
+          if (integration?.status === "stale_in_flight") {
+            state = "blocked";
+          } else if (integration?.status === "blocked" || integration?.status === "cancelled") {
             state = integration.status === "cancelled" ? "cancelled" : "blocked";
           } else if (integration?.status === "completed") {
             state = "completed";
@@ -599,6 +706,12 @@ export function reconcileSprintProgress(plan, progress = {}) {
         ? phaseState(itemId, "integration", phaseState(itemId, "implementation")?.candidateSha)?.terminalReason
           ?? phaseState(itemId, "review", phaseState(itemId, "implementation")?.candidateSha)?.terminalReason
           ?? phaseState(itemId, "implementation")?.terminalReason
+          ?? (phaseState(itemId, "review", phaseState(itemId, "implementation")?.candidateSha)?.status === "repair_ready"
+            && phaseState(itemId, "implementation")?.attempt
+              > phaseState(itemId, "review", phaseState(itemId, "implementation")?.candidateSha)?.failedAttempt
+            ? "no-progress" : null)
+          ?? (["review", "integration"].some((phase) => phaseState(itemId, phase, phaseState(itemId, "implementation")?.candidateSha)?.status === "stale_in_flight")
+            ? "stale-candidate-binding" : null)
           ?? (["merge-local", "merge-push"].includes(source.disposition) ? "missing-candidate-binding" : "failed-dependency")
         : state === "cancelled" ? "cancelled" : null,
     };
@@ -614,6 +727,11 @@ export function reconcileSprintProgress(plan, progress = {}) {
   const causalErrors = [];
   for (const flight of inFlight) {
     const item = items[flight.itemId];
+    const implementationCandidate = phaseState(flight.itemId, "implementation")?.candidateSha;
+    if (flight.phase !== "implementation" && flight.candidateSha !== implementationCandidate) {
+      causalErrors.push(`inFlight ${flight.phase} for '${flight.itemId}' is bound to a stale candidate`);
+      continue;
+    }
     const latestReceipt = receiptResult.latestByPhase.get(phaseKey(flight.itemId, flight.phase));
     // A receipt for this attempt (or a newer one) settles the adapter's stale
     // in-flight marker; it is drained rather than treated as a causal violation.
@@ -687,10 +805,26 @@ export function reconcileSprintProgress(plan, progress = {}) {
     const nextIntegration = waveSchedule.integration.itemIds.find((itemId) => items[itemId].state !== "completed");
     if (nextIntegration && items[nextIntegration].state === "integration_ready") {
       const implementation = phaseState(nextIntegration, "implementation");
-      actions.push({
-        type: "dispatch", itemId: nextIntegration, phase: "integration", wave: waveSchedule.wave,
-        ...(implementation.candidateSha ? { candidateSha: implementation.candidateSha, requiresFreshApproval: true } : {}),
-      });
+      const target = integrationTargets[nextIntegration];
+      if (!target) return invalidReconciliation([`integration target for '${nextIntegration}' is required before approval`]);
+      const authorization = {
+        itemId: nextIntegration,
+        workBranch: target.workBranch,
+        workHeadSha: implementation.candidateSha,
+        baseBranch: target.baseBranch,
+        baseHeadSha: target.baseHeadSha,
+        operation: plan.items[nextIntegration].disposition,
+      };
+      const digest = integrationApprovalDigest(authorization);
+      const approval = approvalByItem.get(nextIntegration);
+      if (!approval || approval.digest !== digest) {
+        actions.push({ type: "approval", phase: "integration", wave: waveSchedule.wave, authorization, digest });
+      } else {
+        actions.push({
+          type: "dispatch", itemId: nextIntegration, phase: "integration", wave: waveSchedule.wave,
+          candidateSha: implementation.candidateSha, approvalDigest: digest,
+        });
+      }
     }
   }
 

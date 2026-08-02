@@ -55,7 +55,8 @@ export function reviewGateState(options = {}) {
   return progressAwareState(options);
 }
 
-export function specGateRecoveryState({ rounds = [], ...options } = {}) {
+export function specGateRecoveryState({ rounds = [], done: callerDone, ...options } = {}) {
+  if (callerDone !== undefined) throw new TypeError("spec gate completion is derived from an explicit independent PASS, not caller input");
   if (!Array.isArray(rounds) || rounds.some((round) => !round || typeof round !== "object"
     || !/^[0-9a-f]{64}$/.test(round.candidateFingerprint ?? "")
     || !["PASS", "FAIL"].includes(round.verdict)
@@ -70,10 +71,16 @@ export function specGateRecoveryState({ rounds = [], ...options } = {}) {
     return { continue: true, reason: "initial", noProgressCount: 0, action: { type: "independent-spec-review" } };
   }
   if (latest.verdict === "PASS") {
+    const invalidatedSameCandidate = rounds.slice(0, -1).some((round) =>
+      round.verdict === "FAIL" && round.candidateFingerprint === latest.candidateFingerprint);
+    if (invalidatedSameCandidate) {
+      return { continue: false, reason: "no-progress", noProgressCount: 2, findings: [] };
+    }
     return { continue: false, reason: "done", noProgressCount: 0, findings: [] };
   }
   const state = progressAwareState({
     ...options,
+    done: false,
     outcomes: rounds.map((round) => round.candidateFingerprint),
   });
   if (!state.continue) return { ...state, findings: latest?.findings ?? [] };

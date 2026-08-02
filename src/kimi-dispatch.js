@@ -2,6 +2,26 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
+import { dispatchRetryState } from "./loop.js";
+
+const SHA256_RE = /^[0-9a-f]{64}$/;
+
+// Parent-owned lifecycle evidence for Kimi resumes. Agent output cannot select
+// its own fingerprint: the parent supplies the candidate and normalized error
+// digests, and the shared non-waivable continuation backstop decides whether a
+// further native resume is legal.
+export function kimiResumeState({ attempts = [], succeeded = false, ...policy } = {}) {
+  if (!Array.isArray(attempts) || attempts.some((attempt) => !attempt
+    || !SHA256_RE.test(attempt.candidateFingerprint ?? "")
+    || !SHA256_RE.test(attempt.errorFingerprint ?? ""))) {
+    throw new TypeError("Kimi resume attempts must carry parent-computed candidate and error sha256 fingerprints");
+  }
+  return dispatchRetryState({
+    succeeded,
+    outcomes: attempts.map((attempt) => `${attempt.candidateFingerprint}\0${attempt.errorFingerprint}`),
+    ...policy,
+  });
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Kimi-native dispatch: AgentSwarm (waves) + /goal (the run loop)

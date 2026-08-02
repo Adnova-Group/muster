@@ -72,11 +72,11 @@ Missing backlog file, or a malformed annotation the tool reports as an error, st
 run, report it plainly.
 
 Persist that successful result as `plan`. During execution, call **`muster_sprint_reconcile`** with
-`plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`), and
-the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`). Drive a strict **reconcile → dispatch → wait** loop:
+`plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`, parent-verified `candidateSha` for completed implementation/review, and the exact-head `approvalDigest` for completed integration), and
+the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`; review/integration also carry `candidateSha`, and integration carries `approvalDigest`). Destructive dispositions also provide `integrationTargets` and record the emitted full-tuple approval in `approvals`. Drive a strict **reconcile → dispatch → wait** loop:
 drain all completions after every wake, reconcile once, execute every returned action, update
 `inFlight`, then reconcile again before waiting. `next:dispatch` forbids an idle wait;
-`next:terminal|escalated` ends the loop; only `wait.eligible:true` permits waiting. Duplicate or
+`next:terminal|blocked|invalid` ends the loop; only `wait.eligible:true` permits waiting. Duplicate or
 out-of-order receipts are retained idempotently, while failed/cancelled/missing receipts never unlock
 dependencies. This MCP result owns the state transition; Cowork still owns the actual subagent calls.
 

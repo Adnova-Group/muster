@@ -391,6 +391,7 @@ async function main() {
       const wave = JSON.parse(await readBoundedCliText(file, CODEX_WAVE_FILE_MAX_BYTES, "Codex wave manifest"));
       if (!wave || typeof wave !== "object" || Array.isArray(wave)) fail("codex-wave <wave.json>: expected an object");
       if (Object.hasOwn(wave, "codexHome")) fail("codex-wave <wave.json>: codexHome is trusted out-of-band configuration and cannot be set by the manifest");
+      if (Object.hasOwn(wave, "catalogVersions")) fail("codex-wave <wave.json>: catalogVersions is trusted out-of-band configuration and cannot be set by the manifest");
       const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
       let threadConfigText = "";
       try {
@@ -407,7 +408,6 @@ async function main() {
         forceProcess: wave.forceProcess === true,
         sandbox: wave.sandbox,
         approvalPolicy: wave.approvalPolicy,
-        catalogVersions: wave.catalogVersions,
         codexHome: waveCodexHome,
         maxConcurrentThreadsPerSession: wave.maxConcurrentThreadsPerSession,
         configuredThreadCeiling: resolveCodexThreadCeiling(threadConfigText),

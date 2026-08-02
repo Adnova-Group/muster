@@ -143,6 +143,29 @@ const watchInvariantSurfaces = new Map([
     .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
 ]);
 
+async function generatedSpawnSurfaces(root) {
+  const found = [];
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) found.push(...await generatedSpawnSurfaces(path));
+    else if (/\.(?:md|toml)$/.test(entry.name) && (await readFile(path, "utf8")).includes("spawn_agent")) found.push(path);
+  }
+  return found;
+}
+
+test("every generated spawn-bearing production surface mandates codex-wave admission", async () => {
+  const surfaces = await generatedSpawnSurfaces(selectedPluginRoot);
+  assert.ok(surfaces.length >= 18, "the global guard must cover every current spawn-bearing surface");
+  for (const path of surfaces) {
+    const text = await readFile(path, "utf8");
+    assert.match(
+      text,
+      /Every production wave MUST first run through[\s\S]{0,180}codex-wave|construct the complete wave and first run it through[\s\S]{0,180}codex-wave/,
+      `${path} must forbid direct manifest/backlog spawn and require the fail-closed selector`,
+    );
+  }
+});
+
 test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {
   const surfaces = watchInvariantSurfaces;
   assert.equal(surfaces.size, 16, "every generated Codex watch-invariant surface must be covered");

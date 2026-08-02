@@ -16,6 +16,8 @@ so this file is their single source. -->
 
 ### Codex-native dispatch: spawn_agent
 
+Every production wave MUST first run through `$MUSTER_CLI codex-wave <wave.json>` with trusted repository/base inputs supplied out of band. Never choose or invoke `spawn_agent` directly from a manifest; dispatch only the non-process packets returned by `codex-wave`. Omitted, malformed, directory, missing, aliased, or otherwise unverifiable write fences select the hermetic process lane.
+
 Codex has no `Workflow`-tool counterpart, so wave dispatch rides Codex's OWN native primitive,
 subagent collaboration itself, never a prose-loop substitute for the Claude-only `Workflow` tool.
 **The dispatch and barrier shapes are VERSION-DEPENDENT** (corrected 2026-07-25 against Codex

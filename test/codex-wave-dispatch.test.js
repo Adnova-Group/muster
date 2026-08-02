@@ -2,16 +2,10 @@
 // codex-spawn-agent-dispatch item (orchestrator/SKILL.md's "Codex-native
 // dispatch: spawn_agent" subsection, src/wave-dispatch.js's Codex section).
 //
-// Codex has no `Workflow`-tool counterpart: its own native wave-dispatch
-// primitive is subagent collaboration itself -- `collaboration.spawn_agent`
-// (fork_turns: "none", agent_type: "<chosen.id>"), `collaboration.wait_agent`,
-// `collaboration.list_agents` -- gated by the session's own
-// `features.multi_agent` (default on). None of those tools are invocable
-// from a unit test; what's fixture-driven and testable here is the pure
-// decision/packet-building layer: which mode a wave rides (spawn_agent vs
-// the sequential-inline floor when multi_agent is off), that the built
-// dispatch packet honors each crew member's agent_type, and -- the whole
-// point of this item -- that a rejected/unregistered profile fails LOUD
+// Production waves have no shared-CWD selector: they use the authenticated
+// process lane. Explicit non-wave leaf delegation may use versioned spawn
+// packets. The fixture-driven layer verifies that those packets honor each
+// crew member's agent_type and that a rejected/unregistered profile fails LOUD
 // with a registration diagnostic rather than silently degrading to a
 // generic agent (docs/research/codex-cli.md sec 6).
 
@@ -19,64 +13,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
-  CODEX_MULTI_AGENT_ENV,
-  CODEX_DISPATCH_MODES,
-  declaredCodexMultiAgent,
-  resolveCodexWaveDispatch,
   codexSpawnAgentCall,
   assertCodexSpawnAgentAccepted,
 } from "../src/wave-dispatch.js";
 
-// ── criterion 3: sequential-inline fallback when multi_agent is off ───────
-
-test("resolveCodexWaveDispatch: no signal at all defaults to spawn_agent (Codex ships multi_agent default-on)", () => {
-  const r = resolveCodexWaveDispatch({ env: {} });
-  assert.equal(r.mode, CODEX_DISPATCH_MODES.SPAWN_AGENT);
-  assert.equal(r.multiAgent, true);
-  assert.match(r.reason, /collaboration\.spawn_agent/);
-});
-
-test("resolveCodexWaveDispatch: multiAgent:false selects the sequential-inline fallback", () => {
-  const r = resolveCodexWaveDispatch({ multiAgent: false, env: {} });
-  assert.equal(r.mode, CODEX_DISPATCH_MODES.SEQUENTIAL_INLINE);
-  assert.equal(r.multiAgent, false);
-  assert.match(r.reason, /sequentially inline/);
-});
-
-test("resolveCodexWaveDispatch: multiAgent:false explicitly overrides a truthy env declaration (self-observation wins)", () => {
-  const r = resolveCodexWaveDispatch({ multiAgent: false, env: { [CODEX_MULTI_AGENT_ENV]: "1" } });
-  assert.equal(r.mode, CODEX_DISPATCH_MODES.SEQUENTIAL_INLINE);
-});
-
-test("resolveCodexWaveDispatch: multiAgent omitted falls back to the declared env var", () => {
-  const off = resolveCodexWaveDispatch({ env: { [CODEX_MULTI_AGENT_ENV]: "0" } });
-  assert.equal(off.mode, CODEX_DISPATCH_MODES.SEQUENTIAL_INLINE);
-  const on = resolveCodexWaveDispatch({ env: { [CODEX_MULTI_AGENT_ENV]: "true" } });
-  assert.equal(on.mode, CODEX_DISPATCH_MODES.SPAWN_AGENT);
-});
-
-test("declaredCodexMultiAgent: absent env var means Codex's own shipped default (on) -- inverse of agent-teams' absent-means-off", () => {
-  assert.equal(declaredCodexMultiAgent({}), true);
-  assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: "0" }), false);
-  assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: "false" }), false);
-  assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: "1" }), true);
-});
-
-test("declaredCodexMultiAgent: canonical values are normalized and unknown values fail closed", () => {
-  assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: " TRUE " }), true);
-  assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: " FALSE " }), false);
-  for (const value of ["yes", "on", "01", "tru", "2"]) {
-    assert.equal(declaredCodexMultiAgent({ [CODEX_MULTI_AGENT_ENV]: value }), false, `${value} must fail closed`);
-  }
-});
-
-test("resolveCodexWaveDispatch: called with no args at all still resolves (real process.env), never throws", () => {
-  const r = resolveCodexWaveDispatch();
-  assert.ok(r.mode === CODEX_DISPATCH_MODES.SPAWN_AGENT || r.mode === CODEX_DISPATCH_MODES.SEQUENTIAL_INLINE);
-});
-
-// ── criterion 1: a routed multi-wave run dispatches each crew member via
-//    spawn_agent honoring its agent_type ─────────────────────────────────
+// Explicit non-wave leaf delegation may still use versioned spawn packets.
 
 // Codex 0.145.0 split the subagent API into v1/v2, resolved PER MODEL from the
 // catalog (docs/research/codex-cli.md sec 10.1), so the packet shape is now
@@ -192,6 +133,13 @@ test("references/codex-dispatch.md pins the fork_turns-is-a-string contract", as
   const section = await codexDispatchSection();
   assert.match(section, /`fork_turns`/, "the Codex subsection must name fork_turns");
   assert.match(section, /STRING/, "the Codex subsection must state fork_turns is a STRING, not an integer");
+});
+
+test("production Codex surfaces contain no legacy shared-cwd wave selector", async () => {
+  const source = await readFile(new URL("../src/wave-dispatch.js", import.meta.url), "utf8");
+  const section = await codexDispatchSection();
+  assert.doesNotMatch(source, /resolveCodexWaveDispatch|SEQUENTIAL_INLINE/);
+  assert.doesNotMatch(section, /resolveCodexWaveDispatch|sequential-inline/);
 });
 
 test("references/codex-dispatch.md pins the mailbox-not-list_agents receipts rule", async () => {

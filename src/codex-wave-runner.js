@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { execFile as execFileCb } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
@@ -19,6 +20,7 @@ export const CODEX_WAVE_LIMITS = Object.freeze({
   // Keep one prompt argv element below portable OS command-line ceilings.
   promptBytes: 16 * 1024,
   outputBytes: 4 * 1024 * 1024,
+  retainedOutputBytes: 64 * 1024,
   schemaBytes: 1024 * 1024,
   workerTimeoutMs: 10 * 60 * 1000,
   probeTimeoutMs: 30 * 1000,
@@ -60,10 +62,23 @@ export function parseCodexVersion(text) {
   return match.slice(1).map(Number);
 }
 
-function terminateProcess(child) {
+export function terminateProcess(child, { platform = process.platform, taskkill = execFileCb } = {}) {
   if (!child || child.killed) return;
+  if (platform === "win32" && Number.isInteger(child.pid)) {
+    try {
+      taskkill("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true }, error => {
+        if (error) {
+          try { child.kill("SIGKILL"); } catch { /* already gone */ }
+        }
+      });
+      return;
+    } catch {
+      try { child.kill("SIGKILL"); } catch { /* already gone */ }
+      return;
+    }
+  }
   try {
-    if (process.platform !== "win32" && Number.isInteger(child.pid)) process.kill(-child.pid, "SIGKILL");
+    if (Number.isInteger(child.pid)) process.kill(-child.pid, "SIGKILL");
     else child.kill("SIGKILL");
   } catch {
     try { child.kill("SIGKILL"); } catch { /* already gone */ }
@@ -98,6 +113,7 @@ function runProcess(command, argv, {
   spawnProcess = spawn,
   timeoutMs = CODEX_WAVE_LIMITS.probeTimeoutMs,
   maxOutputBytes = CODEX_WAVE_LIMITS.outputBytes,
+  consumeOutputBytes,
   signal,
 } = {}) {
   return new Promise((resolveProcess, reject) => {
@@ -115,6 +131,10 @@ function runProcess(command, argv, {
     activeCodexChildren.add(child);
     let stdout = "";
     let stderr = "";
+    const stdoutHash = createHash("sha256");
+    const stderrHash = createHash("sha256");
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     let outputBytes = 0;
     let forcedReason = null;
     let finished = false;
@@ -130,13 +150,32 @@ function runProcess(command, argv, {
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
     const capture = target => chunk => {
-      outputBytes += Buffer.byteLength(chunk, "utf8");
+      const chunkBytes = Buffer.byteLength(chunk, "utf8");
+      outputBytes += chunkBytes;
       if (outputBytes > maxOutputBytes) {
         forceStop(`process output exceeded ${maxOutputBytes} bytes`);
         return;
       }
-      if (target === "stdout") stdout += chunk;
-      else stderr += chunk;
+      if (consumeOutputBytes && !consumeOutputBytes(chunkBytes)) {
+        forceStop(`wave output exceeded ${CODEX_WAVE_LIMITS.outputBytes} bytes`);
+        return;
+      }
+      const appendTail = current => {
+        const combined = current + chunk;
+        if (Buffer.byteLength(combined, "utf8") <= CODEX_WAVE_LIMITS.retainedOutputBytes) return combined;
+        return Buffer.from(combined, "utf8").subarray(-CODEX_WAVE_LIMITS.retainedOutputBytes).toString("utf8");
+      };
+      if (target === "stdout") {
+        stdoutHash.update(chunk);
+        const next = appendTail(stdout);
+        stdoutTruncated ||= next.length < stdout.length + chunk.length;
+        stdout = next;
+      } else {
+        stderrHash.update(chunk);
+        const next = appendTail(stderr);
+        stderrTruncated ||= next.length < stderr.length + chunk.length;
+        stderr = next;
+      }
     };
     child.stdout?.on("data", capture("stdout"));
     child.stderr?.on("data", capture("stderr"));
@@ -161,6 +200,10 @@ function runProcess(command, argv, {
         forcedReason,
         stdout,
         stderr: forcedReason ? `${stderr}${stderr ? "\n" : ""}${forcedReason}` : stderr,
+        stdoutSha256: stdoutHash.digest("hex"),
+        stderrSha256: stderrHash.digest("hex"),
+        stdoutTruncated,
+        stderrTruncated,
       });
     });
   });
@@ -479,60 +522,90 @@ async function runProcessWave({
   const childEnv = hermeticCodexEnv(env);
   const support = await assertCodexProcessSupport({ command: codexCommand, env: childEnv, spawnProcess });
   const controller = new AbortController();
-  const settled = await mapBounded(canonicalMembers, effectiveCeiling, async member => {
-    try {
-      if (controller.signal.aborted) {
-        const error = new Error("Codex wave cancelled after another member failed");
-        error.cancelled = true;
-        return { error };
-      }
-      const refreshedAuthority = await prepareTrustedRepository(authority.repositoryRoot, authority.baseSha);
-      if (refreshedAuthority.commonDir !== authority.commonDir) {
-        throw new Error("runCodexWave: trusted repository common directory changed before spawn");
-      }
-      const revalidated = await validateRegisteredLinkedWorktree(member, refreshedAuthority, member);
-      if (revalidated.cwd !== member.cwd) {
-        throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} changed canonical cwd before spawn`);
-      }
-      const call = codexExecCall({
-        prompt: member.prompt,
-        cwd: member.cwd,
-        model: member.model,
-        schemaPath: member.schemaPath,
-        sandbox,
-        approvalPolicy,
-      });
-      const result = await runProcess(codexCommand, call.argv, {
-        cwd: member.cwd,
-        env: childEnv,
-        spawnProcess,
-        timeoutMs: workerTimeoutMs,
-        maxOutputBytes: CODEX_WAVE_LIMITS.outputBytes,
-        signal: controller.signal,
-      });
-      const verdict = interpretCodexExecExit(result.code);
-      if (!verdict.ok) {
-        const error = new Error(`Codex process for wave member ${JSON.stringify(member.id)} exited ${result.code}: ${result.stderr.trim() || verdict.reason}`);
-        error.code = result.code;
-        error.memberId = member.id;
-        error.cancelled = result.forcedReason?.startsWith("process cancelled") === true;
+  let waveFailure;
+  let waveOutputBytes = 0;
+  const waveTimer = setTimeout(() => {
+    waveFailure ||= new Error(`Codex wave exceeded ${workerTimeoutMs}ms aggregate timeout deadline`);
+    controller.abort();
+  }, workerTimeoutMs);
+  waveTimer.unref?.();
+  const consumeOutputBytes = bytes => {
+    waveOutputBytes += bytes;
+    if (waveOutputBytes <= CODEX_WAVE_LIMITS.outputBytes) return true;
+    waveFailure ||= new Error(`Codex wave output exceeded ${CODEX_WAVE_LIMITS.outputBytes} aggregate bytes`);
+    controller.abort();
+    return false;
+  };
+  let settled;
+  try {
+    settled = await mapBounded(canonicalMembers, effectiveCeiling, async member => {
+      try {
+        if (controller.signal.aborted) {
+          const error = new Error("Codex wave cancelled after another member failed");
+          error.cancelled = true;
+          return { error };
+        }
+        const refreshedAuthority = await prepareTrustedRepository(authority.repositoryRoot, authority.baseSha);
+        if (refreshedAuthority.commonDir !== authority.commonDir) {
+          throw new Error("runCodexWave: trusted repository common directory changed before spawn");
+        }
+        const revalidated = await validateRegisteredLinkedWorktree(member, refreshedAuthority, member);
+        if (revalidated.cwd !== member.cwd) {
+          throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} changed canonical cwd before spawn`);
+        }
+        const call = codexExecCall({
+          prompt: member.prompt,
+          cwd: member.cwd,
+          model: member.model,
+          schemaPath: member.schemaPath,
+          sandbox,
+          approvalPolicy,
+        });
+        const result = await runProcess(codexCommand, call.argv, {
+          cwd: member.cwd,
+          env: childEnv,
+          spawnProcess,
+          timeoutMs: workerTimeoutMs,
+          maxOutputBytes: CODEX_WAVE_LIMITS.outputBytes,
+          consumeOutputBytes,
+          signal: controller.signal,
+        });
+        const verdict = interpretCodexExecExit(result.code);
+        if (!verdict.ok) {
+          const error = new Error(`Codex process for wave member ${JSON.stringify(member.id)} exited ${result.code}: ${result.stderr.trim() || verdict.reason}`);
+          error.code = result.code;
+          error.memberId = member.id;
+          error.cancelled = result.forcedReason?.startsWith("process cancelled") === true;
+          controller.abort();
+          return { error };
+        }
+        const terminal = parseCodexTurnResult(result.stdout);
+        if (!terminal.completed) {
+          const error = new Error(`Codex process for wave member ${JSON.stringify(member.id)} exited 0 without a terminal turn.completed event`);
+          error.memberId = member.id;
+          controller.abort();
+          return { error };
+        }
+        return { value: {
+          id: member.id,
+          usage: terminal.usage,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          stdoutSha256: result.stdoutSha256,
+          stderrSha256: result.stderrSha256,
+          stdoutTruncated: result.stdoutTruncated,
+          stderrTruncated: result.stderrTruncated,
+        } };
+      } catch (error) {
+        if (controller.signal.aborted) error.cancelled = true;
         controller.abort();
         return { error };
       }
-      const terminal = parseCodexTurnResult(result.stdout);
-      if (!terminal.completed) {
-        const error = new Error(`Codex process for wave member ${JSON.stringify(member.id)} exited 0 without a terminal turn.completed event`);
-        error.memberId = member.id;
-        controller.abort();
-        return { error };
-      }
-      return { value: { id: member.id, usage: terminal.usage, stdout: result.stdout, stderr: result.stderr } };
-    } catch (error) {
-      if (controller.signal.aborted) error.cancelled = true;
-      controller.abort();
-      return { error };
-    }
-  });
+    });
+  } finally {
+    clearTimeout(waveTimer);
+  }
+  if (waveFailure) throw waveFailure;
   const failure = settled.find(row => row.error && !row.error.cancelled) || settled.find(row => row.error);
   if (failure) throw failure.error;
   return {

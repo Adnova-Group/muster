@@ -55,12 +55,10 @@ integer string is the useful middle -- it keeps that many turns of context AND s
 a context fork and never use `"all"`: a forked history is copied into every spawned agent, so the
 standing quota policy (the 2026-07-15 quota-amplification fix) keeps `"none"` the spawn default.
 
-`resolveCodexWaveDispatch({ multiAgent, env })` (`src/wave-dispatch.js`) selects between this and a
-sequential-inline floor purely on the session's own `features.multi_agent` signal -- same
-DECLARED-not-auto-probed shape as the wave-dispatch capability check in SKILL.md, inverted: Codex
-ships `multi_agent` default-on, so only an explicit `multiAgent: false` (or
-`MUSTER_CODEX_MULTI_AGENT=0`) drops to `mode: "sequential-inline"`
-(one crew member at a time, never a partial/mixed fan-out).
+There is no shared-CWD production-wave selector or inline fallback. `runCodexWave`
+authenticates the trusted repository, exact base commit, and every registered linked worktree,
+then dispatches the complete wave through bounded `codex exec -C` processes. The versioned spawn
+packet helpers below are reserved for explicit non-wave leaf delegation.
 
 **Fail-closed on a rejected profile -- the whole point of this design.** `agent_type` names a
 custom-agent TOML profile (`.codex/agents/<id>.toml`) that pins that role's model, reasoning

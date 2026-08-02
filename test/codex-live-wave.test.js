@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { runCodexWave } from "../src/codex-wave-runner.js";
+import { runCodexWave, terminateProcess } from "../src/codex-wave-runner.js";
 import { buildCodexPlugin } from "../scripts/build-codex.mjs";
 
 const execFile = promisify(execFileCb);
@@ -44,7 +44,7 @@ const cwd = args[args.indexOf("-C") + 1];
 const payload = JSON.parse(args.at(-1));
 fs.appendFileSync(${JSON.stringify(launches)}, "worker-start:" + require("node:path").basename(cwd) + "\\n");
 fs.appendFileSync(${JSON.stringify(launches)}, "env-secret:" + String(process.env.SUPER_SECRET) + "\\n");
-if (payload.outputBytes) process.stdout.write("x".repeat(payload.outputBytes));
+if (payload.outputBytes) process.stdout.write("x".repeat(payload.outputBytes) + "\\n");
 setTimeout(() => {
   if (payload.swapGitTarget && payload.swapGitSource) fs.copyFileSync(payload.swapGitSource, payload.swapGitTarget);
   fs.writeFileSync(cwd + "/result.txt", payload.value);
@@ -55,6 +55,23 @@ setTimeout(() => {
   await chmod(codex, 0o755);
   return { root, repo, baseSha, worktreeA, worktreeB, launches, codex };
 }
+
+test("terminateProcess uses Windows taskkill tree termination", () => {
+  let invocation;
+  const child = { pid: 4242, killed: false, kill: () => assert.fail("direct child kill must only be fallback") };
+  terminateProcess(child, {
+    platform: "win32",
+    taskkill(command, argv, options, callback) {
+      invocation = { command, argv, options };
+      callback(null);
+    },
+  });
+  assert.deepEqual(invocation, {
+    command: "taskkill",
+    argv: ["/pid", "4242", "/T", "/F"],
+    options: { windowsHide: true },
+  });
+});
 
 function member(id, cwd) {
   return {
@@ -326,6 +343,39 @@ test("runCodexWave rejects executable project config and bounds members, duratio
     }),
     /output exceeded/i,
   );
+
+  const tailed = await waveFixture(t);
+  const chatty = member("chatty", tailed.worktreeA);
+  chatty.prompt = JSON.stringify({ value: "chatty", outputBytes: 128 * 1024 });
+  const tailedResult = await runCodexWave({
+    members: [chatty], codexCommand: tailed.codex,
+    repositoryRoot: tailed.repo, baseSha: tailed.baseSha,
+  });
+  assert.ok(Buffer.byteLength(tailedResult.results[0].stdout, "utf8") <= 64 * 1024);
+  assert.equal(tailedResult.results[0].stdoutTruncated, true);
+  assert.match(tailedResult.results[0].stdoutSha256, /^[a-f0-9]{64}$/);
+
+  const aggregateTimed = await waveFixture(t);
+  const firstSlow = member("first-slow", aggregateTimed.worktreeA);
+  const secondSlow = member("second-slow", aggregateTimed.worktreeB);
+  firstSlow.prompt = JSON.stringify({ value: "first-slow", delayMs: 200 });
+  secondSlow.prompt = JSON.stringify({ value: "second-slow", delayMs: 200 });
+  await assert.rejects(runCodexWave({
+    members: [firstSlow, secondSlow], codexCommand: aggregateTimed.codex,
+    repositoryRoot: aggregateTimed.repo, baseSha: aggregateTimed.baseSha,
+    workerTimeoutMs: 300, availableThreadLimit: 1,
+  }), /wave exceeded .*deadline/i);
+
+  const aggregateNoisy = await waveFixture(t);
+  const firstLoud = member("first-loud", aggregateNoisy.worktreeA);
+  const secondLoud = member("second-loud", aggregateNoisy.worktreeB);
+  firstLoud.prompt = JSON.stringify({ value: "first-loud", outputBytes: 3 * 1024 * 1024 });
+  secondLoud.prompt = JSON.stringify({ value: "second-loud", outputBytes: 3 * 1024 * 1024 });
+  await assert.rejects(runCodexWave({
+    members: [firstLoud, secondLoud], codexCommand: aggregateNoisy.codex,
+    repositoryRoot: aggregateNoisy.repo, baseSha: aggregateNoisy.baseSha,
+    configuredThreadCeiling: 2,
+  }), /wave output exceeded/i);
 
   const schemaFixture = await waveFixture(t);
   const oversizedSchema = join(schemaFixture.worktreeA, "schema.json");

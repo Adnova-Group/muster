@@ -179,11 +179,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the "Wave dispatch: native Workflow vs prose fallback" section's worked-example pointer and
   // before "## Scope fences" -- disturbing neither the numbered step list, the native-vs-prose
   // bullets above it, nor any other named section. The new subsection documents that Codex rides
-  // its OWN native primitive (`collaboration.spawn_agent`/`wait_agent`/`list_agents`,
-  // `fork_turns: "none"`, `agent_type`) rather than a prose-loop substitute for the Claude-only
-  // `Workflow` tool, names `src/wave-dispatch.js`'s new `resolveCodexWaveDispatch` (spawn_agent
-  // vs sequential-inline, gated on Codex's own `features.multi_agent`, default-on -- inverse of
-  // agent-teams' default-off) and `assertCodexSpawnAgentAccepted` (the fail-closed guard: a
+  // explicit non-wave primitive (`collaboration.spawn_agent`/`wait_agent`/`list_agents`,
+  // `fork_turns: "none"`, `agent_type`) alongside the production process-only wave lane and
+  // `assertCodexSpawnAgentAccepted` (the fail-closed guard: a
   // rejected profile throws a registration diagnostic naming the `agent_type`/task rather than
   // ever silently falling back to a generic agent), fixture-driven TDD in
   // test/codex-wave-dispatch.test.js. This whole subsection falls inside build-codex.mjs's
@@ -1360,5 +1358,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // dispatch reference now requires every production wave to traverse the
   // fail-closed codex-wave selector before any returned spawn packet is used.
   // File count remains unchanged.
-  assert.equal(hash.digest("hex"), "ec53c79ae00841ed214e34482d29c4de433b54f45567a5fa195e777fd0748dc2");
+  // 2026-08-02 re-pin #43 (process-only Codex waves): the shared orchestrator
+  // now distinguishes authenticated `codex exec -C` production waves from
+  // explicit non-wave spawn packets; no Claude dispatch behavior changed.
+  // File count remains unchanged.
+  assert.equal(hash.digest("hex"), "c01dc2519addbed8f6400a937f7e6995613c5e8a402a03186b383bd672d16f0a");
 });

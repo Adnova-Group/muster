@@ -82,64 +82,7 @@ export function resolveWaveDispatch({ agentTeams, env = process.env } = {}) {
   };
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Codex-native dispatch: spawn_agent (codex-spawn-agent-dispatch item)
-//
-// Codex has no `Workflow`-tool counterpart -- there is no deterministic
-// native fan-out primitive to ride instead of prose on this harness. Codex's
-// OWN native primitive for wave dispatch is subagent collaboration itself:
-// `collaboration.spawn_agent` (fields: `task_name`, `message`, `fork_turns`,
-// and the runtime extension `agent_type: "<profile name>"`),
-// `collaboration.wait_agent` (timeout-bounded), `collaboration.list_agents`
-// -- gated by the session's own `features.multi_agent` (default true)
-// (docs/research/codex-cli.md sec 6's [DOCUMENTED]/[CODE-VERIFIED] dispatch-
-// mechanics evidence). Codex REJECTS a named `agent_type` combined with a
-// full-history context fork (`fork_turns: "all"` -- full-history agents
-// inherit the parent's type/model/effort), so muster always spawns
-// `fork_turns: "none"`. Same DECLARED-not-auto-probed shape as
-// resolveWaveDispatch above: nothing outside a running session can observe
-// whether `multi_agent` is on, so the caller passes its own observed/
-// declared signal in.
-// ───────────────────────────────────────────────────────────────────────────
-
-export const CODEX_MULTI_AGENT_ENV = "MUSTER_CODEX_MULTI_AGENT";
-
-export const CODEX_DISPATCH_MODES = Object.freeze({
-  SPAWN_AGENT: "spawn_agent",
-  SEQUENTIAL_INLINE: "sequential-inline",
-});
-
-// Codex ships `multi_agent` default ON (docs/research/codex-cli.md sec 3/6) --
-// the INVERSE default from agent-teams above, where nothing declared meant
-// "assume off." Here, nothing declared means "assume Codex's own shipped
-// default," i.e. on. Only an explicit off declaration (env or an explicit
-// `multiAgent: false`) drops to the sequential-inline floor.
-export function declaredCodexMultiAgent(env = process.env) {
-  if (env[CODEX_MULTI_AGENT_ENV] === undefined) return true;
-  return truthyEnv(env[CODEX_MULTI_AGENT_ENV]);
-}
-
-// Pure selection, same shape as resolveWaveDispatch: `multiAgent` (boolean)
-// is the session's own observed/declared signal for whether Codex's
-// `features.multi_agent` is on this session; omitted, falls back to the
-// declared env var. An explicit boolean always wins over the env var.
-export function resolveCodexWaveDispatch({ multiAgent, env = process.env } = {}) {
-  const enabled = explicitOrDeclared(multiAgent, () => declaredCodexMultiAgent(env));
-  if (enabled) {
-    return {
-      mode: CODEX_DISPATCH_MODES.SPAWN_AGENT,
-      multiAgent: true,
-      reason: "Codex multi_agent is on -- dispatch this wave's crew via collaboration.spawn_agent (fork_turns: \"none\", agent_type per crew member), collaboration.wait_agent/list_agents as the barrier",
-    };
-  }
-  return {
-    mode: CODEX_DISPATCH_MODES.SEQUENTIAL_INLINE,
-    multiAgent: false,
-    reason: "Codex multi_agent is off -- no subagent collaboration tools this session; dispatch the wave's tasks sequentially inline, one crew member at a time",
-  };
-}
-
-// --- The v1/v2 subagent API split (Codex 0.145.0) ---------------------------
+// --- Explicit non-wave leaf delegation (Codex 0.145.0) ---------------------
 //
 // Codex ships TWO INCOMPATIBLE subagent APIs and picks between them PER MODEL,
 // from the model catalog's `multi_agent_version` field -- not per install:

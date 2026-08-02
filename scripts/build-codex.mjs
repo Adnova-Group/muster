@@ -495,8 +495,8 @@ function adaptOrchestratorForCodex(text, contract) {
   // spawn_agent" and "### Worktree isolation per harness + base-SHA receipts" INSIDE this same
   // span on the Claude-side source (both between this heading and the unmoved "## Scope fences"
   // end anchor) without ever extending this replacement text to cover them, so the Codex build
-  // silently dropped both subsections' Codex-relevant guidance (the `resolveCodexWaveDispatch`
-  // sequential-inline fallback + fail-closed spawn_agent guard, and `resolveWorktreeIsolation`'s
+  // silently dropped both subsections' Codex-relevant guidance (the process-only production-wave
+  // rule + fail-closed non-wave spawn guard, and `resolveWorktreeIsolation`'s
   // receipts-only mechanism + `buildBaseShaReceipt` provenance) — never reaching a CODEX-HOSTED
   // muster running the bundled plugin (test/codex-wave-dispatch.test.js and
   // test/worktree-isolation.test.js only prove the resolvers themselves, not that a generated

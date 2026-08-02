@@ -75,7 +75,7 @@ Kept verbatim in meaning (judgment / capability check / fallback -- the brief's 
   baseSha" fail-loud rule.
 - Every citation (`docs/research/claude-code-cli.md` sec 1/11, `docs/research/codex-cli.md` sec 6,
   `docs/research/claude-code-desktop.md` sec 2.2, `docs/research/hermes.md` sec 6) and every named
-  code symbol (`resolveWaveDispatch`, `resolveCodexWaveDispatch`, `resolveWorktreeIsolation`,
+  code symbol (`resolveWaveDispatch`, `resolveCodexDispatchLane`, `resolveWorktreeIsolation`,
   `buildBaseShaReceipt`, `assertCodexSpawnAgentAccepted`).
 
 ## No load-bearing rule dropped -- proof

@@ -26,6 +26,14 @@ The loop's anatomy, as exposed by `codex exec --json` (JSON Lines event stream),
 
 `[DOCUMENTED]` Non-interactive contract worth reimplementing exactly: `codex exec "<prompt>"` streams progress to stderr and prints only the final agent message to stdout; piped stdin becomes additional context when a prompt argument is present, or the whole prompt with `codex exec -`; `--output-schema <json-schema>` constrains the final message; `-o/--output-last-message` tees it to a file; `codex exec resume --last` / `resume <SESSION_ID>` continues a prior session; `--ignore-user-config` skips `$CODEX_HOME/config.toml` for hermetic automation [src: codex-exec-doc]. muster's build pipeline translates every `claude -p` instruction in ported workflows to `codex exec` on exactly this contract [src: build-codex].
 
+### 1.1 App Server Plan activation (Codex 0.146.0, verified 2026-07-31)
+
+`[DOCUMENTED]` App Server clients must initialize with `capabilities.experimentalApi: true` before calling the experimental `collaborationMode/list`. The response advertises mode masks rather than a complete `turn/start` object. Built-in presets do not choose a model; the Plan preset chooses medium reasoning effort. `turn/start.collaborationMode` accepts a complete `{mode, settings}` object, and `settings.developer_instructions: null` selects Codex's built-in instructions. App Server sends approval requests back to the controlling client; mode selection is not approval [src: codex-appserver].
+
+`[CODE-VERIFIED]` The installed `codex-cli 0.146.0` returned `Plan` as `{mode:"plan", model:null, reasoning_effort:"medium"}` and `Default` as `{mode:"default", model:null, reasoning_effort:null}`. Its generated experimental JSON Schema requires `CollaborationMode.settings.model`, so a client must combine the advertised mask with the effective model returned by `thread/start`; guessing a private preset object or copying a stale model is incorrect. The same schema exposes `thread/settings/updated.threadSettings.collaborationMode`, which is the positive effective-mode receipt [src: codex-appserver-schema] [src: codex-plan-launch].
+
+Muster's interactive-terminal `codex-plan` launcher follows that contract: discover the Plan mask, resolve its nullable fields against `thread/start`, invoke the installed `muster-plan` skill in `turn/start`, and claim activation only after the effective settings report `mode:"plan"`. The turn request omits `approvalPolicy`, `approvalsReviewer`, `permissions`, and `sandboxPolicy`; action approval requests are declined, never accepted, while `request_user_input` is relayed to the human controlling the terminal. It starts a new App Server thread and cannot mutate an ambient desktop/IDE chat. Any non-interactive caller, missing method, preset, skill, or effective receipt produces explicit `/plan $muster-plan ...` guidance without claiming activation [src: codex-plan-launch].
+
 ---
 
 ## 2. Models and the reasoning-effort ladder
@@ -308,6 +316,10 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 - codex-pr-35365: https://github.com/openai/codex/pull/35365
 - codex-pr-35375: https://github.com/openai/codex/pull/35375
 - codex-pr-35525: https://github.com/openai/codex/pull/35525
+- codex-appserver: https://developers.openai.com/codex/app-server
+- codex-releases: https://github.com/openai/codex/releases
+- codex-appserver-schema: local `codex-cli 0.146.0 app-server generate-json-schema --experimental` evidence captured 2026-07-31
+- codex-plan-launch: src/codex-plan-launch.js
 
 ---
 

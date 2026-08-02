@@ -7,12 +7,14 @@ import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves, nextTasks } from "./wave.js";
 import { computeSprintWaves, reconcileSprintProgress } from "./sprint-waves.js";
+import { BACKLOG_RECEIPT_MAX_BYTES, checkBacklogReceipts, makeGitReachabilityVerifier } from "./backlog-receipts.js";
 import { tallyReview, verdictsTallyCorruptionErrors } from "./review.js";
 import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -123,7 +125,7 @@ const USAGE = [
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
-  "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
+  "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-receipts <backlog.md> --release-ref <ref>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
@@ -821,6 +823,45 @@ async function handleCoreCommandPart2(cmd, rest) {
   return false;
 }
 
+async function handleBacklogReceipts(rest) {
+  const file = requireArg(rest, 0, "backlog-receipts <backlog.md> --release-ref <ref>: missing file path", fail);
+  const releaseRef = flagValue(rest, "--release-ref");
+  if (!releaseRef || releaseRef.startsWith("-") || /[\0-\x20\x7f]/.test(releaseRef)) {
+    fail("backlog-receipts --release-ref must be a non-option Git ref without control characters or whitespace");
+  }
+  let content;
+  if (file === "-") content = await readStdin(MAX_HYGIENE_BACKLOG_BYTES);
+  else {
+    const lexical = resolve(process.cwd(), file);
+    const canonical = await resolveContainedRealpath(process.cwd(), lexical);
+    if (canonical === null) fail(`backlog-receipts: ${file} is not a regular file contained under the run root`);
+    if (canonical !== lexical) fail(`backlog-receipts: ${file} must not contain a symlink`);
+    const { bytes } = await readNoFollowRegular(canonical, {
+      maxBytes: BACKLOG_RECEIPT_MAX_BYTES,
+      label: file,
+    });
+    content = bytes.toString("utf8");
+  }
+  const resolvedRelease = spawnSync("git", [
+    "-c", "core.warnAmbiguousRefs=true", "rev-parse", "--verify", "--end-of-options", `${releaseRef}^{commit}`,
+  ], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (resolvedRelease.error || resolvedRelease.status !== 0 || resolvedRelease.stderr.length !== 0) {
+    fail(`backlog-receipts: release ref ${releaseRef} does not resolve to a commit`);
+  }
+  const result = checkBacklogReceipts(content, {
+    releaseRef,
+    isReachable: makeGitReachabilityVerifier({ cwd: process.cwd(), releaseCommit: resolvedRelease.stdout.trim().toLowerCase() }),
+  });
+  out(result);
+  if (!result.ok) process.exit(2);
+  return true;
+}
+
 async function handleCoreCommandPart6(cmd, rest) {
   if (cmd === "sprint-waves") {
     const file = requireArg(rest, 0, "sprint-waves <backlog.md>: missing file path", fail);
@@ -877,6 +918,8 @@ async function handleCoreCommandPart6(cmd, rest) {
     out(r);
     if (!r.ok) process.exit(2);
     return true;
+  } else if (cmd === "backlog-receipts") {
+    return handleBacklogReceipts(rest);
   } else if (cmd === "backlog-publish") {
     const file = requireArg(rest, 0, "backlog-publish <backlog.md> --expect <sha256|absent>: missing file path", fail);
     if (isUnsafePathToken(file)) fail("backlog-publish requires a relative backlog path contained under the run root");

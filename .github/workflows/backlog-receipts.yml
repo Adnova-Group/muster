@@ -1,0 +1,32 @@
+name: Trusted backlog receipt gate
+
+on:
+  pull_request_target:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted base verifier
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          path: verifier
+      - name: Check out pull request tree as data
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+      - name: Verify PR backlog receipts with trusted base code
+        working-directory: target
+        run: node ../verifier/scripts/check-backlog-receipts.mjs --release-ref "${{ github.event.pull_request.base.sha }}"

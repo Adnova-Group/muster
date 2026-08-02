@@ -24,6 +24,8 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+      - name: Verify backlog completion receipts
+        run: node scripts/check-backlog-receipts.mjs --release-ref "origin/${GITHUB_BASE_REF:-main}"
       - run: npm ci
       - run: npm test
       - name: Router eval (deterministic grade on goldens)

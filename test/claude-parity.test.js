@@ -1364,5 +1364,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // server now uses the same documented 16 MiB backlog-publication envelope as
   // the CLI and discards an actually oversized request locally so the server
   // remains responsive. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "c7ba62a35fbf6cdc16845f7308bc29916edc990755162490b114682cda835f06");
+  // 2026-08-02 re-pin #45 (backlog receipt reachability): checked file-backlog
+  // items now require a release-ancestor merge/done SHA or an explicit
+  // withdrawn reason before the driver may report them cleared.
+  // Correction-loop re-pin: staged bytes, not the old on-disk backlog, are
+  // now the input to the same release-reachability contract.
+  assert.equal(hash.digest("hex"), "3cac8bebccf3969cd2e3b7e3f987e3cce006c7a3da4374bca0f00890652cb6a0");
 });

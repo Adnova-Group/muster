@@ -52,31 +52,62 @@ function annotationRegex() {
   return /\{\s*([A-Za-z][\w-]*)\s*:\s*([^}]*)\}/g;
 }
 
-// A single `{key: value}` group, as a regex source fragment (no flags/anchors of its
-// own) so it can be composed into the trailing-block regex below.
-const ANNOTATION_GROUP_SRC = "\\{\\s*[A-Za-z][\\w-]*\\s*:\\s*[^}]*\\}";
-
-// The trailing annotation block: one-or-more annotation groups, each preceded by
-// optional whitespace, anchored to run all the way to the end of the string. Built
-// fresh per call for the same lastIndex-safety reason as annotationRegex() above
-// (this one isn't global, but keeping the construction pattern consistent avoids a
-// shared-regex mistake creeping in later).
-function trailingAnnotationBlockRegex() {
-  return new RegExp(`(?:\\s*${ANNOTATION_GROUP_SRC})+\\s*$`);
+function annotationOpeningAt(text, start, end) {
+  if (text[start] !== "{") return false;
+  let cursor = start + 1;
+  while (cursor < end && /\s/.test(text[cursor])) cursor += 1;
+  if (cursor >= end || !/[A-Za-z]/.test(text[cursor])) return false;
+  cursor += 1;
+  while (cursor < end && /[\w-]/.test(text[cursor])) cursor += 1;
+  while (cursor < end && /\s/.test(text[cursor])) cursor += 1;
+  return cursor < end && text[cursor] === ":";
 }
 
-function stripAnnotations(text) {
+// Return the start of the maximal trailing annotation block in linear time.
+// Each backward iteration consumes one disjoint `}`-delimited segment; within
+// that segment the first syntactically valid opener is the same leftmost match
+// the former regex selected. This avoids the regex's quadratic retry behavior
+// on repeated incomplete `{a:` fragments.
+function trailingAnnotationBlockStart(text) {
+  let end = text.length;
+  while (end > 0 && /\s/.test(text[end - 1])) end -= 1;
+  if (end === 0 || text[end - 1] !== "}") return null;
+  let suffixStart = null;
+  for (;;) {
+    const close = end - 1;
+    const previousClose = text.lastIndexOf("}", close - 1);
+    const segmentStart = previousClose + 1;
+    let opener = -1;
+    for (let cursor = segmentStart; cursor < close; cursor += 1) {
+      if (text[cursor] === "{" && annotationOpeningAt(text, cursor, close)) {
+        opener = cursor;
+        break;
+      }
+    }
+    if (opener < 0) return suffixStart;
+    suffixStart = opener;
+    let separatorStart = opener;
+    while (separatorStart > segmentStart && /\s/.test(text[separatorStart - 1])) separatorStart -= 1;
+    if (previousClose < 0 || separatorStart !== segmentStart) return suffixStart;
+    end = previousClose + 1;
+  }
+}
+
+export function stripAnnotations(text) {
   const anns = {};
-  const trailingMatch = text.match(trailingAnnotationBlockRegex());
-  const bodyText = trailingMatch ? text.slice(0, trailingMatch.index) : text;
-  const annotationBlock = trailingMatch ? trailingMatch[0] : "";
+  const annotationCounts = {};
+  const annotationStart = trailingAnnotationBlockStart(text);
+  const bodyText = annotationStart === null ? text : text.slice(0, annotationStart);
+  const annotationBlock = annotationStart === null ? "" : text.slice(annotationStart);
   const re = annotationRegex();
   let m;
   while ((m = re.exec(annotationBlock))) {
-    anns[m[1].toLowerCase()] = m[2].trim();
+    const key = m[1].toLowerCase();
+    annotationCounts[key] = (annotationCounts[key] || 0) + 1;
+    anns[key] = m[2].trim();
   }
   const stripped = bodyText.replace(/\s+/g, " ").trim();
-  return { anns, text: stripped };
+  return { anns, annotationCounts, text: stripped };
 }
 
 function resolveParallelLimit(value, maxConcurrentThreadsPerSession) {

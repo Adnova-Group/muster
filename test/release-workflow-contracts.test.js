@@ -75,3 +75,29 @@ test("the full CI suite fetches history required by pinned diff probes", async (
   const fullSuiteJob = workflow.split(/^  windows-smoke:/m)[0];
   assert.match(fullSuiteJob, /uses: actions\/checkout@v4\s+with:\s+(?:#[^\n]*\s+)*fetch-depth: 0/m);
 });
+
+test("CI explicitly gates checked backlog completion on release reachability", async () => {
+  const workflow = await read(".github/workflows/ci.yml");
+  assert.match(workflow, /Verify backlog completion receipts/);
+  assert.match(workflow, /node scripts\/check-backlog-receipts\.mjs --release-ref/);
+
+  const backlog = await read("plugin/commands/go-backlog.md");
+  assert.match(backlog, /\{merge: <40-hex SHA>\}.*\{done: <40-hex SHA>\}/is);
+  assert.match(backlog, /ancestor of the declared release branch/i);
+  assert.match(backlog, /\{withdrawn: <reason>\}/i);
+  assert.match(backlog, /reopen.*unchecked|unchecked.*reopen/is);
+  assert.match(backlog, /backlog-receipts - --release-ref/);
+  assert.match(backlog, /Only those same verified bytes/i);
+});
+
+test("trusted PR receipt gate runs base verifier against HEAD-bound PR data before lifecycle code", async () => {
+  const trusted = await read(".github/workflows/backlog-receipts.yml");
+  assert.match(trusted, /pull_request_target:/);
+  assert.match(trusted, /pull_request\.base\.sha/);
+  assert.match(trusted, /pull_request\.head\.sha/);
+  assert.match(trusted, /\.\.\/verifier\/scripts\/check-backlog-receipts\.mjs/);
+  assert.doesNotMatch(trusted, /npm ci/);
+
+  const ci = await read(".github/workflows/ci.yml");
+  assert.ok(ci.indexOf("Verify backlog completion receipts") < ci.indexOf("npm ci"));
+});

@@ -34,7 +34,7 @@ function runOneStrictConfigCheck({
   timeoutMs = CODEX_STRICT_CONFIG_TIMEOUT_MS,
   env = process.env
 } = {}) {
-  if (!runtimeIdentity?.node || !runtimeIdentity?.codex) {
+  if (!runtimeIdentity?.nativeCodex) {
     return Promise.reject(new Error("a trusted Codex runtime identity is required for strict config validation"));
   }
   return new Promise((resolveResult, reject) => {
@@ -79,7 +79,7 @@ function runOneStrictConfigCheck({
     ), timeoutMs);
     timer.unref?.();
     try {
-      child = spawn(runtimeIdentity.node, [runtimeIdentity.codex, "app-server", "--strict-config", "--listen", "stdio://"], {
+      child = spawn(runtimeIdentity.nativeCodex, ["app-server", "--strict-config", "--listen", "stdio://"], {
         cwd,
         env: { ...env, ...(codexHome ? { CODEX_HOME: codexHome } : {}) },
         stdio: ["pipe", "pipe", "pipe"],
@@ -131,6 +131,38 @@ function runOneStrictConfigCheck({
 
 export async function runCodexStrictConfigCheck(options = {}) {
   const { cwd = process.cwd(), codexHome, runtimeIdentity, spawn = spawnChild } = options;
+  if (options.configSnapshots) {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "muster-codex-strict-stage-"));
+    const stagedHome = join(temporaryRoot, "codex-home");
+    const stagedProject = join(temporaryRoot, "project");
+    const stagedProjectConfig = join(stagedProject, ".codex", "config.toml");
+    const stagedSharedConfig = join(stagedHome, "config.toml");
+    const mappings = [
+      [stagedSharedConfig, options.configSnapshots.shared.path],
+      [stagedProjectConfig, options.configSnapshots.project.path]
+    ];
+    const remap = error => {
+      let message = error.message;
+      for (const [staged, original] of mappings) message = message.replaceAll(staged, original);
+      return new Error(message, { cause: error });
+    };
+    try {
+      await mkdir(stagedHome, { recursive: true });
+      await mkdir(join(stagedProject, ".codex"), { recursive: true });
+      if (options.configSnapshots.shared.exists) await writeFile(stagedSharedConfig, options.configSnapshots.shared.bytes);
+      if (options.configSnapshots.project.exists) await writeFile(stagedProjectConfig, options.configSnapshots.project.bytes);
+      try {
+        await runOneStrictConfigCheck({ ...options, cwd: stagedProject, codexHome: stagedHome, runtimeIdentity, spawn });
+        const trustHome = join(temporaryRoot, "trust-home");
+        await mkdir(trustHome);
+        await writeFile(join(trustHome, "config.toml"),
+          `[projects.${JSON.stringify(resolve(stagedProject))}]\ntrust_level = "trusted"\n`);
+        return await runOneStrictConfigCheck({ ...options, cwd: stagedProject, codexHome: trustHome, runtimeIdentity, spawn });
+      } catch (error) { throw remap(error); }
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  }
   const shared = await runOneStrictConfigCheck({ ...options, cwd, codexHome, runtimeIdentity, spawn });
 
   // Codex deliberately skips project `.codex/config.toml` until the project

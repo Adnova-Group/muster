@@ -23,22 +23,28 @@ async function fixture(t, platform) {
   const shadowBin = join(tmp, "shadow-bin"), marker = join(tmp, "shadow-ran");
   const packageRoot = join(tmp, "trusted", "@openai", "codex");
   await mkdir(join(packageRoot, "bin"), { recursive: true });
+  const triple = platform === "win32"
+    ? (process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc")
+    : (process.arch === "arm64" ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl");
+  const nativePath = join(packageRoot, "vendor", triple, "bin", platform === "win32" ? "codex.exe" : "codex");
+  await mkdir(join(packageRoot, "vendor", triple, "bin"), { recursive: true });
   await mkdir(shadowBin);
   await writeFile(join(packageRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: "9.8.7" }));
   await writeFile(join(packageRoot, "bin", "codex.js"), "#!/usr/bin/env node\n");
+  await writeFile(nativePath, "native codex fixture\n");
   const shadow = join(shadowBin, platform === "win32" ? "codex.cmd" : "codex");
   await writeFile(shadow, platform === "win32" ? `@echo shadow>${marker}\r\n` : `#!/bin/sh\nprintf shadow > '${marker}'\n`);
   await chmod(shadow, 0o755);
   const env = { ...process.env, PATH: `${shadowBin}${delimiter}${process.env.PATH || ""}`, CODEX_MANAGED_PACKAGE_ROOT: packageRoot };
   const identity = resolveCodexRuntimeIdentity({ env, platform, nodeExecPath: process.execPath });
-  return { tmp, marker, env, identity, packageRoot };
+  return { tmp, marker, env, identity, packageRoot, nativePath };
 }
 
 for (const platform of ["linux", "win32"]) {
   test(`${platform}: fake PATH-precedence Codex is never executed and the trusted package entrypoint runs under canonical Node`, {
     skip: process.platform === platform ? false : `native ${platform} fixture runs in its matching CI job`,
   }, async t => {
-    const { marker, env, identity } = await fixture(t, platform);
+    const { marker, env, identity, nativePath } = await fixture(t, platform);
     const calls = [];
     const execFile = async (file, args) => {
       calls.push({ file, args });
@@ -48,6 +54,7 @@ for (const platform of ["linux", "win32"]) {
     assert.equal(calls[0].file, await realpath(process.execPath));
     assert.deepEqual(calls[0].args, [identity.codex, "--version"]);
     assert.equal(identity.version, "9.8.7");
+    assert.equal(identity.nativeCodex, await realpath(nativePath));
     await assert.rejects(readFile(marker), /ENOENT/);
     assert.equal(env.PATH.startsWith(marker), false);
   });

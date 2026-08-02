@@ -1,10 +1,19 @@
 import { execFile as execFileCb } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
 
 const execFileDefault = promisify(execFileCb);
 const MAX_PACKAGE_BYTES = 64 * 1024;
+const CODEX_TARGETS = {
+  "linux:x64": ["@openai/codex-linux-x64", "x86_64-unknown-linux-musl", "codex"],
+  "linux:arm64": ["@openai/codex-linux-arm64", "aarch64-unknown-linux-musl", "codex"],
+  "darwin:x64": ["@openai/codex-darwin-x64", "x86_64-apple-darwin", "codex"],
+  "darwin:arm64": ["@openai/codex-darwin-arm64", "aarch64-apple-darwin", "codex"],
+  "win32:x64": ["@openai/codex-win32-x64", "x86_64-pc-windows-msvc", "codex.exe"],
+  "win32:arm64": ["@openai/codex-win32-arm64", "aarch64-pc-windows-msvc", "codex.exe"]
+};
 
 function canonicalRegularFile(path, label) {
   if (typeof path !== "string" || !path || !isAbsolute(path)) throw new Error(`${label} must be an absolute path`);
@@ -28,6 +37,8 @@ export function resolveCodexRuntimeIdentity({
   env = process.env,
   nodeExecPath = process.execPath,
   codexPackageRoot = env.CODEX_MANAGED_PACKAGE_ROOT,
+  platform = process.platform,
+  arch = process.arch,
 } = {}) {
   const node = canonicalRegularFile(nodeExecPath, "Node executable");
   if (typeof codexPackageRoot !== "string" || !codexPackageRoot || !isAbsolute(codexPackageRoot)) {
@@ -43,7 +54,21 @@ export function resolveCodexRuntimeIdentity({
   if (manifest?.name !== "@openai/codex" || typeof manifest.version !== "string" || !manifest.version) {
     throw new Error("trusted Codex package manifest has an unexpected name or version");
   }
-  return Object.freeze({ node, codex, version: manifest.version, packageRoot: canonicalRoot });
+  const target = CODEX_TARGETS[`${platform}:${arch}`];
+  if (!target) throw new Error(`unsupported Codex native target: ${platform}-${arch}`);
+  const [platformPackage, triple, executable] = target;
+  let nativeCandidate = join(canonicalRoot, "vendor", triple, "bin", executable);
+  try { nativeCandidate = canonicalRegularFile(nativeCandidate, "Codex native executable"); }
+  catch {
+    const requireFromCodex = createRequire(packageJson);
+    const platformManifest = canonicalRegularFile(requireFromCodex.resolve(`${platformPackage}/package.json`), "Codex platform package manifest");
+    const platformPackageJson = JSON.parse(readFileSync(platformManifest, "utf8"));
+    if (platformPackageJson?.name !== "@openai/codex" || !String(platformPackageJson.version || "").startsWith(`${manifest.version}-`)) {
+      throw new Error("trusted Codex platform package has an unexpected name or version");
+    }
+    nativeCandidate = canonicalRegularFile(join(dirname(platformManifest), "vendor", triple, "bin", executable), "Codex native executable");
+  }
+  return Object.freeze({ node, codex, nativeCodex: nativeCandidate, version: manifest.version, packageRoot: canonicalRoot });
 }
 
 export function runCodexCommand(execFile = execFileDefault, identity, args, options = {}) {

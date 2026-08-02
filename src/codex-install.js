@@ -1410,6 +1410,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile), nodeExecPath });
   let originals, changed;
   const rollbackConflicts = new Set();
+  const publishedConfigCandidates = new Map();
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
@@ -1583,26 +1584,70 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         // injected command runner opt into this boundary explicitly.
         const configParser = strictConfigRunner || (!execFile ? runCodexStrictConfigCheck : null);
         if (configParser) {
-          const validationTargets = [...new Set([threadLimitConfigPath, declarationConfigPath])];
-          const validationSnapshots = new Map();
-          for (const path of validationTargets) validationSnapshots.set(path, await exactFileSnapshot(path));
-          let validationError = null;
-          try { await configParser({ cwd, codexHome: codexHome(home), runtimeIdentity: identity }); }
-          catch (error) { validationError = error; }
-          for (const path of validationTargets) {
+          const transactionTargets = [...new Set([threadLimitConfigPath, declarationConfigPath])];
+          const candidateSnapshots = new Map();
+          for (const path of transactionTargets) candidateSnapshots.set(path, await exactFileSnapshot(path));
+
+          // Put live config bytes back before the comparatively long native
+          // parse. The parser receives immutable candidate copies, so a failed
+          // validation never needs to overwrite a concurrent config writer.
+          for (const path of transactionTargets) {
+            const original = originals.get(path);
+            if (original === null) await removeSafe(path);
+            else await atomicWriteSafe(path, original);
+            rollbackConflicts.add(path);
+          }
+          const projectConfigPath = join(cwd, ".codex", "config.toml");
+          const liveExpected = new Map();
+          for (const path of new Set([...transactionTargets, projectConfigPath])) liveExpected.set(path, await exactFileSnapshot(path));
+          const projectCandidate = candidateSnapshots.get(projectConfigPath) || liveExpected.get(projectConfigPath);
+          await configParser({
+            cwd,
+            codexHome: codexHome(home),
+            runtimeIdentity: identity,
+            configSnapshots: {
+              shared: { path: threadLimitConfigPath, ...candidateSnapshots.get(threadLimitConfigPath) },
+              project: { path: projectConfigPath, ...projectCandidate }
+            }
+          });
+
+          const concurrent = [];
+          for (const [path, expected] of liveExpected) {
             let current;
             try { current = await exactFileSnapshot(path); }
             catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
-            if (!sameExactFileSnapshot(validationSnapshots.get(path), current)) rollbackConflicts.add(path);
+            if (!sameExactFileSnapshot(expected, current)) concurrent.push(path);
           }
-          if (rollbackConflicts.size) {
-            throw new Error(`Codex config changed during strict validation: ${[...rollbackConflicts].join(", ")}; concurrent bytes were preserved`,
-              validationError ? { cause: validationError } : undefined);
+          if (concurrent.length) throw new Error(`Codex config changed during strict validation: ${concurrent.join(", ")}; concurrent bytes were preserved`);
+
+          // Compare again immediately before each atomic publication. Any
+          // writer that won after validation remains authoritative and blocks
+          // this install instead of being overwritten.
+          for (const path of transactionTargets) {
+            const current = await exactFileSnapshot(path);
+            if (!sameExactFileSnapshot(liveExpected.get(path), current)) {
+              throw new Error(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
+            }
+            await atomicWriteSafe(path, candidateSnapshots.get(path).bytes);
+            publishedConfigCandidates.set(path, await exactFileSnapshot(path));
           }
-          if (validationError) throw validationError;
+          for (const [path, expected] of publishedConfigCandidates) {
+            if (!sameExactFileSnapshot(expected, await exactFileSnapshot(path))) {
+              throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+            }
+          }
         }
         actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: false, runtimeIdentity: identity }) : [];
       } catch (error) {
+        for (const [path, expected] of publishedConfigCandidates) {
+          let current;
+          try { current = await exactFileSnapshot(path); }
+          catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
+          if (!sameExactFileSnapshot(expected, current)) continue;
+          const original = originals.get(path);
+          if (original === null) await removeSafe(path);
+          else await atomicWriteSafe(path, original);
+        }
         await restoreFilesystem(originals, changed, { skip: rollbackConflicts });
         throw error;
       }

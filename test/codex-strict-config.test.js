@@ -15,6 +15,7 @@ import { resolveCodexRuntimeIdentity } from "../src/codex-runtime-identity.js";
 const PINNED_IDENTITY = Object.freeze({
   node: "/trusted/node",
   codex: "/trusted/codex",
+  nativeCodex: "/trusted/native-codex",
   version: "test"
 });
 
@@ -60,8 +61,8 @@ test("strict config: valid config closes app-server stdin and emits zero model t
   });
   assert.deepEqual(result, { ok: true, modelTurnEvents: 0 });
   assert.equal(spawn.calls.length, 2, "shared config and otherwise-untrusted project config are both parsed");
-  assert.equal(spawn.calls[0].command, PINNED_IDENTITY.node);
-  assert.deepEqual(spawn.calls[0].args, [PINNED_IDENTITY.codex, "app-server", "--strict-config", "--listen", "stdio://"]);
+  assert.equal(spawn.calls[0].command, PINNED_IDENTITY.nativeCodex);
+  assert.deepEqual(spawn.calls[0].args, ["app-server", "--strict-config", "--listen", "stdio://"]);
   assert.equal(spawn.calls[0].options.cwd, "/workspace/project");
   assert.equal(spawn.calls[0].options.env.CODEX_HOME, "/workspace/codex-home");
   assert.equal(spawn.calls[0].child.stdin.writableEnded, true);
@@ -192,21 +193,25 @@ test("strict config: install validates the complete write and restores config by
   await writeFile(projectPath, projectOriginal);
 
   let observedCompleteWrite = false;
+  let observedLiveOriginals = false;
   await assert.rejects(
     runCodexInstall({
       cwd, home, repoRoot,
       execFile: async () => { throw new Error("codex absent"); },
-      strictConfigRunner: async () => {
-        const shared = await readFile(sharedPath, "utf8");
-        const project = await readFile(projectPath, "utf8");
+      strictConfigRunner: async options => {
+        const shared = options.configSnapshots.shared.bytes.toString("utf8");
+        const project = options.configSnapshots.project.bytes.toString("utf8");
         observedCompleteWrite = /max_concurrent_threads_per_session/.test(shared)
           && /muster managed agent declarations/.test(project);
+        observedLiveOriginals = (await readFile(sharedPath)).equals(sharedOriginal)
+          && (await readFile(projectPath)).equals(projectOriginal);
         throw new Error(`${projectPath}:2:1: unknown configuration field \`future_typo\``);
       }
     }),
     /config\.toml:2:1: unknown configuration field `future_typo`/
   );
   assert.equal(observedCompleteWrite, true, "validation must run after all config mutations are on disk");
+  assert.equal(observedLiveOriginals, true, "native validation must use immutable candidates while live config retains original bytes");
   assert.deepEqual(await readFile(sharedPath), sharedOriginal);
   assert.deepEqual(await readFile(projectPath), projectOriginal);
   await assert.rejects(readFile(join(cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
@@ -243,6 +248,24 @@ test("strict config: concurrent config replacement blocks success without overwr
     strictConfigRunner: async () => { await writeFile(projectPath, concurrent); return { ok: true, modelTurnEvents: 0 }; }
   }), /config changed during strict validation/);
   assert.deepEqual(await readFile(projectPath), concurrent, "rollback must not overwrite a concurrent writer");
+});
+
+test("strict config: a delayed shared-config writer during validation is preserved", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-delayed-writer-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), sharedPath = join(home, ".codex", "config.toml");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(sharedPath, "model = \"before\"\n");
+  const concurrent = Buffer.from("unknown_delayed_writer = true\n");
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot,
+    execFile: async () => { throw new Error("codex absent"); },
+    strictConfigRunner: async () => {
+      await new Promise((resolve, reject) => setTimeout(() => writeFile(sharedPath, concurrent).then(resolve, reject), 3));
+      return { ok: true, modelTurnEvents: 0 };
+    }
+  }), /config changed during strict validation/);
+  assert.deepEqual(await readFile(sharedPath), concurrent);
 });
 
 test("strict config: doctor reports the same non-billable parser boundary", async () => {

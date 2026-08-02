@@ -69,39 +69,143 @@ function openTunnelRecord(key, record) {
   return Buffer.concat([decipher.update(record.subarray(28)), decipher.final()]);
 }
 
-async function captureAuthenticatedTunnel(upstreamPort, plaintext) {
+function encodeTunnelRecord(key, plaintext) {
+  const sealed = sealTunnelRecord(key, plaintext);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(sealed.length);
+  return Buffer.concat([length, sealed]);
+}
+
+function decodeTunnelRecords(key, onPlaintext, onAuthenticationFailure) {
+  let buffered = Buffer.alloc(0);
+  return (chunk) => {
+    buffered = Buffer.concat([buffered, chunk]);
+    while (buffered.length >= 4) {
+      const length = buffered.readUInt32BE(0);
+      if (length < 29 || length > 1024 * 1024) {
+        onAuthenticationFailure(new Error("invalid authenticated tunnel record length"));
+        return;
+      }
+      if (buffered.length < 4 + length) return;
+      const sealed = buffered.subarray(4, 4 + length);
+      buffered = buffered.subarray(4 + length);
+      try { onPlaintext(openTunnelRecord(key, sealed)); }
+      catch (error) { onAuthenticationFailure(error); return; }
+    }
+  };
+}
+
+async function listenOnLoopback(server) {
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  return server.address().port;
+}
+
+async function closeTcpServer(server) {
+  await new Promise((resolve) => server.close(resolve));
+}
+
+async function createAuthenticatedTunnel(upstreamPort) {
   const key = randomBytes(32);
-  const captured = sealTunnelRecord(key, plaintext);
-  let settleForward;
-  const forwarded = new Promise((resolve, reject) => { settleForward = { resolve, reject }; });
-  const tunnel = createTcpServer((socket) => {
-    const chunks = [];
-    socket.on("data", (chunk) => chunks.push(chunk));
-    socket.on("end", () => {
-      let cleartext;
-      try { cleartext = openTunnelRecord(key, Buffer.concat(chunks)); }
-      catch (error) { settleForward.reject(error); return; }
-      const upstream = connect(upstreamPort, "127.0.0.1");
-      upstream.on("connect", () => upstream.end(cleartext));
-      upstream.on("data", () => {});
-      upstream.on("close", settleForward.resolve);
-      upstream.on("error", settleForward.reject);
-    });
+  const receiverObserved = [];
+  let authenticatedRecords = 0;
+  const receiver = createTcpServer((encryptedSocket) => {
+    const upstream = connect(upstreamPort, "127.0.0.1");
+    encryptedSocket.on("data", (chunk) => receiverObserved.push(Buffer.from(chunk)));
+    encryptedSocket.on("data", decodeTunnelRecords(key, (plaintext) => {
+      authenticatedRecords += 1;
+      upstream.write(plaintext);
+    }, () => {
+      upstream.destroy();
+      encryptedSocket.destroy();
+    }));
+    upstream.on("data", (plaintext) => encryptedSocket.write(encodeTunnelRecord(key, plaintext)));
+    encryptedSocket.on("end", () => upstream.end());
+    upstream.on("end", () => encryptedSocket.end());
+    encryptedSocket.on("error", () => upstream.destroy());
+    upstream.on("error", () => encryptedSocket.destroy());
   });
+  const receiverPort = await listenOnLoopback(receiver);
+
+  const sender = createTcpServer((browserSocket) => {
+    const encryptedSocket = connect(receiverPort, "127.0.0.1");
+    browserSocket.on("data", (plaintext) => encryptedSocket.write(encodeTunnelRecord(key, plaintext)));
+    encryptedSocket.on("data", decodeTunnelRecords(key, (plaintext) => browserSocket.write(plaintext), () => {
+      browserSocket.destroy();
+      encryptedSocket.destroy();
+    }));
+    browserSocket.on("end", () => encryptedSocket.end());
+    encryptedSocket.on("end", () => browserSocket.end());
+    browserSocket.on("error", () => encryptedSocket.destroy());
+    encryptedSocket.on("error", () => browserSocket.destroy());
+  });
+  const port = await listenOnLoopback(sender);
+
+  return {
+    port,
+    key,
+    receiverObserved,
+    get authenticatedRecords() { return authenticatedRecords; },
+    async close() {
+      await Promise.all([closeTcpServer(sender), closeTcpServer(receiver)]);
+    },
+  };
+}
+
+async function waitForEvent(eventsFile) {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    const contents = await readFile(eventsFile, "utf8").catch(() => "");
+    const lines = contents.trim().split("\n").filter(Boolean);
+    if (lines.length > 0) return JSON.parse(lines.at(-1));
+    await delay(20);
+  }
+  throw new Error("brainstorm receiver did not persist the WebSocket click");
+}
+
+async function exerciseAuthenticatedWebSocketTunnel(t) {
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-tunnel-e2e-"));
+  await chmod(session, 0o700);
+  const { child, info } = await launchServer(session);
+  const tunnel = await createAuthenticatedTunnel(info.port);
+  t.after(async () => {
+    child.kill();
+    await tunnel.close();
+    await rm(session, { recursive: true, force: true });
+  });
+
+  const launchUrl = new URL(info.url);
+  launchUrl.hostname = "127.0.0.1";
+  launchUrl.port = String(tunnel.port);
+  const controller = await (await fetch(launchUrl)).text();
+  const capability = controller.match(/const key = "([0-9a-f]{64})"/)?.[1];
+  assert.ok(capability, "controller must exchange the bootstrap key for a WebSocket capability");
+
+  const click = {
+    type: "click",
+    choice: "remote-private-choice",
+    text: "remote-private-event",
+    id: "remote-choice",
+  };
+  const socket = new WebSocket(`ws://127.0.0.1:${tunnel.port}/?key=${capability}`);
   await new Promise((resolve, reject) => {
-    tunnel.once("error", reject);
-    tunnel.listen(0, "127.0.0.1", resolve);
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", reject, { once: true });
   });
-  const address = tunnel.address();
-  await new Promise((resolve, reject) => {
-    const client = connect(address.port, "127.0.0.1");
-    client.on("connect", () => client.end(captured));
-    client.on("close", resolve);
-    client.on("error", reject);
-  });
-  await forwarded;
-  await new Promise((resolve, reject) => tunnel.close((error) => error ? reject(error) : resolve()));
-  return { captured, key };
+  socket.send(JSON.stringify(click));
+  const received = await waitForEvent(join(session, "state", "events"));
+  socket.close();
+
+  return {
+    received,
+    capability,
+    click,
+    receiverCapture: Buffer.concat(tunnel.receiverObserved),
+    authenticatedRecords: tunnel.authenticatedRecords,
+    tunnelKey: tunnel.key,
+  };
 }
 
 test("packaged brainstorm server and manifest identify the byte-identical local overlay", async () => {
@@ -392,7 +496,7 @@ test("expired and disconnected controller capabilities cannot be replayed", asyn
   assert.equal((await fetch(`http://127.0.0.1:${info.port}/screen?view=${expiringView}&channel=${"b".repeat(32)}`)).status, 403);
 });
 
-test("documented remote traffic is tunnel-only and captured wire bytes expose no live capability or event", async (t) => {
+test("documented authenticated tunnel carries a WebSocket click while receiver-observed bytes hide secrets", async (t) => {
   const guides = await Promise.all([companionGuide, sourceCompanionGuide].map((file) => readFile(file, "utf8")));
   for (const guide of guides) {
     assert.equal(guide.split("\n").some((line) => /^\s*--host\s+(?:0\.0\.0\.0|::|\*)/.test(line)), false);
@@ -401,20 +505,13 @@ test("documented remote traffic is tunnel-only and captured wire bytes expose no
     assert.match(guide, /packet capture[\s\S]*cannot expose[\s\S]*capabilit[\s\S]*event/i);
   }
 
-  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-tunnel-capture-"));
-  await chmod(session, 0o700);
-  const { child, info } = await launchServer(session);
-  t.after(async () => { child.kill(); await rm(session, { recursive: true, force: true }); });
-  const capability = new URL(info.url).searchParams.get("key");
-  const event = JSON.stringify({ type: "click", choice: "private-choice", text: "private-event" });
-  const request = Buffer.from(
-    `POST /?key=${capability} HTTP/1.1\r\nHost: 127.0.0.1:${info.port}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(event)}\r\nConnection: close\r\n\r\n${event}`,
-  );
-  const { captured, key } = await captureAuthenticatedTunnel(info.port, request);
-  assert.equal(captured.includes(Buffer.from(capability)), false);
-  assert.equal(captured.includes(Buffer.from(event)), false);
-  assert.deepEqual(openTunnelRecord(key, captured), request);
-  const tampered = Buffer.from(captured);
-  tampered[tampered.length - 1] ^= 1;
-  assert.throws(() => openTunnelRecord(key, tampered));
+  const receipt = await exerciseAuthenticatedWebSocketTunnel(t);
+  assert.deepEqual(receipt.received, receipt.click);
+  assert.ok(receipt.authenticatedRecords > 0, "receiver must authenticate encrypted records before forwarding");
+  assert.ok(receipt.receiverCapture.length > 0, "capture must contain bytes observed at the tunnel receiver");
+  assert.equal(receipt.receiverCapture.includes(Buffer.from(receipt.capability)), false);
+  assert.equal(receipt.receiverCapture.includes(Buffer.from(JSON.stringify(receipt.click))), false);
+  const authenticated = encodeTunnelRecord(receipt.tunnelKey, Buffer.from("authenticated"));
+  authenticated[authenticated.length - 1] ^= 1;
+  assert.throws(() => openTunnelRecord(receipt.tunnelKey, authenticated.subarray(4)));
 });

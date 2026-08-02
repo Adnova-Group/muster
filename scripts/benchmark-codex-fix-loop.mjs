@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
@@ -113,7 +113,9 @@ function brief({ name, correct, input, expected, cwd, baseSha, blocker }) {
   ].join("\n");
 }
 
-const benchmarkRoot = await mkdtemp(join(tmpdir(), "muster-codex-production-fix-loop-"));
+const benchmarkParent = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "muster", "benchmarks");
+await mkdir(benchmarkParent, { recursive: true });
+const benchmarkRoot = await mkdtemp(join(benchmarkParent, "production-fix-loop-"));
 const evidence = {
   harness: "real Codex paired benchmark through production runCodexWave and authenticated runCodexWaveContinuation",
   command: "node scripts/benchmark-codex-fix-loop.mjs --cases 10 --output test/fixtures/codex-fix-loop/benchmark-evidence.json",

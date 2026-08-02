@@ -1150,6 +1150,7 @@ export async function runCodexWaveContinuation({
   const headAuthority = await prepareTrustedRepository(receipt.repositoryRoot, receipt.headSha, deadline);
   if (headAuthority.commonDir !== authority.commonDir) throw new Error("runCodexWaveContinuation: worktree repository changed");
   const revalidated = await validateRegisteredLinkedWorktree(member, headAuthority, null, { deadline, pinDirectory: true });
+  try {
   const baseIsAncestor = await execFile(TRUSTED_GIT_COMMAND, ["merge-base", "--is-ancestor", receipt.baseSha, receipt.headSha], {
     cwd: receipt.cwd,
     env: { PATH: "/usr/bin:/bin", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_OPTIONAL_LOCKS: "0" },
@@ -1189,9 +1190,7 @@ export async function runCodexWaveContinuation({
     sandbox: rolePolicy.sandbox,
     approvalPolicy: "never",
   });
-  let result;
-  try {
-    result = await runContainedCodex(resolvedCodex, call.argv, {
+  const result = await runContainedCodex(resolvedCodex, call.argv, {
       directoryHandle: revalidated.directoryHandle,
       env: { ...childEnv, CODEX_HOME: isolatedHome.mountPoint },
       spawnProcess,
@@ -1200,10 +1199,7 @@ export async function runCodexWaveContinuation({
       stdinText: call.stdin,
       maskedPaths: store.maskedRoots,
       bindPaths: isolatedCodexHomeBinds(isolatedHome),
-    });
-  } finally {
-    await revalidated.directoryHandle.close();
-  }
+  });
   const verdict = interpretCodexExecExit(result.code);
   if (!verdict.ok) {
     const safeStderr = redactThreadIdentity(result.stderr, receipt.threadId).trim();
@@ -1229,6 +1225,9 @@ export async function runCodexWaveContinuation({
     stdout: redactThreadIdentity(result.stdout, receipt.threadId),
     stderr: redactThreadIdentity(result.stderr, receipt.threadId),
   };
+  } finally {
+    await revalidated.directoryHandle.close();
+  }
 }
 
 export async function runCodexWave({

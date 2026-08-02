@@ -313,6 +313,31 @@ test("runCodexWaveContinuation rejects invalid opaque ids and bounded hostile bl
   assert.ok(fenced.includes("\\u003c/remote-text\\u003e"));
 });
 
+test("runCodexWaveContinuation closes its pinned worktree descriptor on post-admission failure", async t => {
+  const fixture = await waveFixture(t);
+  const initial = await runCodexWave({
+    members: [member("a", fixture.worktreeA)],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+  await rm(join(fixture.worktreeA, "result.txt"));
+  const before = (await readdir("/proc/self/fd")).length;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await assert.rejects(
+      runCodexWaveContinuation({
+        receiptId: initial.results[0].receiptId,
+        blockers: [],
+        codexCommand: fixture.codex,
+        repositoryRoot: fixture.repo,
+      }),
+      /blockers must contain/,
+    );
+  }
+  const after = (await readdir("/proc/self/fd")).length;
+  assert.ok(after <= before + 1, `pinned directory descriptors leaked: before=${before}, after=${after}`);
+});
+
 test("runCodexWave rejects a protected receipt store inside a worker boundary", async t => {
   const fixture = await waveFixture(t);
   await assert.rejects(

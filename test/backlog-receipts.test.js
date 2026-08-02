@@ -2,10 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { symlink, writeFile } from "node:fs/promises";
+import { chmod, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   BACKLOG_RECEIPT_MAX_BYTES,
+  BACKLOG_RECEIPT_MAX_CHECKED_ITEMS,
   checkBacklogReceipts,
   makeGitReachabilityVerifier,
 } from "../src/backlog-receipts.js";
@@ -155,11 +156,56 @@ test("a missing receipt object is ordinary unreachability, while cat-file faults
   );
 });
 
+test("corrupt object storage is an operational Git failure, not an unreachable receipt", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "receipt"], { cwd });
+  const receipt = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  await writeFile(join(cwd, "release.txt"), "release\n");
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release"], { cwd });
+  const releaseCommit = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  const objectPath = (await pexecFile("git", ["rev-parse", "--git-path", `objects/${receipt.slice(0, 2)}/${receipt.slice(2)}`], { cwd })).stdout.trim();
+  await chmod(join(cwd, objectPath), 0o600);
+  await writeFile(join(cwd, objectPath), "corrupt\n");
+  const verifier = makeGitReachabilityVerifier({ cwd, releaseCommit });
+  assert.throws(() => verifier(receipt), /git cat-file.*failed/i);
+});
+
+test("checked-item processing is capped and repeated receipt SHAs are verified once", () => {
+  let calls = 0;
+  const duplicate = checkBacklogReceipts([
+    "- [x] one {done: 1111111111111111111111111111111111111111}",
+    "- [x] two {done: 1111111111111111111111111111111111111111}",
+  ].join("\n"), { releaseRef: "main", isReachable: () => { calls += 1; return true; } });
+  assert.equal(duplicate.ok, true);
+  assert.equal(calls, 1);
+  const oversized = Array.from({ length: BACKLOG_RECEIPT_MAX_CHECKED_ITEMS + 1 }, (_, index) =>
+    `- [x] item ${index} {withdrawn: bounded fixture}`
+  ).join("\n");
+  assert.throws(() => check(oversized), /more than 1000 checked items/i);
+});
+
 test("CI scanner rejects invalid canonical tracked backlog files", async () => {
   const cwd = await tmpProject({ "seed.txt": "seed\n", "nested/backlog.md": "- [x] stale {id: stale}\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+  const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
+  await assert.rejects(() => pexecFile(process.execPath, [script, "--release-ref", "main"], { cwd }), (error) => {
+    assert.equal(error.code, 2);
+    assert.equal(JSON.parse(error.stdout).rejected, 1);
+    return true;
+  });
+});
+
+test("CI scanner validates immutable index blobs rather than replaced working-tree bytes", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n", "roadmap.txt": "- [x] stale {id: indexed}\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+  await writeFile(join(cwd, "roadmap.txt"), "harmless working tree replacement\n");
   const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
   await assert.rejects(() => pexecFile(process.execPath, [script, "--release-ref", "main"], { cwd }), (error) => {
     assert.equal(error.code, 2);

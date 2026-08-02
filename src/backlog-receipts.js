@@ -4,6 +4,7 @@ import { stripAnnotations } from "./sprint-waves.js";
 const CHECKED_CHECKBOX_RE = /^- \[[xX]\] (.*)$/;
 const SHA_RE = /^[0-9a-f]{40}$/;
 export const BACKLOG_RECEIPT_MAX_BYTES = 16 * 1024 * 1024;
+export const BACKLOG_RECEIPT_MAX_CHECKED_ITEMS = 1_000;
 
 function gitFailure(operation, result) {
   if (result.error) throw result.error;
@@ -15,11 +16,15 @@ export function checkBacklogReceipts(content, { releaseRef, isReachable } = {}) 
   if (typeof releaseRef !== "string" || releaseRef.trim() === "") throw new TypeError("releaseRef must be a non-empty string");
   if (typeof isReachable !== "function") throw new TypeError("isReachable must be a function");
   const errors = [];
+  const reachability = new Map();
   let checked = 0, withdrawn = 0, verified = 0;
   content.split(/\r?\n/).forEach((line, index) => {
     const match = CHECKED_CHECKBOX_RE.exec(line.replace(/^\s+/, ""));
     if (!match) return;
     checked += 1;
+    if (checked > BACKLOG_RECEIPT_MAX_CHECKED_ITEMS) {
+      throw new Error(`backlog contains more than ${BACKLOG_RECEIPT_MAX_CHECKED_ITEMS} checked items`);
+    }
     const lineNo = index + 1;
     const { anns, annotationCounts } = stripAnnotations(match[1]);
     const id = anns.id || `item-${lineNo}`;
@@ -48,7 +53,8 @@ export function checkBacklogReceipts(content, { releaseRef, isReachable } = {}) 
       errors.push({ id, line: lineNo, reason: `${receiptType} receipt must be a lowercase 40-character Git SHA` });
       return;
     }
-    if (!isReachable(receipt)) {
+    if (!reachability.has(receipt)) reachability.set(receipt, isReachable(receipt));
+    if (!reachability.get(receipt)) {
       errors.push({ id, line: lineNo, reason: `${receiptType} receipt ${receipt} is not reachable from release ref ${releaseRef}` });
       return;
     }
@@ -73,7 +79,7 @@ export function makeGitReachabilityVerifier({ cwd, releaseCommit, spawnSyncImpl 
       input: `${receipt}\n`,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    if (object.status !== 0 || object.error) gitFailure("git cat-file --batch-check", object);
+    if (object.status !== 0 || object.error || object.stderr !== "") gitFailure("git cat-file --batch-check", object);
     const objectLine = object.stdout.trim();
     if (objectLine === `${receipt} missing`) return false;
     if (objectLine !== `${receipt} commit`) {

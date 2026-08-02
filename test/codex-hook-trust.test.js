@@ -228,7 +228,7 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
     }
   });
   assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, delayedExpansionDuplicate] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
-  for (const command of ["node ~/runtime-alias.mjs", "node ./runtime-*.mjs", "node ./runtime-?.mjs", "node ./runtime-[a-z].mjs"]) {
+  for (const command of ["node ~/runtime-alias.mjs", "node ./runtime-*.mjs", "node ./runtime-?.mjs", "node ./runtime-[a-z].mjs", "cd /tmp/alias-dir && node runtime-alias.mjs"]) {
     const expandedPathDuplicate = currentCodexInventoryHook({
       key: "/repo/.codex/config.toml:stop:0:0",
       currentHash,
@@ -403,12 +403,13 @@ test("Codex project installs use the primary checkout config root from a linked 
   assert.equal(mainHooks.hooks.Stop.length > 0, true);
   await assert.rejects(readFile(join(linked, ".codex", "hooks.json")), error => error.code === "ENOENT");
 
-  await mkdir(join(linked, ".codex"));
+  await mkdir(join(linked, "packages", ".codex"), { recursive: true });
   let markerInventoryReads = 0;
   const markerInventory = async () => {
     markerInventoryReads++;
     if (markerInventoryReads === 2) {
-      await writeFile(join(linked, ".codex", "hooks.json"), JSON.stringify({
+      await mkdir(join(main, "packages", ".codex"), { recursive: true });
+      await writeFile(join(main, "packages", ".codex", "hooks.json"), JSON.stringify({
         hooks: { Stop: [{ hooks: [{ type: "command", command: `node ${join(main, ".codex", "muster", "hooks", "muster-hook.mjs")}` }] }] }
       }, null, 2));
     }

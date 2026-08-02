@@ -76,6 +76,21 @@ export async function codexInvocationConfigDirs(cwd) {
   }
   return [...new Set(dirs)];
 }
+
+export async function codexActivationConfigDirs(commonRoot, invocationCwd) {
+  const invocationRoot = await codexInvocationRoot(invocationCwd);
+  const relativeParts = relative(invocationRoot, resolve(invocationCwd)).split(sep).filter(Boolean);
+  const dirs = [];
+  for (const root of [resolve(commonRoot), invocationRoot]) {
+    let current = root;
+    dirs.push(join(current, ".codex"));
+    for (const part of relativeParts) {
+      current = join(current, part);
+      dirs.push(join(current, ".codex"));
+    }
+  }
+  return [...new Set(dirs)];
+}
 async function ordinaryDirectoryPath(path, { create = false } = {}) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
@@ -218,8 +233,8 @@ export async function hookActivationSnapshot({ home, cwd, inventoryCwd = cwd, us
     }
   }
   const dirs = new Set([userCodexHome, join(cwd, ".codex"), ...entries.map(entry => resolve(entry.configDir))]);
-  const invocationConfigDirs = await codexInvocationConfigDirs(inventoryCwd);
-  for (const dir of invocationConfigDirs) dirs.add(dir);
+  const activationConfigDirs = await codexActivationConfigDirs(cwd, inventoryCwd);
+  for (const dir of activationConfigDirs) dirs.add(dir);
   const paths = [registryPath];
   for (const dir of dirs) paths.push(
     join(dir, "hooks.json"),
@@ -230,7 +245,7 @@ export async function hookActivationSnapshot({ home, cwd, inventoryCwd = cwd, us
   );
   const files = new Map([[registryPath, registryFile]]);
   for (const path of [...new Set(paths)].sort()) if (path !== registryPath) files.set(path, await activationFileSnapshot(path));
-  for (const invocationConfigDir of invocationConfigDirs) files.set(invocationConfigDir, await activationDirectorySnapshot(invocationConfigDir));
+  for (const activationConfigDir of activationConfigDirs) files.set(activationConfigDir, await activationDirectorySnapshot(activationConfigDir));
   return files;
 }
 
@@ -255,7 +270,7 @@ async function liveManagedHookScripts(home, extraConfigDirs = []) {
 
 async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = cwd, entries, currentDir, currentConfig }) {
   const currentProjectDir = join(cwd, ".codex");
-  const invocationProjectDirs = await codexInvocationConfigDirs(inventoryCwd);
+  const invocationProjectDirs = await codexActivationConfigDirs(cwd, inventoryCwd);
   const registeredDirs = new Set(entries.map(entry => resolve(entry.configDir)));
   const scopes = [
     { scope: "user", configDir: codexHome(home) },
@@ -1585,7 +1600,8 @@ function shellPathCandidates(command) {
 const hasUnresolvedShellExpansion = command => typeof command === "string"
   && (/(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command)
     || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command)
-    || /(^|[\s=])~(?:[\\/]|$)|[*?]|\[[^\]\r\n]*\]/.test(command));
+    || /(^|[\s=])~(?:[\\/]|$)|[*?]|\[[^\]\r\n]*\]/.test(command)
+    || /(?:^|[;&|('"\s])(?:cd|chdir|pushd|popd)(?:\s|$)/i.test(command));
 
 async function physicalHookIdentity(path) {
   const canonical = await realpath(path);

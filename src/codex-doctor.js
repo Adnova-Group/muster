@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { codexHookStateKeys, codexInvocationConfigDirs, codexProjectRoot, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, inventoryAliasCandidateSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameAliasCandidateSnapshot, sameHookActivationSnapshot } from "./codex-install.js";
+import { codexActivationConfigDirs, codexHookStateKeys, codexProjectRoot, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, inventoryAliasCandidateSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameAliasCandidateSnapshot, sameHookActivationSnapshot } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -715,7 +715,7 @@ function isHooksSkippedManifest(owner, packageVersion) {
 export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, runtimeIdentity, hookInventory, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
   const inventoryCwd = resolve(cwd);
   cwd = await codexProjectRoot(cwd);
-  const invocationConfigDirs = await codexInvocationConfigDirs(inventoryCwd);
+  const invocationConfigDirs = await codexActivationConfigDirs(cwd, inventoryCwd);
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.

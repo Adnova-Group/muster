@@ -78,6 +78,8 @@ test("Codex inventory is driven by live JSON and project/user directories", asyn
   await mkdir(join(tmp, "project", ".codex", "skills", "project-skill"), { recursive: true });
   await mkdir(join(tmp, "home", "skills", "user-skill"), { recursive: true });
   await mkdir(join(tmp, "project", ".codex", "agents"), { recursive: true });
+  await writeFile(join(tmp, "home", "config.toml"), `[projects.${JSON.stringify(join(tmp, "project"))}]\ntrust_level = "trusted"\n`);
+  await writeFile(join(tmp, "project", ".codex", "config.toml"), "[agents.project-agent]\nconfig_file = 'agents/project-agent.toml'\n");
   await writeFile(join(plugin, "skills", "plugin-skill", "SKILL.md"), "---\nname: plugin-skill\ndescription: test\n---\n");
   await writeFile(join(plugin, "agents", "plugin-agent.toml"), "name = 'plugin-agent'\nmodel = 'gpt-5.6-sol'\n");
   await writeFile(join(tmp, "project", ".codex", "skills", "project-skill", "SKILL.md"), "---\nname: project-skill\ndescription: test\n---\n");

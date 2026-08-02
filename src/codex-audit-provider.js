@@ -49,7 +49,19 @@ function effectiveAgentProfile(id, inventory, manifestProfile) {
   const highest = Math.max(...records.map(record => PROFILE_PRECEDENCE[record.scope] || 0));
   const winners = records.filter(record => (PROFILE_PRECEDENCE[record.scope] || 0) === highest);
   if (highest === 0 || winners.length !== 1) {
-    return { status: "shadowed", scope: null, path: null, model: null };
+    return {
+      status: "shadowed",
+      scope: null,
+      path: null,
+      model: null,
+      contenders: winners.map(({ scope, path, plugin, status, model }) => ({
+        scope,
+        path: path || null,
+        plugin: plugin || null,
+        status,
+        model: model || null,
+      })),
+    };
   }
   const winner = winners[0];
   if (winner.status !== "resolved" || typeof winner.model !== "string" || !winner.model) {

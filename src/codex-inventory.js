@@ -1,10 +1,10 @@
 import { execFile as execFileCb } from "node:child_process";
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, realpath } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { parseAgentProfileToml } from "./codex-release.js";
-import { readNoFollowRegular } from "./fs-safe.js";
+import { assertContainedNoSymlinkPath, readNoFollowRegular } from "./fs-safe.js";
 import { readdirSafe, readJson } from "./fs-util.js";
 
 const execFileDefault = promisify(execFileCb);
@@ -22,12 +22,13 @@ function records(result) {
 }
 
 function installedPlugins(result) {
-  const names = new Set();
+  const identities = new Set();
   return records(result).filter(plugin => {
     if (!plugin || typeof plugin !== "object" || plugin.installed !== true || plugin.enabled !== true) return false;
-    const name = plugin.name || plugin.pluginId?.split("@")[0];
-    if (!name || names.has(name)) return false;
-    names.add(name);
+    const name = plugin.pluginId || plugin.name;
+    const identity = `${name || ""}\0${plugin.source?.path || ""}`;
+    if (!name || identities.has(identity)) return false;
+    identities.add(identity);
     return true;
   });
 }
@@ -103,6 +104,84 @@ async function agentProfileRecords(root, scope, plugin = null) {
   return records;
 }
 
+const AGENT_HEADER = /^\s*\[agents\.("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\]\s*(?:#.*)?$/;
+const PROJECT_HEADER = /^\s*\[projects\.("(?:[^"\\]|\\.)*"|'[^']*')\]\s*(?:#.*)?$/;
+
+function headerKey(raw) {
+  return raw.startsWith('"') || raw.startsWith("'") ? tomlString(raw) : raw;
+}
+
+function configSections(text) {
+  const agents = new Map(), projects = new Map();
+  let current = null;
+  for (const line of String(text).split(/\r?\n/)) {
+    const agent = line.match(AGENT_HEADER), project = line.match(PROJECT_HEADER);
+    if (agent || project) {
+      const kind = agent ? "agent" : "project";
+      const key = headerKey((agent || project)[1]);
+      const target = agent ? agents : projects;
+      current = key ? { kind, key, values: {} } : null;
+      if (current) {
+        if (target.has(key)) { target.set(key, null); current = null; }
+        else target.set(key, current.values);
+      }
+      continue;
+    }
+    if (/^\s*\[/.test(line)) { current = null; continue; }
+    if (!current) continue;
+    const assignment = line.match(/^\s*(config_file|trust_level)\s*=\s*("(?:[^"\\]|\\.)*"|'[^']*')\s*(?:#.*)?$/);
+    if (!assignment) continue;
+    if (Object.hasOwn(current.values, assignment[1])) current.values[assignment[1]] = null;
+    else current.values[assignment[1]] = tomlString(assignment[2]);
+  }
+  return { agents, projects };
+}
+
+async function configText(path) {
+  try {
+    return (await readNoFollowRegular(path, {
+      maxBytes: 8 * 1024 * 1024,
+      label: `Codex config ${path}`,
+    })).bytes.toString("utf8");
+  } catch { return ""; }
+}
+
+async function registeredAgentProfiles(configRoot, scope, sections) {
+  const records = [];
+  for (const [name, values] of sections.agents) {
+    const configured = values?.config_file;
+    if (typeof configured !== "string" || !configured) {
+      records.push({ name, model: null, status: "unresolved", scope, path: null });
+      continue;
+    }
+    const path = resolve(configRoot, configured);
+    try {
+      await assertContainedNoSymlinkPath(configRoot, path);
+      const { bytes } = await readNoFollowRegular(path, {
+        maxBytes: 1_048_576,
+        label: `Codex agent profile ${path}`,
+      });
+      let parsed;
+      try { parsed = parseAgentProfileToml(bytes.toString("utf8")); }
+      catch {
+        records.push({ name, model: null, status: "unresolved", scope, path });
+        continue;
+      }
+      const declaredName = tomlString(parsed.name), model = tomlString(parsed.model);
+      records.push({
+        name,
+        model,
+        status: declaredName === name && model ? "resolved" : "unresolved",
+        scope,
+        path,
+      });
+    } catch {
+      records.push({ name, model: null, status: "unresolved", scope, path });
+    }
+  }
+  return records;
+}
+
 function mcpNames(result) {
   if (Array.isArray(result)) return result
     .filter(record => typeof record === "string" || (record && typeof record === "object" && record.enabled === true))
@@ -126,21 +205,33 @@ export async function readCodexInventory({ cwd = process.cwd(), codexHome = proc
   const pluginSkills = [], pluginAgentProfiles = [];
   for (const plugin of active) {
     if (!plugin.source?.path) continue;
-    pluginSkills.push(...await skillNames(join(plugin.source.path, "skills")));
+    let pluginRoot;
+    try { pluginRoot = await realpath(plugin.source.path); }
+    catch { continue; }
+    pluginSkills.push(...await skillNames(join(pluginRoot, "skills")));
     pluginAgentProfiles.push(...await agentProfileRecords(
-      join(plugin.source.path, "agents"),
+      join(pluginRoot, "agents"),
       "plugin",
-      plugin.name || plugin.pluginId?.split("@")[0] || null,
+      plugin.pluginId || plugin.name || null,
     ));
   }
+  let canonicalCwd;
+  try { canonicalCwd = await realpath(cwd); } catch { canonicalCwd = resolve(cwd); }
+  const projectConfigRoot = join(canonicalCwd, ".codex");
+  const userConfigText = await configText(join(codexHome, "config.toml"));
+  const userSections = configSections(userConfigText);
+  const projectTrusted = userSections.projects.get(canonicalCwd)?.trust_level === "trusted";
+  const projectConfigText = projectTrusted ? await configText(join(projectConfigRoot, "config.toml")) : "";
+  const projectSections = configSections(projectConfigText);
   const [projectSkills, userSkills, projectAgentProfiles, userAgentProfiles] = await Promise.all([
-    skillNames(join(cwd, ".codex", "skills")), skillNames(join(codexHome, "skills")),
-    agentProfileRecords(join(cwd, ".codex", "agents"), "project"),
-    agentProfileRecords(join(codexHome, "agents"), "user"),
+    projectTrusted ? skillNames(join(projectConfigRoot, "skills")) : [],
+    skillNames(join(codexHome, "skills")),
+    projectTrusted ? registeredAgentProfiles(projectConfigRoot, "project", projectSections) : [],
+    registeredAgentProfiles(codexHome, "user", userSections),
   ]);
   const agentProfiles = [...pluginAgentProfiles, ...userAgentProfiles, ...projectAgentProfiles];
   return {
-    plugins: active.map(plugin => plugin.name || plugin.pluginId.split("@")[0]),
+    plugins: [...new Set(active.map(plugin => plugin.name || plugin.pluginId?.split("@")[0]).filter(Boolean))],
     skills: [...new Set([...pluginSkills, ...projectSkills, ...userSkills])],
     mcpServers: [...new Set(mcpNames(mcpJson))],
     agents: [...new Set(agentProfiles.map(profile => profile.name))],

@@ -130,6 +130,8 @@ test("codex-audit-provider CLI derives candidates instead of accepting a handcra
   await mkdir(codexHome, { recursive: true });
   await mkdir(agents, { recursive: true });
   await mkdir(bin, { recursive: true });
+  await writeFile(join(codexHome, "config.toml"), `[projects.${JSON.stringify(dir)}]\ntrust_level = "trusted"\n`);
+  await writeFile(join(dir, ".codex", "config.toml"), "[agents.muster-reviewer]\nconfig_file = 'agents/muster-reviewer.toml'\n");
   await writeFile(join(codexHome, "models_cache.json"), JSON.stringify({
     models: [{ slug: "gpt-5.6-sol", multi_agent_version: "v2" }],
   }));
@@ -161,6 +163,14 @@ test("codex-audit-provider CLI refuses a project profile whose effective model u
   await mkdir(projectAgents, { recursive: true });
   await mkdir(userAgents, { recursive: true });
   await mkdir(bin, { recursive: true });
+  await writeFile(join(codexHome, "config.toml"), [
+    `[projects.${JSON.stringify(dir)}]`,
+    'trust_level = "trusted"',
+    '[agents.muster-reviewer]',
+    "config_file = 'agents/muster-reviewer.toml'",
+    "",
+  ].join("\n"));
+  await writeFile(join(dir, ".codex", "config.toml"), "[agents.muster-reviewer]\nconfig_file = 'agents/muster-reviewer.toml'\n");
   await writeFile(join(codexHome, "models_cache.json"), JSON.stringify({ models: [
     { slug: "gpt-5.6-sol", multi_agent_version: "v2" },
     { slug: "gpt-5.6-luna", multi_agent_version: "v1" },
@@ -184,6 +194,25 @@ test("codex-audit-provider CLI refuses a project profile whose effective model u
   assert.equal(reviewer.apiVersion, "v1");
   assert.equal(reviewer.profile.scope, "project");
   assert.equal(reviewer.profile.model, "gpt-5.6-luna");
+
+  await writeFile(join(codexHome, "config.toml"), [
+    `[projects.${JSON.stringify(dir)}]`,
+    'trust_level = "untrusted"',
+    '[agents.muster-reviewer]',
+    "config_file = 'agents/muster-reviewer.toml'",
+    "",
+  ].join("\n"));
+  const untrusted = JSON.parse((await execFile(process.execPath, [
+    new URL("../src/cli.js", import.meta.url).pathname,
+    "codex-audit-provider", "--role", "code-review", "--task-id", "audit-readability",
+    "--callable-apis", "v2", "--message", "Review readability",
+  ], {
+    cwd: dir,
+    env: { ...process.env, HOME: home, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH || ""}` },
+  })).stdout);
+  assert.equal(untrusted.mode, "independent");
+  assert.equal(untrusted.provider.profile.scope, "user");
+  assert.equal(untrusted.provider.profile.model, "gpt-5.6-sol");
 });
 
 test("a valid complex profile with name different from filename remains an unresolved shadow", async () => {
@@ -195,6 +224,8 @@ test("a valid complex profile with name different from filename remains an unres
   await mkdir(codexHome, { recursive: true });
   await mkdir(agents, { recursive: true });
   await mkdir(bin, { recursive: true });
+  await writeFile(join(codexHome, "config.toml"), `[projects.${JSON.stringify(dir)}]\ntrust_level = "trusted"\n`);
+  await writeFile(join(dir, ".codex", "config.toml"), "[agents.muster-reviewer]\nconfig_file = 'agents/different-filename.toml'\n");
   await writeFile(join(codexHome, "models_cache.json"), JSON.stringify({
     models: [{ slug: "gpt-5.6-sol", multi_agent_version: "v2" }],
   }));

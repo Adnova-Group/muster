@@ -82,6 +82,7 @@ import {
   ensureContainedDirectory,
   inspectContainedPath,
   isUnsafePathToken,
+  readContainedFile,
   readNoFollowRegular,
   resolveContainedRealpath,
   withFileMutationLock,
@@ -560,9 +561,15 @@ async function main() {
       if (message !== undefined && messageFile !== undefined) fail(`${usage}: --message and --message-file are mutually exclusive`);
       let fileMessage;
       if (messageFile !== undefined) {
-        const canonical = await resolveContainedRealpath(process.cwd(), messageFile);
-        if (canonical === null) fail(`${usage}: --message-file ${messageFile} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
-        fileMessage = await readFile(canonical, "utf8");
+        try {
+          fileMessage = (await readContainedFile(
+            process.cwd(),
+            resolve(process.cwd(), messageFile),
+            { maxBytes: 1_048_576 },
+          )).toString("utf8");
+        } catch {
+          fail(`${usage}: --message-file ${messageFile} does not resolve to a file contained under the run root (missing, dangling, oversized, or a symlink escape) -- refusing to read`);
+        }
       }
       const catalog = await loadCatalog(CATALOG_DIR);
       const inventory = await readCodexInventory({ cwd: process.cwd() });
@@ -595,11 +602,15 @@ async function main() {
       // the named refusal, never a read.
       let fileMessage;
       if (messageFile !== undefined) {
-        const canonical = await resolveContainedRealpath(process.cwd(), messageFile);
-        if (canonical === null) {
-          fail(`${usage}: --message-file ${messageFile} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
+        try {
+          fileMessage = (await readContainedFile(
+            process.cwd(),
+            resolve(process.cwd(), messageFile),
+            { maxBytes: 1_048_576 },
+          )).toString("utf8");
+        } catch {
+          fail(`${usage}: --message-file ${messageFile} does not resolve to a file contained under the run root (missing, dangling, oversized, or a symlink escape) -- refusing to read`);
         }
-        fileMessage = await readFile(canonical, "utf8");
       }
       const version = flagValue(rest, "--version");
       const forkTurns = flagValue(rest, "--fork-turns");

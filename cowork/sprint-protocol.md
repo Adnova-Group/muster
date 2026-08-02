@@ -72,8 +72,8 @@ Missing backlog file, or a malformed annotation the tool reports as an error, st
 run, report it plainly.
 
 Persist that successful result as `plan`. During execution, call **`muster_sprint_reconcile`** with
-`plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`, parent-verified `candidateSha` for completed implementation/review, and the exact-head `approvalDigest` for completed integration), and
-the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`; review/integration also carry `candidateSha`, and integration carries `approvalDigest`). Destructive dispositions also provide `integrationTargets` and record the emitted full-tuple approval in `approvals`. Drive a strict **reconcile → dispatch → wait** loop:
+`plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`, parent-verified `candidateSha` for every status, and parent-authenticated `evidence`; review also carries the exact `implementationAttempt`, and completed integration carries the exact-head `approvalDigest`), and
+the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`; review/integration also carry `candidateSha`, review carries `implementationAttempt`, and integration carries `approvalDigest`). Destructive dispositions also provide `integrationTargets` and `runId`; record the emitted full-tuple approval in `approvals` with approver, fresh timestamp, nonce, digest, and HMAC evidence generated through the trusted adapter secret. The same current work/base/operation tuple must match at dispatch, in-flight, and completion. Drive a strict **reconcile → dispatch → wait** loop:
 drain all completions after every wake, reconcile once, execute every returned action, update
 `inFlight`, then reconcile again before waiting. `next:dispatch` forbids an idle wait;
 `next:terminal|blocked|invalid` ends the loop; only `wait.eligible:true` permits waiting. Duplicate or

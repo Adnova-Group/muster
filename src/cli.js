@@ -648,6 +648,7 @@ async function main() {
         inFlight: input.inFlight,
         integrationTargets: input.integrationTargets,
         approvals: input.approvals,
+        runId: input.runId,
         recovery: {
           ...(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT === undefined ? {} : {
             noProgressLimit: Number(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT),
@@ -662,6 +663,12 @@ async function main() {
           if (typeof secret !== "string" || secret.length < 16 || !/^[0-9a-f]{64}$/.test(approval.evidence ?? "")) return false;
           const expected = createHmac("sha256", secret).update(approval.digest).digest();
           return timingSafeEqual(expected, Buffer.from(approval.evidence, "hex"));
+        },
+        verifyReceipt: (receipt, digest) => {
+          const secret = process.env.MUSTER_LIFECYCLE_RECEIPT_SECRET;
+          if (typeof secret !== "string" || secret.length < 16 || !/^[0-9a-f]{64}$/.test(receipt.evidence ?? "")) return false;
+          const expected = createHmac("sha256", secret).update(digest).digest();
+          return timingSafeEqual(expected, Buffer.from(receipt.evidence, "hex"));
         },
       });
       out(r);

@@ -10,7 +10,8 @@ import {
   buildSprintReceipt,
   computeSprintWaves,
   integrationApprovalDigest,
-  reconcileSprintProgress,
+  lifecycleReceiptDigest,
+  reconcileSprintProgress as reconcileSprintProgressRaw,
 } from "../src/sprint-waves.js";
 
 const pexecFile = promisify(execFile);
@@ -24,7 +25,7 @@ function plan(lines) {
 function receipt(id, itemId, phase, status = "completed", attempt = 1) {
   return {
     id, itemId, phase, status, attempt,
-    ...(["implementation", "review"].includes(phase) && status === "completed" ? { candidateSha: SHA_A } : {}),
+    ...(["implementation", "review"].includes(phase) ? { candidateSha: SHA_A } : {}),
     ...(phase === "review" ? { implementationAttempt: attempt } : {}),
   };
 }
@@ -43,6 +44,40 @@ const FINDING_A = "1".repeat(64);
 const BASE_SHA = "c".repeat(40);
 const APPROVAL_TOKEN = "trusted-harness-evidence";
 const VERIFY_APPROVAL = { verifyApproval: (value) => value.evidence === APPROVAL_TOKEN };
+const RECEIPT_TOKEN = "trusted-parent-receipt";
+const RUN_ID = "run-self-healing-test";
+
+function signedReceipt(value) {
+  const unsigned = { ...value };
+  delete unsigned.evidence;
+  return { ...unsigned, evidence: createHmac("sha256", RECEIPT_TOKEN).update(lifecycleReceiptDigest(unsigned)).digest("hex") };
+}
+
+function signedCliProgress(progress, secret) {
+  return {
+    ...progress,
+    receipts: (progress.receipts ?? []).map((value) => {
+      const unsigned = { ...value };
+      delete unsigned.evidence;
+      return {
+        ...unsigned,
+        evidence: createHmac("sha256", secret).update(lifecycleReceiptDigest(unsigned)).digest("hex"),
+      };
+    }),
+  };
+}
+
+function reconcileSprintProgress(sprint, progress = {}, options = {}) {
+  return reconcileSprintProgressRaw(sprint, {
+    ...progress,
+    receipts: (progress.receipts ?? []).map(signedReceipt),
+    ...(progress.approvals?.length ? { runId: progress.runId ?? RUN_ID } : {}),
+  }, {
+    verifyReceipt: (receipt, digest) => receipt.evidence
+      === createHmac("sha256", RECEIPT_TOKEN).update(digest).digest("hex"),
+    ...options,
+  });
+}
 
 function integrationTarget(itemId) {
   return { [itemId]: { workBranch: `work/${itemId}`, baseBranch: "main", baseHeadSha: BASE_SHA } };
@@ -55,7 +90,8 @@ function authorization(itemId, candidateSha, operation) {
 function approval(itemId, candidateSha, operation) {
   const value = {
     ...authorization(itemId, candidateSha, operation), approvedBy: "human-reviewer",
-    approvedAt: "2026-08-01T12:00:00Z", evidence: APPROVAL_TOKEN,
+    approvedAt: new Date().toISOString(), runId: RUN_ID, nonce: `nonce-${itemId}-${candidateSha}`,
+    evidence: APPROVAL_TOKEN,
   };
   return { ...value, digest: integrationApprovalDigest(value) };
 }
@@ -204,17 +240,36 @@ test("unchanged repair detection binds to the reviewed implementation generation
   assert.equal(result.terminalReason, "no-progress");
 });
 
+test("review completion must name an existing current implementation generation", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const stale = reconcileSprintProgress(sprint, { receipts: [
+    { ...receipt("impl-a-1", "a", "implementation"), candidateSha: SHA_A },
+    { ...receipt("impl-a-2", "a", "implementation", "completed", 2), candidateSha: SHA_A },
+    { ...receipt("review-a", "a", "review"), candidateSha: SHA_A, implementationAttempt: 1 },
+  ] });
+  assert.equal(stale.items.a.state, "review_ready");
+  assert.notEqual(stale.next, "terminal");
+
+  const future = reconcileSprintProgress(sprint, { receipts: [
+    { ...receipt("impl-a", "a", "implementation"), candidateSha: SHA_A },
+    { ...receipt("review-a", "a", "review"), candidateSha: SHA_A, implementationAttempt: 99 },
+  ] });
+  assert.equal(future.next, "invalid");
+  assert.match(future.errors.join(" "), /exact implementation generation/);
+});
+
 test("trusted receipt construction verifies worktree HEAD and computes findings evidence", () => {
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
   const built = buildSprintReceipt({
     id: "review-a", itemId: "a", phase: "review", status: "failed", candidateSha: head,
     findings: [{ code: "unsafe" }], worktreePath: repoRoot, implementationAttempt: 1,
+    signReceipt: () => RECEIPT_TOKEN,
   });
   assert.equal(built.candidateSha, head);
   assert.match(built.progressFingerprint, /^[0-9a-f]{64}$/);
   assert.throws(() => buildSprintReceipt({
     id: "review-a", itemId: "a", phase: "review", candidateSha: SHA_A,
-    worktreePath: repoRoot,
+    worktreePath: repoRoot, signReceipt: () => RECEIPT_TOKEN,
   }), /worktree HEAD/);
 });
 
@@ -330,6 +385,57 @@ test("completed integration requires matching approval evidence", () => {
   assert.match(result.errors.join(" "), /matching exact-head approval/);
 });
 
+test("stale signed approval cannot authorize a changed current target in flight or completion", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: merge-local}"]);
+  const approved = approval("a", SHA_A, "merge-local");
+  const changedTargets = { a: { workBranch: "work/a", baseBranch: "release", baseHeadSha: SHA_B } };
+  const baseProgress = {
+    integrationTargets: changedTargets, approvals: [approved],
+    receipts: [
+      { ...receipt("impl-a", "a", "implementation"), candidateSha: SHA_A },
+      { ...receipt("review-a", "a", "review"), candidateSha: SHA_A },
+    ],
+  };
+  const flightResult = reconcileSprintProgress(sprint, {
+    ...baseProgress,
+    inFlight: [{ ...flight("a", "integration"), approvalDigest: approved.digest }],
+  }, VERIFY_APPROVAL);
+  assert.equal(flightResult.next, "invalid");
+  assert.match(flightResult.errors.join(" "), /trusted approval/);
+
+  const completion = reconcileSprintProgress(sprint, {
+    ...baseProgress,
+    receipts: [...baseProgress.receipts, {
+      ...receipt("integrate-a", "a", "integration"), candidateSha: SHA_A, approvalDigest: approved.digest,
+    }],
+  }, VERIFY_APPROVAL);
+  assert.equal(completion.next, "invalid");
+  assert.match(completion.errors.join(" "), /exact-head approval/);
+});
+
+test("approval freshness, canonical identity encoding, and receipt provenance fail closed", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: merge-local}"]);
+  const old = approval("a", SHA_A, "merge-local");
+  old.approvedAt = "2000-01-01T00:00:00.000Z";
+  old.digest = integrationApprovalDigest(old);
+  const expired = reconcileSprintProgress(sprint, {
+    receipts: [], integrationTargets: integrationTarget("a"), approvals: [old], runId: RUN_ID,
+  }, VERIFY_APPROVAL);
+  assert.equal(expired.next, "invalid");
+
+  assert.throws(() => integrationApprovalDigest({
+    ...authorization("a", SHA_A, "merge-local"), approvedBy: "a\0b", approvedAt: new Date().toISOString(),
+    runId: RUN_ID, nonce: "nonce",
+  }), /control characters/);
+
+  const forged = reconcileSprintProgressRaw(
+    plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]),
+    { receipts: [receipt("impl-a", "a", "implementation"), receipt("review-a", "a", "review")] },
+  );
+  assert.equal(forged.next, "invalid");
+  assert.match(forged.errors.join(" "), /trusted parent evidence/);
+});
+
 test("terminal integration failure blocks destructive redispatch", () => {
   const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: merge-push}"]);
   const result = reconcileSprintProgress(sprint, {
@@ -347,8 +453,10 @@ test("terminal integration failure blocks destructive redispatch", () => {
 test("every review and integration outcome requires candidate binding", () => {
   const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: merge-push}"]);
   for (const phase of ["review", "integration"]) {
+    const unbound = receipt(`failed-${phase}`, "a", phase, "failed");
+    delete unbound.candidateSha;
     const result = reconcileSprintProgress(sprint, {
-      receipts: [{ ...receipt(`failed-${phase}`, "a", phase, "failed"), terminalReason: "external-impossibility" }],
+      receipts: [{ ...unbound, terminalReason: "external-impossibility" }],
     });
     assert.equal(result.next, "invalid");
     assert.match(result.errors.join(" "), /candidateSha/);
@@ -462,14 +570,17 @@ test("a later dependency wave waits for all prior-wave integration", () => {
 
 test("sprint-reconcile CLI consumes the machine-checkable receipt envelope", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-sprint-reconcile-"));
+  const receiptSecret = "receipt-secret-0123456789abcdef";
   try {
     const input = join(dir, "progress.json");
-    await writeFile(input, JSON.stringify({
+    await writeFile(input, JSON.stringify(signedCliProgress({
       plan: plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]),
       inFlight: [flight("a", "implementation")],
       receipts: [receipt("impl-a", "a", "implementation")],
-    }));
-    const { stdout } = await pexecFile(process.execPath, [cli, "sprint-reconcile", input], { cwd: repoRoot });
+    }, receiptSecret)));
+    const { stdout } = await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
+      cwd: repoRoot, env: { ...process.env, MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret },
+    });
     const result = JSON.parse(stdout);
 
     assert.equal(result.next, "dispatch");
@@ -481,9 +592,10 @@ test("sprint-reconcile CLI consumes the machine-checkable receipt envelope", asy
 
 test("sprint-reconcile CLI reads recovery policy from trusted environment, not mailbox JSON", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-sprint-recovery-policy-"));
+  const receiptSecret = "receipt-secret-0123456789abcdef";
   try {
     const input = join(dir, "progress.json");
-    await writeFile(input, JSON.stringify({
+    await writeFile(input, JSON.stringify(signedCliProgress({
       plan: plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]),
       recovery: { noProgressLimit: 1 },
       receipts: [
@@ -492,10 +604,13 @@ test("sprint-reconcile CLI reads recovery policy from trusted environment, not m
         { ...receipt("impl-a-2", "a", "implementation", "completed", 2), candidateSha: SHA_A },
         { ...receipt("review-a-2", "a", "review", "failed", 2), candidateSha: SHA_A, progressFingerprint: FINDING_A },
       ],
-    }));
+    }, receiptSecret)));
     const { stdout } = await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
       cwd: repoRoot,
-      env: { ...process.env, MUSTER_RECOVERY_NO_PROGRESS_LIMIT: "3", MUSTER_RECOVERY_MAX_CONTINUATIONS: "10" },
+      env: {
+        ...process.env, MUSTER_RECOVERY_NO_PROGRESS_LIMIT: "3", MUSTER_RECOVERY_MAX_CONTINUATIONS: "10",
+        MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret,
+      },
     });
     const result = JSON.parse(stdout);
     assert.equal(result.next, "dispatch");
@@ -508,6 +623,7 @@ test("sprint-reconcile CLI reads recovery policy from trusted environment, not m
 test("sprint-reconcile CLI round-trips exact-head approval into integration dispatch", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-sprint-approval-"));
   const secret = "0123456789abcdef0123456789abcdef";
+  const receiptSecret = "receipt-secret-0123456789abcdef";
   try {
     const input = join(dir, "progress.json");
     const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: merge-local}"]);
@@ -519,16 +635,23 @@ test("sprint-reconcile CLI round-trips exact-head approval into integration disp
       ],
       inFlight: [], integrationTargets: integrationTarget("a"), approvals: [],
     };
-    await writeFile(input, JSON.stringify(progress));
-    const requested = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-reconcile", input], { cwd: repoRoot })).stdout);
+    await writeFile(input, JSON.stringify(signedCliProgress(progress, receiptSecret)));
+    const requested = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
+      cwd: repoRoot, env: { ...process.env, MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret },
+    })).stdout);
     assert.equal(requested.actions[0].type, "approval");
 
     const approved = approval("a", SHA_A, "merge-local");
     approved.evidence = createHmac("sha256", secret).update(approved.digest).digest("hex");
     progress.approvals = [approved];
-    await writeFile(input, JSON.stringify(progress));
+    progress.runId = RUN_ID;
+    await writeFile(input, JSON.stringify(signedCliProgress(progress, receiptSecret)));
     const dispatched = JSON.parse((await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
-      cwd: repoRoot, env: { ...process.env, MUSTER_INTEGRATION_APPROVAL_SECRET: secret },
+      cwd: repoRoot,
+      env: {
+        ...process.env, MUSTER_INTEGRATION_APPROVAL_SECRET: secret,
+        MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret,
+      },
     })).stdout);
     assert.deepEqual(dispatched.actions, [{
       type: "dispatch", itemId: "a", phase: "integration", wave: 1,

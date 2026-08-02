@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
-import { integrationApprovalDigest } from "../src/sprint-waves.js";
+import { integrationApprovalDigest, lifecycleReceiptDigest } from "../src/sprint-waves.js";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +14,13 @@ const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
 const rootDir = fileURLToPath(root);
 const execFileP = promisify(execFile);
+const MCP_RECEIPT_SECRET = "mcp-receipt-secret-0123456789abcdef";
+function signedMcpReceipt(receipt) {
+  return {
+    ...receipt,
+    evidence: createHmac("sha256", MCP_RECEIPT_SECRET).update(lifecycleReceiptDigest(receipt)).digest("hex"),
+  };
+}
 
 // Drive the MCP server over stdio: send requests, resolve a map of id -> response
 // once every id with an `id` has replied. Notifications (no id) expect no reply.
@@ -842,11 +849,11 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
         arguments: {
           plan,
           inFlight: [{ itemId: "a", phase: "implementation", attempt: 1 }],
-          receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: "a".repeat(40) }],
+          receipts: [signedMcpReceipt({ id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: "a".repeat(40) })],
         },
       },
     },
-  ]);
+  ], { env: { MUSTER_LIFECYCLE_RECEIPT_SECRET: MCP_RECEIPT_SECRET } });
   const res = JSON.parse(reconciled[2].result.content[0].text);
 
   assert.equal(reconciled[2].result.isError, false);
@@ -869,7 +876,8 @@ test("json verb: muster_sprint_reconcile forwards exact-head integration approva
   const baseHeadSha = "b".repeat(40);
   const approval = {
     itemId: "a", workBranch: "work/a", workHeadSha, baseBranch: "main", baseHeadSha,
-    operation: "merge-local", approvedBy: "human", approvedAt: "2026-08-01T12:00:00Z",
+    operation: "merge-local", approvedBy: "human", approvedAt: new Date().toISOString(),
+    runId: "mcp-run", nonce: "mcp-approval-nonce",
   };
   approval.digest = integrationApprovalDigest(approval);
   const secret = "0123456789abcdef0123456789abcdef";
@@ -881,15 +889,19 @@ test("json verb: muster_sprint_reconcile forwards exact-head integration approva
       arguments: {
         plan,
         receipts: [
-          { id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: workHeadSha },
-          { id: "review-a", itemId: "a", phase: "review", status: "completed", candidateSha: workHeadSha, implementationAttempt: 1 },
+          signedMcpReceipt({ id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: workHeadSha }),
+          signedMcpReceipt({ id: "review-a", itemId: "a", phase: "review", status: "completed", candidateSha: workHeadSha, implementationAttempt: 1 }),
         ],
         inFlight: [],
         integrationTargets: { a: { workBranch: "work/a", baseBranch: "main", baseHeadSha } },
         approvals: [approval],
+        runId: "mcp-run",
       },
     } },
-  ], { env: { MUSTER_INTEGRATION_APPROVAL_SECRET: secret } });
+  ], { env: {
+    MUSTER_INTEGRATION_APPROVAL_SECRET: secret,
+    MUSTER_LIFECYCLE_RECEIPT_SECRET: MCP_RECEIPT_SECRET,
+  } });
   const result = JSON.parse(response[2].result.content[0].text);
   assert.equal(response[2].result.isError, false);
   assert.deepEqual(result.actions, [{

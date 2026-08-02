@@ -69,8 +69,9 @@ const SPRINT_RECEIPT_SCHEMA = {
     terminalReason: { type: "string", enum: ["approval", "human-hold", "external-impossibility", "cancelled"] },
     approvalDigest: { type: "string", pattern: "^[0-9a-f]{64}$" },
     implementationAttempt: { type: "integer", minimum: 1, maximum: 1000000 },
+    evidence: { type: "string", pattern: "^[0-9a-f]{64}$" },
   },
-  required: ["id", "itemId", "phase", "status"],
+  required: ["id", "itemId", "phase", "status", "evidence"],
   additionalProperties: false,
 };
 const SPRINT_IN_FLIGHT_SCHEMA = {
@@ -163,10 +164,12 @@ const TOOLS = {
             itemId: { type: "string" }, workBranch: { type: "string" }, workHeadSha: { type: "string" },
             baseBranch: { type: "string" }, baseHeadSha: { type: "string" }, operation: { type: "string", enum: ["merge-local", "merge-push"] },
             approvedBy: { type: "string" }, approvedAt: { type: "string" }, evidence: { type: "string" }, digest: { type: "string", pattern: "^[0-9a-f]{64}$" },
+            runId: { type: "string" }, nonce: { type: "string" },
           },
-          required: ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation", "approvedBy", "approvedAt", "evidence", "digest"],
+          required: ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation", "approvedBy", "approvedAt", "runId", "nonce", "evidence", "digest"],
           additionalProperties: false,
         } },
+        runId: { type: "string", minLength: 1 },
       },
       ["plan", "receipts", "inFlight"],
     ),
@@ -174,6 +177,7 @@ const TOOLS = {
       plan: a.plan, receipts: a.receipts, inFlight: a.inFlight,
       ...(a.integrationTargets === undefined ? {} : { integrationTargets: a.integrationTargets }),
       ...(a.approvals === undefined ? {} : { approvals: a.approvals }),
+      ...(a.runId === undefined ? {} : { runId: a.runId }),
     }],
   },
   muster_backlog_publish: {

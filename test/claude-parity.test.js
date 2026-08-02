@@ -1362,5 +1362,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // no longer terminate progressing work. File count remains unchanged.
   // Re-pin #43 binds lifecycle receipts, in-flight work, and destructive
   // approval evidence to exact candidate/base identities. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "dea381a67a5d871790405c5197b49ce219d44c024a28769265f5aca62ffc861a");
+  assert.equal(hash.digest("hex"), "4309c8cfff730339330dfee2a06caa322abc35935387aea776b0939b6803b203");
 });

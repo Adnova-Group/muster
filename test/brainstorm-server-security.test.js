@@ -212,27 +212,31 @@ async function exerciseAuthenticatedWebSocketTunnel(t) {
 
 async function exerciseRealBrowserTunnel(t) {
   const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-browser-e2e-"));
+  let child;
+  let tunnel;
+  let browser;
+  t.after(async () => {
+    if (browser) await browser.close();
+    if (child) child.kill();
+    if (tunnel) await tunnel.close();
+    await rm(session, { recursive: true, force: true });
+  });
   await chmod(session, 0o700);
-  const { child, info } = await launchServer(session);
+  const launched = await launchServer(session);
+  ({ child } = launched);
+  const { info } = launched;
   await writeFile(join(session, "content", "remote-choice.html"), `
     <main class="options">
       <button id="remote-choice" data-choice="remote-private-choice">remote-private-event</button>
     </main>
   `, { mode: 0o600 });
-  const tunnel = await createAuthenticatedTunnel(info.port);
+  tunnel = await createAuthenticatedTunnel(info.port);
   const { chromium } = require(process.env.MUSTER_PLAYWRIGHT_CORE);
-  const browser = await chromium.launch({
+  browser = await chromium.launch({
     executablePath: process.env.MUSTER_PLAYWRIGHT_BROWSER,
     headless: true,
     args: ["--no-sandbox"],
   });
-  t.after(async () => {
-    await browser.close();
-    child.kill();
-    await tunnel.close();
-    await rm(session, { recursive: true, force: true });
-  });
-
   const launchUrl = new URL(info.url);
   launchUrl.hostname = "127.0.0.1";
   launchUrl.port = String(tunnel.port);

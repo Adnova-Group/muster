@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { runCodexWave, terminateProcess } from "../src/codex-wave-runner.js";
+import { posixContainmentCall, runCodexWave, terminateProcess } from "../src/codex-wave-runner.js";
 import { buildCodexPlugin } from "../scripts/build-codex.mjs";
 
 const execFile = promisify(execFileCb);
@@ -41,8 +41,12 @@ if (args[0] === "--version") return process.stdout.write("codex-cli 0.145.0\\n")
 if (args[0] === "--help") return process.stdout.write("--ask-for-approval\\n");
 if (args[0] === "exec" && args[1] === "--help") return process.stdout.write("--json --ignore-user-config --ignore-rules --strict-config --ephemeral --sandbox\\n");
 const cwd = args[args.indexOf("-C") + 1];
-const payload = JSON.parse(args.at(-1));
-fs.appendFileSync(${JSON.stringify(launches)}, "worker-start:" + require("node:path").basename(cwd) + "\\n");
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+const worker = require("node:path").basename(fs.realpathSync("/proc/self/fd/3"));
+if (payload.escapeProcessGroup) {
+  require("node:child_process").spawn("setsid", ["sh", "-c", "sleep 0.3; printf escaped > /mnt/escaped.txt"], {detached:true,stdio:"ignore"}).unref();
+}
+fs.appendFileSync(${JSON.stringify(launches)}, "worker-start:" + worker + "\\n");
 fs.appendFileSync(${JSON.stringify(launches)}, "env-secret:" + String(process.env.SUPER_SECRET) + "\\n");
 if (payload.outputBytes) process.stdout.write("x".repeat(payload.outputBytes) + "\\n");
 setTimeout(() => {
@@ -50,7 +54,8 @@ setTimeout(() => {
   if (payload.dirtyTarget) fs.writeFileSync(payload.dirtyTarget, "planted-after-admission\\n");
   fs.writeFileSync(cwd + "/result.txt", payload.value);
   if (!payload.omitTurn) process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:7,output_tokens:3}}) + "\\n");
-  fs.appendFileSync(${JSON.stringify(launches)}, "worker-end:" + require("node:path").basename(cwd) + "\\n");
+  if (payload.fatal) process.exitCode = 1;
+  fs.appendFileSync(${JSON.stringify(launches)}, "worker-end:" + worker + "\\n");
 }, payload.delayMs);
 `);
   await chmod(codex, 0o755);
@@ -74,9 +79,18 @@ test("terminateProcess uses Windows taskkill tree termination", () => {
   });
 });
 
+test("posix containment pins cwd through fd 3 and creates a non-escapable PID namespace", () => {
+  const call = posixContainmentCall({ command: "codex", argv: ["exec", "--", "-"] });
+  assert.equal(call.command, "/usr/bin/bwrap");
+  assert.deepEqual(call.argv.slice(0, 4), ["--die-with-parent", "--unshare-pid", "--new-session", "--proc"]);
+  assert.ok(call.argv.includes("/proc/self/fd/3"));
+  assert.deepEqual(call.argv.slice(-4), ["codex", "exec", "--", "-"]);
+});
+
 function member(id, cwd) {
   return {
     id,
+    agentType: "muster-runner",
     cwd,
     prompt: JSON.stringify({ value: basename(cwd), delayMs: 80 }),
     writes: ["result.txt"],
@@ -156,6 +170,14 @@ test("runCodexWave keeps two concurrent conflicting writers isolated in register
   });
 
   assert.equal(result.mode, "exec-process");
+  assert.deepEqual(result.rolePolicy, {
+    id: "muster-runner",
+    model: "gpt-5.6-sol",
+    reasoningEffort: "medium",
+    sandbox: "workspace-write",
+    instructionsSha256: result.rolePolicy.instructionsSha256,
+  });
+  assert.match(result.rolePolicy.instructionsSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(
     await Promise.all([
       readFile(join(fixture.worktreeA, "result.txt"), "utf8"),
@@ -220,11 +242,20 @@ test("runCodexWave rejects worktrees from an unrelated repository before Codex e
   await assert.rejects(readFile(trusted.launches, "utf8"), { code: "ENOENT" });
 });
 
-test("runCodexWave rejects dirty tracked and untracked worktrees before Codex probes", async t => {
-  for (const kind of ["tracked", "untracked"]) {
+test("runCodexWave rejects dirty tracked, untracked, and ignored worktrees before Codex probes", async t => {
+  for (const kind of ["tracked", "untracked", "ignored"]) {
     const fixture = await waveFixture(t);
     if (kind === "tracked") await writeFile(join(fixture.worktreeA, "seed.txt"), "dirty\n");
-    else await writeFile(join(fixture.worktreeA, "planted.txt"), "attacker-controlled\n");
+    else if (kind === "untracked") await writeFile(join(fixture.worktreeA, "planted.txt"), "attacker-controlled\n");
+    else {
+      await writeFile(join(fixture.worktreeA, ".gitignore"), "node_modules/\n");
+      await git(fixture.worktreeA, "add", ".gitignore");
+      await git(fixture.worktreeA, "commit", "-m", "ignore bootstrap");
+      fixture.baseSha = (await git(fixture.worktreeA, "rev-parse", "HEAD")).stdout.trim();
+      await git(fixture.worktreeB, "reset", "--hard", fixture.baseSha);
+      await mkdir(join(fixture.worktreeA, "node_modules"));
+      await writeFile(join(fixture.worktreeA, "node_modules", "poison.js"), "malicious\n");
+    }
     await assert.rejects(runCodexWave({
       members: [member(kind, fixture.worktreeA)],
       codexCommand: fixture.codex,
@@ -233,6 +264,39 @@ test("runCodexWave rejects dirty tracked and untracked worktrees before Codex pr
     }), /not pristine|tracked or untracked changes/i);
     await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
   }
+});
+
+test("runCodexWave rejects manifest role-policy overrides and hidden tracked changes", async t => {
+  const policyFixture = await waveFixture(t);
+  const overridden = { ...member("policy", policyFixture.worktreeA), model: "gpt-5.6-luna" };
+  await assert.rejects(runCodexWave({
+    members: [overridden], codexCommand: policyFixture.codex,
+    repositoryRoot: policyFixture.repo, baseSha: policyFixture.baseSha,
+  }), /untrusted policy fields.*model/i);
+  await assert.rejects(readFile(policyFixture.launches, "utf8"), { code: "ENOENT" });
+
+  for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
+    const fixture = await waveFixture(t);
+    await git(fixture.worktreeA, "update-index", flag, "seed.txt");
+    await writeFile(join(fixture.worktreeA, "seed.txt"), "hidden change\n");
+    await assert.rejects(runCodexWave({
+      members: [member(flag, fixture.worktreeA)], codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo, baseSha: fixture.baseSha,
+    }), /assume-unchanged|skip-worktree|index/i);
+    await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
+  }
+});
+
+test("runCodexWave kills a setsid descendant with the PID namespace", async t => {
+  const fixture = await waveFixture(t);
+  const escaping = member("escaping", fixture.worktreeA);
+  escaping.prompt = JSON.stringify({ value: "escaping", delayMs: 20, escapeProcessGroup: true, fatal: true });
+  await assert.rejects(runCodexWave({
+    members: [escaping], codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo, baseSha: fixture.baseSha,
+  }), /exited 1|fatal/i);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  await assert.rejects(readFile(join(fixture.worktreeA, "escaped.txt"), "utf8"), { code: "ENOENT" });
 });
 
 test("runCodexWave rejects unsafe policy before probes and rejects an exit-zero run without a terminal turn", async t => {
@@ -463,14 +527,13 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   await writeFile(waveFile, JSON.stringify({
     members: [member("a", fixture.worktreeA), member("b", fixture.worktreeB)],
   }));
-  const result = await execFile(process.execPath, [
+  await assert.rejects(execFile(process.execPath, [
     runtime, "codex-wave", waveFile,
     "--repository-root", fixture.repo,
     "--base-sha", fixture.baseSha,
   ], {
-    env: { ...process.env, MUSTER_CODEX_COMMAND: fixture.codex },
-  });
-  assert.equal(JSON.parse(result.stdout).mode, "exec-process");
+    env: { ...process.env, PATH: `${fixture.root}:/usr/bin:/bin`, MUSTER_CODEX_COMMAND: fixture.codex },
+  }), /no trusted Codex executable/i);
 
   await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", waveFile]), /repositoryRoot is required/i);
   await assert.rejects(execFile(process.execPath, [

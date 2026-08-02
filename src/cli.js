@@ -410,7 +410,6 @@ async function main() {
         maxConcurrentThreadsPerSession: wave.maxConcurrentThreadsPerSession,
         configuredThreadCeiling: resolveCodexThreadCeiling(threadConfigText),
         availableThreadLimit: wave.availableThreadLimit,
-        codexCommand: process.env.MUSTER_CODEX_COMMAND || "codex",
         repositoryRoot: flagValue(rest, "--repository-root"),
         baseSha: flagValue(rest, "--base-sha"),
       }));

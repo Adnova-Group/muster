@@ -450,6 +450,8 @@ export function codexExecCall({
   prompt,
   cwd,
   model,
+  reasoningEffort,
+  developerInstructions,
   schemaPath,
   sandbox = "workspace-write",
   approvalPolicy = "never",
@@ -471,11 +473,13 @@ export function codexExecCall({
   ];
   if (cwd) argv.push("-C", cwd);
   if (model) argv.push("-m", model);
+  if (reasoningEffort) argv.push("-c", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
+  if (developerInstructions) argv.push("-c", `developer_instructions=${JSON.stringify(developerInstructions)}`);
   if (schemaPath) argv.push("--output-schema", schemaPath);
   if (lastMessagePath) argv.push("-o", lastMessagePath);
   if (skipGitCheck) argv.push("--skip-git-repo-check");
-  argv.push("--", prompt);
-  return { command: "codex", argv, isolation: cwd ? "process-cwd" : "process" };
+  argv.push("--", "-");
+  return { command: "codex", argv, stdin: prompt, isolation: cwd ? "process-cwd" : "process" };
 }
 
 // `codex exec` exits 1 when a fatal error was reported, 0 otherwise. There are

@@ -37,8 +37,9 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   assert.match(orchestrator, /never use `"all"`/);
   assert.match(orchestrator, /25-step ceiling/);
   assert.match(orchestrator, /trusted thread ceiling/);
-  assert.match(orchestrator, /capabilities --codex --role <role>/);
-  assert.match(orchestrator, /do not reprint the full inventory/);
+  assert.match(orchestrator, /agentType: "muster-runner"/);
+  assert.match(orchestrator, /loads and digests its installed `muster-runner` instructions/);
+  assert.doesNotMatch(orchestrator, /optional `model`|optional `codexModel`/);
   assert.match(orchestrator, /minimal prompt/);
   assert.match(orchestrator, /Never attach unrelated plan items/);
   assert.match(orchestrator, /Never call a subagent API from this production-wave step/);

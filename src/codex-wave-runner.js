@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import { execFile as execFileCb } from "node:child_process";
 import { createHash } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import { promisify } from "node:util";
-import { lstat, readdir, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { lstat, open, readdir, realpath } from "node:fs/promises";
+import { delimiter, dirname, isAbsolute, relative, resolve } from "node:path";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_EXEC_MODES,
@@ -17,7 +19,7 @@ export const UNKNOWN_CODEX_USAGE = "UNKNOWN";
 export const MIN_CODEX_WAVE_VERSION = Object.freeze([0, 145, 0]);
 export const CODEX_WAVE_LIMITS = Object.freeze({
   members: 64,
-  // Keep one prompt argv element below portable OS command-line ceilings.
+  // Bound prompt input independently of platform pipe and model limits.
   promptBytes: 16 * 1024,
   outputBytes: 4 * 1024 * 1024,
   retainedOutputBytes: 64 * 1024,
@@ -35,6 +37,31 @@ const REQUIRED_EXEC_FEATURES = Object.freeze([
   "--sandbox",
 ]);
 const REQUIRED_ROOT_FEATURES = Object.freeze(["--ask-for-approval"]);
+const CONTAINED_CWD = "/mnt";
+const RUNNER_POLICY = Object.freeze({
+  id: "muster-runner",
+  model: "gpt-5.6-sol",
+  reasoningEffort: "medium",
+  sandbox: "workspace-write",
+});
+
+function remainingMs(deadline, label = "Codex wave") {
+  const remaining = deadline - Date.now();
+  if (remaining < 1) throw new Error(`${label} exceeded aggregate timeout deadline`);
+  return remaining;
+}
+
+export function posixContainmentCall({ command, argv, descriptorFd = 3, bwrapCommand = "/usr/bin/bwrap" }) {
+  return {
+    command: bwrapCommand,
+    argv: [
+      "--die-with-parent", "--unshare-pid", "--new-session", "--proc", "/proc",
+      "--dev-bind", "/", "/",
+      "--bind", `/proc/self/fd/${descriptorFd}`, CONTAINED_CWD,
+      "--chdir", CONTAINED_CWD, "--", command, ...argv,
+    ],
+  };
+}
 
 function compareVersion(left, right) {
   for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
@@ -54,6 +81,36 @@ function hermeticCodexEnv(env = {}) {
     if (value.includes("\0")) throw new Error(`runCodexWave: environment value ${key} contains a NUL byte`);
   }
   return Object.fromEntries(entries);
+}
+
+async function loadTrustedRunnerPolicy() {
+  const candidates = [
+    { url: new URL("../agents/muster-runner.toml", import.meta.url), format: "toml" },
+    { url: new URL("../plugin/agents/muster-runner.md", import.meta.url), format: "markdown" },
+  ];
+  for (const candidate of candidates) {
+    try {
+      const read = await readNoFollowRegular(fileURLToPath(candidate.url), {
+        maxBytes: 128 * 1024,
+        label: "trusted muster-runner instructions",
+        requireSingleLink: true,
+      });
+      const source = read.bytes.toString("utf8");
+      const instructions = candidate.format === "toml"
+        ? JSON.parse(source.match(/^developer_instructions = (.+)$/m)?.[1] || "null")
+        : source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
+      if (typeof instructions !== "string") continue;
+      if (!instructions.includes("single-item lifecycle runner") || !instructions.includes("review gate")) continue;
+      return {
+        ...RUNNER_POLICY,
+        instructions,
+        digest: createHash("sha256").update(instructions).digest("hex"),
+      };
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+  throw new Error("runCodexWave: trusted muster-runner instructions are unavailable");
 }
 
 export function parseCodexVersion(text) {
@@ -114,6 +171,8 @@ function runProcess(command, argv, {
   timeoutMs = CODEX_WAVE_LIMITS.probeTimeoutMs,
   maxOutputBytes = CODEX_WAVE_LIMITS.outputBytes,
   consumeOutputBytes,
+  directoryFd,
+  stdinText,
   signal,
 } = {}) {
   return new Promise((resolveProcess, reject) => {
@@ -124,11 +183,14 @@ function runProcess(command, argv, {
     const child = spawnProcess(command, argv, {
       cwd,
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [stdinText === undefined ? "ignore" : "pipe", "pipe", "pipe", ...(directoryFd === undefined ? [] : [directoryFd])],
       detached: process.platform !== "win32",
     });
     installProcessCleanupHandlers();
     activeCodexChildren.add(child);
+    if (stdinText !== undefined) {
+      child.stdin?.end(stdinText);
+    }
     let stdout = "";
     let stderr = "";
     const stdoutHash = createHash("sha256");
@@ -209,21 +271,59 @@ function runProcess(command, argv, {
   });
 }
 
-async function assertCodexProcessSupport({ command, env, spawnProcess }) {
-  const versionResult = await runProcess(command, ["--version"], { env, spawnProcess });
+async function assertContainmentSupport({ deadline, env, spawnProcess }) {
+  if (process.platform !== "linux") {
+    throw new Error(`runCodexWave: non-escapable process containment is unavailable on ${process.platform}; refusing production wave`);
+  }
+  const result = await runProcess("/usr/bin/bwrap", ["--version"], {
+    env,
+    spawnProcess,
+    timeoutMs: Math.min(CODEX_WAVE_LIMITS.probeTimeoutMs, remainingMs(deadline)),
+  });
+  if (result.code !== 0 || !/bubblewrap/i.test(result.stdout + result.stderr)) {
+    throw new Error(`runCodexWave: bubblewrap PID-namespace containment is required: ${result.stderr.trim() || "version probe failed"}`);
+  }
+}
+
+function runContainedCodex(command, argv, {
+  directoryHandle,
+  env,
+  spawnProcess,
+  timeoutMs,
+  maxOutputBytes,
+  consumeOutputBytes,
+  signal,
+  stdinText,
+}) {
+  const wrapped = posixContainmentCall({ command, argv });
+  return runProcess(wrapped.command, wrapped.argv, {
+    cwd: "/",
+    env,
+    spawnProcess,
+    timeoutMs,
+    maxOutputBytes,
+    consumeOutputBytes,
+    signal,
+    stdinText,
+    directoryFd: directoryHandle.fd,
+  });
+}
+
+async function assertCodexProcessSupport({ runCodexProcess }) {
+  const versionResult = await runCodexProcess(["--version"]);
   if (versionResult.code !== 0) throw new Error(`Codex version probe exited ${versionResult.code}: ${versionResult.stderr.trim() || "no stderr"}`);
   const version = parseCodexVersion(versionResult.stdout);
   if (compareVersion(version, MIN_CODEX_WAVE_VERSION) < 0) {
     throw new Error(`unsupported Codex version ${version.join(".")}; hermetic wave dispatch requires ${MIN_CODEX_WAVE_VERSION.join(".")} or newer`);
   }
 
-  const rootHelp = await runProcess(command, ["--help"], { env, spawnProcess });
+  const rootHelp = await runCodexProcess(["--help"]);
   if (rootHelp.code !== 0) throw new Error(`Codex root feature probe exited ${rootHelp.code}: ${rootHelp.stderr.trim() || "no stderr"}`);
   for (const feature of REQUIRED_ROOT_FEATURES) {
     if (!rootHelp.stdout.includes(feature)) throw new Error(`unsupported Codex root feature: ${feature} is required for hermetic wave dispatch`);
   }
 
-  const execHelp = await runProcess(command, ["exec", "--help"], { env, spawnProcess });
+  const execHelp = await runCodexProcess(["exec", "--help"]);
   if (execHelp.code !== 0) throw new Error(`Codex exec feature probe exited ${execHelp.code}: ${execHelp.stderr.trim() || "no stderr"}`);
   for (const feature of REQUIRED_EXEC_FEATURES) {
     if (!execHelp.stdout.includes(feature)) throw new Error(`unsupported Codex exec feature: ${feature} is required for hermetic wave dispatch`);
@@ -255,28 +355,28 @@ function validateMembers(members) {
     throw new Error(`runCodexWave: members exceeds limit ${CODEX_WAVE_LIMITS.members}`);
   }
   const ids = new Set();
+  const allowedKeys = new Set(["id", "cwd", "prompt", "writes", "agentType", "schemaPath"]);
   for (const member of members) {
     if (!member || typeof member.id !== "string" || !member.id.trim()) throw new Error("runCodexWave: every member requires a non-empty id");
     if (member.id.length > 128 || /[\0\r\n]/.test(member.id)) throw new Error("runCodexWave: member id is too long or contains control characters");
     if (ids.has(member.id)) throw new Error(`runCodexWave: duplicate member id ${JSON.stringify(member.id)}`);
     ids.add(member.id);
+    const unknownKeys = Object.keys(member).filter(key => !allowedKeys.has(key));
+    if (unknownKeys.length) throw new Error(`runCodexWave: member ${JSON.stringify(member.id)} contains untrusted policy fields: ${unknownKeys.join(", ")}`);
+    if (member.agentType !== RUNNER_POLICY.id) {
+      throw new Error(`runCodexWave: member ${JSON.stringify(member.id)} agentType must be ${JSON.stringify(RUNNER_POLICY.id)}`);
+    }
     if (typeof member.prompt !== "string" || !member.prompt.trim()) throw new Error(`runCodexWave: member ${JSON.stringify(member.id)} requires a prompt`);
     if (member.prompt.includes("\0")) throw new Error(`runCodexWave: member ${JSON.stringify(member.id)} prompt contains a NUL byte`);
     if (Buffer.byteLength(member.prompt, "utf8") > CODEX_WAVE_LIMITS.promptBytes) {
       throw new Error(`runCodexWave: member ${JSON.stringify(member.id)} prompt exceeds ${CODEX_WAVE_LIMITS.promptBytes} bytes`);
     }
-    if (member.model !== undefined && (typeof member.model !== "string" || !member.model.trim() || member.model.length > 256 || member.model.includes("\0"))) {
-      throw new Error(`runCodexWave: member ${JSON.stringify(member.id)} model must be a non-empty bounded string`);
-    }
-    if (member.lastMessagePath !== undefined) {
-      throw new Error(`runCodexWave: member ${JSON.stringify(member.id)} lastMessagePath is not supported by the hermetic process lane`);
-    }
   }
 }
 
 function validateExecutionPolicy({ sandbox, approvalPolicy }) {
-  if (!["read-only", "workspace-write"].includes(sandbox)) {
-    throw new Error(`runCodexWave: sandbox must be read-only or workspace-write; got ${JSON.stringify(sandbox)}`);
+  if (sandbox !== RUNNER_POLICY.sandbox) {
+    throw new Error(`runCodexWave: sandbox is fixed by the trusted ${RUNNER_POLICY.id} policy; got ${JSON.stringify(sandbox)}`);
   }
   if (approvalPolicy !== "never") {
     throw new Error(`runCodexWave: approvalPolicy must be "never" for unattended hermetic waves; got ${JSON.stringify(approvalPolicy)}`);
@@ -312,8 +412,27 @@ async function mapBounded(values, ceiling, mapper) {
   return results;
 }
 
-async function gitText(cwd, args) {
-  const result = await execFile("git", args, { cwd, encoding: "utf8" });
+async function gitText(cwd, args, deadline) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+  Object.assign(env, {
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_SYSTEM: "/dev/null",
+    GIT_OPTIONAL_LOCKS: "0",
+  });
+  const result = await execFile("git", [
+    "-c", "core.fsmonitor=false",
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.attributesFile=/dev/null",
+    ...args,
+  ], {
+    cwd,
+    env,
+    encoding: "utf8",
+    timeout: remainingMs(deadline, "Codex wave admission"),
+    killSignal: "SIGKILL",
+  });
   return result.stdout.trim();
 }
 
@@ -327,6 +446,36 @@ function worktreePaths(porcelain) {
 function containedPath(root, candidate) {
   const rel = relative(root, candidate);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+async function resolveTrustedCodexExecutable(env, authority) {
+  for (const directory of String(env.PATH || "").split(delimiter).filter(Boolean)) {
+    try {
+      const executable = await realpath(resolve(directory, "codex"));
+      const info = await lstat(executable);
+      if (!info.isFile() || (info.mode & 0o022) !== 0) continue;
+      if (containedPath(authority.repositoryRoot, executable) || containedPath(authority.commonDir, executable)) continue;
+      if (typeof process.getuid === "function" && ![0, process.getuid()].includes(info.uid)) continue;
+      let packageRoot = dirname(executable);
+      let trustedPackage = false;
+      for (let depth = 0; depth < 5; depth += 1) {
+        try {
+          const packageRead = await readNoFollowRegular(resolve(packageRoot, "package.json"), {
+            maxBytes: 64 * 1024,
+            label: "Codex installation package",
+            requireSingleLink: true,
+          });
+          trustedPackage = JSON.parse(packageRead.bytes.toString("utf8")).name === "@openai/codex";
+          break;
+        } catch (error) {
+          if (error.code !== "ENOENT") break;
+        }
+        packageRoot = dirname(packageRoot);
+      }
+      if (trustedPackage) return executable;
+    } catch { /* try the next trusted PATH entry */ }
+  }
+  throw new Error("runCodexWave: no trusted Codex executable was found outside the repository");
 }
 
 function sameIdentity(left, right) {
@@ -378,7 +527,7 @@ async function registeredWorktreeAuthorities(commonDir, porcelain) {
   return authorities;
 }
 
-async function prepareTrustedRepository(repositoryRoot, baseSha) {
+async function prepareTrustedRepository(repositoryRoot, baseSha, deadline) {
   if (typeof repositoryRoot !== "string" || !repositoryRoot.trim()) {
     throw new Error("runCodexWave: repositoryRoot is required for the process lane");
   }
@@ -388,15 +537,18 @@ async function prepareTrustedRepository(repositoryRoot, baseSha) {
   let canonicalRoot;
   try {
     canonicalRoot = await realpath(repositoryRoot);
-    const topLevel = await realpath(await gitText(canonicalRoot, ["rev-parse", "--show-toplevel"]));
+    const topLevel = await realpath(await gitText(canonicalRoot, ["rev-parse", "--show-toplevel"], deadline));
     if (topLevel !== canonicalRoot) throw new Error("repositoryRoot must be the exact trusted repository root");
-    const commonDir = await realpath(await gitText(canonicalRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
-    const resolvedBase = await gitText(canonicalRoot, ["rev-parse", "--verify", `${baseSha}^{commit}`]);
+    const commonDir = await realpath(await gitText(canonicalRoot, ["rev-parse", "--path-format=absolute", "--git-common-dir"], deadline));
+    const resolvedBase = await gitText(canonicalRoot, ["rev-parse", "--verify", `${baseSha}^{commit}`], deadline);
     if (resolvedBase.toLowerCase() !== baseSha.toLowerCase()) throw new Error("baseSha does not resolve exactly in the trusted repository");
-    const registry = await gitText(canonicalRoot, ["worktree", "list", "--porcelain", "-z"]);
+    const registry = await gitText(canonicalRoot, ["worktree", "list", "--porcelain", "-z"], deadline);
     const registered = await registeredWorktreeAuthorities(commonDir, registry);
     return { repositoryRoot: canonicalRoot, commonDir, baseSha: resolvedBase, registered };
   } catch (error) {
+    if (Date.now() >= deadline || /timed out|timeout|killed/i.test(error.message || "")) {
+      throw new Error("runCodexWave: Codex wave admission exceeded aggregate timeout deadline");
+    }
     if (error.message?.startsWith("runCodexWave:")) throw error;
     throw new Error(`runCodexWave: trusted repository validation failed: ${error.message}`);
   }
@@ -413,7 +565,7 @@ async function assertNoExecutableProjectConfig(canonical, memberId) {
   }
 }
 
-async function validateRegisteredLinkedWorktree(member, authority, pinned = null) {
+async function validateRegisteredLinkedWorktree(member, authority, pinned = null, { deadline, pinDirectory = false } = {}) {
   let canonical;
   try {
     canonical = await realpath(member.cwd);
@@ -422,12 +574,12 @@ async function validateRegisteredLinkedWorktree(member, authority, pinned = null
   }
 
   try {
-    const topLevel = await realpath(await gitText(canonical, ["rev-parse", "--show-toplevel"]));
+    const topLevel = await realpath(await gitText(canonical, ["rev-parse", "--show-toplevel"], deadline));
     if (topLevel !== canonical) {
       throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} cwd must be the exact worktree root (got ${JSON.stringify(canonical)}, root ${JSON.stringify(topLevel)})`);
     }
-    const commonDir = await realpath(await gitText(canonical, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
-    const gitDir = await realpath(await gitText(canonical, ["rev-parse", "--path-format=absolute", "--git-dir"]));
+    const commonDir = await realpath(await gitText(canonical, ["rev-parse", "--path-format=absolute", "--git-common-dir"], deadline));
+    const gitDir = await realpath(await gitText(canonical, ["rev-parse", "--path-format=absolute", "--git-dir"], deadline));
     if (canonical === authority.repositoryRoot || commonDir === gitDir) {
       throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} points at the base checkout, not an isolated linked worktree`);
     }
@@ -459,12 +611,13 @@ async function validateRegisteredLinkedWorktree(member, authority, pinned = null
         throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} ${key} changed before launch`);
       }
     }
-    const head = await gitText(canonical, ["rev-parse", "HEAD"]);
+    const head = await gitText(canonical, ["rev-parse", "HEAD"], deadline);
     if (head.toLowerCase() !== authority.baseSha.toLowerCase()) {
       throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} HEAD ${head} does not match trusted base ${authority.baseSha}`);
     }
     await assertNoExecutableProjectConfig(canonical, member.id);
     let schemaPath;
+    let schemaRelative;
     if (member.schemaPath !== undefined) {
       if (typeof member.schemaPath !== "string" || !isAbsolute(member.schemaPath)) {
         throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} schemaPath must be absolute and contained in its worktree`);
@@ -479,17 +632,40 @@ async function validateRegisteredLinkedWorktree(member, authority, pinned = null
         requireSingleLink: true,
       });
       currentIdentity.schemaIdentity = { dev: schemaRead.info.dev, ino: schemaRead.info.ino, size: schemaRead.info.size };
+      schemaRelative = relative(canonical, schemaPath);
       if (pinned?.schemaIdentity && (!sameIdentity(currentIdentity.schemaIdentity, pinned.schemaIdentity)
         || currentIdentity.schemaIdentity.size !== pinned.schemaIdentity.size)) {
         throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} schema changed before launch`);
       }
     }
-    const status = await gitText(canonical, ["status", "--porcelain=v1", "--untracked-files=all"]);
+    const status = await gitText(canonical, ["status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching"], deadline);
     if (status) {
       throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} worktree is not pristine; tracked or untracked changes are forbidden before launch`);
     }
-    return { ...member, cwd: canonical, gitDir, ...currentIdentity, ...(schemaPath ? { schemaPath } : {}) };
+    const flaggedIndex = (await gitText(canonical, ["ls-files", "-v"], deadline))
+      .split("\n")
+      .filter(line => line && (/^[a-z]/.test(line) || line.startsWith("S ")));
+    if (flaggedIndex.length) {
+      throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} index contains assume-unchanged or skip-worktree entries`);
+    }
+    const trackedDiff = await gitText(canonical, ["diff", "--name-only", authority.baseSha, "--"], deadline);
+    if (trackedDiff) {
+      throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} tracked contents or index differ from trusted base`);
+    }
+    let directoryHandle;
+    if (pinDirectory) {
+      directoryHandle = await open(canonical, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+      const info = await directoryHandle.stat();
+      if (!sameIdentity({ dev: info.dev, ino: info.ino }, currentIdentity.cwdIdentity)) {
+        await directoryHandle.close();
+        throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} worktree changed while pinning launch directory`);
+      }
+    }
+    return { ...member, cwd: canonical, gitDir, ...currentIdentity, ...(schemaPath ? { schemaPath, schemaRelative } : {}), ...(directoryHandle ? { directoryHandle } : {}) };
   } catch (error) {
+    if (Date.now() >= deadline || /timed out|timeout|killed/i.test(error.message || "")) {
+      throw new Error("runCodexWave: Codex wave admission exceeded aggregate timeout deadline");
+    }
     if (error.message?.startsWith("runCodexWave:")) throw error;
     throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} is not a registered linked git worktree: ${JSON.stringify(canonical)}`);
   }
@@ -506,11 +682,13 @@ async function runProcessWave({
   repositoryRoot,
   baseSha,
   workerTimeoutMs,
+  deadline,
   authority,
+  rolePolicy,
 }) {
   // All path checks complete before the first Codex support probe or worker process.
-  authority ||= await prepareTrustedRepository(repositoryRoot, baseSha);
-  const canonicalMembers = await Promise.all(members.map(member => validateRegisteredLinkedWorktree(member, authority)));
+  authority ||= await prepareTrustedRepository(repositoryRoot, baseSha, deadline);
+  const canonicalMembers = await Promise.all(members.map(member => validateRegisteredLinkedWorktree(member, authority, null, { deadline })));
   const seen = new Map();
   const seenGitDirs = new Map();
   for (const member of canonicalMembers) {
@@ -524,14 +702,29 @@ async function runProcessWave({
   }
 
   const childEnv = hermeticCodexEnv(env);
-  const support = await assertCodexProcessSupport({ command: codexCommand, env: childEnv, spawnProcess });
+  await assertContainmentSupport({ deadline, env: childEnv, spawnProcess });
+  const repositoryHandle = await open(authority.repositoryRoot, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  let support;
+  try {
+    support = await assertCodexProcessSupport({
+      runCodexProcess: argv => runContainedCodex(codexCommand, argv, {
+        directoryHandle: repositoryHandle,
+        env: childEnv,
+        spawnProcess,
+        timeoutMs: Math.min(CODEX_WAVE_LIMITS.probeTimeoutMs, remainingMs(deadline)),
+        maxOutputBytes: CODEX_WAVE_LIMITS.outputBytes,
+      }),
+    });
+  } finally {
+    await repositoryHandle.close();
+  }
   const controller = new AbortController();
   let waveFailure;
   let waveOutputBytes = 0;
   const waveTimer = setTimeout(() => {
     waveFailure ||= new Error(`Codex wave exceeded ${workerTimeoutMs}ms aggregate timeout deadline`);
     controller.abort();
-  }, workerTimeoutMs);
+  }, remainingMs(deadline));
   waveTimer.unref?.();
   const consumeOutputBytes = bytes => {
     waveOutputBytes += bytes;
@@ -549,31 +742,41 @@ async function runProcessWave({
           error.cancelled = true;
           return { error };
         }
-        const refreshedAuthority = await prepareTrustedRepository(authority.repositoryRoot, authority.baseSha);
+        const refreshedAuthority = await prepareTrustedRepository(authority.repositoryRoot, authority.baseSha, deadline);
         if (refreshedAuthority.commonDir !== authority.commonDir) {
           throw new Error("runCodexWave: trusted repository common directory changed before spawn");
         }
-        const revalidated = await validateRegisteredLinkedWorktree(member, refreshedAuthority, member);
+        const revalidated = await validateRegisteredLinkedWorktree(member, refreshedAuthority, member, { deadline, pinDirectory: true });
         if (revalidated.cwd !== member.cwd) {
           throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} changed canonical cwd before spawn`);
         }
-        const call = codexExecCall({
-          prompt: member.prompt,
-          cwd: member.cwd,
-          model: member.model,
-          schemaPath: member.schemaPath,
-          sandbox,
-          approvalPolicy,
-        });
-        const result = await runProcess(codexCommand, call.argv, {
-          cwd: member.cwd,
-          env: childEnv,
-          spawnProcess,
-          timeoutMs: workerTimeoutMs,
-          maxOutputBytes: CODEX_WAVE_LIMITS.outputBytes,
-          consumeOutputBytes,
-          signal: controller.signal,
-        });
+        let result;
+        try {
+          const call = codexExecCall({
+            prompt: member.prompt,
+            cwd: CONTAINED_CWD,
+            model: rolePolicy.model,
+            reasoningEffort: rolePolicy.reasoningEffort,
+            developerInstructions: rolePolicy.instructions,
+            schemaPath: revalidated.schemaRelative === undefined
+              ? undefined
+              : resolve(CONTAINED_CWD, revalidated.schemaRelative),
+            sandbox: rolePolicy.sandbox,
+            approvalPolicy,
+          });
+          result = await runContainedCodex(codexCommand, call.argv, {
+            directoryHandle: revalidated.directoryHandle,
+            env: childEnv,
+            spawnProcess,
+            timeoutMs: Math.min(workerTimeoutMs, remainingMs(deadline)),
+            maxOutputBytes: CODEX_WAVE_LIMITS.outputBytes,
+            consumeOutputBytes,
+            signal: controller.signal,
+            stdinText: call.stdin,
+          });
+        } finally {
+          await revalidated.directoryHandle.close();
+        }
         const verdict = interpretCodexExecExit(result.code);
         if (!verdict.ok) {
           const error = new Error(`Codex process for wave member ${JSON.stringify(member.id)} exited ${result.code}: ${result.stderr.trim() || verdict.reason}`);
@@ -616,6 +819,13 @@ async function runProcessWave({
     mode: CODEX_EXEC_MODES.EXEC_PROCESS,
     isolation: "registered-linked-worktree",
     codexVersion: support.version,
+    rolePolicy: {
+      id: rolePolicy.id,
+      model: rolePolicy.model,
+      reasoningEffort: rolePolicy.reasoningEffort,
+      sandbox: rolePolicy.sandbox,
+      instructionsSha256: rolePolicy.digest,
+    },
     effectiveCeiling,
     results: settled.map(row => row.value),
   };
@@ -623,7 +833,7 @@ async function runProcessWave({
 
 export async function runCodexWave({
   members,
-  codexCommand = "codex",
+  codexCommand,
   env = process.env,
   spawnProcess,
   sandbox = "workspace-write",
@@ -635,13 +845,15 @@ export async function runCodexWave({
   baseSha,
   workerTimeoutMs = CODEX_WAVE_LIMITS.workerTimeoutMs,
 } = {}) {
-  validateMembers(members);
-  validateExecutionPolicy({ sandbox, approvalPolicy });
-  if (typeof codexCommand !== "string" || !codexCommand.trim() || codexCommand.includes("\0")) {
-    throw new Error("runCodexWave: codexCommand must be a non-empty NUL-free string");
-  }
   if (!Number.isInteger(workerTimeoutMs) || workerTimeoutMs < 1 || workerTimeoutMs > CODEX_WAVE_LIMITS.workerTimeoutMs) {
     throw new Error(`runCodexWave: workerTimeoutMs must be an integer within 1..${CODEX_WAVE_LIMITS.workerTimeoutMs}`);
+  }
+  const deadline = Date.now() + workerTimeoutMs;
+  const rolePolicy = await loadTrustedRunnerPolicy();
+  validateMembers(members);
+  validateExecutionPolicy({ sandbox, approvalPolicy });
+  if (codexCommand !== undefined && (typeof codexCommand !== "string" || !codexCommand.trim() || codexCommand.includes("\0"))) {
+    throw new Error("runCodexWave: test codexCommand must be a non-empty NUL-free string");
   }
   const effectiveCeiling = effectiveWaveCeiling(
     maxConcurrentThreadsPerSession,
@@ -651,7 +863,8 @@ export async function runCodexWave({
   // Trusted repository/base provenance is authenticated before lane selection
   // for every production wave. The resolver is process-only because no
   // mechanically authenticated read-only spawn profile exists.
-  const authority = await prepareTrustedRepository(repositoryRoot, baseSha);
+  const authority = await prepareTrustedRepository(repositoryRoot, baseSha, deadline);
+  codexCommand ||= await resolveTrustedCodexExecutable(env, authority);
   resolveCodexDispatchLane();
   return runProcessWave({
     members,
@@ -664,6 +877,8 @@ export async function runCodexWave({
     repositoryRoot,
     baseSha,
     workerTimeoutMs,
+    deadline,
     authority,
+    rolePolicy,
   });
 }

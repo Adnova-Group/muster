@@ -26,8 +26,10 @@ test("codexExecCall: always emits --json, and -C is what actually isolates", () 
     "--ask-for-approval", "never", "exec", "--json", "--ignore-user-config", "--ignore-rules",
     "--strict-config", "--ephemeral", "-c", 'shell_environment_policy.inherit="none"',
     "--sandbox", "workspace-write",
-    "-C", "/w/item-1", "--", "do the thing",
+    "-C", "/w/item-1", "--", "-",
   ]);
+  assert.equal(call.stdin, "do the thing");
+  assert.doesNotMatch(call.argv.join(" "), /do the thing/);
   assert.equal(call.isolation, "process-cwd");
 });
 
@@ -41,18 +43,35 @@ test("codexExecCall: threads policy, model, schema, last-message and git-check f
     "--strict-config", "--ephemeral", "-c", 'shell_environment_policy.inherit="none"',
     "--sandbox", "read-only", "-C", "/w",
     "-m", "gpt-5.6-sol", "--output-schema", "/s.json", "-o", "/out.txt",
-    "--skip-git-repo-check", "--", "p"
+    "--skip-git-repo-check", "--", "-"
   ]);
+  assert.equal(call.stdin, "p");
   assert.throws(() => codexExecCall({ prompt: "p", sandbox: "host" }), /unsupported sandbox/);
   assert.throws(() => codexExecCall({ prompt: "p", approvalPolicy: "always" }), /unsupported approval policy/);
 });
 
-test("codexExecCall: the prompt is always last, so it is never parsed as a flag value", () => {
+test("codexExecCall: prompts travel through stdin and never process arguments", () => {
   for (const prompt of ["final", "--help", "review", "-danger"]) {
-    assert.deepEqual(codexExecCall({ prompt, cwd: "/w", model: "m" }).argv.slice(-2), ["--", prompt]);
+    const call = codexExecCall({ prompt, cwd: "/w", model: "m" });
+    assert.deepEqual(call.argv.slice(-2), ["--", "-"]);
+    assert.equal(call.stdin, prompt);
+    assert.equal(call.argv.includes(prompt), false);
   }
   assert.throws(() => codexExecCall({ cwd: "/w" }), /prompt is required/);
   assert.throws(() => codexExecCall({ prompt: "   " }), /prompt is required/);
+});
+
+test("codexExecCall: trusted role policy is carried separately from the stdin brief", () => {
+  const call = codexExecCall({
+    prompt: "private brief",
+    model: "gpt-5.6-sol",
+    reasoningEffort: "medium",
+    developerInstructions: "trusted runner policy",
+  });
+  assert.ok(call.argv.includes("model_reasoning_effort=\"medium\""));
+  assert.ok(call.argv.includes("developer_instructions=\"trusted runner policy\""));
+  assert.equal(call.argv.includes("private brief"), false);
+  assert.equal(call.stdin, "private brief");
 });
 
 test("interpretCodexExecExit: 0 and 1 are verdicts, anything else is a harness fault", () => {

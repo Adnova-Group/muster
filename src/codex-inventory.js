@@ -76,6 +76,9 @@ function appServerClient({ cwd, spawn = spawnCb, codexBin = "codex" }) {
         child.stdin.write(JSON.stringify({ id, method, params }) + "\n");
       });
     },
+    notify(method) {
+      if (!closed) child.stdin.write(JSON.stringify({ method }) + "\n");
+    },
     close() { if (!closed) child.kill(); },
   };
 }
@@ -104,6 +107,7 @@ export async function readCodexRuntimeInventory({ cwd = process.cwd(), spawn = s
       clientInfo: { name: "muster", version: "0" },
       capabilities: { experimentalApi: true },
     });
+    client.notify("initialized");
     const [skillsResult, pluginResult] = await Promise.all([
       client.request("skills/list", { cwds: [cwd], forceReload: false }),
       client.request("plugin/list", { cwds: [cwd], forceRefetch: false }),

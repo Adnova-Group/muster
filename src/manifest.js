@@ -180,7 +180,7 @@ export function manifestWarnings(m, skillsInventory, opts = {}) {
   // inventory was supplied or the native authority explicitly reported an
   // incomplete inventory, so absence cannot truthfully be inferred.
   const normalizeInventoryId = opts.exactSkillIds
-    ? (id) => String(id ?? "").trim().toLowerCase()
+    ? (id) => String(id ?? "")
     : (id) => lastColonSegment(String(id ?? "")).toLowerCase();
   const inventorySegments = Array.isArray(skillsInventory) && opts.inventoryComplete !== false
     ? new Set(skillsInventory.map((e) => normalizeInventoryId(e?.id)))

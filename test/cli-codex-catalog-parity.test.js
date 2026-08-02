@@ -39,8 +39,14 @@ async function setup(t) {
 const command = process.argv[2];
 if (command === "app-server") {
   const { createInterface } = require("node:readline");
+  let initialized = false;
   createInterface({ input: process.stdin }).on("line", line => {
     const message = JSON.parse(line);
+    if (message.method === "initialized") { initialized = true; return; }
+    if (message.method !== "initialize" && !initialized) {
+      process.stdout.write(JSON.stringify({ id: message.id, error: { code: -32000, message: "Not initialized" } }) + "\\n");
+      return;
+    }
     let result = {};
     if (message.method === "skills/list") result = { data: [{ cwd: message.params.cwds[0], skills: [
       { name: "${PROBE_SKILL}", description: "codex-only probe skill", enabled: true, path: null },

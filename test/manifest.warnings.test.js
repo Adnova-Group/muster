@@ -86,6 +86,7 @@ test("manifestWarnings: exact runtime mode accepts exact ids and rejects shadow 
   assert.deepEqual(manifestWarnings(manifest("supabase:supabase"), exact, { exactSkillIds: true }), []);
   assert.match(manifestWarnings(manifest("evil:supabase"), exact, { exactSkillIds: true })[0], /evil:supabase/);
   assert.match(manifestWarnings(manifest("supabase"), exact, { exactSkillIds: true })[0], /supabase/);
+  assert.match(manifestWarnings(manifest("Supabase:Supabase"), exact, { exactSkillIds: true })[0], /Supabase:Supabase/);
 });
 
 test("manifestWarnings: incomplete runtime inventory does not claim a binding is absent", () => {

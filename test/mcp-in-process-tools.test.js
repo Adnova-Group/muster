@@ -170,7 +170,7 @@ test("comma-containing completed and done ids retain the CLI argv join/split byt
 test("empty completed and done ids retain the CLI's empty-list bytes", async (t) => {
   const fixture = await mkdtemp(join(tmpdir(), "muster-mcp-empty-id-"));
   t.after(() => rm(fixture, { recursive: true, force: true }));
-  const manifest = { plan: [{ id: "a", task: "Build", mode: "single", deps: [] }] };
+  const manifest = { plan: [{ id: "", task: "Build", mode: "single", deps: [] }] };
   const file = join(fixture, "manifest.json");
   await writeFile(file, JSON.stringify(manifest));
   const [nextCli, checklistCli] = await Promise.all([

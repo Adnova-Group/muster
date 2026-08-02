@@ -106,9 +106,16 @@ test("request_user_input answers are relayed explicitly instead of auto-approved
 
 test("request_user_input forwards the server auto-resolution deadline", async () => {
   const seen = [];
-  await answerPlanUserInput({ autoResolutionMs: 2500, questions: [{ id: "choice", question: "Choose" }] },
-    async (_question, _options, autoResolutionMs) => { seen.push(autoResolutionMs); return "manual"; });
-  assert.deepEqual(seen, [2500]);
+  await answerPlanUserInput({ autoResolutionMs: 100, questions: [
+    { id: "first", question: "Choose first" },
+    { id: "second", question: "Choose second" },
+  ] }, async (_question, _options, autoResolutionMs) => {
+    seen.push(autoResolutionMs);
+    if (seen.length === 1) await new Promise(resolve => setTimeout(resolve, 20));
+    return "manual";
+  });
+  assert.equal(seen[0] <= 100 && seen[0] > 0, true);
+  assert.equal(seen[1] < seen[0] && seen[1] > 0, true);
 });
 
 test("authoritative completed plan and agent messages render before interactive input", () => {
@@ -280,6 +287,13 @@ test("JSON-RPC transport rejects malformed and oversized frames without escaping
 });
 
 test("JSON-RPC transport declines approvals and rejects unknown requests", async () => {
+  const responseChild = fakeAppServerProcess();
+  const responseClient = await createCodexAppServerClient({ cwd: "/repo", spawnProcess: () => responseChild, timeoutMs: 100 });
+  const response = responseClient.request("initialize");
+  responseChild.stdout.write(`${JSON.stringify({ id: 1, result: { accepted: true } })}\n`);
+  assert.deepEqual(await response, { accepted: true });
+  await responseClient.close();
+
   const child = fakeAppServerProcess();
   const written = [];
   child.stdin.setEncoding("utf8");
@@ -295,7 +309,7 @@ test("JSON-RPC transport declines approvals and rejects unknown requests", async
   await new Promise(resolve => setImmediate(resolve));
   const interrupt = written.find(message => message.method === "turn/interrupt");
   assert.deepEqual(interrupt.params, { threadId: "thread-1", turnId: "turn-1" });
-  child.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: interrupt.id, result: {} })}\n`);
+  child.stdout.write(`${JSON.stringify({ id: interrupt.id, result: {} })}\n`);
   await interrupting;
   await client.close();
   assert.equal(child.killed, true);

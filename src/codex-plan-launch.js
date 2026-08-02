@@ -99,11 +99,18 @@ export async function answerPlanUserInput(params, ask) {
     throw new Error("native Plan mode requested user input, but this launcher has no interactive input surface");
   const questions = Array.isArray(params?.questions) ? params.questions : [];
   if (questions.length === 0) throw new Error("native Plan mode requested an empty user-input form");
+  const autoResolutionMs = Number.isInteger(params?.autoResolutionMs) && params.autoResolutionMs >= 0
+    ? params.autoResolutionMs
+    : null;
+  const deadline = autoResolutionMs === null ? null : Date.now() + autoResolutionMs;
   const answers = {};
   for (const question of questions) {
     if (!question?.id || !question?.question) throw new Error("native Plan mode returned a malformed user-input question");
     const options = Array.isArray(question.options) ? question.options : [];
-    const raw = String(await ask(question, options, params?.autoResolutionMs ?? null)).trim();
+    const remainingMs = deadline === null ? null : deadline - Date.now();
+    if (remainingMs !== null && remainingMs <= 0)
+      throw new Error("App Server input auto-resolved before an answer was submitted");
+    const raw = String(await ask(question, options, remainingMs)).trim();
     if (!raw) throw new Error(`no answer supplied for ${question.id}`);
     const numeric = Number.parseInt(raw, 10);
     const selected = Number.isInteger(numeric) && String(numeric) === raw && numeric >= 1 && numeric <= options.length
@@ -391,7 +398,8 @@ class JsonRpcLineClient {
   }
 
   #validMessage(message) {
-    if (!message || typeof message !== "object" || Array.isArray(message) || message.jsonrpc !== "2.0") return false;
+    if (!message || typeof message !== "object" || Array.isArray(message)) return false;
+    if (message.jsonrpc !== undefined && message.jsonrpc !== "2.0") return false;
     const hasId = Object.hasOwn(message, "id");
     const hasMethod = Object.hasOwn(message, "method");
     if (hasId && !["string", "number"].includes(typeof message.id)) return false;

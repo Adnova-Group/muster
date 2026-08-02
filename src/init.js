@@ -345,8 +345,14 @@ async function* gitRelevantPaths(root) {
   }
 }
 
+async function directoryNames(abs) {
+  const names = [];
+  for await (const { name } of await opendir(abs)) names.push(name);
+  return names;
+}
+
 async function* filesystemRelevantPaths(abs, prefix = "") {
-  for await (const { name } of await opendir(abs)) {
+  for (const name of await directoryNames(abs)) {
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
@@ -357,7 +363,7 @@ async function* filesystemRelevantPaths(abs, prefix = "") {
 }
 
 async function rejectSpecialEntries(abs, prefix = "") {
-  for await (const { name } of await opendir(abs)) {
+  for (const name of await directoryNames(abs)) {
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);

@@ -459,6 +459,22 @@ test("repository fingerprints accept valid tracked paths longer than owned artif
   assert.match(profile.repositoryFingerprint.digest, /^[0-9a-f]{64}$/);
 });
 
+test("repository fingerprint recursion does not retain parent directory descriptors", {
+  skip: process.platform === "win32" ? "POSIX file-descriptor limit" : false,
+}, async () => {
+  const dir = await tmp();
+  const deep = join(dir, ...Array.from({ length: 100 }, (_, index) => `d${index}`));
+  await mkdir(deep, { recursive: true });
+  await writeFile(join(deep, "tracked.txt"), "deep\n");
+  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const { stdout } = await pexecFile(
+    "bash",
+    ["-c", 'ulimit -n 64; exec "$1" "$2" init "$3"', "bash", process.execPath, cli, dir],
+    { maxBuffer: 1024 * 1024 },
+  );
+  assert.equal(JSON.parse(stdout).receipt.phase, "prepared");
+});
+
 test("repository fingerprints reject same-size in-place writes during a streamed read", async () => {
   const dir = await tmp();
   const target = join(dir, "changing.bin");

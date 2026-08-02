@@ -44,18 +44,26 @@ test("open PR reconciliation owns every named PR and leaves none falsely complet
     assert.match(pr.evidence, /\S/, `PR #${pr.number} has no evidence`);
     assert.match(pr.observedHeadSha, /^[0-9a-f]{40}$/, `PR #${pr.number} head is not pinned`);
     assert.equal(pr.url, `https://github.com/${ledger.repository}/pull/${pr.number}`);
-    assert.ok(["success", "not-green", "not-assessed"].includes(pr.checksState));
-    assert.ok([
-      "pass-at-observed-head",
-      "revalidation-required",
-      "not-gating-close",
-    ].includes(pr.reviewState));
+    assert.ok(Array.isArray(pr.checksObserved), `PR #${pr.number} checks were not observed`);
+    assert.ok(Array.isArray(pr.reviewsObserved), `PR #${pr.number} reviews were not observed`);
+    for (const check of pr.checksObserved) {
+      assert.match(check.name, /\S/, `PR #${pr.number} has an unnamed check`);
+      assert.ok(["SUCCESS", "FAILURE", "CANCELLED", "PENDING", "SKIPPED"].includes(check.state));
+    }
+    for (const review of pr.reviewsObserved) {
+      assert.ok(["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED"].includes(review.state));
+      assert.ok(review.commit === null || /^[0-9a-f]{40}$/.test(review.commit));
+    }
     assert.equal(pr.externalActionCoordinator, "dispatcher", `PR #${pr.number} coordination is unowned`);
     assert.equal(pr.externalMutationActor, "human", `PR #${pr.number} mutation actor is unsafe`);
 
     if (pr.proposedDisposition === "merge") {
-      assert.equal(pr.checksState, "success", `PR #${pr.number} cannot merge without green checks`);
-      assert.equal(pr.reviewState, "pass-at-observed-head", `PR #${pr.number} has no exact-head review`);
+      assert.ok(pr.checksObserved.length > 0, `PR #${pr.number} has no observed checks`);
+      assert.ok(pr.checksObserved.every(({ state }) => state === "SUCCESS"), `PR #${pr.number} checks are not green`);
+      assert.ok(
+        pr.reviewsObserved.some(({ state, commit }) => state === "APPROVED" && commit === pr.observedHeadSha),
+        `PR #${pr.number} has no exact-head approval`,
+      );
     }
 
     if (pr.proposedDisposition === "active-backlog-owner") {

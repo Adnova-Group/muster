@@ -24,7 +24,7 @@ Every PR was still open when inspected. Consequently, every entry is `awaiting-d
 | 173 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
 | 174 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
 | 175 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
-| 176 | close with rationale | Main's broader filesystem-safety consolidation supersedes it |
+| 176 | active backlog owner | `@rnbennett` — rebase the post-consolidation walker migration and repair CI |
 | 185 | active backlog owner | `@rnbennett` — refresh launcher protocol and generated docs |
 
 The dispatcher coordinates every later action; only the human performs merges or destructive closes. Before any action, the live PR head must equal the ledger's full `observedHeadSha`. A merge additionally requires green current checks and a passing review at that exact head. Active owners own branch repair and re-review; they do not own permission to mutate `main`.

@@ -11,7 +11,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, isAbsolute, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import {
@@ -19,7 +19,7 @@ import {
   PROBES, LANES, AGENT_FILE, CAVEAT, PROTOCOL_VERSION, PROBE_MATERIAL_FILES,
   EFFORTS, EFFORT_ENV_VAR, PROBE_MODES,
   buildCells, buildBriefs, buildQuarantineDir, probeMaterial, fitBrief,
-  spawnEnv, cellNeedsRetry, extractVerdictText, scanContamination,
+  spawnEnv, spawnAttempt, cellNeedsRetry, extractVerdictText, scanContamination,
   effortCellVerdict, buildCostComparison, buildQualityComparison,
   buildEffortComparison, assembleResults
 } from "../eval/kimi-reviewer-tier-probe.mjs";
@@ -96,7 +96,8 @@ test("--dry-run builds 2 probes x 2 lanes of descriptors and spawns nothing", as
   for (const cell of out.cells) {
     // the descriptor argv shape, with -m ALWAYS emitted and binding the lane
     assert.equal(cell.argv[0], "-p");
-    assert.equal(cell.argv[1], cell.brief);
+    assert.match(cell.argv[1], /complete UTF-8 process brief/);
+    assert.ok(!cell.argv.includes(cell.brief), "the full brief does not ride argv");
     assert.deepEqual(cell.argv.slice(2, 5), ["--agent-file", cell.argv[3], "--output-format"]);
     assert.equal(cell.argv[5], "stream-json");
     assert.equal(cell.argv[6], "-m");
@@ -159,7 +160,7 @@ test("--dry-run briefs are identical across lanes and reference each probe's qua
     const briefs = out.cells.filter(c => c.probe === probe).map(c => c.brief);
     assert.equal(briefs.length, 2);
     assert.equal(briefs[0], briefs[1], "briefs must be identical across lanes");
-    assert.ok(briefs[0].length <= KIMI_PROCESS_MAX_BRIEF, "brief must fit the -p budget");
+    assert.ok(Buffer.byteLength(briefs[0], "utf8") <= KIMI_PROCESS_MAX_BRIEF, "brief must fit the -p byte budget");
     // briefs name the quarantine file by RELATIVE name only -- an absolute
     // temp path would differ per cell and break lane-identity
     assert.ok(!briefs[0].includes(tmpdir()), "brief must not embed the absolute quarantine path");
@@ -179,12 +180,37 @@ test("spawnEnv merges the descriptor env OVER the ambient env -- never wholesale
   assert.equal(merged.KIMI_SECONDARY_MODEL, "kimi-code/kimi-for-coding", "descriptor keys override ambient ones");
 });
 
+test("spawnAttempt keeps the transported brief inside the cell quarantine", async () => {
+  const home = fakeKimiHome();
+  const resultsDir = mkdtempSync(join(tmpdir(), "kimi-probe-results-"));
+  const previous = process.env.KIMI_CODE_HOME;
+  process.env.KIMI_CODE_HOME = home;
+  try {
+    const [cell] = buildCells({ baseDir: mkdtempSync(join(tmpdir(), "kimi-probe-cells-")) });
+    const execute = async (_command, argv) => {
+      const prompt = argv[argv.indexOf("-p") + 1];
+      const briefPath = JSON.parse(prompt.slice(prompt.indexOf(":") + 1));
+      const rel = relative(cell.quarantineDir, briefPath);
+      assert.ok(rel && !rel.startsWith("..") && !isAbsolute(rel), "brief file must remain inside quarantine");
+      return { stdout: toolCallLine("Read", { file_path: briefPath }) + "\n" };
+    };
+    const attempt = await spawnAttempt(cell, { resultsDir, attempt: 1, execute });
+    assert.equal(scanContamination(attempt.stdout, { quarantineDir: cell.quarantineDir }).contaminated, false);
+  } finally {
+    if (previous === undefined) delete process.env.KIMI_CODE_HOME;
+    else process.env.KIMI_CODE_HOME = previous;
+  }
+});
+
 test("fitBrief truncates over-budget artifacts at a newline with a disclosed note", () => {
   const small = fitBrief("prefix:", "short artifact");
   assert.equal(small, "prefix:short artifact");
-  const big = fitBrief("prefix:", ("x".repeat(100) + "\n").repeat(200));
-  assert.ok(big.length <= KIMI_PROCESS_MAX_BRIEF);
+  const big = fitBrief("prefix:", ("x".repeat(100) + "\n").repeat(Math.ceil(KIMI_PROCESS_MAX_BRIEF / 100) + 2));
+  assert.ok(Buffer.byteLength(big, "utf8") <= KIMI_PROCESS_MAX_BRIEF);
   assert.match(big, /artifact truncated to fit the -p brief budget/);
+  const multibyte = fitBrief("prefix:", ("€".repeat(100) + "\n").repeat(300));
+  assert.ok(Buffer.byteLength(multibyte, "utf8") <= KIMI_PROCESS_MAX_BRIEF);
+  assert.match(multibyte, /artifact truncated to fit the -p brief budget/);
 });
 
 // --- Retry policy ------------------------------------------------------------

@@ -63,16 +63,24 @@ leg. Filesystem receipts are diagnostic only and never authorize hygiene signali
 valid same-UID fabrications; receipt directory enumeration and each compaction pass are globally
 capped even under malformed-name flooding, retention converges to 128 receipts, and compaction
 unlinks only non-followed entries beneath an open receipt-directory descriptor. The descriptor's
-`argv` is `["-p", brief, "--agent-file", <absolute agent file>,
+`argv` is `["-p", <bounded file-bootstrap prompt>, "--agent-file", <absolute agent file>,
 "--output-format", "stream-json", "-m", KIMI_LANES[lane]]`, and `env` is the shared
 `kimiLaneEnv()` OVERRIDE pair, carried for the v2 engine flag `--agent-file` needs (its
 `KIMI_SECONDARY_MODEL` half also binds lanes for any subagents the leg itself spawns) --
 `-m` is ALWAYS
 emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
 SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
-`-m` and omitting it silently falls to config `default_model`. Briefs MUST be secret-free:
-Kimi requires the prompt in argv via `-p`, and Muster does not invent a misleading insecure
-transport. If a future trusted broker enables this interface, its execution receipt must be
+`-m` and omitting it silently falls to config `default_model`. The descriptor records this
+as `briefTransport: { kind: "temporary-file", encoding: "utf8", maxBytes: 65536 }`:
+`withKimiProcessBriefFile` writes the complete brief to an ephemeral temporary directory,
+substitutes only its path into the bounded `-p` bootstrap, requires the launcher to return a
+Promise that settles after child exit, and recursively removes the directory after that Promise
+settles or rejects. The descriptor is module-branded and its transport/argv surfaces are frozen;
+the helper independently revalidates the byte cap and argv template. This file transport is cross-platform and does
+not inherit `/goal`'s unrelated 4,000-character objective limit or Windows' command-line size.
+Briefs MUST be secret-free: the mode is a POSIX hardening hint, not a Windows ACL or a
+confidentiality boundary, and the model consumes their contents. If a future trusted
+broker enables this interface, its execution receipt must be
 the stream-json result on stdout plus the process exit code, with per-leg token accounting
 from `$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>`
 (src/kimi-receipts.js's `readSessionUsage`, reached through

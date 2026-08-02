@@ -63,8 +63,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
-import { kimiProcessDispatch, KIMI_PROCESS_MAX_BRIEF, detectKimiQuotaFault, quotaFaultLines } from "../src/kimi-dispatch.js";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { kimiProcessDispatch, withKimiProcessBriefFile, KIMI_PROCESS_MAX_BRIEF, detectKimiQuotaFault, quotaFaultLines } from "../src/kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, readSessionThinkingEfforts } from "../src/kimi-receipts.js";
 
 const pexecFile = promisify(execFile);
@@ -154,18 +154,28 @@ export function probe1Diff(repoRoot = REPO_ROOT) {
   return execFileSync("git", ["show", PROBE1_COMMIT], { cwd: repoRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
 }
 
-// Briefs ride argv as the -p prompt, capped at KIMI_PROCESS_MAX_BRIEF
+// Briefs ride the private temporary-file channel prepared immediately before
+// spawn, capped by KIMI_PROCESS_MAX_BRIEF (independent of /goal objectives).
 // (src/kimi-dispatch.js). v2 briefs are small constants that REFERENCE the
 // quarantine file rather than inlining it, so they sit far under the budget;
 // fitBrief remains for any caller that still inlines an artifact: when the
 // budget is exceeded, cut the artifact at the last newline that fits and say
 // so in the brief -- deterministic, and the truncation is disclosed.
 export function fitBrief(prefix, artifact) {
-  if (prefix.length + artifact.length <= KIMI_PROCESS_MAX_BRIEF) return prefix + artifact;
+  if (Buffer.byteLength(prefix + artifact, "utf8") <= KIMI_PROCESS_MAX_BRIEF) return prefix + artifact;
   const note = "\n[artifact truncated to fit the -p brief budget]\n";
-  const room = KIMI_PROCESS_MAX_BRIEF - prefix.length - note.length;
-  const cut = artifact.lastIndexOf("\n", room);
-  return prefix + artifact.slice(0, cut > 0 ? cut : room) + note;
+  const room = KIMI_PROCESS_MAX_BRIEF - Buffer.byteLength(prefix + note, "utf8");
+  let used = 0;
+  let end = 0;
+  for (const char of artifact) {
+    const bytes = Buffer.byteLength(char, "utf8");
+    if (used + bytes > room) break;
+    used += bytes;
+    end += char.length;
+  }
+  const candidate = artifact.slice(0, end);
+  const cut = candidate.lastIndexOf("\n");
+  return prefix + candidate.slice(0, cut > 0 ? cut : candidate.length) + note;
 }
 
 export function buildBriefs() {
@@ -240,7 +250,7 @@ export function buildCells({ repoRoot = REPO_ROOT, agentFile = AGENT_FILE, baseD
     for (const { lane, effort } of variants) {
       const quarantine = buildQuarantineDir({ probeId: probe.id, repoRoot, baseDir });
       const descriptor = kimiProcessDispatch({ brief, agentFile, cwd: quarantine.dir, lane });
-      if (effort) descriptor.env = { ...descriptor.env, [EFFORT_ENV_VAR]: effort };
+      if (effort) descriptor.env[EFFORT_ENV_VAR] = effort;
       cells.push({
         probe: probe.id,
         gate: probe.gate,
@@ -359,7 +369,8 @@ export function scanContamination(stdout, { quarantineDir, repoRoot = REPO_ROOT 
       if (READ_PATH_TOOLS.has(name)) {
         for (const key of PATH_ARG_KEYS) {
           const p = args[key];
-          if (typeof p === "string" && p.startsWith("/") && p !== quarantineDir && !p.startsWith(quarantineDir + "/")) {
+          const rel = typeof p === "string" && isAbsolute(p) ? relative(quarantineDir, p) : "";
+          if (rel && (rel.startsWith("..") || isAbsolute(rel))) {
             indicators.push({ line: lineNo, kind: "read-outside-quarantine", detail: `${name} ${p}` });
           }
         }
@@ -372,19 +383,19 @@ export function scanContamination(stdout, { quarantineDir, repoRoot = REPO_ROOT 
 // One spawn attempt: the descriptor's argv with the env merge rule, stdout
 // captured to the results dir. Never throws on a nonzero exit -- the exit code
 // is data (the retry policy and the results file both need it).
-async function spawnAttempt(cell, { resultsDir, attempt }) {
+export async function spawnAttempt(cell, { resultsDir, attempt, execute = pexecFile }) {
   const { descriptor } = cell;
   const effortTag = cell.effort ? `.${cell.effort}` : "";
   const stdoutFile = join(resultsDir, `${cell.probe}.${cell.lane}${effortTag}.attempt-${attempt}.stdout.jsonl`);
   let exitCode = 0;
   let stdout = "";
   try {
-    ({ stdout } = await pexecFile("kimi", descriptor.argv, {
-      cwd: descriptor.cwd,
-      env: spawnEnv(descriptor.env),
+    ({ stdout } = await withKimiProcessBriefFile(descriptor, prepared => execute("kimi", prepared.argv, {
+      cwd: prepared.cwd,
+      env: spawnEnv(prepared.env),
       timeout: 600_000,
       maxBuffer: 64 * 1024 * 1024
-    }));
+    }), { temporaryRoot: descriptor.cwd }));
   } catch (err) {
     exitCode = typeof err.code === "number" ? err.code : 1;
     stdout = err.stdout ?? "";

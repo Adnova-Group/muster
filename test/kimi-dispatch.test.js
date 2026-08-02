@@ -6,11 +6,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, interpretKimiGoalExit, resolveKimiWaveDispatch,
+  kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, withKimiProcessBriefFile, interpretKimiGoalExit, resolveKimiWaveDispatch,
   interpretKimiBackgroundCompletion, detectKimiQuotaFault, quotaFaultLines,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_PROCESS_MAX_BRIEF, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
@@ -567,17 +568,29 @@ function withKimiHome(fn) {
   }
 }
 
+async function withKimiHomeAsync(fn) {
+  const home = mkdtempSync(join(tmpdir(), "kimi-dispatch-"));
+  mkdirSync(join(home, "agents"), { recursive: true });
+  const previous = process.env.KIMI_CODE_HOME;
+  process.env.KIMI_CODE_HOME = home;
+  try {
+    return await fn(home);
+  } finally {
+    if (previous === undefined) delete process.env.KIMI_CODE_HOME;
+    else process.env.KIMI_CODE_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 test("kimiProcessDispatch: builds the headless -p invocation, -m ALWAYS emitted per lane", () => {
   withKimiHome(home => {
     writeFileSync(join(home, "agents", "muster-builder.md"), "---\nname: muster-builder\n---\n");
     for (const lane of ["primary", "secondary"]) {
       const d = kimiProcessDispatch({ brief: "Implement the feature.", agentFile: "muster-builder.md", cwd: home, lane });
-      assert.deepEqual(d.argv, [
-        "-p", "Implement the feature.",
-        "--agent-file", join(home, "agents", "muster-builder.md"),
-        "--output-format", "stream-json",
-        "-m", KIMI_LANES[lane]
-      ]);
+      assert.equal(d.argv[0], "-p");
+      assert.match(d.argv[1], /complete UTF-8 process brief/);
+      assert.ok(!d.argv.includes("Implement the feature."));
+      assert.deepEqual(d.argv.slice(2), ["--agent-file", join(home, "agents", "muster-builder.md"), "--output-format", "stream-json", "-m", KIMI_LANES[lane]]);
       assert.deepEqual(d.env, kimiLaneEnv()); // the shared derivation, never re-stated
       assert.equal(d.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1"); // the v2 engine --agent-file needs
       assert.equal(d.cwd, home);
@@ -634,18 +647,46 @@ test("kimiProcessDispatch: rejects an empty brief", () => {
   });
 });
 
-test("kimiProcessDispatch: enforces the brief cap -- briefs ride argv, the /goal objective's budget class", () => {
-  // Same budget class as KIMI_GOAL_MAX_OBJECTIVE: a brief IS the -p prompt, and
-  // a /goal objective is itself a `-p "/goal <objective>"` argument.
-  assert.equal(KIMI_PROCESS_MAX_BRIEF, KIMI_GOAL_MAX_OBJECTIVE);
-  withKimiHome(home => {
+test("kimiProcessDispatch: 4,001 chars and 64 KiB reach a child intact through the documented temporary-file transport", async () => {
+  assert.equal(KIMI_PROCESS_MAX_BRIEF, 64 * 1024);
+  await withKimiHomeAsync(async home => {
     writeFileSync(join(home, "agents", "muster-builder.md"), "x");
+    const fakeChild = join(home, "fake-kimi.mjs");
+    writeFileSync(fakeChild, "import { readFileSync } from 'node:fs';\nconst prompt = process.argv[process.argv.indexOf('-p') + 1];\nconst path = JSON.parse(prompt.slice(prompt.indexOf(':') + 1));\nprocess.stdout.write(readFileSync(path));\n");
+    const exactMultibyte64KiB = "€".repeat(21_845) + "x";
+    for (const brief of ["x".repeat(4001), "y".repeat(64 * 1024), exactMultibyte64KiB, "before\0after"]) {
+      assert.ok(Buffer.byteLength(brief, "utf8") <= 64 * 1024);
+      const dispatch = kimiProcessDispatch({ brief, agentFile: "muster-builder.md", cwd: home, lane: "primary" });
+      assert.deepEqual(dispatch.briefTransport, { kind: "temporary-file", encoding: "utf8", maxBytes: 64 * 1024 });
+      assert.throws(() => { dispatch.argv = ["-p", brief]; }, TypeError, "canonical argv is non-writable");
+      assert.throws(() => { dispatch.cwd = join(home, "agents"); }, TypeError, "canonical cwd is non-writable");
+      assert.ok(!dispatch.argv.some(value => value.includes(brief)), "the process brief must not ride argv");
+      let transportedPath;
+      const received = await withKimiProcessBriefFile(dispatch, async prepared => {
+        assert.ok(prepared.argv.every(value => Buffer.byteLength(value, "utf8") < 4096), "argv remains bounded independently of brief size");
+        const prompt = prepared.argv[1];
+        transportedPath = JSON.parse(prompt.slice(prompt.indexOf(":") + 1));
+        assert.ok(existsSync(transportedPath), "the private brief file exists for the child lifetime");
+        return execFileSync(process.execPath, [fakeChild, ...prepared.argv], { encoding: "utf8", maxBuffer: 256 * 1024 });
+      });
+      assert.equal(received, brief);
+      assert.equal(existsSync(transportedPath), false, "the private brief file is removed after child completion");
+    }
     assert.throws(
-      () => kimiProcessDispatch({ brief: "x".repeat(KIMI_PROCESS_MAX_BRIEF + 1), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
-      new RegExp(`kimiProcessDispatch: brief is ${KIMI_PROCESS_MAX_BRIEF + 1} chars; cap is ${KIMI_PROCESS_MAX_BRIEF}`)
+      () => kimiProcessDispatch({ brief: "x".repeat(64 * 1024 + 1), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
+      /brief is 65537 UTF-8 bytes; temporary-file transport cap is 65536 bytes/
     );
-    assert.doesNotThrow(
-      () => kimiProcessDispatch({ brief: "x".repeat(KIMI_PROCESS_MAX_BRIEF), agentFile: "muster-builder.md", cwd: home, lane: "primary" })
+    await assert.rejects(
+      withKimiProcessBriefFile(kimiProcessDispatch({ brief: "x", agentFile: "muster-builder.md", cwd: home, lane: "primary" }), () => "child still running"),
+      /invoke must return a Promise that settles after child exit/
+    );
+    await assert.rejects(
+      withKimiProcessBriefFile({ brief: "forged", briefTransport: { kind: "temporary-file", mode: 0o644 }, argv: ["-p", "x"] }, async () => {}),
+      /kimiProcessDispatch descriptor is required/
+    );
+    assert.throws(
+      () => kimiProcessDispatch({ brief: "€".repeat(21_846), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
+      /brief is 65538 UTF-8 bytes; temporary-file transport cap is 65536 bytes/
     );
   });
 });

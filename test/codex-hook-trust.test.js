@@ -2,12 +2,12 @@
 // trusted_hash exactly matches the hook's current normalized content hash.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { link, mkdir, mkdtemp, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rename, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { effectiveHookTrust, hasManagedRuntimeInventoryAlias, hookActivationSnapshot, musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { codexProjectRoot, effectiveHookTrust, hasManagedRuntimeInventoryAlias, hookActivationSnapshot, musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
 
@@ -343,12 +343,61 @@ test("install and doctor reject another inventory source physically aliasing the
     cwd, hooksJsonPath, activationSnapshot: await hookActivationSnapshot({ home, cwd })
   }), true, "option-attached paths must participate in physical alias detection");
 
+  const fileUrlInventory = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
+  fileUrlInventory.data[0].hooks.push(currentCodexInventoryHook({
+    key: `${configPath}:stop:0:0`, currentHash: `sha256:${"d".repeat(64)}`,
+    overrides: { sourcePath: configPath, command: `node --import=${pathToFileURL(aliasPath).href} -e ''`, source: "project" }
+  }));
+  assert.equal(await hasManagedRuntimeInventoryAlias(fileUrlInventory, {
+    cwd, hooksJsonPath, activationSnapshot: await hookActivationSnapshot({ home, cwd })
+  }), true, "file URL option paths must participate in physical alias detection");
+
   const installed = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, hookInventory: inventory });
   assert.equal(installed.ok, false);
   assert.match(installed.hookTrust.effective.error, /another source invoking/);
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absentCodex, hookInventory: inventory });
   assert.equal(report.checks.find(check => check.name === "codex-hook-trust")?.ok, false);
   assert.match(report.checks.find(check => check.name === "codex-hook-trust")?.detail || "", /another source invoking/);
+
+  const foreignTarget = join(tmp, "foreign-target.mjs");
+  await writeFile(foreignTarget, "export {};\n");
+  let inventoryReads = 0;
+  const racingInventory = async () => {
+    await unlink(aliasPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+    await symlink(inventoryReads++ % 2 === 0 ? join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs") : foreignTarget, aliasPath);
+    const value = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
+    value.data[0].hooks.push(currentCodexInventoryHook({
+      key: `${configPath}:stop:0:0`, currentHash: `sha256:${"e".repeat(64)}`,
+      overrides: { sourcePath: configPath, command: `node --import=${aliasPath} -e ''`, source: "project" }
+    }));
+    return value;
+  };
+  const raced = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, hookInventory: racingInventory });
+  assert.equal(raced.ok, false);
+  assert.match(raced.hookTrust.effective.error, /activation state changed/);
+});
+
+test("Codex project installs use the primary checkout config root from a linked worktree", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-linked-worktree-"));
+  const main = join(tmp, "main"), linked = join(tmp, "linked"), home = join(tmp, "home");
+  await mkdir(main, { recursive: true });
+  const git = (...args) => {
+    const result = spawnSync("git", args, { cwd: main, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  git("init");
+  git("config", "user.email", "muster@example.invalid");
+  git("config", "user.name", "Muster Test");
+  await writeFile(join(main, "README.md"), "fixture\n");
+  git("add", "README.md");
+  git("commit", "-m", "fixture");
+  git("worktree", "add", "-b", "linked-fixture", linked);
+
+  assert.equal(await codexProjectRoot(linked), main);
+  const installed = await runCodexInstall({ cwd: linked, home, repoRoot, execFile: absentCodex });
+  assert.equal(installed.files.some(operation => operation.path.startsWith(join(main, ".codex"))), true);
+  assert.equal(JSON.parse(await readFile(join(main, ".codex", "hooks.json"), "utf8")).hooks.Stop.length > 0, true);
+  await assert.rejects(readFile(join(linked, ".codex", "hooks.json")), error => error.code === "ENOENT");
 });
 
 test("effectiveHookTrust rejects duplicate scope and managed hook inventory records", () => {

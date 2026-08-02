@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { codexHookStateKeys, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameHookActivationSnapshot } from "./codex-install.js";
+import { codexHookStateKeys, codexProjectRoot, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, inventoryAliasCandidateSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameAliasCandidateSnapshot, sameHookActivationSnapshot } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -713,6 +713,8 @@ function isHooksSkippedManifest(owner, packageVersion) {
 }
 
 export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, runtimeIdentity, hookInventory, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+  const inventoryCwd = resolve(cwd);
+  cwd = await codexProjectRoot(cwd);
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -1232,16 +1234,28 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // skipped project as an activation obligation instead of checking the user
   // target only in doctor's invocation directory.
   const effectiveTargets = [...hookTrustTargets];
+  for (const target of effectiveTargets) if (resolve(target.cwd) === cwd) target.cwd = inventoryCwd;
   const userTrustTarget = hookTrustTargets.find(target => target.dir === userCodexHome);
   if (userTrustTarget) for (const skippedCwd of skippedProjectHookCwds) {
-    if (!effectiveTargets.some(target => target.dir === userCodexHome && target.cwd === skippedCwd)) {
-      effectiveTargets.push({ ...userTrustTarget, cwd: skippedCwd });
+    const effectiveCwd = resolve(skippedCwd) === cwd ? inventoryCwd : skippedCwd;
+    if (!effectiveTargets.some(target => target.dir === userCodexHome && target.cwd === effectiveCwd)) {
+      effectiveTargets.push({ ...userTrustTarget, cwd: effectiveCwd });
     }
   }
   const inventoryCwds = [...new Set(effectiveTargets.map(target => target.cwd))];
   const activationBefore = effectiveTargets.length ? activationProofStart : null;
-  const inventory = effectiveTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } }) : null;
-  const inventoryAliases = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => hasManagedRuntimeInventoryAlias(inventory, {
+  const inventoryArgs = { runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } };
+  const inventory = effectiveTargets.length ? await inventoryReader(inventoryArgs) : null;
+  const aliasCandidatesBefore = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => inventoryAliasCandidateSnapshot(inventory, {
+    cwd: target.cwd, hooksJsonPath: target.configPath
+  }))) : [];
+  const confirmedInventory = effectiveTargets.length ? await inventoryReader(inventoryArgs) : null;
+  const aliasCandidatesAfter = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => inventoryAliasCandidateSnapshot(confirmedInventory, {
+    cwd: target.cwd, hooksJsonPath: target.configPath
+  }))) : [];
+  const inventoryStable = !effectiveTargets.length || (same(inventory, confirmedInventory)
+    && aliasCandidatesBefore.every((snapshot, index) => sameAliasCandidateSnapshot(snapshot, aliasCandidatesAfter[index])));
+  const inventoryAliases = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => hasManagedRuntimeInventoryAlias(confirmedInventory, {
     cwd: target.cwd, hooksJsonPath: target.configPath, activationSnapshot: activationBefore
   }))) : [];
   const activationAfter = effectiveTargets.length ? await hookActivationSnapshot({ cwd, userCodexHome }) : null;
@@ -1251,8 +1265,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     cwd: target.cwd,
     effective: inventoryAliases[index]
       ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
-      : activationStable
-      ? effectiveHookTrust(inventory, target.cwd, target.configPath, target.results, { knownKeys: target.knownKeys })
+      : activationStable && inventoryStable
+      ? effectiveHookTrust(confirmedInventory, target.cwd, target.configPath, target.results, { knownKeys: target.knownKeys })
       : { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
   })).filter(item => !item.effective.ok);
   const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length + item.stale.length, 0)

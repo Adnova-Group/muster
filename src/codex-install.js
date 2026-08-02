@@ -39,6 +39,19 @@ const agentsDir = (scope, cwd, home) => scope === "user" ? join(codexHome(home),
 const configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join(cwd, ".codex");
 const scopeRegistryPath = home => join(codexHome(home), "muster", "install-scopes.json");
 const scopeRegistryLockPath = home => `${scopeRegistryPath(home)}.lock`;
+export async function codexProjectRoot(cwd) {
+  const invocationRoot = resolve(cwd);
+  try {
+    const { stdout } = await execFileDefault("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: invocationRoot });
+    const lines = String(stdout).trim().split(/\r?\n/);
+    if (lines.length !== 1 || !isAbsolute(lines[0])) return invocationRoot;
+    const commonDir = resolve(lines[0]);
+    if (basename(commonDir) !== ".git" || !(await stat(commonDir)).isDirectory()) return invocationRoot;
+    return dirname(commonDir);
+  } catch {
+    return invocationRoot;
+  }
+}
 async function ordinaryDirectoryPath(path, { create = false } = {}) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
@@ -1550,9 +1563,14 @@ export async function hasMusterHookCommandAlias(config, expectedScripts, { cwds 
     for (const group of groups) for (const command of groupCommands(group)) {
       if (!includeDirect && isMusterHookCommand(command)) continue;
       for (const candidate of shellPathCandidates(command)) {
-        const paths = posix.isAbsolute(candidate) || win32.isAbsolute(candidate)
-          ? [candidate]
-          : cwds.map(cwd => resolve(cwd, candidate));
+        let filesystemCandidate = candidate;
+        if (/^file:/i.test(candidate)) {
+          try { filesystemCandidate = fileURLToPath(candidate); }
+          catch { return true; }
+        }
+        const paths = posix.isAbsolute(filesystemCandidate) || win32.isAbsolute(filesystemCandidate)
+          ? [filesystemCandidate]
+          : cwds.map(cwd => resolve(cwd, filesystemCandidate));
         for (const path of paths) try {
           if (expectedIdentities.has(await physicalHookIdentity(path))) return true;
         } catch { /* missing and foreign scripts are not managed aliases */ }
@@ -1575,6 +1593,39 @@ export async function hasManagedRuntimeInventoryAlias(inventory, { cwd, hooksJso
   const config = { hooks: { Stop: commands.map(command => ({ hooks: [{ command }] })) } };
   return hasMusterHookCommandAlias(config, expectedScripts, { cwds: [cwd], includeDirect: true });
 }
+
+export async function inventoryAliasCandidateSnapshot(inventory, { cwd, hooksJsonPath }) {
+  const scope = Array.isArray(inventory?.data) ? inventory.data.find(entry => entry?.cwd === cwd) : null;
+  const paths = new Set();
+  for (const hook of Array.isArray(scope?.hooks) ? scope.hooks : []) {
+    const parsed = parseHookInventoryKey(hook?.key);
+    if (!parsed || parsed.path === hooksJsonPath || typeof hook.command !== "string") continue;
+    for (const candidate of shellPathCandidates(hook.command)) {
+      let filesystemCandidate = candidate;
+      if (/^file:/i.test(candidate)) {
+        try { filesystemCandidate = fileURLToPath(candidate); }
+        catch { paths.add(`invalid:${candidate}`); continue; }
+      }
+      for (const path of posix.isAbsolute(filesystemCandidate) || win32.isAbsolute(filesystemCandidate)
+        ? [filesystemCandidate] : [resolve(cwd, filesystemCandidate)]) paths.add(path);
+    }
+  }
+  const snapshot = new Map();
+  for (const path of [...paths].sort()) {
+    if (path.startsWith("invalid:")) { snapshot.set(path, { invalid: true }); continue; }
+    try {
+      const linkMetadata = await lstat(path);
+      const canonical = await realpath(path);
+      const targetMetadata = await stat(canonical);
+      snapshot.set(path, { canonical, linkDev: linkMetadata.dev, linkIno: linkMetadata.ino, targetDev: targetMetadata.dev, targetIno: targetMetadata.ino });
+    } catch (error) {
+      snapshot.set(path, { missing: error.code === "ENOENT", code: error.code || "ERROR" });
+    }
+  }
+  return snapshot;
+}
+
+export const sameAliasCandidateSnapshot = (left, right) => same([...left], [...right]);
 
 function exactMusterHookGroups(config, expectedHookGroups) {
   if (!config?.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) return false;
@@ -2074,7 +2125,7 @@ async function profileSource(root, isPluginRoot) {
 // conflict probe precedes the marketplace + build pre-flight, which precede the
 // transaction. The only side effects are the pre-existing esbuild staging build
 // and ordinaryDirectoryPath probes (create:false) -- neither is rollback-owned.
-async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile, runtimeIdentity, hookInventory, allowInjected, nodeExecPath }) {
+async function prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, home, repoRoot, execFile, runtimeIdentity, hookInventory, allowInjected, nodeExecPath }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
@@ -2131,7 +2182,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
     ? await expectedCodexHookInstall({ dir: codexHome(home), hookSourceRoot, nodeExecPath })
     : null;
   const canonicalUserHooksActive = scope === "project" && await userScopeHooksHealthy({
-    home, packageVersion, expected: canonicalUserExpected, cwd, runtimeIdentity, hookInventory
+    home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd, runtimeIdentity, hookInventory
   });
   const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
@@ -2170,11 +2221,13 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
 }
 
 export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, runtimeIdentity, hookInventory, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
+  const inventoryCwd = resolve(cwd);
+  cwd = await codexProjectRoot(cwd);
   const executor = execFile || execFileDefault;
   let identity = runtimeIdentity;
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
   const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks, staleFiles, present, planned } =
-    await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
+    await prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
   let originals, changed, written, activationProofStart;
   let actions = [];
   let canonicalUserTrust = null;
@@ -2353,7 +2406,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         await validateManagedHookAliasGraph({ home, cwd, entries: reconciled, currentDir: dir, currentConfig: hooks.config });
         if (hooks.skipped) {
           canonicalUserTrust = await inspectEffectiveUserScopeHooks({
-            home, packageVersion, expected: canonicalUserExpected, cwd,
+            home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd,
             runtimeIdentity: identity, hookInventory
           });
           if (!canonicalUserTrust) {
@@ -2397,13 +2450,18 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     const gaps = trustTarget?.gaps ?? { results: [], untrusted: ["canonical-scope-invalid"], stale: [] };
     const inventoryReader = hookInventory || readCodexHookInventory;
     const activationBefore = activationProofStart;
-    const inventory = hooks.skipped ? null : await inventoryReader({
+    const inventoryArgs = {
       runtimeIdentity: identity,
-      cwds: [cwd],
+      cwds: [inventoryCwd],
       env: { ...process.env, CODEX_HOME: codexHome(home) }
-    });
-    const inventoryAlias = hooks.skipped ? false : await hasManagedRuntimeInventoryAlias(inventory, {
-      cwd, hooksJsonPath: trustTarget.configPath, activationSnapshot: activationBefore
+    };
+    const inventory = hooks.skipped ? null : await inventoryReader(inventoryArgs);
+    const aliasCandidatesBefore = hooks.skipped ? null : await inventoryAliasCandidateSnapshot(inventory, { cwd: inventoryCwd, hooksJsonPath: trustTarget.configPath });
+    const confirmedInventory = hooks.skipped ? null : await inventoryReader(inventoryArgs);
+    const aliasCandidatesAfter = hooks.skipped ? null : await inventoryAliasCandidateSnapshot(confirmedInventory, { cwd: inventoryCwd, hooksJsonPath: trustTarget.configPath });
+    const inventoryStable = hooks.skipped || (same(inventory, confirmedInventory) && sameAliasCandidateSnapshot(aliasCandidatesBefore, aliasCandidatesAfter));
+    const inventoryAlias = hooks.skipped ? false : await hasManagedRuntimeInventoryAlias(confirmedInventory, {
+      cwd: inventoryCwd, hooksJsonPath: trustTarget.configPath, activationSnapshot: activationBefore
     });
     const activationAfter = await hookActivationSnapshot({ home, cwd });
     const activationStable = sameHookActivationSnapshot(activationBefore, activationAfter);
@@ -2413,9 +2471,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         : { verified: true, ok: false, error: "Codex hook activation state changed after its transaction proof", results: [] }
       : inventoryAlias
         ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
-        : !activationStable
+        : !activationStable || !inventoryStable
         ? { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
-        : effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
+        : effectiveHookTrust(confirmedInventory, inventoryCwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
     const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;
     hookTrust = {
       ok: persistedOk && effective.ok,
@@ -2524,6 +2582,7 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
 }
 
 export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile, runtimeIdentity } = {}) {
+  cwd = await codexProjectRoot(cwd);
   const executor = execFile || execFileDefault;
   let identity = runtimeIdentity;
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity(); } catch { /* Codex absent: local cleanup still proceeds without PATH probing */ }

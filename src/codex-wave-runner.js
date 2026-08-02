@@ -241,13 +241,13 @@ function validateExecutionPolicy({ sandbox, approvalPolicy }) {
 }
 
 function effectiveWaveCeiling(maxConcurrentThreadsPerSession, configuredThreadCeiling, availableThreadLimit) {
-  const desired = maxConcurrentThreadsPerSession ?? 12;
-  if (!Number.isInteger(desired) || desired < 1) {
-    throw new Error("runCodexWave: maxConcurrentThreadsPerSession must be a positive integer");
-  }
   const configured = configuredThreadCeiling ?? 12;
   if (!Number.isInteger(configured) || configured < 1) {
     throw new Error("runCodexWave: configuredThreadCeiling must be a positive integer");
+  }
+  const desired = maxConcurrentThreadsPerSession ?? configured;
+  if (!Number.isInteger(desired) || desired < 1) {
+    throw new Error("runCodexWave: maxConcurrentThreadsPerSession must be a positive integer");
   }
   if (availableThreadLimit !== undefined
     && (!Number.isInteger(availableThreadLimit) || availableThreadLimit < 1)) {

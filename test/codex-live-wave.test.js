@@ -173,6 +173,19 @@ test("runCodexWave bounds process batches by desired, configured, and available 
   );
 });
 
+test("runCodexWave defaults the desired ceiling to trusted configured capacity", async t => {
+  const fixture = await waveFixture(t);
+  const result = await runCodexWave({
+    members: [member("a", fixture.worktreeA), member("b", fixture.worktreeB)],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+    configuredThreadCeiling: 24,
+  });
+
+  assert.equal(result.effectiveCeiling, 24);
+});
+
 test("runCodexWave rejects worktrees from an unrelated repository before Codex execution", async t => {
   const trusted = await waveFixture(t);
   const unrelated = await waveFixture(t);

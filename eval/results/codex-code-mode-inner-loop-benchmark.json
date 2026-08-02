@@ -1,0 +1,134 @@
+{
+  "schema": "muster-codex-code-mode-inner-loop-benchmark/v1",
+  "generatedAt": "2026-08-02T00:49:24.712Z",
+  "environment": {
+    "codexVersion": "codex-cli 0.146.0",
+    "configuration": "default active Codex configuration; no benchmark feature override",
+    "features": {
+      "codeMode": {
+        "stage": "under development",
+        "enabled": false
+      },
+      "codeModeHost": {
+        "stage": "stable",
+        "enabled": true
+      }
+    },
+    "eligibleModels": [
+      {
+        "slug": "codex-auto-review",
+        "toolMode": "code_mode_only"
+      },
+      {
+        "slug": "gpt-5.6-luna",
+        "toolMode": "code_mode_only"
+      },
+      {
+        "slug": "gpt-5.6-sol",
+        "toolMode": "code_mode_only"
+      },
+      {
+        "slug": "gpt-5.6-terra",
+        "toolMode": "code_mode_only"
+      }
+    ],
+    "switchableModels": [],
+    "stableCodeModeAvailable": false,
+    "comparisonAvailable": false
+  },
+  "protocol": {
+    "comparison": "Code Mode mechanical inner loop versus the current crew-member tool-call path",
+    "lanes": [
+      "investigator",
+      "evidence"
+    ],
+    "orchestrationExcluded": true,
+    "fixtureCases": 10,
+    "pairedCasesExecuted": 0,
+    "status": "UNSUPPORTED_HOST",
+    "modeIdentity": {
+      "status": "UNAVAILABLE",
+      "reason": "Codex JSONL command_execution events do not attest whether the outer call used Code Mode or direct tools"
+    },
+    "unsupportedReasons": [
+      "stable enabled Code Mode feature unavailable",
+      "no same-model switchable code_mode candidate; code_mode_only cannot provide a direct-tool control",
+      "Codex JSONL command_execution events do not attest whether the outer call used Code Mode or direct tools"
+    ],
+    "unsupportedHostFallback": "retain the current crew-member tool-call path"
+  },
+  "pairs": [],
+  "summary": {
+    "caseCount": 10,
+    "completedPairs": 0,
+    "codeMode": {
+      "latencyMs": {
+        "samples": "UNKNOWN",
+        "p50": "UNKNOWN",
+        "p95": "UNKNOWN"
+      },
+      "inputTokens": {
+        "samples": "UNKNOWN",
+        "p50": "UNKNOWN",
+        "p95": "UNKNOWN"
+      }
+    },
+    "currentPath": {
+      "latencyMs": {
+        "samples": "UNKNOWN",
+        "p50": "UNKNOWN",
+        "p95": "UNKNOWN"
+      },
+      "inputTokens": {
+        "samples": "UNKNOWN",
+        "p50": "UNKNOWN",
+        "p95": "UNKNOWN"
+      }
+    },
+    "correctnessRegressions": "UNKNOWN",
+    "codeModeIncorrect": "UNKNOWN",
+    "currentPathIncorrect": "UNKNOWN"
+  },
+  "adoption": {
+    "decision": "REJECT",
+    "metrics": {
+      "medianLatencyReductionPct": "UNKNOWN",
+      "medianInputTokenReductionPct": "UNKNOWN"
+    },
+    "checks": [
+      {
+        "name": "10 completed pairs",
+        "value": 0,
+        "pass": false
+      },
+      {
+        "name": "median latency or input-token reduction",
+        "value": {
+          "medianLatencyReductionPct": "UNKNOWN",
+          "medianInputTokenReductionPct": "UNKNOWN"
+        },
+        "pass": false
+      },
+      {
+        "name": "correctness regressions",
+        "value": "UNKNOWN",
+        "pass": false
+      },
+      {
+        "name": "gold-case correctness",
+        "value": {
+          "codeModeIncorrect": "UNKNOWN",
+          "currentPathIncorrect": "UNKNOWN"
+        },
+        "pass": false
+      }
+    ],
+    "failed": [
+      "effective standard versus Code Mode identity: stable enabled Code Mode feature unavailable; no same-model switchable code_mode candidate; code_mode_only cannot provide a direct-tool control; Codex JSONL command_execution events do not attest whether the outer call used Code Mode or direct tools",
+      "10 completed pairs: 0",
+      "median latency or input-token reduction: {\"medianLatencyReductionPct\":\"UNKNOWN\",\"medianInputTokenReductionPct\":\"UNKNOWN\"}",
+      "correctness regressions: UNKNOWN (threshold cannot pass)",
+      "gold-case correctness: {\"codeModeIncorrect\":\"UNKNOWN\",\"currentPathIncorrect\":\"UNKNOWN\"}"
+    ]
+  }
+}

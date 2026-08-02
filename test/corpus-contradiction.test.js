@@ -51,7 +51,7 @@ const TERM_REGISTRY = [
     quotedAt: ["plugin/commands/go-backlog.md", "plugin/skills/coordination/SKILL.md"] },
   { name: "role vocabulary", canonicalSource: "src/roles.js (ROLES)",
     quotedAt: ["plugin/commands/diagnose.md", "plugin/skills/review-gate/SKILL.md"] },
-  { name: "fix-iteration cap", canonicalSource: "plugin/skills/review-gate/SKILL.md (REVIEW_GATE_MAX_ITERATIONS)",
+  { name: "progress-aware review recovery", canonicalSource: "plugin/skills/review-gate/SKILL.md (reviewGateState)",
     quotedAt: ["plugin/skills/orchestrator/SKILL.md", "plugin/agents/muster-runner.md"] },
 ];
 
@@ -296,39 +296,18 @@ test("role vocabulary: every backtick-quoted role name in plugin/commands and pl
   assert.equal(checked, 7, "expected exactly 7 quoted role names across the two target files");
 });
 
-// ── term 7: fix-iteration cap ────────────────────────────────────────────────
-// Canonical: plugin/skills/review-gate/SKILL.md's REVIEW_GATE_MAX_ITERATIONS
-// numeric value. Quoted as the numeral ("3 fix iterations") in
-// orchestrator.md and as the word form ("three fix loops") in
-// muster-runner.md.
-const NUMBER_WORDS = { 1: "one", 2: "two", 3: "three", 4: "four", 5: "five" };
-
-function extractFixIterationCap(reviewGateMd) {
-  const m = reviewGateMd.match(/REVIEW_GATE_MAX_ITERATIONS`?\s*=\s*(\d+)/);
-  assert.ok(m, "could not find REVIEW_GATE_MAX_ITERATIONS's numeric value in review-gate/SKILL.md");
-  return Number(m[1]);
-}
-
-test("fix-iteration cap: orchestrator.md and muster-runner.md quote review-gate.md's REVIEW_GATE_MAX_ITERATIONS exactly", async () => {
+// ── term 7: progress-aware review recovery ──────────────────────────────────
+test("review recovery contract stays progress-aware across orchestrator and runner", async () => {
   const [reviewGateMd, orchestratorMd, runnerMd] = await Promise.all([
     read("plugin/skills/review-gate/SKILL.md"),
     read("plugin/skills/orchestrator/SKILL.md"),
     read("plugin/agents/muster-runner.md"),
   ]);
-  const cap = extractFixIterationCap(reviewGateMd);
-  assert.equal(cap, 3, "sanity: known canonical fix-iteration cap");
-
-  assert.ok(
-    orchestratorMd.includes(`${cap} fix iterations`),
-    `orchestrator/SKILL.md must read "${cap} fix iterations" verbatim (review-gate/SKILL.md's REVIEW_GATE_MAX_ITERATIONS is canonical)`
-  );
-
-  const word = NUMBER_WORDS[cap];
-  assert.ok(word, `no word form registered for cap ${cap}`);
-  assert.ok(
-    runnerMd.includes(`${word} fix loops`),
-    `muster-runner.md must read "${word} fix loops" verbatim (review-gate/SKILL.md's REVIEW_GATE_MAX_ITERATIONS is canonical)`
-  );
+  for (const text of [reviewGateMd, orchestratorMd, runnerMd]) {
+    assert.match(text, /repeated identical|repeated-identical|no-progress/i);
+    assert.match(text, /independent re-review|fresh independent review|independent review/i);
+    assert.doesNotMatch(text, /REVIEW_GATE_MAX_ITERATIONS|three fix loops|3 fix iterations/);
+  }
 });
 
 // ── residue scan: verb-rename leftovers outside the plugin/ prose scan ─────

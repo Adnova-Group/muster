@@ -77,15 +77,16 @@ doing the work.
         (`claudeProfile`, `codexModel`, or `kimiModel`) exactly as emitted by its adapter, and never
         pass the neutral profile raw. The harness-specific dispatch reference below owns call shape
         and fallback behavior; record any adapter-reported degradation in STATE.
-      - **Subagent failure:** never a silent stop -- re-dispatch ONCE with the error appended as
-        context (`dispatchRetryState`, `src/loop.js`, max 2 attempts). **On Kimi the re-dispatch is
+      - **Subagent failure:** never a silent stop -- record a deterministic error/progress fingerprint
+        and re-dispatch with the error appended while `dispatchRetryState` in `src/loop.js` reports
+        progress. Stop deterministically at the configured repeated-identical/no-progress threshold.
+        **On Kimi the re-dispatch is
         a native RESUME, never a fresh spawn** -- the Agent tool's `resume` for a per-agent
         dispatch, AgentSwarm's `resume_agent_ids` for a swarm dispatch (both modeled by
         `kimiAgentCall`/`kimiSwarmCall` in `src/kimi-dispatch.js`): the failed subagent keeps its
         prior context and only the error is appended, so the retry never pays the full
         prompt/context cost a fresh agent would. Non-Kimi harnesses keep the fresh re-dispatch.
-        A second failure records to
-        STATE and escalates like a review-gate escalation (step 4e); the wave's other tasks still
+        A no-progress result records to STATE and enters the truthful terminal path (step 4e); the wave's other tasks still
         complete. A reviewer dispatched inside the review gate (step 4c) that is killed, exhausted, or
         never starts before returning a verdict is not retried under this generic path -- see
         `plugin/skills/review-gate/SKILL.md`'s exhausted/absent reviewer handling, which records a
@@ -94,10 +95,10 @@ doing the work.
    c. **Review gate — cadence follows step 2's result:** `fastPath: false` -> invoke **review-gate**
       over this wave now. `fastPath: true` -> accumulate the diff and defer the dispatch to step 5,
       after the last wave (one pass over the full cumulative diff); still commit this wave's work
-      per step d. Either way, the review->fix cycle re-dispatches fixes until a recorded `VERDICT: PASS`
-      or the cap
-      (**3 fix iterations**, `REVIEW_GATE_MAX_ITERATIONS` in `src/loop.js`) hits, then escalates
-      (step 4e) -- unchanged by batching, a batched pass gets the same cap over the larger diff.
+      per step d. Either way, the review->fix cycle re-dispatches materially changed repairs and obtains
+      a fresh independent review until a recorded `VERDICT: PASS` or `reviewGateState` reports the
+      configured repeated-identical/no-progress threshold (step 4e). Demonstrable progress permits
+      continuation beyond three iterations; batching never weakens the same progress-aware contract.
       **Advisor escalation:** a worker returning a structured advice-request instead of a final
       result is serviced via the **advisor** skill (`$MUSTER_CLI advise .muster/advice-request.json`,
       consult budget from `src/advisor.js`, default cap 3) -- see `plugin/skills/advisor/SKILL.md`.
@@ -108,7 +109,7 @@ doing the work.
    d. Append to STATE: wave index, tasks, winners, review result (or "deferred to the batched pass")
       -- AND the re-rendered plan checklist (`$MUSTER_CLI plan-checklist .muster/manifest.json --done
       <ids>`).
-   e. Review gate escalates (fix-loop cap, or a tournament with no passing candidate)? Do not start
+   e. Review gate reaches a truthful terminal state (no progress, or a tournament with no passing candidate)? Do not start
       the next wave. Dispatch `muster-strategist` (read-only, root-cause) on the failing task + fix
       history first, append its analysis to STATE, then present resolution choices via
       **AskUserQuestion** (Apply the recommendation / Retry with more context / Re-scope / Abort).
@@ -218,7 +219,9 @@ successful `sprint-waves` result and call `sprint-reconcile` with ALL available 
 and reconcile again before waiting. Only `wait.eligible:true` permits a native idle wait;
 `next:dispatch` must advance the surfaced implementation/review/integration action immediately,
 without a user prompt. Continue this deterministic **reconcile → dispatch → wait** loop until
-`next:terminal` or `next:escalated`. The harness adapter still owns actual dispatch and waiting.
+`next:terminal`, `next:blocked`, or `next:invalid`. A blocked transition carries its deterministic
+terminal reason and preserved findings; it is not a generic escalation. The harness adapter still
+owns actual dispatch and waiting.
 
 ### Codex-native dispatch: spawn_agent
 

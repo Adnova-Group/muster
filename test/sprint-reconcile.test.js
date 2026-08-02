@@ -106,7 +106,7 @@ test("failed, cancelled, and missing receipts never unlock dependencies", () => 
     receipts: [receipt("impl-a-failed", "a", "implementation", "failed")],
   });
 
-  assert.equal(result.items.a.state, "failed");
+  assert.equal(result.items.a.state, "blocked");
   assert.equal(result.items.b.state, "blocked");
   assert.equal(result.items.c.state, "implementation_in_flight");
   assert.ok(!result.actions.some((action) => action.itemId === "b"));
@@ -119,6 +119,58 @@ test("failed, cancelled, and missing receipts never unlock dependencies", () => 
   assert.equal(cancelled.items.a.state, "cancelled");
   assert.equal(cancelled.items.b.state, "blocked");
   assert.ok(!cancelled.actions.some((action) => action.itemId === "b"));
+});
+
+test("a repaired commit after a failed review self-heals by dispatching another independent review", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const result = reconcileSprintProgress(sprint, {
+    receipts: [
+      receipt("impl-a-1", "a", "implementation", "completed", 1),
+      receipt("review-a-1", "a", "review", "failed", 1),
+      receipt("impl-a-2", "a", "implementation", "completed", 2),
+    ],
+  });
+
+  assert.equal(result.items.a.state, "review_ready");
+  assert.deepEqual(result.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1, attempt: 2 }]);
+  assert.equal(result.next, "dispatch");
+  assert.equal(result.escalated, false);
+});
+
+test("failed review outcomes retry while fingerprints change and block after configured no-progress", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const progressing = reconcileSprintProgress(sprint, {
+    receipts: [
+      receipt("impl-a", "a", "implementation"),
+      { ...receipt("review-a-1", "a", "review", "failed", 1), progressFingerprint: "finding:a" },
+      { ...receipt("review-a-2", "a", "review", "failed", 2), progressFingerprint: "finding:b" },
+    ],
+  });
+  assert.deepEqual(progressing.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1, attempt: 3 }]);
+  assert.equal(progressing.next, "dispatch");
+
+  const stalled = reconcileSprintProgress(sprint, {
+    receipts: [
+      receipt("impl-a", "a", "implementation"),
+      { ...receipt("review-a-1", "a", "review", "failed", 1), progressFingerprint: "finding:a" },
+      { ...receipt("review-a-2", "a", "review", "failed", 2), progressFingerprint: "finding:a" },
+    ],
+  });
+  assert.deepEqual(stalled.actions, []);
+  assert.equal(stalled.next, "blocked");
+  assert.equal(stalled.terminalReason, "no-progress");
+});
+
+test("explicit external impossibility remains terminal and is never redispatched", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const result = reconcileSprintProgress(sprint, {
+    receipts: [
+      { ...receipt("impl-a", "a", "implementation", "failed"), terminalReason: "external-impossibility" },
+    ],
+  });
+  assert.deepEqual(result.actions, []);
+  assert.equal(result.next, "blocked");
+  assert.equal(result.terminalReason, "external-impossibility");
 });
 
 test("review barrier exposes merge integration one item at a time in backlog order", () => {

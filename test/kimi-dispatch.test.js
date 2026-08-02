@@ -474,7 +474,7 @@ test("orchestrator references/kimi-dispatch.md has the Kimi subsection naming th
 
 // --- Prose wiring: the failure rule names the Kimi resume path --------------
 
-test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resume path", async () => {
+test("orchestrator/SKILL.md's progress-aware failure rule names the Kimi resume path", async () => {
   const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
   const start = text.indexOf("- **Subagent failure:**");
   assert.ok(start >= 0, "orchestrator/SKILL.md step 4a must carry the 'Subagent failure' bullet");
@@ -487,7 +487,8 @@ test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resum
   assert.match(bullet, /kimiAgentCall`\/`kimiSwarmCall` in `src\/kimi-dispatch\.js`/, "the failure bullet must cite the shipped builders");
   assert.match(bullet, /keeps its\s+prior context and only the error is appended/, "the failure bullet must state the resume keeps prior context and appends only the error");
   assert.match(bullet, /Non-Kimi harnesses keep the fresh re-dispatch/, "the failure bullet must keep the fresh re-dispatch on non-Kimi harnesses");
-  assert.match(bullet, /max 2 attempts/, "the one-retry cap is unchanged");
+  assert.match(bullet, /deterministic error\/progress fingerprint/, "the retry rule must key continuation to progress");
+  assert.match(bullet, /repeated-identical\/no-progress threshold/, "the retry rule must stop repeated outcomes deterministically");
 
   // ...and the Kimi-native dispatch reference carries the matching mechanics.
   const ref = await readFile(KIMI_DISPATCH_REF, "utf8");
@@ -497,6 +498,7 @@ test("orchestrator/SKILL.md's re-dispatch-once failure rule names the Kimi resum
   assert.match(kimi[1], /kimiAgentCall\(\{ resume: /, "the Kimi subsection must show the per-agent resume retry shape");
   assert.match(kimi[1], /kimiSwarmCall\(\{ resumeAgentIds: /, "the Kimi subsection must show the swarm resume retry shape");
   assert.match(kimi[1], /mutually exclusive with `subagent_type`/, "the Kimi subsection must state resume's mutual exclusion with subagent_type");
+  assert.match(kimi[1], /changed outcomes may resume again/, "Kimi retries must continue while progress changes");
 });
 
 // --- Prose wiring: the Kimi subsection names the background-vs-barrier rule --

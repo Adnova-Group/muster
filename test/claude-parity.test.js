@@ -1356,5 +1356,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bootstraps and verifies its own isolated outer worktree when invoked from
   // a primary checkout, retaining fail-closed CAS publication for bookkeeping.
   // File count remains unchanged.
-  assert.equal(hash.digest("hex"), "e1f99f70792a1ff3dbdd6b0ec902fb53bcbf872dcd188d17c8a4d6136aeb3ee5");
+  // 2026-08-01 re-pin #42 (progress-aware backlog recovery): canonical
+  // orchestrator, go/go-backlog, runner, and review-gate prose now preserve
+  // findings and continue materially changed candidates; fixed attempt caps
+  // no longer terminate progressing work. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "2f7fb405f125e0549a351f1a5405a3c3a11539906c8c9381a0da67bdf8a49f92");
 });

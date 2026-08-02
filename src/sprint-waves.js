@@ -138,6 +138,8 @@ export function buildSprintSchedule(waves, items, { parallelLimit, maxConcurrent
   };
 }
 
+import { progressAwareState, TERMINAL_RECOVERY_REASONS } from "./loop.js";
+
 const SPRINT_PHASES = ["implementation", "review", "integration"];
 const SPRINT_RECEIPT_STATUSES = ["completed", "failed", "cancelled"];
 const FAILURE_STATES = new Set(["failed", "cancelled", "blocked"]);
@@ -166,10 +168,11 @@ function invalidReconciliation(errors) {
     receipts: [],
     inFlight: [],
     actions: [],
-    next: "escalated",
+    next: "invalid",
     wait: { eligible: false, inFlight: [] },
     terminal: false,
-    escalated: true,
+    escalated: false,
+    terminalReason: "invalid-input",
   };
 }
 
@@ -354,6 +357,7 @@ function canonicalReceipts(receipts, itemIds) {
   const errors = [];
   const byId = new Map();
   const latestByPhase = new Map();
+  const byPhase = new Map();
   for (const raw of receipts) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       errors.push("each receipt must be an object");
@@ -365,6 +369,8 @@ function canonicalReceipts(receipts, itemIds) {
       phase: raw.phase,
       status: raw.status,
       attempt: raw.attempt === undefined ? 1 : raw.attempt,
+      ...(raw.progressFingerprint === undefined ? {} : { progressFingerprint: raw.progressFingerprint }),
+      ...(raw.terminalReason === undefined ? {} : { terminalReason: raw.terminalReason }),
     };
     let valid = true;
     if (typeof receipt.id !== "string" || !receipt.id.trim() || receipt.id.length > SPRINT_RECONCILE_LIMITS.idLength) {
@@ -387,6 +393,15 @@ function canonicalReceipts(receipts, itemIds) {
       errors.push(`receipt '${receipt.id}' attempt must be an integer from 1 to ${SPRINT_RECONCILE_LIMITS.attempt}`);
       valid = false;
     }
+    if (receipt.progressFingerprint !== undefined
+      && (typeof receipt.progressFingerprint !== "string" || !receipt.progressFingerprint || receipt.progressFingerprint.length > SPRINT_RECONCILE_LIMITS.idLength)) {
+      errors.push(`receipt '${receipt.id}' progressFingerprint must be a non-empty bounded string`);
+      valid = false;
+    }
+    if (receipt.terminalReason !== undefined && !TERMINAL_RECOVERY_REASONS.includes(receipt.terminalReason)) {
+      errors.push(`receipt '${receipt.id}' has invalid terminalReason '${receipt.terminalReason}'`);
+      valid = false;
+    }
     if (!valid) continue;
     const normalized = { ...receipt };
     const prior = byId.get(normalized.id);
@@ -397,6 +412,10 @@ function canonicalReceipts(receipts, itemIds) {
     byId.set(normalized.id, normalized);
     latestByPhase.set(phaseKey(normalized.itemId, normalized.phase),
       strongerReceipt(latestByPhase.get(phaseKey(normalized.itemId, normalized.phase)), normalized));
+    const key = phaseKey(normalized.itemId, normalized.phase);
+    const phaseReceipts = byPhase.get(key) ?? [];
+    phaseReceipts.push(normalized);
+    byPhase.set(key, phaseReceipts);
   }
   return {
     errors,
@@ -406,6 +425,7 @@ function canonicalReceipts(receipts, itemIds) {
       || a.attempt - b.attempt
       || a.id.localeCompare(b.id)),
     latestByPhase,
+    byPhase,
   };
 }
 
@@ -465,11 +485,27 @@ export function reconcileSprintProgress(plan, progress = {}) {
 
   const receipts = receiptResult.receipts;
   const inFlight = inFlightResult.inFlight;
-  const phaseState = (itemId, phase) => {
+  const noProgressLimit = progress.recovery?.noProgressLimit;
+  if (progress.recovery !== undefined && (!isRecord(progress.recovery)
+    || (noProgressLimit !== undefined && (!Number.isInteger(noProgressLimit) || noProgressLimit < 1)))) {
+    return invalidReconciliation(["progress.recovery.noProgressLimit must be a positive integer"]);
+  }
+  const phaseState = (itemId, phase, minimumAttempt = 0) => {
     const receipt = receiptResult.latestByPhase.get(phaseKey(itemId, phase));
     const flight = inFlightResult.byPhase.get(phaseKey(itemId, phase));
     if (flight && (!receipt || flight.attempt > receipt.attempt)) return { status: "in_flight", attempt: flight.attempt };
-    return receipt ? { status: receipt.status, attempt: receipt.attempt } : null;
+    if (!receipt || receipt.attempt < minimumAttempt) return null;
+    if (receipt.status !== "failed") return { status: receipt.status, attempt: receipt.attempt, terminalReason: receipt.terminalReason };
+    if (receipt.terminalReason) return { status: "blocked", attempt: receipt.attempt, terminalReason: receipt.terminalReason };
+    const outcomes = (receiptResult.byPhase.get(phaseKey(itemId, phase)) ?? [])
+      .filter((candidate) => candidate.status === "failed" && candidate.progressFingerprint && candidate.attempt >= minimumAttempt)
+      .sort((a, b) => a.attempt - b.attempt)
+      .map((candidate) => candidate.progressFingerprint);
+    if (outcomes.length === 0) return { status: "blocked", attempt: receipt.attempt, terminalReason: "failed" };
+    const recovery = progressAwareState({ outcomes, ...(noProgressLimit === undefined ? {} : { noProgressLimit }) });
+    return recovery.continue
+      ? { status: "ready", attempt: receipt.attempt + 1 }
+      : { status: "blocked", attempt: receipt.attempt, terminalReason: recovery.reason };
   };
   const items = {};
 
@@ -488,14 +524,14 @@ export function reconcileSprintProgress(plan, progress = {}) {
       state = "pending";
     } else {
       const implementation = phaseState(itemId, "implementation");
-      if (implementation?.status === "failed" || implementation?.status === "cancelled") {
-        state = implementation.status;
+      if (implementation?.status === "blocked" || implementation?.status === "cancelled") {
+        state = implementation.status === "cancelled" ? "cancelled" : "blocked";
       } else if (implementation?.status !== "completed") {
         state = implementation?.status === "in_flight" ? "implementation_in_flight" : "implementation_ready";
       } else {
-        const review = phaseState(itemId, "review");
-        if (review?.status === "failed" || review?.status === "cancelled") {
-          state = review.status;
+        const review = phaseState(itemId, "review", implementation.attempt);
+        if (review?.status === "blocked" || review?.status === "cancelled") {
+          state = review.status === "cancelled" ? "cancelled" : "blocked";
         } else if (review?.status !== "completed") {
           state = review?.status === "in_flight" ? "review_in_flight" : "review_ready";
         } else if (!["merge-local", "merge-push"].includes(source.disposition)) {
@@ -519,6 +555,11 @@ export function reconcileSprintProgress(plan, progress = {}) {
       deps: [...deps],
       disposition: source.disposition,
       blockedBy,
+      terminalReason: state === "blocked"
+        ? phaseState(itemId, "review", phaseState(itemId, "implementation")?.attempt ?? 0)?.terminalReason
+          ?? phaseState(itemId, "implementation")?.terminalReason
+          ?? "failed-dependency"
+        : state === "cancelled" ? "cancelled" : null,
     };
   }
 
@@ -567,9 +608,12 @@ export function reconcileSprintProgress(plan, progress = {}) {
     const item = items[itemId];
     if (!priorWavesComplete(item.wave)) continue;
     if (item.state === "implementation_ready") {
-      buildReviewActions.push({ type: "dispatch", itemId, phase: "implementation", wave: item.wave });
+      const attempt = phaseState(itemId, "implementation")?.attempt ?? 1;
+      buildReviewActions.push({ type: "dispatch", itemId, phase: "implementation", wave: item.wave, ...(attempt > 1 ? { attempt } : {}) });
     } else if (item.state === "review_ready") {
-      buildReviewActions.push({ type: "dispatch", itemId, phase: "review", wave: item.wave });
+      const implementationAttempt = phaseState(itemId, "implementation")?.attempt ?? 1;
+      const attempt = phaseState(itemId, "review", implementationAttempt)?.attempt ?? implementationAttempt;
+      buildReviewActions.push({ type: "dispatch", itemId, phase: "review", wave: item.wave, ...(attempt > 1 ? { attempt } : {}) });
     }
   }
   const availableBuildSlots = Math.max(0, plan.schedule.buildReview.maxConcurrency - activeInFlight.length);
@@ -597,7 +641,8 @@ export function reconcileSprintProgress(plan, progress = {}) {
   const next = actions.length > 0 ? "dispatch"
     : terminal ? "terminal"
     : hasInFlight ? "wait"
-    : "escalated";
+    : "blocked";
+  const blockedItem = orderedIds.map((itemId) => items[itemId]).find((item) => item.state === "blocked" || item.state === "cancelled");
 
   return {
     ok: true,
@@ -613,7 +658,8 @@ export function reconcileSprintProgress(plan, progress = {}) {
       inFlight: activeInFlight,
     },
     terminal,
-    escalated: next === "escalated",
+    escalated: false,
+    terminalReason: next === "blocked" ? blockedItem?.terminalReason ?? "failed-dependency" : null,
     metadata: {
       buildReview: { ...plan.schedule.buildReview },
       barrier: plan.schedule.barrier,

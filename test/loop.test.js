@@ -1,52 +1,122 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loopState, reviewGateState, REVIEW_GATE_MAX_ITERATIONS, dispatchRetryState, DISPATCH_MAX_ATTEMPTS } from "../src/loop.js";
+import {
+  loopState,
+  progressAwareState,
+  reviewGateState,
+  specGateRecoveryState,
+  dispatchRetryState,
+  DEFAULT_NO_PROGRESS_LIMIT,
+} from "../src/loop.js";
 
-test("continues while not done and under the cap", () => {
-  assert.deepEqual(loopState({ iteration: 0, maxIterations: 25, done: false }), { continue: true, reason: "iterate" });
-  assert.deepEqual(loopState({ iteration: 24, maxIterations: 25, done: false }), { continue: true, reason: "iterate" });
+test("continues while not done and under a configured cap", () => {
+  assert.deepEqual(loopState({ iteration: 0, maxIterations: 25 }), { continue: true, reason: "iterate" });
+  assert.deepEqual(loopState({ iteration: 24, maxIterations: 25 }), { continue: true, reason: "iterate" });
 });
-test("stops when done (the completion promise is genuinely true)", () => {
+
+test("stops when done", () => {
   assert.deepEqual(loopState({ iteration: 3, maxIterations: 25, done: true }), { continue: false, reason: "done" });
 });
-test("stops at the cap (escalate, do not loop forever)", () => {
-  assert.deepEqual(loopState({ iteration: 25, maxIterations: 25, done: false }), { continue: false, reason: "max-iterations" });
-});
-test("defaults: maxIterations 25, done false", () => {
-  assert.equal(loopState({ iteration: 0 }).continue, true);
+
+test("honors an explicitly configured hard cap", () => {
+  assert.deepEqual(loopState({ iteration: 25, maxIterations: 25 }), { continue: false, reason: "max-iterations" });
 });
 
-// reviewGateState: the cap (3) IS the contract — these tests encode that.
-test("REVIEW_GATE_MAX_ITERATIONS is 3", () => {
-  assert.equal(REVIEW_GATE_MAX_ITERATIONS, 3);
-});
-test("reviewGateState caps at 3 (escalates at iteration 3)", () => {
-  assert.deepEqual(reviewGateState({ iteration: 2, done: false }), { continue: true, reason: "iterate" });
-  assert.deepEqual(reviewGateState({ iteration: 3, done: false }), { continue: false, reason: "max-iterations" });
-});
-test("reviewGateState: caller cannot override the cap upward", () => {
-  // maxIterations: 99 must be silently dropped — cap is fixed at 3
-  assert.deepEqual(reviewGateState({ iteration: 3, done: false, maxIterations: 99 }), { continue: false, reason: "max-iterations" });
-});
-test("reviewGateState: done still short-circuits before the cap", () => {
-  assert.deepEqual(reviewGateState({ iteration: 1, done: true }), { continue: false, reason: "done" });
+test("the generic loop has no arbitrary default iteration stop", () => {
+  assert.deepEqual(loopState({ iteration: 25 }), { continue: true, reason: "iterate" });
+  assert.deepEqual(loopState({ iteration: 250 }), { continue: true, reason: "iterate" });
 });
 
-// dispatchRetryState: cap (2) IS the contract — these tests encode that.
-test("DISPATCH_MAX_ATTEMPTS is 2", () => {
-  assert.equal(DISPATCH_MAX_ATTEMPTS, 2);
+test("progress-aware recovery stops after a configurable identical-outcome streak", () => {
+  assert.equal(DEFAULT_NO_PROGRESS_LIMIT, 2);
+  assert.deepEqual(progressAwareState({ outcomes: ["same", "same"] }), {
+    continue: false, reason: "no-progress", noProgressCount: 2,
+  });
+  assert.deepEqual(progressAwareState({ outcomes: ["same", "same"], noProgressLimit: 3 }), {
+    continue: true, reason: "progress", noProgressCount: 2,
+  });
 });
-// B-C8: boundary — attempt 0 (first invocation, before any attempt has been made)
-test("dispatchRetryState({attempt:0}) retries (boundary: below DISPATCH_MAX_ATTEMPTS)", () => {
-  assert.deepEqual(dispatchRetryState({ attempt: 0 }), { retry: true, reason: "retry" });
+
+test("changing review outcomes keep recovery alive beyond three rounds", () => {
+  assert.deepEqual(reviewGateState({ outcomes: ["commit:a", "commit:b", "commit:c", "commit:d"] }), {
+    continue: true, reason: "progress", noProgressCount: 1,
+  });
 });
-test("dispatchRetryState retries on first failure (attempt 1, not succeeded)", () => {
-  assert.deepEqual(dispatchRetryState({ attempt: 1 }), { retry: true, reason: "retry" });
+
+test("review recovery terminates on a repeated identical finding", () => {
+  assert.deepEqual(reviewGateState({ outcomes: ["blocker:x", "blocker:x"] }), {
+    continue: false, reason: "no-progress", noProgressCount: 2,
+  });
 });
-test("dispatchRetryState exhausted at attempt >= DISPATCH_MAX_ATTEMPTS", () => {
-  assert.deepEqual(dispatchRetryState({ attempt: 2 }), { retry: false, reason: "attempts-exhausted" });
-  assert.deepEqual(dispatchRetryState({ attempt: 3 }), { retry: false, reason: "attempts-exhausted" });
+
+test("reviewGateState completion short-circuits recovery", () => {
+  assert.deepEqual(reviewGateState({ outcomes: ["blocker:x"], done: true }), {
+    continue: false, reason: "done", noProgressCount: 0,
+  });
 });
-test("dispatchRetryState: succeeded short-circuits before the cap", () => {
-  assert.deepEqual(dispatchRetryState({ attempt: 1, succeeded: true }), { retry: false, reason: "succeeded" });
+
+test("dispatch retry continues while failure fingerprints change", () => {
+  assert.deepEqual(dispatchRetryState({ outcomes: ["timeout", "provider-fallback", "replanned"] }), {
+    retry: true, reason: "progress", noProgressCount: 1,
+  });
+});
+
+test("dispatch retry stops deterministically when the outcome repeats", () => {
+  assert.deepEqual(dispatchRetryState({ outcomes: ["timeout", "timeout"] }), {
+    retry: false, reason: "no-progress", noProgressCount: 2,
+  });
+});
+
+test("dispatchRetryState success short-circuits recovery", () => {
+  assert.deepEqual(dispatchRetryState({ outcomes: ["timeout"], succeeded: true }), {
+    retry: false, reason: "succeeded", noProgressCount: 0,
+  });
+});
+
+test("approval, HUMAN-HOLD, and external impossibility are truthful terminal states", () => {
+  for (const terminalReason of ["approval", "human-hold", "external-impossibility"]) {
+    assert.deepEqual(progressAwareState({ outcomes: ["progress"], terminalReason }), {
+      continue: false, reason: terminalReason, noProgressCount: 0,
+    });
+  }
+});
+
+const SAFETY_FINDINGS = [
+  { severity: "blocker", code: "target-identity", note: "target identity is unbound" },
+  { severity: "blocker", code: "backup-restoration", note: "backup restoration proof is absent" },
+  { severity: "blocker", code: "schema-normalization", note: "schema normalization scope is incomplete" },
+  { severity: "blocker", code: "protected-sql-provenance", note: "protected SQL provenance is missing" },
+  { severity: "blocker", code: "mutation-allowlist", note: "mutation allowlist is not bound" },
+];
+
+test("changed spec candidates preserve repeated safety findings and continue beyond the old round cap", () => {
+  const rounds = ["candidate:a", "candidate:b", "candidate:c", "candidate:d"].map((candidateFingerprint) => ({
+    candidateFingerprint,
+    findings: SAFETY_FINDINGS,
+  }));
+  assert.deepEqual(specGateRecoveryState({ rounds }), {
+    continue: true,
+    reason: "progress",
+    noProgressCount: 1,
+    action: {
+      type: "correction-replan",
+      invalidateCandidate: "candidate:d",
+      findings: SAFETY_FINDINGS,
+      requireMaterialChange: true,
+      next: "independent-spec-review",
+    },
+  });
+});
+
+test("byte-identical spec candidates stop deterministically without waiving safety findings", () => {
+  const rounds = ["candidate:a", "candidate:a"].map((candidateFingerprint) => ({
+    candidateFingerprint,
+    findings: SAFETY_FINDINGS,
+  }));
+  assert.deepEqual(specGateRecoveryState({ rounds }), {
+    continue: false,
+    reason: "no-progress",
+    noProgressCount: 2,
+    findings: SAFETY_FINDINGS,
+  });
 });

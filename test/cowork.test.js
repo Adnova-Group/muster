@@ -733,9 +733,11 @@ test("F3: missing cowork/sprint-protocol.md at module load does not crash the se
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   mkdirSync(path.join(tmp, "cowork"), { recursive: true });
   mkdirSync(path.join(tmp, "mcp"), { recursive: true });
+  mkdirSync(path.join(tmp, "src"), { recursive: true });
   mkdirSync(path.join(tmp, "plugin", "hooks"), { recursive: true });
   copyFileSync(path.join(rootDir, "cowork", "mcp-server.mjs"), path.join(tmp, "cowork", "mcp-server.mjs"));
   copyFileSync(path.join(rootDir, "mcp", "server.mjs"), path.join(tmp, "mcp", "server.mjs"));
+  copyFileSync(path.join(rootDir, "src", "backlog-publication.js"), path.join(tmp, "src", "backlog-publication.js"));
   copyFileSync(path.join(rootDir, "plugin", "hooks", "guidance.js"), path.join(tmp, "plugin", "hooks", "guidance.js"));
   writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ version: "0.0.0-test", type: "module" }));
   // Deliberately no cowork/sprint-protocol.md written into the temp copy -- this omission IS
@@ -905,27 +907,56 @@ test("MCP backlog publisher performs a bounded CAS write inside an explicit proj
   assert.equal(readFileSync(backlog, "utf8"), "updated\n");
 });
 
-test("MCP backlog publisher rejects content above its one-megabyte boundary before CLI dispatch", async () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "muster-mcp-backlog-bound-"));
+test("MCP and CLI backlog publishers share the 16 MiB envelope and contain oversized calls", async () => {
+  const cliDir = mkdtempSync(path.join(tmpdir(), "muster-cli-backlog-envelope-"));
+  const mcpDir = mkdtempSync(path.join(tmpdir(), "muster-mcp-backlog-envelope-"));
+  const content = `${"\\".repeat(9 * 1_048_576)}\nabove-one-mib\n`;
+  const expectedDigest = createHash("sha256").update(content).digest("hex");
+  const cliResult = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [path.join(rootDir, "src", "cli.js"), "backlog-publish", "backlog.md", "--expect", "absent"], {
+      cwd: cliDir, stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => code === 0 ? resolve(JSON.parse(stdout)) : reject(new Error(stderr)));
+    child.stdin.end(content);
+  });
+
   const r = await rpc([
     INIT,
     {
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: {
+      jsonrpc: "2.0", id: 2, method: "tools/call", params: {
+        name: "muster_backlog_publish",
+        arguments: { dir: mcpDir, path: "backlog.md", expectedSha256: "absent", content },
+      },
+    },
+    {
+      jsonrpc: "2.0", id: 3, method: "tools/call", params: {
         name: "muster_backlog_publish",
         arguments: {
-          dir,
-          path: "backlog.md",
+          dir: mcpDir,
+          path: "oversized.md",
           expectedSha256: "absent",
-          content: "x".repeat(1_048_577),
+          content: "x".repeat(16 * 1_048_576 + 1),
         },
       },
     },
-  ]);
-  assert.equal(r[2].error.code, -32602);
-  assert.match(r[2].error.message, /arguments\.content must have length at most 1048576/);
+    { jsonrpc: "2.0", id: 4, method: "ping" },
+  ], { timeout: 60_000 });
+  const mcpResult = JSON.parse(r[2].result.content[0].text);
+
+  assert.equal(cliResult.sha256, expectedDigest);
+  assert.equal(mcpResult.sha256, expectedDigest);
+  assert.equal(readFileSync(path.join(cliDir, "backlog.md"), "utf8"), content);
+  assert.equal(readFileSync(path.join(mcpDir, "backlog.md"), "utf8"), content);
+  assert.equal(r[3].result.isError, true);
+  assert.match(r[3].result.content[0].text, /content exceeds 16777216 byte limit/);
+  assert.deepEqual(r[4].result, {}, "server remains responsive after the oversized tool call");
 });
 
 test("file verb: muster_sprint_waves on an unannotated backlog returns annotated:false, sequential waves", async () => {
@@ -1375,31 +1406,46 @@ test("tools/call notifications execute without replies, undefined-id collisions,
 });
 
 // ── A-SEC6: stdin buffer overflow guard ─────────────────────────────────────
-// The stdin accumulator is unbounded; a client that sends >4 MB without a
-// newline would exhaust the server's heap. The cap must cause a clean exit
-// (not an uncaught exception crash) before the newline arrives.
-test("A-SEC6: stdin buffer >4 MB without newline causes clean non-zero exit", async () => {
-  const LIMIT = 4 * 1024 * 1024;
-  const OVER = LIMIT + 1;
-  const chunk = Buffer.alloc(OVER, 0x78); // 0x78 = 'x', no newline
-
-  const exitCode = await new Promise((resolve, reject) => {
+// An unterminated request must remain bounded without taking down the process;
+// once its delimiter arrives, the server rejects that request and resumes.
+test("A-SEC6: an oversized unterminated request is discarded without killing the server", async () => {
+  const REQUEST_LIMIT = 97 * 1_048_576;
+  const pingId = 42;
+  const responses = await new Promise((resolve, reject) => {
     const srv = spawn("node", [path.join(rootDir, "cowork", "mcp-server.mjs")], {
       cwd: rootDir,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const timer = setTimeout(() => { srv.kill("SIGKILL"); reject(new Error("A-SEC6 test timeout")); }, 8000);
-    srv.on("exit", (code) => { clearTimeout(timer); resolve(code); });
+    const got = {};
+    let buf = "";
+    const timer = setTimeout(() => { srv.kill("SIGKILL"); reject(new Error("A-SEC6 test timeout")); }, 15_000);
+    srv.stdout.setEncoding("utf8");
+    srv.stdout.on("data", (chunk) => {
+      buf += chunk;
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const message = JSON.parse(line);
+        got[message.id] = message;
+        if (got.null && got[pingId]) {
+          clearTimeout(timer);
+          srv.stdin.end();
+          resolve(got);
+        }
+      }
+    });
     srv.on("error", (e) => { clearTimeout(timer); reject(e); });
-    // Write the oversized chunk without a newline so it accumulates in buffer.
-    srv.stdin.write(chunk);
-    // Leave stdin open — the server must self-terminate on overflow.
+    const prefix = '{"jsonrpc":"2.0","method":"ping","params":{"id":999},"id":41,"padding":"';
+    srv.stdin.write(prefix + "x".repeat(REQUEST_LIMIT + 1));
+    srv.stdin.write('"}\n');
+    srv.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: pingId, method: "ping" }) + "\n");
   });
 
-  // Must exit non-zero (cap triggered) and with a code < 128 (not a signal kill).
-  assert.ok(exitCode !== null, "server must exit, not hang");
-  assert.notEqual(exitCode, 0, "overflow must cause non-zero exit (cap enforced)");
-  assert.ok(exitCode < 128, `expected a clean exit code < 128, got ${exitCode}`);
+  assert.equal(responses.null.error.code, -32600);
+  assert.match(responses.null.error.message, /Request exceeds 101711872 byte limit/);
+  assert.deepEqual(responses[pingId].result, {});
 });
 
 // ── B-C4: unknown tool name ───────────────────────────────────────────────────

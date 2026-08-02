@@ -1360,5 +1360,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // ChatGPT Desktop shell, Codex Desktop, and ChatGPT Work init handoffs.
   // 2026-08-02 re-pin #43 (wave-dispatch split): codex-dispatch.md points its
   // implementation citations at the extracted src/codex-dispatch.js module.
-  assert.equal(hash.digest("hex"), "038fe761ecd169f642fa09387feaf5b817e70b196e8843d13a4809c059578575");
+  // 2026-08-02 re-pin #44 (backlog publication limit parity): the shared MCP
+  // server now uses the same documented 16 MiB backlog-publication envelope as
+  // the CLI and discards an actually oversized request locally so the server
+  // remains responsive. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "c7ba62a35fbf6cdc16845f7308bc29916edc990755162490b114682cda835f06");
 });

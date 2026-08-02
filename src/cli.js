@@ -77,6 +77,7 @@ import { resolveDesktopHarness } from "./desktop-harness.js";
 import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
+import { BACKLOG_PUBLICATION_MAX_BYTES } from "./backlog-publication.js";
 import {
   codexThreadLimitConfigPath,
   resolveCodexThreadCeiling,
@@ -143,7 +144,7 @@ function fail(msg) { process.stderr.write(`muster: ${msg}\n`); process.exit(1); 
 // Shared stdin/text reader for every command that accepts a file-or-stdin arg. Caps stdin so an
 // untrusted caller can't pump unbounded input into a linter/scorer (used by `prompt` and `humanize-score`).
 const MAX_STDIN_BYTES = 1_048_576; // 1 MB — far above any realistic prompt
-const MAX_HYGIENE_BACKLOG_BYTES = 16 * 1_048_576;
+const MAX_HYGIENE_BACKLOG_BYTES = BACKLOG_PUBLICATION_MAX_BYTES;
 function readStdin(maxBytes = MAX_STDIN_BYTES) {
   return new Promise((resolve, reject) => {
     let d = "", bytes = 0; process.stdin.setEncoding("utf8");
@@ -840,7 +841,29 @@ async function handleCoreCommandPart6(cmd, rest) {
       fail(`sprint-waves <backlog.md>: ${file} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
     }
     const content = await readFile(canonical, "utf8");
-    const r = computeSprintWaves(content);
+    const ceilingFlag = "--max-concurrent-threads-per-session";
+    const explicitCeiling = flagValue(rest, ceilingFlag);
+    if (rest.includes(ceilingFlag) && !/^[1-9]\d*$/.test(explicitCeiling || "")) {
+      fail(`sprint-waves <backlog.md>: ${ceilingFlag} must be a positive integer`);
+    }
+    let threadConfigText = "";
+    if (explicitCeiling === undefined) {
+      const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+      try {
+        threadConfigText = await readFile(codexThreadLimitConfigPath(waveCodexHome), "utf8");
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    const explicitCeilingValue = explicitCeiling === undefined
+      ? undefined
+      : BigInt(explicitCeiling) <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(explicitCeiling) : explicitCeiling;
+    const r = computeSprintWaves(content, {
+      parallelLimit: process.env.MUSTER_SPRINT_PARALLEL,
+      maxConcurrentThreadsPerSession: explicitCeilingValue === undefined
+        ? resolveCodexThreadCeiling(threadConfigText)
+        : explicitCeilingValue,
+    });
     out(r);
     if (!r.ok) process.exit(2);
     return true;

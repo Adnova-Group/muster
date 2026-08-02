@@ -1138,9 +1138,14 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
     const inventory = await readCodexInventory({ cwd, codexHome, execFile, ...(runtimeInventory ? { runtimeInventory } : {}) });
-    const installed = inventory.plugins.includes("muster");
-    checks.push({ name: "codex-plugin-installed", ok: installed, detail: installed ? "muster plugin is enabled in live Codex state" : "muster plugin is not installed; run muster install codex" });
-    checks.push({ name: "codex-inventory", ok: true, detail: `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state` });
+    const complete = inventory.skillInventory?.complete === true;
+    const installed = complete && inventory.plugins.includes("muster");
+    checks.push({ name: "codex-plugin-installed", ok: installed, detail: !complete
+      ? "could not verify whether the muster plugin is installed because Codex runtime discovery was incomplete"
+      : installed ? "muster plugin is enabled in live Codex state" : "muster plugin is not installed; run muster install codex" });
+    checks.push({ name: "codex-inventory", ok: complete, detail: complete
+      ? `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state`
+      : `Codex runtime inventory incomplete: ${(inventory.skillInventory?.errors || []).join("; ") || "unknown discovery error"}` });
   }
   return { ok: checks.every(check => check.ok), target: "codex", checks };
 }

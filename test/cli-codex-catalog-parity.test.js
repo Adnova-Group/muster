@@ -48,15 +48,16 @@ if (command === "app-server") {
       return;
     }
     let result = {};
-    if (message.method === "skills/list") result = { data: [{ cwd: message.params.cwds[0], skills: [
+    if (message.method === "skills/list") result = { data: [{ cwd: process.env.CODEX_FAKE_WRONG_CWD || message.params.cwds[0], skills: [
       { name: "${PROBE_SKILL}", description: "codex-only probe skill", enabled: true, path: null },
       { name: "disabled-probe", description: "must stay hidden", enabled: false, path: null }
     ], errors: [] }] };
     if (message.method === "plugin/list") result = { marketplaces: [{ name: "remote", plugins: [
       { name: "supabase", id: "supabase@remote", remotePluginId: "plugin_supabase", installed: true, enabled: true, source: { type: "remote" } },
-      { name: "disabled", id: "disabled@remote", remotePluginId: "plugin_disabled", installed: true, enabled: false, source: { type: "remote" } }
+      { name: "disabled", id: "disabled@remote", remotePluginId: "plugin_disabled", installed: true, enabled: false, availability: "AVAILABLE", source: { type: "remote" } },
+      { name: "blocked", id: "blocked@remote", remotePluginId: "plugin_blocked", installed: true, enabled: true, availability: "DISABLED_BY_ADMIN", source: { type: "remote" } }
     ] }], marketplaceLoadErrors: [], featuredPluginIds: [] };
-    if (message.method === "plugin/read" && message.params.pluginName === "plugin_supabase") result = { plugin: { skills: [
+    if (message.method === "plugin/read" && ["plugin_supabase", "plugin_blocked"].includes(message.params.pluginName)) result = { plugin: { skills: [
       { name: "supabase", description: "runtime remote skill", enabled: true, path: null },
       { name: "hidden", description: "disabled remote skill", enabled: false, path: null }
     ] } };
@@ -73,9 +74,9 @@ if (command === "app-server") {
     CODEX_HOME: join(home, ".codex"),
     PATH: `${bin}:${process.env.PATH || ""}`,
   };
-  const run = async (args) =>
+  const run = async (args, extraEnv = {}) =>
     JSON.parse((await execFile(process.execPath, [cli, ...args], {
-      cwd: project, env, timeout: 15_000, maxBuffer: 4 * 1024 * 1024,
+      cwd: project, env: { ...env, ...extraEnv }, timeout: 15_000, maxBuffer: 4 * 1024 * 1024,
     })).stdout);
   const runFailure = async (args) => {
     try { await run(args); }
@@ -108,6 +109,14 @@ test("capabilities --codex and match --skills --codex resolve the same codex-onl
   assert.ok(!capsPlain.skills.some(s => s.id === PROBE_SKILL), "capabilities without --codex must not list it");
   assert.ok(skillsCodex.ranked.some(s => s.id === PROBE_SKILL), "match --skills --codex must rank the codex-only skill");
   assert.ok(!skillsPlain.ranked.some(s => s.id === PROBE_SKILL), "match --skills without --codex must not rank it");
+  assert.ok(!capsCodex.skills.some(s => s.id.startsWith("blocked:")), "admin-disabled plugin skills must stay hidden");
+});
+
+test("Codex inventory fails incomplete instead of adopting a different cwd row", async (t) => {
+  const { run } = await setup(t);
+  const caps = await run(["capabilities", "--codex"], { CODEX_FAKE_WRONG_CWD: "/unrelated" });
+  assert.equal(caps.installedRaw.skillInventory.complete, false);
+  assert.ok(!caps.skills.some(skill => skill.id === PROBE_SKILL));
 });
 
 test("match applies the same gsd-* id rewrite as the shared codex adaptation", async (t) => {

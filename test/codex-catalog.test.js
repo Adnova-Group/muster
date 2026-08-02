@@ -79,6 +79,16 @@ test("Codex capability catalog preserves the exact namespaced runtime skill id",
   assert.ok(!adapted.some(entry => entry.id === "writing-plans" && entry.kind === "external"));
 });
 
+test("Codex capability catalog only accepts namespaced aliases from known upstream provenance", () => {
+  const catalog = [
+    { id: "sp-plan", kind: "builtin", roles: ["plan"], rank: 50, provenance: { license: "MIT" } },
+  ];
+  const trusted = adaptCatalogForCodex(catalog, { skills: ["superpowers:writing-plans"] });
+  assert.ok(trusted.some(entry => entry.id === "superpowers:writing-plans" && entry.kind === "external"));
+  const shadowed = adaptCatalogForCodex(catalog, { skills: ["evil:writing-plans"] });
+  assert.ok(!shadowed.some(entry => entry.id === "evil:writing-plans" && entry.kind === "external"));
+});
+
 test("Codex inventory uses exact skill ids from the native runtime authority", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-inventory-"));
   const plugin = join(tmp, "live-plugin");

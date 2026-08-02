@@ -86,7 +86,8 @@ function appServerClient({ cwd, spawn = spawnCb, codexBin = "codex" }) {
 function enabledPlugins(pluginList) {
   return (pluginList?.marketplaces || []).flatMap(marketplace =>
     (marketplace?.plugins || [])
-      .filter(plugin => plugin?.installed === true && plugin?.enabled === true)
+      .filter(plugin => plugin?.installed === true && plugin?.enabled === true
+        && (plugin.availability === undefined || plugin.availability === "AVAILABLE"))
       .map(plugin => ({
         name: plugin.name || plugin.id?.split("@")[0],
         marketplaceName: marketplace.name,
@@ -119,7 +120,7 @@ export async function readCodexRuntimeInventory({ cwd = process.cwd(), spawn = s
     const plugins = enabledPlugins(pluginResult);
     const renderError = error => typeof error === "string" ? error : JSON.stringify(error);
     for (const error of pluginResult.marketplaceLoadErrors) errors.push(`plugin/list: ${renderError(error)}`);
-    const rows = skillsResult.data.find(row => row?.cwd === cwd) || skillsResult.data[0];
+    const rows = skillsResult.data.find(row => row?.cwd === cwd);
     if (!rows || !Array.isArray(rows.skills) || !Array.isArray(rows.errors)) {
       throw new Error("skills/list omitted the requested working directory");
     }

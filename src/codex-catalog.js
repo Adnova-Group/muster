@@ -39,14 +39,12 @@ export function adaptCatalogForCodex(catalog, installed) {
     }
 
     const nativeName = nativeSkillId(entry.id);
-    const suffixMatches = nativeName
-      ? [...liveSkills].filter(id => id === nativeName || id.endsWith(`:${nativeName}`))
-      : [];
-    // Prefer an exact id. A single namespaced suffix is also unambiguous; if
-    // multiple plugins shadow the same basename, do not invent a winner.
-    const nativeId = suffixMatches.includes(nativeName)
+    const trustedNamespacedId = nativeName && entry.id.startsWith("sp-") ? `superpowers:${nativeName}` : null;
+    // Exact unnamespaced ids remain valid. Namespaced aliases require known
+    // upstream provenance; a unique suffix alone is not proof of identity.
+    const nativeId = liveSkills.has(nativeName)
       ? nativeName
-      : suffixMatches.length === 1 ? suffixMatches[0] : null;
+      : trustedNamespacedId && liveSkills.has(trustedNamespacedId) ? trustedNamespacedId : null;
     if (nativeId) {
       upstream.push({
         id: nativeId,

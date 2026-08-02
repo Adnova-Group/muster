@@ -643,6 +643,18 @@ test("Codex doctor live-inventory: FAILING -- a non-zero/throwing `codex` comman
   assert.ok(report.checks.length > 3 && report.checks.some(check => check.name === "codex-mcp-handshake"));
 });
 
+test("Codex doctor reports incomplete native inventory without claiming the plugin is absent", async () => {
+  const runtimeInventory = async () => ({
+    plugins: [], skills: [], complete: false, errors: ["skills/list timed out"],
+  });
+  const { installed, inventory } = await inventoryDoctor(liveCodexExec({ plugins: "[]", mcp: "[]" }), runtimeInventory);
+  assert.equal(installed?.ok, false);
+  assert.match(installed?.detail || "", /could not verify/i);
+  assert.doesNotMatch(installed?.detail || "", /not installed|reinstall/i);
+  assert.equal(inventory?.ok, false);
+  assert.match(inventory?.detail || "", /skills\/list timed out/);
+});
+
 // --- UNREGISTERED-scope read hardening (Codex dogfood audit) --------------
 // The doctor inspects the current-project scope (`<cwd>/.codex`) and the user
 // scope (CODEX_HOME) EVEN WHEN NEITHER IS REGISTERED in install-scopes.json.

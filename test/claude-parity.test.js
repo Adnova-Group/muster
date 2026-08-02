@@ -1362,5 +1362,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // no longer terminate progressing work. File count remains unchanged.
   // Re-pin #43 binds lifecycle receipts, in-flight work, and destructive
   // approval evidence to exact candidate/base identities. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "4309c8cfff730339330dfee2a06caa322abc35935387aea776b0939b6803b203");
+  // Re-pin #44 moves receipt and approval issuance behind the trusted adapter,
+  // binds approvals to its run identity, and preserves authenticated completed
+  // history beyond the live approval freshness window. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "34e0a3379e7ffeb33527c893610ef68f5ba857986a49752a6a79bc9cc16ce856");
 });

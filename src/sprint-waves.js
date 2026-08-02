@@ -595,7 +595,9 @@ function canonicalInFlight(inFlight, itemIds) {
 // this function owns the executable decision about whether a wake means dispatch,
 // wait, terminal, or escalated. Callers pass the complete receipts currently
 // available on every wake, then dispatch every returned action before waiting again.
-export function reconcileSprintProgress(plan, progress = {}, { verifyApproval, verifyReceipt, now = Date.now() } = {}) {
+export function reconcileSprintProgress(plan, progress = {}, {
+  verifyApproval, verifyReceipt, trustedRunId, now = Date.now(),
+} = {}) {
   const planResult = validateSprintPlan(plan);
   if (planResult.errors.length > 0) return invalidReconciliation(planResult.errors);
   if (!isRecord(progress)) return invalidReconciliation(["progress must be an object"]);
@@ -633,10 +635,13 @@ export function reconcileSprintProgress(plan, progress = {}, { verifyApproval, v
   if (!Array.isArray(approvals)) return invalidReconciliation(["progress.approvals must be an array"]);
   const approvalByItem = new Map();
   const approvalNonces = new Set();
-  const runId = progress.runId;
-  if (approvals.length > 0 && (typeof runId !== "string" || !runId || /[\u0000-\u001f\u007f]/.test(runId))) {
-    return invalidReconciliation(["progress.runId is required for approvals"]);
+  if (approvals.length > 0 && (typeof trustedRunId !== "string" || !trustedRunId
+    || /[\u0000-\u001f\u007f]/.test(trustedRunId))) {
+    return invalidReconciliation(["adapter-owned trustedRunId is required for approvals"]);
   }
+  const consumedApprovalDigests = new Set(receipts
+    .filter((receipt) => receipt.phase === "integration" && receipt.status === "completed")
+    .map((receipt) => receipt.approvalDigest));
   for (const [itemId, target] of Object.entries(integrationTargets)) {
     if (!itemIds.has(itemId) || !isRecord(target)
       || typeof target.workBranch !== "string" || !target.workBranch
@@ -649,8 +654,9 @@ export function reconcileSprintProgress(plan, progress = {}, { verifyApproval, v
     try {
       const approvedAtMs = Date.parse(approval?.approvedAt);
       if (!itemIds.has(approval?.itemId) || typeof approval.approvedBy !== "string" || !approval.approvedBy
-        || !Number.isFinite(approvedAtMs) || Math.abs(now - approvedAtMs) > 15 * 60 * 1000
-        || approval.runId !== runId || typeof approval.nonce !== "string" || !approval.nonce
+        || !Number.isFinite(approvedAtMs)
+        || (!consumedApprovalDigests.has(approval.digest) && Math.abs(now - approvedAtMs) > 15 * 60 * 1000)
+        || approval.runId !== trustedRunId || typeof approval.nonce !== "string" || !approval.nonce
         || typeof approval.evidence !== "string" || !approval.evidence
         || typeof verifyApproval !== "function" || verifyApproval(approval) !== true
         || approval.digest !== integrationApprovalDigest(approval)) {

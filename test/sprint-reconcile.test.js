@@ -75,6 +75,7 @@ function reconcileSprintProgress(sprint, progress = {}, options = {}) {
   }, {
     verifyReceipt: (receipt, digest) => receipt.evidence
       === createHmac("sha256", RECEIPT_TOKEN).update(digest).digest("hex"),
+    trustedRunId: RUN_ID,
     ...options,
   });
 }
@@ -423,6 +424,16 @@ test("approval freshness, canonical identity encoding, and receipt provenance fa
   }, VERIFY_APPROVAL);
   assert.equal(expired.next, "invalid");
 
+  const historical = reconcileSprintProgress(sprint, {
+    integrationTargets: integrationTarget("a"), approvals: [old], runId: RUN_ID,
+    receipts: [
+      { ...receipt("impl-a", "a", "implementation"), candidateSha: SHA_A },
+      { ...receipt("review-a", "a", "review"), candidateSha: SHA_A },
+      { ...receipt("integrate-a", "a", "integration"), candidateSha: SHA_A, approvalDigest: old.digest },
+    ],
+  }, VERIFY_APPROVAL);
+  assert.equal(historical.next, "terminal");
+
   assert.throws(() => integrationApprovalDigest({
     ...authorization("a", SHA_A, "merge-local"), approvedBy: "a\0b", approvedAt: new Date().toISOString(),
     runId: RUN_ID, nonce: "nonce",
@@ -651,6 +662,7 @@ test("sprint-reconcile CLI round-trips exact-head approval into integration disp
       env: {
         ...process.env, MUSTER_INTEGRATION_APPROVAL_SECRET: secret,
         MUSTER_LIFECYCLE_RECEIPT_SECRET: receiptSecret,
+        MUSTER_RUN_ID: RUN_ID,
       },
     })).stdout);
     assert.deepEqual(dispatched.actions, [{

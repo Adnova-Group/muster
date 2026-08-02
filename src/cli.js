@@ -6,13 +6,18 @@ import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves, nextTasks } from "./wave.js";
-import { computeSprintWaves, reconcileSprintProgress } from "./sprint-waves.js";
+import {
+  buildSprintReceipt,
+  computeSprintWaves,
+  integrationApprovalDigest,
+  reconcileSprintProgress,
+} from "./sprint-waves.js";
 import { tallyReview, verdictsTallyCorruptionErrors } from "./review.js";
 import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { constants as fsConstants } from "node:fs";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
@@ -643,12 +648,35 @@ async function main() {
     } else if (cmd === "sprint-reconcile") {
       const file = requireArg(rest, 0, "sprint-reconcile <progress.json>: missing file path", fail);
       const input = JSON.parse(await readFile(file, "utf8"));
+      const receiptSecret = process.env.MUSTER_LIFECYCLE_RECEIPT_SECRET;
+      const approvalSecret = process.env.MUSTER_INTEGRATION_APPROVAL_SECRET;
+      const trustedRunId = process.env.MUSTER_RUN_ID;
+      const sign = (secret, digest, label) => {
+        if (typeof secret !== "string" || secret.length < 16) throw new Error(`${label} secret is unavailable`);
+        return createHmac("sha256", secret).update(digest).digest("hex");
+      };
+      const receipts = (input.receipts ?? []).map((receipt) => receipt.evidence ? receipt : buildSprintReceipt({
+        ...receipt,
+        findings: receipt.findings ?? [],
+        signReceipt: (digest) => sign(receiptSecret, digest, "lifecycle receipt"),
+      }));
+      const issuedApprovals = (input.approvalRequests ?? []).map((request) => {
+        if (typeof trustedRunId !== "string" || !trustedRunId) throw new Error("adapter-owned MUSTER_RUN_ID is required to issue approval");
+        const approval = {
+          ...request,
+          approvedAt: new Date().toISOString(),
+          runId: trustedRunId,
+          nonce: randomUUID(),
+        };
+        const digest = integrationApprovalDigest(approval);
+        return { ...approval, digest, evidence: sign(approvalSecret, digest, "integration approval") };
+      });
+      const approvals = [...(input.approvals ?? []), ...issuedApprovals];
       const r = reconcileSprintProgress(input.plan, {
-        receipts: input.receipts,
+        receipts,
         inFlight: input.inFlight,
         integrationTargets: input.integrationTargets,
-        approvals: input.approvals,
-        runId: input.runId,
+        approvals,
         recovery: {
           ...(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT === undefined ? {} : {
             noProgressLimit: Number(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT),
@@ -665,13 +693,13 @@ async function main() {
           return timingSafeEqual(expected, Buffer.from(approval.evidence, "hex"));
         },
         verifyReceipt: (receipt, digest) => {
-          const secret = process.env.MUSTER_LIFECYCLE_RECEIPT_SECRET;
-          if (typeof secret !== "string" || secret.length < 16 || !/^[0-9a-f]{64}$/.test(receipt.evidence ?? "")) return false;
-          const expected = createHmac("sha256", secret).update(digest).digest();
+          if (typeof receiptSecret !== "string" || receiptSecret.length < 16 || !/^[0-9a-f]{64}$/.test(receipt.evidence ?? "")) return false;
+          const expected = createHmac("sha256", receiptSecret).update(digest).digest();
           return timingSafeEqual(expected, Buffer.from(receipt.evidence, "hex"));
         },
+        trustedRunId,
       });
-      out(r);
+      out({ ...r, approvals });
       if (!r.ok) process.exit(2);
     } else if (cmd === "backlog-publish") {
       const file = requireArg(rest, 0, "backlog-publish <backlog.md> --expect <sha256|absent>: missing file path", fail);

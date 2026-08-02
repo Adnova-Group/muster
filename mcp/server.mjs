@@ -70,8 +70,10 @@ const SPRINT_RECEIPT_SCHEMA = {
     approvalDigest: { type: "string", pattern: "^[0-9a-f]{64}$" },
     implementationAttempt: { type: "integer", minimum: 1, maximum: 1000000 },
     evidence: { type: "string", pattern: "^[0-9a-f]{64}$" },
+    worktreePath: { type: "string", minLength: 1 },
+    findings: { type: "array", maxItems: 1000 },
   },
-  required: ["id", "itemId", "phase", "status", "evidence"],
+  required: ["id", "itemId", "phase", "status"],
   additionalProperties: false,
 };
 const SPRINT_IN_FLIGHT_SCHEMA = {
@@ -169,7 +171,16 @@ const TOOLS = {
           required: ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation", "approvedBy", "approvedAt", "runId", "nonce", "evidence", "digest"],
           additionalProperties: false,
         } },
-        runId: { type: "string", minLength: 1 },
+        approvalRequests: { type: "array", maxItems: 1000, items: {
+          type: "object",
+          properties: {
+            itemId: { type: "string" }, workBranch: { type: "string" }, workHeadSha: { type: "string" },
+            baseBranch: { type: "string" }, baseHeadSha: { type: "string" }, operation: { type: "string", enum: ["merge-local", "merge-push"] },
+            approvedBy: { type: "string" },
+          },
+          required: ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation", "approvedBy"],
+          additionalProperties: false,
+        } },
       },
       ["plan", "receipts", "inFlight"],
     ),
@@ -177,7 +188,7 @@ const TOOLS = {
       plan: a.plan, receipts: a.receipts, inFlight: a.inFlight,
       ...(a.integrationTargets === undefined ? {} : { integrationTargets: a.integrationTargets }),
       ...(a.approvals === undefined ? {} : { approvals: a.approvals }),
-      ...(a.runId === undefined ? {} : { runId: a.runId }),
+      ...(a.approvalRequests === undefined ? {} : { approvalRequests: a.approvalRequests }),
     }],
   },
   muster_backlog_publish: {

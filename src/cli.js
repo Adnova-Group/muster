@@ -405,20 +405,24 @@ async function main() {
         process.exitCode = 2;
         return;
       }
-      const userInput = async (question, options, autoResolutionMs) => {
+      const userInput = async (question, options, autoResolutionMs, controlSignal) => {
         process.stderr.write(`\n[Codex Plan input]\n${question.header ? `${sanitizeTerminalText(question.header)}: ` : ""}${sanitizeTerminalText(question.question)}\n`);
         for (const [index, option] of options.entries())
           process.stderr.write(`  ${index + 1}. ${sanitizeTerminalText(option.label)}${option.description ? ` — ${sanitizeTerminalText(option.description)}` : ""}\n`);
         if (question.isSecret)
-          return readSecretTerminalInput({ input: process.stdin, output: process.stderr, timeoutMs: autoResolutionMs });
+          return readSecretTerminalInput({ input: process.stdin, output: process.stderr, timeoutMs: autoResolutionMs, signal: controlSignal });
         const terminal = createInterface({ input: process.stdin, output: process.stderr });
         const controller = Number.isInteger(autoResolutionMs) && autoResolutionMs > 0 ? new AbortController() : null;
         const timer = controller ? setTimeout(() => controller.abort(), autoResolutionMs) : null;
+        const signals = [controlSignal, controller?.signal].filter(Boolean);
+        const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
         try {
-          return await terminal.question("> ", controller ? { signal: controller.signal } : undefined);
+          return await terminal.question("> ", signal ? { signal } : undefined);
         } catch (error) {
           if (controller?.signal.aborted)
             throw new Error("App Server input auto-resolved before an answer was submitted");
+          if (controlSignal?.aborted)
+            throw controlSignal.reason instanceof Error ? controlSignal.reason : new Error("App Server input cancelled");
           throw error;
         } finally {
           if (timer) clearTimeout(timer);

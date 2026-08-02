@@ -325,6 +325,34 @@ test("JSON-RPC transport declines approvals and rejects unknown requests", async
   assert.equal(child.killed, true);
 });
 
+test("client close aborts an in-flight secret prompt and restores terminal state", async () => {
+  const child = fakeAppServerProcess();
+  const input = new EventEmitter();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = value => { input.isRaw = value; };
+  input.resume = () => {};
+  const client = await createCodexAppServerClient({
+    cwd: "/repo",
+    spawnProcess: () => child,
+    timeoutMs: 100,
+    userInput: (_question, _options, timeoutMs, signal) =>
+      readSecretTerminalInput({ input, output: { write() {} }, timeoutMs, signal }),
+  });
+  child.stdout.write(`${JSON.stringify({ id: 12, method: "item/tool/requestUserInput", params: {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "item-1",
+    questions: [{ id: "secret", header: "Secret", question: "Token?", isSecret: true }],
+  } })}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(input.isRaw, true);
+  assert.equal(input.listenerCount("data"), 1);
+  await client.close();
+  assert.equal(input.isRaw, false);
+  assert.equal(input.listenerCount("data"), 0);
+});
+
 test("unavailable App Server control fails safely with explicit /plan guidance", async () => {
   const result = await launchCodexPlan({
     cwd: "/repo",

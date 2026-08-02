@@ -15,7 +15,7 @@ export function sanitizeTerminalText(value) {
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
 }
 
-export function readSecretTerminalInput({ input, output, timeoutMs } = {}) {
+export function readSecretTerminalInput({ input, output, timeoutMs, signal } = {}) {
   if (!input?.isTTY || typeof input.setRawMode !== "function" || typeof output?.write !== "function")
     return Promise.reject(new Error("secret App Server input requires an interactive terminal"));
   return new Promise((resolveInput, rejectInput) => {
@@ -30,6 +30,7 @@ export function readSecretTerminalInput({ input, output, timeoutMs } = {}) {
       input.off("end", onEnd);
       input.off("close", onEnd);
       input.off("error", onError);
+      signal?.removeEventListener("abort", onAbort);
       try { input.setRawMode(wasRaw); } catch {}
       output.write("\n");
       if (error) rejectInput(error);
@@ -46,14 +47,17 @@ export function readSecretTerminalInput({ input, output, timeoutMs } = {}) {
     };
     const onEnd = () => finish(new Error("secret input ended before an answer was submitted"));
     const onError = error => finish(error instanceof Error ? error : new Error(String(error)));
+    const onAbort = () => finish(signal?.reason instanceof Error ? signal.reason : new Error("secret input cancelled"));
     const timeout = Number.isInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : null;
     const timer = timeout === null ? null : setTimeout(() => finish(new Error("App Server input auto-resolved before an answer was submitted")), timeout);
     try {
+      if (signal?.aborted) return finish(signal.reason instanceof Error ? signal.reason : new Error("secret input cancelled"));
       input.setRawMode(true);
       input.on("data", onData);
       input.once("end", onEnd);
       input.once("close", onEnd);
       input.once("error", onError);
+      signal?.addEventListener("abort", onAbort, { once: true });
       input.resume?.();
       output.write("> ");
     } catch (error) {
@@ -255,6 +259,7 @@ class JsonRpcLineClient {
     this.closed = false;
     this.userInput = userInput;
     this.onNotification = onNotification;
+    this.inputControllers = new Set();
     this.exitPromise = new Promise(resolveExit => child.once("exit", resolveExit));
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", chunk => this.#consume(chunk));
@@ -304,6 +309,7 @@ class JsonRpcLineClient {
   }
 
   async close({ threadId, turnId, interrupt = false } = {}) {
+    this.#abortInputs();
     if (interrupt) await this.interruptTurn(threadId, turnId);
     if (!this.closed) {
       this.closed = true;
@@ -366,12 +372,18 @@ class JsonRpcLineClient {
         // Any request that could authorize an action is declined, visibly, rather
         // than being auto-approved or silently inherited as an unsafe default.
         if (message.method === "item/tool/requestUserInput") {
-          answerPlanUserInput(message.params, this.userInput)
+          const inputController = new AbortController();
+          this.inputControllers.add(inputController);
+          const ask = typeof this.userInput === "function"
+            ? (question, options, timeoutMs) => this.userInput(question, options, timeoutMs, inputController.signal)
+            : undefined;
+          answerPlanUserInput(message.params, ask)
             .then(result => this.#write({ jsonrpc: "2.0", id: message.id, result }))
             .catch(error => this.#write({ jsonrpc: "2.0", id: message.id, error: {
               code: -32000,
               message: error.message,
-            } }));
+            } }))
+            .finally(() => this.inputControllers.delete(inputController));
         } else if (["item/commandExecution/requestApproval", "item/fileChange/requestApproval"].includes(message.method)) {
           this.#write({ jsonrpc: "2.0", id: message.id, result: { decision: "decline" } });
           process.stderr.write(`muster: declined App Server request ${sanitizeTerminalText(message.method)}; approval was not bypassed\n`);
@@ -427,10 +439,16 @@ class JsonRpcLineClient {
     if (this.closed) return;
     this.closed = true;
     this.buffer = "";
+    this.#abortInputs(error);
     this.#failAll(error instanceof Error ? error : new Error(String(error)));
     if (kill) {
       try { if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill(); } catch {}
     }
+  }
+
+  #abortInputs(reason = new Error("codex app-server control closed")) {
+    for (const controller of this.inputControllers) controller.abort(reason);
+    this.inputControllers.clear();
   }
 
   #failAll(error) {

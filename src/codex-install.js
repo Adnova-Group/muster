@@ -150,6 +150,19 @@ function samePhysicalFile(left, right) {
   return left.exists === right.exists && left.dev === right.dev && left.ino === right.ino
     && (!left.exists || left.bytes.equals(right.bytes));
 }
+async function physicalFilesSnapshot(paths) {
+  const snapshot = new Map();
+  for (const path of paths) snapshot.set(path, await physicalFileSnapshot(path));
+  return snapshot;
+}
+function samePhysicalFilesSnapshot(left, right) {
+  if (left.size !== right.size) return false;
+  for (const [path, expected] of left) {
+    const current = right.get(path);
+    if (!current || !samePhysicalFile(expected, current)) return false;
+  }
+  return true;
+}
 async function activationFileSnapshot(path) {
   try { return await physicalFileSnapshot(path); }
   catch (error) { return { unsafe: true, code: error.code || null, message: error.message }; }
@@ -2653,7 +2666,7 @@ async function remainingManagedScopes(registry, currentScope) {
 // mutation stays inside uninstallScope's try/restore boundary. Order-sensitive
 // steps are preserved exactly: departingScopeOwnedHookStateKeys is captured from
 // the raw hooks.json BEFORE removeOwnedHookGroups strips muster's own groups.
-async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdentity, allowInjected }) {
+async function prepareCodexUninstall({ scope, cwd, activationCwds = [], home, execFile, runtimeIdentity, allowInjected }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
   const declarationConfigPath = join(configDir(scope, cwd, home), "config.toml");
@@ -2704,12 +2717,14 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
     if (Object.values(hookConfig.hooks || {}).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
       throw new Error(`Codex hook conflict: ${hookConfigPath} contains a duplicate or unmanaged Muster hook outside manifest ownership. Remove the extra group, then rerun the command.`);
     }
-    if (await hasMusterHookCommandAlias(hookConfig, hookFiles, { cwds: [cwd] })) {
+    if (await hasMusterHookCommandAlias(hookConfig, hookFiles, { cwds: [...new Set([cwd, ...activationCwds])] })) {
       throw new Error(`Codex hook conflict: ${hookConfigPath} contains an aliased Muster hook outside manifest ownership. Remove the alias, then rerun the command.`);
     }
     const otherKeys = Object.keys(hookConfig).filter(key => key !== "hooks");
     removeHookConfig = hookManifest.hookConfigCreated && otherKeys.length === 0 && Object.keys(hookConfig.hooks || {}).length === 0;
   }
+  const hookOwnershipPaths = [...new Set([hookManifestPath, hookConfigPath, ...hookFiles])];
+  const hookOwnershipSnapshot = await physicalFilesSnapshot(hookOwnershipPaths);
   const present = await codexAvailable({ execFile, runtimeIdentity, allowInjected });
   const ownsScope = manifestExists || hookManifestExists;
   const currentScope = await scopeEntry(scope, cwd, home);
@@ -2729,7 +2744,7 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
       threadLimitConfigPath,
     )
     : null;
-  return { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig, declarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest };
+  return { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig, declarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, hookOwnershipPaths, hookOwnershipSnapshot, present, ownsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest };
 }
 
 export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile, runtimeIdentity } = {}) {
@@ -2748,8 +2763,8 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   const executor = execFile || execFileDefault;
   let identity = runtimeIdentity;
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity(); } catch { /* Codex absent: local cleanup still proceeds without PATH probing */ }
-  const { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig: preflightDeclarationConfig, declarationConfigCreated: preflightDeclarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, present, ownsScope: preflightOwnsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest } =
-    await prepareCodexUninstall({ scope, cwd, home, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile) });
+  const { dir, manifestPath, files, declarationConfigPath, declarationOwnership, declarationConfig: preflightDeclarationConfig, declarationConfigCreated: preflightDeclarationConfigCreated, hookRuntimeDir, hookManifestPath, hookConfigPath, hookManifestExists, hookManifest, hookConfig, removeHookConfig, departingScopeOwnedHookStateKeys, hookFiles, hookOwnershipPaths, hookOwnershipSnapshot, present, ownsScope: preflightOwnsScope, currentScope, threadLimitConfigPath, threadLimitManifestPath, threadLimitManifest } =
+    await prepareCodexUninstall({ scope, cwd, activationCwds: [invocationCwd], home, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile) });
   let liveScopes = [], ownershipCertain = false, removePlugin = false, restoreThreadLimits = false, removeThreadLimitConfig = false;
   let manifestExists = declarationOwnership.manifest.exists;
   let ownsScope = preflightOwnsScope;
@@ -2760,6 +2775,18 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
   const prunedHookState = [], prunedProjectTrust = [];
   const uninstallScope = async registry => {
     if (!dryRun) {
+      const checkedHookOwnership = await physicalFilesSnapshot(hookOwnershipPaths);
+      if (!samePhysicalFilesSnapshot(hookOwnershipSnapshot, checkedHookOwnership)) {
+        throw new Error("Codex hook ownership concurrent state change detected; no installation state was modified.");
+      }
+      const registeredActivationCwds = registry.entries
+        .filter(entry => entry.scope === "project")
+        .map(entry => dirname(entry.configDir));
+      if (hookManifest && await hasMusterHookCommandAlias(hookConfig, hookFiles, {
+        cwds: [...new Set([cwd, invocationCwd, ...registeredActivationCwds])]
+      })) {
+        throw new Error(`Codex hook conflict: ${hookConfigPath} contains an aliased Muster hook outside manifest ownership. Remove the alias, then rerun the command.`);
+      }
       const checkedOwnership = await verifyDeclarationOwnershipSnapshot(
         declarationOwnership, manifestPath, declarationConfigPath
       );

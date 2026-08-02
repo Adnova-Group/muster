@@ -32,7 +32,7 @@
 //       function's comment for why).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { link, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reconcileConfigTomlHookState, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
@@ -575,6 +575,43 @@ test("Codex uninstall rejects a leftover hook physically aliasing its managed ru
 
   await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex }), /aliased Muster hook/);
   await readFile(runtimePath, "utf8");
+});
+
+test("Codex uninstall resolves leftover runtime aliases from the original nested invocation CWD", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-uninstall-relative-alias-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), nested = join(cwd, "packages", "pkg"), home = join(tmp, "home");
+  await mkdir(nested, { recursive: true });
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(home, ".codex", "hooks.json");
+  const runtimePath = join(home, ".codex", "muster", "hooks", "muster-hook.mjs");
+  await link(runtimePath, join(nested, "relative-hook.mjs"));
+  const config = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  config.hooks.Stop.push({ hooks: [{ type: "command", command: "node ./relative-hook.mjs" }] });
+  await writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  await assert.rejects(() => runCodexUninstall({ scope: "user", cwd: nested, home, execFile: absentCodex }), /aliased Muster hook/);
+  await readFile(runtimePath, "utf8");
+});
+
+test("Codex uninstall rejects hook configuration drift between preparation and the registry transaction", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-uninstall-race-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const replacement = `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node /foreign/hook.mjs" }] }] } }, null, 2)}\n`;
+  const changingCodex = async (_binary, args) => {
+    if (args[0] === "--version") {
+      await writeFile(hooksJsonPath, replacement);
+      return { stdout: "codex-cli test" };
+    }
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+
+  await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: changingCodex }), /hook ownership concurrent state change/);
+  assert.equal(await readFile(hooksJsonPath, "utf8"), replacement);
+  await readFile(join(cwd, ".codex", "muster", ".muster-managed.json"), "utf8");
 });
 
 // -- Doctor integration (fix D) ------------------------------------------------

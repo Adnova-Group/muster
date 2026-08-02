@@ -273,8 +273,8 @@ const hookStateEventName = pascal => pascal.replace(/([a-z0-9])([A-Z])/g, "$1_$2
 // co-located NON-muster hook definition -- sharing the same hooks.json but a
 // different group/hook index -- is never included here, and so never gets
 // swept up by a path-level prune.
-function ownedHookStateKeys(config, hookGroups) {
-  const keys = [];
+function ownedHookStateEntries(config, hookGroups) {
+  const entries = [];
   for (const [event, groups] of Object.entries(hookGroups || {})) {
     if (!Array.isArray(groups)) continue;
     const current = [...(Array.isArray(config?.hooks?.[event]) ? config.hooks[event] : [])];
@@ -282,12 +282,18 @@ function ownedHookStateKeys(config, hookGroups) {
     for (const group of groups) {
       const index = current.findIndex(candidate => same(candidate, group));
       if (index < 0) continue;
-      const hookCount = Array.isArray(group.hooks) ? group.hooks.length : 0;
-      for (let hookIndex = 0; hookIndex < hookCount; hookIndex++) keys.push(`${snakeEvent}:${index}:${hookIndex}`);
+      const hooks = Array.isArray(group.hooks) ? group.hooks : [];
+      for (let hookIndex = 0; hookIndex < hooks.length; hookIndex++) {
+        entries.push({ key: `${snakeEvent}:${index}:${hookIndex}`, event, group, hook: hooks[hookIndex] });
+      }
       current.splice(index, 1);
     }
   }
-  return keys;
+  return entries;
+}
+
+function ownedHookStateKeys(config, hookGroups) {
+  return ownedHookStateEntries(config, hookGroups).map(entry => entry.key);
 }
 
 // Reconciles config.toml's [hooks.state] trust cache against the
@@ -373,25 +379,94 @@ export function reconcileConfigTomlHookState(text, registeredEntries, keptEntrie
 // quietly stops firing is precisely the failure this project's guard design
 // exists to prevent, so it must be reported loudly rather than inferred.
 //
-// Pure and text-scoped, mirroring reconcileConfigTomlHookState: it reads the
-// same `[hooks.state."<hooksJsonPath>:<event>:<group>:<hook>"]` keys and
-// compares them against the exact keys this scope's OWN muster hook groups
-// currently occupy in its live hooks.json (ownedHookStateKeys). Returns the
-// owned keys with NO trust entry -- i.e. the hooks Codex is skipping.
+const HOOK_CONTEXT_EVENTS = new Set(["PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit", "SubagentStart"]);
+const DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT = 2_500;
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalJson(value[key])]));
+}
+
+// Mirrors Codex's command_hook_hash in codex-rs/hooks/src/engine/discovery.rs:
+// hash the canonical JSON serialization of a normalized, config-derived hook
+// identity. Trust is deliberately verified, never created or bypassed here.
+function currentCodexHookHash(event, group, hook) {
+  const command = process.platform === "win32" ? (hook?.commandWindows ?? hook?.command) : hook?.command;
+  const rawTimeout = Number.isSafeInteger(hook?.timeout) ? hook.timeout : null;
+  const timeout = event === "SessionEnd"
+    ? Math.min(3, Math.max(1, rawTimeout ?? 1))
+    : Math.max(1, rawTimeout ?? 600);
+  const normalizedHook = {
+    type: "command",
+    command,
+    commandWindows: null,
+    timeout,
+    async: hook?.async === true,
+    statusMessage: typeof hook?.statusMessage === "string" ? hook.statusMessage : null
+  };
+  if (HOOK_CONTEXT_EVENTS.has(event)
+    && Number.isSafeInteger(hook?.additionalContextLimit)
+    && hook.additionalContextLimit >= 0
+    && hook.additionalContextLimit !== DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT) {
+    normalizedHook.additionalContextLimit = hook.additionalContextLimit;
+  }
+  const identity = {
+    event_name: hookStateEventName(event),
+    matcher: typeof group?.matcher === "string" ? group.matcher : null,
+    hooks: [normalizedHook]
+  };
+  return `sha256:${createHash("sha256").update(JSON.stringify(canonicalJson(identity))).digest("hex")}`;
+}
+
+function hookTrustSectionState(state, section) {
+  let enabled = true;
+  let trustedHash = null;
+  for (let index = section.headerLine + 1; index < section.end; index++) {
+    const line = state.lines[index];
+    const enabledMatch = line.match(/^\s*enabled\s*=\s*(true|false)\s*(?:#.*)?$/);
+    if (enabledMatch) enabled = enabledMatch[1] === "true";
+    const hashMatch = line.match(/^\s*trusted_hash\s*=\s*(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/);
+    if (hashMatch) trustedHash = hashMatch[1] ?? hashMatch[2];
+  }
+  return { enabled, trustedHash };
+}
+
+// Pure and text-scoped, mirroring reconcileConfigTomlHookState: verifies every
+// exact owned hook against Codex's current content hash and enabled state.
 export function musterHookTrustGaps({ configTomlText, hooksJsonPath, config, hookGroups } = {}) {
-  const owned = ownedHookStateKeys(config, hookGroups);
-  if (!owned.length) return { owned: [], untrusted: [], trusted: [] };
-  const trusted = new Set();
-  for (const section of parseConfigTomlTrustSections(configTomlText ?? "").sections) {
+  const entries = ownedHookStateEntries(config, hookGroups);
+  const owned = entries.map(entry => entry.key);
+  if (!owned.length) return { owned: [], untrusted: [], trusted: [], results: [], stale: [] };
+  const parsed = parseConfigTomlTrustSections(configTomlText ?? "");
+  const states = new Map();
+  const scopeKeys = [];
+  for (const section of parsed.sections) {
     if (section.table !== "hooks.state" || section.key == null) continue;
     const match = section.key.match(HOOK_STATE_KEY);
     if (!match) continue;
     const [, prefix, event, groupIndex, hookIndex] = match;
     if (prefix !== hooksJsonPath) continue;
-    trusted.add(`${event}:${groupIndex}:${hookIndex}`);
+    const key = `${event}:${groupIndex}:${hookIndex}`;
+    scopeKeys.push(key);
+    states.set(key, hookTrustSectionState(parsed, section));
   }
-  const untrusted = owned.filter(key => !trusted.has(key));
-  return { owned, untrusted, trusted: owned.filter(key => trusted.has(key)) };
+  const results = entries.map(({ key, event, group, hook }) => {
+    const currentHash = currentCodexHookHash(event, group, hook);
+    const state = states.get(key);
+    const enabled = state?.enabled !== false;
+    const trustedHash = state?.trustedHash ?? null;
+    const status = !enabled ? "disabled"
+      : trustedHash === currentHash ? "trusted"
+      : trustedHash === null ? "untrusted"
+      : "modified";
+    return { key, currentHash, trustedHash, enabled, status };
+  });
+  const trusted = results.filter(result => result.status === "trusted").map(result => result.key);
+  const untrusted = results.filter(result => result.status !== "trusted").map(result => result.key);
+  const ownedSet = new Set(owned);
+  const stale = [...new Set(scopeKeys.filter(key => !ownedSet.has(key)))];
+  return { owned, untrusted, trusted, results, stale };
 }
 
 async function scopeLockText(token) {
@@ -1566,11 +1641,36 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   } else {
     actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: true, runtimeIdentity: identity }) : [];
   }
-  return { ok: true, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
+  const trustRemediation = "Open Codex, run /hooks, and trust the exact current Muster hook definitions, then rerun muster install codex to verify them";
+  let hookTrust;
+  if (dryRun) {
+    hookTrust = { ok: true, blocking: false, verified: false, results: [], stale: [], remediation: null };
+  } else {
+    const configTomlText = await readSafe(threadLimitConfigPath);
+    const gaps = musterHookTrustGaps({
+      configTomlText,
+      hooksJsonPath: hooks.configPath,
+      config: hooks.config,
+      hookGroups: hooks.manifest.hookGroups
+    });
+    hookTrust = {
+      ok: gaps.untrusted.length === 0,
+      blocking: gaps.untrusted.length > 0,
+      verified: true,
+      results: gaps.results,
+      stale: gaps.stale,
+      remediation: gaps.untrusted.length ? trustRemediation : null
+    };
+  }
+  return { ok: hookTrust.ok, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
     hooksSkipped: hooks.skipped,
+    hookTrust,
     prunedScopes, prunedHookState, prunedProjectTrust,
     plugin: present ? { registered: !dryRun, actions } : { registered: false, skipped: "codex-not-found" },
-    nextSteps: present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${scope}`] };
+    nextSteps: [
+      ...(present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${scope}`]),
+      ...(hookTrust.remediation ? [hookTrust.remediation] : [])
+    ] };
 }
 
 async function remainingManagedScopes(registry, currentScope) {

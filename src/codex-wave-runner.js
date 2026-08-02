@@ -554,6 +554,9 @@ async function protectedFixLoopStore({ env, override, authority, members }) {
   if (configuredHome) {
     try { maskCandidates.unshift(await realpath(configuredHome)); } catch (error) { if (error.code !== "ENOENT") throw error; }
   }
+  if (env.HOME) {
+    try { maskCandidates.unshift(await realpath(join(env.HOME, ".agents"))); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
   const uniqueMasks = [...new Set(maskCandidates)];
   const maskedRoots = uniqueMasks.filter(path =>
     !uniqueMasks.some(parent => parent !== path && containedPath(parent, path))
@@ -624,13 +627,28 @@ function isolatedCodexHomeBinds(home) {
 }
 
 async function assertNoExecutableSessionConfig(sessionHome) {
-  for (const relativePath of ["config.toml", "hooks.json", "rules", "skills", "agents", "plugins"]) {
+  for (const relativePath of ["AGENTS.md", "AGENTS.override.md", "config.toml", "hooks.json", "rules", "skills", "agents", "plugins"]) {
     try {
       await lstat(join(sessionHome, relativePath));
       throw new Error(`runCodexWaveContinuation: isolated Codex home contains executable discovery surface ${JSON.stringify(relativePath)}`);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
+  }
+}
+
+async function assertNoIgnoredCodexDiscovery(canonical, memberId, deadline) {
+  const ignored = (await gitText(canonical, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], deadline))
+    .split("\0")
+    .filter(Boolean);
+  const planted = ignored.find(path => {
+    const segments = path.split("/");
+    const basename = segments.at(-1);
+    return basename === "AGENTS.md" || basename === "AGENTS.override.md"
+      || segments.includes(".agents") || segments.includes(".codex");
+  });
+  if (planted) {
+    throw new Error(`runCodexWave: process member ${JSON.stringify(memberId)} contains ignored Codex discovery surface ${JSON.stringify(planted)}`);
   }
 }
 
@@ -856,6 +874,7 @@ async function validateRegisteredLinkedWorktree(member, authority, pinned = null
       throw new Error(`runCodexWave: process member ${JSON.stringify(member.id)} HEAD ${head} does not match trusted base ${authority.baseSha}`);
     }
     await assertNoExecutableProjectConfig(canonical, member.id);
+    if (!includeIgnored) await assertNoIgnoredCodexDiscovery(canonical, member.id, deadline);
     let schemaPath;
     let schemaRelative;
     if (member.schemaPath !== undefined) {
@@ -1149,7 +1168,7 @@ export async function runCodexWaveContinuation({
   await assertNoExecutableSessionConfig(isolatedHome.sessionHome);
   const headAuthority = await prepareTrustedRepository(receipt.repositoryRoot, receipt.headSha, deadline);
   if (headAuthority.commonDir !== authority.commonDir) throw new Error("runCodexWaveContinuation: worktree repository changed");
-  const revalidated = await validateRegisteredLinkedWorktree(member, headAuthority, null, { deadline, pinDirectory: true });
+  const revalidated = await validateRegisteredLinkedWorktree(member, headAuthority, null, { deadline, pinDirectory: true, includeIgnored: false });
   try {
   const baseIsAncestor = await execFile(TRUSTED_GIT_COMMAND, ["merge-base", "--is-ancestor", receipt.baseSha, receipt.headSha], {
     cwd: receipt.cwd,

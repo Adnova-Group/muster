@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { benchmarkCodexFixLoops } from "../src/codex-fix-loop.js";
@@ -113,7 +113,16 @@ function brief({ name, correct, input, expected, cwd, baseSha, blocker }) {
   ].join("\n");
 }
 
-const benchmarkParent = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "muster", "benchmarks");
+const configuredCodexHome = resolve(process.env.CODEX_HOME || join(homedir(), ".codex"));
+const outsideConfiguredHome = path => {
+  const rel = relative(configuredCodexHome, resolve(path));
+  return rel.startsWith("..") && !isAbsolute(rel);
+};
+const benchmarkParent = [
+  join(homedir(), ".cache", "muster", "benchmarks"),
+  join(homedir(), ".local", "state", "muster", "benchmarks"),
+].find(outsideConfiguredHome);
+if (!benchmarkParent) throw new Error("benchmark requires an owner cache root outside CODEX_HOME");
 await mkdir(benchmarkParent, { recursive: true });
 const benchmarkRoot = await mkdtemp(join(benchmarkParent, "production-fix-loop-"));
 const evidence = {

@@ -32,6 +32,17 @@ if (!configPath) {
   process.exit(2);
 }
 const config = JSON.parse(await readProtectedFile(configPath, "broker config"));
+const socketParent = await lstat(dirname(config.socketPath));
+if (!socketParent.isDirectory() || (socketParent.mode & 0o077) !== 0
+  || (typeof process.getuid === "function" && socketParent.uid !== process.getuid())) {
+  throw new Error("broker socket parent must be an owner-only service directory");
+}
+try {
+  await lstat(config.socketPath);
+  throw new Error("broker socket path already exists; refusing to replace it");
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 const [receiptPrivateKey, approvalPrivateKey, approvalPublicKey] = await Promise.all([
   readProtectedFile(config.receiptPrivateKeyPath, "receipt private key"),
   readProtectedFile(config.approvalPrivateKeyPath, "approval private key"),

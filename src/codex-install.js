@@ -1211,11 +1211,15 @@ async function snapshot(originals, changed, path) {
 }
 
 async function restoreFilesystem(originals, changed, { skip = new Set() } = {}) {
+  const errors = [];
   for (const destination of [...changed].reverse()) {
     if (skip.has(destination)) continue;
-    if (originals.get(destination) === null) await removeSafe(destination);
-    else await atomicWriteSafe(destination, originals.get(destination));
+    try {
+      if (originals.get(destination) === null) await removeSafe(destination);
+      else await atomicWriteSafe(destination, originals.get(destination));
+    } catch (error) { errors.push(error); }
   }
+  if (errors.length) throw new AggregateError(errors, `${errors.length} filesystem rollback operation(s) failed`);
 }
 
 async function exactFileSnapshot(path) {
@@ -1253,6 +1257,8 @@ async function restoreRetiredName(path, retired) {
 async function publishConfigCandidate(path, expected, bytes) {
   await ordinaryDirectoryPath(dirname(path), { create: true });
   const staged = await writePrivateSibling(path, "candidate", bytes);
+  const stagedSnapshot = await exactFileSnapshot(staged);
+  const recovery = expected.exists ? await writePrivateSibling(path, "publication-recovery", expected.bytes) : null;
   let retired = null;
   try {
     if (expected.exists) {
@@ -1271,41 +1277,76 @@ async function publishConfigCandidate(path, expected, bytes) {
     }
     const published = await exactFileSnapshot(path);
     if (retired && !sameExactFileSnapshot(expected, await exactFileSnapshot(retired))) {
-      const displaced = join(dirname(path), `.${basename(path)}.muster-displaced-${process.pid}-${randomUUID()}`);
-      await rename(path, displaced);
-      await restoreRetiredName(path, retired);
-      await unlink(displaced);
       throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
     }
     return { path, expected, retired, published };
   } catch (error) {
-    if (retired) {
-      await restoreRetiredName(path, retired);
-      try { await unlink(retired); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
+    // Recover from retained bytes, not from the retirement pathname. If a
+    // concurrent writer owns the live name, preserve it. If our candidate is
+    // live, retire it first and restore the exact baseline exclusively.
+    let current;
+    try { current = await exactFileSnapshot(path); }
+    catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
+    let displaced = null;
+    if (sameExactFileSnapshot(stagedSnapshot, current)) {
+      displaced = join(dirname(path), `.${basename(path)}.muster-failed-publication-${process.pid}-${randomUUID()}`);
+      await rename(path, displaced);
+      current = { exists: false, bytes: null, dev: null, ino: null };
     }
+    if (!current.exists && recovery) {
+      try { await link(recovery, path); }
+      catch (restoreError) {
+        if (restoreError.code !== "EEXIST") {
+          if (displaced) await restoreRetiredName(path, displaced);
+          throw restoreError;
+        }
+      }
+    }
+    if (displaced) try { await unlink(displaced); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
+    if (retired) try { await unlink(retired); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
     throw error;
   } finally {
-    try { await unlink(staged); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    try { await unlink(staged); } catch { /* best-effort private-artifact cleanup */ }
+    if (recovery) try { await unlink(recovery); } catch { /* best-effort private-artifact cleanup */ }
   }
 }
 
 async function rollbackConfigCandidate(receipt) {
-  const { path, retired, published } = receipt;
+  const { path, expected, retired, published } = receipt;
   const current = await exactFileSnapshot(path);
   if (!sameExactFileSnapshot(published, current)) {
     if (retired) try { await unlink(retired); } catch (error) { if (error.code !== "ENOENT") throw error; }
     return;
   }
+  // Materialize the byte-exact baseline before moving the live candidate.
+  // Rollback never depends on the path-addressable retirement artifact still
+  // existing: cleanup, antivirus, or a concurrent actor may have removed it.
+  const recovery = expected.exists ? await writePrivateSibling(path, "recovery", expected.bytes) : null;
   const displaced = join(dirname(path), `.${basename(path)}.muster-rollback-${process.pid}-${randomUUID()}`);
-  await rename(path, displaced);
+  let discardDisplaced = false;
+  let moved = false;
   try {
+    await rename(path, displaced);
+    moved = true;
     if (!sameExactFileSnapshot(published, await exactFileSnapshot(displaced))) {
       await restoreRetiredName(path, displaced);
+      discardDisplaced = true;
       return;
     }
-    if (retired) await restoreRetiredName(path, retired);
+    if (recovery) {
+      try { await link(recovery, path); }
+      catch (error) { if (error.code !== "EEXIST") throw error; }
+    }
+    // For an originally absent file, the vacant name is the restored state.
+    // For an existing file, either recovery won or a concurrent creator did.
+    discardDisplaced = true;
+  } catch (error) {
+    // Never leave the live name missing merely because recovery failed.
+    if (moved) await restoreRetiredName(path, displaced);
+    throw error;
   } finally {
-    try { await unlink(displaced); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (discardDisplaced) try { await unlink(displaced); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (recovery) try { await unlink(recovery); } catch (error) { if (error.code !== "ENOENT") throw error; }
     if (retired) try { await unlink(retired); } catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 }
@@ -1496,6 +1537,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const rollbackConflicts = new Set();
   const publishedConfigCandidates = new Map();
   const configCandidates = new Map();
+  const configCandidateSources = new Map();
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
@@ -1508,6 +1550,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       const manifestExists = checkedOwnership.manifest.exists;
       const declarationConfigExists = checkedOwnership.config.exists;
       const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
+      let committed = false;
       await ordinaryDirectoryPath(dir, { create: true });
       try {
         const currentScope = await scopeEntry(scope, cwd, home);
@@ -1632,6 +1675,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             : !(scope === "user" ? declarationConfigExists : configExistedBefore);
           await snapshot(originals, changed, threadLimitConfigPath);
           configCandidates.set(threadLimitConfigPath, Buffer.from(threadLimits.text));
+          configCandidateSources.set(threadLimitConfigPath, threadLimitOriginal);
           rollbackConflicts.add(threadLimitConfigPath);
           await snapshot(originals, changed, threadLimitManifestPath);
           await atomicWriteSafe(threadLimitManifestPath, JSON.stringify({
@@ -1661,6 +1705,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         );
         await snapshot(originals, changed, declarationConfigPath);
         configCandidates.set(declarationConfigPath, Buffer.from(declarationReconcile.text));
+        if (!configCandidateSources.has(declarationConfigPath)) {
+          configCandidateSources.set(declarationConfigPath, declarationOriginal);
+        }
         rollbackConflicts.add(declarationConfigPath);
         await snapshot(originals, changed, manifestPath);
         await atomicWriteSafe(manifestPath, JSON.stringify({
@@ -1682,7 +1729,8 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           });
           const projectConfigPath = join(cwd, ".codex", "config.toml");
           const liveExpected = new Map();
-          for (const path of new Set([...transactionTargets, projectConfigPath])) liveExpected.set(path, await exactFileSnapshot(path));
+          for (const path of transactionTargets) liveExpected.set(path, configCandidateSources.get(path));
+          if (!liveExpected.has(projectConfigPath)) liveExpected.set(projectConfigPath, await exactFileSnapshot(projectConfigPath));
           const projectCandidate = candidateSnapshots.get(projectConfigPath) || liveExpected.get(projectConfigPath);
           if (configParser) {
             await configParser({
@@ -1724,13 +1772,28 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           }
         }
         actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: false, runtimeIdentity: identity }) : [];
-        for (const receipt of publishedConfigCandidates.values()) {
-          if (receipt.retired) await unlink(receipt.retired);
-        }
+        committed = true;
       } catch (error) {
-        for (const receipt of [...publishedConfigCandidates.values()].reverse()) await rollbackConfigCandidate(receipt);
-        await restoreFilesystem(originals, changed, { skip: rollbackConflicts });
+        const rollbackErrors = [];
+        for (const receipt of [...publishedConfigCandidates.values()].reverse()) {
+          try { await rollbackConfigCandidate(receipt); }
+          catch (rollbackError) { rollbackErrors.push(rollbackError); }
+        }
+        try { await restoreFilesystem(originals, changed, { skip: rollbackConflicts }); }
+        catch (rollbackError) { rollbackErrors.push(rollbackError); }
+        if (rollbackErrors.length) {
+          throw new AggregateError([error, ...rollbackErrors],
+            `${error.message}; ${rollbackErrors.length} rollback operation(s) also failed`, { cause: error });
+        }
         throw error;
+      }
+      if (committed) {
+        // Registration is the commit point. Retirement artifacts are now
+        // cleanup-only and must never re-enter rollback after earlier baseline
+        // names have already been discarded.
+        for (const receipt of publishedConfigCandidates.values()) {
+          if (receipt.retired) try { await unlink(receipt.retired); } catch { /* best-effort post-commit cleanup */ }
+        }
       }
     }, scopeLockOptions);
   } else {

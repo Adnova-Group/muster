@@ -1,7 +1,6 @@
 import { execFile as execFileCb } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
 
 const execFileDefault = promisify(execFileCb);
@@ -28,6 +27,15 @@ function containedFile(root, path, label) {
   const rel = relative(canonicalRoot, canonical);
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error(`${label} escapes the trusted Codex package root`);
   return { canonicalRoot, canonical };
+}
+
+function containedDirectory(root, path, label) {
+  const canonicalRoot = realpathSync(root);
+  const canonical = realpathSync(path);
+  if (!statSync(canonical).isDirectory()) throw new Error(`${label} is not a directory: ${path}`);
+  const rel = relative(canonicalRoot, canonical);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error(`${label} escapes the trusted Codex package root`);
+  return canonical;
 }
 
 // Codex injects CODEX_MANAGED_PACKAGE_ROOT for the package generation that
@@ -61,11 +69,20 @@ export function resolveCodexRuntimeIdentity({
   try { nativeCandidate = containedFile(canonicalRoot, nativeCandidate, "Codex native executable").canonical; }
   catch (error) {
     if (error.code !== "ENOENT") throw error;
-    const requireFromCodex = createRequire(packageJson);
-    const platformManifest = canonicalRegularFile(requireFromCodex.resolve(`${platformPackage}/package.json`), "Codex platform package manifest");
-    const platformRoot = realpathSync(dirname(platformManifest));
+    const declared = manifest.optionalDependencies?.[platformPackage];
+    const expectedPlatformVersion = `${manifest.version}-${platformPackage.slice("@openai/codex-".length)}`;
+    if (declared !== `npm:@openai/codex@${expectedPlatformVersion}`) {
+      throw new Error("trusted Codex package does not declare the exact platform dependency");
+    }
+    const platformRootCandidate = join(canonicalRoot, "node_modules", ...platformPackage.split("/"));
+    const platformRoot = containedDirectory(canonicalRoot, platformRootCandidate, "Codex platform package root");
+    const platformManifest = containedFile(
+      platformRoot, join(platformRoot, "package.json"), "Codex platform package manifest"
+    ).canonical;
+    const platformStat = statSync(platformManifest);
+    if (platformStat.size > MAX_PACKAGE_BYTES) throw new Error("Codex platform package manifest exceeds the 64 KiB identity limit");
     const platformPackageJson = JSON.parse(readFileSync(platformManifest, "utf8"));
-    if (platformPackageJson?.name !== "@openai/codex" || !String(platformPackageJson.version || "").startsWith(`${manifest.version}-`)) {
+    if (platformPackageJson?.name !== "@openai/codex" || platformPackageJson.version !== expectedPlatformVersion) {
       throw new Error("trusted Codex platform package has an unexpected name or version");
     }
     nativeCandidate = containedFile(platformRoot, join(platformRoot, "vendor", triple, "bin", executable), "Codex native executable").canonical;

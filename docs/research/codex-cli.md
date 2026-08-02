@@ -264,6 +264,9 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 - dr-audit: docs/decisions/retriage-audit-hardening.md:31
 - dr-burn: docs/decisions/retriage-burn-salvage.md:33-34
 - codex-desktop-appserver: docs/research/codex-desktop.md:270-285 (app-server `thread/goal/set|get|clear` API, §8)
+- strict-config-probe: test/codex-strict-config.test.js (`real Codex validates unknown and malformed config without a model turn`)
+- strict-config-src: src/codex-strict-config.js and src/codex-install.js (`runCodexStrictConfigCheck`, candidate publication transaction)
+- strict-config-tests: test/codex-strict-config.test.js and test/codex-runtime-identity.test.js
 
 ---
 
@@ -402,7 +405,7 @@ parses configuration and exits without initialization, a thread, or a turn. Live
 returned 0 for valid TOML, returned 1 with `<file>:<line>:<column>` for an unknown field, and
 returned 1 with the project config path plus TOML line/column for malformed TOML. `doctor
 --strict-config` is not a substitute: its ordinary report accepted an unknown root field during the
-same probe.
+same probe [src: strict-config-probe].
 
 Muster therefore launches the attested native Codex binary directly (no Node-wrapper grandchild),
 uses a dedicated process group behind a 2.5-second timeout and 64 KiB per-stream caps, closes stdin without sending an
@@ -413,6 +416,7 @@ compare-and-swap publishes only after the parser accepts them. Descriptor-pinned
 publication to unchanged config inodes and bytes; failure restores raw snapshotted bytes without
 overwriting a concurrent writer. A second pass supplies project trust only in an ephemeral `CODEX_HOME`, validating an
 otherwise-untrusted project config without persisting trust. Doctor reuses the same boundary.
+[src: strict-config-src] [src: strict-config-tests]
 
 **`agents.default_subagent_model` / `default_subagent_reasoning_effort` — LOW VALUE for muster.**
 These set a fleet-wide default for spawns that omit a model. But every muster crew member is

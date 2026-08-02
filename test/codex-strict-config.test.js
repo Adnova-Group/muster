@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
@@ -264,6 +264,61 @@ test("strict config: a delayed shared-config writer during validation is preserv
     }
   }), /config changed during strict validation/);
   assert.deepEqual(await readFile(sharedPath), concurrent);
+});
+
+test("strict config: candidate publication is bound to the snapshot used before validation", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-source-snapshot-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), sharedPath = join(home, ".codex", "config.toml");
+  const receiptPath = join(home, ".codex", "muster", "thread-limits.json");
+  const concurrent = Buffer.from("model = \"writer-after-candidate\"\n");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(sharedPath, "model = \"candidate-source\"\n");
+  const writer = (async () => {
+    for (let attempt = 0; attempt < 1_000; attempt++) {
+      try { await readFile(receiptPath); await writeFile(sharedPath, concurrent); return; }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+    throw new Error("thread-limit receipt was not published");
+  })();
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot,
+    execFile: async () => { throw new Error("codex absent"); },
+    strictConfigRunner: async () => { await writer; return { ok: true, modelTurnEvents: 0 }; }
+  }), /config changed during strict validation/);
+  assert.deepEqual(await readFile(sharedPath), concurrent);
+});
+
+test("strict config: rollback reconstructs exact originals when retirement artifacts disappear", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-missing-retired-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), sharedPath = join(home, ".codex", "config.toml");
+  const projectPath = join(cwd, ".codex", "config.toml");
+  const sharedOriginal = Buffer.from("model = \"shared-original\"\r\n");
+  const projectOriginal = Buffer.from("model = \"project-original\"\r\n");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(sharedPath, sharedOriginal);
+  await writeFile(projectPath, projectOriginal);
+  const executor = async (_bin, args) => {
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      for (const dir of [join(home, ".codex"), join(cwd, ".codex")]) {
+        for (const name of await readdir(dir)) if (name.includes(".muster-retired-")) await unlink(join(dir, name));
+      }
+      throw new Error("forced registration failure");
+    }
+    if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
+    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /forced registration failure/);
+  assert.deepEqual(await readFile(sharedPath), sharedOriginal);
+  assert.deepEqual(await readFile(projectPath), projectOriginal);
+  await assert.rejects(readFile(join(cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
 });
 
 test("strict config: doctor reports the same non-billable parser boundary", async () => {

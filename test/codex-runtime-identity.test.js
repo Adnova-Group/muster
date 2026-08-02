@@ -79,6 +79,41 @@ test("trusted Codex identity rejects a native executable symlink escaping the pa
   );
 });
 
+test("Codex platform fallback ignores ambient package lookup and requires the exact declared version", async t => {
+  const { tmp, env, packageRoot, nativePath } = await fixture(t, process.platform);
+  const suffix = `${process.platform}-${process.arch}`;
+  const platformName = `@openai/codex-${suffix}`;
+  const expectedVersion = `9.8.7-${suffix}`;
+  await unlink(nativePath);
+  await writeFile(join(packageRoot, "package.json"), JSON.stringify({
+    name: "@openai/codex", version: "9.8.7",
+    optionalDependencies: { [platformName]: `npm:@openai/codex@${expectedVersion}` }
+  }));
+
+  const injectedRoot = join(tmp, "injected", "@openai", `codex-${suffix}`);
+  await mkdir(join(injectedRoot, "vendor"), { recursive: true });
+  await writeFile(join(injectedRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: expectedVersion }));
+  assert.throws(
+    () => resolveCodexRuntimeIdentity({ env: { ...env, NODE_PATH: join(tmp, "injected") }, platform: process.platform }),
+    /ENOENT|Codex platform package manifest/
+  );
+
+  const nestedRoot = join(packageRoot, "node_modules", "@openai", `codex-${suffix}`);
+  const triple = process.platform === "win32"
+    ? (process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc")
+    : process.platform === "darwin"
+      ? (process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin")
+      : (process.arch === "arm64" ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl");
+  const executable = process.platform === "win32" ? "codex.exe" : "codex";
+  await mkdir(join(nestedRoot, "vendor", triple, "bin"), { recursive: true });
+  await writeFile(join(nestedRoot, "vendor", triple, "bin", executable), "nested native\n");
+  await writeFile(join(nestedRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: `${expectedVersion}-attacker` }));
+  assert.throws(() => resolveCodexRuntimeIdentity({ env, platform: process.platform }), /unexpected name or version/);
+  await writeFile(join(nestedRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: expectedVersion }));
+  assert.equal(resolveCodexRuntimeIdentity({ env, platform: process.platform }).nativeCodex,
+    await realpath(join(nestedRoot, "vendor", triple, "bin", executable)));
+});
+
 test("missing trusted identity performs no Codex PATH execution", async () => {
   const calls = [];
   const runner = async (...args) => { calls.push(args); throw new Error("must not execute"); };

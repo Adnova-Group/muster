@@ -1369,9 +1369,19 @@ async function rollbackConfigCandidate(receipt) {
       discardDisplaced = true;
       return;
     }
-    if (recovery) {
-      try { await link(recovery, path); }
-      catch (error) { if (error.code !== "EEXIST") throw error; }
+    if (expected.exists) {
+      let restored = false;
+      if (retired) {
+        try { await link(retired, path); restored = true; }
+        catch (error) {
+          if (error.code === "EEXIST") restored = true;
+          else if (error.code !== "ENOENT") throw error;
+        }
+      }
+      if (!restored && recovery) {
+        try { await link(recovery, path); }
+        catch (error) { if (error.code !== "EEXIST") throw error; }
+      }
     }
     // For an originally absent file, the vacant name is the restored state.
     // For an existing file, either recovery won or a concurrent creator did.
@@ -1817,6 +1827,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
               throw new Error(`Codex config changed during plugin registration: ${path}; concurrent bytes were preserved`);
             }
+            if (receipt.retired && !sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
+              throw new Error(`Codex config writer changed the retired baseline during plugin registration: ${path}; concurrent bytes will be restored`);
+            }
           }
           // No await follows this assignment before registerPlugin returns;
           // later edits are ordinary post-install user changes, not bytes the
@@ -1850,7 +1863,14 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         // cleanup-only and must never re-enter rollback after earlier baseline
         // names have already been discarded.
         for (const receipt of publishedConfigCandidates.values()) {
-          if (receipt.retired) try { await unlink(receipt.retired); } catch { /* best-effort post-commit cleanup */ }
+          if (!receipt.retired) continue;
+          try {
+            if (!sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
+              await rollbackConfigCandidate(receipt);
+            } else {
+              await unlink(receipt.retired);
+            }
+          } catch { /* best-effort post-commit writer preservation/cleanup */ }
         }
       }
     }, scopeLockOptions);

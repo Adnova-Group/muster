@@ -4,7 +4,7 @@ import { chmodSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
@@ -393,6 +393,38 @@ test("strict config: registration conflict never removes a previously installed 
   await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
     strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /config changed during plugin registration/);
   assert.equal(calls.includes("plugin remove muster@muster"), false);
+  assert.ok(calls.includes("plugin marketplace remove muster"));
+});
+
+test("strict config: a registration-time writer holding the retired inode is restored", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-retired-writer-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
+  const concurrent = Buffer.from("unknown_retired_writer = true\n");
+  const calls = [];
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(projectPath, "model = \"before\"\n");
+  const held = await open(projectPath, "r+");
+  const executor = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      await held.truncate(0);
+      await held.write(concurrent, 0, concurrent.length, 0);
+      return { stdout: "" };
+    }
+    if (args.slice(0, 2).join(" ") === "plugin remove") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  try {
+    await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
+      strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /retired baseline during plugin registration/);
+  } finally { await held.close(); }
+  assert.deepEqual(await readFile(projectPath), concurrent);
+  assert.ok(calls.includes("plugin remove muster@muster"));
   assert.ok(calls.includes("plugin marketplace remove muster"));
 });
 

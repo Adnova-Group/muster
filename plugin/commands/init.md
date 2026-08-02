@@ -57,11 +57,24 @@ instruction seeds.
      `$MUSTER_CLI init transition "$TARGET" --to handoff --reason not-callable --expect AGENTS.md,CLAUDE.md`.
      Leave a **HUMAN-HOLD** instructing the user to run the harness-native
      `/init`, then resume this workflow with positive evidence.
-   - **Codex** — run
+   - **Codex (CLI or Codex Desktop experience)** — run
      `$MUSTER_CLI init transition "$TARGET" --to handoff --reason not-callable --expect AGENTS.md,CLAUDE.md`.
      Leave a **HUMAN-HOLD** instructing the user to run the harness-native
      `/init`, then resume this workflow with positive evidence. A refusal to
      overwrite an existing AGENTS.md is not completion.
+   - **ChatGPT Desktop shell** — the shell alone is not an execution runtime.
+     Select the active experience before continuing. If the selected experience
+     cannot be identified, run
+     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason unavailable --expect ""`.
+     Do not infer Codex merely because the session is in ChatGPT Desktop, and do
+     not invent a shell-level native init command. Leave a **HUMAN-HOLD** for
+     explicit unavailable acknowledgement.
+   - **ChatGPT Work (GPT Work)** — Work does not inherit Codex `AGENTS.md` or
+     its native `/init`, and no Work-native instruction initializer is proven
+     callable. Run
+     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason unavailable --expect ""`.
+     Do not suggest Codex `/init` from a Work session. Leave a **HUMAN-HOLD**
+     offering explicit acknowledgement of the unavailable handoff.
    - **Kimi** — Kimi has no proven callable native init command. Run
      `$MUSTER_CLI init transition "$TARGET" --to handoff --reason unavailable --expect ""`.
      Do not invent or suggest a Kimi init command. Leave a **HUMAN-HOLD** offering

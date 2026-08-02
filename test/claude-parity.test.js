@@ -1356,5 +1356,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bootstraps and verifies its own isolated outer worktree when invoked from
   // a primary checkout, retaining fail-closed CAS publication for bookkeeping.
   // File count remains unchanged.
-  assert.equal(hash.digest("hex"), "e1f99f70792a1ff3dbdd6b0ec902fb53bcbf872dcd188d17c8a4d6136aeb3ee5");
+  // 2026-08-02 re-pin #42 (desktop harness support): init.md distinguishes the
+  // ChatGPT Desktop shell, Codex Desktop, and ChatGPT Work init handoffs.
+  assert.equal(hash.digest("hex"), "d3d5c3c5bd2c83dbe56f84ccad1e8a4ee4f4c5571cefbd193922d4cd95f3b61a");
 });

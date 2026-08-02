@@ -8,6 +8,7 @@ export function loopState({ iteration = 0, maxIterations = Number.POSITIVE_INFIN
 }
 
 export const DEFAULT_NO_PROGRESS_LIMIT = 2;
+export const MAX_RECOVERY_CONTINUATIONS = 100;
 export const TERMINAL_RECOVERY_REASONS = Object.freeze([
   "approval",
   "human-hold",
@@ -28,7 +29,7 @@ export function progressAwareState({
   done = false,
   terminalReason = null,
   noProgressLimit = DEFAULT_NO_PROGRESS_LIMIT,
-  maxContinuations = Number.POSITIVE_INFINITY,
+  maxContinuations = MAX_RECOVERY_CONTINUATIONS,
 } = {}) {
   if (done) return { continue: false, reason: "done", noProgressCount: 0 };
   if (terminalReason !== null) {
@@ -41,8 +42,8 @@ export function progressAwareState({
   if (!Number.isInteger(noProgressLimit) || noProgressLimit < 1) {
     throw new TypeError("noProgressLimit must be a positive integer");
   }
-  if (!(maxContinuations === Number.POSITIVE_INFINITY || (Number.isInteger(maxContinuations) && maxContinuations >= 0))) {
-    throw new TypeError("maxContinuations must be a non-negative integer or Infinity");
+  if (!Number.isInteger(maxContinuations) || maxContinuations < 1 || maxContinuations > MAX_RECOVERY_CONTINUATIONS) {
+    throw new TypeError(`maxContinuations must be an integer from 1 to ${MAX_RECOVERY_CONTINUATIONS}`);
   }
   const noProgressCount = trailingIdenticalCount(outcomes);
   if (noProgressCount >= noProgressLimit) return { continue: false, reason: "no-progress", noProgressCount };
@@ -56,12 +57,19 @@ export function reviewGateState(options = {}) {
 
 export function specGateRecoveryState({ rounds = [], ...options } = {}) {
   if (!Array.isArray(rounds) || rounds.some((round) => !round || typeof round !== "object"
-    || typeof round.candidateFingerprint !== "string" || !round.candidateFingerprint
-    || !Array.isArray(round.findings))) {
-    throw new TypeError("rounds must carry a candidateFingerprint and structured findings");
+    || !/^[0-9a-f]{64}$/.test(round.candidateFingerprint ?? "")
+    || !["PASS", "FAIL"].includes(round.verdict)
+    || typeof round.reviewer !== "string" || !round.reviewer
+    || !/^[0-9a-f]{64}$/.test(round.evidenceDigest ?? "")
+    || !Array.isArray(round.findings)
+    || (round.verdict === "PASS" ? round.findings.length !== 0 : round.findings.length === 0))) {
+    throw new TypeError("rounds must carry candidate fingerprint, independent reviewer, evidence digest, explicit verdict, and verdict-consistent findings");
   }
   const latest = rounds.at(-1);
-  if (latest && latest.findings.length === 0) {
+  if (!latest) {
+    return { continue: true, reason: "initial", noProgressCount: 0, action: { type: "independent-spec-review" } };
+  }
+  if (latest.verdict === "PASS") {
     return { continue: false, reason: "done", noProgressCount: 0, findings: [] };
   }
   const state = progressAwareState({

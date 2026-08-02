@@ -7,6 +7,7 @@ import {
   specGateRecoveryState,
   dispatchRetryState,
   DEFAULT_NO_PROGRESS_LIMIT,
+  MAX_RECOVERY_CONTINUATIONS,
 } from "../src/loop.js";
 
 test("continues while not done and under a configured cap", () => {
@@ -81,6 +82,14 @@ test("approval, HUMAN-HOLD, and external impossibility are truthful terminal sta
   }
 });
 
+test("recovery has a configurable but non-waivable runaway backstop", () => {
+  assert.equal(MAX_RECOVERY_CONTINUATIONS, 100);
+  assert.throws(() => progressAwareState({ outcomes: ["a"], maxContinuations: 101 }), /1 to 100/);
+  assert.deepEqual(progressAwareState({ outcomes: ["a", "b", "c"], maxContinuations: 3 }), {
+    continue: false, reason: "max-continuations", noProgressCount: 1,
+  });
+});
+
 const SAFETY_FINDINGS = [
   { severity: "blocker", code: "target-identity", note: "target identity is unbound" },
   { severity: "blocker", code: "backup-restoration", note: "backup restoration proof is absent" },
@@ -88,11 +97,19 @@ const SAFETY_FINDINGS = [
   { severity: "blocker", code: "protected-sql-provenance", note: "protected SQL provenance is missing" },
   { severity: "blocker", code: "mutation-allowlist", note: "mutation allowlist is not bound" },
 ];
+const EVIDENCE_DIGEST = "e".repeat(64);
+const SPEC_A = "a".repeat(64);
+const SPEC_B = "b".repeat(64);
+const SPEC_C = "c".repeat(64);
+const SPEC_D = "d".repeat(64);
 
 test("changed spec candidates preserve repeated safety findings and continue beyond the old round cap", () => {
-  const rounds = ["candidate:a", "candidate:b", "candidate:c", "candidate:d"].map((candidateFingerprint) => ({
+  const rounds = [SPEC_A, SPEC_B, SPEC_C, SPEC_D].map((candidateFingerprint) => ({
     candidateFingerprint,
     findings: SAFETY_FINDINGS,
+    verdict: "FAIL",
+    reviewer: "independent-reviewer",
+    evidenceDigest: EVIDENCE_DIGEST,
   }));
   assert.deepEqual(specGateRecoveryState({ rounds }), {
     continue: true,
@@ -100,7 +117,7 @@ test("changed spec candidates preserve repeated safety findings and continue bey
     noProgressCount: 1,
     action: {
       type: "correction-replan",
-      invalidateCandidate: "candidate:d",
+      invalidateCandidate: SPEC_D,
       findings: SAFETY_FINDINGS,
       requireMaterialChange: true,
       next: "independent-spec-review",
@@ -109,14 +126,43 @@ test("changed spec candidates preserve repeated safety findings and continue bey
 });
 
 test("byte-identical spec candidates stop deterministically without waiving safety findings", () => {
-  const rounds = ["candidate:a", "candidate:a"].map((candidateFingerprint) => ({
+  const rounds = [SPEC_A, SPEC_A].map((candidateFingerprint) => ({
     candidateFingerprint,
     findings: SAFETY_FINDINGS,
+    verdict: "FAIL",
+    reviewer: "independent-reviewer",
+    evidenceDigest: EVIDENCE_DIGEST,
   }));
   assert.deepEqual(specGateRecoveryState({ rounds }), {
     continue: false,
     reason: "no-progress",
     noProgressCount: 2,
     findings: SAFETY_FINDINGS,
+  });
+});
+
+test("spec completion requires explicit independent PASS evidence bound to the candidate", () => {
+  assert.throws(() => specGateRecoveryState({ rounds: [{
+    candidateFingerprint: SPEC_A,
+    findings: [],
+    verdict: "FAIL",
+    reviewer: "independent-reviewer",
+    evidenceDigest: EVIDENCE_DIGEST,
+  }] }), /verdict-consistent/);
+  assert.deepEqual(specGateRecoveryState({ rounds: [{
+    candidateFingerprint: SPEC_A,
+    findings: [],
+    verdict: "PASS",
+    reviewer: "independent-reviewer",
+    evidenceDigest: EVIDENCE_DIGEST,
+  }] }), { continue: false, reason: "done", noProgressCount: 0, findings: [] });
+});
+
+test("empty spec history produces a defined initial independent review action", () => {
+  assert.deepEqual(specGateRecoveryState(), {
+    continue: true,
+    reason: "initial",
+    noProgressCount: 0,
+    action: { type: "independent-spec-review" },
   });
 });

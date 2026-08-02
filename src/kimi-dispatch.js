@@ -50,7 +50,7 @@ const LANES = Object.keys(KIMI_LANES);
 //      how muster would trip it (e.g. two crew members handed the same file).
 export function kimiSwarmCall({ promptTemplate, items = [], subagentType, model, resumeAgentIds } = {}) {
   // resume_agent_ids maps a PRIOR subagent's agent id to the prompt used to
-  // resume it -- the orchestrator's re-dispatch-once failure rule rides this:
+  // resume it -- the orchestrator's progress-aware failure rule rides this:
   // a failed swarm member is resumed with only the error context appended,
   // keeping its prior context instead of paying a fresh full prompt again.
   if (resumeAgentIds !== undefined) {
@@ -113,7 +113,7 @@ export function kimiSwarmCall({ promptTemplate, items = [], subagentType, model,
 // the shared manifest so a dispatch can never contradict the installed
 // agent file's stamped model_preference.
 //
-// `resume` is the failure-retry path (orchestrator step 4a's re-dispatch-once
+// `resume` is the failure-retry path (orchestrator step 4a's progress-aware
 // rule on Kimi): Kimi's `resume` takes the FAILED subagent's agent id and is
 // mutually exclusive with `subagent_type`, and a resumed subagent keeps its
 // prior context AND its model (an explicit `model` is "ignored when
@@ -168,7 +168,7 @@ export function kimiAgentCall({ agentId, prompt, description, background = false
 //     (the whole handoff, same return contract as a foreground leg); fold it
 //     back verbatim.
 //   failed (any terminal state that is not completed) -> the leg re-enters
-//     orchestrator step 4a's re-dispatch-once rule (a resume retry on Kimi) --
+//     orchestrator step 4a's progress-aware rule (a resume retry on Kimi) --
 //     a backgrounded leg is never a silent drop.
 //   anything else -> still in flight: pending. The wave's barrier does NOT
 //     cover a pending leg -- which is exactly why barrier-gated work never
@@ -186,7 +186,7 @@ export function interpretKimiBackgroundCompletion({ status, result, terminalReas
     return {
       status: "failed",
       terminal: true,
-      reason: `background leg ended ${status}${terminalReason ? ` (${terminalReason})` : ""} -- re-enters the re-dispatch-once rule (a resume retry), never a silent drop`
+      reason: `background leg ended ${status}${terminalReason ? ` (${terminalReason})` : ""} -- re-enters the progress-aware fingerprint rule (a resume retry), never a silent drop`
     };
   }
   return { status: "pending", terminal: false, reason: "no completion receipt yet -- the leg is still in flight and the wave's barrier does not cover it" };

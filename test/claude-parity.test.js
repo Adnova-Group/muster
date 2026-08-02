@@ -1360,5 +1360,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // orchestrator, go/go-backlog, runner, and review-gate prose now preserve
   // findings and continue materially changed candidates; fixed attempt caps
   // no longer terminate progressing work. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "2f7fb405f125e0549a351f1a5405a3c3a11539906c8c9381a0da67bdf8a49f92");
+  assert.equal(hash.digest("hex"), "6ad7efb19ad37694646e20bbdf57e353dc344d1c840872f9912d4aa2c6f59bb0");
 });

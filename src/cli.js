@@ -646,6 +646,14 @@ async function main() {
       const r = reconcileSprintProgress(input.plan, {
         receipts: input.receipts,
         inFlight: input.inFlight,
+        recovery: {
+          ...(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT === undefined ? {} : {
+            noProgressLimit: Number(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT),
+          }),
+          ...(process.env.MUSTER_RECOVERY_MAX_CONTINUATIONS === undefined ? {} : {
+            maxContinuations: Number(process.env.MUSTER_RECOVERY_MAX_CONTINUATIONS),
+          }),
+        },
       });
       out(r);
       if (!r.ok) process.exit(2);

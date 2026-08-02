@@ -23,6 +23,10 @@ function flight(itemId, phase, attempt = 1) {
   return { itemId, phase, attempt };
 }
 
+const SHA_A = "a".repeat(40);
+const SHA_B = "b".repeat(40);
+const FINDING_A = "1".repeat(64);
+
 test("a completion wake immediately exposes review instead of returning to idle", () => {
   const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
   const result = reconcileSprintProgress(sprint, {
@@ -125,40 +129,102 @@ test("a repaired commit after a failed review self-heals by dispatching another 
   const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
   const result = reconcileSprintProgress(sprint, {
     receipts: [
-      receipt("impl-a-1", "a", "implementation", "completed", 1),
-      receipt("review-a-1", "a", "review", "failed", 1),
-      receipt("impl-a-2", "a", "implementation", "completed", 2),
+      { ...receipt("impl-a-1", "a", "implementation", "completed", 1), candidateSha: SHA_A },
+      { ...receipt("review-a-1", "a", "review", "failed", 1), candidateSha: SHA_A, progressFingerprint: FINDING_A },
+      { ...receipt("impl-a-2", "a", "implementation", "completed", 2), candidateSha: SHA_B },
     ],
   });
 
   assert.equal(result.items.a.state, "review_ready");
-  assert.deepEqual(result.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1, attempt: 2 }]);
+  assert.deepEqual(result.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1, attempt: 2, candidateSha: SHA_B }]);
   assert.equal(result.next, "dispatch");
   assert.equal(result.escalated, false);
 });
 
-test("failed review outcomes retry while fingerprints change and block after configured no-progress", () => {
+test("failed review outcomes dispatch repair while candidates change and block on an unchanged candidate", () => {
   const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
   const progressing = reconcileSprintProgress(sprint, {
     receipts: [
-      receipt("impl-a", "a", "implementation"),
-      { ...receipt("review-a-1", "a", "review", "failed", 1), progressFingerprint: "finding:a" },
-      { ...receipt("review-a-2", "a", "review", "failed", 2), progressFingerprint: "finding:b" },
+      { ...receipt("impl-a-1", "a", "implementation"), candidateSha: SHA_A },
+      { ...receipt("review-a-1", "a", "review", "failed", 1), candidateSha: SHA_A, progressFingerprint: FINDING_A },
+      { ...receipt("impl-a-2", "a", "implementation", "completed", 2), candidateSha: SHA_B },
+      { ...receipt("review-a-2", "a", "review", "failed", 2), candidateSha: SHA_B, progressFingerprint: FINDING_A },
     ],
   });
-  assert.deepEqual(progressing.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1, attempt: 3 }]);
+  assert.deepEqual(progressing.actions, [{
+    type: "dispatch", itemId: "a", phase: "implementation", wave: 1,
+    attempt: 3, recovery: "repair", candidateSha: SHA_B,
+  }]);
   assert.equal(progressing.next, "dispatch");
 
   const stalled = reconcileSprintProgress(sprint, {
     receipts: [
-      receipt("impl-a", "a", "implementation"),
-      { ...receipt("review-a-1", "a", "review", "failed", 1), progressFingerprint: "finding:a" },
-      { ...receipt("review-a-2", "a", "review", "failed", 2), progressFingerprint: "finding:a" },
+      { ...receipt("impl-a-1", "a", "implementation"), candidateSha: SHA_A },
+      { ...receipt("review-a-1", "a", "review", "failed", 1), candidateSha: SHA_A, progressFingerprint: FINDING_A },
+      { ...receipt("impl-a-2", "a", "implementation", "completed", 2), candidateSha: SHA_A },
+      { ...receipt("review-a-2", "a", "review", "failed", 2), candidateSha: SHA_A, progressFingerprint: FINDING_A },
     ],
   });
   assert.deepEqual(stalled.actions, []);
   assert.equal(stalled.next, "blocked");
   assert.equal(stalled.terminalReason, "no-progress");
+});
+
+test("duplicate failed receipt ids are idempotent and cannot fabricate no-progress", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const failedReview = {
+    ...receipt("review-a-1", "a", "review", "failed"),
+    candidateSha: SHA_A,
+    progressFingerprint: FINDING_A,
+  };
+  const result = reconcileSprintProgress(sprint, {
+    receipts: [
+      { ...receipt("impl-a", "a", "implementation"), candidateSha: SHA_A },
+      failedReview,
+      failedReview,
+    ],
+  });
+  assert.equal(result.next, "dispatch");
+  assert.equal(result.items.a.state, "implementation_repair_ready");
+});
+
+test("conflicting logical receipts reject deterministically regardless of input order", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
+  const progressFailure = { ...receipt("failure-progress", "a", "implementation", "failed"), progressFingerprint: FINDING_A };
+  const terminalFailure = { ...receipt("failure-terminal", "a", "implementation", "failed"), terminalReason: "external-impossibility" };
+  for (const receipts of [[progressFailure, terminalFailure], [terminalFailure, progressFailure]]) {
+    const result = reconcileSprintProgress(sprint, { receipts });
+    assert.equal(result.next, "invalid");
+    assert.match(result.errors.join(" "), /conflicting receipts/);
+  }
+});
+
+test("stale review and integration receipts cannot complete a repaired candidate", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: merge-local}"]);
+  const result = reconcileSprintProgress(sprint, {
+    receipts: [
+      { ...receipt("impl-a-1", "a", "implementation"), candidateSha: SHA_A },
+      { ...receipt("review-a-1", "a", "review"), candidateSha: SHA_A },
+      { ...receipt("integration-a-1", "a", "integration"), candidateSha: SHA_A },
+      { ...receipt("impl-a-2", "a", "implementation", "completed", 2), candidateSha: SHA_B },
+    ],
+  });
+  assert.equal(result.items.a.state, "review_ready");
+  assert.deepEqual(result.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1, attempt: 2, candidateSha: SHA_B }]);
+});
+
+test("terminal integration failure blocks destructive redispatch", () => {
+  const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: merge-push}"]);
+  const result = reconcileSprintProgress(sprint, {
+    receipts: [
+      { ...receipt("impl-a", "a", "implementation"), candidateSha: SHA_A },
+      { ...receipt("review-a", "a", "review"), candidateSha: SHA_A },
+      { ...receipt("integration-a", "a", "integration", "failed"), candidateSha: SHA_A, terminalReason: "external-impossibility" },
+    ],
+  });
+  assert.deepEqual(result.actions, []);
+  assert.equal(result.next, "blocked");
+  assert.equal(result.terminalReason, "external-impossibility");
 });
 
 test("explicit external impossibility remains terminal and is never redispatched", () => {
@@ -179,22 +245,28 @@ test("review barrier exposes merge integration one item at a time in backlog ord
     "- [ ] B {id: b} {deps: none} {disposition: merge-push}",
   ]);
   const reviewsDone = [
-    receipt("impl-a", "a", "implementation"),
-    receipt("review-a", "a", "review"),
-    receipt("impl-b", "b", "implementation"),
-    receipt("review-b", "b", "review"),
+    { ...receipt("impl-a", "a", "implementation"), candidateSha: SHA_A },
+    { ...receipt("review-a", "a", "review"), candidateSha: SHA_A },
+    { ...receipt("impl-b", "b", "implementation"), candidateSha: SHA_B },
+    { ...receipt("review-b", "b", "review"), candidateSha: SHA_B },
   ];
   const first = reconcileSprintProgress(sprint, { receipts: reviewsDone });
 
-  assert.deepEqual(first.actions, [{ type: "dispatch", itemId: "a", phase: "integration", wave: 1 }]);
+  assert.deepEqual(first.actions, [{
+    type: "dispatch", itemId: "a", phase: "integration", wave: 1,
+    candidateSha: SHA_A, requiresFreshApproval: true,
+  }]);
   assert.equal(first.items.b.state, "integration_ready");
   assert.equal(first.metadata.buildReview.maxConcurrency, 5);
   assert.equal(first.metadata.degradation.integrationOrder, "preserved");
 
   const second = reconcileSprintProgress(sprint, {
-    receipts: [...first.receipts, receipt("integrate-a", "a", "integration")],
+    receipts: [...first.receipts, { ...receipt("integrate-a", "a", "integration"), candidateSha: SHA_A }],
   });
-  assert.deepEqual(second.actions, [{ type: "dispatch", itemId: "b", phase: "integration", wave: 1 }]);
+  assert.deepEqual(second.actions, [{
+    type: "dispatch", itemId: "b", phase: "integration", wave: 1,
+    candidateSha: SHA_B, requiresFreshApproval: true,
+  }]);
 });
 
 test("a later dependency wave waits for all prior-wave integration", () => {
@@ -207,12 +279,15 @@ test("a later dependency wave waits for all prior-wave integration", () => {
     receipts: [
       receipt("impl-a", "a", "implementation"),
       receipt("review-a", "a", "review"),
-      receipt("impl-c", "c", "implementation"),
-      receipt("review-c", "c", "review"),
+      { ...receipt("impl-c", "c", "implementation"), candidateSha: SHA_A },
+      { ...receipt("review-c", "c", "review"), candidateSha: SHA_A },
     ],
   });
 
-  assert.deepEqual(result.actions, [{ type: "dispatch", itemId: "c", phase: "integration", wave: 1 }]);
+  assert.deepEqual(result.actions, [{
+    type: "dispatch", itemId: "c", phase: "integration", wave: 1,
+    candidateSha: SHA_A, requiresFreshApproval: true,
+  }]);
   assert.equal(result.items.b.state, "implementation_ready");
 });
 
@@ -230,6 +305,32 @@ test("sprint-reconcile CLI consumes the machine-checkable receipt envelope", asy
 
     assert.equal(result.next, "dispatch");
     assert.deepEqual(result.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1 }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("sprint-reconcile CLI reads recovery policy from trusted environment, not mailbox JSON", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-sprint-recovery-policy-"));
+  try {
+    const input = join(dir, "progress.json");
+    await writeFile(input, JSON.stringify({
+      plan: plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]),
+      recovery: { noProgressLimit: 1 },
+      receipts: [
+        { ...receipt("impl-a-1", "a", "implementation"), candidateSha: SHA_A },
+        { ...receipt("review-a-1", "a", "review", "failed"), candidateSha: SHA_A, progressFingerprint: FINDING_A },
+        { ...receipt("impl-a-2", "a", "implementation", "completed", 2), candidateSha: SHA_A },
+        { ...receipt("review-a-2", "a", "review", "failed", 2), candidateSha: SHA_A, progressFingerprint: FINDING_A },
+      ],
+    }));
+    const { stdout } = await pexecFile(process.execPath, [cli, "sprint-reconcile", input], {
+      cwd: repoRoot,
+      env: { ...process.env, MUSTER_RECOVERY_NO_PROGRESS_LIMIT: "3", MUSTER_RECOVERY_MAX_CONTINUATIONS: "10" },
+    });
+    const result = JSON.parse(stdout);
+    assert.equal(result.next, "dispatch");
+    assert.equal(result.actions[0].recovery, "repair");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

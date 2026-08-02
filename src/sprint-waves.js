@@ -144,6 +144,8 @@ const SPRINT_PHASES = ["implementation", "review", "integration"];
 const SPRINT_RECEIPT_STATUSES = ["completed", "failed", "cancelled"];
 const FAILURE_STATES = new Set(["failed", "cancelled", "blocked"]);
 const SPRINT_DISPOSITIONS = [null, "merge-local", "merge-push", "pr", "keep", "ask"];
+const CANDIDATE_SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const DIGEST_RE = /^[0-9a-f]{64}$/;
 const SPRINT_RECONCILE_LIMITS = Object.freeze({
   items: 1_000,
   waves: 1_000,
@@ -356,6 +358,7 @@ function canonicalReceipts(receipts, itemIds) {
   }
   const errors = [];
   const byId = new Map();
+  const byLogicalAttempt = new Map();
   const latestByPhase = new Map();
   const byPhase = new Map();
   for (const raw of receipts) {
@@ -370,6 +373,7 @@ function canonicalReceipts(receipts, itemIds) {
       status: raw.status,
       attempt: raw.attempt === undefined ? 1 : raw.attempt,
       ...(raw.progressFingerprint === undefined ? {} : { progressFingerprint: raw.progressFingerprint }),
+      ...(raw.candidateSha === undefined ? {} : { candidateSha: raw.candidateSha }),
       ...(raw.terminalReason === undefined ? {} : { terminalReason: raw.terminalReason }),
     };
     let valid = true;
@@ -393,9 +397,17 @@ function canonicalReceipts(receipts, itemIds) {
       errors.push(`receipt '${receipt.id}' attempt must be an integer from 1 to ${SPRINT_RECONCILE_LIMITS.attempt}`);
       valid = false;
     }
-    if (receipt.progressFingerprint !== undefined
-      && (typeof receipt.progressFingerprint !== "string" || !receipt.progressFingerprint || receipt.progressFingerprint.length > SPRINT_RECONCILE_LIMITS.idLength)) {
-      errors.push(`receipt '${receipt.id}' progressFingerprint must be a non-empty bounded string`);
+    if (receipt.progressFingerprint !== undefined && !DIGEST_RE.test(receipt.progressFingerprint)) {
+      errors.push(`receipt '${receipt.id}' progressFingerprint must be a lowercase sha256 digest`);
+      valid = false;
+    }
+    if (receipt.candidateSha !== undefined && !CANDIDATE_SHA_RE.test(receipt.candidateSha)) {
+      errors.push(`receipt '${receipt.id}' candidateSha must be a lowercase git object id`);
+      valid = false;
+    }
+    if (receipt.attempt > 1 && ["implementation", "review"].includes(receipt.phase)
+      && receipt.status === "completed" && receipt.candidateSha === undefined) {
+      errors.push(`receipt '${receipt.id}' must bind completed ${receipt.phase} attempt ${receipt.attempt} to candidateSha`);
       valid = false;
     }
     if (receipt.terminalReason !== undefined && !TERMINAL_RECOVERY_REASONS.includes(receipt.terminalReason)) {
@@ -409,7 +421,15 @@ function canonicalReceipts(receipts, itemIds) {
       errors.push(`duplicate receipt id '${normalized.id}' carries conflicting payloads`);
       continue;
     }
+    if (prior) continue;
+    const logicalKey = `${normalized.itemId}\0${normalized.phase}\0${normalized.attempt}`;
+    const priorLogical = byLogicalAttempt.get(logicalKey);
+    if (priorLogical && JSON.stringify(priorLogical) !== JSON.stringify(normalized)) {
+      errors.push(`item '${normalized.itemId}' phase '${normalized.phase}' attempt ${normalized.attempt} has conflicting receipts`);
+      continue;
+    }
     byId.set(normalized.id, normalized);
+    byLogicalAttempt.set(logicalKey, normalized);
     latestByPhase.set(phaseKey(normalized.itemId, normalized.phase),
       strongerReceipt(latestByPhase.get(phaseKey(normalized.itemId, normalized.phase)), normalized));
     const key = phaseKey(normalized.itemId, normalized.phase);
@@ -486,25 +506,41 @@ export function reconcileSprintProgress(plan, progress = {}) {
   const receipts = receiptResult.receipts;
   const inFlight = inFlightResult.inFlight;
   const noProgressLimit = progress.recovery?.noProgressLimit;
+  const maxContinuations = progress.recovery?.maxContinuations;
   if (progress.recovery !== undefined && (!isRecord(progress.recovery)
-    || (noProgressLimit !== undefined && (!Number.isInteger(noProgressLimit) || noProgressLimit < 1)))) {
-    return invalidReconciliation(["progress.recovery.noProgressLimit must be a positive integer"]);
+    || (noProgressLimit !== undefined && (!Number.isInteger(noProgressLimit) || noProgressLimit < 1))
+    || (maxContinuations !== undefined && (!Number.isInteger(maxContinuations) || maxContinuations < 1 || maxContinuations > 100)))) {
+    return invalidReconciliation(["progress.recovery thresholds are invalid"]);
   }
-  const phaseState = (itemId, phase, minimumAttempt = 0) => {
-    const receipt = receiptResult.latestByPhase.get(phaseKey(itemId, phase));
+  const phaseState = (itemId, phase, candidateSha = undefined) => {
+    const phaseReceipts = (receiptResult.byPhase.get(phaseKey(itemId, phase)) ?? [])
+      .filter((candidate) => phase === "implementation"
+        || (candidateSha === undefined
+          ? candidate.candidateSha === undefined
+          : candidate.candidateSha === candidateSha));
+    const receipt = phaseReceipts.reduce(strongerReceipt, null);
     const flight = inFlightResult.byPhase.get(phaseKey(itemId, phase));
     if (flight && (!receipt || flight.attempt > receipt.attempt)) return { status: "in_flight", attempt: flight.attempt };
-    if (!receipt || receipt.attempt < minimumAttempt) return null;
-    if (receipt.status !== "failed") return { status: receipt.status, attempt: receipt.attempt, terminalReason: receipt.terminalReason };
+    if (!receipt) return null;
+    if (receipt.status !== "failed") return {
+      status: receipt.status,
+      attempt: receipt.attempt,
+      terminalReason: receipt.terminalReason,
+      candidateSha: receipt.candidateSha,
+    };
     if (receipt.terminalReason) return { status: "blocked", attempt: receipt.attempt, terminalReason: receipt.terminalReason };
     const outcomes = (receiptResult.byPhase.get(phaseKey(itemId, phase)) ?? [])
-      .filter((candidate) => candidate.status === "failed" && candidate.progressFingerprint && candidate.attempt >= minimumAttempt)
+      .filter((candidate) => candidate.status === "failed" && candidate.progressFingerprint)
       .sort((a, b) => a.attempt - b.attempt)
-      .map((candidate) => candidate.progressFingerprint);
+      .map((candidate) => `${candidate.candidateSha ?? "legacy"}\0${candidate.progressFingerprint}`);
     if (outcomes.length === 0) return { status: "blocked", attempt: receipt.attempt, terminalReason: "failed" };
-    const recovery = progressAwareState({ outcomes, ...(noProgressLimit === undefined ? {} : { noProgressLimit }) });
+    const recovery = progressAwareState({
+      outcomes,
+      ...(noProgressLimit === undefined ? {} : { noProgressLimit }),
+      ...(maxContinuations === undefined ? {} : { maxContinuations }),
+    });
     return recovery.continue
-      ? { status: "ready", attempt: receipt.attempt + 1 }
+      ? { status: phase === "review" ? "repair_ready" : "ready", attempt: receipt.attempt + 1, candidateSha: receipt.candidateSha }
       : { status: "blocked", attempt: receipt.attempt, terminalReason: recovery.reason };
   };
   const items = {};
@@ -528,18 +564,22 @@ export function reconcileSprintProgress(plan, progress = {}) {
         state = implementation.status === "cancelled" ? "cancelled" : "blocked";
       } else if (implementation?.status !== "completed") {
         state = implementation?.status === "in_flight" ? "implementation_in_flight" : "implementation_ready";
+      } else if (["merge-local", "merge-push"].includes(source.disposition) && !implementation.candidateSha) {
+        state = "blocked";
       } else {
-        const review = phaseState(itemId, "review", implementation.attempt);
+        const review = phaseState(itemId, "review", implementation.candidateSha);
         if (review?.status === "blocked" || review?.status === "cancelled") {
           state = review.status === "cancelled" ? "cancelled" : "blocked";
+        } else if (review?.status === "repair_ready") {
+          state = "implementation_repair_ready";
         } else if (review?.status !== "completed") {
           state = review?.status === "in_flight" ? "review_in_flight" : "review_ready";
         } else if (!["merge-local", "merge-push"].includes(source.disposition)) {
           state = "completed";
         } else {
-          const integration = phaseState(itemId, "integration");
-          if (integration?.status === "failed" || integration?.status === "cancelled") {
-            state = integration.status;
+          const integration = phaseState(itemId, "integration", implementation.candidateSha);
+          if (integration?.status === "blocked" || integration?.status === "cancelled") {
+            state = integration.status === "cancelled" ? "cancelled" : "blocked";
           } else if (integration?.status === "completed") {
             state = "completed";
           } else {
@@ -556,9 +596,10 @@ export function reconcileSprintProgress(plan, progress = {}) {
       disposition: source.disposition,
       blockedBy,
       terminalReason: state === "blocked"
-        ? phaseState(itemId, "review", phaseState(itemId, "implementation")?.attempt ?? 0)?.terminalReason
+        ? phaseState(itemId, "integration", phaseState(itemId, "implementation")?.candidateSha)?.terminalReason
+          ?? phaseState(itemId, "review", phaseState(itemId, "implementation")?.candidateSha)?.terminalReason
           ?? phaseState(itemId, "implementation")?.terminalReason
-          ?? "failed-dependency"
+          ?? (["merge-local", "merge-push"].includes(source.disposition) ? "missing-candidate-binding" : "failed-dependency")
         : state === "cancelled" ? "cancelled" : null,
     };
   }
@@ -610,10 +651,23 @@ export function reconcileSprintProgress(plan, progress = {}) {
     if (item.state === "implementation_ready") {
       const attempt = phaseState(itemId, "implementation")?.attempt ?? 1;
       buildReviewActions.push({ type: "dispatch", itemId, phase: "implementation", wave: item.wave, ...(attempt > 1 ? { attempt } : {}) });
+    } else if (item.state === "implementation_repair_ready") {
+      const implementation = phaseState(itemId, "implementation");
+      buildReviewActions.push({
+        type: "dispatch", itemId, phase: "implementation", wave: item.wave,
+        attempt: implementation.attempt + 1,
+        recovery: "repair",
+        ...(implementation.candidateSha ? { candidateSha: implementation.candidateSha } : {}),
+      });
     } else if (item.state === "review_ready") {
-      const implementationAttempt = phaseState(itemId, "implementation")?.attempt ?? 1;
-      const attempt = phaseState(itemId, "review", implementationAttempt)?.attempt ?? implementationAttempt;
-      buildReviewActions.push({ type: "dispatch", itemId, phase: "review", wave: item.wave, ...(attempt > 1 ? { attempt } : {}) });
+      const implementation = phaseState(itemId, "implementation");
+      const priorReviews = receiptResult.byPhase.get(phaseKey(itemId, "review")) ?? [];
+      const attempt = priorReviews.reduce((max, receipt) => Math.max(max, receipt.attempt), 0) + 1;
+      buildReviewActions.push({
+        type: "dispatch", itemId, phase: "review", wave: item.wave,
+        ...(attempt > 1 ? { attempt } : {}),
+        ...(implementation.candidateSha ? { candidateSha: implementation.candidateSha } : {}),
+      });
     }
   }
   const availableBuildSlots = Math.max(0, plan.schedule.buildReview.maxConcurrency - activeInFlight.length);
@@ -632,7 +686,11 @@ export function reconcileSprintProgress(plan, progress = {}) {
     if (!barrierPassed) continue;
     const nextIntegration = waveSchedule.integration.itemIds.find((itemId) => items[itemId].state !== "completed");
     if (nextIntegration && items[nextIntegration].state === "integration_ready") {
-      actions.push({ type: "dispatch", itemId: nextIntegration, phase: "integration", wave: waveSchedule.wave });
+      const implementation = phaseState(nextIntegration, "implementation");
+      actions.push({
+        type: "dispatch", itemId: nextIntegration, phase: "integration", wave: waveSchedule.wave,
+        ...(implementation.candidateSha ? { candidateSha: implementation.candidateSha, requiresFreshApproval: true } : {}),
+      });
     }
   }
 

@@ -19,5 +19,5 @@ Check, adversarially:
 
 Return findings: `[{ severity: "blocker"|"risk"|"nit", note }]`. Write to `.muster/verdicts.json`; run `$MUSTER_CLI tally .muster/verdicts.json`. If blocked: preserve the findings, invalidate the candidate, re-dispatch a materially changed repair, and obtain a fresh independent review. Continue while the deterministic candidate/finding fingerprint changes; stop at the configured repeated-identical/no-progress threshold or a truthful terminal condition. Carry risk/nit findings to FOLLOWUPS (non-blocking).
 
-Return pass (all clear) or escalate (cap hit with remaining blockers) to the orchestrator, one-line status with blocker notes listed when relevant.
+Return pass (all clear) or the configured repeated-identical/no-progress terminal result to the orchestrator, one-line status with blocker notes listed when relevant.
 <!-- muster-brief-template:end -->

@@ -131,11 +131,11 @@ test("interpretKimiBackgroundCompletion: a completed receipt folds back as the w
   assert.match(done.reason, /synthetic user message/);
 });
 
-test("interpretKimiBackgroundCompletion: a failed leg re-enters the re-dispatch-once rule, never a silent drop", () => {
+test("interpretKimiBackgroundCompletion: a failed leg re-enters progress-aware recovery, never a silent drop", () => {
   const failed = interpretKimiBackgroundCompletion({ status: "failed", terminalReason: "timed_out" });
   assert.equal(failed.status, "failed");
   assert.equal(failed.terminal, true);
-  assert.match(failed.reason, /re-dispatch-once/);
+  assert.match(failed.reason, /progress-aware fingerprint/);
   assert.match(failed.reason, /never a silent drop/);
 
   for (const status of ["stopped", "timed_out"]) {
@@ -519,7 +519,7 @@ test("references/kimi-dispatch.md names when to background a leg versus barrier 
   assert.match(section, /interpretKimiBackgroundCompletion/, "the rule must name the shipped receipt interpreter");
   // the barrier is not weakened: barrier/review-gate work stays foreground
   assert.match(section, /step 4b's barrier[\s\S]*?step 4c's review gate[\s\S]*?FOREGROUND/, "the rule must keep barrier/review-gate work foreground");
-  assert.match(section, /re-dispatch-once/, "a failed backgrounded leg must re-enter the re-dispatch-once rule");
+  assert.match(section, /progress-aware fingerprint/, "a failed backgrounded leg must re-enter progress-aware recovery");
 });
 
 // --- Prose wiring: the runner prose routes the Kimi run loop through /goal ----

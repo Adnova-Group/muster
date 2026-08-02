@@ -43,8 +43,9 @@ serves every wave). Reuse the invoking verb's resolved `$MUSTER_CLI`.
    never synthesize or waive a missing `VERDICT: PASS`.
 6. If `blocked`: preserve the structured blocker notes, invalidate the reviewed candidate, and
    re-dispatch the implementer for a materially changed repair, then obtain a fresh independent
-   review. Record a deterministic candidate/finding fingerprint and use `reviewGateState` from
-   `src/loop.js`; continue while the fingerprint changes, even beyond three iterations. Stop with
+   review. The parent computes the candidate git SHA and finding SHA-256 digest; worker-provided
+   labels are never progress authority. Use `reviewGateState` from `src/loop.js`; continue while
+   the bound digest changes, even beyond three iterations, up to the non-waivable runaway backstop. Stop with
    the unresolved blockers only when the configured repeated-identical/no-progress threshold is
    reached, or on approval/HUMAN-HOLD, cancellation, or external impossibility. A changed candidate
    always gets another independent review; neither a prior review nor human acknowledgment waives PASS.

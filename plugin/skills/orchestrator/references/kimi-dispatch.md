@@ -113,7 +113,7 @@ from the background-completion receipt -- a synthetic user message carrying the 
 final message (the whole handoff, same return contract as a foreground leg), backed by the
 on-disk `tasks/<task_id>.json` + `output.log` (docs/research/kimi-code-cli.md secs 6+8;
 `interpretKimiBackgroundCompletion` in `src/kimi-dispatch.js` maps the receipt onto the
-fold-back, and a failed backgrounded leg re-enters step 4a's re-dispatch-once rule
+fold-back, and a failed backgrounded leg re-enters step 4a's progress-aware fingerprint rule
 unchanged). Anything step 4b's barrier or step 4c's review gate depends on dispatches
 FOREGROUND: a backgrounded leg is still in flight at the barrier, so backgrounding
 barrier-gated work would silently empty the barrier's "all wave tasks done" meaning.

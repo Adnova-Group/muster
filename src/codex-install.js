@@ -1305,12 +1305,25 @@ async function publishConfigCandidate(path, expected, bytes) {
         current = await exactFileSnapshot(path);
       }
     }
-    if (!current.exists && recovery) {
-      try { await link(recovery, path); }
-      catch (restoreError) {
-        if (restoreError.code !== "EEXIST") {
-          if (displaced) await restoreRetiredName(path, displaced);
-          throw restoreError;
+    if (!current.exists && expected.exists) {
+      let restored = false;
+      if (retired) {
+        try { await link(retired, path); restored = true; }
+        catch (restoreError) {
+          if (restoreError.code === "EEXIST") restored = true;
+          else if (restoreError.code !== "ENOENT") {
+            if (displaced) await restoreRetiredName(path, displaced);
+            throw restoreError;
+          }
+        }
+      }
+      if (!restored && recovery) {
+        try { await link(recovery, path); }
+        catch (restoreError) {
+          if (restoreError.code !== "EEXIST") {
+            if (displaced) await restoreRetiredName(path, displaced);
+            throw restoreError;
+          }
         }
       }
     }

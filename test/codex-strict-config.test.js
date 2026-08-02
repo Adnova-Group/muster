@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { spawn as spawnChild } from "node:child_process";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, watch, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -316,6 +316,40 @@ test("strict config: candidate publication is bound to the snapshot used before 
     strictConfigRunner: async () => { await writer; return { ok: true, modelTurnEvents: 0 }; }
   }), /config changed during strict validation/);
   assert.deepEqual(await readFile(sharedPath), concurrent);
+});
+
+test("strict config: a retired-inode writer immediately after candidate link remains live", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-after-link-writer-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
+  const concurrent = Buffer.from("unknown_after_link_writer = true\n");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(projectPath, "model = \"before\"\n");
+  const held = await open(projectPath, "r+");
+  let writing = false;
+  let resolveWriter, rejectWriter;
+  const writer = new Promise((resolve, reject) => { resolveWriter = resolve; rejectWriter = reject; });
+  const watcher = watch(join(cwd, ".codex"), (_event, filename) => {
+    if (writing || String(filename) !== "config.toml") return;
+    writing = true;
+    void (async () => {
+      try {
+        const live = await readFile(projectPath, "utf8");
+        if (!live.includes("muster managed agent declarations")) { writing = false; return; }
+        await held.truncate(0);
+        await held.write(concurrent, 0, concurrent.length, 0);
+        resolveWriter();
+      } catch (error) { writing = false; if (error.code !== "ENOENT") rejectWriter(error); }
+    })();
+  });
+  try {
+    await assert.rejects(runCodexInstall({
+      cwd, home, repoRoot,
+      execFile: async () => { throw new Error("codex absent"); },
+      strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 })
+    }), /config changed during strict candidate publication/);
+    await writer;
+  } finally { watcher.close(); await held.close(); }
+  assert.deepEqual(await readFile(projectPath), concurrent);
 });
 
 test("strict config: rollback reconstructs exact originals when retirement artifacts disappear", async () => {

@@ -1,10 +1,10 @@
 import { constants as fsConstants } from "node:fs";
-import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, stat, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, rmdir, stat, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { atomicWrite, readNoFollowRegular } from "./fs-safe.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
@@ -696,10 +696,10 @@ async function removeSafe(path) {
   if (stat) await unlink(path);
 }
 const profileFiles = async root => (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort();
-const run = (execFile, args, runtimeIdentity) => runtimeIdentity
-  ? runCodexCommand(execFile, runtimeIdentity, args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 })
-  : execFile("muster:injected-codex-runner", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
-async function runJson(execFile, args, runtimeIdentity) { return JSON.parse((await run(execFile, args, runtimeIdentity)).stdout); }
+const run = (execFile, args, runtimeIdentity, commandOptions = {}) => runtimeIdentity
+  ? runCodexCommand(execFile, runtimeIdentity, args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024, ...commandOptions })
+  : execFile("muster:injected-codex-runner", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024, ...commandOptions });
+async function runJson(execFile, args, runtimeIdentity, commandOptions) { return JSON.parse((await run(execFile, args, runtimeIdentity, commandOptions)).stdout); }
 
 // Defense in depth (arbitrary-write containment) behind generateCodexProfiles'
 // manifest-id guard: every profile filename here is one join() away from
@@ -1238,6 +1238,57 @@ function sameExactFileSnapshot(left, right) {
     && (!left.exists || (left.dev === right.dev && left.ino === right.ino && left.bytes.equals(right.bytes)));
 }
 
+function concurrentConfigError(message) {
+  const error = new Error(message);
+  error.musterConcurrentConfig = true;
+  return error;
+}
+
+const retirementReceiptPath = configPath => join(dirname(configPath), "muster", "config-retirements.json");
+
+function retirementArtifactRecord(configPath, artifactPath, snapshot) {
+  return {
+    configPath,
+    artifactPath,
+    dev: String(snapshot.dev),
+    ino: String(snapshot.ino),
+    size: snapshot.bytes.length,
+    algorithm: "sha256",
+    digest: createHash("sha256").update(snapshot.bytes).digest("hex")
+  };
+}
+
+export async function verifyCodexConfigRetirementReceipt(configPath) {
+  const path = retirementReceiptPath(configPath);
+  const receiptSnapshot = await exactFileSnapshot(path);
+  if (!receiptSnapshot.exists) return { path, entries: [] };
+  let value;
+  try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(receiptSnapshot.bytes)); }
+  catch { value = null; }
+  if (value?.format !== 1 || value.owner !== "muster" || !Array.isArray(value.entries)) {
+    throw new Error(`Codex config retirement receipt conflict: ${path}. Move it or remove it, then rerun the command.`);
+  }
+  const entries = [];
+  for (const entry of value.entries) {
+    const artifactName = typeof entry?.artifactPath === "string" ? basename(entry.artifactPath) : "";
+    const structurallyValid = entry?.configPath === configPath
+      && dirname(entry.artifactPath || "") === dirname(configPath)
+      && artifactName.startsWith(`.${basename(configPath)}.muster-retired-`)
+      && typeof entry.dev === "string" && /^\d+$/.test(entry.dev)
+      && typeof entry.ino === "string" && /^\d+$/.test(entry.ino)
+      && Number.isSafeInteger(entry.size) && entry.size >= 0
+      && entry.algorithm === "sha256" && /^[a-f0-9]{64}$/.test(entry.digest);
+    if (!structurallyValid) throw new Error(`Codex config retirement receipt conflict: ${path}. Move it or remove it, then rerun the command.`);
+    const snapshot = await exactFileSnapshot(entry.artifactPath);
+    const actual = snapshot.exists ? retirementArtifactRecord(configPath, entry.artifactPath, snapshot) : null;
+    if (!actual || JSON.stringify(actual) !== JSON.stringify(entry)) {
+      throw new Error(`Codex config retired baseline changed: ${entry.artifactPath}. Preserve and inspect it before rerunning the command.`);
+    }
+    entries.push(entry);
+  }
+  return { path, entries };
+}
+
 async function writePrivateSibling(path, label, bytes) {
   const privatePath = join(dirname(path), `.${basename(path)}.muster-${label}-${process.pid}-${randomUUID()}`);
   const handle = await open(privatePath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
@@ -1292,21 +1343,21 @@ async function publishConfigCandidate(path, expected, bytes) {
       await rename(path, retired);
       if (!sameExactFileSnapshot(expected, await exactFileSnapshot(retired))) {
         await restoreRetiredName(path, retired);
-        throw new Error(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
+        throw concurrentConfigError(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
       }
     }
     try { await link(staged, path); }
     catch (error) {
       if (retired) await restoreRetiredName(path, retired);
-      if (error.code === "EEXIST") throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+      if (error.code === "EEXIST") throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
       throw error;
     }
     const published = await exactFileSnapshot(path);
     if (!sameExactFileSnapshot(stagedSnapshot, published)) {
-      throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+      throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
     }
     if (retired && !sameExactFileSnapshot(expected, await exactFileSnapshot(retired))) {
-      throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+      throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
     }
     return { path, expected, retired, published: stagedSnapshot };
   } catch (error) {
@@ -1461,8 +1512,8 @@ async function trustedMusterMarketplace(item, repoRoot) {
     && await sameLocalRoot(source.source, repoRoot);
 }
 
-async function existingMusterMarketplace(execFile, repoRoot, runtimeIdentity) {
-  const result = await runJson(execFile, ["plugin", "marketplace", "list", "--json"], runtimeIdentity);
+async function existingMusterMarketplace(execFile, repoRoot, runtimeIdentity, commandOptions) {
+  const result = await runJson(execFile, ["plugin", "marketplace", "list", "--json"], runtimeIdentity, commandOptions);
   const matches = Array.isArray(result?.marketplaces) ? result.marketplaces.filter(item => item.name === "muster") : [];
   const trusted = await Promise.all(matches.map(item => trustedMusterMarketplace(item, repoRoot)));
   if (trusted.some(value => !value)) {
@@ -1474,27 +1525,27 @@ async function existingMusterMarketplace(execFile, repoRoot, runtimeIdentity) {
 // File-local, so the flag is an OPTIONS object rather than a positional
 // boolean: `registerPlugin(execFile, root, { dryRun: true })` reads at the call
 // site; the old `registerPlugin(execFile, true, root)` did not.
-async function registerPlugin(execFile, repoRoot, { dryRun, runtimeIdentity, afterRegister }) {
+async function registerPlugin(execFile, repoRoot, { dryRun, runtimeIdentity, afterRegister, commandOptions }) {
   if (dryRun) return [`codex plugin marketplace add ${repoRoot}`, `codex plugin add ${CODEX_PLUGIN}`];
   let marketplaceAdded = false, pluginAdded = false, pluginPreviouslyInstalled = false;
   try {
-    const marketplace = await existingMusterMarketplace(execFile, repoRoot, runtimeIdentity);
+    const marketplace = await existingMusterMarketplace(execFile, repoRoot, runtimeIdentity, commandOptions);
     if (!marketplace) {
-      await run(execFile, ["plugin", "marketplace", "add", repoRoot], runtimeIdentity);
+      await run(execFile, ["plugin", "marketplace", "add", repoRoot], runtimeIdentity, commandOptions);
       marketplaceAdded = true;
     }
-    const inventory = await runJson(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity);
+    const inventory = await runJson(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity, commandOptions);
     pluginPreviouslyInstalled = Array.isArray(inventory?.installed) && inventory.installed.some(plugin =>
       plugin === CODEX_PLUGIN || plugin?.pluginId === CODEX_PLUGIN
         || (plugin?.name === "muster" && (plugin?.marketplace === "muster" || plugin?.source?.marketplace === "muster"))
     );
-    await run(execFile, ["plugin", "add", CODEX_PLUGIN], runtimeIdentity);
+    await run(execFile, ["plugin", "add", CODEX_PLUGIN], runtimeIdentity, commandOptions);
     pluginAdded = true;
     await afterRegister?.();
     return [];
   } catch (error) {
-    if (pluginAdded && !pluginPreviouslyInstalled) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN], runtimeIdentity); } catch { /* best-effort transaction rollback */ }
-    if (marketplaceAdded) try { await run(execFile, ["plugin", "marketplace", "remove", "muster"], runtimeIdentity); } catch { /* best-effort transaction rollback */ }
+    if (pluginAdded && !pluginPreviouslyInstalled) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN], runtimeIdentity, commandOptions); } catch { /* best-effort transaction rollback */ }
+    if (marketplaceAdded) try { await run(execFile, ["plugin", "marketplace", "remove", "muster"], runtimeIdentity, commandOptions); } catch { /* best-effort transaction rollback */ }
     throw error;
   }
 }
@@ -1617,10 +1668,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile), nodeExecPath });
   let originals, changed;
-  const rollbackConflicts = new Set();
   const publishedConfigCandidates = new Map();
   const configCandidates = new Map();
   const configCandidateSources = new Map();
+  const configRetirementReceipts = new Map();
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
@@ -1634,7 +1685,16 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       const declarationConfigExists = checkedOwnership.config.exists;
       const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
       await ordinaryDirectoryPath(dir, { create: true });
+      for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
+        configRetirementReceipts.set(configPath, await verifyCodexConfigRetirementReceipt(configPath));
+      }
       try {
+        // Codex's own plugin registration rewrites config.toml. Preserve the
+        // exact pre-registration bytes here; the config transaction below is
+        // deliberately derived only after registration has completed.
+        for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
+          await snapshot(originals, changed, configPath);
+        }
         const currentScope = await scopeEntry(scope, cwd, home);
         await snapshot(originals, changed, registry.path);
         // Reconcile on every install: prune scopes whose configDir no
@@ -1684,7 +1744,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         await atomicWriteSafe(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
         await snapshot(originals, changed, hooks.manifestPath);
         await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
-        try {
+        const installConfig = async () => {
+          try {
+          try {
           const threadLimitOriginal = await exactFileSnapshot(threadLimitConfigPath);
           const configExistedBefore = threadLimitOriginal.exists;
           const existingConfigText = configSnapshotText(threadLimitOriginal, threadLimitConfigPath);
@@ -1758,7 +1820,6 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           await snapshot(originals, changed, threadLimitConfigPath);
           configCandidates.set(threadLimitConfigPath, Buffer.from(threadLimits.text));
           configCandidateSources.set(threadLimitConfigPath, threadLimitOriginal);
-          rollbackConflicts.add(threadLimitConfigPath);
           await snapshot(originals, changed, threadLimitManifestPath);
           await atomicWriteSafe(threadLimitManifestPath, JSON.stringify({
             format: 1, owner: "muster", configPath: threadLimitConfigPath,
@@ -1790,7 +1851,6 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         if (!configCandidateSources.has(declarationConfigPath)) {
           configCandidateSources.set(declarationConfigPath, declarationOriginal);
         }
-        rollbackConflicts.add(declarationConfigPath);
         await snapshot(originals, changed, manifestPath);
         await atomicWriteSafe(manifestPath, JSON.stringify({
           format: 1, owner: "muster", files, packageVersion,
@@ -1798,8 +1858,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           declarationSeparatorAdded: declarationReconcile.separatorAdded,
           declarationRegion: declarationReconcile.receipt
         }, null, 2) + "\n");
-        // Parse only after every shared and scoped config candidate is complete,
-        // but before plugin registration makes the install externally visible.
+        // Parse after every shared and scoped config candidate is complete.
+        // Plugin registration then runs only against a private CODEX_HOME;
+        // its resulting config is parsed again before the exact bytes are
+        // exclusively published to the real configuration paths.
         // Production always takes the bounded native parser path; tests with an
         // injected command runner opt into this boundary explicitly.
         const configParser = strictConfigRunner || (!execFile && identity ? runCodexStrictConfigCheck : null);
@@ -1813,8 +1875,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           const liveExpected = new Map();
           for (const path of transactionTargets) liveExpected.set(path, configCandidateSources.get(path));
           if (!liveExpected.has(projectConfigPath)) liveExpected.set(projectConfigPath, await exactFileSnapshot(projectConfigPath));
-          const projectCandidate = candidateSnapshots.get(projectConfigPath) || liveExpected.get(projectConfigPath);
-          if (configParser) {
+          const runConfigParser = async () => {
+            if (!configParser) return;
+            const projectCandidate = candidateSnapshots.get(projectConfigPath) || liveExpected.get(projectConfigPath);
             await configParser({
               cwd,
               codexHome: codexHome(home),
@@ -1824,16 +1887,41 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
                 project: { path: projectConfigPath, ...projectCandidate }
               }
             });
+          };
+          const verifyLive = async phase => {
+            const concurrent = [];
+            for (const [path, expected] of liveExpected) {
+              let current;
+              try { current = await exactFileSnapshot(path); }
+              catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
+              if (!sameExactFileSnapshot(expected, current)) concurrent.push(path);
+            }
+            if (concurrent.length) throw concurrentConfigError(`Codex config changed during ${phase}: ${concurrent.join(", ")}; concurrent bytes were preserved`);
+          };
+          await runConfigParser();
+          await verifyLive("strict validation");
+          if (present) {
+            const stagingHome = await mkdtemp(join(tmpdir(), "muster-codex-plugin-config-"));
+            try {
+              const stagedConfigPath = join(stagingHome, "config.toml");
+              await atomicWriteSafe(stagedConfigPath, candidateSnapshots.get(threadLimitConfigPath).bytes);
+              actions = await registerPlugin(executor, distributionRoot, {
+                dryRun: false,
+                runtimeIdentity: identity,
+                commandOptions: { env: { ...process.env, CODEX_HOME: stagingHome } }
+              });
+              const registered = await exactFileSnapshot(stagedConfigPath);
+              if (!registered.exists) throw new Error("Codex staged plugin registration removed config.toml");
+              const finalShared = { exists: true, bytes: registered.bytes, dev: null, ino: null };
+              candidateSnapshots.set(threadLimitConfigPath, finalShared);
+              configCandidates.set(threadLimitConfigPath, registered.bytes);
+            } finally {
+              await rm(stagingHome, { recursive: true, force: true });
+            }
+            await verifyLive("staged plugin registration");
+            await runConfigParser();
+            await verifyLive("final strict validation");
           }
-
-          const concurrent = [];
-          for (const [path, expected] of liveExpected) {
-            let current;
-            try { current = await exactFileSnapshot(path); }
-            catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
-            if (!sameExactFileSnapshot(expected, current)) concurrent.push(path);
-          }
-          if (concurrent.length) throw new Error(`Codex config changed during strict validation: ${concurrent.join(", ")}; concurrent bytes were preserved`);
 
           // Retire the expected name and publish by exclusive hard-link. Any
           // writer that wins after validation remains authoritative and blocks
@@ -1841,7 +1929,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           for (const path of transactionTargets) {
             const current = await exactFileSnapshot(path);
             if (!sameExactFileSnapshot(liveExpected.get(path), current)) {
-              throw new Error(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
+              throw concurrentConfigError(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
             }
             publishedConfigCandidates.set(path, await publishConfigCandidate(
               path, liveExpected.get(path), candidateSnapshots.get(path).bytes
@@ -1849,48 +1937,54 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           }
           for (const [path, receipt] of publishedConfigCandidates) {
             if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
-              throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+              throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
             }
           }
         }
-        const commitConfigCandidates = async () => {
-          const verify = async () => {
-            for (const [path, receipt] of publishedConfigCandidates) {
-              if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
-                throw new Error(`Codex config changed during plugin registration: ${path}; concurrent bytes were preserved`);
-              }
-              if (receipt.retired && !sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
-                throw new Error(`Codex config writer changed the retired baseline during plugin registration: ${path}; concurrent bytes will be restored`);
-              }
-            }
-          };
-          await verify();
-          // Give already-open writer descriptors a bounded turn to become
-          // visible before the final receipt check and commit-point unlink.
-          await pause(10);
-          await verify();
-          for (const receipt of publishedConfigCandidates.values()) {
-            if (receipt.retired) await unlink(receipt.retired);
+        for (const [path, receipt] of publishedConfigCandidates) {
+          if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
+            throw concurrentConfigError(`Codex config changed at the strict config commit point: ${path}; concurrent bytes were preserved`);
           }
-          // Returning from this callback is the commit point. Later edits are
-          // ordinary post-install user changes, not bytes the installation can
-          // overwrite or claim as its validated candidate.
+          if (receipt.retired && !sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
+            throw concurrentConfigError(`Codex config writer changed the retired baseline before the commit point: ${path}; concurrent bytes will be restored`);
+          }
+        }
+        for (const [path, receipt] of publishedConfigCandidates) {
+          if (!receipt.retired) continue;
+          const owned = configRetirementReceipts.get(path);
+          const retiredSnapshot = await exactFileSnapshot(receipt.retired);
+          const entry = retirementArtifactRecord(path, receipt.retired, retiredSnapshot);
+          await ordinaryDirectoryPath(dirname(owned.path), { create: true });
+          await snapshot(originals, changed, owned.path);
+          await atomicWriteSafe(owned.path, JSON.stringify({
+            format: 1,
+            owner: "muster",
+            entries: [...owned.entries, entry]
+          }, null, 2) + "\n");
+          owned.entries.push(entry);
+        }
+          } catch (error) {
+            const rollbackErrors = [];
+            for (const receipt of [...publishedConfigCandidates.values()].reverse()) {
+              try { await rollbackConfigCandidate(receipt); }
+              catch (rollbackError) { rollbackErrors.push(rollbackError); }
+            }
+            publishedConfigCandidates.clear();
+            if (rollbackErrors.length) {
+              throw new AggregateError([error, ...rollbackErrors],
+                `${error.message}; ${rollbackErrors.length} config rollback operation(s) also failed`, { cause: error });
+            }
+            throw error;
+          }
         };
-        if (present) {
-          actions = await registerPlugin(executor, distributionRoot, {
-            dryRun: false, runtimeIdentity: identity, afterRegister: commitConfigCandidates
-          });
-        } else {
-          actions = [];
-          await commitConfigCandidates();
-        }
+        if (!present) actions = [];
+        await installConfig();
       } catch (error) {
         const rollbackErrors = [];
-        for (const receipt of [...publishedConfigCandidates.values()].reverse()) {
-          try { await rollbackConfigCandidate(receipt); }
-          catch (rollbackError) { rollbackErrors.push(rollbackError); }
-        }
-        try { await restoreFilesystem(originals, changed, { skip: rollbackConflicts }); }
+        const skip = error?.musterConcurrentConfig
+          ? new Set([threadLimitConfigPath, declarationConfigPath])
+          : new Set();
+        try { await restoreFilesystem(originals, changed, { skip }); }
         catch (rollbackError) { rollbackErrors.push(rollbackError); }
         if (rollbackErrors.length) {
           throw new AggregateError([error, ...rollbackErrors],

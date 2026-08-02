@@ -387,7 +387,41 @@ test("strict config: rollback reconstructs exact originals when retirement artif
   await assert.rejects(readFile(join(cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
 });
 
-test("strict config: a writer during plugin registration aborts and registration is reversed", async () => {
+test("strict config: native plugin config mutations are staged and included in the validated candidate", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-staged-plugin-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), sharedPath = join(home, ".codex", "config.toml");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await writeFile(sharedPath, "model = \"before\"\r\n");
+  const executor = async (_bin, args, options) => {
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") {
+      const staged = join(options.env.CODEX_HOME, "config.toml");
+      await writeFile(staged, `${await readFile(staged, "utf8")}\n[marketplaces.muster]\nsource = \"local\"\n`);
+      return { stdout: "" };
+    }
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      const staged = join(options.env.CODEX_HOME, "config.toml");
+      await writeFile(staged, `${await readFile(staged, "utf8")}\n[plugins.\"muster@muster\"]\nenabled = true\n`);
+      return { stdout: "" };
+    }
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  let validated;
+  const result = await runCodexInstall({ cwd, home, repoRoot, execFile: executor,
+    strictConfigRunner: async ({ configSnapshots }) => {
+      validated = configSnapshots.shared.bytes.toString("utf8");
+      return { ok: true, modelTurnEvents: 0 };
+    } });
+  assert.equal(result.ok, true);
+  assert.match(validated, /\[marketplaces\.muster\]/);
+  assert.match(validated, /\[plugins\."muster@muster"\]/);
+  assert.deepEqual(await readFile(sharedPath, "utf8"), validated);
+});
+
+test("strict config: a live writer during staged plugin registration aborts without touching it", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-strict-registration-writer-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
   const concurrent = Buffer.from("unknown_registration_writer = true\n");
@@ -406,10 +440,10 @@ test("strict config: a writer during plugin registration aborts and registration
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
   await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
-    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /config changed during plugin registration/);
+    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /config changed during staged plugin registration/);
   assert.deepEqual(await readFile(projectPath), concurrent);
-  assert.ok(calls.includes("plugin remove muster@muster"));
-  assert.ok(calls.includes("plugin marketplace remove muster"));
+  assert.equal(calls.includes("plugin remove muster@muster"), false);
+  assert.equal(calls.includes("plugin marketplace remove muster"), false);
 });
 
 test("strict config: registration conflict never removes a previously installed plugin", async () => {
@@ -429,44 +463,45 @@ test("strict config: registration conflict never removes a previously installed 
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
   await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
-    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /config changed during plugin registration/);
+    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /config changed during staged plugin registration/);
   assert.equal(calls.includes("plugin remove muster@muster"), false);
-  assert.ok(calls.includes("plugin marketplace remove muster"));
+  assert.equal(calls.includes("plugin marketplace remove muster"), false);
 });
 
-test("strict config: a registration-time writer holding the retired inode is restored", async () => {
+test("strict config: a post-commit writer holding the retired inode remains receipted", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-strict-retired-writer-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
   const concurrent = Buffer.from("unknown_retired_writer = true\n");
-  const calls = [];
-  let delayedWrite;
   await mkdir(join(cwd, ".codex"), { recursive: true });
   await writeFile(projectPath, "model = \"before\"\n");
   const held = await open(projectPath, "r+");
   const executor = async (_bin, args) => {
-    calls.push(args.join(" "));
     if (args[0] === "--version") return { stdout: "codex-cli test" };
     if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
     if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
-    if (args.slice(0, 2).join(" ") === "plugin add") {
-      delayedWrite = new Promise((resolve, reject) => setTimeout(() => {
-        held.truncate(0).then(() => held.write(concurrent, 0, concurrent.length, 0)).then(resolve, reject);
-      }, 3));
-      return { stdout: "" };
-    }
-    if (args.slice(0, 2).join(" ") === "plugin remove") return { stdout: "" };
-    if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "" };
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
   try {
-    await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
-      strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /retired baseline during plugin registration/);
-    await delayedWrite;
+    const result = await runCodexInstall({ cwd, home, repoRoot, execFile: executor,
+      strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) });
+    assert.equal(result.ok, true);
+    await held.truncate(0);
+    await held.write(concurrent, 0, concurrent.length, 0);
   } finally { await held.close(); }
-  assert.deepEqual(await readFile(projectPath), concurrent);
-  assert.ok(calls.includes("plugin remove muster@muster"));
-  assert.ok(calls.includes("plugin marketplace remove muster"));
+  const receipt = JSON.parse(await readFile(join(cwd, ".codex", "muster", "config-retirements.json"), "utf8"));
+  const retired = receipt.entries.find(entry => entry.configPath === projectPath);
+  assert.ok(retired);
+  assert.deepEqual(await readFile(retired.artifactPath), concurrent);
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"),
+    execFile: async () => { throw new Error("codex absent"); },
+    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) });
+  const retirementCheck = report.checks.find(check => check.name === "codex-config-retirements");
+  assert.equal(retirementCheck?.ok, false);
+  assert.match(retirementCheck?.detail || "", /retired baseline changed/);
+  await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
+    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /retired baseline changed/);
 });
 
 test("strict config: rollback preserves a delayed writer holding the published candidate inode", async () => {
@@ -489,6 +524,9 @@ test("strict config: rollback preserves a delayed writer holding the published c
         const live = await readFile(projectPath, "utf8");
         if (!candidateHandle && live.includes("muster managed agent declarations")) {
           candidateHandle = await open(projectPath, "r+");
+          await originalHandle.truncate(0);
+          await originalHandle.write(retiredWrite, 0, retiredWrite.length, 0);
+          registrationTriggered = true;
           resolveCandidate();
         } else if (candidateHandle && registrationTriggered && live.includes("unknown_retired_trigger")) {
           await candidateHandle.truncate(0);
@@ -509,20 +547,14 @@ test("strict config: rollback preserves a delayed writer holding the published c
     if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
     if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
-    if (args.slice(0, 2).join(" ") === "plugin add") {
-      await candidateReady;
-      await originalHandle.truncate(0);
-      await originalHandle.write(retiredWrite, 0, retiredWrite.length, 0);
-      registrationTriggered = true;
-      return { stdout: "" };
-    }
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "" };
     if (args.slice(0, 2).join(" ") === "plugin remove") return { stdout: "" };
     if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
     throw new Error(`unexpected command: ${args.join(" ")}`);
   };
   try {
     await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
-      strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /retired baseline during plugin registration/);
+      strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /(?:strict candidate publication|retired baseline before the commit point)/);
     await candidateWritten;
   } finally {
     watcher.close();

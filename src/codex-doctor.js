@@ -19,6 +19,7 @@ import {
   readCodexThreadLimits
 } from "./codex-thread-limits.js";
 import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
+import { verifyCodexConfigRetirementReceipt } from "./codex-install.js";
 
 // codex-path-shadow (backlog item run4-polish-pair; security-hardened by
 // run-5 audit High #3 `doctor-path-shadow-no-exec`): a stale globally
@@ -731,6 +732,19 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       detail: "Codex app-server strict parser accepted shared and project config with zero model-turn events" });
   } catch (error) {
     checks.push({ name: "codex-config-strict", ok: false, detail: error.message });
+  }
+  const retirementTargets = [...new Set([
+    join(codexHome || env.CODEX_HOME || join(homedir(), ".codex"), "config.toml"),
+    join(cwd, ".codex", "config.toml")
+  ])];
+  try {
+    const receipts = await Promise.all(retirementTargets.map(verifyCodexConfigRetirementReceipt));
+    const count = receipts.reduce((total, receipt) => total + receipt.entries.length, 0);
+    checks.push({ name: "codex-config-retirements", ok: true, detail: count
+      ? `${count} retained config baseline inode${count === 1 ? " is" : "s are"} intact and receipted`
+      : "no retained config baseline inodes" });
+  } catch (error) {
+    checks.push({ name: "codex-config-retirements", ok: false, detail: error.message });
   }
   if (identity) {
     try {

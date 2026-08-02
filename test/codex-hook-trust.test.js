@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { effectiveHookTrust, musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
@@ -225,6 +225,15 @@ test("effectiveHookTrust rejects duplicate scope and managed hook inventory reco
     const controlledCwd = `/repo/${control}name`;
     const controlled = { ...structuredClone(record), cwd: controlledCwd };
     assert.equal(effectiveHookTrust({ ok: true, data: [controlled] }, controlledCwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  }
+  for (const [requested, recordCwd] of [
+    ["relative-hook-scope", resolve("relative-hook-scope")],
+    [`${cwd}/child/..`, cwd],
+    [`${cwd}/\x01/..`, cwd],
+    [`${cwd}/\u0085/..`, cwd]
+  ]) {
+    const cleanRecord = { ...structuredClone(record), cwd: recordCwd };
+    assert.equal(effectiveHookTrust({ ok: true, data: [cleanRecord] }, requested, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
   }
 });
 

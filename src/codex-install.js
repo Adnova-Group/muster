@@ -632,24 +632,41 @@ export async function readCodexHookInventory({ runtimeIdentity, cwds, env = proc
   });
 }
 
+const HOOK_INVENTORY_CONTROLS = /[\u0000-\u001F\u007F-\u009F]/u;
+const HOOK_POSITION_KEY = /^[a-z][a-z0-9_]*:\d+:\d+$/;
+const HOOK_CONTENT_HASH = /^sha256:[0-9a-f]{64}$/;
+const validCanonicalHookPath = value => typeof value === "string" && value.length > 0
+  && isAbsolute(value) && !HOOK_INVENTORY_CONTROLS.test(value) && resolve(value) === value;
+
 function validHookInventoryRecord(entry) {
-  const controls = /[\u0000-\u001F\u007F-\u009F]/u;
   if (!entry || typeof entry !== "object" || Array.isArray(entry)
-    || typeof entry.cwd !== "string" || !entry.cwd || !isAbsolute(entry.cwd)
-    || controls.test(entry.cwd) || resolve(entry.cwd) !== entry.cwd
+    || !validCanonicalHookPath(entry.cwd)
     || !Array.isArray(entry.warnings) || !entry.warnings.every(item => typeof item === "string")
     || !Array.isArray(entry.errors) || !entry.errors.every(item => typeof item === "string")
     || !Array.isArray(entry.hooks)) return false;
   return entry.hooks.every(hook => hook && typeof hook === "object" && !Array.isArray(hook)
-    && typeof hook.key === "string" && /^.+:[a-z][a-z0-9_]*:\d+:\d+$/.test(hook.key) && !controls.test(hook.key)
+    && typeof hook.key === "string" && /^.+:[a-z][a-z0-9_]*:\d+:\d+$/.test(hook.key) && !HOOK_INVENTORY_CONTROLS.test(hook.key)
     && typeof hook.enabled === "boolean"
-    && typeof hook.trustStatus === "string" && hook.trustStatus.length > 0 && !controls.test(hook.trustStatus)
-    && typeof hook.currentHash === "string" && /^sha256:[0-9a-f]{64}$/.test(hook.currentHash));
+    && typeof hook.trustStatus === "string" && hook.trustStatus.length > 0 && !HOOK_INVENTORY_CONTROLS.test(hook.trustStatus)
+    && typeof hook.currentHash === "string" && HOOK_CONTENT_HASH.test(hook.currentHash));
 }
 
 export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys } = {}) {
   if (!inventory?.ok) return { verified: false, ok: false, error: inventory?.error || "Codex hooks/list unavailable", results: [] };
-  if (!Array.isArray(results) || results.length === 0) return { verified: true, ok: false, error: "no expected Muster hooks were supplied for activation verification", results: [] };
+  if (!validCanonicalHookPath(cwd) || !validCanonicalHookPath(hooksJsonPath)) {
+    return { verified: true, ok: false, error: "requested hook scope CWD or hooks.json path is malformed or noncanonical", results: [] };
+  }
+  if (!Array.isArray(results) || results.length === 0
+    || !results.every(result => result && typeof result === "object" && !Array.isArray(result)
+      && typeof result.key === "string" && HOOK_POSITION_KEY.test(result.key)
+      && typeof result.currentHash === "string" && HOOK_CONTENT_HASH.test(result.currentHash))
+    || new Set(results.map(result => result.key)).size !== results.length) {
+    return { verified: true, ok: false, error: "no valid, unique expected Muster hooks were supplied for activation verification", results: [] };
+  }
+  if (knownKeys !== undefined && (!Array.isArray(knownKeys) || !knownKeys.every(key => typeof key === "string" && HOOK_POSITION_KEY.test(key))
+    || new Set(knownKeys).size !== knownKeys.length || results.some(result => !knownKeys.includes(result.key)))) {
+    return { verified: true, ok: false, error: "known hook positions are malformed, duplicate, or incomplete", results: [] };
+  }
   if (!Array.isArray(inventory.data) || !inventory.data.every(validHookInventoryRecord)) {
     return { verified: true, ok: false, error: "Codex hooks/list returned a malformed scope or hook record", results: [] };
   }
@@ -658,7 +675,7 @@ export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { kno
     || inventory.data.some(entry => new Set(entry.hooks.map(hook => hook.key)).size !== entry.hooks.length)) {
     return { verified: true, ok: false, error: "Codex hooks/list returned duplicate scope or hook records", results: [] };
   }
-  const scopes = inventory.data.filter(entry => entry.cwd === resolve(cwd));
+  const scopes = inventory.data.filter(entry => entry.cwd === cwd);
   if (scopes.length !== 1) {
     return { verified: true, ok: false, error: scopes.length ? `Codex hooks/list returned duplicate records for ${cwd}` : "Codex hooks/list omitted the requested scope", results: [] };
   }

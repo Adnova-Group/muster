@@ -13,8 +13,9 @@ import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 // The write side of the Kimi harness leg (docs/research/kimi-code-cli.md). Kimi
 // loads Claude-Code-format agent .md files and SKILL.md skills natively (the
 // research's "closest structural clone" finding), so `muster install kimi`
-// simply places muster's 27 agents and 12 builtin skills into the gen2 data
-// root (`$KIMI_CODE_HOME`, or ~/.kimi-code) where a Kimi session discovers them.
+// places muster's agents, orchestration skills, and catalog-backed builtin
+// skills into the gen2 data root (`$KIMI_CODE_HOME`, or ~/.kimi-code) where a
+// Kimi session discovers them.
 //
 // Why this is a lean file copy, NOT the codex-install.js fortress: Kimi is
 // hooks-free by muster's design (see memory codex-plugin-hooks-free -- Codex's
@@ -652,11 +653,11 @@ export async function probeKimiModels({
 }
 
 // Enumerate the source agents/skills without writing -- shared by install and
-// its --dry-run. Agent files are agents/*.md; a skill is any skills/<name>/ that
-// carries a SKILL.md, copied whole (SKILL.md plus any sibling assets, e.g.
-// review-gate/verdict.schema.json).
+// its --dry-run. Agent files are agents/*.md; a skill is any
+// skills/<name>/ or builtins/<name>/ that carries a SKILL.md, copied whole
+// (SKILL.md plus any sibling assets, e.g. review-gate/verdict.schema.json).
 async function collectSource(pluginRoot) {
-  const agentsSrc = join(pluginRoot, "agents"), skillsSrc = join(pluginRoot, "skills");
+  const agentsSrc = join(pluginRoot, "agents");
   const agentFiles = (await readdirSafe(agentsSrc)).filter(f => f.endsWith(".md")).sort();
   // Each agent carries the Kimi lane its manifest tier resolves to; a file with
   // no manifest entry gets lane null and is copied through unstamped (surfaced
@@ -666,11 +667,33 @@ async function collectSource(pluginRoot) {
     return { rel: `agents/${f}`, src: join(agentsSrc, f), id, lane: kimiPreferenceForAgentId(id) };
   });
   const skills = [];
-  for (const name of (await readdirSafe(skillsSrc)).sort()) {
-    const skillDir = join(skillsSrc, name);
-    if (!(await exists(join(skillDir, "SKILL.md")))) continue;
-    for (const rel of (await walkFiles(skillDir)).sort()) {
-      skills.push({ rel: `skills/${name}/${rel}`, src: join(skillDir, rel), skill: name });
+  const seenSkillNames = new Set();
+  // Kimi natively loads the same Agent-Skills directory format used by both
+  // trees. Catalog builtins are dispatch payloads, so omitting builtins/ while
+  // capabilities --kimi advertised them made the resolver's output
+  // unreachable. Materialize them instead of silently weakening the catalog.
+  for (const [sourceKind, skillsSrc] of [
+    ["orchestration", join(pluginRoot, "skills")],
+    ["builtin", join(pluginRoot, "builtins")]
+  ]) {
+    for (const name of (await readdirSafe(skillsSrc)).sort()) {
+      const skillDir = join(skillsSrc, name);
+      if (!(await exists(join(skillDir, "SKILL.md")))) continue;
+      if (seenSkillNames.has(name)) {
+        throw new Error(`Duplicate Kimi skill source: ${name}`);
+      }
+      seenSkillNames.add(name);
+      for (const rel of (await walkFiles(skillDir)).sort()) {
+        skills.push({
+          rel: `skills/${name}/${rel}`,
+          src: join(skillDir, rel),
+          skill: name,
+          // Kimi invokes a skill by frontmatter name, while many vendored
+          // builtins retain their upstream name. The catalog/directory id is
+          // muster's dispatch contract, so stamp that id at install time.
+          dispatchName: sourceKind === "builtin" && rel === "SKILL.md" ? name : null
+        });
+      }
     }
   }
 
@@ -775,14 +798,28 @@ export async function runKimiInstall({
     catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 
-  // Skills copy byte-for-byte; agents are stamped with their model_preference
-  // lane (see the header note -- an un-stamped agent would silently bind to the
-  // secondary/cheap lane once a [secondary_model] is configured).
-  for (const { rel, src } of skills) await copyInto(src, join(dest, rel), dest, _beforeManagedMutation);
+  // Orchestration skills and skill assets copy byte-for-byte. Catalog builtins'
+  // SKILL.md names are stamped to their catalog ids because Kimi dispatches by
+  // frontmatter name, not directory. Known agents are likewise stamped to
+  // their manifest/file ids as well as their model_preference lane (see the
+  // header note -- an un-stamped agent would silently bind to the
+  // secondary/cheap lane once configured).
+  for (const { rel, src, dispatchName } of skills) {
+    const destFile = join(dest, rel);
+    if (!dispatchName) {
+      await copyInto(src, destFile, dest, _beforeManagedMutation);
+      continue;
+    }
+    const stamped = stampSkillName(await readFile(src, "utf8"), dispatchName);
+    if (stamped === null) throw new Error(`Kimi builtin skill has no frontmatter: ${src}`);
+    await writeManaged(dest, destFile, stamped, _beforeManagedMutation);
+  }
   const lanes = { primary: [], secondary: [] }, unstamped = [];
   for (const { rel, src, id, lane } of agents) {
     const destFile = join(dest, rel);
-    const stamped = lane ? stampModelPreference(await readFile(src, "utf8"), lane) : null;
+    const sourceText = await readFile(src, "utf8");
+    const named = lane ? stampFrontmatterField(sourceText, "name", id) : null;
+    const stamped = named === null ? null : stampModelPreference(named, lane);
     if (stamped === null) {
       await copyInto(src, destFile, dest, _beforeManagedMutation);
       unstamped.push({ id, reason: lane ? "no frontmatter" : "no manifest entry" });

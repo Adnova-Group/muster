@@ -144,6 +144,7 @@ const backlogWaveDispatchRe = /This transition is executable and authoritative; 
 // and scoped to leave the FOLLOWING worktree-removal/node_modules-bootstrap sentences
 // (harness-neutral, no PreToolUse/hook content) untouched.
 const runnerCwdRe = /Runner cwd is its worktree, and the preflight above copies regular `[.]muster\/run-active`[\s\S]*?do not bypass the action fence\./;
+const backlogFencePropagationRe = /Before dispatching any writer, propagate the batch fence[\s\S]*?the worker stops or its wave reaches the barrier\.\n/;
 const captureWritesRe = /capture only ever writes[\s\S]*?deliberately omitted\./i;
 // adapt-command-file-arrays item (PR #163 reviewer nit): the four arrays above
 // are hand-maintained -- a NEW command file adopting the same boilerplate would
@@ -268,6 +269,7 @@ function adaptCommandForCodex(text, name, contract) {
   if (SESSION_START_CLEAR_FILES.includes(name) && !text.includes("`SessionStart` on a fresh session clears a stale marker automatically.")) throw new Error(`${name}: SessionStart stale-marker anchor not found for Codex rewrite`);
   if (name === "go-backlog.md" && !backlogWaveDispatchRe.test(text)) throw new Error(`${name}: complete wave-dispatch anchor not found for Codex rewrite`);
   if (name === "go-backlog.md" && !runnerCwdRe.test(text)) throw new Error(`${name}: runner-cwd anchor not found for Codex rewrite`);
+  if (name === "go-backlog.md" && !backlogFencePropagationRe.test(text)) throw new Error(`${name}: action-fence propagation anchor not found for Codex rewrite`);
   if (name === "capture.md" && !captureWritesRe.test(text)) throw new Error(`${name}: capture-writes anchor not found for Codex rewrite`);
   let result = translatePluginPaths(translateCodexProse(text))
     .replaceAll("the `PreToolUse` hook uses to scope the scale-gate", "Muster's Codex lifecycle hooks use for state diagnostics")
@@ -276,6 +278,7 @@ function adaptCommandForCodex(text, name, contract) {
     .replaceAll("`SessionStart` on a fresh session clears a stale marker automatically.", "Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.")
     .replace(backlogWaveDispatchRe, "This transition is executable and authoritative; Codex production actions are adapter-owned process members. Construct one complete `wave.json` whose members carry the emitted item id, `agentType: \"muster-runner\"`, runner brief as `prompt`, and a distinct freshly created registered linked worktree as `cwd`, then run `node ${PLUGIN_ROOT}/runtime/muster.mjs codex-wave <wave.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>`. Production waves are process-only; never invoke a shared-CWD or inline dispatch path from the backlog or manifest. The runtime authenticates every pristine worktree, loads and digests the installed `muster-runner` policy, pins its model, effort, sandbox, and developer instructions outside the manifest, and owns the all-process barrier; treat missing provenance or any process failure as an item failure. Put the scheduler's cap in `maxConcurrentThreadsPerSession`; the runtime clamps it to trusted Codex capacity.")
     .replace(runnerCwdRe, "Runner cwd is its recorded worktree. Codex hooks provide diagnostics but do not replace the worktree path/base-SHA proof or the post-wave ownership check.")
+    .replace(backlogFencePropagationRe, "Do not copy `.muster/run-active` or `.muster/forbidden-actions` into process member worktrees: sealed `codex-wave` admission rejects every ignored artifact. Carry the effective forbidden actions in the authenticated runner brief instead.\n")
     .replace(captureWritesRe, "Capture only writes the explicitly approved `.muster/backlog.md` bookkeeping artifact and dispatches no write-capable wave, so it deliberately has no run-active lifecycle.");
   if (name === "init.md") {
     const claudeResolver = [
@@ -424,7 +427,13 @@ function adaptOrchestratorForCodex(text, contract) {
   result = result.replace(worktreeIsolationAnchor, "create a separate pristine registered linked worktree for each task, bind that absolute path to exactly one process-wave member, and record the path/base SHA in its prompt");
   const readOnlySkip = "Read-only/single-task waves skip worktree creation, but any\n        writer that already runs in another cwd still receives this same propagation.";
   if (!result.includes(readOnlySkip)) throw new Error("orchestrator read-only worktree skip anchor not found for Codex rewrite");
-  result = result.replace(readOnlySkip, "Every production member, including a read-only or single-task member, requires its own pristine registered linked worktree; any writer also receives this same action-fence propagation.");
+  result = result.replace(readOnlySkip, "Every production member, including a read-only or single-task member, requires its own pristine registered linked worktree. The sealed process lane rejects ignored artifacts, so never copy `.muster/run-active` or `.muster/forbidden-actions` into a member worktree; carry the effective fence in the runner brief.");
+  const isolatedFenceRe = /Before dispatch, propagate the\n        active action fence[\s\S]*?after the worker has stopped\. /;
+  if (!isolatedFenceRe.test(result)) throw new Error("orchestrator isolated action-fence propagation anchor not found for Codex rewrite");
+  result = result.replace(isolatedFenceRe, "The authenticated runner brief carries the effective action fence; the sealed process worktree remains free of ignored `.muster` marker files. ");
+  const actionFenceCopyRe = /The hook resolves\nthese files from the tool payload's cwd,[\s\S]*?then remove the propagated files only after that worker stops or at the wave barrier\./;
+  if (!actionFenceCopyRe.test(result)) throw new Error("orchestrator action-fence copy anchor not found for Codex rewrite");
+  result = result.replace(actionFenceCopyRe, "Codex process members receive the effective forbidden-action set in their authenticated runner brief. Never copy the outer run markers into a sealed member worktree, because admission rejects all ignored artifacts.");
   // build-anchor-audit item: this .replaceAll's target ("after a Claude Code restart") lived in
   // step 4a's old, verbose "Generic-subagent fallback (degraded path)" bullet. The prose-cutting
   // pass (commit 3b0b4d7, "cut prose 48.3%, no rule dropped") condensed that whole bullet down to

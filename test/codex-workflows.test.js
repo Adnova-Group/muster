@@ -43,6 +43,8 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   assert.match(orchestrator, /minimal prompt/);
   assert.match(orchestrator, /Never attach unrelated plan items/);
   assert.match(orchestrator, /Never call a subagent API from this production-wave step/);
+  assert.match(orchestrator, /sealed process lane rejects ignored artifacts/);
+  assert.doesNotMatch(orchestrator, /propagate the active action fence|receives this same action-fence propagation/i);
   assert.doesNotMatch(orchestrator, /generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK/);
 
   for (const command of ["plan", "go", "plan-backlog", "go-backlog", "diagnose", "audit", "runner", "capture"]) {

@@ -286,7 +286,8 @@ test("generated Codex review gates use compact, risk-based review dispatch", asy
   assert.match(text, /exact original opaque `receiptId`/);
   assert.match(text, /codex-wave-resume/);
   assert.match(text, /same bubblewrap/);
-  assert.match(text, /canonical worktree\/base\/HEAD, full `muster-runner` policy and action fence/);
+  assert.match(text, /canonical worktree\/base\/HEAD, full `muster-runner` policy and forbidden-action fence/);
+  assert.match(text, /private persistent Codex home/);
   assert.match(text, /computes only new blocker deltas/);
   assert.match(text, /opaque `receiptId`/);
   assert.match(text, /<remote-text>/);

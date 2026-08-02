@@ -462,6 +462,69 @@ test("strict config: a registration-time writer holding the retired inode is res
   assert.ok(calls.includes("plugin marketplace remove muster"));
 });
 
+test("strict config: rollback preserves a delayed writer holding the published candidate inode", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-rollback-candidate-writer-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
+  const retiredWrite = Buffer.from("unknown_retired_trigger = true\n");
+  const candidateWrite = Buffer.from("unknown_delayed_candidate_writer = true\n");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(projectPath, "model = \"before\"\n");
+  const originalHandle = await open(projectPath, "r+");
+  let candidateHandle, registrationTriggered = false, writing = false;
+  let resolveCandidate, rejectCandidate, resolveCandidateWrite, rejectCandidateWrite;
+  const candidateReady = new Promise((resolve, reject) => { resolveCandidate = resolve; rejectCandidate = reject; });
+  const candidateWritten = new Promise((resolve, reject) => { resolveCandidateWrite = resolve; rejectCandidateWrite = reject; });
+  const watcher = watch(join(cwd, ".codex"), (_event, filename) => {
+    if (writing || String(filename) !== "config.toml") return;
+    writing = true;
+    void (async () => {
+      try {
+        const live = await readFile(projectPath, "utf8");
+        if (!candidateHandle && live.includes("muster managed agent declarations")) {
+          candidateHandle = await open(projectPath, "r+");
+          resolveCandidate();
+        } else if (candidateHandle && registrationTriggered && live.includes("unknown_retired_trigger")) {
+          await candidateHandle.truncate(0);
+          await candidateHandle.write(candidateWrite, 0, candidateWrite.length, 0);
+          registrationTriggered = false;
+          resolveCandidateWrite();
+        }
+      } catch (error) {
+        if (error.code !== "ENOENT") {
+          if (!candidateHandle) rejectCandidate(error);
+          else rejectCandidateWrite(error);
+        }
+      } finally { writing = false; }
+    })();
+  });
+  const executor = async (_bin, args) => {
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      await candidateReady;
+      await originalHandle.truncate(0);
+      await originalHandle.write(retiredWrite, 0, retiredWrite.length, 0);
+      registrationTriggered = true;
+      return { stdout: "" };
+    }
+    if (args.slice(0, 2).join(" ") === "plugin remove") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  try {
+    await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
+      strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /retired baseline during plugin registration/);
+    await candidateWritten;
+  } finally {
+    watcher.close();
+    if (candidateHandle) await candidateHandle.close();
+    await originalHandle.close();
+  }
+  assert.deepEqual(await readFile(projectPath), candidateWrite);
+});
+
 test("strict config: doctor reports the same non-billable parser boundary", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-strict-doctor-"));
   const cwd = join(tmp, "project"), codexHome = join(tmp, "codex-home");

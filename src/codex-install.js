@@ -1251,6 +1251,31 @@ async function restoreRetiredName(path, retired) {
   catch (error) { if (error.code !== "EEXIST") throw error; }
 }
 
+async function promoteChangedDisplaced(path, displaced, expectedDisplaced, restoredBaseline) {
+  if (!restoredBaseline || sameExactFileSnapshot(expectedDisplaced, await exactFileSnapshot(displaced))) return;
+  const live = await exactFileSnapshot(path);
+  if (!sameExactFileSnapshot(restoredBaseline, live)) return;
+  const baselineAlias = live.exists
+    ? join(dirname(path), `.${basename(path)}.muster-displaced-baseline-${process.pid}-${randomUUID()}`)
+    : null;
+  if (baselineAlias) {
+    await rename(path, baselineAlias);
+    if (!sameExactFileSnapshot(restoredBaseline, await exactFileSnapshot(baselineAlias))) {
+      await restoreRetiredName(path, baselineAlias);
+      await unlink(baselineAlias);
+      return;
+    }
+  }
+  try { await link(displaced, path); }
+  catch (error) {
+    if (error.code !== "EEXIST") {
+      if (baselineAlias) await restoreRetiredName(path, baselineAlias);
+      throw error;
+    }
+  }
+  if (baselineAlias) await unlink(baselineAlias);
+}
+
 // Publish without an overwrite-capable rename. The old name is first retired,
 // checked by inode and bytes, then the candidate is hard-linked into the now
 // vacant name with EEXIST semantics. A concurrent creator therefore wins.
@@ -1292,6 +1317,7 @@ async function publishConfigCandidate(path, expected, bytes) {
     try { current = await exactFileSnapshot(path); }
     catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
     let displaced = null;
+    let restoredBaseline = expected.exists ? null : { exists: false, bytes: null, dev: null, ino: null };
     if (sameExactFileSnapshot(stagedSnapshot, current)) {
       displaced = join(dirname(path), `.${basename(path)}.muster-failed-publication-${process.pid}-${randomUUID()}`);
       await rename(path, displaced);
@@ -1308,7 +1334,11 @@ async function publishConfigCandidate(path, expected, bytes) {
     if (!current.exists && expected.exists) {
       let restored = false;
       if (retired) {
-        try { await link(retired, path); restored = true; }
+        try {
+          await link(retired, path);
+          restored = true;
+          restoredBaseline = await exactFileSnapshot(retired);
+        }
         catch (restoreError) {
           if (restoreError.code === "EEXIST") restored = true;
           else if (restoreError.code !== "ENOENT") {
@@ -1318,7 +1348,10 @@ async function publishConfigCandidate(path, expected, bytes) {
         }
       }
       if (!restored && recovery) {
-        try { await link(recovery, path); }
+        try {
+          await link(recovery, path);
+          restoredBaseline = recoverySnapshot;
+        }
         catch (restoreError) {
           if (restoreError.code !== "EEXIST") {
             if (displaced) await restoreRetiredName(path, displaced);
@@ -1327,30 +1360,7 @@ async function publishConfigCandidate(path, expected, bytes) {
         }
       }
     }
-    if (displaced && !sameExactFileSnapshot(stagedSnapshot, await exactFileSnapshot(displaced))) {
-      // A delayed writer held the candidate inode open across rename. If the
-      // live name is still our recovery baseline, atomically retire that
-      // baseline and link the writer-owned inode back before deleting aliases.
-      const live = await exactFileSnapshot(path);
-      if (sameExactFileSnapshot(recoverySnapshot, live)) {
-        const baseline = live.exists
-          ? join(dirname(path), `.${basename(path)}.muster-failed-baseline-${process.pid}-${randomUUID()}`)
-          : null;
-        if (baseline) {
-          await rename(path, baseline);
-          if (!sameExactFileSnapshot(recoverySnapshot, await exactFileSnapshot(baseline))) {
-            await restoreRetiredName(path, baseline);
-          } else {
-            try { await link(displaced, path); }
-            catch (linkError) { if (linkError.code !== "EEXIST") throw linkError; }
-          }
-          await unlink(baseline);
-        } else {
-          try { await link(displaced, path); }
-          catch (linkError) { if (linkError.code !== "EEXIST") throw linkError; }
-        }
-      }
-    }
+    if (displaced) await promoteChangedDisplaced(path, displaced, stagedSnapshot, restoredBaseline);
     if (displaced) try { await unlink(displaced); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
     if (retired) try { await unlink(retired); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
     throw error;
@@ -1374,6 +1384,7 @@ async function rollbackConfigCandidate(receipt) {
   const displaced = join(dirname(path), `.${basename(path)}.muster-rollback-${process.pid}-${randomUUID()}`);
   let discardDisplaced = false;
   let moved = false;
+  let restoredBaseline = expected.exists ? null : { exists: false, bytes: null, dev: null, ino: null };
   try {
     await rename(path, displaced);
     moved = true;
@@ -1385,14 +1396,21 @@ async function rollbackConfigCandidate(receipt) {
     if (expected.exists) {
       let restored = false;
       if (retired) {
-        try { await link(retired, path); restored = true; }
+        try {
+          await link(retired, path);
+          restored = true;
+          restoredBaseline = await exactFileSnapshot(retired);
+        }
         catch (error) {
           if (error.code === "EEXIST") restored = true;
           else if (error.code !== "ENOENT") throw error;
         }
       }
       if (!restored && recovery) {
-        try { await link(recovery, path); }
+        try {
+          await link(recovery, path);
+          restoredBaseline = await exactFileSnapshot(recovery);
+        }
         catch (error) { if (error.code !== "EEXIST") throw error; }
       }
     }
@@ -1404,6 +1422,7 @@ async function rollbackConfigCandidate(receipt) {
     if (moved) await restoreRetiredName(path, displaced);
     throw error;
   } finally {
+    if (discardDisplaced) await promoteChangedDisplaced(path, displaced, published, restoredBaseline);
     if (discardDisplaced) try { await unlink(displaced); } catch (error) { if (error.code !== "ENOENT") throw error; }
     if (recovery) try { await unlink(recovery); } catch (error) { if (error.code !== "ENOENT") throw error; }
     if (retired) try { await unlink(retired); } catch (error) { if (error.code !== "ENOENT") throw error; }

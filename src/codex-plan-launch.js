@@ -355,7 +355,11 @@ class JsonRpcLineClient {
     }
     for (;;) {
       const newline = this.buffer.indexOf("\n");
-      if (newline < 0) return;
+      if (newline < 0) {
+        if (Buffer.byteLength(this.buffer, "utf8") > MAX_JSON_RPC_FRAME_BYTES)
+          this.#terminate(new Error("codex app-server JSON-RPC frame buffer is too large"));
+        return;
+      }
       const line = this.buffer.slice(0, newline).trim();
       this.buffer = this.buffer.slice(newline + 1);
       if (!line) continue;

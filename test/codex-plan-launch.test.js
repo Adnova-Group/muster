@@ -293,6 +293,13 @@ test("JSON-RPC transport rejects malformed and oversized frames without escaping
   await assert.rejects(pending, /frame.*large|buffer.*large/i);
   assert.equal(child.killed, true);
 
+  const trailingChild = fakeAppServerProcess();
+  const trailingClient = await createCodexAppServerClient({ cwd: "/repo", spawnProcess: () => trailingChild, timeoutMs: 100 });
+  const trailingPending = trailingClient.request("initialize");
+  trailingChild.stdout.write(`${JSON.stringify({ method: "server/ready", params: {} })}\n${"x".repeat(1024 * 1024 + 1)}`);
+  await assert.rejects(trailingPending, /frame.*large|buffer.*large/i);
+  assert.equal(trailingChild.killed, true);
+
   const fallbackChild = fakeAppServerProcess();
   const fallbackClient = await createCodexAppServerClient({ cwd: "/repo", spawnProcess: () => fallbackChild, timeoutMs: 100 });
   const launching = launchCodexPlan({ client: fallbackClient, cwd: "/repo", outcome: "Design the import flow" });

@@ -64,7 +64,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { kimiProcessDispatch, KIMI_PROCESS_MAX_BRIEF, detectKimiQuotaFault, quotaFaultLines } from "../src/kimi-dispatch.js";
+import { kimiProcessDispatch, withKimiProcessBriefFile, KIMI_PROCESS_MAX_BRIEF, detectKimiQuotaFault, quotaFaultLines } from "../src/kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, readSessionThinkingEfforts } from "../src/kimi-receipts.js";
 
 const pexecFile = promisify(execFile);
@@ -154,8 +154,8 @@ export function probe1Diff(repoRoot = REPO_ROOT) {
   return execFileSync("git", ["show", PROBE1_COMMIT], { cwd: repoRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
 }
 
-// Briefs ride argv as the bare -p prompt, capped by that transport's own
-// KIMI_PROCESS_MAX_BRIEF contract (independent of /goal objectives).
+// Briefs ride the private temporary-file channel prepared immediately before
+// spawn, capped by KIMI_PROCESS_MAX_BRIEF (independent of /goal objectives).
 // (src/kimi-dispatch.js). v2 briefs are small constants that REFERENCE the
 // quarantine file rather than inlining it, so they sit far under the budget;
 // fitBrief remains for any caller that still inlines an artifact: when the
@@ -389,12 +389,12 @@ async function spawnAttempt(cell, { resultsDir, attempt }) {
   let exitCode = 0;
   let stdout = "";
   try {
-    ({ stdout } = await pexecFile("kimi", descriptor.argv, {
-      cwd: descriptor.cwd,
-      env: spawnEnv(descriptor.env),
+    ({ stdout } = await withKimiProcessBriefFile(descriptor, prepared => pexecFile("kimi", prepared.argv, {
+      cwd: prepared.cwd,
+      env: spawnEnv(prepared.env),
       timeout: 600_000,
       maxBuffer: 64 * 1024 * 1024
-    }));
+    })));
   } catch (err) {
     exitCode = typeof err.code === "number" ? err.code : 1;
     stdout = err.stdout ?? "";

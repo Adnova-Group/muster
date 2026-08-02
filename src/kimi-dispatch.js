@@ -1,5 +1,5 @@
-import { existsSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 
@@ -199,11 +199,14 @@ export function interpretKimiBackgroundCompletion({ status, result, terminalReas
 export const KIMI_GOAL_EXIT_CODES = Object.freeze({ complete: 0, blocked: 3, paused: 6 });
 export const KIMI_GOAL_MAX_OBJECTIVE = 4000;
 
-// A process brief is a bare `-p` prompt, not a /goal objective. Keep its bound
-// tied to the transport Muster actually emits: one argv value, deliberately
-// capped at 64 KiB so descriptors and their callers have a concrete contract.
+// A process brief is not a /goal objective. Keep its bound tied to the private
+// UTF-8 temporary-file transport Muster actually emits, deliberately capped at
+// 64 KiB so descriptors and their callers have a concrete contract.
 // This is independent of the Kimi binary's 4,000-character /goal objective cap.
 export const KIMI_PROCESS_MAX_BRIEF = 64 * 1024;
+const KIMI_PROCESS_BRIEF_PATH_PLACEHOLDER = "{{MUSTER_PROCESS_BRIEF_FILE}}";
+const kimiProcessBriefPrompt = path =>
+  `Read and execute the complete UTF-8 process brief at:${JSON.stringify(path)}`;
 
 // --- Quota/balance fail-fast (kimi 0.30.0) ------------------------------------
 
@@ -345,7 +348,7 @@ export function kimiGoalInvocation({ objective, primaryModel = KIMI_LANES.primar
 // Resolved per call so a relocated Kimi home (and tests) are honored.
 const kimiAgentsDir = () => join(process.env.KIMI_CODE_HOME || join(homedir(), ".kimi-code"), "agents");
 
-// Build the argv + env for a headless `kimi -p <brief> --agent-file <path>`
+// Build the argv + env for a headless `kimi -p <brief-file-bootstrap> --agent-file <path>`
 // process -- a wave leg dispatched as its OWN Kimi process rather than as an
 // in-session Agent/AgentSwarm call. `--agent-file` binds a custom MAIN agent
 // (docs/research/kimi-code-cli.md section 9, "How muster would actually drive
@@ -365,12 +368,9 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   if (typeof brief !== "string" || !brief.trim()) {
     throw new Error("kimiProcessDispatch: brief is required (the -p prompt the dispatched process runs)");
   }
-  if (brief.includes("\0")) {
-    throw new Error("kimiProcessDispatch: brief cannot contain NUL -- argv values cannot transport it");
-  }
   const briefBytes = Buffer.byteLength(brief, "utf8");
   if (briefBytes > KIMI_PROCESS_MAX_BRIEF) {
-    throw new Error(`kimiProcessDispatch: brief is ${briefBytes} UTF-8 bytes; argv transport cap is ${KIMI_PROCESS_MAX_BRIEF} bytes`);
+    throw new Error(`kimiProcessDispatch: brief is ${briefBytes} UTF-8 bytes; temporary-file transport cap is ${KIMI_PROCESS_MAX_BRIEF} bytes`);
   }
   if (!LANES.includes(lane)) {
     throw new Error(`kimiProcessDispatch: lane is required and must be one of ${LANES.join("|")} -- model_preference never binds the -p process's own main agent, so its model comes ONLY from -m; omitting it silently falls to config default_model; got ${JSON.stringify(lane)}`);
@@ -404,9 +404,9 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
   resolvedAgentFile = realpathSync(resolvedAgentFile);
   const cwdInfo = statSync(resolvedCwd);
   const agentFileInfo = statSync(resolvedAgentFile);
-  return {
-    argv: ["-p", brief, "--agent-file", resolvedAgentFile, "--output-format", "stream-json", "-m", KIMI_LANES[lane]],
-    briefTransport: { kind: "argv", flag: "-p", valueIndex: 1, encoding: "utf8", maxBytes: KIMI_PROCESS_MAX_BRIEF },
+  const descriptor = {
+    argv: ["-p", kimiProcessBriefPrompt(KIMI_PROCESS_BRIEF_PATH_PLACEHOLDER), "--agent-file", resolvedAgentFile, "--output-format", "stream-json", "-m", KIMI_LANES[lane]],
+    briefTransport: { kind: "temporary-file", encoding: "utf8", maxBytes: KIMI_PROCESS_MAX_BRIEF, mode: 0o600 },
     // An OVERRIDE pair: merge over the ambient env at spawn
     // (`{ ...process.env, ...d.env }`), never pass as the whole env -- a
     // wholesale replacement loses HOME/PATH and the child breaks.
@@ -418,6 +418,35 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
     },
     lane
   };
+  // The descriptor's JSON/debug surface never repeats the potentially large
+  // brief. The executor helper below owns the private payload and its lifetime.
+  Object.defineProperty(descriptor, "brief", { value: brief });
+  return descriptor;
+}
+
+// Materialize a process brief outside argv, invoke the caller while the file
+// exists, then remove the private directory on every completion path. Kimi's
+// documented `-p` interface still receives a short bootstrap prompt; the full
+// brief rides a 0600 UTF-8 file, so Windows CreateProcessW never sees it.
+export async function withKimiProcessBriefFile(descriptor, invoke, { temporaryRoot = tmpdir() } = {}) {
+  if (!descriptor || descriptor.briefTransport?.kind !== "temporary-file" || typeof descriptor.brief !== "string") {
+    throw new Error("withKimiProcessBriefFile: a kimiProcessDispatch descriptor is required");
+  }
+  if (typeof invoke !== "function") {
+    throw new Error("withKimiProcessBriefFile: invoke callback is required");
+  }
+  const directory = mkdtempSync(join(temporaryRoot, "muster-kimi-brief-"));
+  const briefPath = join(directory, "brief.utf8");
+  try {
+    writeFileSync(briefPath, descriptor.brief, { encoding: "utf8", mode: descriptor.briefTransport.mode });
+    const prepared = {
+      ...descriptor,
+      argv: descriptor.argv.map((value, index) => index === 1 ? kimiProcessBriefPrompt(briefPath) : value),
+    };
+    return await invoke(prepared);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 // --- Wave dispatch mode selection -------------------------------------------

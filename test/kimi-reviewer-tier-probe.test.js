@@ -96,7 +96,8 @@ test("--dry-run builds 2 probes x 2 lanes of descriptors and spawns nothing", as
   for (const cell of out.cells) {
     // the descriptor argv shape, with -m ALWAYS emitted and binding the lane
     assert.equal(cell.argv[0], "-p");
-    assert.equal(cell.argv[1], cell.brief);
+    assert.match(cell.argv[1], /complete UTF-8 process brief/);
+    assert.ok(!cell.argv.includes(cell.brief), "the full brief does not ride argv");
     assert.deepEqual(cell.argv.slice(2, 5), ["--agent-file", cell.argv[3], "--output-format"]);
     assert.equal(cell.argv[5], "stream-json");
     assert.equal(cell.argv[6], "-m");

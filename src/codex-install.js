@@ -1294,7 +1294,15 @@ async function publishConfigCandidate(path, expected, bytes) {
     if (sameExactFileSnapshot(stagedSnapshot, current)) {
       displaced = join(dirname(path), `.${basename(path)}.muster-failed-publication-${process.pid}-${randomUUID()}`);
       await rename(path, displaced);
-      current = { exists: false, bytes: null, dev: null, ino: null };
+      const moved = await exactFileSnapshot(displaced);
+      if (sameExactFileSnapshot(stagedSnapshot, moved)) {
+        current = { exists: false, bytes: null, dev: null, ino: null };
+      } else {
+        // A writer won between the live snapshot and rename. Re-link exactly
+        // what was moved; never replace it with the retained baseline.
+        await restoreRetiredName(path, displaced);
+        current = await exactFileSnapshot(path);
+      }
     }
     if (!current.exists && recovery) {
       try { await link(recovery, path); }

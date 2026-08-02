@@ -20,7 +20,18 @@ test("open PR reconciliation owns every named PR and leaves none falsely complet
   ));
 
   assert.equal(ledger.itemId, "open-pr-branch-reconciliation");
+  assert.equal(ledger.schemaVersion, 2);
+  assert.equal(ledger.repository, "Adnova-Group/muster");
   assert.equal(ledger.baseCommit, "248f556c790ff1b9765c053c89a7d7e1669a4419");
+  assert.match(ledger.observedAt, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(ledger.externalMutationPerformed, false);
+  assert.equal(ledger.externalActionCoordinator, "dispatcher");
+  assert.equal(ledger.externalMutationActor, "human");
+  assert.deepEqual(ledger.executionPreconditions, {
+    liveHeadShaMustMatchObservedHeadSha: true,
+    mergeChecksMustBeGreen: true,
+    mergeReviewMustPassAtObservedHeadSha: true,
+  });
   assert.deepEqual(ledger.prs.map(({ number }) => number), EXPECTED_PRS);
   assert.equal(new Set(ledger.prs.map(({ number }) => number)).size, EXPECTED_PRS.length);
 
@@ -30,7 +41,21 @@ test("open PR reconciliation owns every named PR and leaves none falsely complet
     assert.ok(ALLOWED_DISPOSITIONS.has(pr.proposedDisposition), `PR #${pr.number} has no disposition`);
     assert.match(pr.rationale, /\S/, `PR #${pr.number} has no rationale`);
     assert.match(pr.evidence, /\S/, `PR #${pr.number} has no evidence`);
-    assert.equal(pr.externalActionOwner, "dispatcher", `PR #${pr.number} external action is unowned`);
+    assert.match(pr.observedHeadSha, /^[0-9a-f]{40}$/, `PR #${pr.number} head is not pinned`);
+    assert.equal(pr.url, `https://github.com/${ledger.repository}/pull/${pr.number}`);
+    assert.ok(["success", "not-green", "not-assessed"].includes(pr.checksState));
+    assert.ok([
+      "pass-at-observed-head",
+      "revalidation-required",
+      "not-gating-close",
+    ].includes(pr.reviewState));
+    assert.equal(pr.externalActionCoordinator, "dispatcher", `PR #${pr.number} coordination is unowned`);
+    assert.equal(pr.externalMutationActor, "human", `PR #${pr.number} mutation actor is unsafe`);
+
+    if (pr.proposedDisposition === "merge") {
+      assert.equal(pr.checksState, "success", `PR #${pr.number} cannot merge without green checks`);
+      assert.equal(pr.reviewState, "pass-at-observed-head", `PR #${pr.number} has no exact-head review`);
+    }
 
     if (pr.proposedDisposition === "active-backlog-owner") {
       assert.match(pr.backlogOwner, /^@[a-z0-9-]+$/i, `PR #${pr.number} has no active owner`);

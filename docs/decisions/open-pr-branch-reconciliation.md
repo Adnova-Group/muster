@@ -8,23 +8,23 @@ Every PR was still open when inspected. Consequently, every entry is `awaiting-d
 |---:|---|---|
 | 145 | active backlog owner | `@rnbennett` — rebase and isolate the missing MCP-specific runtime pin |
 | 146 | close with rationale | Accepted research rejects `--strict-config` as an unsafe doctor primitive |
-| 147 | merge | Conflict-free exact-hash hook trust refinement |
+| 147 | merge | Green Node 20/22 checks and exact-head review at `dc1aec51a86cfeb15acd40aff328de09319a7358` |
 | 148 | active backlog owner | `@rnbennett` — reconcile the process wave with the later isolation lane |
 | 149 | close with rationale | Canonical thread ceiling landed and evolved on main |
 | 150 | close with rationale | Current event-driven watcher supersedes the stale branch |
 | 151 | close with rationale | Its own benchmark rejected adoption and prohibited production routing |
 | 152 | close with rationale | Current provider-aware follow-up loop supersedes the module |
-| 166 | merge | Conflict-free doctor decomposition |
+| 166 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
 | 167 | active backlog owner | `@rnbennett` — refresh desktop contracts against current init/CLI |
 | 168 | active backlog owner | `@rnbennett` — rebase the CLI handler split |
 | 169 | active backlog owner | `@rnbennett` — rebase the Codex dispatch split and retain Kimi parity |
 | 170 | active backlog owner | `@rnbennett` — refresh the census consumer migration |
 | 171 | active backlog owner | `@rnbennett` — rerun the Kimi builtin reachability census |
-| 172 | merge | Conflict-free, two-file vendor profile fix |
-| 173 | merge | Conflict-free cross-adapter cap governance |
-| 174 | merge | Conflict-free, test-pinned Codex 0.146 audit |
-| 175 | merge | Conflict-free stale installed-protocol diagnostic |
+| 172 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
+| 173 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
+| 174 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
+| 175 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
 | 176 | close with rationale | Main's broader filesystem-safety consolidation supersedes it |
 | 185 | active backlog owner | `@rnbennett` — refresh launcher protocol and generated docs |
 
-The dispatcher owns every later merge or close action. Active owners own branch repair and re-review; they do not own permission to mutate `main`.
+The dispatcher coordinates every later action; only the human performs merges or destructive closes. Before any action, the live PR head must equal the ledger's full `observedHeadSha`. A merge additionally requires green current checks and a passing review at that exact head. Active owners own branch repair and re-review; they do not own permission to mutate `main`.

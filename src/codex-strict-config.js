@@ -19,8 +19,8 @@ function modelTurnEventCount(text) {
     if (!line.trim()) continue;
     try {
       const message = JSON.parse(line);
-      if (typeof message?.method === "string" && /^(?:thread|turn)[/.](?:start|started|complete|completed|fail|failed)$/.test(message.method)) count++;
-      else if (typeof message?.type === "string" && /^(?:thread|turn)[._/](?:start|started|complete|completed|fail|failed)$/.test(message.type)) count++;
+      if (typeof message?.method === "string" && /^(?:thread|turn)[/._]/.test(message.method)) count++;
+      else if (typeof message?.type === "string" && /^(?:thread|turn)[/._]/.test(message.type)) count++;
     } catch { /* Native diagnostics are not required to be JSON. */ }
   }
   return count;

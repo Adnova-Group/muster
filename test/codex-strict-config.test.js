@@ -106,6 +106,10 @@ test("strict config: parser absence, timeout, capped output, and model-turn even
     const spawn = fakeSpawn({ stdout: '{"method":"turn/started","params":{}}\n' });
     await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY, spawn, timeoutMs: 100 }), /model-turn event/);
   });
+  await t.test("thread notification", async () => {
+    const spawn = fakeSpawn({ stdout: '{"method":"thread/status/changed","params":{}}\n' });
+    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY, spawn, timeoutMs: 100 }), /model-turn event/);
+  });
 });
 
 test("strict config: waits for drained streams before accepting zero model turns", async () => {
@@ -435,6 +439,7 @@ test("strict config: a registration-time writer holding the retired inode is res
   const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
   const concurrent = Buffer.from("unknown_retired_writer = true\n");
   const calls = [];
+  let delayedWrite;
   await mkdir(join(cwd, ".codex"), { recursive: true });
   await writeFile(projectPath, "model = \"before\"\n");
   const held = await open(projectPath, "r+");
@@ -445,8 +450,9 @@ test("strict config: a registration-time writer holding the retired inode is res
     if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
     if (args.slice(0, 2).join(" ") === "plugin add") {
-      await held.truncate(0);
-      await held.write(concurrent, 0, concurrent.length, 0);
+      delayedWrite = new Promise((resolve, reject) => setTimeout(() => {
+        held.truncate(0).then(() => held.write(concurrent, 0, concurrent.length, 0)).then(resolve, reject);
+      }, 3));
       return { stdout: "" };
     }
     if (args.slice(0, 2).join(" ") === "plugin remove") return { stdout: "" };
@@ -456,6 +462,7 @@ test("strict config: a registration-time writer holding the retired inode is res
   try {
     await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
       strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /retired baseline during plugin registration/);
+    await delayedWrite;
   } finally { await held.close(); }
   assert.deepEqual(await readFile(projectPath), concurrent);
   assert.ok(calls.includes("plugin remove muster@muster"));

@@ -1633,7 +1633,6 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       const manifestExists = checkedOwnership.manifest.exists;
       const declarationConfigExists = checkedOwnership.config.exists;
       const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
-      let committed = false;
       await ordinaryDirectoryPath(dir, { create: true });
       try {
         const currentScope = await scopeEntry(scope, cwd, home);
@@ -1855,18 +1854,27 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           }
         }
         const commitConfigCandidates = async () => {
-          for (const [path, receipt] of publishedConfigCandidates) {
-            if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
-              throw new Error(`Codex config changed during plugin registration: ${path}; concurrent bytes were preserved`);
+          const verify = async () => {
+            for (const [path, receipt] of publishedConfigCandidates) {
+              if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
+                throw new Error(`Codex config changed during plugin registration: ${path}; concurrent bytes were preserved`);
+              }
+              if (receipt.retired && !sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
+                throw new Error(`Codex config writer changed the retired baseline during plugin registration: ${path}; concurrent bytes will be restored`);
+              }
             }
-            if (receipt.retired && !sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
-              throw new Error(`Codex config writer changed the retired baseline during plugin registration: ${path}; concurrent bytes will be restored`);
-            }
+          };
+          await verify();
+          // Give already-open writer descriptors a bounded turn to become
+          // visible before the final receipt check and commit-point unlink.
+          await pause(10);
+          await verify();
+          for (const receipt of publishedConfigCandidates.values()) {
+            if (receipt.retired) await unlink(receipt.retired);
           }
-          // No await follows this assignment before registerPlugin returns;
-          // later edits are ordinary post-install user changes, not bytes the
-          // installation can overwrite or claim as its validated candidate.
-          committed = true;
+          // Returning from this callback is the commit point. Later edits are
+          // ordinary post-install user changes, not bytes the installation can
+          // overwrite or claim as its validated candidate.
         };
         if (present) {
           actions = await registerPlugin(executor, distributionRoot, {
@@ -1889,21 +1897,6 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             `${error.message}; ${rollbackErrors.length} rollback operation(s) also failed`, { cause: error });
         }
         throw error;
-      }
-      if (committed) {
-        // Registration is the commit point. Retirement artifacts are now
-        // cleanup-only and must never re-enter rollback after earlier baseline
-        // names have already been discarded.
-        for (const receipt of publishedConfigCandidates.values()) {
-          if (!receipt.retired) continue;
-          try {
-            if (!sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
-              await rollbackConfigCandidate(receipt);
-            } else {
-              await unlink(receipt.retired);
-            }
-          } catch { /* best-effort post-commit writer preservation/cleanup */ }
-        }
       }
     }, scopeLockOptions);
   } else {

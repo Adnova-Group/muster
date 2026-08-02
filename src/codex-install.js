@@ -1399,7 +1399,7 @@ async function existingMusterMarketplace(execFile, repoRoot, runtimeIdentity) {
 // File-local, so the flag is an OPTIONS object rather than a positional
 // boolean: `registerPlugin(execFile, root, { dryRun: true })` reads at the call
 // site; the old `registerPlugin(execFile, true, root)` did not.
-async function registerPlugin(execFile, repoRoot, { dryRun, runtimeIdentity }) {
+async function registerPlugin(execFile, repoRoot, { dryRun, runtimeIdentity, afterRegister }) {
   if (dryRun) return [`codex plugin marketplace add ${repoRoot}`, `codex plugin add ${CODEX_PLUGIN}`];
   let marketplaceAdded = false, pluginAdded = false;
   try {
@@ -1411,6 +1411,7 @@ async function registerPlugin(execFile, repoRoot, { dryRun, runtimeIdentity }) {
     await runJson(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity);
     await run(execFile, ["plugin", "add", CODEX_PLUGIN], runtimeIdentity);
     pluginAdded = true;
+    await afterRegister?.();
     return [];
   } catch (error) {
     if (pluginAdded) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN], runtimeIdentity); } catch { /* best-effort transaction rollback */ }
@@ -1774,8 +1775,25 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             }
           }
         }
-        actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: false, runtimeIdentity: identity }) : [];
-        committed = true;
+        const commitConfigCandidates = async () => {
+          for (const [path, receipt] of publishedConfigCandidates) {
+            if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
+              throw new Error(`Codex config changed during plugin registration: ${path}; concurrent bytes were preserved`);
+            }
+          }
+          // No await follows this assignment before registerPlugin returns;
+          // later edits are ordinary post-install user changes, not bytes the
+          // installation can overwrite or claim as its validated candidate.
+          committed = true;
+        };
+        if (present) {
+          actions = await registerPlugin(executor, distributionRoot, {
+            dryRun: false, runtimeIdentity: identity, afterRegister: commitConfigCandidates
+          });
+        } else {
+          actions = [];
+          await commitConfigCandidates();
+        }
       } catch (error) {
         const rollbackErrors = [];
         for (const receipt of [...publishedConfigCandidates.values()].reverse()) {

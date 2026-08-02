@@ -321,6 +321,31 @@ test("strict config: rollback reconstructs exact originals when retirement artif
   await assert.rejects(readFile(join(cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
 });
 
+test("strict config: a writer during plugin registration aborts and registration is reversed", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-registration-writer-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
+  const concurrent = Buffer.from("unknown_registration_writer = true\n");
+  const calls = [];
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(projectPath, "model = \"before\"\n");
+  const executor = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") { await writeFile(projectPath, concurrent); return { stdout: "" }; }
+    if (args.slice(0, 2).join(" ") === "plugin remove") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
+    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /config changed during plugin registration/);
+  assert.deepEqual(await readFile(projectPath), concurrent);
+  assert.ok(calls.includes("plugin remove muster@muster"));
+  assert.ok(calls.includes("plugin marketplace remove muster"));
+});
+
 test("strict config: doctor reports the same non-billable parser boundary", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-strict-doctor-"));
   const cwd = join(tmp, "project"), codexHome = join(tmp, "codex-home");

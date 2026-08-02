@@ -434,6 +434,74 @@ test("repository fingerprints stream relevant files without repository-size ceil
   assert.equal(finalized.receipt.phase, "finalized");
 });
 
+test("repository fingerprints ignore external core.excludesFile state", async () => {
+  const dir = await tmp();
+  const outside = await tmp();
+  const excludes = join(outside, "global-ignore");
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, "local.txt"), "repository bytes\n");
+  await writeFile(excludes, "unrelated.txt\n");
+  await pexecFile("git", ["config", "core.excludesFile", excludes], { cwd: dir });
+
+  const before = (await learnProjectProfile(dir)).repositoryFingerprint.digest;
+  await writeFile(excludes, "local.txt\n");
+  const after = (await learnProjectProfile(dir)).repositoryFingerprint.digest;
+  assert.equal(after, before, "external ignore-file contents are not repository state");
+});
+
+test("non-Git repository fingerprints use global UTF-8 path order", async () => {
+  const dir = await tmp();
+  await mkdir(join(dir, "a"));
+  await writeFile(join(dir, "a", "z"), "nested\n");
+  await writeFile(join(dir, "a.txt"), "sibling\n");
+  const hash = createHash("sha256").update(Buffer.from("muster.repository-state.v2\0"));
+  const rows = [
+    Buffer.from(`F\0a.txt\0${0}\0${8}\0${sha("sibling\n")}\n`),
+    Buffer.from(`F\0a/z\0${0}\0${7}\0${sha("nested\n")}\n`),
+  ];
+  for (const row of rows) {
+    const length = Buffer.allocUnsafe(8);
+    length.writeBigUInt64BE(BigInt(row.length));
+    hash.update(length).update(row);
+  }
+  const count = Buffer.allocUnsafe(8);
+  count.writeBigUInt64BE(2n);
+  const expected = hash.update(count).digest("hex");
+  assert.equal((await learnProjectProfile(dir)).repositoryFingerprint.digest, expected);
+});
+
+test("repository fingerprints reject a path-set addition during hashing", async () => {
+  const dir = await tmp();
+  const large = join(dir, "large.bin");
+  await writeFile(large, "");
+  await truncate(large, 128 * 1024 * 1024);
+  const writer = (async () => {
+    await sleep(20);
+    await writeFile(join(dir, "inserted.txt"), "late\n");
+  })();
+  await assert.rejects(() => learnProjectProfile(dir), /repository changed while fingerprinting/);
+  await writer;
+});
+
+test("directory learning limits remain explicit without blocking fingerprinting", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, ".gitignore"), "*\n");
+  for (let offset = 0; offset < 33_000; offset += 500) {
+    await Promise.all(Array.from({ length: 500 }, (_, index) => {
+      const id = String(offset + index).padStart(5, "0");
+      return writeFile(join(dir, `${id}-${"x".repeat(249)}`), "");
+    }));
+  }
+
+  const profile = await learnProjectProfile(dir);
+  assert.deepEqual(profile.facts.learning, {
+    limitations: [{ path: "project-root", reason: "directory-limit" }],
+    status: "incomplete",
+  });
+  assert.match(profile.repositoryFingerprint.digest, /^[0-9a-f]{64}$/);
+});
+
 test("repository fingerprints still reject relevant special files", async () => {
   const dir = await tmp();
   await pexecFile("git", ["init", "--quiet"], { cwd: dir });
@@ -583,6 +651,38 @@ test("project learning reuses a descriptor-pinned digest for sparse recognized m
   assert.deepEqual(profile.facts.learning, { limitations: [], status: "complete" });
   assert.match(profile.repositoryFingerprint.digest, /^[0-9a-f]{64}$/);
   assert.deepEqual(await initializeProject(dir), initialized);
+});
+
+test("project learning rejects metadata changed before its fingerprint is sealed", async () => {
+  const dir = await tmp();
+  const instructions = join(dir, "AGENTS.md");
+  await writeFile(instructions, "before!\n");
+  const lock = join(dir, "package-lock.json");
+  await writeFile(lock, "");
+  await truncate(lock, 128 * 1024 * 1024);
+  const writer = (async () => {
+    await sleep(20);
+    await writeFile(instructions, "after!!\n");
+  })();
+  await assert.rejects(
+    () => learnProjectProfile(dir),
+    /file changed while reading: AGENTS\.md/,
+  );
+  await writer;
+});
+
+test("project learning cumulatively bounds retained package metadata", async () => {
+  const dir = await tmp();
+  const packageBytes = Buffer.from(`{"padding":"${"x".repeat(1_048_560)}"}`);
+  assert.equal(packageBytes.length, 1_048_574);
+  for (let index = 0; index < 9; index++) {
+    const parent = join(dir, `p${index}`);
+    await mkdir(parent);
+    await writeFile(join(parent, "package.json"), packageBytes);
+  }
+  const profile = await learnProjectProfile(dir);
+  assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "parse-limit"));
+  assert.ok(profile.facts.manifests.reduce((sum, row) => sum + row.bytes, 0) > INIT_LIMITS.learnCaptureBytes);
 });
 
 test("project learning reports bounded parsing and depth as explicit incomplete evidence", async () => {

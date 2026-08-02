@@ -27,7 +27,7 @@ import {
   lstat, mkdir, mkdtemp, open, opendir, readdir, readlink, realpath,
   rm, stat,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -40,7 +40,8 @@ import {
 const pexecFile = promisify(execFile);
 const PROFILE_FORMAT = "muster.project-profile";
 const RECEIPT_FORMAT = "muster.init-receipt";
-const FINGERPRINT_BASIS = "muster.repository-state.v1";
+const FINGERPRINT_BASIS = "muster.repository-state.v2";
+const LEGACY_FINGERPRINT_BASES = new Set(["muster.repository-state.v1", FINGERPRINT_BASIS]);
 const HEX64 = /^[0-9a-f]{64}$/;
 const GIT_HEAD = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const CLAUDE_AUTHORITY_POINTER = Buffer.from("# Claude Code\n\n@AGENTS.md\n");
@@ -57,7 +58,11 @@ export const INIT_PATHS = Object.freeze({
 export const INIT_LIMITS = Object.freeze({
   fingerprintDirectoryBytes: 8_388_608,
   fingerprintDirectoryEntries: 100_000,
+  fingerprintDeadlineMs: 3_600_000,
+  fingerprintEntries: 1_000_000,
   fingerprintPathBytes: 262_144,
+  fingerprintTotalBytes: 1_099_511_627_776,
+  learnCaptureBytes: 8_388_608,
   learnDepth: 4,
   learnEvidenceBytes: 350_000,
   learnFileBytes: 1_048_576,
@@ -319,7 +324,8 @@ async function* gitPathStream(root, suffix) {
   const sandbox = await mkdtemp(join(tmpdir(), "muster-git-"));
   const args = [
     "--no-optional-locks", "-c", `core.hooksPath=${sandbox}`, "-c", "core.fsmonitor=false",
-    "-c", "core.untrackedCache=false", "-c", "core.quotepath=false", "ls-files", "-z",
+    "-c", "core.untrackedCache=false", "-c", "core.quotepath=false",
+    "-c", `core.excludesFile=${devNull}`, "ls-files", "-z",
     "--deduplicate", ...suffix,
   ];
   const child = spawn("git", args, {
@@ -407,7 +413,17 @@ function sameDirectoryIdentity(current, prior) {
     current.mtimeNs === prior.mtimeNs;
 }
 
-async function pinnedDirectoryNames(root, abs, rel) {
+async function pinnedDirectoryVisit(root, abs, rel, visit) {
+  const ancestorPaths = [root];
+  let ancestor = root;
+  for (const part of rel ? rel.split("/") : []) {
+    ancestor = join(ancestor, part);
+    ancestorPaths.push(ancestor);
+  }
+  const ancestorsBefore = await Promise.all(ancestorPaths.map((path) => lstat(path, { bigint: true })));
+  if (ancestorsBefore.some((info) => info.isSymbolicLink() || !info.isDirectory())) {
+    throw new Error(`unsafe repository directory: ${rel || "."}`);
+  }
   const namedBefore = await lstat(abs, { bigint: true });
   if (namedBefore.isSymbolicLink() || !namedBefore.isDirectory() ||
       !(await resolveContainedRealpath(root, abs))) throw new Error(`unsafe repository directory: ${rel || "."}`);
@@ -419,60 +435,96 @@ async function pinnedDirectoryNames(root, abs, rel) {
     );
     const heldBefore = await handle.stat({ bigint: true });
     if (!sameDirectoryIdentity(heldBefore, namedBefore)) throw new Error(`repository directory changed: ${rel || "."}`);
-    const descriptorPath = process.platform === "linux" ? `/proc/self/fd/${handle.fd}` : abs;
-    const names = [];
-    let totalBytes = 0;
+    const descriptorPath = process.platform === "linux" ? `/proc/self/fd/${handle.fd}` :
+      process.platform === "win32" ? abs : `/dev/fd/${handle.fd}`;
     for await (const entry of await opendir(descriptorPath, { encoding: "buffer" })) {
       const bytes = Buffer.isBuffer(entry.name) ? entry.name : Buffer.from(entry.name);
-      totalBytes += bytes.length;
-      if (totalBytes > INIT_LIMITS.fingerprintDirectoryBytes) {
-        const error = new Error(`repository directory entry limit exceeded: ${rel || "."}`);
-        error.initReason = "directory-limit";
-        throw error;
-      }
-      names.push(decodePathBytes(bytes, rel || "."));
-      if (names.length > INIT_LIMITS.fingerprintDirectoryEntries) {
-        const error = new Error(`repository directory entry limit exceeded: ${rel || "."}`);
-        error.initReason = "directory-limit";
-        throw error;
-      }
+      if (await visit(decodePathBytes(bytes, rel || "."), bytes) === false) break;
     }
     const heldAfter = await handle.stat({ bigint: true });
     const namedAfter = await lstat(abs, { bigint: true });
+    const ancestorsAfter = await Promise.all(ancestorPaths.map((path) => lstat(path, { bigint: true })));
     if (!sameDirectoryIdentity(heldAfter, heldBefore) || !sameDirectoryIdentity(namedAfter, heldBefore) ||
+        ancestorsAfter.some((info, index) => !sameDirectoryIdentity(info, ancestorsBefore[index])) ||
         !(await resolveContainedRealpath(root, abs))) throw new Error(`repository directory changed: ${rel || "."}`);
-    return names.sort(utf8Sort);
+    return heldBefore;
   } finally {
     await handle?.close();
   }
 }
 
+async function pinnedDirectoryNames(root, abs, rel) {
+  const names = [];
+  let totalBytes = 0;
+  await pinnedDirectoryVisit(root, abs, rel, (name, bytes) => {
+    totalBytes += bytes.length;
+    if (totalBytes > INIT_LIMITS.fingerprintDirectoryBytes ||
+        names.length >= INIT_LIMITS.fingerprintDirectoryEntries) {
+      const error = new Error(`repository directory entry limit exceeded: ${rel || "."}`);
+      error.initReason = "directory-limit";
+      throw error;
+    }
+    names.push(name);
+  });
+  return names.sort(utf8Sort);
+}
+
 async function* filesystemRelevantPaths(root, abs = root, prefix = "") {
+  const children = [];
   for (const name of await pinnedDirectoryNames(root, abs, prefix)) {
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
     const info = await lstat(path);
-    if (info.isDirectory() && !(await realGitMarker(path))) yield* filesystemRelevantPaths(root, path, rel);
-    else yield rel;
+    const descend = info.isDirectory() && !(await realGitMarker(path));
+    children.push({ descend, key: descend ? `${rel}/` : rel, path, rel });
+  }
+  children.sort((a, b) => utf8Sort(a.key, b.key));
+  for (const child of children) {
+    if (child.descend) yield* filesystemRelevantPaths(root, child.path, child.rel);
+    else yield child.rel;
   }
 }
 
-async function rejectSpecialEntries(root, abs = root, prefix = "") {
-  for (const name of await pinnedDirectoryNames(root, abs, prefix)) {
-    if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
+function checkFingerprintDeadline(deadline) {
+  if (Date.now() > deadline) throw new Error("repository fingerprint deadline exceeded");
+}
+
+async function rejectSpecialEntries(root, abs = root, prefix = "", identities = new Map(), work = null) {
+  work ||= { deadline: Date.now() + INIT_LIMITS.fingerprintDeadlineMs, entries: 0 };
+  const directories = [];
+  const identity = await pinnedDirectoryVisit(root, abs, prefix, async (name) => {
+    checkFingerprintDeadline(work.deadline);
+    work.entries++;
+    if (work.entries > INIT_LIMITS.fingerprintEntries) {
+      throw new Error("repository fingerprint entry limit exceeded");
+    }
+    if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) return;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
     const info = await lstat(path);
     if (info.isDirectory()) {
-      if (!(await realGitMarker(path))) await rejectSpecialEntries(root, path, rel);
+      if (!(await realGitMarker(path))) directories.push({ path, rel });
     } else if (info.isSymbolicLink()) {
       const target = await readlink(path, { encoding: "buffer" });
       if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
     } else if (!info.isFile()) {
       throw new Error(`unsupported repository entry type: ${rel}`);
     }
+  });
+  identities.set(prefix, identity);
+  for (const { path, rel } of directories) {
+    await rejectSpecialEntries(root, path, rel, identities, work);
   }
+  return identities;
+}
+
+function sameDirectorySnapshot(current, prior) {
+  if (current.size !== prior.size) return false;
+  for (const [path, identity] of prior) {
+    if (!current.has(path) || !sameDirectoryIdentity(current.get(path), identity)) return false;
+  }
+  return true;
 }
 
 async function ensureFingerprintAncestors(root, path, rel) {
@@ -495,7 +547,7 @@ async function ensureFingerprintAncestors(root, path, rel) {
   }
 }
 
-async function streamedFileDigest(root, path, rel, expectedInfo) {
+async function streamedFileDigest(root, path, rel, expectedInfo, deadline = Infinity) {
   let handle;
   try {
     await ensureFingerprintAncestors(root, path, rel);
@@ -504,6 +556,7 @@ async function streamedFileDigest(root, path, rel, expectedInfo) {
       fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0),
     );
     const before = await handle.stat({ bigint: true });
+    if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`unsafe regular file: ${rel}`);
     const size = Number(before.size);
     if (!before.isFile()) throw new Error(`unsafe regular file: ${rel}`);
     if (before.ino !== expectedInfo.ino || before.dev !== expectedInfo.dev) {
@@ -513,6 +566,7 @@ async function streamedFileDigest(root, path, rel, expectedInfo) {
     const chunk = Buffer.allocUnsafe(64 * 1024);
     let position = 0;
     while (position < size) {
+      checkFingerprintDeadline(deadline);
       const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - position), position);
       if (bytesRead === 0) break;
       digest.update(chunk.subarray(0, bytesRead));
@@ -543,13 +597,15 @@ function sameFingerprintIdentity(current, prior) {
     current.ctimeNs === prior.ctimeNs && current.mtimeNs === prior.mtimeNs;
 }
 
-async function repositoryFingerprint(root, learnedDigests = new Map()) {
+async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadline = Infinity) {
   // Git deliberately omits untrackable special entries from `ls-files`.
   // Preserve the previous fail-closed repository walk before hashing only the
   // relevant paths; ignored/generated ordinary files remain unhashed.
-  await rejectSpecialEntries(root);
+  const directorySnapshot = await rejectSpecialEntries(root, root, "", new Map(), { deadline, entries: 0 });
   const hash = createHash("sha256").update(Buffer.from(`${FINGERPRINT_BASIS}\0`));
   let rowCount = 0;
+  let visitedPaths = 0;
+  let totalBytes = 0;
   const add = (row) => {
     const length = Buffer.allocUnsafe(8);
     length.writeBigUInt64BE(BigInt(row.length));
@@ -558,6 +614,9 @@ async function repositoryFingerprint(root, learnedDigests = new Map()) {
   };
   const paths = await realGitMarker(root) ? gitRelevantPaths(root) : filesystemRelevantPaths(root);
   for await (const rel of paths) {
+    checkFingerprintDeadline(deadline);
+    visitedPaths++;
+    if (visitedPaths > INIT_LIMITS.fingerprintEntries) throw new Error("repository fingerprint entry limit exceeded");
     const path = join(root, rel);
     let info;
     try { info = await lstat(path, { bigint: true }); }
@@ -575,9 +634,16 @@ async function repositoryFingerprint(root, learnedDigests = new Map()) {
       add(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
     } else if (info.isFile()) {
       const learned = learnedDigests.get(rel);
-      const opened = learned && sameFingerprintIdentity(info, learned.identity)
-        ? learned
-        : await streamedFileDigest(root, path, rel, info);
+      if (learned && !sameFingerprintIdentity(info, learned.identity)) throw learningFileChanged(rel);
+      if (info.size > BigInt(Number.MAX_SAFE_INTEGER) ||
+          info.size > BigInt(INIT_LIMITS.fingerprintTotalBytes - totalBytes)) {
+        throw new Error("repository fingerprint byte limit exceeded");
+      }
+      const opened = learned || await streamedFileDigest(root, path, rel, info, deadline);
+      if (!Number.isSafeInteger(opened.size) || opened.size > INIT_LIMITS.fingerprintTotalBytes - totalBytes) {
+        throw new Error("repository fingerprint byte limit exceeded");
+      }
+      totalBytes += opened.size;
       add(Buffer.from(`F\0${rel}\0${(opened.mode & 0o111) ? 1 : 0}\0${opened.size}\0${opened.digest}\n`));
     } else if (info.isSymbolicLink()) {
       const target = await readlink(path, { encoding: "buffer" });
@@ -592,23 +658,49 @@ async function repositoryFingerprint(root, learnedDigests = new Map()) {
       throw new Error(`unsupported repository entry type: ${rel}`);
     }
   }
-  await rejectSpecialEntries(root);
+  for (const [rel, learned] of learnedDigests) {
+    const path = join(root, rel);
+    await ensureLearningAncestors(root, path, rel);
+    const current = await lstat(path, { bigint: true }).catch((error) => {
+      if (error.code === "ENOENT") throw learningFileChanged(rel);
+      throw error;
+    });
+    if (!sameFingerprintIdentity(current, learned.identity)) throw learningFileChanged(rel);
+  }
+  const finalDirectorySnapshot = await rejectSpecialEntries(root, root, "", new Map(), { deadline, entries: 0 });
+  if (!sameDirectorySnapshot(finalDirectorySnapshot, directorySnapshot)) {
+    throw new Error("repository changed while fingerprinting");
+  }
   const count = Buffer.allocUnsafe(8);
   count.writeBigUInt64BE(BigInt(rowCount));
   const digest = hash.update(count).digest("hex");
   return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest };
 }
 
+async function repositoryFingerprint(root, learnedDigests = new Map()) {
+  const deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs;
+  const first = await repositoryFingerprintPass(root, learnedDigests, deadline);
+  const second = await repositoryFingerprintPass(root, learnedDigests, deadline);
+  if (first.digest !== second.digest) throw new Error("repository changed while fingerprinting");
+  return second;
+}
+
 async function classify(root) {
-  const names = await readdir(root);
-  for (const name of names) {
-    if (name === ".git") continue;
+  let classification = "greenfield";
+  await pinnedDirectoryVisit(root, root, "", async (name) => {
+    if (name === ".git") return;
     if (name === ".muster") {
-      if ((await readdir(join(root, name))).length === 0) continue;
+      let occupied = false;
+      await pinnedDirectoryVisit(root, join(root, name), name, () => {
+        occupied = true;
+        return false;
+      });
+      if (!occupied) return;
     }
-    return "brownfield";
-  }
-  return "greenfield";
+    classification = "brownfield";
+    return false;
+  });
+  return classification;
 }
 
 const MANIFEST_NAMES = new Set([
@@ -708,6 +800,7 @@ async function learnFacts(root) {
   const sourceRoots = new Set();
   const testRoots = new Set();
   const extensions = new Set();
+  let capturedBytes = 0;
   let evidenceBytes = 0;
   let profileLimited = false;
   const markProfileLimited = (path) => {
@@ -766,8 +859,10 @@ async function learnFacts(root) {
           bytes: Number.MAX_SAFE_INTEGER, path: rel, sha256: "0".repeat(64),
         })) + 2;
         if (!reserveEvidence(factBytes, rel)) continue;
-        const parse = name === "package.json" && info.size <= BigInt(INIT_LIMITS.learnFileBytes);
+        const parse = name === "package.json" && info.size <= BigInt(INIT_LIMITS.learnFileBytes) &&
+          info.size <= BigInt(INIT_LIMITS.learnCaptureBytes - capturedBytes);
         const opened = await readLearningMetadata(root, path, rel, info, parse);
+        capturedBytes += opened.bytes?.length || 0;
         digests.set(rel, opened);
         if (name === "package.json" && !parse) addLimitation(rel, "parse-limit");
         rows.push({
@@ -974,8 +1069,8 @@ function validateProfile(profile) {
     fail("repositoryFingerprint", "keys must be exactly algorithm, basis, digest");
   }
   if (profile.repositoryFingerprint.algorithm !== "sha256") fail("repositoryFingerprint.algorithm", "must be sha256");
-  if (profile.repositoryFingerprint.basis !== FINGERPRINT_BASIS) {
-    fail("repositoryFingerprint.basis", `must be ${FINGERPRINT_BASIS}`);
+  if (!LEGACY_FINGERPRINT_BASES.has(profile.repositoryFingerprint.basis)) {
+    fail("repositoryFingerprint.basis", `must be a supported repository-state basis`);
   }
   if (!HEX64.test(profile.repositoryFingerprint.digest)) {
     fail("repositoryFingerprint.digest", "must be 64 lowercase hex characters");
@@ -1065,8 +1160,8 @@ function validateReceipt(receipt) {
     fail("finalStateFingerprint", "keys must be exactly algorithm, basis, digest");
   }
   if (receipt.finalStateFingerprint.algorithm !== "sha256") fail("finalStateFingerprint.algorithm", "must be sha256");
-  if (receipt.finalStateFingerprint.basis !== FINGERPRINT_BASIS) {
-    fail("finalStateFingerprint.basis", `must be ${FINGERPRINT_BASIS}`);
+  if (!LEGACY_FINGERPRINT_BASES.has(receipt.finalStateFingerprint.basis)) {
+    fail("finalStateFingerprint.basis", `must be a supported repository-state basis`);
   }
   if (!HEX64.test(receipt.finalStateFingerprint.digest)) {
     fail("finalStateFingerprint.digest", "must be 64 lowercase hex characters");

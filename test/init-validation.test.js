@@ -123,6 +123,8 @@ test("schema-v1 profiles generated before learning evidence remain readable", as
   const profile = JSON.parse(await readFile(profilePath, "utf8"));
   const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
   delete profile.facts.learning;
+  profile.repositoryFingerprint.basis = "muster.repository-state.v1";
+  receipt.finalStateFingerprint.basis = "muster.repository-state.v1";
   receipt.profileDigest = createHash("sha256").update(canonicalInitJson(profile)).digest("hex");
   await writeFile(profilePath, JSON.stringify(profile));
   await writeFile(receiptPath, JSON.stringify(receipt));

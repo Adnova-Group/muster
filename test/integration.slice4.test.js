@@ -33,7 +33,7 @@ test("init keeps native handoff pending until explicit acknowledgement and final
   assert.equal(prepared.receipt.classification, "greenfield");
   assert.equal(prepared.receipt.nativeInit.state, "not-requested");
   assert.equal(prepared.observedNativeEvidence, null);
-  assert.equal(prepared.receipt.finalStateFingerprint.basis, "muster.repository-state.v1");
+  assert.equal(prepared.receipt.finalStateFingerprint.basis, "muster.repository-state.v2");
   assert.equal((await stat(join(dir, ".git"))).isDirectory(), true);
   assert.deepEqual((await readdir(dir)).sort(), [".git", ".muster"]);
   assert.equal(await exists(join(dir, ".git/hooks")), false);

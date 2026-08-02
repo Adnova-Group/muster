@@ -7,6 +7,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { PRINCIPLES, VERBS, ROUTING_POLICY } from "../plugin/hooks/guidance.js";
+import { invokeInProcessTool } from "./in-process-tools.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // CLI resolution is layout-adaptive: source installs use ../src/cli.js while
@@ -423,6 +424,9 @@ export function startMusterMcpServer(config) {
   async function callTool(name, args = {}, signal) {
     const tool = catalog[name];
     if (!tool) return { ok: false, text: `unknown tool: ${name}` };
+
+  const inProcess = await invokeInProcessTool(name, args, { signal, environment });
+  if (inProcess.handled) return inProcess.result;
 
   if (tool.kind === "str") {
     const v = args[tool.prop];

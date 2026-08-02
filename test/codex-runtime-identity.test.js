@@ -10,7 +10,7 @@ import { buildCodexPlugin } from "../scripts/build-codex.mjs";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "../src/codex-runtime-identity.js";
 import { parseHookCommand, runCodexInstall } from "../src/codex-install.js";
-import { CODEX_COUNTS } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { codexAvailable, readCodexInventory } from "../src/codex-inventory.js";
 
 const execFile = promisify(execFileCb);

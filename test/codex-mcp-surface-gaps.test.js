@@ -17,7 +17,7 @@ import { execFile as execFileCb, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { CODEX_COUNTS } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { execFile, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 const execFileP = promisify(execFileCb);

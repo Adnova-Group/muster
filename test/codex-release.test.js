@@ -17,7 +17,8 @@ import {
   resolveCodexPlugin
 } from "../src/codex-release.js";
 import { withCodexFileLock } from "../src/codex-lock.js";
-import { CODEX_COUNTS, codexProfileForConfig } from "../src/codex.js";
+import { codexProfileForConfig } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
 

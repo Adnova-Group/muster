@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { CODEX_COUNTS } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { codexFallbackSkillId } from "../src/codex-catalog.js";
 import { execFile, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
 

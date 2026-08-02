@@ -5,7 +5,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { CODEX_COUNTS } from "../src/codex.js";
+import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
 
 const execFile = promisify(execFileCb);

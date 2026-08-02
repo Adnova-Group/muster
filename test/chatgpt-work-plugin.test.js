@@ -722,6 +722,18 @@ test("installed Work startup rejects a symlink introduced anywhere in managed an
   assert.match(result.stderr, /publication path rejected.*not an ordinary directory/i);
 });
 
+test("installed Work startup preserves ENOENT for missing publication ancestry", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-work-startup-missing-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const result = await serverExit({
+    MUSTER_CHATGPT_WORK_PROFILE: "pro-safe",
+    MUSTER_CHATGPT_WORK_PLUGIN_PATH: join(dir, "missing", "plugin"),
+  });
+  assert.notEqual(result.code, 0);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /publication path rejected \(ENOENT\)/);
+});
+
 test("probe identity validates installed app bytes and consumes nonce durably across restarts", async t => {
   const dir = await mkdtemp(join(tmpdir(), "muster-work-probe-restart-"));
   await chmod(dir, 0o700);

@@ -5,6 +5,7 @@ import { open } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { isDeepStrictEqual } from "node:util";
+import { ordinaryDirectoryPath } from "../src/fs-safe.js";
 import { resolveMusterCli, startMusterMcpServer } from "./server.mjs";
 
 const profile = process.env.MUSTER_CHATGPT_WORK_PROFILE;
@@ -17,11 +18,11 @@ if (process.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH || process.env.MUSTER_CHATGPT_WO
   try {
     const pluginPath = process.env.MUSTER_CHATGPT_WORK_PLUGIN_PATH;
     if (!pluginPath || !path.isAbsolute(pluginPath)) throw new Error("installed plugin path is required");
-    let current = path.parse(pluginPath).root;
-    for (const part of path.relative(current, pluginPath).split(path.sep).filter(Boolean)) {
-      current = path.join(current, part);
-      const info = lstatSync(current);
-      if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`${current} is not an ordinary directory`);
+    const ordinaryPluginPath = await ordinaryDirectoryPath(pluginPath, {
+      unsafeError: current => new Error(`${current} is not an ordinary directory`),
+    });
+    if (!ordinaryPluginPath) {
+      throw Object.assign(new Error(`${pluginPath} is missing`), { code: "ENOENT" });
     }
     for (const candidate of [path.dirname(path.dirname(pluginPath)), path.dirname(pluginPath), pluginPath]) {
       const info = lstatSync(candidate);

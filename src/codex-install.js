@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { cp, link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, rmdir, stat, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
-import { atomicWrite, readNoFollowRegular } from "./fs-safe.js";
+import { atomicWrite, ordinaryDirectoryPath as walkOrdinaryDirectoryPath, readNoFollowRegular } from "./fs-safe.js";
 import { basename, dirname, isAbsolute, join, parse, posix, relative, resolve, sep, win32 } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -92,24 +92,10 @@ export async function codexActivationConfigDirs(commonRoot, invocationCwd) {
   }
   return [...new Set(dirs)];
 }
-async function ordinaryDirectoryPath(path, { create = false } = {}) {
-  const absolute = resolve(path), root = parse(absolute).root;
-  let current = root;
-  for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-    current = join(current, part);
-    let stat;
-    try { stat = await lstat(current); }
-    catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      if (!create) return false;
-      try { await mkdir(current, { mode: 0o700 }); }
-      catch (mkdirError) { if (mkdirError.code !== "EEXIST") throw mkdirError; }
-      stat = await lstat(current);
-    }
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Codex configuration ancestry must be an ordinary directory: ${current}`);
-  }
-  return true;
-}
+const ordinaryDirectoryPath = (path, options = {}) => walkOrdinaryDirectoryPath(path, {
+  ...options,
+  unsafeError: current => new Error(`Codex configuration ancestry must be an ordinary directory: ${current}`),
+});
 
 async function regularFileState(path) {
   await ordinaryDirectoryPath(dirname(path));

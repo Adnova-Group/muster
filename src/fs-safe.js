@@ -14,7 +14,7 @@
 import { closeSync, constants as fsConstants, fstatSync, openSync, readFileSync } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
 
 // --- Traversal-token guards --------------------------------------------------
@@ -300,6 +300,41 @@ export async function updateContainedFile(root, path, transform) {
     await writeContainedFile(root, path, nextBytes);
     return next;
   }, { beforeOpen: guard, requireNoFollow: false });
+}
+
+// Walk every component from the filesystem root to `path` with lstat, never
+// following a symlinked component. All consumers share one return contract:
+// the resolved absolute path when the full ancestry is ordinary directories,
+// or false when a component is missing and creation is disabled. With create
+// enabled, missing components are created private and then lstat-validated;
+// EEXIST is tolerated only so a concurrent creator can be validated normally.
+// Callers may translate the unsafe-component diagnostic without changing the
+// walk or its return shape.
+export async function ordinaryDirectoryPath(path, {
+  create = false,
+  unsafeError = current => new Error(`Path ancestry must be an ordinary directory: ${current}`),
+} = {}) {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  let current = root;
+  for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
+    current = join(current, part);
+    let info;
+    try {
+      info = await lstat(current);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      if (!create) return false;
+      try {
+        await mkdir(current, { mode: 0o700 });
+      } catch (createError) {
+        if (createError.code !== "EEXIST") throw createError;
+      }
+      info = await lstat(current);
+    }
+    if (info.isSymbolicLink() || !info.isDirectory()) throw unsafeError(current);
+  }
+  return absolute;
 }
 
 // --- No-follow regular-file reads --------------------------------------------

@@ -17,12 +17,13 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   atomicWrite,
   isAbsolutePathToken,
   isContainedLexical,
   isUnsafePathToken,
+  ordinaryDirectoryPath,
   readNoFollowRegular,
   readNoFollowRegularSync,
   resolveContainedRealpath,
@@ -143,6 +144,62 @@ test("resolveContainedRealpath: a missing target resolves to null (benign absenc
     assert.equal(await resolveContainedRealpath(dir, join(dir, "nope.md")), null);
     await assert.rejects(() => resolveContainedRealpath(join(dir, "no-such-base"), join(dir, "x.md")));
   });
+});
+
+// --- ordinaryDirectoryPath (shared no-follow ancestry walker) ----------------
+
+test("ordinaryDirectoryPath: one return contract covers existing, missing, and created ancestry", async () => {
+  await withTempDir(async (dir) => {
+    const existing = join(dir, "existing", "nested");
+    await mkdir(existing, { recursive: true });
+    assert.equal(await ordinaryDirectoryPath(existing), resolve(existing));
+
+    const missing = join(dir, "missing", "nested");
+    assert.equal(await ordinaryDirectoryPath(missing), false);
+    assert.equal(await ordinaryDirectoryPath(missing, { create: true }), resolve(missing));
+    assert.equal((await stat(join(dir, "missing"))).isDirectory(), true);
+    assert.equal((await stat(missing)).isDirectory(), true);
+    if (process.platform !== "win32") {
+      assert.equal((await stat(join(dir, "missing"))).mode & 0o777, 0o700);
+      assert.equal((await stat(missing)).mode & 0o777, 0o700);
+    }
+  });
+});
+
+test("ordinaryDirectoryPath: rejects a symlinked or non-directory component and names the offender", async () => {
+  await withTempDir(async (dir) => {
+    const target = join(dir, "target");
+    await mkdir(target);
+    const linked = join(dir, "linked");
+    await symlink(target, linked);
+    await assert.rejects(
+      () => ordinaryDirectoryPath(join(linked, "child")),
+      new RegExp(`ordinary directory: ${linked.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+    );
+
+    const file = join(dir, "file");
+    await writeFile(file, "not a directory");
+    await assert.rejects(
+      () => ordinaryDirectoryPath(join(file, "child")),
+      new RegExp(`ordinary directory: ${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+    );
+  });
+});
+
+test("ordinaryDirectoryPath: all four consumers import the shared walker instead of declaring their own", async () => {
+  const root = dirname(dirname(fileURLToPath(import.meta.url)));
+  const consumers = [
+    ["src/codex-install.js", /ordinaryDirectoryPath/],
+    ["src/codex-doctor.js", /ordinaryDirectoryPath/],
+    ["src/chatgpt-work-install.js", /ordinaryDirectoryPath/],
+    ["mcp/chatgpt-work-server.mjs", /ordinaryDirectoryPath/],
+  ];
+  for (const [relative, call] of consumers) {
+    const source = await readFile(join(root, relative), "utf8");
+    assert.match(source, /from ["'][^"']*fs-safe\.js["']/, `${relative} imports fs-safe.js`);
+    assert.match(source, call, `${relative} calls the shared walker`);
+    assert.doesNotMatch(source, /(?:async\s+)?function ordinaryDirectory(?:Path)?\s*\(/, `${relative} has no local walker`);
+  }
 });
 
 // --- readNoFollowRegular (async, descriptor-pinned) ---------------------------

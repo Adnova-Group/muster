@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { lstat, open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { CODEX_COUNTS } from "./codex.js";
@@ -11,7 +11,7 @@ import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } fro
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
 import { codexActivationConfigDirs, codexHookStateKeys, codexProjectRoot, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, inventoryAliasCandidateSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameAliasCandidateSnapshot, sameHookActivationSnapshot } from "./codex-install.js";
-import { readNoFollowRegular } from "./fs-safe.js";
+import { ordinaryDirectoryPath as walkOrdinaryDirectoryPath, readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
   codexThreadLimitConfigPath,
@@ -369,21 +369,9 @@ function scopeCauseClauses(noun, failures) {
   ];
 }
 
-async function ordinaryDirectoryPath(path) {
-  const absolute = resolve(path), root = parse(absolute).root;
-  let current = root;
-  for (const part of relative(root, absolute).split(sep).filter(Boolean)) {
-    current = join(current, part);
-    let stat;
-    try { stat = await lstat(current); }
-    catch (error) {
-      if (missingPath(error)) return false;
-      throw error;
-    }
-    if (stat.isSymbolicLink() || !stat.isDirectory()) throw unsafeScopeRead(`Codex configuration ancestry must be an ordinary directory: ${current}`);
-  }
-  return true;
-}
+const ordinaryDirectoryPath = path => walkOrdinaryDirectoryPath(path, {
+  unsafeError: current => unsafeScopeRead(`Codex configuration ancestry must be an ordinary directory: ${current}`),
+});
 
 // Descriptor-pinned no-follow open + regular-file validation WITHOUT reading:
 // the content-free validator (assertRegularFilePresent) needs the held

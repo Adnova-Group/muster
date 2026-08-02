@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
@@ -263,7 +263,8 @@ for (const relativePath of trackedCodexFiles) {
 }
 
 const mcp = await json(join(plugin, ".mcp.json"));
-if (mcp.mcpServers?.muster?.command !== "node" || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not Codex-native");
+const canonicalNode = await realpath(process.execPath);
+if (mcp.mcpServers?.muster?.command !== canonicalNode || mcp.mcpServers?.muster?.args?.[0] !== "./runtime/muster-mcp.mjs") fail("MCP configuration is not pinned to the canonical Codex host Node executable");
 const bundledMcp = await readFile(join(plugin, "runtime", "muster-mcp.mjs"), "utf8");
 if (!bundledMcp.includes('runtimeIdentity: "codex"') || !bundledMcp.includes('"capabilities", "--codex"')) fail("MCP capability tool is not bound to live Codex inventory");
 if (bundledMcp.includes("MUSTER_MCP_HOST")) fail("MCP runtime must use the explicit adapter contract, not the retired environment host selector");

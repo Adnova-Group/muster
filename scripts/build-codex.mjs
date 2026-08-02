@@ -1,7 +1,7 @@
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -706,7 +706,9 @@ async function adaptPortedSkills(internalSkillDir, names, contract) {
 // `npm run build:codex` / the `pretest` hook that invokes this same script's
 // CLI entry below) all still force a fresh build unconditionally.
 export async function buildCodexPlugin(options, retries = 1) {
-  const { root, outDir } = options;
+  const { root, outDir, nodeExecPath = process.execPath } = options;
+  const canonicalNode = realpathSync(nodeExecPath);
+  if (!statSync(canonicalNode).isFile()) throw new Error(`Codex runtime Node executable is not a regular file: ${nodeExecPath}`);
   if (process.env.MUSTER_BUILD_FORCE !== "1") {
     try {
       const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
@@ -721,7 +723,7 @@ export async function buildCodexPlugin(options, retries = 1) {
         && manifest.skills === "./skills/"
         && manifest.mcpServers === "./.mcp.json"
         && JSON.stringify(mcp) === JSON.stringify({
-          mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
+          mcpServers: { muster: { command: canonicalNode, args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
         })
         && readFileSync(join(current.pluginRoot, "runtime", "muster.mjs")).length > 0
         && readFileSync(join(current.pluginRoot, "runtime", "muster-mcp.mjs")).length > 0
@@ -734,7 +736,7 @@ export async function buildCodexPlugin(options, retries = 1) {
   }
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt++) {
-    try { return await buildCodexPluginOnce(options); }
+    try { return await buildCodexPluginOnce({ ...options, nodeExecPath: canonicalNode }); }
     catch (error) {
       if (error?.code !== "ENOENT") throw error;
       lastError = error;
@@ -743,7 +745,7 @@ export async function buildCodexPlugin(options, retries = 1) {
   throw new Error(`Codex plugin generation did not succeed after ${retries + 1} attempts: ${lastError.message}`, { cause: lastError });
 }
 
-async function buildCodexPluginOnce({ root, outDir }) {
+async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
   ensure(outDir);
   // Stage on the native filesystem, not under outDir — see the top-of-file
   // comment. outDir itself may still be on drvfs (it usually is: the
@@ -862,7 +864,7 @@ async function buildCodexPluginOnce({ root, outDir }) {
     write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version, inputDigest }, null, 2) + "\n");
 
     write(join(plugin, ".mcp.json"), JSON.stringify({
-      mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
+      mcpServers: { muster: { command: nodeExecPath, args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
     }, null, 2) + "\n");
     const pluginManifest = {
       name: "muster", version: pkg.version,

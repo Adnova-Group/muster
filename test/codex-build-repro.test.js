@@ -285,7 +285,7 @@ test("buildCodexPlugin's input-digest skip-if-current check can be bypassed with
     mcpServers: "./.mcp.json",
   }));
   await writeFile(join(staged, ".mcp.json"), JSON.stringify({
-    mcpServers: { muster: { command: "node", args: ["./runtime/muster-mcp.mjs"], cwd: "." } },
+    mcpServers: { muster: { command: process.execPath, args: ["./runtime/muster-mcp.mjs"], cwd: "." } },
   }));
   await writeFile(join(staged, "runtime", "muster.mjs"), "export {};\n");
   await writeFile(join(staged, "runtime", "muster-mcp.mjs"), "export {};\n");

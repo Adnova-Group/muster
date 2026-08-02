@@ -4,12 +4,15 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { readdirSafe, readJson } from "./fs-util.js";
+import { runCodexCommand } from "./codex-runtime-identity.js";
 
 const execFileDefault = promisify(execFileCb);
 
-async function jsonCommand(execFile, args) {
+async function jsonCommand(execFile, args, runtimeIdentity) {
   try {
-    const { stdout } = await execFile("codex", args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
+    const { stdout } = runtimeIdentity
+      ? await runCodexCommand(execFile, runtimeIdentity, args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 })
+      : await execFile("codex", args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
     return JSON.parse(stdout);
   } catch { return null; }
 }
@@ -57,10 +60,10 @@ function mcpNames(result) {
 
 // Codex's live CLI output is authoritative. Never walk its plugin cache: it
 // can contain stale or disabled copies that Codex is not currently using.
-export async function readCodexInventory({ cwd = process.cwd(), codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"), execFile = execFileDefault } = {}) {
+export async function readCodexInventory({ cwd = process.cwd(), codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"), execFile = execFileDefault, runtimeIdentity } = {}) {
   const [pluginsJson, mcpJson] = await Promise.all([
-    jsonCommand(execFile, ["plugin", "list", "--available", "--json"]),
-    jsonCommand(execFile, ["mcp", "list", "--json"])
+    jsonCommand(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity),
+    jsonCommand(execFile, ["mcp", "list", "--json"], runtimeIdentity)
   ]);
   const active = installedPlugins(pluginsJson);
   const pluginSkills = [], pluginAgents = [];
@@ -81,8 +84,12 @@ export async function readCodexInventory({ cwd = process.cwd(), codexHome = proc
   };
 }
 
-export async function codexAvailable({ execFile = execFileDefault } = {}) {
-  try { await execFile("codex", ["--version"], { timeout: 5_000 }); return true; }
+export async function codexAvailable({ execFile = execFileDefault, runtimeIdentity } = {}) {
+  try {
+    if (runtimeIdentity) await runCodexCommand(execFile, runtimeIdentity, ["--version"], { timeout: 5_000 });
+    else await execFile("codex", ["--version"], { timeout: 5_000 });
+    return true;
+  }
   catch { return false; }
 }
 

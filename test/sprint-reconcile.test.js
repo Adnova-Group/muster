@@ -76,6 +76,38 @@ test("new dispatch actions preserve the schedule concurrency cap", () => {
   assert.equal(result.metadata.buildReview.maxConcurrency, 2);
 });
 
+test("a 1,001-item plan reconciles page-wise under the dispatch ceiling with stable full-plan identity", () => {
+  const sprint = computeSprintWaves(
+    Array.from({ length: 1_001 }, (_, index) =>
+      `- [ ] Item ${index + 1} {id: item-${index + 1}} {deps: none} {disposition: pr}`
+    ).join("\n"),
+    { parallelLimit: 4 },
+  );
+
+  const first = reconcileSprintProgress(sprint);
+  assert.equal(first.ok, true);
+  assert.equal(first.escalated, false);
+  assert.equal(first.next, "dispatch");
+  assert.equal(first.actions.length, 4);
+  assert.ok(first.actions.every((action) => action.phase === "implementation"));
+  assert.deepEqual(first.metadata.plan, {
+    digestAlgorithm: "sha256",
+    digest: first.metadata.plan.digest,
+    totalItems: 1_001,
+    pageSize: 1_000,
+    pageCount: 2,
+  });
+  assert.match(first.metadata.plan.digest, /^[a-f0-9]{64}$/);
+
+  const second = reconcileSprintProgress(sprint, {
+    inFlight: first.actions.map((action) => flight(action.itemId, action.phase)),
+  });
+  assert.equal(second.ok, true);
+  assert.equal(second.escalated, false);
+  assert.equal(second.next, "wait");
+  assert.equal(second.metadata.plan.digest, first.metadata.plan.digest);
+});
+
 test("duplicate and out-of-order receipts are retained and applied idempotently", () => {
   const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
   const early = receipt("review-a", "a", "review");
